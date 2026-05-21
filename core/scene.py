@@ -51,3 +51,21 @@ class Scene:
             self.edges.clear()
             self.selection.clear()
             self.version += 1
+
+    def bounds(self) -> tuple[QVector3D, QVector3D] | tuple[None, None]:
+        """Axis-aligned bounding box of all geometry. ``(None, None)`` if empty."""
+        if not self.edges:
+            return None, None
+        inf = float("inf")
+        minx = miny = minz = inf
+        maxx = maxy = maxz = -inf
+        for edge in self.edges:
+            for v in (edge.a, edge.b):
+                x, y, z = v.x(), v.y(), v.z()
+                if x < minx: minx = x
+                if y < miny: miny = y
+                if z < minz: minz = z
+                if x > maxx: maxx = x
+                if y > maxy: maxy = y
+                if z > maxz: maxz = z
+        return QVector3D(minx, miny, minz), QVector3D(maxx, maxy, maxz)

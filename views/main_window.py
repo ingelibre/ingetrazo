@@ -107,10 +107,32 @@ class MainWindow(QMainWindow):
 
         # View menu
         view_menu = menubar.addMenu("View")
+
         action_proj = QAction("Toggle Perspective / Parallel", self)
         action_proj.setShortcut(QKeySequence("P"))
         action_proj.triggered.connect(self.viewport.toggle_projection)
         view_menu.addAction(action_proj)
+
+        view_menu.addSeparator()
+
+        action_zoom_extents = QAction("Zoom Extents", self)
+        action_zoom_extents.setShortcut(QKeySequence("F2"))
+        action_zoom_extents.triggered.connect(self._on_zoom_extents)
+        view_menu.addAction(action_zoom_extents)
+
+        standard_menu = view_menu.addMenu("Standard Views")
+        for label, key in [
+            ("Top", "top"),
+            ("Bottom", "bottom"),
+            ("Front", "front"),
+            ("Back", "back"),
+            ("Left", "left"),
+            ("Right", "right"),
+            ("Isometric", "iso"),
+        ]:
+            action = QAction(label, self)
+            action.triggered.connect(lambda _checked, k=key: self._on_standard_view(k))
+            standard_menu.addAction(action)
 
         # Tools menu (mirrors the toolbar)
         tools_menu = menubar.addMenu("Tools")
@@ -199,6 +221,18 @@ class MainWindow(QMainWindow):
     def _cancel_tool(self) -> None:
         if self.viewport.active_tool is not None:
             self.viewport.active_tool.on_cancel(self.viewport)
+
+    # ---- View navigation ----------------------------------------------------
+    def _on_zoom_extents(self) -> None:
+        bounds = self.viewport.scene.bounds()
+        if bounds[0] is None:
+            return
+        self.viewport.camera.fit_to(bounds[0], bounds[1])
+        self.viewport.update()
+
+    def _on_standard_view(self, key: str) -> None:
+        self.viewport.camera.set_view(key)
+        self.viewport.update()
 
     # ---- Undo / redo --------------------------------------------------------
     def _on_undo(self) -> None:

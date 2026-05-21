@@ -92,3 +92,35 @@ class OrbitCamera:
 
     def toggle_projection(self) -> None:
         self.perspective = not self.perspective
+
+    # ---- Navigation presets ------------------------------------------------
+    def fit_to(self, min_pt: QVector3D, max_pt: QVector3D, margin: float = 1.3) -> None:
+        """Center the camera on the AABB and back up enough to frame it."""
+        center = QVector3D(
+            (min_pt.x() + max_pt.x()) * 0.5,
+            (min_pt.y() + max_pt.y()) * 0.5,
+            (min_pt.z() + max_pt.z()) * 0.5,
+        )
+        diag = (max_pt - min_pt).length()
+        if diag < 1.0:
+            diag = 1.0
+        self.target = center
+        fov_rad = math.radians(self.fov_deg)
+        self.distance = max(diag * margin / (2.0 * math.tan(fov_rad / 2.0)), 1.0)
+
+    # Yaw / pitch presets for standard architectural views (Z-up convention).
+    _STANDARD_VIEWS = {
+        "top":    (math.radians(-90.0), math.radians(89.0)),
+        "bottom": (math.radians(-90.0), math.radians(-89.0)),
+        "front":  (math.radians(-90.0), 0.0),
+        "back":   (math.radians(90.0), 0.0),
+        "right":  (0.0, 0.0),
+        "left":   (math.radians(180.0), 0.0),
+        "iso":    (math.radians(-45.0), math.radians(30.0)),
+    }
+
+    def set_view(self, name: str) -> None:
+        preset = self._STANDARD_VIEWS.get(name)
+        if preset is None:
+            return
+        self.yaw, self.pitch = preset
