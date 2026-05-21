@@ -613,20 +613,42 @@ class Viewport(QOpenGLWidget):
         return p_near, direction.normalized()
 
     def _world_from_pixel(self, x: int, y: int) -> Optional[QVector3D]:
-        """Pixel → world hit on the Z=0 plane, or None."""
+        """Pixel → world hit on the *current* work plane (horizontal).
+
+        The work plane follows the active tool's start point: if the user
+        clicked a point at ``Z = 5``, subsequent free movement is captured
+        at ``Z = 5`` rather than falling back to the ground. This is what
+        makes inclined / elevated drawing feel natural (SketchUp does the
+        same — without it the cursor always projects to the ground and
+        diagonals up are impossible).
+        """
         origin, direction = self._pixel_to_ray(x, y)
         if origin is None or direction is None:
             return None
+        plane_z = self._current_work_plane_z()
         if abs(direction.z()) < 1e-6:
             return None
-        t = -origin.z() / direction.z()
+        t = (plane_z - origin.z()) / direction.z()
         if t < 0:
             return None
         return QVector3D(
             origin.x() + t * direction.x(),
             origin.y() + t * direction.y(),
-            0.0,
+            plane_z,
         )
+
+    def _current_work_plane_z(self) -> float:
+        """Z height of the active drawing plane.
+
+        Defaults to 0 (ground). When the active tool has a start point at
+        a non-zero Z, the work plane follows that height so the user can
+        keep drawing at that elevation.
+        """
+        if self.active_tool is not None:
+            start = getattr(self.active_tool, "start_point", None)
+            if start is not None and abs(start.z()) > 1e-6:
+                return start.z()
+        return 0.0
 
     def _project_to_lock_line(
         self,
@@ -889,9 +911,16 @@ class Viewport(QOpenGLWidget):
 
     # ---- Numeric value buffer (VCB-style) ----------------------------------
     def _handle_value_key(self, ev) -> bool:
-        """Buffer digit / dot / comma / backspace. Return True if consumed.
+        """Buffer digit / dot / comma / semicolon / space / backspace.
 
         Enter applies the buffer via ``active_tool.on_value(...)``.
+
+        Input forms:
+        - ``"5"`` or ``"5,3"`` or ``"5.3"`` → single length (float).
+        - ``"3;4;5"`` or ``"3 4 5"``       → 3D delta from the start point
+                                              (passed as a ``(dx, dy, dz)`` tuple).
+        Comma is always the decimal separator; ``;`` and space are field
+        separators (SketchUp convention adapted to our locale).
         """
         if self.active_tool is None:
             return False
@@ -902,9 +931,8 @@ class Viewport(QOpenGLWidget):
         if key in (Qt.Key_Return, Qt.Key_Enter):
             if not self._value_buffer:
                 return False
-            try:
-                value = float(self._value_buffer.replace(",", "."))
-            except ValueError:
+            value = self._parse_value_buffer(self._value_buffer)
+            if value is None:
                 self._set_value_buffer("")
                 return True
             self.active_tool.on_value(self, value)
@@ -917,14 +945,39 @@ class Viewport(QOpenGLWidget):
             self._set_value_buffer(self._value_buffer[:-1])
             return True
 
-        if text and (text.isdigit() or text in (".", ",")):
-            # Forbid two separators in the buffer.
-            if text in (".", ",") and ("." in self._value_buffer or "," in self._value_buffer):
-                return True  # swallow but don't append
+        if text and (text.isdigit() or text in (".", ",", ";", " ")):
+            # Forbid two decimal separators in the current numeric token.
+            if text in (".", ","):
+                tail = self._current_token_tail()
+                if "." in tail or "," in tail:
+                    return True
             self._set_value_buffer(self._value_buffer + text)
             return True
 
         return False
+
+    @staticmethod
+    def _parse_value_buffer(buffer: str):
+        """Return a float, a ``(dx, dy, dz)`` tuple, or ``None`` on parse error."""
+        normalized = buffer.replace(",", ".").replace(";", " ")
+        parts = normalized.split()
+        try:
+            nums = [float(p) for p in parts if p]
+        except ValueError:
+            return None
+        if len(nums) == 1:
+            return nums[0]
+        if len(nums) == 3:
+            return (nums[0], nums[1], nums[2])
+        return None
+
+    def _current_token_tail(self) -> str:
+        """The portion of the buffer after the last ``;`` or space."""
+        normalized = self._value_buffer.replace(";", " ")
+        idx = normalized.rfind(" ")
+        if idx < 0:
+            return self._value_buffer
+        return self._value_buffer[idx + 1 :]
 
     def _set_value_buffer(self, text: str) -> None:
         if text == self._value_buffer:

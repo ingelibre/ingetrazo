@@ -76,21 +76,37 @@ class LineTool(Tool):
             return []
         return [(self.start_point, self.hover_point)]
 
-    def on_value(self, viewport, value: float) -> bool:
-        """Commit a segment of exact length in the current rubber-band direction."""
-        if (
-            self.start_point is None
-            or self.hover_point is None
-            or value <= 0.0
-        ):
+    def on_value(self, viewport, value) -> bool:
+        """Commit a segment from the VCB input.
+
+        ``value`` is either:
+        - ``float``  → length along the current rubber-band direction.
+        - 3-tuple    → ``(dx, dy, dz)`` delta added to the start point,
+                        which makes inclined / elevated lines trivial to
+                        construct numerically (start, then type "3;4;5"
+                        for a +3 X, +4 Y, +5 Z delta).
+        """
+        if self.start_point is None:
             return False
-        delta = self.hover_point - self.start_point
-        if delta.length() < 1e-9:
-            return False
-        direction = delta.normalized()
-        new_endpoint = self.start_point + direction * value
+
+        if isinstance(value, tuple):
+            dx, dy, dz = value
+            new_endpoint = QVector3D(
+                self.start_point.x() + dx,
+                self.start_point.y() + dy,
+                self.start_point.z() + dz,
+            )
+        else:
+            if self.hover_point is None or value <= 0.0:
+                return False
+            delta = self.hover_point - self.start_point
+            if delta.length() < 1e-9:
+                return False
+            direction = delta.normalized()
+            new_endpoint = self.start_point + direction * value
+
         viewport.history.execute(AddEdgeCommand(self.start_point, new_endpoint))
-        # Chain into the next segment, leaving the rubber-band aligned.
+        self.chain_vertices.append(new_endpoint)
         self.start_point = new_endpoint
         self.hover_point = new_endpoint
         viewport.update()

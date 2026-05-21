@@ -81,7 +81,10 @@ class PushPullTool(Tool):
             return
         self._commit(viewport)
 
-    def on_value(self, viewport, value: float) -> bool:
+    def on_value(self, viewport, value) -> bool:
+        # Push/Pull only takes a single extrusion length; 3D deltas don't apply.
+        if isinstance(value, tuple):
+            return False
         if not self.dragging or self.base_face is None or value <= 0.0:
             return False
         # Keep the sign the user has been dragging toward; default to +normal.

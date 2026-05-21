@@ -189,7 +189,8 @@ class MainWindow(QMainWindow):
         bar.showMessage(
             "MMB-drag: orbit  ·  Shift+MMB-drag: pan  ·  Wheel: zoom  ·  "
             "P: persp/parallel  ·  →←↑: lock X/Y/Z  ·  ↓: par/perp to ref  ·  "
-            "Shift: lock inference  ·  Type number + Enter: exact length"
+            "Shift: lock inference  ·  Type N + Enter: exact length  ·  "
+            "Type X;Y;Z + Enter: 3D delta"
         )
         self._value_label = QLabel("")
         self._value_label.setStyleSheet(
