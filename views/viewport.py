@@ -356,9 +356,8 @@ class Viewport(QOpenGLWidget):
         tool = self.active_tool
         if tool is None:
             return
-        start = getattr(tool, "start_point", None)
-        hover = getattr(tool, "hover_point", None)
-        if start is None or hover is None:
+        segments = tool.rubber_band_lines()
+        if not segments:
             return
 
         snap = self.last_snap
@@ -367,7 +366,7 @@ class Viewport(QOpenGLWidget):
             color = (r, g, b, 1.0)
         elif snap is not None and snap.kind == "axis_inference":
             r, g, b = snap.color
-            color = (r, g, b, 0.50)  # soft — visual cue, not committed
+            color = (r, g, b, 0.50)
         elif snap is not None and snap.kind == "reference":
             r, g, b = snap.color
             color = (r, g, b, 1.0)
@@ -376,10 +375,9 @@ class Viewport(QOpenGLWidget):
         else:
             color = (0.95, 0.45, 0.16, 0.85)
 
-        data = array("f", [
-            start.x(), start.y(), start.z(),
-            hover.x(), hover.y(), hover.z(),
-        ])
+        data = array("f")
+        for a, b in segments:
+            data.extend([a.x(), a.y(), a.z(), b.x(), b.y(), b.z()])
         raw = data.tobytes()
         self._rubber_vbo.bind()
         self._rubber_vbo.allocate(raw, len(raw))
@@ -387,7 +385,7 @@ class Viewport(QOpenGLWidget):
 
         self._set_color(*color)
         self._rubber_vao.bind()
-        self._gl.glDrawArrays(GL_LINES, 0, 2)
+        self._gl.glDrawArrays(GL_LINES, 0, len(data) // 3)
         self._rubber_vao.release()
 
     # ---- 2D overlay (QPainter on top of OpenGL) -----------------------------
@@ -443,10 +441,11 @@ class Viewport(QOpenGLWidget):
         tool = self.active_tool
         if tool is None:
             return
-        start = getattr(tool, "start_point", None)
-        hover = getattr(tool, "hover_point", None)
-        if start is None or hover is None:
+        segments = tool.rubber_band_lines()
+        # Only meaningful for single-segment previews (line tool, VCB).
+        if len(segments) != 1:
             return
+        start, hover = segments[0]
         mid_world = QVector3D(
             (start.x() + hover.x()) * 0.5,
             (start.y() + hover.y()) * 0.5,

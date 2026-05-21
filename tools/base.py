@@ -69,3 +69,13 @@ class Tool(ABC):
         consume the value.
         """
         return False
+
+    # ---- Visual feedback hooks ---------------------------------------------
+    def rubber_band_lines(self):
+        """Return ``[(a, b), ...]`` line segments to draw as the live preview.
+
+        ``LineTool`` returns a single segment; ``RectangleTool`` returns four.
+        The viewport renders whatever the active tool returns; tools that
+        don't preview anything default to an empty list.
+        """
+        return []

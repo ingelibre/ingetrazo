@@ -60,6 +60,11 @@ class LineTool(Tool):
         self._reset()
         viewport.update()
 
+    def rubber_band_lines(self):
+        if self.start_point is None or self.hover_point is None:
+            return []
+        return [(self.start_point, self.hover_point)]
+
     def on_value(self, viewport, value: float) -> bool:
         """Commit a segment of exact length in the current rubber-band direction."""
         if (
