@@ -1,13 +1,31 @@
-"""Wasia main window: toolbar, viewport, side panels, status bar."""
+"""Wasia main window: toolbar, viewport, side panels, status bar.
+
+Owns the open document path and dispatches File menu actions (New, Open,
+Save, Save As) onto :mod:`formats.wasia`.
+"""
 from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
-from PySide6.QtWidgets import QLabel, QMainWindow, QStatusBar, QToolBar
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QStatusBar,
+    QToolBar,
+)
 
+from formats import wasia as wasia_format
 from tools.line import LineTool
 from tools.select import SelectTool
 from views.viewport import Viewport
+
+
+WASIA_FILE_FILTER = "Wasia document (*.wasia);;All files (*)"
 
 
 class MainWindow(QMainWindow):
@@ -15,7 +33,6 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Wasia")
         self.resize(1280, 800)
 
         self._tools = {
@@ -24,9 +41,12 @@ class MainWindow(QMainWindow):
         }
         self._tool_actions: dict[str, QAction] = {}
 
+        self._current_path: Optional[Path] = None
+        self._saved_version: int = 0
+
         self._setup_ui()
-        # Start with the Select tool so the user has a sensible default.
         self._activate_tool("select")
+        self._update_title()
 
     # ---- Layout -------------------------------------------------------------
     def _setup_ui(self) -> None:
@@ -36,6 +56,9 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_menubar()
         self._build_statusbar()
+
+        self._saved_version = self.viewport.scene.version
+        self.viewport.sceneVersionChanged.connect(self._on_scene_version_changed)
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main", self)
@@ -59,12 +82,19 @@ class MainWindow(QMainWindow):
     def _build_menubar(self) -> None:
         menubar = self.menuBar()
 
+        # File menu
+        file_menu = menubar.addMenu("File")
+        for action in self._file_actions():
+            file_menu.addAction(action)
+
+        # View menu
         view_menu = menubar.addMenu("View")
         action_proj = QAction("Toggle Perspective / Parallel", self)
         action_proj.setShortcut(QKeySequence("P"))
         action_proj.triggered.connect(self.viewport.toggle_projection)
         view_menu.addAction(action_proj)
 
+        # Tools menu (mirrors the toolbar)
         tools_menu = menubar.addMenu("Tools")
         for action in self._tool_actions.values():
             tools_menu.addAction(action)
@@ -73,6 +103,43 @@ class MainWindow(QMainWindow):
         action_cancel.setShortcut(QKeySequence("Esc"))
         action_cancel.triggered.connect(self._cancel_tool)
         tools_menu.addAction(action_cancel)
+
+    def _file_actions(self) -> list[QAction]:
+        actions = []
+
+        new_action = QAction("New", self)
+        new_action.setShortcut(QKeySequence.New)
+        new_action.triggered.connect(self._on_new)
+        actions.append(new_action)
+
+        open_action = QAction("Open…", self)
+        open_action.setShortcut(QKeySequence.Open)
+        open_action.triggered.connect(self._on_open)
+        actions.append(open_action)
+
+        save_action = QAction("Save", self)
+        save_action.setShortcut(QKeySequence.Save)
+        save_action.triggered.connect(self._on_save)
+        actions.append(save_action)
+
+        save_as_action = QAction("Save As…", self)
+        save_as_action.setShortcut(QKeySequence.SaveAs)
+        save_as_action.triggered.connect(self._on_save_as)
+        actions.append(save_as_action)
+
+        actions.append(self._separator())
+
+        quit_action = QAction("Quit", self)
+        quit_action.setShortcut(QKeySequence.Quit)
+        quit_action.triggered.connect(self.close)
+        actions.append(quit_action)
+
+        return actions
+
+    def _separator(self) -> QAction:
+        sep = QAction(self)
+        sep.setSeparator(True)
+        return sep
 
     def _build_statusbar(self) -> None:
         bar = QStatusBar(self)
@@ -114,3 +181,107 @@ class MainWindow(QMainWindow):
     def _cancel_tool(self) -> None:
         if self.viewport.active_tool is not None:
             self.viewport.active_tool.on_cancel(self.viewport)
+
+    # ---- File handling ------------------------------------------------------
+    def _on_new(self) -> None:
+        if not self._confirm_discard("Discard current drawing?"):
+            return
+        scene = self.viewport.scene
+        scene.edges.clear()
+        scene.selection.clear()
+        if hasattr(scene, "faces"):
+            scene.faces.clear()
+        scene.version += 1
+        self._current_path = None
+        self._saved_version = scene.version
+        self.viewport.notify_scene_changed()
+        self._update_title()
+
+    def _on_open(self) -> None:
+        if not self._confirm_discard("Discard current drawing and open another?"):
+            return
+        path_str, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Wasia document",
+            "",
+            WASIA_FILE_FILTER,
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        try:
+            wasia_format.load_into(self.viewport.scene, path)
+        except Exception as exc:  # noqa: BLE001 - surface any IO/parse error to the user
+            QMessageBox.critical(self, "Open failed", str(exc))
+            return
+        self._current_path = path
+        self._saved_version = self.viewport.scene.version
+        self.viewport.notify_scene_changed()
+        self._update_title()
+
+    def _on_save(self) -> None:
+        if self._current_path is None:
+            self._on_save_as()
+            return
+        self._do_save(self._current_path)
+
+    def _on_save_as(self) -> None:
+        default_name = (
+            self._current_path.name if self._current_path is not None else "untitled.wasia"
+        )
+        path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Wasia document",
+            default_name,
+            WASIA_FILE_FILTER,
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.suffix.lower() != ".wasia":
+            path = path.with_suffix(".wasia")
+        self._do_save(path)
+
+    def _do_save(self, path: Path) -> None:
+        try:
+            wasia_format.save_scene(self.viewport.scene, path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Save failed", str(exc))
+            return
+        self._current_path = path
+        self._saved_version = self.viewport.scene.version
+        self._update_title()
+
+    def _confirm_discard(self, prompt: str) -> bool:
+        """Return True if it's safe to discard the current drawing."""
+        if not self._is_dirty():
+            return True
+        answer = QMessageBox.question(
+            self,
+            "Unsaved changes",
+            f"{prompt}\n\nUnsaved changes will be lost.",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+            QMessageBox.Save,
+        )
+        if answer == QMessageBox.Save:
+            self._on_save()
+            return not self._is_dirty()
+        return answer == QMessageBox.Discard
+
+    def _is_dirty(self) -> bool:
+        return self.viewport.scene.version != self._saved_version
+
+    def _on_scene_version_changed(self, _version: int) -> None:
+        self._update_title()
+
+    def _update_title(self) -> None:
+        name = self._current_path.name if self._current_path is not None else "Untitled"
+        marker = " *" if self._is_dirty() else ""
+        self.setWindowTitle(f"Wasia — {name}{marker}")
+
+    # ---- Window lifecycle ---------------------------------------------------
+    def closeEvent(self, event) -> None:
+        if not self._confirm_discard("Quit Wasia?"):
+            event.ignore()
+            return
+        super().closeEvent(event)

@@ -117,6 +117,7 @@ class Viewport(QOpenGLWidget):
     """OpenGL viewport with orbital camera, grid, XYZ axes, tools and snapping."""
 
     valueBufferChanged = Signal(str)
+    sceneVersionChanged = Signal(int)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -302,6 +303,16 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue(self._loc_color, QVector4D(r, g, b, a))
 
     # ---- Dynamic uploads ----------------------------------------------------
+    def notify_scene_changed(self) -> None:
+        """Force a redraw and emit the version-changed signal.
+
+        Use this when an outside system (load, undo, redo) has mutated the
+        scene and wants subscribers (title-bar dirty flag, etc.) to react
+        without waiting for the next paint.
+        """
+        self.sceneVersionChanged.emit(self.scene.version)
+        self.update()
+
     def _sync_edges(self) -> None:
         if self.scene.version == self._edges_version:
             return
@@ -337,6 +348,7 @@ class Viewport(QOpenGLWidget):
         self._selected_count = len(sel_data) // 3
 
         self._edges_version = self.scene.version
+        self.sceneVersionChanged.emit(self._edges_version)
 
     def _draw_rubber_band(self) -> None:
         tool = self.active_tool
