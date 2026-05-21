@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 
+from core.history import DeleteEdgesCommand
 from tools.base import Tool, ToolContext
 
 
@@ -37,7 +38,9 @@ class SelectTool(Tool):
     def on_key(self, viewport, key: int, modifiers: Qt.KeyboardModifiers) -> bool:
         if key in (Qt.Key_Delete, Qt.Key_Backspace):
             if viewport.scene.selection:
-                viewport.scene.delete_selection()
+                viewport.history.execute(
+                    DeleteEdgesCommand(list(viewport.scene.selection))
+                )
                 viewport.update()
             return True
         return False

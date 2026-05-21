@@ -87,6 +87,22 @@ class MainWindow(QMainWindow):
         for action in self._file_actions():
             file_menu.addAction(action)
 
+        # Edit menu
+        edit_menu = menubar.addMenu("Edit")
+
+        self._undo_action = QAction("Undo", self)
+        self._undo_action.setShortcut(QKeySequence.Undo)
+        self._undo_action.triggered.connect(self._on_undo)
+        edit_menu.addAction(self._undo_action)
+
+        self._redo_action = QAction("Redo", self)
+        # Cover both classic Windows (Ctrl+Y) and Linux/macOS (Ctrl+Shift+Z).
+        self._redo_action.setShortcuts(
+            [QKeySequence.Redo, QKeySequence("Ctrl+Shift+Z")]
+        )
+        self._redo_action.triggered.connect(self._on_redo)
+        edit_menu.addAction(self._redo_action)
+
         # View menu
         view_menu = menubar.addMenu("View")
         action_proj = QAction("Toggle Perspective / Parallel", self)
@@ -182,6 +198,15 @@ class MainWindow(QMainWindow):
         if self.viewport.active_tool is not None:
             self.viewport.active_tool.on_cancel(self.viewport)
 
+    # ---- Undo / redo --------------------------------------------------------
+    def _on_undo(self) -> None:
+        if self.viewport.history.undo():
+            self.viewport.notify_scene_changed()
+
+    def _on_redo(self) -> None:
+        if self.viewport.history.redo():
+            self.viewport.notify_scene_changed()
+
     # ---- File handling ------------------------------------------------------
     def _on_new(self) -> None:
         if not self._confirm_discard("Discard current drawing?"):
@@ -192,6 +217,7 @@ class MainWindow(QMainWindow):
         if hasattr(scene, "faces"):
             scene.faces.clear()
         scene.version += 1
+        self.viewport.history.clear()
         self._current_path = None
         self._saved_version = scene.version
         self.viewport.notify_scene_changed()
@@ -214,6 +240,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001 - surface any IO/parse error to the user
             QMessageBox.critical(self, "Open failed", str(exc))
             return
+        self.viewport.history.clear()
         self._current_path = path
         self._saved_version = self.viewport.scene.version
         self.viewport.notify_scene_changed()

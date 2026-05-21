@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from PySide6.QtGui import QVector3D
 
+from core.history import AddEdgeCommand
 from tools.base import Tool, ToolContext
 
 
@@ -43,7 +44,7 @@ class LineTool(Tool):
             self.start_point = clicked
             self.chain_first_point = clicked
         else:
-            ctx.viewport.scene.add_edge(self.start_point, clicked)
+            ctx.viewport.history.execute(AddEdgeCommand(self.start_point, clicked))
             if ctx.snap.kind == "close":
                 # Polygon finished; start a fresh chain on the next click.
                 self._reset()
@@ -72,7 +73,7 @@ class LineTool(Tool):
             return False
         direction = delta.normalized()
         new_endpoint = self.start_point + direction * value
-        viewport.scene.add_edge(self.start_point, new_endpoint)
+        viewport.history.execute(AddEdgeCommand(self.start_point, new_endpoint))
         # Chain into the next segment, leaving the rubber-band aligned.
         self.start_point = new_endpoint
         self.hover_point = new_endpoint

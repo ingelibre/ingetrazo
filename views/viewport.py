@@ -57,6 +57,7 @@ from PySide6.QtOpenGL import (
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core.camera import OrbitCamera
+from core.history import History
 from core.scene import Scene
 from core.snap import SnapResult, compute_snap
 from tools.base import Tool, ToolContext
@@ -127,6 +128,7 @@ class Viewport(QOpenGLWidget):
 
         self.camera = OrbitCamera()
         self.scene = Scene()
+        self.history = History(self.scene)
         self.active_tool: Optional[Tool] = None
         self.axis_lock: Optional[str] = None  # None | "x" | "y" | "z"
         self.last_snap: Optional[SnapResult] = None
