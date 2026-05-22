@@ -33,20 +33,30 @@ Modelador 3D estilo SketchUp orientado a arquitectura, ingeniería civil e impre
     - **(b) QPainter del overlay deshabilita `GL_DEPTH_TEST`** y el estado se hereda en el siguiente `paintGL` — confirmado con `glIsEnabled(GL_DEPTH_TEST)` que devuelve `0` en el frame 2. Por eso, aunque pongamos `glEnable(GL_DEPTH_TEST)` en `initializeGL`, las caras dejan de ocluir aristas después del primer overlay. Fix: re-establecer **todo** el estado GL relevante (`glEnable(GL_DEPTH_TEST)`, `glDepthFunc(GL_LEQUAL)`, `glDepthMask(GL_TRUE)`, `glEnable(GL_BLEND)`, blend func, `glClearDepthf(1.0)`, `glClearColor`) al inicio de cada `paintGL`.
     - Adicional: `glDepthMask(GL_FALSE)` en el grid (no debe ocluir geometría), polygon offset (1,1) sobre caras como cinturón+tirantes para aristas coplanares, request de OpenGL 3.3 Core en `main.py` + en el widget.
 
+### ✅ Sesión 2026-05-22 (continuación) — UX de dibujo y topología
+11. **HiDPI / device pixel ratio** — el FBO se creaba con tamaño lógico (`self.width()`) mientras el framebuffer del widget está en píxeles físicos (lógico × DPR). Consecuencia: el render se blitteaba al 1/DPR² del widget y el cursor quedaba desplazado del trazado. Fix: usar `int(self.width() * self.devicePixelRatioF())` para viewport, FBO y blit en `paintGL`/`resizeGL`.
+12. **Adaptive work plane según cámara** — `_world_from_pixel` ahora elige el plano de trabajo según la orientación de la cámara. Si `|forward.z| ≥ sin(15°)` (top/iso/arquitectónica), plano horizontal a través de `start_point`. Si la cámara está casi al horizonte, plano vertical (XZ o YZ, el más perpendicular a la vista). Resuelve el problema de "dibujo aparente OK pero la línea cae al suelo" cuando se rota la cámara cerca del horizonte. Threshold de 15° elegido tras probar — más estricto rompía rectángulos en iso, más laxo molestaba en arquitectura.
+13. **Auto-detección de polígonos** (`core/topology.py`, nuevo) — `find_smallest_cycle_through(edges, a, b)` hace BFS en el grafo de aristas (dedup por posición con tolerancia ≈ 0.1 mm) para encontrar el ciclo más chico que pasaría por la nueva arista. `is_planar` + `face_exists` filtran lo válido. `LineTool._commit_edge` lo usa: si dibujás 2 líneas que cierran un triángulo usando una arista del cubo, la cara aparece automáticamente. Estilo SketchUp.
+14. **UX del snap** — tres ajustes encadenados:
+    - Threshold de point snaps bajó de 12 → 9 px (estaba mushy: en aristas cortas el endpoint disparaba a lo largo de toda la línea).
+    - Indicador continuo de axis lock (círculo 4×4 siguiendo el cursor) eliminado. El estado de lock se comunica sólo con el color del rubber-band, como SketchUp.
+    - Con axis lock activo, `compute_snap` ahora dispara `endpoint` (cuadrado verde) cuando el cursor cae cerca de un vértice que **está sobre la línea de lock** — así podés clavarte exactamente en vértices existentes sin perder el lock.
+15. **Orden de render** — ejes XYZ ahora se dibujan ANTES de las aristas del usuario, así una línea sobre el eje Z queda visible por encima del color del eje (`GL_LEQUAL` deja ganar al segundo draw en depths iguales). Rubber-band sigue al final, sin depth-test, encima de todo.
+
 ### 🐛 Conocidos sin resolver
 - **Fan triangulation rompe para polígonos cóncavos** — funciona para rectángulos y convexos. Una L o cualquier no-convexo se triangula mal. Solución: ear-clipping.
 - **Sin face culling** — ambos lados de cada cara se renderizan con el mismo color crema. Front/back vs SketchUp: front cream, back azul-grisáceo. Pendiente.
 - **Sin merge de geometría coincidente** — dos rectángulos que comparten arista crean aristas duplicadas. SketchUp auto-suelda.
-- **Sin face-plane inference** — el plano de trabajo solo se adapta a la altura Z del start_point. Hoverear sobre una cara inclinada todavía no toma esa cara como plano. Es el siguiente nivel de naturalidad (#10 en roadmap).
+- **Sin face-plane inference** — el plano de trabajo se adapta a la cámara y al `start_point.z`, pero no a una cara hovereada. Es el siguiente nivel de naturalidad.
+- **Auto-polígono encuentra UN solo ciclo** — si una arista cierra múltiples polígonos (clásico: diagonal en cuadrado → 2 triángulos), sólo crea uno (el primero que BFS encuentra). SketchUp crea ambos.
 
-### 🚧 Próxima sesión — prioridades
-1. **Move tool** (M) — trasladar selección con clic+drag + VCB.
-2. **Rotate tool** (Q?) — pivot + ángulo.
-3. **Ear-clipping triangulation** para polígonos cóncavos.
-4. **Face culling + colores front/back** (cream vs slate-blue).
-5. **Auto-merge edges/faces coincidentes** — cuando una nueva arista comparte ambos endpoints con una existente, no duplicar.
-6. **Face-plane inference** — cursor adopta la cara hovereada como plano de trabajo (workflow: clic en cara inclinada → la próxima línea se dibuja sobre esa cara).
-7. **Erase tool** (E) — clic-y-arrastre tachando aristas/caras (alternativa al Select+Delete).
+### 🚧 Próxima sesión — prioridades (decididas 2026-05-22)
+**Refinar lo que ya existe ANTES de tools nuevas.** El motor básico es ~70%, pero la calidad de la selección y el manejo de polígonos define la experiencia.
+1. **Pulir auto-detección de polígonos** — detectar TODOS los ciclos chicos que cierra una arista nueva (no sólo el primero), evitar caras duplicadas con orientación opuesta, considerar el caso de aristas que dividen una cara existente (split de face), y ear-clipping para soportar cóncavos.
+2. **Selección sólida** — hoy sólo se seleccionan aristas. Falta: seleccionar caras (con click sobre la cara), seleccionar al hacer rubber-band con drag, double-click para seleccionar todo lo conectado, triple-click para todo el sólido, hover highlighting.
+3. **Después de eso** sigue Move/Rotate/Erase + face-plane inference + auto-merge + face culling (en ese orden).
+
+### 🔮 Roadmap v0.1 (versión inicial usable real)
 
 ### 🔮 Roadmap v0.1 (versión inicial usable real)
 - Groups / Components (encapsulación de geometría reutilizable).

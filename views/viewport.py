@@ -195,7 +195,12 @@ class Viewport(QOpenGLWidget):
         self._hover_edge = None  # last edge under cursor (candidate for capture)
         self._last_mouse_pos: Optional[QPointF] = None
 
-        self.snap_threshold_px = 12.0
+        # Pixel radius for point snaps (endpoint, origin, close). 12 px felt
+        # mushy when the cursor was running along an existing edge: as long
+        # as the cursor was within 12 px of either end of a short edge,
+        # endpoint snap kept firing. SketchUp is tighter — the green dot
+        # only lights up right at the vertex.
+        self.snap_threshold_px = 9.0
         self.pick_threshold_px = 8.0
         self.inference_angle_deg = 3.0
 
@@ -269,11 +274,18 @@ class Viewport(QOpenGLWidget):
         self._rubber_vao, self._rubber_vbo = self._create_dynamic()
 
     def resizeGL(self, w: int, h: int) -> None:
+        # Qt passes framebuffer-pixel sizes here (already scaled by DPR), so
+        # this is the authoritative source for FBO and viewport dimensions.
         if self._gl is None:
             return
         self._gl.glViewport(0, 0, w, h)
         self.camera.set_aspect(w, h)
         self._ensure_scene_fbo(w, h)
+
+    def _fb_size(self) -> tuple[int, int]:
+        """Framebuffer pixel size (logical size × device pixel ratio)."""
+        dpr = self.devicePixelRatioF()
+        return max(int(round(self.width() * dpr)), 1), max(int(round(self.height() * dpr)), 1)
 
     def _ensure_scene_fbo(self, w: int, h: int) -> None:
         """Create or resize the offscreen FBO used for depth-tested rendering."""
@@ -290,8 +302,11 @@ class Viewport(QOpenGLWidget):
             return
 
         # Render the 3D scene into our own FBO (which has a real depth buffer)
-        # then blit the colour to the widget's default framebuffer.
-        w, h = self.width(), self.height()
+        # then blit the colour to the widget's default framebuffer. Sizes are
+        # in framebuffer pixels — using logical (self.width/height) here would
+        # blit into a fraction of the widget on HiDPI displays and shift the
+        # rendered scene away from the mouse cursor.
+        w, h = self._fb_size()
         self._ensure_scene_fbo(w, h)
         default_fbo = self.defaultFramebufferObject()
         self._scene_fbo.bind()
@@ -338,6 +353,19 @@ class Viewport(QOpenGLWidget):
             self._gl.glDrawArrays(GL_TRIANGLES, 0, self._faces_count)
             self._faces_vao.release()
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+        # Axes — drawn BEFORE user edges so any edge the user happens to draw
+        # along an axis (or coincident with one) wins the GL_LEQUAL depth
+        # test and shows on top of the axis colour. Rubber-band stays on top
+        # of both because it's drawn last with depth test off.
+        self._axes_vao.bind()
+        self._set_color(0.86, 0.22, 0.27, 1.0)  # X red
+        self._gl.glDrawArrays(GL_LINES, 0, 2)
+        self._set_color(0.16, 0.62, 0.36, 1.0)  # Y green
+        self._gl.glDrawArrays(GL_LINES, 2, 2)
+        self._set_color(0.20, 0.40, 0.78, 1.0)  # Z blue
+        self._gl.glDrawArrays(GL_LINES, 4, 2)
+        self._axes_vao.release()
+
         if self._edges_count > 0:
             self._set_color(0.13, 0.17, 0.23, 1.0)
             self._edges_vao.bind()
@@ -350,17 +378,6 @@ class Viewport(QOpenGLWidget):
             self._selected_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, self._selected_count)
             self._selected_vao.release()
-
-        # Axes — drawn before the rubber band so coincident rubber-band lines
-        # (e.g. while axis-locked) still overlay them.
-        self._axes_vao.bind()
-        self._set_color(0.86, 0.22, 0.27, 1.0)  # X red
-        self._gl.glDrawArrays(GL_LINES, 0, 2)
-        self._set_color(0.16, 0.62, 0.36, 1.0)  # Y green
-        self._gl.glDrawArrays(GL_LINES, 2, 2)
-        self._set_color(0.20, 0.40, 0.78, 1.0)  # Z blue
-        self._gl.glDrawArrays(GL_LINES, 4, 2)
-        self._axes_vao.release()
 
         # Rubber band preview — always on top. Depth test off so it doesn't
         # z-fight with coincident axes.
@@ -570,8 +587,10 @@ class Viewport(QOpenGLWidget):
         painter.end()
 
     def _draw_snap_indicator(self, painter: QPainter, snap: SnapResult) -> None:
-        # Axis inference is conveyed by the rubber-band color alone; no badge.
-        if snap.kind == "axis_inference":
+        # Axis-lock and inference state is conveyed by the coloured rubber
+        # band; no badge follows the cursor along the lock line. Only the
+        # discrete point snaps get a marker.
+        if snap.kind in ("axis_inference", "axis"):
             return
         pixel = self._world_to_pixel(snap.point)
         if pixel is None:
@@ -585,8 +604,6 @@ class Viewport(QOpenGLWidget):
             painter.drawRect(QRectF(px - 5, py - 5, 10, 10))
         elif snap.kind == "close":
             painter.drawEllipse(QPointF(px, py), 7.0, 7.0)
-        elif snap.kind == "axis":
-            painter.drawEllipse(QPointF(px, py), 4.0, 4.0)
         elif snap.kind == "reference":
             # Diamond marker for reference lock.
             painter.drawEllipse(QPointF(px, py), 5.0, 5.0)
@@ -696,42 +713,65 @@ class Viewport(QOpenGLWidget):
         return p_near, direction.normalized()
 
     def _world_from_pixel(self, x: int, y: int) -> Optional[QVector3D]:
-        """Pixel → world hit on the *current* work plane (horizontal).
+        """Pixel → world hit on the *current* work plane.
 
-        The work plane follows the active tool's start point: if the user
-        clicked a point at ``Z = 5``, subsequent free movement is captured
-        at ``Z = 5`` rather than falling back to the ground. This is what
-        makes inclined / elevated drawing feel natural (SketchUp does the
-        same — without it the cursor always projects to the ground and
-        diagonals up are impossible).
+        The work plane goes through the active tool's start point (or the
+        origin, for the first click) and its normal is the world axis most
+        aligned with the camera-forward direction. That keeps the cursor
+        moving "where you look": top view → XY plane; front/side view →
+        the vertical plane through start_point. Without this, drawing from
+        a horizon-ish view would force every second point back to Z = 0
+        even when the cursor appears to be at a higher elevation.
         """
         origin, direction = self._pixel_to_ray(x, y)
         if origin is None or direction is None:
             return None
-        plane_z = self._current_work_plane_z()
-        if abs(direction.z()) < 1e-6:
+        plane_point, plane_normal = self._current_work_plane()
+        denom = QVector3D.dotProduct(plane_normal, direction)
+        if abs(denom) < 1e-6:
             return None
-        t = (plane_z - origin.z()) / direction.z()
+        t = QVector3D.dotProduct(plane_normal, plane_point - origin) / denom
         if t < 0:
             return None
-        return QVector3D(
-            origin.x() + t * direction.x(),
-            origin.y() + t * direction.y(),
-            plane_z,
-        )
+        return origin + direction * t
 
-    def _current_work_plane_z(self) -> float:
-        """Z height of the active drawing plane.
+    # When the camera is at least this tilted off the horizon, the work plane
+    # stays horizontal (XY) — that covers top, iso, and most architectural
+    # angles. Only at near-horizon views does it switch to a vertical plane,
+    # which is the only orientation where cursor-to-ground is ambiguous.
+    HORIZON_PITCH_THRESHOLD_DEG = 15.0
 
-        Defaults to 0 (ground). When the active tool has a start point at
-        a non-zero Z, the work plane follows that height so the user can
-        keep drawing at that elevation.
+    def _current_work_plane(self) -> tuple[QVector3D, QVector3D]:
+        """Return ``(point, normal)`` of the current drawing plane.
+
+        With no active start point, defaults to the ground (XY at Z=0). With
+        one, the plane passes through it. Its orientation is horizontal
+        (normal +Z) for most camera angles — including iso — so rectangles
+        and ground-plane sketching feel natural. Only when the camera is
+        close to horizontal does the plane flip to a vertical orientation
+        (normal +X or +Y, whichever is more end-on to the camera), so the
+        cursor can move in Z without forcing every point back to Z = 0.
         """
         if self.active_tool is not None:
             start = getattr(self.active_tool, "start_point", None)
-            if start is not None and abs(start.z()) > 1e-6:
-                return start.z()
-        return 0.0
+        else:
+            start = None
+        if start is None:
+            return QVector3D(0.0, 0.0, 0.0), QVector3D(0.0, 0.0, 1.0)
+
+        forward = (self.camera.target - self.camera.eye())
+        if forward.length() < 1e-9:
+            return start, QVector3D(0.0, 0.0, 1.0)
+        forward = forward.normalized()
+        # |forward.z| ≈ sin(pitch). Anything tilted more than the threshold
+        # keeps the horizontal plane.
+        if abs(forward.z()) >= math.sin(math.radians(self.HORIZON_PITCH_THRESHOLD_DEG)):
+            return start, QVector3D(0.0, 0.0, 1.0)
+        # Near-horizon view — pick the vertical plane whose normal is more
+        # end-on to the camera so cursor motion maps cleanly to it.
+        if abs(forward.x()) >= abs(forward.y()):
+            return start, QVector3D(1.0, 0.0, 0.0)
+        return start, QVector3D(0.0, 1.0, 0.0)
 
     def _project_to_lock_line(
         self,

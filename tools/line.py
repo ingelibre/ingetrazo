@@ -16,7 +16,8 @@ from __future__ import annotations
 
 from PySide6.QtGui import QVector3D
 
-from core.history import AddEdgeCommand, AddFaceCommand, CompoundCommand
+from core.history import AddEdgeCommand, AddFaceCommand, CompoundCommand, Command
+from core.topology import face_exists, find_smallest_cycle_through, is_planar
 from tools.base import Tool, ToolContext
 
 
@@ -49,16 +50,11 @@ class LineTool(Tool):
             self.chain_vertices = [clicked]
             return
 
-        edge_cmd = AddEdgeCommand(self.start_point, clicked)
-        if ctx.snap.kind == "close" and len(self.chain_vertices) >= 3:
-            face_cmd = AddFaceCommand(list(self.chain_vertices))
-            ctx.viewport.history.execute(CompoundCommand([edge_cmd, face_cmd]))
-            self._reset()
-        elif ctx.snap.kind == "close":
-            ctx.viewport.history.execute(edge_cmd)
+        cmd = self._commit_edge(ctx.viewport, self.start_point, clicked)
+        ctx.viewport.history.execute(cmd)
+        if ctx.snap.kind == "close":
             self._reset()
         else:
-            ctx.viewport.history.execute(edge_cmd)
             self.chain_vertices.append(clicked)
             self.start_point = clicked
         ctx.viewport.update()
@@ -105,7 +101,7 @@ class LineTool(Tool):
             direction = delta.normalized()
             new_endpoint = self.start_point + direction * value
 
-        viewport.history.execute(AddEdgeCommand(self.start_point, new_endpoint))
+        viewport.history.execute(self._commit_edge(viewport, self.start_point, new_endpoint))
         self.chain_vertices.append(new_endpoint)
         self.start_point = new_endpoint
         self.hover_point = new_endpoint
@@ -113,6 +109,21 @@ class LineTool(Tool):
         return True
 
     # ---- Internals ----------------------------------------------------------
+    def _commit_edge(self, viewport, start: QVector3D, end: QVector3D) -> Command:
+        """Build the command for a new edge, attaching a face if the new edge
+        closes a planar cycle in the existing edge graph. This is what makes
+        a drawn line over a cube edge auto-create a triangle face — the
+        SketchUp-style "any planar loop becomes a face" behaviour."""
+        edge_cmd = AddEdgeCommand(start, end)
+        cycle = find_smallest_cycle_through(viewport.scene.edges, start, end)
+        if (
+            cycle is not None
+            and is_planar(cycle)
+            and not face_exists(viewport.scene.faces, cycle)
+        ):
+            return CompoundCommand([edge_cmd, AddFaceCommand(cycle)])
+        return edge_cmd
+
     def _reset(self) -> None:
         self.start_point = None
         self.chain_first_point = None

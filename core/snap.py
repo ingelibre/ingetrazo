@@ -111,6 +111,16 @@ _AXIS_VECTORS = {
 }
 
 
+def _vertex_on_line(
+    vertex: QVector3D, line_start: QVector3D, line_dir: QVector3D, tol: float = 1e-4
+) -> bool:
+    """Whether ``vertex`` lies on the infinite line through ``line_start`` in
+    ``line_dir`` (perpendicular distance below ``tol``)."""
+    rel = vertex - line_start
+    proj = QVector3D.dotProduct(rel, line_dir) * line_dir
+    return (rel - proj).length() < tol
+
+
 def compute_snap(
     candidate_world: QVector3D,
     candidate_pixel: tuple[float, float],
@@ -127,9 +137,24 @@ def compute_snap(
     inference_angle_deg: float = 3.0,
 ) -> SnapResult:
     # 1. Explicit axis lock (arrow keys). Use the viewport's camera-aware
-    #    projection so locks to Z (vertical) actually move along Z.
+    #    projection so locks to Z (vertical) actually move along Z. Existing
+    #    vertices that fall on the lock line still get an endpoint snap, so
+    #    you can land exactly on them without leaving the lock.
     if axis_lock and start_point is not None and project_onto_line is not None:
-        locked = project_onto_line(start_point, _AXIS_VECTORS[axis_lock])
+        axis_dir = _AXIS_VECTORS[axis_lock]
+        locked = project_onto_line(start_point, axis_dir)
+        cx, cy = candidate_pixel
+        for edge in scene.edges:
+            for vertex in (edge.a, edge.b):
+                if not _vertex_on_line(vertex, start_point, axis_dir):
+                    continue
+                vp = world_to_pixel(vertex)
+                if vp is None:
+                    continue
+                if math.hypot(vp[0] - cx, vp[1] - cy) <= threshold_px:
+                    return SnapResult(
+                        vertex, "endpoint", COLOR_ENDPOINT
+                    )
         return SnapResult(locked, "axis", AXIS_COLORS[axis_lock], axis=axis_lock)
 
     # 2. Reference edge lock (Down arrow + edge under cursor).
