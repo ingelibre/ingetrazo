@@ -45,11 +45,14 @@ from PySide6.QtGui import (
     QOpenGLFunctions,
     QPainter,
     QPen,
+    QSurfaceFormat,
     QVector3D,
     QVector4D,
 )
 from PySide6.QtOpenGL import (
     QOpenGLBuffer,
+    QOpenGLFramebufferObject,
+    QOpenGLFramebufferObjectFormat,
     QOpenGLShader,
     QOpenGLShaderProgram,
     QOpenGLVertexArrayObject,
@@ -74,6 +77,13 @@ GL_BLEND = 0x0BE2
 GL_SRC_ALPHA = 0x0302
 GL_ONE_MINUS_SRC_ALPHA = 0x0303
 GL_POLYGON_OFFSET_FILL = 0x8037
+GL_LEQUAL = 0x0203
+GL_FALSE = 0
+GL_TRUE = 1
+GL_FRAMEBUFFER = 0x8D40
+GL_READ_FRAMEBUFFER = 0x8CA8
+GL_DRAW_FRAMEBUFFER = 0x8CA9
+GL_NEAREST = 0x2600
 
 
 SHADER_DIR = Path(__file__).resolve().parents[1] / "resources" / "shaders"
@@ -157,6 +167,17 @@ class Viewport(QOpenGLWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        # Hidden-line removal needs a real depth buffer. setDefaultFormat() in
+        # main.py is best-effort; many platforms ignore it for QOpenGLWidget
+        # and hand us a 0-bit depth context. Forcing the format here is the
+        # only reliable way.
+        fmt = QSurfaceFormat()
+        fmt.setVersion(3, 3)
+        fmt.setProfile(QSurfaceFormat.CoreProfile)
+        fmt.setDepthBufferSize(24)
+        fmt.setStencilBufferSize(8)
+        fmt.setSamples(4)
+        self.setFormat(fmt)
         self.setMinimumSize(640, 480)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
@@ -204,6 +225,13 @@ class Viewport(QOpenGLWidget):
         self._rubber_vao = None
         self._rubber_vbo = None
 
+        # Offscreen FBO with depth attachment. QOpenGLWidget's default target
+        # on some Mesa/Wayland stacks has no depth buffer, which silently
+        # breaks hidden-line removal. Rendering into our own FBO and blitting
+        # color out guarantees a real depth buffer is present.
+        self._scene_fbo: Optional[QOpenGLFramebufferObject] = None
+        self._fbo_size = (0, 0)
+
         # Camera navigation state (middle button)
         self._last_pos = None
         self._pan_mode = False
@@ -216,7 +244,12 @@ class Viewport(QOpenGLWidget):
         self._gl = QOpenGLFunctions(self.context())
         self._gl.initializeOpenGLFunctions()
         self._gl.glClearColor(0.93, 0.94, 0.96, 1.0)
+        self._gl.glClearDepthf(1.0)
         self._gl.glEnable(GL_DEPTH_TEST)
+        # LEQUAL (instead of the default LESS) lets a fragment win when its
+        # depth equals the existing one — important for edges drawn on top of
+        # coincident faces, which can rasterize to bit-identical depths.
+        self._gl.glDepthFunc(GL_LEQUAL)
         self._gl.glEnable(GL_BLEND)
         self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
@@ -240,21 +273,57 @@ class Viewport(QOpenGLWidget):
             return
         self._gl.glViewport(0, 0, w, h)
         self.camera.set_aspect(w, h)
+        self._ensure_scene_fbo(w, h)
+
+    def _ensure_scene_fbo(self, w: int, h: int) -> None:
+        """Create or resize the offscreen FBO used for depth-tested rendering."""
+        size = (max(w, 1), max(h, 1))
+        if self._scene_fbo is not None and self._fbo_size == size:
+            return
+        fmt = QOpenGLFramebufferObjectFormat()
+        fmt.setAttachment(QOpenGLFramebufferObject.CombinedDepthStencil)
+        self._scene_fbo = QOpenGLFramebufferObject(size[0], size[1], fmt)
+        self._fbo_size = size
 
     def paintGL(self) -> None:
         if self._gl is None or self._program is None:
             return
+
+        # Render the 3D scene into our own FBO (which has a real depth buffer)
+        # then blit the colour to the widget's default framebuffer.
+        w, h = self.width(), self.height()
+        self._ensure_scene_fbo(w, h)
+        default_fbo = self.defaultFramebufferObject()
+        self._scene_fbo.bind()
+        self._gl.glViewport(0, 0, w, h)
+
+        # Re-establish GL state every frame. QPainter (used for the 2D overlay)
+        # leaves GL state in an undefined shape — in particular it tends to
+        # disable depth test — so we can't trust state to persist across
+        # paintGL calls.
+        self._gl.glEnable(GL_DEPTH_TEST)
+        self._gl.glDepthFunc(GL_LEQUAL)
+        self._gl.glDepthMask(GL_TRUE)
+        self._gl.glEnable(GL_BLEND)
+        self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+        self._gl.glClearDepthf(1.0)
+        self._gl.glClearColor(0.93, 0.94, 0.96, 1.0)
         self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
         self._program.bind()
         self._program.setUniformValue(self._loc_mvp, mvp)
 
-        # Grid
+        # Grid — depth-tested (so geometry hides it) but depth-write OFF, so
+        # grid lines don't pollute the depth buffer at z=0 and accidentally
+        # cull the bottom face of a freshly extruded box where they overlap.
+        self._gl.glDepthMask(GL_FALSE)
         self._set_color(0.78, 0.80, 0.84, 1.0)
         self._grid_vao.bind()
         self._gl.glDrawArrays(GL_LINES, 0, self._grid_count)
         self._grid_vao.release()
+        self._gl.glDepthMask(GL_TRUE)
 
         # Persistent edges + faces
         self._sync_edges()
@@ -300,6 +369,20 @@ class Viewport(QOpenGLWidget):
         self._gl.glEnable(GL_DEPTH_TEST)
 
         self._program.release()
+
+        # Blit colour from our scene FBO to the widget's default framebuffer.
+        # We can't use QOpenGLFramebufferObject.blitFramebuffer(None, src) here
+        # because in QOpenGLWidget the "default" framebuffer the widget shows
+        # is its own internal FBO (returned by defaultFramebufferObject()),
+        # NOT the system framebuffer 0. So we bind the read/draw targets by id
+        # and call glBlitFramebuffer directly via the GL3+ extra functions.
+        extra = self.context().extraFunctions()
+        self._gl.glBindFramebuffer(GL_READ_FRAMEBUFFER, self._scene_fbo.handle())
+        self._gl.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, default_fbo)
+        extra.glBlitFramebuffer(
+            0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST
+        )
+        self._gl.glBindFramebuffer(GL_FRAMEBUFFER, default_fbo)
 
         # 2D overlays on top of the OpenGL framebuffer.
         self._draw_overlay()

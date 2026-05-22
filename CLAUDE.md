@@ -27,22 +27,26 @@ Modelador 3D estilo SketchUp orientado a arquitectura, ingeniería civil e impre
 8. **Faces + Push/Pull (U)** (`e352688`) — `Face` con Newell-normal + centroide. Auto-cara cuando un polígono cierra (≥3 vértices). PushPullTool: hover → click cara → drag o VCB → commit con CompoundCommand (top edges + verticales + top face + N side faces). Render con polygon offset para no z-fighting con aristas.
 9. **Adaptive work plane + VCB 3D** (`0f78087`) — `_world_from_pixel` raycastea al plano `Z = start_point.z` cuando hay tool activa con start_point a altura ≠ 0. VCB acepta `5;3;2` como delta XYZ; `LineTool.on_value` recibe float (longitud) o tuple (delta 3D).
 
+### ✅ Sesión 2026-05-22 — hidden line removal
+10. **Fix hidden line removal** — bug raíz **doble**:
+    - **(a) FBO sin depth attachment**: en PySide6 6.11 + Mesa + Wayland, `QOpenGLWidget` ignora `setFormat(depthBufferSize=24)`; el default FB termina sin depth (verificado: `defaultFramebufferObject()=0`, `glReadPixels(DEPTH)` tras `glClearDepthf(0.5)` devuelve 0.0). Workaround: render en `views/viewport.py` a un `QOpenGLFramebufferObject` propio con `CombinedDepthStencil`, luego `glBlitFramebuffer` del color al default FBO del widget.
+    - **(b) QPainter del overlay deshabilita `GL_DEPTH_TEST`** y el estado se hereda en el siguiente `paintGL` — confirmado con `glIsEnabled(GL_DEPTH_TEST)` que devuelve `0` en el frame 2. Por eso, aunque pongamos `glEnable(GL_DEPTH_TEST)` en `initializeGL`, las caras dejan de ocluir aristas después del primer overlay. Fix: re-establecer **todo** el estado GL relevante (`glEnable(GL_DEPTH_TEST)`, `glDepthFunc(GL_LEQUAL)`, `glDepthMask(GL_TRUE)`, `glEnable(GL_BLEND)`, blend func, `glClearDepthf(1.0)`, `glClearColor`) al inicio de cada `paintGL`.
+    - Adicional: `glDepthMask(GL_FALSE)` en el grid (no debe ocluir geometría), polygon offset (1,1) sobre caras como cinturón+tirantes para aristas coplanares, request de OpenGL 3.3 Core en `main.py` + en el widget.
+
 ### 🐛 Conocidos sin resolver
-- **Hidden line removal incorrecto** (reportado 2026-05-21): después de un push/pull se ven aristas del interior del sólido que deberían quedar ocultas tras las caras. Hipótesis a investigar: (a) polygon offset insuficiente o en sentido contrario; (b) faces no cubren completamente las aristas — algún gap en triangulación fan; (c) depth buffer precision; (d) el grid en `z=0` interactúa con las aristas bottom. **Primera prioridad próxima sesión**.
 - **Fan triangulation rompe para polígonos cóncavos** — funciona para rectángulos y convexos. Una L o cualquier no-convexo se triangula mal. Solución: ear-clipping.
 - **Sin face culling** — ambos lados de cada cara se renderizan con el mismo color crema. Front/back vs SketchUp: front cream, back azul-grisáceo. Pendiente.
 - **Sin merge de geometría coincidente** — dos rectángulos que comparten arista crean aristas duplicadas. SketchUp auto-suelda.
 - **Sin face-plane inference** — el plano de trabajo solo se adapta a la altura Z del start_point. Hoverear sobre una cara inclinada todavía no toma esa cara como plano. Es el siguiente nivel de naturalidad (#10 en roadmap).
 
 ### 🚧 Próxima sesión — prioridades
-1. **Fix hidden line removal** (P0).
-2. **Move tool** (M) — trasladar selección con clic+drag + VCB.
-3. **Rotate tool** (Q?) — pivot + ángulo.
-4. **Ear-clipping triangulation** para polígonos cóncavos.
-5. **Face culling + colores front/back** (cream vs slate-blue).
-6. **Auto-merge edges/faces coincidentes** — cuando una nueva arista comparte ambos endpoints con una existente, no duplicar.
-7. **Face-plane inference** — cursor adopta la cara hovereada como plano de trabajo (workflow: clic en cara inclinada → la próxima línea se dibuja sobre esa cara).
-8. **Erase tool** (E) — clic-y-arrastre tachando aristas/caras (alternativa al Select+Delete).
+1. **Move tool** (M) — trasladar selección con clic+drag + VCB.
+2. **Rotate tool** (Q?) — pivot + ángulo.
+3. **Ear-clipping triangulation** para polígonos cóncavos.
+4. **Face culling + colores front/back** (cream vs slate-blue).
+5. **Auto-merge edges/faces coincidentes** — cuando una nueva arista comparte ambos endpoints con una existente, no duplicar.
+6. **Face-plane inference** — cursor adopta la cara hovereada como plano de trabajo (workflow: clic en cara inclinada → la próxima línea se dibuja sobre esa cara).
+7. **Erase tool** (E) — clic-y-arrastre tachando aristas/caras (alternativa al Select+Delete).
 
 ### 🔮 Roadmap v0.1 (versión inicial usable real)
 - Groups / Components (encapsulación de geometría reutilizable).
@@ -140,8 +144,10 @@ wasia/
 
 - **Z lock pre-refactor**: proyectar candidate (que venía del raycast Z=0) sobre el eje Z daba el mismo `start_point`. Fix: `_project_to_lock_line` con closest-point line-to-ray usando el rayo de la cámara (`views/viewport.py`). Mismo fix vale para reference lock con dirección 3D.
 - **Adaptive work plane** (Fix 1 de la sesión 9): sin esto, después de subir con Z lock no podías dibujar al nivel del techo — el cursor caía al suelo. Solución: `_current_work_plane_z()` que usa `start_point.z()` cuando hay tool activa.
-- **Polygon offset** activado solo para faces (`GL_POLYGON_OFFSET_FILL` con factor 1, units 1) — empuja las caras "atrás" en depth para que aristas coincidentes se vean limpias encima. **Está aplicado pero el hidden-line removal aún falla**, investigar.
+- **Polygon offset** activado solo para faces (`GL_POLYGON_OFFSET_FILL` con factor 1, units 1) — empuja las caras "atrás" en depth para que aristas coincidentes se vean limpias encima. Combinado con `glDepthFunc(GL_LEQUAL)` cubre todos los casos de aristas coplanares con caras.
 - **Rubber band depth-test off**: el rubber-band naranja se pinta SIEMPRE encima de cualquier cosa, sin importar profundidad. Lo logramos con `glDisable(GL_DEPTH_TEST)` antes del draw, `glEnable` después.
+- **QOpenGLWidget sin depth buffer real**: en esta combinación PySide6/Mesa/Wayland, el default FB del widget llega sin depth attachment aunque `setFormat(depthBufferSize=24)` y `context().format()` mientan diciendo que sí lo tiene. Por eso `Viewport.paintGL` renderea a su propio `QOpenGLFramebufferObject` (creado en `_ensure_scene_fbo` con `CombinedDepthStencil`) y blittea el color al final. **No tocar este flujo sin verificar que el depth buffer sobreviva** — la regresión es silenciosa: la app sigue funcionando, sólo se rompe la oclusión.
+- **QPainter contamina el estado GL** entre frames. Cada `paintGL` debe re-establecer `GL_DEPTH_TEST`, `glDepthFunc`, `glDepthMask`, `GL_BLEND`, blend func y clear color/depth. No alcanza con setearlos una vez en `initializeGL`. La regresión típica es: hidden-line removal funciona en el primer frame y se rompe en todos los siguientes.
 
 ---
 
