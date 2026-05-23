@@ -1,15 +1,41 @@
-# Wasia — modelador 3D libre
+# IngeTrazo — modelador 3D libre
 
-**Autor:** Marco Sumari Tellez · **Licencia:** GPL-3.0-or-later · **Repo:** `/home/sumaritux/wasia/` (local, sin pushear todavía a github.com/tuxiasumari/wasia)
+**Autor:** Marco Sumari Tellez · **Licencia:** GPL-3.0-or-later · **Repo:** `/home/sumaritux/wasia/` (directorio en disco aún se llama `wasia/`; el rename de carpeta queda para que lo haga el usuario fuera de la sesión — afecta venv. GitHub destino tentativo: `github.com/tuxiasumari/ingetrazo`)
+
+> **Nota histórica:** este proyecto se llamó **Wasia** (quechua *wasi* = "casa") entre 2026-05-21 y 2026-05-23. Renombrado a **IngeTrazo** el 2026-05-23 para entrar al ecosistema visual de IngePresupuestos. Ver sesión 17 abajo. Extensión nativa pasó de `.wasia` a `.igz`; módulo `formats/wasia.py` a `formats/igz.py`.
 
 Modelador 3D estilo SketchUp orientado a arquitectura, ingeniería civil e impresión 3D. Multiplataforma (Linux / Windows / macOS) sobre PySide6. Hermano open-source de [IngePresupuestos](../ingepresupuestos-pyside6/) — la integración IFC entre los dos cierra el loop modelo → metrado → presupuesto.
+
+---
+
+## 🧭 Visión de producto (definida 2026-05-22)
+
+**Qué construir:** modelador 3D libre estilo SketchUp + **BIM como capa semántica opcional**, Linux-first, en español, integrado con IngePresupuestos vía IFC. No es clon de Revit ni de AutoCAD — es la herramienta que el ingeniero civil/arquitecto latinoamericano necesita para **modelar → metrar → presupuestar** sin salir del ecosistema. Mercado mal atendido hoy (AutoCAD/SketchUp/Revit no tienen Linux nativo; FreeCAD es UX dolorosa).
+
+**Principios arquitectónicos (no negociables):**
+
+1. **Freeform al núcleo, BIM como tagging encima.** El modelador es libertad total estilo SketchUp (dibujás una plaza, una escultura, una fachada curva — lo que quieras). El BIM **no vive en primitivas rígidas** tipo `WallTool` de Revit; vive como metadatos aplicados opcionalmente a geometría seleccionada (`IfcWall`, `IfcSlab`, `IfcColumn`, propiedades, materiales). Lo taggeado se exporta a IFC y alimenta el metrado; lo no taggeado es solo dibujo visual. Referente vivo del patrón: **BlenderBIM**.
+2. **2D = Top View + Parallel + Layers, no un módulo separado.** No hay "modo 2D". La experiencia 2D *emerge* del 3D bien afinado: vista superior + proyección paralela + plano de trabajo Z=0 + capas para organizar (estructura / muros / instalaciones / mobiliario). Mismo motor, dos lecturas. Output profesional de planos (LayOut-equivalente: márgenes, sellos, escalas) se difiere a v2.
+3. **Scope disciplinado.** No competir con SketchUp/AutoCAD/Revit feature-por-feature — esa es la receta para nunca shippear. Cada feature pasa por el filtro: "¿le sirve al usuario que querés que modele un edificio chico y saque cantidades?".
+
+**Posicionamiento estratégico (secuencial, no paralelo):**
+
+- **IngePresupuestos** = generador de caja a corto plazo. La mayor parte del tiempo va ahí mientras tracciona comercialmente.
+- **IngeTrazo** = moat de largo plazo. Crece en segundo plano con scope acotado (motor sólido + IFC export mínimo) durante 12-18 meses; después se integra fuerte cuando IngePresupuestos genere flujo.
+- **IFC bridge primero** (procesos separados, intercambio de archivos); embebido directo solo cuando el motor sea sólido y la licencia lo permita. El error a evitar: abandonar el producto que ya genera revenue por perseguir el sueño grande del modelador.
+
+**Pendientes estratégicos:**
+
+- ✅ **Rename (resuelto 2026-05-23).** Wasia → **IngeTrazo**. Verbo de oficio civil ("trazar" como acción del usuario), ritmo limpio en tres sílabas, encaja en el patrón ecosistema `Inge[X]`. Tagline planeado: *"Trazá. Metrá. Presupuestá."* Tradeoff aceptado: se pierde la identidad cultural quechua de "Wasia" a cambio de cohesión de marca con IngePresupuestos.
+- ⏳ **Licencia.** GPL-3.0 actual atrapa a IngePresupuestos (closed-source) si en el futuro se quisiera embeber IngeTrazo como librería. Como nunca se distribuyó a nadie bajo GPL (sigue local en la laptop), el cambio es libre. Candidato fuerte: **Apache 2.0** — permite embeber sin acrobacia legal ni CLAs, sigue siendo OSS legítimo, suma cláusula de patentes. Decidir antes del primer push público.
+- ⏳ **Rename de directorio en disco.** `/home/sumaritux/wasia/` → `/home/sumaritux/ingetrazo/`. Pendiente porque rompe el venv (paths hardcodeados); el usuario lo hace fuera de la sesión cuando le quede cómodo recrear el venv. Pasos sugeridos: `mv ~/wasia ~/ingetrazo && cd ~/ingetrazo && rm -rf venv && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`.
 
 ---
 
 ## Estado / Roadmap
 
 ### ✅ Sesión inaugural 2026-05-21
-1. **Repo + esqueleto + GPL-3.0** (`ac278d6`) — carpetas en inglés, README/CONTRIBUTING/CODE_OF_CONDUCT, .wasia format placeholder, main.py runnable con ventana vacía.
+1. **Repo + esqueleto + GPL-3.0** (`ac278d6`) — carpetas en inglés, README/CONTRIBUTING/CODE_OF_CONDUCT, `.wasia` format placeholder (luego renombrado a `.igz` en sesión 17), main.py runnable con ventana vacía.
 2. **Viewport: cámara orbital + grid + ejes XYZ** (`860a6b6`) — `OrbitCamera` Z-up estilo SketchUp/Blender, navegación middle-drag (orbit) / Shift+MMB-drag (pan) / wheel (zoom) / P (perspectiva ↔ paralela). Shaders `basic.vert`/`basic.frag`. **Wayland nativo OK** (vía `paintGL` que limpia explícitamente — ver `[[feedback-wayland-paintgl-explicito]]` en memoria de Claude).
 3. **Tools (Line + Select) con SketchUp-style inferencing** (`1c454c9`):
    - Snap engine: endpoint, origin, close-polygon, axis_inference (auto, dentro de 3°), reference parallel/perpendicular.
@@ -20,7 +46,7 @@ Modelador 3D estilo SketchUp orientado a arquitectura, ingeniería civil e impre
    - **Shift** = lock contextual (locks la inferencia auto activa).
    - **VCB** (Value Control Box): tipear número → Enter → longitud exacta.
    - Camera-aware line projection (line-line closest a la ray) — Z lock funciona.
-4. **Save/Open `.wasia`** (`3f7248d`) — JSON versioned, File menu (New/Open/Save/Save As), título dinámico con `*` dirty marker, prompt antes de descartar cambios.
+4. **Save/Open `.wasia`** (`3f7248d`, extensión luego renombrada a `.igz` en sesión 17) — JSON versioned, File menu (New/Open/Save/Save As), título dinámico con `*` dirty marker, prompt antes de descartar cambios.
 5. **Undo/Redo** (`6379191`) — `core/history.py` con `Command` ABC, `History` stack, `AddEdgeCommand`/`DeleteEdgesCommand`/`AddFaceCommand`/`CompoundCommand`. Tools usan `viewport.history.execute(cmd)` siempre. Edit menu con Undo (Ctrl+Z) / Redo (Ctrl+Y o Ctrl+Shift+Z). Cada rectángulo / extrusión cuenta como **un solo paso atómico** vía `CompoundCommand`.
 6. **Rectangle tool (R)** (`db41965`) — 2 clics → 4 aristas + 1 cara. Tools exponen `rubber_band_lines() -> list[(a,b)]` que el viewport renderiza genéricamente.
 7. **Zoom Extents (F2) + Standard Views** (`f29224e`) — `Camera.fit_to(min,max)` + `Camera.set_view("top"/"front"/"right"/"iso"/...)` + `Scene.bounds()`. Menú View → Standard Views.
@@ -43,31 +69,55 @@ Modelador 3D estilo SketchUp orientado a arquitectura, ingeniería civil e impre
     - Con axis lock activo, `compute_snap` ahora dispara `endpoint` (cuadrado verde) cuando el cursor cae cerca de un vértice que **está sobre la línea de lock** — así podés clavarte exactamente en vértices existentes sin perder el lock.
 15. **Orden de render** — ejes XYZ ahora se dibujan ANTES de las aristas del usuario, así una línea sobre el eje Z queda visible por encima del color del eje (`GL_LEQUAL` deja ganar al segundo draw en depths iguales). Rubber-band sigue al final, sin depth-test, encima de todo.
 
+### ✅ Sesión 2026-05-22 (continuación) — face-plane inference
+16. **Dibujar polígonos sobre cualquier cara** (`views/viewport.py`, `tools/rectangle.py`, `tools/line.py`) — antes el work plane sólo conocía Z=0 hasta el primer clic, así que al intentar dibujar sobre el techo de un cubo el clic caía al piso. Ahora:
+    - `_current_work_plane(cursor)` hace `pick_face` bajo el cursor cuando no hay `start_point`; si pega, devuelve el plano `(centroid, normal)` de esa cara.
+    - `mousePressEvent` captura ese plano en `tool.work_plane` al primer clic, así los puntos siguientes del chain se quedan coplanares (incluso en caras inclinadas o verticales).
+    - `RectangleTool._corners` antes asumía XY (`z = a.z()` en los 4 corners); ahora deriva dos ejes en el plano vía `_plane_axes(normal)` (proyectando world +X sobre la cara, cross con la normal). Resultado: rectángulo se acuesta sobre cualquier orientación de cara — paredes verticales y techos inclinados incluidos. Bug previo: el rectángulo en una pared vertical colapsaba a un segmento al pie de la pared.
+    - Convención para futuros tools (circle, polygon, arc, …): declarar `self.work_plane = None` + limpiar en `_reset()`; usar `_plane_axes` para derivar ejes en el plano en vez de hardcodear XY.
+
+### ✅ Sesión 2026-05-23 — rename a IngeTrazo
+17. **Wasia → IngeTrazo** — proyecto renombrado para entrar al ecosistema visual de IngePresupuestos. Cambios:
+    - Marca del producto: `Wasia` → `IngeTrazo` en README, CONTRIBUTING, CODE_OF_CONDUCT, docs/, plugins/README, i18n/{en,es}.json, todas las docstrings de paquetes (`core/`, `views/`, `tools/`, `tests/`, `formats/`), `main.py` (`setApplicationName`, `setOrganizationName`, copyright header), `views/main_window.py` (window title, dialog titles, "Quit IngeTrazo?").
+    - Extensión nativa: `.wasia` → `.igz` (3 letras, las iniciales de **I**nge**G**z donde la "g" puede leerse como "geometría" o como sufijo arbitrario; se descartó `.itz` por choques con formatos legacy de InterTrust DRM aunque ambas tienen overlaps menores). Cambios en `views/main_window.py` (filter, suffix check, default name `untitled.igz`) y `formats/__init__.py`.
+    - Módulo: `formats/wasia.py` → `formats/igz.py` (git mv, history preservada). Import en `views/main_window.py`: `from formats import igz as igz_format`. Constante `WASIA_FILE_FILTER` → `IGZ_FILE_FILTER`.
+    - Schema JSON: clave `"wasia_format": 1` → `"igz_format": 1` en `formats/igz.py`. Sin backwards-compat (proyecto pre-release, los únicos `.wasia` que existían eran `ejemplo.wasia` y `untitled.wasia`).
+    - Archivos físicos: `ejemplo.wasia` → `ejemplo.igz` (git mv). `untitled.wasia` queda como está (es WIP no-trackeado del usuario, lo renombra él si quiere). `formats/__pycache__/wasia.cpython-*.pyc` borrado.
+    - **No tocado:** directorio raíz `/home/sumaritux/wasia/` (rename rompe venv; usuario lo hace fuera de sesión). Licencia (sigue GPL-3.0; decisión Apache 2.0 sigue pendiente). Cambios sin commitear de antes de sesión (`tools/line.py`, `tools/rectangle.py`, `views/viewport.py` salvo línea 122 que sí tenía referencia "Wasia") — el usuario los commitea por separado.
+    - Verificación: `python -c "from formats import igz; from views.main_window import MainWindow, IGZ_FILE_FILTER; import main"` retorna OK con filter `"IngeTrazo document (*.igz);;All files (*)"`.
+
 ### 🐛 Conocidos sin resolver
 - **Fan triangulation rompe para polígonos cóncavos** — funciona para rectángulos y convexos. Una L o cualquier no-convexo se triangula mal. Solución: ear-clipping.
 - **Sin face culling** — ambos lados de cada cara se renderizan con el mismo color crema. Front/back vs SketchUp: front cream, back azul-grisáceo. Pendiente.
 - **Sin merge de geometría coincidente** — dos rectángulos que comparten arista crean aristas duplicadas. SketchUp auto-suelda.
-- **Sin face-plane inference** — el plano de trabajo se adapta a la cámara y al `start_point.z`, pero no a una cara hovereada. Es el siguiente nivel de naturalidad.
 - **Auto-polígono encuentra UN solo ciclo** — si una arista cierra múltiples polígonos (clásico: diagonal en cuadrado → 2 triángulos), sólo crea uno (el primero que BFS encuentra). SketchUp crea ambos.
+- **Polígono nuevo dentro de cara existente no la divide** — al dibujar un cuadradito interno en la cara superior de un cubo, se crea la cara nueva pero la grande sigue intacta debajo (dos caras coplanares). Falta split de face: detectar que el ciclo nuevo está contenido en una cara existente y restarlo / triangular el "donut" resultante.
 
-### 🚧 Próxima sesión — prioridades (decididas 2026-05-22)
-**Refinar lo que ya existe ANTES de tools nuevas.** El motor básico es ~70%, pero la calidad de la selección y el manejo de polígonos define la experiencia.
-1. **Pulir auto-detección de polígonos** — detectar TODOS los ciclos chicos que cierra una arista nueva (no sólo el primero), evitar caras duplicadas con orientación opuesta, considerar el caso de aristas que dividen una cara existente (split de face), y ear-clipping para soportar cóncavos.
-2. **Selección sólida** — hoy sólo se seleccionan aristas. Falta: seleccionar caras (con click sobre la cara), seleccionar al hacer rubber-band con drag, double-click para seleccionar todo lo conectado, triple-click para todo el sólido, hover highlighting.
-3. **Después de eso** sigue Move/Rotate/Erase + face-plane inference + auto-merge + face culling (en ese orden).
+### 🚧 Próxima sesión — prioridades (decididas 2026-05-22, reconfirmadas 2026-05-22)
+**Refinar lo que ya existe ANTES de tools nuevas.** El motor básico es ~70%, pero la calidad de la selección y el manejo de polígonos define la experiencia. **Confirmado en la conversación de visión:** afinar el motor es el foco hasta nuevo aviso; el rename, el cambio de licencia y la capa BIM/IFC entran *después* de que el modelado básico esté sólido.
+1. **Pulir auto-detección de polígonos** — detectar TODOS los ciclos chicos que cierra una arista nueva (no sólo el primero), evitar caras duplicadas con orientación opuesta, y ear-clipping para soportar cóncavos.
+2. **Split de cara existente** — cuando un ciclo nuevo (polígono dibujado encima) está contenido dentro de una cara, restar la cara grande / triangular el agujero. Ya se puede dibujar sobre cualquier cara (face-plane inference resuelto en `[[project-face-plane-inference-done]]`); el siguiente paso natural es que el polígono interno divida la cara madre como hace SketchUp.
+3. **Selección sólida** — hoy sólo se seleccionan aristas. Falta: seleccionar caras (con click sobre la cara), seleccionar al hacer rubber-band con drag, double-click para seleccionar todo lo conectado, triple-click para todo el sólido, hover highlighting.
+4. **Después de eso** sigue Move/Rotate/Erase + auto-merge + face culling (en ese orden).
 
 ### 🔮 Roadmap v0.1 (versión inicial usable real)
+Orden sugerido alineado con la visión (freeform + BIM tagging + 2D que emerge del 3D):
+- **Groups / Components** — encapsulación de geometría reutilizable.
+- **Tape Measure + Guide Lines** — líneas de construcción que no son geometría real. Crítico para flujo arquitectónico.
+- **Layers / Tags** — visibilidad / lock por capa. **Habilita el flujo 2D** (Top + Parallel + Layers = experiencia 2D sin módulo separado).
+- **Dimensions tool** — cotas entre dos puntos que se actualizan con la geometría. Imprescindible para planos imprimibles.
+- **Text labels** — anotaciones en plano ("DORMITORIO", "ESC. 1:50", etc.).
+- **Materials** — color sólido + textura por cara.
+- **BIM tagging layer** — panel de propiedades para marcar geometría seleccionada como `IfcWall` / `IfcSlab` / `IfcColumn` / etc. con propiedades. Es la *única* capa "BIM-aware"; el modelador sigue siendo freeform.
+- **IFC export** (basado en tags, no en primitivas) — gancho clave con IngePresupuestos. Sólo lo taggeado va al IFC.
+- **IFC import** — para abrir modelos externos.
+- **DWG / DXF I/O** — convivir con clientes/colegas que usan AutoCAD; no para competir contra él.
+- **STL / 3MF export** — para impresión 3D.
+- **Geo-referenciación** — terreno DEM + ortofoto. Carpeta `georef/` ya esqueleteada.
+- **Plugin system público** — el patrón `Tool` + auto-discovery en `plugins/` ya está armado, falta documentar y publicar API.
+- **Sistema de licencia y release** — portear desde IngePresupuestos: `core/update_manager.py`, `release.sh`, GitHub Actions, distribución vía R2.
 
-### 🔮 Roadmap v0.1 (versión inicial usable real)
-- Groups / Components (encapsulación de geometría reutilizable).
-- Tape Measure + Guide Lines (líneas de construcción que no son geometría real).
-- Layers / Tags (visibilidad / lock por capa).
-- Materials (color sólido + textura por cara).
-- IFC import/export (gancho clave con IngePresupuestos).
-- STL/3MF export (para impresión 3D).
-- Geo-referenciación (terreno DEM + ortofoto). Carpeta `georef/` ya esqueleteada.
-- Plugin system público — el patrón `Tool` + auto-discovery en `plugins/` ya está armado, falta documentar y publicar API.
-- Sistema de licencia y release (portear desde IngePresupuestos: `core/update_manager.py`, `release.sh`, GitHub Actions, distribución vía R2).
+**Diferido a v2:** generación profesional de planos (LayOut-equivalente: márgenes, sello, escala, múltiples vistas por hoja, leyendas). Por ahora, exportar la vista actual como SVG/PDF cubre el 80% del uso casual.
 
 ---
 
@@ -84,7 +134,7 @@ Modelador 3D estilo SketchUp orientado a arquitectura, ingeniería civil e impre
 **Sin** numpy, ifcopenshell, trimesh, manifold3d, pyassimp aún — esos llegan cuando se necesiten (probablemente IFC el primero).
 
 ```bash
-cd /home/sumaritux/wasia
+cd /home/sumaritux/wasia    # directorio en disco aún se llama wasia/; rename pendiente
 source venv/bin/activate
 python main.py
 ```
@@ -96,7 +146,7 @@ Python 3.14.4 · venv local en `/home/sumaritux/wasia/venv/` (gitignored).
 ## Arquitectura
 
 ```
-wasia/
+ingetrazo/                     ← nombre lógico del proyecto; carpeta en disco sigue siendo `wasia/`
 ├── main.py                    ← entry point Qt
 ├── CLAUDE.md                  ← este archivo
 ├── LICENSE                    ← GPL-3.0 verbatim
@@ -117,7 +167,7 @@ wasia/
 │   ├── rectangle.py           ← RectangleTool (4 edges + 1 face CompoundCommand)
 │   └── pushpull.py            ← PushPullTool (face hover + drag → extrude)
 ├── formats/
-│   └── wasia.py               ← save_scene / load_into (JSON, schema versionado)
+│   └── igz.py                 ← save_scene / load_into (JSON `.igz`, schema versionado)
 ├── plugins/                   ← carpeta para complementos de terceros (vacía + README)
 ├── georef/                    ← stubs para tiles/DEM/projections (a llenar)
 ├── resources/
@@ -168,8 +218,14 @@ wasia/
 
 ---
 
-## Memorias de Claude relacionadas (en `~/.claude/projects/-home-sumaritux-ingepresupuestos-pyside6/memory/`)
+## Memorias de Claude relacionadas
 
-- `project_wasia_iniciado.md` — decisiones estratégicas del proyecto (GPL-3.0, idioma inglés, monetización via integración con IngePresupuestos).
+**De este proyecto** (`~/.claude/projects/-home-sumaritux-wasia/memory/` — directorio aún con el nombre viejo "wasia"):
+
+- `project_face_plane_inference_done.md` — convención para tools nuevos: leer `tool.work_plane` y usar `_plane_axes(normal)` en vez de hardcodear XY.
+
+**Del proyecto hermano IngePresupuestos** (`~/.claude/projects/-home-sumaritux-ingepresupuestos-pyside6/memory/`):
+
+- `project_wasia_iniciado.md` — decisiones estratégicas originales del proyecto cuando aún se llamaba Wasia (GPL-3.0, idioma inglés, monetización via integración con IngePresupuestos). Nombre del archivo histórico; el contenido sigue aplicando a IngeTrazo.
 - `feedback_wayland_paintgl_explicito.md` — Wayland exige `glClear` en `paintGL`.
 - `feedback_pyside6_matrix_vector_mul.md` — `QMatrix4x4 * QVector4D` no bindea; usar `.map()`.

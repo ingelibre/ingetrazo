@@ -1,4 +1,4 @@
-"""Native Wasia document format.
+"""Native IngeTrazo document format (``.igz``).
 
 Plain JSON, schema-versioned. Trivial to inspect, edit by hand, and diff
 in source control. Will grow as new entity types (faces, groups,
@@ -7,7 +7,7 @@ components, materials) land — old documents must keep loading.
 Layout::
 
     {
-      "wasia_format": 1,
+      "igz_format": 1,
       "app_version": "0.0.1",
       "scene": {
         "edges": [
@@ -46,7 +46,7 @@ def save_scene(scene, path: Path) -> None:
         for f in getattr(scene, "faces", [])
     ]
     data = {
-        "wasia_format": CURRENT_FORMAT,
+        "igz_format": CURRENT_FORMAT,
         "app_version": "0.0.1",
         "scene": {"edges": edges, "faces": faces},
     }
@@ -56,7 +56,7 @@ def save_scene(scene, path: Path) -> None:
 def load_into(scene, path: Path) -> None:
     """Replace ``scene`` contents with what's stored at ``path``."""
     data = json.loads(path.read_text())
-    fmt = data.get("wasia_format", 1)
+    fmt = data.get("igz_format", 1)
     if fmt > CURRENT_FORMAT:
         raise ValueError(
             f"Document format v{fmt} is newer than this build (v{CURRENT_FORMAT})."

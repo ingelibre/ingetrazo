@@ -1,1 +1,1 @@
-"""Wasia automated tests."""
+"""IngeTrazo automated tests."""

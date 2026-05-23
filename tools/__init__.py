@@ -1,1 +1,1 @@
-"""Wasia built-in tools (line, rectangle, push/pull, select, ...)."""
+"""IngeTrazo built-in tools (line, rectangle, push/pull, select, ...)."""

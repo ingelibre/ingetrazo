@@ -1,1 +1,1 @@
-"""Wasia core: configuration, scene graph, camera, geometry primitives, layers."""
+"""IngeTrazo core: configuration, scene graph, camera, geometry primitives, layers."""

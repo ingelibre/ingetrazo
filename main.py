@@ -1,8 +1,9 @@
-"""Wasia entry point.
+"""IngeTrazo entry point.
 
 Free 3D modeler for architecture, civil engineering, and 3D printing.
+Part of the IngePresupuestos ecosystem (modeling → quantity takeoff → budget).
 
-Copyright (C) 2026 Marco Sumari Tellez and Wasia contributors.
+Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 Licensed under GPL-3.0-or-later. See LICENSE.
 """
 from __future__ import annotations
@@ -34,8 +35,8 @@ def _configure_surface_format() -> None:
 def main() -> int:
     _configure_surface_format()
     app = QApplication(sys.argv)
-    app.setApplicationName("Wasia")
-    app.setOrganizationName("Wasia")
+    app.setApplicationName("IngeTrazo")
+    app.setOrganizationName("IngeTrazo")
     window = MainWindow()
     window.show()
     return app.exec()

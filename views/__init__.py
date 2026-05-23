@@ -1,1 +1,1 @@
-"""Wasia views: Qt widgets (main window, viewport, side panels)."""
+"""IngeTrazo views: Qt widgets (main window, viewport, side panels)."""

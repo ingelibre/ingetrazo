@@ -2,7 +2,7 @@
 
 ## Our pledge
 
-We pledge to make participation in the Wasia community a respectful, harassment-free experience for everyone — regardless of age, body size, disability, ethnicity, gender identity, level of experience, nationality, personal appearance, race, religion, or sexual orientation.
+We pledge to make participation in the IngeTrazo community a respectful, harassment-free experience for everyone — regardless of age, body size, disability, ethnicity, gender identity, level of experience, nationality, personal appearance, race, religion, or sexual orientation.
 
 ## Our standards
 

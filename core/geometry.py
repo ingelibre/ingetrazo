@@ -28,7 +28,7 @@ class Face:
 
     No internal triangulation is stored — consumers (renderer, picker)
     triangulate on the fly. For MVP we use fan triangulation, which is
-    fine for the convex polygons Wasia produces today (rectangles +
+    fine for the convex polygons IngeTrazo produces today (rectangles +
     closed line chains the user draws). Ear-clipping for non-convex
     polygons can land later.
 

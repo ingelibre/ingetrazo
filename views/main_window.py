@@ -1,7 +1,7 @@
-"""Wasia main window: toolbar, viewport, side panels, status bar.
+"""IngeTrazo main window: toolbar, viewport, side panels, status bar.
 
 Owns the open document path and dispatches File menu actions (New, Open,
-Save, Save As) onto :mod:`formats.wasia`.
+Save, Save As) onto :mod:`formats.igz`.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QToolBar,
 )
 
-from formats import wasia as wasia_format
+from formats import igz as igz_format
 from tools.line import LineTool
 from tools.pushpull import PushPullTool
 from tools.rectangle import RectangleTool
@@ -27,11 +27,11 @@ from tools.select import SelectTool
 from views.viewport import Viewport
 
 
-WASIA_FILE_FILTER = "Wasia document (*.wasia);;All files (*)"
+IGZ_FILE_FILTER = "IngeTrazo document (*.igz);;All files (*)"
 
 
 class MainWindow(QMainWindow):
-    """Top-level Wasia window."""
+    """Top-level IngeTrazo window."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -267,15 +267,15 @@ class MainWindow(QMainWindow):
             return
         path_str, _ = QFileDialog.getOpenFileName(
             self,
-            "Open Wasia document",
+            "Open IngeTrazo document",
             "",
-            WASIA_FILE_FILTER,
+            IGZ_FILE_FILTER,
         )
         if not path_str:
             return
         path = Path(path_str)
         try:
-            wasia_format.load_into(self.viewport.scene, path)
+            igz_format.load_into(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001 - surface any IO/parse error to the user
             QMessageBox.critical(self, "Open failed", str(exc))
             return
@@ -293,24 +293,24 @@ class MainWindow(QMainWindow):
 
     def _on_save_as(self) -> None:
         default_name = (
-            self._current_path.name if self._current_path is not None else "untitled.wasia"
+            self._current_path.name if self._current_path is not None else "untitled.igz"
         )
         path_str, _ = QFileDialog.getSaveFileName(
             self,
-            "Save Wasia document",
+            "Save IngeTrazo document",
             default_name,
-            WASIA_FILE_FILTER,
+            IGZ_FILE_FILTER,
         )
         if not path_str:
             return
         path = Path(path_str)
-        if path.suffix.lower() != ".wasia":
-            path = path.with_suffix(".wasia")
+        if path.suffix.lower() != ".igz":
+            path = path.with_suffix(".igz")
         self._do_save(path)
 
     def _do_save(self, path: Path) -> None:
         try:
-            wasia_format.save_scene(self.viewport.scene, path)
+            igz_format.save_scene(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Save failed", str(exc))
             return
@@ -343,11 +343,11 @@ class MainWindow(QMainWindow):
     def _update_title(self) -> None:
         name = self._current_path.name if self._current_path is not None else "Untitled"
         marker = " *" if self._is_dirty() else ""
-        self.setWindowTitle(f"Wasia — {name}{marker}")
+        self.setWindowTitle(f"IngeTrazo — {name}{marker}")
 
     # ---- Window lifecycle ---------------------------------------------------
     def closeEvent(self, event) -> None:
-        if not self._confirm_discard("Quit Wasia?"):
+        if not self._confirm_discard("Quit IngeTrazo?"):
             event.ignore()
             return
         super().closeEvent(event)

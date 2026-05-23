@@ -1,12 +1,12 @@
-# Contributing to Wasia
+# Contributing to IngeTrazo
 
-Thank you for your interest in Wasia! Contributions of any kind are welcome — code, documentation, translations, bug reports, design feedback.
+Thank you for your interest in IngeTrazo! Contributions of any kind are welcome — code, documentation, translations, bug reports, design feedback.
 
 ## Development setup
 
 ```bash
-git clone https://github.com/<your-user>/wasia.git
-cd wasia
+git clone https://github.com/<your-user>/ingetrazo.git
+cd ingetrazo
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -58,7 +58,7 @@ See [docs/architecture.md](docs/architecture.md) for a tour. Briefly:
 ## Communication
 
 - Open **issues** for bugs and proposals.
-- Use **GitHub Discussions** for open-ended questions, architecture debates, and showcasing your projects built with Wasia.
+- Use **GitHub Discussions** for open-ended questions, architecture debates, and showcasing your projects built with IngeTrazo.
 
 ## Licensing of contributions
 

@@ -1,4 +1,4 @@
-"""Base class for Wasia tools and the per-event ``ToolContext`` they receive.
+"""Base class for IngeTrazo tools and the per-event ``ToolContext`` they receive.
 
 A tool is anything the user activates from the toolbar to interact with the
 viewport: draw, modify, select. Both built-in tools and third-party plugins

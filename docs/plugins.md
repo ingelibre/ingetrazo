@@ -1,4 +1,4 @@
-# Writing a Wasia plugin
+# Writing an IngeTrazo plugin
 
 Early draft. The plugin API is **not stable yet** — expect breaking changes during the 0.x series.
 
@@ -22,7 +22,7 @@ class HelloTool(Tool):
         pass
 ```
 
-Wasia discovers `Tool` subclasses inside `plugins/` and adds them to the toolbar.
+IngeTrazo discovers `Tool` subclasses inside `plugins/` and adds them to the toolbar.
 
 ## Roadmap
 
