@@ -119,7 +119,7 @@ def _ray_triangle(
     """Möller–Trumbore ray / triangle intersection. Returns distance ``t``
     along the ray, or ``None`` for a miss / behind-camera hit. The triangle
     is intersected from both sides — front/back orientation does not matter
-    because Wasia doesn't (yet) cull back faces."""
+    because IngeTrazo doesn't (yet) cull back faces."""
     eps = 1e-6
     e1 = v1 - v0
     e2 = v2 - v0
@@ -715,18 +715,21 @@ class Viewport(QOpenGLWidget):
     def _world_from_pixel(self, x: int, y: int) -> Optional[QVector3D]:
         """Pixel → world hit on the *current* work plane.
 
-        The work plane goes through the active tool's start point (or the
-        origin, for the first click) and its normal is the world axis most
-        aligned with the camera-forward direction. That keeps the cursor
-        moving "where you look": top view → XY plane; front/side view →
-        the vertical plane through start_point. Without this, drawing from
-        a horizon-ish view would force every second point back to Z = 0
-        even when the cursor appears to be at a higher elevation.
+        Plane choice priority:
+        1. ``tool.work_plane``, captured at first click when the user clicked
+           on a face — keeps the rest of the chain coplanar with that face.
+        2. If a tool has a ``start_point``, the plane goes through it; its
+           orientation is horizontal for most camera tilts and vertical only
+           near the horizon (so dragging up/down can move in Z).
+        3. If no ``start_point`` yet and the cursor is over an existing
+           face, that face's plane (this is what lets the user draw a new
+           polygon *inside* an existing one — e.g. on top of a box).
+        4. Ground (Z=0).
         """
         origin, direction = self._pixel_to_ray(x, y)
         if origin is None or direction is None:
             return None
-        plane_point, plane_normal = self._current_work_plane()
+        plane_point, plane_normal = self._current_work_plane(cursor=(x, y))
         denom = QVector3D.dotProduct(plane_normal, direction)
         if abs(denom) < 1e-6:
             return None
@@ -741,22 +744,28 @@ class Viewport(QOpenGLWidget):
     # which is the only orientation where cursor-to-ground is ambiguous.
     HORIZON_PITCH_THRESHOLD_DEG = 15.0
 
-    def _current_work_plane(self) -> tuple[QVector3D, QVector3D]:
+    def _current_work_plane(
+        self, cursor: Optional[tuple[float, float]] = None
+    ) -> tuple[QVector3D, QVector3D]:
         """Return ``(point, normal)`` of the current drawing plane.
 
-        With no active start point, defaults to the ground (XY at Z=0). With
-        one, the plane passes through it. Its orientation is horizontal
-        (normal +Z) for most camera angles — including iso — so rectangles
-        and ground-plane sketching feel natural. Only when the camera is
-        close to horizontal does the plane flip to a vertical orientation
-        (normal +X or +Y, whichever is more end-on to the camera), so the
-        cursor can move in Z without forcing every point back to Z = 0.
+        Priority: tool-captured plane > camera-aware plane through the active
+        ``start_point`` > face under cursor (face-plane inference) > ground.
         """
-        if self.active_tool is not None:
-            start = getattr(self.active_tool, "start_point", None)
-        else:
-            start = None
+        tool = self.active_tool
+        captured = getattr(tool, "work_plane", None) if tool is not None else None
+        if captured is not None:
+            return captured
+
+        start = getattr(tool, "start_point", None) if tool is not None else None
         if start is None:
+            # First-click hover: if the cursor is over an existing face, use
+            # that face's plane so a new polygon drawn "inside" it lands on
+            # the face instead of falling to the ground.
+            if cursor is not None and tool is not None:
+                face = self.pick_face(cursor[0], cursor[1])
+                if face is not None:
+                    return face.centroid(), face.normal()
             return QVector3D(0.0, 0.0, 0.0), QVector3D(0.0, 0.0, 1.0)
 
         forward = (self.camera.target - self.camera.eye())
@@ -869,9 +878,28 @@ class Viewport(QOpenGLWidget):
             self._pan_mode = bool(ev.modifiers() & Qt.ShiftModifier)
             return
         if ev.button() == Qt.LeftButton and self.active_tool is not None:
+            had_start = getattr(self.active_tool, "start_point", None) is not None
+            had_plane = getattr(self.active_tool, "work_plane", None) is not None
+            face_at_click = None
+            if not had_start and not had_plane:
+                face_at_click = self.pick_face(ev.position().x(), ev.position().y())
             ctx = self._build_ctx(ev)
             if ctx is not None:
                 self.active_tool.on_click(ctx)
+                # If the click established a new start point on top of an
+                # existing face, lock the rest of the chain to that face's
+                # plane so subsequent clicks stay coplanar.
+                now_start = getattr(self.active_tool, "start_point", None)
+                if (
+                    not had_start
+                    and now_start is not None
+                    and face_at_click is not None
+                    and hasattr(self.active_tool, "work_plane")
+                ):
+                    self.active_tool.work_plane = (
+                        face_at_click.centroid(),
+                        face_at_click.normal(),
+                    )
                 # Any pending typed value is invalidated once the user
                 # commits a point with the mouse.
                 self._set_value_buffer("")

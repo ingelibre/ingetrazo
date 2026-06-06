@@ -32,6 +32,9 @@ class LineTool(Tool):
         # Ordered list of vertices in the current chain. Populated as the
         # user clicks; consumed to build a Face when the chain auto-closes.
         self.chain_vertices: list[QVector3D] = []
+        # (point, normal) of the face the chain was started on, if any.
+        # The viewport reads this to keep subsequent points coplanar.
+        self.work_plane: tuple[QVector3D, QVector3D] | None = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -128,3 +131,4 @@ class LineTool(Tool):
         self.start_point = None
         self.chain_first_point = None
         self.chain_vertices = []
+        self.work_plane = None

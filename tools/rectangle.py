@@ -17,6 +17,27 @@ from core.history import AddEdgeCommand, AddFaceCommand, CompoundCommand
 from tools.base import Tool, ToolContext
 
 
+def _plane_axes(normal: QVector3D) -> tuple[QVector3D, QVector3D]:
+    """Two orthonormal in-plane axes derived from a plane normal.
+
+    The first axis (``u``) is world +X projected onto the plane (or +Y if
+    the plane normal is nearly +X, to avoid the degenerate projection).
+    The second axis (``v``) is ``normal × u``. The pair lets us lay out a
+    rectangle on any plane while staying close to the world axes — so a
+    rectangle on the top of a box still feels axis-aligned, and on a
+    vertical wall ``u`` runs horizontally and ``v`` runs up/down.
+    """
+    n = normal.normalized()
+    ref = QVector3D(1.0, 0.0, 0.0)
+    u = ref - n * QVector3D.dotProduct(ref, n)
+    if u.length() < 0.1:
+        ref = QVector3D(0.0, 1.0, 0.0)
+        u = ref - n * QVector3D.dotProduct(ref, n)
+    u = u.normalized()
+    v = QVector3D.crossProduct(n, u).normalized()
+    return u, v
+
+
 class RectangleTool(Tool):
     name = "Rectangle"
     shortcut = "R"
@@ -27,6 +48,9 @@ class RectangleTool(Tool):
         # Aliased so the snap engine's close-polygon path doesn't fire on
         # the rectangle's first corner.
         self.chain_first_point: QVector3D | None = None
+        # (point, normal) of the face the rectangle was started on, if any.
+        # The viewport reads this to keep the opposite corner coplanar.
+        self.work_plane: tuple[QVector3D, QVector3D] | None = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -71,16 +95,38 @@ class RectangleTool(Tool):
         ]
 
     # ---- Internals ----------------------------------------------------------
-    @staticmethod
-    def _corners(a: QVector3D, b: QVector3D) -> list[QVector3D]:
-        z = a.z()
+    def _corners(self, a: QVector3D, b: QVector3D) -> list[QVector3D]:
+        """Four corners of the rectangle spanning ``a``–``b`` on the current
+        work plane.
+
+        Without a captured plane we fall back to the legacy XY layout (corners
+        share ``a.z()``). When the rectangle was started on a face, we derive
+        two orthonormal in-plane axes from the face's normal and use them to
+        place the two intermediate corners — so a rectangle on a vertical or
+        slanted face lies on that face instead of collapsing onto the XY
+        plane.
+        """
+        if self.work_plane is None:
+            z = a.z()
+            return [
+                QVector3D(a.x(), a.y(), z),
+                QVector3D(b.x(), a.y(), z),
+                QVector3D(b.x(), b.y(), z),
+                QVector3D(a.x(), b.y(), z),
+            ]
+        _, normal = self.work_plane
+        u, v = _plane_axes(normal)
+        delta = b - a
+        du = QVector3D.dotProduct(delta, u)
+        dv = QVector3D.dotProduct(delta, v)
         return [
-            QVector3D(a.x(), a.y(), z),
-            QVector3D(b.x(), a.y(), z),
-            QVector3D(b.x(), b.y(), z),
-            QVector3D(a.x(), b.y(), z),
+            a,
+            a + u * du,
+            a + u * du + v * dv,
+            a + v * dv,
         ]
 
     def _reset(self) -> None:
         self.start_point = None
         self.chain_first_point = None
+        self.work_plane = None
