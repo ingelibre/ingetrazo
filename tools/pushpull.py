@@ -37,6 +37,7 @@ from core.history import (
     AddFaceCommand,
     CompoundCommand,
     DeleteFaceCommand,
+    PruneOrphanEdgesCommand,
 )
 from core.topology import classify_push_edge, subtract_loop_from_face
 from tools.base import Tool, ToolContext
@@ -189,6 +190,11 @@ class PushPullTool(Tool):
                     commands.append(AddFaceCommand(remainder, auto=False))
                     continue  # notched open — no wall here
             commands.append(AddFaceCommand([a, b, b2, a2], auto=False))
+
+        # Sweep up edges left dangling where the base used to be (e.g. a step's
+        # old top edges at the corner that no longer border any face).
+        if attached:
+            commands.append(PruneOrphanEdgesCommand(list(base)))
 
         viewport.history.execute(CompoundCommand(commands))
         self._reset()

@@ -224,3 +224,36 @@ def test_corner_step_notches_adjacent_walls():
     assert corner in scene.faces                           # fully restored
     assert any(len(f.vertices) == 4 and all(abs(v.y()) < 1e-9 for v in f.vertices)
                for f in scene.faces)                       # walls back to rects
+
+
+def test_corner_step_leaves_no_orphan_edges():
+    from core.edits import build_add_edges
+    from core.topology import _key, _loop_edges
+
+    scene = Scene()
+    hist = History(scene)
+    ground = [V(0, 0), V(10, 0), V(10, 10), V(0, 10)]
+    hist.execute(build_add_edges(
+        scene, [(ground[i], ground[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(ground))]))
+    _push(scene, scene.faces[0], 3.0)
+    corner_loop = [V(0, 0, 3), V(4, 0, 3), V(4, 4, 3), V(0, 4, 3)]
+    hist.execute(build_add_edges(
+        scene, [(corner_loop[i], corner_loop[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(corner_loop))]))
+    corner = next(
+        f for f in scene.faces
+        if all(abs(v.z() - 3) < 1e-9 for v in f.vertices) and len(f.vertices) == 4
+        and max(v.x() for v in f.vertices) <= 4.001
+        and max(v.y() for v in f.vertices) <= 4.001
+    )
+    _push(scene, corner, -1.5)
+
+    face_edges = set()
+    for f in scene.faces:
+        face_edges.update(_loop_edges(f.vertices))
+        for hole in f.holes:
+            face_edges.update(_loop_edges(hole))
+    orphans = [e for e in scene.edges
+               if frozenset((_key(e.a), _key(e.b))) not in face_edges]
+    assert orphans == []   # no dangling lines where faces were carved away

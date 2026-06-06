@@ -353,6 +353,29 @@ def _loop_edges(loop: list[QVector3D]) -> list[frozenset]:
     ]
 
 
+def orphaned_edges_at(
+    edges: Iterable[Edge], faces: Iterable[Face], vertices: Iterable[QVector3D]
+) -> list[Edge]:
+    """Edges incident to any of ``vertices`` that border no face.
+
+    Used after push/pull consumes a face to sweep up the dangling lines left
+    where geometry was carved away, without disturbing standalone edges
+    elsewhere (only those touching the operation's vertices are considered).
+    """
+    vkeys = {_key(v) for v in vertices}
+    face_edges: set = set()
+    for f in faces:
+        face_edges.update(_loop_edges(f.vertices))
+        for hole in f.holes:
+            face_edges.update(_loop_edges(hole))
+    out: list[Edge] = []
+    for e in edges:
+        ek = frozenset((_key(e.a), _key(e.b)))
+        if (_key(e.a) in vkeys or _key(e.b) in vkeys) and ek not in face_edges:
+            out.append(e)
+    return out
+
+
 def _faces_coplanar(n1: QVector3D, n2: QVector3D) -> bool:
     return abs(QVector3D.dotProduct(n1.normalized(), n2.normalized())) > 0.999
 

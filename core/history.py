@@ -21,6 +21,7 @@ from core.topology import (
     find_containing_face,
     find_duplicate_edge,
     loop_inside_face,
+    orphaned_edges_at,
     subtract_loop_from_face,
 )
 
@@ -246,6 +247,35 @@ class DeleteFaceCommand(Command):
         if self.face not in scene.faces:
             scene.faces.append(self.face)
         scene.version += 1
+
+
+class PruneOrphanEdgesCommand(Command):
+    """Remove edges incident to ``vertices`` that, once the rest of a compound
+    has run, border no face — the dangling lines left where push/pull carved
+    geometry away. The set is computed at ``do`` time so it reflects the real
+    post-carve scene; ``undo`` puts the swept edges back."""
+
+    def __init__(self, vertices: Iterable[QVector3D]) -> None:
+        self.vertices = [QVector3D(v) for v in vertices]
+        self.removed: list[Edge] = []
+
+    def do(self, scene) -> None:
+        self.removed = orphaned_edges_at(scene.edges, scene.faces, self.vertices)
+        if not self.removed:
+            return
+        gone = set(self.removed)
+        scene.edges[:] = [e for e in scene.edges if e not in gone]
+        for e in self.removed:
+            scene.selection.discard(e)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for e in self.removed:
+            if e not in scene.edges:
+                scene.edges.append(e)
+        if self.removed:
+            scene.version += 1
+        self.removed = []
 
 
 class CompoundCommand(Command):
