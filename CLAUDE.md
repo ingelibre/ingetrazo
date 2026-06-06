@@ -18,6 +18,20 @@ Modelador 3D estilo SketchUp orientado a arquitectura, ingeniería civil e impre
 2. **2D = Top View + Parallel + Layers, no un módulo separado.** No hay "modo 2D". La experiencia 2D *emerge* del 3D bien afinado: vista superior + proyección paralela + plano de trabajo Z=0 + capas para organizar (estructura / muros / instalaciones / mobiliario). Mismo motor, dos lecturas. Output profesional de planos (LayOut-equivalente: márgenes, sellos, escalas) se difiere a v2.
 3. **Scope disciplinado.** No competir con SketchUp/AutoCAD/Revit feature-por-feature — esa es la receta para nunca shippear. Cada feature pasa por el filtro: "¿le sirve al usuario que querés que modele un edificio chico y saque cantidades?".
 
+### 🎯 Filosofía central — el norte que NO se negocia (definida 2026-06-05)
+
+**El nombre ES la tesis: _trazar como en la vida real_.** IngeTrazo se usa como quien dibuja a mano, no como un CAD. Si una decisión de UX o feature mete complejidad de CAD y se aleja de "esto se siente como trazar a mano", es la decisión equivocada. Este es el filtro maestro sobre todos los demás.
+
+**El flujo unificado es el producto** (así trabaja un ingeniero de verdad, en *un solo* entorno, no con 2D-aparte que es la forma vieja):
+
+> **fotogrametría del terreno (dron/Agisoft) → georeferenciar → trazar encima → aplicar BIM a lo trazado**
+
+El 2D separado quedó en el pasado; por eso el referente es SketchUp y no AutoCAD. El valor de IngeTrazo no es "otro modelador" — es *ese flujo completo sin salir del programa*, cerrando después el loop con IngePresupuestos vía IFC.
+
+**Implicación de arquitectura (tenerla en la cabeza desde la Fase 1):** la `Scene` sostiene objetos **heterogéneos**, no "todo es geometría editable": (1) malla de referencia (fotogrametría, display-only, NO entra al motor de topología), (2) contexto georeferenciado, (3) geometría freeform editable (el motor de topología), (4) tags BIM encima de lo trazado. No hay que construir las cuatro ya, pero el diseño del `Scene` no debe cerrarse esa puerta (mismo criterio que el índice espacial). Ver `[[project-filosofia-trazo-flujo-unificado]]`.
+
+**Recordatorio operativo:** Claude debe re-anclar al usuario a esta filosofía cuando una idea empiece a desviarse (escenarios "grandes/futuros" tipo Vulkan, ray tracing, AI-PCs, mallas pesadas son válidos pero son *display/import de referencia* — fáciles —, NO el motor de topología editable que es lo difícil y lo que define si IngeTrazo existe). Los cimientos (Fase 0 → Fase 1) van antes que el techo brillante.
+
 **Posicionamiento estratégico (secuencial, no paralelo):**
 
 - **IngePresupuestos** = generador de caja a corto plazo. La mayor parte del tiempo va ahí mientras tracciona comercialmente.
@@ -93,12 +107,52 @@ Modelador 3D estilo SketchUp orientado a arquitectura, ingeniería civil e impre
 - **Auto-polígono encuentra UN solo ciclo** — si una arista cierra múltiples polígonos (clásico: diagonal en cuadrado → 2 triángulos), sólo crea uno (el primero que BFS encuentra). SketchUp crea ambos.
 - **Polígono nuevo dentro de cara existente no la divide** — al dibujar un cuadradito interno en la cara superior de un cubo, se crea la cara nueva pero la grande sigue intacta debajo (dos caras coplanares). Falta split de face: detectar que el ciclo nuevo está contenido en una cara existente y restarlo / triangular el "donut" resultante.
 
-### 🚧 Próxima sesión — prioridades (decididas 2026-05-22, reconfirmadas 2026-05-22)
-**Refinar lo que ya existe ANTES de tools nuevas.** El motor básico es ~70%, pero la calidad de la selección y el manejo de polígonos define la experiencia. **Confirmado en la conversación de visión:** afinar el motor es el foco hasta nuevo aviso; el rename, el cambio de licencia y la capa BIM/IFC entran *después* de que el modelado básico esté sólido.
-1. **Pulir auto-detección de polígonos** — detectar TODOS los ciclos chicos que cierra una arista nueva (no sólo el primero), evitar caras duplicadas con orientación opuesta, y ear-clipping para soportar cóncavos.
-2. **Split de cara existente** — cuando un ciclo nuevo (polígono dibujado encima) está contenido dentro de una cara, restar la cara grande / triangular el agujero. Ya se puede dibujar sobre cualquier cara (face-plane inference resuelto en `[[project-face-plane-inference-done]]`); el siguiente paso natural es que el polígono interno divida la cara madre como hace SketchUp.
-3. **Selección sólida** — hoy sólo se seleccionan aristas. Falta: seleccionar caras (con click sobre la cara), seleccionar al hacer rubber-band con drag, double-click para seleccionar todo lo conectado, triple-click para todo el sólido, hover highlighting.
-4. **Después de eso** sigue Move/Rotate/Erase + auto-merge + face culling (en ese orden).
+### 🚧 Programación secuenciada hacia v0.1 (definida 2026-06-05)
+
+**Objetivo:** un "SketchUp-mínimo para Linux" usable por un ingeniero civil — NO un clon feature-por-feature (eso son años; esto son meses, ya vamos ~60-70% del MVP de modelado). El motor freeform standalone se mantiene (NO migrar a Blender: su UX no da el "feel" SketchUp y su GPL mata la integración embebida futura con IngePresupuestos). "Abrir modelos de SketchUp" se resuelve con import `.dae`/`.obj`, sin Blender.
+
+**Regla de oro (no negociable):** una fase NO está terminada hasta cumplir las 3: (1) su Definición de Hecho (DoD) pasa, (2) está commiteada y la app arranca sin regresiones, (3) cero "lo dejo para después" dentro de la fase. No se abre la fase siguiente hasta esas tres. Nada de avanzar algo a medias y empezar otra cosa.
+
+**FASE 0 — Limpieza de arranque** *(~0.5 día)*
+Commitear los cambios sueltos (`tools/line.py`, `tools/rectangle.py`, `views/viewport.py`) + actualizar CLAUDE.md (rename de carpeta ya hecho, venv reparado el 2026-06-05).
+- **DoD:** `git status` limpio, CLAUDE.md refleja la realidad.
+
+**FASE 1 — 🔴 Motor de topología robusto** *(la incógnita go/no-go, ~1-2 semanas)*
+Es la fase que decide si el camino standalone es viable. Con tests en `tests/` (hoy vacía; la regresión topológica es silenciosa). En orden: (1) auto-merge de vértices/aristas coincidentes, (2) split de aristas al cruzarse, (3) split de cara cuando un ciclo nuevo cae dentro, (4) detectar TODOS los ciclos sin caras duplicadas/invertidas, (5) ear-clipping para cóncavos.
+- **DoD:** diagonal en cuadrado → 2 triángulos · cuadradito dentro de cara → divide la madre · 2 rects que comparten arista → 1 arista, no duplicada · "L" cóncava se rellena · push/pull funciona sobre todas. Reemplaza los 4 bugs de "Conocidos sin resolver" de topología.
+
+**FASE 2 — Selección sólida** *(el "feel" SketchUp)*
+Seleccionar caras (click), hover highlight, rubber-band con drag (ventana vs crossing), doble-click=conectado, triple-click=sólido.
+- 📌 Checkpoint perf: dejar el pick detrás de una abstracción para poder insertar un índice espacial luego sin reescribir (NO construir el índice todavía).
+- **DoD:** aristas y caras seleccionables con los 4 gestos + hover, integrado con undo.
+
+**FASE 3 — Move + Eraser** *(de tablero a modelador; el salto de sensación más grande)*
+Move (M) con snap/inferencia/VCB + copia con Ctrl; Eraser (E) por click y arrastre.
+- **DoD:** muevo y borro con medida exacta y snap; la topología de Fase 1 aguanta los movimientos sin romper caras.
+
+**FASE 4 — Kit de dibujo completo**
+Circle (C), Arc (A), Offset (F), Tape Measure + guías (T). Usar `tool.work_plane` + `_plane_axes` (ver `[[project-face-plane-inference-done]]`).
+- **DoD:** círculos, arcos, paralelas y guías sobre cualquier cara.
+
+**FASE 5 — Groups** *(imprescindible cuando el modelo crece; sin esto todo se suelda con todo por el auto-merge de Fase 1)*
+Encapsular geometría aislada + editar dentro del grupo + Outliner básico.
+- **DoD:** agrupo, edito aislado, y al mover el grupo no se pega al resto.
+
+**FASE 6 — Capas/Tags UI** *(habilita el "2D que emerge")*
+UI sobre `core/layers.py` (ya existe el core): visibilidad/lock por capa.
+- **DoD:** Top View + paralela + capas = experiencia 2D usable sin módulo separado.
+
+**FASE 7 — Utilidad real**
+Materiales (color/textura por cara), Dimensions, import `.dae`/`.obj` (abrir modelos exportados de SketchUp), export `.dae`/`.obj`/`.stl`.
+- **DoD:** importo un `.dae` de SketchUp, lo acoto, lo pinto y exporto a STL.
+
+🏁 **Al cerrar Fase 7 = v0.1 usable real.** Recién después: BIM tagging, IFC export (gancho IngePresupuestos), DXF, geo-ref, etc. (ver Roadmap v0.1 largo abajo).
+
+**Decisiones en paralelo (no bloquean código):** licencia GPL→Apache antes del primer push público (~Fase 7); índice espacial recién cuando en Fase 2/3 el mouse se arrastre con modelos grandes (ni antes = over-engineering, ni después = duele).
+
+**Estimación honesta:** Fase 1 = 1-2 semanas (la incógnita); Fases 2-7 con foco = orden de 2-4 meses al v0.1. Lejos de "años" porque NO es clonar SketchUp.
+
+> El registro de *lo hecho* vive en los commits de git (bitácora automática); este archivo guarda el *rumbo* (fases + DoD). No duplicar en el .md lo que git ya registra.
 
 ### 🔮 Roadmap v0.1 (versión inicial usable real)
 Orden sugerido alineado con la visión (freeform + BIM tagging + 2D que emerge del 3D):

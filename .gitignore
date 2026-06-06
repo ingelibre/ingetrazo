@@ -34,3 +34,6 @@ update_state.json
 
 # Local agent state
 .claude/
+
+# User scratch file (WIP, not part of the repo)
+untitled.igz
