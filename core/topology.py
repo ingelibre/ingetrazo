@@ -487,6 +487,137 @@ def find_chord_split(
     return None
 
 
+# ---- Loop subtraction (a face drawn against another's boundary) -------------
+
+def _face_plane_proj(face: Face):
+    """Return ``(proj, poly2)`` — a projector to the face's 2D plane and the
+    face's boundary projected with it."""
+    from core.triangulate import plane_axes
+
+    normal = face.normal()
+    origin = face.vertices[0]
+    u, w = plane_axes(normal)
+
+    def proj(p):
+        rel = p - origin
+        return (QVector3D.dotProduct(rel, u), QVector3D.dotProduct(rel, w))
+
+    return proj, [proj(v) for v in face.vertices]
+
+
+def find_subdividing_chain(
+    face: Face, loop: list[QVector3D]
+) -> Optional[list[QVector3D]]:
+    """If ``loop`` shares a contiguous boundary arc with ``face`` and pushes a
+    single run of vertices through its interior, return that interior chain
+    ``[P, ...interior..., Q]`` (P, Q on the face boundary). Otherwise ``None``.
+
+    This is the "rectangle drawn in a corner / along an edge" case: the loop
+    neither sits strictly inside the face (a hole) nor is a single straight
+    chord — it carves a connected sub-region. Faces with holes, loops that
+    poke outside the face, and loops touching the boundary in more than one
+    place are out of scope and return ``None``.
+    """
+    if face.holes or len(face.vertices) < 3 or len(loop) < 3:
+        return None
+    proj, poly2 = _face_plane_proj(face)
+
+    labels: list[str] = []
+    for v in loop:
+        if _locate_on_loop(face.vertices, v) is not None:
+            labels.append("bdry")
+        elif _strictly_inside_2d(proj(v), poly2):
+            labels.append("in")
+        else:
+            return None  # loop pokes outside the face → not a clean subdivision
+    if "in" not in labels or "bdry" not in labels:
+        return None
+
+    n = len(loop)
+    start = labels.index("bdry")
+    runs: list[list[int]] = []
+    cur: list[int] = []
+    for k in range(n):
+        idx = (start + k) % n
+        if labels[idx] == "in":
+            cur.append(idx)
+        elif cur:
+            runs.append(cur)
+            cur = []
+    if cur:
+        runs.append(cur)
+    if len(runs) != 1:
+        return None
+
+    run = runs[0]
+    p = loop[(run[0] - 1) % n]
+    q = loop[(run[-1] + 1) % n]
+    if same_position(p, q):
+        return None
+    return [p, *(loop[i] for i in run), q]
+
+
+def _arc(seq: list, i: int, j: int) -> list:
+    """Cyclic slice of ``seq`` from index ``i`` to ``j`` inclusive, forward."""
+    if i <= j:
+        return seq[i : j + 1]
+    return seq[i:] + seq[: j + 1]
+
+
+def split_face_by_chain(
+    face: Face, chain: list[QVector3D]
+) -> Optional[tuple[list[QVector3D], list[QVector3D]]]:
+    """Split ``face`` along ``chain`` (``[P, ...interior..., Q]``, ends on the
+    boundary) into its two sub-loops. On-edge ends are inserted into the
+    boundary. Returns ``None`` if the ends can't be located."""
+    p, q = chain[0], chain[-1]
+    middles = list(chain[1:-1])
+    on_edge: dict[int, list[QVector3D]] = {}
+    for pt in (p, q):
+        loc = _locate_on_loop(face.vertices, pt)
+        if loc is None:
+            return None
+        if loc[0] == "edge":
+            on_edge.setdefault(loc[1], []).append(QVector3D(pt))
+
+    aug: list[QVector3D] = []
+    for i, v in enumerate(face.vertices):
+        aug.append(v)
+        if i in on_edge:
+            for pp in sorted(on_edge[i], key=lambda r: (r - v).length()):
+                aug.append(pp)
+
+    keys = [_key(x) for x in aug]
+    ip = keys.index(_key(p))
+    iq = keys.index(_key(q))
+    region_pq = _arc(aug, ip, iq) + list(reversed(middles))
+    region_qp = _arc(aug, iq, ip) + middles
+    if len(region_pq) < 3 or len(region_qp) < 3:
+        return None
+    return region_pq, region_qp
+
+
+def subtract_loop_from_face(
+    face: Face, loop: list[QVector3D]
+) -> Optional[list[QVector3D]]:
+    """The remainder of ``face`` after ``loop`` is carved out of it, when the
+    loop shares a contiguous boundary arc (corner / edge rectangle). ``None``
+    if it isn't that case. The ``loop`` itself stays a separate face."""
+    chain = find_subdividing_chain(face, loop)
+    if chain is None:
+        return None
+    split = split_face_by_chain(face, chain)
+    if split is None:
+        return None
+    r1, r2 = split
+    loop_keys = frozenset(_key(v) for v in loop)
+    if frozenset(_key(v) for v in r1) == loop_keys:
+        return r2
+    if frozenset(_key(v) for v in r2) == loop_keys:
+        return r1
+    return None  # neither half is the drawn loop → ambiguous, leave it alone
+
+
 # ---- Multiple-cycle detection ----------------------------------------------
 
 def _same_cycle(c1: list[QVector3D], c2: list[QVector3D]) -> bool:

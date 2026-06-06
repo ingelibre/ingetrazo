@@ -17,7 +17,12 @@ from typing import Iterable, Optional
 from PySide6.QtGui import QVector3D
 
 from core.geometry import Edge, Face
-from core.topology import find_containing_face, find_duplicate_edge, loop_inside_face
+from core.topology import (
+    find_containing_face,
+    find_duplicate_edge,
+    loop_inside_face,
+    subtract_loop_from_face,
+)
 
 
 class Command(ABC):
@@ -144,6 +149,10 @@ class AddFaceCommand(Command):
         # the new face landing inside an existing mother, *and* the new face
         # enclosing existing smaller faces.
         self._punches: list[tuple[Face, list]] = []
+        # A face this command subdivided (drawn against its boundary) and the
+        # remainder face that replaced it, for undo.
+        self._subdiv_mother: Optional[Face] = None
+        self._subdiv_remainder: Optional[Face] = None
 
     def do(self, scene) -> None:
         if self.face is None:
@@ -168,9 +177,34 @@ class AddFaceCommand(Command):
                 self.face.holes.append(loop)
                 self._punches.append((self.face, loop))
 
+        # Direction C: the new face was drawn against an existing face's
+        # boundary (a corner / edge rectangle), carving a connected sub-region
+        # rather than a hole. Replace that mother with its remainder; the new
+        # face stands on its own. Only when no hole relationship applied.
+        if not self._punches:
+            for other in list(scene.faces):
+                if other is self.face or other.holes:
+                    continue
+                remainder = subtract_loop_from_face(other, self.face.vertices)
+                if remainder is None:
+                    continue
+                rem_face = Face(list(remainder))
+                scene.faces.remove(other)
+                scene.faces.append(rem_face)
+                self._subdiv_mother = other
+                self._subdiv_remainder = rem_face
+                break
+
         scene.version += 1
 
     def undo(self, scene) -> None:
+        if self._subdiv_mother is not None:
+            if self._subdiv_remainder in scene.faces:
+                scene.faces.remove(self._subdiv_remainder)
+            if self._subdiv_mother not in scene.faces:
+                scene.faces.append(self._subdiv_mother)
+            self._subdiv_mother = None
+            self._subdiv_remainder = None
         for face, loop in self._punches:
             try:
                 face.holes.remove(loop)
