@@ -17,6 +17,7 @@ from typing import Iterable, Optional
 from PySide6.QtGui import QVector3D
 
 from core.geometry import Edge, Face
+from core.topology import find_containing_face, find_duplicate_edge, loop_inside_face
 
 
 class Command(ABC):
@@ -66,24 +67,43 @@ class History:
 # ---- Concrete commands ------------------------------------------------------
 
 class AddEdgeCommand(Command):
-    def __init__(self, a: QVector3D, b: QVector3D) -> None:
+    """Add a single edge, welding to coincident geometry (SketchUp-style).
+
+    With ``merge=True`` (the default), if an edge with the same endpoints
+    already exists the command becomes a no-op instead of stacking a
+    duplicate — so two rectangles sharing a border keep a single shared
+    edge. ``do`` records in ``_added`` whether it actually appended, so
+    ``undo`` only removes an edge *this* command created and never deletes
+    the pre-existing one it merged into. ``self.edge`` only ever holds the
+    edge this command owns (``None`` after a merged no-op).
+    """
+
+    def __init__(self, a: QVector3D, b: QVector3D, merge: bool = True) -> None:
         self.a = a
         self.b = b
+        self.merge = merge
         self.edge: Optional[Edge] = None
+        self._added = False
 
     def do(self, scene) -> None:
+        if self.merge and find_duplicate_edge(scene.edges, self.a, self.b) is not None:
+            self._added = False
+            return
         if self.edge is None:
             self.edge = Edge(self.a, self.b)
         scene.edges.append(self.edge)
+        self._added = True
         scene.version += 1
 
     def undo(self, scene) -> None:
+        if not self._added or self.edge is None:
+            return
         try:
             scene.edges.remove(self.edge)
         except ValueError:
             pass
-        if self.edge is not None:
-            scene.selection.discard(self.edge)
+        scene.selection.discard(self.edge)
+        self._added = False
         scene.version += 1
 
 
@@ -107,22 +127,82 @@ class DeleteEdgesCommand(Command):
 
 
 class AddFaceCommand(Command):
+    """Add a face, dividing any coplanar face it lands strictly inside.
+
+    When the new loop falls wholly within an existing face (e.g. a small
+    rectangle drawn inside a larger one), that mother face gains a hole so it
+    no longer overlaps the new face — SketchUp-style "draw inside a face and
+    it splits". The hole is recorded so ``undo`` can remove exactly the loop
+    this command punched, leaving the mother untouched.
+    """
+
     def __init__(self, vertices: Iterable[QVector3D]) -> None:
         self.vertices = [QVector3D(v) for v in vertices]
         self.face: Optional[Face] = None
+        # Each punch is (face_that_gained_a_hole, the_exact_hole_loop_object),
+        # kept for identity-based removal on undo. Covers both directions:
+        # the new face landing inside an existing mother, *and* the new face
+        # enclosing existing smaller faces.
+        self._punches: list[tuple[Face, list]] = []
 
     def do(self, scene) -> None:
         if self.face is None:
             self.face = Face(list(self.vertices))
         scene.faces.append(self.face)
+
+        # Direction A: the new face falls inside an existing mother → the
+        # mother gains the new loop as a hole.
+        mother = find_containing_face(scene.faces, self.face.vertices, exclude=self.face)
+        if mother is not None:
+            loop = list(self.face.vertices)
+            mother.holes.append(loop)
+            self._punches.append((mother, loop))
+
+        # Direction B: the new face encloses existing smaller faces → the new
+        # face gains each of them as a hole (order independence).
+        for other in scene.faces:
+            if other is self.face:
+                continue
+            if loop_inside_face(self.face, other.vertices):
+                loop = list(other.vertices)
+                self.face.holes.append(loop)
+                self._punches.append((self.face, loop))
+
         scene.version += 1
 
     def undo(self, scene) -> None:
+        for face, loop in self._punches:
+            try:
+                face.holes.remove(loop)
+            except ValueError:
+                pass
+        self._punches = []
         if self.face is not None:
             try:
                 scene.faces.remove(self.face)
             except ValueError:
                 pass
+        scene.version += 1
+
+
+class DeleteFaceCommand(Command):
+    """Remove a face (e.g. a mother face being replaced by its chord-split
+    halves). Holes the face carried travel with it, so undo restores them."""
+
+    def __init__(self, face: Face) -> None:
+        self.face = face
+
+    def do(self, scene) -> None:
+        try:
+            scene.faces.remove(self.face)
+        except ValueError:
+            pass
+        scene.selection.discard(self.face)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.face not in scene.faces:
+            scene.faces.append(self.face)
         scene.version += 1
 
 

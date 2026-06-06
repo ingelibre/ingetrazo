@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from PySide6.QtGui import QVector3D
 
-from core.history import AddEdgeCommand, AddFaceCommand, CompoundCommand
+from core.edits import build_add_edges
+from core.history import AddFaceCommand
 from tools.base import Tool, ToolContext
 
 
@@ -66,11 +67,17 @@ class RectangleTool(Tool):
             self.start_point = ctx.world
             return
         corners = self._corners(self.start_point, ctx.world)
-        commands = [
-            AddEdgeCommand(corners[i], corners[(i + 1) % 4]) for i in range(4)
-        ]
-        commands.append(AddFaceCommand(list(corners)))
-        ctx.viewport.history.execute(CompoundCommand(commands))
+        segments = [(corners[i], corners[(i + 1) % 4]) for i in range(4)]
+        # The rectangle owns its face explicitly (the loop spans corner to
+        # corner regardless of how its edges get subdivided by crossings), so
+        # let the edge builder handle splitting/welding but not auto-facing.
+        cmd = build_add_edges(
+            ctx.viewport.scene,
+            segments,
+            detect_faces=False,
+            extra=[AddFaceCommand(list(corners))],
+        )
+        ctx.viewport.history.execute(cmd)
         self._reset()
         ctx.viewport.update()
 

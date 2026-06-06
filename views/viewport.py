@@ -499,17 +499,15 @@ class Viewport(QOpenGLWidget):
         self._selected_vbo.release()
         self._selected_count = len(sel_data) // 3
 
-        # Faces: fan-triangulate each face and concatenate into a single VBO.
+        # Faces: triangulate each face (fan when simple, hole-aware when the
+        # face has been divided) and concatenate into a single VBO.
         face_data = array("f")
         for face in self.scene.faces:
-            v = face.vertices
-            if len(v) < 3:
-                continue
-            for i in range(1, len(v) - 1):
+            for t0, t1, t2 in face.triangulate():
                 face_data.extend([
-                    v[0].x(), v[0].y(), v[0].z(),
-                    v[i].x(), v[i].y(), v[i].z(),
-                    v[i + 1].x(), v[i + 1].y(), v[i + 1].z(),
+                    t0.x(), t0.y(), t0.z(),
+                    t1.x(), t1.y(), t1.z(),
+                    t2.x(), t2.y(), t2.z(),
                 ])
         self._faces_vbo.bind()
         if face_data:
@@ -849,11 +847,8 @@ class Viewport(QOpenGLWidget):
         best_t = float("inf")
         best = None
         for face in self.scene.faces:
-            v = face.vertices
-            if len(v) < 3:
-                continue
-            for i in range(1, len(v) - 1):
-                t = _ray_triangle(origin, direction, v[0], v[i], v[i + 1])
+            for t0, t1, t2 in face.triangulate():
+                t = _ray_triangle(origin, direction, t0, t1, t2)
                 if t is not None and t < best_t:
                     best_t = t
                     best = face

@@ -1,0 +1,139 @@
+"""Edit operations that turn drawn segments into history commands.
+
+This is the bridge between the pure geometry planner in :mod:`core.topology`
+and the undo/redo commands in :mod:`core.history`. Tools hand it the raw
+segments the user drew; it returns a single reversible command that:
+
+- splits existing edges the new segments cross (SketchUp-style auto-split),
+- breaks each new segment at those crossings,
+- welds coincident edges (via ``AddEdgeCommand``'s merge), and
+- optionally auto-faces any planar cycle the new sub-edges close.
+
+Segments are processed in order against a running simulation of the scene's
+edge list, so a batch (e.g. a rectangle's four edges) splits correctly even
+when later segments cross edges created by earlier ones.
+
+Kept in its own module to avoid an import cycle: ``history`` imports
+``topology``, so the command-building glue can't live in either of them.
+"""
+from __future__ import annotations
+
+from typing import Iterable, Sequence
+
+from PySide6.QtGui import QVector3D
+
+from core.geometry import Edge, Face
+from core.history import (
+    AddEdgeCommand,
+    AddFaceCommand,
+    Command,
+    CompoundCommand,
+    DeleteEdgesCommand,
+    DeleteFaceCommand,
+)
+from core.topology import (
+    face_exists,
+    find_chord_split,
+    find_cycles_through,
+    find_duplicate_edge,
+    is_planar,
+    plan_edge_split,
+)
+
+Segment = tuple[QVector3D, QVector3D]
+
+
+def plan_edge_commands(
+    scene,
+    segments: Sequence[Segment],
+    detect_faces: bool = True,
+) -> list[Command]:
+    """Build the ordered command list to add ``segments`` to ``scene``.
+
+    Mirrors what each emitted command will do to the scene in a local
+    ``simulated`` edge list, so planning and execution stay in lock-step.
+    Returns a flat list (callers wrap it, possibly alongside their own
+    commands such as a tool-managed face, in a single ``CompoundCommand``).
+    """
+    commands: list[Command] = []
+    simulated: list[Edge] = list(scene.edges)
+    faces_snapshot: list[Face] = list(scene.faces)
+
+    for a, b in segments:
+        new_segments, edge_cuts = plan_edge_split(simulated, a, b)
+
+        # Replace each crossed existing edge with its two sub-edges.
+        for edge, point in edge_cuts.items():
+            commands.append(DeleteEdgesCommand([edge]))
+            if edge in simulated:
+                simulated.remove(edge)
+            for sa, sb in ((edge.a, point), (point, edge.b)):
+                if find_duplicate_edge(simulated, sa, sb) is None:
+                    commands.append(AddEdgeCommand(sa, sb))
+                    simulated.append(Edge(sa, sb))
+
+        # Add the new segment's pieces (welding duplicates), auto-facing.
+        for sa, sb in new_segments:
+            already = find_duplicate_edge(simulated, sa, sb)
+            # Always emit the add: AddEdgeCommand welds, so a duplicate is a
+            # no-op, but face detection below must still run (drawing over an
+            # existing edge can still close a new face).
+            commands.append(AddEdgeCommand(sa, sb))
+            if already is None:
+                simulated.append(Edge(sa, sb))
+            if detect_faces:
+                _plan_faces(commands, faces_snapshot, simulated, sa, sb)
+
+    return commands
+
+
+def _plan_faces(commands, faces_snapshot, simulated, sa, sb) -> None:
+    """Emit the face commands for a freshly added edge ``sa``–``sb``.
+
+    Two paths, mutually exclusive:
+
+    - *Chord split* — the edge divides an existing face: replace that mother
+      face with its two halves (handles "draw a diagonal across a square → two
+      triangles, each pushable on its own").
+    - *Auto-face* — otherwise close any new minimal cycles the edge forms.
+      ``find_cycles_through`` returns both sides, so a diagonal across a
+      face-less square still faces both triangles.
+    """
+    chord = find_chord_split(faces_snapshot, sa, sb)
+    if chord is not None:
+        mother, loop_a, loop_b = chord
+        commands.append(DeleteFaceCommand(mother))
+        faces_snapshot.remove(mother)
+        for loop in (loop_a, loop_b):
+            if is_planar(loop) and not face_exists(faces_snapshot, loop):
+                commands.append(AddFaceCommand(loop))
+                faces_snapshot.append(Face(list(loop)))
+        return
+
+    for cycle in find_cycles_through(simulated, sa, sb):
+        if is_planar(cycle) and not face_exists(faces_snapshot, cycle):
+            commands.append(AddFaceCommand(cycle))
+            faces_snapshot.append(Face(list(cycle)))
+
+
+def build_add_edge(scene, a: QVector3D, b: QVector3D, detect_faces: bool = True) -> Command:
+    """Single-segment convenience: one drawn edge → one atomic command."""
+    commands = plan_edge_commands(scene, [(a, b)], detect_faces=detect_faces)
+    if len(commands) == 1:
+        return commands[0]
+    return CompoundCommand(commands)
+
+
+def build_add_edges(
+    scene,
+    segments: Sequence[Segment],
+    detect_faces: bool = True,
+    extra: Iterable[Command] = (),
+) -> Command:
+    """Batch convenience: many drawn edges (+ optional ``extra`` commands such
+    as a tool-managed face) → one atomic command."""
+    commands = plan_edge_commands(scene, segments, detect_faces=detect_faces)
+    commands.extend(extra)
+    if len(commands) == 1:
+        return commands[0]
+    return CompoundCommand(commands)

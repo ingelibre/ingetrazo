@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from PySide6.QtGui import QVector3D
 
-from core.history import AddEdgeCommand, AddFaceCommand, CompoundCommand, Command
-from core.topology import face_exists, find_smallest_cycle_through, is_planar
+from core.edits import build_add_edge
+from core.history import Command
 from tools.base import Tool, ToolContext
 
 
@@ -113,19 +113,12 @@ class LineTool(Tool):
 
     # ---- Internals ----------------------------------------------------------
     def _commit_edge(self, viewport, start: QVector3D, end: QVector3D) -> Command:
-        """Build the command for a new edge, attaching a face if the new edge
-        closes a planar cycle in the existing edge graph. This is what makes
-        a drawn line over a cube edge auto-create a triangle face — the
-        SketchUp-style "any planar loop becomes a face" behaviour."""
-        edge_cmd = AddEdgeCommand(start, end)
-        cycle = find_smallest_cycle_through(viewport.scene.edges, start, end)
-        if (
-            cycle is not None
-            and is_planar(cycle)
-            and not face_exists(viewport.scene.faces, cycle)
-        ):
-            return CompoundCommand([edge_cmd, AddFaceCommand(cycle)])
-        return edge_cmd
+        """Build the command for a new edge. ``build_add_edge`` welds
+        coincident edges, splits any existing edge the new one crosses
+        (introducing a shared vertex), and attaches a face when the new edge
+        closes a planar cycle — the SketchUp-style "any planar loop becomes a
+        face" behaviour, now correct even when the loop relies on a crossing."""
+        return build_add_edge(viewport.scene, start, end, detect_faces=True)
 
     def _reset(self) -> None:
         self.start_point = None

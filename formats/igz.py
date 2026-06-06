@@ -41,10 +41,17 @@ def save_scene(scene, path: Path) -> None:
         }
         for e in scene.edges
     ]
-    faces = [
-        {"vertices": [[v.x(), v.y(), v.z()] for v in f.vertices]}
-        for f in getattr(scene, "faces", [])
-    ]
+    def _face_json(f):
+        entry = {"vertices": [[v.x(), v.y(), v.z()] for v in f.vertices]}
+        # Holes are written only when present, so simple documents stay terse
+        # and older readers ignore the extra key gracefully.
+        if getattr(f, "holes", None):
+            entry["holes"] = [
+                [[v.x(), v.y(), v.z()] for v in loop] for loop in f.holes
+            ]
+        return entry
+
+    faces = [_face_json(f) for f in getattr(scene, "faces", [])]
     data = {
         "igz_format": CURRENT_FORMAT,
         "app_version": "0.0.1",
@@ -79,6 +86,9 @@ def load_into(scene, path: Path) -> None:
 
         for raw in payload["faces"]:
             verts = [QVector3D(*v) for v in raw["vertices"]]
-            scene.faces.append(Face(verts))
+            holes = [
+                [QVector3D(*v) for v in loop] for loop in raw.get("holes", [])
+            ]
+            scene.faces.append(Face(verts, holes))
 
     scene.version += 1

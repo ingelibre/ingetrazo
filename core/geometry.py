@@ -24,13 +24,17 @@ class Edge:
 
 @dataclass(eq=False)
 class Face:
-    """A planar polygon defined by its vertex loop.
+    """A planar polygon defined by its outer vertex loop, with optional holes.
 
-    No internal triangulation is stored — consumers (renderer, picker)
-    triangulate on the fly. For MVP we use fan triangulation, which is
-    fine for the convex polygons IngeTrazo produces today (rectangles +
-    closed line chains the user draws). Ear-clipping for non-convex
-    polygons can land later.
+    No internal triangulation is stored — consumers (renderer, picker) call
+    :meth:`triangulate`. A face with no holes and a convex loop reduces to a
+    cheap fan; a face that has been divided by an inner loop (``holes``) is a
+    "donut" and is triangulated by :mod:`core.triangulate`.
+
+    Each entry in ``holes`` is an inner vertex loop that has been subtracted
+    from this face (e.g. a small rectangle drawn inside a larger one). The
+    inner loop is also usually its own :class:`Face`; the hole here is what
+    keeps this (mother) face from overlapping it.
 
     The face normal is derived with Newell's method so it works for
     arbitrary polygons (including non-planar ones, where it returns the
@@ -38,6 +42,7 @@ class Face:
     """
 
     vertices: list[QVector3D] = field(default_factory=list)
+    holes: list[list[QVector3D]] = field(default_factory=list)
 
     def normal(self) -> QVector3D:
         n = QVector3D(0.0, 0.0, 0.0)
@@ -64,3 +69,20 @@ class Face:
         cy = sum(v.y() for v in self.vertices) / count
         cz = sum(v.z() for v in self.vertices) / count
         return QVector3D(cx, cy, cz)
+
+    def triangulate(self) -> list[tuple[QVector3D, QVector3D, QVector3D]]:
+        """Triangles covering this face (outer loop minus any holes).
+
+        Fast path: a face with no holes uses a fan, identical to the legacy
+        behaviour, so existing convex faces pay nothing new. Holed faces go
+        through the hole-aware triangulator.
+        """
+        v = self.vertices
+        if len(v) < 3:
+            return []
+        if not self.holes:
+            return [(v[0], v[i], v[i + 1]) for i in range(1, len(v) - 1)]
+        # Imported lazily to keep geometry.py dependency-light at import time.
+        from core.triangulate import triangulate
+
+        return triangulate(v, self.holes, self.normal())
