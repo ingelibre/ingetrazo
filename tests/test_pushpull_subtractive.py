@@ -257,3 +257,38 @@ def test_corner_step_leaves_no_orphan_edges():
     orphans = [e for e in scene.edges
                if frozenset((_key(e.a), _key(e.b))) not in face_edges]
     assert orphans == []   # no dangling lines where faces were carved away
+
+
+def test_corner_step_splits_corner_vertical_not_deletes_it():
+    from core.edits import build_add_edges
+    from core.topology import same_position
+
+    scene = Scene()
+    hist = History(scene)
+    ground = [V(0, 0), V(10, 0), V(10, 10), V(0, 10)]
+    hist.execute(build_add_edges(
+        scene, [(ground[i], ground[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(ground))]))
+    _push(scene, scene.faces[0], 3.0)
+    corner_loop = [V(0, 0, 3), V(4, 0, 3), V(4, 4, 3), V(0, 4, 3)]
+    hist.execute(build_add_edges(
+        scene, [(corner_loop[i], corner_loop[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(corner_loop))]))
+    corner = next(
+        f for f in scene.faces
+        if all(abs(v.z() - 3) < 1e-9 for v in f.vertices) and len(f.vertices) == 4
+        and max(v.x() for v in f.vertices) <= 4.001
+        and max(v.y() for v in f.vertices) <= 4.001
+    )
+    _push(scene, corner, -1.5)
+
+    def has_edge(a, b):
+        return any(
+            (same_position(e.a, a) and same_position(e.b, b))
+            or (same_position(e.a, b) and same_position(e.b, a))
+            for e in scene.edges
+        )
+
+    # The cube's corner vertical is split at the step level, not erased.
+    assert has_edge(V(0, 0, 0), V(0, 0, 1.5))      # lower segment survives
+    assert not has_edge(V(0, 0, 0), V(0, 0, 3))    # cut-away part gone

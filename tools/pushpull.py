@@ -188,6 +188,15 @@ class PushPullTool(Tool):
                 if remainder is not None:
                     commands.append(DeleteFaceCommand(neighbour))
                     commands.append(AddFaceCommand(remainder, auto=False))
+                    # The notch puts a new vertex on the wall's side edge,
+                    # splitting it; add the remainder's boundary edges so the
+                    # surviving lower segment (e.g. the corner vertical up to
+                    # the step) exists rather than being pruned with the rest.
+                    rn = len(remainder)
+                    for k in range(rn):
+                        commands.append(
+                            AddEdgeCommand(remainder[k], remainder[(k + 1) % rn])
+                        )
                     continue  # notched open — no wall here
             commands.append(AddFaceCommand([a, b, b2, a2], auto=False))
 
