@@ -12,19 +12,33 @@ UX (SketchUp-like):
 - Esc cancels without committing.
 
 Commit creates:
-- N new edges connecting each base vertex to the matching top vertex.
-- N new edges around the top face boundary.
-- 1 new top face.
+- N new edges connecting each base vertex to the matching moved vertex.
+- N new edges around the moved face boundary.
+- 1 new moved face (the box top, or the floor of a recess).
 - N new side faces (quads, one per base edge).
 
-The original base face stays in place — it becomes the box's "bottom".
+Additive vs subtractive:
+- Pushing *out* (extrusion along the normal) leaves the base face in place —
+  it becomes the box's "bottom".
+- Pushing *in* (extrusion against the normal) is subtractive: the base face
+  is removed. For a face drawn inside another (a coplanar surrounding face
+  that gained a hole when the inner face was created), removing the base
+  leaves that hole open as the mouth of a recess / pocket. For a standalone
+  face it simply shortens the solid. Through-holes (pushing clear out the
+  far side) are not detected yet — that's a follow-up.
 """
 from __future__ import annotations
 
 from PySide6.QtGui import QVector3D
 
 from core.geometry import Face
-from core.history import AddEdgeCommand, AddFaceCommand, CompoundCommand
+from core.history import (
+    AddEdgeCommand,
+    AddFaceCommand,
+    CompoundCommand,
+    DeleteFaceCommand,
+)
+from core.topology import face_is_bordered
 from tools.base import Tool, ToolContext
 
 
@@ -139,6 +153,16 @@ class PushPullTool(Tool):
         count = len(base)
 
         commands: list = []
+
+        # A bordered face (embedded in a surface/solid) is moved by the push,
+        # so its base is consumed — pushing in carves a recess (the
+        # surrounding face keeps its hole as the open mouth), pushing out/
+        # through extends or shortens without leaving an internal cap. A free-
+        # standing face is extruded instead, keeping its base as a cap. This
+        # replaces a sign-of-distance test, which was unreliable because face
+        # normals aren't consistently oriented.
+        if face_is_bordered(face, viewport.scene.faces):
+            commands.append(DeleteFaceCommand(face))
 
         # Top boundary edges.
         for i in range(count):

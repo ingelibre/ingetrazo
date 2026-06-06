@@ -346,6 +346,37 @@ def find_containing_face(
     return best
 
 
+def _loop_edges(loop: list[QVector3D]) -> list[frozenset]:
+    n = len(loop)
+    return [
+        frozenset((_key(loop[i]), _key(loop[(i + 1) % n]))) for i in range(n)
+    ]
+
+
+def face_is_bordered(face: Face, faces: Iterable[Face]) -> bool:
+    """Whether every boundary edge of ``face`` is also an edge of some other
+    face (its boundary or a hole).
+
+    A bordered face is embedded in a surface or solid — a cube's top, or a
+    rectangle drawn inside another face — so push/pull *moves* it and the base
+    is consumed (carving a recess, or extending/shortening a solid without
+    leaving an internal cap). A free-standing face (free edges) is *extruded*,
+    keeping the base as a cap. This is orientation-independent, so it works
+    regardless of how the face happens to be wound.
+    """
+    base_edges = _loop_edges(face.vertices)
+    if not base_edges:
+        return False
+    others: set = set()
+    for f in faces:
+        if f is face:
+            continue
+        others.update(_loop_edges(f.vertices))
+        for hole in f.holes:
+            others.update(_loop_edges(hole))
+    return all(e in others for e in base_edges)
+
+
 # ---- Chord split (a new edge divides an existing face) ---------------------
 
 def _point_on_segment_3d(
