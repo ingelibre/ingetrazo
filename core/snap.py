@@ -6,9 +6,11 @@ Snap kinds (priority high → low):
 3. ``"axis"`` via Shift — Shift held while an axis inference is active.
 4. ``"close"``          — closing the current polygon chain.
 5. ``"endpoint"``       — vertex of an existing edge.
-6. ``"origin"``         — world origin.
-7. ``"axis_inference"`` — soft auto-detected axis alignment (visual cue only).
-8. ``"none"``           — no snap.
+6. ``"midpoint"``       — midpoint of an existing edge.
+7. ``"origin"``         — world origin.
+8. ``"on_edge"``        — arbitrary point along an edge (start a shape on it).
+9. ``"axis_inference"`` — soft auto-detected axis alignment (visual cue only).
+10. ``"none"``          — no snap.
 
 Distance checks for point snaps are done in **screen-space pixels** so the
 snap radius stays constant under zoom. The caller supplies a
@@ -26,6 +28,9 @@ from PySide6.QtGui import QVector3D
 
 # Colors used by the rubber band and the 2D snap indicator. RGB floats [0, 1].
 COLOR_ENDPOINT = (0.16, 0.62, 0.36)
+COLOR_MIDPOINT = (0.20, 0.66, 0.74)  # cyan — midpoint of an edge
+COLOR_ON_EDGE = (0.86, 0.22, 0.27)   # red — arbitrary point on an edge
+COLOR_ON_FACE = (0.42, 0.46, 0.92)   # blue/violet — point on a face
 COLOR_ORIGIN = (0.95, 0.45, 0.16)
 COLOR_CLOSE = (0.20, 0.40, 0.78)
 COLOR_AXIS_X = (0.86, 0.22, 0.27)
@@ -111,6 +116,26 @@ _AXIS_VECTORS = {
 }
 
 
+def _closest_on_segment_2d(
+    p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]
+) -> tuple[float, float]:
+    """Closest point on 2D segment ``ab`` to ``p``. Returns ``(distance, t)``
+    where ``t`` in [0, 1] is the parameter along ``ab`` of that closest point."""
+    ax, ay = a
+    bx, by = b
+    px, py = p
+    dx = bx - ax
+    dy = by - ay
+    denom = dx * dx + dy * dy
+    if denom == 0.0:
+        return math.hypot(px - ax, py - ay), 0.0
+    t = ((px - ax) * dx + (py - ay) * dy) / denom
+    t = max(0.0, min(1.0, t))
+    qx = ax + t * dx
+    qy = ay + t * dy
+    return math.hypot(px - qx, py - qy), t
+
+
 def _vertex_on_line(
     vertex: QVector3D, line_start: QVector3D, line_dir: QVector3D, tol: float = 1e-4
 ) -> bool:
@@ -135,6 +160,9 @@ def compute_snap(
     reference_edge=None,
     reference_mode: Optional[str] = None,
     inference_angle_deg: float = 3.0,
+    is_occluded: Optional[Callable[[QVector3D], bool]] = None,
+    face_under_cursor: bool = False,
+    edge_threshold_px: Optional[float] = None,
 ) -> SnapResult:
     # 1. Explicit axis lock (arrow keys). Use the viewport's camera-aware
     #    projection so locks to Z (vertical) actually move along Z. Existing
@@ -182,13 +210,23 @@ def compute_snap(
     cx, cy = candidate_pixel
     best: Optional[tuple[float, QVector3D, str, tuple[float, float, float]]] = None
 
-    def _consider(world: QVector3D, kind: str, color: tuple[float, float, float]) -> None:
+    def _consider(
+        world: QVector3D,
+        kind: str,
+        color: tuple[float, float, float],
+        occludable: bool = True,
+    ) -> None:
         nonlocal best
         px = world_to_pixel(world)
         if px is None:
             return
         d = math.hypot(px[0] - cx, px[1] - cy)
         if d > threshold_px:
+            return
+        # Only snap to geometry the user can actually see — a vertex hidden
+        # behind a face shouldn't light up. The occlusion test is run after
+        # the cheap pixel filter so it only fires for points near the cursor.
+        if occludable and is_occluded is not None and is_occluded(world):
             return
         if best is None or d < best[0]:
             best = (d, world, kind, color)
@@ -198,19 +236,47 @@ def compute_snap(
         and start_point is not None
         and chain_first_point is not start_point
     ):
-        _consider(chain_first_point, "close", COLOR_CLOSE)
+        # The point being chained to is part of the live drawing, not hidden
+        # scene geometry — never occlusion-cull it.
+        _consider(chain_first_point, "close", COLOR_CLOSE, occludable=False)
 
     if best is None or best[2] != "close":
         for edge in scene.edges:
             _consider(edge.a, "endpoint", COLOR_ENDPOINT)
             _consider(edge.b, "endpoint", COLOR_ENDPOINT)
+            _consider((edge.a + edge.b) * 0.5, "midpoint", COLOR_MIDPOINT)
 
     _consider(QVector3D(0.0, 0.0, 0.0), "origin", COLOR_ORIGIN)
 
     if best is not None:
         return SnapResult(best[1], best[2], best[3])
 
-    # 7. Soft axis inference (no lock; visual cue only).
+    # 8. On-edge: an arbitrary point along an edge. Lower priority than the
+    #    discrete endpoint/midpoint snaps above, so those win when the cursor
+    #    is near them; elsewhere along the edge this lets the user start a
+    #    shape exactly on the edge (e.g. a door resting on a wall's base line).
+    #    An edge is a big linear target, so it gets a more generous radius than
+    #    the point snaps — landing a corner on it (a door on the floor line)
+    #    should be forgiving.
+    et = edge_threshold_px if edge_threshold_px is not None else threshold_px
+    best_edge: Optional[tuple[float, QVector3D]] = None
+    for edge in scene.edges:
+        pa = world_to_pixel(edge.a)
+        pb = world_to_pixel(edge.b)
+        if pa is None or pb is None:
+            continue
+        d, t = _closest_on_segment_2d((cx, cy), pa, pb)
+        if d > et:
+            continue
+        on_pt = edge.a + (edge.b - edge.a) * t
+        if is_occluded is not None and is_occluded(on_pt):
+            continue
+        if best_edge is None or d < best_edge[0]:
+            best_edge = (d, on_pt)
+    if best_edge is not None:
+        return SnapResult(best_edge[1], "on_edge", COLOR_ON_EDGE)
+
+    # 9. Soft axis inference (no lock; visual cue only).
     if start_point is not None:
         inferred = _detect_axis_alignment(
             start_point, candidate_world, inference_angle_deg
@@ -219,5 +285,10 @@ def compute_snap(
             return SnapResult(
                 candidate_world, "axis_inference", AXIS_COLORS[inferred], axis=inferred
             )
+
+    # 10. On-face: the cursor hovers a face with nothing closer to snap to.
+    #     The candidate already lies on that face's plane (the work plane).
+    if face_under_cursor:
+        return SnapResult(candidate_world, "on_face", COLOR_ON_FACE)
 
     return SnapResult(candidate_world, "none", COLOR_NONE)

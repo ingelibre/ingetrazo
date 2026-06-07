@@ -45,6 +45,7 @@ from PySide6.QtGui import (
     QOpenGLFunctions,
     QPainter,
     QPen,
+    QPolygonF,
     QSurfaceFormat,
     QVector3D,
     QVector4D,
@@ -60,6 +61,7 @@ from PySide6.QtOpenGL import (
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core.camera import OrbitCamera
+from core.geometry import Edge, Face
 from core.history import History
 from core.scene import Scene
 from core.snap import SnapResult, compute_snap
@@ -165,6 +167,15 @@ class Viewport(QOpenGLWidget):
     valueBufferChanged = Signal(str)
     sceneVersionChanged = Signal(int)
 
+    # Tooltip text shown next to the snap marker, SketchUp-style.
+    _SNAP_LABELS = {
+        "endpoint": "Endpoint",
+        "midpoint": "Midpoint",
+        "on_edge": "On Edge",
+        "on_face": "On Face",
+        "origin": "Origin",
+    }
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         # Hidden-line removal needs a real depth buffer. setDefaultFormat() in
@@ -201,6 +212,10 @@ class Viewport(QOpenGLWidget):
         # endpoint snap kept firing. SketchUp is tighter — the green dot
         # only lights up right at the vertex.
         self.snap_threshold_px = 9.0
+        # On-edge snap gets a bigger radius than point snaps: an edge is a large
+        # linear target, so resting a corner on it (e.g. a door on the floor
+        # line) should be forgiving and not slip just outside the face.
+        self.edge_snap_threshold_px = 14.0
         self.pick_threshold_px = 8.0
         self.inference_angle_deg = 3.0
 
@@ -222,10 +237,21 @@ class Viewport(QOpenGLWidget):
         self._selected_vao = None
         self._selected_vbo = None
         self._selected_count = 0
+        self._sel_faces_vao = None
+        self._sel_faces_vbo = None
+        self._sel_faces_count = 0
         self._faces_vao = None
         self._faces_vbo = None
         self._faces_count = 0
         self._edges_version = -1
+
+        # Hover highlight (Select tool). Not version-tracked — it changes with
+        # the cursor, not with scene mutations — so it's uploaded per paint.
+        self._hover_entity = None  # None | Edge | Face under the cursor
+        self._hover_faces_vao = None
+        self._hover_faces_vbo = None
+        self._hover_edges_vao = None
+        self._hover_edges_vbo = None
 
         self._rubber_vao = None
         self._rubber_vbo = None
@@ -270,7 +296,10 @@ class Viewport(QOpenGLWidget):
 
         self._edges_vao, self._edges_vbo = self._create_dynamic()
         self._selected_vao, self._selected_vbo = self._create_dynamic()
+        self._sel_faces_vao, self._sel_faces_vbo = self._create_dynamic()
         self._faces_vao, self._faces_vbo = self._create_dynamic()
+        self._hover_faces_vao, self._hover_faces_vbo = self._create_dynamic()
+        self._hover_edges_vao, self._hover_edges_vbo = self._create_dynamic()
         self._rubber_vao, self._rubber_vbo = self._create_dynamic()
 
     def resizeGL(self, w: int, h: int) -> None:
@@ -353,6 +382,29 @@ class Viewport(QOpenGLWidget):
             self._gl.glDrawArrays(GL_TRIANGLES, 0, self._faces_count)
             self._faces_vao.release()
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
+        # Face highlights (selection + hover) — translucent overlays drawn on
+        # top of the cream faces. Same polygon offset as the faces so they sit
+        # at matching depth (LEQUAL lets this later draw win); depth-write OFF
+        # so the overlay tints without blocking the edges drawn afterwards.
+        if self._sel_faces_count > 0 or self._hover_entity is not None:
+            self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+            self._gl.glPolygonOffset(1.0, 1.0)
+            self._gl.glDepthMask(GL_FALSE)
+            if self._sel_faces_count > 0:
+                self._set_color(0.95, 0.45, 0.16, 0.35)  # selection orange tint
+                self._sel_faces_vao.bind()
+                self._gl.glDrawArrays(GL_TRIANGLES, 0, self._sel_faces_count)
+                self._sel_faces_vao.release()
+            if isinstance(self._hover_entity, Face):
+                hover_count = self._upload_hover_face(self._hover_entity)
+                if hover_count > 0:
+                    self._set_color(0.30, 0.55, 0.95, 0.28)  # hover blue tint
+                    self._hover_faces_vao.bind()
+                    self._gl.glDrawArrays(GL_TRIANGLES, 0, hover_count)
+                    self._hover_faces_vao.release()
+            self._gl.glDepthMask(GL_TRUE)
+            self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
         # Axes — drawn BEFORE user edges so any edge the user happens to draw
         # along an axis (or coincident with one) wins the GL_LEQUAL depth
         # test and shows on top of the axis colour. Rubber-band stays on top
@@ -378,6 +430,15 @@ class Viewport(QOpenGLWidget):
             self._selected_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, self._selected_count)
             self._selected_vao.release()
+
+        # Hovered edge — light blue, on top of everything else so it reads as
+        # the pick candidate even when it overlaps a selected (orange) edge.
+        if isinstance(self._hover_entity, Edge):
+            self._upload_hover_edge(self._hover_entity)
+            self._set_color(0.30, 0.55, 0.95, 1.0)
+            self._hover_edges_vao.bind()
+            self._gl.glDrawArrays(GL_LINES, 0, 2)
+            self._hover_edges_vao.release()
 
         # Rubber band preview — always on top. Depth test off so it doesn't
         # z-fight with coincident axes.
@@ -484,8 +545,12 @@ class Viewport(QOpenGLWidget):
         self._edges_vbo.release()
         self._edges_count = len(all_data) // 3
 
+        # The selection set is heterogeneous (edges and/or faces). Split it:
+        # edges go to the highlighted-line VBO, faces to the overlay VBO.
         sel_data = array("f")
         for e in self.scene.selection:
+            if not isinstance(e, Edge):
+                continue
             sel_data.extend([
                 e.a.x(), e.a.y(), e.a.z(),
                 e.b.x(), e.b.y(), e.b.z(),
@@ -498,6 +563,25 @@ class Viewport(QOpenGLWidget):
             self._selected_vbo.allocate(24)
         self._selected_vbo.release()
         self._selected_count = len(sel_data) // 3
+
+        sel_face_data = array("f")
+        for face in self.scene.selection:
+            if not isinstance(face, Face):
+                continue
+            for t0, t1, t2 in face.triangulate():
+                sel_face_data.extend([
+                    t0.x(), t0.y(), t0.z(),
+                    t1.x(), t1.y(), t1.z(),
+                    t2.x(), t2.y(), t2.z(),
+                ])
+        self._sel_faces_vbo.bind()
+        if sel_face_data:
+            sel_face_raw = sel_face_data.tobytes()
+            self._sel_faces_vbo.allocate(sel_face_raw, len(sel_face_raw))
+        else:
+            self._sel_faces_vbo.allocate(24)
+        self._sel_faces_vbo.release()
+        self._sel_faces_count = len(sel_face_data) // 3
 
         # Faces: triangulate each face (fan when simple, hole-aware when the
         # face has been divided) and concatenate into a single VBO.
@@ -520,6 +604,43 @@ class Viewport(QOpenGLWidget):
 
         self._edges_version = self.scene.version
         self.sceneVersionChanged.emit(self._edges_version)
+
+    def _upload_hover_face(self, face: Face) -> int:
+        """Triangulate ``face`` into the hover-faces VBO. Returns vertex count."""
+        data = array("f")
+        for t0, t1, t2 in face.triangulate():
+            data.extend([
+                t0.x(), t0.y(), t0.z(),
+                t1.x(), t1.y(), t1.z(),
+                t2.x(), t2.y(), t2.z(),
+            ])
+        self._hover_faces_vbo.bind()
+        if data:
+            raw = data.tobytes()
+            self._hover_faces_vbo.allocate(raw, len(raw))
+        else:
+            self._hover_faces_vbo.allocate(24)
+        self._hover_faces_vbo.release()
+        return len(data) // 3
+
+    def _upload_hover_edge(self, edge: Edge) -> None:
+        """Upload the single hovered edge into the hover-edges VBO."""
+        data = array("f", [
+            edge.a.x(), edge.a.y(), edge.a.z(),
+            edge.b.x(), edge.b.y(), edge.b.z(),
+        ])
+        self._hover_edges_vbo.bind()
+        raw = data.tobytes()
+        self._hover_edges_vbo.allocate(raw, len(raw))
+        self._hover_edges_vbo.release()
+
+    def set_hover(self, entity) -> None:
+        """Set the entity (edge/face) highlighted under the cursor and repaint
+        if it changed. ``None`` clears the highlight."""
+        if entity is self._hover_entity:
+            return
+        self._hover_entity = entity
+        self.update()
 
     def _draw_rubber_band(self) -> None:
         tool = self.active_tool
@@ -598,13 +719,36 @@ class Viewport(QOpenGLWidget):
         painter.setPen(QPen(color, 2.0))
         painter.setBrush(QColor.fromRgbF(r, g, b, 0.25))
         px, py = pixel
-        if snap.kind == "endpoint" or snap.kind == "origin":
+        if snap.kind in ("endpoint", "origin", "on_edge"):
             painter.drawRect(QRectF(px - 5, py - 5, 10, 10))
+        elif snap.kind == "midpoint":
+            # Cyan diamond, SketchUp-style.
+            diamond = QPolygonF([
+                QPointF(px, py - 6),
+                QPointF(px + 6, py),
+                QPointF(px, py + 6),
+                QPointF(px - 6, py),
+            ])
+            painter.drawPolygon(diamond)
+        elif snap.kind == "on_face":
+            # Small dot — the cursor is over a face, ready to draw on it.
+            painter.drawEllipse(QPointF(px, py), 4.0, 4.0)
         elif snap.kind == "close":
             painter.drawEllipse(QPointF(px, py), 7.0, 7.0)
         elif snap.kind == "reference":
             # Diamond marker for reference lock.
             painter.drawEllipse(QPointF(px, py), 5.0, 5.0)
+
+        # Tooltip text next to the marker (SketchUp shows "On Edge", etc.).
+        label = self._SNAP_LABELS.get(snap.kind)
+        if label:
+            font = QFont()
+            font.setPointSize(9)
+            painter.setFont(font)
+            painter.setPen(QPen(QColor(255, 255, 255, 220)))
+            painter.drawText(QPointF(px + 11, py + 17), label)
+            painter.setPen(QPen(color))
+            painter.drawText(QPointF(px + 10, py + 16), label)
 
     def _draw_length_label(self, painter: QPainter) -> None:
         tool = self.active_tool
@@ -839,21 +983,57 @@ class Viewport(QOpenGLWidget):
                 best = edge
         return best
 
-    def pick_face(self, screen_x: float, screen_y: float):
-        """Return the front-most face the cursor ray hits, or ``None``."""
-        origin, direction = self._pixel_to_ray(screen_x, screen_y)
-        if origin is None or direction is None:
-            return None
-        best_t = float("inf")
-        best = None
+    def _is_occluded(self, world: QVector3D) -> bool:
+        """Whether a face sits between the camera and ``world`` — i.e. the
+        point is hidden behind solid geometry from the current view. Used to
+        keep snaps from firing on edges/vertices the user can't see.
+
+        A small epsilon keeps a point that lies *on* a face (e.g. an edge on
+        that face's boundary) from being reported as occluded by its own
+        face."""
+        origin = self.camera.eye()
+        delta = world - origin
+        dist = delta.length()
+        if dist < 1e-9:
+            return False
+        direction = delta.normalized()
+        eps = 1e-3
         for face in self.scene.faces:
             for t0, t1, t2 in face.triangulate():
                 t = _ray_triangle(origin, direction, t0, t1, t2)
-                if t is not None and t < best_t:
-                    best_t = t
-                    best = face
-                    break  # triangles of one face are coplanar
-        return best
+                if t is not None and t < dist - eps:
+                    return True
+        return False
+
+    def pick_face(self, screen_x: float, screen_y: float):
+        """Return the face the cursor ray hits, or ``None``.
+
+        Normally that's the front-most face. But when several *coplanar* faces
+        overlap at the cursor — e.g. a small rectangle drawn on a larger face
+        that didn't subdivide it — the ray hits them at the same depth. In that
+        case prefer the smallest one, so push/pull and select grab the inner
+        face the user is pointing at instead of the big face behind it (the
+        old behaviour silently pushed the whole face)."""
+        origin, direction = self._pixel_to_ray(screen_x, screen_y)
+        if origin is None or direction is None:
+            return None
+        hits: list[tuple[float, object]] = []
+        for face in self.scene.faces:
+            face_t = None
+            for t0, t1, t2 in face.triangulate():
+                t = _ray_triangle(origin, direction, t0, t1, t2)
+                if t is not None and (face_t is None or t < face_t):
+                    face_t = t
+            if face_t is not None:
+                hits.append((face_t, face))
+        if not hits:
+            return None
+        best_t = min(t for t, _ in hits)
+        eps = max(1e-4, best_t * 1e-4)
+        candidates = [f for t, f in hits if t <= best_t + eps]
+        if len(candidates) == 1:
+            return candidates[0]
+        return min(candidates, key=lambda f: f.area())
 
     # ---- Tool management ----------------------------------------------------
     def set_active_tool(self, tool: Optional[Tool]) -> None:
@@ -862,9 +1042,16 @@ class Viewport(QOpenGLWidget):
         if self.active_tool is not None:
             self.active_tool.on_deactivate(self)
         self.active_tool = tool
+        self._hover_entity = None  # stale highlight from the previous tool
         if tool is not None:
             tool.on_activate(self)
         self.update()
+
+    def leaveEvent(self, ev) -> None:
+        if self._hover_entity is not None:
+            self._hover_entity = None
+            self.update()
+        super().leaveEvent(ev)
 
     # ---- Input --------------------------------------------------------------
     def mousePressEvent(self, ev) -> None:
@@ -1039,6 +1226,9 @@ class Viewport(QOpenGLWidget):
             reference_edge=self.reference_edge,
             reference_mode=self.reference_mode,
             inference_angle_deg=self.inference_angle_deg,
+            is_occluded=self._is_occluded,
+            face_under_cursor=self.pick_face(px_x, px_y) is not None,
+            edge_threshold_px=self.edge_snap_threshold_px,
         )
         self.last_snap = snap
         ctx = ToolContext(
@@ -1163,6 +1353,9 @@ class Viewport(QOpenGLWidget):
             reference_edge=self.reference_edge,
             reference_mode=self.reference_mode,
             inference_angle_deg=self.inference_angle_deg,
+            is_occluded=self._is_occluded,
+            face_under_cursor=self.pick_face(px_x, px_y) is not None,
+            edge_threshold_px=self.edge_snap_threshold_px,
         )
         return ToolContext(
             viewport=self,

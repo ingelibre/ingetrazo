@@ -44,11 +44,11 @@ class Face:
     vertices: list[QVector3D] = field(default_factory=list)
     holes: list[list[QVector3D]] = field(default_factory=list)
 
-    def normal(self) -> QVector3D:
+    def _newell(self) -> QVector3D:
+        """Raw (un-normalized) Newell vector of the outer loop. Its length is
+        twice the polygon's area and its direction is the face normal."""
         n = QVector3D(0.0, 0.0, 0.0)
         count = len(self.vertices)
-        if count < 3:
-            return QVector3D(0.0, 0.0, 1.0)
         for i in range(count):
             curr = self.vertices[i]
             nxt = self.vertices[(i + 1) % count]
@@ -57,9 +57,23 @@ class Face:
                 (curr.z() - nxt.z()) * (curr.x() + nxt.x()),
                 (curr.x() - nxt.x()) * (curr.y() + nxt.y()),
             )
+        return n
+
+    def normal(self) -> QVector3D:
+        if len(self.vertices) < 3:
+            return QVector3D(0.0, 0.0, 1.0)
+        n = self._newell()
         if n.length() < 1e-9:
             return QVector3D(0.0, 0.0, 1.0)
         return n.normalized()
+
+    def area(self) -> float:
+        """Area of the outer loop (holes not subtracted). Used to disambiguate
+        coplanar faces that overlap under the cursor — the smaller one is the
+        inner patch the user is pointing at."""
+        if len(self.vertices) < 3:
+            return 0.0
+        return 0.5 * self._newell().length()
 
     def centroid(self) -> QVector3D:
         count = len(self.vertices)
