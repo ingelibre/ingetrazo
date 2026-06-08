@@ -256,6 +256,11 @@ class Viewport(QOpenGLWidget):
         self._rubber_vao = None
         self._rubber_vbo = None
 
+        # Shaded solid preview (Push/Pull): the forming box's faces, uploaded
+        # per paint while the tool drags.
+        self._preview_faces_vao = None
+        self._preview_faces_vbo = None
+
         # Offscreen FBO with depth attachment. QOpenGLWidget's default target
         # on some Mesa/Wayland stacks has no depth buffer, which silently
         # breaks hidden-line removal. Rendering into our own FBO and blitting
@@ -266,6 +271,11 @@ class Viewport(QOpenGLWidget):
         # Camera navigation state (middle button)
         self._last_pos = None
         self._pan_mode = False
+        # SketchUp-style navigation mode for trackpad users with no middle
+        # mouse button: when set ("orbit" / "pan"), a left-drag drives the
+        # camera instead of the active tool. None means a drawing tool is in
+        # charge of the left button.
+        self.nav_mode: Optional[str] = None
 
         # Rubber-band box selection (left-drag with a box_select tool).
         self._box_active = False
@@ -306,6 +316,7 @@ class Viewport(QOpenGLWidget):
         self._hover_faces_vao, self._hover_faces_vbo = self._create_dynamic()
         self._hover_edges_vao, self._hover_edges_vbo = self._create_dynamic()
         self._rubber_vao, self._rubber_vbo = self._create_dynamic()
+        self._preview_faces_vao, self._preview_faces_vbo = self._create_dynamic()
 
     def resizeGL(self, w: int, h: int) -> None:
         # Qt passes framebuffer-pixel sizes here (already scaled by DPR), so
@@ -410,6 +421,13 @@ class Viewport(QOpenGLWidget):
                     self._hover_faces_vao.release()
             self._gl.glDepthMask(GL_TRUE)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
+        # Shaded solid preview (Push/Pull box forming as you drag). Drawn after
+        # the persistent faces, depth-tested so it occludes geometry behind it
+        # and reads as a real solid; its wireframe goes on top via the rubber
+        # band below.
+        self._draw_preview_faces()
+
         # Axes — drawn BEFORE user edges so any edge the user happens to draw
         # along an axis (or coincident with one) wins the GL_LEQUAL depth
         # test and shows on top of the axis colour. Rubber-band stays on top
@@ -646,6 +664,41 @@ class Viewport(QOpenGLWidget):
             return
         self._hover_entity = entity
         self.update()
+
+    def _draw_preview_faces(self) -> None:
+        """Triangulate and draw the active tool's solid preview faces (if any)
+        in the same warm cream as real faces, so an extrusion looks solid as it
+        forms. Depth-tested with a polygon offset so the wireframe sits cleanly
+        on top."""
+        tool = self.active_tool
+        provider = getattr(tool, "preview_faces", None) if tool is not None else None
+        if not callable(provider):
+            return
+        faces = provider()
+        if not faces:
+            return
+        data = array("f")
+        for face in faces:
+            for t0, t1, t2 in face.triangulate():
+                data.extend([
+                    t0.x(), t0.y(), t0.z(),
+                    t1.x(), t1.y(), t1.z(),
+                    t2.x(), t2.y(), t2.z(),
+                ])
+        if not data:
+            return
+        self._preview_faces_vbo.bind()
+        raw = data.tobytes()
+        self._preview_faces_vbo.allocate(raw, len(raw))
+        self._preview_faces_vbo.release()
+
+        self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+        self._gl.glPolygonOffset(1.0, 1.0)
+        self._set_color(0.92, 0.89, 0.81, 1.0)  # warm cream, same as real faces
+        self._preview_faces_vao.bind()
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, len(data) // 3)
+        self._preview_faces_vao.release()
+        self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
     def _draw_rubber_band(self) -> None:
         tool = self.active_tool
@@ -945,6 +998,18 @@ class Viewport(QOpenGLWidget):
         if forward.length() < 1e-9:
             return start, QVector3D(0.0, 0.0, 1.0)
         forward = forward.normalized()
+        # Tools that drag geometry up and down (Move) use a camera-facing
+        # vertical plane through the grab point, so pulling the mouse up raises
+        # the geometry rigidly instead of sliding it across the ground (which
+        # shears connected faces and looks disordered). The plane contains the
+        # world Z axis; its normal is the camera's horizontal heading. Only when
+        # looking nearly straight down — where height is unreadable anyway — does
+        # it fall back to the horizontal plane.
+        if getattr(tool, "prefers_vertical_drag", False):
+            horiz = QVector3D(forward.x(), forward.y(), 0.0)
+            if horiz.length() >= math.sin(math.radians(self.HORIZON_PITCH_THRESHOLD_DEG)):
+                return start, horiz.normalized()
+            return start, QVector3D(0.0, 0.0, 1.0)
         # |forward.z| ≈ sin(pitch). Anything tilted more than the threshold
         # keeps the horizontal plane.
         if abs(forward.z()) >= math.sin(math.radians(self.HORIZON_PITCH_THRESHOLD_DEG)):
@@ -1068,8 +1133,11 @@ class Viewport(QOpenGLWidget):
 
     # ---- Tool management ----------------------------------------------------
     def set_active_tool(self, tool: Optional[Tool]) -> None:
-        if self.active_tool is tool:
+        if self.active_tool is tool and self.nav_mode is None:
             return
+        # Picking a drawing tool always leaves camera-navigation mode.
+        self.nav_mode = None
+        self.unsetCursor()
         if self.active_tool is not None:
             self.active_tool.on_deactivate(self)
         self.active_tool = tool
@@ -1077,6 +1145,26 @@ class Viewport(QOpenGLWidget):
         self.last_snap = None      # stale snap marker from the previous tool
         if tool is not None:
             tool.on_activate(self)
+        self.update()
+
+    def set_nav_mode(self, mode: Optional[str]) -> None:
+        """Enter a SketchUp-style camera navigation mode ("orbit" / "pan").
+
+        For trackpad users with no middle mouse button: while a nav mode is
+        active the left-drag drives the camera (orbit or pan). The active
+        drawing tool is suspended; return to drawing by picking any tool or
+        pressing Space (Select). ``None`` clears the nav mode.
+        """
+        if self.active_tool is not None:
+            self.active_tool.on_deactivate(self)
+            self.active_tool = None
+        self._hover_entity = None
+        self.last_snap = None
+        self.nav_mode = mode
+        if mode is not None:
+            self.setCursor(Qt.OpenHandCursor)
+        else:
+            self.unsetCursor()
         self.update()
 
     def leaveEvent(self, ev) -> None:
@@ -1090,6 +1178,16 @@ class Viewport(QOpenGLWidget):
         if ev.button() == Qt.MiddleButton:
             self._last_pos = ev.position().toPoint()
             self._pan_mode = bool(ev.modifiers() & Qt.ShiftModifier)
+            return
+        # SketchUp-style nav buttons: left-drag orbits/pans the camera.
+        # Hold Shift while orbiting to pan temporarily (matches MMB+Shift).
+        if ev.button() == Qt.LeftButton and self.nav_mode is not None:
+            self._last_pos = ev.position().toPoint()
+            self._pan_mode = (
+                self.nav_mode == "pan"
+                or bool(ev.modifiers() & Qt.ShiftModifier)
+            )
+            self.setCursor(Qt.ClosedHandCursor)
             return
         if ev.button() == Qt.LeftButton and self.active_tool is not None:
             # Box-select tools defer the decision to release: a tiny drag is a
@@ -1164,6 +1262,12 @@ class Viewport(QOpenGLWidget):
         if ev.button() == Qt.MiddleButton:
             self._last_pos = None
             self._pan_mode = False
+            return
+
+        if ev.button() == Qt.LeftButton and self.nav_mode is not None:
+            self._last_pos = None
+            self._pan_mode = False
+            self.setCursor(Qt.OpenHandCursor)
             return
 
         if ev.button() == Qt.LeftButton and self._box_active:
@@ -1305,6 +1409,7 @@ class Viewport(QOpenGLWidget):
             is_occluded=self._is_occluded,
             face_under_cursor=self.pick_face(px_x, px_y) is not None,
             edge_threshold_px=self.edge_snap_threshold_px,
+            magnetic_axis_deg=getattr(self.active_tool, "magnetic_axis_deg", None),
         )
         self.last_snap = snap
         ctx = ToolContext(
@@ -1448,6 +1553,7 @@ class Viewport(QOpenGLWidget):
             is_occluded=self._is_occluded,
             face_under_cursor=self.pick_face(px_x, px_y) is not None,
             edge_threshold_px=self.edge_snap_threshold_px,
+            magnetic_axis_deg=getattr(self.active_tool, "magnetic_axis_deg", None),
         )
         return ToolContext(
             viewport=self,

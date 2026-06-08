@@ -90,6 +90,25 @@ class MainWindow(QMainWindow):
         select_action.setShortcuts([QKeySequence("S"), QKeySequence(Qt.Key_Space)])
         select_action.setToolTip("Select (Space / S)")
 
+        # Camera-navigation buttons (SketchUp Orbit / Pan). Essential on a
+        # trackpad with no middle mouse button: click one, then left-drag to
+        # move the view. They live in the same exclusive group as the drawing
+        # tools, so entering nav unchecks the active tool and vice versa.
+        toolbar.addSeparator()
+        self._nav_actions: dict[str, QAction] = {}
+        for key, label, short, tip in [
+            ("orbit", "Orbit", "O", "Orbit (O) — left-drag to rotate the view"),
+            ("pan", "Pan", "H", "Pan (H) — left-drag to slide the view"),
+        ]:
+            action = QAction(f"{label} ({short})", self)
+            action.setCheckable(True)
+            action.setShortcut(QKeySequence(short))
+            action.setToolTip(tip)
+            action.triggered.connect(lambda _checked, k=key: self._activate_nav(k))
+            self._tool_group.addAction(action)
+            toolbar.addAction(action)
+            self._nav_actions[key] = action
+
     def _build_menubar(self) -> None:
         menubar = self.menuBar()
 
@@ -148,6 +167,9 @@ class MainWindow(QMainWindow):
         for action in self._tool_actions.values():
             tools_menu.addAction(action)
         tools_menu.addSeparator()
+        for action in self._nav_actions.values():
+            tools_menu.addAction(action)
+        tools_menu.addSeparator()
         action_cancel = QAction("Cancel current tool", self)
         action_cancel.setShortcut(QKeySequence("Esc"))
         action_cancel.triggered.connect(self._cancel_tool)
@@ -194,7 +216,8 @@ class MainWindow(QMainWindow):
         bar = QStatusBar(self)
         self.setStatusBar(bar)
         bar.showMessage(
-            "MMB-drag: orbit  ·  Shift+MMB-drag: pan  ·  Wheel: zoom  ·  "
+            "Orbit (O) / Pan (H) buttons: left-drag to move the view  ·  "
+            "MMB-drag: orbit  ·  Shift+MMB-drag: pan  ·  Wheel / 2-finger: zoom  ·  "
             "P: persp/parallel  ·  →←↑: lock X/Y/Z  ·  ↓: par/perp to ref  ·  "
             "Shift: lock inference  ·  Type N + Enter: exact length  ·  "
             "Type X;Y;Z + Enter: 3D delta"
@@ -227,6 +250,13 @@ class MainWindow(QMainWindow):
         if action is not None:
             action.setChecked(True)
         self._tool_label.setText(f"Tool: {tool.name}")
+
+    def _activate_nav(self, key: str) -> None:
+        self.viewport.set_nav_mode(key)
+        action = self._nav_actions.get(key)
+        if action is not None:
+            action.setChecked(True)
+        self._tool_label.setText(f"Nav: {key.capitalize()}")
 
     def _cancel_tool(self) -> None:
         if self.viewport.active_tool is not None:

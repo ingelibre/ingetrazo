@@ -94,3 +94,13 @@ class Tool(ABC):
         don't preview anything default to an empty list.
         """
         return []
+
+    def preview_faces(self):
+        """Return ``Face`` objects to render shaded as a live solid preview.
+
+        Push/Pull uses this so the extruded box appears filled while you drag,
+        the way SketchUp shows the solid forming — not just its wireframe. The
+        viewport triangulates and draws them depth-tested every frame; tools
+        that have no solid preview default to an empty list.
+        """
+        return []

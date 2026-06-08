@@ -32,6 +32,14 @@ class MoveTool(Tool):
     name = "Move"
     shortcut = "M"
 
+    # Drag on a camera-facing vertical plane (not the ground) so pulling the
+    # mouse up raises geometry — what lets you lift a roof ridge straight up.
+    prefers_vertical_drag = True
+    # Magnetically lock to the nearest world axis within this angle, projecting
+    # onto the axis line. Keeps a move rigid and axis-aligned (a 3 m ridge stays
+    # 3 m and level) without holding Shift; arrow-key locks still override it.
+    magnetic_axis_deg = 15.0
+
     def __init__(self) -> None:
         # ``start_point`` drives the viewport's snap / axis-lock machinery, same
         # as the drawing tools. ``grab`` is the handle the delta is measured

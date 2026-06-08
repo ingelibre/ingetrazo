@@ -163,6 +163,7 @@ def compute_snap(
     is_occluded: Optional[Callable[[QVector3D], bool]] = None,
     face_under_cursor: bool = False,
     edge_threshold_px: Optional[float] = None,
+    magnetic_axis_deg: Optional[float] = None,
 ) -> SnapResult:
     # 1. Explicit axis lock (arrow keys). Use the viewport's camera-aware
     #    projection so locks to Z (vertical) actually move along Z. Existing
@@ -276,8 +277,21 @@ def compute_snap(
     if best_edge is not None:
         return SnapResult(best_edge[1], "on_edge", COLOR_ON_EDGE)
 
-    # 9. Soft axis inference (no lock; visual cue only).
+    # 9. Axis inference. Normally a soft visual cue only (you Shift to lock).
+    #    When ``magnetic_axis_deg`` is set (the Move tool), the inference is
+    #    *magnetic*: within that wider angle of an axis the point is projected
+    #    onto the axis line and hard-locked, so dragging roughly up moves
+    #    straight up and the geometry keeps its length and alignment without
+    #    holding a modifier. Point/edge snaps above still win, so you can still
+    #    move exactly onto an existing vertex.
     if start_point is not None:
+        if magnetic_axis_deg is not None and project_onto_line is not None:
+            inferred = _detect_axis_alignment(
+                start_point, candidate_world, magnetic_axis_deg
+            )
+            if inferred is not None:
+                locked = project_onto_line(start_point, _AXIS_VECTORS[inferred])
+                return SnapResult(locked, "axis", AXIS_COLORS[inferred], axis=inferred)
         inferred = _detect_axis_alignment(
             start_point, candidate_world, inference_angle_deg
         )

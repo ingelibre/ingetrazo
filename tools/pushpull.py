@@ -135,6 +135,23 @@ class PushPullTool(Tool):
             segments.append((v_base, v_top))
         return segments
 
+    def preview_faces(self):
+        """Shaded solid preview: the moved cap plus a side wall per base edge,
+        so the box reads as a forming solid while dragging (SketchUp-style),
+        not just a wireframe."""
+        if not self.dragging or self.base_face is None or abs(self.extrusion) < 1e-6:
+            return []
+        n = self.base_face.normal()
+        d = self.extrusion
+        base = self.base_face.vertices
+        top = [v + n * d for v in base]
+        count = len(base)
+        faces = [Face(list(top))]
+        for i in range(count):
+            j = (i + 1) % count
+            faces.append(Face([base[i], base[j], top[j], top[i]]))
+        return faces
+
     def value_label(self):
         """Return ``(text, midpoint_world)`` for the floating distance label."""
         if not self.dragging or self.base_face is None:
