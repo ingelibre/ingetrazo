@@ -1099,6 +1099,37 @@ def orient_coplanar_faces(mesh) -> list:
     return flipped
 
 
+def _collinear_overlapping(e1, e2) -> bool:
+    """Whether edge ``e1`` lies collinearly over ``e2`` with overlapping span."""
+    a, b, c, d = e1.a, e1.b, e2.a, e2.b
+    d1, d2 = b - a, d - c
+    if d1.length() < 1e-9 or d2.length() < 1e-9:
+        return False
+    u = d2.normalized()
+    if QVector3D.crossProduct(d1.normalized(), u).length() > 1e-4:
+        return False  # not parallel
+    rel = a - c
+    if (rel - u * QVector3D.dotProduct(rel, u)).length() > _PLANAR_TOLERANCE:
+        return False  # parallel but offset (different line)
+    ta = QVector3D.dotProduct(a - c, u)
+    tb = QVector3D.dotProduct(b - c, u)
+    lo1, hi1 = min(ta, tb), max(ta, tb)
+    return min(hi1, d2.length()) - max(lo1, 0.0) > 1e-4
+
+
+def prune_collinear_orphan_edges(mesh) -> list:
+    """Remove edges that bound no face and lie collinearly over another edge — the
+    unwelded collinear overlaps that leave a duplicate 'division line'. Returns
+    the removed edges."""
+    removed = []
+    for e in [edge for edge in mesh.edges if len(edge.faces) == 0]:
+        if any(other is not e and _collinear_overlapping(e, other)
+               for other in mesh.edges):
+            mesh.remove_edge(e)
+            removed.append(e)
+    return removed
+
+
 def _mesh_is_flat(mesh) -> bool:
     """Whether every face lies on one common plane — a flat 2D drawing, where the
     aggressive partial-overlap cleanup is safe (in 3D, coplanar faces inside each
@@ -1142,7 +1173,12 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None) -> list:
     if partial is None:
         partial = _mesh_is_flat(mesh)
 
-    # 0. Flip any reversed face so coplanar faces face the same way.
+    # 0a. Prune duplicate division lines: an edge bounding no face that lies
+    #     collinearly over another edge (the unwelded collinear-overlap that
+    #     leaves a "doubled line" you can't merge away).
+    prune_collinear_orphan_edges(mesh)
+
+    # 0b. Flip any reversed face so coplanar faces face the same way.
     orient_coplanar_faces(mesh)
 
     # 1. Dedupe nested holes by rebuilding the face with the outermost holes.
