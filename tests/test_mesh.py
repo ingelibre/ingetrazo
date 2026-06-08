@@ -1,0 +1,157 @@
+"""Shared-vertex, non-manifold connectivity mesh (core.mesh).
+
+Phase M0 of the topology migration (docs/halfedge-migration-plan.md): the new
+model is built and tested in parallel; the running app is not wired to it yet.
+
+The point of the new model: vertices are shared objects, edges carry a radial
+list of incident faces (which may exceed two), and moving a vertex moves every
+edge/face referencing it for free — no position matching, no float tolerance.
+"""
+from __future__ import annotations
+
+from PySide6.QtGui import QVector3D
+
+from core.mesh import Edge, Face, Mesh, Vertex
+
+
+def V(x: float, y: float, z: float = 0.0) -> QVector3D:
+    return QVector3D(float(x), float(y), float(z))
+
+
+# ---- welding ----------------------------------------------------------------
+
+def test_coincident_positions_weld_to_one_vertex():
+    m = Mesh()
+    a = m.vertex(V(1, 1, 1))
+    b = m.vertex(V(1, 1, 1))
+    assert a is b
+    assert len(m.vertices) == 1
+
+
+def test_weld_within_tolerance():
+    m = Mesh()
+    a = m.vertex(V(1, 0, 0))
+    b = m.vertex(V(1.00001, 0, 0))  # < 0.1 mm
+    assert a is b
+
+
+def test_two_edges_sharing_a_corner_share_the_vertex():
+    m = Mesh()
+    e1 = m.add_edge(V(0, 0), V(1, 0))
+    e2 = m.add_edge(V(1, 0), V(1, 1))
+    # The shared corner is a single Vertex object, referenced by both edges.
+    assert e1.v1 is e2.v0
+    assert len(m.vertices) == 3
+    assert e1.v1.edges == {e1, e2}
+
+
+def test_add_edge_dedups():
+    m = Mesh()
+    e1 = m.add_edge(V(0, 0), V(2, 0))
+    e2 = m.add_edge(V(2, 0), V(0, 0))  # reversed — same edge
+    assert e1 is e2
+    assert len(m.edges) == 1
+
+
+def test_degenerate_edge_rejected():
+    m = Mesh()
+    try:
+        m.add_edge(V(0, 0), V(0, 0))
+    except ValueError:
+        return
+    raise AssertionError("degenerate edge should raise")
+
+
+# ---- radial incidence (non-manifold) ----------------------------------------
+
+def test_edge_between_two_faces_has_both():
+    m = Mesh()
+    m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    m.add_face([V(1, 0), V(2, 0), V(2, 1), V(1, 1)])
+    shared = m.find_edge(m.vertex_at(V(1, 0)), m.vertex_at(V(1, 1)))
+    assert shared is not None
+    assert len(shared.faces) == 2
+
+
+def test_non_manifold_edge_carries_three_faces():
+    # Three faces meeting along the edge (0,0,0)-(0,0,1) — like two walls and a
+    # floor sharing a corner edge. The legacy model can't express this cleanly.
+    m = Mesh()
+    e = (V(0, 0, 0), V(0, 0, 1))
+    m.add_face([e[0], e[1], V(1, 0, 1), V(1, 0, 0)])   # wall in +x
+    m.add_face([e[0], e[1], V(0, 1, 1), V(0, 1, 0)])   # wall in +y
+    m.add_face([e[0], e[1], V(-1, 0, 1), V(-1, 0, 0)])  # wall in -x
+    shared = m.find_edge(m.vertex_at(V(0, 0, 0)), m.vertex_at(V(0, 0, 1)))
+    assert len(shared.faces) == 3
+
+
+def test_remove_face_detaches_incidence():
+    m = Mesh()
+    f1 = m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    m.add_face([V(1, 0), V(2, 0), V(2, 1), V(1, 1)])
+    shared = m.find_edge(m.vertex_at(V(1, 0)), m.vertex_at(V(1, 1)))
+    assert len(shared.faces) == 2
+    m.remove_face(f1)
+    assert f1 not in m.faces
+    assert len(shared.faces) == 1            # only the survivor remains
+    assert shared in m.edges                 # shared edge still there
+
+
+def test_vertex_faces_query():
+    m = Mesh()
+    m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    m.add_face([V(1, 0), V(2, 0), V(2, 1), V(1, 1)])
+    corner = m.vertex_at(V(1, 0))
+    assert len(corner.faces()) == 2
+
+
+# ---- the headline: move follows for free ------------------------------------
+
+def test_move_vertex_drags_all_incident_geometry():
+    # Two faces sharing the edge (1,0)-(1,1). Moving those shared vertices up
+    # must lift the matching corner of *both* faces — they hold the same
+    # objects, so it is automatic (this is the gable-ridge mechanic, now free).
+    m = Mesh()
+    left = m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    right = m.add_face([V(1, 0), V(2, 0), V(2, 1), V(1, 1)])
+    m.move_vertex(m.vertex_at(V(1, 0)), V(0, 0, 1))
+    m.move_vertex(m.vertex_at(V(1, 1)), V(0, 0, 1))
+
+    def raised(face):
+        return {(round(p.x()), round(p.y()), round(p.z())) for p in face.positions()
+                if abs(p.z() - 1) < 1e-6}
+
+    assert raised(left) == {(1, 0, 1), (1, 1, 1)}
+    assert raised(right) == {(1, 0, 1), (1, 1, 1)}
+
+
+def test_move_vertex_rekeys_registry():
+    m = Mesh()
+    v = m.vertex(V(0, 0, 0))
+    m.move_vertex(v, V(5, 0, 0))
+    assert m.vertex_at(V(0, 0, 0)) is None
+    assert m.vertex_at(V(5, 0, 0)) is v
+    # A later weld at the new spot reuses it.
+    assert m.vertex(V(5, 0, 0)) is v
+
+
+# ---- face geometry (parity with legacy Face) --------------------------------
+
+def test_face_geometry_basics():
+    m = Mesh()
+    f = m.add_face([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
+    assert abs(f.area() - 4.0) < 1e-6
+    n = f.normal()
+    assert abs(n.x()) < 1e-6 and abs(n.y()) < 1e-6 and abs(abs(n.z()) - 1) < 1e-6
+    c = f.centroid()
+    assert abs(c.x() - 1) < 1e-6 and abs(c.y() - 1) < 1e-6
+    assert len(f.triangulate()) == 2  # a quad → two triangles
+
+
+def test_add_face_creates_boundary_edges_and_reuses_them():
+    m = Mesh()
+    m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    assert len(m.edges) == 4
+    # An adjacent face reuses the shared edge instead of stacking a duplicate.
+    m.add_face([V(1, 0), V(2, 0), V(2, 1), V(1, 1)])
+    assert len(m.edges) == 7  # 4 + 3 new (one shared)
