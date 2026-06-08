@@ -90,6 +90,15 @@ class OrbitCamera:
         factor = 0.9 ** steps
         self.distance = max(0.5, min(self.distance * factor, 10000.0))
 
+    def zoom_to(self, steps: float, focus: QVector3D) -> None:
+        """Zoom keeping the world point ``focus`` (under the cursor) fixed on
+        screen, SketchUp-style. The whole frame scales toward ``focus``, so both
+        the distance and the target move by the same (clamped) factor."""
+        new_distance = max(0.5, min(self.distance * (0.9 ** steps), 10000.0))
+        factor = new_distance / self.distance if self.distance > 1e-9 else 1.0
+        self.target = focus + (self.target - focus) * factor
+        self.distance = new_distance
+
     def set_aspect(self, w: int, h: int) -> None:
         self.aspect = max(w, 1) / max(h, 1)
 

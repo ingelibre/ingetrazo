@@ -23,6 +23,7 @@ from formats import igz as igz_format
 from tools.line import LineTool
 from tools.move import MoveTool
 from tools.offset import OffsetTool
+from tools.paste import PasteTool
 from tools.pushpull import PushPullTool
 from tools.rectangle import RectangleTool
 from tools.select import SelectTool
@@ -134,6 +135,23 @@ class MainWindow(QMainWindow):
         )
         self._redo_action.triggered.connect(self._on_redo)
         edit_menu.addAction(self._redo_action)
+
+        edit_menu.addSeparator()
+
+        copy_action = QAction("Copy", self)
+        copy_action.setShortcut(QKeySequence.Copy)
+        copy_action.triggered.connect(lambda: self.viewport.copy_selection())
+        edit_menu.addAction(copy_action)
+
+        cut_action = QAction("Cut", self)
+        cut_action.setShortcut(QKeySequence.Cut)
+        cut_action.triggered.connect(lambda: self.viewport.cut_selection())
+        edit_menu.addAction(cut_action)
+
+        paste_action = QAction("Paste", self)
+        paste_action.setShortcut(QKeySequence.Paste)
+        paste_action.triggered.connect(self._on_paste)
+        edit_menu.addAction(paste_action)
 
         # View menu
         view_menu = menubar.addMenu("View")
@@ -294,7 +312,19 @@ class MainWindow(QMainWindow):
         self._tool_label.setText(f"Nav: {key.capitalize()}")
         self._refresh_vcb()
 
+    def _on_paste(self) -> None:
+        if self.viewport.clipboard is None:
+            return
+        self.viewport.set_active_tool(PasteTool())
+        for action in self._tool_actions.values():
+            action.setChecked(False)
+        self._tool_label.setText("Tool: Paste")
+        self._refresh_vcb()
+
     def _cancel_tool(self) -> None:
+        if isinstance(self.viewport.active_tool, PasteTool):
+            self._activate_tool("select")
+            return
         if self.viewport.active_tool is not None:
             self.viewport.active_tool.on_cancel(self.viewport)
 

@@ -62,7 +62,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core.camera import OrbitCamera
 from core.mesh import Edge, Face
-from core.history import History
+from core.history import EraseSelectionCommand, History
 from core.scene import Scene
 from core.snap import SnapResult, compute_snap
 from tools.base import Tool, ToolContext
@@ -203,6 +203,9 @@ class Viewport(QOpenGLWidget):
         self.active_tool: Optional[Tool] = None
         self.axis_lock: Optional[str] = None  # None | "x" | "y" | "z"
         self.last_snap: Optional[SnapResult] = None
+        # Copy/paste clipboard: copied geometry (faces + edges) as positions,
+        # plus a reference corner so Paste can place it under the cursor.
+        self.clipboard: Optional[dict] = None
 
         # Reference-edge state (Down arrow → parallel / perpendicular).
         self.reference_edge = None
@@ -1213,6 +1216,39 @@ class Viewport(QOpenGLWidget):
         self.measurementChanged.emit(self._measurement_text())
         self.update()
 
+    # ---- Copy / paste -------------------------------------------------------
+    def copy_selection(self) -> bool:
+        """Copy the selected faces and edges into the clipboard (as positions,
+        with a reference corner). Returns False if nothing is selected."""
+        faces = [f for f in self.scene.selection if isinstance(f, Face)]
+        edges = [e for e in self.scene.selection if isinstance(e, Edge)]
+        if not faces and not edges:
+            return False
+        face_data = [
+            ([QVector3D(v) for v in f.vertices],
+             [[QVector3D(v) for v in h] for h in f.holes])
+            for f in faces
+        ]
+        edge_data = [(QVector3D(e.a), QVector3D(e.b)) for e in edges]
+        pts = [p for loop, holes in face_data for p in loop]
+        pts += [p for _, holes in face_data for h in holes for p in h]
+        pts += [p for a, b in edge_data for p in (a, b)]
+        ref = QVector3D(min(p.x() for p in pts),
+                        min(p.y() for p in pts),
+                        min(p.z() for p in pts))
+        self.clipboard = {"faces": face_data, "edges": edge_data, "ref": ref}
+        return True
+
+    def cut_selection(self) -> bool:
+        """Copy the selection, then erase it (one undoable step)."""
+        if not self.copy_selection():
+            return False
+        faces = [f for f in self.scene.selection if isinstance(f, Face)]
+        edges = [e for e in self.scene.selection if isinstance(e, Edge)]
+        self.history.execute(EraseSelectionCommand(edges, faces))
+        self.update()
+        return True
+
     def set_nav_mode(self, mode: Optional[str]) -> None:
         """Enter a SketchUp-style camera navigation mode ("orbit" / "pan").
 
@@ -1364,8 +1400,44 @@ class Viewport(QOpenGLWidget):
                 tool.on_box_select(self, rect, crossing, additive)
             self.update()
 
+    def _world_under_cursor(self, x: float, y: float) -> Optional[QVector3D]:
+        """The world point the cursor points at: nearest geometry hit, else the
+        ground plane (Z=0), else the focal plane through the target."""
+        origin, direction = self._pixel_to_ray(x, y)
+        if origin is None or direction is None:
+            return None
+        best_t = None
+        for face in self.scene.faces:
+            for t0, t1, t2 in face.triangulate():
+                t = _ray_triangle(origin, direction, t0, t1, t2)
+                if t is not None and (best_t is None or t < best_t):
+                    best_t = t
+        if best_t is not None:
+            return origin + direction * best_t
+        if abs(direction.z()) > 1e-6:
+            t = -origin.z() / direction.z()
+            if t > 0:
+                return origin + direction * t
+        view = (self.camera.target - self.camera.eye())
+        if view.length() > 1e-9:
+            view = view.normalized()
+            denom = QVector3D.dotProduct(direction, view)
+            if abs(denom) > 1e-6:
+                t = QVector3D.dotProduct(self.camera.target - origin, view) / denom
+                if t > 0:
+                    return origin + direction * t
+        return None
+
     def wheelEvent(self, ev) -> None:
-        self.camera.zoom(ev.angleDelta().y() / 120.0)
+        # Zoom toward the cursor (SketchUp-style): keep the point under the
+        # pointer fixed on screen, not the origin.
+        steps = ev.angleDelta().y() / 120.0
+        pos = ev.position()
+        focus = self._world_under_cursor(pos.x(), pos.y())
+        if focus is not None:
+            self.camera.zoom_to(steps, focus)
+        else:
+            self.camera.zoom(steps)
         self.update()
 
     def keyPressEvent(self, ev) -> None:
