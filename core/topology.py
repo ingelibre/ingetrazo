@@ -418,6 +418,43 @@ def _segment_on_face_boundary(a: QVector3D, b: QVector3D, face: Face) -> bool:
     return False
 
 
+def refine_loop_with_points(
+    loop: list[QVector3D], points: Iterable[QVector3D], tol: float = _SPLIT_TOLERANCE
+) -> list[QVector3D]:
+    """Insert any ``points`` that lie on an edge's interior into ``loop``.
+
+    A pushed wall whose edge runs along a *T-junction* — where the host wall ends
+    and an earlier overhang's floor begins — has that edge covered piecewise by
+    two faces, but no single one, so it reads as ``free``. Splitting the edge at
+    the existing vertices sitting on it makes each sub-segment carried by one
+    face, so push/pull classifies (and consumes) it correctly. Returns a new loop
+    with the collinear points inserted in order; the originals are untouched."""
+    out: list[QVector3D] = []
+    n = len(loop)
+    pts = list(points)
+    for i in range(n):
+        a = loop[i]
+        b = loop[(i + 1) % n]
+        out.append(a)
+        ab = b - a
+        length = ab.length()
+        if length < tol:
+            continue
+        on: list[tuple[float, QVector3D]] = []
+        for p in pts:
+            if same_position(p, a) or same_position(p, b):
+                continue
+            t = QVector3D.dotProduct(p - a, ab) / (length * length)
+            if t <= tol / length or t >= 1.0 - tol / length:
+                continue
+            if (p - (a + ab * t)).length() < tol:
+                on.append((t, p))
+        on.sort(key=lambda it: it[0])
+        for _, p in on:
+            out.append(QVector3D(p))
+    return out
+
+
 def classify_push_edge(
     face: Face, a: QVector3D, b: QVector3D, faces: Iterable[Face]
 ) -> tuple[str, Optional[Face]]:
@@ -428,6 +465,12 @@ def classify_push_edge(
     - ``("perp", s)`` — a non-coplanar face carries this edge on its boundary
       (the solid's side wall); pushing in notches that wall.
     - ``("free", None)`` — nothing adjacent; a free extrusion edge.
+
+    A coplanar neighbour is matched even when it carries the edge only as a
+    *sub-segment* of a wider boundary edge (its own edge was never split at this
+    vertex — the colinear-overlap case). Without this, a block flush against a
+    wider wall reads its shared edge as ``free`` and the push becomes a stray
+    free extrusion that leaves the base as an internal partition.
     """
     fn = face.normal()
     eset = frozenset((_key(a), _key(b)))
@@ -435,7 +478,9 @@ def classify_push_edge(
     for g in faces:
         if g is face:
             continue
-        if _faces_coplanar(fn, g.normal()) and eset in _face_all_edges(g):
+        if _faces_coplanar(fn, g.normal()) and (
+            eset in _face_all_edges(g) or _segment_on_face_boundary(a, b, g)
+        ):
             return ("coplanar", g)
     for s in faces:
         if s is face or _faces_coplanar(fn, s.normal()):
@@ -784,6 +829,23 @@ def extend_wall_edge(
     n = len(face.vertices)
     if not (abs(ia - ib) == 1 or {ia, ib} == {0, n - 1}):
         return None  # a, b not adjacent → not a single boundary edge
+    # Only a *true prism extend* applies here: the whole wall grows, so both
+    # endpoints must be real corners. If the wall continues straight past an
+    # endpoint (a T-junction — the host is wider than the pushed cap, so the
+    # wall carries on at the old level), moving that vertex up would collapse
+    # the step into a diagonal slant. Bail so the caller raises a coplanar strip
+    # instead, which coplanar-merge then fuses into a clean L (step), not a wedge.
+    verts = face.vertices
+    for idx, other_idx in ((ia, ib), (ib, ia)):
+        outer = verts[(idx - 1) % n]
+        if (idx - 1) % n == other_idx:
+            outer = verts[(idx + 1) % n]
+        d_into = verts[idx] - outer            # wall edge arriving at the vertex
+        d_along = verts[other_idx] - verts[idx]  # the edge being moved
+        if d_into.length() < 1e-9 or d_along.length() < 1e-9:
+            continue
+        if QVector3D.dotProduct(d_into.normalized(), d_along.normalized()) > 0.999:
+            return None  # collinear continuation → not a corner; not a prism extend
     new_loop = list(face.vertices)
     new_loop[ia] = QVector3D(a2)
     new_loop[ib] = QVector3D(b2)

@@ -31,6 +31,10 @@ from PySide6.QtGui import QVector3D
 # scale) are the same vertex. Same value as legacy ``core.topology``.
 _KEY_DECIMALS = 4
 
+# Distance tolerance for the stitch pass (a point this close to an edge counts
+# as on it). Matches the weld key resolution.
+_STITCH_TOL = 1e-4
+
 
 def _key(p: QVector3D) -> tuple[float, float, float]:
     return (round(p.x(), _KEY_DECIMALS),
@@ -276,6 +280,100 @@ class Mesh:
         if face in self.faces:
             self.faces.remove(face)
 
+    # ---- Re-link (undo support) --------------------------------------------
+    def relink_edge(self, edge: Edge) -> None:
+        """Re-attach a previously removed edge object (undo), preserving its
+        identity so other commands' references stay valid."""
+        if edge in self.edges:
+            return
+        edge.v0.edges.add(edge)
+        edge.v1.edges.add(edge)
+        self.edges.append(edge)
+        self._registry.setdefault(_key(edge.v0.position), edge.v0)
+        self._registry.setdefault(_key(edge.v1.position), edge.v1)
+
+    def relink_face(self, face: Face) -> None:
+        """Re-attach a previously removed face object (undo), recreating any
+        missing boundary edges and re-registering incidence."""
+        if face in self.faces:
+            return
+        for lp in (face.loop, *face.hole_loops):
+            n = len(lp)
+            for i in range(n):
+                edge = self._link_edge(lp[i], lp[(i + 1) % n])
+                if face not in edge.faces:
+                    edge.faces.append(face)
+        self.faces.append(face)
+
+    # ---- Holes --------------------------------------------------------------
+    def add_hole(self, face: Face, loop_positions: Iterable[QVector3D]) -> list[Vertex]:
+        """Punch a hole into ``face`` (a window/door drawn inside it). Welds the
+        loop's vertices, ensures its boundary edges, and registers the face on
+        them. Returns the vertex loop so undo can remove exactly this hole."""
+        loop = [self.vertex(p) for p in loop_positions]
+        face.hole_loops.append(loop)
+        n = len(loop)
+        for i in range(n):
+            edge = self._link_edge(loop[i], loop[(i + 1) % n])
+            if face not in edge.faces:
+                edge.faces.append(face)
+        return loop
+
+    def remove_hole(self, face: Face, loop: list[Vertex]) -> None:
+        if loop in face.hole_loops:
+            face.hole_loops.remove(loop)
+        n = len(loop)
+        for i in range(n):
+            edge = self.find_edge(loop[i], loop[(i + 1) % n])
+            if edge is not None and face in edge.faces:
+                edge.faces.remove(face)
+
+    # ---- State snapshot (identity-preserving) -------------------------------
+    def capture_state(self) -> dict:
+        """Snapshot the mesh keeping *object identity*: the same vertex/edge/face
+        objects, plus a copy of every mutable field. :meth:`restore_state` brings
+        the exact objects back, so delta commands holding references stay valid.
+
+        Used by the stitch pass, whose splits/merges/collapses interact too much
+        for a clean per-op inverse — restoring the whole touched mesh is robust."""
+        return {
+            "vertices": list(self.vertices),
+            "edges": list(self.edges),
+            "faces": list(self.faces),
+            "registry": dict(self._registry),
+            "vpos": {v: QVector3D(v.position) for v in self.vertices},
+            "vedges": {v: set(v.edges) for v in self.vertices},
+            "efaces": {e: list(e.faces) for e in self.edges},
+            "floop": {f: list(f.loop) for f in self.faces},
+            "fholes": {f: [list(h) for h in f.hole_loops] for f in self.faces},
+        }
+
+    def restore_state(self, snap: dict) -> None:
+        """Restore a :meth:`capture_state` snapshot. Objects created since are
+        dropped; captured ones are re-listed with their fields reset."""
+        self.vertices[:] = snap["vertices"]
+        self.edges[:] = snap["edges"]
+        self.faces[:] = snap["faces"]
+        self._registry.clear()
+        self._registry.update(snap["registry"])
+        for v, p in snap["vpos"].items():
+            v.position = QVector3D(p)
+        for v, es in snap["vedges"].items():
+            v.edges = set(es)
+        for e, fs in snap["efaces"].items():
+            e.faces = list(fs)
+        for f, loop in snap["floop"].items():
+            f.loop = list(loop)
+        for f, holes in snap["fholes"].items():
+            f.hole_loops = [list(h) for h in holes]
+
+    # ---- Reset --------------------------------------------------------------
+    def clear(self) -> None:
+        self._registry.clear()
+        self.vertices.clear()
+        self.edges.clear()
+        self.faces.clear()
+
     # ---- Incidence queries --------------------------------------------------
     def edges_at(self, v: Vertex) -> set[Edge]:
         return set(v.edges)
@@ -345,3 +443,382 @@ class Mesh:
                 ):
                     loop.insert(i + 1, mid)  # i+1 == n wraps to an append
                     return
+
+    # ---- Stitch primitives (watertight cleanup, all reversible) -------------
+    def interior_vertex_on(self, edge: Edge) -> Optional[Vertex]:
+        """An existing vertex lying strictly on ``edge``'s interior (a
+        T-junction: ``edge`` runs past a vertex that belongs to another face),
+        or ``None``. Splitting there is what makes mismatched subdivisions share
+        connectivity instead of leaving a naked seam."""
+        a = edge.v0.position
+        b = edge.v1.position
+        ab = b - a
+        length = ab.length()
+        if length < _STITCH_TOL:
+            return None
+        for v in self.vertices:
+            if v is edge.v0 or v is edge.v1:
+                continue
+            t = QVector3D.dotProduct(v.position - a, ab) / (length * length)
+            if t <= _STITCH_TOL / length or t >= 1.0 - _STITCH_TOL / length:
+                continue
+            if (v.position - (a + ab * t)).length() < _STITCH_TOL:
+                return v
+        return None
+
+    def split_edge_at(self, edge: Edge, mid: Vertex) -> dict:
+        """Split ``edge`` at the *existing* vertex ``mid`` on its interior.
+        Returns a reversible record consumed by :meth:`revert_stitch`.
+
+        A sub-edge may already exist — the T-junction's other face owns it — in
+        which case :meth:`_link_edge` reuses it. The record tracks which sub-edges
+        this split *created* so undo removes only those and merely detaches the
+        face from the reused ones (never deleting a neighbour's edge)."""
+        v0, v1 = edge.v0, edge.v1
+        incident = list(edge.faces)
+        self.remove_edge(edge)
+        e0_new = self.find_edge(v0, mid) is None
+        e0 = self._link_edge(v0, mid)
+        e1_new = self.find_edge(mid, v1) is None
+        e1 = self._link_edge(mid, v1)
+        for face in incident:
+            self._insert_into_face_loops(face, v0, v1, mid)
+            if face not in e0.faces:
+                e0.faces.append(face)
+            if face not in e1.faces:
+                e1.faces.append(face)
+        return {"kind": "split", "edge": edge, "e0": e0, "e1": e1,
+                "e0_new": e0_new, "e1_new": e1_new, "mid": mid, "faces": incident}
+
+    def collapsible_vertex(self, v: Vertex) -> bool:
+        """Whether ``v`` is a redundant valence-2 collinear vertex: its two edges
+        are collinear and border the same faces, so it is a spurious subdivision
+        of a straight boundary (no edge or face needs it). SketchUp keeps no such
+        vertex. Removing it lets two coplanar faces share a single edge again."""
+        if len(v.edges) != 2:
+            return False
+        e1, e2 = list(v.edges)
+        d1 = v.position - e1.other(v).position
+        d2 = e2.other(v).position - v.position
+        if d1.length() < _STITCH_TOL or d2.length() < _STITCH_TOL:
+            return False
+        if QVector3D.dotProduct(d1.normalized(), d2.normalized()) < 0.999:
+            return False
+        return set(e1.faces) == set(e2.faces)
+
+    def collapse_vertex(self, v: Vertex) -> dict:
+        """Remove the redundant valence-2 collinear vertex ``v`` (see
+        :meth:`collapsible_vertex`), merging its two edges into one. Returns a
+        reversible record."""
+        e1, e2 = list(v.edges)
+        n1, n2 = e1.other(v), e2.other(v)
+        faces = list(set(e1.faces))
+        self.remove_edge(e1)
+        self.remove_edge(e2)
+        new_edge_existed = self.find_edge(n1, n2) is not None
+        new_edge = self._link_edge(n1, n2)
+        for face in faces:
+            for loop in (face.loop, *face.hole_loops):
+                if v in loop:
+                    loop.remove(v)
+            if face not in new_edge.faces:
+                new_edge.faces.append(face)
+        if v in self.vertices:
+            self.vertices.remove(v)
+        if self._registry.get(_key(v.position)) is v:
+            del self._registry[_key(v.position)]
+        return {"kind": "collapse", "v": v, "e1": e1, "e2": e2, "n1": n1,
+                "n2": n2, "new_edge": new_edge, "new_edge_new": not new_edge_existed,
+                "faces": faces}
+
+    def dissolve_edge_recorded(self, edge: Edge) -> Optional[dict]:
+        """:meth:`dissolve_edge`, but returning a reversible record (the removed
+        faces, the edge, and the merged face) instead of just the new face."""
+        if len(edge.faces) != 2:
+            return None
+        face_a, face_b = edge.faces[0], edge.faces[1]
+        if face_a is face_b:
+            return None
+        if QVector3D.dotProduct(face_a.normal(), face_b.normal()) < 0.999:
+            return None
+        merged = _splice_loops(face_a.loop, face_b.loop, edge.v0, edge.v1)
+        if merged is None:
+            return None
+        loop_positions = [v.position for v in merged]
+        hole_positions = [[v.position for v in h]
+                          for h in (*face_a.hole_loops, *face_b.hole_loops)]
+        self.remove_face(face_a)
+        self.remove_face(face_b)
+        self.remove_edge(edge)
+        new_face = self.add_face(loop_positions, hole_positions or None)
+        return {"kind": "merge", "edge": edge, "face_a": face_a,
+                "face_b": face_b, "merged": new_face}
+
+    def dissolve_coplanar_pair(self, face_a: "Face", face_b: "Face") -> Optional[dict]:
+        """Merge two coplanar faces into the boundary of their union, removing
+        *every* edge they share — not just one. T-junction resolution can leave
+        two coplanar faces sharing several edges (a footprint notch), which the
+        single-edge splice can't fuse. Traces the union outline instead. Returns
+        a reversible record, or ``None`` if they aren't a coplanar adjacent pair
+        with a simple union outline."""
+        if face_a is face_b:
+            return None
+        if QVector3D.dotProduct(face_a.normal(), face_b.normal()) < 0.999:
+            return None
+        a_loops = [face_a.loop, *face_a.hole_loops]
+        b_loops = [face_b.loop, *face_b.hole_loops]
+        counts: dict = {}
+        for loops in (a_loops, b_loops):
+            for loop in loops:
+                n = len(loop)
+                for i in range(n):
+                    key = frozenset((id(loop[i]), id(loop[(i + 1) % n])))
+                    counts[key] = counts.get(key, 0) + 1
+        # Edges interior to the union appear in both faces; the outline is the
+        # edges that appear exactly once.
+        shared = [k for k, c in counts.items() if c >= 2]
+        if not shared:
+            return None  # not adjacent
+        by_id = {id(v): v for loop in (a_loops + b_loops) for v in loop}
+        outline: list[tuple[Vertex, Vertex]] = []
+        for loops in (a_loops, b_loops):
+            for loop in loops:
+                n = len(loop)
+                for i in range(n):
+                    u, w = loop[i], loop[(i + 1) % n]
+                    if counts[frozenset((id(u), id(w)))] == 1:
+                        outline.append((u, w))
+        loops_out = _trace_loops(outline)
+        if loops_out is None:
+            return None  # pinched / non-simple union → leave it
+        # Largest-area loop is the outer boundary; the rest are holes.
+        loops_out.sort(key=lambda lp: _loop_area(lp), reverse=True)
+        outer = loops_out[0]
+        holes = loops_out[1:]
+        shared_edges = [self.find_edge(by_id[next(iter(k))],
+                                       by_id[list(k)[-1]]) for k in shared]
+        self.remove_face(face_a)
+        self.remove_face(face_b)
+        for e in shared_edges:
+            if e is not None:
+                self.remove_edge(e)
+        merged = self.add_face([v.position for v in outer],
+                               [[v.position for v in h] for h in holes] or None)
+        return {"kind": "merge_pair", "face_a": face_a, "face_b": face_b,
+                "edges": [e for e in shared_edges if e is not None], "merged": merged}
+
+    def dissolve_coplanar_region(self, faces: Iterable["Face"]) -> Optional["Face"]:
+        """Merge a set of mutually-coplanar, edge-connected faces into one face
+        spanning the boundary of their union, removing every interior edge.
+
+        Pairwise merging is order-dependent — fusing two of three faces can leave
+        a valence-3 junction the third can't bridge — so the stitch merges the
+        whole coplanar component at once, which is deterministic. ``None`` if the
+        faces aren't all coplanar, aren't connected, or the union isn't simple."""
+        faces = list(faces)
+        if len(faces) < 2:
+            return None
+        n0 = faces[0].normal()
+        if any(QVector3D.dotProduct(n0, f.normal()) < 0.999 for f in faces[1:]):
+            return None
+        counts: dict = {}
+        for f in faces:
+            for loop in (f.loop, *f.hole_loops):
+                n = len(loop)
+                for i in range(n):
+                    key = frozenset((id(loop[i]), id(loop[(i + 1) % n])))
+                    counts[key] = counts.get(key, 0) + 1
+        if not any(c >= 2 for c in counts.values()):
+            return None  # not edge-connected
+        by_id = {id(v): v for f in faces
+                 for loop in (f.loop, *f.hole_loops) for v in loop}
+        outline = [
+            (u, w)
+            for f in faces
+            for loop in (f.loop, *f.hole_loops)
+            for u, w in zip(loop, loop[1:] + loop[:1])
+            if counts[frozenset((id(u), id(w)))] == 1
+        ]
+        loops_out = _trace_loops(outline)
+        if loops_out is None:
+            return None
+        loops_out.sort(key=_loop_area, reverse=True)
+        outer, holes = loops_out[0], loops_out[1:]
+        interior = [self.find_edge(by_id[tuple(k)[0]], by_id[tuple(k)[-1]])
+                    for k, c in counts.items() if c >= 2]
+        for f in faces:
+            self.remove_face(f)
+        for e in interior:
+            if e is not None and not e.faces:
+                self.remove_edge(e)
+        return self.add_face([v.position for v in outer],
+                             [[v.position for v in h] for h in holes] or None)
+
+    def revert_stitch(self, rec: dict) -> None:
+        """Undo a single stitch primitive recorded by the methods above."""
+        kind = rec["kind"]
+        if kind == "split":
+            for face in rec["faces"]:
+                for loop in (face.loop, *face.hole_loops):
+                    if rec["mid"] in loop:
+                        loop.remove(rec["mid"])
+            # New sub-edges are deleted; reused ones (a neighbour's edge) only
+            # lose the faces this split added to them.
+            for ekey, enew in (("e0", "e0_new"), ("e1", "e1_new")):
+                sub = rec[ekey]
+                if rec[enew]:
+                    self.remove_edge(sub)
+                else:
+                    for face in rec["faces"]:
+                        if face in sub.faces:
+                            sub.faces.remove(face)
+            self.relink_edge(rec["edge"])
+            for face in rec["faces"]:
+                if face not in rec["edge"].faces:
+                    rec["edge"].faces.append(face)
+        elif kind == "collapse":
+            v = rec["v"]
+            if v not in self.vertices:
+                self.vertices.append(v)
+            self._registry.setdefault(_key(v.position), v)
+            if rec["new_edge_new"]:
+                self.remove_edge(rec["new_edge"])
+            else:
+                for face in rec["faces"]:
+                    if face in rec["new_edge"].faces:
+                        rec["new_edge"].faces.remove(face)
+            self.relink_edge(rec["e1"])
+            self.relink_edge(rec["e2"])
+            for face in rec["faces"]:
+                self._insert_into_face_loops(face, rec["n1"], rec["n2"], v)
+                if face not in rec["e1"].faces:
+                    rec["e1"].faces.append(face)
+                if face not in rec["e2"].faces:
+                    rec["e2"].faces.append(face)
+        elif kind == "merge":
+            self.remove_face(rec["merged"])
+            self.relink_edge(rec["edge"])
+            self.relink_face(rec["face_a"])
+            self.relink_face(rec["face_b"])
+        elif kind == "merge_pair":
+            self.remove_face(rec["merged"])
+            for e in rec["edges"]:
+                self.relink_edge(e)
+            self.relink_face(rec["face_a"])
+            self.relink_face(rec["face_b"])
+
+    def dissolve_edge(self, edge: Edge) -> Optional[Face]:
+        """Dissolve a *redundant* coplanar edge, merging its two faces into one.
+
+        SketchUp's coplanar-merge: an edge bordering exactly two faces that lie
+        in the same plane (same outward normal) carries no silhouette — it is the
+        seam left when a pushed wall ends up flush with an adjacent one. Splicing
+        the two face loops along the shared edge and dropping the edge yields a
+        single face (the "L"), no phantom line.
+
+        Returns the new merged face, or ``None`` if the edge is not mergeable
+        (not exactly two faces, not coplanar, shared on a hole loop, or the
+        splice would not be a simple loop). The radial model makes this cheap:
+        the two incident faces are right there on ``edge.faces``; nothing is
+        rediscovered by position.
+        """
+        if len(edge.faces) != 2:
+            return None
+        face_a, face_b = edge.faces[0], edge.faces[1]
+        if face_a is face_b:
+            return None  # both sides are the same face (a slit) — leave it
+        if QVector3D.dotProduct(face_a.normal(), face_b.normal()) < 0.999:
+            return None  # not coplanar with a shared outward direction
+        merged = _splice_loops(face_a.loop, face_b.loop, edge.v0, edge.v1)
+        if merged is None:
+            return None
+        loop_positions = [v.position for v in merged]
+        hole_positions = [
+            [v.position for v in h]
+            for h in (*face_a.hole_loops, *face_b.hole_loops)
+        ]
+        self.remove_face(face_a)
+        self.remove_face(face_b)
+        self.remove_edge(edge)
+        return self.add_face(loop_positions, hole_positions or None)
+
+
+def _shared_edge_index(loop: list[Vertex], v0: Vertex, v1: Vertex) -> Optional[int]:
+    """Index ``i`` where ``loop[i]``–``loop[i+1]`` is the edge ``{v0, v1}``."""
+    n = len(loop)
+    for i in range(n):
+        a, b = loop[i], loop[(i + 1) % n]
+        if (a is v0 and b is v1) or (a is v1 and b is v0):
+            return i
+    return None
+
+
+def _splice_loops(
+    loop_a: list[Vertex], loop_b: list[Vertex], v0: Vertex, v1: Vertex
+) -> Optional[list[Vertex]]:
+    """Merge two vertex loops sharing the edge ``{v0, v1}`` into one, dropping the
+    shared edge. Both loops must carry the edge on their *outer* boundary with
+    consistent winding (the edge runs ``u→w`` in one and ``w→u`` in the other);
+    returns ``None`` otherwise, or if the result would repeat a vertex."""
+    ia = _shared_edge_index(loop_a, v0, v1)
+    ib = _shared_edge_index(loop_b, v0, v1)
+    if ia is None or ib is None:
+        return None
+    na, nb = len(loop_a), len(loop_b)
+    u, w = loop_a[ia], loop_a[(ia + 1) % na]  # A traverses the edge u → w
+    # Consistent winding requires B to traverse it the other way, w → u.
+    if not (loop_b[ib] is w and loop_b[(ib + 1) % nb] is u):
+        return None
+    sa = (ia + 1) % na                          # rotate A to start at w → [w … u]
+    a_path = loop_a[sa:] + loop_a[:sa]
+    sb = (ib + 1) % nb                          # rotate B to start at u → [u … w]
+    b_path = loop_b[sb:] + loop_b[:sb]
+    merged = a_path[:-1] + b_path[:-1]          # drop the duplicated u and w
+    if len({id(v) for v in merged}) != len(merged):
+        return None                             # a vertex repeats → not simple
+    return merged
+
+
+def _trace_loops(outline: list[tuple[Vertex, Vertex]]) -> Optional[list[list[Vertex]]]:
+    """Trace a set of undirected boundary edges into closed vertex loops. Returns
+    ``None`` if any vertex has valence ≠ 2 (a pinched / non-simple outline)."""
+    adj: dict[Vertex, list[Vertex]] = {}
+    edges: set = set()
+    for u, w in outline:
+        adj.setdefault(u, []).append(w)
+        adj.setdefault(w, []).append(u)
+        edges.add(frozenset((u, w)))
+    for nbrs in adj.values():
+        if len(nbrs) != 2:
+            return None
+    loops: list[list[Vertex]] = []
+    while edges:
+        a, b = tuple(next(iter(edges)))
+        edges.discard(frozenset((a, b)))
+        loop = [a, b]
+        prev, cur = a, b
+        while True:
+            nbrs = adj[cur]
+            nxt = nbrs[0] if nbrs[0] is not prev else nbrs[1]
+            edges.discard(frozenset((cur, nxt)))
+            if nxt is loop[0]:
+                break
+            loop.append(nxt)
+            prev, cur = cur, nxt
+        loops.append(loop)
+    return loops
+
+
+def _loop_area(loop: list[Vertex]) -> float:
+    """Newell-magnitude area of a vertex loop (orientation-independent)."""
+    n = QVector3D(0.0, 0.0, 0.0)
+    count = len(loop)
+    for i in range(count):
+        cur = loop[i].position
+        nxt = loop[(i + 1) % count].position
+        n = n + QVector3D(
+            (cur.y() - nxt.y()) * (cur.z() + nxt.z()),
+            (cur.z() - nxt.z()) * (cur.x() + nxt.x()),
+            (cur.x() - nxt.x()) * (cur.y() + nxt.y()),
+        )
+    return 0.5 * n.length()

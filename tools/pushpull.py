@@ -35,10 +35,10 @@ from core.geometry import Face
 from core.history import (
     AddEdgeCommand,
     AddFaceCommand,
-    CompoundCommand,
     DeleteFaceCommand,
-    MoveVerticesCommand,
     PruneOrphanEdgesCommand,
+    SnapshotMutation,
+    run_stitch,
     translate_points,
 )
 from core.topology import (
@@ -46,6 +46,7 @@ from core.topology import (
     classify_push_edge,
     extend_wall_edge,
     loop_inside_face,
+    refine_loop_with_points,
     subtract_loop_from_face,
 )
 from tools.base import Tool, ToolContext
@@ -69,25 +70,23 @@ class PushPullTool(Tool):
         # Whether the base face is embedded in a solid (its boundary edges are
         # shared), so an inner face pushed in is a recess (window/door pocket).
         self._attached: bool = False
-        # A prism cap (every edge backs onto a perpendicular wall) previews by
-        # live-deforming the real geometry — translating the cap along its
-        # normal, walls following — which is clean in *both* directions. Other
-        # pushes (free face, recess) keep the shaded overlay preview.
+        # A prism cap is every edge backing onto a perpendicular wall — the push
+        # is a clean translation of the cap (walls following through shared
+        # vertices) rather than a strip-by-strip extrude.
         self._prism_cap: bool = False
         self._anchor: QVector3D | None = None  # fixed centroid for measuring extrusion
         self._normal: QVector3D | None = None
         self._cap_positions: list[QVector3D] = []  # original cap vertices
-        self._preview_delta = QVector3D(0.0, 0.0, 0.0)  # live translation applied
-        # When a recess push reaches a parallel far face, this holds
-        # ``(far_face, back_loop)`` so the preview shows a clean through-hole.
-        self._through = None
+        # The live preview applies the real commit each frame and reverts it from
+        # this snapshot before the next, so the drag shows the stitched result.
+        self._preview_snapshot: dict | None = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
         self._reset()
 
     def on_deactivate(self, viewport) -> None:
-        self._revert_translate(viewport)
+        self._revert_preview(viewport)
         viewport.set_hover(None)
         viewport.set_suppressed_faces(set())
         self._reset()
@@ -108,26 +107,9 @@ class PushPullTool(Tool):
             self._anchor, self._normal, ctx.screen.x(), ctx.screen.y()
         )
         self.extrusion = QVector3D.dotProduct(projected - self._anchor, self._normal)
-        if self._prism_cap:
-            # Deform the real solid live: the cap slides along its normal and
-            # the walls follow, so shrinking or growing the box stays clean in
-            # both directions (no overlay, no leftover edges).
-            self._apply_translate(viewport, self._normal * self.extrusion)
-        elif self._attached and abs(self.extrusion) > 1e-6:
-            # Recess (window/door): hide the flat inner face once it starts
-            # moving, so the pocket shows. If the push has reached a parallel far
-            # face, it's a through-hole — hide that face too so you see through.
-            self._through = self._find_through_face(
-                self.base_face, self.extrusion, viewport.scene.faces
-            )
-            if self._through is not None:
-                viewport.set_suppressed_faces({self.base_face, self._through[0]})
-            else:
-                viewport.set_suppressed_faces({self.base_face})
-        else:
-            self._through = None
-            viewport.set_suppressed_faces(set())
-        viewport.update()
+        # Apply the real commit to the mesh as a live preview (reverting last
+        # frame's first), so the forming solid renders exactly as it will commit.
+        self._apply_preview(viewport)
 
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
@@ -142,10 +124,8 @@ class PushPullTool(Tool):
             self._normal = face.normal()
             self._attached, self._prism_cap = self._classify_base(viewport.scene)
             self._cap_positions = [QVector3D(v) for v in face.vertices]
-            self._preview_delta = QVector3D(0.0, 0.0, 0.0)
-            # The shaded solid preview takes over from the hover shade now.
-            # (A recess hides its flat inner face later, once it starts moving —
-            # see on_hover — so it doesn't flash transparent before any drag.)
+            self._preview_snapshot = None
+            # The live preview takes over from the hover shade now.
             viewport.set_hover(None)
             viewport.update()
             return
@@ -169,62 +149,38 @@ class PushPullTool(Tool):
         return True
 
     def on_cancel(self, viewport) -> None:
-        self._revert_translate(viewport)
+        self._revert_preview(viewport)
         viewport.set_hover(None)
         viewport.set_suppressed_faces(set())
         self._reset()
         viewport.update()
 
     # ---- Visual preview -----------------------------------------------------
+    # The drag preview is the real (stitched) geometry applied each frame, so no
+    # overlay wireframe or shaded faces are needed.
     def rubber_band_lines(self):
-        # Prism caps deform the real geometry live — no overlay wireframe.
-        if not self.dragging or self.base_face is None or self._prism_cap:
-            return []
-        n = self.base_face.normal()
-        d = self.extrusion
-        base = self.base_face.vertices
-        top = [v + n * d for v in base]
-        segments = []
-        # Top boundary
-        count = len(top)
-        for i in range(count):
-            segments.append((top[i], top[(i + 1) % count]))
-        # Vertical edges
-        for v_base, v_top in zip(base, top):
-            segments.append((v_base, v_top))
-        return segments
+        return []
 
     def preview_faces(self):
-        """Shaded solid preview: the moved cap plus a side wall per base edge,
-        so the box reads as a forming solid while dragging (SketchUp-style),
-        not just a wireframe. Prism caps deform the real solid instead, so they
-        return nothing here."""
-        if (
-            not self.dragging
-            or self.base_face is None
-            or self._prism_cap
-            or abs(self.extrusion) < 1e-6
-        ):
-            return []
-        base = self.base_face.vertices
-        count = len(base)
-        if self._through is not None:
-            # Through-hole: only the tunnel walls, clamped to the far face, and
-            # no cap — so the opening reads as see-through.
-            _, back_loop = self._through
-            return [
-                Face([base[i], base[j], back_loop[j], back_loop[i]])
-                for i in range(count)
-                for j in ((i + 1) % count,)
-            ]
-        n = self.base_face.normal()
-        d = self.extrusion
-        top = [v + n * d for v in base]
-        faces = [Face(list(top))]
-        for i in range(count):
-            j = (i + 1) % count
-            faces.append(Face([base[i], base[j], top[j], top[i]]))
-        return faces
+        return []
+
+    def _apply_preview(self, viewport) -> None:
+        """Show the forming solid by applying the real commit to the mesh, after
+        reverting the previous frame's preview."""
+        self._revert_preview(viewport)
+        if self.base_face is None or abs(self.extrusion) < 1e-6:
+            viewport.update()
+            return
+        self._preview_snapshot = viewport.scene.mesh.capture_state()
+        self._mutate(viewport.scene)
+        viewport.scene.version += 1
+        viewport.update()
+
+    def _revert_preview(self, viewport) -> None:
+        if self._preview_snapshot is not None:
+            viewport.scene.mesh.restore_state(self._preview_snapshot)
+            self._preview_snapshot = None
+            viewport.scene.version += 1
 
     def value_label(self):
         """Return ``(text, midpoint_world)`` for the floating distance label.
@@ -257,139 +213,109 @@ class PushPullTool(Tool):
         prism_cap = bool(kinds) and all(kind == "perp" for kind, _ in kinds)
         return attached, prism_cap
 
-    def _apply_translate(self, viewport, target_delta: QVector3D) -> None:
-        """Live-deform the solid so the cap sits at ``target_delta`` from its
-        start, by translating the incremental step (same mechanic as Move)."""
-        step = target_delta - self._preview_delta
-        if step.length() < 1e-12:
-            return
-        keys = {_key(p + self._preview_delta) for p in self._cap_positions}
-        translate_points(viewport.scene, keys, step)
-        self._preview_delta = target_delta
-
-    def _revert_translate(self, viewport) -> None:
-        """Undo the live deformation, returning the cap to its start position."""
-        if self._preview_delta.length() < 1e-12:
-            return
-        keys = {_key(p + self._preview_delta) for p in self._cap_positions}
-        translate_points(viewport.scene, keys, -self._preview_delta)
-        self._preview_delta = QVector3D(0.0, 0.0, 0.0)
-
     def _commit(self, viewport) -> None:
         viewport.set_hover(None)  # the hovered face is about to be replaced
         viewport.set_suppressed_faces(set())
-        # Undo any live prism-cap deformation so the real edit rebuilds the
-        # topology cleanly from the original positions (same final geometry,
-        # but on the undo stack as one atomic command).
-        self._revert_translate(viewport)
-        face = self.base_face
-        if face is None or abs(self.extrusion) < 1e-6:
+        self._revert_preview(viewport)  # drop the live preview; redo it for real
+        if self.base_face is None or abs(self.extrusion) < 1e-6:
             self._reset()
             viewport.update()
             return
+        # One snapshot wraps the edit *and* the watertight stitch: undo is exact,
+        # and it is the identical mutation the live preview just showed.
+        viewport.history.execute(SnapshotMutation(self._mutate))
+        self._reset()
+        viewport.update()
 
-        # A prism cap push is exactly a translation of the cap along its normal:
-        # the walls (and any host hole the cap sits in — a stacked block on a
-        # cube) deform through their shared vertices. Commit it as that, the same
-        # mechanic as the live preview. The extrude/extend path below would
-        # instead patch in coplanar strips and leave the host hole un-extended,
-        # which broke the next push on a neighbouring wall.
+    def _mutate(self, scene) -> None:
+        """Apply the push to ``scene``'s mesh and stitch it watertight. Shared by
+        the committed edit (wrapped in :class:`SnapshotMutation`) and the live
+        preview, so the drag renders exactly what will commit."""
+        face = self.base_face
+        d = self.extrusion
+
+        # A prism cap is exactly a translation of the cap along its normal; the
+        # walls follow through shared vertices. Then repair connectivity
+        # (T-junctions, collinear) — no coplanar-merge, as nothing new is added.
         if self._prism_cap:
-            viewport.history.execute(
-                MoveVerticesCommand(self._cap_positions, self._normal * self.extrusion)
-            )
-            self._reset()
-            viewport.update()
+            normal = self._normal if self._normal is not None else face.normal()
+            translate_points(scene, {_key(p) for p in self._cap_positions},
+                             normal * d)
+            seed = list(self._cap_positions) + [p + normal * d
+                                                for p in self._cap_positions]
+            run_stitch(scene.mesh, {_key(p) for p in seed}, set())
             return
 
         normal = face.normal()
-        d = self.extrusion
-        base = face.vertices
+        # Split the base loop at any existing vertex sitting on one of its edges
+        # (a T-junction where the host wall ends and an earlier overhang's floor
+        # begins) so each sub-edge is carried by one face and classifies right.
+        base = refine_loop_with_points(
+            face.vertices, [v.position for v in scene.mesh.vertices]
+        )
         top = [v + normal * d for v in base]
         count = len(base)
-        faces = viewport.scene.faces
-
-        # Classify every side edge: coplanar neighbour (inner wall), a
-        # perpendicular face it sits on (the solid's side wall — notch it), or
-        # free (open extrusion). A face whose edges are all attached is part of
-        # a surface/solid, so the push *moves* it (base consumed); a fully
-        # free-standing face is extruded keeping its base as a cap.
+        faces = scene.faces
         kinds = [
             classify_push_edge(face, base[i], base[(i + 1) % count], faces)
             for i in range(count)
         ]
         attached = all(kind != "free" for kind, _ in kinds)
-
-        # Through-hole: pushing an embedded face (a window/door in a wall) far
-        # enough to reach a parallel face on the far side of the solid punches
-        # clean through — the opening appears on both faces, joined by tunnel
-        # walls, instead of a blind recess.
         through = self._find_through_face(face, d, faces) if attached else None
-        if through is not None:
-            self._commit_through_hole(viewport, face, base, through)
-            self._reset()
-            viewport.update()
-            return
 
+        before = set(scene.mesh.faces)
+        if through is not None:
+            commands = self._through_commands(face, base, through)
+        else:
+            commands = self._extrude_commands(face, base, top, count, kinds, attached)
+        for cmd in commands:
+            cmd.do(scene)
+        new_faces = set(scene.mesh.faces) - before
+        run_stitch(scene.mesh, {_key(p) for p in (list(base) + list(top))}, new_faces)
+
+    def _extrude_commands(self, face, base, top, count, kinds, attached) -> list:
+        """Build the commands that extrude ``face`` to ``top``: a consumed/kept
+        base, the moved cap, and a wall (or notch / wall-extension) per side."""
         commands: list = []
         if attached:
-            commands.append(DeleteFaceCommand(face))
-
-        # Moved boundary + vertical edges, and the moved face (floor / top).
+            commands.append(DeleteFaceCommand(face))  # base consumed into the solid
         for i in range(count):
             commands.append(AddEdgeCommand(top[i], top[(i + 1) % count]))
         for i in range(count):
             commands.append(AddEdgeCommand(base[i], top[i]))
         commands.append(AddFaceCommand(list(top), auto=not attached))
 
-        # Sides: a perpendicular edge notches its wall when the strip falls
-        # inside it (pushing in → a step / recess opening); otherwise a wall
-        # quad is raised (inner wall, free extrusion, or pushing out).
         for i in range(count):
             j = (i + 1) % count
             a, b, b2, a2 = base[i], base[j], top[j], top[i]
             kind, neighbour = kinds[i]
             if attached and kind == "perp":
-                # Extending a prism: the wall this edge sits on grows in its own
-                # plane. Move the wall's shared edge up rather than stacking a
-                # coplanar strip, so no seam is left at the old cap level.
+                # The wall this edge sits on grows in its own plane: move its
+                # shared edge rather than stack a coplanar strip (no seam left).
                 extended = extend_wall_edge(neighbour, a, b, a2, b2)
                 if extended is not None:
                     commands.append(DeleteFaceCommand(neighbour))
-                    # Carry over any opening (window / door hole) the wall had.
                     commands.append(AddFaceCommand(
-                        extended, auto=False, holes=neighbour.holes or None
-                    ))
+                        extended, auto=False, holes=neighbour.holes or None))
                     en = len(extended)
                     for k in range(en):
                         commands.append(
-                            AddEdgeCommand(extended[k], extended[(k + 1) % en])
-                        )
-                    continue  # wall extended — no separate strip, seam pruned
+                            AddEdgeCommand(extended[k], extended[(k + 1) % en]))
+                    continue
                 remainder = subtract_loop_from_face(neighbour, [a, b, b2, a2])
                 if remainder is not None:
                     commands.append(DeleteFaceCommand(neighbour))
                     commands.append(AddFaceCommand(remainder, auto=False))
-                    # The notch puts a new vertex on the wall's side edge,
-                    # splitting it; add the remainder's boundary edges so the
-                    # surviving lower segment (e.g. the corner vertical up to
-                    # the step) exists rather than being pruned with the rest.
                     rn = len(remainder)
                     for k in range(rn):
                         commands.append(
-                            AddEdgeCommand(remainder[k], remainder[(k + 1) % rn])
-                        )
-                    continue  # notched open — no wall here
+                            AddEdgeCommand(remainder[k], remainder[(k + 1) % rn]))
+                    continue
             commands.append(AddFaceCommand([a, b, b2, a2], auto=False))
 
-        # Sweep up edges left dangling where the base used to be (e.g. a step's
-        # old top edges at the corner that no longer border any face).
         if attached:
             commands.append(PruneOrphanEdgesCommand(list(base)))
-
-        viewport.history.execute(CompoundCommand(commands))
-        self._reset()
-        viewport.update()
+        return commands
 
     # ---- Through-hole -------------------------------------------------------
     def _find_through_face(self, face, d: float, faces):
@@ -417,7 +343,9 @@ class PushPullTool(Tool):
             return None
         return best[1], best[2]
 
-    def _commit_through_hole(self, viewport, face, base, through) -> None:
+    def _through_commands(self, face, base, through) -> list:
+        """Build the commands for a through-hole: punch the far face, join it to
+        the front opening with a tunnel, and sweep the dangling base edges."""
         far_face, back_loop = through
         count = len(base)
         commands: list = [
@@ -436,10 +364,8 @@ class PushPullTool(Tool):
             j = (i + 1) % count
             commands.append(AddFaceCommand(
                 [base[i], base[j], back_loop[j], back_loop[i]], auto=False))
-        # The front opening's edges now border the front hole + the tunnel; sweep
-        # only anything genuinely left dangling.
         commands.append(PruneOrphanEdgesCommand(list(base)))
-        viewport.history.execute(CompoundCommand(commands))
+        return commands
 
     def _reset(self) -> None:
         self.hovered_face = None
@@ -451,5 +377,4 @@ class PushPullTool(Tool):
         self._anchor = None
         self._normal = None
         self._cap_positions = []
-        self._preview_delta = QVector3D(0.0, 0.0, 0.0)
-        self._through = None
+        self._preview_snapshot = None
