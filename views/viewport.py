@@ -166,6 +166,8 @@ class Viewport(QOpenGLWidget):
 
     valueBufferChanged = Signal(str)
     sceneVersionChanged = Signal(int)
+    # Live measurement for the VCB box (e.g. "5.00 m", "3.00 × 2.00 m").
+    measurementChanged = Signal(str)
 
     # Tooltip text shown next to the snap marker, SketchUp-style.
     _SNAP_LABELS = {
@@ -912,6 +914,24 @@ class Viewport(QOpenGLWidget):
         painter.setPen(QPen(fg))
         painter.drawText(QPointF(pixel[0] + 11, pixel[1] - 8), text)
 
+    def _measurement_text(self) -> str:
+        """Live measurement string for the VCB box: the active tool's
+        ``value_label`` text (rectangle dimensions, push distance, …) or the
+        single-segment length a line is drawing. Empty when nothing applies."""
+        tool = self.active_tool
+        if tool is None:
+            return ""
+        provider = getattr(tool, "value_label", None)
+        if callable(provider):
+            result = provider()
+            if result is not None:
+                return result[0]
+        segments = tool.rubber_band_lines()
+        if len(segments) == 1:
+            start, hover = segments[0]
+            return f"{(hover - start).length():.2f} m"
+        return ""
+
     def _draw_axis_lock_label(self, painter: QPainter) -> None:
         label = {
             "x": ("X", QColor(220, 56, 69)),
@@ -1179,6 +1199,7 @@ class Viewport(QOpenGLWidget):
         self.last_snap = None      # stale snap marker from the previous tool
         if tool is not None:
             tool.on_activate(self)
+        self.measurementChanged.emit(self._measurement_text())
         self.update()
 
     def set_nav_mode(self, mode: Optional[str]) -> None:
@@ -1287,6 +1308,7 @@ class Viewport(QOpenGLWidget):
             return
         self.last_snap = ctx.snap
         self.active_tool.on_hover(ctx)
+        self.measurementChanged.emit(self._measurement_text())
         self.update()
 
     # Below this many pixels of drag, a left press/release is a click, not a box.
@@ -1454,6 +1476,7 @@ class Viewport(QOpenGLWidget):
             snap=snap,
         )
         self.active_tool.on_hover(ctx)
+        self.measurementChanged.emit(self._measurement_text())
 
     def keyReleaseEvent(self, ev) -> None:
         if ev.key() == Qt.Key_Shift and not ev.isAutoRepeat():
@@ -1514,7 +1537,9 @@ class Viewport(QOpenGLWidget):
 
     @staticmethod
     def _parse_value_buffer(buffer: str):
-        """Return a float, a ``(dx, dy, dz)`` tuple, or ``None`` on parse error."""
+        """Return a float, a 2-tuple ``(w, h)`` (rectangle dimensions), a
+        3-tuple ``(dx, dy, dz)`` (delta), or ``None`` on parse error. Each tool's
+        ``on_value`` accepts the arity it understands and ignores the rest."""
         normalized = buffer.replace(",", ".").replace(";", " ")
         parts = normalized.split()
         try:
@@ -1523,8 +1548,8 @@ class Viewport(QOpenGLWidget):
             return None
         if len(nums) == 1:
             return nums[0]
-        if len(nums) == 3:
-            return (nums[0], nums[1], nums[2])
+        if len(nums) in (2, 3):
+            return tuple(nums)
         return None
 
     def _current_token_tail(self) -> str:

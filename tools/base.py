@@ -53,6 +53,9 @@ class Tool(ABC):
     # back edges behind its faces, like real geometry; loose drawing tools keep
     # the default (preview always visible on top).
     wireframe_depth_tested: bool = False
+    # Caption for the SketchUp-style Measurements box (VCB) while this tool is
+    # active — "Length", "Dimensions", "Distance". ``None`` hides the box.
+    vcb_label: str | None = None
 
     @abstractmethod
     def on_activate(self, viewport) -> None:

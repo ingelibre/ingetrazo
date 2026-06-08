@@ -54,6 +54,7 @@ class PushPullTool(Tool):
     name = "Push / Pull"
     shortcut = "U"
     uses_snap = False  # picks a face to extrude; no snap markers
+    vcb_label = "Distance"
     # Preview lines in the normal edge colour, not the loose orange rubber band,
     # and depth-tested so the forming box hides its own back edges.
     wireframe_color = (0.13, 0.17, 0.23, 1.0)

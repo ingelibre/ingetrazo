@@ -24,6 +24,7 @@ from tools.base import Tool, ToolContext
 class LineTool(Tool):
     name = "Line"
     shortcut = "L"
+    vcb_label = "Length"
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None
@@ -89,6 +90,8 @@ class LineTool(Tool):
             return False
 
         if isinstance(value, tuple):
+            if len(value) != 3:
+                return False  # 2-tuple is a rectangle's W×H, not a line delta
             dx, dy, dz = value
             new_endpoint = QVector3D(
                 self.start_point.x() + dx,

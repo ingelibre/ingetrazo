@@ -42,6 +42,7 @@ def _plane_axes(normal: QVector3D) -> tuple[QVector3D, QVector3D]:
 class RectangleTool(Tool):
     name = "Rectangle"
     shortcut = "R"
+    vcb_label = "Dimensions"
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None
@@ -66,24 +67,31 @@ class RectangleTool(Tool):
         if self.start_point is None:
             self.start_point = ctx.world
             return
-        corners = self._corners(self.start_point, ctx.world)
-        segments = [(corners[i], corners[(i + 1) % 4]) for i in range(4)]
-        # The rectangle owns its face explicitly (the loop spans corner to
-        # corner regardless of how its edges get subdivided by crossings), so
-        # let the edge builder handle splitting/welding but not auto-facing.
-        cmd = build_add_edges(
-            ctx.viewport.scene,
-            segments,
-            detect_faces=False,
-            extra=[AddFaceCommand(list(corners))],
-        )
-        ctx.viewport.history.execute(cmd)
-        self._reset()
-        ctx.viewport.update()
+        self._commit_rect(ctx.viewport, self._corners(self.start_point, ctx.world))
 
     def on_hover(self, ctx: ToolContext) -> None:
         self.hover_point = ctx.world
         ctx.viewport.update()
+
+    def on_value(self, viewport, value) -> bool:
+        """Type exact dimensions: ``"3;2"`` (or ``"3 2"``) + Enter lays a
+        3 m × 2 m rectangle, in the quadrant the cursor is currently dragging
+        toward. The first number runs along the work plane's horizontal axis,
+        the second along its vertical axis."""
+        if self.start_point is None or self.hover_point is None:
+            return False
+        if not (isinstance(value, tuple) and len(value) == 2):
+            return False
+        w, h = value
+        if w <= 0.0 or h <= 0.0:
+            return False
+        u, v = self._axes()
+        du, dv = self._dimensions(self.start_point, self.hover_point)
+        su = -1.0 if du < 0 else 1.0  # keep the side the cursor is heading to
+        sv = -1.0 if dv < 0 else 1.0
+        far = self.start_point + u * (su * w) + v * (sv * h)
+        self._commit_rect(viewport, self._corners(self.start_point, far))
+        return True
 
     def on_cancel(self, viewport) -> None:
         self._reset()
@@ -101,37 +109,57 @@ class RectangleTool(Tool):
             (c[3], c[0]),
         ]
 
+    def value_label(self):
+        """Floating ``width × height`` readout while dragging (SketchUp's VCB
+        dimensions). The viewport draws it near the rectangle's centre."""
+        if self.start_point is None or self.hover_point is None:
+            return None
+        du, dv = self._dimensions(self.start_point, self.hover_point)
+        text = f"{abs(du):.2f} × {abs(dv):.2f} m"
+        mid = (self.start_point + self.hover_point) * 0.5
+        return (text, mid)
+
     # ---- Internals ----------------------------------------------------------
+    def _axes(self) -> tuple[QVector3D, QVector3D]:
+        """In-plane horizontal/vertical axes for the current work plane. Without
+        a captured plane this is world +X / +Y (the legacy Z=0 layout)."""
+        if self.work_plane is None:
+            return QVector3D(1.0, 0.0, 0.0), QVector3D(0.0, 1.0, 0.0)
+        _, normal = self.work_plane
+        return _plane_axes(normal)
+
+    def _dimensions(self, a: QVector3D, b: QVector3D) -> tuple[float, float]:
+        """Signed (width, height) of the rectangle spanning ``a``–``b``, measured
+        along the work plane's two axes."""
+        u, v = self._axes()
+        delta = b - a
+        return QVector3D.dotProduct(delta, u), QVector3D.dotProduct(delta, v)
+
     def _corners(self, a: QVector3D, b: QVector3D) -> list[QVector3D]:
         """Four corners of the rectangle spanning ``a``–``b`` on the current
-        work plane.
-
-        Without a captured plane we fall back to the legacy XY layout (corners
-        share ``a.z()``). When the rectangle was started on a face, we derive
-        two orthonormal in-plane axes from the face's normal and use them to
-        place the two intermediate corners — so a rectangle on a vertical or
-        slanted face lies on that face instead of collapsing onto the XY
-        plane.
-        """
-        if self.work_plane is None:
-            z = a.z()
-            return [
-                QVector3D(a.x(), a.y(), z),
-                QVector3D(b.x(), a.y(), z),
-                QVector3D(b.x(), b.y(), z),
-                QVector3D(a.x(), b.y(), z),
-            ]
-        _, normal = self.work_plane
-        u, v = _plane_axes(normal)
+        work plane. Derives two in-plane axes from the face the rectangle was
+        started on (so it lies on a vertical or slanted face instead of
+        collapsing onto XY); falls back to world X/Y on the Z=0 plane."""
+        u, v = self._axes()
         delta = b - a
         du = QVector3D.dotProduct(delta, u)
         dv = QVector3D.dotProduct(delta, v)
-        return [
-            a,
-            a + u * du,
-            a + u * du + v * dv,
-            a + v * dv,
-        ]
+        return [a, a + u * du, a + u * du + v * dv, a + v * dv]
+
+    def _commit_rect(self, viewport, corners: list[QVector3D]) -> None:
+        segments = [(corners[i], corners[(i + 1) % 4]) for i in range(4)]
+        # The rectangle owns its face explicitly (the loop spans corner to
+        # corner regardless of how its edges get subdivided by crossings), so
+        # let the edge builder handle splitting/welding but not auto-facing.
+        cmd = build_add_edges(
+            viewport.scene,
+            segments,
+            detect_faces=False,
+            extra=[AddFaceCommand(list(corners))],
+        )
+        viewport.history.execute(cmd)
+        self._reset()
+        viewport.update()
 
     def _reset(self) -> None:
         self.start_point = None

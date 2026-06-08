@@ -31,6 +31,7 @@ from tools.base import Tool, ToolContext
 class MoveTool(Tool):
     name = "Move"
     shortcut = "M"
+    vcb_label = "Distance"
 
     # Drag on a camera-facing vertical plane (not the ground) so pulling the
     # mouse up raises geometry — what lets you lift a roof ridge straight up.
@@ -82,6 +83,8 @@ class MoveTool(Tool):
         if self.start_point is None or self.grab is None:
             return False
         if isinstance(value, tuple):
+            if len(value) != 3:
+                return False  # 2-tuple is a rectangle's W×H, not a move delta
             delta = QVector3D(value[0], value[1], value[2])
         else:
             if self.hover_point is None:

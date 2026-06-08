@@ -220,27 +220,59 @@ class MainWindow(QMainWindow):
             "MMB-drag: orbit  ·  Shift+MMB-drag: pan  ·  Wheel / 2-finger: zoom  ·  "
             "P: persp/parallel  ·  →←↑: lock X/Y/Z  ·  ↓: par/perp to ref  ·  "
             "Shift: lock inference  ·  Type N + Enter: exact length  ·  "
-            "Type X;Y;Z + Enter: 3D delta"
+            "Rectangle: type W;H + Enter  ·  Type X;Y;Z + Enter: 3D delta"
         )
-        self._value_label = QLabel("")
-        self._value_label.setStyleSheet(
-            "color: #0F141B; background: #FFE082; padding: 2px 8px; border-radius: 3px;"
-        )
-        self._value_label.setVisible(False)
-        bar.addPermanentWidget(self._value_label)
-
-        self.viewport.valueBufferChanged.connect(self._on_value_buffer)
-
         self._tool_label = QLabel("Tool: none")
         bar.addPermanentWidget(self._tool_label)
 
+        # SketchUp-style Measurements box (VCB), pinned bottom-right: a caption
+        # ("Length" / "Dimensions" / "Distance") plus a boxed field showing the
+        # live measurement, or what you're typing (highlighted while typing).
+        self._vcb_buffer = ""
+        self._vcb_live = ""
+        self._vcb_name = QLabel("")
+        self._vcb_name.setStyleSheet("color:#5a6472; padding:0 4px;")
+        self._vcb_value = QLabel("")
+        self._vcb_value.setMinimumWidth(130)
+        self._vcb_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._vcb_value.setStyleSheet(self._VCB_IDLE_STYLE)
+        bar.addPermanentWidget(self._vcb_name)
+        bar.addPermanentWidget(self._vcb_value)
+
+        self.viewport.valueBufferChanged.connect(self._on_value_buffer)
+        self.viewport.measurementChanged.connect(self._on_measurement)
+
+    _VCB_IDLE_STYLE = (
+        "color:#0F141B; background:#FFFFFF; border:1px solid #9aa3ad;"
+        "border-radius:3px; padding:2px 8px;"
+    )
+    _VCB_ACTIVE_STYLE = (
+        "color:#0F141B; background:#FFF3C4; border:1px solid #E0A800;"
+        "border-radius:3px; padding:2px 8px;"
+    )
+
     def _on_value_buffer(self, text: str) -> None:
-        if text:
-            self._value_label.setText(f"Length: {text} m")
-            self._value_label.setVisible(True)
+        self._vcb_buffer = text
+        self._refresh_vcb()
+
+    def _on_measurement(self, text: str) -> None:
+        self._vcb_live = text
+        self._refresh_vcb()
+
+    def _refresh_vcb(self) -> None:
+        tool = self.viewport.active_tool
+        caption = getattr(tool, "vcb_label", None) if tool is not None else None
+        self._vcb_name.setVisible(caption is not None)
+        self._vcb_value.setVisible(caption is not None)
+        if caption is None:
+            return
+        self._vcb_name.setText(caption)
+        if self._vcb_buffer:
+            self._vcb_value.setText(f"{self._vcb_buffer}")
+            self._vcb_value.setStyleSheet(self._VCB_ACTIVE_STYLE)
         else:
-            self._value_label.setVisible(False)
-            self._value_label.setText("")
+            self._vcb_value.setText(self._vcb_live)
+            self._vcb_value.setStyleSheet(self._VCB_IDLE_STYLE)
 
     # ---- Tool routing -------------------------------------------------------
     def _activate_tool(self, key: str) -> None:
@@ -250,6 +282,7 @@ class MainWindow(QMainWindow):
         if action is not None:
             action.setChecked(True)
         self._tool_label.setText(f"Tool: {tool.name}")
+        self._refresh_vcb()
 
     def _activate_nav(self, key: str) -> None:
         self.viewport.set_nav_mode(key)
@@ -257,6 +290,7 @@ class MainWindow(QMainWindow):
         if action is not None:
             action.setChecked(True)
         self._tool_label.setText(f"Nav: {key.capitalize()}")
+        self._refresh_vcb()
 
     def _cancel_tool(self) -> None:
         if self.viewport.active_tool is not None:
