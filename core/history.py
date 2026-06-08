@@ -351,6 +351,226 @@ class PruneOrphanEdgesCommand(Command):
         self.removed = []
 
 
+class CoplanarMergeCommand(Command):
+    """Dissolve coplanar seams left by push/pull, SketchUp-style.
+
+    After a wall is pushed flush against an adjacent one, the shared edge borders
+    two faces in the same plane and carries no silhouette — a phantom line. This
+    command sweeps the edges incident to the operation's vertices and merges any
+    such redundant pair into one face (the "L"), so the result reads as a clean
+    solid. Seeded with the operation's vertices (not the whole model) so a
+    *deliberately* drawn coplanar edge elsewhere is left alone.
+
+    Each merge is recorded as ``(face_a, face_b, edge, merged_face)`` so undo
+    restores the exact objects other commands may reference.
+    """
+
+    def __init__(self, seed_positions: Iterable[QVector3D]) -> None:
+        self.seed = [QVector3D(p) for p in seed_positions]
+        self.merges: list[tuple[Face, Face, Edge, Face]] = []
+
+    def do(self, scene) -> None:
+        mesh = scene.mesh
+        seedkeys = {_key(p) for p in self.seed}
+        progress = True
+        while progress:
+            progress = False
+            for edge in list(mesh.edges):
+                if len(edge.faces) != 2:
+                    continue
+                if (_key(edge.v0.position) not in seedkeys
+                        and _key(edge.v1.position) not in seedkeys):
+                    continue
+                face_a, face_b = edge.faces[0], edge.faces[1]
+                merged = mesh.dissolve_edge(edge)
+                if merged is None:
+                    continue
+                self.merges.append((face_a, face_b, edge, merged))
+                progress = True
+                break  # mesh mutated — restart the scan
+        if self.merges:
+            scene.version += 1
+
+    def undo(self, scene) -> None:
+        mesh = scene.mesh
+        for face_a, face_b, edge, merged in reversed(self.merges):
+            mesh.remove_face(merged)
+            mesh.relink_edge(edge)
+            mesh.relink_face(face_a)
+            mesh.relink_face(face_b)
+        if self.merges:
+            scene.version += 1
+        self.merges = []
+
+
+class StitchSolidCommand(Command):
+    """Make a solid watertight again after push/pull, SketchUp-style.
+
+    Repeated pushes leave three kinds of connectivity debris: edges that run past
+    a vertex belonging to a neighbour (a *T-junction* — the two sides share a
+    line but no edge, so the seam reads as a naked crack), redundant valence-2
+    collinear vertices left by mismatched subdivision, and coplanar faces that
+    should be one. This runs in three phases:
+
+    1. **Resolve T-junctions** (global): split every edge at any vertex on its
+       interior, so mismatched subdivisions share edges → no naked cracks.
+    2. **Collapse collinear vertices** (global): drop spurious valence-2 points.
+    3. **Coplanar-merge** (seeded): fuse coplanar faces around the operation
+       into one — seeded so a deliberately drawn coplanar line elsewhere stays.
+
+    Phases 1–2 only repair connectivity (no shape change), so they are safe to
+    run model-wide. The splits, collapses and merges interact too tightly for a
+    clean per-op inverse, so undo restores an identity-preserving snapshot taken
+    before the pass — robust, and it keeps the surrounding delta commands' object
+    references valid (this command runs last in the push/pull compound).
+    """
+
+    def __init__(self, seed_positions: Iterable[QVector3D]) -> None:
+        self.seed = [QVector3D(p) for p in seed_positions]
+        self.snapshot: Optional[dict] = None
+
+    def do(self, scene) -> None:
+        self.snapshot = scene.mesh.capture_state()
+        run_stitch(scene.mesh, {_key(p) for p in self.seed})
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.snapshot is not None:
+            scene.mesh.restore_state(self.snapshot)
+            scene.version += 1
+
+
+def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None) -> None:
+    """Three-phase watertight cleanup (no undo bookkeeping — the caller snapshots).
+    See :class:`StitchSolidCommand` for the rationale of each phase.
+
+    ``new_faces`` (when given) are the faces this operation created; phase 3 only
+    fuses a coplanar component that contains one of them, so a seam a push just
+    made is merged while a pre-existing coplanar split (a user's diagonal) is
+    left intact. ``None`` means merge any seeded component (manual stitch)."""
+    # Phase 1 — resolve T-junctions (global).
+    while True:
+        split = False
+        for e in list(mesh.edges):
+            mid = mesh.interior_vertex_on(e)
+            if mid is not None:
+                mesh.split_edge_at(e, mid)
+                split = True
+                break
+        if not split:
+            break
+    # Phase 2 — collapse redundant valence-2 collinear vertices (global).
+    while True:
+        collapsed = False
+        for v in list(mesh.vertices):
+            if mesh.collapsible_vertex(v):
+                mesh.collapse_vertex(v)
+                collapsed = True
+                break
+        if not collapsed:
+            break
+    # Phase 3 — coplanar-merge, seeded to the operation. Fuses the whole coplanar
+    # component (every shared edge, any number of faces) at once, but only when it
+    # includes a face this operation created (so user diagonals survive).
+    while True:
+        merged = False
+        for f0 in list(mesh.faces):
+            comp = _coplanar_component(mesh, f0, seedkeys)
+            if len(comp) < 2:
+                continue
+            if new_faces is not None and not (comp & new_faces):
+                continue
+            region = mesh.dissolve_coplanar_region(comp)
+            if region is not None:
+                if new_faces is not None:
+                    new_faces -= comp
+                    new_faces.add(region)
+                merged = True
+                break
+        if not merged:
+            break
+
+
+def _coplanar_component(mesh, f0, seedkeys: set) -> set:
+    """Maximal set of coplanar, edge-connected faces that touch the operation's
+    seed. Whether the component is actually merged is gated separately on it
+    containing a face the operation created (see ``run_stitch``)."""
+    def seeded(f):
+        return any(_key(v) in seedkeys for v in f.vertices)
+
+    if not seeded(f0):
+        return set()
+    n0 = f0.normal()
+    comp = {f0}
+    stack = [f0]
+    while stack:
+        f = stack.pop()
+        for loop in (f.loop, *f.hole_loops):
+            for a, b in zip(loop, loop[1:] + loop[:1]):
+                e = mesh.find_edge(a, b)
+                if e is None:
+                    continue
+                for g in e.faces:
+                    if g in comp or not seeded(g):
+                        continue
+                    if QVector3D.dotProduct(n0, g.normal()) > 0.999:
+                        comp.add(g)
+                        stack.append(g)
+    return comp
+
+
+class SnapshotMutation(Command):
+    """Wrap an arbitrary mesh mutation with snapshot undo. The push/pull live
+    preview applies the *same* mutation each drag frame (then reverts via its own
+    snapshot), so the forming solid renders exactly as it will commit — clean,
+    already stitched — instead of flashing the pre-stitch seams."""
+
+    def __init__(self, mutate) -> None:
+        self.mutate = mutate
+        self.snapshot: Optional[dict] = None
+
+    def do(self, scene) -> None:
+        self.snapshot = scene.mesh.capture_state()
+        self.mutate(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.snapshot is not None:
+            scene.mesh.restore_state(self.snapshot)
+            scene.version += 1
+
+
+class MeshSnapshotCommand(Command):
+    """Run a list of sub-commands plus the stitch pass under a single
+    identity-preserving snapshot, undone by restoring that snapshot.
+
+    Push/pull builds its edit as delta commands and then stitches the result
+    watertight; the stitch's splits/merges restructure the very edges those
+    commands own, so composing their individual undos leaves orphan edges. One
+    snapshot of the whole push is exact and robust — and because it preserves
+    object identity, *other* history entries (a drawn line, an earlier push) keep
+    working across this undo."""
+
+    def __init__(self, inner: Iterable[Command], stitch_seed: Iterable[QVector3D]) -> None:
+        self.inner = list(inner)
+        self.seed = [QVector3D(p) for p in stitch_seed]
+        self.snapshot: Optional[dict] = None
+
+    def do(self, scene) -> None:
+        self.snapshot = scene.mesh.capture_state()
+        before = set(self.snapshot["faces"])
+        for cmd in self.inner:
+            cmd.do(scene)
+        new_faces = set(scene.mesh.faces) - before
+        run_stitch(scene.mesh, {_key(p) for p in self.seed}, new_faces)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.snapshot is not None:
+            scene.mesh.restore_state(self.snapshot)
+            scene.version += 1
+
+
 class CompoundCommand(Command):
     """A list of commands executed and reverted as one atomic step."""
 
