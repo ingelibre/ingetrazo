@@ -71,7 +71,10 @@ class OrbitCamera:
         sp = math.sin(self.pitch)
         cy = math.cos(self.yaw)
         sy = math.sin(self.yaw)
-        forward = QVector3D(cp * cy, cp * sy, sp)
+        # View direction (eye → target): the eye sits at
+        # target + distance·(cp·cy, cp·sy, sp), so forward is its negation.
+        # Using +that vector flipped screen-right, inverting horizontal pan.
+        forward = QVector3D(-cp * cy, -cp * sy, -sp)
         right = QVector3D.crossProduct(forward, self.up).normalized()
         screen_up = QVector3D.crossProduct(right, forward).normalized()
         world_per_pixel = (
