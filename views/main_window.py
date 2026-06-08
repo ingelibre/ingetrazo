@@ -19,6 +19,9 @@ from PySide6.QtWidgets import (
     QToolBar,
 )
 
+from core.group import Group
+from core.history import ExplodeGroupCommand, HealOverlapsCommand, MakeGroupCommand
+from core.mesh import Edge, Face
 from formats import igz as igz_format
 from tools.line import LineTool
 from tools.move import MoveTool
@@ -152,6 +155,24 @@ class MainWindow(QMainWindow):
         paste_action.setShortcut(QKeySequence.Paste)
         paste_action.triggered.connect(self._on_paste)
         edit_menu.addAction(paste_action)
+
+        edit_menu.addSeparator()
+
+        group_action = QAction("Make Group", self)
+        group_action.setShortcut(QKeySequence("Ctrl+G"))
+        group_action.triggered.connect(self._on_make_group)
+        edit_menu.addAction(group_action)
+
+        explode_action = QAction("Explode Group", self)
+        explode_action.setShortcut(QKeySequence("Ctrl+Shift+G"))
+        explode_action.triggered.connect(self._on_explode_group)
+        edit_menu.addAction(explode_action)
+
+        edit_menu.addSeparator()
+
+        heal_action = QAction("Heal Overlapping Faces", self)
+        heal_action.triggered.connect(self._on_heal_overlaps)
+        edit_menu.addAction(heal_action)
 
         # View menu
         view_menu = menubar.addMenu("View")
@@ -311,6 +332,29 @@ class MainWindow(QMainWindow):
             action.setChecked(True)
         self._tool_label.setText(f"Nav: {key.capitalize()}")
         self._refresh_vcb()
+
+    def _on_make_group(self) -> None:
+        sel = self.viewport.scene.selection
+        faces = [f for f in sel if isinstance(f, Face)]
+        edges = [e for e in sel if isinstance(e, Edge)]
+        if faces or edges:
+            self.viewport.history.execute(MakeGroupCommand(faces, edges))
+            self.viewport.update()
+
+    def _on_explode_group(self) -> None:
+        groups = [g for g in self.viewport.scene.selection if isinstance(g, Group)]
+        for g in groups:
+            self.viewport.history.execute(ExplodeGroupCommand(g))
+        if groups:
+            self.viewport.update()
+
+    def _on_heal_overlaps(self) -> None:
+        cmd = HealOverlapsCommand()
+        self.viewport.history.execute(cmd)
+        self.viewport.update()
+        self.statusBar().showMessage(
+            f"Healed {cmd.healed} overlapping face(s)." if cmd.healed
+            else "No overlapping faces found.", 3000)
 
     def _on_paste(self) -> None:
         if self.viewport.clipboard is None:

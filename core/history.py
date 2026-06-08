@@ -21,11 +21,13 @@ from typing import Iterable, Optional
 
 from PySide6.QtGui import QVector3D
 
-from core.mesh import Edge, Face, Vertex
+from core.group import Group
+from core.mesh import Edge, Face, Mesh, Vertex
 from core.topology import (
     _key,
     _loop_edges,
     find_containing_face,
+    heal_overlapping_faces,
     loop_inside_face,
     orphaned_edges_at,
     subtract_loop_from_face,
@@ -217,6 +219,10 @@ class EraseSelectionCommand(Command):
                     scene.selection.discard(f)
                 m.remove_edge(edge)
             scene.selection.discard(edge)
+        # A merge can leave the big enclosing face overlapping its subdivisions;
+        # drop any such redundant mother (covered by the snapshot undo above).
+        for f in heal_overlapping_faces(m):
+            scene.selection.discard(f)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -592,6 +598,44 @@ class SnapshotMutation(Command):
             scene.version += 1
 
 
+class SnapshotCompound(Command):
+    """Run a list of sub-commands under one identity-preserving snapshot, undone
+    by restoring it.
+
+    The line-draw plan splits and welds edges (and punches holes in coplanar
+    faces); the per-command inverses don't compose into a clean whole — undoing
+    them piecemeal leaves orphan split edges and stray vertices behind. One
+    snapshot of the entire edit reverses it exactly, and because identity is
+    preserved, earlier history entries keep working across this undo."""
+
+    def __init__(self, inner: Iterable[Command]) -> None:
+        self.inner = list(inner)
+        self.before: Optional[dict] = None
+        self.after: Optional[dict] = None
+
+    def do(self, scene) -> None:
+        if self.after is None:
+            # First run: snapshot before, apply the plan, clean up any coplanar
+            # overlap it created (redundant nested holes / spurious mother), then
+            # snapshot the result so undo/redo restore exactly.
+            self.before = scene.mesh.capture_state()
+            for cmd in self.inner:
+                cmd.do(scene)
+            for f in heal_overlapping_faces(scene.mesh):
+                scene.selection.discard(f)
+            self.after = scene.mesh.capture_state()
+        else:
+            # Redo: re-running the delta plan wouldn't reproduce the splits, so
+            # restore the captured result directly.
+            scene.mesh.restore_state(self.after)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.before is not None:
+            scene.mesh.restore_state(self.before)
+            scene.version += 1
+
+
 class MeshSnapshotCommand(Command):
     """Run a list of sub-commands plus the stitch pass under a single
     identity-preserving snapshot, undone by restoring that snapshot.
@@ -615,6 +659,153 @@ class MeshSnapshotCommand(Command):
             cmd.do(scene)
         new_faces = set(scene.mesh.faces) - before
         run_stitch(scene.mesh, {_key(p) for p in self.seed}, new_faces)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.snapshot is not None:
+            scene.mesh.restore_state(self.snapshot)
+            scene.version += 1
+
+
+class MakeGroupCommand(Command):
+    """Encapsulate the selected faces and edges into a new Group with its own
+    mesh, removing them from the loose mesh so they no longer weld to the rest.
+    Snapshot undo (geometry crosses meshes — too tangled for a per-op inverse)."""
+
+    def __init__(self, faces: Iterable[Face], edges: Iterable[Edge]) -> None:
+        self._face_loops = [
+            ([QVector3D(v) for v in f.vertices],
+             [[QVector3D(v) for v in h] for h in f.holes])
+            for f in faces
+        ]
+        self._edge_ends = [(QVector3D(e.a), QVector3D(e.b)) for e in edges]
+        self.snapshot: Optional[dict] = None
+        self.group: Optional[Group] = None
+
+    def do(self, scene) -> None:
+        m = scene.mesh
+        self.snapshot = m.capture_state()
+        # The group is a fresh copy built from the captured positions.
+        gmesh = Mesh()
+        for loop, holes in self._face_loops:
+            gmesh.add_face([QVector3D(p) for p in loop],
+                           [[QVector3D(p) for p in h] for h in holes] or None)
+        for a, b in self._edge_ends:
+            gmesh.add_edge(QVector3D(a), QVector3D(b))
+        self.group = Group(gmesh)
+        # Remove the grouped geometry from the loose mesh.
+        face_keysets = [frozenset(_key(p) for p in loop)
+                        for loop, _ in self._face_loops]
+        for f in list(m.faces):
+            if frozenset(_key(p) for p in f.vertices) in face_keysets:
+                m.remove_face(f)
+                scene.selection.discard(f)
+        grouped = {_key(p) for loop, holes in self._face_loops
+                   for lst in (loop, *holes) for p in lst}
+        sel_edges = {frozenset((_key(a), _key(b))) for a, b in self._edge_ends}
+        for e in list(m.edges):
+            ek = frozenset((_key(e.a), _key(e.b)))
+            if not e.faces and (ek in sel_edges or
+                                (_key(e.a) in grouped and _key(e.b) in grouped)):
+                m.remove_edge(e)
+                scene.selection.discard(e)
+        scene.groups.append(self.group)
+        scene.selection.clear()
+        scene.selection.add(self.group)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.group in scene.groups:
+            scene.groups.remove(self.group)
+        scene.selection.discard(self.group)
+        scene.mesh.restore_state(self.snapshot)
+        scene.version += 1
+
+
+class ExplodeGroupCommand(Command):
+    """Dissolve a group: merge its geometry back into the loose mesh (welding to
+    whatever it touches). Snapshot undo restores the loose mesh and the group."""
+
+    def __init__(self, group: Group) -> None:
+        self.group = group
+        self.snapshot: Optional[dict] = None
+        self.index: Optional[int] = None
+
+    def do(self, scene) -> None:
+        m = scene.mesh
+        self.snapshot = m.capture_state()
+        self.index = scene.groups.index(self.group)
+        for f in self.group.mesh.faces:
+            m.add_face([QVector3D(v) for v in f.vertices],
+                       [[QVector3D(v) for v in h] for h in f.holes] or None)
+        for e in self.group.mesh.edges:
+            v0, v1 = m.vertex_at(e.a), m.vertex_at(e.b)
+            if v0 is None or v1 is None or m.find_edge(v0, v1) is None:
+                m.add_edge(QVector3D(e.a), QVector3D(e.b))
+        scene.groups.remove(self.group)
+        scene.selection.discard(self.group)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        scene.mesh.restore_state(self.snapshot)
+        scene.groups.insert(self.index, self.group)
+        scene.version += 1
+
+
+class MoveGroupCommand(Command):
+    """Translate a whole group by ``delta`` (every vertex of its mesh). Because
+    the group is isolated, this never drags the rest of the model."""
+
+    def __init__(self, group: Group, delta: QVector3D) -> None:
+        self.group = group
+        self.delta = QVector3D(delta)
+
+    def _shift(self, scene, delta) -> None:
+        for v in list(self.group.mesh.vertices):
+            self.group.mesh.move_vertex(v, delta)
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._shift(scene, self.delta)
+
+    def undo(self, scene) -> None:
+        self._shift(scene, -self.delta)
+
+
+class DeleteGroupCommand(Command):
+    """Remove a whole group (and its geometry) from the scene; undo restores it
+    at its original position in the list."""
+
+    def __init__(self, group: Group) -> None:
+        self.group = group
+        self.index: Optional[int] = None
+
+    def do(self, scene) -> None:
+        self.index = scene.groups.index(self.group)
+        scene.groups.remove(self.group)
+        scene.selection.discard(self.group)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        scene.groups.insert(self.index, self.group)
+        scene.version += 1
+
+
+class HealOverlapsCommand(Command):
+    """Remove redundant 'mother' faces left overlapping their own subdivisions
+    (a draw/delete can leave the big enclosing face on top). Snapshot undo."""
+
+    def __init__(self) -> None:
+        self.snapshot: Optional[dict] = None
+        self.healed = 0
+
+    def do(self, scene) -> None:
+        self.snapshot = scene.mesh.capture_state()
+        # The explicit command runs the aggressive partial-overlap pass too.
+        removed = heal_overlapping_faces(scene.mesh, partial=True)
+        self.healed = len(removed)
+        for f in removed:
+            scene.selection.discard(f)
         scene.version += 1
 
     def undo(self, scene) -> None:

@@ -61,6 +61,7 @@ from PySide6.QtOpenGL import (
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core.camera import OrbitCamera
+from core.group import Group
 from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
@@ -575,7 +576,7 @@ class Viewport(QOpenGLWidget):
             return
 
         all_data = array("f")
-        for e in self.scene.edges:
+        for e in self.scene.render_edges():
             all_data.extend([
                 e.a.x(), e.a.y(), e.a.z(),
                 e.b.x(), e.b.y(), e.b.z(),
@@ -589,12 +590,16 @@ class Viewport(QOpenGLWidget):
         self._edges_vbo.release()
         self._edges_count = len(all_data) // 3
 
-        # The selection set is heterogeneous (edges and/or faces). Split it:
-        # edges go to the highlighted-line VBO, faces to the overlay VBO.
+        # The selection set is heterogeneous (edges, faces and/or whole groups).
+        # Edges (and every edge of a selected group) → highlighted-line VBO.
+        sel_edges = []
+        for ent in self.scene.selection:
+            if isinstance(ent, Edge):
+                sel_edges.append(ent)
+            elif isinstance(ent, Group):
+                sel_edges.extend(ent.mesh.edges)
         sel_data = array("f")
-        for e in self.scene.selection:
-            if not isinstance(e, Edge):
-                continue
+        for e in sel_edges:
             sel_data.extend([
                 e.a.x(), e.a.y(), e.a.z(),
                 e.b.x(), e.b.y(), e.b.z(),
@@ -608,10 +613,14 @@ class Viewport(QOpenGLWidget):
         self._selected_vbo.release()
         self._selected_count = len(sel_data) // 3
 
+        sel_faces = []
+        for ent in self.scene.selection:
+            if isinstance(ent, Face):
+                sel_faces.append(ent)
+            elif isinstance(ent, Group):
+                sel_faces.extend(ent.mesh.faces)
         sel_face_data = array("f")
-        for face in self.scene.selection:
-            if not isinstance(face, Face):
-                continue
+        for face in sel_faces:
             for t0, t1, t2 in face.triangulate():
                 sel_face_data.extend([
                     t0.x(), t0.y(), t0.z(),
@@ -628,10 +637,11 @@ class Viewport(QOpenGLWidget):
         self._sel_faces_count = len(sel_face_data) // 3
 
         # Faces: triangulate each face (fan when simple, hole-aware when the
-        # face has been divided) and concatenate into a single VBO.
+        # face has been divided) and concatenate into a single VBO. Group faces
+        # render alongside the loose ones.
         face_data = array("f")
         suppressed_faces = self._suppressed_faces
-        for face in self.scene.faces:
+        for face in self.scene.render_faces():
             if face in suppressed_faces:
                 continue
             for t0, t1, t2 in face.triangulate():
@@ -1199,6 +1209,34 @@ class Viewport(QOpenGLWidget):
             return candidates[0]
         return min(candidates, key=lambda f: f.area())
 
+    def pick_group(self, screen_x: float, screen_y: float):
+        """The group whose geometry the cursor hits (front-most face, or nearest
+        edge for a group that's only lines), or ``None``."""
+        origin, direction = self._pixel_to_ray(screen_x, screen_y)
+        if origin is not None and direction is not None:
+            best = None  # (t, group)
+            for g in self.scene.groups:
+                for face in g.mesh.faces:
+                    for t0, t1, t2 in face.triangulate():
+                        t = _ray_triangle(origin, direction, t0, t1, t2)
+                        if t is not None and (best is None or t < best[0]):
+                            best = (t, g)
+            if best is not None:
+                return best[1]
+        best_d = self.pick_threshold_px
+        best_g = None
+        for g in self.scene.groups:
+            for e in g.mesh.edges:
+                pa = self._world_to_pixel(e.a)
+                pb = self._world_to_pixel(e.b)
+                if pa is None or pb is None:
+                    continue
+                d = _point_to_segment_distance_2d((screen_x, screen_y), pa, pb)
+                if d < best_d:
+                    best_d = d
+                    best_g = g
+        return best_g
+
     # ---- Tool management ----------------------------------------------------
     def set_active_tool(self, tool: Optional[Tool]) -> None:
         if self.active_tool is tool and self.nav_mode is None:
@@ -1407,7 +1445,7 @@ class Viewport(QOpenGLWidget):
         if origin is None or direction is None:
             return None
         best_t = None
-        for face in self.scene.faces:
+        for face in self.scene.render_faces():
             for t0, t1, t2 in face.triangulate():
                 t = _ray_triangle(origin, direction, t0, t1, t2)
                 if t is not None and (best_t is None or t < best_t):

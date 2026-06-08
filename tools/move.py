@@ -22,8 +22,9 @@ from __future__ import annotations
 
 from PySide6.QtGui import QVector3D
 
+from core.group import Group
 from core.mesh import Edge, Face
-from core.history import MoveVerticesCommand, translate_points
+from core.history import MoveGroupCommand, MoveVerticesCommand, translate_points
 from core.topology import _key
 from tools.base import Tool, ToolContext
 
@@ -50,6 +51,7 @@ class MoveTool(Tool):
         self.hover_point: QVector3D | None = None
         self.chain_first_point: QVector3D | None = None  # silence close-snap
         self._positions: list[QVector3D] = []  # unique positions to translate
+        self._group: Group | None = None       # set when moving a whole group
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)  # currently applied live
 
     # ---- Lifecycle ----------------------------------------------------------
@@ -64,11 +66,12 @@ class MoveTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         if self.start_point is None:
-            positions = self._gather(ctx)
-            if not positions:
+            group, positions = self._gather(ctx)
+            if group is None and not positions:
                 return  # nothing under the cursor / selected to move
             self.start_point = ctx.world
             self.grab = ctx.world
+            self._group = group
             self._positions = positions
             return
         self._commit(viewport, ctx.world - self.grab)
@@ -118,11 +121,15 @@ class MoveTool(Tool):
 
     # ---- Internals ----------------------------------------------------------
     def _gather(self, ctx: ToolContext):
-        """Unique positions to translate — from the selection if there is one,
-        otherwise from the entity under the cursor."""
+        """What to move: ``(group, positions)``. A selected/hovered group moves
+        as a unit; otherwise unique positions from the selection or the entity
+        under the cursor."""
         viewport = ctx.viewport
         entities = list(viewport.scene.selection)
         if not entities:
+            group = viewport.pick_group(ctx.screen.x(), ctx.screen.y())
+            if group is not None:
+                return group, []
             edge = viewport.pick_edge(ctx.screen.x(), ctx.screen.y())
             if edge is not None:
                 entities = [edge]
@@ -130,13 +137,16 @@ class MoveTool(Tool):
                 face = viewport.pick_face(ctx.screen.x(), ctx.screen.y())
                 if face is not None:
                     entities = [face]
+        for ent in entities:
+            if isinstance(ent, Group):
+                return ent, []
         positions: list[QVector3D] = []
         for ent in entities:
             if isinstance(ent, Edge):
                 positions.extend([ent.a, ent.b])
             elif isinstance(ent, Face):
                 positions.extend(ent.vertices)
-        return self._dedup(positions)
+        return None, self._dedup(positions)
 
     @staticmethod
     def _dedup(positions: list[QVector3D]) -> list[QVector3D]:
@@ -149,22 +159,31 @@ class MoveTool(Tool):
                 out.append(QVector3D(p))
         return out
 
+    def _shift(self, viewport, step: QVector3D) -> None:
+        """Translate the live geometry by ``step`` — a whole group's mesh, or the
+        loose positions (everything coincident follows)."""
+        if self._group is not None:
+            for v in list(self._group.mesh.vertices):
+                self._group.mesh.move_vertex(v, step)
+            viewport.scene.version += 1
+        else:
+            keys = {_key(p + self._preview_delta) for p in self._positions}
+            translate_points(viewport.scene, keys, step)
+
     def _apply_preview(self, viewport, target_delta: QVector3D) -> None:
         """Live-deform the scene so the current offset is ``target_delta`` from
         the grab point, by translating the incremental step."""
         step = target_delta - self._preview_delta
         if step.length() < 1e-12:
             return
-        keys = {_key(p + self._preview_delta) for p in self._positions}
-        translate_points(viewport.scene, keys, step)
+        self._shift(viewport, step)
         self._preview_delta = target_delta
 
     def _revert_preview(self, viewport) -> None:
         """Undo the live deformation, returning geometry to its grab-time spot."""
         if self._preview_delta.length() < 1e-12:
             return
-        keys = {_key(p + self._preview_delta) for p in self._positions}
-        translate_points(viewport.scene, keys, -self._preview_delta)
+        self._shift(viewport, -self._preview_delta)
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)
 
     def _commit(self, viewport, delta: QVector3D) -> None:
@@ -172,8 +191,11 @@ class MoveTool(Tool):
         # the history holds a single clean entry (and the geometry doesn't shift
         # by double the delta).
         self._revert_preview(viewport)
-        if delta.length() > 1e-9 and self._positions:
-            viewport.history.execute(MoveVerticesCommand(self._positions, delta))
+        if delta.length() > 1e-9:
+            if self._group is not None:
+                viewport.history.execute(MoveGroupCommand(self._group, delta))
+            elif self._positions:
+                viewport.history.execute(MoveVerticesCommand(self._positions, delta))
         self._reset()
         viewport.update()
 
@@ -182,4 +204,5 @@ class MoveTool(Tool):
         self.grab = None
         self.hover_point = None
         self._positions = []
+        self._group = None
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)

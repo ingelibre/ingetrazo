@@ -30,6 +30,7 @@ from core.history import (
     CompoundCommand,
     DeleteEdgesCommand,
     DeleteFaceCommand,
+    SnapshotCompound,
 )
 from core.topology import (
     face_exists,
@@ -143,7 +144,9 @@ def build_add_edge(scene, a: QVector3D, b: QVector3D, detect_faces: bool = True)
     commands = plan_edge_commands(scene, [(a, b)], detect_faces=detect_faces)
     if len(commands) == 1:
         return commands[0]
-    return CompoundCommand(commands)
+    # Splits/welds/hole-punches don't compose into a clean per-op inverse — undo
+    # via one snapshot so it reverses exactly (no orphan edges/vertices left).
+    return SnapshotCompound(commands)
 
 
 def build_add_edges(
@@ -158,4 +161,4 @@ def build_add_edges(
     commands.extend(extra)
     if len(commands) == 1:
         return commands[0]
-    return CompoundCommand(commands)
+    return SnapshotCompound(commands)

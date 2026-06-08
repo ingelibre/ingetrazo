@@ -14,8 +14,13 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 
+from core.group import Group
 from core.mesh import Edge, Face
-from core.history import EraseSelectionCommand
+from core.history import (
+    CompoundCommand,
+    DeleteGroupCommand,
+    EraseSelectionCommand,
+)
 from tools.base import Tool, ToolContext
 
 
@@ -57,7 +62,11 @@ class SelectTool(Tool):
         viewport.set_hover(None)
 
     def _pick(self, viewport, screen_x: float, screen_y: float):
-        """Edge under the cursor (screen-space priority), else the front face."""
+        """A group (picked as a unit) takes priority; else the edge under the
+        cursor (screen-space priority), else the front face."""
+        group = viewport.pick_group(screen_x, screen_y)
+        if group is not None:
+            return group
         edge = viewport.pick_edge(screen_x, screen_y)
         if edge is not None:
             return edge
@@ -113,10 +122,17 @@ class SelectTool(Tool):
             if selection:
                 edges = [e for e in selection if isinstance(e, Edge)]
                 faces = [f for f in selection if isinstance(f, Face)]
+                groups = [g for g in selection if isinstance(g, Group)]
+                commands = []
                 if edges or faces:
                     # Erasing an edge between two coplanar faces merges them back
                     # into one (SketchUp); any other erased edge takes its faces.
-                    viewport.history.execute(EraseSelectionCommand(edges, faces))
+                    commands.append(EraseSelectionCommand(edges, faces))
+                commands.extend(DeleteGroupCommand(g) for g in groups)
+                if commands:
+                    cmd = (commands[0] if len(commands) == 1
+                           else CompoundCommand(commands))
+                    viewport.history.execute(cmd)
                     viewport.update()
             return True
         return False

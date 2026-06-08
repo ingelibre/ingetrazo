@@ -1,0 +1,96 @@
+"""Heal: drop a redundant 'mother' face left overlapping its own subdivisions."""
+from __future__ import annotations
+
+from PySide6.QtGui import QVector3D
+
+from core.mesh import Mesh
+from core.topology import heal_overlapping_faces
+
+
+def V(x: float, y: float, z: float = 0.0) -> QVector3D:
+    return QVector3D(float(x), float(y), float(z))
+
+
+def test_heal_removes_mother_covered_by_inset_subdivisions():
+    # The planta bug: a big slab left on top of the inset rooms drawn inside it.
+    m = Mesh()
+    m.add_face([V(0, 0), V(8, 0), V(8, 8), V(0, 8)])               # big slab (64)
+    m.add_face([V(0.2, 0.2), V(3.8, 0.2), V(3.8, 7.8), V(0.2, 7.8)])  # room (~27)
+    m.add_face([V(4.2, 0.2), V(7.8, 0.2), V(7.8, 7.8), V(4.2, 7.8)])  # room (~27)
+    removed = heal_overlapping_faces(m)
+    assert len(removed) == 1                # only the big slab
+    assert len(m.faces) == 2                # the two rooms stay
+    assert all(f.area() < 30 for f in m.faces)
+
+
+def test_heal_keeps_a_face_with_a_small_island_inside():
+    # A big face with a small square inside it is NOT a redundant mother — the
+    # big face should keep being a face (it'd get a hole, not be deleted).
+    m = Mesh()
+    m.add_face([V(0, 0), V(10, 0), V(10, 10), V(0, 10)])   # big (100)
+    m.add_face([V(4, 4), V(6, 4), V(6, 6), V(4, 6)])       # small island (4%)
+    removed = heal_overlapping_faces(m)
+    assert removed == []
+    assert len(m.faces) == 2
+
+
+def test_heal_no_op_on_clean_subdivision():
+    # A cleanly split face (two halves sharing a chord) has no overlap to heal.
+    m = Mesh()
+    m.add_face([V(0, 0), V(4, 0), V(4, 4), V(0, 4)])
+    m.add_face([V(4, 0), V(8, 0), V(8, 4), V(4, 4)])
+    assert heal_overlapping_faces(m) == []
+
+
+def test_heal_dedupes_nested_holes_keeps_the_ring():
+    # The planta2 bug: a wall ring whose interior was subdivided accumulated
+    # overlapping holes (a hole inside a hole). Heal keeps the outermost hole and
+    # the ring itself — it must NOT delete the ring or leave nested holes.
+    m = Mesh()
+    outer = [V(0, 0), V(10, 0), V(10, 10), V(0, 10)]
+    big_hole = [V(2, 2), V(8, 2), V(8, 8), V(2, 8)]          # the real interior
+    nested = [V(2, 2), V(8, 2), V(8, 5), V(2, 5)]            # redundant, inside it
+    m.add_face(list(outer), [list(big_hole), list(nested)])  # ring, 2 holes
+    m.add_face(list(big_hole))                               # fills the interior
+    removed = heal_overlapping_faces(m)
+    assert removed == []                                     # ring kept
+    ring = next(f for f in m.faces if f.holes)
+    assert len(ring.holes) == 1                              # nested hole dropped
+
+
+def test_heal_keeps_a_legit_ring_with_an_inner_face():
+    # A face with one hole, filled by an inner face (an offset wall + room), is
+    # valid: the inner only fills the hole, so the ring is not "covered".
+    m = Mesh()
+    m.add_face([V(1, 1), V(3, 1), V(3, 3), V(1, 3)])                 # inner room
+    m.add_face([V(0, 0), V(4, 0), V(4, 4), V(0, 4)],
+               [[V(1, 1), V(3, 1), V(3, 3), V(1, 3)]])               # ring
+    assert heal_overlapping_faces(m) == []
+    assert any(f.holes for f in m.faces)                            # ring intact
+
+
+def test_heal_flips_a_reversed_face():
+    # A face auto-faced with reversed winding (normal pointing the wrong way)
+    # would push into the model. Heal flips it to match its coplanar neighbours.
+    m = Mesh()
+    m.add_face([V(0, 0), V(10, 0), V(10, 10), V(0, 10)])     # big, +Z
+    # a small strip wound clockwise -> normal -Z (reversed)
+    m.add_face([V(2, 2), V(2, 4), V(4, 4), V(4, 2)])
+    normals_before = sorted(round(f.normal().z(), 1) for f in m.faces)
+    assert normals_before == [-1.0, 1.0]
+    heal_overlapping_faces(m)
+    assert all(f.normal().z() > 0 for f in m.faces)          # both face +Z now
+
+
+def test_partial_overlap_removed_only_by_explicit_heal():
+    # A sliver sitting in a bigger face's solid (the door double-face). The
+    # automatic pass leaves it (would be unsafe in 3D); the explicit partial
+    # pass removes it.
+    m = Mesh()
+    m.add_face([V(0, 0), V(10, 0), V(10, 10), V(0, 10)])      # big solid
+    m.add_face([V(2, 2), V(2.2, 2), V(2.2, 4), V(2, 4)])      # sliver inside it
+    assert heal_overlapping_faces(m) == []                    # auto: kept
+    assert len(m.faces) == 2
+    removed = heal_overlapping_faces(m, partial=True)         # explicit: removed
+    assert len(removed) == 1
+    assert len(m.faces) == 1

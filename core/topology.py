@@ -971,3 +971,206 @@ def offset_loop(
         if QVector3D.dotProduct(orig.normalized(), new.normalized()) <= 0.0:
             return None
     return new_loop
+
+
+# ---- Heal overlapping coplanar faces (spurious mother) ---------------------
+
+def _loop_inside_loop(inner: list[QVector3D], outer: list[QVector3D],
+                      normal: QVector3D) -> bool:
+    """Whether ``inner`` lies inside ``outer`` (both coplanar loops, by centroid)."""
+    if len(inner) < 3 or len(outer) < 3:
+        return False
+    from core.triangulate import plane_axes
+    u, w = plane_axes(normal)
+    origin = outer[0]
+
+    def proj(p):
+        rel = p - origin
+        return (QVector3D.dotProduct(rel, u), QVector3D.dotProduct(rel, w))
+
+    poly = [proj(p) for p in outer]
+    cx = sum(p.x() for p in inner) / len(inner)
+    cy = sum(p.y() for p in inner) / len(inner)
+    cz = sum(p.z() for p in inner) / len(inner)
+    return _point_inside_2d(proj(QVector3D(cx, cy, cz)), poly)
+
+
+def _point_inside_2d(pt, poly) -> bool:
+    x, y = pt
+    inside = False
+    n = len(poly)
+    j = n - 1
+    for i in range(n):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _maximal_holes(holes: list) -> list:
+    """Drop holes nested inside a larger hole of the same face — redundant
+    overlapping holes that incremental subdivision can leave behind."""
+    def area(loop):
+        a = 0.0
+        n = len(loop)
+        for i in range(n):
+            a += loop[i].x() * loop[(i + 1) % n].y()
+            a -= loop[(i + 1) % n].x() * loop[i].y()
+        return abs(a) / 2.0
+
+    areas = [area(h) for h in holes]
+    keep = []
+    for i, h in enumerate(holes):
+        # The plane normal from the hole itself (any 3 non-collinear points).
+        nrm = QVector3D.crossProduct(h[1] - h[0], h[2] - h[0])
+        if nrm.length() < 1e-9:
+            keep.append(h)
+            continue
+        nrm = nrm.normalized()
+        nested = any(
+            j != i and areas[j] > areas[i] + 1e-6
+            and _loop_inside_loop(h, holes[j], nrm)
+            for j in range(len(holes))
+        )
+        if not nested:
+            keep.append(h)
+    return keep
+
+
+def _g_inside_a_hole(face: Face, loop: list[QVector3D]) -> bool:
+    """Whether ``loop`` sits inside one of ``face``'s holes (so it doesn't
+    actually overlap the face's solid region — it fills a hole)."""
+    n = face.normal()
+    return any(_loop_inside_loop(loop, h, n) for h in face.holes if len(h) >= 3)
+
+
+def _point_in_face_solid(face: Face, point: QVector3D) -> bool:
+    """Whether ``point`` lies in ``face``'s solid region — inside its outer loop
+    and outside every hole."""
+    from core.triangulate import plane_axes
+    n = face.normal()
+    u, w = plane_axes(n)
+    origin = face.vertices[0]
+
+    def proj(p):
+        rel = p - origin
+        return (QVector3D.dotProduct(rel, u), QVector3D.dotProduct(rel, w))
+
+    pt = proj(point)
+    if not _point_inside_2d(pt, [proj(v) for v in face.vertices]):
+        return False
+    return not any(_point_inside_2d(pt, [proj(v) for v in h]) for h in face.holes)
+
+
+def orient_coplanar_faces(mesh) -> list:
+    """Flip faces whose winding came out reversed, so coplanar faces face the
+    same way.
+
+    Auto-faced cycles can close with the opposite orientation (a normal pointing
+    the wrong way), and push/pull then extrudes that face *into* the model
+    instead of out — it looks like "I can't push this one". A valid solid never
+    has two anti-parallel faces on the same plane, so flipping any face whose
+    normal opposes the area-weighted majority of its plane only ever fixes that
+    anomaly. Returns the flipped faces.
+    """
+    groups: dict = {}
+    for f in mesh.faces:
+        n = f.normal()
+        axis = (round(abs(n.x()), 2), round(abs(n.y()), 2), round(abs(n.z()), 2))
+        dist = round(abs(QVector3D.dotProduct(n, f.centroid())), 2)
+        groups.setdefault((axis, dist), []).append(f)
+
+    flipped: list = []
+    for fs in groups.values():
+        if len(fs) < 2:
+            continue
+        dominant = QVector3D(0.0, 0.0, 0.0)
+        for f in fs:
+            dominant += f.normal() * f.area()
+        for f in fs:
+            if QVector3D.dotProduct(f.normal(), dominant) < 0:
+                outer = [QVector3D(v) for v in f.vertices][::-1]
+                holes = [[QVector3D(v) for v in h] for h in f.holes]
+                mesh.remove_face(f)
+                mesh.add_face(outer, holes or None)
+                flipped.append(f)
+    return flipped
+
+
+def heal_overlapping_faces(mesh, coverage: float = 0.5, partial: bool = False) -> list:
+    """Clean up coplanar face overlaps that draw/delete sequences can leave:
+
+    1. **Redundant nested holes** — incrementally subdividing a face can punch
+       overlapping holes (a hole inside a hole). Keep only the outermost ones.
+    2. **A redundant mother** — a big enclosing face left on top of the smaller
+       coplanar faces inside it (not merely filling its holes). When the inside
+       faces cover most (> ``coverage``) of its area, that mother is spurious;
+       remove it so the real subdivision stays. A ring (face with holes) whose
+       inside faces only *fill its holes* is legitimate and kept.
+
+    3. **Reversed faces** — a face auto-faced with the wrong winding (so it would
+       push the wrong way) is flipped to match its plane.
+
+    With ``partial=True`` (the explicit *Heal* command, never the automatic pass)
+    it also removes a small face whose body lies in another's solid region — a
+    partial overlap the auto-divide missed (e.g. a door-corner sliver). This is
+    unsafe to run automatically: valid 3D solids (stacked blocks, through-holes)
+    legitimately have coplanar faces inside each other, so it's gated behind the
+    deliberate command and meant for flat plans.
+
+    Returns the faces removed (the rebuilt/flipped ones don't count).
+    """
+    # 0. Flip any reversed face so coplanar faces face the same way.
+    orient_coplanar_faces(mesh)
+
+    # 1. Dedupe nested holes by rebuilding the face with the outermost holes.
+    for face in list(mesh.faces):
+        if len(face.holes) < 2:
+            continue
+        keep = _maximal_holes(face.holes)
+        if len(keep) != len(face.holes):
+            outer = [QVector3D(v) for v in face.vertices]
+            mesh.remove_face(face)
+            mesh.add_face(outer, [[QVector3D(v) for v in h] for h in keep] or None)
+
+    # 2. Remove a redundant mother covered by faces that aren't in its holes.
+    removed: list = []
+    for face in list(mesh.faces):
+        if face.area() < _SPLIT_TOLERANCE:
+            continue
+        fn = face.normal()
+        covered = 0.0
+        for g in mesh.faces:
+            if g is face or g in removed:
+                continue
+            if not _faces_coplanar(fn, g.normal()):
+                continue
+            if (g.area() < face.area() and loop_inside_face(face, g.vertices)
+                    and not _g_inside_a_hole(face, g.vertices)):
+                covered += g.area()
+        if covered > coverage * face.area():
+            mesh.remove_face(face)
+            removed.append(face)
+
+    # 3. (Explicit Heal only) Remove a small face whose body lies in another's
+    #    solid region — a partial overlap the auto-divide missed.
+    if partial:
+        for face in list(mesh.faces):
+            if face in removed:
+                continue
+            centre = face.centroid()
+            fn = face.normal()
+            for g in mesh.faces:
+                if g is face or g in removed or g.area() <= face.area():
+                    continue
+                if not _faces_coplanar(fn, g.normal()):
+                    continue
+                if _point_in_face_solid(g, centre):
+                    mesh.remove_face(face)
+                    removed.append(face)
+                    break
+    return removed
+
+

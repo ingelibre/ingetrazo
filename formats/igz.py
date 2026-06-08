@@ -27,33 +27,42 @@ from pathlib import Path
 
 from PySide6.QtGui import QVector3D
 
+from core.group import Group
+
 
 CURRENT_FORMAT = 1
 
 
-def save_scene(scene, path: Path) -> None:
-    edges = [
-        {
-            "a": [e.a.x(), e.a.y(), e.a.z()],
-            "b": [e.b.x(), e.b.y(), e.b.z()],
-        }
-        for e in scene.edges
-    ]
-    def _face_json(f):
-        entry = {"vertices": [[v.x(), v.y(), v.z()] for v in f.vertices]}
-        # Holes are written only when present, so simple documents stay terse
-        # and older readers ignore the extra key gracefully.
-        if getattr(f, "holes", None):
-            entry["holes"] = [
-                [[v.x(), v.y(), v.z()] for v in loop] for loop in f.holes
-            ]
-        return entry
+def _face_json(f) -> dict:
+    entry = {"vertices": [[v.x(), v.y(), v.z()] for v in f.vertices]}
+    # Holes are written only when present, so simple documents stay terse and
+    # older readers ignore the extra key gracefully.
+    if getattr(f, "holes", None):
+        entry["holes"] = [
+            [[v.x(), v.y(), v.z()] for v in loop] for loop in f.holes
+        ]
+    return entry
 
-    faces = [_face_json(f) for f in getattr(scene, "faces", [])]
+
+def _mesh_json(mesh) -> dict:
+    return {
+        "edges": [{"a": [e.a.x(), e.a.y(), e.a.z()],
+                   "b": [e.b.x(), e.b.y(), e.b.z()]} for e in mesh.edges],
+        "faces": [_face_json(f) for f in mesh.faces],
+    }
+
+
+def save_scene(scene, path: Path) -> None:
+    # Accept a Scene or a bare Mesh (the M1 read-compat path feeds a Mesh).
+    mesh = scene.mesh if hasattr(scene, "mesh") else scene
+    payload = _mesh_json(mesh)
+    groups = getattr(scene, "groups", None)
+    if groups:
+        payload["groups"] = [_mesh_json(g.mesh) for g in groups]
     data = {
         "igz_format": CURRENT_FORMAT,
         "app_version": "0.0.1",
-        "scene": {"edges": edges, "faces": faces},
+        "scene": payload,
     }
     path.write_text(json.dumps(data, indent=2))
 
@@ -71,20 +80,24 @@ def load_into(scene, path: Path) -> None:
 
     scene.mesh.clear()
     scene.selection.clear()
+    scene.groups.clear()
 
-    for raw in payload.get("edges", []):
-        a = QVector3D(*raw["a"])
-        b = QVector3D(*raw["b"])
-        try:
-            scene.mesh.add_edge(a, b)
-        except ValueError:
-            pass  # degenerate edge in the document — skip
-
-    for raw in payload.get("faces", []):
-        verts = [QVector3D(*v) for v in raw["vertices"]]
-        holes = [
-            [QVector3D(*v) for v in loop] for loop in raw.get("holes", [])
-        ]
-        scene.mesh.add_face(verts, holes)
+    _load_mesh(scene.mesh, payload)
+    for raw in payload.get("groups", []):
+        group = Group()
+        _load_mesh(group.mesh, raw)
+        scene.groups.append(group)
 
     scene.version += 1
+
+
+def _load_mesh(mesh, payload) -> None:
+    for raw in payload.get("edges", []):
+        try:
+            mesh.add_edge(QVector3D(*raw["a"]), QVector3D(*raw["b"]))
+        except ValueError:
+            pass  # degenerate edge in the document — skip
+    for raw in payload.get("faces", []):
+        verts = [QVector3D(*v) for v in raw["vertices"]]
+        holes = [[QVector3D(*v) for v in loop] for loop in raw.get("holes", [])]
+        mesh.add_face(verts, holes)

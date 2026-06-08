@@ -24,8 +24,12 @@ class Scene:
     mesh: Mesh = field(default_factory=Mesh)
     selection: set = field(default_factory=set)
     version: int = 0
+    # Encapsulated chunks (own meshes), isolated from the main mesh's welding.
+    groups: list = field(default_factory=list)
 
-    # ---- Geometry views (read-only over the mesh) ---------------------------
+    # ---- Geometry views (read-only over the *loose* mesh) -------------------
+    # Tools, edits and topology operate on this (the loose geometry); groups are
+    # walled off so drawing never welds to them.
     @property
     def edges(self) -> list[Edge]:
         return self.mesh.edges
@@ -33,6 +37,17 @@ class Scene:
     @property
     def faces(self) -> list[Face]:
         return self.mesh.faces
+
+    # ---- Render views (loose + every group) ---------------------------------
+    def render_edges(self):
+        yield from self.mesh.edges
+        for g in self.groups:
+            yield from g.mesh.edges
+
+    def render_faces(self):
+        yield from self.mesh.faces
+        for g in self.groups:
+            yield from g.mesh.faces
 
     # ---- Mutations ----------------------------------------------------------
     def add_edge(self, a: QVector3D, b: QVector3D) -> Edge:
@@ -63,15 +78,18 @@ class Scene:
         self.version += 1
 
     def clear(self) -> None:
-        if self.mesh.edges or self.mesh.faces or self.selection:
+        if self.mesh.edges or self.mesh.faces or self.selection or self.groups:
             self.mesh.clear()
+            self.groups.clear()
             self.selection.clear()
             self.version += 1
 
     # ---- Queries ------------------------------------------------------------
     def bounds(self) -> tuple[QVector3D, QVector3D] | tuple[None, None]:
         """Axis-aligned bounding box of all geometry. ``(None, None)`` if empty."""
-        if not self.edges and not self.faces:
+        edges = list(self.render_edges())
+        faces = list(self.render_faces())
+        if not edges and not faces:
             return None, None
         inf = float("inf")
         minx = miny = minz = inf
@@ -87,10 +105,10 @@ class Scene:
             if y > maxy: maxy = y
             if z > maxz: maxz = z
 
-        for edge in self.edges:
+        for edge in edges:
             absorb(edge.a)
             absorb(edge.b)
-        for face in self.faces:
+        for face in faces:
             for v in face.vertices:
                 absorb(v)
         return QVector3D(minx, miny, minz), QVector3D(maxx, maxy, maxz)
