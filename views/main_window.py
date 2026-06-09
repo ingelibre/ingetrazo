@@ -20,7 +20,12 @@ from PySide6.QtWidgets import (
 )
 
 from core.group import Group
-from core.history import ExplodeGroupCommand, HealOverlapsCommand, MakeGroupCommand
+from core.history import (
+    ExplodeGroupCommand,
+    HealOverlapsCommand,
+    MakeGroupCommand,
+    RebuildPlanarFacesCommand,
+)
 from core.mesh import Edge, Face
 from formats import igz as igz_format
 from tools.line import LineTool
@@ -173,6 +178,10 @@ class MainWindow(QMainWindow):
         heal_action = QAction("Heal Overlapping Faces", self)
         heal_action.triggered.connect(self._on_heal_overlaps)
         edit_menu.addAction(heal_action)
+
+        rebuild_action = QAction("Rebuild Faces (Planar)", self)
+        rebuild_action.triggered.connect(self._on_rebuild_planar)
+        edit_menu.addAction(rebuild_action)
 
         # View menu
         view_menu = menubar.addMenu("View")
@@ -355,6 +364,16 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Healed {cmd.healed} overlapping face(s)." if cmd.healed
             else "No overlapping faces found.", 3000)
+
+    def _on_rebuild_planar(self) -> None:
+        cmd = RebuildPlanarFacesCommand()
+        self.viewport.history.execute(cmd)
+        self.viewport.update()
+        if not cmd.flat:
+            msg = "Rebuild Faces only works on a flat (single-plane) drawing."
+        else:
+            msg = f"Rebuilt {cmd.rebuilt} face(s) from the edge graph."
+        self.statusBar().showMessage(msg, 3000)
 
     def _on_paste(self) -> None:
         if self.viewport.clipboard is None:

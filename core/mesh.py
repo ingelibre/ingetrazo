@@ -619,7 +619,10 @@ class Mesh:
         if len(faces) < 2:
             return None
         n0 = faces[0].normal()
-        if any(QVector3D.dotProduct(n0, f.normal()) < 0.999 for f in faces[1:]):
+        # Coplanar regardless of winding sign (a push/pull can flip a fragment's
+        # winding): the union outline is traced from undirected edges, so an
+        # opposite-wound coplanar face merges in cleanly.
+        if any(abs(QVector3D.dotProduct(n0, f.normal())) < 0.999 for f in faces[1:]):
             return None
         counts: dict = {}
         for f in faces:
@@ -727,9 +730,13 @@ class Mesh:
         face_a, face_b = edge.faces[0], edge.faces[1]
         if face_a is face_b:
             return None  # both sides are the same face (a slit) — leave it
-        if QVector3D.dotProduct(face_a.normal(), face_b.normal()) < 0.999:
-            return None  # not coplanar with a shared outward direction
-        merged = _splice_loops(face_a.loop, face_b.loop, edge.v0, edge.v1)
+        dot = QVector3D.dotProduct(face_a.normal(), face_b.normal())
+        if abs(dot) < 0.999:
+            return None  # not coplanar
+        # Opposite-wound coplanar fragments (a push/pull artefact) are still one
+        # face — flip B so the splice closes instead of leaving a phantom seam.
+        loop_b = face_b.loop if dot > 0 else list(reversed(face_b.loop))
+        merged = _splice_loops(face_a.loop, loop_b, edge.v0, edge.v1)
         if merged is None:
             return None
         loop_positions = [v.position for v in merged]

@@ -43,6 +43,8 @@ from core.history import (
 )
 from core.topology import (
     _key,
+    _mesh_is_flat,
+    cap_boundary_loops,
     classify_push_edge,
     extend_wall_edge,
     loop_inside_face,
@@ -50,6 +52,23 @@ from core.topology import (
     subtract_loop_from_face,
 )
 from tools.base import Tool, ToolContext
+
+
+def _swept_by_push(neighbour: Face, push_normal: QVector3D) -> bool:
+    """Whether ``neighbour`` is *swept* by a push along ``push_normal`` — it has
+    an edge parallel to the push, so translating its shared edge slides the wall
+    along its own length (a prism wall getting taller). A cap perpendicular to
+    the prism axis (a triangular floor/top) has no such edge, so pushing one of
+    *its* edges out would shear it instead — that case must add a coplanar strip
+    (a box bump), not translate/extend."""
+    n = push_normal.normalized()
+    verts = neighbour.vertices
+    m = len(verts)
+    for i in range(m):
+        e = verts[(i + 1) % m] - verts[i]
+        if e.length() > 1e-9 and abs(QVector3D.dotProduct(e.normalized(), n)) > 0.999:
+            return True
+    return False
 
 
 class PushPullTool(Tool):
@@ -209,8 +228,16 @@ class PushPullTool(Tool):
             classify_push_edge(self.base_face, base[i], base[(i + 1) % n], faces)
             for i in range(n)
         ]
+        normal = self.base_face.normal()
         attached = all(kind != "free" for kind, _ in kinds)
-        prism_cap = bool(kinds) and all(kind == "perp" for kind, _ in kinds)
+        # A clean prism-cap translate only applies when every backing wall is
+        # *swept* by the push (has an edge along the normal). Otherwise the push
+        # is into a cap that would shear — handle that via the extrude path so it
+        # adds a box bump instead of dragging the whole cross-section.
+        prism_cap = bool(kinds) and all(
+            kind == "perp" and nb is not None and _swept_by_push(nb, normal)
+            for kind, nb in kinds
+        )
         return attached, prism_cap
 
     def _commit(self, viewport) -> None:
@@ -247,6 +274,9 @@ class PushPullTool(Tool):
             return
 
         normal = face.normal()
+        # A push on a *pre-existing solid* must stay watertight; one on a flat
+        # sheet (a recess carved into a surface) legitimately leaves open edges.
+        was_solid = not _mesh_is_flat(scene.mesh)
         allverts = [v.position for v in scene.mesh.vertices]
         # Split the base loop at any existing vertex sitting on one of its edges
         # (a T-junction where the host wall ends and an earlier overhang's floor
@@ -281,6 +311,11 @@ class PushPullTool(Tool):
         for hb, ht in zip(base_holes, top_holes):
             seed += list(hb) + list(ht)
         run_stitch(scene.mesh, {_key(p) for p in seed}, new_faces)
+        # A push on a solid must end watertight; a nested push can still leave a
+        # small unfaced crack. Cap any boundary loop so the solid closes — but
+        # only when we started from a solid (a flat sheet's open edges are real).
+        if attached and was_solid:
+            cap_boundary_loops(scene.mesh)
 
     def _extrude_commands(self, face, base, top, base_holes, top_holes,
                           count, kinds, attached) -> list:
@@ -288,6 +323,7 @@ class PushPullTool(Tool):
         base, the moved cap (carrying any holes), a wall per side, and an inner
         wall per hole edge."""
         commands: list = []
+        push_normal = face.normal()
         if attached:
             commands.append(DeleteFaceCommand(face))  # base consumed into the solid
         for i in range(count):
@@ -313,9 +349,12 @@ class PushPullTool(Tool):
             j = (i + 1) % count
             a, b, b2, a2 = base[i], base[j], top[j], top[i]
             kind, neighbour = kinds[i]
-            if attached and kind == "perp":
+            if attached and kind == "perp" and _swept_by_push(neighbour, push_normal):
                 # The wall this edge sits on grows in its own plane: move its
                 # shared edge rather than stack a coplanar strip (no seam left).
+                # Only when the wall is swept by the push (a prism wall getting
+                # taller); a cap perpendicular to the push gets a coplanar strip
+                # below (a box bump) which the stitch then merges.
                 extended = extend_wall_edge(neighbour, a, b, a2, b2)
                 if extended is not None:
                     commands.append(DeleteFaceCommand(neighbour))

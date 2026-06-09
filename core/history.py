@@ -571,7 +571,10 @@ def _coplanar_component(mesh, f0, seedkeys: set) -> set:
                 for g in e.faces:
                     if g in comp or not seeded(g):
                         continue
-                    if QVector3D.dotProduct(n0, g.normal()) > 0.999:
+                    # Coplanar regardless of winding sign — a push/pull can leave
+                    # a fragment wound the opposite way (a prism floor cap +Z vs a
+                    # bump strip -Z); same surface, so it belongs to the region.
+                    if abs(QVector3D.dotProduct(n0, g.normal())) > 0.999:
                         comp.add(g)
                         stack.append(g)
     return comp
@@ -806,6 +809,54 @@ class HealOverlapsCommand(Command):
         self.healed = len(removed)
         for f in removed:
             scene.selection.discard(f)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.snapshot is not None:
+            scene.mesh.restore_state(self.snapshot)
+            scene.version += 1
+
+
+class RebuildPlanarFacesCommand(Command):
+    """Rebuild the minimal faces of a flat drawing from its edge graph (a planar
+    arrangement) — the deterministic, from-scratch replacement for the heuristic
+    heal. Splits every crossing/overlap, drops dangling spurs, and recomputes the
+    rooms and their holes exactly. Only runs on a single-plane mesh; 3D is left
+    untouched (coplanar nesting there is legitimate). Snapshot undo."""
+
+    def __init__(self) -> None:
+        self.snapshot: Optional[dict] = None
+        self.rebuilt = 0
+        self.flat = True
+
+    def do(self, scene) -> None:
+        from core.arrangement import coplanar_plane, planar_rebuild
+
+        self.snapshot = scene.mesh.capture_state()
+        mesh = scene.mesh
+        if not mesh.edges:
+            self.flat = False
+            return
+        # Every edge endpoint must share one plane; 3D models are left alone.
+        verts = [v.position for v in mesh.vertices]
+        plane = coplanar_plane(verts)
+        if plane is None:
+            self.flat = False
+            return
+        origin, normal = plane
+        if mesh.faces:  # prefer a real face's normal for a stable orientation
+            normal = mesh.faces[0].normal()
+            origin = mesh.faces[0].vertices[0]
+        segments = [(e.v0.position, e.v1.position) for e in mesh.edges]
+        edges, faces = planar_rebuild(segments, origin, normal)
+
+        scene.selection.clear()
+        mesh.clear()
+        for a, b in edges:
+            mesh.add_edge(a, b)
+        for outer, holes in faces:
+            mesh.add_face(outer, holes or None)
+        self.rebuilt = len(faces)
         scene.version += 1
 
     def undo(self, scene) -> None:

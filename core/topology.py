@@ -1151,6 +1151,105 @@ def prune_collinear_orphan_edges(mesh) -> list:
     return removed
 
 
+def cap_boundary_loops(mesh) -> int:
+    """Fill missing faces (cracks) in what should be a closed solid.
+
+    A push/pull on a solid must end watertight; a repeated/nested push can still
+    leave a small unfaced region — a closed loop of edges each bordering exactly
+    *one* face. Trace each such loop and add a planar face for it, closing the
+    crack. Returns the number of faces added.
+
+    Only call this when the result is *meant* to be closed (an attached push), so
+    it never caps legitimately-open geometry. Loops that aren't a clean simple
+    cycle (an ambiguous junction) or aren't planar are left alone — conservative
+    by design.
+    """
+    boundary = [e for e in mesh.edges if len(e.faces) == 1]
+    if not boundary:
+        return 0
+    inc: dict = {}
+    for e in boundary:
+        inc.setdefault(e.v0, []).append(e)
+        inc.setdefault(e.v1, []).append(e)
+
+    filled = 0
+    capped_verts: set = set()
+    used: set = set()
+    for start in boundary:
+        if start in used:
+            continue
+        loop_v = [start.v0]
+        cur, cv = start, start.v1
+        used.add(cur)
+        ok = True
+        while cv is not start.v0:
+            loop_v.append(cv)
+            nxts = [e for e in inc.get(cv, []) if e is not cur]
+            if len(nxts) != 1:          # open end or ambiguous junction
+                ok = False
+                break
+            nxt = nxts[0]
+            if nxt in used:             # ran into another loop — bail
+                ok = False
+                break
+            used.add(nxt)
+            cv = nxt.v1 if nxt.v0 is cv else nxt.v0
+            cur = nxt
+            if len(loop_v) > 100000:
+                ok = False
+                break
+        if ok and len(loop_v) >= 3:
+            positions = [v.position for v in loop_v]
+            if is_planar(positions):
+                mesh.add_face(positions)
+                filled += 1
+                capped_verts.update(loop_v)
+
+    if filled:
+        # Fuse each patch into its whole coplanar component so it reads as one
+        # clean face (no visible diagonal seam where the crack was), SketchUp-
+        # style. The region merge handles faces that share several edges, which
+        # a pairwise edge dissolve can't.
+        changed = True
+        while changed:
+            changed = False
+            for f0 in list(mesh.faces):
+                if not any(v in capped_verts for v in f0.loop):
+                    continue
+                comp = _coplanar_component_local(mesh, f0)
+                if len(comp) < 2:
+                    continue
+                region = mesh.dissolve_coplanar_region(comp)
+                if region is not None:
+                    capped_verts.update(region.loop)
+                    changed = True
+                    break
+    return filled
+
+
+def _coplanar_component_local(mesh, f0) -> set:
+    """All coplanar, edge-connected faces reachable from ``f0`` (winding sign
+    ignored — a push can flip a fragment's winding)."""
+    n0 = f0.normal().normalized()
+    comp = {f0}
+    stack = [f0]
+    while stack:
+        f = stack.pop()
+        for loop in (f.loop, *f.hole_loops):
+            n = len(loop)
+            for i in range(n):
+                e = mesh.find_edge(loop[i], loop[(i + 1) % n])
+                if e is None:
+                    continue
+                for g in e.faces:
+                    if g in comp:
+                        continue
+                    if abs(QVector3D.dotProduct(n0, g.normal().normalized())) > 0.999:
+                        comp.add(g)
+                        stack.append(g)
+    return comp
+
+
 def _mesh_is_flat(mesh) -> bool:
     """Whether every face lies on one common plane — a flat 2D drawing, where the
     aggressive partial-overlap cleanup is safe (in 3D, coplanar faces inside each
