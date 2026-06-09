@@ -41,6 +41,7 @@ from core.history import (
     run_stitch,
     translate_points,
 )
+from core.orient import orient_outward
 from core.topology import (
     _key,
     _mesh_is_flat,
@@ -316,6 +317,15 @@ class PushPullTool(Tool):
         # only when we started from a solid (a flat sheet's open edges are real).
         if attached and was_solid:
             cap_boundary_loops(scene.mesh)
+        # Give any closed solid a consistent outward orientation — every face's
+        # normal pointing out. The extrude/merge can otherwise commit a closed
+        # solid wound inconsistently (a fresh strip opposite its coplanar
+        # neighbour, a flipped cap, or the base of a first flat→solid extrude),
+        # which is invisible until you push that face and it extrudes *inward*.
+        # This restores the invariant the coplanar merge's ``abs()`` stood in for,
+        # so the "can't push this face" class is gone. No-op when the result is
+        # legitimately open (a recess carved into a flat sheet).
+        orient_outward(scene.mesh)
 
     def _extrude_commands(self, face, base, top, base_holes, top_holes,
                           count, kinds, attached) -> list:

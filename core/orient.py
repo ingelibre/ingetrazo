@@ -171,11 +171,12 @@ def orient_outward(mesh, seed: int = 12345) -> list:
         if outward is False:
             to_flip.append(f)
 
-    flipped: list = []
     for f in to_flip:
-        outer = [QVector3D(v) for v in f.vertices][::-1]
-        holes = [[QVector3D(v) for v in h] for h in f.holes]
-        mesh.remove_face(f)
-        mesh.add_face(outer, holes or None)
-        flipped.append(f)
-    return flipped
+        # Flip in place: reversing the loops reverses the winding (so the normal
+        # flips) while keeping the *same* Face object and its shared edges/
+        # incidence. Identity is preserved — a freshly extruded box keeps its
+        # base face object, and snapshot undo stays valid.
+        f.loop.reverse()
+        for h in f.hole_loops:
+            h.reverse()
+    return to_flip
