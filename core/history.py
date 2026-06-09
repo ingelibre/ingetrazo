@@ -584,20 +584,30 @@ class SnapshotMutation(Command):
     """Wrap an arbitrary mesh mutation with snapshot undo. The push/pull live
     preview applies the *same* mutation each drag frame (then reverts via its own
     snapshot), so the forming solid renders exactly as it will commit — clean,
-    already stitched — instead of flashing the pre-stitch seams."""
+    already stitched — instead of flashing the pre-stitch seams.
+
+    Redo restores the captured *result* rather than re-running the mutation: the
+    closure usually closes over tool state (``base_face`` etc.) that is reset
+    right after commit, so re-running it on redo would crash — and re-running the
+    deterministic plane rebuild on stale state would be wasteful besides."""
 
     def __init__(self, mutate) -> None:
         self.mutate = mutate
-        self.snapshot: Optional[dict] = None
+        self.before: Optional[dict] = None
+        self.after: Optional[dict] = None
 
     def do(self, scene) -> None:
-        self.snapshot = scene.mesh.capture_state()
-        self.mutate(scene)
+        if self.after is None:
+            self.before = scene.mesh.capture_state()
+            self.mutate(scene)
+            self.after = scene.mesh.capture_state()
+        else:
+            scene.mesh.restore_state(self.after)
         scene.version += 1
 
     def undo(self, scene) -> None:
-        if self.snapshot is not None:
-            scene.mesh.restore_state(self.snapshot)
+        if self.before is not None:
+            scene.mesh.restore_state(self.before)
             scene.version += 1
 
 

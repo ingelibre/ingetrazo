@@ -222,3 +222,61 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D) -> Optional[list]:
         ([to3d(p) for p in outer], [[to3d(p) for p in h] for h in holes])
         for outer, holes in merged
     ]
+
+
+def _coplanar_on(face, origin, normal) -> bool:
+    return (
+        abs(QVector3D.dotProduct(face.normal().normalized(), normal)) > 0.999
+        and _on_plane(face.centroid(), origin, normal)
+    )
+
+
+def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D) -> bool:
+    """Rebuild one plane of ``mesh`` in place: replace its coplanar faces with the
+    deterministic solid faces from :func:`rebuild_plane`, and prune the edges left
+    interior to the plane (a dissolved seam) that now border nothing. Returns
+    whether anything changed. No-op when the rebuild yields nothing to face.
+
+    The caller snapshots for undo (the push wraps the whole mutation), so this
+    keeps no inverse of its own."""
+    normal = normal.normalized()
+    rebuilt = rebuild_plane(mesh, origin, normal)
+    if not rebuilt:
+        return False
+    old = [f for f in mesh.faces if _coplanar_on(f, origin, normal)]
+    for f in old:
+        mesh.remove_face(f)
+    for outer, holes in rebuilt:
+        mesh.add_face(outer, holes or None)
+    # Drop edges that lie fully on the plane and ended up facing nothing — the
+    # interior seams the union dissolved. Perimeter edges still border a wall, so
+    # they keep a face and survive.
+    for e in list(mesh.edges):
+        if (not e.faces
+                and _on_plane(e.a, origin, normal)
+                and _on_plane(e.b, origin, normal)):
+            mesh.remove_edge(e)
+    return True
+
+
+def crack_planes(mesh) -> list:
+    """Representative ``(origin, normal)`` for each distinct plane that carries a
+    crack — a boundary edge bordering a single face. These are the planes a
+    nested push can leave unclosed, the ones :func:`apply_rebuild` should
+    recompute (the deterministic replacement for ``cap_boundary_loops``)."""
+    seen: dict = {}
+    for e in mesh.edges:
+        if len(e.faces) != 1:
+            continue
+        f = e.faces[0]
+        n = f.normal().normalized()
+        # Canonical normal (largest-magnitude component made positive) so the two
+        # sides of a slab don't collide, but a face and its flip map to one plane.
+        comps = (n.x(), n.y(), n.z())
+        if comps[max(range(3), key=lambda i: abs(comps[i]))] < 0:
+            n = -n
+        d = QVector3D.dotProduct(n, f.centroid())
+        key = (round(n.x(), 3), round(n.y(), 3), round(n.z(), 3), round(d, 3))
+        if key not in seen:
+            seen[key] = (f.centroid(), n)
+    return list(seen.values())

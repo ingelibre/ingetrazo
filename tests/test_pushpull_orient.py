@@ -129,3 +129,17 @@ def test_repeated_wall_push_commits_oriented_solid(perm):
 def test_plain_prism_is_oriented():
     scene, _hist = _prism_solid()
     _assert_clean_solid(scene)
+
+
+# ---- undo / redo round-trip ------------------------------------------------
+
+def test_push_undo_redo_round_trip():
+    # Redo must restore the committed result, not re-run the mutation closure
+    # (whose tool state is reset right after commit) — the pre-existing crash.
+    scene, hist = _prism_solid()
+    _push(scene, hist, _side_walls(scene)[0], 1.5)
+    after = len(scene.mesh.faces)
+    assert hist.undo() is True
+    assert hist.redo() is True
+    assert len(scene.mesh.faces) == after
+    _assert_clean_solid(scene)

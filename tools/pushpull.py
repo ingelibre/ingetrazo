@@ -42,10 +42,10 @@ from core.history import (
     translate_points,
 )
 from core.orient import orient_outward
+from core.cap_rebuild import apply_rebuild, crack_planes
 from core.topology import (
     _key,
     _mesh_is_flat,
-    cap_boundary_loops,
     classify_push_edge,
     extend_wall_edge,
     loop_inside_face,
@@ -316,15 +316,19 @@ class PushPullTool(Tool):
         # small unfaced crack. Cap any boundary loop so the solid closes — but
         # only when we started from a solid (a flat sheet's open edges are real).
         if attached and was_solid:
-            cap_boundary_loops(scene.mesh)
+            # Deterministic root-fix (path C): instead of patching the crack with
+            # the post-hoc ``cap_boundary_loops`` heal, recompute each cracked
+            # plane's faces from its edges — the planar arrangement finds every
+            # region, winding-classification keeps the ones inside the solid and
+            # drops phantoms outside, and the union dissolves coplanar seams. One
+            # pass fills the crack *and* merges seams, with no growing case tree.
+            for origin, plane_n in crack_planes(scene.mesh):
+                apply_rebuild(scene.mesh, origin, plane_n)
         # Give any closed solid a consistent outward orientation — every face's
-        # normal pointing out. The extrude/merge can otherwise commit a closed
-        # solid wound inconsistently (a fresh strip opposite its coplanar
-        # neighbour, a flipped cap, or the base of a first flat→solid extrude),
-        # which is invisible until you push that face and it extrudes *inward*.
-        # This restores the invariant the coplanar merge's ``abs()`` stood in for,
-        # so the "can't push this face" class is gone. No-op when the result is
-        # legitimately open (a recess carved into a flat sheet).
+        # normal pointing out. The extrude can otherwise commit a closed solid
+        # wound inconsistently (a flipped cap, or the base of a first flat→solid
+        # extrude), invisible until you push that face and it extrudes *inward*.
+        # No-op when the result is legitimately open (a recess in a flat sheet).
         orient_outward(scene.mesh)
 
     def _extrude_commands(self, face, base, top, base_holes, top_holes,
