@@ -11,6 +11,8 @@ Notes:
 """
 from __future__ import annotations
 
+import math
+
 from PySide6.QtGui import QVector3D
 
 from core.edits import build_add_edges
@@ -43,6 +45,9 @@ class RectangleTool(Tool):
     name = "Rectangle"
     shortcut = "R"
     vcb_label = "Dimensions"
+    # Within this fraction of the longer side, the two sides count as equal and
+    # the rectangle snaps to a perfect square ("Cuadrado"), SketchUp-style.
+    SQUARE_TOL = 0.04
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None
@@ -67,7 +72,8 @@ class RectangleTool(Tool):
         if self.start_point is None:
             self.start_point = ctx.world
             return
-        self._commit_rect(ctx.viewport, self._corners(self.start_point, ctx.world))
+        far, _ = self._square_corner(self.start_point, ctx.world)
+        self._commit_rect(ctx.viewport, self._corners(self.start_point, far))
 
     def on_hover(self, ctx: ToolContext) -> None:
         self.hover_point = ctx.world
@@ -101,22 +107,31 @@ class RectangleTool(Tool):
     def rubber_band_lines(self):
         if self.start_point is None or self.hover_point is None:
             return []
-        c = self._corners(self.start_point, self.hover_point)
-        return [
+        far, is_square = self._square_corner(self.start_point, self.hover_point)
+        c = self._corners(self.start_point, far)
+        lines = [
             (c[0], c[1]),
             (c[1], c[2]),
             (c[2], c[3]),
             (c[3], c[0]),
         ]
+        # A diagonal across the square is SketchUp's "Square" cue (preview only).
+        if is_square:
+            lines.append((c[0], c[2]))
+        return lines
 
     def value_label(self):
         """Floating ``width × height`` readout while dragging (SketchUp's VCB
-        dimensions). The viewport draws it near the rectangle's centre."""
+        dimensions). The viewport draws it near the rectangle's centre. When the
+        sides are equal it reads "Cuadrado"."""
         if self.start_point is None or self.hover_point is None:
             return None
-        du, dv = self._dimensions(self.start_point, self.hover_point)
+        far, is_square = self._square_corner(self.start_point, self.hover_point)
+        du, dv = self._dimensions(self.start_point, far)
         text = f"{abs(du):.2f} × {abs(dv):.2f} m"
-        mid = (self.start_point + self.hover_point) * 0.5
+        if is_square:
+            text += "  (Cuadrado)"
+        mid = (self.start_point + far) * 0.5
         return (text, mid)
 
     # ---- Internals ----------------------------------------------------------
@@ -134,6 +149,23 @@ class RectangleTool(Tool):
         u, v = self._axes()
         delta = b - a
         return QVector3D.dotProduct(delta, u), QVector3D.dotProduct(delta, v)
+
+    def _square_corner(self, a: QVector3D, b: QVector3D) -> tuple[QVector3D, bool]:
+        """If the rectangle spanning ``a``–``b`` is within ``SQUARE_TOL`` of being
+        square, return the opposite corner nudged to a perfect square plus
+        ``True``; otherwise return ``b`` unchanged plus ``False``. The square
+        side is the longer of the two, so the shape grows to square (never
+        collapses), keeping the quadrant the cursor is dragging toward."""
+        u, v = self._axes()
+        du, dv = self._dimensions(a, b)
+        adu, adv = abs(du), abs(dv)
+        if adu < 1e-6 or adv < 1e-6:
+            return b, False
+        if abs(adu - adv) <= self.SQUARE_TOL * max(adu, adv):
+            side = max(adu, adv)
+            far = a + u * math.copysign(side, du) + v * math.copysign(side, dv)
+            return far, True
+        return b, False
 
     def _corners(self, a: QVector3D, b: QVector3D) -> list[QVector3D]:
         """Four corners of the rectangle spanning ``a``–``b`` on the current

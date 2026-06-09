@@ -170,15 +170,19 @@ class Viewport(QOpenGLWidget):
     # Live measurement for the VCB box (e.g. "5.00 m", "3.00 × 2.00 m").
     measurementChanged = Signal(str)
 
-    # Tooltip text shown next to the snap marker, SketchUp-style.
+    # Tooltip text shown next to the snap marker, SketchUp-style (Spanish, to
+    # match SketchUp's inference labels).
     _SNAP_LABELS = {
-        "endpoint": "Endpoint",
-        "midpoint": "Midpoint",
-        "on_edge": "On Edge",
-        "on_face": "On Face",
-        "origin": "Origin",
-        "extension": "Extension",
-        "intersection": "Intersection",
+        "endpoint": "Extremo final",
+        "midpoint": "Punto medio",
+        "on_edge": "En arista",
+        "on_face": "En cara",
+        "origin": "Origen",
+        "extension": "Extensión",
+        "intersection": "Intersección",
+        "from_point": "Desde el punto",
+        "through_point": "A través del punto",
+        "perp_face": "Perpendicular a la cara",
     }
 
     def __init__(self, parent=None) -> None:
@@ -211,7 +215,18 @@ class Viewport(QOpenGLWidget):
         # Reference-edge state (Down arrow → parallel / perpendicular).
         self.reference_edge = None
         self.reference_mode: Optional[str] = None  # None | "parallel" | "perpendicular"
+        # Linear-inference toggle (SketchUp's Alt): "all" | "off" | "parallel_perp".
+        self.linear_inference_mode = "all"
+        # Sticky inference lock (Shift): (direction, color) captured from the
+        # active inference, held until Shift is released.
+        self._shift_lock: Optional[tuple] = None
         self._hover_edge = None  # last edge under cursor (candidate for capture)
+        # Edge/corner/face hovered while drawing, held as soft references
+        # (SketchUp "from point" / "through point" / "perpendicular to face"
+        # acquisition). Cleared when no segment is in progress.
+        self._acquired_edge = None
+        self._acquired_point = None
+        self._acquired_face_normal = None
         self._last_mouse_pos: Optional[QPointF] = None
 
         # Pixel radius for point snaps (endpoint, origin, close). 12 px felt
@@ -289,6 +304,10 @@ class Viewport(QOpenGLWidget):
         # camera instead of the active tool. None means a drawing tool is in
         # charge of the left button.
         self.nav_mode: Optional[str] = None
+
+        # Preview line for the "always on top" tools, stashed during GL render
+        # and drawn in the QPainter overlay (thick, reliable pen).
+        self._overlay_rubber: Optional[tuple] = None
 
         # Rubber-band box selection (left-drag with a box_select tool).
         self._box_active = False
@@ -746,6 +765,7 @@ class Viewport(QOpenGLWidget):
         self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
     def _draw_rubber_band(self) -> None:
+        self._overlay_rubber = None
         tool = self.active_tool
         if tool is None:
             return
@@ -758,6 +778,14 @@ class Viewport(QOpenGLWidget):
         # orange rubber band).
         forced = getattr(tool, "wireframe_color", None)
         snap = self.last_snap
+        # Axis / reference / extension cues read as "projection lines": draw them
+        # a touch thicker so the alignment is easy to spot while drawing.
+        inference = (
+            forced is None
+            and snap is not None
+            and snap.kind in ("axis", "axis_inference", "reference", "extension",
+                              "through_point", "perp_face")
+        )
         if forced is not None:
             color = forced
         elif snap is not None and snap.kind == "axis":
@@ -766,7 +794,7 @@ class Viewport(QOpenGLWidget):
         elif snap is not None and snap.kind == "axis_inference":
             r, g, b = snap.color
             color = (r, g, b, 0.50)
-        elif snap is not None and snap.kind == "reference":
+        elif snap is not None and snap.kind in ("reference", "through_point", "perp_face"):
             r, g, b = snap.color
             color = (r, g, b, 1.0)
         elif snap is not None and snap.kind == "close":
@@ -774,24 +802,52 @@ class Viewport(QOpenGLWidget):
         else:
             color = (0.95, 0.45, 0.16, 0.85)
 
-        data = array("f")
-        for a, b in segments:
-            data.extend([a.x(), a.y(), a.z(), b.x(), b.y(), b.z()])
-        raw = data.tobytes()
-        self._rubber_vbo.bind()
-        self._rubber_vbo.allocate(raw, len(raw))
-        self._rubber_vbo.release()
+        # Depth-tested previews (Push/Pull, Offset, Paste) read like real
+        # geometry and need GL hidden-line removal — draw them via GL. The
+        # "always on top" previews (Line/Rectangle/Move) are stashed for the
+        # QPainter overlay instead, where a thick pen is reliable (Core-profile
+        # glLineWidth often clamps to 1px on Mesa, so GL can't thicken them).
+        if getattr(tool, "wireframe_depth_tested", False):
+            data = array("f")
+            for a, b in segments:
+                data.extend([a.x(), a.y(), a.z(), b.x(), b.y(), b.z()])
+            raw = data.tobytes()
+            self._rubber_vbo.bind()
+            self._rubber_vbo.allocate(raw, len(raw))
+            self._rubber_vbo.release()
 
-        self._set_color(*color)
-        self._rubber_vao.bind()
-        self._gl.glDrawArrays(GL_LINES, 0, len(data) // 3)
-        self._rubber_vao.release()
+            self._set_color(*color)
+            self._rubber_vao.bind()
+            self._gl.glDrawArrays(GL_LINES, 0, len(data) // 3)
+            self._rubber_vao.release()
+        else:
+            self._overlay_rubber = (segments, color, 2.5 if inference else 2.0)
+
+    def _draw_rubber_band_overlay(self, painter: QPainter) -> None:
+        if self._overlay_rubber is None:
+            return
+        segments, color, width = self._overlay_rubber
+        r, g, b = color[0], color[1], color[2]
+        a = color[3] if len(color) > 3 else 1.0
+        pen = QPen(QColor.fromRgbF(r, g, b, a), width)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+        for p0, p1 in segments:
+            q0 = self._world_to_pixel(p0)
+            q1 = self._world_to_pixel(p1)
+            if q0 is not None and q1 is not None:
+                painter.drawLine(QPointF(*q0), QPointF(*q1))
 
     # ---- 2D overlay (QPainter on top of OpenGL) -----------------------------
     def _draw_overlay(self) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
+
+        # Rubber band for the "always on top" tools (Line/Rectangle/Move),
+        # drawn here with a thick, reliable pen.
+        self._draw_rubber_band_overlay(painter)
 
         # Snap indicator
         if (
@@ -812,10 +868,27 @@ class Viewport(QOpenGLWidget):
         else:
             self._draw_inference_label(painter)
 
+        # Linear-inference toggle state (Alt), shown while not on the default.
+        if self.linear_inference_mode != "all":
+            self._draw_linear_mode_label(painter)
+
         # Rubber-band selection box.
         self._draw_selection_box(painter)
 
         painter.end()
+
+    def _draw_linear_mode_label(self, painter: QPainter) -> None:
+        text = {
+            "off": "Inferencias lineales: OFF (Alt)",
+            "parallel_perp": "Inferencias: solo paralela / perpendicular (Alt)",
+        }.get(self.linear_inference_mode)
+        if not text:
+            return
+        font = QFont()
+        font.setPointSize(9)
+        painter.setFont(font)
+        painter.setPen(QPen(QColor(210, 150, 40)))
+        painter.drawText(QPointF(14, self.height() - 16), text)
 
     def _draw_selection_box(self, painter: QPainter) -> None:
         if not self._box_active or self._box_start is None or self._box_cur is None:
@@ -857,13 +930,22 @@ class Viewport(QOpenGLWidget):
             gp0 = self._world_to_pixel(snap.guide[0])
             gp1 = self._world_to_pixel(snap.guide[1])
             if gp0 is not None and gp1 is not None:
-                dash = QPen(QColor.fromRgbF(r, g, b, 0.9), 1.0, Qt.DashLine)
+                # A snap can colour its guide differently from the marker (the
+                # 'from point' guide is axis-coloured while the point is green).
+                gc = snap.guide_color if snap.guide_color is not None else (r, g, b)
+                dash = QPen(QColor.fromRgbF(gc[0], gc[1], gc[2], 0.9), 2.0, Qt.DashLine)
                 painter.setPen(dash)
                 painter.drawLine(QPointF(*gp0), QPointF(*gp1))
         painter.setPen(QPen(color, 2.0))
         painter.setBrush(QColor.fromRgbF(r, g, b, 0.25))
         px, py = pixel
-        if snap.kind in ("endpoint", "origin", "on_edge", "extension", "intersection"):
+        if snap.kind == "intersection":
+            # X marker at the crossing (drawn line × projected guide),
+            # SketchUp-style — reads as a distinct point on the junction.
+            painter.setPen(QPen(color, 2.0))
+            painter.drawLine(QPointF(px - 6, py - 6), QPointF(px + 6, py + 6))
+            painter.drawLine(QPointF(px - 6, py + 6), QPointF(px + 6, py - 6))
+        elif snap.kind in ("endpoint", "origin", "on_edge", "extension", "from_point"):
             painter.drawRect(QRectF(px - 5, py - 5, 10, 10))
         elif snap.kind == "midpoint":
             # Cyan diamond, SketchUp-style.
@@ -879,8 +961,9 @@ class Viewport(QOpenGLWidget):
             painter.drawEllipse(QPointF(px, py), 4.0, 4.0)
         elif snap.kind == "close":
             painter.drawEllipse(QPointF(px, py), 7.0, 7.0)
-        elif snap.kind == "reference":
-            # Diamond marker for reference lock.
+        elif snap.kind in ("reference", "through_point", "perp_face"):
+            # Small circle marker for directional locks (parallel/perpendicular,
+            # through point, perpendicular to face).
             painter.drawEllipse(QPointF(px, py), 5.0, 5.0)
 
         # Tooltip text next to the marker (SketchUp shows "On Edge", etc.).
@@ -1157,6 +1240,23 @@ class Viewport(QOpenGLWidget):
                 best = edge
         return best
 
+    def pick_vertex(self, screen_x: float, screen_y: float):
+        """Return the scene vertex (corner) closest to the cursor within the
+        pick threshold, or ``None``. Used to acquire a corner as a 'from point'
+        reference while drawing. Occluded vertices are ignored."""
+        best = None
+        best_d = self.pick_threshold_px
+        for edge in self.scene.edges:
+            for vertex in (edge.a, edge.b):
+                vp = self._world_to_pixel(vertex)
+                if vp is None:
+                    continue
+                d = math.hypot(vp[0] - screen_x, vp[1] - screen_y)
+                if d < best_d and not self._is_occluded(vertex):
+                    best_d = d
+                    best = vertex
+        return best
+
     def _is_occluded(self, world: QVector3D) -> bool:
         """Whether a face sits between the camera and ``world`` — i.e. the
         point is hidden behind solid geometry from the current view. Used to
@@ -1249,6 +1349,9 @@ class Viewport(QOpenGLWidget):
         self.active_tool = tool
         self._hover_entity = None  # stale highlight from the previous tool
         self.last_snap = None      # stale snap marker from the previous tool
+        self._acquired_edge = None  # drop any held parallel reference
+        self._acquired_point = None
+        self._acquired_face_normal = None
         if tool is not None:
             tool.on_activate(self)
         self.measurementChanged.emit(self._measurement_text())
@@ -1386,6 +1489,27 @@ class Viewport(QOpenGLWidget):
         self._last_mouse_pos = ev.position()
         self._hover_edge = self.pick_edge(ev.position().x(), ev.position().y())
 
+        # While a segment is being drawn, hovering an edge acquires it as a soft
+        # parallel reference; the acquisition is dropped once nothing is in
+        # progress, so it never goes stale across separate draws.
+        drawing = (
+            self.active_tool is not None
+            and getattr(self.active_tool, "start_point", None) is not None
+        )
+        if not drawing:
+            self._acquired_edge = None
+            self._acquired_point = None
+            self._acquired_face_normal = None
+        else:
+            if self._hover_edge is not None:
+                self._acquired_edge = self._hover_edge
+            corner = self.pick_vertex(ev.position().x(), ev.position().y())
+            if corner is not None:
+                self._acquired_point = corner
+            face = self.pick_face(ev.position().x(), ev.position().y())
+            if face is not None:
+                self._acquired_face_normal = face.normal()
+
         if self.active_tool is None:
             return
         ctx = self._build_ctx(ev)
@@ -1482,6 +1606,7 @@ class Viewport(QOpenGLWidget):
         # 0. Shift state change → refresh snap immediately so the user sees
         #    the contextual lock take effect without moving the mouse.
         if ev.key() == Qt.Key_Shift and not ev.isAutoRepeat():
+            self._capture_shift_lock()
             self._refresh_snap()
             # Do not return — Shift is a modifier; let the rest fall through.
 
@@ -1509,6 +1634,11 @@ class Viewport(QOpenGLWidget):
             self.toggle_projection()
             return
 
+        # 3b. Alt: cycle linear inferences (SketchUp) — all → off → parallel/perp.
+        if ev.key() == Qt.Key_Alt and not ev.isAutoRepeat():
+            self._cycle_linear_inference_mode()
+            return
+
         # 4. Axis lock (arrow keys). Pressing the same arrow toggles it off.
         if ev.key() == Qt.Key_Right:
             self.axis_lock = None if self.axis_lock == "x" else "x"
@@ -1530,6 +1660,20 @@ class Viewport(QOpenGLWidget):
             return
 
         super().keyPressEvent(ev)
+
+    def _cycle_linear_inference_mode(self) -> None:
+        """Alt: cycle linear inferences all → off → parallel/perp → all
+        (SketchUp's Alt toggle). Point snaps (endpoint, midpoint, …) stay on;
+        explicit locks (arrow keys, Down reference) keep working in every mode."""
+        order = {"all": "off", "off": "parallel_perp", "parallel_perp": "all"}
+        self.linear_inference_mode = order[self.linear_inference_mode]
+        label = {
+            "all": "Linear inferences: all on",
+            "off": "Linear inferences: off",
+            "parallel_perp": "Linear inferences: parallel / perpendicular only",
+        }[self.linear_inference_mode]
+        self.measurementChanged.emit(label)
+        self._refresh_snap()
 
     def _cycle_reference_mode(self) -> None:
         """Down arrow: cycle None → parallel → perpendicular → None.
@@ -1587,6 +1731,12 @@ class Viewport(QOpenGLWidget):
             face_under_cursor=self.pick_face(px_x, px_y) is not None,
             edge_threshold_px=self.edge_snap_threshold_px,
             magnetic_axis_deg=getattr(self.active_tool, "magnetic_axis_deg", None),
+            acquired_edge=self._acquired_edge,
+            acquired_point=self._acquired_point,
+            acquired_face_normal=self._acquired_face_normal,
+            shift_lock_dir=self._shift_lock[0] if self._shift_lock else None,
+            shift_lock_color=self._shift_lock[1] if self._shift_lock else None,
+            linear_mode=self.linear_inference_mode,
         )
         self.last_snap = snap
         ctx = ToolContext(
@@ -1601,8 +1751,28 @@ class Viewport(QOpenGLWidget):
 
     def keyReleaseEvent(self, ev) -> None:
         if ev.key() == Qt.Key_Shift and not ev.isAutoRepeat():
+            self._shift_lock = None
             self._refresh_snap()
         super().keyReleaseEvent(ev)
+
+    # Inferences whose direction can be captured by a Shift lock.
+    _SHIFT_LOCKABLE = frozenset({
+        "axis", "axis_inference", "reference", "through_point", "perp_face",
+        "extension",
+    })
+
+    def _capture_shift_lock(self) -> None:
+        """On Shift press, freeze the active inference's direction so it holds
+        even as the cursor wanders off it (SketchUp's inference lock)."""
+        self._shift_lock = None
+        snap = self.last_snap
+        tool = self.active_tool
+        start = getattr(tool, "start_point", None) if tool is not None else None
+        if snap is None or start is None or snap.kind not in self._SHIFT_LOCKABLE:
+            return
+        d = snap.point - start
+        if d.length() > 1e-6:
+            self._shift_lock = (d.normalized(), snap.color)
 
     # ---- Numeric value buffer (VCB-style) ----------------------------------
     def _handle_value_key(self, ev) -> bool:
@@ -1734,6 +1904,12 @@ class Viewport(QOpenGLWidget):
             face_under_cursor=self.pick_face(px_x, px_y) is not None,
             edge_threshold_px=self.edge_snap_threshold_px,
             magnetic_axis_deg=getattr(self.active_tool, "magnetic_axis_deg", None),
+            acquired_edge=self._acquired_edge,
+            acquired_point=self._acquired_point,
+            acquired_face_normal=self._acquired_face_normal,
+            shift_lock_dir=self._shift_lock[0] if self._shift_lock else None,
+            shift_lock_color=self._shift_lock[1] if self._shift_lock else None,
+            linear_mode=self.linear_inference_mode,
         )
         return ToolContext(
             viewport=self,
