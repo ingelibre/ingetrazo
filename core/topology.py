@@ -1076,6 +1076,62 @@ def resolve_tjunctions(mesh, max_iter: int = 1000) -> None:
         mesh.split_edge_at(*target)
 
 
+def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
+    """SketchUp's *autofold*: split every face a move has warped out of its
+    plane into planar pieces along fold edges.
+
+    The warped face is triangulated (earcut over its Newell plane — robust for
+    the gentle warps a vertex drag produces), then coplanar adjacent triangles
+    are merged back so only the true folds remain: a quad with one lifted
+    corner becomes exactly two triangles joined by one fold edge. Merging is
+    confined to the pieces of the same source face, so a fold never dissolves
+    into a coplanar neighbour across the original boundary. Returns the faces
+    that were folded (the originals, already removed from the mesh)."""
+    folded = []
+    for face in list(mesh.faces):
+        pts = list(face.vertices)
+        for hole in face.holes:
+            pts += list(hole)
+        if len(pts) <= 3 or is_planar(pts, tolerance):
+            continue
+        tris = face.triangulate()
+        if len(tris) < 2:
+            continue
+        mesh.remove_face(face)
+        pieces = {
+            mesh.add_face([QVector3D(a), QVector3D(b), QVector3D(c)])
+            for a, b, c in tris
+        }
+        merged = True
+        while merged:
+            merged = False
+            for f in list(pieces):
+                if f not in mesh.faces:
+                    pieces.discard(f)
+                    continue
+                lp = f.loop
+                for i in range(len(lp)):
+                    e = mesh.find_edge(lp[i], lp[(i + 1) % len(lp)])
+                    if e is None or len(e.faces) != 2:
+                        continue
+                    g = e.faces[0] if e.faces[1] is f else e.faces[1]
+                    if g is f or g not in pieces:
+                        continue
+                    if QVector3D.dotProduct(f.normal().normalized(),
+                                            g.normal().normalized()) > 0.999:
+                        region = mesh.dissolve_edge(e)
+                        if region is not None:
+                            pieces.discard(f)
+                            pieces.discard(g)
+                            pieces.add(region)
+                            merged = True
+                            break
+                if merged:
+                    break
+        folded.append(face)
+    return folded
+
+
 def prune_collinear_orphan_edges(mesh) -> list:
     """Remove edges that bound no face and lie collinearly over another edge — the
     unwelded collinear overlaps that leave a duplicate 'division line'. Returns

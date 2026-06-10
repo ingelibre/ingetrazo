@@ -27,6 +27,7 @@ from core.topology import (
     _key,
     _loop_edges,
     find_containing_face,
+    fold_nonplanar_faces,
     heal_overlapping_faces,
     loop_inside_face,
     orphaned_edges_at,
@@ -365,21 +366,38 @@ def translate_points(scene, keys: set, delta: QVector3D) -> None:
 
 
 class MoveVerticesCommand(Command):
-    """Translate every shared vertex at a set of positions by ``delta``.
+    """Translate every shared vertex at a set of positions by ``delta``, then
+    **autofold**: any face the move warped out of its plane is split into
+    planar pieces along fold edges (SketchUp behaviour — a quad with a lifted
+    corner becomes two triangles, not a fake bent "face").
 
-    A moved face may become non-planar, which the Newell normal and the
-    triangulator already tolerate. Topology is not restructured (no merge when a
-    vertex lands on another); that is a follow-up.
-    """
+    A plain move undoes by the inverse translation; when folding restructured
+    topology, undo restores the pre-move snapshot instead (the fold's new
+    edges/faces have no clean per-op inverse) and redo restores the captured
+    result."""
 
     def __init__(self, positions: Iterable[QVector3D], delta: QVector3D) -> None:
         self.src = [QVector3D(p) for p in positions]
         self.delta = QVector3D(delta)
+        self._before: Optional[dict] = None
+        self._after: Optional[dict] = None
 
     def do(self, scene) -> None:
+        if self._after is not None:  # redo of a folding move
+            scene.mesh.restore_state(self._after)
+            scene.version += 1
+            return
+        before = scene.mesh.capture_state()
         translate_points(scene, {_key(p) for p in self.src}, self.delta)
+        if fold_nonplanar_faces(scene.mesh):
+            self._before = before
+            self._after = scene.mesh.capture_state()
 
     def undo(self, scene) -> None:
+        if self._before is not None:
+            scene.mesh.restore_state(self._before)
+            scene.version += 1
+            return
         translate_points(scene, {_key(p + self.delta) for p in self.src}, -self.delta)
 
 
@@ -600,25 +618,33 @@ class SnapshotMutation(Command):
     Redo restores the captured *result* rather than re-running the mutation: the
     closure usually closes over tool state (``base_face`` etc.) that is reset
     right after commit, so re-running it on redo would crash — and re-running the
-    deterministic plane rebuild on stale state would be wasteful besides."""
+    deterministic plane rebuild on stale state would be wasteful besides.
 
-    def __init__(self, mutate) -> None:
+    ``mesh`` (when given) is the mesh to snapshot instead of the scene's loose
+    one — a push/pull aimed at a Group edits that group's isolated mesh."""
+
+    def __init__(self, mutate, mesh: Optional[Mesh] = None) -> None:
         self.mutate = mutate
+        self._mesh = mesh
         self.before: Optional[dict] = None
         self.after: Optional[dict] = None
 
+    def _target(self, scene) -> Mesh:
+        return self._mesh if self._mesh is not None else scene.mesh
+
     def do(self, scene) -> None:
+        mesh = self._target(scene)
         if self.after is None:
-            self.before = scene.mesh.capture_state()
+            self.before = mesh.capture_state()
             self.mutate(scene)
-            self.after = scene.mesh.capture_state()
+            self.after = mesh.capture_state()
         else:
-            scene.mesh.restore_state(self.after)
+            mesh.restore_state(self.after)
         scene.version += 1
 
     def undo(self, scene) -> None:
         if self.before is not None:
-            scene.mesh.restore_state(self.before)
+            self._target(scene).restore_state(self.before)
             scene.version += 1
 
 

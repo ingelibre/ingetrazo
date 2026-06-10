@@ -39,6 +39,9 @@ class _StubViewport:
     def pick_face(self, x, y):
         return self._pick
 
+    def pick_face_any(self, x, y):
+        return self._pick, None
+
 
 def _ctx(vp, modifiers=Qt.NoModifier):
     return ToolContext(viewport=vp, world=QVector3D(), screen=QPointF(0, 0),
@@ -391,3 +394,146 @@ def test_hovering_vertex_infers_distance():
     ctx3 = ToolContext(viewport=vp, world=QVector3D(), screen=QPointF(0.0, -30.0),
                        modifiers=Qt.NoModifier, snap=None)
     assert tool._infer_reference_distance(ctx3) is None
+
+
+# ---- autofold: a move that warps a face splits it into planar pieces ----------
+
+def test_move_lifting_a_corner_autofolds_quad():
+    from core.history import MoveVerticesCommand
+    from core.topology import is_planar
+
+    scene = Scene()
+    hist = History(scene)
+    scene.mesh.add_face([V(0, 0, 0), V(2, 0, 0), V(2, 2, 0), V(0, 2, 0)])
+    hist.execute(MoveVerticesCommand([V(2, 2, 0)], QVector3D(0, 0, 1)))
+
+    m = scene.mesh
+    assert len(m.faces) == 2                       # quad folded into 2 triangles
+    assert all(len(f.vertices) == 3 for f in m.faces)
+    assert all(is_planar(list(f.vertices)) for f in m.faces)
+    fold = [e for e in m.edges if len(e.faces) == 2]
+    assert len(fold) == 1                          # exactly one fold edge
+
+    assert hist.undo() is True                     # snapshot undo: quad restored
+    assert len(m.faces) == 1 and len(m.faces[0].vertices) == 4
+    assert hist.redo() is True
+    assert len(m.faces) == 2
+
+
+def test_move_in_plane_does_not_fold():
+    from core.history import MoveVerticesCommand
+
+    scene = Scene()
+    hist = History(scene)
+    scene.mesh.add_face([V(0, 0, 0), V(2, 0, 0), V(2, 2, 0), V(0, 2, 0)])
+    hist.execute(MoveVerticesCommand([V(2, 2, 0)], QVector3D(1, 1, 0)))
+    assert len(scene.mesh.faces) == 1              # still one planar quad
+    assert len(scene.mesh.faces[0].vertices) == 4
+    assert hist.undo() is True                     # cheap inverse-translate undo
+    assert abs(scene.mesh.faces[0].vertices[2].x() - 2.0) < 1e-6
+
+
+def test_autofold_pentagon_folds_minimally():
+    # Lift one vertex of a planar pentagon: the planar remainder must merge
+    # back into one piece — pieces stay minimal, not a full triangle fan.
+    from core.history import MoveVerticesCommand
+    from core.topology import is_planar
+
+    scene = Scene()
+    hist = History(scene)
+    scene.mesh.add_face(
+        [V(0, 0, 0), V(4, 0, 0), V(4, 4, 0), V(2, 6, 0), V(0, 4, 0)])
+    hist.execute(MoveVerticesCommand([V(2, 6, 0)], QVector3D(0, 0, 1.5)))
+    m = scene.mesh
+    assert all(is_planar(list(f.vertices)) for f in m.faces)
+    assert len(m.faces) <= 3                       # folded, not fanned to bits
+
+
+# ---- push/pull directly on a group's face --------------------------------------
+
+def _boxed_group(scene, x0=0.0):
+    """A 2×2×2 closed box living in its own Group, appended to the scene."""
+    from core.group import Group
+    from core.orient import orient_outward
+
+    g = Group()
+    m = g.mesh
+    p = [V(x0, 0, 0), V(x0 + 2, 0, 0), V(x0 + 2, 2, 0), V(x0, 2, 0)]
+    q = [V(x0, 0, 2), V(x0 + 2, 0, 2), V(x0 + 2, 2, 2), V(x0, 2, 2)]
+    m.add_face(p)
+    m.add_face(q)
+    for i in range(4):
+        j = (i + 1) % 4
+        m.add_face([p[i], p[j], q[j], q[i]])
+    orient_outward(m)
+    scene.groups.append(g)
+    return g
+
+
+def _push_group(scene, group, face, dist):
+    vp = _StubViewport(scene)
+    tool = PushPullTool()
+    tool.base_face = face
+    tool.extrusion = dist
+    tool.dragging = True
+    tool._group = group
+    target = tool._target_scene(scene)
+    tool._anchor = face.centroid()
+    tool._normal = face.normal()
+    tool._attached, tool._prism_cap = tool._classify_base(target)
+    tool._cap_positions = [QVector3D(v) for v in face.vertices]
+    tool._compute_inward_limit(target)
+    tool._commit(vp)
+    return vp
+
+
+def test_push_on_group_face_edits_only_the_group():
+    from core.orient import signed_volume
+
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)                 # loose cube in the scene
+    g = _boxed_group(scene, x0=10.0)
+    loose_faces = len(scene.mesh.faces)
+
+    top = next(f for f in g.mesh.faces
+               if all(abs(v.z() - 2) < 1e-9 for v in f.vertices))
+    vp = _push_group(scene, g, top, 1.0)           # raise the group's box to z=3
+
+    assert len(scene.mesh.faces) == loose_faces    # loose mesh untouched
+    assert any(all(abs(v.z() - 3) < 1e-9 for v in f.vertices)
+               for f in g.mesh.faces)              # group cap moved up
+    assert all(len(e.faces) == 2 for e in g.mesh.edges)
+    assert signed_volume(g.mesh) > 0
+
+    assert vp.history.undo() is True               # snapshot lands on the group
+    assert any(all(abs(v.z() - 2) < 1e-9 for v in f.vertices)
+               for f in g.mesh.faces)
+    assert not any(v.position.z() > 2.5 for v in g.mesh.vertices)
+
+
+def test_group_recess_and_clamp_use_group_geometry():
+    scene = Scene()
+    hist = History(scene)
+    g = _boxed_group(scene)
+
+    top = next(f for f in g.mesh.faces
+               if all(abs(v.z() - 2) < 1e-9 for v in f.vertices))
+    vp = _StubViewport(scene)
+    tool = PushPullTool()
+    tool.base_face = top
+    tool.dragging = True
+    tool._group = g
+    target = tool._target_scene(scene)
+    tool._anchor = top.centroid()
+    tool._normal = top.normal()
+    tool._attached, tool._prism_cap = tool._classify_base(target)
+    tool._cap_positions = [QVector3D(v) for v in top.vertices]
+    tool._compute_inward_limit(target)
+    assert tool._limit_in is not None and abs(tool._limit_in - 2.0) < 1e-6
+    tool.extrusion = -99.0
+    tool._clamp_extrusion()
+    assert tool.extrusion == -2.0                  # clamped by the group's box
+    tool._commit(vp)
+    assert len(g.mesh.faces) == 1                  # collapsed flat, group-local
+    assert scene.mesh.faces == []                  # loose mesh untouched

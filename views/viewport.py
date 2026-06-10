@@ -1310,6 +1310,36 @@ class Viewport(QOpenGLWidget):
             return candidates[0]
         return min(candidates, key=lambda f: f.area())
 
+    def pick_face_any(self, screen_x: float, screen_y: float):
+        """Front-most face under the cursor across the loose mesh **and** every
+        group: returns ``(face, group_or_None)``. Same coplanar tiebreak as
+        :meth:`pick_face` (the smallest of the overlapping faces wins). Lets
+        Push/Pull act on a group's face directly — no "enter the group" step."""
+        origin, direction = self._pixel_to_ray(screen_x, screen_y)
+        if origin is None or direction is None:
+            return None, None
+        sources = [(None, self.scene.faces)] + [
+            (g, g.mesh.faces) for g in self.scene.groups
+        ]
+        hits: list[tuple[float, object, object]] = []
+        for grp, faces in sources:
+            for face in faces:
+                face_t = None
+                for t0, t1, t2 in face.triangulate():
+                    t = _ray_triangle(origin, direction, t0, t1, t2)
+                    if t is not None and (face_t is None or t < face_t):
+                        face_t = t
+                if face_t is not None:
+                    hits.append((face_t, face, grp))
+        if not hits:
+            return None, None
+        best_t = min(t for t, _, _ in hits)
+        eps = max(1e-4, best_t * 1e-4)
+        candidates = [(f, g) for t, f, g in hits if t <= best_t + eps]
+        if len(candidates) == 1:
+            return candidates[0]
+        return min(candidates, key=lambda fg: fg[0].area())
+
     def pick_group(self, screen_x: float, screen_y: float):
         """The group whose geometry the cursor hits (front-most face, or nearest
         edge for a group that's only lines), or ``None``."""

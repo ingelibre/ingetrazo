@@ -80,6 +80,37 @@ def _loops_overlap_2d(a_xy, b_xy) -> bool:
         any(_point_in_polygon(p, a_xy) for p in b_xy)
 
 
+class _GroupScene:
+    """Scene facade aiming the push/pull machinery at a Group's isolated mesh.
+
+    Mirrors the slice of :class:`core.scene.Scene` the commands, the stitch and
+    the per-plane rebuild touch — ``mesh`` / ``faces`` / ``edges`` /
+    ``selection`` / ``version`` — so the whole pipeline runs unchanged inside
+    the group (its geometry is already in world coordinates). The version
+    bump lands on the real scene so the viewport re-renders."""
+
+    def __init__(self, scene, group) -> None:
+        self._scene = scene
+        self.mesh = group.mesh
+        self.selection = scene.selection
+
+    @property
+    def faces(self):
+        return self.mesh.faces
+
+    @property
+    def edges(self):
+        return self.mesh.edges
+
+    @property
+    def version(self):
+        return self._scene.version
+
+    @version.setter
+    def version(self, value):
+        self._scene.version = value
+
+
 def _swept_by_push(neighbour: Face, push_normal: QVector3D) -> bool:
     """Whether ``neighbour`` is *swept* by a push along ``push_normal`` — it has
     an edge parallel to the push, so translating its shared edge slides the wall
@@ -123,6 +154,11 @@ class PushPullTool(Tool):
         # Deepest allowed inward push (positive, along −normal), computed at
         # drag start; None = unbounded. SketchUp's "Offset limited to" clamp.
         self._limit_in: float | None = None
+        # The Group whose face is being pushed (None = the loose mesh). The
+        # whole pipeline then runs on that group's isolated mesh directly — no
+        # "enter the group" step needed, unlike SketchUp.
+        self._group = None
+        self._hover_group = None
         # Whether the base face is embedded in a solid (its boundary edges are
         # shared), so an inner face pushed in is a recess (window/door pocket).
         self._attached: bool = False
@@ -151,7 +187,8 @@ class PushPullTool(Tool):
     def on_hover(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         if not self.dragging:
-            self.hovered_face = viewport.pick_face(ctx.screen.x(), ctx.screen.y())
+            self.hovered_face, self._hover_group = viewport.pick_face_any(
+                ctx.screen.x(), ctx.screen.y())
             # Shade the face that would be pushed, SketchUp-style, so the target
             # is unmistakable before clicking.
             viewport.set_hover(self.hovered_face)
@@ -188,11 +225,13 @@ class PushPullTool(Tool):
             self.base_face = face
             self.extrusion = 0.0
             self.dragging = True
+            self._group = self._hover_group
+            target = self._target_scene(viewport.scene)
             self._anchor = face.centroid()
             self._normal = face.normal()
-            self._attached, self._prism_cap = self._classify_base(viewport.scene)
+            self._attached, self._prism_cap = self._classify_base(target)
             self._cap_positions = [QVector3D(v) for v in face.vertices]
-            self._compute_inward_limit(viewport.scene)
+            self._compute_inward_limit(target)
             self._preview_snapshot = None
             # The live preview takes over from the hover shade now.
             viewport.set_hover(None)
@@ -217,16 +256,18 @@ class PushPullTool(Tool):
             return
         self._keep_base = bool(ctx.modifiers & Qt.ControlModifier)
         if not self.dragging:
-            face = viewport.pick_face(ctx.screen.x(), ctx.screen.y())
+            face, grp = viewport.pick_face_any(ctx.screen.x(), ctx.screen.y())
             if face is None:
                 return
             self.base_face = face
             self.dragging = True
+            self._group = grp
+            target = self._target_scene(viewport.scene)
             self._anchor = face.centroid()
             self._normal = face.normal()
-            self._attached, self._prism_cap = self._classify_base(viewport.scene)
+            self._attached, self._prism_cap = self._classify_base(target)
             self._cap_positions = [QVector3D(v) for v in face.vertices]
-            self._compute_inward_limit(viewport.scene)
+            self._compute_inward_limit(target)
             self._preview_snapshot = None
         elif abs(self.extrusion) > 1e-6:
             # Mid-drag with a real distance: treat as the commit click.
@@ -266,6 +307,14 @@ class PushPullTool(Tool):
     def preview_faces(self):
         return []
 
+    def _target_scene(self, scene):
+        """The scene the machinery edits: the real one, or a facade over the
+        target group's isolated mesh."""
+        return scene if self._group is None else _GroupScene(scene, self._group)
+
+    def _target_mesh(self, scene):
+        return self._group.mesh if self._group is not None else scene.mesh
+
     def _apply_preview(self, viewport) -> None:
         """Show the forming solid by applying the real commit to the mesh, after
         reverting the previous frame's preview."""
@@ -273,14 +322,14 @@ class PushPullTool(Tool):
         if self.base_face is None or abs(self.extrusion) < 1e-6:
             viewport.update()
             return
-        self._preview_snapshot = viewport.scene.mesh.capture_state()
+        self._preview_snapshot = self._target_mesh(viewport.scene).capture_state()
         self._mutate(viewport.scene)
         viewport.scene.version += 1
         viewport.update()
 
     def _revert_preview(self, viewport) -> None:
         if self._preview_snapshot is not None:
-            viewport.scene.mesh.restore_state(self._preview_snapshot)
+            self._target_mesh(viewport.scene).restore_state(self._preview_snapshot)
             self._preview_snapshot = None
             viewport.scene.version += 1
 
@@ -397,16 +446,21 @@ class PushPullTool(Tool):
             viewport.update()
             return
         # One snapshot wraps the edit *and* the watertight stitch: undo is exact,
-        # and it is the identical mutation the live preview just showed.
-        viewport.history.execute(SnapshotMutation(self._mutate))
+        # and it is the identical mutation the live preview just showed. A push
+        # aimed at a group snapshots that group's mesh instead.
+        viewport.history.execute(SnapshotMutation(
+            self._mutate,
+            mesh=self._group.mesh if self._group is not None else None))
         PushPullTool.last_distance = self.extrusion  # double-click repeats this
         self._reset()
         viewport.update()
 
     def _mutate(self, scene) -> None:
-        """Apply the push to ``scene``'s mesh and stitch it watertight. Shared by
-        the committed edit (wrapped in :class:`SnapshotMutation`) and the live
-        preview, so the drag renders exactly what will commit."""
+        """Apply the push to the target mesh (the scene's, or the locked
+        group's) and stitch it watertight. Shared by the committed edit
+        (wrapped in :class:`SnapshotMutation`) and the live preview, so the
+        drag renders exactly what will commit."""
+        scene = self._target_scene(scene)
         face = self.base_face
         d = self.extrusion
 
@@ -643,6 +697,8 @@ class PushPullTool(Tool):
         self._prism_cap = False
         self._keep_base = False
         self._limit_in = None
+        self._group = None
+        self._hover_group = None
         self._anchor = None
         self._normal = None
         self._cap_positions = []
