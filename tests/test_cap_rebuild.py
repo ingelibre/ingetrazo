@@ -213,7 +213,7 @@ def test_pushed_prism_cap_rebuild_matches_committed_face(perm, normal):
     t.base_face = face
     t.extrusion = d
     t._normal = fn
-    for c in t._extrude_commands(face, base, top, [], [], count, kinds, attached):
+    for c in t._extrude_commands(face, base, top, [], [], count, attached):
         c.do(sc)
 
     o = V(0, 0, 3) if normal.z() > 0 else V(0, 0, 0)

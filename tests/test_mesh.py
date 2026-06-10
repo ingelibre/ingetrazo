@@ -247,3 +247,48 @@ def test_split_edge_then_move_forms_a_gable():
     m.move_vertex(apex, V(0, 0, 1))  # raise the ridge point
     assert any(abs(p.z() - 3) < 1e-6 for p in left.vertices)
     assert any(abs(p.z() - 3) < 1e-6 for p in right.vertices)
+
+
+# ---- weld_coincident (post-translation repair) -------------------------------
+
+def test_weld_coincident_merges_translated_duplicates():
+    # Two squares whose right/left edges occupy the same line but were built
+    # apart and "moved" together: distinct Vertex objects at equal positions.
+    m = Mesh()
+    m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    m.add_face([V(2, 0), V(3, 0), V(3, 1), V(2, 1)])
+    right = next(v for v in m.vertices if v.position.x() == 2.0 and v.position.y() == 0.0)
+    # drag the second square onto the first (shared border at x=1)
+    for v in list(m.vertices):
+        if v.position.x() >= 2.0:
+            m.move_vertex(v, V(-1, 0, 0))
+    # duplicates now exist at (1,0) and (1,1)
+    assert len(m.vertices) == 8
+    assert m.weld_coincident() is True
+    assert len(m.vertices) == 6
+    # the border edge is one shared edge carrying both faces
+    va = m.vertex_at(V(1, 0)); vb = m.vertex_at(V(1, 1))
+    border = m.find_edge(va, vb)
+    assert border is not None and len(border.faces) == 2
+
+
+def test_weld_coincident_drops_zero_area_faces_and_edges():
+    # A quad collapsed onto a segment (its top edge translated down onto the
+    # bottom edge) must vanish: zero-length side edges, duplicate top/bottom
+    # edge merged, degenerate face removed.
+    m = Mesh()
+    m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    for v in list(m.vertices):
+        if v.position.y() == 1.0:
+            m.move_vertex(v, V(0, -1, 0))
+    m.weld_coincident()
+    assert len(m.faces) == 0
+    assert len(m.vertices) == 2
+    assert len(m.edges) == 1          # the surviving segment
+
+
+def test_weld_coincident_noop_on_clean_mesh():
+    m = Mesh()
+    m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    assert m.weld_coincident() is False
+    assert len(m.vertices) == 4 and len(m.edges) == 4 and len(m.faces) == 1

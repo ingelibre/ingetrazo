@@ -445,6 +445,57 @@ class Mesh:
                     return
 
     # ---- Stitch primitives (watertight cleanup, all reversible) -------------
+    def weld_coincident(self) -> bool:
+        """Merge vertices occupying the same position — the debris a translation
+        leaves when geometry lands exactly on existing geometry (a cap pushed
+        flush onto the ring it came from). Edges and face loops are re-pointed
+        onto the kept vertex; zero-length edges vanish, duplicate edges merge
+        their incidence, and faces degenerated below three distinct vertices
+        are dropped. Returns whether anything merged. No undo bookkeeping —
+        callers run under a snapshot, like the rest of the stitch."""
+        groups: dict = {}
+        for v in self.vertices:
+            groups.setdefault(_key(v.position), []).append(v)
+        changed = False
+        for vs in groups.values():
+            if len(vs) < 2:
+                continue
+            keep = vs[0]
+            for dup in vs[1:]:
+                self._weld_into(keep, dup)
+            changed = True
+        return changed
+
+    def _weld_into(self, keep: Vertex, dup: Vertex) -> None:
+        affected = {f for e in dup.edges for f in e.faces}
+        for e in list(dup.edges):
+            other = e.other(dup)
+            incident = list(e.faces)
+            self.remove_edge(e)
+            if other is keep:
+                continue  # zero-length edge vanishes
+            kept_edge = self._link_edge(keep, other)
+            for f in incident:
+                if f not in kept_edge.faces:
+                    kept_edge.faces.append(f)
+        for f in affected:
+            for loop in (f.loop, *f.hole_loops):
+                for i, lv in enumerate(loop):
+                    if lv is dup:
+                        loop[i] = keep
+                i = 0
+                while len(loop) > 1 and i < len(loop):
+                    if loop[i] is loop[(i + 1) % len(loop)]:
+                        loop.pop(i if i + 1 < len(loop) else i + 1 - len(loop))
+                    else:
+                        i += 1
+            if len({id(x) for x in f.loop}) < 3:
+                self.remove_face(f)  # collapsed to a sliver
+        if dup in self.vertices:
+            self.vertices.remove(dup)
+        if self._registry.get(_key(dup.position)) is dup:
+            self._registry[_key(dup.position)] = keep
+
     def interior_vertex_on(self, edge: Edge) -> Optional[Vertex]:
         """An existing vertex lying strictly on ``edge``'s interior (a
         T-junction: ``edge`` runs past a vertex that belongs to another face),

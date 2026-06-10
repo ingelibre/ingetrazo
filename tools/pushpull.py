@@ -11,21 +11,21 @@ UX (SketchUp-like):
   preserving the current direction's sign.
 - Esc cancels without committing.
 
-Commit creates:
-- N new edges connecting each base vertex to the matching moved vertex.
-- N new edges around the moved face boundary.
-- 1 new moved face (the box top, or the floor of a recess).
-- N new side faces (quads, one per base edge).
+Commit pipeline (the deterministic root-fix, no case tree):
+1. Orient the mesh outward (entry invariant; no-op on open sheets).
+2. Build the *naive* extrusion: consumed/kept base, moved cap (with holes),
+   one wall quad per boundary/hole edge — even where a quad lands on an
+   existing face's plane.
+3. Stitch connectivity (T-junctions, collinear vertices).
+4. On a solid: deterministically rebuild every touched plane (seams, overlaps,
+   cracks) from its edges via ``core.cap_rebuild``; on a flat sheet, fall back
+   to the seeded coplanar merge (no outward side exists there).
+5. Orient outward again — every committed solid upholds the invariant.
 
-Additive vs subtractive:
-- Pushing *out* (extrusion along the normal) leaves the base face in place —
-  it becomes the box's "bottom".
-- Pushing *in* (extrusion against the normal) is subtractive: the base face
-  is removed. For a face drawn inside another (a coplanar surrounding face
-  that gained a hole when the inner face was created), removing the base
-  leaves that hole open as the mouth of a recess / pocket. For a standalone
-  face it simply shortens the solid. Through-holes (pushing clear out the
-  far side) are not detected yet — that's a follow-up.
+A bordered (embedded) base face is consumed either direction — pushing in
+carves a recess / step / through-hole (the far face is punched when the push
+reaches it); pushing out grows the solid. A free-standing face keeps its base
+as the cap of the new box.
 """
 from __future__ import annotations
 
@@ -42,15 +42,13 @@ from core.history import (
     translate_points,
 )
 from core.orient import orient_outward
-from core.cap_rebuild import apply_rebuild, crack_planes
+from core.cap_rebuild import apply_rebuild, crack_planes, plane_key, seam_planes
 from core.topology import (
     _key,
     _mesh_is_flat,
     classify_push_edge,
-    extend_wall_edge,
     loop_inside_face,
     refine_loop_with_points,
-    subtract_loop_from_face,
 )
 from tools.base import Tool, ToolContext
 
@@ -264,17 +262,36 @@ class PushPullTool(Tool):
 
         # A prism cap is exactly a translation of the cap along its normal; the
         # walls follow through shared vertices. Then repair connectivity
-        # (T-junctions, collinear) — no coplanar-merge, as nothing new is added.
+        # (welds, T-junctions, collinear) — no coplanar-merge, nothing new is
+        # added.
         if self._prism_cap:
             normal = self._normal if self._normal is not None else face.normal()
             translate_points(scene, {_key(p) for p in self._cap_positions},
                              normal * d)
             seed = list(self._cap_positions) + [p + normal * d
                                                 for p in self._cap_positions]
-            run_stitch(scene.mesh, {_key(p) for p in seed}, set())
+            run_stitch(scene.mesh, {_key(p) for p in seed}, set(),
+                       coplanar_merge=False)
+            # A shrink can land the cap flush on a coplanar neighbour (a bump
+            # pushed back level with its wall): rebuild that plane so the
+            # redundant pane and its mouth ring dissolve into the host face.
+            if not _mesh_is_flat(scene.mesh) and face in scene.mesh.faces:
+                for origin, plane_n in seam_planes(scene.mesh, {face}):
+                    apply_rebuild(scene.mesh, origin, plane_n)
+            orient_outward(scene.mesh)
             return
 
+        # Establish the outward invariant *up front* instead of trusting history:
+        # hand-built or loaded meshes can arrive with mixed winding, and every
+        # downstream decision (the wall quads' deterministic winding, the
+        # per-plane rebuild's material-side classification) reads face normals.
+        # If the base face flips, the drag distance flips with it so the push
+        # still goes where the user dragged. No-op on open meshes.
+        pre_normal = face.normal()
+        orient_outward(scene.mesh)
         normal = face.normal()
+        if QVector3D.dotProduct(normal, pre_normal) < 0:
+            d = -d
         # A push on a *pre-existing solid* must stay watertight; one on a flat
         # sheet (a recess carved into a surface) legitimately leaves open edges.
         was_solid = not _mesh_is_flat(scene.mesh)
@@ -303,7 +320,7 @@ class PushPullTool(Tool):
             commands = self._through_commands(face, base, through)
         else:
             commands = self._extrude_commands(
-                face, base, top, base_holes, top_holes, count, kinds, attached
+                face, base, top, base_holes, top_holes, count, attached
             )
         for cmd in commands:
             cmd.do(scene)
@@ -311,19 +328,33 @@ class PushPullTool(Tool):
         seed = list(base) + list(top)
         for hb, ht in zip(base_holes, top_holes):
             seed += list(hb) + list(ht)
-        run_stitch(scene.mesh, {_key(p) for p in seed}, new_faces)
-        # A push on a solid must end watertight; a nested push can still leave a
-        # small unfaced crack. Cap any boundary loop so the solid closes — but
-        # only when we started from a solid (a flat sheet's open edges are real).
-        if attached and was_solid:
-            # Deterministic root-fix (path C): instead of patching the crack with
-            # the post-hoc ``cap_boundary_loops`` heal, recompute each cracked
-            # plane's faces from its edges — the planar arrangement finds every
-            # region, winding-classification keeps the ones inside the solid and
-            # drops phantoms outside, and the union dissolves coplanar seams. One
-            # pass fills the crack *and* merges seams, with no growing case tree.
-            for origin, plane_n in crack_planes(scene.mesh):
+        seedkeys = {_key(p) for p in seed}
+        # On a solid, the naive extrude's seams and overlaps are dissolved by the
+        # deterministic per-plane rebuild below, so the winding-tolerant coplanar
+        # merge (phase 3) stays off. On raw/open geometry (a flat sheet) there is
+        # no "outside" to classify against, so the merge still applies there.
+        solid = attached and was_solid
+        run_stitch(scene.mesh, seedkeys, new_faces, coplanar_merge=not solid)
+        if solid:
+            # Deterministic root-fix (path C): recompute each touched plane's
+            # faces from its edges — the planar arrangement finds every region,
+            # winding-classification keeps the ones inside the solid and drops
+            # phantoms outside, and the union dissolves coplanar seams. Seam
+            # planes (a fresh face coplanar-adjacent to another) cover the strip
+            # stacked on a wall and the quad overlapping a wall to be notched;
+            # crack planes (run after, on the healed mesh) cover anything a
+            # nested push left unfaced. No case tree.
+            done = set()
+            for origin, plane_n in seam_planes(scene.mesh, new_faces):
+                done.add(plane_key(origin, plane_n)[0])
                 apply_rebuild(scene.mesh, origin, plane_n)
+            for origin, plane_n in crack_planes(scene.mesh):
+                if plane_key(origin, plane_n)[0] not in done:
+                    apply_rebuild(scene.mesh, origin, plane_n)
+            # The dissolved seams can leave redundant collinear vertices on the
+            # rebuilt faces' borders (the old cap ring's corners); one more
+            # connectivity pass collapses them. No merge — rebuild already did.
+            run_stitch(scene.mesh, seedkeys, None, coplanar_merge=False)
         # Give any closed solid a consistent outward orientation — every face's
         # normal pointing out. The extrude can otherwise commit a closed solid
         # wound inconsistently (a flipped cap, or the base of a first flat→solid
@@ -332,12 +363,20 @@ class PushPullTool(Tool):
         orient_outward(scene.mesh)
 
     def _extrude_commands(self, face, base, top, base_holes, top_holes,
-                          count, kinds, attached) -> list:
-        """Build the commands that extrude ``face`` to ``top``: a consumed/kept
-        base, the moved cap (carrying any holes), a wall per side, and an inner
-        wall per hole edge."""
+                          count, attached) -> list:
+        """Build the naive extrusion of ``face`` to ``top``: a consumed/kept
+        base, the moved cap (carrying any holes), one wall quad per boundary
+        edge, and an inner wall per hole edge — no special cases. Where a quad
+        lands on an existing face's plane (a strip on a wall, a phantom over a
+        region being carved away) the per-plane rebuild dissolves it.
+
+        Winding is deterministic: with the base wound outward (the commit
+        invariant on solids), ``[a, b, b2, a2]`` is outward for *both* push
+        directions — flipping the push flips the quad's geometric normal and
+        which side holds material together — and the cap keeps the base's
+        winding (+n faces out of an added box and out of a carved pocket
+        alike). That is what lets the rebuild trust fresh faces' normals."""
         commands: list = []
-        push_normal = face.normal()
         if attached:
             commands.append(DeleteFaceCommand(face))  # base consumed into the solid
         for i in range(count):
@@ -361,34 +400,8 @@ class PushPullTool(Tool):
 
         for i in range(count):
             j = (i + 1) % count
-            a, b, b2, a2 = base[i], base[j], top[j], top[i]
-            kind, neighbour = kinds[i]
-            if attached and kind == "perp" and _swept_by_push(neighbour, push_normal):
-                # The wall this edge sits on grows in its own plane: move its
-                # shared edge rather than stack a coplanar strip (no seam left).
-                # Only when the wall is swept by the push (a prism wall getting
-                # taller); a cap perpendicular to the push gets a coplanar strip
-                # below (a box bump) which the stitch then merges.
-                extended = extend_wall_edge(neighbour, a, b, a2, b2)
-                if extended is not None:
-                    commands.append(DeleteFaceCommand(neighbour))
-                    commands.append(AddFaceCommand(
-                        extended, auto=False, holes=neighbour.holes or None))
-                    en = len(extended)
-                    for k in range(en):
-                        commands.append(
-                            AddEdgeCommand(extended[k], extended[(k + 1) % en]))
-                    continue
-                remainder = subtract_loop_from_face(neighbour, [a, b, b2, a2])
-                if remainder is not None:
-                    commands.append(DeleteFaceCommand(neighbour))
-                    commands.append(AddFaceCommand(remainder, auto=False))
-                    rn = len(remainder)
-                    for k in range(rn):
-                        commands.append(
-                            AddEdgeCommand(remainder[k], remainder[(k + 1) % rn]))
-                    continue
-            commands.append(AddFaceCommand([a, b, b2, a2], auto=False))
+            commands.append(AddFaceCommand(
+                [base[i], base[j], top[j], top[i]], auto=False))
 
         if attached:
             commands.append(PruneOrphanEdgesCommand(list(base)))

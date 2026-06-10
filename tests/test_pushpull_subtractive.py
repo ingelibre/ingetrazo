@@ -510,3 +510,46 @@ def test_push_through_wall_makes_a_real_hole():
         f for f in scene.faces if all(abs(v.y()) < 1e-9 for v in f.vertices)
         and {round(v.z()) for v in f.vertices} == {1, 2}
     ] == []
+
+
+# ---- push a bump flush back: everything dissolves, SketchUp-style -----------
+
+def test_bump_pushed_flush_back_dissolves_to_clean_cube():
+    """Extrude a bump out of a wall, then push its front face back level with
+    the wall. The pane must merge into the host wall (no seam, no hole, no
+    zero-area side walls, no stale vertices) — a pristine cube again."""
+    from core.edits import build_add_edges
+    from core.orient import signed_volume
+
+    scene = Scene()
+    hist = History(scene)
+    ground = [V(0, 0), V(4, 0), V(4, 4), V(0, 4)]
+    hist.execute(build_add_edges(
+        scene, [(ground[i], ground[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(ground))]))
+    _push(scene, scene.faces[0], 3.0)  # cube
+
+    bump = [V(1, 0, 1), V(2, 0, 1), V(2, 0, 2), V(1, 0, 2)]
+    hist.execute(build_add_edges(
+        scene, [(bump[i], bump[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(bump))]))
+    bump_base = next(
+        f for f in scene.faces if len(f.vertices) == 4
+        and all(abs(v.y()) < 1e-9 for v in f.vertices)
+        and max(v.x() for v in f.vertices) <= 2.001
+        and min(v.x() for v in f.vertices) >= 0.999
+    )
+    assert _push_real(scene, bump_base, 1.0) is False  # extrude path (bump out)
+
+    bump_front = next(
+        f for f in scene.faces if all(abs(v.y() + 1) < 1e-6 for v in f.vertices)
+    )
+    vp_prism = _push_real(scene, bump_front, -1.0)     # prism translate back
+    assert vp_prism is True
+
+    m = scene.mesh
+    assert (len(m.faces), len(m.edges), len(m.vertices)) == (6, 12, 8)
+    assert all(len(e.faces) == 2 for e in m.edges)     # watertight
+    fronts = [f for f in m.faces if all(abs(v.y()) < 1e-9 for v in f.vertices)]
+    assert len(fronts) == 1 and fronts[0].holes == []  # pane + ring dissolved
+    assert signed_volume(m) > 0                        # outward

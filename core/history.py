@@ -498,14 +498,23 @@ class StitchSolidCommand(Command):
             scene.version += 1
 
 
-def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None) -> None:
+def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
+               coplanar_merge: bool = True) -> None:
     """Three-phase watertight cleanup (no undo bookkeeping — the caller snapshots).
     See :class:`StitchSolidCommand` for the rationale of each phase.
 
     ``new_faces`` (when given) are the faces this operation created; phase 3 only
     fuses a coplanar component that contains one of them, so a seam a push just
     made is merged while a pre-existing coplanar split (a user's diagonal) is
-    left intact. ``None`` means merge any seeded component (manual stitch)."""
+    left intact. ``None`` means merge any seeded component (manual stitch).
+
+    ``coplanar_merge=False`` runs only phases 0–2 (connectivity repair). Solid
+    push/pull uses this: its seams are dissolved by the deterministic per-plane
+    rebuild (:mod:`core.cap_rebuild`) instead of the winding-tolerant merge,
+    which only remains for raw/open geometry where outwardness is undefined."""
+    # Phase 0 — weld coincident vertices (a translated cap landing flush on the
+    # ring it came from); merges duplicate edges, drops degenerated faces.
+    mesh.weld_coincident()
     # Phase 1 — resolve T-junctions (global).
     while True:
         split = False
@@ -527,6 +536,8 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None) -> None:
                 break
         if not collapsed:
             break
+    if not coplanar_merge:
+        return
     # Phase 3 — coplanar-merge, seeded to the operation. Fuses the whole coplanar
     # component (every shared edge, any number of faces) at once, but only when it
     # includes a face this operation created (so user diagonals survive).

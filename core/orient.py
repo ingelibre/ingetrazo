@@ -1,17 +1,12 @@
 """Consistent outward orientation for closed solids in the non-manifold mesh.
 
-Root-fix groundwork. The 3D push/pull currently leans on two crutches that hide
-a missing invariant — the mesh has no globally consistent winding:
-
-- the coplanar merge accepts faces ``abs(dot) > 0.999`` (winding sign ignored),
-  because a pushed strip can come out wound backwards relative to its coplanar
-  neighbour;
-- ``cap_boundary_loops`` patches cracks after the fact.
-
-The fix is to give the mesh a consistent orientation: every face of a closed
-solid wound so its normal points *outward* from the enclosed volume. Then two
-coplanar faces of one surface share the *same* normal (dot ≈ +1), the merge can
-drop ``abs()``, and the "flipped fragment" class of bug disappears.
+The root-fix invariant: every face of a closed solid is wound so its normal
+points *outward* from the enclosed volume. The solid push/pull pipeline relies
+on it at both ends — it orients **on entry** (hand-built or loaded meshes can
+arrive with mixed winding) so the naive extrude's deterministic quad winding
+and the per-plane rebuild's material-side classification (:mod:`core.
+cap_rebuild`) can trust face normals, and **on exit** so every committed solid
+upholds the invariant for the next edit.
 
 The mesh is **shared-vertex, non-manifold** (an interior wall is shared by two
 rooms; an edge can border three faces), so winding does *not* propagate cleanly
