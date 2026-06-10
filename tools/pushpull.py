@@ -55,6 +55,7 @@ from core.topology import (
     _key,
     _mesh_is_flat,
     classify_push_edge,
+    heal_overlapping_faces,
     loop_inside_face,
     refine_loop_with_points,
 )
@@ -579,6 +580,12 @@ class PushPullTool(Tool):
                 fresh = {f for f in scene.mesh.faces
                          if any(_key(v) in seedkeys for v in f.vertices)}
                 self._rebuild_planes_fixpoint(scene.mesh, fresh, seedkeys)
+            else:
+                # A full collapse flattened the solid. The cap may have landed
+                # on a *subdivided* base (hole-bearing cycles never dedupe as
+                # identical): it is now a redundant mother over the
+                # subdivision — exactly what the flat-drawing heal removes.
+                heal_overlapping_faces(scene.mesh)
             orient_outward(scene.mesh)
             return
 
