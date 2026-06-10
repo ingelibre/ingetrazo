@@ -517,7 +517,7 @@ class StitchSolidCommand(Command):
 
 
 def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
-               coplanar_merge: bool = True) -> None:
+               coplanar_merge: bool = True, dedupe: bool = True) -> None:
     """Three-phase watertight cleanup (no undo bookkeeping — the caller snapshots).
     See :class:`StitchSolidCommand` for the rationale of each phase.
 
@@ -529,12 +529,21 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
     ``coplanar_merge=False`` runs only phases 0–2 (connectivity repair). Solid
     push/pull uses this: its seams are dissolved by the deterministic per-plane
     rebuild (:mod:`core.cap_rebuild`) instead of the winding-tolerant merge,
-    which only remains for raw/open geometry where outwardness is undefined."""
+    which only remains for raw/open geometry where outwardness is undefined.
+
+    ``dedupe=False`` skips the identical-cycle face dedupe of phase 0. The
+    solid path's *first* stitch needs that: a flush-collapse sweep quad lands
+    identical to the face it must annihilate *with*, and the per-plane rebuild
+    is what decides whether the pair means "keep one" (a shared wall built
+    twice — material on both sides) or "drop both" (an emptied region) — by
+    parity, where the pair's two crossings cancel. Deduping it early restores
+    the material reading and the collapse never classifies."""
     # Phase 0 — weld coincident vertices (a translated cap landing flush on the
     # ring it came from); merges duplicate edges, drops degenerated faces. Then
     # drop faces stacked on an identical cycle (a shared wall built twice).
     mesh.weld_coincident()
-    mesh.dedupe_faces()
+    if dedupe:
+        mesh.dedupe_faces()
     # Phase 1 — resolve T-junctions (global).
     while True:
         split = False

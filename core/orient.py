@@ -33,9 +33,14 @@ _EPS = 1e-7
 _T_MIN = 1e-6
 # Number of jittered rays voted over to step around degenerate hits (a ray that
 # grazes a shared edge or vertex would be counted 0 or 2 times). The face normal
-# is one of them; the rest are small angular perturbations.
+# is one of them; the rest are small angular perturbations. The jitter must be
+# *small*: the lateral deviation grows linearly with distance, and a wide cone
+# (it used to be 0.08) overshoots thin features far away — a 0.3 m belt strip
+# at 4 m deviated by ±0.32 m, so most rays missed it and the vote read "no
+# material" by seed luck. 3e-4 keeps the deviation ~2 cm even 60 m out while
+# still dodging exact edge/vertex grazes of human-valued coordinates.
 _RAYS = 7
-_JITTER = 0.08
+_JITTER = 3e-4
 
 
 Triangle = tuple[QVector3D, QVector3D, QVector3D]

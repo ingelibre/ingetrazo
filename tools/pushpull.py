@@ -655,8 +655,13 @@ class PushPullTool(Tool):
         # merge (phase 3) stays off. On raw/open geometry (a flat sheet) there is
         # no "outside" to classify against, so the merge still applies there.
         solid = attached_any and was_solid
+        # On solids the identical-cycle dedupe waits for the rebuild: a flush
+        # collapse's sweep quad lands identical to the face it annihilates
+        # with, and only the volumetric classification can tell "keep one"
+        # (shared wall) from "drop both" (emptied region).
         run_stitch(scene.mesh, seedkeys, new_faces,
-                   coplanar_merge=not solid and not self._keep_base)
+                   coplanar_merge=not solid and not self._keep_base,
+                   dedupe=not solid)
         if solid:
             self._rebuild_planes_fixpoint(scene.mesh, set(new_faces), seedkeys,
                                           keep_mode=self._keep_base)
