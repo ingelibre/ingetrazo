@@ -8,7 +8,13 @@ UX (SketchUp-like):
   midpoint, same overlay as the line tool.
 - Second click commits at the current distance.
 - Typing a number + Enter (VCB) commits at exactly that distance,
-  preserving the current direction's sign.
+  preserving the current direction's sign; a negative value ("-2")
+  reverses it, and unit suffixes ("30cm", "1500mm") are understood.
+- **Ctrl** = push/pull a copy: the start face stays in place (a slab
+  division) and the extrusion stacks as a new segment — how floors are
+  stacked.
+- **Double-click** repeats the last committed distance on the face under
+  the cursor (with Ctrl, as a copy).
 - Esc cancels without committing.
 
 Commit pipeline (the deterministic root-fix, no case tree):
@@ -29,6 +35,7 @@ as the cap of the new box.
 """
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QVector3D
 
 from core.geometry import Face
@@ -80,11 +87,19 @@ class PushPullTool(Tool):
     wireframe_color = (0.13, 0.17, 0.23, 1.0)
     wireframe_depth_tested = True
 
+    # Last committed distance (signed along the base's outward normal), shared
+    # across activations: double-click repeats it on another face, SketchUp-style.
+    last_distance: float | None = None
+
     def __init__(self) -> None:
         self.hovered_face: Face | None = None
         self.base_face: Face | None = None
         self.extrusion: float = 0.0  # signed distance along normal
         self.dragging: bool = False
+        # Ctrl held = "push/pull a copy": the base face stays in place (a slab
+        # division), the extrusion stacks as a new segment instead of growing
+        # the neighbours — how floors are stacked in SketchUp.
+        self._keep_base: bool = False
         # Whether the base face is embedded in a solid (its boundary edges are
         # shared), so an inner face pushed in is a recess (window/door pocket).
         self._attached: bool = False
@@ -121,6 +136,8 @@ class PushPullTool(Tool):
 
         if self.base_face is None or self._anchor is None:
             return
+        # Ctrl can be pressed/released mid-drag; the live preview follows.
+        self._keep_base = bool(ctx.modifiers & Qt.ControlModifier)
         projected = viewport._project_to_lock_line(
             self._anchor, self._normal, ctx.screen.x(), ctx.screen.y()
         )
@@ -131,6 +148,7 @@ class PushPullTool(Tool):
 
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
+        self._keep_base = bool(ctx.modifiers & Qt.ControlModifier)
         if not self.dragging:
             face = self.hovered_face
             if face is None:
@@ -154,13 +172,43 @@ class PushPullTool(Tool):
             return
         self._commit(viewport)
 
+    def on_double_click(self, ctx: ToolContext) -> None:
+        """Repeat the last committed distance on the face under the cursor,
+        SketchUp-style. Works both as a fresh double-click (the first press
+        already locked the face) and right after a commit (the next quick
+        click arrives as a double-click)."""
+        viewport = ctx.viewport
+        last = PushPullTool.last_distance
+        if last is None:
+            self.on_click(ctx)
+            return
+        self._keep_base = bool(ctx.modifiers & Qt.ControlModifier)
+        if not self.dragging:
+            face = viewport.pick_face(ctx.screen.x(), ctx.screen.y())
+            if face is None:
+                return
+            self.base_face = face
+            self.dragging = True
+            self._anchor = face.centroid()
+            self._normal = face.normal()
+            self._attached, self._prism_cap = self._classify_base(viewport.scene)
+            self._cap_positions = [QVector3D(v) for v in face.vertices]
+            self._preview_snapshot = None
+        elif abs(self.extrusion) > 1e-6:
+            # Mid-drag with a real distance: treat as the commit click.
+            self._commit(viewport)
+            return
+        self.extrusion = last
+        self._commit(viewport)
+
     def on_value(self, viewport, value) -> bool:
         # Push/Pull only takes a single extrusion length; 3D deltas don't apply.
         if isinstance(value, tuple):
             return False
-        if not self.dragging or self.base_face is None or value <= 0.0:
+        if not self.dragging or self.base_face is None or value == 0.0:
             return False
-        # Keep the sign the user has been dragging toward; default to +normal.
+        # A positive value goes the way the user is dragging (default +normal);
+        # a negative one reverses it, SketchUp-style.
         sign = -1.0 if self.extrusion < 0.0 else 1.0
         self.extrusion = sign * value
         self._commit(viewport)
@@ -250,6 +298,7 @@ class PushPullTool(Tool):
         # One snapshot wraps the edit *and* the watertight stitch: undo is exact,
         # and it is the identical mutation the live preview just showed.
         viewport.history.execute(SnapshotMutation(self._mutate))
+        PushPullTool.last_distance = self.extrusion  # double-click repeats this
         self._reset()
         viewport.update()
 
@@ -263,8 +312,9 @@ class PushPullTool(Tool):
         # A prism cap is exactly a translation of the cap along its normal; the
         # walls follow through shared vertices. Then repair connectivity
         # (welds, T-junctions, collinear) — no coplanar-merge, nothing new is
-        # added.
-        if self._prism_cap:
+        # added. Ctrl ("push/pull a copy") must not translate: it stacks a new
+        # segment, so it takes the extrude path below with the base kept.
+        if self._prism_cap and not self._keep_base:
             normal = self._normal if self._normal is not None else face.normal()
             translate_points(scene, {_key(p) for p in self._cap_positions},
                              normal * d)
@@ -312,7 +362,12 @@ class PushPullTool(Tool):
             classify_push_edge(face, base[i], base[(i + 1) % count], faces)
             for i in range(count)
         ]
-        attached = all(kind != "free" for kind, _ in kinds)
+        # Ctrl ("push/pull a copy") forces the free-extrusion semantics: the
+        # base face stays in place as a slab division, so the build keeps it,
+        # punches no through-hole and dissolves no seams — the stacked strips
+        # and their belt of edges are the point, exactly like SketchUp.
+        attached = (all(kind != "free" for kind, _ in kinds)
+                    and not self._keep_base)
         through = self._find_through_face(face, d, faces) if attached else None
 
         before = set(scene.mesh.faces)
@@ -334,7 +389,8 @@ class PushPullTool(Tool):
         # merge (phase 3) stays off. On raw/open geometry (a flat sheet) there is
         # no "outside" to classify against, so the merge still applies there.
         solid = attached and was_solid
-        run_stitch(scene.mesh, seedkeys, new_faces, coplanar_merge=not solid)
+        run_stitch(scene.mesh, seedkeys, new_faces,
+                   coplanar_merge=not solid and not self._keep_base)
         if solid:
             # Deterministic root-fix (path C): recompute each touched plane's
             # faces from its edges — the planar arrangement finds every region,
@@ -464,6 +520,7 @@ class PushPullTool(Tool):
         self.dragging = False
         self._attached = False
         self._prism_cap = False
+        self._keep_base = False
         self._anchor = None
         self._normal = None
         self._cap_positions = []

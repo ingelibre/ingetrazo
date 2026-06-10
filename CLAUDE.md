@@ -210,7 +210,13 @@ La deuda "parches/heals, no fix de raíz" quedó saldada. Los tres pasos, en ord
 
    ⚠️ **Limitación conocida (heredada, no nueva):** `apply_rebuild` unioniza todas las regiones sólidas del plano, así que una **diagonal dibujada por el usuario** sobre un plano que el push toca (costura/grieta) se disuelve. El merge viejo tenía la misma semántica para componentes seeded. Si molesta en la práctica: re-splitear las caras reconstruidas por las aristas de usuario sobrevivientes.
 
-Red de regresión: 249 tests (incl. las 60 combinaciones de push del triángulo irregular `[(-0.2,-2.8),(2.7,-7.2),(4.1,-2.7)]`). Banco: `capturas/pris2.igz` (roto a propósito, sirve de bench de robustez sobre input dañado).
+Red de regresión: 256 tests (incl. las 60 combinaciones de push del triángulo irregular `[(-0.2,-2.8),(2.7,-7.2),(4.1,-2.7)]`). Banco: `capturas/pris2.igz` (roto a propósito, sirve de bench de robustez sobre input dañado).
+
+### 🧰 Paridad SketchUp del Push/Pull (auditada 2026-06-09)
+
+Tras el fix de raíz se auditó el push/pull contra SketchUp (el usuario es ex-usuario intensivo). **Hecho en la misma sesión:** ① **Ctrl = push/pull a copy** (la cara de arranque queda como división de losa; las paredes se apilan como strips separados por el cinturón de aristas — así se apilan pisos; Ctrl togglea en vivo durante el drag y anula el camino prism-translate); ② **doble-click repite la última distancia** sobre la cara bajo el cursor (`Tool.on_double_click` + dispatch en viewport, default = on_click para no romper el ritmo click-click de los tools de dibujo); ③ **VCB acepta negativos y unidades** (`-2` invierte la dirección del drag; `30cm`/`1500mm`/`2m` por campo, metro = unidad base; `ShortcutOverride` evita que `M`/`C` disparen el shortcut de herramienta a mitad de número). Tests en `tests/test_pushpull_ux.py`.
+
+**Brechas restantes vs SketchUp (anotadas, no urgentes):** clamp al encoger (hoy se puede empujar una tapa más allá del fondo e invertir el sólido), inferencia de distancia (apuntar a un vértice/cara para quedar exacto a ese nivel), autofold de vecinos no-planares, push/pull dentro de grupos (necesita "entrar al grupo", Groups v2), y la diagonal de usuario que el rebuild disuelve (limitación de arriba).
 
 ### 🔧 Migración del motor a conectividad de vértices compartidos (swap en `main`, 2026-06-08)
 

@@ -72,6 +72,13 @@ class Tool(ABC):
     def on_hover(self, ctx: ToolContext) -> None:
         """Mouse moved to ``ctx.world`` without a button pressed."""
 
+    def on_double_click(self, ctx: ToolContext) -> None:
+        """Left double-click. Qt swallows the second press, so tools that act
+        on it (Push/Pull repeating its last distance) override this; the
+        default is to treat it as a plain click so other tools keep their
+        click-click rhythm even when the user clicks fast."""
+        self.on_click(ctx)
+
     def on_box_select(self, viewport, rect, crossing: bool, additive: bool) -> None:
         """Rubber-band box released. ``rect`` is ``(x0, y0, x1, y1)`` in screen
         pixels (normalized so x0<=x1, y0<=y1). ``crossing`` is True for a

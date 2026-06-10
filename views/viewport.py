@@ -34,11 +34,12 @@ Tool input (when a tool is active):
 from __future__ import annotations
 
 import math
+import re
 from array import array
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QPointF, QRectF, Signal
+from PySide6.QtCore import QEvent, Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -1440,32 +1441,51 @@ class Viewport(QOpenGLWidget):
                 self._box_start = ev.position()
                 self._box_cur = ev.position()
                 return
-            had_start = getattr(self.active_tool, "start_point", None) is not None
-            had_plane = getattr(self.active_tool, "work_plane", None) is not None
-            face_at_click = None
-            if not had_start and not had_plane:
-                face_at_click = self.pick_face(ev.position().x(), ev.position().y())
-            ctx = self._build_ctx(ev)
-            if ctx is not None:
+            self._dispatch_tool_click(ev)
+
+    def _dispatch_tool_click(self, ev, double: bool = False) -> None:
+        """Forward a (double-)click to the active tool, then run the shared
+        follow-ups: lock the chain to a clicked face's plane, clear the VCB."""
+        had_start = getattr(self.active_tool, "start_point", None) is not None
+        had_plane = getattr(self.active_tool, "work_plane", None) is not None
+        face_at_click = None
+        if not had_start and not had_plane:
+            face_at_click = self.pick_face(ev.position().x(), ev.position().y())
+        ctx = self._build_ctx(ev)
+        if ctx is not None:
+            if double:
+                self.active_tool.on_double_click(ctx)
+            else:
                 self.active_tool.on_click(ctx)
-                # If the click established a new start point on top of an
-                # existing face, lock the rest of the chain to that face's
-                # plane so subsequent clicks stay coplanar.
-                now_start = getattr(self.active_tool, "start_point", None)
-                if (
-                    not had_start
-                    and now_start is not None
-                    and face_at_click is not None
-                    and hasattr(self.active_tool, "work_plane")
-                ):
-                    self.active_tool.work_plane = (
-                        face_at_click.centroid(),
-                        face_at_click.normal(),
-                    )
-                # Any pending typed value is invalidated once the user
-                # commits a point with the mouse.
-                self._set_value_buffer("")
-                self.update()
+            # If the click established a new start point on top of an
+            # existing face, lock the rest of the chain to that face's
+            # plane so subsequent clicks stay coplanar.
+            now_start = getattr(self.active_tool, "start_point", None)
+            if (
+                not had_start
+                and now_start is not None
+                and face_at_click is not None
+                and hasattr(self.active_tool, "work_plane")
+            ):
+                self.active_tool.work_plane = (
+                    face_at_click.centroid(),
+                    face_at_click.normal(),
+                )
+            # Any pending typed value is invalidated once the user
+            # commits a point with the mouse.
+            self._set_value_buffer("")
+            self.update()
+
+    def mouseDoubleClickEvent(self, ev) -> None:
+        """Qt replaces the second press of a double-click with this event, so
+        route it to ``tool.on_double_click`` — whose default re-runs
+        ``on_click``, keeping fast click-click rhythms working for drawing
+        tools while Push/Pull overrides it to repeat its last distance."""
+        if ev.button() != Qt.LeftButton or self.active_tool is None \
+                or self.nav_mode is not None or self.active_tool.box_select:
+            self.mousePressEvent(ev)
+            return
+        self._dispatch_tool_click(ev, double=True)
 
     def mouseMoveEvent(self, ev) -> None:
         if self._last_pos is not None:
@@ -1601,6 +1621,19 @@ class Viewport(QOpenGLWidget):
         else:
             self.camera.zoom(steps)
         self.update()
+
+    def event(self, ev) -> bool:
+        # With a VCB buffer in progress, claim keys that continue it (unit
+        # suffixes m/cm/mm, separators, sign) before the window's QAction
+        # shortcuts swallow them — otherwise typing "2m" would fire the Move
+        # tool instead of finishing the length. Bare letters with no buffer
+        # still reach the shortcuts.
+        if ev.type() == QEvent.ShortcutOverride and self._value_buffer:
+            t = ev.text().lower()
+            if t and (t.isdigit() or t in (".", ",", ";", " ", "-", "m", "c")):
+                ev.accept()
+                return True
+        return super().event(ev)
 
     def keyPressEvent(self, ev) -> None:
         # 0. Shift state change → refresh snap immediately so the user sees
@@ -1784,6 +1817,10 @@ class Viewport(QOpenGLWidget):
         - ``"5"`` or ``"5,3"`` or ``"5.3"`` → single length (float).
         - ``"3;4;5"`` or ``"3 4 5"``       → 3D delta from the start point
                                               (passed as a ``(dx, dy, dz)`` tuple).
+        - ``"-2"``                          → negative value (tools that take a
+                                              direction flip it, SketchUp-style).
+        - ``"30cm"`` / ``"1500mm"`` / ``"2m"`` → unit suffix per field; bare
+                                              numbers are metres (project unit).
         Comma is always the decimal separator; ``;`` and space are field
         separators (SketchUp convention adapted to our locale).
         """
@@ -1810,12 +1847,20 @@ class Viewport(QOpenGLWidget):
             self._set_value_buffer(self._value_buffer[:-1])
             return True
 
-        if text and (text.isdigit() or text in (".", ",", ";", " ")):
+        if text and (text.isdigit() or text in (".", ",", ";", " ", "-")
+                     or text.lower() in ("m", "c")):
             # A field separator (space / ;) with an empty buffer isn't VCB
             # input — let it fall through so Space can act as the Select
             # shortcut (SketchUp-style). It only separates fields mid-number.
             if text in (";", " ") and not self._value_buffer:
                 return False
+            # A unit letter with an empty buffer is a tool shortcut (M = Move,
+            # C = Circle), not VCB input — only buffer it after a digit.
+            if text.lower() in ("m", "c") and not self._current_token_tail():
+                return False
+            # Minus only opens a token (a sign, not an operator).
+            if text == "-" and self._current_token_tail():
+                return True
             # Forbid two decimal separators in the current numeric token.
             if text in (".", ","):
                 tail = self._current_token_tail()
@@ -1830,13 +1875,17 @@ class Viewport(QOpenGLWidget):
     def _parse_value_buffer(buffer: str):
         """Return a float, a 2-tuple ``(w, h)`` (rectangle dimensions), a
         3-tuple ``(dx, dy, dz)`` (delta), or ``None`` on parse error. Each tool's
-        ``on_value`` accepts the arity it understands and ignores the rest."""
+        ``on_value`` accepts the arity it understands and ignores the rest.
+        Fields may carry a unit suffix (``m``/``cm``/``mm``); bare numbers are
+        metres, and a leading minus is kept (direction tools flip on it)."""
         normalized = buffer.replace(",", ".").replace(";", " ")
-        parts = normalized.split()
-        try:
-            nums = [float(p) for p in parts if p]
-        except ValueError:
-            return None
+        scale = {"": 1.0, "m": 1.0, "cm": 0.01, "mm": 0.001}
+        nums = []
+        for p in normalized.split():
+            m = re.fullmatch(r"(-?(?:\d+\.?\d*|\.\d+))(mm|cm|m)?", p.lower())
+            if m is None:
+                return None
+            nums.append(float(m.group(1)) * scale[m.group(2) or ""])
         if len(nums) == 1:
             return nums[0]
         if len(nums) in (2, 3):
