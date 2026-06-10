@@ -219,3 +219,87 @@ def test_pushed_prism_cap_rebuild_matches_committed_face(perm, normal):
     o = V(0, 0, 3) if normal.z() > 0 else V(0, 0, 0)
     faces = rebuild_plane(m, o, normal)
     assert round(sum(_areas(faces)), 2) == round(gt_total, 2)
+
+
+# ---- fixpoint / order independence -------------------------------------------
+
+def test_apply_rebuild_noop_on_stable_plane():
+    """A plane already in its rebuilt form reports no change — the property
+    that terminates the push's rebuild fixpoint loop."""
+    from core.cap_rebuild import apply_rebuild
+    sc, h = _fresh_prism_scene()
+    m = sc.mesh
+    wall = _walls(sc)[0]
+    n = wall.normal().normalized()
+    before = len(m.faces)
+    assert apply_rebuild(m, wall.centroid(), n) is False
+    assert len(m.faces) == before
+
+
+def test_rebuild_order_independent_on_overhang():
+    """The overhang push (cubito flush on an unsplit host) must come out clean
+    for *every* seam-plane iteration order — the volumetric (parity ray-cast)
+    classification reads the mesh volume, not the half-cleaned plane edges, so
+    no order leaves a seam or an internal partition."""
+    import itertools
+    from PySide6.QtGui import QVector3D
+    import core.cap_rebuild as cr
+    import tools.pushpull as pp
+    from core.scene import Scene
+    from core.history import History
+    from tools.pushpull import PushPullTool
+
+    def build():
+        X0, X1, XC = 0.0, 4.0, 2.0
+        Y0, Y1, YC = 0.0, 6.0, 1.5
+        ZT, ZC = 3.0, 5.0
+        scene = Scene()
+        m = scene.mesh
+        m.add_face([V(X0,Y0,0), V(X1,Y0,0), V(X1,Y1,0), V(X0,Y1,0)])
+        m.add_face([V(X0,Y0,0), V(X1,Y0,0), V(X1,Y0,ZT), V(X0,Y0,ZT)])
+        m.add_face([V(X1,Y0,0), V(X1,Y1,0), V(X1,Y1,ZT), V(X1,Y0,ZT)])
+        m.add_face([V(X0,Y1,0), V(X1,Y1,0), V(X1,Y1,ZT), V(X0,Y1,ZT)])
+        m.add_face([V(X0,Y0,0), V(X0,Y1,0), V(X0,Y1,ZT), V(X0,Y0,ZT)])
+        m.add_face([V(XC,Y0,ZT), V(X1,Y0,ZT), V(X1,Y1,ZT), V(X0,Y1,ZT),
+                    V(X0,YC,ZT), V(XC,YC,ZT)])
+        m.add_face([V(X0,Y0,ZC), V(XC,Y0,ZC), V(XC,YC,ZC), V(X0,YC,ZC)])
+        fw = m.add_face([V(X0,Y0,ZT), V(XC,Y0,ZT), V(XC,Y0,ZC), V(X0,Y0,ZC)])
+        m.add_face([V(XC,Y0,ZT), V(XC,YC,ZT), V(XC,YC,ZC), V(XC,Y0,ZC)])
+        m.add_face([V(X0,YC,ZT), V(XC,YC,ZT), V(XC,YC,ZC), V(X0,YC,ZC)])
+        m.add_face([V(X0,Y0,ZT), V(X0,YC,ZT), V(X0,YC,ZC), V(X0,Y0,ZC)])
+        return scene, fw
+
+    class _VP:
+        def __init__(self, s):
+            self.scene = s
+            self.history = History(s)
+        def update(self): pass
+        def set_hover(self, e): pass
+        def set_suppressed_faces(self, f): pass
+
+    orig = cr.seam_planes
+    try:
+        # 4 seam planes → spot-check a spread of orders incl. identity/reverse.
+        for perm in [(0,1,2,3), (3,2,1,0), (1,3,0,2), (2,0,3,1)]:
+            def reorder(mesh, fresh, _p=perm):
+                out = orig(mesh, fresh)
+                return [out[i] for i in _p if i < len(out)] + \
+                       [o for j, o in enumerate(out) if j >= len(_p)]
+            pp.seam_planes = reorder
+            scene, fwall = build()
+            t = PushPullTool()
+            t.base_face = fwall
+            t.extrusion = -2.0
+            t.dragging = True
+            t._anchor = fwall.centroid()
+            t._normal = fwall.normal()
+            t._attached, t._prism_cap = t._classify_base(scene)
+            t._cap_positions = [QVector3D(v) for v in fwall.vertices]
+            t._commit(_VP(scene))
+            m = scene.mesh
+            seams = [e for e in m.edges if len(e.faces) == 2 and
+                     QVector3D.dotProduct(e.faces[0].normal().normalized(),
+                                          e.faces[1].normal().normalized()) > 0.999]
+            assert seams == [], f"seam left with order {perm}"
+    finally:
+        pp.seam_planes = orig

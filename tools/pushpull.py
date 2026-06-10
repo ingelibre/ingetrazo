@@ -398,15 +398,35 @@ class PushPullTool(Tool):
             # phantoms outside, and the union dissolves coplanar seams. Seam
             # planes (a fresh face coplanar-adjacent to another) cover the strip
             # stacked on a wall and the quad overlapping a wall to be notched;
-            # crack planes (run after, on the healed mesh) cover anything a
-            # nested push left unfaced. No case tree.
-            done = set()
-            for origin, plane_n in seam_planes(scene.mesh, new_faces):
-                done.add(plane_key(origin, plane_n)[0])
-                apply_rebuild(scene.mesh, origin, plane_n)
-            for origin, plane_n in crack_planes(scene.mesh):
-                if plane_key(origin, plane_n)[0] not in done:
-                    apply_rebuild(scene.mesh, origin, plane_n)
+            # crack planes cover anything a nested push left unfaced.
+            #
+            # Rebuilt to a **fixpoint**: a plane's classification reads the
+            # current mesh, so a plane rebuilt while a neighbour still carries
+            # its dirty phantom can come out wrong — which made the result
+            # depend on iteration order (set order = the Python hash seed).
+            # Treating the faces a rebuild adds as fresh re-flags the affected
+            # planes next round, and ``apply_rebuild`` returning False on a
+            # stable plane makes the loop terminate. Plane keys are sorted, so
+            # the whole pass is order-deterministic. No case tree.
+            fresh = set(new_faces)
+            for _ in range(4):  # converges in 1-2 rounds; hard cap for safety
+                planes: dict = {}
+                for origin, plane_n in seam_planes(scene.mesh, fresh):
+                    planes.setdefault(plane_key(origin, plane_n)[0],
+                                      (origin, plane_n))
+                for origin, plane_n in crack_planes(scene.mesh):
+                    planes.setdefault(plane_key(origin, plane_n)[0],
+                                      (origin, plane_n))
+                changed = False
+                for key in sorted(planes):
+                    origin, plane_n = planes[key]
+                    before_faces = set(scene.mesh.faces)
+                    if apply_rebuild(scene.mesh, origin, plane_n):
+                        changed = True
+                        fresh |= set(scene.mesh.faces) - before_faces
+                if not changed:
+                    break
+                fresh = {f for f in fresh if f in scene.mesh.faces}
             # The dissolved seams can leave redundant collinear vertices on the
             # rebuilt faces' borders (the old cap ring's corners); one more
             # connectivity pass collapses them. No merge — rebuild already did.

@@ -8,16 +8,16 @@ on solids — with one deterministic recompute per touched plane:
 1. Gather the mesh edges lying on the plane.
 2. Run the planar arrangement (:mod:`core.arrangement`) to get every minimal
    bounded region.
-3. Classify each region by **which side of the plane holds material**, per
-   side, via the winding number of an interior point against that side's
-   *wall* edges, each oriented so the material sits on its left — the wall's
-   outward normal (the invariant from :func:`core.orient.orient_outward`)
-   projected into the plane decides the in-plane side, its centroid offset
-   decides the half-space. Material on exactly **one** side → a boundary face
-   (wound toward the empty side); on neither → a phantom outside the solid;
-   on both → solid interior (e.g. the mouth ring where a pushed-out pane
-   meets its wall — facing it would create an internal partition and swallow
-   a window hole).
+3. Classify each region by **which side of the plane holds material**,
+   volumetrically: parity ray-casting (the same primitive as
+   :func:`core.orient.orient_outward`) from a sample point just off the
+   region's interior on each side. Reading the volume keeps the answer
+   independent of the order planes are rebuilt in — the overlapping coplanar
+   faces a naive extrude leaves mid-cleanup cancel in crossing-parity pairs.
+   Material on exactly **one** side → a boundary face (wound toward the empty
+   side); on neither → a phantom outside the solid; on both → solid interior
+   (e.g. the mouth ring where a pushed-out pane meets its wall — facing it
+   would create an internal partition and swallow a window hole).
 4. Union each side's regions (dropping the edges interior to the union) into
    the final face loops — outer boundary plus holes.
 
@@ -28,6 +28,7 @@ cases.
 from __future__ import annotations
 
 import math
+import random
 from collections import defaultdict
 from typing import Optional
 
@@ -42,6 +43,7 @@ from core.arrangement import (
     plane_basis,
 )
 from core.mesh import _key as _vkey
+from core.orient import _face_triangles, ray_parity_outside
 
 # A point this close to the plane (along its normal) counts as on it.
 _ON_PLANE = 1e-4
@@ -55,51 +57,9 @@ def _on_plane(pos: QVector3D, origin: QVector3D, normal: QVector3D) -> bool:
     return abs(QVector3D.dotProduct(pos - origin, normal)) < _ON_PLANE
 
 
-def _winding(p, edges) -> float:
-    """Signed winding number of point ``p`` against the directed 2D ``edges``
-    (≈ ±1 inside, 0 outside). Robust on concave outlines where an even-odd test
-    would misjudge a notch."""
-    total = 0.0
-    for a, b in edges:
-        ax, ay = a[0] - p[0], a[1] - p[1]
-        bx, by = b[0] - p[0], b[1] - p[1]
-        total += math.atan2(ax * by - ay * bx, ax * bx + ay * by)
-    return total / (2.0 * math.pi)
-
-
-def _wall_boundary_sides(mesh, origin, normal, u, v, to2d) -> tuple[list, list]:
-    """Directed 2D edges of the plane's *wall* borders, split by which side of
-    the plane the wall's material hangs on: ``(plus_side, minus_side)`` along
-    ``normal``. Each edge is oriented so the material is on its left. A plane
-    edge borders a wall when it is shared with a face that is **not** coplanar
-    with this plane; that wall's outward normal projected into the plane points
-    away from the material, which fixes the in-plane side, and the wall's
-    centroid offset along ``normal`` fixes which half-space it bounds. A wall
-    crossing the plane bounds material on both sides, so it feeds both lists."""
-    plus: list = []
-    minus: list = []
-    for e in mesh.edges:
-        if not (_on_plane(e.a, origin, normal) and _on_plane(e.b, origin, normal)):
-            continue
-        for wall in e.faces:
-            nw = wall.normal().normalized()
-            if abs(QVector3D.dotProduct(nw, normal)) >= 0.5:
-                continue  # coplanar-ish with the plane → not a wall
-            out2 = (QVector3D.dotProduct(nw, u), QVector3D.dotProduct(nw, v))
-            a2, b2 = to2d(e.a), to2d(e.b)
-            dx, dy = b2[0] - a2[0], b2[1] - a2[1]
-            # Left normal of a→b is (-dy, dx); keep the orientation whose left
-            # points toward the material (opposite the wall's outward projection).
-            if (-dy) * (-out2[0]) + dx * (-out2[1]) > 0:
-                seg = (a2, b2)
-            else:
-                seg = (b2, a2)
-            off = QVector3D.dotProduct(wall.centroid() - origin, normal)
-            if off > -_ON_PLANE:
-                plus.append(seg)
-            if off < _ON_PLANE:
-                minus.append(seg)
-    return plus, minus
+# Normal offset of the material sample points: clear of the welding tolerance
+# (1e-4) yet far smaller than any feature the engine can represent.
+_SAMPLE_OFF = 1e-3
 
 
 def _region_test_point(outer_xy, holes_xy):
@@ -226,7 +186,14 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D) -> Optional[list]:
     if not regions_3d:
         return None
 
-    plus, minus = _wall_boundary_sides(mesh, origin, normal, u, v, to2d)
+    # Material presence per side is volumetric: parity ray-casting from a point
+    # just off the region's interior, away from the plane (so the ray never
+    # looks back through a crack being capped). It reads the whole mesh — the
+    # one source that is consistent mid-cleanup, because the overlapping
+    # coplanar faces a naive extrude leaves cancel in crossing-parity pairs.
+    # This is what makes the per-plane rebuild independent of plane order.
+    tris = list(_face_triangles(mesh).values())
+    rng = random.Random(54321)
 
     # Group boundary regions by which side holds the material — each group is
     # unioned separately because its faces wind the other way (outward points
@@ -235,9 +202,11 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D) -> Optional[list]:
     for outer, holes in regions_3d:
         outer_xy = [to2d(p) for p in outer]
         holes_xy = [[to2d(p) for p in h] for h in holes]
-        ip = _region_test_point(outer_xy, holes_xy)
-        mat_plus = abs(_winding(ip, plus)) > 0.5
-        mat_minus = abs(_winding(ip, minus)) > 0.5
+        ip = to3d(_region_test_point(outer_xy, holes_xy))
+        mat_plus = ray_parity_outside(
+            ip + normal * _SAMPLE_OFF, normal, tris, rng) is False
+        mat_minus = ray_parity_outside(
+            ip - normal * _SAMPLE_OFF, -normal, tris, rng) is False
         if mat_plus != mat_minus:
             solid_by_side[mat_plus].append((outer_xy, holes_xy))
 
@@ -264,11 +233,30 @@ def _coplanar_on(face, origin, normal) -> bool:
     )
 
 
+def _canon_loop(loop) -> tuple:
+    """Canonical form of a vertex-position cycle: rotated so the smallest key
+    leads. Winding is preserved (an orientation flip is a real change)."""
+    keys = [(round(p.x() / 1e-4), round(p.y() / 1e-4), round(p.z() / 1e-4))
+            for p in loop]
+    i = min(range(len(keys)), key=lambda j: keys[j])
+    return tuple(keys[i:] + keys[:i])
+
+
+def _canon_faces(faces_as_loops) -> frozenset:
+    """Order-free fingerprint of a set of faces given as ``(outer, holes)``."""
+    return frozenset(
+        (_canon_loop(outer), frozenset(_canon_loop(h) for h in holes))
+        for outer, holes in faces_as_loops
+    )
+
+
 def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D) -> bool:
     """Rebuild one plane of ``mesh`` in place: replace its coplanar faces with the
     deterministic solid faces from :func:`rebuild_plane`, and prune the edges left
     interior to the plane (a dissolved seam) that now border nothing. Returns
-    whether anything changed. No-op when the rebuild yields nothing to face.
+    whether anything changed — **False when the plane already matches** the
+    rebuilt result, so callers can iterate rebuilds to a fixpoint and know it
+    terminates. No-op when the rebuild yields nothing to face.
 
     The caller snapshots for undo (the push wraps the whole mutation), so this
     keeps no inverse of its own."""
@@ -277,6 +265,10 @@ def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D) -> bool:
     if not rebuilt:
         return False
     old = [f for f in mesh.faces if _coplanar_on(f, origin, normal)]
+    if _canon_faces(rebuilt) == _canon_faces(
+        [(list(f.vertices), [list(h) for h in f.holes]) for f in old]
+    ):
+        return False  # plane already in its rebuilt form — stable
     for f in old:
         mesh.remove_face(f)
     for outer, holes in rebuilt:

@@ -85,20 +85,22 @@ def _face_triangles(mesh) -> dict:
     return tris
 
 
-def _normal_points_outward(face, tris_by_face: dict, rng: random.Random) -> Optional[bool]:
-    """Whether ``face``'s current normal points out of the solid, by parity ray
-    casting from its centroid. ``None`` when the votes don't agree (degenerate —
-    leave the face as is)."""
-    n = face.normal()
-    if n.length() < 1e-9:
-        return None
-    n = n.normalized()
-    origin = face.centroid()
-    others = [(f, t) for f, t in tris_by_face.items() if f is not face]
+def ray_parity_outside(origin: QVector3D, direction: QVector3D,
+                       triangle_lists, rng: random.Random) -> Optional[bool]:
+    """Whether ``origin`` sits *outside* the volume bounded by the triangles, by
+    crossing parity along jittered rays around ``direction`` (majority vote —
+    a single ray can graze a shared edge and miscount). Even crossings ahead →
+    outside (infinity is outside; each crossing flips). ``None`` on a tie.
 
+    This is the engine's one volumetric primitive: orientation asks it with a
+    face's centroid and normal, and the per-plane rebuild asks it from sample
+    points just off a plane ("is there material on this side?") — the dirty
+    overlapping coplanar faces a naive extrude leaves cancel in pairs, so the
+    answer is right even mid-cleanup, in any plane order."""
+    n = direction.normalized()
     u, v = _basis(n)
-    outward_votes = 0
-    inward_votes = 0
+    outside_votes = 0
+    inside_votes = 0
     for r in range(_RAYS):
         if r == 0:
             d = n
@@ -107,19 +109,30 @@ def _normal_points_outward(face, tris_by_face: dict, rng: random.Random) -> Opti
                  + u * rng.uniform(-_JITTER, _JITTER)
                  + v * rng.uniform(-_JITTER, _JITTER)).normalized()
         crossings = 0
-        for _f, tlist in others:
+        for tlist in triangle_lists:
             for tri in tlist:
                 if _ray_triangle(origin, d, tri) is not None:
                     crossings += 1
-        # Even crossings ahead → the region just past the centroid along the
-        # normal is outside (infinity is outside; each crossing flips) → outward.
         if crossings % 2 == 0:
-            outward_votes += 1
+            outside_votes += 1
         else:
-            inward_votes += 1
-    if outward_votes == inward_votes:
+            inside_votes += 1
+    if outside_votes == inside_votes:
         return None
-    return outward_votes > inward_votes
+    return outside_votes > inside_votes
+
+
+def _normal_points_outward(face, tris_by_face: dict, rng: random.Random) -> Optional[bool]:
+    """Whether ``face``'s current normal points out of the solid, by parity ray
+    casting from its centroid. ``None`` when the votes don't agree (degenerate —
+    leave the face as is)."""
+    n = face.normal()
+    if n.length() < 1e-9:
+        return None
+    others = [t for f, t in tris_by_face.items() if f is not face]
+    # The region just past the centroid along the normal being outside is
+    # exactly the normal pointing outward.
+    return ray_parity_outside(face.centroid(), n, others, rng)
 
 
 # ---- Public API ------------------------------------------------------------
