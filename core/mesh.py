@@ -464,22 +464,28 @@ class Mesh:
             for dup in vs[1:]:
                 self._weld_into(keep, dup)
             changed = True
-        if changed:
-            # A full collapse (a box pushed flat) can leave two faces occupying
-            # the same cycle (the old top welded onto the bottom). Keep one —
-            # SketchUp leaves a single face when a solid is flattened away.
-            seen: dict = {}
-            for f in list(self.faces):
-                sig = frozenset(
-                    frozenset((id(lp[i]), id(lp[(i + 1) % len(lp)])))
-                    for lp in (f.loop, *f.hole_loops)
-                    for i in range(len(lp))
-                )
-                if sig in seen:
-                    self.remove_face(f)
-                else:
-                    seen[sig] = f
         return changed
+
+    def dedupe_faces(self) -> int:
+        """Drop faces occupying exactly the same edge cycle as another — a box
+        pushed flat (top welded onto bottom), or a room raised whose shared
+        wall the neighbour's push already built. Two coincident faces are
+        always junk in a surface model; SketchUp keeps one. Returns how many
+        were removed."""
+        seen: dict = {}
+        removed = 0
+        for f in list(self.faces):
+            sig = frozenset(
+                frozenset((id(lp[i]), id(lp[(i + 1) % len(lp)])))
+                for lp in (f.loop, *f.hole_loops)
+                for i in range(len(lp))
+            )
+            if sig in seen:
+                self.remove_face(f)
+                removed += 1
+            else:
+                seen[sig] = f
+        return removed
 
     def _weld_into(self, keep: Vertex, dup: Vertex) -> None:
         affected = {f for e in dup.edges for f in e.faces}
@@ -711,6 +717,13 @@ class Mesh:
         loops_out = _trace_loops(outline)
         if loops_out is None:
             return None
+        if not loops_out:
+            # The union has no boundary of its own: identical cycles stacked on
+            # one another (raising a room whose shared wall the neighbour's push
+            # already built). Keep one face, drop the duplicates.
+            for f in faces[1:]:
+                self.remove_face(f)
+            return faces[0]
         loops_out.sort(key=_loop_area, reverse=True)
         outer, holes = loops_out[0], loops_out[1:]
         interior = [self.find_edge(by_id[tuple(k)[0]], by_id[tuple(k)[-1]])

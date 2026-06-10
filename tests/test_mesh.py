@@ -292,3 +292,20 @@ def test_weld_coincident_noop_on_clean_mesh():
     m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
     assert m.weld_coincident() is False
     assert len(m.vertices) == 4 and len(m.edges) == 4 and len(m.faces) == 1
+
+
+def test_dedupe_faces_drops_identical_cycle():
+    m = Mesh()
+    a = m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])      # exact duplicate
+    assert len(m.faces) == 2
+    assert m.dedupe_faces() == 1
+    assert m.faces == [a]
+
+
+def test_dedupe_faces_keeps_distinct_faces():
+    m = Mesh()
+    m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    m.add_face([V(1, 0), V(2, 0), V(2, 1), V(1, 1)])      # neighbour, not a dup
+    assert m.dedupe_faces() == 0
+    assert len(m.faces) == 2

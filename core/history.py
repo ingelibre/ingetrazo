@@ -531,8 +531,10 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
     rebuild (:mod:`core.cap_rebuild`) instead of the winding-tolerant merge,
     which only remains for raw/open geometry where outwardness is undefined."""
     # Phase 0 — weld coincident vertices (a translated cap landing flush on the
-    # ring it came from); merges duplicate edges, drops degenerated faces.
+    # ring it came from); merges duplicate edges, drops degenerated faces. Then
+    # drop faces stacked on an identical cycle (a shared wall built twice).
     mesh.weld_coincident()
+    mesh.dedupe_faces()
     # Phase 1 — resolve T-junctions (global).
     while True:
         split = False
@@ -581,13 +583,18 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
 def _coplanar_component(mesh, f0, seedkeys: set) -> set:
     """Maximal set of coplanar, edge-connected faces that touch the operation's
     seed. Whether the component is actually merged is gated separately on it
-    containing a face the operation created (see ``run_stitch``)."""
+    containing a face the operation created (see ``run_stitch``).
+
+    An edge that also carries a *non-coplanar* face is a **crease** — a wall
+    standing under the seam — and the component never crosses it: two roof
+    slabs over a dividing wall stay two faces with a visible ridge,
+    SketchUp-style, instead of fusing into one slab floating over the wall."""
     def seeded(f):
         return any(_key(v) in seedkeys for v in f.vertices)
 
     if not seeded(f0):
         return set()
-    n0 = f0.normal()
+    n0 = f0.normal().normalized()
     comp = {f0}
     stack = [f0]
     while stack:
@@ -597,6 +604,9 @@ def _coplanar_component(mesh, f0, seedkeys: set) -> set:
                 e = mesh.find_edge(a, b)
                 if e is None:
                     continue
+                if any(abs(QVector3D.dotProduct(n0, h.normal().normalized()))
+                       < 0.999 for h in e.faces):
+                    continue  # crease: a perpendicular face holds this edge
                 for g in e.faces:
                     if g in comp or not seeded(g):
                         continue

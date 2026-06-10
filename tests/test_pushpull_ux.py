@@ -537,3 +537,44 @@ def test_group_recess_and_clamp_use_group_geometry():
     tool._commit(vp)
     assert len(g.mesh.faces) == 1                  # collapsed flat, group-local
     assert scene.mesh.faces == []                  # loose mesh untouched
+
+
+# ---- floor-plan workflow: raising adjacent rooms --------------------------------
+
+def test_two_room_plan_raises_cleanly():
+    """The casita core loop: a plan with two rooms sharing a wall, both raised
+    to the same height. The second push must not crash on the already-built
+    shared wall (it deduplicates), the roofs stay two faces split by a ridge
+    over the divider (SketchUp's crease rule — no slab floating over the
+    wall), and nothing is left orphaned."""
+    scene = Scene()
+    hist = History(scene)
+
+    def draw_rect(loop):
+        hist.execute(build_add_edges(
+            scene, [(loop[i], loop[(i + 1) % 4]) for i in range(4)],
+            detect_faces=False, extra=[AddFaceCommand(list(loop))]))
+
+    draw_rect([V(0, 0), V(3, 0), V(3, 4), V(0, 4)])
+    draw_rect([V(3, 0), V(6, 0), V(6, 4), V(3, 4)])
+    room_a = min(scene.mesh.faces, key=lambda f: f.centroid().x())
+    _push(scene, room_a, 2.7)
+    room_b = next(f for f in scene.mesh.faces
+                  if all(abs(v.z()) < 1e-9 for v in f.vertices)
+                  and f.centroid().x() > 3)
+    _push(scene, room_b, 2.7)
+
+    m = scene.mesh
+    tops = [f for f in m.faces if all(abs(v.z() - 2.7) < 1e-6 for v in f.vertices)]
+    shared = [f for f in m.faces if all(abs(v.x() - 3) < 1e-6 for v in f.vertices)]
+    assert len(tops) == 2                      # roofs split by the ridge
+    assert len(shared) == 1                    # one shared wall, deduplicated
+    ridge = [e for e in m.edges
+             if abs(e.a.z() - 2.7) < 1e-6 and abs(e.b.z() - 2.7) < 1e-6
+             and abs(e.a.x() - 3) < 1e-6 and abs(e.b.x() - 3) < 1e-6]
+    assert len(ridge) == 1 and len(ridge[0].faces) == 3   # 2 roofs + the wall
+    assert sum(1 for e in m.edges if not e.faces) == 0
+    seams = [e for e in m.edges if len(e.faces) == 2 and
+             QVector3D.dotProduct(e.faces[0].normal().normalized(),
+                                  e.faces[1].normal().normalized()) > 0.999]
+    assert seams == []
