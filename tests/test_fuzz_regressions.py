@@ -116,6 +116,26 @@ def test_draw_on_shared_plane_does_not_flip_the_other_solid():
     assert orient_outward(scene.mesh) == []
 
 
+# ---- nested rectangles punch the right mother (fuzz: prism seed 108) ---------
+
+def test_nested_rectangle_punches_its_mother_not_grandmother():
+    # rect B drawn inside rect A (itself drawn on the cube top): the mother
+    # search used to pick smallest-by-vertex-count ignoring holes, so the top
+    # face (already holed by A) won and got a hole-inside-its-hole — which the
+    # heal then deduped, leaving B's face floating on four 1-face edges.
+    scene, hist, user = _cube_scene()
+    _draw_rect(scene, hist, [V(1, 1, 3), V(3, 1, 3), V(3, 3, 3), V(1, 3, 3)],
+               user)
+    _draw_rect(scene, hist,
+               [V(1.5, 1.5, 3), V(2.5, 1.5, 3), V(2.5, 2.5, 3), V(1.5, 2.5, 3)],
+               user)
+    m = scene.mesh
+    assert is_closed(m)
+    rect_a = next(f for f in m.faces if f.holes
+                  and 0.9 < min(v.x() for v in f.vertices))
+    assert len(rect_a.holes) == 1          # B punched A, not the top
+
+
 # ---- inward Ctrl-stack: belt-split boundary, no coincident debris ------------
 
 def test_ctrl_inward_stack_splits_boundary_at_belt():

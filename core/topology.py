@@ -299,13 +299,18 @@ def _strictly_inside_2d(p, poly: list[tuple[float, float]]) -> bool:
     return inside
 
 
-def loop_inside_face(mother: Face, loop: list[QVector3D]) -> bool:
+def loop_inside_face(mother: Face, loop: list[QVector3D],
+                     outside_holes: bool = False) -> bool:
     """Whether ``loop`` lies entirely, strictly inside coplanar face ``mother``.
 
     Requires the loop to be coplanar with the mother and every loop vertex to
     fall strictly inside the mother's outer polygon (no vertex on its
     boundary). A loop that shares any boundary point is a chord split, handled
     elsewhere, and returns ``False`` here.
+
+    With ``outside_holes`` the mother's holes count as *not hers*: a loop with
+    a vertex inside one of her holes is not contained (it belongs to whatever
+    face fills that hole — the nested-rectangle case).
     """
     if len(mother.vertices) < 3 or len(loop) < 3:
         return False
@@ -325,7 +330,14 @@ def loop_inside_face(mother: Face, loop: list[QVector3D]) -> bool:
         return (QVector3D.dotProduct(rel, u), QVector3D.dotProduct(rel, w))
 
     poly2 = [proj(p) for p in mother.vertices]
-    return all(_strictly_inside_2d(proj(v), poly2) for v in loop)
+    if not all(_strictly_inside_2d(proj(v), poly2) for v in loop):
+        return False
+    if outside_holes:
+        for hole in mother.holes:
+            hole2 = [proj(p) for p in hole]
+            if any(_strictly_inside_2d(proj(v), hole2) for v in loop):
+                return False
+    return True
 
 
 def find_containing_face(
@@ -333,14 +345,18 @@ def find_containing_face(
 ) -> Optional[Face]:
     """Smallest existing face that strictly contains ``loop`` (or ``None``).
 
-    Smallest by vertex count is a cheap, good-enough proxy for the immediate
-    mother when faces are nested. ``exclude`` skips the face being added.
+    Hole-aware: a loop inside a candidate's *hole* is not contained by it (it
+    belongs to the face filling that hole — drawing a rectangle inside an
+    already-drawn rectangle must punch the inner face, not the grandmother
+    whose hole already excludes the spot). Smallest by vertex count is a
+    cheap, good-enough proxy for the immediate mother when faces are nested.
+    ``exclude`` skips the face being added.
     """
     best: Optional[Face] = None
     for face in faces:
         if face is exclude:
             continue
-        if loop_inside_face(face, loop):
+        if loop_inside_face(face, loop, outside_holes=True):
             if best is None or len(face.vertices) < len(best.vertices):
                 best = face
     return best
