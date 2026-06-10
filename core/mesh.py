@@ -202,20 +202,45 @@ class Mesh:
         self.faces: list[Face] = []
 
     # ---- Vertices -----------------------------------------------------------
+    def _lookup(self, position: QVector3D) -> Optional[Vertex]:
+        """The registered vertex within weld tolerance of ``position``, or
+        ``None``. Rounding alone has a boundary hole: two points 2e-6 apart
+        can straddle a 0.5e-4 rounding edge and land in different cells (a
+        slanted plane's corner computed via two float paths) — so a miss in
+        the exact cell probes the neighbouring cells and checks real
+        distance."""
+        k = _key(position)
+        v = self._registry.get(k)
+        if v is not None:
+            return v
+        step = 10.0 ** -_KEY_DECIMALS
+        tol2 = step * step
+        for dx in (-step, 0.0, step):
+            for dy in (-step, 0.0, step):
+                for dz in (-step, 0.0, step):
+                    if dx == 0.0 and dy == 0.0 and dz == 0.0:
+                        continue
+                    n = self._registry.get((round(k[0] + dx, _KEY_DECIMALS),
+                                            round(k[1] + dy, _KEY_DECIMALS),
+                                            round(k[2] + dz, _KEY_DECIMALS)))
+                    if n is not None and (
+                            (n.position - position).lengthSquared() < tol2):
+                        return n
+        return None
+
     def vertex(self, position: QVector3D) -> Vertex:
         """Get-or-create the shared vertex at ``position`` (welds coincident
         points to one object)."""
-        k = _key(position)
-        v = self._registry.get(k)
+        v = self._lookup(position)
         if v is None:
             v = Vertex(position)
-            self._registry[k] = v
+            self._registry[_key(position)] = v
             self.vertices.append(v)
         return v
 
     def vertex_at(self, position: QVector3D) -> Optional[Vertex]:
         """The existing vertex at ``position``, or ``None``."""
-        return self._registry.get(_key(position))
+        return self._lookup(position)
 
     # ---- Edges --------------------------------------------------------------
     def find_edge(self, v0: Vertex, v1: Vertex) -> Optional[Edge]:
@@ -471,6 +496,44 @@ class Mesh:
             for dup in vs[1:]:
                 self._weld_into(keep, dup)
             changed = True
+        # Cross-cell pass: two coincident points can straddle a rounding
+        # boundary into *different* cells (a slanted corner computed via two
+        # float paths, 2e-6 apart across a 0.5e-4 edge). Probe neighbouring
+        # cells and weld into the lexicographically smaller key — a
+        # deterministic survivor.
+        step = 10.0 ** -_KEY_DECIMALS
+        tol2 = step * step
+        merged = True
+        while merged:
+            merged = False
+            for v in list(self.vertices):
+                k = _key(v.position)
+                if self._registry.get(k) is not v:
+                    continue
+                for dx in (-step, 0.0, step):
+                    for dy in (-step, 0.0, step):
+                        for dz in (-step, 0.0, step):
+                            nk = (round(k[0] + dx, _KEY_DECIMALS),
+                                  round(k[1] + dy, _KEY_DECIMALS),
+                                  round(k[2] + dz, _KEY_DECIMALS))
+                            if nk == k:
+                                continue
+                            w = self._registry.get(nk)
+                            if (w is None or w is v or
+                                    (w.position - v.position)
+                                    .lengthSquared() >= tol2):
+                                continue
+                            kp, dp = (v, w) if k < nk else (w, v)
+                            self._weld_into(kp, dp)
+                            changed = True
+                            merged = True
+                            break
+                        if merged:
+                            break
+                    if merged:
+                        break
+                if merged:
+                    break
         return changed
 
     def dedupe_faces(self) -> int:
