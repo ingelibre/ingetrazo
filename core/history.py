@@ -309,6 +309,7 @@ class AddFaceCommand(Command):
                     continue
                 m.remove_face(other)
                 rem_face = m.add_face(remainder, rem_holes)
+                rem_face.attrs = dict(other.attrs)  # carved mother continues
                 self._subdiv_mother = other
                 self._subdiv_remainder = rem_face
                 break

@@ -488,10 +488,33 @@ def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D,
          for f in old]
     ):
         return False  # plane already in its rebuilt form — stable
+    # Region inheritance: a new face takes the attrs (material, future BIM
+    # tag) of the old face whose interior contains its interior point — the
+    # face it is the continuation of. Captured before the removal.
+    u, v = plane_basis(normal)
+
+    def to2d(p):
+        d = p - origin
+        return (QVector3D.dotProduct(d, u), QVector3D.dotProduct(d, v))
+
+    donors = [
+        ([to2d(p) for p in f.vertices],
+         [[to2d(p) for p in h] for h in f.holes], dict(f.attrs))
+        for f in old if f.attrs
+    ]
     for f in old:
         mesh.remove_face(f)
     for outer, holes, interior in rebuilt:
-        mesh.add_face(outer, holes or None).interior = interior
+        nf = mesh.add_face(outer, holes or None)
+        nf.interior = interior
+        if donors:
+            ip = _region_test_point([to2d(p) for p in outer],
+                                    [[to2d(p) for p in h] for h in (holes or [])])
+            for o_xy, hs_xy, attrs in donors:
+                if _point_in_polygon(ip, o_xy) and not any(
+                        _point_in_polygon(ip, h) for h in hs_xy):
+                    nf.attrs = dict(attrs)
+                    break
     if prune:
         prune_plane_debris(mesh, origin, normal)
     return True

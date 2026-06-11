@@ -1048,7 +1048,7 @@ def orient_coplanar_faces(mesh) -> list:
                 outer = [QVector3D(v) for v in f.vertices][::-1]
                 holes = [[QVector3D(v) for v in h] for h in f.holes]
                 mesh.remove_face(f)
-                mesh.add_face(outer, holes or None)
+                mesh.add_face(outer, holes or None).attrs = dict(f.attrs)
                 flipped.append(f)
     return flipped
 
@@ -1118,6 +1118,8 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
             mesh.add_face([QVector3D(a), QVector3D(b), QVector3D(c)])
             for a, b, c in tris
         }
+        for piece in pieces:  # every planar piece continues the warped mother
+            piece.attrs = dict(face.attrs)
         merged = True
         while merged:
             merged = False
@@ -1137,6 +1139,7 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
                                             g.normal().normalized()) > 0.999:
                         region = mesh.dissolve_edge(e)
                         if region is not None:
+                            region.attrs = dict(face.attrs)
                             pieces.discard(f)
                             pieces.discard(g)
                             pieces.add(region)
@@ -1229,7 +1232,9 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None) -> list:
         if len(keep) != len(face.holes):
             outer = [QVector3D(v) for v in face.vertices]
             mesh.remove_face(face)
-            mesh.add_face(outer, [[QVector3D(v) for v in h] for h in keep] or None)
+            mesh.add_face(
+                outer, [[QVector3D(v) for v in h] for h in keep] or None
+            ).attrs = dict(face.attrs)
 
     # 2. Remove a redundant mother covered by faces that aren't in its holes.
     removed: list = []
@@ -1279,11 +1284,12 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None) -> list:
             holes += [[QVector3D(v) for v in s.vertices] for s in smalls]
             mesh.remove_face(g)
             try:
-                mesh.add_face(outer, holes)
+                mesh.add_face(outer, holes).attrs = dict(g.attrs)
             except Exception:
                 # Degenerate hole arrangement — fall back to the face as it was.
                 mesh.add_face(outer, [[QVector3D(v) for v in h]
-                                      for h in g.holes] or None)
+                                      for h in g.holes] or None
+                              ).attrs = dict(g.attrs)
 
     # 4. (3D) Volumetric winding: a freshly drawn sub-face lands with whatever
     #    winding the user traced; on a closed solid, orient per face (and

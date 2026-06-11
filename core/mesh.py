@@ -118,7 +118,7 @@ class Face:
     rendering, bounds and ``.igz`` save consume a ``mesh.Face`` unchanged (M1).
     """
 
-    __slots__ = ("loop", "hole_loops", "interior")
+    __slots__ = ("loop", "hole_loops", "interior", "attrs")
 
     def __init__(
         self, loop: list[Vertex], hole_loops: Optional[list[list[Vertex]]] = None
@@ -132,6 +132,11 @@ class Face:
         # face is not part of the boundary, and counting a ray crossing
         # through it would corrupt every inside/outside answer.
         self.interior = False
+        # User-facing attributes that must survive the engine's face churn
+        # (materials, future BIM tags). The rebuild/dissolve/dedupe/fold paths
+        # replace face objects, so each inheritance point carries this dict to
+        # the surviving/covering face — see tests/test_face_attrs.py.
+        self.attrs: dict = {}
 
     # ---- Legacy-compatible read interface (positions) -----------------------
     @property
@@ -378,6 +383,7 @@ class Mesh:
             "efaces": {e: list(e.faces) for e in self.edges},
             "floop": {f: list(f.loop) for f in self.faces},
             "fholes": {f: [list(h) for h in f.hole_loops] for f in self.faces},
+            "fattrs": {f: dict(f.attrs) for f in self.faces},
         }
 
     def restore_state(self, snap: dict) -> None:
@@ -398,6 +404,8 @@ class Mesh:
             f.loop = list(loop)
         for f, holes in snap["fholes"].items():
             f.hole_loops = [list(h) for h in holes]
+        for f, attrs in snap.get("fattrs", {}).items():
+            f.attrs = dict(attrs)
 
     # ---- Reset --------------------------------------------------------------
     def clear(self) -> None:
@@ -558,6 +566,8 @@ class Mesh:
                 continue
             drop, keep = ((other, f) if len(f.hole_loops) > len(other.hole_loops)
                           else (f, other))
+            if drop.attrs and not keep.attrs:
+                keep.attrs = dict(drop.attrs)
             self.remove_face(drop)
             seen[sig] = keep
             removed += 1
@@ -699,6 +709,7 @@ class Mesh:
         self.remove_face(face_b)
         self.remove_edge(edge)
         new_face = self.add_face(loop_positions, hole_positions or None)
+        new_face.attrs = dict(_dominant_attrs((face_a, face_b)))
         return {"kind": "merge", "edge": edge, "face_a": face_a,
                 "face_b": face_b, "merged": new_face}
 
@@ -752,6 +763,7 @@ class Mesh:
                 self.remove_edge(e)
         merged = self.add_face([v.position for v in outer],
                                [[v.position for v in h] for h in holes] or None)
+        merged.attrs = dict(_dominant_attrs((face_a, face_b)))
         return {"kind": "merge_pair", "face_a": face_a, "face_b": face_b,
                 "edges": [e for e in shared_edges if e is not None], "merged": merged}
 
@@ -797,6 +809,8 @@ class Mesh:
             # The union has no boundary of its own: identical cycles stacked on
             # one another (raising a room whose shared wall the neighbour's push
             # already built). Keep one face, drop the duplicates.
+            if not faces[0].attrs:
+                faces[0].attrs = dict(_dominant_attrs(faces[1:]))
             for f in faces[1:]:
                 self.remove_face(f)
             return faces[0]
@@ -809,8 +823,10 @@ class Mesh:
         for e in interior:
             if e is not None and not e.faces:
                 self.remove_edge(e)
-        return self.add_face([v.position for v in outer],
-                             [[v.position for v in h] for h in holes] or None)
+        merged = self.add_face([v.position for v in outer],
+                               [[v.position for v in h] for h in holes] or None)
+        merged.attrs = dict(_dominant_attrs(faces))
+        return merged
 
     def revert_stitch(self, rec: dict) -> None:
         """Undo a single stitch primitive recorded by the methods above."""
@@ -902,7 +918,21 @@ class Mesh:
         self.remove_face(face_a)
         self.remove_face(face_b)
         self.remove_edge(edge)
-        return self.add_face(loop_positions, hole_positions or None)
+        merged_face = self.add_face(loop_positions, hole_positions or None)
+        merged_face.attrs = dict(_dominant_attrs((face_a, face_b)))
+        return merged_face
+
+
+def _dominant_attrs(faces) -> dict:
+    """The attrs of the largest-area face that carries any — the dominant
+    contributor when a merge collapses several faces into one survivor."""
+    best: dict = {}
+    best_area = -1.0
+    for f in faces:
+        if f.attrs and f.area() > best_area:
+            best = f.attrs
+            best_area = f.area()
+    return best
 
 
 def _shared_edge_index(loop: list[Vertex], v0: Vertex, v1: Vertex) -> Optional[int]:

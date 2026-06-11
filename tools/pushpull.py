@@ -641,6 +641,8 @@ class PushPullTool(Tool):
         through = self._find_through_face(face, d, faces) if attached else None
 
         before = set(scene.mesh.faces)
+        self._cap_cmd = None
+        base_attrs = dict(face.attrs)
         if through is not None:
             commands = self._through_commands(face, base, through)
         else:
@@ -649,6 +651,10 @@ class PushPullTool(Tool):
             )
         for cmd in commands:
             cmd.do(scene)
+        if (base_attrs and self._cap_cmd is not None
+                and self._cap_cmd.face in scene.mesh.faces):
+            # The moved cap continues the (consumed) base: same attrs.
+            self._cap_cmd.face.attrs = dict(base_attrs)
         new_faces = set(scene.mesh.faces) - before
         if self._keep_base and attached_any and d < 0:
             # The Ctrl-stack grows *into* the solid: its cap is a deliberate
@@ -754,9 +760,14 @@ class PushPullTool(Tool):
             commands.append(AddEdgeCommand(top[i], top[(i + 1) % count]))
         for i in range(count):
             commands.append(AddEdgeCommand(base[i], top[i]))
-        commands.append(AddFaceCommand(
+        cap_cmd = AddFaceCommand(
             list(top), auto=not attached,
-            holes=[list(th) for th in top_holes] or None))
+            holes=[list(th) for th in top_holes] or None)
+        commands.append(cap_cmd)
+        # The moved cap is the base's continuation: it inherits its attrs
+        # (material, future BIM tag). Remembered so _mutate can stamp the face
+        # the command creates when it runs.
+        self._cap_cmd = cap_cmd
 
         # Inner walls: each hole edge raises a wall to the moved cap's opening.
         for hb, ht in zip(base_holes, top_holes):
