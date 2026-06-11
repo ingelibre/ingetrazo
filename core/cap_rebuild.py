@@ -316,13 +316,16 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
 
     # A fresh face *marked interior* (the cap of an inward Ctrl-stack) is a
     # deliberate division, not a boundary declaration — it counts as existing
-    # structure instead. Declarations only exist when the push *removes*
-    # material (an inward carve): they testify that a still-walled-in region
-    # emptied. A Ctrl push removes nothing, and an outward push only adds —
-    # its quad landing on an existing wall means the spot became a legitimate
-    # partition (a raised room touching its neighbour), not a boundary.
+    # structure instead. What a fresh winding may testify depends on the push:
+    # an inward carve empties regions (declarations apply where material reads
+    # *both* sides — a void still walled in by an untrimmed plane); an outward
+    # push creates material (declarations apply where material reads *neither*
+    # side — the sweep envelops old boundary faces that still miscount); a
+    # Ctrl push never declares (it removes nothing and its quads are
+    # divisions).
+    fresh_polys = ([] if keep_mode else
+                   _proj_polys(f for f in fresh_set if not f.interior))
     fresh_cover_polys = _proj_polys(f for f in fresh_set if not f.interior)
-    fresh_polys = ([] if keep_mode or not removing else fresh_cover_polys)
     old_polys = _proj_polys(f for f in mesh.faces
                             if f not in fresh_set or f.interior)
 
@@ -358,12 +361,12 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
             continue
         decl = {p for poly, p in fresh_polys if _poly_covers(poly, ip_xy)}
         if mat_plus:  # material on both sides
-            if len(decl) == 1:
-                # One fresh winding covers the spot: the push declares which
+            if removing and len(decl) == 1:
+                # One fresh winding covers the spot: the carve declares which
                 # side emptied (parity can be blind to a void still walled in
                 # by an untrimmed neighbouring plane).
                 solid_by_side[not decl.pop()].append((outer_xy, holes_xy))
-            elif not decl and (
+            elif (not removing or not decl) and (
                 any(_poly_covers(poly, ip_xy) for poly, _ in old_polys)
                 or (keep_mode and any(_poly_covers(poly, ip_xy)
                                       for poly, _ in fresh_cover_polys))
@@ -373,10 +376,15 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
                 # the body lays brand-new divisions where no face existed.
                 partitions.append((outer_xy, holes_xy))
         else:         # material on neither side
-            if not decl and any(
+            if not removing and len(decl) == 1:
+                # An outward sweep envelops old boundary faces that still
+                # count in parity ("void below" misread): its own quad
+                # declares the new material side.
+                solid_by_side[not decl.pop()].append((outer_xy, holes_xy))
+            elif not decl and any(
                     _poly_covers(poly, ip_xy) for poly, _ in old_polys):
                 sheets.append((outer_xy, holes_xy))
-            # fresh-covered: op debris (a flush-landed cap or collapsed fin)
+            # otherwise: op debris (a flush-landed cap or collapsed fin)
 
     # Creases: plane edges a non-coplanar face stands on. The union must keep a
     # boundary there (a roof stays split over its dividing wall). Stored as 2D
