@@ -579,7 +579,8 @@ class PushPullTool(Tool):
             if not _mesh_is_flat(scene.mesh):
                 fresh = {f for f in scene.mesh.faces
                          if any(_key(v) in seedkeys for v in f.vertices)}
-                self._rebuild_planes_fixpoint(scene.mesh, fresh, seedkeys)
+                self._rebuild_planes_fixpoint(scene.mesh, fresh, seedkeys,
+                                              removing=d < 0)
             else:
                 # A full collapse flattened the solid. The cap may have landed
                 # on a *subdivided* base (hole-bearing cycles never dedupe as
@@ -671,7 +672,8 @@ class PushPullTool(Tool):
                    dedupe=not solid)
         if solid:
             self._rebuild_planes_fixpoint(scene.mesh, set(new_faces), seedkeys,
-                                          keep_mode=self._keep_base)
+                                          keep_mode=self._keep_base,
+                                          removing=d < 0)
         # Give any closed solid a consistent outward orientation — every face's
         # normal pointing out. The extrude can otherwise commit a closed solid
         # wound inconsistently (a flipped cap, or the base of a first flat→solid
@@ -681,7 +683,8 @@ class PushPullTool(Tool):
 
     @staticmethod
     def _rebuild_planes_fixpoint(mesh, fresh: set, seedkeys: set,
-                                 keep_mode: bool = False) -> None:
+                                 keep_mode: bool = False,
+                                 removing: bool = True) -> None:
         """Deterministic root-fix (path C): recompute each touched plane's
         faces from its edges — the planar arrangement finds every region,
         winding-classification keeps the ones inside the solid and drops
@@ -712,7 +715,8 @@ class PushPullTool(Tool):
             for key in sorted(planes):
                 origin, plane_n = planes[key]
                 before_faces = set(mesh.faces)
-                if apply_rebuild(mesh, origin, plane_n, fresh, keep_mode):
+                if apply_rebuild(mesh, origin, plane_n, fresh, keep_mode,
+                                 removing):
                     changed = True
                     fresh |= set(mesh.faces) - before_faces
             if not changed:

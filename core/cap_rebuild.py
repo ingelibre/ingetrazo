@@ -207,7 +207,8 @@ def _union_outline(solid_regions_xy, keep_segs=None) -> list:
 
 
 def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
-                  fresh=(), keep_mode: bool = False) -> Optional[list]:
+                  fresh=(), keep_mode: bool = False,
+                  removing: bool = True) -> Optional[list]:
     """Recompute the solid *boundary* faces of ``mesh`` on the plane
     ``(origin, normal)``.
 
@@ -315,10 +316,12 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
 
     # A fresh face *marked interior* (the cap of an inward Ctrl-stack) is a
     # deliberate division, not a boundary declaration — it counts as existing
-    # structure instead. In keep mode nothing declares: Ctrl removes no
-    # material, so a fresh quad never testifies that a region emptied — the
-    # partition coverage rule below owns those spots.
-    fresh_polys = ([] if keep_mode else
+    # structure instead. Declarations only exist when the push *removes*
+    # material (an inward carve): they testify that a still-walled-in region
+    # emptied. A Ctrl push removes nothing, and an outward push only adds —
+    # its quad landing on an existing wall means the spot became a legitimate
+    # partition (a raised room touching its neighbour), not a boundary.
+    fresh_polys = ([] if keep_mode or not removing else
                    _proj_polys(f for f in fresh_set if not f.interior))
     old_polys = _proj_polys(f for f in mesh.faces
                             if f not in fresh_set or f.interior)
@@ -440,7 +443,8 @@ def _canon_faces(faces_as_loops) -> frozenset:
 
 
 def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D,
-                  fresh=(), keep_mode: bool = False) -> bool:
+                  fresh=(), keep_mode: bool = False,
+                  removing: bool = True) -> bool:
     """Rebuild one plane of ``mesh`` in place: replace its coplanar faces with the
     deterministic solid faces from :func:`rebuild_plane`, and prune the edges left
     interior to the plane (a dissolved seam) that now border nothing. Returns
@@ -455,7 +459,7 @@ def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D,
     The caller snapshots for undo (the push wraps the whole mutation), so this
     keeps no inverse of its own."""
     normal = normal.normalized()
-    rebuilt = rebuild_plane(mesh, origin, normal, fresh, keep_mode)
+    rebuilt = rebuild_plane(mesh, origin, normal, fresh, keep_mode, removing)
     if rebuilt is None:
         return False
     old = [f for f in mesh.faces if _coplanar_on(f, origin, normal)]
