@@ -49,7 +49,7 @@ from core.history import (
     translate_points,
 )
 from core.arrangement import _interior_point, _point_in_polygon, plane_basis
-from core.orient import _ray_triangle, orient_outward
+from core.orient import _ray_triangle, is_closed, orient_outward
 from core.cap_rebuild import (
     apply_rebuild,
     crack_planes,
@@ -189,6 +189,9 @@ class PushPullTool(Tool):
         # corner or a face hit), drawn as a green marker by the viewport overlay.
         self._inference_point: QVector3D | None = None
         self._inference_kind: str | None = None
+        # Set when the last _mutate refused the push to keep the solid valid
+        # (the BIM-grade guard); _commit surfaces it in the status bar.
+        self._refused: bool = False
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -599,11 +602,40 @@ class PushPullTool(Tool):
         viewport.history.execute(SnapshotMutation(
             self._mutate,
             mesh=self._group.mesh if self._group is not None else None))
-        PushPullTool.last_distance = self.extrusion  # double-click repeats this
+        if self._refused:
+            # The guard rolled the push back to keep the solid watertight; tell
+            # the user so the no-op isn't silent.
+            viewport.flash_status(
+                "Push refused: would break the solid (left it unchanged)")
+        else:
+            PushPullTool.last_distance = self.extrusion  # double-click repeats it
         self._reset()
         viewport.update()
 
     def _mutate(self, scene) -> None:
+        """Apply the push and stitch watertight, with a **BIM-grade refusal
+        guard**: a push on a closed solid must leave a closed solid (or collapse
+        it flat). If the operation would leave the mesh cracked — an ill-defined
+        push *through* an interior partition, a hole rim detached from a column
+        anchored to it, a degenerate collapse — the result is **refused**: the
+        solid is restored untouched rather than committing a non-watertight mesh
+        that would poison volume/area takeoff and IFC/STL export. SketchUp
+        commits the mess; a solid modeler feeding a quantity engine must not.
+
+        The guard only fires on a mesh that *was* a valid closed solid; a flat
+        sheet (a recess in a surface, the first flat→solid extrude) legitimately
+        opens, so it is never guarded."""
+        self._refused = False
+        target = self._target_scene(scene)
+        mesh = target.mesh
+        guard = (mesh.capture_state()
+                 if is_closed(mesh) and not _mesh_is_flat(mesh) else None)
+        self._mutate_inner(scene)
+        if guard is not None and not (is_closed(mesh) or _mesh_is_flat(mesh)):
+            mesh.restore_state(guard)
+            self._refused = True
+
+    def _mutate_inner(self, scene) -> None:
         """Apply the push to the target mesh (the scene's, or the locked
         group's) and stitch it watertight. Shared by the committed edit
         (wrapped in :class:`SnapshotMutation`) and the live preview, so the
@@ -917,3 +949,4 @@ class PushPullTool(Tool):
         self._preview_snapshot = None
         self._inference_point = None
         self._inference_kind = None
+        self._refused = False

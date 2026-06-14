@@ -63,6 +63,9 @@ class _StubVP:
     def set_suppressed_faces(self, faces):
         pass
 
+    def flash_status(self, text, msec=2500):
+        pass
+
 
 # ---- Operations (the same call paths the real tools take) -------------------
 
@@ -434,19 +437,21 @@ QUICK_SEEDS = range(0, 50)     # 50 × 4 scenarios = 200 sequences, every run
 FULL_SEEDS = range(50, 250)    # +800 sequences = 1000 total, the certification
 
 # Sequences the engine does not survive yet — every entry is a reproducible
-# open bug (mostly: pushes whose sweep needs boolean-grade resolution, and
-# states seeded by an inward Ctrl-stack). They xfail so the 698 passing
-# sequences guard against regressions while these get root-fixed; a fixed
-# seed simply starts passing and should then be pruned from this list.
-# Regenerate with:  python -m tests.test_fuzz_engine
+# open bug. They xfail so the passing sequences guard against regressions while
+# these get root-fixed; a fixed seed simply starts passing and should then be
+# pruned from this list. Regenerate with:  python -m tests.test_fuzz_engine
+#
+# The whole **push-crack** class (53 seeds) was closed 2026-06-14 by the
+# BIM-grade refusal guard in ``PushPullTool._mutate``: a push on a closed solid
+# that would leave it non-watertight (an ill-defined push through an interior
+# partition or a detached hole rim, a degenerate collapse) is refused — the
+# solid is restored untouched rather than committing a broken mesh. What's left
+# is **draw-side**: ``_draw_rect`` (``build_add_edges`` + heal) leaving orphan
+# edges or an unmerged coplanar seam when a rectangle lands on certain faces —
+# a different subsystem from push/pull.
 KNOWN_BAD = {
-    "cube": {13, 20, 23, 59, 63, 78, 85, 103, 114, 121, 123, 140, 190, 215,
-             233},
-    "prism": {8, 23, 27, 39, 57, 80, 89, 112, 147, 151, 154, 156, 170, 201,
-              206, 218, 221, 224, 245},
-    "plan": {52, 75, 79, 84, 92, 106, 108, 115, 121, 124, 152, 157, 196, 203,
-             206, 210, 242},
-    "group": {1, 86, 89, 96, 111, 118},
+    "cube": {121},
+    "plan": {152, 210, 242},
 }
 
 

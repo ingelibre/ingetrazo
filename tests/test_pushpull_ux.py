@@ -11,7 +11,7 @@ from PySide6.QtGui import QVector3D
 
 from core.edits import build_add_edges
 from core.history import AddFaceCommand, History
-from core.orient import signed_volume
+from core.orient import is_closed, signed_volume
 from core.scene import Scene
 from tools.base import ToolContext
 from tools.pushpull import PushPullTool
@@ -477,6 +477,54 @@ def test_clamp_flashes_status_message():
     tool._clamp_extrusion(vp)
     assert tool.extrusion == -3.0
     assert vp.last_status == "Offset limited to 3.00 m"
+
+
+# ---- BIM-grade refusal guard --------------------------------------------------
+
+def test_push_that_would_break_the_solid_is_refused(monkeypatch):
+    # A push whose inner mutation leaves the closed solid non-watertight (an
+    # ill-defined push through an interior partition, a detached hole rim) must
+    # be refused: the solid is restored untouched rather than committing a
+    # broken mesh that would poison volume/IFC export.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    tool = PushPullTool()
+    tool.base_face = top
+    tool.dragging = True
+    tool._anchor = top.centroid()
+    tool._normal = top.normal()
+    tool.extrusion = 1.0
+    before_faces = len(scene.mesh.faces)
+    before_vol = signed_volume(scene.mesh)
+
+    # Stand in for any inner op that would crack the solid: drop a face.
+    def break_it(s):
+        m = tool._target_scene(s).mesh
+        m.remove_face(m.faces[0])
+
+    monkeypatch.setattr(tool, "_mutate_inner", break_it)
+    tool._mutate(scene)
+
+    assert tool._refused
+    assert is_closed(scene.mesh)                       # solid kept intact
+    assert len(scene.mesh.faces) == before_faces
+    assert abs(signed_volume(scene.mesh) - before_vol) < 1e-9
+
+
+def test_valid_push_is_not_refused():
+    # The guard must not fire on a clean push: a normal +2 extrude on a 4×4×3
+    # cube commits (volume 48 → 80) and keeps the solid watertight.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    tool = _locked_tool(scene, _top(scene, 3.0), 2.0)
+    tool._commit(_StubViewport(scene))
+    assert is_closed(scene.mesh)
+    assert abs(signed_volume(scene.mesh) - 80.0) < 1e-6   # the push happened
+    # The committed distance is remembered (guard did not intercept).
+    assert PushPullTool.last_distance == 2.0
 
 
 # ---- autofold: a move that warps a face splits it into planar pieces ----------
