@@ -43,6 +43,7 @@ from PySide6.QtCore import QEvent, Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QImage,
     QOpenGLFunctions,
     QPainter,
     QPen,
@@ -57,6 +58,7 @@ from PySide6.QtOpenGL import (
     QOpenGLFramebufferObjectFormat,
     QOpenGLShader,
     QOpenGLShaderProgram,
+    QOpenGLTexture,
     QOpenGLVertexArrayObject,
 )
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -67,6 +69,7 @@ from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
 from core.snap import SnapResult, compute_snap
+from core.triangulate import plane_axes
 from tools.base import Tool, ToolContext
 
 
@@ -274,6 +277,10 @@ class Viewport(QOpenGLWidget):
         # Faces share one VBO but are grouped by their attrs["color"] (default
         # cream), so each material is one glDrawArrays with its own uniform.
         self._face_runs: list = []
+        # Textured faces (pos+uv VBO) grouped by image path: [(path, start, count)].
+        self._tex_faces_count = 0
+        self._tex_runs: list = []
+        self._tex_cache: dict = {}
         self._edges_version = -1
 
         # Hover highlight (Select tool). Not version-tracked — it changes with
@@ -343,6 +350,9 @@ class Viewport(QOpenGLWidget):
         self._loc_mvp = self._program.uniformLocation("u_mvp")
         self._loc_color = self._program.uniformLocation("u_color")
         self._loc_pos = self._program.attributeLocation("a_pos")
+        self._loc_uv = self._program.attributeLocation("a_uv")
+        self._loc_use_tex = self._program.uniformLocation("u_use_texture")
+        self._loc_tex = self._program.uniformLocation("u_tex")
 
         self._grid_vao, self._grid_vbo, self._grid_count = self._upload_static(
             _grid_vertices()
@@ -353,6 +363,7 @@ class Viewport(QOpenGLWidget):
         self._selected_vao, self._selected_vbo = self._create_dynamic()
         self._sel_faces_vao, self._sel_faces_vbo = self._create_dynamic()
         self._faces_vao, self._faces_vbo = self._create_dynamic()
+        self._tex_faces_vao, self._tex_faces_vbo = self._create_dynamic_uv()
         self._hover_faces_vao, self._hover_faces_vbo = self._create_dynamic()
         self._hover_edges_vao, self._hover_edges_vbo = self._create_dynamic()
         self._rubber_vao, self._rubber_vbo = self._create_dynamic()
@@ -414,6 +425,9 @@ class Viewport(QOpenGLWidget):
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
         self._program.bind()
         self._program.setUniformValue(self._loc_mvp, mvp)
+        # Solid-colour by default; the textured-face pass flips this on.
+        self._program.setUniformValue(self._loc_use_tex, 0)
+        self._program.setUniformValue(self._loc_tex, 0)  # sampler → unit 0
 
         # Grid — depth-tested (so geometry hides it) but depth-write OFF, so
         # grid lines don't pollute the depth buffer at z=0 and accidentally
@@ -439,6 +453,24 @@ class Viewport(QOpenGLWidget):
                 self._set_color(r, g, b, 1.0)
                 self._gl.glDrawArrays(GL_TRIANGLES, start, count)
             self._faces_vao.release()
+            self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
+        # Textured faces — same depth/offset treatment, sampling each face's
+        # image. One draw per texture (its GL texture bound to unit 0).
+        if self._tex_faces_count > 0:
+            self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+            self._gl.glPolygonOffset(1.0, 1.0)
+            self._program.setUniformValue(self._loc_use_tex, 1)
+            self._tex_faces_vao.bind()
+            for path, start, count in self._tex_runs:
+                tex = self._get_texture(path)
+                if tex is None:
+                    continue
+                tex.bind(0)
+                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                tex.release(0)
+            self._tex_faces_vao.release()
+            self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
         # Face highlights (selection + hover) — translucent overlays drawn on
@@ -586,6 +618,47 @@ class Viewport(QOpenGLWidget):
         vao.release()
         return vao, vbo
 
+    def _create_dynamic_uv(self):
+        """A dynamic VAO/VBO interleaving position (3f) + UV (2f) per vertex —
+        for textured faces."""
+        vao = QOpenGLVertexArrayObject(self)
+        vao.create()
+        vao.bind()
+        vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+        vbo.setUsagePattern(QOpenGLBuffer.DynamicDraw)
+        vbo.create()
+        vbo.bind()
+        vbo.allocate(40)  # 2 vertices × 5 floats × 4 bytes
+        stride = 5 * 4
+        self._program.bind()
+        self._program.enableAttributeArray(self._loc_pos)
+        self._program.setAttributeBuffer(self._loc_pos, GL_FLOAT, 0, 3, stride)
+        self._program.enableAttributeArray(self._loc_uv)
+        self._program.setAttributeBuffer(self._loc_uv, GL_FLOAT, 3 * 4, 2, stride)
+        self._program.release()
+        vbo.release()
+        vao.release()
+        return vao, vbo
+
+    def _get_texture(self, path: str):
+        """GL texture for an image ``path``, cached on the viewport. Returns the
+        :class:`QOpenGLTexture` (Repeat wrap, linear+mipmap) or ``None`` if the
+        image can't be loaded."""
+        cache = getattr(self, "_tex_cache", None)
+        if cache is None:
+            cache = self._tex_cache = {}
+        if path in cache:
+            return cache[path]
+        img = QImage(path)
+        tex = None
+        if not img.isNull():
+            tex = QOpenGLTexture(img.mirrored())  # OBJ/SketchUp V is bottom-up
+            tex.setWrapMode(QOpenGLTexture.Repeat)
+            tex.setMinificationFilter(QOpenGLTexture.LinearMipMapLinear)
+            tex.setMagnificationFilter(QOpenGLTexture.Linear)
+        cache[path] = tex
+        return tex
+
     def _set_color(self, r: float, g: float, b: float, a: float) -> None:
         self._program.setUniformValue(self._loc_color, QVector4D(r, g, b, a))
 
@@ -671,8 +744,13 @@ class Viewport(QOpenGLWidget):
         # with its own uniform. Group faces render alongside the loose ones.
         suppressed_faces = self._suppressed_faces
         by_color: dict = {}
+        by_texture: dict = {}        # image path -> interleaved pos+uv array
         for face in self.scene.render_faces():
             if face in suppressed_faces:
+                continue
+            tex = face.attrs.get("texture")
+            if tex is not None and tex.get("path"):
+                self._append_textured_face(by_texture, face, tex)
                 continue
             col = face.attrs.get("color")
             key = tuple(col) if col is not None else self.DEFAULT_FACE_COLOR
@@ -700,8 +778,45 @@ class Viewport(QOpenGLWidget):
         self._faces_vbo.release()
         self._faces_count = len(face_data) // 3
 
+        # Textured faces: one interleaved (pos+uv) VBO, a run per image path.
+        tex_data = array("f")
+        self._tex_runs = []
+        for path, buf in by_texture.items():
+            start = len(tex_data) // 5
+            tex_data.extend(buf)
+            self._tex_runs.append((path, start, len(buf) // 5))
+        self._tex_faces_vbo.bind()
+        if tex_data:
+            tex_raw = tex_data.tobytes()
+            self._tex_faces_vbo.allocate(tex_raw, len(tex_raw))
+        else:
+            self._tex_faces_vbo.allocate(40)
+        self._tex_faces_vbo.release()
+        self._tex_faces_count = len(tex_data) // 5
+
         self._edges_version = self.scene.version
         self.sceneVersionChanged.emit(self._edges_version)
+
+    def _append_textured_face(self, by_texture: dict, face, tex: dict) -> None:
+        """Triangulate ``face`` into ``by_texture[path]`` as interleaved
+        ``pos(3) + uv(2)`` floats, the UVs planar-projected SketchUp-style from
+        each triangle vertex's world position (so coplanar faces tile
+        seamlessly)."""
+        path = tex["path"]
+        buf = by_texture.get(path)
+        if buf is None:
+            buf = by_texture[path] = array("f")
+        n = face.normal().normalized()
+        u_axis, v_axis = plane_axes(n)
+        sw = tex.get("sw", 1.0) or 1.0
+        sh = tex.get("sh", 1.0) or 1.0
+        for tri in face.triangulate():
+            for p in tri:
+                buf.extend([
+                    p.x(), p.y(), p.z(),
+                    QVector3D.dotProduct(p, u_axis) / sw,
+                    QVector3D.dotProduct(p, v_axis) / sh,
+                ])
 
     def _upload_hover_face(self, face: Face) -> int:
         """Triangulate ``face`` into the hover-faces VBO. Returns vertex count."""

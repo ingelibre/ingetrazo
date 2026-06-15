@@ -25,56 +25,110 @@ def _faces(scene):
 
 
 def save_obj(scene, path) -> None:
-    """Write the scene as ``path`` (.obj) plus a sibling ``.mtl``."""
+    """Write the scene as ``path`` (.obj) + a sibling ``.mtl``. Solid colours
+    become ``Kd`` materials; textured faces become ``map_Kd`` materials with the
+    image copied next to the .obj and per-vertex ``vt`` from the same planar
+    projection the viewport uses — so the model opens with matching textures in
+    SketchUp/Blender."""
+    import shutil
+    from core.texture import planar_uv
+
     path = Path(path)
     verts: list[tuple[float, float, float]] = []
-    index: dict[tuple, int] = {}
+    vindex: dict[tuple, int] = {}
+    uvs: list[tuple[float, float]] = []
+    uvindex: dict[tuple, int] = {}
 
     def vidx(p) -> int:
         key = (round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
-        i = index.get(key)
+        i = vindex.get(key)
         if i is None:
             verts.append((p.x(), p.y(), p.z()))
-            i = index[key] = len(verts)  # OBJ indices are 1-based
+            i = vindex[key] = len(verts)  # OBJ indices are 1-based
         return i
 
-    # color -> list of (i, j, k) triangles
-    groups: dict[tuple, list[tuple[int, int, int]]] = {}
-    for face in _faces(scene):
-        col = face.attrs.get("color")
-        key = tuple(col) if col is not None else _DEFAULT_COLOR
-        bucket = groups.setdefault(key, [])
-        for t0, t1, t2 in face.triangulate():
-            bucket.append((vidx(t0), vidx(t1), vidx(t2)))
+    def uvidx(uv) -> int:
+        key = (round(uv[0], 6), round(uv[1], 6))
+        i = uvindex.get(key)
+        if i is None:
+            uvs.append((uv[0], uv[1]))
+            i = uvindex[key] = len(uvs)
+        return i
 
-    colors = list(groups.keys())
-    matname = {c: f"mat{i}" for i, c in enumerate(colors)}
+    # material key -> {"color": rgb, "map": basename|None} and its triangles
+    # (each triangle a list of (vi, ti|None)).
+    materials: dict[tuple, dict] = {}
+    groups: dict[tuple, list] = {}
+    for face in _faces(scene):
+        tex = face.attrs.get("texture")
+        if tex is not None and tex.get("path"):
+            src = Path(tex["path"])
+            key = ("tex", src.name)
+            materials.setdefault(key, {"color": (1.0, 1.0, 1.0),
+                                       "map": src.name, "src": src})
+            n = face.normal()
+            sw = tex.get("sw", 1.0) or 1.0
+            sh = tex.get("sh", 1.0) or 1.0
+            for tri in face.triangulate():
+                uv = planar_uv(n, list(tri), sw, sh)
+                groups.setdefault(key, []).append(
+                    [(vidx(tri[k]), uvidx(uv[k])) for k in range(3)])
+        else:
+            col = tuple(face.attrs.get("color") or _DEFAULT_COLOR)
+            key = ("color", col)
+            materials.setdefault(key, {"color": col, "map": None})
+            for tri in face.triangulate():
+                groups.setdefault(key, []).append(
+                    [(vidx(tri[k]), None) for k in range(3)])
+
+    keys = list(groups.keys())
+    matname = {k: f"mat{i}" for i, k in enumerate(keys)}
+
+    # Copy texture images next to the .obj so map_Kd resolves.
+    for k in keys:
+        mat = materials[k]
+        if mat.get("map"):
+            dst = path.parent / mat["map"]
+            try:
+                if mat["src"].resolve() != dst.resolve():
+                    shutil.copy(mat["src"], dst)
+            except Exception:  # noqa: BLE001 — best-effort; export still valid
+                pass
 
     mtl_path = path.with_suffix(".mtl")
     with open(mtl_path, "w") as m:
-        for c in colors:
-            r, g, b = c
-            m.write(f"newmtl {matname[c]}\n")
-            m.write(f"Kd {r:.4f} {g:.4f} {b:.4f}\n\n")
+        for k in keys:
+            mat = materials[k]
+            r, g, b = mat["color"]
+            m.write(f"newmtl {matname[k]}\n")
+            m.write(f"Kd {r:.4f} {g:.4f} {b:.4f}\n")
+            if mat.get("map"):
+                m.write(f"map_Kd {mat['map']}\n")
+            m.write("\n")
 
     with open(path, "w") as o:
         o.write("# IngeTrazo OBJ export\n")
         o.write(f"mtllib {mtl_path.name}\n")
         for x, y, z in verts:
             o.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
-        for c in colors:
-            o.write(f"usemtl {matname[c]}\n")
-            for i, j, k in groups[c]:
-                o.write(f"f {i} {j} {k}\n")
+        for u, v in uvs:
+            o.write(f"vt {u:.6f} {v:.6f}\n")
+        for k in keys:
+            o.write(f"usemtl {matname[k]}\n")
+            for tri in groups[k]:
+                toks = [(f"{vi}/{ti}" if ti is not None else f"{vi}")
+                        for vi, ti in tri]
+                o.write("f " + " ".join(toks) + "\n")
 
 
 # ---- Import --------------------------------------------------------------------
 
 def _parse_mtl(path: Path) -> dict:
-    """Map material name → (r, g, b) from a ``.mtl`` file's ``Kd`` lines."""
-    colors: dict[str, tuple[float, float, float]] = {}
+    """Map material name → ``{"color": (r,g,b), "map": filename|None}`` from a
+    ``.mtl`` file's ``Kd`` / ``map_Kd`` lines."""
+    mats: dict[str, dict] = {}
     if not path.exists():
-        return colors
+        return mats
     current = None
     for line in path.read_text().splitlines():
         parts = line.split()
@@ -82,9 +136,15 @@ def _parse_mtl(path: Path) -> dict:
             continue
         if parts[0] == "newmtl":
             current = parts[1]
-        elif parts[0] == "Kd" and current is not None and len(parts) >= 4:
-            colors[current] = (float(parts[1]), float(parts[2]), float(parts[3]))
-    return colors
+            mats[current] = {"color": None, "map": None}
+        elif current is None:
+            continue
+        elif parts[0] == "Kd" and len(parts) >= 4:
+            mats[current]["color"] = (float(parts[1]), float(parts[2]),
+                                      float(parts[3]))
+        elif parts[0] == "map_Kd" and len(parts) >= 2:
+            mats[current]["map"] = parts[-1]  # last token = filename
+    return mats
 
 
 def load_obj(scene, path) -> None:
@@ -101,7 +161,7 @@ def load_obj(scene, path) -> None:
     path = Path(path)
     verts: list[QVector3D] = []
     materials: dict = {}
-    current_color = None
+    current_mat = None
     pending: list[tuple[list[QVector3D], object]] = []
 
     for line in path.read_text().splitlines():
@@ -114,26 +174,35 @@ def load_obj(scene, path) -> None:
         elif tag == "mtllib":
             materials = _parse_mtl(path.with_name(parts[1]))
         elif tag == "usemtl":
-            current_color = materials.get(parts[1])
+            current_mat = materials.get(parts[1])
         elif tag == "f":
             idxs = []
             for tok in parts[1:]:
                 raw = int(tok.split("/")[0])
                 idxs.append(raw - 1 if raw > 0 else len(verts) + raw)
             if len(idxs) >= 3 and all(0 <= i < len(verts) for i in idxs):
-                pending.append(([verts[i] for i in idxs], current_color))
+                pending.append(([verts[i] for i in idxs], current_mat))
 
     seed: set = set()
     new_faces = set()
-    for loop, color in pending:
+    for loop, mat in pending:
         try:
             face = scene.mesh.add_face(loop)
         except Exception:  # noqa: BLE001 — skip a degenerate polygon
             continue
         new_faces.add(face)
-        if color is not None and tuple(round(c, 4) for c in color) != tuple(
-                round(c, 4) for c in _DEFAULT_COLOR):
-            face.attrs["color"] = list(color)
+        if mat is not None:
+            if mat.get("map"):
+                # Resolve the image next to the .obj. Tile size isn't in the OBJ
+                # (the vt carry it), so default to 1 m — the texture shows; the
+                # exact tiling can be re-set with the Paint tool.
+                img = path.with_name(mat["map"])
+                face.attrs["texture"] = {"path": str(img), "sw": 1.0, "sh": 1.0}
+            else:
+                color = mat.get("color")
+                if color is not None and tuple(round(c, 4) for c in color) != \
+                        tuple(round(c, 4) for c in _DEFAULT_COLOR):
+                    face.attrs["color"] = list(color)
         for v in loop:
             seed.add(_key(v))
 

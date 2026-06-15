@@ -46,6 +46,9 @@ def _face_json(f) -> dict:
     color = getattr(f, "attrs", {}).get("color")
     if color is not None:
         entry["color"] = list(color)
+    texture = getattr(f, "attrs", {}).get("texture")
+    if texture is not None:
+        entry["texture"] = dict(texture)
     return entry
 
 
@@ -119,6 +122,10 @@ def _load_mesh(mesh, payload) -> None:
         verts = [QVector3D(*v) for v in raw["vertices"]]
         holes = [[QVector3D(*v) for v in loop] for loop in raw.get("holes", [])]
         face = mesh.add_face(verts, holes)
-        color = raw.get("color")
-        if color is not None and face is not None:
-            face.attrs["color"] = list(color)
+        if face is not None:
+            color = raw.get("color")
+            if color is not None:
+                face.attrs["color"] = list(color)
+            texture = raw.get("texture")
+            if texture is not None:
+                face.attrs["texture"] = dict(texture)

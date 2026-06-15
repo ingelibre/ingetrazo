@@ -20,6 +20,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QColorDialog,
     QFileDialog,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -144,6 +145,12 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._color_action)
         self._refresh_color_swatch()
 
+        self._texture_action = QAction("Texture…", self)
+        self._texture_action.setToolTip(
+            "Load an image texture (SketchUp-style tile size) and switch to Paint")
+        self._texture_action.triggered.connect(self._on_pick_texture)
+        toolbar.addAction(self._texture_action)
+
     def _color_icon(self, color: QColor) -> QIcon:
         pm = QPixmap(20, 20)
         pm.fill(color)
@@ -161,7 +168,25 @@ class MainWindow(QMainWindow):
         if chosen.isValid():
             PaintTool.current_color = (
                 chosen.redF(), chosen.greenF(), chosen.blueF())
+            PaintTool.current_texture = None   # colour mode
             self._refresh_color_swatch()
+        self._activate_tool("paint")
+
+    def _on_pick_texture(self) -> None:
+        path_str, _ = QFileDialog.getOpenFileName(
+            self, "Choose texture image", "",
+            "Images (*.png *.jpg *.jpeg *.bmp);;All files (*)")
+        if not path_str:
+            return
+        size, ok = QInputDialog.getDouble(
+            self, "Texture size",
+            "Real-world size of one tile (metres):", 1.0, 0.001, 1000.0, 3)
+        if not ok:
+            return
+        PaintTool.current_texture = {"path": path_str, "sw": size, "sh": size}
+        self.statusBar().showMessage(
+            f"Texture ready ({Path(path_str).name}, {size:g} m) — click a face",
+            4000)
         self._activate_tool("paint")
 
     def _build_menubar(self) -> None:

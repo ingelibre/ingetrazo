@@ -17,7 +17,11 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 
 from core.mesh import Face
-from core.history import SetFaceColorCommand
+from core.history import (
+    CompoundCommand,
+    SetFaceColorCommand,
+    SetFaceTextureCommand,
+)
 from tools.base import Tool, ToolContext
 
 # The default cream the viewport paints unpainted faces with — sampling an
@@ -32,6 +36,9 @@ class PaintTool(Tool):
 
     # Shared current paint colour (RGB, 0..1), set from the toolbar swatch.
     current_color: tuple[float, float, float] = (0.80, 0.45, 0.30)
+    # Shared current texture ({"path","sw","sh"}) or None. When set, the click
+    # applies a texture instead of a colour — chosen from the toolbar.
+    current_texture: dict | None = None
 
     def on_activate(self, viewport) -> None:
         pass
@@ -50,10 +57,16 @@ class PaintTool(Tool):
             return
 
         if ctx.modifiers & Qt.AltModifier:
-            # Eyedropper: adopt the face's colour as the current paint colour.
-            sampled = face.attrs.get("color")
-            PaintTool.current_color = (tuple(sampled) if sampled is not None
-                                       else DEFAULT_FACE_COLOR)
+            # Eyedropper: adopt the face's material (texture if it has one, else
+            # colour) as the current paint material.
+            tex = face.attrs.get("texture")
+            if tex is not None:
+                PaintTool.current_texture = dict(tex)
+            else:
+                PaintTool.current_texture = None
+                sampled = face.attrs.get("color")
+                PaintTool.current_color = (tuple(sampled) if sampled is not None
+                                           else DEFAULT_FACE_COLOR)
             vp.update()
             return
 
@@ -61,5 +74,14 @@ class PaintTool(Tool):
         # selection, the whole selection in one undoable step.
         sel_faces = [e for e in vp.scene.selection if isinstance(e, Face)]
         faces = sel_faces if face in sel_faces else [face]
-        vp.history.execute(SetFaceColorCommand(faces, PaintTool.current_color))
+        if PaintTool.current_texture is not None:
+            vp.history.execute(
+                SetFaceTextureCommand(faces, PaintTool.current_texture))
+        else:
+            # Painting a solid colour clears any texture on those faces, in one
+            # undoable step.
+            vp.history.execute(CompoundCommand([
+                SetFaceColorCommand(faces, PaintTool.current_color),
+                SetFaceTextureCommand(faces, None),
+            ]))
         vp.update()

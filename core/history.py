@@ -423,6 +423,35 @@ class DeleteDimensionsCommand(Command):
         scene.version += 1
 
 
+class SetFaceTextureCommand(Command):
+    """Apply an image texture (``{"path","sw","sh"}``) to a set of faces, or
+    clear it with ``None`` — stored in each face's ``attrs["texture"]`` (rides
+    the rebuild like the colour). Topology-free, so the attrs swap inverts it."""
+
+    def __init__(self, faces, texture) -> None:
+        self._faces = list(faces)
+        self._tex = dict(texture) if texture is not None else None
+        self._old: Optional[list] = None
+
+    def do(self, scene) -> None:
+        if self._old is None:
+            self._old = [f.attrs.get("texture") for f in self._faces]
+        for f in self._faces:
+            if self._tex is None:
+                f.attrs.pop("texture", None)
+            else:
+                f.attrs["texture"] = dict(self._tex)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for f, old in zip(self._faces, self._old or []):
+            if old is None:
+                f.attrs.pop("texture", None)
+            else:
+                f.attrs["texture"] = dict(old)
+        scene.version += 1
+
+
 def translate_points(scene, keys: set, delta: QVector3D) -> None:
     """Move every shared vertex whose position key is in ``keys`` by ``delta``.
 
