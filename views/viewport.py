@@ -1031,35 +1031,55 @@ class Viewport(QOpenGLWidget):
             ink = (sel_ink if (dim in selection or dim is self._hover_entity)
                    else default_ink)
             ap, bp = dim.line_points()
-            pa = self._world_to_pixel(dim.a)
-            pb = self._world_to_pixel(dim.b)
             pap = self._world_to_pixel(ap)
             pbp = self._world_to_pixel(bp)
-            if None in (pa, pb, pap, pbp):
+            if pap is None or pbp is None:
                 continue
-            # Extension lines (endpoint → dimension line), thin.
+            # Lines are hidden where solid geometry sits in front of them, so a
+            # dimension reads as part of the model instead of floating over it.
+            # Each 3D segment is sampled and only its visible runs are drawn.
             painter.setPen(QPen(ink, 1.0))
-            painter.drawLine(QPointF(*pa), QPointF(*pap))
-            painter.drawLine(QPointF(*pb), QPointF(*pbp))
-            # Dimension line.
+            self._draw_occluded_segment(painter, dim.a, ap)      # extension
+            self._draw_occluded_segment(painter, dim.b, bp)
             painter.setPen(QPen(ink, 1.5))
-            painter.drawLine(QPointF(*pap), QPointF(*pbp))
-            # End ticks: short screen-space perpendiculars at each end.
+            self._draw_occluded_segment(painter, ap, bp)         # dimension line
+            # End ticks: short screen-space perpendiculars at each end (drawn
+            # only when the end point itself is visible).
             dx, dy = pbp[0] - pap[0], pbp[1] - pap[1]
             ln = math.hypot(dx, dy)
             if ln > 1e-6:
-                px, py = -dy / ln * 4.0, dx / ln * 4.0
-                for (cx, cy) in (pap, pbp):
-                    painter.drawLine(QPointF(cx - px, cy - py),
-                                     QPointF(cx + px, cy + py))
-            # Value label at the dimension line's midpoint.
-            mid = self._world_to_pixel(dim.midpoint())
-            if mid is not None:
+                ox, oy = -dy / ln * 4.0, dx / ln * 4.0
+                for (cx, cy), w in ((pap, ap), (pbp, bp)):
+                    if not self._is_occluded(w):
+                        painter.drawLine(QPointF(cx - ox, cy - oy),
+                                         QPointF(cx + ox, cy + oy))
+            # Value label at the dimension line's midpoint — hidden if that
+            # point is behind the solid.
+            mid_world = dim.midpoint()
+            mid = self._world_to_pixel(mid_world)
+            if mid is not None and not self._is_occluded(mid_world):
                 painter.setFont(font)
                 painter.setPen(QPen(QColor(255, 255, 255, 230)))
                 painter.drawText(QPointF(mid[0] + 5, mid[1] - 4), dim.label())
                 painter.setPen(QPen(ink))
                 painter.drawText(QPointF(mid[0] + 4, mid[1] - 5), dim.label())
+
+    def _draw_occluded_segment(self, painter: QPainter, p3a: QVector3D,
+                               p3b: QVector3D, samples: int = 16) -> None:
+        """Draw the 3D segment ``p3a``–``p3b`` in screen space, skipping the
+        parts hidden behind solid geometry (CPU occlusion sample). A sub-segment
+        is drawn only when both its sampled ends are visible, so the line never
+        bleeds over the solid; the silhouette gap is sub-pixel at this density."""
+        prev_px = None
+        prev_vis = False
+        for i in range(samples + 1):
+            t = i / samples
+            w = p3a + (p3b - p3a) * t
+            px = self._world_to_pixel(w)
+            vis = px is not None and not self._is_occluded(w)
+            if prev_px is not None and px is not None and prev_vis and vis:
+                painter.drawLine(QPointF(*prev_px), QPointF(*px))
+            prev_px, prev_vis = px, vis
 
     def _draw_inference_marker(self, painter: QPainter) -> None:
         """Green endpoint-style square where the active tool's distance
