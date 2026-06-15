@@ -354,7 +354,12 @@ class MainWindow(QMainWindow):
 
     def _refresh_vcb(self) -> None:
         tool = self.viewport.active_tool
-        caption = getattr(tool, "vcb_label", None) if tool is not None else None
+        # A tool may vary its caption with state (Circle: "Lados" before the
+        # centre, "Radio" after); fall back to the static label.
+        dynamic = getattr(tool, "vcb_caption", None) if tool is not None else None
+        caption = (dynamic() if callable(dynamic)
+                   else getattr(tool, "vcb_label", None)) if tool is not None \
+            else None
         self._vcb_name.setVisible(caption is not None)
         self._vcb_value.setVisible(caption is not None)
         if caption is None:

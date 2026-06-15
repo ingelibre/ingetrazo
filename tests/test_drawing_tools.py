@@ -197,6 +197,31 @@ def test_circle_edges_are_soft_polygon_edges_are_hard():
     assert not any(e.soft for e in scene2.mesh.edges)  # polygon shows its sides
 
 
+def test_pushing_a_circle_makes_a_smooth_cylinder():
+    # A circle extruded should have every edge soft (smooth cylinder), while a
+    # polygon keeps hard edges (faceted prism).
+    import tests.test_fuzz_engine as F
+    scene = Scene()
+    vp = _VP(scene)
+    c = CircleTool()
+    c.on_click(_ctx(vp, V(0, 0, 0)))
+    c.on_hover(_ctx(vp, V(2, 0, 0)))
+    c.on_click(_ctx(vp, V(2, 0, 0)))
+    circ = next(f for f in scene.mesh.faces if len(f.vertices) == 24)
+    F._push(scene, vp.history, circ, 3.0 if circ.normal().z() > 0 else -3.0)
+    assert scene.mesh.edges and all(e.soft for e in scene.mesh.edges)
+
+    scene2 = Scene()
+    vp2 = _VP(scene2)
+    p = PolygonTool()
+    p.on_click(_ctx(vp2, V(0, 0, 0)))
+    p.on_hover(_ctx(vp2, V(2, 0, 0)))
+    p.on_click(_ctx(vp2, V(2, 0, 0)))
+    poly = next(f for f in scene2.mesh.faces if len(f.vertices) == 6)
+    F._push(scene2, vp2.history, poly, 3.0 if poly.normal().z() > 0 else -3.0)
+    assert not any(e.soft for e in scene2.mesh.edges)  # hexagonal prism stays hard
+
+
 def test_soft_survives_snapshot_and_igz(tmp_path):
     from formats import igz
     scene = Scene()

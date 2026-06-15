@@ -22,7 +22,11 @@ class _RadialTool(Tool):
 
     sides: int = 24
     soft_edges: bool = False  # True hides the segments so a curve reads smooth
-    vcb_label = "Radius"
+    vcb_label = "Radio"
+
+    def vcb_caption(self) -> str:
+        """SketchUp shows 'Sides' before the centre, 'Radius' after."""
+        return "Radio" if self.start_point is not None else "Lados"
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None   # centre (also drives work plane)

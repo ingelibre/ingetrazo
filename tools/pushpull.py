@@ -628,12 +628,54 @@ class PushPullTool(Tool):
         self._refused = False
         target = self._target_scene(scene)
         mesh = target.mesh
+        # Soft (curve) base edges (a circle/arc): remember their vertices so the
+        # swept walls and the far rim can be softened too — a circle extrudes
+        # into a *smooth* cylinder, not a faceted prism (SketchUp).
+        soft_keys = self._base_soft_vertex_keys(mesh)
+        before_edges = set(mesh.edges) if soft_keys else None
         guard = (mesh.capture_state()
                  if is_closed(mesh) and not _mesh_is_flat(mesh) else None)
         self._mutate_inner(scene)
         if guard is not None and not (is_closed(mesh) or _mesh_is_flat(mesh)):
             mesh.restore_state(guard)
             self._refused = True
+            return
+        if soft_keys and self._normal is not None and self._anchor is not None:
+            self._soften_swept(mesh, before_edges, soft_keys)
+
+    def _base_soft_vertex_keys(self, mesh) -> set:
+        """Position keys of the vertices on the base face's **soft** boundary
+        edges (a circle/arc base). Empty for a normal (hard-edged) face."""
+        face = self.base_face
+        if face is None:
+            return set()
+        keys: set = set()
+        for lp in (face.loop, *face.hole_loops):
+            n = len(lp)
+            for i in range(n):
+                e = mesh.find_edge(lp[i], lp[(i + 1) % n])
+                if e is not None and e.soft:
+                    keys.add(_key(e.a))
+                    keys.add(_key(e.b))
+        return keys
+
+    def _soften_swept(self, mesh, before_edges, soft_keys: set) -> None:
+        """Mark every *new* edge whose both endpoints project (along the push
+        normal) onto the soft base curve as soft — the cylinder's vertical
+        facet edges and its far rim — so a circle extrudes to a smooth cylinder
+        instead of a visibly faceted prism."""
+        normal = self._normal.normalized()
+        origin = self._anchor
+
+        def proj_key(p):
+            flat = p - normal * QVector3D.dotProduct(p - origin, normal)
+            return _key(flat)
+
+        for e in mesh.edges:
+            if e in before_edges or e.soft:
+                continue
+            if proj_key(e.a) in soft_keys and proj_key(e.b) in soft_keys:
+                e.soft = True
 
     def _mutate_inner(self, scene) -> None:
         """Apply the push to the target mesh (the scene's, or the locked
