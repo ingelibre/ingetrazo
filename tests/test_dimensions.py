@@ -139,3 +139,25 @@ def test_select_tool_deletes_a_dimension():
 
     vp.history.undo()
     assert d in scene.dimensions             # undo brings it back
+
+
+# ---- Style (precision / units) -------------------------------------------------
+
+def test_format_dim_value_respects_units_and_precision():
+    from views.viewport import Viewport
+    f = Viewport._format_dim_value
+    assert f(4.0, {"units": "m", "decimals": 2}) == "4.00 m"
+    assert f(4.0, {"units": "cm", "decimals": 0}) == "400 cm"
+    assert f(4.0, {"units": "mm", "decimals": 1}) == "4000.0 mm"
+
+
+def test_dimension_style_survives_igz_round_trip(tmp_path):
+    scene = Scene()
+    scene.dimension_style.update({"decimals": 0, "units": "cm", "font_size": 14})
+    path = tmp_path / "style.igz"
+    igz.save_scene(scene, path)
+    loaded = Scene()
+    igz.load_into(loaded, path)
+    assert loaded.dimension_style["decimals"] == 0
+    assert loaded.dimension_style["units"] == "cm"
+    assert loaded.dimension_style["font_size"] == 14

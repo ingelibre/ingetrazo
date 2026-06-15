@@ -9,18 +9,9 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import (
-    QAction,
-    QActionGroup,
-    QColor,
-    QIcon,
-    QKeySequence,
-    QPixmap,
-)
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
-    QColorDialog,
     QFileDialog,
-    QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -49,6 +40,7 @@ from tools.paste import PasteTool
 from tools.pushpull import PushPullTool
 from tools.rectangle import RectangleTool
 from tools.select import SelectTool
+from views.tray import Tray
 from views.viewport import Viewport
 
 
@@ -87,11 +79,18 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.viewport)
 
         self._build_toolbar()
+        self._build_tray()
         self._build_menubar()
         self._build_statusbar()
 
         self._saved_version = self.viewport.scene.version
         self.viewport.sceneVersionChanged.connect(self._on_scene_version_changed)
+
+    def _build_tray(self) -> None:
+        self.tray = Tray(self)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.tray)
+        self.viewport.sceneVersionChanged.connect(
+            lambda _v: self.tray.on_scene_changed())
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main", self)
@@ -135,59 +134,7 @@ class MainWindow(QMainWindow):
             self._tool_group.addAction(action)
             toolbar.addAction(action)
             self._nav_actions[key] = action
-
-        # Material colour swatch for the Paint tool: shows the current colour;
-        # clicking opens a colour picker and switches to Paint.
-        toolbar.addSeparator()
-        self._color_action = QAction("Color", self)
-        self._color_action.setToolTip("Pick the paint colour and switch to Paint (B)")
-        self._color_action.triggered.connect(self._on_pick_color)
-        toolbar.addAction(self._color_action)
-        self._refresh_color_swatch()
-
-        self._texture_action = QAction("Texture…", self)
-        self._texture_action.setToolTip(
-            "Load an image texture (SketchUp-style tile size) and switch to Paint")
-        self._texture_action.triggered.connect(self._on_pick_texture)
-        toolbar.addAction(self._texture_action)
-
-    def _color_icon(self, color: QColor) -> QIcon:
-        pm = QPixmap(20, 20)
-        pm.fill(color)
-        return QIcon(pm)
-
-    def _refresh_color_swatch(self) -> None:
-        r, g, b = PaintTool.current_color
-        self._color_action.setIcon(self._color_icon(
-            QColor.fromRgbF(r, g, b)))
-
-    def _on_pick_color(self) -> None:
-        r, g, b = PaintTool.current_color
-        chosen = QColorDialog.getColor(
-            QColor.fromRgbF(r, g, b), self, "Paint colour")
-        if chosen.isValid():
-            PaintTool.current_color = (
-                chosen.redF(), chosen.greenF(), chosen.blueF())
-            PaintTool.current_texture = None   # colour mode
-            self._refresh_color_swatch()
-        self._activate_tool("paint")
-
-    def _on_pick_texture(self) -> None:
-        path_str, _ = QFileDialog.getOpenFileName(
-            self, "Choose texture image", "",
-            "Images (*.png *.jpg *.jpeg *.bmp);;All files (*)")
-        if not path_str:
-            return
-        size, ok = QInputDialog.getDouble(
-            self, "Texture size",
-            "Real-world size of one tile (metres):", 1.0, 0.001, 1000.0, 3)
-        if not ok:
-            return
-        PaintTool.current_texture = {"path": path_str, "sw": size, "sh": size}
-        self.statusBar().showMessage(
-            f"Texture ready ({Path(path_str).name}, {size:g} m) — click a face",
-            4000)
-        self._activate_tool("paint")
+        # Materials (colour swatches + textures) now live in the right-side Tray.
 
     def _build_menubar(self) -> None:
         menubar = self.menuBar()
@@ -254,6 +201,11 @@ class MainWindow(QMainWindow):
 
         # View menu
         view_menu = menubar.addMenu("View")
+
+        toggle_tray = self.tray.toggleViewAction()
+        toggle_tray.setText("Bandeja (Materiales / Cotas / Info)")
+        view_menu.addAction(toggle_tray)
+        view_menu.addSeparator()
 
         action_proj = QAction("Toggle Perspective / Parallel", self)
         action_proj.setShortcut(QKeySequence("P"))

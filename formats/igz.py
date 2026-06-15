@@ -75,6 +75,9 @@ def save_scene(scene, path: Path) -> None:
              "offset": [d.offset.x(), d.offset.y(), d.offset.z()]}
             for d in dims
         ]
+    style = getattr(scene, "dimension_style", None)
+    if style:
+        payload["dimension_style"] = dict(style)
     data = {
         "igz_format": CURRENT_FORMAT,
         "app_version": "0.0.1",
@@ -108,6 +111,10 @@ def load_into(scene, path: Path) -> None:
         scene.dimensions.append(Dimension(
             QVector3D(*raw["a"]), QVector3D(*raw["b"]),
             QVector3D(*raw["offset"])))
+
+    style = payload.get("dimension_style")
+    if isinstance(style, dict):
+        scene.dimension_style.update(style)
 
     scene.version += 1
 

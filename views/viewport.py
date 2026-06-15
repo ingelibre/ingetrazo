@@ -1136,11 +1136,13 @@ class Viewport(QOpenGLWidget):
         dims = getattr(self.scene, "dimensions", None)
         if not dims:
             return
-        default_ink = QColor(45, 55, 75)
+        style = getattr(self.scene, "dimension_style", {})
+        col = style.get("color", [45, 55, 75])
+        default_ink = QColor(col[0], col[1], col[2])
         sel_ink = QColor(243, 115, 41)  # selection orange
         selection = self.scene.selection
         font = QFont()
-        font.setPointSize(9)
+        font.setPointSize(int(style.get("font_size", 9)))
         font.setBold(True)
         for dim in dims:
             ink = (sel_ink if (dim in selection or dim is self._hover_entity)
@@ -1173,11 +1175,20 @@ class Viewport(QOpenGLWidget):
             mid_world = dim.midpoint()
             mid = self._world_to_pixel(mid_world)
             if mid is not None and not self._is_occluded(mid_world):
+                text = self._format_dim_value(dim.value(), style)
                 painter.setFont(font)
                 painter.setPen(QPen(QColor(255, 255, 255, 230)))
-                painter.drawText(QPointF(mid[0] + 5, mid[1] - 4), dim.label())
+                painter.drawText(QPointF(mid[0] + 5, mid[1] - 4), text)
                 painter.setPen(QPen(ink))
-                painter.drawText(QPointF(mid[0] + 4, mid[1] - 5), dim.label())
+                painter.drawText(QPointF(mid[0] + 4, mid[1] - 5), text)
+
+    @staticmethod
+    def _format_dim_value(metres: float, style: dict) -> str:
+        """Format a length (metres) per the dimension style: unit + precision."""
+        units = style.get("units", "m")
+        decimals = int(style.get("decimals", 2))
+        factor = {"m": 1.0, "cm": 100.0, "mm": 1000.0}.get(units, 1.0)
+        return f"{metres * factor:.{decimals}f} {units}"
 
     def _draw_occluded_segment(self, painter: QPainter, p3a: QVector3D,
                                p3b: QVector3D, samples: int = 16) -> None:

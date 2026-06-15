@@ -28,6 +28,9 @@ class Scene:
     groups: list = field(default_factory=list)
     # Annotation entities (static dimensions) — not geometry, drawn as overlays.
     dimensions: list = field(default_factory=list)
+    # Display style for dimension annotations (edited from the Tray).
+    dimension_style: dict = field(default_factory=lambda: {
+        "decimals": 2, "units": "m", "font_size": 9, "color": [45, 55, 75]})
 
     # ---- Geometry views (read-only over the *loose* mesh) -------------------
     # Tools, edits and topology operate on this (the loose geometry); groups are
