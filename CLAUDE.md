@@ -185,7 +185,7 @@ Materiales (color/textura por cara), Dimensions, import `.dae`/`.obj` (abrir mod
 
 **Reorden que revela la casita:** los bloqueos reales para *producir* una casita son **push/pull pasante** (puerta/ventana) y **Move** (techo) — que el roadmap abstracto tenía más abajo que "Fase 2 Selección". Selección *habilita el flujo* (agarrar caras cómodo) pero pasante + Move *producen la casita*.
 
-**Estado casita (2026-06-09):** huella, **muros con espesor (Offset)**, vanos pasantes, techo a dos aguas, tabiques/escalera, y **Groups** (mover bloques sin pegarse) **hechos**. La casita es dibujable y editable reconocible end-to-end. Lo único que falta para "presentable": **acabados** (materiales por cara + cotas, Fase 7).
+**Estado casita (2026-06-14): PRESENTABLE end-to-end.** Huella, **muros con espesor (Offset)**, vanos pasantes, techo a dos aguas, tabiques/escalera, **Groups**, y **acabados** (materiales por cara + texturas + cotas) **hechos**. Más kit de dibujo completo (círculo/polígono/arco/rect rotado) y export STL/OBJ. Se dibuja, edita, acota, pinta y exporta. Lo único que queda del cronograma casita: detalles de afinado (Tape Measure para alinear, Eraser, face culling).
 
 ### 🩹 Robustez de topología de plantas dibujadas a mano (sesión 2026-06-09)
 
@@ -239,16 +239,24 @@ Tras el fix de raíz se auditó el push/pull contra SketchUp (el usuario es ex-u
 
 - ⑧ **Regla de crease + dedup de caras (2026-06-10).** Auditando "¿qué falta para roca sólida?" se encontró y arregló un **crash real del flujo de planta** (levantar la 2ª de dos habitaciones que comparten muro → `IndexError`: el push reconstruía el muro compartido como duplicado idéntico y el merge de dos ciclos idénticos no tiene frontera que trazar). Fix triple: `dissolve_coplanar_region` dedupea ciclos idénticos en vez de crashear; **regla de crease** (una arista que carga una cara no-coplanar es estructural — nunca se fusiona a través de ella) en el merge fase 3 **y** en la unión del rebuild (`keep_keys`) → dos techos sobre un muro divisorio quedan **dos caras con ridge visible**, como SketchUp, no una losa flotando sobre el muro; `mesh.dedupe_faces()` como paso propio de la fase 0 del stitch. Test del flujo completo en `test_two_room_plan_raises_cleanly`.
 
-### 🎯 PRÓXIMA SESIÓN — PENDIENTE (actualizado 2026-06-14)
+### 🎯 PRÓXIMA SESIÓN — PENDIENTE (actualizado 2026-06-15)
 
+> **Estado al cerrar la sesión 2026-06-14/15: 568 tests verdes (+ ~57 xfail del fuzz), todo pusheado a `main` (`5799f69`). El modelador está MUY completo** — dibujo (línea, rect, rect rotado, círculo, polígono, arco 2pt/3pt), push/pull robusto con guard grado-BIM, offset, move, groups, materiales + texturas SketchUp-compatible, cotas, sólidos curvos estilo SketchUp (superficie/profiles), bandeja lateral, export STL/OBJ, import OBJ.
+>
 > **Lo que queda, en orden sugerido para arrancar:**
 >
-> 1. **4 seeds `KNOWN_BAD` restantes (todos draw-side) — son la punta de un iceberg de SOLAPES coplanares (ver investigación abajo).** `cube 121`, `plan 152`, `plan 210` (orphan edges al dibujar un rect), `plan 242` (seam). El orphan/seam al dibujar es el *síntoma*; la causa es que el motor deja **caras coplanares que se solapan (doble cobertura)** en **~326/1000 secuencias** — invisibles al bench actual (su seam-check solo mira aristas de exactamente 2 caras coplanares; un solape sin arista compartida limpia se le escapa). Lo crean **tanto push como draw**. Disolverlos limpio es adyacente al techo del rebuild (ver investigación 2026-06-14 abajo). **Decisión:** no atacarlo como "4 bugs"; es un proyecto de calidad mayor (pre-IFC/STL). Dejar los 4 como xfail.
-> 2. **Bloque C** (features de producto): Fase 2 selección (doble/triple-click), Fase 3 Eraser, face culling, Groups v2, Fase 4 (Circle/Arc/Tape), Fase 6 (UI capas), **Fase 7** — ✅ Materials color-por-cara (2026-06-14, tool Paint B); falta textura + Dimensions + import/export. Lista completa en el bloque **C** abajo.
+> 1. **Tape Measure + guías (T)** — *lo único que falta del kit de dibujo (Fase 4)*. Líneas/puntos de construcción que no son geometría real, para alinear y medir antes de trazar. Complemento natural del kit recién hecho.
+> 2. **Fase 2 restante:** doble-click = geometría conectada, triple-click = sólido completo (`SelectTool` ya tiene surface-select de curvas; falta connected/solid por gesto). **Fase 3:** Eraser (E) por click y arrastre. **Face culling** (front crema / back azul-gris — la orientación outward ya está garantizada). Detalle en bloque **C** abajo.
+> 3. **Calidad de motor diferida:** los **4 seeds `KNOWN_BAD` draw-side** (`cube 121`, `plan 152/210/242`) son la punta del **iceberg de SOLAPES coplanares** (~326/1000 secuencias dejan caras coplanares doble-cubiertas, invisibles al bench actual; ver "🔬 Iceberg de solapes coplanares" abajo). **Proyecto propio pre-IFC/STL**, no "4 bugs". Dejar como xfail.
+> 4. **Decisión vencida:** licencia **GPL→Apache 2.0** — el repo YA es público bajo GPL (ver "⚠️ Licencia" arriba); re-licenciar deliberadamente si se quiere el embebido en IngePresupuestos.
 >
-> **El bloque A (motor "roca sólida") está COMPLETO** — A.1 fuzz bench (943/1000 limpias), A.2 caras inclinadas, A.3 `Face.attrs` por región, A.4 subdivisiones de usuario. Cerrado 2026-06-11.
+> **Bloques A y B (motor "roca sólida" + UX push/pull) COMPLETOS (2026-06-11/14).** Ver detalle abajo.
 >
-> **El bloque B (UX restante del push/pull) está COMPLETO (2026-06-14)** — B.5 inferencia de distancia sobre caras/planos (fallback de `_infer_reference_distance` al `pick_face_any` bajo el cursor: proyecta el rayo∩plano sobre el eje del push; el vértice cercano sigue ganando primero), B.6 marcador verde estilo endpoint del punto inferido (`PushPullTool.inference_marker()` → `viewport._draw_inference_marker`), B.7 mensaje "Offset limited to X m" en la status bar cuando el clamp recorta (`viewport.flash_status` desde `_clamp_extrusion`). 3 tests nuevos en `tests/test_pushpull_ux.py` (face-infer + marker, clamp-flash). **Cerrada la paridad SketchUp del push/pull.**
+> **Fase 7 esencialmente COMPLETA (2026-06-14):** Materials (color por cara, Paint B), Texturas SketchUp-compatible (proyección planar + render GL + OBJ map_Kd), Dimensions (cotas estáticas, seleccionables/borrables, occlusion, estilos), Export STL/OBJ, Import OBJ. Falta solo import `.dae` (COLLADA) para el DoD literal.
+>
+> **Fase 4 casi COMPLETA (2026-06-14):** Circle (C), Polygon (G), Rotated Rect (K), Arc (A), 3-Point Arc (J), Offset (F) — con sólidos curvos estilo SketchUp (aristas soft, cilindro liso por diedro, superficie curva seleccionable/pintable, profiles/silueta view-dependent, borrado limpio). Falta solo Tape Measure + guías.
+>
+> **Bandeja lateral (Tray) HECHA (2026-06-14):** `QDockWidget` derecho con Materiales (swatches + texturas) / Estilo de cota / Info de entidad.
 
 ---
 
@@ -267,15 +275,15 @@ Tras el fix de raíz se auditó el push/pull contra SketchUp (el usuario es ex-u
 6. ✅ **Marcador visual del punto inferido.** `PushPullTool.inference_marker() → (world, kind)`; `viewport._draw_inference_marker` pinta un cuadrado verde estilo endpoint en el overlay cuando engancha.
 7. ✅ **Mensaje "Offset limited to X m" en status bar.** `viewport.flash_status(text)` (envuelve `window().statusBar().showMessage`); `_clamp_extrusion(viewport)` lo dispara cuando recorta. Llamado desde drag, VCB y double-click.
 
-**C. Para sesiones siguientes (NO de esta sesión, no empezar hasta cerrar A+B):**
+**C. Para sesiones siguientes (lo que queda del bloque de features):**
 
-- **Fase 2 restante (selección):** doble-click = geometría conectada, triple-click = sólido completo (SelectTool hoy solo tiene click/Shift/box-select/hover). Nota: `Tool.on_double_click` ya existe (lo agregó la sesión de paridad).
+- **Fase 4 restante:** **Tape Measure + guías (T)** — único pendiente del kit de dibujo. (Circle/Polygon/Rotated Rect/Arc/3-Point Arc/Offset ✅ hechos 2026-06-14.)
+- **Fase 2 restante (selección):** doble-click = geometría conectada, triple-click = sólido completo. (`SelectTool` ya hace surface-select de superficies curvas vía `mesh.surface_of`; falta connected/solid por gesto. `Tool.on_double_click` ya existe.)
 - **Fase 3 restante:** **Eraser (E)** — borrar por click y por arrastre (no existe `tools/eraser.py`; hoy solo Delete sobre la selección).
 - **Sin face culling** (render): ambos lados de cada cara con el mismo crema; SketchUp pinta front crema / back azul-gris. Con la orientación outward ya garantizada por el motor, es solo trabajo de shader/render.
 - **Groups v2:** editar dentro del grupo (doble-click entra al contexto, dibujar/borrar adentro), Outliner, Components (instancias con transform).
-- **Fase 4 restante:** Circle (C), Arc (A), Tape Measure + guías (T).
-- **Fase 6:** UI de capas sobre `core/layers.py`.
-- **Fase 7:** Materials (usa el punto A.3) + Dimensions + import/export `.dae`/`.obj`/`.stl` → v0.1.
+- **Fase 6:** UI de capas sobre `core/layers.py` (la bandeja `views/tray.py` es el lugar natural para una sección "Capas/Tags").
+- **Fase 7 restante:** ✅ Materials + Texturas + Dimensions + Export STL/OBJ + Import OBJ (hechos 2026-06-14). Falta **import `.dae`** (COLLADA) y, opcional, **textura del cilindro al extruir** (hoy el color/textura se aplica por cara; un cilindro recién extruido se pinta seleccionando su superficie).
 - **M4:** serialización `.igz` indexada por vértices (base para OBJ/glTF/IFC).
 - **Índice espacial** cuando el pick/motor duela con modelos grandes (parity/orient/arrangement son O(F²)-ish por commit — bien a escala casita, molasses en edificios reales).
 - **Origen local para georef:** `QVector3D` es float32 → en coordenadas UTM (~500 km) la precisión cae a cm; la Scene necesitará offset de origen local. Decidir al diseñar georef.
