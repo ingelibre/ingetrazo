@@ -31,9 +31,12 @@ from core.mesh import Edge, Face
 from formats import igz as igz_format
 from formats import obj as obj_format
 from formats import stl as stl_format
+from tools.arc import ArcTool
+from tools.circle import CircleTool, PolygonTool
 from tools.dimension import DimensionTool
 from tools.line import LineTool
 from tools.move import MoveTool
+from tools.rotated_rectangle import RotatedRectangleTool
 from tools.offset import OffsetTool
 from tools.paint import PaintTool
 from tools.paste import PasteTool
@@ -58,6 +61,10 @@ class MainWindow(QMainWindow):
             "select": SelectTool(),
             "line": LineTool(),
             "rectangle": RectangleTool(),
+            "rotated_rect": RotatedRectangleTool(),
+            "circle": CircleTool(),
+            "polygon": PolygonTool(),
+            "arc": ArcTool(),
             "pushpull": PushPullTool(),
             "offset": OffsetTool(),
             "move": MoveTool(),

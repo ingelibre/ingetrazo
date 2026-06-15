@@ -130,10 +130,11 @@ Seleccionar caras (click), hover highlight, rubber-band con drag (ventana vs cro
 Move (M) con snap/inferencia/VCB + copia con Ctrl; Eraser (E) por click y arrastre.
 - **DoD:** muevo y borro con medida exacta y snap; la topología de Fase 1 aguanta los movimientos sin romper caras.
 
-**FASE 4 — Kit de dibujo completo** *(parcial)*
-Circle (C), Arc (A), Offset (F), Tape Measure + guías (T). Usar `tool.work_plane` + `_plane_axes` (ver `[[project-face-plane-inference-done]]`).
-- ✅ **Offset (F)** hecho (`tools/offset.py` + `offset_loop`; push del anillo levanta muros con espesor). Falta Circle/Arc/Tape Measure.
-- **DoD:** círculos, arcos, paralelas y guías sobre cualquier cara.
+**FASE 4 — Kit de dibujo completo** *(casi completo)*
+Circle (C), Arc (A), Offset (F), Tape Measure + guías (T). Usar `tool.work_plane` + `plane_axes` (ver `[[project-face-plane-inference-done]]`).
+- ✅ **Offset (F)** hecho (`tools/offset.py` + `offset_loop`; push del anillo levanta muros con espesor).
+- ✅ **Circle (C) + Polygon (G) + Rotated Rect (K) + Arc (A) HECHO (2026-06-14).** `tools/circle.py` (`_RadialTool` base: centro+radio → N-gon con un vértice hacia el cursor, VCB radio; `CircleTool` 24 lados, `PolygonTool` 6), `tools/rotated_rectangle.py` (3 clics: esquina→arista base→ancho perpendicular, VCB ancho), `tools/arc.py` (2 puntos + bulge: circumcentro 2D del cordón+ápice, polilínea de 16 segmentos, auto-face si cierra; recto si bulge≈0). Todos sobre `work_plane` vía `plane_axes`, rubber-band + value_label. 8 tests en `tests/test_drawing_tools.py`. Verificado visualmente. **Falta:** Tape Measure + guías.
+- **DoD:** círculos, arcos, paralelas y guías sobre cualquier cara. *(círculos/arcos/paralelas ✅; falta Tape Measure + guías.)*
 
 **✅ FASE 5 — Groups v1** *(hecho 2026-06-08; era la deuda estructural contra la geometría pegajosa)*
 `core/group.py`: cada Group tiene su propio `Mesh` aislado del weld del mesh principal. Make Group (Ctrl+G), Explode (Ctrl+Shift+G), Move como unidad (no arrastra el resto), pick/select/delete como unidad, render + serialización `.igz`.
@@ -427,6 +428,9 @@ ingetrazo/                     ← nombre lógico del proyecto; carpeta en disco
 │   ├── select.py              ← SelectTool (pick edge/face/grupo + Shift-add + Delete + box-select)
 │   ├── line.py                ← LineTool (chain + auto-close + VCB float/tuple)
 │   ├── rectangle.py           ← RectangleTool (4 edges + 1 face CompoundCommand)
+│   ├── rotated_rectangle.py   ← RotatedRectangleTool (K) — rect en ángulo (3 clics)
+│   ├── circle.py              ← CircleTool (C) + PolygonTool (G) — N-gon centro+radio
+│   ├── arc.py                 ← ArcTool (A) — 2 puntos + bulge → polilínea
 │   ├── move.py                ← MoveTool (mueve posiciones o un grupo entero; snap/VCB/axis magnético)
 │   ├── offset.py              ← OffsetTool (F) — offset de cara → anillo + cara interna (muros con espesor)
 │   ├── paste.py               ← PasteTool — pega el clipboard siguiendo el cursor
