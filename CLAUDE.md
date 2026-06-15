@@ -149,7 +149,8 @@ Materiales (color/textura por cara), Dimensions, import `.dae`/`.obj` (abrir mod
 - ✅ **Materiales — color sólido por cara HECHO (2026-06-14).** `Face.attrs["color"]` (RGB 0..1, base A.3 → rueda por push/pull + rebuild), `SetFaceColorCommand` (undoable, swap de attrs sin snapshot), **tool Paint (B)** en `tools/paint.py` (click pinta la cara / toda la selección de caras; **Alt**=eyedropper; corre sobre malla suelta y grupos vía `pick_face_any`), swatch de color en la toolbar (`QColorDialog`), render por color (VBO de caras agrupado por `attrs["color"]`, default crema, un draw por color en `viewport._face_runs`), y serialización `.igz` (`"color"` por cara). 8 tests en `tests/test_materials.py`.
 - ✅ **Export STL + OBJ HECHO (2026-06-14).** `formats/stl.py::save_stl` (binario, todas las caras de malla+grupos trianguladas con normal geométrica outward — para impresión 3D / slicers) y `formats/obj.py::save_obj` (vértices dedup por posición, triángulos agrupados por color → `.mtl` con `Kd` por material; abre en Blender/MeshLab con los colores). File ▸ Export STL… / Export OBJ…
 - ✅ **Import OBJ HECHO (2026-06-14).** `formats/obj.py::load_obj` — parsea `v`/`f`/`usemtl`/`mtllib` (índices +/−, n-gons), agrega las caras al scene, **funde coplanares** (`run_stitch coplanar_merge=True`) para reconstruir polígonos de un archivo triangulado (cubo de SketchUp/nuestro export → 6 quads editables) y corre `orient_outward` (el merge es winding-tolerant); `Kd` → `attrs["color"]` (salvo crema = sin pintar). File ▸ Import OBJ… (undo vía `SnapshotMutation`). 12 tests en `tests/test_export.py` (conteo de triángulos, normales outward, grupos, dedup, colores→materiales, **round-trip sólido limpio**, color round-trip). Falta de Fase 7: **textura** por cara, **Dimensions** (cotas), import `.dae` (COLLADA).
-- **DoD:** importo un modelo de SketchUp (OBJ ✅ / .dae pendiente), lo acoto (Dimensions pendiente), lo pinto ✅ y exporto a STL ✅.
+- ✅ **Dimensions — cotas estáticas HECHO (2026-06-14).** `core/dimension.py::Dimension` (entidad en `Scene.dimensions`, no geometría: dos puntos `a`/`b` fijos + `offset`; mide `|b−a|`, estática = no se re-mide al mover la geometría — la variante anclada es para después). **DimensionTool (D)** (3 clics: inicio→fin→colocar offset, con snap; preview vía `rubber_band_lines`+`value_label`). Render persistente en el overlay (`viewport._draw_dimensions`: líneas de extensión + línea de cota + ticks + valor). `AddDimensionCommand`/`DeleteDimensionsCommand` (undo). Serialización `.igz` (`dimensions: [{a,b,offset}]`). 6 tests en `tests/test_dimensions.py`. **Pendiente:** borrar cotas desde el SelectTool (hoy solo por undo), y la variante anclada (auto-update).
+- **DoD:** importo un modelo de SketchUp (OBJ ✅ / .dae pendiente), lo **acoto ✅**, lo **pinto ✅** y **exporto a STL ✅**. *(Solo falta import `.dae` para el DoD literal; con OBJ está cubierto el espíritu.)*
 
 🏁 **Al cerrar Fase 7 = v0.1 usable real.** Recién después: BIM tagging, IFC export (gancho IngePresupuestos), DXF, geo-ref, etc. (ver Roadmap v0.1 largo abajo).
 
@@ -172,7 +173,7 @@ Materiales (color/textura por cara), Dimensions, import `.dae`/`.obj` (abrir mod
 | 2. Vanos: puerta + ventana (push **atravesando**) | **Push/pull pasante (through-hole)** | ✅ (sesión 2026-06-08) |
 | 3. Techo a dos aguas (subir el caballete) | **Move (M)** + topología que aguante mover | ✅ (frontón se rellena, gable) |
 | 4. Tabiques + escalera | Subdivisión + grada solid-aware | ✅ (sesión 2026-06-06) |
-| 5. Acabados (color por cara, cotas) | Materials + Dimensions (Fase 7) | 🟡 color por cara ✅ (2026-06-14); cotas ❌ |
+| 5. Acabados (color por cara, cotas) | Materials + Dimensions (Fase 7) | ✅ color por cara + cotas estáticas (2026-06-14) |
 
 **Reorden que revela la casita:** los bloqueos reales para *producir* una casita son **push/pull pasante** (puerta/ventana) y **Move** (techo) — que el roadmap abstracto tenía más abajo que "Fase 2 Selección". Selección *habilita el flujo* (agarrar caras cómodo) pero pasante + Move *producen la casita*.
 
@@ -404,6 +405,7 @@ ingetrazo/                     ← nombre lógico del proyecto; carpeta en disco
 ├── README.md / CONTRIBUTING.md / CODE_OF_CONDUCT.md
 ├── core/
 │   ├── camera.py              ← OrbitCamera (Z-up, lookAt, perspective/ortho, fit_to, set_view)
+│   ├── dimension.py           ← Dimension (cota estática: a/b/offset; entidad de anotación)
 │   ├── mesh.py                ← MOTOR NUEVO: Vertex compartido + Edge (incidencia radial) + Face + Mesh (no-manifold). Reemplazando a geometry.py y parte de topology.py — ver docs/halfedge-migration-plan.md
 │   ├── geometry.py            ← motor VIEJO (Edge/Face por copia). En vías de retiro (M3); hoy solo para objetos throwaway de simulación en edits/topology
 │   ├── scene.py               ← Scene (envuelve un Mesh; edges/faces son vistas de solo-lectura; + groups[])
@@ -425,6 +427,7 @@ ingetrazo/                     ← nombre lógico del proyecto; carpeta en disco
 │   ├── offset.py              ← OffsetTool (F) — offset de cara → anillo + cara interna (muros con espesor)
 │   ├── paste.py               ← PasteTool — pega el clipboard siguiendo el cursor
 │   ├── paint.py               ← PaintTool (B) — color por cara (attrs["color"]); Alt=eyedropper
+│   ├── dimension.py           ← DimensionTool (D) — cota estática de 3 clics
 │   └── pushpull.py            ← PushPullTool (extrude / recess / step / pasante; stitch watertight)
 ├── formats/
 │   ├── igz.py                 ← save_scene / load_into (JSON `.igz`, schema versionado; color por cara)

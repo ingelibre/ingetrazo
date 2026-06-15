@@ -27,6 +27,7 @@ from pathlib import Path
 
 from PySide6.QtGui import QVector3D
 
+from core.dimension import Dimension
 from core.group import Group
 
 
@@ -63,6 +64,14 @@ def save_scene(scene, path: Path) -> None:
     groups = getattr(scene, "groups", None)
     if groups:
         payload["groups"] = [_mesh_json(g.mesh) for g in groups]
+    dims = getattr(scene, "dimensions", None)
+    if dims:
+        payload["dimensions"] = [
+            {"a": [d.a.x(), d.a.y(), d.a.z()],
+             "b": [d.b.x(), d.b.y(), d.b.z()],
+             "offset": [d.offset.x(), d.offset.y(), d.offset.z()]}
+            for d in dims
+        ]
     data = {
         "igz_format": CURRENT_FORMAT,
         "app_version": "0.0.1",
@@ -91,6 +100,11 @@ def load_into(scene, path: Path) -> None:
         group = Group()
         _load_mesh(group.mesh, raw)
         scene.groups.append(group)
+
+    for raw in payload.get("dimensions", []):
+        scene.dimensions.append(Dimension(
+            QVector3D(*raw["a"]), QVector3D(*raw["b"]),
+            QVector3D(*raw["offset"])))
 
     scene.version += 1
 

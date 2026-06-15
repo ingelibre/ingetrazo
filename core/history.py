@@ -385,6 +385,43 @@ class SetFaceColorCommand(Command):
         scene.version += 1
 
 
+class AddDimensionCommand(Command):
+    """Add a static dimension annotation to ``scene.dimensions``."""
+
+    def __init__(self, dimension) -> None:
+        self.dimension = dimension
+
+    def do(self, scene) -> None:
+        scene.dimensions.append(self.dimension)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.dimension in scene.dimensions:
+            scene.dimensions.remove(self.dimension)
+        scene.version += 1
+
+
+class DeleteDimensionsCommand(Command):
+    """Remove a set of dimensions from ``scene.dimensions``."""
+
+    def __init__(self, dimensions) -> None:
+        self._dims = list(dimensions)
+        self._restore: list[tuple[int, object]] = []
+
+    def do(self, scene) -> None:
+        self._restore = [(scene.dimensions.index(d), d)
+                         for d in self._dims if d in scene.dimensions]
+        for d in self._dims:
+            if d in scene.dimensions:
+                scene.dimensions.remove(d)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for i, d in sorted(self._restore):
+            scene.dimensions.insert(i, d)
+        scene.version += 1
+
+
 def translate_points(scene, keys: set, delta: QVector3D) -> None:
     """Move every shared vertex whose position key is in ``keys`` by ``delta``.
 

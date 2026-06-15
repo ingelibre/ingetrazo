@@ -26,6 +26,8 @@ class Scene:
     version: int = 0
     # Encapsulated chunks (own meshes), isolated from the main mesh's welding.
     groups: list = field(default_factory=list)
+    # Annotation entities (static dimensions) — not geometry, drawn as overlays.
+    dimensions: list = field(default_factory=list)
 
     # ---- Geometry views (read-only over the *loose* mesh) -------------------
     # Tools, edits and topology operate on this (the loose geometry); groups are
@@ -78,9 +80,11 @@ class Scene:
         self.version += 1
 
     def clear(self) -> None:
-        if self.mesh.edges or self.mesh.faces or self.selection or self.groups:
+        if (self.mesh.edges or self.mesh.faces or self.selection
+                or self.groups or self.dimensions):
             self.mesh.clear()
             self.groups.clear()
+            self.dimensions.clear()
             self.selection.clear()
             self.version += 1
 

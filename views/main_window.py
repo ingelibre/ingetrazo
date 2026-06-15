@@ -39,6 +39,7 @@ from core.mesh import Edge, Face
 from formats import igz as igz_format
 from formats import obj as obj_format
 from formats import stl as stl_format
+from tools.dimension import DimensionTool
 from tools.line import LineTool
 from tools.move import MoveTool
 from tools.offset import OffsetTool
@@ -68,6 +69,7 @@ class MainWindow(QMainWindow):
             "offset": OffsetTool(),
             "move": MoveTool(),
             "paint": PaintTool(),
+            "dimension": DimensionTool(),
         }
         self._tool_actions: dict[str, QAction] = {}
 

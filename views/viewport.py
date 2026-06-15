@@ -891,6 +891,9 @@ class Viewport(QOpenGLWidget):
         # the extrusion is snapping level with).
         self._draw_inference_marker(painter)
 
+        # Persistent dimension annotations
+        self._draw_dimensions(painter)
+
         # Length measurement near rubber band
         self._draw_length_label(painter)
 
@@ -1010,6 +1013,49 @@ class Viewport(QOpenGLWidget):
             painter.drawText(QPointF(px + 11, py + 17), label)
             painter.setPen(QPen(color))
             painter.drawText(QPointF(px + 10, py + 16), label)
+
+    def _draw_dimensions(self, painter: QPainter) -> None:
+        """Draw every committed static dimension: extension lines from the
+        measured endpoints out to the dimension line, the dimension line with
+        end ticks, and the value label at its midpoint."""
+        dims = getattr(self.scene, "dimensions", None)
+        if not dims:
+            return
+        ink = QColor(45, 55, 75)
+        font = QFont()
+        font.setPointSize(9)
+        font.setBold(True)
+        for dim in dims:
+            ap, bp = dim.line_points()
+            pa = self._world_to_pixel(dim.a)
+            pb = self._world_to_pixel(dim.b)
+            pap = self._world_to_pixel(ap)
+            pbp = self._world_to_pixel(bp)
+            if None in (pa, pb, pap, pbp):
+                continue
+            # Extension lines (endpoint → dimension line), thin.
+            painter.setPen(QPen(ink, 1.0))
+            painter.drawLine(QPointF(*pa), QPointF(*pap))
+            painter.drawLine(QPointF(*pb), QPointF(*pbp))
+            # Dimension line.
+            painter.setPen(QPen(ink, 1.5))
+            painter.drawLine(QPointF(*pap), QPointF(*pbp))
+            # End ticks: short screen-space perpendiculars at each end.
+            dx, dy = pbp[0] - pap[0], pbp[1] - pap[1]
+            ln = math.hypot(dx, dy)
+            if ln > 1e-6:
+                px, py = -dy / ln * 4.0, dx / ln * 4.0
+                for (cx, cy) in (pap, pbp):
+                    painter.drawLine(QPointF(cx - px, cy - py),
+                                     QPointF(cx + px, cy + py))
+            # Value label at the dimension line's midpoint.
+            mid = self._world_to_pixel(dim.midpoint())
+            if mid is not None:
+                painter.setFont(font)
+                painter.setPen(QPen(QColor(255, 255, 255, 230)))
+                painter.drawText(QPointF(mid[0] + 5, mid[1] - 4), dim.label())
+                painter.setPen(QPen(ink))
+                painter.drawText(QPointF(mid[0] + 4, mid[1] - 5), dim.label())
 
     def _draw_inference_marker(self, painter: QPainter) -> None:
         """Green endpoint-style square where the active tool's distance
