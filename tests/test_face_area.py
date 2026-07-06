@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Face.area() — the discriminator pick_face uses to choose the inner face
 when coplanar faces overlap under the cursor.
 

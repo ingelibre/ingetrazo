@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Consistent outward orientation for closed solids in the non-manifold mesh.
 
 The root-fix invariant: every face of a closed solid is wound so its normal

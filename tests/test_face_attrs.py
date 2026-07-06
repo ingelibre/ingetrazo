@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """A.3 — Face.attrs survive the engine's face churn (region inheritance).
 
 The rebuild/dissolve/dedupe/fold paths delete and re-create faces; anything a

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Shared-vertex, non-manifold connectivity mesh (core.mesh).
 
 Phase M0 of the topology migration (docs/halfedge-migration-plan.md): the new

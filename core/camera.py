@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Orbital camera for the 3D viewport.
 
 Z-up convention (SketchUp, Blender, FreeCAD): X red (east), Y green (north),

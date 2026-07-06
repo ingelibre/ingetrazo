@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Image textures, mapped the SketchUp way for interchange compatibility.
 
 A SketchUp material is a colour plus an optional texture image with a

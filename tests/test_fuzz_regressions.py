@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Named regressions for engine bugs the fuzz bench (test_fuzz_engine) found.
 
 Each test is the minimized form of a failing fuzz sequence, kept permanent so

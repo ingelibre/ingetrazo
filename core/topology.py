@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Topology helpers — graph queries over the scene's edge network.
 
 Used by tools (today: ``LineTool``) to find polygons that close when a new

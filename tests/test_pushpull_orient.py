@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Push/pull on a solid commits a *consistently oriented* watertight mesh.
 
 Root-fix step 2: after a nested push the solid is closed and seam-free, but its

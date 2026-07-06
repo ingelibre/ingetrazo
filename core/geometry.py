@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Geometry primitives: vertex, edge, face, solid.
 
 Edges and faces use identity-based equality so each instance is a distinct

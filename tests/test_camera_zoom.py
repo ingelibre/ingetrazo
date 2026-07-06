@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Zoom-to-cursor: keep the world point under the pointer fixed on screen."""
 from __future__ import annotations
 

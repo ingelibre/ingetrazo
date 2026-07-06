@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Rectangle tool — on-screen dimensions and typed exact size (VCB).
 
 Drawing a rectangle shows a live ``width × height`` readout, and typing

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Offset tool: offset a face's boundary in its plane (walls with thickness).
 
 SketchUp's Offset (F): pick a face, drag (or type a distance) and a parallel

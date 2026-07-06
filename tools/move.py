@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Move tool: drag geometry (and everything connected to it) to a new spot.
 
 UX (SketchUp-like):

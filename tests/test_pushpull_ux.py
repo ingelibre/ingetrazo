@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Push/Pull UX parity with SketchUp: Ctrl = push/pull a copy (keep the base
 face as a slab division), double-click = repeat the last distance, VCB accepts
 negatives (reverse) and unit suffixes.

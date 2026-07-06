@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Deterministic plane rebuild for push/pull (the root-fix, "path C").
 
 This is what replaced the fragile post-extrude heal chain — the old

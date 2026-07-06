@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Dimension tool (D): place a static linear dimension.
 
 Three clicks, SketchUp-style:

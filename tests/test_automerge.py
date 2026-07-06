@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Auto-merge of coincident edges — Phase 1, sub-step 1.
 
 Covers the SketchUp-style weld: drawing an edge that already exists (in

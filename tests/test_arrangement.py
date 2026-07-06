@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Planar arrangement: rebuild minimal faces from an edge graph.
 
 Covers the geometry a floor plan is made of — rooms, diagonals, crossings,

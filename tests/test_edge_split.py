@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Auto-split of crossing edges — Phase 1, sub-step 2.
 
 When a new edge crosses an existing one, both must split at the intersection

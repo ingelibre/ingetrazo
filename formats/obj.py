@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """OBJ export — indexed vertices + triangles, with per-face colour as materials.
 
 Wavefront OBJ with a sidecar ``.mtl``: vertices are de-duplicated by position,

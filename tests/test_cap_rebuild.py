@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Deterministic plane rebuild (core.cap_rebuild) — the root-fix "path C".
 
 Given a plane of a solid, recompute its faces from the plane's edges: run the

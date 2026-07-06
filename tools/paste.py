@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Paste tool: drop a copied set of geometry, placing it with the cursor.
 
 After Copy/Cut fills ``viewport.clipboard``, Paste activates this tool: the copied

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Extension inference — snap to the collinear continuation of a nearby edge.
 
 SketchUp's dashed-extension guide: when the cursor lines up with the prolongation

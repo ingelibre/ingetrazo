@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Offset tool geometry — polygon offset + the ring/inner face split.
 
 Walls with thickness: offsetting a face's boundary inward splits it into a ring

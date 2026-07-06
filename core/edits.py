@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Edit operations that turn drawn segments into history commands.
 
 This is the bridge between the pure geometry planner in :mod:`core.topology`

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Snap engine: pick the best snap target near the cursor.
 
 Snap kinds (priority high → low):

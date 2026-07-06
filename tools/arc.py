@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Arc tool: two endpoints (the chord), then a bulge.
 
 SketchUp's 2-point arc:

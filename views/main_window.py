@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """IngeTrazo main window: toolbar, viewport, side panels, status bar.
 
 Owns the open document path and dispatches File menu actions (New, Open,
@@ -253,6 +255,26 @@ class MainWindow(QMainWindow):
         action_cancel.setShortcut(QKeySequence("Esc"))
         action_cancel.triggered.connect(self._cancel_tool)
         tools_menu.addAction(action_cancel)
+
+        help_menu = menubar.addMenu("Help")
+        about_action = QAction("About IngeTrazo", self)
+        about_action.triggered.connect(self._on_about)
+        help_menu.addAction(about_action)
+
+    def _on_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About IngeTrazo",
+            "<h3>IngeTrazo</h3>"
+            "<p>Free 3D modeler for architecture, civil engineering "
+            "and 3D printing.</p>"
+            "<p>Created by <b>Marco Sumari Tellez</b><br>"
+            "Civil Engineer — Lima, Peru</p>"
+            "<p>Licensed under GPL-3.0-or-later.<br>"
+            "<a href='https://github.com/tuxiasumari/ingetrazo'>"
+            "github.com/tuxiasumari/ingetrazo</a></p>"
+            "<p><i>Trazá. Metrá. Presupuestá.</i></p>",
+        )
 
     def _file_actions(self) -> list[QAction]:
         actions = []

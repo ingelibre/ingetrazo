@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Move — translate positions and let connected geometry follow.
 
 Moving works on positions, not entities: every edge endpoint and face vertex

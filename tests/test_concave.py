@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Concave faces fill correctly — Phase 1, sub-step 5.
 
 A non-convex face fan-triangulated produces triangles that spill outside the

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Planar arrangement: rebuild the minimal faces of a plane from its edges.
 
 Given a tangle of segments lying in one plane (hand-drawn walls, slivers,

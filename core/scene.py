@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Scene container, backed by a shared-vertex :class:`~core.mesh.Mesh`.
 
 ``edges`` and ``faces`` are read-only views onto the mesh (lists of

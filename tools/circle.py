@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Circle and Polygon tools: a centre click, then a radius.
 
 Both draw a regular N-gon on the work plane (a circle is just a many-sided one,

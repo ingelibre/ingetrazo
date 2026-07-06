@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Phase 1 Definition of Done — the gate for the topology engine.
 
 One test per DoD bullet, exercised through the same command paths the tools

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Consistent outward orientation of closed solids (core.orient).
 
 Root-fix groundwork: every face of a closed solid wound so its normal points

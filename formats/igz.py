@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Native IngeTrazo document format (``.igz``).
 
 Plain JSON, schema-versioned. Trivial to inspect, edit by hand, and diff

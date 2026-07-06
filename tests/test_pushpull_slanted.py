@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """A.2 — the slanted-faces bench (next-session item).
 
 The directed push/pull benches were all axis-aligned plus the irregular

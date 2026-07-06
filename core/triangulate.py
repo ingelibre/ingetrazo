@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Polygon triangulation, including polygons with holes.
 
 The renderer and the face picker both need triangles, and a face that has

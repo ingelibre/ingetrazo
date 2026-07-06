@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Chord split + multi-cycle detection — Phase 1, sub-step 4.
 
 The reported case: draw a rectangle (a face), then a diagonal between opposite

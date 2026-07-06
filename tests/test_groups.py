@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Groups: isolate geometry into its own mesh so it doesn't weld to the rest."""
 from __future__ import annotations
 

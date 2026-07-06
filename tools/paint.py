@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Paint (bucket) tool: assign a material colour to a face.
 
 Behavior (SketchUp's Paint Bucket, ``B``):

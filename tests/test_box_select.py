@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Rubber-band box selection — window vs crossing (SketchUp-style).
 
 - Left-to-right drag (``crossing=False``, "window"): selects only entities whose

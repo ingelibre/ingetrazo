@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Undo/redo of drawn geometry must restore exactly — no orphan split edges or
 stray vertices left behind (the line-draw plan can't compose a clean per-op
 inverse, so it's undone by snapshot)."""

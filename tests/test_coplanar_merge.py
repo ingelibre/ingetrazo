@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Coplanar-merge — dissolve the seam a flush push/pull leaves behind.
 
 SketchUp's model: an edge bordering exactly two faces in the same plane carries

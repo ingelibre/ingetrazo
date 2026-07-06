@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """STL export — triangle soup for 3D printing and mesh interchange.
 
 Binary STL: every face (the loose mesh plus every group) is triangulated and

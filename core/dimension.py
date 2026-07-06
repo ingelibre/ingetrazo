@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Static linear dimension — a measured annotation between two world points.
 
 A ``Dimension`` records two endpoints ``a``/``b`` (snapped to geometry when

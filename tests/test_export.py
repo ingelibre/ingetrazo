@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """STL + OBJ export: geometry round-trips (triangle count, vertices), normals
 point outward, and per-face colour becomes OBJ materials."""
 from __future__ import annotations

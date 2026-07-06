@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Right-side dockable tray (SketchUp-style), built from QDockWidget.
 
 Holds collapsible sections:

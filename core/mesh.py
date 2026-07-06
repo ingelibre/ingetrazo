@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Shared-vertex, non-manifold connectivity mesh.
 
 Level B+C of the topology-engine migration (see

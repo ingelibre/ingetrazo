@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Fuzz/property bench for the topology engine — the certifier.
 
 Seeded (fully reproducible) random sequences of real user operations — draw a

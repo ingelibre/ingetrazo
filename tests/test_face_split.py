@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Face split / hole punching — Phase 1, sub-step 3.
 
 When a new loop is drawn strictly inside an existing coplanar face, the

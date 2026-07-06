@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Line tool: click points to draw edges; auto-close polygons.
 
 Behavior mirrors SketchUp:

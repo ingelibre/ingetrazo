@@ -1,0 +1,17 @@
+IngeTrazo — authors and contributors
+=====================================
+
+Creator and lead author
+------------------------
+Marco Sumari Tellez <ing.sumari@gmail.com>
+    Civil Engineer, Lima, Peru.
+    Original author and designer of IngeTrazo; wrote the topology engine,
+    tools, rendering, and file formats.
+
+---
+
+IngeTrazo is free software under GPL-3.0-or-later (see LICENSE).
+Every source file carries an SPDX header and copyright notice; these must be
+preserved in any redistribution or derivative work, per the license terms.
+
+Later contributors may add their names below.

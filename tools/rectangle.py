@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Rectangle tool: two clicks define opposite corners on the work plane.
 
 Output is a closed loop of four edges, axis-aligned to the world X / Y

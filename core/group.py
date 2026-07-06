@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Group: a self-contained chunk of geometry with its own mesh.
 
 The scene's main mesh welds every coincident vertex (sticky geometry), so a

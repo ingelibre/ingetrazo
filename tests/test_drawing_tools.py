@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Circle, Polygon, Rotated Rectangle and Arc tools — the geometry they commit."""
 from __future__ import annotations
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """A.4 — hand-drawn subdivisions survive the plane rebuild.
 
 ``apply_rebuild`` used to union every region of a touched plane, dissolving a

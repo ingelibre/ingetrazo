@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Deleting an edge takes its faces with it (SketchUp behaviour).
 
 A face can't exist without its bounding edges, so erasing a boundary edge erases

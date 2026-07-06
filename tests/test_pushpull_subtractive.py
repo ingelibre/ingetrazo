@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Subtractive push/pull — recess / pocket.
 
 Push/pull consumes the base face when that face is *bordered* (its edges are

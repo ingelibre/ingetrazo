@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Face subdivision by a loop drawn against the boundary (corner/edge rect).
 
 A rectangle drawn in the corner of a face — sharing part of one or two of its
