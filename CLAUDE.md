@@ -255,16 +255,24 @@ Tras el fix de raíz se auditó el push/pull contra SketchUp (el usuario es ex-u
 
 - ⑧ **Regla de crease + dedup de caras (2026-06-10).** Auditando "¿qué falta para roca sólida?" se encontró y arregló un **crash real del flujo de planta** (levantar la 2ª de dos habitaciones que comparten muro → `IndexError`: el push reconstruía el muro compartido como duplicado idéntico y el merge de dos ciclos idénticos no tiene frontera que trazar). Fix triple: `dissolve_coplanar_region` dedupea ciclos idénticos en vez de crashear; **regla de crease** (una arista que carga una cara no-coplanar es estructural — nunca se fusiona a través de ella) en el merge fase 3 **y** en la unión del rebuild (`keep_keys`) → dos techos sobre un muro divisorio quedan **dos caras con ridge visible**, como SketchUp, no una losa flotando sobre el muro; `mesh.dedupe_faces()` como paso propio de la fase 0 del stitch. Test del flujo completo en `test_two_room_plan_raises_cleanly`.
 
-### 🎯 PRÓXIMA SESIÓN — PENDIENTE (actualizado 2026-06-15)
+### 🎯 PRÓXIMA SESIÓN — PENDIENTE (actualizado 2026-07-05)
 
-> **Estado al cerrar la sesión 2026-06-14/15: 568 tests verdes (+ ~57 xfail del fuzz), todo pusheado a `main` (`5799f69`). El modelador está MUY completo** — dibujo (línea, rect, rect rotado, círculo, polígono, arco 2pt/3pt), push/pull robusto con guard grado-BIM, offset, move, groups, materiales + texturas SketchUp-compatible, cotas, sólidos curvos estilo SketchUp (superficie/profiles), bandeja lateral, export STL/OBJ, import OBJ.
+> **Sesión 2026-07-05 (estratégica + repo público + i18n). Todo pusheado a `main` (`0881ee6`). 568 tests verdes.** Lo hecho, no-código salvo i18n:
+> - **Repo hecho PÚBLICO** (`github.com/tuxiasumari/ingetrazo`, antes estaba **privado** — la nota vieja que lo daba por público era falsa, verificado por API). Escaneo de secretos (limpio) → push → visibilidad pública.
+> - **Atribución de autor:** headers SPDX + copyright en los 83 `.py`, archivo `AUTHORS`, diálogo **Help ▸ About IngeTrazo** con el autor. Marco es único titular de copyright → **licencia sigue 100% a su elección** (la nota vieja "ya no se puede cambiar a Apache" también era falsa).
+> - **README pulido** para el repo público (screenshot hero en `docs/images/viewport.png`, badges, features reales, "why IngeTrazo" = el hueco de CAD en Linux). **`requirements.txt` corregido** (listaba deps pesadas no instaladas que rompen `pip install` en 3.14; ahora solo PySide6 + pytest).
+> - **UI BILINGÜE de verdad (i18n)** — ver sección "Convenciones" y `core/i18n.py`. Antes era una mezcla inconsistente con los JSON muertos; ahora `tr()` + `es.json` + selector **Vista ▸ Idioma** (aplica al reiniciar). **Verificado funcionando por el usuario.**
+> - **Principio AI-native fijado** (sección "🤖 Principio de arquitectura AI-native"): IA agéntica como capa de orquestación opcional sobre el motor determinista vía API de acciones; NO construir IA aún.
+> - Conversación estratégica: nombre **IngeTrazo vs "Trazo"** sigue abierto (proyecto sin objetivo comercial, motivación = tapar el hueco de ing. civil en Linux); WebODM es **AGPL** (usar como proceso aparte, outputs son del usuario); Blender es **GPL-2+** (por eso motor propio); `.dae` es estándar **abierto** (Khronos) → import libre de implementar.
+>
+> **Estado del modelador: MUY completo** — dibujo (línea, rect, rect rotado, círculo, polígono, arco 2pt/3pt), push/pull robusto con guard grado-BIM, offset, move, groups, materiales + texturas SketchUp-compatible, cotas, sólidos curvos estilo SketchUp (superficie/profiles), bandeja lateral, export STL/OBJ, import OBJ, **UI bilingüe**.
 >
 > **Lo que queda, en orden sugerido para arrancar:**
 >
 > 1. **Tape Measure + guías (T)** — *lo único que falta del kit de dibujo (Fase 4)*. Líneas/puntos de construcción que no son geometría real, para alinear y medir antes de trazar. Complemento natural del kit recién hecho.
 > 2. **Fase 2 restante:** doble-click = geometría conectada, triple-click = sólido completo (`SelectTool` ya tiene surface-select de curvas; falta connected/solid por gesto). **Fase 3:** Eraser (E) por click y arrastre. **Face culling** (front crema / back azul-gris — la orientación outward ya está garantizada). Detalle en bloque **C** abajo.
 > 3. **Calidad de motor diferida:** los **4 seeds `KNOWN_BAD` draw-side** (`cube 121`, `plan 152/210/242`) son la punta del **iceberg de SOLAPES coplanares** (~326/1000 secuencias dejan caras coplanares doble-cubiertas, invisibles al bench actual; ver "🔬 Iceberg de solapes coplanares" abajo). **Proyecto propio pre-IFC/STL**, no "4 bugs". Dejar como xfail.
-> 4. **Decisión vencida:** licencia **GPL→Apache 2.0** — el repo YA es público bajo GPL (ver "⚠️ Licencia" arriba); re-licenciar deliberadamente si se quiere el embebido en IngePresupuestos.
+> 4. **Licencia (abierta, sin urgencia):** repo público bajo **GPL-3.0** desde 2026-07-05. Marco es único titular → puede re-licenciar a **Apache 2.0** cuando quiera (si algún día quiere el embebido en IngePresupuestos). Si el norte es "libre para siempre", GPL-3.0 ya es correcto y no hay nada que decidir. Ver "⚠️ Licencia" arriba.
 >
 > **Bloques A y B (motor "roca sólida" + UX push/pull) COMPLETOS (2026-06-11/14).** Ver detalle abajo.
 >
