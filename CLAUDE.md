@@ -32,6 +32,22 @@ El 2D separado quedó en el pasado; por eso el referente es SketchUp y no AutoCA
 
 **Recordatorio operativo:** Claude debe re-anclar al usuario a esta filosofía cuando una idea empiece a desviarse (escenarios "grandes/futuros" tipo Vulkan, ray tracing, AI-PCs, mallas pesadas son válidos pero son *display/import de referencia* — fáciles —, NO el motor de topología editable que es lo difícil y lo que define si IngeTrazo existe). Los cimientos (Fase 0 → Fase 1) van antes que el techo brillante.
 
+### 🤖 Principio de arquitectura AI-native (definido 2026-07-05)
+
+**La visión a largo plazo:** _"el usuario imagina un proyecto e IngeTrazo lo hace realidad"_ — IA **agéntica** que traduce lenguaje natural / imagen / traza a un modelo 3D real. Pero el "cómo" no es negociable, y se decide **desde ahora** para no cerrarle la puerta (mismo criterio que la `Scene` heterogénea y el índice espacial). El invariante:
+
+> **Toda operación de edición se puede ejecutar sin mouse, a través de una capa de acciones explícita. La IA será una capa de orquestación OPCIONAL encima del motor determinista — nunca dentro del kernel geométrico — con backend intercambiable (cloud hoy, local/offline mañana). El motor funciona 100% sin IA.**
+
+**Por qué esta arquitectura y no otra** (razonado 2026-07-05, contrastado con SketchUp AI):
+
+- **La IA NO genera la malla directo** (tipo text-to-mesh / Diffusion). Eso produce geometría sucia, no hermética, no metrable, no taggeable — incompatible con la tesis BIM. Es la razón por la que **hasta SketchUp** separa su "AI Render" (solo imágenes 2D: aplasta la vista → Canny + depth → modelo de difusión, NO toca geometría) de su "Generate Object" (geometría editable), y por la que su IA vive **bolteada como panel lateral, fuera del kernel** — no por falta de recursos de Trimble, sino porque es la arquitectura correcta.
+- **La IA genera la _receta_ de acciones; el motor determinista la ejecuta.** Salida siempre limpia/editable/hermética/metrable — el diferencial vs. SketchUp. Esta apuesta **mejora sin techo cuando la IA mejora** (mejor IA = mejores recetas: casas completas, normativa), mientras que la generación directa de malla tiene techo permanente en validez/semántica.
+- **Encaja con el futuro agéntico:** el loop *actuar → validar contra el guard grado-BIM → corregir* es lo que un agente necesita. La API de acciones + el guard de hermeticidad **son el sustrato de un agente**. La misma inversión (motor headless + guard) vuelve a IngeTrazo "agent-ready" gratis.
+
+**El moat (lo que la IA NO commoditiza):** la generación se vuelve commodity; lo defendible es (1) la riqueza de la API de acciones, (2) la semántica de dominio (BIM, IFC, **normativa local latinoamericana**, metrado), (3) el **flujo unificado** fotogrametría → georef → trazar → tag → IngePresupuestos, (4) libre / Linux / offline / español. Competir en integración + dominio local + loop cerrado, **nunca** en la generación cruda.
+
+**Qué se hace HOY:** nada de IA. Solo respetar el invariante al agregar features (la lógica de edición vive en la capa de acciones, no atada al evento de mouse — ya se cumple ~70% vía `Tool` + `Command`) y seguir con los cimientos (hermeticidad 100% + IFC export). **Secuencia para cuando la IA valga la pena (v0.2+):** (1) API `build.*` headless — desacoplar el motor del mouse, útil igual para tests/macros/plugins; (2) generador **paramétrico sin IA** (plantilla "casa 3×10" → efecto "escribo → aparece", offline, cero cloud); (3) capa agéntica LLM encima traduciendo NL/imagen → acciones `build.*`, iterando contra el guard, backend intercambiable. Ver `[[project-ai-native-architecture]]`.
+
 **Posicionamiento estratégico (secuencial, no paralelo):**
 
 - **IngePresupuestos** = generador de caja a corto plazo. La mayor parte del tiempo va ahí mientras tracciona comercialmente.
