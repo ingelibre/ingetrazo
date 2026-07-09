@@ -31,6 +31,7 @@ from PySide6.QtGui import QVector3D
 
 from core.dimension import Dimension
 from core.group import Group
+from georef.datum import SceneDatum
 
 
 CURRENT_FORMAT = 1
@@ -87,6 +88,11 @@ def save_scene(scene, path: Path) -> None:
     style = getattr(scene, "dimension_style", None)
     if style:
         payload["dimension_style"] = dict(style)
+    # Georeferencing datum (Track G) — optional block, written only when set so
+    # ungeoreferenced documents stay terse and older readers ignore it.
+    datum = getattr(scene, "georef", None)
+    if datum is not None:
+        payload["georef"] = {"datum": datum.to_dict()}
     data = {
         "igz_format": CURRENT_FORMAT,
         "app_version": "0.0.1",
@@ -109,6 +115,7 @@ def load_into(scene, path: Path) -> None:
     scene.mesh.clear()
     scene.selection.clear()
     scene.groups.clear()
+    scene.georef = None
 
     _load_mesh(scene.mesh, payload)
     for raw in payload.get("groups", []):
@@ -124,6 +131,10 @@ def load_into(scene, path: Path) -> None:
     style = payload.get("dimension_style")
     if isinstance(style, dict):
         scene.dimension_style.update(style)
+
+    georef = payload.get("georef")
+    if isinstance(georef, dict) and isinstance(georef.get("datum"), dict):
+        scene.georef = SceneDatum.from_dict(georef["datum"])
 
     scene.version += 1
 
