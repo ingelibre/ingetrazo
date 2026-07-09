@@ -1711,6 +1711,25 @@ class Viewport(QOpenGLWidget):
                     best = dim
         return best
 
+    def pick_geopath(self, screen_x: float, screen_y: float):
+        """Return the georef path whose polyline is closest to the cursor within
+        the pick threshold, or ``None`` (Track G)."""
+        paths = getattr(self.scene, "geo_paths", None)
+        if not paths:
+            return None
+        best, best_d = None, self.pick_threshold_px
+        for path in paths:
+            for a, b in path.segments():
+                pa = self._world_to_pixel(a)
+                pb = self._world_to_pixel(b)
+                if pa is None or pb is None:
+                    continue
+                d = _point_to_segment_distance_2d((screen_x, screen_y), pa, pb)
+                if d < best_d:
+                    best_d = d
+                    best = path
+        return best
+
     def pick_vertex(self, screen_x: float, screen_y: float):
         """Return the scene vertex (corner) closest to the cursor within the
         pick threshold, or ``None``. Used to acquire a corner as a 'from point'

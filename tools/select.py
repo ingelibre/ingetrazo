@@ -22,9 +22,11 @@ from core.mesh import Edge, Face
 from core.history import (
     CompoundCommand,
     DeleteDimensionsCommand,
+    DeleteGeoPathsCommand,
     DeleteGroupCommand,
     EraseSelectionCommand,
 )
+from georef.geopath import GeoPath
 from tools.base import Tool, ToolContext
 
 
@@ -78,6 +80,9 @@ class SelectTool(Tool):
         dim = viewport.pick_dimension(screen_x, screen_y)
         if dim is not None:
             return dim
+        path = viewport.pick_geopath(screen_x, screen_y)
+        if path is not None:
+            return path
         return viewport.pick_face(screen_x, screen_y)
 
     def on_click(self, ctx: ToolContext) -> None:
@@ -146,6 +151,7 @@ class SelectTool(Tool):
                 faces = [f for f in selection if isinstance(f, Face)]
                 groups = [g for g in selection if isinstance(g, Group)]
                 dims = [d for d in selection if isinstance(d, Dimension)]
+                paths = [p for p in selection if isinstance(p, GeoPath)]
                 commands = []
                 if edges or faces:
                     # Erasing an edge between two coplanar faces merges them back
@@ -154,6 +160,8 @@ class SelectTool(Tool):
                 commands.extend(DeleteGroupCommand(g) for g in groups)
                 if dims:
                     commands.append(DeleteDimensionsCommand(dims))
+                if paths:
+                    commands.append(DeleteGeoPathsCommand(paths))
                 if commands:
                     cmd = (commands[0] if len(commands) == 1
                            else CompoundCommand(commands))
