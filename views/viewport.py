@@ -346,6 +346,9 @@ class Viewport(QOpenGLWidget):
         self._tile_quad_vbo = None
         # Cached base-map tile geometry (built once per capture, not per frame).
         self._tile_geom = None
+        # Per-frame GL-texture-creation budget (spreads big captures over frames).
+        self._tex_budget = 0
+        self._tex_deferred = False
 
         # Georef path node being hovered ``(path, index)`` — for the drag handle
         # highlight (Track G, GeoPath node editing).
@@ -761,6 +764,12 @@ class Viewport(QOpenGLWidget):
             layer.images.clear()
         self.update()
 
+    # Max NEW GL textures created per frame. Uploading hundreds at once (a big
+    # capture) overwhelms Mesa and reads back as garbage (black/green tears at
+    # the far edge); creating a few per frame spreads it — the map fills in over
+    # a second and repaints itself until done.
+    _TEX_PER_FRAME = 6
+
     def _tile_texture(self, layer, x, y):
         """GL texture for tile ``(x, y)`` of ``layer``, or ``None`` if not yet
         available (a download is kicked off and the frame repaints on arrival)."""
@@ -776,6 +785,10 @@ class Viewport(QOpenGLWidget):
             if img is None:
                 return None
             layer.images[(x, y, z)] = img
+        if self._tex_budget <= 0:
+            self._tex_deferred = True     # too many this frame — next frame
+            return None
+        self._tex_budget -= 1
         tex = QOpenGLTexture(img)  # QImage is top-down; our UVs map north→v=0
         tex.setWrapMode(QOpenGLTexture.ClampToEdge)
         tex.setMinificationFilter(QOpenGLTexture.LinearMipMapLinear)
@@ -886,6 +899,9 @@ class Viewport(QOpenGLWidget):
             return
         if not runs:
             return
+        # Budget new texture uploads this frame (see _tile_texture).
+        self._tex_budget = self._TEX_PER_FRAME
+        self._tex_deferred = False
         self._program.setUniformValue(self._loc_use_tex, 1)
         self._gl.glDepthMask(GL_FALSE)
         self._tile_quad_vao.bind()
@@ -899,6 +915,8 @@ class Viewport(QOpenGLWidget):
         self._tile_quad_vao.release()
         self._gl.glDepthMask(GL_TRUE)
         self._program.setUniformValue(self._loc_use_tex, 0)
+        if self._tex_deferred:            # more tiles to upload — schedule a frame
+            self.update()
 
     # ---- Dynamic uploads ----------------------------------------------------
     def notify_scene_changed(self) -> None:
