@@ -35,6 +35,25 @@ def test_length_closed_includes_closing_edge():
     assert abs(p.length() - 12.0) < 1e-9
 
 
+def test_area_and_perimeter():
+    sq = GeoPath([V(0, 0), V(10, 0), V(10, 10), V(0, 10)], closed=True)
+    assert abs(sq.area() - 100.0) < 1e-9
+    assert abs(sq.perimeter() - 40.0) < 1e-9
+    # An open path has length but no area.
+    line = GeoPath([V(0, 0), V(10, 0), V(10, 10)])
+    assert line.area() == 0.0
+    assert abs(line.perimeter() - 20.0) < 1e-9
+
+
+def test_surface_area_from_tris():
+    sq = GeoPath([V(0, 0), V(10, 0), V(10, 10), V(0, 10)], closed=True)
+    assert sq.surface_area() is None            # no surface built yet
+    # A flat surface at Z=0 → 3D area equals the planimetric area.
+    sq._surface_tris = [(V(0, 0), V(10, 0), V(10, 10)),
+                        (V(0, 0), V(10, 10), V(0, 10))]
+    assert abs(sq.surface_area() - 100.0) < 1e-6
+
+
 def test_profile_points_closes_loop():
     p = GeoPath([V(0, 0), V(4, 0), V(4, 3)], closed=True)
     pts = p.profile_points()

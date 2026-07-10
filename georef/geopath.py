@@ -49,6 +49,30 @@ class GeoPath:
         return sum(math.hypot(b.x() - a.x(), b.y() - a.y())
                    for a, b in self.segments())
 
+    def perimeter(self) -> float:
+        """Perimeter (closed) or total length (open) — both are :meth:`length`."""
+        return self.length()
+
+    def area(self) -> float:
+        """Planimetric (XY-projected) area of a closed polygon; 0 if open."""
+        if not self.closed or len(self.points) < 3:
+            return 0.0
+        pts = self.points
+        n = len(pts)
+        s = sum(pts[i].x() * pts[(i + 1) % n].y()
+                - pts[(i + 1) % n].x() * pts[i].y() for i in range(n))
+        return abs(s) * 0.5
+
+    def surface_area(self) -> float | None:
+        """Real 3D area of the built terrain surface (sum of triangle areas), or
+        ``None`` if the path has no surface fill. Larger than the planimetric
+        area on sloped/rough ground."""
+        tris = self._surface_tris
+        if not tris:
+            return None
+        return sum(QVector3D.crossProduct(b - a, c - a).length() * 0.5
+                   for a, b, c in tris)
+
     def profile_points(self) -> list[QVector3D]:
         """The ordered nodes the profile walks (closes the loop when closed)."""
         pts = list(self.points)

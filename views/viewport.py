@@ -1380,6 +1380,35 @@ class Viewport(QOpenGLWidget):
                 r = 5.0 if (hover_node == (path, i)) else 3.5
                 painter.drawEllipse(QPointF(*q), r, r)
             painter.setBrush(Qt.NoBrush)
+            # Area + perimeter label at the centroid of a selected polygon.
+            if path in selection and path.closed and len(path.points) >= 3:
+                self._draw_geo_path_label(painter, path)
+
+    def _draw_geo_path_label(self, painter: QPainter, path) -> None:
+        n = len(path.points)
+        cx = sum(p.x() for p in path.points) / n
+        cy = sum(p.y() for p in path.points) / n
+        cz = sum(p.z() for p in path.points) / n
+        q = self._world_to_pixel(QVector3D(cx, cy, cz))
+        if q is None:
+            return
+        area = path.area()
+        text = f"{tr('Area')}: {area:.1f} m²  ({area / 10000:.3f} ha)\n" \
+               f"{tr('Perimeter')}: {path.perimeter():.1f} m"
+        font = QFont()
+        font.setPointSize(9)
+        font.setBold(True)
+        painter.setFont(font)
+        fm = painter.fontMetrics()
+        lines = text.split("\n")
+        tw = max(fm.horizontalAdvance(ln) for ln in lines)
+        th = fm.height() * len(lines)
+        x, y = q[0] - tw / 2, q[1] - th / 2
+        painter.fillRect(int(x) - 5, int(y) - 3, tw + 10, th + 6,
+                         QColor(20, 24, 30, 190))
+        painter.setPen(QColor(255, 255, 255))
+        for i, ln in enumerate(lines):
+            painter.drawText(QPointF(x, y + fm.ascent() + i * fm.height()), ln)
 
     def _draw_dimensions(self, painter: QPainter) -> None:
         """Draw every committed static dimension: extension lines from the

@@ -46,6 +46,7 @@ from core.mesh import Edge, Face
 from core.group import Group
 from core.dimension import Dimension
 from georef.datum import SceneDatum
+from georef.geopath import GeoPath
 from georef.tiles import DEFAULT_SOURCE_ID, PRESETS, TileLayer, custom_source
 from tools.paint import PaintTool
 
@@ -510,6 +511,8 @@ class EntityInfoPanel(QWidget):
                         f"{tr('Length')}: {(e.b - e.a).length():.3f} m")
             if isinstance(e, Dimension):
                 return f"<b>{tr('Dimension')}</b><br>{tr('Measure')}: {e.value():.3f} m"
+            if isinstance(e, GeoPath):
+                return self._describe_geopath(e)
             if isinstance(e, Group):
                 return f"<b>{tr('Group')}</b><br>{tr('Faces')}: {len(e.mesh.faces)}"
             return f"<b>{tr('1 entity')}</b>"
@@ -525,6 +528,21 @@ class EntityInfoPanel(QWidget):
                 counts["groups"] += 1
         parts = [f"{n} {tr(k)}" for k, n in counts.items() if n]
         return f"<b>{tr('Selection')}</b><br>" + ", ".join(parts)
+
+    @staticmethod
+    def _describe_geopath(path) -> str:
+        kind = tr("Polygon") if path.closed else tr("Route")
+        rows = [f"<b>{kind}</b>",
+                f"{tr('Vertices')}: {len(path.points)}",
+                f"{tr('Perimeter')}: {path.perimeter():.2f} m"]
+        if path.closed:
+            area = path.area()
+            rows.append(f"{tr('Area (plan)')}: {area:.2f} m² "
+                        f"({area / 10000:.4f} ha)")
+            sa = path.surface_area()
+            if sa is not None:
+                rows.append(f"{tr('Area (3D terrain)')}: {sa:.2f} m²")
+        return "<br>".join(rows)
 
     @staticmethod
     def _material_of(face) -> str:
