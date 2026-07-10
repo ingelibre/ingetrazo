@@ -11,6 +11,7 @@ from core.history import (
     DeleteGeoPathsCommand,
     History,
     MoveGeoPathNodeCommand,
+    ToggleGeoPathClosedCommand,
 )
 from core.scene import Scene
 from formats import igz
@@ -69,6 +70,17 @@ def test_delete_paths():
     assert scene.geo_paths == [p2]
     hist.undo()
     assert scene.geo_paths == [p1, p2]
+
+
+def test_toggle_closed():
+    scene = Scene()
+    hist = History(scene)
+    path = GeoPath([V(0, 0), V(10, 0), V(10, 10)])
+    scene.geo_paths.append(path)
+    hist.execute(ToggleGeoPathClosedCommand([path]))
+    assert path.closed is True
+    hist.undo()
+    assert path.closed is False
 
 
 def test_move_node():

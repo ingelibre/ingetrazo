@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QStatusBar,
     QToolBar,
@@ -510,6 +511,85 @@ class MainWindow(QMainWindow):
         cmd = cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
         self.viewport.history.execute(cmd)
         self.viewport.update()
+
+    def _on_toggle_path_closed(self) -> None:
+        from georef.geopath import GeoPath
+        from core.history import ToggleGeoPathClosedCommand
+        paths = [p for p in self.viewport.scene.selection if isinstance(p, GeoPath)]
+        if paths:
+            self.viewport.history.execute(ToggleGeoPathClosedCommand(paths))
+            self.viewport.update()
+
+    def _on_delete_selection(self) -> None:
+        """Delete the current selection (any entity type), as one undoable step —
+        the same logic the Select tool's Delete key runs, reachable from the
+        context menu regardless of the active tool."""
+        from core.mesh import Edge, Face
+        from core.dimension import Dimension
+        from georef.geopath import GeoPath
+        from core.history import (
+            CompoundCommand, DeleteDimensionsCommand, DeleteGeoPathsCommand,
+            DeleteGroupCommand, EraseSelectionCommand,
+        )
+        sel = self.viewport.scene.selection
+        if not sel:
+            return
+        edges = [e for e in sel if isinstance(e, Edge)]
+        faces = [f for f in sel if isinstance(f, Face)]
+        groups = [g for g in sel if isinstance(g, Group)]
+        dims = [d for d in sel if isinstance(d, Dimension)]
+        paths = [p for p in sel if isinstance(p, GeoPath)]
+        cmds = []
+        if edges or faces:
+            cmds.append(EraseSelectionCommand(edges, faces))
+        cmds.extend(DeleteGroupCommand(g) for g in groups)
+        if dims:
+            cmds.append(DeleteDimensionsCommand(dims))
+        if paths:
+            cmds.append(DeleteGeoPathsCommand(paths))
+        if cmds:
+            self.viewport.history.execute(
+                cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
+            self.viewport.update()
+
+    def show_viewport_context_menu(self, global_pos) -> None:
+        """SketchUp-style right-click menu, tailored to what's selected."""
+        from core.mesh import Edge, Face
+        from core.dimension import Dimension
+        from georef.geopath import GeoPath
+
+        sel = self.viewport.scene.selection
+        has_geopath = any(isinstance(e, GeoPath) for e in sel)
+        has_group = any(isinstance(e, Group) for e in sel)
+        has_mesh = any(isinstance(e, (Edge, Face)) for e in sel)
+        menu = QMenu(self)
+
+        if has_geopath:
+            menu.addAction(tr("Terrain profile"), self._on_terrain_profile)
+            menu.addAction(tr("Convert Path to Geometry"), self._on_convert_geopath)
+            menu.addAction(tr("Open / Close path"), self._on_toggle_path_closed)
+            menu.addSeparator()
+        if has_mesh:
+            menu.addAction(tr("Make Group"), self._on_make_group)
+        if has_group:
+            menu.addAction(tr("Explode Group"), self._on_explode_group)
+        if sel:
+            menu.addAction(tr("Delete"), self._on_delete_selection)
+            act_clear = menu.addAction(tr("Clear selection"),
+                                       self.viewport.scene.clear_selection)
+            act_clear.triggered.connect(self.viewport.update)
+            menu.addSeparator()
+
+        if getattr(self.viewport, "clipboard", None):
+            menu.addAction(tr("Paste"), self._on_paste)
+        menu.addAction(tr("Zoom Extents"), self._on_zoom_extents)
+        menu.addSeparator()
+        undo = menu.addAction(tr("Undo"), self._on_undo)
+        undo.setEnabled(bool(self.viewport.history.undo_stack))
+        redo = menu.addAction(tr("Redo"), self._on_redo)
+        redo.setEnabled(bool(self.viewport.history.redo_stack))
+
+        menu.exec(global_pos)
 
     def _on_heal_overlaps(self) -> None:
         cmd = HealOverlapsCommand()

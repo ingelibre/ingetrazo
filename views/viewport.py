@@ -1937,6 +1937,21 @@ class Viewport(QOpenGLWidget):
         super().leaveEvent(ev)
 
     # ---- Input --------------------------------------------------------------
+    def contextMenuEvent(self, ev) -> None:
+        """Right-click: select what's under the cursor (SketchUp-style) and open
+        a context menu of actions relevant to the current selection."""
+        win = self.window()
+        if not hasattr(win, "show_viewport_context_menu"):
+            return
+        x, y = ev.pos().x(), ev.pos().y()
+        picked = (self.pick_group(x, y) or self.pick_edge(x, y)
+                  or self.pick_geopath(x, y) or self.pick_dimension(x, y)
+                  or self.pick_face(x, y))
+        if picked is not None and picked not in self.scene.selection:
+            self.scene.select([picked])
+            self.update()
+        win.show_viewport_context_menu(ev.globalPos())
+
     def mousePressEvent(self, ev) -> None:
         if ev.button() == Qt.MiddleButton:
             self._last_pos = ev.position().toPoint()

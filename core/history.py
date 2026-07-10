@@ -471,6 +471,21 @@ class DeleteGeoPathsCommand(Command):
         scene.version += 1
 
 
+class ToggleGeoPathClosedCommand(Command):
+    """Flip open ↔ closed (loop) on a set of georef paths."""
+
+    def __init__(self, paths) -> None:
+        self._paths = list(paths)
+
+    def _flip(self, scene) -> None:
+        for p in self._paths:
+            p.closed = not p.closed
+        scene.version += 1
+
+    do = _flip
+    undo = _flip
+
+
 class MoveGeoPathNodeCommand(Command):
     """Move one node of a georef path to a new position (undoable)."""
 
