@@ -219,6 +219,34 @@ def test_deleting_big_rectangle_leaves_clean_faces():
     assert areas == [10.1, 30.2]                    # sector + rest of disc
 
 
+def test_tangent_lines_split_circle_into_arcs():
+    # Two lines merely TOUCHING the circle at vertices (endpoint snap — no
+    # crossing, no edge splits) must still break the curve there, SketchUp-
+    # style: deleting the arc between the tangent points leaves the rest.
+    from core.edits import build_add_edge
+    from core.history import EraseSelectionCommand
+    scene = Scene()
+    hist = History(scene)
+    cmd, pts = _draw_circle(scene)
+    hist.execute(cmd)
+    hist.execute(build_add_edge(scene, QVector3D(9, 2, 0), pts[0]))
+    hist.execute(build_add_edge(scene, QVector3D(2, 9, 0), pts[6]))
+    ids = sorted({e.curve for e in scene.mesh.edges if e.curve is not None})
+    sizes = sorted(len([e for e in scene.mesh.edges if e.curve == c])
+                   for c in ids)
+    assert sizes == [6, 18]                     # two arcs at the touch points
+    short = min(ids, key=lambda c: len([e for e in scene.mesh.edges
+                                        if e.curve == c]))
+    sel = scene.mesh.curve_edges(
+        next(e for e in scene.mesh.edges if e.curve == short))
+    hist.execute(EraseSelectionCommand(sel, []))
+    left = [e for e in scene.mesh.edges if e.curve is not None]
+    assert len(left) == 18                      # only the short arc died
+    hist.undo(), hist.undo(), hist.undo()
+    reunited = {e.curve for e in scene.mesh.edges if e.curve is not None}
+    assert len(reunited) == 1                   # undoing reunites the circle
+
+
 def test_plain_edge_has_no_curve():
     scene = Scene()
     e = scene.mesh.add_edge(QVector3D(0, 0, 0), QVector3D(1, 0, 0))

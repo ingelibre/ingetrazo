@@ -146,10 +146,18 @@ def _plan_faces(commands, faces_snapshot, simulated, sa, sb) -> None:
             faces_snapshot.append(Face(list(cycle)))
 
 
+def _scene_has_curves(scene) -> bool:
+    return any(getattr(e, "curve", None) is not None for e in scene.edges)
+
+
 def build_add_edge(scene, a: QVector3D, b: QVector3D, detect_faces: bool = True) -> Command:
     """Single-segment convenience: one drawn edge → one atomic command."""
     commands = plan_edge_commands(scene, [(a, b)], detect_faces=detect_faces)
-    if len(commands) == 1:
+    # When curves exist, even a single added edge can break a circle into
+    # contours (a tangent line landing on a curve vertex splits it in SketchUp),
+    # so it must go through SnapshotCompound, which runs the contour re-split —
+    # and whose undo restores the reunited curve.
+    if len(commands) == 1 and not _scene_has_curves(scene):
         return commands[0]
     # Splits/welds/hole-punches don't compose into a clean per-op inverse — undo
     # via one snapshot so it reverses exactly (no orphan edges/vertices left).
@@ -166,6 +174,6 @@ def build_add_edges(
     as a tool-managed face) → one atomic command."""
     commands = plan_edge_commands(scene, segments, detect_faces=detect_faces)
     commands.extend(extra)
-    if len(commands) == 1:
+    if len(commands) == 1 and not _scene_has_curves(scene):
         return commands[0]
     return SnapshotCompound(commands)
