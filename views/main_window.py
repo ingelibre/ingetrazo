@@ -116,6 +116,7 @@ class MainWindow(QMainWindow):
             lambda _v: self.profile_dock.on_scene_changed())
         self.viewport.sceneVersionChanged.connect(
             lambda _v: self._on_surfaces_scene_changed())
+        self.viewport.tilesChanged.connect(self._build_terrain)
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar(tr("Main"), self)
@@ -671,6 +672,7 @@ class MainWindow(QMainWindow):
         self._surf_sampler = DEMSampler(datum, parent=self)
         self._surf_datum = datum
         self._surf_sampler.changed.connect(self._rebuild_surfaces)
+        self._surf_sampler.changed.connect(self._build_terrain)
         return self._surf_sampler
 
     def _on_set_surface(self, mode) -> None:
@@ -716,6 +718,55 @@ class MainWindow(QMainWindow):
         """Re-drape surfaced paths when their nodes move (version bump)."""
         if any(getattr(p, "surface", None) for p in self.viewport.scene.geo_paths):
             self._rebuild_surfaces()
+
+    # ---- 3D terrain (Track G, G2 full) --------------------------------------
+    def set_terrain_enabled(self, on: bool) -> None:
+        self._terrain_on = on
+        if on:
+            self._build_terrain()
+        else:
+            self.viewport.scene.terrain = None
+            self.viewport.upload_terrain(None)
+            self.viewport.update()
+
+    def _build_terrain(self) -> None:
+        """(Re)build the 3D terrain from the DEM + base-map tiles (async-ready)."""
+        if not getattr(self, "_terrain_on", False):
+            return
+        from georef.terrain import build_mosaic, build_terrain
+        from georef.surface import ground_reference
+        scene = self.viewport.scene
+        datum = getattr(scene, "georef", None)
+        layer = getattr(scene, "tile_layer", None)
+        if datum is None or layer is None:
+            return
+        sampler = self._surface_dem(datum)
+        radius, zoom = layer.radius_m, layer.zoom
+        # Ensure the DEM covering the area, and the imagery tiles for the mosaic.
+        lo = self._local_to_ll(datum, -radius, -radius)
+        hi = self._local_to_ll(datum, radius, radius)
+        sampler.ensure_area(min(lo[0], hi[0]), min(lo[1], hi[1]),
+                            max(lo[0], hi[0]), max(lo[1], hi[1]))
+        self.viewport.prefetch_tiles(layer.source, layer.visible_tiles(datum), zoom)
+        ground = ground_reference(sampler, datum)
+        if ground is None:
+            return                         # DEM not ready — retry on changed
+        terrain = build_terrain(datum, sampler, ground, radius_m=radius,
+                                grid_n=96, zoom=zoom)
+        if terrain is None:
+            return                         # DEM grid not fully loaded yet
+        first = scene.terrain is None
+        terrain.texture_image = build_mosaic(terrain, layer.images)
+        terrain.visible = True
+        scene.terrain = terrain
+        self.viewport.upload_terrain(terrain)
+        # Frame the terrain only the first time it appears (not on async rebuilds).
+        if first:
+            mn, mx = terrain.bounds()
+            if mn is not None:
+                self.viewport.camera.set_view("iso")
+                self.viewport.camera.fit_to(mn, mx)
+        self.viewport.update()
 
     # ---- Undo / redo --------------------------------------------------------
     def _on_undo(self) -> None:

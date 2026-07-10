@@ -176,6 +176,9 @@ class Viewport(QOpenGLWidget):
     sceneVersionChanged = Signal(int)
     # Live measurement for the VCB box (e.g. "5.00 m", "3.00 × 2.00 m").
     measurementChanged = Signal(str)
+    # A base-map tile finished downloading (Track G) — lets the 3D terrain
+    # rebuild its mosaic as imagery arrives.
+    tilesChanged = Signal()
 
     # Warm cream (SketchUp-ish) painted on faces with no material colour.
     DEFAULT_FACE_COLOR = (0.92, 0.89, 0.81)
@@ -348,6 +351,12 @@ class Viewport(QOpenGLWidget):
         # World point on the profiled route to mark (profile→plan link), or None.
         self._route_marker = None
 
+        # 3D draped terrain (Track G, G2 full).
+        self._terrain_vao = None
+        self._terrain_vbo = None
+        self._terrain_count = 0
+        self._terrain_texture = None
+
     # ---- GL lifecycle -------------------------------------------------------
     def initializeGL(self) -> None:
         self._gl = QOpenGLFunctions(self.context())
@@ -386,6 +395,7 @@ class Viewport(QOpenGLWidget):
         self._rubber_vao, self._rubber_vbo = self._create_dynamic()
         self._preview_faces_vao, self._preview_faces_vbo = self._create_dynamic()
         self._tile_quad_vao, self._tile_quad_vbo = self._create_dynamic_uv()
+        self._terrain_vao, self._terrain_vbo = self._create_dynamic_uv()
 
     def resizeGL(self, w: int, h: int) -> None:
         # Qt passes framebuffer-pixel sizes here (already scaled by DPR), so
@@ -452,14 +462,18 @@ class Viewport(QOpenGLWidget):
         # backdrop, geometry always draws over it.
         self._render_tiles()
 
+        # 3D draped terrain (Track G, G2 full) — real depth-tested relief that
+        # replaces the flat map when enabled.
+        self._render_terrain()
+
         # Grid — depth-tested (so geometry hides it) but depth-write OFF, so
         # grid lines don't pollute the depth buffer at z=0 and accidentally
         # cull the bottom face of a freshly extruded box where they overlap.
-        # Hidden while the base map is showing: the modelling grid is a fixed
-        # 100 m square meant for object-scale work, so at km-scale map views it
-        # collapses into a noisy dense patch. Over terrain the map *is* the
+        # Hidden while the base map / terrain is showing: the modelling grid is a
+        # fixed 100 m square meant for object-scale work, so at km-scale map views
+        # it collapses into a noisy dense patch. Over terrain the map *is* the
         # ground reference (like Google Earth / SketchUp geo-location).
-        if not self._base_map_showing():
+        if not self._base_map_showing() and not self._terrain_showing():
             self._gl.glDepthMask(GL_FALSE)
             self._set_color(0.78, 0.80, 0.84, 1.0)
             self._grid_vao.bind()
@@ -721,6 +735,7 @@ class Viewport(QOpenGLWidget):
         if (layer is not None and layer.source.id == source_id
                 and z == layer.zoom):
             layer.images[(x, y, z)] = image
+            self.tilesChanged.emit()
             self.update()
 
     def reset_tiles(self) -> None:
@@ -765,7 +780,77 @@ class Viewport(QOpenGLWidget):
         self._tile_textures[key] = tex
         return tex
 
+    def _terrain_showing(self) -> bool:
+        t = getattr(self.scene, "terrain", None)
+        return t is not None and getattr(t, "visible", False)
+
+    def prefetch_tiles(self, source, tile_list, zoom) -> None:
+        """Request the given tiles so their images populate ``tile_layer.images``
+        (used to build the 3D terrain mosaic even when the flat map is hidden)."""
+        layer = getattr(self.scene, "tile_layer", None)
+        if layer is None:
+            return
+        fetcher = self._ensure_tile_fetcher()
+        for (x, y) in tile_list:
+            img = fetcher.request(source, x, y, zoom)
+            if img is not None:
+                layer.images[(x, y, zoom)] = img
+
+    def upload_terrain(self, terrain) -> None:
+        """Build the terrain VBO (pos+uv) and its mosaic texture from a
+        :class:`~georef.terrain.TerrainObject`."""
+        if terrain is None or not terrain.vertices or not terrain.triangles:
+            self._terrain_count = 0
+            return
+        self.makeCurrent()
+        try:
+            raw = array("f")
+            verts, uvs = terrain.vertices, terrain.uvs
+            for (i, j, k) in terrain.triangles:
+                for idx in (i, j, k):
+                    v = verts[idx]
+                    u, w = uvs[idx]
+                    raw.extend([v.x(), v.y(), v.z(), u, w])
+            data = raw.tobytes()
+            self._terrain_vbo.bind()
+            self._terrain_vbo.allocate(data, len(data))
+            self._terrain_vbo.release()
+            self._terrain_count = len(raw) // 5
+            if self._terrain_texture is not None:
+                self._terrain_texture.destroy()
+                self._terrain_texture = None
+            img = terrain.texture_image
+            if img is not None and not img.isNull():
+                self._terrain_texture = QOpenGLTexture(img)
+                self._terrain_texture.setWrapMode(QOpenGLTexture.ClampToEdge)
+                self._terrain_texture.setMinificationFilter(
+                    QOpenGLTexture.LinearMipMapLinear)
+                self._terrain_texture.setMagnificationFilter(QOpenGLTexture.Linear)
+        finally:
+            self.doneCurrent()
+        self.update()
+
+    def _render_terrain(self) -> None:
+        if not self._terrain_showing() or self._terrain_count == 0:
+            return
+        self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+        self._gl.glPolygonOffset(1.0, 1.0)
+        self._terrain_vao.bind()
+        if self._terrain_texture is not None:
+            self._program.setUniformValue(self._loc_use_tex, 1)
+            self._terrain_texture.bind(0)
+            self._gl.glDrawArrays(GL_TRIANGLES, 0, self._terrain_count)
+            self._terrain_texture.release(0)
+            self._program.setUniformValue(self._loc_use_tex, 0)
+        else:
+            self._set_color(0.55, 0.60, 0.52, 1.0)
+            self._gl.glDrawArrays(GL_TRIANGLES, 0, self._terrain_count)
+        self._terrain_vao.release()
+        self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
     def _render_tiles(self) -> None:
+        if self._terrain_showing():
+            return  # the 3D terrain replaces the flat map
         layer = getattr(self.scene, "tile_layer", None)
         datum = getattr(self.scene, "georef", None)
         if layer is None or datum is None or not getattr(layer, "visible", False):

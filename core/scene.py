@@ -43,6 +43,8 @@ class Scene:
     # Base-map tile layer (Track G, G1) — display-only, never welded into the
     # mesh. Runtime state (not serialised as geometry); requires ``georef``.
     tile_layer: object | None = None
+    # 3D draped terrain (Track G, G2 full) — display-only relief mesh, runtime.
+    terrain: object | None = None
 
     # ---- Geometry views (read-only over the *loose* mesh) -------------------
     # Tools, edits and topology operate on this (the loose geometry); groups are
@@ -97,7 +99,7 @@ class Scene:
     def clear(self) -> None:
         if (self.mesh.edges or self.mesh.faces or self.selection
                 or self.groups or self.dimensions or self.georef
-                or self.tile_layer or self.geo_paths):
+                or self.tile_layer or self.geo_paths or self.terrain):
             self.mesh.clear()
             self.groups.clear()
             self.dimensions.clear()
@@ -105,6 +107,7 @@ class Scene:
             self.selection.clear()
             self.georef = None
             self.tile_layer = None
+            self.terrain = None
             self.version += 1
 
     # ---- Queries ------------------------------------------------------------

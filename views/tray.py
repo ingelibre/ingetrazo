@@ -175,10 +175,14 @@ class BaseMapPanel(QWidget):
         self._show.toggled.connect(self._on_toggle_visible)
         grid.addWidget(self._show, 6, 0, 1, 2)
 
+        self._terrain3d = QCheckBox(tr("3D terrain"))
+        self._terrain3d.toggled.connect(self._on_toggle_terrain)
+        grid.addWidget(self._terrain3d, 7, 0, 1, 2)
+
         self._attribution = QLabel("")
         self._attribution.setWordWrap(True)
         self._attribution.setStyleSheet("color:#9aa3b2; font-size:10px; margin-top:4px;")
-        grid.addWidget(self._attribution, 7, 0, 1, 2)
+        grid.addWidget(self._attribution, 8, 0, 1, 2)
 
         self._sync_from_scene()
 
@@ -238,6 +242,9 @@ class BaseMapPanel(QWidget):
         if layer is not None:
             layer.visible = on
             self._window.viewport.update()
+
+    def _on_toggle_terrain(self, on: bool) -> None:
+        self._window.set_terrain_enabled(on)
 
     def _sync_from_scene(self) -> None:
         """Reflect a datum/layer already on the scene (e.g. loaded from .igz).
