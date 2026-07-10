@@ -202,6 +202,12 @@
   "OpenStreetMap (streets)": "OpenStreetMap (calles)",
 
   "Path": "Ruta",
+  "Import georef (KML / GeoJSON)…": "Importar georref (KML / GeoJSON)…",
+  "Import georef": "Importar georref",
+  "Import failed": "Falló la importación",
+  "Georef (*.kml *.kmz *.geojson *.json);;All files (*)": "Georref (*.kml *.kmz *.geojson *.json);;Todos (*)",
+  "No lines or polygons found in the file.": "No se encontraron líneas ni polígonos en el archivo.",
+  "Imported {n} feature(s) from {name}": "Importadas {n} entidad(es) de {name}",
   "Convert Path to Geometry": "Convertir ruta en geometría",
   "Select a path to convert to geometry.": "Seleccioná una ruta para convertir en geometría.",
   "Open / Close path": "Abrir / Cerrar ruta",

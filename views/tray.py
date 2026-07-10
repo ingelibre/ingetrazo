@@ -261,6 +261,35 @@ class BaseMapPanel(QWidget):
         self._window.viewport.reset_tiles()
         self._frame_camera(max(self._capture_w, self._capture_l) / 2.0)
 
+    def setup_for_import(self, datum, geo_paths) -> None:
+        """After a georef import: anchor the base map at the imported data with a
+        reference capture covering it, so 'Show base map' verifies the location."""
+        from PySide6.QtCore import QSignalBlocker
+        src = self._current_source() or PRESETS[DEFAULT_SOURCE_ID]
+        scene = self._window.viewport.scene
+        pts = [p for gp in geo_paths for p in gp.points]
+        if not pts:
+            return
+        minx = min(p.x() for p in pts)
+        maxx = max(p.x() for p in pts)
+        miny = min(p.y() for p in pts)
+        maxy = max(p.y() for p in pts)
+        margin = 0.15 * max(maxx - minx, maxy - miny, 200.0)
+        cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+        self._capture_w = (maxx - minx) + 2 * margin
+        self._capture_l = (maxy - miny) + 2 * margin
+        layer = TileLayer(src, zoom=self._zoom.value())
+        layer.set_rectangle(self._capture_w, self._capture_l, cx=cx, cy=cy)
+        layer.cap_detail(datum, max_tiles=500)
+        layer.visible = self._show.isChecked()
+        scene.tile_layer = layer
+        self._attribution.setText(src.attribution)
+        blockers = [QSignalBlocker(w) for w in (self._lat, self._lon)]
+        self._lat.setValue(datum.lat)
+        self._lon.setValue(datum.lon)
+        del blockers
+        self._window.viewport.reset_tiles()
+
     def _frame_camera(self, radius: float) -> None:
         from PySide6.QtGui import QVector3D
         vp = self._window.viewport

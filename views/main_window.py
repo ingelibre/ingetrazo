@@ -364,6 +364,10 @@ class MainWindow(QMainWindow):
         import_obj_action.triggered.connect(self._on_import_obj)
         actions.append(import_obj_action)
 
+        import_geo_action = QAction(tr("Import georef (KML / GeoJSON)…"), self)
+        import_geo_action.triggered.connect(self._on_import_georef)
+        actions.append(import_geo_action)
+
         export_stl_action = QAction(tr("Export STL…"), self)
         export_stl_action.triggered.connect(self._on_export_stl)
         actions.append(export_stl_action)
@@ -876,6 +880,65 @@ class MainWindow(QMainWindow):
             return
         self.viewport.update()
         self.statusBar().showMessage(tr("Imported {name}", name=path.name), 3000)
+
+    def _on_import_georef(self) -> None:
+        """Import a KML/KMZ/GeoJSON alignment as georeferenced GeoPath traces —
+        located via the datum, ready to profile / measure (Track G)."""
+        from georef.geoimport import load_features
+        from georef.datum import SceneDatum
+        from georef.geopath import GeoPath
+        from core.history import AddGeoPathCommand, CompoundCommand
+
+        path_str, _ = QFileDialog.getOpenFileName(
+            self, tr("Import georef"), "",
+            tr("Georef (*.kml *.kmz *.geojson *.json);;All files (*)"))
+        if not path_str:
+            return
+        try:
+            feats = load_features(Path(path_str))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, tr("Import failed"), str(exc))
+            return
+        feats = [f for f in feats if len(f.points) >= 2]
+        if not feats:
+            self.statusBar().showMessage(
+                tr("No lines or polygons found in the file."), 4000)
+            return
+
+        scene = self.viewport.scene
+        datum = getattr(scene, "georef", None)
+        if datum is None:      # anchor the scene at the imported data's centre
+            pts = [p for f in feats for p in f.points]
+            datum = SceneDatum(sum(p[0] for p in pts) / len(pts),
+                               sum(p[1] for p in pts) / len(pts))
+            scene.georef = datum
+
+        cmds = []
+        for f in feats:
+            local = [datum.geodetic_to_local(la, lo) for la, lo in f.points]
+            cmds.append(AddGeoPathCommand(GeoPath(local, closed=f.closed,
+                                                  name=f.name)))
+        self.viewport.history.execute(
+            cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
+
+        # Sync the base-map panel + set a reference capture around the import.
+        self.tray.base_map.setup_for_import(datum, scene.geo_paths)
+        # Frame the imported traces (top view).
+        self._frame_geo_paths(scene.geo_paths)
+        self.statusBar().showMessage(
+            tr("Imported {n} feature(s) from {name}").format(
+                n=len(feats), name=Path(path_str).name), 4000)
+
+    def _frame_geo_paths(self, paths) -> None:
+        from PySide6.QtGui import QVector3D
+        pts = [p for gp in paths for p in gp.points]
+        if not pts:
+            return
+        mn = QVector3D(min(p.x() for p in pts), min(p.y() for p in pts), 0.0)
+        mx = QVector3D(max(p.x() for p in pts), max(p.y() for p in pts), 0.0)
+        self.viewport.camera.set_view("top")
+        self.viewport.camera.fit_to(mn, mx)
+        self.viewport.update()
 
     def _on_export_stl(self) -> None:
         self._export("STL", "stl", tr("STL mesh (*.stl)"), stl_format.save_stl)
