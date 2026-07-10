@@ -93,12 +93,20 @@ class SelectTool(Tool):
             if not additive:
                 viewport.scene.clear_selection()
         else:
-            # A face on a curved surface (a cylinder's side) selects as the whole
-            # surface — every face joined to it by soft edges, SketchUp-style.
-            picked = (viewport.scene.mesh.surface_of(entity)
-                      if isinstance(entity, Face) else [entity])
+            picked = self._expand(viewport, entity)
             viewport.scene.select(picked, additive=additive)
         viewport.update()
+
+    @staticmethod
+    def _expand(viewport, entity):
+        """Grow a pick to its natural whole: a curved surface (faces joined by
+        soft edges) for a face, or the whole drawn curve (circle/arc) for one of
+        its segments — SketchUp-style. Plain entities select alone."""
+        if isinstance(entity, Face):
+            return viewport.scene.mesh.surface_of(entity)
+        if isinstance(entity, Edge) and getattr(entity, "curve", None) is not None:
+            return viewport.scene.mesh.curve_edges(entity)
+        return [entity]
 
     def on_hover(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport

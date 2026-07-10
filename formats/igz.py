@@ -61,6 +61,8 @@ def _edge_json(e) -> dict:
              "b": [e.b.x(), e.b.y(), e.b.z()]}
     if getattr(e, "soft", False):
         entry["soft"] = True
+    if getattr(e, "curve", None) is not None:
+        entry["curve"] = e.curve
     return entry
 
 
@@ -148,11 +150,18 @@ def load_into(scene, path: Path) -> None:
 
 
 def _load_mesh(mesh, payload) -> None:
+    import core.mesh as _mesh_mod
     for raw in payload.get("edges", []):
         try:
             edge = mesh.add_edge(QVector3D(*raw["a"]), QVector3D(*raw["b"]))
             if raw.get("soft"):
                 edge.soft = True
+            cid = raw.get("curve")
+            if cid is not None:
+                edge.curve = cid
+                # Keep new curves unique after loading stored ids.
+                if cid >= _mesh_mod._CURVE_COUNTER:
+                    _mesh_mod._CURVE_COUNTER = cid + 1
         except ValueError:
             pass  # degenerate edge in the document — skip
     for raw in payload.get("faces", []):

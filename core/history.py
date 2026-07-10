@@ -241,6 +241,23 @@ class EraseSelectionCommand(Command):
             scene.version += 1
 
 
+class TagCurveCommand(Command):
+    """Mark the edges of a drawn circle/arc loop as one curve (shared id), so
+    selecting a segment selects the whole curve. Runs as the last step of the
+    draw so the id is captured in the enclosing snapshot (redo keeps it); undo is
+    a no-op because that snapshot restores the pre-draw state."""
+
+    def __init__(self, loop_points, closed: bool = True) -> None:
+        self.pts = [QVector3D(p) for p in loop_points]
+        self.closed = closed
+
+    def do(self, scene) -> None:
+        scene.mesh.tag_curve(self.pts, self.closed)
+
+    def undo(self, scene) -> None:
+        pass
+
+
 class AddFaceCommand(Command):
     """Add a face, dividing any coplanar face it lands strictly inside.
 

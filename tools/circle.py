@@ -14,7 +14,7 @@ import math
 from PySide6.QtGui import QVector3D
 
 from core.edits import build_add_edges
-from core.history import AddFaceCommand
+from core.history import AddFaceCommand, TagCurveCommand
 from core.i18n import tr
 from core.triangulate import plane_axes
 from tools.base import Tool, ToolContext
@@ -128,7 +128,8 @@ class _RadialTool(Tool):
         # only a *swept* curve's vertical facets — done by Push/Pull, not here.
         cmd = build_add_edges(
             viewport.scene, segments, detect_faces=False,
-            extra=[AddFaceCommand(list(pts))])
+            extra=[AddFaceCommand(list(pts)),
+                   TagCurveCommand(list(pts), closed=True)])
         viewport.history.execute(cmd)
         self._reset()
         viewport.update()

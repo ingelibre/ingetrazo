@@ -33,6 +33,11 @@ from PySide6.QtGui import QVector3D
 # scale) are the same vertex. Same value as legacy ``core.topology``.
 _KEY_DECIMALS = 4
 
+# Monotonic id for drawn curves (circle/arc). Segments of one curve share it so
+# selection groups them, SketchUp-style. Session-scoped; ``.igz`` load bumps it
+# past any stored ids so new curves stay unique.
+_CURVE_COUNTER = 1
+
 # Distance tolerance for the stitch pass (a point this close to an edge counts
 # as on it). Matches the weld key resolution.
 _STITCH_TOL = 1e-4
@@ -78,7 +83,7 @@ class Edge:
     architecture). Maintained by the mesh.
     """
 
-    __slots__ = ("v0", "v1", "faces", "soft")
+    __slots__ = ("v0", "v1", "faces", "soft", "curve")
 
     def __init__(self, v0: Vertex, v1: Vertex) -> None:
         self.v0 = v0
@@ -87,6 +92,11 @@ class Edge:
         # A "soft" edge is a curve segment (circle/arc): kept in the topology but
         # hidden from the edge render, so the curve reads smooth, SketchUp-style.
         self.soft: bool = False
+        # Segments of one drawn curve (circle/arc) share a ``curve`` id, so
+        # selecting one segment selects the whole curve (SketchUp curve entity).
+        # ``None`` for a plain edge. A split just leaves each side's segments with
+        # the same id → the pieces select as separate arcs, like SketchUp.
+        self.curve: int | None = None
 
     # Position accessors keep parity with the legacy ``Edge.a`` / ``Edge.b`` so
     # read-only consumers (render, bounds) port with minimal churn.
@@ -263,6 +273,41 @@ class Mesh:
                 return e
         return None
 
+    def tag_curve(self, loop_points, closed: bool = True) -> int | None:
+        """Mark the edges connecting consecutive ``loop_points`` as one curve
+        (a fresh id), so selecting any segment selects the whole circle/arc.
+        Called by the circle/arc tools after they commit. Returns the id, or
+        ``None`` if no edges matched (e.g. the loop was split by other geometry).
+        """
+        global _CURVE_COUNTER
+        pts = list(loop_points)
+        if len(pts) < 2:
+            return None
+        cid = _CURVE_COUNTER
+        pairs = list(zip(pts, pts[1:]))
+        if closed:
+            pairs.append((pts[-1], pts[0]))
+        tagged = False
+        for a, b in pairs:
+            va, vb = self.vertex_at(a), self.vertex_at(b)
+            if va is None or vb is None:
+                continue
+            e = self.find_edge(va, vb)
+            if e is not None:
+                e.curve = cid
+                tagged = True
+        if tagged:
+            _CURVE_COUNTER += 1
+            return cid
+        return None
+
+    def curve_edges(self, edge) -> list:
+        """All edges sharing ``edge``'s curve id (``[edge]`` if it has none)."""
+        cid = getattr(edge, "curve", None)
+        if cid is None:
+            return [edge]
+        return [e for e in self.edges if e.curve == cid]
+
     def _link_edge(self, v0: Vertex, v1: Vertex) -> Edge:
         e = self.find_edge(v0, v1)
         if e is not None:
@@ -409,6 +454,7 @@ class Mesh:
             "vedges": {v: set(v.edges) for v in self.vertices},
             "efaces": {e: list(e.faces) for e in self.edges},
             "esoft": {e: e.soft for e in self.edges},
+            "ecurve": {e: e.curve for e in self.edges},
             "floop": {f: list(f.loop) for f in self.faces},
             "fholes": {f: [list(h) for h in f.hole_loops] for f in self.faces},
             "fattrs": {f: dict(f.attrs) for f in self.faces},
@@ -430,6 +476,8 @@ class Mesh:
             e.faces = list(fs)
         for e, soft in snap.get("esoft", {}).items():
             e.soft = soft
+        for e, cid in snap.get("ecurve", {}).items():
+            e.curve = cid
         for f, loop in snap["floop"].items():
             f.loop = list(loop)
         for f, holes in snap["fholes"].items():
