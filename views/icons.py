@@ -1,0 +1,221 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
+"""Toolbar icons, drawn programmatically with QPainter (Track: UI).
+
+The drawing tools are geometric primitives, so their icons *are* those shapes —
+a line is a line, a rectangle a rectangle. Drawing them ourselves keeps the set
+perfectly consistent, theme-aware (ink follows the palette), tiny, and free of
+any third-party icon licence. No SVG files, no QtSvg, no assets.
+
+``tool_icon(key)`` returns a :class:`QIcon` for a tool/nav key, or a null icon
+for an unknown key (the action keeps its text label).
+"""
+from __future__ import annotations
+
+import math
+
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QIcon,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QPolygonF,
+)
+from PySide6.QtWidgets import QApplication
+
+_PX = 48          # render size (QIcon scales down; big = crisp on HiDPI)
+_M = 8.0          # margin — drawing happens in [_M, _PX-_M]
+
+
+def _ink() -> QColor:
+    """Icon ink colour — follows the current palette's text colour so the icons
+    read on light and dark themes alike."""
+    app = QApplication.instance()
+    if app is not None:
+        c = app.palette().windowText().color()
+        # Nudge toward a medium ink so lines aren't harsh pure black.
+        return QColor(c.red(), c.green(), c.blue())
+    return QColor(40, 44, 52)
+
+
+def _canvas():
+    pm = QPixmap(_PX, _PX)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    ink = _ink()
+    pen = QPen(ink, 3.0)
+    pen.setJoinStyle(Qt.RoundJoin)
+    pen.setCapStyle(Qt.RoundStyle if hasattr(Qt, "RoundStyle") else Qt.RoundCap)
+    p.setPen(pen)
+    return pm, p, ink
+
+
+def _accent() -> QColor:
+    return QColor(243, 115, 41)   # IngeTrazo orange, for endpoint dots / handles
+
+
+# ---- Per-tool drawings ---------------------------------------------------------
+# Each takes (painter, ink) and draws into the _M.._PX-_M box.
+
+def _dot(p, x, y, r=3.2, color=None):
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(color or _accent())
+    p.drawEllipse(QPointF(x, y), r, r)
+    p.restore()
+
+
+def _select(p, ink):
+    # Arrow cursor.
+    path = QPainterPath()
+    path.moveTo(16, 12)
+    path.lineTo(16, 36)
+    path.lineTo(23, 29)
+    path.lineTo(28, 39)
+    path.lineTo(32, 37)
+    path.lineTo(27, 27)
+    path.lineTo(36, 27)
+    path.closeSubpath()
+    p.setBrush(QBrush(ink))
+    p.drawPath(path)
+
+
+def _line(p, ink):
+    p.drawLine(QPointF(12, 36), QPointF(36, 12))
+    _dot(p, 12, 36)
+    _dot(p, 36, 12)
+
+
+def _rectangle(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(12, 14, 24, 20))
+
+
+def _rotated_rect(p, ink):
+    poly = QPolygonF([QPointF(12, 26), QPointF(26, 12),
+                      QPointF(36, 22), QPointF(22, 36)])
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(poly)
+
+
+def _circle(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(24, 24), 13, 13)
+
+
+def _polygon(p, ink):
+    pts = []
+    for i in range(6):
+        a = math.radians(60 * i - 30)
+        pts.append(QPointF(24 + 13 * math.cos(a), 24 + 13 * math.sin(a)))
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(pts))
+
+
+def _arc(p, ink):
+    path = QPainterPath()
+    path.moveTo(12, 34)
+    path.quadTo(24, 6, 36, 34)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    _dot(p, 12, 34)
+    _dot(p, 36, 34)
+
+
+def _arc3(p, ink):
+    _arc(p, ink)
+    _dot(p, 24, 15)
+
+
+def _pushpull(p, ink):
+    # A face with an up arrow (extrude).
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(12, 26, 18, 12))
+    p.drawLine(QPointF(21, 26), QPointF(21, 10))
+    p.drawLine(QPointF(21, 10), QPointF(16, 16))
+    p.drawLine(QPointF(21, 10), QPointF(26, 16))
+
+
+def _offset(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(10, 12, 28, 24))
+    p.drawRect(QRectF(16, 18, 16, 12))
+
+
+def _move(p, ink):
+    p.drawLine(QPointF(24, 10), QPointF(24, 38))
+    p.drawLine(QPointF(10, 24), QPointF(38, 24))
+    for (x, y, dx1, dy1, dx2, dy2) in (
+        (24, 10, -4, 5, 4, 5), (24, 38, -4, -5, 4, -5),
+        (10, 24, 5, -4, 5, 4), (38, 24, -5, -4, -5, 4)):
+        p.drawLine(QPointF(x, y), QPointF(x + dx1, y + dy1))
+        p.drawLine(QPointF(x, y), QPointF(x + dx2, y + dy2))
+
+
+def _paint(p, ink):
+    # A bucket.
+    p.setBrush(Qt.NoBrush)
+    body = QPainterPath()
+    body.moveTo(14, 20)
+    body.lineTo(34, 20)
+    body.lineTo(30, 38)
+    body.lineTo(18, 38)
+    body.closeSubpath()
+    p.drawPath(body)
+    p.drawLine(QPointF(24, 20), QPointF(24, 12))
+    _dot(p, 30, 40, 2.6)
+
+
+def _dimension(p, ink):
+    p.drawLine(QPointF(12, 30), QPointF(36, 30))
+    p.drawLine(QPointF(12, 24), QPointF(12, 36))
+    p.drawLine(QPointF(36, 24), QPointF(36, 36))
+
+
+def _geopath(p, ink):
+    pen = p.pen()
+    pen.setStyle(Qt.DashLine)
+    p.setPen(pen)
+    p.drawPolyline(QPolygonF([QPointF(11, 34), QPointF(20, 16),
+                              QPointF(30, 30), QPointF(38, 14)]))
+    pen.setStyle(Qt.SolidLine)
+    p.setPen(pen)
+    for x, y in ((11, 34), (20, 16), (30, 30), (38, 14)):
+        _dot(p, x, y, 2.8)
+
+
+def _orbit(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawArc(QRectF(11, 11, 26, 26), 40 * 16, 280 * 16)
+    p.drawLine(QPointF(33, 12), QPointF(37, 16))
+    p.drawLine(QPointF(37, 16), QPointF(31, 18))
+
+
+def _pan(p, ink):
+    # Four-way arrows, thinner than move.
+    _move(p, ink)
+
+
+_DRAW = {
+    "select": _select, "line": _line, "rectangle": _rectangle,
+    "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
+    "arc": _arc, "arc3": _arc3, "pushpull": _pushpull, "offset": _offset,
+    "move": _move, "paint": _paint, "dimension": _dimension,
+    "geopath": _geopath, "orbit": _orbit, "pan": _pan,
+}
+
+
+def tool_icon(key: str) -> QIcon:
+    """Programmatic :class:`QIcon` for a tool/nav ``key`` (null if unknown)."""
+    draw = _DRAW.get(key)
+    if draw is None:
+        return QIcon()
+    pm, p, ink = _canvas()
+    draw(p, ink)
+    p.end()
+    return QIcon(pm)

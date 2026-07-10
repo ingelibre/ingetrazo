@@ -49,6 +49,7 @@ from tools.pushpull import PushPullTool
 from tools.rectangle import RectangleTool
 from tools.select import SelectTool
 from views.tray import GeorefTray, Tray
+from views.icons import tool_icon
 from views.viewport import Viewport
 
 
@@ -133,6 +134,11 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(True)
         toolbar.setFloatable(True)
         toolbar.setAllowedAreas(Qt.AllToolBarAreas)
+        from PySide6.QtCore import QSize
+        toolbar.setIconSize(QSize(22, 22))
+        # Icon above a short label — compact and readable; also stays tidy when
+        # the toolbar is docked vertically on a side.
+        toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         self.toolbar = toolbar
         self.addToolBar(Qt.TopToolBarArea, toolbar)
 
@@ -154,11 +160,12 @@ class MainWindow(QMainWindow):
             for key in keys:
                 tool = self._tools[key]
                 name = tr(tool.name)
-                label = f"{name} ({tool.shortcut})" if tool.shortcut else name
-                action = QAction(label, self)
+                action = QAction(name, self)      # short label under the icon
+                action.setIcon(tool_icon(key))
                 action.setCheckable(True)
                 if tool.shortcut:
                     action.setShortcut(QKeySequence(tool.shortcut))
+                    action.setToolTip(f"{name} ({tool.shortcut})")
                 action.triggered.connect(
                     lambda _checked, k=key: self._activate_tool(k))
                 self._tool_group.addAction(action)
@@ -180,7 +187,8 @@ class MainWindow(QMainWindow):
             ("orbit", "Orbit", "O", "Orbit (O) — left-drag to rotate the view"),
             ("pan", "Pan", "H", "Pan (H) — left-drag to slide the view"),
         ]:
-            action = QAction(f"{tr(label)} ({short})", self)
+            action = QAction(tr(label), self)
+            action.setIcon(tool_icon(key))
             action.setCheckable(True)
             action.setShortcut(QKeySequence(short))
             action.setToolTip(tr(tip))
