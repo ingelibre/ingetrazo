@@ -310,6 +310,58 @@ class Mesh:
             return [edge]
         return [e for e in self.edges if e.curve == cid]
 
+    def resplit_curves(self) -> None:
+        """Re-partition curve ids into contiguous contours (SketchUp).
+
+        A curve breaks at any vertex where other geometry attaches (a non-curve
+        edge is incident) or where its own connectivity isn't a simple chain
+        (curve-degree ≠ 2). Each resulting chain keeps/gets its own id — so a
+        circle crossed by a square's edges selects as two separate arcs, exactly
+        SketchUp's 'two contours'. A pristine circle stays one curve."""
+        global _CURVE_COUNTER
+        by_id: dict[int, list[Edge]] = {}
+        for e in self.edges:
+            if e.curve is not None:
+                by_id.setdefault(e.curve, []).append(e)
+        for cid, edges in by_id.items():
+            eset = set(edges)
+
+            def is_break(v) -> bool:
+                cdeg = sum(1 for e in v.edges if e in eset)
+                return cdeg != 2 or len(v.edges) != cdeg
+
+            # Walk chains between break vertices; a break-free component is a
+            # closed loop (one chain).
+            unvisited = set(edges)
+            chains: list[list[Edge]] = []
+            # Seed from break vertices first so open chains are walked end-to-end.
+            seeds = [e for e in edges if is_break(e.v0) or is_break(e.v1)]
+            for seed in seeds + edges:
+                if seed not in unvisited:
+                    continue
+                start_v = seed.v0 if is_break(seed.v0) else (
+                    seed.v1 if is_break(seed.v1) else seed.v0)
+                chain, v, e = [], start_v, seed
+                while e in unvisited:
+                    unvisited.discard(e)
+                    chain.append(e)
+                    v = e.other(v)
+                    if is_break(v):
+                        break
+                    nxt = next((n for n in v.edges if n in unvisited), None)
+                    if nxt is None:
+                        break
+                    e = nxt
+                chains.append(chain)
+            if len(chains) <= 1:
+                continue  # still one contour — keep the id stable
+            for i, chain in enumerate(chains):
+                new_id = cid if i == 0 else _CURVE_COUNTER
+                if i > 0:
+                    _CURVE_COUNTER += 1
+                for e in chain:
+                    e.curve = new_id
+
     def _link_edge(self, v0: Vertex, v1: Vertex) -> Edge:
         e = self.find_edge(v0, v1)
         if e is not None:
@@ -719,6 +771,11 @@ class Mesh:
         e0 = self._link_edge(v0, mid)
         e1_new = self.find_edge(mid, v1) is None
         e1 = self._link_edge(mid, v1)
+        # Sub-edges continue the split edge's curve/soft identity.
+        for sub, was_new in ((e0, e0_new), (e1, e1_new)):
+            if was_new:
+                sub.soft = edge.soft
+                sub.curve = edge.curve
         for face in incident:
             self._insert_into_face_loops(face, v0, v1, mid)
             if face not in e0.faces:

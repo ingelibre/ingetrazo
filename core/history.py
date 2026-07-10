@@ -99,17 +99,29 @@ class AddEdgeCommand(Command):
     command actually created the edge, so undo only removes an edge it owns
     (never the pre-existing one it merged into)."""
 
-    def __init__(self, a: QVector3D, b: QVector3D, merge: bool = True) -> None:
+    def __init__(self, a: QVector3D, b: QVector3D, merge: bool = True,
+                 soft: bool | None = None, curve: int | None = None) -> None:
         self.a = QVector3D(a)
         self.b = QVector3D(b)
         self.merge = merge  # kept for API parity; the mesh never duplicates
+        # Optional flags stamped on the resulting edge — used when a split
+        # replaces a curve/soft edge with sub-edges, so the pieces inherit.
+        self.soft = soft
+        self.curve = curve
         self.edge: Optional[Edge] = None
         self._owned = False
+
+    def _stamp(self, edge) -> None:
+        if self.soft is not None:
+            edge.soft = self.soft
+        if self.curve is not None:
+            edge.curve = self.curve
 
     def do(self, scene) -> None:
         m = scene.mesh
         if self._owned and self.edge is not None:
             m.relink_edge(self.edge)  # redo of an edge this command owns
+            self._stamp(self.edge)
             scene.version += 1
             return
         v0 = m.vertex_at(self.a)
@@ -118,10 +130,12 @@ class AddEdgeCommand(Command):
         if pre is not None:
             # The mesh already has this edge — merged no-op. Own nothing, so
             # ``self.edge`` stays None and undo leaves the pre-existing edge.
+            self._stamp(pre)
             scene.version += 1
             return
         self.edge = m.add_edge(self.a, self.b)
         self._owned = True
+        self._stamp(self.edge)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -924,6 +938,9 @@ class SnapshotCompound(Command):
                 cmd.do(scene)
             for f in heal_overlapping_faces(scene.mesh):
                 scene.selection.discard(f)
+            # A draw that split a curve leaves it in separate contours — break
+            # the curve ids there (SketchUp), before the snapshot so redo keeps it.
+            scene.mesh.resplit_curves()
             self.after = scene.mesh.capture_state()
         else:
             # Redo: re-running the delta plan wouldn't reproduce the splits, so
@@ -1115,6 +1132,19 @@ class HealOverlapsCommand(Command):
             scene.version += 1
 
 
+def _point_in_tri(p: QVector3D, t0: QVector3D, t1: QVector3D,
+                  t2: QVector3D) -> bool:
+    """Coplanar point-in-triangle via consistent cross-product orientation."""
+    n = QVector3D.crossProduct(t1 - t0, t2 - t0)
+    if n.length() < 1e-12:
+        return False
+    for a, b in ((t0, t1), (t1, t2), (t2, t0)):
+        c = QVector3D.crossProduct(b - a, p - a)
+        if QVector3D.dotProduct(c, n) < -1e-9:
+            return False
+    return True
+
+
 class RebuildPlanarFacesCommand(Command):
     """Rebuild the minimal faces of a flat drawing from its edge graph (a planar
     arrangement) — the deterministic, from-scratch replacement for the heuristic
@@ -1129,6 +1159,7 @@ class RebuildPlanarFacesCommand(Command):
 
     def do(self, scene) -> None:
         from core.arrangement import coplanar_plane, planar_rebuild
+        from core.topology import _point_on_seg_incl
 
         self.snapshot = scene.mesh.capture_state()
         mesh = scene.mesh
@@ -1146,14 +1177,37 @@ class RebuildPlanarFacesCommand(Command):
             normal = mesh.faces[0].normal()
             origin = mesh.faces[0].vertices[0]
         segments = [(e.v0.position, e.v1.position) for e in mesh.edges]
+        # Remember flagged edges and face attrs so the rebuild preserves them:
+        # output edges are sub-segments of input ones (re-stamp by lie-on), and
+        # output faces inherit attrs from the old face containing their interior.
+        flagged = [(QVector3D(e.a), QVector3D(e.b), e.soft, e.curve)
+                   for e in mesh.edges if e.soft or e.curve is not None]
+        old_attrs = [([tuple(t) for t in f.triangulate()], dict(f.attrs))
+                     for f in mesh.faces if f.attrs]
         edges, faces = planar_rebuild(segments, origin, normal)
 
         scene.selection.clear()
         mesh.clear()
         for a, b in edges:
-            mesh.add_edge(a, b)
+            e = mesh.add_edge(a, b)
+            for (fa, fb, soft, curve) in flagged:
+                if _point_on_seg_incl(e.a, fa, fb) and _point_on_seg_incl(e.b, fa, fb):
+                    e.soft, e.curve = soft, curve
+                    break
         for outer, holes in faces:
-            mesh.add_face(outer, holes or None)
+            f = mesh.add_face(outer, holes or None)
+            if f is None or not old_attrs:
+                continue
+            tris = f.triangulate()
+            if not tris:
+                continue
+            probe = (tris[0][0] + tris[0][1] + tris[0][2]) / 3.0
+            for old_tris, attrs in old_attrs:
+                if any(_point_in_tri(probe, t0, t1, t2)
+                       for t0, t1, t2 in old_tris):
+                    f.attrs.update(attrs)
+                    break
+        mesh.resplit_curves()
         self.rebuilt = len(faces)
         scene.version += 1
 

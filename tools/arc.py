@@ -17,7 +17,7 @@ import math
 from PySide6.QtGui import QVector3D
 
 from core.edits import build_add_edges
-from core.history import TagCurveCommand
+from core.history import RebuildPlanarFacesCommand, TagCurveCommand
 from core.triangulate import plane_axes
 from tools.base import Tool, ToolContext
 
@@ -178,8 +178,16 @@ class ArcTool(Tool):
         segments = [(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
         # The arc's segments are drawn (a 16-segment arc reads smooth); a
         # *swept* arc's vertical facets are hidden later by Push/Pull.
-        cmd = build_add_edges(viewport.scene, segments, detect_faces=True,
-                              extra=[TagCurveCommand(list(pts), closed=False)])
+        from tools.circle import flat_drawing
+        if flat_drawing(viewport.scene, pts):
+            # Flat drawing → deterministic planar arrangement (see circle.py).
+            cmd = build_add_edges(
+                viewport.scene, segments, detect_faces=False,
+                extra=[TagCurveCommand(list(pts), closed=False),
+                       RebuildPlanarFacesCommand()])
+        else:
+            cmd = build_add_edges(viewport.scene, segments, detect_faces=True,
+                                  extra=[TagCurveCommand(list(pts), closed=False)])
         viewport.history.execute(cmd)
         self._reset()
         viewport.update()
@@ -261,8 +269,16 @@ class ThreePointArcTool(Tool):
 
     def _commit(self, viewport, pts: list[QVector3D]) -> None:
         segments = [(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
-        cmd = build_add_edges(viewport.scene, segments, detect_faces=True,
-                              extra=[TagCurveCommand(list(pts), closed=False)])
+        from tools.circle import flat_drawing
+        if flat_drawing(viewport.scene, pts):
+            # Flat drawing → deterministic planar arrangement (see circle.py).
+            cmd = build_add_edges(
+                viewport.scene, segments, detect_faces=False,
+                extra=[TagCurveCommand(list(pts), closed=False),
+                       RebuildPlanarFacesCommand()])
+        else:
+            cmd = build_add_edges(viewport.scene, segments, detect_faces=True,
+                                  extra=[TagCurveCommand(list(pts), closed=False)])
         viewport.history.execute(cmd)
         self._reset()
         viewport.update()

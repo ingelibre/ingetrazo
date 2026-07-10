@@ -73,9 +73,14 @@ def plan_edge_commands(
             commands.append(DeleteEdgesCommand([edge], cascade_faces=False))
             if edge in simulated:
                 simulated.remove(edge)
+            # Sub-edges inherit the split edge's curve/soft flags, so cutting a
+            # circle leaves its pieces selectable as the same curve entity.
+            e_soft = getattr(edge, "soft", False) or None
+            e_curve = getattr(edge, "curve", None)
             for sa, sb in ((edge.a, point), (point, edge.b)):
                 if find_duplicate_edge(simulated, sa, sb) is None:
-                    commands.append(AddEdgeCommand(sa, sb))
+                    commands.append(
+                        AddEdgeCommand(sa, sb, soft=e_soft, curve=e_curve))
                     simulated.append(Edge(sa, sb))
 
             # Carry the split into faces sharing this edge — but not the face

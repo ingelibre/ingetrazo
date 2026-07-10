@@ -14,7 +14,20 @@ import math
 from PySide6.QtGui import QVector3D
 
 from core.edits import build_add_edges
-from core.history import AddFaceCommand, TagCurveCommand
+from core.history import (
+    AddFaceCommand,
+    RebuildPlanarFacesCommand,
+    TagCurveCommand,
+)
+
+
+def flat_drawing(scene, new_points) -> bool:
+    """Whether the whole drawing (existing mesh + the new loop) shares one
+    plane — the gate for the SketchUp-style planar arrangement, which forms
+    every intersection face deterministically. 3D models keep the naive path."""
+    from core.arrangement import coplanar_plane
+    verts = [v.position for v in scene.mesh.vertices] + list(new_points)
+    return coplanar_plane(verts) is not None
 from core.i18n import tr
 from core.triangulate import plane_axes
 from tools.base import Tool, ToolContext
@@ -126,10 +139,19 @@ class _RadialTool(Tool):
         segments = [(pts[i], pts[(i + 1) % n]) for i in range(n)]
         # The outline is drawn (a 24-segment circle reads round). What hides is
         # only a *swept* curve's vertical facets — done by Push/Pull, not here.
+        if flat_drawing(viewport.scene, pts):
+            # Flat drawing: rebuild the plane's faces from the edge graph — the
+            # deterministic SketchUp arrangement. A circle crossing a square
+            # splits both and every region (the quarter inside, the rest of the
+            # disc) becomes its own face; an isolated circle still yields the
+            # disc. TagCurve first so the rebuild carries the curve id over.
+            extra = [TagCurveCommand(list(pts), closed=True),
+                     RebuildPlanarFacesCommand()]
+        else:
+            extra = [AddFaceCommand(list(pts)),
+                     TagCurveCommand(list(pts), closed=True)]
         cmd = build_add_edges(
-            viewport.scene, segments, detect_faces=False,
-            extra=[AddFaceCommand(list(pts)),
-                   TagCurveCommand(list(pts), closed=True)])
+            viewport.scene, segments, detect_faces=False, extra=extra)
         viewport.history.execute(cmd)
         self._reset()
         viewport.update()
