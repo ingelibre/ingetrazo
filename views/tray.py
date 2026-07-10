@@ -166,23 +166,27 @@ class BaseMapPanel(QWidget):
         self._zoom.valueChanged.connect(self._on_zoom_changed)
         grid.addWidget(self._zoom, 4, 1)
 
+        self._find = QPushButton(tr("Search location…"))
+        self._find.clicked.connect(self._open_locator)
+        grid.addWidget(self._find, 5, 0, 1, 2)
+
         self._go = QPushButton(tr("Go to location"))
         self._go.clicked.connect(self._go_to)
-        grid.addWidget(self._go, 5, 0, 1, 2)
+        grid.addWidget(self._go, 6, 0, 1, 2)
 
         self._show = QCheckBox(tr("Show base map"))
         self._show.setChecked(True)
         self._show.toggled.connect(self._on_toggle_visible)
-        grid.addWidget(self._show, 6, 0, 1, 2)
+        grid.addWidget(self._show, 7, 0, 1, 2)
 
         self._terrain3d = QCheckBox(tr("3D terrain"))
         self._terrain3d.toggled.connect(self._on_toggle_terrain)
-        grid.addWidget(self._terrain3d, 7, 0, 1, 2)
+        grid.addWidget(self._terrain3d, 8, 0, 1, 2)
 
         self._attribution = QLabel("")
         self._attribution.setWordWrap(True)
         self._attribution.setStyleSheet("color:#9aa3b2; font-size:10px; margin-top:4px;")
-        grid.addWidget(self._attribution, 8, 0, 1, 2)
+        grid.addWidget(self._attribution, 9, 0, 1, 2)
 
         self._sync_from_scene()
 
@@ -217,6 +221,17 @@ class BaseMapPanel(QWidget):
             self._window.viewport.reset_tiles()
 
     # ---- Location -----------------------------------------------------------
+    def _open_locator(self) -> None:
+        """Open the map locator; on accept, drop the chosen lat/lon and go."""
+        from views.location_dialog import pick_location
+        src = self._current_source() or PRESETS[DEFAULT_SOURCE_ID]
+        result = pick_location(src, self._lat.value(), self._lon.value(), self)
+        if result is not None:
+            lat, lon = result
+            self._lat.setValue(lat)
+            self._lon.setValue(lon)
+            self._go_to()
+
     def _go_to(self) -> None:
         src = self._current_source()
         if src is None:
