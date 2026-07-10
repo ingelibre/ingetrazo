@@ -127,78 +127,87 @@ class MainWindow(QMainWindow):
             lambda _v: self._on_surfaces_scene_changed())
         self.viewport.tilesChanged.connect(self._build_terrain)
 
-    def _build_toolbar(self) -> None:
-        toolbar = QToolBar(tr("Tools"), self)
-        # Draggable + dockable to any edge or floating in its own window
-        # (SketchUp-style). Left/right docking stacks the buttons vertically.
-        toolbar.setMovable(True)
-        toolbar.setFloatable(True)
-        toolbar.setAllowedAreas(Qt.AllToolBarAreas)
+    def _new_toolbar(self, title: str, object_name: str) -> QToolBar:
+        """A separate, independently draggable/floatable icons-only toolbar
+        (SketchUp-style — Draw, Modify, View… each move on their own)."""
         from PySide6.QtCore import QSize
-        toolbar.setIconSize(QSize(24, 24))
-        # Icons only (SketchUp-style) — stays compact when docked vertically on a
-        # side; the name + shortcut live in each button's tooltip.
-        toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        self.toolbar = toolbar
-        self.addToolBar(Qt.TopToolBarArea, toolbar)
+        tb = QToolBar(title, self)
+        tb.setObjectName(object_name)
+        tb.setMovable(True)
+        tb.setFloatable(True)
+        tb.setAllowedAreas(Qt.AllToolBarAreas)
+        tb.setIconSize(QSize(24, 24))
+        tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.addToolBar(Qt.TopToolBarArea, tb)
+        return tb
 
+    def _add_tool_button(self, tb: QToolBar, key: str) -> QAction:
+        tool = self._tools[key]
+        name = tr(tool.name)
+        action = QAction(tool_icon(key), name, self)
+        action.setCheckable(True)
+        if tool.shortcut:
+            action.setShortcut(QKeySequence(tool.shortcut))
+            action.setToolTip(f"{name}  ({tool.shortcut})")
+        else:
+            action.setToolTip(name)
+        action.triggered.connect(lambda _c, k=key: self._activate_tool(k))
+        self._tool_group.addAction(action)
+        tb.addAction(action)
+        self._tool_actions[key] = action
+        return action
+
+    def _build_toolbar(self) -> None:
         self._tool_group = QActionGroup(self)
         self._tool_group.setExclusive(True)
+        self.toolbars: dict[str, QToolBar] = {}
 
-        # Tools grouped by task (separators between groups), like QGIS/SketchUp.
-        # Select stands alone; then Draw, Modify, Annotate, Georef.
-        groups = [
-            ["select"],
-            ["line", "rectangle", "rotated_rect", "circle", "polygon", "arc", "arc3"],
-            ["pushpull", "offset", "move", "paint"],
-            ["dimension"],
-            ["geopath"],
+        # One toolbar per task, each independently movable (SketchUp).
+        layout = [
+            ("main", tr("Main"), ["select", "paint"]),
+            ("draw", tr("Draw"),
+             ["line", "rectangle", "rotated_rect", "circle", "polygon",
+              "arc", "arc3"]),
+            ("modify", tr("Modify"), ["move", "pushpull", "offset"]),
+            ("annotate", tr("Annotate"), ["dimension", "geopath"]),
         ]
-        for gi, keys in enumerate(groups):
-            if gi > 0:
-                toolbar.addSeparator()
+        for oname, title, keys in layout:
+            tb = self._new_toolbar(title, oname)
+            self.toolbars[oname] = tb
             for key in keys:
-                tool = self._tools[key]
-                name = tr(tool.name)
-                action = QAction(name, self)
-                action.setIcon(tool_icon(key))
-                action.setCheckable(True)
-                if tool.shortcut:
-                    action.setShortcut(QKeySequence(tool.shortcut))
-                    action.setToolTip(f"{name}  ({tool.shortcut})")
-                else:
-                    action.setToolTip(name)
-                action.triggered.connect(
-                    lambda _checked, k=key: self._activate_tool(k))
-                self._tool_group.addAction(action)
-                toolbar.addAction(action)
-                self._tool_actions[key] = action
+                self._add_tool_button(tb, key)
 
         # Spacebar returns to Select, like SketchUp's pointer. Keep "S" too.
         select_action = self._tool_actions["select"]
         select_action.setShortcuts([QKeySequence("S"), QKeySequence(Qt.Key_Space)])
         select_action.setToolTip(tr("Select (Space / S)"))
 
-        # Camera-navigation buttons (SketchUp Orbit / Pan). Essential on a
-        # trackpad with no middle mouse button: click one, then left-drag to
-        # move the view. They live in the same exclusive group as the drawing
-        # tools, so entering nav unchecks the active tool and vice versa.
-        toolbar.addSeparator()
+        # View toolbar: camera nav (Orbit / Pan) + Zoom Extents + iso view.
+        view_tb = self._new_toolbar(tr("View"), "view")
+        self.toolbars["view"] = view_tb
         self._nav_actions: dict[str, QAction] = {}
         for key, label, short, tip in [
             ("orbit", "Orbit", "O", "Orbit (O) — left-drag to rotate the view"),
             ("pan", "Pan", "H", "Pan (H) — left-drag to slide the view"),
         ]:
-            action = QAction(tr(label), self)
-            action.setIcon(tool_icon(key))
+            action = QAction(tool_icon(key), tr(label), self)
             action.setCheckable(True)
             action.setShortcut(QKeySequence(short))
             action.setToolTip(tr(tip))
-            action.triggered.connect(lambda _checked, k=key: self._activate_nav(k))
+            action.triggered.connect(lambda _c, k=key: self._activate_nav(k))
             self._tool_group.addAction(action)
-            toolbar.addAction(action)
+            view_tb.addAction(action)
             self._nav_actions[key] = action
-        # Materials (colour swatches + textures) now live in the right-side Tray.
+        view_tb.addSeparator()
+        act_ze = QAction(tool_icon("zoom_extents"), tr("Zoom Extents"), self)
+        act_ze.setShortcut(QKeySequence("F2"))
+        act_ze.setToolTip(f"{tr('Zoom Extents')}  (F2)")
+        act_ze.triggered.connect(self._on_zoom_extents)
+        view_tb.addAction(act_ze)
+        act_iso = QAction(tool_icon("view_iso"), tr("Isometric"), self)
+        act_iso.setToolTip(tr("Isometric"))
+        act_iso.triggered.connect(lambda: self._on_standard_view("iso"))
+        view_tb.addAction(act_iso)
 
     def _build_menubar(self) -> None:
         menubar = self.menuBar()

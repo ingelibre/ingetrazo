@@ -201,12 +201,34 @@ def _pan(p, ink):
     _move(p, ink)
 
 
+def _zoom_extents(p, ink):
+    # Corner brackets framing the extent (fit-to-view).
+    for (cx, cy, sx, sy) in ((13, 13, 1, 1), (35, 13, -1, 1),
+                             (35, 35, -1, -1), (13, 35, 1, -1)):
+        p.drawLine(QPointF(cx, cy), QPointF(cx + 7 * sx, cy))
+        p.drawLine(QPointF(cx, cy), QPointF(cx, cy + 7 * sy))
+
+
+def _view_iso(p, ink):
+    # A cube seen in iso: hexagon outline + a Y to the centre.
+    pts = []
+    for i in range(6):
+        a = math.radians(60 * i - 90)
+        pts.append(QPointF(24 + 14 * math.cos(a), 24 + 14 * math.sin(a)))
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(pts))
+    c = QPointF(24, 24)
+    for i in (0, 2, 4):
+        p.drawLine(c, pts[i])
+
+
 _DRAW = {
     "select": _select, "line": _line, "rectangle": _rectangle,
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
     "arc": _arc, "arc3": _arc3, "pushpull": _pushpull, "offset": _offset,
     "move": _move, "paint": _paint, "dimension": _dimension,
     "geopath": _geopath, "orbit": _orbit, "pan": _pan,
+    "zoom_extents": _zoom_extents, "view_iso": _view_iso,
 }
 
 
