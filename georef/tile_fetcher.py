@@ -56,6 +56,11 @@ class TileFetcher(QObject):
     #: ``(source_id, x, y, z, reason)`` — the tile could not be fetched.
     tileFailed = Signal(str, int, int, int, str)
 
+    #: Max simultaneous downloads. A large capture asks for hundreds of tiles at
+    #: once; firing them all floods the network stack and freezes the UI, so
+    #: they queue and drain a few at a time.
+    _MAX_INFLIGHT = 8
+
     def __init__(self, cache: TileCache | None = None,
                  parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -63,6 +68,9 @@ class TileFetcher(QObject):
         self._nam = QNetworkAccessManager(self)
         # (source_id, x, y, z) -> QNetworkReply, so repeated asks coalesce.
         self._inflight: dict[tuple[str, int, int, int], QNetworkReply] = {}
+        # Pending downloads waiting for an in-flight slot.
+        self._queue: list[tuple[TileSource, int, int, int]] = []
+        self._queued: set[tuple[str, int, int, int]] = set()
 
     @property
     def cache(self) -> TileCache:
@@ -84,10 +92,21 @@ class TileFetcher(QObject):
             if img.loadFromData(QByteArray(cached)):
                 return img
             # Corrupt cache entry — fall through and re-download.
-        if key in self._inflight:
-            return None  # already downloading; the pending reply will emit
-        self._start_download(source, x, y, z)
+        if key in self._inflight or key in self._queued:
+            return None  # already downloading / queued; the reply will emit
+        if len(self._inflight) < self._MAX_INFLIGHT:
+            self._start_download(source, x, y, z)
+        else:
+            self._queue.append((source, x, y, z))
+            self._queued.add(key)
         return None
+
+    def _pump(self) -> None:
+        """Start queued downloads up to the concurrency limit."""
+        while self._queue and len(self._inflight) < self._MAX_INFLIGHT:
+            source, x, y, z = self._queue.pop(0)
+            self._queued.discard((source.id, x, y, z))
+            self._start_download(source, x, y, z)
 
     def _start_download(self, source: TileSource, x: int, y: int, z: int) -> None:
         req = QNetworkRequest(source.url(x, y, z))
@@ -103,6 +122,7 @@ class TileFetcher(QObject):
     def _on_finished(self, source_id: str, x: int, y: int, z: int,
                      reply: QNetworkReply) -> None:
         self._inflight.pop((source_id, x, y, z), None)
+        self._pump()   # a slot freed — start the next queued download
         try:
             if reply.error() != QNetworkReply.NetworkError.NoError:
                 self.tileFailed.emit(source_id, x, y, z, reply.errorString())
@@ -118,7 +138,9 @@ class TileFetcher(QObject):
             reply.deleteLater()
 
     def cancel_all(self) -> None:
-        """Abort every in-flight download (e.g. when the source changes)."""
+        """Abort every in-flight download and drop the queue (source changed)."""
         for reply in list(self._inflight.values()):
             reply.abort()
         self._inflight.clear()
+        self._queue.clear()
+        self._queued.clear()

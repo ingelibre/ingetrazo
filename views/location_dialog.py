@@ -53,8 +53,10 @@ class MapPicker(QWidget):
         # capture instead of panning. Committed as geographic corners so it
         # stays anchored to the ground as you pan/zoom.
         self._rect_mode = False
-        self._rect_screen = None       # (start_pt, cur_pt) while dragging
-        self._rect_ll = None           # (lat1, lon1, lat2, lon2) committed
+        self._drawing = False
+        self._rect_anchor = None       # (lat, lon) of the fixed corner
+        self._rect_ll = None           # (lat1, lon1, lat2, lon2), area-clamped
+        self._rect_clamped = False     # hit the max-area limit
         from georef.tile_fetcher import TileFetcher
         self._fetcher = TileFetcher(parent=self)
         self._fetcher.tileReady.connect(lambda *_: self.update())
@@ -137,22 +139,16 @@ class MapPicker(QWidget):
                     p.fillRect(int(sx), int(sy), TILE_PX, TILE_PX,
                                QColor(214, 217, 222))
 
-        # Capture rectangle: the drawn area to import.
-        rect_pts = None
-        if self._rect_screen is not None:
-            (p0, p1) = self._rect_screen
-            rect_pts = (p0.x(), p0.y(), p1.x(), p1.y())
-        elif self._rect_ll is not None:
+        # Capture rectangle: the drawn area to import (red when area-clamped).
+        if self._rect_ll is not None:
             la1, lo1, la2, lo2 = self._rect_ll
             x0, y0 = self._ll_to_screen(la1, lo1)
             x1, y1 = self._ll_to_screen(la2, lo2)
-            rect_pts = (x0, y0, x1, y1)
-        if rect_pts is not None:
-            x0, y0, x1, y1 = rect_pts
             rx, ry = min(x0, x1), min(y0, y1)
             rw, rh = abs(x1 - x0), abs(y1 - y0)
-            p.setBrush(QColor(255, 200, 40, 40))
-            p.setPen(QPen(QColor(255, 190, 30), 2))
+            edge = QColor(235, 70, 45) if self._rect_clamped else QColor(255, 190, 30)
+            p.setBrush(QColor(edge.red(), edge.green(), edge.blue(), 45))
+            p.setPen(QPen(edge, 2))
             p.drawRect(int(rx), int(ry), int(rw), int(rh))
             p.setBrush(Qt.NoBrush)
 
@@ -179,18 +175,44 @@ class MapPicker(QWidget):
         return img
 
     # ---- Interaction --------------------------------------------------------
+    # Max drawable capture area (km²). Caps by *area*, not per side, so a long
+    # thin road strip is fine while a huge block is clamped.
+    _MAX_AREA_KM2 = 400.0
+
+    def _clamp_ll(self, la0, lo0, la, lo):
+        """Clamp corner ``(la, lo)`` (anchored at ``la0, lo0``) so the rectangle
+        area stays under the limit, preserving its aspect (a strip stays a strip)."""
+        import math
+        dlat, dlon = la - la0, lo - lo0
+        length_m = abs(dlat) * 111320.0
+        width_m = abs(dlon) * 111320.0 * math.cos(math.radians(la0))
+        area_km2 = (length_m / 1000.0) * (width_m / 1000.0)
+        if area_km2 > self._MAX_AREA_KM2:
+            factor = math.sqrt(self._MAX_AREA_KM2 / area_km2)
+            self._rect_clamped = True
+            return la0 + dlat * factor, lo0 + dlon * factor
+        self._rect_clamped = False
+        return la, lo
+
     def mousePressEvent(self, ev) -> None:
         if ev.button() != Qt.LeftButton:
             return
         if self._rect_mode:
-            self._rect_screen = (ev.position(), ev.position())
+            la, lo = self._screen_to_ll(ev.position().x(), ev.position().y())
+            self._drawing = True
+            self._rect_anchor = (la, lo)
+            self._rect_ll = (la, lo, la, lo)
+            self._rect_clamped = False
         else:
             self._drag = ev.position()
             self.setCursor(Qt.ClosedHandCursor)
 
     def mouseMoveEvent(self, ev) -> None:
-        if self._rect_mode and self._rect_screen is not None:
-            self._rect_screen = (self._rect_screen[0], ev.position())
+        if self._rect_mode and self._drawing:
+            la0, lo0 = self._rect_anchor
+            la, lo = self._screen_to_ll(ev.position().x(), ev.position().y())
+            cla, clo = self._clamp_ll(la0, lo0, la, lo)
+            self._rect_ll = (la0, lo0, cla, clo)
             self.update()
             return
         if self._drag is None:
@@ -203,18 +225,17 @@ class MapPicker(QWidget):
         self.set_center(lat, lon)
 
     def mouseReleaseEvent(self, _ev) -> None:
-        if self._rect_mode and self._rect_screen is not None:
-            (p0, p1) = self._rect_screen
-            if abs(p1.x() - p0.x()) > 4 and abs(p1.y() - p0.y()) > 4:
-                la1, lo1 = self._screen_to_ll(p0.x(), p0.y())
-                la2, lo2 = self._screen_to_ll(p1.x(), p1.y())
-                self._rect_ll = (la1, lo1, la2, lo2)
+        if self._rect_mode and self._drawing:
+            self._drawing = False
+            la1, lo1, la2, lo2 = self._rect_ll
+            if abs(la2 - la1) > 1e-7 and abs(lo2 - lo1) > 1e-7:
                 self.rectChanged.emit()
-            self._rect_screen = None
+            else:
+                self._rect_ll = None
             self.update()
             return
         self._drag = None
-        self.setCursor(Qt.OpenHandCursor if not self._rect_mode else Qt.CrossCursor)
+        self.setCursor(Qt.CrossCursor if self._rect_mode else Qt.OpenHandCursor)
 
     def wheelEvent(self, ev) -> None:
         step = 1 if ev.angleDelta().y() > 0 else -1
@@ -335,7 +356,9 @@ class LocationDialog(QDialog):
         _, _, wm, lm = rect
         km2 = (wm / 1000.0) * (lm / 1000.0)
         msg = tr("Capture area: {w} × {l} m").format(w=f"{wm:.0f}", l=f"{lm:.0f}")
-        if km2 > 25.0:      # bigger than ~5×5 km → detail will be reduced
+        if self._map._rect_clamped:
+            msg += "  " + tr("(maximum area reached)")
+        elif km2 > 25.0:    # bigger than ~5×5 km → detail will be reduced
             msg += "  " + tr("(large — detail will be reduced to stay fast)")
         self._status.setText(msg)
 

@@ -67,3 +67,16 @@ def test_duplicate_request_coalesces(tmp_path):
 
 def test_default_cache_dir_ends_in_tiles():
     assert default_cache_dir().name == "tiles"
+
+
+def test_downloads_are_capped_and_queued(tmp_path):
+    # Asking for many tiles at once must not start them all — only up to the
+    # concurrency limit run; the rest queue (prevents the network flood/hang).
+    fetcher = TileFetcher(TileCache(tmp_path))
+    osm = PRESETS["osm"]
+    for x in range(30):
+        fetcher.request(osm, x, 0, 5)
+    assert len(fetcher._inflight) == fetcher._MAX_INFLIGHT
+    assert len(fetcher._queue) == 30 - fetcher._MAX_INFLIGHT
+    fetcher.cancel_all()
+    assert fetcher._inflight == {} and fetcher._queue == []
