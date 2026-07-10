@@ -102,30 +102,29 @@ SHADER_DIR = Path(__file__).resolve().parents[1] / "resources" / "shaders"
 
 # ---- Geometry helpers ------------------------------------------------------
 
-def _axes_vertices(pos_len: float = 1.0e5):
-    """SketchUp-style axes: a long solid line in the positive direction and a
-    dashed line in the negative. The dashes grow geometrically so ~40 of them
-    reach effectively infinity (denser near the origin, sparser far — reads like
-    a line receding to the horizon). Returns ``(coords, spans)`` where ``spans``
+_AXIS_DIRS = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
+
+
+def _axes_vertices(spacing: float, pos_len: float = 1.0e5):
+    """SketchUp-style axes: a long solid line in the positive direction and an
+    **evenly-spaced** dashed line in the negative (constant world ``spacing``, so
+    the dashes converge toward the horizon by perspective — like SketchUp, not
+    spreading apart). ``spacing`` scales with the camera distance so the on-screen
+    density stays stable across zoom. Returns ``(coords, spans)`` where ``spans``
     maps ``'x'|'y'|'z'`` → ``(first_vertex, vertex_count)`` for a per-axis draw."""
-    dirs = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
     coords = array("f")
     spans: dict[str, tuple[int, int]] = {}
-    base, growth, dash_frac, n = 0.5, 1.4, 0.5, 40
-    for name, (dx, dy, dz) in dirs.items():
+    spacing = max(spacing, 1e-4)
+    dash = spacing * 0.5
+    n = 140                          # dashes → reach = spacing*n past the model
+    for name, (dx, dy, dz) in _AXIS_DIRS.items():
         start = len(coords) // 3
-        # Positive: one long solid segment.
         coords.extend([0.0, 0.0, 0.0, dx * pos_len, dy * pos_len, dz * pos_len])
-        # Negative: dashes filling the first ``dash_frac`` of each interval
-        # ``[prev, base*growth**k]`` — starts AT the origin, real gaps between
-        # dashes, and each interval grows so ~40 reach effectively infinity.
-        prev = 0.0
         for k in range(n):
-            nxt = base * (growth ** k)
-            end = prev + dash_frac * (nxt - prev)
-            coords.extend([-dx * prev, -dy * prev, -dz * prev,
-                           -dx * end, -dy * end, -dz * end])
-            prev = nxt
+            t0 = k * spacing
+            t1 = t0 + dash
+            coords.extend([-dx * t0, -dy * t0, -dz * t0,
+                           -dx * t1, -dy * t1, -dz * t1])
         spans[name] = (start, len(coords) // 3 - start)
     return coords, spans
 
@@ -392,8 +391,9 @@ class Viewport(QOpenGLWidget):
         self._loc_use_tex = self._program.uniformLocation("u_use_texture")
         self._loc_tex = self._program.uniformLocation("u_tex")
 
-        _axes_coords, self._axes_spans = _axes_vertices()
-        self._axes_vao, self._axes_vbo, _ = self._upload_static(_axes_coords)
+        # Axes rebuilt per frame (dash spacing scales with zoom), so dynamic.
+        self._axes_vao, self._axes_vbo = self._create_dynamic()
+        self._axes_spans: dict = {}
 
         self._sky_vao, self._sky_vbo = self._create_dynamic()
         self._edges_vao, self._edges_vbo = self._create_dynamic()
@@ -551,10 +551,17 @@ class Viewport(QOpenGLWidget):
         # band below.
         self._draw_preview_faces()
 
-        # Axes — long solid positive + dashed negative per axis (SketchUp).
-        # Depth-write OFF so the ground axes don't cull geometry sitting on z=0;
-        # drawn BEFORE user edges so an edge along an axis wins the LEQUAL depth
-        # test and shows on top. Rubber-band stays on top (drawn last, no depth).
+        # Axes — long solid positive + evenly-dashed negative per axis (SketchUp).
+        # Dash spacing scales with the camera distance so the on-screen density
+        # stays stable across zoom. Depth-write OFF so the ground axes don't cull
+        # geometry sitting on z=0; drawn BEFORE user edges so an edge along an
+        # axis wins the LEQUAL depth test. Rubber-band stays on top (drawn last).
+        spacing = max(self.camera.distance * 0.03, 1e-4)
+        axes_coords, self._axes_spans = _axes_vertices(spacing)
+        data = axes_coords.tobytes()
+        self._axes_vbo.bind()
+        self._axes_vbo.allocate(data, len(data))
+        self._axes_vbo.release()
         self._axes_vao.bind()
         self._gl.glDepthMask(GL_FALSE)
         for name, rgb in (("x", (0.86, 0.22, 0.27)),   # red
