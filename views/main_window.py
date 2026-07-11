@@ -45,6 +45,7 @@ from tools.tape import TapeMeasureTool
 from tools.move import MoveTool
 from tools.rotate import RotateTool
 from tools.scale import ScaleTool
+from tools.followme import FollowMeTool
 from tools.rotated_rectangle import RotatedRectangleTool
 from tools.offset import OffsetTool
 from tools.paint import PaintTool
@@ -82,6 +83,7 @@ class MainWindow(QMainWindow):
             "move": MoveTool(),
             "rotate": RotateTool(),
             "scale": ScaleTool(),
+            "followme": FollowMeTool(),
             "paint": PaintTool(),
             "dimension": DimensionTool(),
             "eraser": EraserTool(),
@@ -177,7 +179,7 @@ class MainWindow(QMainWindow):
             ("draw", tr("Draw"),
              ["line", "rectangle", "rotated_rect", "circle", "polygon",
               "arc", "arc3", "center_arc"]),
-            ("modify", tr("Modify"), ["move", "rotate", "scale", "pushpull", "offset"]),
+            ("modify", tr("Modify"), ["move", "rotate", "scale", "pushpull", "followme", "offset"]),
             ("annotate", tr("Annotate"), ["tape", "dimension", "geopath"]),
         ]
         for oname, title, keys in layout:

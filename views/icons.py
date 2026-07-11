@@ -162,6 +162,22 @@ def _scale(p, ink):
     p.drawLine(QPointF(33, 15), QPointF(33, 21))
 
 
+
+def _followme(p, ink):
+    # A small profile square swept along a curved path.
+    p.setBrush(Qt.NoBrush)
+    path = QPainterPath()
+    path.moveTo(12, 36)
+    path.quadTo(14, 16, 36, 14)
+    p.drawPath(path)
+    p.save()
+    p.translate(12, 36)
+    p.rotate(-75)
+    p.drawRect(QRectF(-4.5, -4.5, 9, 9))
+    p.restore()
+    _dot(p, 36, 14)
+
+
 def _pushpull(p, ink):
     # A face with an up arrow (extrude).
     p.setBrush(Qt.NoBrush)
@@ -324,7 +340,7 @@ _DRAW = {
     "select": _select, "line": _line, "rectangle": _rectangle,
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc,
-    "rotate": _rotate, "scale": _scale, "pushpull": _pushpull, "offset": _offset,
+    "rotate": _rotate, "scale": _scale, "followme": _followme, "pushpull": _pushpull, "offset": _offset,
     "move": _move, "paint": _paint, "dimension": _dimension,
     "geopath": _geopath, "orbit": _orbit, "pan": _pan,
     "eraser": _eraser, "tape": _tape,

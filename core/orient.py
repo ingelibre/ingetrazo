@@ -239,19 +239,44 @@ def _face_side_state(face, tris_by_face: dict, rng: random.Random,
         others = [t for f, t in tris_by_face.items() if f is not face]
     else:
         others = None
-    # The region just past the centroid along the normal being outside is
+    # Probe from a point INSIDE the face's solid region. The loop centroid is
+    # wrong for a ring face: it falls in the hole (an annular cap's centroid
+    # sits in the tube's channel), and rays cast from the void misclassify
+    # the cap. The largest triangle's centroid always lies on material.
+    probe = _interior_probe(face)
+    # The region just past the probe along the normal being outside is
     # exactly the normal pointing outward.
-    ahead = ray_parity_outside(face.centroid(), n, others, rng,
+    ahead = ray_parity_outside(probe, n, others, rng,
                                packed=packed, mask=mask)
     if ahead is not False:
         return "outward" if ahead else None
     # The +normal side is inside. An inward-wound boundary face has its *other*
     # side outside; an interior partition is inside both ways.
-    behind = ray_parity_outside(face.centroid(), -n, others, rng,
+    behind = ray_parity_outside(probe, -n, others, rng,
                                 packed=packed, mask=mask)
     if behind is True:
         return "inward"
     return "interior" if behind is False else None
+
+
+def _interior_probe(face) -> QVector3D:
+    """A point on the face's solid material.
+
+    For a HOLED face the loop centroid falls in the hole (an annular tube cap
+    probes from the channel void and flips) — use the largest triangle's
+    centroid instead. Hole-free faces keep the plain centroid: the fuzz
+    rule-set is hardened around it, and switching those probes destabilised
+    seeds (prism 151, plan 179, cube 214) for no gain."""
+    if not face.hole_loops:
+        return face.centroid()
+    tris = face.triangulate()
+    if not tris:
+        return face.centroid()
+    t0, t1, t2 = max(
+        tris,
+        key=lambda t: QVector3D.crossProduct(t[1] - t[0],
+                                             t[2] - t[0]).lengthSquared())
+    return (t0 + t1 + t2) / 3.0
 
 
 # ---- Public API ------------------------------------------------------------
