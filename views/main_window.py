@@ -715,11 +715,21 @@ class MainWindow(QMainWindow):
         self._refresh_vcb()
 
     def _cancel_tool(self) -> None:
-        if isinstance(self.viewport.active_tool, PasteTool):
+        """Esc, escalating like the viewport: cancel an in-progress action
+        first; with nothing in progress, clear the selection."""
+        vp = self.viewport
+        if isinstance(vp.active_tool, PasteTool):
             self._activate_tool("select")
             return
-        if self.viewport.active_tool is not None:
-            self.viewport.active_tool.on_cancel(self.viewport)
+        if vp.active_tool is not None and vp._tool_busy(vp.active_tool):
+            vp.active_tool.on_cancel(vp)
+            return
+        if vp.scene.selection:
+            vp.scene.clear_selection()
+            vp.update()
+            return
+        if vp.active_tool is not None:
+            vp.active_tool.on_cancel(vp)
 
     # ---- View navigation ----------------------------------------------------
     def _on_zoom_extents(self) -> None:

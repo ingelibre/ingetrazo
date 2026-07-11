@@ -2093,6 +2093,21 @@ class Viewport(QOpenGLWidget):
                     best = path
         return best
 
+    @staticmethod
+    def _tool_busy(tool) -> bool:
+        """Whether the active tool has an operation in progress that Esc should
+        cancel before falling through to clearing the selection: an unfinished
+        chain (start_point / nodes), a drag (dragging / grab / node edit), or
+        an eraser stroke."""
+        for attr in ("start_point", "dragging", "grab", "_drag"):
+            if getattr(tool, attr, None):
+                return True
+        if getattr(tool, "nodes", None):
+            return True
+        if getattr(tool, "_stroke", False):
+            return True
+        return False
+
     def _snap_scene(self):
         """The scene the snap engine sees: real edges plus construction guides
         as pseudo-edges (``Guide.a/.b`` span the long segment), so drawing tools
@@ -2592,11 +2607,19 @@ class Viewport(QOpenGLWidget):
             if self.active_tool.on_key(self, ev.key(), ev.modifiers()):
                 return
 
-        # 3. Esc cancels the in-progress tool action (or clears the buffer
-        #    first if it has any content).
+        # 3. Esc, escalating (standard CAD): first clear the typed value buffer,
+        #    then cancel the tool's in-progress action (an unfinished chain, a
+        #    drag), and finally — nothing in progress — clear the selection.
         if ev.key() == Qt.Key_Escape:
             if self._value_buffer:
                 self._set_value_buffer("")
+                return
+            if self.active_tool is not None and self._tool_busy(self.active_tool):
+                self.active_tool.on_cancel(self)
+                return
+            if self.scene.selection:
+                self.scene.clear_selection()
+                self.update()
                 return
             if self.active_tool is not None:
                 self.active_tool.on_cancel(self)
