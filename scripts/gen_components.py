@@ -208,77 +208,66 @@ def car() -> Obj:
 
 
 def person_billboard() -> None:
-    """The face-me scale figure: a clean arch-viz silhouette PNG (flat slate,
-    real anthropometric proportions), tight-cropped so the billboard quad's
-    aspect maps exactly to 1.75 m tall."""
-    from PySide6.QtCore import QPointF, Qt
-    from PySide6.QtGui import (QBrush, QColor, QGuiApplication, QImage,
-                               QPainter, QPainterPath)
-    QGuiApplication.instance() or QGuiApplication([])
-    W, H = 640, 1024
-    img = QImage(W, H, QImage.Format_ARGB32)
-    img.fill(Qt.transparent)
-    p = QPainter(img)
-    p.setRenderHint(QPainter.Antialiasing, True)
-    ink = QColor(58, 66, 82)
-    SC = H * 0.97 / 175.0
+    """The face-me scale figure, from the bundled CC0 outline.
 
-    def pt(x, y):
-        return QPointF(W / 2 + x * SC, H * 0.985 - y * SC)
-
-    p.setBrush(QBrush(ink))
-    p.setPen(Qt.NoPen)
-    p.drawEllipse(pt(0, 163.5), 10.5 * SC, 11.5 * SC)
-    b = QPainterPath()
-    b.moveTo(pt(4.5, 152))
-    b.cubicTo(pt(13, 150), pt(20, 148), pt(22.5, 144))
-    b.cubicTo(pt(24.5, 140), pt(24.5, 134), pt(23.5, 126))
-    b.cubicTo(pt(22.5, 112), pt(21.5, 96), pt(20.5, 82))
-    b.cubicTo(pt(20.2, 77), pt(20.5, 73), pt(19.5, 69))
-    b.cubicTo(pt(18.0, 66), pt(16.5, 67), pt(16.3, 70))
-    b.cubicTo(pt(16.4, 74), pt(16.6, 78), pt(16.6, 82))
-    b.cubicTo(pt(17.0, 98), pt(17.4, 116), pt(18.2, 133))
-    b.cubicTo(pt(17.0, 136), pt(16.2, 133), pt(15.8, 124))
-    b.cubicTo(pt(15.2, 114), pt(14.8, 108), pt(15.2, 100))
-    b.cubicTo(pt(16.4, 94), pt(17.2, 90), pt(17.2, 85))
-    b.cubicTo(pt(16.4, 72), pt(13.0, 60), pt(11.0, 48))
-    b.cubicTo(pt(9.4, 36), pt(8.0, 20), pt(7.4, 7))
-    b.lineTo(pt(9.6, 1.2))
-    b.lineTo(pt(2.6, 0))
-    b.cubicTo(pt(2.9, 12), pt(3.1, 26), pt(3.4, 44))
-    b.cubicTo(pt(3.0, 58), pt(1.6, 68), pt(0.0, 76))
-    b.cubicTo(pt(-1.6, 68), pt(-3.0, 58), pt(-3.4, 44))
-    b.cubicTo(pt(-3.1, 26), pt(-2.9, 12), pt(-2.6, 0))
-    b.lineTo(pt(-9.6, 1.2))
-    b.lineTo(pt(-7.4, 7))
-    b.cubicTo(pt(-8.0, 20), pt(-9.4, 36), pt(-11.0, 48))
-    b.cubicTo(pt(-13.0, 60), pt(-16.4, 72), pt(-17.2, 85))
-    b.cubicTo(pt(-17.2, 90), pt(-16.4, 94), pt(-15.2, 100))
-    b.cubicTo(pt(-14.8, 108), pt(-15.2, 114), pt(-15.8, 124))
-    b.cubicTo(pt(-16.2, 133), pt(-17.0, 136), pt(-18.2, 133))
-    b.cubicTo(pt(-17.4, 116), pt(-17.0, 98), pt(-16.6, 82))
-    b.cubicTo(pt(-16.6, 78), pt(-16.4, 74), pt(-16.3, 70))
-    b.cubicTo(pt(-16.5, 67), pt(-18.0, 66), pt(-19.5, 69))
-    b.cubicTo(pt(-20.5, 73), pt(-20.2, 77), pt(-20.5, 82))
-    b.cubicTo(pt(-21.5, 96), pt(-22.5, 112), pt(-23.5, 126))
-    b.cubicTo(pt(-24.5, 134), pt(-24.5, 140), pt(-22.5, 144))
-    b.cubicTo(pt(-20, 148), pt(-13, 150), pt(-4.5, 152))
-    b.closeSubpath()
-    p.drawPath(b)
-    p.end()
-    # Tight crop so quad aspect = real proportions.
+    Renders ``resources/components/person_silhouette.svg`` ('Silhouette of
+    man standing and facing forward', Wikimedia Commons, CC0 1.0 — see
+    SOURCES.md) at high resolution and produces two variants: the flat-colour
+    arch-viz cutout (hair/skin/shirt/trousers/shoes bands + a soft side
+    shading) and the plain slate silhouette."""
     import numpy as np
-    buf = np.frombuffer(img.constBits(), np.uint8).reshape(H, W, 4)
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QGuiApplication, QImage, QPainter
+    from PySide6.QtSvg import QSvgRenderer
+    QGuiApplication.instance() or QGuiApplication([])
+    r = QSvgRenderer(str(OUT / "person_silhouette.svg"))
+    if not r.isValid():
+        print("person_silhouette.svg missing — billboard skipped")
+        return
+    vb = r.viewBoxF()
+    H = 1600
+    W = max(1, int(H * vb.width() / vb.height()))
+    img = QImage(W, H, QImage.Format_ARGB32)
+    img.fill(0)
+    q = QPainter(img)
+    r.render(q, QRectF(0, 0, W, H))
+    q.end()
+    buf = np.frombuffer(img.constBits(), np.uint8).reshape(
+        H, img.bytesPerLine() // 4, 4)[:, :W].copy()
     alpha = buf[:, :, 3]
     ys, xs = np.where(alpha > 8)
-    m = 4
-    crop = img.copy(int(xs.min()) - m, int(ys.min()) - m,
-                    int(xs.max() - xs.min()) + 2 * m,
-                    int(ys.max() - ys.min()) + 2 * m)
-    OUT.mkdir(parents=True, exist_ok=True)
-    crop.save(str(OUT / "person_billboard.png"))
-    print("wrote person_billboard.png",
-          f"({crop.width()}x{crop.height()})")
+    y0, y1, x0, x1 = ys.min(), ys.max(), xs.min(), xs.max()
+    mask = alpha > 0
+    yy = (np.arange(H)[:, None] - y0) / (y1 - y0)
+    for f0, f1, (b, g, rr) in (
+            (0.000, 0.060, (38, 46, 60)),      # hair
+            (0.060, 0.130, (150, 172, 208)),   # face / neck (BGR)
+            (0.130, 0.500, (128, 96, 52)),     # shirt — teal
+            (0.500, 0.955, (66, 60, 54)),      # trousers
+            (0.955, 1.001, (40, 38, 36))):     # shoes
+        band = mask & (yy >= f0) & (yy < f1)
+        buf[:, :, 0][band] = b
+        buf[:, :, 1][band] = g
+        buf[:, :, 2][band] = rr
+    t = np.clip((np.arange(W)[None, :] - x0) / ((x1 - x0) * 0.55), 0, 1)
+    factor = 0.86 + 0.14 * t
+    for c in range(3):
+        ch = buf[:, :, c].astype(np.float32)
+        ch[mask] *= np.broadcast_to(factor, (H, W))[mask]
+        buf[:, :, c] = np.clip(ch, 0, 255).astype(np.uint8)
+    m = 6
+    crop = buf[max(0, y0 - m):y1 + m, max(0, x0 - m):x1 + m]
+    ch2, cw = crop.shape[:2]
+    QImage(crop.tobytes(), cw, ch2, cw * 4, QImage.Format_ARGB32).save(
+        str(OUT / "person_billboard.png"))
+    sil = buf.copy()
+    for c, v in zip(range(3), (82, 66, 58)):
+        sil[:, :, c][mask] = v
+    crop2 = sil[max(0, y0 - m):y1 + m, max(0, x0 - m):x1 + m]
+    QImage(crop2.tobytes(), cw, ch2, cw * 4, QImage.Format_ARGB32).save(
+        str(OUT / "person_silhouette.png"))
+    print("wrote person_billboard.png + person_silhouette.png",
+          f"({cw}x{ch2})")
 
 
 def main() -> None:

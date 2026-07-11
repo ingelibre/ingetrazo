@@ -1,7 +1,7 @@
 # Component sources
 
 - `person_billboard.png` (flat-colour arch-viz cutout) and
-  `person_silhouette.png`/`.svg` — derived from "Man standing silhouette.svg"
+  `person_silhouette.png`/`.svg` — derived from "Silhouette of man standing and facing forward.svg"
   (Wikimedia Commons), dedicated to the public domain under **CC0 1.0**
   (no attribution required; noted here for provenance). Recoloured to the
   IngeTrazo slate tone and tight-cropped for the face-me billboard.
