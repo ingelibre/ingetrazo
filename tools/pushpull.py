@@ -607,9 +607,11 @@ class PushPullTool(Tool):
             mesh=self._group.mesh if self._group is not None else None))
         if self._refused:
             # The guard rolled the push back to keep the solid watertight; tell
-            # the user so the no-op isn't silent.
+            # the user so the no-op isn't silent — long timeout, it's easy to
+            # miss and the tool otherwise looks broken.
             viewport.flash_status(
-                tr("Push refused: would break the solid (left it unchanged)"))
+                tr("Push refused: would break the solid (left it unchanged)"),
+                6000)
         else:
             PushPullTool.last_distance = self.extrusion  # double-click repeats it
         self._reset()
@@ -634,12 +636,27 @@ class PushPullTool(Tool):
         before_edges = set(mesh.edges)
         guard = (mesh.capture_state()
                  if is_closed(mesh) and not _mesh_is_flat(mesh) else None)
+        fp_before = self._mesh_fingerprint(mesh) if guard is not None else None
         self._mutate_inner(scene)
         if guard is not None and not (is_closed(mesh) or _mesh_is_flat(mesh)):
             mesh.restore_state(guard)
             self._refused = True
             return
+        if (fp_before is not None and abs(self.extrusion) >= _MIN_EXTRUDE
+                and self._mesh_fingerprint(mesh) == fp_before):
+            # The rebuild digested the push back to the starting state (the
+            # known holed-face-between-levels class): geometrically a no-op.
+            # Flag it so the commit tells the user instead of failing silently.
+            self._refused = True
+            return
         self._soften_curve_facets(mesh, before_edges)
+
+    @staticmethod
+    def _mesh_fingerprint(mesh):
+        """Cheap canonical state: counts + the sorted vertex grid keys. Enough
+        to detect 'the push dissolved itself back to the original solid'."""
+        return (len(mesh.faces), len(mesh.edges),
+                tuple(sorted(_key(v.position) for v in mesh.vertices)))
 
     # The dihedral above which a swept seam reads as a *curve* facet (a
     # cylinder's side) rather than a real corner. cos(31.8°): a 24-side circle
