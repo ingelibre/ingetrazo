@@ -63,3 +63,76 @@ def test_explode_merges_group_back_into_loose_mesh():
     assert len(scene.mesh.faces) == 2           # back among the loose geometry
     assert hist.undo() is True
     assert len(scene.groups) == 1
+
+
+def test_group_keeps_soft_and_curve_flags_round_trip(tmp_path):
+    # Grouping a smooth cylinder must not expose its facet seams: the group's
+    # fresh mesh copies positions, so the soft/curve flags have to travel with
+    # it — and travel back out on explode. (The report: push a circle → clean
+    # cylinder; make a group → every vertical seam shows.)
+    import math
+
+    from PySide6.QtCore import QPointF, Qt
+
+    from core.history import ExplodeGroupCommand, History, MakeGroupCommand
+    from formats import igz
+    from tools.base import ToolContext
+    from tools.circle import CircleTool
+    from tools.pushpull import PushPullTool
+
+    class _Vp:
+        def __init__(self, scene):
+            self.scene = scene
+            self.history = History(scene)
+
+        def update(self):
+            pass
+
+        def set_hover(self, *_):
+            pass
+
+        def set_suppressed_faces(self, *_):
+            pass
+
+        def flash_status(self, *a, **k):
+            pass
+
+    scene = Scene()
+    vp = _Vp(scene)
+    t = CircleTool()
+    t.work_plane = None
+    for x in (0, 3):
+        t.on_click(ToolContext(viewport=vp, world=QVector3D(x, 0, 0),
+                               screen=QPointF(0, 0),
+                               modifiers=Qt.NoModifier, snap=None))
+    pp = PushPullTool()
+    pp.hovered_face = scene.mesh.faces[0]
+    pp._hover_group = None
+    pp.on_click(ToolContext(viewport=vp, world=QVector3D(0, 0, 0),
+                            screen=QPointF(0, 0),
+                            modifiers=Qt.NoModifier, snap=None))
+    pp.extrusion = 2.0
+    pp._commit(vp)
+    soft_before = sum(1 for e in scene.mesh.edges if e.soft)
+    curve_before = sum(1 for e in scene.mesh.edges if e.curve is not None)
+    assert soft_before == 24                      # the cylinder's facet seams
+
+    vp.history.execute(MakeGroupCommand(list(scene.mesh.faces),
+                                        list(scene.mesh.edges)))
+    group = scene.groups[0]
+    assert sum(1 for e in group.mesh.edges if e.soft) == soft_before
+    assert sum(1 for e in group.mesh.edges
+               if e.curve is not None) == curve_before
+
+    # .igz round-trip keeps the group smooth.
+    p = tmp_path / "cyl.igz"
+    igz.save_scene(scene, p)
+    scene2 = Scene()
+    igz.load_into(scene2, p)
+    assert sum(1 for e in scene2.groups[0].mesh.edges if e.soft) == soft_before
+
+    # Explode: flags travel back to the loose mesh.
+    vp.history.execute(ExplodeGroupCommand(group))
+    assert sum(1 for e in scene.mesh.edges if e.soft) == soft_before
+    assert sum(1 for e in scene.mesh.edges
+               if e.curve is not None) == curve_before

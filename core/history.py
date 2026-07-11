@@ -1090,12 +1090,34 @@ class MakeGroupCommand(Command):
     Snapshot undo (geometry crosses meshes — too tangled for a per-op inverse)."""
 
     def __init__(self, faces: Iterable[Face], edges: Iterable[Edge]) -> None:
+        faces = list(faces)
         self._face_loops = [
             ([QVector3D(v) for v in f.vertices],
              [[QVector3D(v) for v in h] for h in f.holes])
             for f in faces
         ]
         self._edge_ends = [(QVector3D(e.a), QVector3D(e.b)) for e in edges]
+        # Soft/curve flags must travel into the group's fresh mesh: without
+        # them, grouping a smooth cylinder suddenly shows every facet seam
+        # (soft edges hidden in the loose mesh, visible in the group) and its
+        # rims stop selecting as whole curves.
+        self._flagged: list = []
+
+        def note(e):
+            if e is not None and (getattr(e, "soft", False)
+                                  or getattr(e, "curve", None) is not None):
+                self._flagged.append(
+                    (QVector3D(e.a), QVector3D(e.b), e.soft, e.curve))
+
+        for f in faces:
+            for lp in (f.loop, *f.hole_loops):
+                n = len(lp)
+                for i in range(n):
+                    va, vb = lp[i], lp[(i + 1) % n]
+                    note(next((k for k in va.edges if k.other(va) is vb),
+                              None))
+        for e in edges:
+            note(e)
         self.snapshot: Optional[dict] = None
         self.group: Optional[Group] = None
 
@@ -1109,6 +1131,12 @@ class MakeGroupCommand(Command):
                            [[QVector3D(p) for p in h] for h in holes] or None)
         for a, b in self._edge_ends:
             gmesh.add_edge(QVector3D(a), QVector3D(b))
+        for a, b, soft, curve in self._flagged:
+            va, vb = gmesh.vertex_at(a), gmesh.vertex_at(b)
+            e = (gmesh.find_edge(va, vb)
+                 if va is not None and vb is not None else None)
+            if e is not None:
+                e.soft, e.curve = soft, curve
         self.group = Group(gmesh)
         # Remove the grouped geometry from the loose mesh.
         face_keysets = [frozenset(_key(p) for p in loop)
@@ -1159,6 +1187,17 @@ class ExplodeGroupCommand(Command):
             v0, v1 = m.vertex_at(e.a), m.vertex_at(e.b)
             if v0 is None or v1 is None or m.find_edge(v0, v1) is None:
                 m.add_edge(QVector3D(e.a), QVector3D(e.b))
+        # Soft/curve flags travel back out of the group (the mirror of
+        # MakeGroupCommand): an exploded cylinder must stay smooth and its
+        # rims keep selecting as whole curves.
+        for e in self.group.mesh.edges:
+            if getattr(e, "soft", False) or getattr(e, "curve", None) is not None:
+                v0, v1 = m.vertex_at(e.a), m.vertex_at(e.b)
+                k = (m.find_edge(v0, v1)
+                     if v0 is not None and v1 is not None else None)
+                if k is not None:
+                    k.soft, k.curve = e.soft, e.curve
+        m.resplit_curves()
         scene.groups.remove(self.group)
         scene.selection.discard(self.group)
         scene.version += 1

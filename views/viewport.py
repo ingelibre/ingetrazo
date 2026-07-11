@@ -1064,7 +1064,12 @@ class Viewport(QOpenGLWidget):
             if isinstance(ent, Edge):
                 sel_edges.append(ent)
             elif isinstance(ent, Group):
-                sel_edges.extend(ent.mesh.edges)
+                # Soft seams (a swept curve's vertical facets) are hidden in
+                # the normal render; the selection highlight must hide them
+                # too, or grouping a smooth cylinder suddenly shows every
+                # segment seam in orange.
+                sel_edges.extend(e for e in ent.mesh.edges
+                                 if not getattr(e, "soft", False))
         sel_data = array("f")
         for e in sel_edges:
             sel_data.extend([
