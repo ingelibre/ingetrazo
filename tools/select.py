@@ -108,6 +108,74 @@ class SelectTool(Tool):
             return viewport.scene.mesh.curve_edges(entity)
         return [entity]
 
+    def on_double_click(self, ctx: ToolContext) -> None:
+        """SketchUp double click: a face selects itself plus its bounding
+        edges; an edge selects itself plus its faces."""
+        viewport = ctx.viewport
+        entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
+        if not isinstance(entity, (Face, Edge)):
+            self.on_click(ctx)
+            return
+        mesh = viewport.scene.mesh
+        picked = list(self._expand(viewport, entity))
+        if isinstance(entity, Face):
+            for f in list(picked):
+                if not isinstance(f, Face):
+                    continue
+                for lp in (f.loop, *f.hole_loops):
+                    n = len(lp)
+                    for i in range(n):
+                        e = mesh.find_edge(lp[i], lp[(i + 1) % n])
+                        if e is not None:
+                            picked.append(e)
+        else:
+            for e in list(picked):
+                if isinstance(e, Edge):
+                    picked.extend(e.faces)
+        additive = bool(ctx.modifiers & Qt.ShiftModifier)
+        viewport.scene.select(picked, additive=additive)
+        viewport.update()
+
+    def on_triple_click(self, ctx: ToolContext) -> None:
+        """SketchUp triple click: everything physically connected to the
+        picked entity (the whole solid), walked through shared vertices."""
+        viewport = ctx.viewport
+        entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
+        if not isinstance(entity, (Face, Edge)):
+            self.on_click(ctx)
+            return
+        if isinstance(entity, Face):
+            seeds = list(entity.loop) + [v for h in entity.hole_loops
+                                         for v in h]
+        else:
+            seeds = [entity.v0, entity.v1]
+        seen_v = set(seeds)
+        edges: set = set()
+        faces: set = set()
+        stack = list(seeds)
+        while stack:
+            v = stack.pop()
+            for e in v.edges:
+                if e in edges:
+                    continue
+                edges.add(e)
+                for f in e.faces:
+                    if f in faces:
+                        continue
+                    faces.add(f)
+                    for lp in (f.loop, *f.hole_loops):
+                        for w in lp:
+                            if w not in seen_v:
+                                seen_v.add(w)
+                                stack.append(w)
+                w = e.other(v)
+                if w not in seen_v:
+                    seen_v.add(w)
+                    stack.append(w)
+        additive = bool(ctx.modifiers & Qt.ShiftModifier)
+        viewport.scene.select(list(edges) + list(faces), additive=additive)
+        viewport.update()
+
     def on_hover(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         viewport.set_hover(self._pick(viewport, ctx.screen.x(), ctx.screen.y()))

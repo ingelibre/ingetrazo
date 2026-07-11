@@ -280,3 +280,83 @@ def test_select_all_then_rotate_whole_model_is_rigid():
     d = min((v.position - QVector3D(0, 0, 0)).length()
             for v in scene.mesh.vertices)
     assert d < 1e-5                                # corner stayed on centre
+
+
+class _VpPick(_Vp):
+    def __init__(self, scene):
+        super().__init__(scene)
+        self._edge = None
+        self._face = None
+
+    def pick_edge(self, x, y):
+        return self._edge
+
+    def pick_face(self, x, y):
+        return self._face
+
+    def pick_dimension(self, x, y):
+        return None
+
+    def pick_geopath(self, x, y):
+        return None
+
+    def set_hover(self, *_):
+        pass
+
+
+def _cube(scene, vp):
+    from tools.pushpull import PushPullTool
+    _rect(scene, vp.history, 0, 0, 4, 4)
+    pp = PushPullTool()
+    pp.hovered_face = scene.mesh.faces[0]
+    pp._hover_group = None
+    pp.on_click(ToolContext(viewport=vp, world=QVector3D(0, 0, 0),
+                            screen=QPointF(0, 0),
+                            modifiers=Qt.NoModifier, snap=None))
+    pp.extrusion = 3.0
+    pp._commit(vp)
+
+
+def test_double_click_face_selects_face_plus_edges():
+    from tools.select import SelectTool
+
+    scene = Scene()
+    vp = _VpPick(scene)
+    vp.set_suppressed_faces = lambda *_: None
+    _cube(scene, vp)
+    top = next(f for f in scene.mesh.faces
+               if all(abs(v.position.z() - 3) < 1e-6 for v in f.loop))
+    vp._face = top
+    t = SelectTool()
+    t.on_double_click(ToolContext(viewport=vp, world=QVector3D(),
+                                  screen=QPointF(0, 0),
+                                  modifiers=Qt.NoModifier, snap=None))
+    sel = scene.selection
+    assert top in sel
+    from core.mesh import Edge
+    assert sum(1 for s in sel if isinstance(s, Edge)) == 4   # its 4 edges
+
+
+def test_triple_click_selects_whole_connected_solid():
+    from core.mesh import Edge, Face
+    from tools.select import SelectTool
+
+    scene = Scene()
+    vp = _VpPick(scene)
+    vp.set_suppressed_faces = lambda *_: None
+    _cube(scene, vp)
+    _rect(scene, vp.history, 10, 10, 12, 12)     # separate slab, NOT connected
+    top = next(f for f in scene.mesh.faces
+               if all(abs(v.position.z() - 3) < 1e-6 for v in f.loop))
+    vp._face = top
+    t = SelectTool()
+    t.on_triple_click(ToolContext(viewport=vp, world=QVector3D(),
+                                  screen=QPointF(0, 0),
+                                  modifiers=Qt.NoModifier, snap=None))
+    sel = scene.selection
+    faces = [s for s in sel if isinstance(s, Face)]
+    edges = [s for s in sel if isinstance(s, Edge)]
+    assert len(faces) == 6 and len(edges) == 12  # the whole cube
+    far = next(f for f in scene.mesh.faces
+               if f.loop[0].position.x() >= 10)
+    assert far not in sel                        # disconnected slab untouched

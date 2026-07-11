@@ -81,6 +81,11 @@ class Tool(ABC):
         click-click rhythm even when the user clicks fast."""
         self.on_click(ctx)
 
+    def on_triple_click(self, ctx: "ToolContext") -> None:
+        """Third click in place (SketchUp: select all connected). Defaults to
+        a plain click so unaware tools keep their rhythm."""
+        self.on_click(ctx)
+
     def on_box_select(self, viewport, rect, crossing: bool, additive: bool) -> None:
         """Rubber-band box released. ``rect`` is ``(x0, y0, x1, y1)`` in screen
         pixels (normalized so x0<=x1, y0<=y1). ``crossing`` is True for a

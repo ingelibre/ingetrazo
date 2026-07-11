@@ -303,6 +303,7 @@ class Viewport(QOpenGLWidget):
         # Hover highlight (Select tool). Not version-tracked — it changes with
         # the cursor, not with scene mutations — so it's uploaded per paint.
         self._hover_entity = None  # None | Edge | Face under the cursor
+        self._last_double = None   # (timestamp, pos) of the last double-click
         self._hover_faces_vao = None
         self._hover_faces_vbo = None
         self._hover_edges_vao = None
@@ -390,6 +391,7 @@ class Viewport(QOpenGLWidget):
         self._program = self._compile_program()
         self._loc_mvp = self._program.uniformLocation("u_mvp")
         self._loc_color = self._program.uniformLocation("u_color")
+        self._loc_back_color = self._program.uniformLocation("u_back_color")
         self._loc_pos = self._program.attributeLocation("a_pos")
         self._loc_uv = self._program.attributeLocation("a_uv")
         self._loc_use_tex = self._program.uniformLocation("u_use_texture")
@@ -504,6 +506,7 @@ class Viewport(QOpenGLWidget):
             # One draw per material colour (default cream for unpainted faces).
             for (r, g, b), start, count in self._face_runs:
                 self._set_color(r, g, b, 1.0)
+                self._set_back_face_color()
                 self._gl.glDrawArrays(GL_TRIANGLES, start, count)
             self._faces_vao.release()
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
@@ -732,8 +735,23 @@ class Viewport(QOpenGLWidget):
         cache[path] = tex
         return tex
 
+    #: Back-face colour, SketchUp's blue-grey: a visible back face means
+    #: "you are looking at the inside" (or at a genuinely inverted face) —
+    #: honest feedback the winding-proof shading used to hide.
+    BACK_FACE_COLOR = (0.62, 0.70, 0.78)
+
     def _set_color(self, r: float, g: float, b: float, a: float) -> None:
         self._program.setUniformValue(self._loc_color, QVector4D(r, g, b, a))
+        # Keep the back colour in sync by default so lines and highlights
+        # (where gl_FrontFacing is meaningless) render one colour; the face
+        # passes override it just before their draws.
+        self._program.setUniformValue(self._loc_back_color,
+                                      QVector4D(r, g, b, a))
+
+    def _set_back_face_color(self) -> None:
+        r, g, b = self.BACK_FACE_COLOR
+        self._program.setUniformValue(self._loc_back_color,
+                                      QVector4D(r, g, b, 1.0))
 
     def _shaded_color(self, base, normal):
         """Multiply ``base`` RGB by a subtle diffuse term from the face normal vs
@@ -1326,6 +1344,7 @@ class Viewport(QOpenGLWidget):
         self._preview_faces_vao.bind()
         for (r, g, b), start, count in runs:
             self._set_color(r, g, b, 1.0)
+            self._set_back_face_color()
             self._gl.glDrawArrays(GL_TRIANGLES, start, count)
         self._preview_faces_vao.release()
         self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
@@ -2416,6 +2435,16 @@ class Viewport(QOpenGLWidget):
             self.setCursor(Qt.ClosedHandCursor)
             return
         if ev.button() == Qt.LeftButton and self.active_tool is not None:
+            # Triple click: a press landing right after a double-click at the
+            # same spot (Qt has no native triple event). SketchUp: select all
+            # connected.
+            if self._is_triple_click(ev):
+                self._last_double = None
+                ctx = self._build_ctx(ev)
+                if ctx is not None:
+                    self.active_tool.on_triple_click(ctx)
+                    self.update()
+                return
             # Box-select tools defer the decision to release: a tiny drag is a
             # click, a real drag is a rubber-band box.
             if self.active_tool.box_select:
@@ -2424,6 +2453,16 @@ class Viewport(QOpenGLWidget):
                 self._box_cur = ev.position()
                 return
             self._dispatch_tool_click(ev)
+
+    def _is_triple_click(self, ev) -> bool:
+        from PySide6.QtWidgets import QApplication
+        last = self._last_double
+        if last is None:
+            return False
+        t, pos = last
+        return (ev.timestamp() - t
+                <= QApplication.doubleClickInterval()
+                and (ev.position() - pos).manhattanLength() < 8)
 
     def _dispatch_tool_click(self, ev, double: bool = False) -> None:
         """Forward a (double-)click to the active tool, then run the shared
@@ -2468,10 +2507,21 @@ class Viewport(QOpenGLWidget):
         """Qt replaces the second press of a double-click with this event, so
         route it to ``tool.on_double_click`` — whose default re-runs
         ``on_click``, keeping fast click-click rhythms working for drawing
-        tools while Push/Pull overrides it to repeat its last distance."""
+        tools while Push/Pull overrides it to repeat its last distance.
+
+        Box-select tools (Select) get the double-click DIRECTLY (no drag box
+        starts on a double), and the event is remembered so the next press in
+        place counts as a triple click."""
         if ev.button() != Qt.LeftButton or self.active_tool is None \
-                or self.nav_mode is not None or self.active_tool.box_select:
+                or self.nav_mode is not None:
             self.mousePressEvent(ev)
+            return
+        self._last_double = (ev.timestamp(), ev.position())
+        if self.active_tool.box_select:
+            ctx = self._build_ctx(ev)
+            if ctx is not None:
+                self.active_tool.on_double_click(ctx)
+                self.update()
             return
         self._dispatch_tool_click(ev, double=True)
 
