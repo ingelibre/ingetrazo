@@ -893,8 +893,10 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
     # includes a face this operation created (so user diagonals survive).
     while True:
         merged = False
+        ncache: dict = {}
+        scache: dict = {}
         for f0 in list(mesh.faces):
-            comp = _coplanar_component(mesh, f0, seedkeys)
+            comp = _coplanar_component(mesh, f0, seedkeys, ncache, scache)
             if len(comp) < 2:
                 continue
             if new_faces is not None and not (comp & new_faces):
@@ -910,7 +912,9 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
             break
 
 
-def _coplanar_component(mesh, f0, seedkeys: set) -> set:
+def _coplanar_component(mesh, f0, seedkeys: set,
+                        ncache: Optional[dict] = None,
+                        scache: Optional[dict] = None) -> set:
     """Maximal set of coplanar, edge-connected faces that touch the operation's
     seed. Whether the component is actually merged is gated separately on it
     containing a face the operation created (see ``run_stitch``).
@@ -918,13 +922,33 @@ def _coplanar_component(mesh, f0, seedkeys: set) -> set:
     An edge that also carries a *non-coplanar* face is a **crease** — a wall
     standing under the seam — and the component never crosses it: two roof
     slabs over a dividing wall stay two faces with a visible ridge,
-    SketchUp-style, instead of fusing into one slab floating over the wall."""
+    SketchUp-style, instead of fusing into one slab floating over the wall.
+
+    ``ncache``/``scache`` memoise per-face normalized normals and seed tests
+    within one (mutation-free) scan — Newell normals recomputed per comparison
+    dominated the push drag preview."""
+    if ncache is None:
+        ncache = {}
+    if scache is None:
+        scache = {}
+
+    def nrm(f):
+        v = ncache.get(f)
+        if v is None:
+            v = f.normal().normalized()
+            ncache[f] = v
+        return v
+
     def seeded(f):
-        return any(_key(v) in seedkeys for v in f.vertices)
+        v = scache.get(f)
+        if v is None:
+            v = any(_key(p) in seedkeys for p in f.vertices)
+            scache[f] = v
+        return v
 
     if not seeded(f0):
         return set()
-    n0 = f0.normal().normalized()
+    n0 = nrm(f0)
     comp = {f0}
     stack = [f0]
     while stack:
@@ -934,8 +958,8 @@ def _coplanar_component(mesh, f0, seedkeys: set) -> set:
                 e = mesh.find_edge(a, b)
                 if e is None:
                     continue
-                if any(abs(QVector3D.dotProduct(n0, h.normal().normalized()))
-                       < 0.999 for h in e.faces):
+                if any(abs(QVector3D.dotProduct(n0, nrm(h))) < 0.999
+                       for h in e.faces):
                     continue  # crease: a perpendicular face holds this edge
                 for g in e.faces:
                     if g in comp or not seeded(g):

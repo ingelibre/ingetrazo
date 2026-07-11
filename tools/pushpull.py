@@ -206,6 +206,7 @@ class PushPullTool(Tool):
         # is a clean translation of the cap (walls following through shared
         # vertices) rather than a strip-by-strip extrude.
         self._prism_cap: bool = False
+        self._drag_pre_oriented: bool = False
         self._anchor: QVector3D | None = None  # fixed centroid for measuring extrusion
         self._normal: QVector3D | None = None
         self._cap_positions: list[QVector3D] = []  # original cap vertices
@@ -276,6 +277,13 @@ class PushPullTool(Tool):
             self.dragging = True
             self._group = self._hover_group
             target = self._target_scene(viewport.scene)
+            # Establish the outward invariant ONCE per drag, before anchor and
+            # normal are captured. The preview restores its own snapshot (taken
+            # after this), so every frame sees an already-oriented mesh and
+            # _mutate_inner skips the per-frame parity pass — the drag on the
+            # eye model lagged at ~4 fps re-orienting the same mesh each frame.
+            orient_outward(target.mesh)
+            self._drag_pre_oriented = True
             self._anchor = face.centroid()
             self._normal = face.normal()
             self._attached, self._prism_cap = self._classify_base(target)
@@ -312,6 +320,8 @@ class PushPullTool(Tool):
             self.dragging = True
             self._group = grp
             target = self._target_scene(viewport.scene)
+            orient_outward(target.mesh)
+            self._drag_pre_oriented = True
             self._anchor = face.centroid()
             self._normal = face.normal()
             self._attached, self._prism_cap = self._classify_base(target)
@@ -372,7 +382,7 @@ class PushPullTool(Tool):
             viewport.update()
             return
         self._preview_snapshot = self._target_mesh(viewport.scene).capture_state()
-        self._mutate(viewport.scene)
+        self._mutate(viewport.scene, preview=True)
         viewport.scene.version += 1
         viewport.update()
 
@@ -641,7 +651,7 @@ class PushPullTool(Tool):
         self._reset()
         viewport.update()
 
-    def _mutate(self, scene) -> None:
+    def _mutate(self, scene, preview: bool = False) -> None:
         """Apply the push and stitch watertight, with a **BIM-grade refusal
         guard**: a push on a closed solid must leave a closed solid (or collapse
         it flat). If the operation would leave the mesh cracked — an ill-defined
@@ -661,7 +671,7 @@ class PushPullTool(Tool):
         guard = (mesh.capture_state()
                  if is_closed(mesh) and not _mesh_is_flat(mesh) else None)
         fp_before = self._mesh_fingerprint(mesh) if guard is not None else None
-        self._mutate_inner(scene)
+        self._mutate_inner(scene, preview)
         if guard is not None and not (is_closed(mesh) or _mesh_is_flat(mesh)):
             mesh.restore_state(guard)
             self._refused = True
@@ -701,7 +711,7 @@ class PushPullTool(Tool):
             if self._CURVE_FACET_COS < d < 0.99995:
                 e.soft = True
 
-    def _mutate_inner(self, scene) -> None:
+    def _mutate_inner(self, scene, preview: bool = False) -> None:
         """Apply the push to the target mesh (the scene's, or the locked
         group's) and stitch it watertight. Shared by the committed edit
         (wrapped in :class:`SnapshotMutation`) and the live preview, so the
@@ -749,15 +759,22 @@ class PushPullTool(Tool):
         # downstream decision (the wall quads' deterministic winding, the
         # per-plane rebuild's material-side classification) reads face normals.
         # If the base face flips, the drag distance flips with it so the push
-        # still goes where the user dragged. No-op on open meshes.
+        # still goes where the user dragged.
+        #
+        # PERF: on an OPEN mesh orient never flips a face — it only marks
+        # interior partitions for the volumetric rebuild's parity queries — so
+        # for open meshes the (expensive) pass is deferred until we know the
+        # push takes the solid path at all; a pure sheet push skips it. The
+        # per-drag flag skips repeating it every preview frame (the preview
+        # snapshot preserves the oriented state). Re-orienting the eye model
+        # each frame made the drag lag at ~4 fps.
+        entry_closed = is_closed(scene.mesh)
         pre_normal = face.normal()
-        orient_outward(scene.mesh)
+        if entry_closed and not self._drag_pre_oriented:
+            orient_outward(scene.mesh)
         normal = face.normal()
         if QVector3D.dotProduct(normal, pre_normal) < 0:
             d = -d
-        # A push on a *pre-existing solid* must stay watertight; one on a flat
-        # sheet (a recess carved into a surface) legitimately leaves open edges.
-        was_solid = not _mesh_is_flat(scene.mesh)
         allverts = [v.position for v in scene.mesh.vertices]
         # Split the base loop at any existing vertex sitting on one of its edges
         # (a T-junction where the host wall ends and an earlier overhang's floor
@@ -793,12 +810,29 @@ class PushPullTool(Tool):
         # sheet path — the volumetric plane rebuild reads an open sheet's
         # regions as phantoms and deletes the neighbours (xc.igz: pushing a
         # circle∩square lens made the rest of the drawing disappear). A base
-        # whose rim backs onto ONLY coplanar faces and whose connected
-        # component has open edges is pure sheet; any perpendicular backing
-        # (a room raised from the plan) keeps the solid pipeline.
-        if was_solid and all(kind == "coplanar" for kind, _ in kinds) \
-                and not _component_is_closed(scene.mesh, face):
-            was_solid = False
+        # whose rim (outer + hole loops) backs onto ONLY coplanar faces and
+        # whose connected component has open edges is pure sheet; any
+        # perpendicular backing (a room raised from the plan, a corner step's
+        # walls — matched even across unsplit T-junction edges, which is why
+        # this reads ``kinds`` and not raw edge sharing) keeps the solid
+        # pipeline.
+        sheet_fast = (not entry_closed
+                      and all(kind == "coplanar" for kind, _ in kinds))
+        if sheet_fast:
+            for h in base_holes:
+                m = len(h)
+                if any(classify_push_edge(face, h[i], h[(i + 1) % m],
+                                          faces)[0] != "coplanar"
+                       for i in range(m)):
+                    sheet_fast = False
+                    break
+        if sheet_fast and _component_is_closed(scene.mesh, face):
+            sheet_fast = False
+        was_solid = not _mesh_is_flat(scene.mesh) and not sheet_fast
+        if was_solid and not entry_closed and not self._drag_pre_oriented:
+            # Open mixed mesh taking the solid path: mark interior partitions
+            # for the rebuild's parity (orient never flips faces here).
+            orient_outward(scene.mesh)
 
         before = set(scene.mesh.faces)
         self._cap_cmd = None
@@ -850,8 +884,14 @@ class PushPullTool(Tool):
         # normal pointing out. The extrude can otherwise commit a closed solid
         # wound inconsistently (a flipped cap, or the base of a first flat→solid
         # extrude), invisible until you push that face and it extrudes *inward*.
-        # No-op when the result is legitimately open (a recess in a flat sheet).
-        orient_outward(scene.mesh)
+        # PERF: deferred during drag PREVIEW frames — the state is discarded
+        # next frame and the face shading is winding-proof (abs), so paying a
+        # parity pass per mouse move only made the drag lag; the commit runs
+        # it for real. A sheet-path push whose result is still open has
+        # nothing to orient either way (open meshes never flip; interior
+        # marking is recomputed by the next solid op).
+        if not preview and (not sheet_fast or is_closed(scene.mesh)):
+            orient_outward(scene.mesh)
 
     @staticmethod
     def _rebuild_planes_fixpoint(mesh, fresh: set, seedkeys: set,
@@ -1025,6 +1065,7 @@ class PushPullTool(Tool):
         self._normal = None
         self._cap_positions = []
         self._preview_snapshot = None
+        self._drag_pre_oriented = False
         self._inference_point = None
         self._inference_kind = None
         self._refused = False

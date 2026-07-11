@@ -502,7 +502,7 @@ def test_push_that_would_break_the_solid_is_refused(monkeypatch):
     before_vol = signed_volume(scene.mesh)
 
     # Stand in for any inner op that would crack the solid: drop a face.
-    def break_it(s):
+    def break_it(s, preview=False):
         m = tool._target_scene(s).mesh
         m.remove_face(m.faces[0])
 
