@@ -165,6 +165,7 @@
   "Prog {sta} · {elev} m": "Prog {sta} · {elev} m",
   "Properties": "Propiedades",
   "Properties panel": "Panel de propiedades",
+  "Protractor": "Transportador",
   "Push / Pull": "Empujar / Tirar",
   "Push refused: would break the solid (left it unchanged)": "Empuje rechazado: rompería el sólido (sin cambios)",
   "Push stopped at {d:.2f} m: going further would break the solid": "Push detenido en {d:.2f} m: seguir rompería el sólido",

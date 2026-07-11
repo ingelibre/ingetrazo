@@ -42,6 +42,7 @@ from tools.dimension import DimensionTool
 from tools.eraser import EraserTool
 from tools.geopath import GeoPathTool
 from tools.line import LineTool
+from tools.protractor import ProtractorTool
 from tools.tape import TapeMeasureTool
 from tools.move import MoveTool
 from tools.rotate import RotateTool
@@ -89,6 +90,7 @@ class MainWindow(QMainWindow):
             "dimension": DimensionTool(),
             "eraser": EraserTool(),
             "tape": TapeMeasureTool(),
+            "protractor": ProtractorTool(),
             # Georef trace (Track G) — draws a GeoPath, never mesh geometry.
             "geopath": GeoPathTool(),
         }
@@ -181,7 +183,7 @@ class MainWindow(QMainWindow):
              ["line", "rectangle", "rotated_rect", "circle", "polygon",
               "arc", "arc3", "center_arc"]),
             ("modify", tr("Modify"), ["move", "rotate", "scale", "pushpull", "followme", "offset"]),
-            ("annotate", tr("Annotate"), ["tape", "dimension", "geopath"]),
+            ("annotate", tr("Annotate"), ["tape", "protractor", "dimension", "geopath"]),
         ]
         for oname, title, keys in layout:
             tb = self._new_toolbar(title, oname)

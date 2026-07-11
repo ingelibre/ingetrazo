@@ -178,6 +178,27 @@ def _followme(p, ink):
     _dot(p, 36, 14)
 
 
+
+def _protractor(p, ink):
+    # A half-circle protractor with tick marks and an angled guide arm.
+    p.setBrush(Qt.NoBrush)
+    p.drawArc(QRectF(10, 10, 28, 28), 0, 180 * 16)
+    p.drawLine(QPointF(10, 24), QPointF(38, 24))       # the base
+    import math as _m
+    for adeg in (30, 60, 90, 120, 150):
+        a = _m.radians(adeg)
+        x1, y1 = 24 + 11 * _m.cos(a), 24 - 11 * _m.sin(a)
+        x2, y2 = 24 + 14 * _m.cos(a), 24 - 14 * _m.sin(a)
+        p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+    pen = p.pen()
+    pen.setStyle(Qt.DashLine)
+    p.setPen(pen)
+    p.drawLine(QPointF(24, 24), QPointF(40, 11))       # the angled guide
+    pen.setStyle(Qt.SolidLine)
+    p.setPen(pen)
+    _dot(p, 24, 24)
+
+
 def _pushpull(p, ink):
     # A face with an up arrow (extrude).
     p.setBrush(Qt.NoBrush)
@@ -343,7 +364,7 @@ _DRAW = {
     "rotate": _rotate, "scale": _scale, "followme": _followme, "pushpull": _pushpull, "offset": _offset,
     "move": _move, "paint": _paint, "dimension": _dimension,
     "geopath": _geopath, "orbit": _orbit, "pan": _pan,
-    "eraser": _eraser, "tape": _tape,
+    "eraser": _eraser, "tape": _tape, "protractor": _protractor,
     "zoom_extents": _zoom_extents, "view_iso": _view_iso,
     # Standard views — solid face = near, hollow face = opposite.
     "view_top": _view_cube("top", True),
