@@ -33,6 +33,7 @@ from core.history import (
 )
 from core.mesh import Edge, Face
 from formats import igz as igz_format
+from formats import dae as dae_format
 from formats import obj as obj_format
 from formats import stl as stl_format
 from tools.arc import CenterArcTool, ArcTool, ThreePointArcTool
@@ -449,6 +450,10 @@ class MainWindow(QMainWindow):
         import_obj_action = QAction(tr("Import OBJ…"), self)
         import_obj_action.triggered.connect(self._on_import_obj)
         actions.append(import_obj_action)
+
+        import_dae_action = QAction(tr("Import DAE…"), self)
+        import_dae_action.triggered.connect(self._on_import_dae)
+        actions.append(import_dae_action)
 
         import_geo_action = QAction(tr("Import georef (KML / GeoJSON)…"), self)
         import_geo_action.triggered.connect(self._on_import_georef)
@@ -984,6 +989,21 @@ class MainWindow(QMainWindow):
         self._current_path = path
         self._saved_version = self.viewport.scene.version
         self._update_title()
+
+    def _on_import_dae(self) -> None:
+        path_str, _ = QFileDialog.getOpenFileName(
+            self, tr("Import DAE"), "",
+            tr("COLLADA (*.dae);;All files (*)"))
+        if not path_str:
+            return
+        path = Path(path_str)
+        try:
+            self.viewport.history.execute(SnapshotMutation(
+                lambda scene: dae_format.load_dae(scene, path)))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, tr("Import DAE failed"), str(exc))
+            return
+        self.viewport.update()
 
     def _on_import_obj(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
