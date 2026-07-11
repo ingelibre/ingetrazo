@@ -92,8 +92,95 @@ def _face_triangles(mesh) -> dict:
     return tris
 
 
+class _PackedTris:
+    """Triangles flattened to NumPy arrays for batched Möller–Trumbore.
+
+    ``a``/``e1``/``e2`` are (N, 3) float64 (vertex A and the two edge vectors);
+    ``face_idx`` maps each triangle to its face's index so a query can exclude
+    faces without repacking. The parity primitive used to test each ray against
+    every triangle in pure Python — the O(F²·T) hot loop that froze the app as
+    solids grew; one vectorised pass per ray replaces it."""
+
+    __slots__ = ("a", "e1", "e2", "face_idx")
+
+    def __init__(self, a, e1, e2, face_idx) -> None:
+        self.a, self.e1, self.e2, self.face_idx = a, e1, e2, face_idx
+
+
+def _pack_lists(triangle_lists, face_ids=None) -> _PackedTris:
+    """Flatten ``triangle_lists`` (iterable of triangle lists) into arrays.
+    ``face_ids`` gives the face index per list (defaults to the list's order)."""
+    import numpy as np
+    rows_a, rows_b, rows_c, idx = [], [], [], []
+    for li, tlist in enumerate(triangle_lists):
+        fi = face_ids[li] if face_ids is not None else li
+        for (ta, tb, tc) in tlist:
+            rows_a.append((ta.x(), ta.y(), ta.z()))
+            rows_b.append((tb.x(), tb.y(), tb.z()))
+            rows_c.append((tc.x(), tc.y(), tc.z()))
+            idx.append(fi)
+    if not rows_a:
+        return _PackedTris(np.zeros((0, 3)), np.zeros((0, 3)),
+                           np.zeros((0, 3)), np.zeros(0, dtype=np.int64))
+    a = np.asarray(rows_a, dtype=np.float64)
+    b = np.asarray(rows_b, dtype=np.float64)
+    c = np.asarray(rows_c, dtype=np.float64)
+    return _PackedTris(a, b - a, c - a, np.asarray(idx, dtype=np.int64))
+
+
+def _cross_rows(a, b):
+    """Row-wise cross product without np.cross's moveaxis overhead.
+    ``a`` is (3,) or (N,3); ``b`` is (N,3)."""
+    import numpy as np
+    ax, ay, az = (a[..., 0], a[..., 1], a[..., 2])
+    bx, by, bz = b[:, 0], b[:, 1], b[:, 2]
+    return np.stack((ay * bz - az * by,
+                     az * bx - ax * bz,
+                     ax * by - ay * bx), axis=-1)
+
+
+class _ParityQuery:
+    """One origin, many jittered rays: everything that depends only on the
+    origin (tvec, q, e2·q) is computed once; each ray then costs a couple of
+    vector ops. Same eps/t-min semantics as the scalar Möller–Trumbore."""
+
+    def __init__(self, origin: QVector3D, packed: _PackedTris, mask=None) -> None:
+        import numpy as np
+        self.n = packed.a.shape[0]
+        if self.n == 0:
+            return
+        o = np.array([origin.x(), origin.y(), origin.z()], dtype=np.float64)
+        self.e1, self.e2 = packed.e1, packed.e2
+        self.base = np.ones(self.n, dtype=bool) if mask is None else mask
+        self.tvec = o - packed.a
+        self.q = _cross_rows(self.tvec, packed.e1)
+        self.e2q = np.einsum("ij,ij->i", packed.e2, self.q)
+
+    def crossings(self, d: QVector3D) -> int:
+        import numpy as np
+        if self.n == 0:
+            return 0
+        dv = np.array([d.x(), d.y(), d.z()], dtype=np.float64)
+        p = _cross_rows(dv, self.e2)
+        det = np.einsum("ij,ij->i", self.e1, p)
+        ok = (np.abs(det) >= _EPS) & self.base
+        if not ok.any():
+            return 0
+        inv = np.zeros(self.n)
+        inv[ok] = 1.0 / det[ok]
+        u = np.einsum("ij,ij->i", self.tvec, p) * inv
+        ok &= (u >= -_EPS) & (u <= 1.0 + _EPS)
+        v = (self.q @ dv) * inv
+        ok &= (v >= -_EPS) & (u + v <= 1.0 + _EPS)
+        t = self.e2q * inv
+        ok &= t > _T_MIN
+        return int(ok.sum())
+
+
 def ray_parity_outside(origin: QVector3D, direction: QVector3D,
-                       triangle_lists, rng: random.Random) -> Optional[bool]:
+                       triangle_lists, rng: random.Random,
+                       packed: Optional[_PackedTris] = None,
+                       mask=None) -> Optional[bool]:
     """Whether ``origin`` sits *outside* the volume bounded by the triangles, by
     crossing parity along jittered rays around ``direction`` (majority vote —
     a single ray can graze a shared edge and miscount). Even crossings ahead →
@@ -103,7 +190,15 @@ def ray_parity_outside(origin: QVector3D, direction: QVector3D,
     face's centroid and normal, and the per-plane rebuild asks it from sample
     points just off a plane ("is there material on this side?") — the dirty
     overlapping coplanar faces a naive extrude leaves cancel in pairs, so the
-    answer is right even mid-cleanup, in any plane order."""
+    answer is right even mid-cleanup, in any plane order.
+
+    Pass ``packed`` (+ optional boolean ``mask`` over its triangles) to reuse a
+    prebuilt triangle set across many queries; otherwise ``triangle_lists`` is
+    packed on the fly. Either way the crossing count is vectorised."""
+    if packed is None:
+        packed = _pack_lists(triangle_lists)
+        mask = None
+    query = _ParityQuery(origin, packed, mask)
     n = direction.normalized()
     u, v = _basis(n)
     outside_votes = 0
@@ -115,11 +210,7 @@ def ray_parity_outside(origin: QVector3D, direction: QVector3D,
             d = (n
                  + u * rng.uniform(-_JITTER, _JITTER)
                  + v * rng.uniform(-_JITTER, _JITTER)).normalized()
-        crossings = 0
-        for tlist in triangle_lists:
-            for tri in tlist:
-                if _ray_triangle(origin, d, tri) is not None:
-                    crossings += 1
+        crossings = query.crossings(d)
         if crossings % 2 == 0:
             outside_votes += 1
         else:
@@ -129,24 +220,35 @@ def ray_parity_outside(origin: QVector3D, direction: QVector3D,
     return outside_votes > inside_votes
 
 
-def _face_side_state(face, tris_by_face: dict, rng: random.Random) -> Optional[str]:
+def _face_side_state(face, tris_by_face: dict, rng: random.Random,
+                     packed: Optional[_PackedTris] = None,
+                     mask=None) -> Optional[str]:
     """Classify ``face`` against the volume bounded by ``tris_by_face`` (the
     current *boundary* faces): ``"outward"`` / ``"inward"`` for a boundary face
     (by which side is empty), ``"interior"`` for a partition with material on
     both sides (the slab a Ctrl-push keeps, a wall two rooms share), ``None``
-    when undecidable (degenerate face, tied votes)."""
+    when undecidable (degenerate face, tied votes).
+
+    ``packed``/``mask`` (triangles of the boundary set minus this face) let the
+    caller reuse one packed array across every face instead of re-listing —
+    the difference between O(F²·T) and O(F·T)."""
     n = face.normal()
     if n.length() < 1e-9:
         return None
-    others = [t for f, t in tris_by_face.items() if f is not face]
+    if packed is None:
+        others = [t for f, t in tris_by_face.items() if f is not face]
+    else:
+        others = None
     # The region just past the centroid along the normal being outside is
     # exactly the normal pointing outward.
-    ahead = ray_parity_outside(face.centroid(), n, others, rng)
+    ahead = ray_parity_outside(face.centroid(), n, others, rng,
+                               packed=packed, mask=mask)
     if ahead is not False:
         return "outward" if ahead else None
     # The +normal side is inside. An inward-wound boundary face has its *other*
     # side outside; an interior partition is inside both ways.
-    behind = ray_parity_outside(face.centroid(), -n, others, rng)
+    behind = ray_parity_outside(face.centroid(), -n, others, rng,
+                                packed=packed, mask=mask)
     if behind is True:
         return "inward"
     return "interior" if behind is False else None
@@ -217,13 +319,30 @@ def orient_outward(mesh, seed: int = 12345) -> list:
         for f in mesh.faces:
             f.interior = False
         return []
+    import numpy as np
     all_tris = _face_triangles(mesh)
+    faces = list(all_tris)
+    fidx = {f: i for i, f in enumerate(faces)}
+    # Pack every triangle once; per-face queries exclude by mask instead of
+    # re-listing the other faces' triangles (the old O(F²·T) hot loop).
+    packed = _pack_lists([all_tris[f] for f in faces])
+
+    def query_mask(boundary_set, face):
+        m = np.isin(packed.face_idx,
+                    np.fromiter((fidx[f] for f in boundary_set), dtype=np.int64,
+                                count=len(boundary_set)))
+        m &= packed.face_idx != fidx[face]
+        return m
+
     boundary = dict(all_tris)
     for _ in range(4):
         rng = random.Random(seed)
+        bset = set(boundary)
         interior_now = {
             f for f in mesh.faces
-            if _face_side_state(f, boundary, rng) == "interior"
+            if _face_side_state(f, boundary, rng,
+                                packed=packed, mask=query_mask(bset, f))
+            == "interior"
         }
         if interior_now == {f for f in mesh.faces if f not in boundary}:
             break
@@ -238,9 +357,11 @@ def orient_outward(mesh, seed: int = 12345) -> list:
     if not is_closed(mesh):
         return []
     rng = random.Random(seed)
+    bset = set(boundary)
     to_flip = [
         f for f in boundary
-        if _face_side_state(f, boundary, rng) == "inward"
+        if _face_side_state(f, boundary, rng,
+                            packed=packed, mask=query_mask(bset, f)) == "inward"
     ]
     for f in to_flip:
         # Flip in place: reversing the loops reverses the winding (so the normal
