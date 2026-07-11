@@ -53,6 +53,9 @@ def _face_json(f) -> dict:
     texture = getattr(f, "attrs", {}).get("texture")
     if texture is not None:
         entry["texture"] = dict(texture)
+    layer = getattr(f, "attrs", {}).get("layer")
+    if layer is not None:
+        entry["layer"] = layer
     return entry
 
 
@@ -63,6 +66,8 @@ def _edge_json(e) -> dict:
         entry["soft"] = True
     if getattr(e, "curve", None) is not None:
         entry["curve"] = e.curve
+    if getattr(e, "layer", None) is not None:
+        entry["layer"] = e.layer
     return entry
 
 
@@ -79,7 +84,16 @@ def save_scene(scene, path: Path) -> None:
     payload = _mesh_json(mesh)
     groups = getattr(scene, "groups", None)
     if groups:
-        payload["groups"] = [_mesh_json(g.mesh) for g in groups]
+        payload["groups"] = []
+        for g in groups:
+            entry = _mesh_json(g.mesh)
+            if getattr(g, "layer", None) is not None:
+                entry["layer"] = g.layer
+            payload["groups"].append(entry)
+    layers = getattr(scene, "layers", None)
+    if layers is not None and (len(layers) > 1 or any(
+            not ly.visible or ly.locked for ly in layers)):
+        payload["layers"] = [ly.to_dict() for ly in layers]
     dims = getattr(scene, "dimensions", None)
     if dims:
         payload["dimensions"] = [
@@ -128,9 +142,17 @@ def load_into(scene, path: Path) -> None:
     scene.georef = None
 
     _load_mesh(scene.mesh, payload)
+    raw_layers = payload.get("layers")
+    if raw_layers:
+        from core.layers import DEFAULT_LAYER, Layer
+        scene.layers = [Layer.from_dict(r) for r in raw_layers]
+        if not any(ly.name == DEFAULT_LAYER for ly in scene.layers):
+            scene.layers.insert(0, Layer(DEFAULT_LAYER))
     for raw in payload.get("groups", []):
         group = Group()
         _load_mesh(group.mesh, raw)
+        if raw.get("layer"):
+            group.layer = raw["layer"]
         scene.groups.append(group)
 
     for raw in payload.get("dimensions", []):
@@ -164,6 +186,8 @@ def _load_mesh(mesh, payload) -> None:
             edge = mesh.add_edge(QVector3D(*raw["a"]), QVector3D(*raw["b"]))
             if raw.get("soft"):
                 edge.soft = True
+            if raw.get("layer"):
+                edge.layer = raw["layer"]
             cid = raw.get("curve")
             if cid is not None:
                 edge.curve = cid
@@ -183,3 +207,5 @@ def _load_mesh(mesh, payload) -> None:
             texture = raw.get("texture")
             if texture is not None:
                 face.attrs["texture"] = dict(texture)
+            if raw.get("layer"):
+                face.attrs["layer"] = raw["layer"]

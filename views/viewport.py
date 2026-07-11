@@ -2097,6 +2097,8 @@ class Viewport(QOpenGLWidget):
         best = None
         best_d = self.pick_threshold_px
         for edge in self.scene.edges:
+            if not self.scene.entity_selectable(edge):
+                continue                        # hidden or locked layer
             pa = self._world_to_pixel(edge.a)
             pb = self._world_to_pixel(edge.b)
             if pa is None or pb is None:
@@ -2247,6 +2249,8 @@ class Viewport(QOpenGLWidget):
             return None
         hits: list[tuple[float, object]] = []
         for face in self.scene.faces:
+            if not self.scene.entity_selectable(face):
+                continue                        # hidden or locked layer
             face_t = None
             for t0, t1, t2 in face.triangulate():
                 t = _ray_triangle(origin, direction, t0, t1, t2)
@@ -2273,10 +2277,13 @@ class Viewport(QOpenGLWidget):
             return None, None
         sources = [(None, self.scene.faces)] + [
             (g, g.mesh.faces) for g in self.scene.groups
+            if self.scene.entity_selectable(g)
         ]
         hits: list[tuple[float, object, object]] = []
         for grp, faces in sources:
             for face in faces:
+                if grp is None and not self.scene.entity_selectable(face):
+                    continue                    # hidden or locked layer
                 face_t = None
                 for t0, t1, t2 in face.triangulate():
                     t = _ray_triangle(origin, direction, t0, t1, t2)
@@ -2300,6 +2307,8 @@ class Viewport(QOpenGLWidget):
         if origin is not None and direction is not None:
             best = None  # (t, group)
             for g in self.scene.groups:
+                if not self.scene.entity_selectable(g):
+                    continue                    # hidden or locked layer
                 for face in g.mesh.faces:
                     for t0, t1, t2 in face.triangulate():
                         t = _ray_triangle(origin, direction, t0, t1, t2)
@@ -2310,6 +2319,8 @@ class Viewport(QOpenGLWidget):
         best_d = self.pick_threshold_px
         best_g = None
         for g in self.scene.groups:
+            if not self.scene.entity_selectable(g):
+                continue                        # hidden or locked layer
             for e in g.mesh.edges:
                 pa = self._world_to_pixel(e.a)
                 pb = self._world_to_pixel(e.b)

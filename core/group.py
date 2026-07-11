@@ -20,11 +20,13 @@ _counter = itertools.count(1)
 
 
 class Group:
-    __slots__ = ("mesh", "name")
+    __slots__ = ("mesh", "name", "layer")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
         self.name = name or f"Group {next(_counter)}"
+        # Layer / tag name (None = default layer).
+        self.layer = None
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return (f"Group({self.name!r}: {len(self.mesh.faces)} faces, "

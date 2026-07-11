@@ -184,6 +184,8 @@ class SelectTool(Tool):
         w2p = viewport._world_to_pixel
         picked = []
         for edge in viewport.scene.edges:
+            if not viewport.scene.entity_selectable(edge):
+                continue                        # hidden or locked layer
             pa = w2p(edge.a)
             pb = w2p(edge.b)
             if pa is None or pb is None:
@@ -194,6 +196,8 @@ class SelectTool(Tool):
             elif _pt_in_rect(pa, rect) and _pt_in_rect(pb, rect):
                 picked.append(edge)
         for face in viewport.scene.faces:
+            if not viewport.scene.entity_selectable(face):
+                continue                        # hidden or locked layer
             pts = [w2p(v) for v in face.vertices]
             if any(p is None for p in pts):
                 continue

@@ -36,6 +36,12 @@ class Scene:
     # Construction guides (Tape Measure): infinite dashed lines / points used to
     # align real drawing. Scaffolding, never part of the mesh.
     guides: list = field(default_factory=list)
+    # Layers / tags (SketchUp): labels with visibility + lock. The default
+    # layer always exists; entities reference layers by name.
+    layers: list = field(default_factory=lambda: [
+        __import__("core.layers", fromlist=["Layer"]).Layer(
+            __import__("core.layers", fromlist=["DEFAULT_LAYER"]).DEFAULT_LAYER)
+    ])
     # Display style for dimension annotations (edited from the Tray).
     dimension_style: dict = field(default_factory=lambda: {
         "decimals": 2, "units": "m", "font_size": 9, "color": [45, 55, 75]})
@@ -60,16 +66,45 @@ class Scene:
     def faces(self) -> list[Face]:
         return self.mesh.faces
 
+    # ---- Layers --------------------------------------------------------------
+    def layer(self, name: str):
+        for ly in self.layers:
+            if ly.name == name:
+                return ly
+        return None
+
+    def _layer_state(self, entity) -> tuple[bool, bool]:
+        """(visible, locked) of the layer ``entity`` carries; unknown layer
+        names read as the default (visible, unlocked)."""
+        from core.layers import layer_of
+        ly = self.layer(layer_of(entity))
+        if ly is None:
+            return True, False
+        return ly.visible, ly.locked
+
+    def entity_visible(self, entity) -> bool:
+        return self._layer_state(entity)[0]
+
+    def entity_selectable(self, entity) -> bool:
+        visible, locked = self._layer_state(entity)
+        return visible and not locked
+
     # ---- Render views (loose + every group) ---------------------------------
     def render_edges(self):
-        yield from self.mesh.edges
+        for e in self.mesh.edges:
+            if self.entity_visible(e):
+                yield e
         for g in self.groups:
-            yield from g.mesh.edges
+            if self.entity_visible(g):
+                yield from g.mesh.edges
 
     def render_faces(self):
-        yield from self.mesh.faces
+        for f in self.mesh.faces:
+            if self.entity_visible(f):
+                yield f
         for g in self.groups:
-            yield from g.mesh.faces
+            if self.entity_visible(g):
+                yield from g.mesh.faces
 
     # ---- Mutations ----------------------------------------------------------
     def add_edge(self, a: QVector3D, b: QVector3D) -> Edge:
@@ -110,6 +145,8 @@ class Scene:
             self.geo_paths.clear()
             self.guides.clear()
             self.selection.clear()
+            from core.layers import DEFAULT_LAYER, Layer
+            self.layers = [Layer(DEFAULT_LAYER)]
             self.georef = None
             self.tile_layer = None
             self.terrain = None
