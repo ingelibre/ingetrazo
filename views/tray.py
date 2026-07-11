@@ -365,11 +365,23 @@ class MaterialsPanel(QWidget):
         row.addStretch(1)
         root.addLayout(row)
 
-        # SketchUp's "edit material": tile width/height + rotation. Edits the
-        # active texture for future paints, and Apply re-stamps the selected
+        # SketchUp's "edit material": tile width/height + rotation, tucked
+        # behind an Edit toggle so the panel stays clean. Edits the active
+        # texture for future paints, and Apply re-stamps the selected
         # textured faces (undoable).
-        from PySide6.QtWidgets import QDoubleSpinBox
-        edit_row = QHBoxLayout()
+        from PySide6.QtWidgets import QDoubleSpinBox, QToolButton
+        self._edit_toggle = QToolButton()
+        self._edit_toggle.setText(tr("Edit texture"))
+        self._edit_toggle.setCheckable(True)
+        self._edit_toggle.setArrowType(Qt.RightArrow)
+        self._edit_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._edit_toggle.setStyleSheet(
+            "QToolButton { border: none; padding: 2px; }"
+            "QToolButton:hover { background: palette(midlight); }")
+        row.insertWidget(2, self._edit_toggle)
+        self._edit_body = QWidget()
+        edit_row = QHBoxLayout(self._edit_body)
+        edit_row.setContentsMargins(0, 0, 0, 0)
         edit_row.addWidget(QLabel(tr("W")))
         self._sw_box = QDoubleSpinBox()
         self._sw_box.setRange(0.01, 1000.0)
@@ -397,12 +409,23 @@ class MaterialsPanel(QWidget):
             "re-stamps them (undoable)"))
         apply_btn.clicked.connect(self._on_apply_texture_edit)
         edit_row.addWidget(apply_btn)
-        root.addLayout(edit_row)
+        self._edit_body.setVisible(False)
+
+        def _toggle_edit(on):
+            self._edit_body.setVisible(on)
+            self._edit_toggle.setArrowType(Qt.DownArrow if on
+                                           else Qt.RightArrow)
+            if on:
+                self._load_texture_fields()
+
+        self._edit_toggle.toggled.connect(_toggle_edit)
+        root.addWidget(self._edit_body)
         self._load_texture_fields()
 
         root.addWidget(self._heading(tr("In model")))
         self._in_model_grid = QGridLayout()
-        self._in_model_grid.setSpacing(3)
+        self._in_model_grid.setSpacing(2)
+        self._in_model_grid.setColumnStretch(self.COLS, 1)
         root.addLayout(self._in_model_grid)
 
         root.addWidget(self._heading(tr("Library")))
@@ -456,7 +479,10 @@ class MaterialsPanel(QWidget):
             body = QWidget()
             grid = QGridLayout(body)
             grid.setContentsMargins(4, 2, 0, 4)
-            grid.setSpacing(3)
+            grid.setSpacing(2)
+            # Pack swatches left: the leftover width goes to a phantom last
+            # column instead of spreading the thumbnails apart.
+            grid.setColumnStretch(self.COLS, 1)
             body.setVisible(False)
 
             def toggle(on, b=btn, w=body):
