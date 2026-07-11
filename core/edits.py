@@ -150,9 +150,31 @@ def _scene_has_curves(scene) -> bool:
     return any(getattr(e, "curve", None) is not None for e in scene.edges)
 
 
+def _append_flat_curve_rebuild(scene, commands, points) -> None:
+    """When straight edges land on a *flat* drawing that contains curves,
+    append the planar-arrangement rebuild (the same deterministic pass the
+    circle/arc tools run). The cycle-detection planner reasons in straight
+    segments and cannot form the regions a curve crossing creates — a square
+    drawn over a circle must split into three areas (SketchUp), not stack a
+    duplicate face over the lens. Dangling edges survive the rebuild (spur
+    pruning only affects face tracing), so half-drawn chains are safe."""
+    from core.history import RebuildPlanarFacesCommand
+
+    if not _scene_has_curves(scene):
+        return
+    if any(isinstance(c, RebuildPlanarFacesCommand) for c in commands):
+        return
+    from core.arrangement import coplanar_plane
+
+    verts = [v.position for v in scene.mesh.vertices] + list(points)
+    if coplanar_plane(verts) is not None:
+        commands.append(RebuildPlanarFacesCommand())
+
+
 def build_add_edge(scene, a: QVector3D, b: QVector3D, detect_faces: bool = True) -> Command:
     """Single-segment convenience: one drawn edge → one atomic command."""
     commands = plan_edge_commands(scene, [(a, b)], detect_faces=detect_faces)
+    _append_flat_curve_rebuild(scene, commands, [a, b])
     # When curves exist, even a single added edge can break a circle into
     # contours (a tangent line landing on a curve vertex splits it in SketchUp),
     # so it must go through SnapshotCompound, which runs the contour re-split —
@@ -174,6 +196,8 @@ def build_add_edges(
     as a tool-managed face) → one atomic command."""
     commands = plan_edge_commands(scene, segments, detect_faces=detect_faces)
     commands.extend(extra)
+    _append_flat_curve_rebuild(
+        scene, commands, [p for seg in segments for p in seg])
     if len(commands) == 1 and not _scene_has_curves(scene):
         return commands[0]
     return SnapshotCompound(commands)

@@ -153,6 +153,46 @@ def test_circle_crossing_square_two_contours_and_sector_face():
     assert any(abs(f.area() - target) < 0.2 for f in scene.mesh.faces)
 
 
+def test_square_drawn_after_circle_splits_three_areas():
+    # The reverse order of the scenario above: the circle exists FIRST and the
+    # square lands over it. The straight-edge planner can't form the lens, so
+    # build_add_edges must run the planar arrangement itself (flat + curves
+    # gate) — otherwise a duplicate square face stacks over the lens
+    # (z-fighting stripes on screen). SketchUp: three areas.
+    from core.edits import build_add_edges
+    from core.history import AddFaceCommand, RebuildPlanarFacesCommand
+
+    scene = Scene()
+    hist = History(scene)
+    pts = _circle_pts(0, -2, 4)
+    segs = [(pts[i], pts[(i + 1) % 24]) for i in range(24)]
+    hist.execute(build_add_edges(
+        scene, segs, detect_faces=False,
+        extra=[TagCurveCommand(list(pts), closed=True),
+               RebuildPlanarFacesCommand()]))
+    sq = [QVector3D(-5, 0, 0), QVector3D(5, 0, 0),
+          QVector3D(5, 10, 0), QVector3D(-5, 10, 0)]
+    hist.execute(build_add_edges(
+        scene, [(sq[i], sq[(i + 1) % 4]) for i in range(4)],
+        detect_faces=True, extra=[AddFaceCommand(list(sq))]))
+    faces = list(scene.mesh.faces)
+    assert len(faces) == 3                              # lens + disc rest + square rest
+    areas = sorted(f.area() for f in faces)
+    assert areas[0] < areas[1] < areas[2]
+    # lens + (disc − lens) + (square − lens) = 24-gon disc + square − lens
+    disc = 0.5 * 24 * 16 * math.sin(2 * math.pi / 24)
+    assert abs(sum(areas) - (disc + 100 - areas[0])) < 1e-3
+    # no doubled region: no two faces share (almost) the same area ≈ 100
+    assert sum(1 for a in areas if a > 85) == 1
+    # the crossed circle split into two contours
+    ids = {e.curve for e in scene.mesh.edges if e.curve is not None}
+    assert len(ids) == 2
+    # undo restores the pristine pre-square state
+    hist.undo()
+    assert len(scene.mesh.faces) == 1
+    assert len(scene.mesh.edges) == 24
+
+
 def test_deleting_one_contour_leaves_the_other():
     from core.history import EraseSelectionCommand
     from core.mesh import Edge
