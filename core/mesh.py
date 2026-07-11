@@ -397,9 +397,22 @@ class Mesh:
     ) -> Face:
         """Add a face from position loops. Vertices weld, the boundary edges are
         created if missing (and the face is registered on each as an incident
-        face — radial, so an edge can carry several)."""
+        face — radial, so an edge can carry several).
+
+        Nested holes are dropped here, at the single choke point every face
+        creation path goes through (draw, push rebuild, heal, ``.igz`` load): a
+        hole inside another hole of the same face is geometric nonsense — its
+        region is already void — yet it corrupts earcut (phantom wedge
+        triangles across the opening) and registers the face on rim edges it
+        does not geometrically touch, which lets ``is_closed`` report a broken
+        solid as watertight (defeating the BIM push guard)."""
         loop = [self.vertex(p) for p in loop_positions]
-        holes = [[self.vertex(p) for p in h] for h in (hole_loops or [])]
+        raw_holes = [list(h) for h in (hole_loops or [])]
+        if len(raw_holes) > 1:
+            from core.topology import _maximal_holes
+
+            raw_holes = _maximal_holes(raw_holes)
+        holes = [[self.vertex(p) for p in h] for h in raw_holes]
         face = Face(loop, holes)  # Face stores them as hole_loops (vertices)
         for lp in (loop, *holes):
             n = len(lp)

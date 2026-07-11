@@ -114,6 +114,32 @@ def test_ring_push_refusal_is_failsafe_and_announced():
     assert any("refused" in m.lower() for m in vp.messages)  # user is told
 
 
+def test_add_face_drops_nested_holes():
+    """A hole inside another hole of the same face is geometric nonsense: it
+    corrupts earcut (phantom wedge triangles across the opening — the 'eye'
+    model's visible symptom) and registers the face on rim edges it does not
+    touch, letting ``is_closed`` bless a broken solid. ``mesh.add_face`` is the
+    single choke point (draw, push rebuild, heal, ``.igz`` load) — it must keep
+    only the outermost hole."""
+    sc = Scene()
+    outer = [QVector3D(x, y, 2.0) for x, y in
+             ((-4, -4), (4, -4), (4, 4), (-4, 4))]
+    big = _circle(2.0)
+    small = _circle(0.8)
+    for lp in (big, small):
+        for p in lp:
+            p.setZ(2.0)
+    face = sc.mesh.add_face(outer, [big, small])
+    assert len(face.hole_loops) == 1                # nested r=0.8 dropped
+    hole_r = {round(math.hypot(v.position.x(), v.position.y()), 1)
+              for v in face.hole_loops[0]}
+    assert hole_r == {2.0}
+    # earcut stays sane: no triangle lands inside the opening
+    for a, b, c in face.triangulate():
+        cen = (a + b + c) / 3.0
+        assert math.hypot(cen.x(), cen.y()) > 2.0 - 1e-6
+
+
 @pytest.mark.xfail(reason="holed-ring push between mixed neighbour levels "
                           "needs the region-identity rebuild (A.3)",
                    strict=True)
