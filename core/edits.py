@@ -151,28 +151,48 @@ def _scene_has_curves(scene) -> bool:
 
 
 def _append_flat_curve_rebuild(scene, commands, points) -> None:
-    """When straight edges land on a drawing plane that contains curves,
-    append the planar-arrangement rebuild (the same deterministic pass the
-    circle/arc tools run). The cycle-detection planner reasons in straight
-    segments and cannot form the regions a curve crossing creates — a square
-    drawn over a circle must split into three areas (SketchUp), not stack a
-    duplicate face over the lens. Whole-flat drawings get the full rebuild;
-    3D scenes get the SCOPED per-plane one (only when that plane carries curve
-    edges, so straight-only 3D drawing keeps its proven path). Dangling edges
-    survive the rebuild (spur pruning only affects face tracing), so
-    half-drawn chains are safe."""
+    """Append the deterministic planar-arrangement rebuild after a draw when
+    the cycle planner alone cannot produce SketchUp's regions:
+
+    - Whole-flat drawing WITH curves → full rebuild (every minimal region gets
+      a face; a square over a circle splits into three areas).
+    - Whole-flat drawing, straight edges only, faces present → SCOPED rebuild
+      with coverage semantics (two overlapping rectangles split into three
+      regions; regions nobody covered stay empty — no resurrecting faces the
+      user deleted).
+    - 3D scene whose drawing plane carries curve edges → SCOPED rebuild on
+      just that plane (straight-only 3D drawing keeps its proven path).
+
+    Dangling edges survive the rebuild (spur pruning only affects face
+    tracing), so half-drawn chains are safe."""
     from core.history import RebuildPlanarFacesCommand, RebuildPlaneFacesCommand
 
-    if not _scene_has_curves(scene):
-        return
     if any(isinstance(c, (RebuildPlanarFacesCommand, RebuildPlaneFacesCommand))
            for c in commands):
         return
     from core.arrangement import coplanar_plane
 
+    has_curves = _scene_has_curves(scene)
     verts = [v.position for v in scene.mesh.vertices] + list(points)
     if coplanar_plane(verts) is not None:
-        commands.append(RebuildPlanarFacesCommand())
+        if has_curves:
+            # Whole-flat drawing with curves: the full rebuild (every minimal
+            # region gets a face — how a lone circle yields its disc).
+            commands.append(RebuildPlanarFacesCommand())
+        elif scene.mesh.faces:
+            # Whole-flat, straight edges only, faces present: the SCOPED
+            # rebuild with coverage semantics. Two overlapping rectangles must
+            # split into three regions (SketchUp) — the cycle planner leaves
+            # the first rectangle whole over the lens (rect.igz report) — but
+            # regions nobody covered stay empty (no resurrecting faces the
+            # user deleted).
+            origin, normal = coplanar_plane(verts)
+            if scene.mesh.faces:
+                normal = scene.mesh.faces[0].normal()
+                origin = scene.mesh.faces[0].vertices[0]
+            commands.append(RebuildPlaneFacesCommand(origin, normal))
+        return
+    if not has_curves:
         return
     plane = coplanar_plane(list(points))
     if plane is None:

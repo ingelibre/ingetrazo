@@ -167,6 +167,8 @@ def test_strictly_inside_still_punches_hole():
     hist = History(scene)
     hist.execute(AddFaceCommand(MOTHER))
     _rectangle(scene, hist, INSIDE)
-    mother = scene.faces[0]
+    # Face order is an implementation detail (the planar rebuild may
+    # re-emit regions in arrangement order) — find the mother by shape.
+    mother = next(f for f in scene.faces if f.holes)
     assert len(mother.holes) == 1
     assert len(scene.faces) == 2  # mother (holed) + inner, not subdivided

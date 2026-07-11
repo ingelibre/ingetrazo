@@ -169,7 +169,9 @@ def test_small_rect_inside_big_rect_divides_mother():
     scene, hist = _history()
     _draw_rectangle(scene, hist, SQUARE_4)
     _draw_rectangle(scene, hist, HOLE_2)
-    mother = scene.faces[0]
+    # Face order is an implementation detail (the planar rebuild may
+    # re-emit regions in arrangement order) — find the mother by shape.
+    mother = next(f for f in scene.faces if f.holes)
     assert len(scene.faces) == 2
     assert len(mother.holes) == 1
     assert abs(_total_area(mother.triangulate()) - 12.0) < 1e-6

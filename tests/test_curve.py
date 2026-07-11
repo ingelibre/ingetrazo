@@ -275,6 +275,51 @@ def test_square_over_circle_next_to_a_solid():
     assert sum(1 for f in ground if f.area() > 85) == 1   # no doubled square
 
 
+def test_two_overlapping_rectangles_split_into_three_regions():
+    # Straight edges only (no curves): the cycle planner left the first
+    # rectangle whole over the lens, so pushing 'the middle' grabbed the whole
+    # rectangle (rect.igz report). The scoped planar rebuild must split the
+    # overlap into its own region — SketchUp's three areas — while deleted
+    # faces stay deleted (coverage semantics).
+    from core.edits import build_add_edges
+    from core.history import AddFaceCommand, DeleteFaceCommand
+
+    scene = Scene()
+    hist = History(scene)
+
+    def rect(x0, y0, x1, y1):
+        pts = [QVector3D(x0, y0, 0), QVector3D(x1, y0, 0),
+               QVector3D(x1, y1, 0), QVector3D(x0, y1, 0)]
+        hist.execute(build_add_edges(
+            scene, [(pts[i], pts[(i + 1) % 4]) for i in range(4)],
+            detect_faces=False, extra=[AddFaceCommand(list(pts))]))
+
+    rect(0, 0, 6, 4)
+    rect(4, -2, 9, 2)                       # overlaps the corner: 2×2 lens
+    areas = sorted(round(f.area(), 1) for f in scene.mesh.faces)
+    assert areas == [4.0, 16.0, 20.0]       # middle + both remainders
+    hist.undo()
+    assert len(scene.mesh.faces) == 1       # exact restore
+    hist.redo()
+    assert len(scene.mesh.faces) == 3
+    # no resurrect: delete a face, draw elsewhere, it stays deleted
+    scene2 = Scene()
+    hist2 = History(scene2)
+    hist, scene_saved = hist, scene         # keep names readable
+
+    def rect2(x0, y0, x1, y1):
+        pts = [QVector3D(x0, y0, 0), QVector3D(x1, y0, 0),
+               QVector3D(x1, y1, 0), QVector3D(x0, y1, 0)]
+        hist2.execute(build_add_edges(
+            scene2, [(pts[i], pts[(i + 1) % 4]) for i in range(4)],
+            detect_faces=False, extra=[AddFaceCommand(list(pts))]))
+
+    rect2(0, 0, 6, 4)
+    hist2.execute(DeleteFaceCommand(scene2.mesh.faces[0]))
+    rect2(10, 10, 14, 13)
+    assert sorted(round(f.area(), 1) for f in scene2.mesh.faces) == [12.0]
+
+
 def test_paste_keeps_curve_identity():
     # Copy/paste re-created edges with no soft/curve flags, silently degrading
     # a pasted circle to 24 loose segments (per-segment selection — the

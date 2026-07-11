@@ -71,7 +71,9 @@ def test_dod_square_inside_face_divides_mother():
     hist = History(scene)
     _rectangle(scene, hist, [V(0, 0), V(4, 0), V(4, 4), V(0, 4)])
     _rectangle(scene, hist, [V(1, 1), V(3, 1), V(3, 3), V(1, 3)])
-    mother = scene.faces[0]
+    # Face order is an implementation detail (the planar rebuild may
+    # re-emit regions in arrangement order) — find the mother by shape.
+    mother = next(f for f in scene.faces if f.holes)
     assert len(mother.holes) == 1
     area = sum(
         QVector3D.crossProduct(t[1] - t[0], t[2] - t[0]).length() * 0.5
