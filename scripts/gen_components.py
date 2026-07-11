@@ -79,23 +79,45 @@ class Obj:
 
 
 def person() -> Obj:
-    """The 1.75 m scale figure — a flat architectural cutout."""
+    """A 1.75 m low-poly 3D figure — reads from every angle (no face-me
+    billboard needed): head, torso, arms and legs as tapered boxes."""
     o = Obj("person")
-    o.mats["figure"] = (0.42, 0.47, 0.55)
-    # Silhouette in the XZ plane (x = width, z = height), half-outline mirrored.
-    right = [
-        (0.09, 0.00), (0.11, 0.02), (0.12, 0.42),   # foot + outer leg
-        (0.10, 0.80), (0.16, 0.84),                 # hip
-        (0.185, 1.18),                              # arm down, hand
-        (0.205, 1.42),                              # shoulder outer
-        (0.14, 1.50),                               # neck side
-        (0.115, 1.56), (0.115, 1.68), (0.06, 1.75), # head side
-    ]
-    left = [(-x, z) for x, z in reversed(right)]
-    inner_right = [(0.02, 0.42), (0.035, 0.00)]     # inseam right leg
-    inner_left = [(-0.035, 0.00), (-0.02, 0.42)]
-    outline = right + left + inner_left + [(0.0, 0.5)] + inner_right
-    o.poly_prism("figure", outline, -0.02, 0.02)
+    o.mats["skin"] = (0.85, 0.68, 0.55)
+    o.mats["shirt"] = (0.25, 0.45, 0.60)
+    o.mats["pants"] = (0.30, 0.32, 0.38)
+    o.mats["shoes"] = (0.15, 0.15, 0.17)
+
+    def tbox(mat, cx, cy, z0, z1, w0, d0, w1, d1):
+        """Tapered box: rectangle (w0×d0) at z0 lofted to (w1×d1) at z1."""
+        def rect(z, w, d, cxx):
+            return [o.add_v(cxx - w / 2, cy - d / 2, z),
+                    o.add_v(cxx + w / 2, cy - d / 2, z),
+                    o.add_v(cxx + w / 2, cy + d / 2, z),
+                    o.add_v(cxx - w / 2, cy + d / 2, z)]
+        b = rect(z0, w0, d0, cx)
+        t = rect(z1, w1, d1, cx)
+        o.face(mat, list(reversed(b)))
+        o.face(mat, t)
+        for i in range(4):
+            j = (i + 1) % 4
+            o.face(mat, [b[i], b[j], t[j], t[i]])
+
+    # Legs (slight stance) + shoes.
+    for sx in (-0.09, 0.09):
+        tbox("shoes", sx, 0.035, 0.00, 0.07, 0.11, 0.28, 0.10, 0.24)
+        tbox("pants", sx, 0.0, 0.07, 0.52, 0.12, 0.15, 0.13, 0.16)   # shin
+        tbox("pants", sx, 0.0, 0.52, 0.95, 0.13, 0.16, 0.15, 0.18)   # thigh
+    # Pelvis.
+    tbox("pants", 0.0, 0.0, 0.95, 1.08, 0.34, 0.20, 0.33, 0.19)
+    # Torso, tapering out to the shoulders.
+    tbox("shirt", 0.0, 0.0, 1.08, 1.45, 0.33, 0.19, 0.42, 0.21)
+    # Shoulders → arms (slightly outward) → hands.
+    for sx in (-0.245, 0.245):
+        tbox("shirt", sx, 0.0, 1.17, 1.45, 0.09, 0.11, 0.10, 0.12)  # upper arm
+        tbox("skin", sx * 1.06, 0.0, 0.88, 1.17, 0.075, 0.09, 0.08, 0.10)
+    # Neck + head.
+    tbox("skin", 0.0, 0.0, 1.45, 1.52, 0.10, 0.10, 0.10, 0.10)
+    tbox("skin", 0.0, 0.0, 1.52, 1.75, 0.17, 0.19, 0.15, 0.17)
     return o
 
 

@@ -102,6 +102,7 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._activate_tool("select")
+        self._insert_scale_figure()
         self._update_title()
 
     # ---- Layout -------------------------------------------------------------
@@ -964,12 +965,11 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard(tr("Discard current drawing?")):
             return
         scene = self.viewport.scene
-        scene.mesh.clear()
-        scene.selection.clear()
+        scene.clear()
         scene.version += 1
         self.viewport.history.clear()
         self._current_path = None
-        self._saved_version = scene.version
+        self._insert_scale_figure()
         self.viewport.notify_scene_changed()
         self._update_title()
 
@@ -1032,6 +1032,27 @@ class MainWindow(QMainWindow):
         self._current_path = path
         self._saved_version = self.viewport.scene.version
         self._update_title()
+
+    def _insert_scale_figure(self) -> None:
+        """Place the 1.75 m scale figure near the origin in a fresh document,
+        SketchUp-style. A plain group — select and Delete removes it. Added
+        outside the undo history and without dirtying the document."""
+        from core.group import Group
+        from core.scene import Scene as _Scene
+        from formats import obj as _obj
+        path = (Path(__file__).resolve().parent.parent / "resources"
+                / "components" / "person.obj")
+        if not path.exists():
+            return
+        temp = _Scene()
+        try:
+            _obj.load_obj(temp, path)
+        except Exception:  # noqa: BLE001 — a broken asset must not block startup
+            return
+        scene = self.viewport.scene
+        scene.groups.append(Group(temp.mesh, name=tr("Person")))
+        scene.version += 1
+        self._saved_version = scene.version
 
     def _on_insert_component(self, key: str) -> None:
         """Insert a bundled starter component as a Group at the origin,

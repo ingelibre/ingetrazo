@@ -1,2 +1,11 @@
-newmtl figure
-Kd 0.4200 0.4700 0.5500
+newmtl skin
+Kd 0.8500 0.6800 0.5500
+
+newmtl shirt
+Kd 0.2500 0.4500 0.6000
+
+newmtl pants
+Kd 0.3000 0.3200 0.3800
+
+newmtl shoes
+Kd 0.1500 0.1500 0.1700
