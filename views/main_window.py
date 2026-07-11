@@ -35,6 +35,7 @@ from core.mesh import Edge, Face
 from formats import igz as igz_format
 from formats import dae as dae_format
 from formats import obj as obj_format
+from formats import ifc as ifc_format
 from formats import stl as stl_format
 from tools.arc import CenterArcTool, ArcTool, ThreePointArcTool
 from tools.circle import CircleTool, PolygonTool
@@ -460,6 +461,10 @@ class MainWindow(QMainWindow):
         import_geo_action = QAction(tr("Import georef (KML / GeoJSON)…"), self)
         import_geo_action.triggered.connect(self._on_import_georef)
         actions.append(import_geo_action)
+
+        export_ifc_action = QAction(tr("Export IFC…"), self)
+        export_ifc_action.triggered.connect(self._on_export_ifc)
+        actions.append(export_ifc_action)
 
         export_stl_action = QAction(tr("Export STL…"), self)
         export_stl_action.triggered.connect(self._on_export_stl)
@@ -1095,6 +1100,29 @@ class MainWindow(QMainWindow):
         self.viewport.camera.set_view("top")
         self.viewport.camera.fit_to(mn, mx)
         self.viewport.update()
+
+    def _on_export_ifc(self) -> None:
+        self.viewport.end_group_edit()
+        from core.bim import collect_objects
+        if not collect_objects(self.viewport.scene):
+            QMessageBox.information(
+                self, tr("Export IFC"),
+                tr("Nothing to export: tag geometry in the BIM panel first "
+                   "(only tagged objects go to IFC)."))
+            return
+        path_str, _ = QFileDialog.getSaveFileName(
+            self, tr("Export IFC"), "model.ifc",
+            tr("IFC4 (*.ifc);;All files (*)"))
+        if not path_str:
+            return
+        try:
+            count = ifc_format.save_ifc(self.viewport.scene, path_str)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, tr("Export IFC failed"), str(exc))
+            return
+        self.statusBar().showMessage(
+            tr("{n} IFC elements exported to {path}",
+               n=count, path=path_str), 5000)
 
     def _on_export_stl(self) -> None:
         self._export("STL", "stl", tr("STL mesh (*.stl)"), stl_format.save_stl)
