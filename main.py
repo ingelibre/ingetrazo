@@ -44,7 +44,10 @@ def _configure_surface_format() -> None:
     fmt.setProfile(QSurfaceFormat.CoreProfile)
     fmt.setDepthBufferSize(24)
     fmt.setStencilBufferSize(8)
-    fmt.setSamples(4)  # 4× MSAA — smooths thin edge lines without hurting depth
+    # NO setSamples here: MSAA lives in the viewport's offscreen scene FBO
+    # (whose blit to the widget is the resolve). A multisampled widget/window
+    # surface never antialiased the blitted scene, and its extra resolve step
+    # interleaved stale frames on Wayland — the "ghost image" during fast zoom.
     QSurfaceFormat.setDefaultFormat(fmt)
 
 

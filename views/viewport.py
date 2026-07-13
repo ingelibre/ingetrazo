@@ -223,7 +223,11 @@ class Viewport(QOpenGLWidget):
         fmt.setProfile(QSurfaceFormat.CoreProfile)
         fmt.setDepthBufferSize(24)
         fmt.setStencilBufferSize(8)
-        fmt.setSamples(4)
+        # NO samples on the widget surface: the scene renders into our own
+        # multisampled FBO (_ensure_scene_fbo) and the blit resolves it. A
+        # multisampled widget FBO adds a second resolve that interleaves stale
+        # frames on Wayland (ghost frames during fast zoom) and cannot smooth
+        # the already-resolved pixels we blit into it.
         self.setFormat(fmt)
         self.setMinimumSize(640, 480)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -437,7 +441,17 @@ class Viewport(QOpenGLWidget):
             return
         fmt = QOpenGLFramebufferObjectFormat()
         fmt.setAttachment(QOpenGLFramebufferObject.CombinedDepthStencil)
+        # Real MSAA happens HERE, where the scene actually renders; the blit
+        # to the widget's single-sample FBO is the resolve (MSAA read → plain
+        # draw is the legal direction). The widget surface itself stays
+        # single-sample — see __init__.
+        fmt.setSamples(4)
         self._scene_fbo = QOpenGLFramebufferObject(size[0], size[1], fmt)
+        if self._scene_fbo.format().samples() == 0:
+            # Driver refused multisampling — retry single-sample but KEEP the
+            # depth/stencil attachment (the Wayland depth workaround).
+            fmt.setSamples(0)
+            self._scene_fbo = QOpenGLFramebufferObject(size[0], size[1], fmt)
         self._fbo_size = size
 
     def paintGL(self) -> None:
