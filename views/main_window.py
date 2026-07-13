@@ -1176,6 +1176,24 @@ class MainWindow(QMainWindow):
             + "<br><b>Sketchfab</b> — <a href='https://sketchfab.com'>"
             "sketchfab.com</a> " + tr("(filter by CC licence, download OBJ)"))
 
+
+    def _import_progress(self, title):
+        """A modal progress dialog + the callback the loaders call at
+        milestones (big imports take ~20 s; SketchUp shows a bar here too)."""
+        from PySide6.QtWidgets import QApplication, QProgressDialog
+        dlg = QProgressDialog(title, "", 0, 100, self)
+        dlg.setCancelButton(None)
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.setMinimumDuration(400)
+        dlg.setAutoClose(False)
+
+        def cb(frac, text):
+            dlg.setValue(int(frac * 100))
+            dlg.setLabelText(tr(text))
+            QApplication.processEvents()
+
+        return dlg, cb
+
     def _on_import_dae(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
             self, tr("Import DAE"), "",
@@ -1183,12 +1201,15 @@ class MainWindow(QMainWindow):
         if not path_str:
             return
         path = Path(path_str)
+        dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))
         try:
             self.viewport.history.execute(SnapshotImport(
-                lambda scene: dae_format.load_dae(scene, path)))
+                lambda scene: dae_format.load_dae(scene, path, progress=cb)))
         except Exception as exc:  # noqa: BLE001
+            dlg.close()
             QMessageBox.critical(self, tr("Import DAE failed"), str(exc))
             return
+        dlg.close()
         self.viewport.update()
         self.statusBar().showMessage(tr("Imported {name}", name=path.name), 3000)
 
@@ -1198,12 +1219,15 @@ class MainWindow(QMainWindow):
         if not path_str:
             return
         path = Path(path_str)
+        dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))
         try:
             self.viewport.history.execute(SnapshotImport(
-                lambda scene: obj_format.load_obj(scene, path)))
+                lambda scene: obj_format.load_obj(scene, path, progress=cb)))
         except Exception as exc:  # noqa: BLE001
+            dlg.close()
             QMessageBox.critical(self, tr("Import OBJ failed"), str(exc))
             return
+        dlg.close()
         self.viewport.update()
         self.statusBar().showMessage(tr("Imported {name}", name=path.name), 3000)
 

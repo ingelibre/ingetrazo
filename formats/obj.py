@@ -150,7 +150,7 @@ def _parse_mtl(path: Path) -> dict:
     return mats
 
 
-def load_obj(scene, path) -> None:
+def load_obj(scene, path, progress=None) -> None:
     """Add the faces of a Wavefront OBJ at ``path`` to ``scene``'s mesh, then
     weld + merge coplanar so a triangulated file (e.g. our own export, or a
     SketchUp OBJ) comes back as clean editable polygons. Material ``Kd`` colours
@@ -161,6 +161,11 @@ def load_obj(scene, path) -> None:
     from core.orient import orient_outward
     from core.topology import _key
 
+    def tick(frac, text):
+        if progress is not None:
+            progress(frac, text)
+
+    tick(0.05, "Reading file…")
     path = Path(path)
     verts: list[QVector3D] = []
     materials: dict = {}
@@ -209,10 +214,18 @@ def load_obj(scene, path) -> None:
         from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
         target = Mesh()
         raw = [(loop, _face_attrs(mat)) for loop, mat in pending]
-        _add_fused(target, fuse_coplanar_loops(raw))
+        tick(0.5, "Merging coplanar faces…")
+        fused = fuse_coplanar_loops(raw)
+        n = max(len(fused), 1)
+        for k, item in enumerate(fused):
+            if progress is not None and k % 8192 == 0:
+                tick(0.6 + 0.3 * k / n, "Building the model…")
+            _add_fused(target, [item])
+        tick(0.92, "Smoothing edges…")
         soften_smooth_edges(target)
         scene.groups.append(Group(target))
         scene.version += 1
+        tick(1.0, "Done")
         return
 
     target = scene.mesh

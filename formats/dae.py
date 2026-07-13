@@ -65,8 +65,10 @@ def _ints(text) -> list[int]:
 class _Dae:
     """One parsed document: id-indexed libraries + resolved world geometry."""
 
-    def __init__(self, root) -> None:
+    def __init__(self, root, base_dir=None) -> None:
         self.root = root
+        self.base_dir = base_dir
+        self._img_colors: dict = {}
         self.by_id: dict = {}
         for el in root.iter():
             i = el.get("id")
@@ -163,8 +165,44 @@ def _prim_loops(prim_el, positions) -> list[list[int]]:
             if len(lp) >= 3 and all(0 <= i < len(positions) for i in lp)]
 
 
+def _image_color(dae: _Dae, image_el):
+    """Representative RGB of a texture image: the average colour when the
+    file exists next to the ``.dae`` (SketchUp exports a ``<name>/`` folder),
+    else a stable light tint derived from the path — either way, distinct
+    materials get distinct colours, so the fusion pass keeps their
+    boundaries (a plaza's curb lines must not melt into the paving)."""
+    init = image_el.find(f"{_NS}init_from")
+    ref = (init.text or "").strip() if init is not None else ""
+    if not ref:
+        return None
+    cached = dae._img_colors.get(ref)
+    if cached is not None:
+        return cached
+    color = None
+    if dae.base_dir is not None:
+        from urllib.parse import unquote
+        candidate = Path(dae.base_dir) / unquote(ref)
+        if candidate.is_file():
+            from PySide6.QtCore import Qt
+            from PySide6.QtGui import QImage
+            img = QImage(str(candidate))
+            if not img.isNull():
+                px = img.scaled(1, 1, Qt.IgnoreAspectRatio,
+                                Qt.SmoothTransformation)
+                c = px.pixelColor(0, 0)
+                color = [c.redF(), c.greenF(), c.blueF()]
+    if color is None:
+        # Missing image: a deterministic light tint keeps the material
+        # boundary visible without inventing loud colours.
+        h = hash(ref)
+        color = [0.78 + ((h >> s) & 15) / 100.0 for s in (0, 4, 8)]
+    dae._img_colors[ref] = color
+    return color
+
+
 def _effect_color(dae: _Dae, material_el):
-    """Diffuse RGB of a material (lambert/phong), or ``None``."""
+    """Diffuse RGB of a material (lambert/phong): the literal colour, or a
+    representative colour of its diffuse texture, or ``None``."""
     ie = material_el.find(f"{_NS}instance_effect")
     effect = dae.ref(ie.get("url")) if ie is not None else None
     if effect is None:
@@ -179,6 +217,33 @@ def _effect_color(dae: _Dae, material_el):
                 vals = _floats(col.text)
                 if len(vals) >= 3:
                     return vals[:3]
+            tex = diffuse.find(f"{_NS}texture")
+            if tex is not None:
+                # Chase sampler → surface → image (SketchUp sometimes puts
+                # the image id directly in texture/@texture).
+                sid = tex.get("texture") or ""
+                target = dae.by_id.get(sid)
+                if target is None or _tag(target) != "image":
+                    for np_el in effect.iter(f"{_NS}newparam"):
+                        if np_el.get("sid") != sid:
+                            continue
+                        s2d = np_el.find(f"{_NS}sampler2D")
+                        src = (s2d.find(f"{_NS}source")
+                               if s2d is not None else None)
+                        surf_sid = (src.text or "").strip() if src is not None else ""
+                        for np2 in effect.iter(f"{_NS}newparam"):
+                            if np2.get("sid") != surf_sid:
+                                continue
+                            surf = np2.find(f"{_NS}surface")
+                            init = (surf.find(f"{_NS}init_from")
+                                    if surf is not None else None)
+                            if init is not None and init.text:
+                                target = dae.by_id.get(init.text.strip())
+                        break
+                if target is not None and _tag(target) == "image":
+                    c = _image_color(dae, target)
+                    if c is not None:
+                        return c
     return None
 
 
@@ -252,7 +317,7 @@ def _collect(dae: _Dae, node_el, xform: QMatrix4x4, out: list,
                     out.append(([world[i] for i in lp], color))
 
 
-def load_dae(scene, path) -> None:
+def load_dae(scene, path, progress=None) -> None:
     """Add the geometry of a COLLADA file at ``path`` to ``scene``.
 
     Small models (≤ ``_MAX_FUSE_LOOPS`` polygons) go into the loose mesh and
@@ -261,13 +326,22 @@ def load_dae(scene, path) -> None:
     :class:`~core.group.Group` (isolated mesh, SketchUp-style), so the
     editing engine — snap, edge splitting, auto-face, heals — never scans
     their thousands of triangles while the user draws beside them. The
-    caller wraps this for undo (``SnapshotImport`` handles the group)."""
+    caller wraps this for undo (``SnapshotImport`` handles the group).
+
+    ``progress``, when given, is called as ``progress(fraction, text)`` at
+    milestones so the UI can show an import progress bar."""
     from core.history import run_stitch
     from core.orient import orient_outward
     from core.topology import _key
 
+    def tick(frac, text):
+        if progress is not None:
+            progress(frac, text)
+
+    tick(0.02, "Reading file…")
     root = ET.parse(Path(path)).getroot()
-    dae = _Dae(root)
+    dae = _Dae(root, base_dir=Path(path).parent)
+    tick(0.15, "Collecting geometry…")
     pending: list = []
     for vs in root.iter(f"{_NS}visual_scene"):
         for node in vs.findall(f"{_NS}node"):
@@ -292,14 +366,23 @@ def load_dae(scene, path) -> None:
         from core.mesh import Mesh
         from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
         target = Mesh()
+        tick(0.35, "Transforming…")
         raw = [([dae.to_zup(p) for p in loop],
                 None if color is None
                 else {"color": [float(c) for c in color[:3]]})
                for loop, color in pending]
-        _add_fused(target, fuse_coplanar_loops(raw))
+        tick(0.5, "Merging coplanar faces…")
+        fused = fuse_coplanar_loops(raw)
+        n = max(len(fused), 1)
+        for k, item in enumerate(fused):
+            if progress is not None and k % 8192 == 0:
+                tick(0.6 + 0.3 * k / n, "Building the model…")
+            _add_fused(target, [item])
+        tick(0.92, "Smoothing edges…")
         soften_smooth_edges(target)
         scene.groups.append(Group(target))
         scene.version += 1
+        tick(1.0, "Done")
         return
 
     target = scene.mesh
