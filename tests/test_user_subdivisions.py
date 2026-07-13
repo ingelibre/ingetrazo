@@ -181,3 +181,84 @@ def test_deleting_the_fence_line_fuses_the_plane_back():
     assert big, "the mother top face must survive and re-fuse"
     assert len(big[0].holes) == 1              # the inner rect is a hole again
     assert is_closed(m)
+
+
+# ---- Slit edges: a fence line joining an inner boundary to the outline
+# (ss.igz report, 2026-07-12) -------------------------------------------------
+
+
+def _flat_ring_with_fence():
+    """30×20 mother + 10×8 inner rect + a fence line from the inner rect's
+    corner (10,6) to the outline (10,0). The plane rebuild traces the mother
+    as ONE cut-open ring walking the fence twice (a slit edge)."""
+    from core.history import AddFaceCommand
+    from core.edits import build_add_edges
+
+    scene = Scene()
+    hist = History(scene)
+
+    def rect(a, c):
+        cs = [V(a[0], a[1]), V(c[0], a[1]), V(c[0], c[1]), V(a[0], c[1])]
+        segs = [(cs[i], cs[(i + 1) % 4]) for i in range(4)]
+        hist.execute(build_add_edges(scene, segs, detect_faces=False,
+                                     extra=[AddFaceCommand(list(cs))]))
+
+    rect((0, 0), (30, 20))
+    rect((10, 6), (24, 14))
+    hist.execute(build_add_edge(scene, V(10, 6), V(10, 0)))
+    return scene, hist
+
+
+def _slit_edges(mesh):
+    return [e for e in mesh.edges
+            if len(e.faces) == 2 and e.faces[0] is e.faces[1]]
+
+
+def test_deleting_a_slit_edge_keeps_the_face():
+    # Erasing the fence line used to dissolve the ring face "with itself":
+    # the face vanished and the line stayed. It must be the other way around.
+    from core.history import EraseSelectionCommand
+    scene, hist = _flat_ring_with_fence()
+    m = scene.mesh
+    slits = _slit_edges(m)
+    assert len(slits) == 1
+    hist.execute(EraseSelectionCommand(slits))
+    assert hist.last_error is None
+    assert not _slit_edges(m)                     # the line is gone
+    big = [f for f in m.faces if f.area() > 400]
+    assert big, "the ring face must survive the fence deletion"
+    assert len(big[0].holes) == 1                 # back to outer + hole
+    assert hist.undo() is True                    # exact round-trip
+    assert len(_slit_edges(m)) == 1
+
+
+def test_deleting_one_piece_of_a_two_piece_fence():
+    # Only the erased piece goes; the other survives as a free edge on the
+    # healed face (SketchUp).
+    from core.history import AddFaceCommand
+    from core.edits import build_add_edges
+    from core.history import EraseSelectionCommand
+
+    scene = Scene()
+    hist = History(scene)
+
+    def rect(a, c):
+        cs = [V(a[0], a[1]), V(c[0], a[1]), V(c[0], c[1]), V(a[0], c[1])]
+        segs = [(cs[i], cs[(i + 1) % 4]) for i in range(4)]
+        hist.execute(build_add_edges(scene, segs, detect_faces=False,
+                                     extra=[AddFaceCommand(list(cs))]))
+
+    rect((0, 0), (30, 20))
+    rect((10, 6), (24, 14))
+    hist.execute(build_add_edge(scene, V(10, 6), V(10, 3)))   # fence, 2 strokes
+    hist.execute(build_add_edge(scene, V(10, 3), V(10, 0)))
+    m = scene.mesh
+    lower = [e for e in _slit_edges(m) if max(e.a.y(), e.b.y()) < 3.01]
+    assert len(lower) == 1
+    hist.execute(EraseSelectionCommand(lower))
+    assert hist.last_error is None
+    big = [f for f in m.faces if f.area() > 400]
+    assert big and len(big[0].holes) == 1
+    upper = [e for e in m.edges if not e.faces
+             and abs(e.a.x() - 10) < 1e-6 and abs(e.b.x() - 10) < 1e-6]
+    assert upper, "the untouched fence piece must survive as a free edge"

@@ -271,6 +271,7 @@ class EraseSelectionCommand(Command):
             if f is not None:
                 m.remove_face(f)
                 scene.selection.discard(f)
+        slit_planes: list = []
         for a, b in self._edge_endpoints:
             v0 = m.vertex_at(a)
             v1 = m.vertex_at(b)
@@ -279,6 +280,19 @@ class EraseSelectionCommand(Command):
                 continue
             faces = list(edge.faces)
             merged = None
+            if len(faces) == 2 and faces[0] is faces[1]:
+                # Slit edge: ONE face walks it twice — a fence line joining an
+                # inner boundary to the outline turns the ring into a cut-open
+                # walk. Dissolving "the face with itself" deleted the face and
+                # kept the line (ss.igz report). Erasing the line must keep
+                # the face: drop only the edge and re-derive the plane's
+                # regions below (the ring comes back as outer + hole; other
+                # fence pieces survive as free edges).
+                f = faces[0]
+                slit_planes.append((QVector3D(f.vertices[0]), f.normal()))
+                m.remove_edge(edge)
+                scene.selection.discard(edge)
+                continue
             if len(faces) == 2 and QVector3D.dotProduct(
                 faces[0].normal(), faces[1].normal()
             ) > 0.999:
@@ -293,6 +307,18 @@ class EraseSelectionCommand(Command):
                     scene.selection.discard(f)
                 m.remove_edge(edge)
             scene.selection.discard(edge)
+        # Slit removals re-derive their plane from the arrangement while the
+        # cut-ring face is still present to provide coverage (it re-emits as
+        # outer + hole, attrs intact; uncovered regions stay empty).
+        done_planes: list = []
+        for origin, normal in slit_planes:
+            nn = normal.normalized()
+            if any(abs(QVector3D.dotProduct(nn, n)) > 0.999 and
+                   abs(QVector3D.dotProduct(origin - o, n)) < 1e-4
+                   for o, n in done_planes):
+                continue
+            done_planes.append((origin, nn))
+            RebuildPlaneFacesCommand(origin, nn).do(scene)
         # Deleting a curved surface takes its hidden seams with it: a soft edge
         # left bordering no face is a dangling curve segment (a cylinder side's
         # vertical seam) — prune it so no stray vertical lines remain. Hard
