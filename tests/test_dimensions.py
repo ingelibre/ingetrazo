@@ -200,3 +200,41 @@ def test_is_occluded_matches_geometry():
     scene.version += 1                                # cache must refresh
     assert occluded(QVector3D(0, 5, 0)) is True
     assert occluded(QVector3D(0, 1, 0)) is True       # behind wall 1 only
+
+
+def test_world_under_cursor_uses_cached_pick():
+    # Zoom-to-cursor's pick rides the cached NumPy triangles (fast wheel
+    # bursts must not re-triangulate the model per event). Nearest hit wins;
+    # empty scene falls back to the ground plane.
+    from PySide6.QtGui import QVector3D
+    from views.viewport import Viewport
+
+    scene = Scene()
+    scene.mesh.add_face([QVector3D(-2, 0, -2), QVector3D(2, 0, -2),
+                         QVector3D(2, 0, 2), QVector3D(-2, 0, 2)])   # wall y=0
+    scene.mesh.add_face([QVector3D(-2, 3, -2), QVector3D(2, 3, -2),
+                         QVector3D(2, 3, 2), QVector3D(-2, 3, 2)])   # wall y=3
+
+    class _Cam:
+        target = QVector3D(0, 0, 0)
+        def eye(self):
+            return QVector3D(0.0, -10.0, 0.0)
+
+    class _VP:
+        pass
+
+    vp = _VP()
+    vp.scene = scene
+    vp.camera = _Cam()
+    vp._pixel_to_ray = lambda x, y: (QVector3D(0, -10, 0), QVector3D(0, 1, 0))
+    vp._pick_triangles = Viewport._pick_triangles.__get__(vp)
+    under = Viewport._world_under_cursor.__get__(vp)
+
+    hit = under(0, 0)
+    assert abs(hit.y() - 0.0) < 1e-6          # nearest wall, not the far one
+    scene.mesh.clear()
+    scene.version += 1                        # cache refresh on scene change
+    vp._pixel_to_ray = lambda x, y: (QVector3D(0, 0, 10),
+                                     QVector3D(0, 0, -1))
+    ground = under(0, 0)
+    assert abs(ground.z()) < 1e-6             # falls back to the ground plane

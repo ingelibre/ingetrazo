@@ -2823,6 +2823,31 @@ class Viewport(QOpenGLWidget):
                 tool.on_box_select(self, rect, crossing, additive)
             self.update()
 
+    def _pick_triangles(self):
+        """Cached NumPy triangle arrays of every *rendered* face (loose mesh +
+        groups), rebuilt when the scene changes. Zoom-to-cursor picks on every
+        wheel event; re-triangulating the whole model per event (2.75 ms on
+        the plaza) starved the paint loop during fast zoom bursts and frames
+        showed up late (the \"ghost image\" report)."""
+        key = (self.scene.version, id(self.scene.mesh))
+        cached = getattr(self, "_pick_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        import numpy as np
+        tris = []
+        for face in self.scene.render_faces():
+            for t0, t1, t2 in face.triangulate():
+                tris.append([[t0.x(), t0.y(), t0.z()],
+                             [t1.x(), t1.y(), t1.z()],
+                             [t2.x(), t2.y(), t2.z()]])
+        if tris:
+            t = np.asarray(tris, dtype=np.float64)
+            arrays = (t[:, 0], t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+        else:
+            arrays = None
+        self._pick_cache = (key, arrays)
+        return arrays
+
     def _world_under_cursor(self, x: float, y: float) -> Optional[QVector3D]:
         """The world point the cursor points at: nearest geometry hit, else the
         ground plane (Z=0), else the focal plane through the target."""
@@ -2830,11 +2855,25 @@ class Viewport(QOpenGLWidget):
         if origin is None or direction is None:
             return None
         best_t = None
-        for face in self.scene.render_faces():
-            for t0, t1, t2 in face.triangulate():
-                t = _ray_triangle(origin, direction, t0, t1, t2)
-                if t is not None and (best_t is None or t < best_t):
-                    best_t = t
+        arrays = self._pick_triangles()
+        if arrays is not None:
+            import numpy as np
+            v0, e1, e2 = arrays
+            o = np.array([origin.x(), origin.y(), origin.z()])
+            d = np.array([direction.x(), direction.y(), direction.z()])
+            p = np.cross(d, e2)
+            det = np.einsum("ij,ij->i", e1, p)
+            ok = np.abs(det) > 1e-9
+            inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+            s = o - v0
+            u = np.einsum("ij,ij->i", s, p) * inv
+            q = np.cross(s, e1)
+            v = (q @ d) * inv
+            t = np.einsum("ij,ij->i", e2, q) * inv
+            hit = (ok & (u >= 0.0) & (u <= 1.0) & (v >= 0.0) & (u + v <= 1.0)
+                   & (t > 1e-9))
+            if hit.any():
+                best_t = float(t[hit].min())
         if best_t is not None:
             return origin + direction * best_t
         if abs(direction.z()) > 1e-6:
