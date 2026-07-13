@@ -186,18 +186,36 @@ def load_obj(scene, path) -> None:
             if len(idxs) >= 3 and all(0 <= i < len(verts) for i in idxs):
                 pending.append(([verts[i] for i in idxs], current_mat))
 
+    def _face_attrs(mat):
+        if mat is None:
+            return None
+        if mat.get("map"):
+            img = path.with_name(mat["map"])
+            return {"texture": {"path": str(img), "sw": 1.0, "sh": 1.0}}
+        color = mat.get("color")
+        if color is not None and tuple(round(c, 4) for c in color) != \
+                tuple(round(c, 4) for c in _DEFAULT_COLOR):
+            return {"color": list(color)}
+        return None
+
     # Library-scale meshes are *reference* geometry: they land in their own
-    # Group (isolated mesh) so drawing beside them never scans their
-    # triangles — see formats/dae.py (_MAX_FUSE_LOOPS, keep in sync).
-    from formats.dae import _MAX_FUSE_LOOPS
-    big = len(pending) > _MAX_FUSE_LOOPS
-    if big:
+    # Group (isolated mesh, coplanar triangles fast-fused into clean facade
+    # polygons + smooth edges softened — the SketchUp import look) so drawing
+    # beside them never scans their triangles — see formats/dae.py.
+    from formats.dae import _MAX_FUSE_LOOPS, _add_fused
+    if len(pending) > _MAX_FUSE_LOOPS:
         from core.group import Group
         from core.mesh import Mesh
+        from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
         target = Mesh()
-    else:
-        target = scene.mesh
+        raw = [(loop, _face_attrs(mat)) for loop, mat in pending]
+        _add_fused(target, fuse_coplanar_loops(raw))
+        soften_smooth_edges(target)
+        scene.groups.append(Group(target))
+        scene.version += 1
+        return
 
+    target = scene.mesh
     seed: set = set()
     new_faces = set()
     for loop, mat in pending:
@@ -221,14 +239,11 @@ def load_obj(scene, path) -> None:
         for v in loop:
             seed.add(_key(v))
 
-    if big:
-        scene.groups.append(Group(target))
-    else:
-        # Weld coincident vertices and fuse the coplanar triangles back into
-        # the polygons they were exported from (a triangulated cube → 6
-        # quads). The coplanar merge is winding-tolerant, so give a closed
-        # result a consistent outward orientation — what the engine and STL
-        # re-export expect. Fusion is O(F²)-ish, hence the reference gate.
-        run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
-        orient_outward(scene.mesh)
+    # Weld coincident vertices and fuse the coplanar triangles back into the
+    # polygons they were exported from (a triangulated cube → 6 quads). The
+    # coplanar merge is winding-tolerant, so give a closed result a
+    # consistent outward orientation — what the engine and STL re-export
+    # expect. (Big models took the reference-group path above.)
+    run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
+    orient_outward(scene.mesh)
     scene.version += 1

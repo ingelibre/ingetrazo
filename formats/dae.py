@@ -23,6 +23,24 @@ from PySide6.QtGui import QMatrix4x4, QVector3D
 
 _NS = "{http://www.collada.org/2005/11/COLLADASchema}"
 
+def _add_fused(mesh, fused) -> None:
+    """Add ``fuse_coplanar_loops`` output to ``mesh``, falling back to a
+    region's original loops when the fused polygon is rejected."""
+    for outer, holes, attrs, originals in fused:
+        try:
+            f = mesh.add_face(outer, holes or None)
+            if attrs:
+                f.attrs.update(attrs)
+        except Exception:  # noqa: BLE001 — irregular region: keep its pieces
+            for pts in originals:
+                try:
+                    f = mesh.add_face(pts)
+                    if attrs:
+                        f.attrs.update(attrs)
+                except Exception:  # noqa: BLE001
+                    continue
+
+
 # Imports up to this many polygons get the full editable-import pipeline
 # (coplanar fusion + outward orientation). Bigger models come from asset
 # libraries (3D Warehouse buildings, furniture) and import as-is: the fusion
@@ -272,10 +290,19 @@ def load_dae(scene, path) -> None:
     if big:
         from core.group import Group
         from core.mesh import Mesh
+        from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
         target = Mesh()
-    else:
-        target = scene.mesh
+        raw = [([dae.to_zup(p) for p in loop],
+                None if color is None
+                else {"color": [float(c) for c in color[:3]]})
+               for loop, color in pending]
+        _add_fused(target, fuse_coplanar_loops(raw))
+        soften_smooth_edges(target)
+        scene.groups.append(Group(target))
+        scene.version += 1
+        return
 
+    target = scene.mesh
     seed: set = set()
     new_faces = set()
     for loop, color in pending:
@@ -290,12 +317,9 @@ def load_dae(scene, path) -> None:
         for p in pts:
             seed.add(_key(p))
 
-    if big:
-        scene.groups.append(Group(target))
-    else:
-        # Fuse the exported triangles back into clean polygons and give a
-        # closed result a consistent outward orientation — same pipeline as
-        # OBJ import. Fusion is O(F²)-ish, hence the reference gate above.
-        run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
-        orient_outward(scene.mesh)
+    # Fuse the exported triangles back into clean polygons and give a closed
+    # result a consistent outward orientation — same pipeline as OBJ import.
+    # (Big models took the reference-group path above with the fast fusion.)
+    run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
+    orient_outward(scene.mesh)
     scene.version += 1
