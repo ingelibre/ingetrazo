@@ -1068,95 +1068,108 @@ class Viewport(QOpenGLWidget):
         # no longer exist, or deleted geometry keeps ghost-rendering (blue
         # hover / orange selection) until the mouse moves or a click replaces
         # the selection. Renderer-level guarantee — holds no matter which
-        # command forgot to discard. Skipped when there is nothing to purge
-        # (the common case while drawing): the alive sets walk every entity.
+        # command forgot to discard. Membership is checked per candidate
+        # (identity scans in C) instead of materialising 300k-entity sets;
+        # a huge candidate list falls back to the set walk.
         hover = self._hover_entity
-        if hover is not None or self.scene.selection:
-            alive_edges = set(self.scene.render_edges())
-            alive_faces = set(self.scene.render_faces())
-            if isinstance(hover, Edge) and hover not in alive_edges:
+        cands = [hover] if isinstance(hover, (Edge, Face)) else []
+        cands += [s for s in self.scene.selection
+                  if isinstance(s, (Edge, Face))]
+        if cands:
+            if len(cands) > 64:
+                alive_e: set = set(self.scene.render_edges())
+                alive_f: set = set(self.scene.render_faces())
+
+                def alive(ent):
+                    return ent in (alive_e if isinstance(ent, Edge)
+                                   else alive_f)
+            else:
+                gmeshes = [g.mesh for g in self.scene.groups
+                           if self.scene.entity_visible(g)
+                           and not getattr(g, "billboard", False)]
+
+                def alive(ent):
+                    if isinstance(ent, Edge):
+                        if ent in self.scene.loose_mesh.edges:
+                            return self.scene.entity_visible(ent)
+                        return any(ent in gm.edges for gm in gmeshes)
+                    if ent in self.scene.loose_mesh.faces:
+                        return self.scene.entity_visible(ent)
+                    return any(ent in gm.faces for gm in gmeshes)
+
+            if isinstance(hover, (Edge, Face)) and not alive(hover):
                 self._hover_entity = None
-            elif isinstance(hover, Face) and hover not in alive_faces:
-                self._hover_entity = None
-            dead = [s for s in self.scene.selection
-                    if (isinstance(s, Edge) and s not in alive_edges)
-                    or (isinstance(s, Face) and s not in alive_faces)]
-            for s in dead:
+            for s in [s for s in self.scene.selection
+                      if isinstance(s, (Edge, Face)) and not alive(s)]:
                 self.scene.selection.discard(s)
 
         # Hard edges: loose ones rebuilt fresh, group ones from cached chunks
         # (composition mirrors scene.render_edges()).
-        all_data = array("f")
+        all_loose = array("f")
         for e in self.scene.loose_mesh.edges:
             if not self.scene.entity_visible(e) or getattr(e, "soft", False):
                 continue  # hidden layer / curve segment (hidden, reads smooth)
-            all_data.extend([
+            all_loose.extend([
                 e.a.x(), e.a.y(), e.a.z(),
                 e.b.x(), e.b.y(), e.b.z(),
             ])
+        edge_parts = [all_loose.tobytes()]
         for g in self.scene.groups:
             if (self.scene.entity_visible(g)
                     and not getattr(g, "billboard", False)):
-                all_data.extend(self._group_chunk(g)["edges"])
+                edge_parts.append(self._group_chunk(g)["edges"])
+        edges_raw = b"".join(edge_parts)
         self._edges_vbo.bind()
-        if all_data:
-            raw = all_data.tobytes()
-            self._edges_vbo.allocate(raw, len(raw))
+        if edges_raw:
+            self._edges_vbo.allocate(edges_raw, len(edges_raw))
         else:
             self._edges_vbo.allocate(24)
         self._edges_vbo.release()
-        self._edges_count = len(all_data) // 3
+        self._edges_count = len(edges_raw) // 12
 
-        # The selection set is heterogeneous (edges, faces and/or whole groups).
-        # Edges (and every edge of a selected group) → highlighted-line VBO.
-        sel_edges = []
+        # The selection set is heterogeneous (edges, faces and/or whole
+        # groups). A selected GROUP highlights via its cached chunk — walking
+        # + re-triangulating a 100k-face imported group froze the app the
+        # moment the user clicked it.
+        sel_loose = array("f")
+        sel_edge_parts = []
+        sel_face_parts = []
         for ent in self.scene.selection:
             if isinstance(ent, Edge):
-                sel_edges.append(ent)
+                sel_loose.extend([ent.a.x(), ent.a.y(), ent.a.z(),
+                                  ent.b.x(), ent.b.y(), ent.b.z()])
             elif isinstance(ent, Group):
-                # Soft seams (a swept curve's vertical facets) are hidden in
-                # the normal render; the selection highlight must hide them
-                # too, or grouping a smooth cylinder suddenly shows every
-                # segment seam in orange.
-                sel_edges.extend(e for e in ent.mesh.edges
-                                 if not getattr(e, "soft", False))
-        sel_data = array("f")
-        for e in sel_edges:
-            sel_data.extend([
-                e.a.x(), e.a.y(), e.a.z(),
-                e.b.x(), e.b.y(), e.b.z(),
-            ])
+                # Chunk edges already exclude soft seams (a grouped smooth
+                # cylinder must not flash its segment seams in orange).
+                chunk = self._group_chunk(ent)
+                sel_edge_parts.append(chunk["edges"])
+                sel_face_parts.append(self._chunk_tri_pos(chunk))
+        sel_raw = sel_loose.tobytes() + b"".join(sel_edge_parts)
         self._selected_vbo.bind()
-        if sel_data:
-            sel_raw = sel_data.tobytes()
+        if sel_raw:
             self._selected_vbo.allocate(sel_raw, len(sel_raw))
         else:
             self._selected_vbo.allocate(24)
         self._selected_vbo.release()
-        self._selected_count = len(sel_data) // 3
+        self._selected_count = len(sel_raw) // 12
 
-        sel_faces = []
+        sel_face_loose = array("f")
         for ent in self.scene.selection:
             if isinstance(ent, Face):
-                sel_faces.append(ent)
-            elif isinstance(ent, Group):
-                sel_faces.extend(ent.mesh.faces)
-        sel_face_data = array("f")
-        for face in sel_faces:
-            for t0, t1, t2 in face.triangulate():
-                sel_face_data.extend([
-                    t0.x(), t0.y(), t0.z(),
-                    t1.x(), t1.y(), t1.z(),
-                    t2.x(), t2.y(), t2.z(),
-                ])
+                for t0, t1, t2 in ent.triangulate():
+                    sel_face_loose.extend([
+                        t0.x(), t0.y(), t0.z(),
+                        t1.x(), t1.y(), t1.z(),
+                        t2.x(), t2.y(), t2.z(),
+                    ])
+        sel_face_raw = sel_face_loose.tobytes() + b"".join(sel_face_parts)
         self._sel_faces_vbo.bind()
-        if sel_face_data:
-            sel_face_raw = sel_face_data.tobytes()
+        if sel_face_raw:
             self._sel_faces_vbo.allocate(sel_face_raw, len(sel_face_raw))
         else:
             self._sel_faces_vbo.allocate(24)
         self._sel_faces_vbo.release()
-        self._sel_faces_count = len(sel_face_data) // 3
+        self._sel_faces_count = len(sel_face_raw) // 12
 
         # Faces: triangulate each face (fan when simple, hole-aware when the
         # face has been divided) into one VBO, but grouped by material colour
@@ -1165,8 +1178,10 @@ class Viewport(QOpenGLWidget):
         # contribute their cached chunk buffers (a 17k-face reference model
         # made every stroke pay a ~1 s re-triangulation otherwise).
         suppressed_faces = self._suppressed_faces
-        by_color: dict = {}
+        by_color: dict = {}          # loose faces (array("f") buffers)
         by_texture: dict = {}        # image path -> interleaved pos+uv array
+        group_color: dict = {}       # chunk byte-parts per colour key
+        group_texture: dict = {}     # chunk byte-parts per image path
 
         def bucket_face(face):
             if face in suppressed_faces:
@@ -1205,46 +1220,51 @@ class Viewport(QOpenGLWidget):
                     bucket_face(face)   # push/pull preview suppresses faces
                 continue
             chunk = self._group_chunk(g)
-            for key, buf in chunk["by_color"].items():
-                dst = by_color.get(key)
-                if dst is None:
-                    dst = by_color[key] = array("f")
-                dst.extend(buf)
-            for path, buf in chunk["by_texture"].items():
-                dst = by_texture.get(path)
-                if dst is None:
-                    dst = by_texture[path] = array("f")
-                dst.extend(buf)
-        face_data = array("f")
+            for key, raw in chunk["by_color"].items():
+                group_color.setdefault(key, []).append(raw)
+            for path, raw in chunk["by_texture"].items():
+                group_texture.setdefault(path, []).append(raw)
+
+        face_parts = []
         self._face_runs = []
-        for key, buf in by_color.items():
-            start = len(face_data) // 3
-            face_data.extend(buf)
-            self._face_runs.append((key, start, len(buf) // 3))
+        start = 0
+        for key in dict.fromkeys(list(by_color) + list(group_color)):
+            parts = ([by_color[key].tobytes()] if key in by_color else [])
+            parts += group_color.get(key, [])
+            raw = b"".join(parts)
+            face_parts.append(raw)
+            count = len(raw) // 12
+            self._face_runs.append((key, start, count))
+            start += count
+        face_raw = b"".join(face_parts)
         self._faces_vbo.bind()
-        if face_data:
-            face_raw = face_data.tobytes()
+        if face_raw:
             self._faces_vbo.allocate(face_raw, len(face_raw))
         else:
             self._faces_vbo.allocate(24)
         self._faces_vbo.release()
-        self._faces_count = len(face_data) // 3
+        self._faces_count = len(face_raw) // 12
 
         # Textured faces: one interleaved (pos+uv) VBO, a run per image path.
-        tex_data = array("f")
+        tex_parts = []
         self._tex_runs = []
-        for path, buf in by_texture.items():
-            start = len(tex_data) // 5
-            tex_data.extend(buf)
-            self._tex_runs.append((path, start, len(buf) // 5))
+        start = 0
+        for path in dict.fromkeys(list(by_texture) + list(group_texture)):
+            parts = ([by_texture[path].tobytes()] if path in by_texture else [])
+            parts += group_texture.get(path, [])
+            raw = b"".join(parts)
+            tex_parts.append(raw)
+            count = len(raw) // 20
+            self._tex_runs.append((path, start, count))
+            start += count
+        tex_raw = b"".join(tex_parts)
         self._tex_faces_vbo.bind()
-        if tex_data:
-            tex_raw = tex_data.tobytes()
+        if tex_raw:
             self._tex_faces_vbo.allocate(tex_raw, len(tex_raw))
         else:
             self._tex_faces_vbo.allocate(40)
         self._tex_faces_vbo.release()
-        self._tex_faces_count = len(tex_data) // 5
+        self._tex_faces_count = len(tex_raw) // 20
 
         self._edges_version = self.scene.version
         self.sceneVersionChanged.emit(self._edges_version)
@@ -2335,17 +2355,107 @@ class Viewport(QOpenGLWidget):
             fp = memo[key] = self._mesh_fingerprint(group.mesh)
         return fp
 
+    @staticmethod
+    def _translation_probe(entry, mesh):
+        """When the group's mesh is the chunk, purely TRANSLATED, return the
+        delta; else ``None``. Counts must match and every sampled vertex must
+        have moved by the same vector. This is what keeps dragging a 100k-face
+        reference group interactive: Move live-deforms the mesh per frame, and
+        a full chunk rebuild at that scale takes ~15 s."""
+        verts = mesh.vertices
+        if (len(verts) != entry["nv"] or len(mesh.edges) != entry["ne"]
+                or len(mesh.faces) != entry["nf"] or not entry["samples"]):
+            return None
+        i0, p0 = entry["samples"][0]
+        d = verts[i0].position - QVector3D(*p0)
+        if d.length() < 1e-9:
+            return None                   # unchanged, or a non-geometric edit
+        for i, p in entry["samples"][1:]:
+            if ((verts[i].position - QVector3D(*p)) - d).length() > 1e-6:
+                return None
+        return d
+
+    def _shift_chunk(self, entry, d, mesh) -> None:
+        """Translate every cached array of ``entry`` by ``d`` in place —
+        NumPy adds instead of a rebuild — and refresh samples + fingerprint
+        analytically."""
+        import numpy as np
+        dx = np.array([d.x(), d.y(), d.z()])
+
+        def flat3(b):
+            a = np.frombuffer(b, dtype=np.float32).reshape(-1, 3).copy()
+            a += dx
+            return a.astype(np.float32).tobytes()
+
+        entry["edges"] = flat3(entry["edges"])
+        entry["by_color"] = {k: flat3(v) for k, v in entry["by_color"].items()}
+        tex = {}
+        for k, v in entry["by_texture"].items():
+            a = np.frombuffer(v, dtype=np.float32).reshape(-1, 5).copy()
+            a[:, :3] += dx
+            tex[k] = a.astype(np.float32).tobytes()
+        entry["by_texture"] = tex
+        if entry["v0"] is not None:
+            entry["v0"] = entry["v0"] + dx
+        for kk in ("soft_c0", "soft_c1"):
+            if len(entry[kk]):
+                entry[kk] = entry[kk] + dx
+        if entry["soft_pts"] is not None:
+            sp = entry["soft_pts"].reshape(-1, 3) + dx
+            entry["soft_pts"] = sp.astype(np.float32).reshape(-1, 6)
+        entry["tri_pos"] = None            # lazy; rebuilt from v0 on demand
+        entry["samples"] = [(i, (mesh.vertices[i].position.x(),
+                                 mesh.vertices[i].position.y(),
+                                 mesh.vertices[i].position.z()))
+                            for i, _p in entry["samples"]]
+        entry["coordsum"] += entry["nv"] * (
+            d.x() + d.y() * 1.000003 + d.z() * 1.000007)
+        fp = entry["fp"]
+        entry["fp"] = (fp[0], fp[1], fp[2], round(entry["coordsum"], 4),
+                       fp[4], fp[5])
+
+    @staticmethod
+    def _chunk_tri_pos(entry):
+        """Flat float32 triangle positions of a chunk (for the selection
+        tint) — derived lazily from the pick arrays, never by re-running
+        earcut over the group."""
+        tp = entry.get("tri_pos")
+        if tp is None:
+            if entry["v0"] is None:
+                tp = b""
+            else:
+                import numpy as np
+                v0, e1, e2 = entry["v0"], entry["e1"], entry["e2"]
+                arr = np.empty((len(v0), 9), dtype=np.float32)
+                arr[:, 0:3] = v0
+                arr[:, 3:6] = v0 + e1
+                arr[:, 6:9] = v0 + e2
+                tp = arr.tobytes()
+            entry["tri_pos"] = tp
+        return tp
+
     def _group_chunk(self, group):
         """Cached render + pick payload of one group, keyed by its content
         fingerprint. A big imported reference model (17k faces) made EVERY
         stroke beside it pay a full VBO + pick-index rebuild (~1.5 s); with
-        the chunk, untouched groups just re-concatenate."""
-        fp = self._group_fp(group)
+        the chunk, untouched groups just re-concatenate, and a pure
+        translation (Move drag) shifts the arrays instead of rebuilding."""
         cache = getattr(self, "_group_chunks", None)
         if cache is None:
             cache = self._group_chunks = {}
         entry = cache.get(id(group))
+        vkey = (self.scene.version, id(self.scene.mesh))
+        if entry is not None:
+            if entry.get("vkey") == vkey:
+                return entry
+            d = self._translation_probe(entry, group.mesh)
+            if d is not None:
+                self._shift_chunk(entry, d, group.mesh)
+                entry["vkey"] = vkey
+                return entry
+        fp = self._group_fp(group)
         if entry is not None and entry["fp"] == fp:
+            entry["vkey"] = vkey
             return entry
         import numpy as np
         mesh = group.mesh
@@ -2424,10 +2534,25 @@ class Viewport(QOpenGLWidget):
             tri_ent_a = np.asarray(tri_ent, dtype=np.int64)
         else:
             v0 = e1 = e2 = tri_ent_a = None
-        entry = {"fp": fp, "edges": edges_data, "by_color": by_color,
-                 "by_texture": by_texture, "faces": faces,
+        verts = mesh.vertices
+        nv = len(verts)
+        coordsum = 0.0
+        for v in verts:
+            p = v.position
+            coordsum += p.x() + p.y() * 1.000003 + p.z() * 1.000007
+        idxs = sorted({k * max(nv - 1, 0) // 7 for k in range(8)}) if nv else []
+        samples = [(i, (verts[i].position.x(), verts[i].position.y(),
+                        verts[i].position.z())) for i in idxs]
+        entry = {"fp": fp, "vkey": vkey,
+                 "nv": nv, "ne": len(mesh.edges), "nf": len(mesh.faces),
+                 "samples": samples, "coordsum": coordsum,
+                 "edges": edges_data.tobytes(),
+                 "by_color": {k: v.tobytes() for k, v in by_color.items()},
+                 "by_texture": {k: v.tobytes() for k, v in by_texture.items()},
+                 "faces": faces,
                  "areas": np.asarray(areas, dtype=np.float64),
                  "v0": v0, "e1": e1, "e2": e2, "tri_ent": tri_ent_a,
+                 "tri_pos": None,
                  "soft_pts": (np.asarray(soft_pts, dtype=np.float32)
                               if soft_pts else None),
                  "soft_n0": np.asarray(soft_n0, dtype=np.float64),
