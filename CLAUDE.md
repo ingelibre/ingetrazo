@@ -585,6 +585,9 @@ ingetrazo/                     ← nombre lógico del proyecto; carpeta en disco
 
 ## Gotchas críticos descubiertos
 
+- **Wayland nativo intercala frames viejos del viewport GL** (verificado 2026-07-12, GNOME/Mutter + Mesa + kernel 7.0): bajo ráfagas de update() (zoom rápido de rueda) el compositor muestra frames anteriores intercalados → imagen fantasma/doble que las capturas no registran (solo fotos de pantalla). NO lo curan ni mover el MSAA al FBO de escena ni un `glFinish` al final de `paintGL`. Bajo **XWayland es perfecto** → `main.py` setea `QT_QPA_PLATFORM=xcb;wayland` por default (override explícito del env sigue ganando; `;wayland` es fallback para sistemas sin X). Si algún día se quiere volver a Wayland nativo, re-testear este síntoma primero.
+- **MSAA va en el FBO de escena, NO en la superficie del widget** (2026-07-12): la escena se dibuja en nuestro FBO offscreen (workaround del depth) — `setSamples(4)` en el widget/ventana no antialiasea nada de lo blitteado y agrega un resolve extra por frame; el FBO de escena con `setSamples(4)` + el blit existente como resolve da el AA real (primera vez que la escena tiene AA).
+
 - **Z lock pre-refactor**: proyectar candidate (que venía del raycast Z=0) sobre el eje Z daba el mismo `start_point`. Fix: `_project_to_lock_line` con closest-point line-to-ray usando el rayo de la cámara (`views/viewport.py`). Mismo fix vale para reference lock con dirección 3D.
 - **Adaptive work plane** (Fix 1 de la sesión 9): sin esto, después de subir con Z lock no podías dibujar al nivel del techo — el cursor caía al suelo. Solución: `_current_work_plane_z()` que usa `start_point.z()` cuando hay tool activa.
 - **Polygon offset** activado solo para faces (`GL_POLYGON_OFFSET_FILL` con factor 1, units 1) — empuja las caras "atrás" en depth para que aristas coincidentes se vean limpias encima. Combinado con `glDepthFunc(GL_LEQUAL)` cubre todos los casos de aristas coplanares con caras.

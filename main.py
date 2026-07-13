@@ -8,8 +8,19 @@ Licensed under GPL-3.0-or-later. See LICENSE.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# Prefer XWayland over native Wayland (must be set before Qt loads its
+# platform plugin). Native Wayland compositing interleaves stale frames of
+# the GL viewport under fast zoom/orbit bursts — a persistent ghost/double
+# image (verified 2026-07-12: flawless under xcb, ghosting under wayland on
+# the same build; neither MSAA relocation nor a glFinish barrier cured the
+# native path). The ";wayland" fallback keeps X-less systems working, and an
+# explicit QT_QPA_PLATFORM in the environment still wins.
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb;wayland")
 
 from PySide6.QtCore import QLocale, QSettings
 from PySide6.QtGui import QSurfaceFormat
