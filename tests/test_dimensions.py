@@ -163,3 +163,40 @@ def test_dimension_style_survives_igz_round_trip(tmp_path):
     assert loaded.dimension_style["decimals"] == 0
     assert loaded.dimension_style["units"] == "cm"
     assert loaded.dimension_style["font_size"] == 14
+
+
+# ---- Occlusion (vectorised, cached — the orbit-speed fix) -----------------------
+
+def test_is_occluded_matches_geometry():
+    # A wall between the camera and the point occludes it; a point in front
+    # of the wall (or with no geometry) is visible. Exercises the cached
+    # NumPy Möller–Trumbore path headless (plaza.igz slowdown report).
+    from PySide6.QtGui import QVector3D
+    from views.viewport import Viewport
+
+    scene = Scene()
+    scene.mesh.add_face([QVector3D(-2, 0, -2), QVector3D(2, 0, -2),
+                         QVector3D(2, 0, 2), QVector3D(-2, 0, 2)])  # wall y=0
+
+    class _Cam:
+        def eye(self):
+            return QVector3D(0.0, -10.0, 0.0)
+
+    class _VP:
+        pass
+
+    vp = _VP()
+    vp.scene = scene
+    vp.camera = _Cam()
+    vp._occlusion_triangles = Viewport._occlusion_triangles.__get__(vp)
+    occluded = Viewport._is_occluded.__get__(vp)
+
+    assert occluded(QVector3D(0, 5, 0)) is True       # behind the wall
+    assert occluded(QVector3D(0, -5, 0)) is False     # in front of it
+    assert occluded(QVector3D(5, 5, 0)) is False      # past the wall's edge
+    assert occluded(QVector3D(0, 0, 0)) is False      # ON the wall (epsilon)
+    scene.mesh.add_face([QVector3D(-2, 2, -2), QVector3D(2, 2, -2),
+                         QVector3D(2, 2, 2), QVector3D(-2, 2, 2)])
+    scene.version += 1                                # cache must refresh
+    assert occluded(QVector3D(0, 5, 0)) is True
+    assert occluded(QVector3D(0, 1, 0)) is True       # behind wall 1 only

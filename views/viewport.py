@@ -2324,6 +2324,32 @@ class Viewport(QOpenGLWidget):
                     best = vertex
         return best
 
+    def _occlusion_triangles(self):
+        """Cached NumPy arrays ``(v0, e1, e2)`` of every loose-mesh triangle,
+        rebuilt when the scene changes. ``_is_occluded`` fires dozens of times
+        per frame while dimensions are on screen (each cota samples its three
+        lines against the model); re-running earcut per query made orbiting a
+        dimensioned plaza crawl (~280 ms/frame on the plaza.igz report —
+        batched here it's ~5 ms)."""
+        key = (self.scene.version, id(self.scene.mesh))
+        cached = getattr(self, "_occl_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        import numpy as np
+        tris = []
+        for face in self.scene.faces:
+            for t0, t1, t2 in face.triangulate():
+                tris.append([[t0.x(), t0.y(), t0.z()],
+                             [t1.x(), t1.y(), t1.z()],
+                             [t2.x(), t2.y(), t2.z()]])
+        if tris:
+            t = np.asarray(tris, dtype=np.float64)
+            arrays = (t[:, 0], t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+        else:
+            arrays = None
+        self._occl_cache = (key, arrays)
+        return arrays
+
     def _is_occluded(self, world: QVector3D) -> bool:
         """Whether a face sits between the camera and ``world`` — i.e. the
         point is hidden behind solid geometry from the current view. Used to
@@ -2331,20 +2357,32 @@ class Viewport(QOpenGLWidget):
 
         A small epsilon keeps a point that lies *on* a face (e.g. an edge on
         that face's boundary) from being reported as occluded by its own
-        face."""
+        face. Vectorised Möller–Trumbore over the cached triangle arrays."""
+        arrays = self._occlusion_triangles()
+        if arrays is None:
+            return False
+        import numpy as np
         origin = self.camera.eye()
-        delta = world - origin
-        dist = delta.length()
+        eye = np.array([origin.x(), origin.y(), origin.z()])
+        w = np.array([world.x(), world.y(), world.z()])
+        delta = w - eye
+        dist = float(np.linalg.norm(delta))
         if dist < 1e-9:
             return False
-        direction = delta.normalized()
-        eps = 1e-3
-        for face in self.scene.faces:
-            for t0, t1, t2 in face.triangulate():
-                t = _ray_triangle(origin, direction, t0, t1, t2)
-                if t is not None and t < dist - eps:
-                    return True
-        return False
+        d = delta / dist
+        v0, e1, e2 = arrays
+        p = np.cross(d, e2)
+        det = np.einsum("ij,ij->i", e1, p)
+        ok = np.abs(det) > 1e-9
+        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+        s = eye - v0
+        u = np.einsum("ij,ij->i", s, p) * inv
+        q = np.cross(s, e1)
+        v = (q @ d) * inv
+        t = np.einsum("ij,ij->i", e2, q) * inv
+        hit = (ok & (u >= 0.0) & (u <= 1.0) & (v >= 0.0) & (u + v <= 1.0)
+               & (t > 1e-9) & (t < dist - 1e-3))
+        return bool(hit.any())
 
     def pick_face(self, screen_x: float, screen_y: float):
         """Return the face the cursor ray hits, or ``None``.
