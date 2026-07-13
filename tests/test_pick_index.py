@@ -37,7 +37,7 @@ def _bind(vp):
     vp._mesh_fingerprint = Viewport._mesh_fingerprint  # staticmethod
     for name in ("_pick_index", "_ray_hits", "pick_face", "pick_face_any",
                  "pick_edge", "_project_px", "_np_mvp", "_group_chunk",
-                 "_append_textured_face", "_shaded_color"):
+                 "_append_textured_face", "_shaded_color", "_group_fp"):
         setattr(vp, name, getattr(Viewport, name).__get__(vp))
     return vp
 

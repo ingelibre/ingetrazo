@@ -784,9 +784,14 @@ class Viewport(QOpenGLWidget):
             # while a solid keeps its top-bright / sides-toned maquette look.
             d = abs(QVector3D.dotProduct(normal.normalized(), self._LIGHT))
             shade = 0.80 + 0.20 * d                                     # 0.80..1.0
-        return (min(1.0, base[0] * shade),
-                min(1.0, base[1] * shade),
-                min(1.0, base[2] * shade))
+        # Quantise to 1/64 steps: the tuple is the DRAW-RUN key, and a model
+        # with thousands of distinct normals (imported trees, curved detail)
+        # otherwise explodes into one draw call per unique shade — 63k draw
+        # calls per frame on a real 100k-face project. 1/64 banding is
+        # invisible; the run count collapses to a few hundred.
+        return (round(min(1.0, base[0] * shade) * 64.0) / 64.0,
+                round(min(1.0, base[1] * shade) * 64.0) / 64.0,
+                round(min(1.0, base[2] * shade) * 64.0) / 64.0)
 
     # ---- Base-map tiles (Track G) -------------------------------------------
     def _base_map_showing(self) -> bool:
@@ -1367,21 +1372,19 @@ class Viewport(QOpenGLWidget):
         camera and one away — so a curved surface shows its outline. A soft
         edge with a single face is always a profile (a boundary). View-dependent,
         called each frame."""
-        # Only soft edges matter here; scanning ALL edges per frame is pure
-        # waste on a big imported mesh (40k edges, none soft) — cache the
-        # soft subset per scene version.
+        # Loose soft edges (few — the user's own curves) walk in Python;
+        # group soft edges (an imported project can carry ~100k) run the view
+        # test vectorised over the group chunk's cached arrays.
         key = (self.scene.version, id(self.scene.mesh))
         cached = getattr(self, "_soft_edges_cache", None)
         if cached is None or cached[0] != key:
-            cached = (key, [e for e in self.scene.render_edges()
-                            if getattr(e, "soft", False)])
+            cached = (key, [e for e in self.scene.loose_mesh.edges
+                            if getattr(e, "soft", False)
+                            and self.scene.entity_visible(e)])
             self._soft_edges_cache = cached
-        soft_edges = cached[1]
-        if not soft_edges:
-            return 0
         eye = self.camera.eye()
         data = array("f")
-        for e in soft_edges:
+        for e in cached[1]:
             faces = e.faces
             # A 1-face soft edge is an open-surface boundary (a real profile); a
             # 0-face one is a dangling line (not drawn here).
@@ -1395,14 +1398,32 @@ class Viewport(QOpenGLWidget):
             if silhouette:
                 data.extend([e.a.x(), e.a.y(), e.a.z(),
                              e.b.x(), e.b.y(), e.b.z()])
+        chunks: list = [data.tobytes()]
+        groups = [g for g in self.scene.groups
+                  if self.scene.entity_visible(g)
+                  and not getattr(g, "billboard", False)]
+        if groups:
+            import numpy as np
+            e_np = np.array([eye.x(), eye.y(), eye.z()])
+            for g in groups:
+                ch = self._group_chunk(g)
+                if ch["soft_pts"] is None:
+                    continue
+                s0 = np.einsum("ij,ij->i", ch["soft_n0"],
+                               ch["soft_c0"] - e_np)
+                s1 = np.einsum("ij,ij->i", ch["soft_n1"],
+                               ch["soft_c1"] - e_np)
+                mask = ch["soft_single"] | ((s0 < 0) != (s1 < 0))
+                if mask.any():
+                    chunks.append(ch["soft_pts"][mask].tobytes())
+        raw = b"".join(chunks)
         self._silhouette_vbo.bind()
-        if data:
-            raw = data.tobytes()
+        if raw:
             self._silhouette_vbo.allocate(raw, len(raw))
         else:
             self._silhouette_vbo.allocate(24)
         self._silhouette_vbo.release()
-        return len(data) // 3
+        return len(raw) // 12
 
     def _upload_hover_edge(self, edge: Edge) -> int:
         """Upload the hovered edge — or, for a curve segment, its whole contour
@@ -2287,12 +2308,28 @@ class Viewport(QOpenGLWidget):
         return (len(mesh.vertices), len(mesh.edges), len(mesh.faces),
                 round(s, 4), a, soft)
 
+    def _group_fp(self, group):
+        """Fingerprint of a group's mesh, memoised per scene version — the
+        chunk is consulted several times per frame/stroke (faces, edges,
+        silhouette, pick index) and the fingerprint walk over a 130k-vertex
+        reference model costs ~200 ms."""
+        key = (id(group), self.scene.version, id(self.scene.mesh))
+        memo = getattr(self, "_fp_memo", None)
+        if memo is None:
+            memo = self._fp_memo = {}
+        fp = memo.get(key)
+        if fp is None:
+            if len(memo) > 64:
+                memo.clear()
+            fp = memo[key] = self._mesh_fingerprint(group.mesh)
+        return fp
+
     def _group_chunk(self, group):
         """Cached render + pick payload of one group, keyed by its content
         fingerprint. A big imported reference model (17k faces) made EVERY
         stroke beside it pay a full VBO + pick-index rebuild (~1.5 s); with
         the chunk, untouched groups just re-concatenate."""
-        fp = self._mesh_fingerprint(group.mesh)
+        fp = self._group_fp(group)
         cache = getattr(self, "_group_chunks", None)
         if cache is None:
             cache = self._group_chunks = {}
@@ -2302,11 +2339,46 @@ class Viewport(QOpenGLWidget):
         import numpy as np
         mesh = group.mesh
         edges_data = array("f")
+        # Soft-edge silhouette source data: per-frame the view test runs
+        # vectorised over these (99k soft edges walked in Python per frame
+        # made orbiting a full imported project a 4-second slide show).
+        soft_pts: list = []
+        soft_n0: list = []
+        soft_c0: list = []
+        soft_n1: list = []
+        soft_c1: list = []
+        soft_single: list = []
+        fprops: dict = {}
+
+        def props(f):
+            r = fprops.get(id(f))
+            if r is None:
+                n, c = f.normal(), f.centroid()
+                r = fprops[id(f)] = ((n.x(), n.y(), n.z()),
+                                     (c.x(), c.y(), c.z()))
+            return r
+
         for e in mesh.edges:
-            if getattr(e, "soft", False):
+            if not getattr(e, "soft", False):
+                edges_data.extend([e.a.x(), e.a.y(), e.a.z(),
+                                   e.b.x(), e.b.y(), e.b.z()])
                 continue
-            edges_data.extend([e.a.x(), e.a.y(), e.a.z(),
-                               e.b.x(), e.b.y(), e.b.z()])
+            fs = e.faces
+            if len(fs) not in (1, 2):
+                continue                  # dangling / non-manifold: not drawn
+            soft_pts.append([e.a.x(), e.a.y(), e.a.z(),
+                             e.b.x(), e.b.y(), e.b.z()])
+            n0, c0 = props(fs[0])
+            soft_n0.append(n0)
+            soft_c0.append(c0)
+            if len(fs) == 2:
+                n1, c1 = props(fs[1])
+                soft_single.append(False)
+            else:
+                n1, c1 = n0, c0
+                soft_single.append(True)
+            soft_n1.append(n1)
+            soft_c1.append(c1)
         by_color: dict = {}
         by_texture: dict = {}
         faces: list = []
@@ -2344,7 +2416,14 @@ class Viewport(QOpenGLWidget):
         entry = {"fp": fp, "edges": edges_data, "by_color": by_color,
                  "by_texture": by_texture, "faces": faces,
                  "areas": np.asarray(areas, dtype=np.float64),
-                 "v0": v0, "e1": e1, "e2": e2, "tri_ent": tri_ent_a}
+                 "v0": v0, "e1": e1, "e2": e2, "tri_ent": tri_ent_a,
+                 "soft_pts": (np.asarray(soft_pts, dtype=np.float32)
+                              if soft_pts else None),
+                 "soft_n0": np.asarray(soft_n0, dtype=np.float64),
+                 "soft_c0": np.asarray(soft_c0, dtype=np.float64),
+                 "soft_n1": np.asarray(soft_n1, dtype=np.float64),
+                 "soft_c1": np.asarray(soft_c1, dtype=np.float64),
+                 "soft_single": np.asarray(soft_single, dtype=bool)}
         cache[id(group)] = entry
         return entry
 

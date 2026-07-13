@@ -61,6 +61,11 @@ def fuse_coplanar_loops(loops, cos_tol: float = 0.99999):
     faceted curve (real dihedral steps) never chain-merges into a non-planar
     blob."""
     faces: list = []
+    # Coincident duplicates (SketchUp's two-sided export writes every
+    # triangle twice, front + reversed back): keep ONE copy — they z-fight
+    # in the render (the mottled front/back patchwork) and their 4-faces
+    # edges block every merge. The copy carrying a material wins.
+    seen_tris: dict = {}
     for pts, attrs in loops:
         if len(pts) < 3:
             continue
@@ -68,7 +73,17 @@ def fuse_coplanar_loops(loops, cos_tol: float = 0.99999):
         ln = n.length()
         if ln < 1e-10:
             continue                      # degenerate sliver
-        faces.append((pts, attrs, n / ln, _attrs_sig(attrs)))
+        entry = (pts, attrs, n / ln, _attrs_sig(attrs))
+        if len(pts) == 3:
+            tkey = frozenset(_key(p) for p in pts)
+            prev = seen_tris.get(tkey)
+            if prev is None:
+                seen_tris[tkey] = len(faces)
+                faces.append(entry)
+            elif faces[prev][3] is None and entry[3] is not None:
+                faces[prev] = entry       # painted copy replaces the bare one
+            continue
+        faces.append(entry)
 
     parent = list(range(len(faces)))
     root_n = [f[2] for f in faces]
