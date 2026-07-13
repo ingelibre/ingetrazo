@@ -1372,10 +1372,19 @@ class Viewport(QOpenGLWidget):
         camera and one away — so a curved surface shows its outline. A soft
         edge with a single face is always a profile (a boundary). View-dependent,
         called each frame."""
+        # Throttle: the silhouette is view-dependent but re-deriving it at
+        # most ~12×/s is visually indistinguishable, and at 100k soft edges
+        # the NumPy pass still costs ~4 ms a frame during orbits.
+        import time as _time
+        now = _time.monotonic()
+        key = (self.scene.version, id(self.scene.mesh))
+        last = getattr(self, "_sil_last", None)
+        if last is not None and last[0] == key and now - last[1] < 0.08:
+            return last[2]        # VBO still holds the last upload
+
         # Loose soft edges (few — the user's own curves) walk in Python;
         # group soft edges (an imported project can carry ~100k) run the view
         # test vectorised over the group chunk's cached arrays.
-        key = (self.scene.version, id(self.scene.mesh))
         cached = getattr(self, "_soft_edges_cache", None)
         if cached is None or cached[0] != key:
             cached = (key, [e for e in self.scene.loose_mesh.edges
@@ -1423,7 +1432,9 @@ class Viewport(QOpenGLWidget):
         else:
             self._silhouette_vbo.allocate(24)
         self._silhouette_vbo.release()
-        return len(raw) // 12
+        count = len(raw) // 12
+        self._sil_last = (key, now, count)
+        return count
 
     def _upload_hover_edge(self, edge: Edge) -> int:
         """Upload the hovered edge — or, for a curve segment, its whole contour
@@ -3232,10 +3243,23 @@ class Viewport(QOpenGLWidget):
 
     def wheelEvent(self, ev) -> None:
         # Zoom toward the cursor (SketchUp-style): keep the point under the
-        # pointer fixed on screen, not the origin.
+        # pointer fixed on screen, not the origin. During a wheel burst the
+        # focus is CACHED: zoom_to pins that world point, so re-picking every
+        # tick both wasted ~25 ms/tick against a big model (the zoom felt
+        # heavy) and let float error drift the pinned point.
+        import time as _time
         steps = ev.angleDelta().y() / 120.0
         pos = ev.position()
-        focus = self._world_under_cursor(pos.x(), pos.y())
+        now = _time.monotonic()
+        cached = getattr(self, "_zoom_focus", None)
+        if (cached is not None and now - cached[0] < 0.4
+                and abs(pos.x() - cached[1]) < 3.0
+                and abs(pos.y() - cached[2]) < 3.0
+                and self.scene.version == cached[3]):
+            focus = cached[4]
+        else:
+            focus = self._world_under_cursor(pos.x(), pos.y())
+        self._zoom_focus = (now, pos.x(), pos.y(), self.scene.version, focus)
         if focus is not None:
             self.camera.zoom_to(steps, focus)
         else:
