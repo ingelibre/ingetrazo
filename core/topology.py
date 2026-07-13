@@ -213,13 +213,17 @@ def segment_intersection(
 
 def _order_along(a: QVector3D, b: QVector3D, points: list[QVector3D]) -> list[QVector3D]:
     """Deduplicate ``points`` and order them by their projection along a→b,
-    dropping any that coincide with an endpoint."""
+    dropping any that coincide with an endpoint.
+
+    Coincidence is by real distance, not the rounded ``same_position`` key —
+    two points can sit 1e-5 apart yet straddle a rounding cell, and a chain
+    piece that short welds to a degenerate edge downstream."""
     d = b - a
     uniq: list[QVector3D] = []
     for p in points:
-        if same_position(p, a) or same_position(p, b):
+        if (p - a).length() <= _SPLIT_TOLERANCE or (p - b).length() <= _SPLIT_TOLERANCE:
             continue
-        if not any(same_position(p, q) for q in uniq):
+        if not any((p - q).length() <= _SPLIT_TOLERANCE for q in uniq):
             uniq.append(p)
     uniq.sort(key=lambda p: QVector3D.dotProduct(p - a, d))
     return uniq
@@ -247,6 +251,15 @@ def plan_edge_split(
         point = segment_intersection(a, b, e.a, e.b)
         if point is None:
             continue
+        # Snap a graze to the vertex it grazes. A float32 tangency (circle
+        # vertex snapped onto an edge endpoint) lands the crossing a hair past
+        # the vertex; the rounded ``same_position`` key can miss the pair when
+        # it straddles a rounding cell, and the resulting sub-weld split plans
+        # an edge the mesh rejects as degenerate. Distance-based on purpose.
+        for anchor in (e.a, e.b, a, b):
+            if (point - anchor).length() <= _SPLIT_TOLERANCE:
+                point = anchor
+                break
         if not (same_position(point, a) or same_position(point, b)):
             new_cuts.append(point)
         if not (same_position(point, e.a) or same_position(point, e.b)):

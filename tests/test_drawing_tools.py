@@ -77,6 +77,37 @@ def test_circle_radius_via_vcb():
     assert all(abs(v.length() - 5.0) < 1e-4 for v in f.vertices)
 
 
+def test_circle_tangent_to_edge_vertex_commits(  # circc.igz report (2026-07-12)
+):
+    """A circle whose rim snaps onto an existing edge endpoint must commit.
+
+    Float32 puts the tangent vertex a hair past the edge, so the adjacent
+    circle segments graze it ~1e-5 from the shared vertex. The rounded
+    same_position key can miss that pair across a rounding cell, planning a
+    sub-weld split that add_edge rejects as degenerate — the whole circle
+    then rolled back ("degenerate edge: endpoints weld to one vertex")."""
+    scene = Scene()
+    vp = _VP(scene)
+    from core.edits import build_add_edge
+    # Exact float32-sensitive coordinates from the user's file: a 36×18 slab
+    # whose bottom edge is split at the future tangent point.
+    t = V(3.639848232269287, -18.0)
+    for a, b in ((V(0, 0), V(36, 0)), (V(36, 0), V(36, -18)),
+                 (V(36, -18), t), (t, V(0, -18)), (V(0, -18), V(0, 0))):
+        vp.history.execute(build_add_edge(scene, a, b))
+    tool = CircleTool()
+    center = V(3.639848232269287, -14.399999618530273)
+    tool.on_click(_ctx(vp, center))
+    tool.on_hover(_ctx(vp, t))
+    tool.on_click(_ctx(vp, t))              # rim snapped to the edge vertex
+    assert vp.history.last_error is None
+    # The disc face exists (24-gon area) and no degenerate slivers were left.
+    disc = 0.5 * 24 * 3.6 * 3.6 * math.sin(2 * math.pi / 24)
+    areas = sorted(f.area() for f in scene.mesh.faces)
+    assert any(abs(a - disc) < 0.01 for a in areas)
+    assert all((e.b - e.a).length() > 1e-4 for e in scene.mesh.edges)
+
+
 # ---- Rotated rectangle ---------------------------------------------------------
 
 def _has_corner(face, p, tol=1e-4):
