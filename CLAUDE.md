@@ -255,7 +255,21 @@ Tras el fix de raíz se auditó el push/pull contra SketchUp (el usuario es ex-u
 
 - ⑧ **Regla de crease + dedup de caras (2026-06-10).** Auditando "¿qué falta para roca sólida?" se encontró y arregló un **crash real del flujo de planta** (levantar la 2ª de dos habitaciones que comparten muro → `IndexError`: el push reconstruía el muro compartido como duplicado idéntico y el merge de dos ciclos idénticos no tiene frontera que trazar). Fix triple: `dissolve_coplanar_region` dedupea ciclos idénticos en vez de crashear; **regla de crease** (una arista que carga una cara no-coplanar es estructural — nunca se fusiona a través de ella) en el merge fase 3 **y** en la unión del rebuild (`keep_keys`) → dos techos sobre un muro divisorio quedan **dos caras con ridge visible**, como SketchUp, no una losa flotando sobre el muro; `mesh.dedupe_faces()` como paso propio de la fase 0 del stitch. Test del flujo completo en `test_two_room_plan_raises_cleanly`.
 
-### 🎯 PRÓXIMA SESIÓN — PENDIENTE (actualizado 2026-07-11, noche)
+### 🎯 PRÓXIMA SESIÓN — PENDIENTE (actualizado 2026-07-13, madrugada)
+
+> **Sesión 2026-07-12/13 (dogfooding post-release: la plaza del usuario + import real). 8 fixes commiteados, 1569 tests verdes + fuzz 996/4 estable en cada uno.** Todo con archivo-repro del usuario:
+> - **Círculo tangente a vértice** (`bdcbe89`): snap por distancia real en `plan_edge_split`/`_order_along` — la clave redondeada de `same_position` fallaba cross-cell (misma clase que el fix #12 del fuzz, ahora en el planner).
+> - **Línea sobre plano poblado subdivide** (`03c31ce`): `build_add_edge` (LineTool) corre `RebuildPlaneFacesCommand` cuando el segmento cae en el plano de una cara existente — cierra la entrada de LineTool al iceberg de solapes (cuerda contorno↔hueco apilaba cara duplicada volteada; borrarla cascadeaba todo el plano).
+> - **Arista slit** (`ec7661d`): borrar una línea que la cara recorre DOS veces (anillo cortado) borraba la cara y dejaba la línea; ahora borra la línea y re-deriva el plano (madre vuelve como contorno+hueco).
+> - **Attrs viajan por Make Group/Explode** (`bf03bd8`): texturas/colores/capas/IFC ya no se pierden al agrupar.
+> - **Perf oclusión de cotas** (`40a090c`): triángulos cacheados + Möller–Trumbore vectorizado — orbitar con cotas 280→6 ms/frame.
+> - **MSAA reubicado** (`fc71853`): del widget (no antialiaseaba nada, causaba resolve extra) al FBO de escena — **primera vez con AA real**. Ghost de Wayland NO curado por esto.
+> - **Wayland nativo intercala frames viejos** (ver gotcha): A/B confirmó XWayland perfecto; **decisión del usuario: quedarse en Wayland nativo** (multi-monitor DPI mixto > fantasma cosmético). Escape: `QT_QPA_PLATFORM=xcb`.
+> - **Import DAE/OBJ grande** (`f2f6a97`): gate `_MAX_FUSE_LOOPS=400` — edificio 3D Warehouse de 17k tris importa en 0.8 s como referencia (antes colgaba horas en la fusión O(F²)).
+> - **⭐ Índice de pick vectorizado** (`3e212f2`): el hito "índice espacial cuando duela" HECHO como lotes NumPy planos — `_pick_index` cacheado por versión (tris sueltos+grupos con masks vis/sel + áreas, aristas) alimenta pick_face/face_any/group/edge/vertex/_world_under_cursor. Interacción con el edificio: **2138→22 ms/frame**. Silhouette itera solo soft edges cacheadas. Paridad 0/40 vs loops viejos.
+> - **Pendiente nuevo detectado:** retrazar una arista de contorno NO re-caia una cara borrada en sólidos (el ciclo mínimo elige el muro lateral); editar mallas de 17k tris con push/pull sigue siendo lento (motor de topología, por diseño por ahora).
+
+---
 
 > ## 🏁 v0.1.0 RELEASED (2026-07-11) — tag `v0.1.0`, release pública en GitHub
 >
