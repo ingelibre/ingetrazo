@@ -208,10 +208,38 @@ def _append_flat_curve_rebuild(scene, commands, points) -> None:
         commands.append(RebuildPlaneFacesCommand(origin, normal))
 
 
+def _append_face_plane_rebuild(scene, commands, points) -> None:
+    """Append the scoped plane rebuild when straight edges land on a plane
+    that already carries faces, in a scene the whole-flat gate can't cover.
+
+    The naive cycle planner mishandles a chord that touches a hole boundary
+    (a line across a slab top grazing an inner rectangle's edge): instead of
+    subdividing the mother it stacks a duplicate, sometimes flipped, region
+    face on top — and erasing any of those edges later cascade-deletes the
+    whole plane instead of merging (aa.igz plaza report, 2026-07-12). The
+    deterministic arrangement with coverage semantics is the machinery that
+    already solves this for curves; a populated plane deserves it too."""
+    from core.history import RebuildPlanarFacesCommand, RebuildPlaneFacesCommand
+
+    if any(isinstance(c, (RebuildPlanarFacesCommand, RebuildPlaneFacesCommand))
+           for c in commands):
+        return
+    tol = 1e-4
+    for f in scene.mesh.faces:
+        origin = f.vertices[0]
+        normal = f.normal()
+        if all(abs(QVector3D.dotProduct(p - origin, normal)) < tol
+               for p in points):
+            commands.append(RebuildPlaneFacesCommand(origin, normal))
+            return
+
+
 def build_add_edge(scene, a: QVector3D, b: QVector3D, detect_faces: bool = True) -> Command:
     """Single-segment convenience: one drawn edge → one atomic command."""
     commands = plan_edge_commands(scene, [(a, b)], detect_faces=detect_faces)
     _append_flat_curve_rebuild(scene, commands, [a, b])
+    if detect_faces:
+        _append_face_plane_rebuild(scene, commands, [a, b])
     # When curves exist, even a single added edge can break a circle into
     # contours (a tangent line landing on a curve vertex splits it in SketchUp),
     # so it must go through SnapshotCompound, which runs the contour re-split —

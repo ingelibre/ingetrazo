@@ -122,9 +122,11 @@ def _roof_rect(scene):
     roof = _roof(scene)
     n = roof.normal().normalized()
     u, w = plane_axes(n)
-    o = roof.vertices[0]
-    return n, [o + u * 0.5 + w * 0.5, o + u * 1.5 + w * 0.5,
-               o + u * 1.5 + w * 1.5, o + u * 0.5 + w * 1.5]
+    # Anchor at the centroid: a face loop is cyclic, so vertices[0] is not a
+    # stable corner (the plane rebuild may rotate the loop start).
+    o = roof.centroid()
+    return n, [o - u * 0.5 - w * 0.5, o + u * 0.5 - w * 0.5,
+               o + u * 0.5 + w * 0.5, o - u * 0.5 + w * 0.5]
 
 
 def test_recess_on_slanted_roof():

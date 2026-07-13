@@ -125,3 +125,59 @@ def test_chord_attrs_partition_survives_push():
     colors = {f.attrs.get("color") for f in m.faces
               if all(abs(v.y()) < 1e-9 for v in f.vertices)}
     assert {"zocalo", "muro"} <= colors
+
+
+# ---- Lines drawn on a populated plane subdivide it (aa.igz plaza, 2026-07-12)
+
+
+def _slab_with_inner_rect():
+    """A 6×4×1 slab whose top face carries a rect subdivision at x 2..4."""
+    scene = Scene()
+    hist = History(scene)
+    _draw_rect(scene, hist, [V(0, 0), V(6, 0), V(6, -4), V(0, -4)], [])
+    f = scene.mesh.faces[0]
+    _push(scene, hist, f, _up(f, 1.0))
+    _draw_rect(scene, hist,
+               [V(2, -1, 1), V(4, -1, 1), V(4, -3, 1), V(2, -3, 1)], [])
+    return scene, hist
+
+
+def _top_faces(mesh):
+    return [f for f in mesh.faces
+            if all(abs(v.z() - 1.0) < 1e-6 for v in f.vertices)]
+
+
+def test_line_grazing_hole_boundary_subdivides_not_stacks():
+    # A line across the top from the outline to the outline, collinear with
+    # the inner rect's left edge, must fence the top into left/right regions —
+    # not stack a flipped duplicate over the mother (the aa.igz failure).
+    scene, hist = _slab_with_inner_rect()
+    m = scene.mesh
+    hist.execute(build_add_edge(scene, V(2, 0, 1), V(2, -4, 1)))
+    assert hist.last_error is None
+    tops = _top_faces(m)
+    areas = sorted(round(f.area(), 2) for f in tops)
+    # left 2×4=8, inner rect 2×2=4, right region 6×4−8−4=12
+    assert areas == [4.0, 8.0, 12.0]
+    assert all(f.normal().z() > 0.99 for f in tops), "a top face came out flipped"
+    assert is_closed(m)
+
+
+def test_deleting_the_fence_line_fuses_the_plane_back():
+    from core.history import EraseSelectionCommand
+    scene, hist = _slab_with_inner_rect()
+    m = scene.mesh
+    hist.execute(build_add_edge(scene, V(2, 0, 1), V(2, -4, 1)))
+    fence = [e for e in m.edges
+             if abs(e.a.x() - 2) < 1e-6 and abs(e.b.x() - 2) < 1e-6
+             and abs(e.a.z() - 1) < 1e-6 and abs(e.b.z() - 1) < 1e-6
+             and not (min(e.a.y(), e.b.y()) >= -3.0 - 1e-6
+                      and max(e.a.y(), e.b.y()) <= -1.0 + 1e-6)]
+    assert fence, "fence pieces outside the rect edge expected"
+    hist.execute(EraseSelectionCommand(fence))
+    assert hist.last_error is None
+    tops = _top_faces(m)
+    big = [f for f in tops if f.area() > 15]
+    assert big, "the mother top face must survive and re-fuse"
+    assert len(big[0].holes) == 1              # the inner rect is a hole again
+    assert is_closed(m)
