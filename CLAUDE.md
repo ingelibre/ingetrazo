@@ -255,7 +255,16 @@ Tras el fix de raíz se auditó el push/pull contra SketchUp (el usuario es ex-u
 
 - ⑧ **Regla de crease + dedup de caras (2026-06-10).** Auditando "¿qué falta para roca sólida?" se encontró y arregló un **crash real del flujo de planta** (levantar la 2ª de dos habitaciones que comparten muro → `IndexError`: el push reconstruía el muro compartido como duplicado idéntico y el merge de dos ciclos idénticos no tiene frontera que trazar). Fix triple: `dissolve_coplanar_region` dedupea ciclos idénticos en vez de crashear; **regla de crease** (una arista que carga una cara no-coplanar es estructural — nunca se fusiona a través de ella) en el merge fase 3 **y** en la unión del rebuild (`keep_keys`) → dos techos sobre un muro divisorio quedan **dos caras con ridge visible**, como SketchUp, no una losa flotando sobre el muro; `mesh.dedupe_faces()` como paso propio de la fase 0 del stitch. Test del flujo completo en `test_two_room_plan_raises_cleanly`.
 
-### 🎯 PRÓXIMA SESIÓN — PENDIENTE (actualizado 2026-07-13, madrugada)
+### 🎯 PRÓXIMA SESIÓN — PENDIENTE (actualizado 2026-07-13, tarde)
+
+> **Sesión 2026-07-13 (tarde) — lag de zoom/órbita con DAE grande ("Proyecto vivero.dae", 159k caras / 312k aristas / 148k soft). 1576 tests verdes.** El perf-log del usuario mostró frames de 39–88 ms y 4 congelones de ~30 s. Diagnóstico: el render por frame estaba bien; el asesino era el **event loop saturado por el hover** (SelectTool `_pick` por evento de mouse = `pick_group` con fallback Python sobre 312k aristas ~300 ms + 2 pases Möller–Trumbore de ~21 ms c/u, con el mouse a 60–125 eventos/s). Fixes (todo en `views/viewport.py` + shaders):
+> - **`pick_group` fallback vectorizado** (aristas de grupo como arrays en el pick block): 294 → ~8 ms.
+> - **Pase de rayos compartido** (`_hover_face_t`, memo por rayo): pick_group + pick_face del mismo evento pagan UN Möller–Trumbore.
+> - **Hover coalescing adaptativo** en `mouseMoveEvent` (gate = 1.5× el costo del último hover, trailing-edge timer): el mouse ya no encola trabajo; en modelos chicos el gate es ~0.
+> - **Caras en UN draw call**: color sombreado por vértice (`a_color` en el shader, VBO pos+rgb entrelazado, `u_use_vcolor`); antes 684 runs de color × ~3 llamadas GL = ~2000 calls/frame. Chunk guarda `vcol` (reemplaza `by_color`); `_shift_chunk` desplaza el interleaved.
+> - **Chunk build: Newell 1× por cara** (normal+área+triangulate+shaded de una sola pasada; props de soft edges la reusan): 8.0 → 5.7 s en el vivero.
+> - **Resultado medido (GL real, xcb)**: órbita con el vivero completo a **60 paints/s, 2 ms/frame** (antes 39–88 ms y ráfagas de 1 paint/2 s).
+> - **Pendiente que quedó (la otra mitad de la frustración): abrir/importar el DAE sigue costando ~27 s** (fuse O(F) pero constante Python pesada: 23 s; + chunk 5.7 s). Los 4 congelones del log del usuario eran probablemente 4 re-imports. El fix de fondo es el ítem v0.2 **"grupos de referencia como arrays NumPy puros"** (vectorizar dae/fuse/chunk de punta a punta + caché binaria del import). Mientras tanto: guardar como `.igz` NO ayuda mucho (reconstruye los mismos objetos Python al cargar).
 
 > **Sesión 2026-07-12/13 (dogfooding post-release: la plaza del usuario + import real). 8 fixes commiteados, 1569 tests verdes + fuzz 996/4 estable en cada uno.** Todo con archivo-repro del usuario:
 > - **Círculo tangente a vértice** (`bdcbe89`): snap por distancia real en `plan_edge_split`/`_order_along` — la clave redondeada de `same_position` fallaba cross-cell (misma clase que el fix #12 del fuzz, ahora en el planner).

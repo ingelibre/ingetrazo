@@ -4,8 +4,10 @@ uniform vec4 u_color;
 uniform vec4 u_back_color;
 uniform sampler2D u_tex;
 uniform int u_use_texture;
+uniform int u_use_vcolor;
 
 in vec2 v_uv;
+in vec3 v_color;
 
 out vec4 fragColor;
 
@@ -21,6 +23,10 @@ void main() {
         // blue-grey. Orientation is guaranteed outward by the engine, so a
         // visible back face means "you are looking at the inside" (or at a
         // genuinely inverted face).
-        fragColor = gl_FrontFacing ? u_color : u_back_color;
+        // u_use_vcolor: the batched face pass carries its per-face shaded
+        // colour as a vertex attribute — ONE draw call for the whole model
+        // instead of one per colour run.
+        vec4 front = (u_use_vcolor == 1) ? vec4(v_color, 1.0) : u_color;
+        fragColor = gl_FrontFacing ? front : u_back_color;
     }
 }

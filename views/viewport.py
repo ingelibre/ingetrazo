@@ -95,6 +95,23 @@ from core.triangulate import plane_axes
 from tools.base import Tool, ToolContext
 
 
+class _HoverEvent:
+    """Minimal stand-in for a QMouseEvent inside the coalesced hover path —
+    just what ``_build_ctx`` and the hover handlers read."""
+
+    __slots__ = ("_pos", "_mods")
+
+    def __init__(self, pos, mods) -> None:
+        self._pos = pos
+        self._mods = mods
+
+    def position(self):
+        return self._pos
+
+    def modifiers(self):
+        return self._mods
+
+
 # OpenGL constants — kept as literals so we don't depend on PyOpenGL.
 GL_FLOAT = 0x1406
 GL_LINES = 0x0001
@@ -312,10 +329,8 @@ class Viewport(QOpenGLWidget):
         self._faces_vao = None
         self._faces_vbo = None
         self._faces_count = 0
-        # Per-colour draw ranges into the face VBO: [((r,g,b), start, count)].
-        # Faces share one VBO but are grouped by their attrs["color"] (default
-        # cream), so each material is one glDrawArrays with its own uniform.
-        self._face_runs: list = []
+        # Solid-colour faces share ONE interleaved pos+rgb VBO drawn in a
+        # single call (the shaded material colour rides per vertex).
         # Textured faces (pos+uv VBO) grouped by image path: [(path, start, count)].
         self._tex_faces_count = 0
         self._tex_runs: list = []
@@ -418,6 +433,8 @@ class Viewport(QOpenGLWidget):
         self._loc_uv = self._program.attributeLocation("a_uv")
         self._loc_use_tex = self._program.uniformLocation("u_use_texture")
         self._loc_tex = self._program.uniformLocation("u_tex")
+        self._loc_vcolor = self._program.attributeLocation("a_color")
+        self._loc_use_vcolor = self._program.uniformLocation("u_use_vcolor")
 
         # Axes rebuilt per frame (dash spacing scales with zoom), so dynamic.
         self._axes_vao, self._axes_vbo = self._create_dynamic()
@@ -427,7 +444,7 @@ class Viewport(QOpenGLWidget):
         self._edges_vao, self._edges_vbo = self._create_dynamic()
         self._selected_vao, self._selected_vbo = self._create_dynamic()
         self._sel_faces_vao, self._sel_faces_vbo = self._create_dynamic()
-        self._faces_vao, self._faces_vbo = self._create_dynamic()
+        self._faces_vao, self._faces_vbo = self._create_dynamic_vcol()
         self._tex_faces_vao, self._tex_faces_vbo = self._create_dynamic_uv()
         self._billboard_vao, self._billboard_vbo = self._create_dynamic_uv()
         self._hover_faces_vao, self._hover_faces_vbo = self._create_dynamic()
@@ -508,6 +525,7 @@ class Viewport(QOpenGLWidget):
         # Solid-colour by default; the textured-face pass flips this on.
         self._program.setUniformValue(self._loc_use_tex, 0)
         self._program.setUniformValue(self._loc_tex, 0)  # sampler → unit 0
+        self._program.setUniformValue(self._loc_use_vcolor, 0)
 
         # Sky / ground backdrop with a horizon anchored to the camera pitch —
         # premium SketchUp feel. Fixed on zoom (it's the point at infinity),
@@ -536,13 +554,15 @@ class Viewport(QOpenGLWidget):
         if self._faces_count > 0:
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
+            # Every colour run in ONE draw call: the shaded material colour
+            # rides per vertex (a_color). An imported model with hundreds of
+            # colour×shade runs paid ~2000 uniform/draw calls per frame.
+            self._program.setUniformValue(self._loc_use_vcolor, 1)
+            self._set_back_face_color()
             self._faces_vao.bind()
-            # One draw per material colour (default cream for unpainted faces).
-            for (r, g, b), start, count in self._face_runs:
-                self._set_color(r, g, b, 1.0)
-                self._set_back_face_color()
-                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+            self._gl.glDrawArrays(GL_TRIANGLES, 0, self._faces_count)
             self._faces_vao.release()
+            self._program.setUniformValue(self._loc_use_vcolor, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
         # Textured faces — same depth/offset treatment, sampling each face's
@@ -764,6 +784,29 @@ class Viewport(QOpenGLWidget):
         self._program.setAttributeBuffer(self._loc_pos, GL_FLOAT, 0, 3, stride)
         self._program.enableAttributeArray(self._loc_uv)
         self._program.setAttributeBuffer(self._loc_uv, GL_FLOAT, 3 * 4, 2, stride)
+        self._program.release()
+        vbo.release()
+        vao.release()
+        return vao, vbo
+
+    def _create_dynamic_vcol(self):
+        """A dynamic VAO/VBO interleaving position (3f) + RGB (3f) per vertex —
+        the batched face pass (one draw call for every colour run)."""
+        vao = QOpenGLVertexArrayObject(self)
+        vao.create()
+        vao.bind()
+        vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+        vbo.setUsagePattern(QOpenGLBuffer.DynamicDraw)
+        vbo.create()
+        vbo.bind()
+        vbo.allocate(48)  # 2 vertices × 6 floats × 4 bytes
+        stride = 6 * 4
+        self._program.bind()
+        self._program.enableAttributeArray(self._loc_pos)
+        self._program.setAttributeBuffer(self._loc_pos, GL_FLOAT, 0, 3, stride)
+        self._program.enableAttributeArray(self._loc_vcolor)
+        self._program.setAttributeBuffer(self._loc_vcolor, GL_FLOAT, 3 * 4, 3,
+                                         stride)
         self._program.release()
         vbo.release()
         vao.release()
@@ -1213,10 +1256,10 @@ class Viewport(QOpenGLWidget):
         # contribute their cached chunk buffers (a 17k-face reference model
         # made every stroke pay a ~1 s re-triangulation otherwise).
         suppressed_faces = self._suppressed_faces
-        by_color: dict = {}          # loose faces (array("f") buffers)
+        vcol = array("f")            # loose faces, interleaved pos(3)+rgb(3)
         by_texture: dict = {}        # image path -> interleaved pos+uv array
-        group_color: dict = {}       # chunk byte-parts per colour key
         group_texture: dict = {}     # chunk byte-parts per image path
+        face_parts: list = []        # interleaved vcol byte chunks
 
         def bucket_face(face):
             if face in suppressed_faces:
@@ -1229,17 +1272,14 @@ class Viewport(QOpenGLWidget):
             base = tuple(col) if col is not None else self.DEFAULT_FACE_COLOR
             # Bake a subtle diffuse shade from the face normal against a fixed
             # world light — the matte-model look of SketchUp. World-fixed, so
-            # it doesn't change as you orbit; faces sharing a normal+colour
-            # share the shaded key, keeping the draw-call count low.
-            key = self._shaded_color(base, face.normal())
-            buf = by_color.get(key)
-            if buf is None:
-                buf = by_color[key] = array("f")
+            # it doesn't change as you orbit. The shaded colour rides per
+            # vertex, so the whole pass is ONE draw call.
+            r, g, b = self._shaded_color(base, face.normal())
             for t0, t1, t2 in face.triangulate():
-                buf.extend([
-                    t0.x(), t0.y(), t0.z(),
-                    t1.x(), t1.y(), t1.z(),
-                    t2.x(), t2.y(), t2.z(),
+                vcol.extend([
+                    t0.x(), t0.y(), t0.z(), r, g, b,
+                    t1.x(), t1.y(), t1.z(), r, g, b,
+                    t2.x(), t2.y(), t2.z(), r, g, b,
                 ])
 
         for face in self.scene.loose_mesh.faces:
@@ -1255,30 +1295,18 @@ class Viewport(QOpenGLWidget):
                     bucket_face(face)   # push/pull preview suppresses faces
                 continue
             chunk = self._group_chunk(g)
-            for key, raw in chunk["by_color"].items():
-                group_color.setdefault(key, []).append(raw)
+            face_parts.append(chunk["vcol"])
             for path, raw in chunk["by_texture"].items():
                 group_texture.setdefault(path, []).append(raw)
 
-        face_parts = []
-        self._face_runs = []
-        start = 0
-        for key in dict.fromkeys(list(by_color) + list(group_color)):
-            parts = ([by_color[key].tobytes()] if key in by_color else [])
-            parts += group_color.get(key, [])
-            raw = b"".join(parts)
-            face_parts.append(raw)
-            count = len(raw) // 12
-            self._face_runs.append((key, start, count))
-            start += count
-        face_raw = b"".join(face_parts)
+        face_raw = vcol.tobytes() + b"".join(face_parts)
         self._faces_vbo.bind()
         if face_raw:
             self._faces_vbo.allocate(face_raw, len(face_raw))
         else:
-            self._faces_vbo.allocate(24)
+            self._faces_vbo.allocate(48)
         self._faces_vbo.release()
-        self._faces_count = len(face_raw) // 12
+        self._faces_count = len(face_raw) // 24
 
         # Textured faces: one interleaved (pos+uv) VBO, a run per image path.
         tex_parts = []
@@ -2442,7 +2470,9 @@ class Viewport(QOpenGLWidget):
             return a.astype(np.float32).tobytes()
 
         entry["edges"] = flat3(entry["edges"])
-        entry["by_color"] = {k: flat3(v) for k, v in entry["by_color"].items()}
+        vc = np.frombuffer(entry["vcol"], dtype=np.float32).reshape(-1, 6).copy()
+        vc[:, :3] += dx
+        entry["vcol"] = vc.astype(np.float32).tobytes()
         tex = {}
         for k, v in entry["by_texture"].items():
             a = np.frombuffer(v, dtype=np.float32).reshape(-1, 5).copy()
@@ -2555,11 +2585,58 @@ class Viewport(QOpenGLWidget):
         soft_single: list = []
         fprops: dict = {}
 
+        # Faces first: one Newell walk per face yields normal + area, and the
+        # normal feeds triangulate(), the shaded colour AND the soft-edge
+        # props below (the naive per-call chain re-ran Newell ~3.6× per face —
+        # a third of the whole build on a 160k-face import).
+        from core.triangulate import triangulate as _triangulate
+        vcol = array("f")             # interleaved pos(3)+rgb(3) per vertex
+        by_texture: dict = {}
+        faces: list = []
+        areas: list = []
+        tris: list = []
+        tri_ent: list = []
+        for f in mesh.faces:
+            i = len(faces)
+            faces.append(f)
+            if len(f.loop) < 3:
+                normal = QVector3D(0.0, 0.0, 1.0)
+                areas.append(0.0)
+                tri_list = []
+            else:
+                n_raw = f._newell()
+                ln = n_raw.length()
+                normal = n_raw / ln if ln > 1e-9 else QVector3D(0.0, 0.0, 1.0)
+                areas.append(0.5 * ln)
+                tri_list = _triangulate(f.vertices, f.holes, normal)
+            fprops[id(f)] = normal
+            tex = f.attrs.get("texture")
+            if tex is not None and tex.get("path"):
+                self._append_textured_face(by_texture, f, tex)
+            else:
+                col = f.attrs.get("color")
+                base = tuple(col) if col is not None else self.DEFAULT_FACE_COLOR
+                r, g, b = self._shaded_color(base, normal)
+                for t0, t1, t2 in tri_list:
+                    vcol.extend([t0.x(), t0.y(), t0.z(), r, g, b,
+                                 t1.x(), t1.y(), t1.z(), r, g, b,
+                                 t2.x(), t2.y(), t2.z(), r, g, b])
+            for t0, t1, t2 in tri_list:
+                tris.append([[t0.x(), t0.y(), t0.z()],
+                             [t1.x(), t1.y(), t1.z()],
+                             [t2.x(), t2.y(), t2.z()]])
+                tri_ent.append(i)
+
+        sprops: dict = {}
+
         def props(f):
-            r = fprops.get(id(f))
+            r = sprops.get(id(f))
             if r is None:
-                n, c = f.normal(), f.centroid()
-                r = fprops[id(f)] = ((n.x(), n.y(), n.z()),
+                n = fprops.get(id(f))
+                if n is None:
+                    n = f.normal()
+                c = f.centroid()
+                r = sprops[id(f)] = ((n.x(), n.y(), n.z()),
                                      (c.x(), c.y(), c.z()))
             return r
 
@@ -2584,34 +2661,6 @@ class Viewport(QOpenGLWidget):
                 soft_single.append(True)
             soft_n1.append(n1)
             soft_c1.append(c1)
-        by_color: dict = {}
-        by_texture: dict = {}
-        faces: list = []
-        areas: list = []
-        tris: list = []
-        tri_ent: list = []
-        for f in mesh.faces:
-            i = len(faces)
-            faces.append(f)
-            areas.append(f.area())
-            tri_list = f.triangulate()
-            tex = f.attrs.get("texture")
-            if tex is not None and tex.get("path"):
-                self._append_textured_face(by_texture, f, tex)
-            else:
-                col = f.attrs.get("color")
-                base = tuple(col) if col is not None else self.DEFAULT_FACE_COLOR
-                buf = by_color.setdefault(self._shaded_color(base, f.normal()),
-                                          array("f"))
-                for t0, t1, t2 in tri_list:
-                    buf.extend([t0.x(), t0.y(), t0.z(),
-                                t1.x(), t1.y(), t1.z(),
-                                t2.x(), t2.y(), t2.z()])
-            for t0, t1, t2 in tri_list:
-                tris.append([[t0.x(), t0.y(), t0.z()],
-                             [t1.x(), t1.y(), t1.z()],
-                             [t2.x(), t2.y(), t2.z()]])
-                tri_ent.append(i)
         if tris:
             t = np.asarray(tris, dtype=np.float64)
             v0, e1, e2 = t[:, 0], t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]
@@ -2631,7 +2680,7 @@ class Viewport(QOpenGLWidget):
                  "nv": nv, "ne": len(mesh.edges), "nf": len(mesh.faces),
                  "samples": samples, "coordsum": coordsum,
                  "edges": edges_data.tobytes(),
-                 "by_color": {k: v.tobytes() for k, v in by_color.items()},
+                 "vcol": vcol.tobytes(),
                  "by_texture": {k: v.tobytes() for k, v in by_texture.items()},
                  "faces": faces,
                  "areas": np.asarray(areas, dtype=np.float64),
@@ -2751,6 +2800,11 @@ class Viewport(QOpenGLWidget):
                 b_entities: list = []
                 b_v0, b_e1, b_e2, b_te = [], [], [], []
                 b_area, b_vis, b_sel = [], [], []
+                # Group hard edges, flat — pick_group's fallback (cursor over
+                # empty space / lines-only group) walked every group edge in
+                # Python (~300 ms per mouse move against a 300k-edge import).
+                b_gea, b_geb, b_ggi = [], [], []
+                b_ggroups: list = []
                 for g, chunk, gvis, gsel in chunks:
                     n = len(chunk["faces"])
                     off = len(b_entities)
@@ -2763,6 +2817,14 @@ class Viewport(QOpenGLWidget):
                         b_e1.append(chunk["e1"])
                         b_e2.append(chunk["e2"])
                         b_te.append(chunk["tri_ent"] + off)
+                    if gsel and chunk["edges"]:
+                        ge = np.frombuffer(chunk["edges"], dtype=np.float32)
+                        ge = ge.reshape(-1, 2, 3).astype(np.float64)
+                        b_gea.append(ge[:, 0])
+                        b_geb.append(ge[:, 1])
+                        b_ggi.append(np.full(len(ge), len(b_ggroups),
+                                             dtype=np.int64))
+                        b_ggroups.append(g)
                 blk = (tuple(sig), {
                     "entities": b_entities,
                     "areas": (np.concatenate(b_area) if b_area
@@ -2775,6 +2837,10 @@ class Viewport(QOpenGLWidget):
                     "e1": np.concatenate(b_e1) if b_v0 else None,
                     "e2": np.concatenate(b_e2) if b_v0 else None,
                     "te": np.concatenate(b_te) if b_v0 else None,
+                    "gedge_a": np.concatenate(b_gea) if b_gea else None,
+                    "gedge_b": np.concatenate(b_geb) if b_gea else None,
+                    "gedge_gi": np.concatenate(b_ggi) if b_gea else None,
+                    "gedge_groups": b_ggroups,
                 })
                 self._pick_block = blk
             block = blk[1]
@@ -2791,6 +2857,16 @@ class Viewport(QOpenGLWidget):
                     e1s.append(block["e1"])
                     e2s.append(block["e2"])
                     tents.append(block["te"] + offset)
+
+        gedge_a = gedge_b = gedge_gi = None
+        gedge_groups: list = []
+        if scene.edit_group is None:
+            block = self._pick_block[1] if getattr(self, "_pick_block", None) \
+                else {}
+            gedge_a = block.get("gedge_a")
+            gedge_b = block.get("gedge_b")
+            gedge_gi = block.get("gedge_gi")
+            gedge_groups = block.get("gedge_groups", [])
 
         edges: list = []
         ea: list = []
@@ -2817,6 +2893,10 @@ class Viewport(QOpenGLWidget):
             edge_a=np.asarray(ea, dtype=np.float64) if edges else None,
             edge_b=np.asarray(eb, dtype=np.float64) if edges else None,
             edge_sel=np.asarray(esel, dtype=bool) if edges else None,
+            gedge_a=gedge_a,
+            gedge_b=gedge_b,
+            gedge_gi=gedge_gi,
+            gedge_groups=gedge_groups,
         )
         if _PERF:
             _plog("pick_index", (_time_mod.perf_counter() - _p0) * 1000.0)
@@ -2848,6 +2928,22 @@ class Viewport(QOpenGLWidget):
         tvals = np.where(hit, t, np.inf)
         face_t = np.full(len(idx.entities), np.inf)
         np.minimum.at(face_t, idx.tri_ent, tvals)
+        return face_t
+
+    def _hover_face_t(self, idx, origin, direction):
+        """Per-entity nearest-hit ``t`` against every *selectable* entity,
+        memoised for the current cursor ray. One SelectTool hover fires
+        pick_group + pick_face on the same mouse move, and each used to re-run
+        the full Möller–Trumbore pass (~20 ms over a 260k-triangle import);
+        they now share one pass and post-mask by loose/group."""
+        key = (self.scene.version, id(self.scene.mesh),
+               origin.x(), origin.y(), origin.z(),
+               direction.x(), direction.y(), direction.z())
+        cached = getattr(self, "_hover_hits_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        face_t = self._ray_hits(idx, origin, direction, idx.ent_sel)
+        self._hover_hits_cache = (key, face_t)
         return face_t
 
     def pick_edge(self, screen_x: float, screen_y: float):
@@ -3056,10 +3152,10 @@ class Viewport(QOpenGLWidget):
         idx = self._pick_index()
         if not idx.entities:
             return None
-        face_t = self._ray_hits(idx, origin, direction,
-                                idx.ent_loose & idx.ent_sel)
+        face_t = self._hover_face_t(idx, origin, direction)
         if face_t is None:
             return None
+        face_t = np.where(idx.ent_loose, face_t, np.inf)
         best_t = face_t.min()
         if not np.isfinite(best_t):
             return None
@@ -3081,7 +3177,7 @@ class Viewport(QOpenGLWidget):
         idx = self._pick_index()
         if not idx.entities:
             return None, None
-        face_t = self._ray_hits(idx, origin, direction, idx.ent_sel)
+        face_t = self._hover_face_t(idx, origin, direction)
         if face_t is None:
             return None, None
         best_t = face_t.min()
@@ -3104,9 +3200,9 @@ class Viewport(QOpenGLWidget):
             best = None  # (t, group)
             idx = self._pick_index()
             if idx.entities:
-                face_t = self._ray_hits(idx, origin, direction,
-                                        (~idx.ent_loose) & idx.ent_sel)
+                face_t = self._hover_face_t(idx, origin, direction)
                 if face_t is not None:
+                    face_t = np.where(idx.ent_loose, np.inf, face_t)
                     i = int(np.argmin(face_t))
                     if np.isfinite(face_t[i]):
                         best = (float(face_t[i]), idx.entities[i][1])
@@ -3123,21 +3219,30 @@ class Viewport(QOpenGLWidget):
                                 best = (t, g)
             if best is not None:
                 return best[1]
-        best_d = self.pick_threshold_px
-        best_g = None
-        for g in self.scene.groups:
-            if not self.scene.entity_selectable(g):
-                continue                        # hidden or locked layer
-            for e in g.mesh.edges:
-                pa = self._world_to_pixel(e.a)
-                pb = self._world_to_pixel(e.b)
-                if pa is None or pb is None:
-                    continue
-                d = _point_to_segment_distance_2d((screen_x, screen_y), pa, pb)
-                if d < best_d:
-                    best_d = d
-                    best_g = g
-        return best_g
+        # Edge fallback (cursor over empty space, or a lines-only group):
+        # screen-space distance to every group hard edge, batched over the
+        # index arrays — the Python per-edge walk took ~300 ms per mouse move
+        # against a 300k-edge imported model.
+        import numpy as np
+        idx = self._pick_index()
+        if idx.gedge_a is None or not len(idx.gedge_a):
+            return None
+        ax, ay, oka = self._project_px(idx.gedge_a)
+        bx, by, okb = self._project_px(idx.gedge_b)
+        ok = oka & okb
+        if not ok.any():
+            return None
+        dx, dy = bx - ax, by - ay
+        l2 = dx * dx + dy * dy
+        safe = np.where(l2 > 1e-12, l2, 1.0)
+        t = np.clip(((screen_x - ax) * dx + (screen_y - ay) * dy) / safe,
+                    0.0, 1.0)
+        d = np.hypot(ax + t * dx - screen_x, ay + t * dy - screen_y)
+        d = np.where(ok, d, np.inf)
+        i = int(np.argmin(d))
+        if d[i] < self.pick_threshold_px:
+            return idx.gedge_groups[int(idx.gedge_gi[i])]
+        return None
 
     # ---- Tool management ----------------------------------------------------
     def set_active_tool(self, tool: Optional[Tool]) -> None:
@@ -3379,6 +3484,43 @@ class Viewport(QOpenGLWidget):
             self.update()
             return
 
+        # Adaptive hover coalescing: against a big imported model one hover
+        # costs ~25-30 ms (picks + snap) while the mouse delivers 60-125
+        # events/s — processing every event backlogs the queue and the whole
+        # app reads as frozen. Gate by the measured cost of the LAST hover
+        # (a small model gates at ~0 → immediate), and let a trailing-edge
+        # timer process the final position so the highlight never sticks.
+        self._pending_hover = (ev.position(), ev.modifiers())
+        now = _time_mod.monotonic()
+        gate = min(0.06, getattr(self, "_hover_cost", 0.0) * 1.5)
+        elapsed = now - getattr(self, "_hover_last_t", 0.0)
+        if elapsed < gate:
+            timer = getattr(self, "_hover_timer", None)
+            if timer is None:
+                from PySide6.QtCore import QTimer
+                timer = self._hover_timer = QTimer(self)
+                timer.setSingleShot(True)
+                timer.timeout.connect(self._run_pending_hover)
+            if not timer.isActive():
+                timer.start(max(1, int((gate - elapsed) * 1000) + 1))
+            return
+        self._run_pending_hover()
+
+    def _run_pending_hover(self) -> None:
+        pending = getattr(self, "_pending_hover", None)
+        if pending is None:
+            return
+        self._pending_hover = None
+        pos, modifiers = pending
+        t0 = _time_mod.monotonic()
+        self._process_hover(pos, modifiers)
+        self._hover_last_t = _time_mod.monotonic()
+        self._hover_cost = self._hover_last_t - t0
+
+    def _process_hover(self, pos, modifiers) -> None:
+        if self._last_pos is not None or self._box_active:
+            return          # a camera drag / box select started meanwhile
+        ev = _HoverEvent(pos, modifiers)
         # Track cursor + hover edge so Down can capture a reference edge.
         self._last_mouse_pos = ev.position()
         # Plan↔profile link (Track G): let an open profile mark the station of
