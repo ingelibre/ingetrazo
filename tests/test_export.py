@@ -178,3 +178,28 @@ def test_obj_import_restores_colour(tmp_path):
     assert painted[0].attrs["color"] == [0.9, 0.1, 0.1]
     # Unpainted faces stay unpainted (cream Kd is not stored as a colour).
     assert sum(1 for f in loaded.mesh.faces if not f.attrs.get("color")) == 5
+
+
+def test_big_import_skips_fusion_gate(tmp_path):
+    # Library-scale meshes (3D Warehouse buildings) import as-is: the
+    # coplanar fusion + orientation passes are size-gated (they measured
+    # minutes-to-hours at 17k triangles — the app read as hung). Triangles
+    # over the gate stay triangles; small imports keep the full pipeline
+    # (covered by the round-trip tests above).
+    from formats.dae import _MAX_FUSE_LOOPS
+
+    n = _MAX_FUSE_LOOPS + 50
+    lines = []
+    for i in range(n):
+        x = float(i * 2)
+        lines += [f"v {x} 0 0", f"v {x + 1} 0 0", f"v {x} 1 0"]
+    lines += [f"f {3 * i + 1} {3 * i + 2} {3 * i + 3}" for i in range(n)]
+    p = tmp_path / "big.obj"
+    p.write_text("\n".join(lines) + "\n")
+
+    import time
+    scene = Scene()
+    t0 = time.perf_counter()
+    obj_format.load_obj(scene, p)
+    assert time.perf_counter() - t0 < 10.0        # no O(F²) pass ran
+    assert len(scene.mesh.faces) == n             # unfused, as-is

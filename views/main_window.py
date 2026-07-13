@@ -1189,6 +1189,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, tr("Import DAE failed"), str(exc))
             return
         self.viewport.update()
+        self.statusBar().showMessage(tr("Imported {name}", name=path.name), 3000)
 
     def _on_import_obj(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(

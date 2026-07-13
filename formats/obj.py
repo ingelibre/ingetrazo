@@ -213,6 +213,10 @@ def load_obj(scene, path) -> None:
     # polygons they were exported from (a triangulated cube → 6 quads). The
     # coplanar merge is winding-tolerant, so give a closed result a consistent
     # outward orientation — what the engine and STL re-export expect.
-    run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
-    orient_outward(scene.mesh)
+    # Size-gated like formats/dae.py (_MAX_FUSE_LOOPS there, keep in sync):
+    # fusion blows up on library-scale meshes, which import as-is (reference).
+    from formats.dae import _MAX_FUSE_LOOPS
+    if len(new_faces) <= _MAX_FUSE_LOOPS:
+        run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
+        orient_outward(scene.mesh)
     scene.version += 1

@@ -23,6 +23,14 @@ from PySide6.QtGui import QMatrix4x4, QVector3D
 
 _NS = "{http://www.collada.org/2005/11/COLLADASchema}"
 
+# Imports up to this many polygons get the full editable-import pipeline
+# (coplanar fusion + outward orientation). Bigger models come from asset
+# libraries (3D Warehouse buildings, furniture) and import as-is: the fusion
+# pass is O(F²)-ish and measured minutes-to-hours at that scale (a 17k-tri
+# building froze the app), while the result is reference geometry anyway.
+# Mirrored in formats/obj.py — keep the two in sync.
+_MAX_FUSE_LOOPS = 400
+
 
 def _tag(el) -> str:
     return el.tag.rsplit("}", 1)[-1]
@@ -269,6 +277,11 @@ def load_dae(scene, path) -> None:
 
     # Fuse the exported triangles back into clean polygons and give a closed
     # result a consistent outward orientation — same pipeline as OBJ import.
-    run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
-    orient_outward(scene.mesh)
+    # Gated by size: fusion/orientation are O(F²)-ish and blow up on real
+    # 3D-Warehouse models (17k-triangle building: minutes-to-hours, the app
+    # reads as hung). Past the gate the model imports as-is — a *reference*
+    # mesh (display geometry, not metrable BIM solids), per the philosophy.
+    if len(new_faces) <= _MAX_FUSE_LOOPS:
+        run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
+        orient_outward(scene.mesh)
     scene.version += 1
