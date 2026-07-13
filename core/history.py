@@ -1213,6 +1213,44 @@ class SnapshotMutation(Command):
             scene.version += 1
 
 
+class SnapshotImport(Command):
+    """Wrap a file import that may add loose geometry AND/OR reference groups
+    (big DAE/OBJ models land as a Group). SnapshotMutation only snapshots the
+    mesh, so a group added by the loader would survive undo — this also
+    remembers and reverts the groups the import appended."""
+
+    def __init__(self, mutate) -> None:
+        self.mutate = mutate
+        self.before: Optional[dict] = None
+        self.after: Optional[dict] = None
+        self.added_groups: list = []
+
+    def do(self, scene) -> None:
+        m = scene.mesh
+        if self.after is None:
+            groups_before = list(scene.groups)
+            self.before = m.capture_state()
+            self.mutate(scene)
+            self.after = m.capture_state()
+            self.added_groups = [g for g in scene.groups
+                                 if g not in groups_before]
+        else:
+            m.restore_state(self.after)
+            for g in self.added_groups:
+                if g not in scene.groups:
+                    scene.groups.append(g)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.before is not None:
+            scene.mesh.restore_state(self.before)
+        for g in self.added_groups:
+            if g in scene.groups:
+                scene.groups.remove(g)
+            scene.selection.discard(g)
+        scene.version += 1
+
+
 class SnapshotCompound(Command):
     """Run a list of sub-commands under one identity-preserving snapshot, undone
     by restoring it.

@@ -230,7 +230,18 @@ def _append_face_plane_rebuild(scene, commands, points) -> None:
         normal = f.normal()
         if all(abs(QVector3D.dotProduct(p - origin, normal)) < tol
                for p in points):
-            commands.append(RebuildPlaneFacesCommand(origin, normal))
+            # Reference-scale guard: rebuilding a plane that carries hundreds
+            # of faces (a triangulated import living loose in the mesh) runs
+            # the arrangement over all of them — minutes, reads as a hang.
+            # Hand-drawn planes stay far below this; past it, keep the naive
+            # path (imports should live in a Group anyway).
+            on_plane = sum(
+                1 for g in scene.mesh.faces
+                if abs(QVector3D.dotProduct(g.vertices[0] - origin,
+                                            normal)) < tol
+                and abs(QVector3D.dotProduct(g.normal(), normal)) > 0.999)
+            if on_plane <= 400:
+                commands.append(RebuildPlaneFacesCommand(origin, normal))
             return
 
 

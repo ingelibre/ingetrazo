@@ -180,15 +180,7 @@ def test_obj_import_restores_colour(tmp_path):
     assert sum(1 for f in loaded.mesh.faces if not f.attrs.get("color")) == 5
 
 
-def test_big_import_skips_fusion_gate(tmp_path):
-    # Library-scale meshes (3D Warehouse buildings) import as-is: the
-    # coplanar fusion + orientation passes are size-gated (they measured
-    # minutes-to-hours at 17k triangles — the app read as hung). Triangles
-    # over the gate stay triangles; small imports keep the full pipeline
-    # (covered by the round-trip tests above).
-    from formats.dae import _MAX_FUSE_LOOPS
-
-    n = _MAX_FUSE_LOOPS + 50
+def _big_obj(tmp_path, n):
     lines = []
     for i in range(n):
         x = float(i * 2)
@@ -196,10 +188,42 @@ def test_big_import_skips_fusion_gate(tmp_path):
     lines += [f"f {3 * i + 1} {3 * i + 2} {3 * i + 3}" for i in range(n)]
     p = tmp_path / "big.obj"
     p.write_text("\n".join(lines) + "\n")
+    return p
+
+
+def test_big_import_lands_as_reference_group(tmp_path):
+    # Library-scale meshes (3D Warehouse buildings) are reference geometry:
+    # they skip the O(F²) fusion/orientation passes (minutes-to-hours at 17k
+    # triangles — the app read as hung) AND land in their own Group, so the
+    # drawing tools' loose-mesh scans (snap, edge splitting, auto-face) never
+    # pay for them while the user draws beside the model. Small imports keep
+    # the full editable pipeline (covered by the round-trip tests above).
+    from formats.dae import _MAX_FUSE_LOOPS
+
+    n = _MAX_FUSE_LOOPS + 50
+    p = _big_obj(tmp_path, n)
 
     import time
     scene = Scene()
     t0 = time.perf_counter()
     obj_format.load_obj(scene, p)
     assert time.perf_counter() - t0 < 10.0        # no O(F²) pass ran
-    assert len(scene.mesh.faces) == n             # unfused, as-is
+    assert len(scene.mesh.faces) == 0             # loose mesh untouched
+    assert len(scene.groups) == 1
+    assert len(scene.groups[0].mesh.faces) == n   # unfused, as-is
+
+
+def test_big_import_undo_removes_the_group(tmp_path):
+    from core.history import SnapshotImport
+    from formats.dae import _MAX_FUSE_LOOPS
+
+    p = _big_obj(tmp_path, _MAX_FUSE_LOOPS + 10)
+    scene = Scene()
+    hist = History(scene)
+    hist.execute(SnapshotImport(lambda s: obj_format.load_obj(s, p)))
+    assert hist.last_error is None
+    assert len(scene.groups) == 1
+    assert hist.undo() is True
+    assert len(scene.groups) == 0                 # the group undoes too
+    assert hist.redo() is True
+    assert len(scene.groups) == 1

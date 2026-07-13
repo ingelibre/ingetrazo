@@ -235,8 +235,15 @@ def _collect(dae: _Dae, node_el, xform: QMatrix4x4, out: list,
 
 
 def load_dae(scene, path) -> None:
-    """Add the geometry of a COLLADA file at ``path`` to ``scene``'s mesh.
-    Adds to the current scene; the caller wraps it for undo."""
+    """Add the geometry of a COLLADA file at ``path`` to ``scene``.
+
+    Small models (≤ ``_MAX_FUSE_LOOPS`` polygons) go into the loose mesh and
+    get the full editable pipeline — triangle fusion + outward orientation.
+    Bigger models are *reference* geometry: they land in their own
+    :class:`~core.group.Group` (isolated mesh, SketchUp-style), so the
+    editing engine — snap, edge splitting, auto-face, heals — never scans
+    their thousands of triangles while the user draws beside them. The
+    caller wraps this for undo (``SnapshotImport`` handles the group)."""
     from core.history import run_stitch
     from core.orient import orient_outward
     from core.topology import _key
@@ -261,12 +268,20 @@ def load_dae(scene, path) -> None:
     if not pending:
         raise ValueError("No geometry found in the COLLADA file")
 
+    big = len(pending) > _MAX_FUSE_LOOPS
+    if big:
+        from core.group import Group
+        from core.mesh import Mesh
+        target = Mesh()
+    else:
+        target = scene.mesh
+
     seed: set = set()
     new_faces = set()
     for loop, color in pending:
         pts = [dae.to_zup(p) for p in loop]
         try:
-            face = scene.mesh.add_face(pts)
+            face = target.add_face(pts)
         except Exception:  # noqa: BLE001 — skip a degenerate polygon
             continue
         new_faces.add(face)
@@ -275,13 +290,12 @@ def load_dae(scene, path) -> None:
         for p in pts:
             seed.add(_key(p))
 
-    # Fuse the exported triangles back into clean polygons and give a closed
-    # result a consistent outward orientation — same pipeline as OBJ import.
-    # Gated by size: fusion/orientation are O(F²)-ish and blow up on real
-    # 3D-Warehouse models (17k-triangle building: minutes-to-hours, the app
-    # reads as hung). Past the gate the model imports as-is — a *reference*
-    # mesh (display geometry, not metrable BIM solids), per the philosophy.
-    if len(new_faces) <= _MAX_FUSE_LOOPS:
+    if big:
+        scene.groups.append(Group(target))
+    else:
+        # Fuse the exported triangles back into clean polygons and give a
+        # closed result a consistent outward orientation — same pipeline as
+        # OBJ import. Fusion is O(F²)-ish, hence the reference gate above.
         run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
         orient_outward(scene.mesh)
     scene.version += 1

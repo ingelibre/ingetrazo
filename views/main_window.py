@@ -30,6 +30,7 @@ from core.history import (
     HealOverlapsCommand,
     MakeGroupCommand,
     RebuildPlanarFacesCommand,
+    SnapshotImport,
     SnapshotMutation,
 )
 from core.mesh import Edge, Face
@@ -1183,7 +1184,7 @@ class MainWindow(QMainWindow):
             return
         path = Path(path_str)
         try:
-            self.viewport.history.execute(SnapshotMutation(
+            self.viewport.history.execute(SnapshotImport(
                 lambda scene: dae_format.load_dae(scene, path)))
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Import DAE failed"), str(exc))
@@ -1198,7 +1199,7 @@ class MainWindow(QMainWindow):
             return
         path = Path(path_str)
         try:
-            self.viewport.history.execute(SnapshotMutation(
+            self.viewport.history.execute(SnapshotImport(
                 lambda scene: obj_format.load_obj(scene, path)))
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Import OBJ failed"), str(exc))

@@ -186,11 +186,23 @@ def load_obj(scene, path) -> None:
             if len(idxs) >= 3 and all(0 <= i < len(verts) for i in idxs):
                 pending.append(([verts[i] for i in idxs], current_mat))
 
+    # Library-scale meshes are *reference* geometry: they land in their own
+    # Group (isolated mesh) so drawing beside them never scans their
+    # triangles — see formats/dae.py (_MAX_FUSE_LOOPS, keep in sync).
+    from formats.dae import _MAX_FUSE_LOOPS
+    big = len(pending) > _MAX_FUSE_LOOPS
+    if big:
+        from core.group import Group
+        from core.mesh import Mesh
+        target = Mesh()
+    else:
+        target = scene.mesh
+
     seed: set = set()
     new_faces = set()
     for loop, mat in pending:
         try:
-            face = scene.mesh.add_face(loop)
+            face = target.add_face(loop)
         except Exception:  # noqa: BLE001 — skip a degenerate polygon
             continue
         new_faces.add(face)
@@ -209,14 +221,14 @@ def load_obj(scene, path) -> None:
         for v in loop:
             seed.add(_key(v))
 
-    # Weld coincident vertices and fuse the coplanar triangles back into the
-    # polygons they were exported from (a triangulated cube → 6 quads). The
-    # coplanar merge is winding-tolerant, so give a closed result a consistent
-    # outward orientation — what the engine and STL re-export expect.
-    # Size-gated like formats/dae.py (_MAX_FUSE_LOOPS there, keep in sync):
-    # fusion blows up on library-scale meshes, which import as-is (reference).
-    from formats.dae import _MAX_FUSE_LOOPS
-    if len(new_faces) <= _MAX_FUSE_LOOPS:
+    if big:
+        scene.groups.append(Group(target))
+    else:
+        # Weld coincident vertices and fuse the coplanar triangles back into
+        # the polygons they were exported from (a triangulated cube → 6
+        # quads). The coplanar merge is winding-tolerant, so give a closed
+        # result a consistent outward orientation — what the engine and STL
+        # re-export expect. Fusion is O(F²)-ish, hence the reference gate.
         run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
         orient_outward(scene.mesh)
     scene.version += 1
