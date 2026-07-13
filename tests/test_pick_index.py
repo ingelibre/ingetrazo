@@ -32,8 +32,12 @@ class _VP:
 
 
 def _bind(vp):
+    vp.DEFAULT_FACE_COLOR = Viewport.DEFAULT_FACE_COLOR
+    vp._LIGHT = Viewport._LIGHT
+    vp._mesh_fingerprint = Viewport._mesh_fingerprint  # staticmethod
     for name in ("_pick_index", "_ray_hits", "pick_face", "pick_face_any",
-                 "pick_edge", "_project_px", "_np_mvp"):
+                 "pick_edge", "_project_px", "_np_mvp", "_group_chunk",
+                 "_append_textured_face", "_shaded_color"):
         setattr(vp, name, getattr(Viewport, name).__get__(vp))
     return vp
 
@@ -76,3 +80,24 @@ def test_pick_index_refreshes_on_scene_change():
     scene.mesh.add_face([V(-2, -2), V(2, -2), V(2, 2), V(-2, 2)])
     scene.version += 1
     assert vp.pick_face(0, 0) is not None
+
+
+def test_group_chunk_fingerprint_invalidation():
+    # The cached group chunk must refresh when the group's content changes —
+    # paint (attrs) and move (positions) both produce a new fingerprint;
+    # an untouched group keeps the same one (that reuse is what makes
+    # drawing beside a 17k-face import instant).
+    scene = Scene()
+    hist = History(scene)
+    f = scene.mesh.add_face([V(-2, -2), V(2, -2), V(2, 2), V(-2, 2)])
+    hist.execute(MakeGroupCommand([f], []))
+    g = scene.groups[0]
+    fp0 = Viewport._mesh_fingerprint(g.mesh)
+    assert Viewport._mesh_fingerprint(g.mesh) == fp0     # stable when untouched
+    gf = g.mesh.faces[0]
+    gf.attrs["color"] = [0.5, 0.2, 0.2]
+    fp_paint = Viewport._mesh_fingerprint(g.mesh)
+    assert fp_paint != fp0                               # paint invalidates
+    for v in g.mesh.vertices:
+        v.position += QVector3D(1.0, 0.0, 0.0)
+    assert Viewport._mesh_fingerprint(g.mesh) != fp_paint  # move invalidates

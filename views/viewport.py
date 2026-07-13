@@ -1063,28 +1063,36 @@ class Viewport(QOpenGLWidget):
         # no longer exist, or deleted geometry keeps ghost-rendering (blue
         # hover / orange selection) until the mouse moves or a click replaces
         # the selection. Renderer-level guarantee — holds no matter which
-        # command forgot to discard.
-        alive_edges = set(self.scene.render_edges())
-        alive_faces = set(self.scene.render_faces())
+        # command forgot to discard. Skipped when there is nothing to purge
+        # (the common case while drawing): the alive sets walk every entity.
         hover = self._hover_entity
-        if isinstance(hover, Edge) and hover not in alive_edges:
-            self._hover_entity = None
-        elif isinstance(hover, Face) and hover not in alive_faces:
-            self._hover_entity = None
-        dead = [s for s in self.scene.selection
-                if (isinstance(s, Edge) and s not in alive_edges)
-                or (isinstance(s, Face) and s not in alive_faces)]
-        for s in dead:
-            self.scene.selection.discard(s)
+        if hover is not None or self.scene.selection:
+            alive_edges = set(self.scene.render_edges())
+            alive_faces = set(self.scene.render_faces())
+            if isinstance(hover, Edge) and hover not in alive_edges:
+                self._hover_entity = None
+            elif isinstance(hover, Face) and hover not in alive_faces:
+                self._hover_entity = None
+            dead = [s for s in self.scene.selection
+                    if (isinstance(s, Edge) and s not in alive_edges)
+                    or (isinstance(s, Face) and s not in alive_faces)]
+            for s in dead:
+                self.scene.selection.discard(s)
 
+        # Hard edges: loose ones rebuilt fresh, group ones from cached chunks
+        # (composition mirrors scene.render_edges()).
         all_data = array("f")
-        for e in self.scene.render_edges():
-            if getattr(e, "soft", False):
-                continue  # curve segment (circle/arc) — hidden so it reads smooth
+        for e in self.scene.loose_mesh.edges:
+            if not self.scene.entity_visible(e) or getattr(e, "soft", False):
+                continue  # hidden layer / curve segment (hidden, reads smooth)
             all_data.extend([
                 e.a.x(), e.a.y(), e.a.z(),
                 e.b.x(), e.b.y(), e.b.z(),
             ])
+        for g in self.scene.groups:
+            if (self.scene.entity_visible(g)
+                    and not getattr(g, "billboard", False)):
+                all_data.extend(self._group_chunk(g)["edges"])
         self._edges_vbo.bind()
         if all_data:
             raw = all_data.tobytes()
@@ -1148,23 +1156,26 @@ class Viewport(QOpenGLWidget):
         # Faces: triangulate each face (fan when simple, hole-aware when the
         # face has been divided) into one VBO, but grouped by material colour
         # (attrs["color"], default cream) so each colour is a single draw call
-        # with its own uniform. Group faces render alongside the loose ones.
+        # with its own uniform. Loose faces rebuild fresh; untouched groups
+        # contribute their cached chunk buffers (a 17k-face reference model
+        # made every stroke pay a ~1 s re-triangulation otherwise).
         suppressed_faces = self._suppressed_faces
         by_color: dict = {}
         by_texture: dict = {}        # image path -> interleaved pos+uv array
-        for face in self.scene.render_faces():
+
+        def bucket_face(face):
             if face in suppressed_faces:
-                continue
+                return
             tex = face.attrs.get("texture")
             if tex is not None and tex.get("path"):
                 self._append_textured_face(by_texture, face, tex)
-                continue
+                return
             col = face.attrs.get("color")
             base = tuple(col) if col is not None else self.DEFAULT_FACE_COLOR
             # Bake a subtle diffuse shade from the face normal against a fixed
-            # world light — the matte-model look of SketchUp. World-fixed, so it
-            # doesn't change as you orbit; faces sharing a normal+colour share the
-            # shaded key, keeping the draw-call count low.
+            # world light — the matte-model look of SketchUp. World-fixed, so
+            # it doesn't change as you orbit; faces sharing a normal+colour
+            # share the shaded key, keeping the draw-call count low.
             key = self._shaded_color(base, face.normal())
             buf = by_color.get(key)
             if buf is None:
@@ -1175,6 +1186,30 @@ class Viewport(QOpenGLWidget):
                     t1.x(), t1.y(), t1.z(),
                     t2.x(), t2.y(), t2.z(),
                 ])
+
+        for face in self.scene.loose_mesh.faces:
+            if self.scene.entity_visible(face):
+                bucket_face(face)
+        for g in self.scene.groups:
+            if (not self.scene.entity_visible(g)
+                    or getattr(g, "billboard", False)):
+                continue
+            if suppressed_faces and any(f in suppressed_faces
+                                        for f in g.mesh.faces):
+                for face in g.mesh.faces:
+                    bucket_face(face)   # push/pull preview suppresses faces
+                continue
+            chunk = self._group_chunk(g)
+            for key, buf in chunk["by_color"].items():
+                dst = by_color.get(key)
+                if dst is None:
+                    dst = by_color[key] = array("f")
+                dst.extend(buf)
+            for path, buf in chunk["by_texture"].items():
+                dst = by_texture.get(path)
+                if dst is None:
+                    dst = by_texture[path] = array("f")
+                dst.extend(buf)
         face_data = array("f")
         self._face_runs = []
         for key, buf in by_color.items():
@@ -2227,6 +2262,92 @@ class Viewport(QOpenGLWidget):
         py = (1.0 - (ndc_y * 0.5 + 0.5)) * self.height()
         return (px, py)
 
+    @staticmethod
+    def _mesh_fingerprint(mesh):
+        """Cheap content fingerprint of a group's mesh — counts, a coordinate
+        checksum, render-relevant attrs and soft flags. Self-healing cache key
+        (no dirty-flag invariant to maintain): any geometry/paint change on
+        the group produces a new value; ~20 ms on a 17k-face mesh versus the
+        ~1.5 s rebuild it lets untouched groups skip."""
+        s = 0.0
+        for v in mesh.vertices:
+            p = v.position
+            s += p.x() + p.y() * 1.000003 + p.z() * 1.000007
+        a = 0
+        for i, f in enumerate(mesh.faces):
+            if f.attrs:
+                c = f.attrs.get("color")
+                t = f.attrs.get("texture")
+                a ^= hash((i,
+                           None if c is None else tuple(c),
+                           None if not t else (t.get("path"), t.get("sw"),
+                                               t.get("sh"), t.get("rot", 0)),
+                           f.attrs.get("layer")))
+        soft = sum(1 for e in mesh.edges if getattr(e, "soft", False))
+        return (len(mesh.vertices), len(mesh.edges), len(mesh.faces),
+                round(s, 4), a, soft)
+
+    def _group_chunk(self, group):
+        """Cached render + pick payload of one group, keyed by its content
+        fingerprint. A big imported reference model (17k faces) made EVERY
+        stroke beside it pay a full VBO + pick-index rebuild (~1.5 s); with
+        the chunk, untouched groups just re-concatenate."""
+        fp = self._mesh_fingerprint(group.mesh)
+        cache = getattr(self, "_group_chunks", None)
+        if cache is None:
+            cache = self._group_chunks = {}
+        entry = cache.get(id(group))
+        if entry is not None and entry["fp"] == fp:
+            return entry
+        import numpy as np
+        mesh = group.mesh
+        edges_data = array("f")
+        for e in mesh.edges:
+            if getattr(e, "soft", False):
+                continue
+            edges_data.extend([e.a.x(), e.a.y(), e.a.z(),
+                               e.b.x(), e.b.y(), e.b.z()])
+        by_color: dict = {}
+        by_texture: dict = {}
+        faces: list = []
+        areas: list = []
+        tris: list = []
+        tri_ent: list = []
+        for f in mesh.faces:
+            i = len(faces)
+            faces.append(f)
+            areas.append(f.area())
+            tri_list = f.triangulate()
+            tex = f.attrs.get("texture")
+            if tex is not None and tex.get("path"):
+                self._append_textured_face(by_texture, f, tex)
+            else:
+                col = f.attrs.get("color")
+                base = tuple(col) if col is not None else self.DEFAULT_FACE_COLOR
+                buf = by_color.setdefault(self._shaded_color(base, f.normal()),
+                                          array("f"))
+                for t0, t1, t2 in tri_list:
+                    buf.extend([t0.x(), t0.y(), t0.z(),
+                                t1.x(), t1.y(), t1.z(),
+                                t2.x(), t2.y(), t2.z()])
+            for t0, t1, t2 in tri_list:
+                tris.append([[t0.x(), t0.y(), t0.z()],
+                             [t1.x(), t1.y(), t1.z()],
+                             [t2.x(), t2.y(), t2.z()]])
+                tri_ent.append(i)
+        if tris:
+            t = np.asarray(tris, dtype=np.float64)
+            v0, e1, e2 = t[:, 0], t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]
+            tri_ent_a = np.asarray(tri_ent, dtype=np.int64)
+        else:
+            v0 = e1 = e2 = tri_ent_a = None
+        entry = {"fp": fp, "edges": edges_data, "by_color": by_color,
+                 "by_texture": by_texture, "faces": faces,
+                 "areas": np.asarray(areas, dtype=np.float64),
+                 "v0": v0, "e1": e1, "e2": e2, "tri_ent": tri_ent_a}
+        cache[id(group)] = entry
+        return entry
+
     def _np_mvp(self):
         """Current MVP as a (4, 4) float64 NumPy matrix (row-major indexing).
         ``QMatrix4x4.data()`` is column-major, hence the Fortran reshape."""
@@ -2287,6 +2408,21 @@ class Viewport(QOpenGLWidget):
         for f in scene.faces:
             add_face(f, None, scene.entity_visible(f),
                      scene.entity_selectable(f))
+
+        # Loose part → arrays; groups append their cached chunk arrays.
+        if tris:
+            t = np.asarray(tris, dtype=np.float64)
+            v0s = [t[:, 0]]
+            e1s = [t[:, 1] - t[:, 0]]
+            e2s = [t[:, 2] - t[:, 0]]
+            tents = [np.asarray(tri_ent, dtype=np.int64)]
+        else:
+            v0s, e1s, e2s, tents = [], [], [], []
+        areas = [np.asarray(ent_area, dtype=np.float64)]
+        vis_parts = [np.asarray(ent_vis, dtype=bool)]
+        sel_parts = [np.asarray(ent_sel, dtype=bool)]
+        loose_parts = [np.asarray(ent_loose, dtype=bool)]
+
         if scene.edit_group is None:
             for g in scene.groups:
                 if getattr(g, "billboard", False):
@@ -2295,8 +2431,21 @@ class Viewport(QOpenGLWidget):
                 gsel = scene.entity_selectable(g)
                 if not (gvis or gsel):
                     continue
-                for f in g.mesh.faces:
-                    add_face(f, g, gvis, gsel)
+                chunk = self._group_chunk(g)
+                n = len(chunk["faces"])
+                if not n:
+                    continue
+                offset = len(entities)
+                entities.extend((f, g) for f in chunk["faces"])
+                areas.append(chunk["areas"])
+                vis_parts.append(np.full(n, gvis, dtype=bool))
+                sel_parts.append(np.full(n, gsel, dtype=bool))
+                loose_parts.append(np.zeros(n, dtype=bool))
+                if chunk["v0"] is not None:
+                    v0s.append(chunk["v0"])
+                    e1s.append(chunk["e1"])
+                    e2s.append(chunk["e2"])
+                    tents.append(chunk["tri_ent"] + offset)
 
         edges: list = []
         ea: list = []
@@ -2308,19 +2457,17 @@ class Viewport(QOpenGLWidget):
             eb.append([e.b.x(), e.b.y(), e.b.z()])
             esel.append(scene.entity_selectable(e))
 
-        if tris:
-            t = np.asarray(tris, dtype=np.float64)
-            tv0, te1, te2 = t[:, 0], t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]
-            tri_ent_a = np.asarray(tri_ent, dtype=np.int64)
-        else:
-            tv0 = te1 = te2 = tri_ent_a = None
         idx = SimpleNamespace(
             entities=entities,
-            ent_area=np.asarray(ent_area, dtype=np.float64),
-            ent_sel=np.asarray(ent_sel, dtype=bool),
-            ent_vis=np.asarray(ent_vis, dtype=bool),
-            ent_loose=np.asarray(ent_loose, dtype=bool),
-            tri_v0=tv0, tri_e1=te1, tri_e2=te2, tri_ent=tri_ent_a,
+            ent_area=np.concatenate(areas) if entities else np.empty(0),
+            ent_sel=np.concatenate(sel_parts) if entities else np.empty(0, bool),
+            ent_vis=np.concatenate(vis_parts) if entities else np.empty(0, bool),
+            ent_loose=(np.concatenate(loose_parts) if entities
+                       else np.empty(0, bool)),
+            tri_v0=np.concatenate(v0s) if v0s else None,
+            tri_e1=np.concatenate(e1s) if v0s else None,
+            tri_e2=np.concatenate(e2s) if v0s else None,
+            tri_ent=np.concatenate(tents) if v0s else None,
             edges=edges,
             edge_a=np.asarray(ea, dtype=np.float64) if edges else None,
             edge_b=np.asarray(eb, dtype=np.float64) if edges else None,
