@@ -458,6 +458,7 @@ class Viewport(QOpenGLWidget):
         self._faces_vao, self._faces_vbo = self._create_dynamic_vcol()
         self._tex_faces_vao, self._tex_faces_vbo = self._create_dynamic_uv()
         self._billboard_vao, self._billboard_vbo = self._create_dynamic_uv()
+        self._bb_sel_vao, self._bb_sel_vbo = self._create_dynamic()
         self._hover_faces_vao, self._hover_faces_vbo = self._create_dynamic()
         self._hover_edges_vao, self._hover_edges_vbo = self._create_dynamic()
         self._silhouette_vao, self._silhouette_vbo = self._create_dynamic()
@@ -597,6 +598,7 @@ class Viewport(QOpenGLWidget):
         # Face-me billboards (SketchUp 2D people): per-frame textured cutout
         # quads turned toward the camera.
         self._draw_billboards()
+        self._draw_billboard_outlines()
 
         # Face highlights (selection + hover) — translucent overlays drawn on
         # top of the cream faces. Same polygon offset as the faces so they sit
@@ -1228,6 +1230,13 @@ class Viewport(QOpenGLWidget):
                 sel_loose.extend([ent.a.x(), ent.a.y(), ent.a.z(),
                                   ent.b.x(), ent.b.y(), ent.b.z()])
             elif isinstance(ent, Group):
+                if getattr(ent, "billboard", False):
+                    # A face-me billboard's mesh quad is NOT what's on screen
+                    # (the drawn quad rotates to face the camera every frame)
+                    # — tinting it painted a stray plane through the figure.
+                    # Its selection cue is the per-frame outline drawn in
+                    # _draw_billboard_outlines instead.
+                    continue
                 # Chunk edges already exclude soft seams (a grouped smooth
                 # cylinder must not flash its segment seams in orange).
                 chunk = self._group_chunk(ent)
@@ -1442,6 +1451,36 @@ class Viewport(QOpenGLWidget):
                 pass
         self._billboard_vao.release()
         self._program.setUniformValue(self._loc_use_tex, 0)
+
+    def _draw_billboard_outlines(self) -> None:
+        """Selection cue for face-me billboards: an orange outline around the
+        quad AS DRAWN this frame (it rotates toward the camera). Tinting the
+        group's static mesh painted a stray plane through the figure —
+        SketchUp shows a selected 2D person as an outlined box too."""
+        sel = [g for g in self.scene.selection
+               if isinstance(g, Group) and getattr(g, "billboard", False)
+               and self.scene.entity_visible(g)]
+        if not sel:
+            return
+        data = array("f")
+        for g in sel:
+            quad = self._billboard_quad(g)
+            if quad is None:
+                continue
+            c = quad[0]
+            for i, j in ((0, 1), (1, 2), (2, 3), (3, 0)):
+                data.extend([c[i].x(), c[i].y(), c[i].z(),
+                             c[j].x(), c[j].y(), c[j].z()])
+        if not data:
+            return
+        raw = data.tobytes()
+        self._bb_sel_vbo.bind()
+        self._bb_sel_vbo.allocate(raw, len(raw))
+        self._bb_sel_vbo.release()
+        self._set_color(0.95, 0.45, 0.16, 1.0)  # selection orange
+        self._bb_sel_vao.bind()
+        self._gl.glDrawArrays(GL_LINES, 0, len(data) // 3)
+        self._bb_sel_vao.release()
 
     def _upload_hover_face(self, face: Face) -> int:
         """Triangulate ``face`` into the hover-faces VBO. Returns vertex count."""
@@ -3085,16 +3124,41 @@ class Viewport(QOpenGLWidget):
         return [_SnapEdge(QVector3D(*ga[i]), QVector3D(*gb[i]))
                 for i in cand]
 
+    def _billboard_snap_edges(self) -> list:
+        """Pseudo-edges for face-me billboards: the base edge and the vertical
+        centre axis of the quad AS DRAWN this frame — so a figure's feet (its
+        anchor point), base corners and head snap like real geometry when
+        placing or measuring against it. The group a transform tool is
+        currently dragging is excluded (it would snap to itself)."""
+        moving = getattr(self.active_tool, "_group", None)
+        out: list = []
+        for g in self.scene.groups:
+            if not getattr(g, "billboard", False) or g is moving:
+                continue
+            if not self.scene.entity_selectable(g):
+                continue
+            quad = self._billboard_quad(g)
+            if quad is None:
+                continue
+            c = quad[0]
+            base_mid = (c[0] + c[1]) * 0.5
+            top_mid = (c[2] + c[3]) * 0.5
+            out.append(_SnapEdge(QVector3D(c[0]), QVector3D(c[1])))
+            out.append(_SnapEdge(base_mid, top_mid))
+        return out
+
     def _snap_scene(self, px: Optional[float] = None,
                     py: Optional[float] = None):
         """The scene the snap engine sees: loose edges, construction guides as
         pseudo-edges (``Guide.a/.b`` span the long segment), and — when the
-        cursor position is given — the group edges near it, so drawing and
-        dimensioning over an imported reference model snaps to its corners
-        and edges."""
+        cursor position is given — the group edges near it plus the face-me
+        billboard anchors, so drawing and dimensioning over an imported
+        reference model snaps to its corners and edges."""
         guides = getattr(self.scene, "guides", None)
         lines = [g for g in guides if g.is_line] if guides else []
         near = self._nearby_group_edges(px, py) if px is not None else []
+        if px is not None:
+            near += self._billboard_snap_edges()
         if not lines and not near:
             return self.scene
         from types import SimpleNamespace
@@ -3305,24 +3369,48 @@ class Viewport(QOpenGLWidget):
         # cached projected arrays — the Python per-edge walk took ~300 ms per
         # mouse move against a 300k-edge imported model.
         import numpy as np
+        best_d = self.pick_threshold_px
+        best_g = None
         proj = self._gedge_screen()
-        if proj is None:
-            return None
-        idx = self._pick_index()
-        ax, ay, bx, by, ok = proj
-        if not ok.any():
-            return None
-        dx, dy = bx - ax, by - ay
-        l2 = dx * dx + dy * dy
-        safe = np.where(l2 > 1e-12, l2, 1.0)
-        t = np.clip(((screen_x - ax) * dx + (screen_y - ay) * dy) / safe,
-                    0.0, 1.0)
-        d = np.hypot(ax + t * dx - screen_x, ay + t * dy - screen_y)
-        d = np.where(ok, d, np.inf)
-        i = int(np.argmin(d))
-        if d[i] < self.pick_threshold_px:
-            return idx.gedge_groups[int(idx.gedge_gi[i])]
-        return None
+        if proj is not None:
+            ax, ay, bx, by, ok = proj
+            if ok.any():
+                dx, dy = bx - ax, by - ay
+                l2 = dx * dx + dy * dy
+                safe = np.where(l2 > 1e-12, l2, 1.0)
+                t = np.clip(((screen_x - ax) * dx
+                             + (screen_y - ay) * dy) / safe, 0.0, 1.0)
+                d = np.hypot(ax + t * dx - screen_x,
+                             ay + t * dy - screen_y)
+                d = np.where(ok, d, np.inf)
+                i = int(np.argmin(d))
+                if d[i] < best_d:
+                    idx = self._pick_index()
+                    best_d = float(d[i])
+                    best_g = idx.gedge_groups[int(idx.gedge_gi[i])]
+        # Billboard outlines: clicking a figure exactly on its snapped feet
+        # point lands ON the quad's boundary, which the ray-triangle test
+        # rejects — the outline proximity test catches it.
+        for g in self.scene.groups:
+            if not getattr(g, "billboard", False):
+                continue
+            if not self.scene.entity_selectable(g):
+                continue
+            quad = self._billboard_quad(g)
+            if quad is None:
+                continue
+            c = quad[0]
+            for i, j in ((0, 1), (1, 2), (2, 3), (3, 0)):
+                pa = self._world_to_pixel(c[i])
+                pb = self._world_to_pixel(c[j])
+                if pa is None or pb is None:
+                    continue
+                d2 = _point_to_segment_distance_2d(
+                    (screen_x, screen_y), pa, pb)
+                if d2 < best_d:
+                    best_d = d2
+                    best_g = g
+        return best_g
 
     # ---- Tool management ----------------------------------------------------
     def set_active_tool(self, tool: Optional[Tool]) -> None:
