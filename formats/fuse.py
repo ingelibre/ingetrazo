@@ -60,6 +60,30 @@ def _sig_rank(sig) -> int:
     return 2 if sig[1] is not None else 1
 
 
+def _uvw_close(ua, ub) -> bool:
+    return all(abs(x - y) <= 0.02 + 0.01 * max(abs(x), abs(y))
+               for x, y in zip(ua, ub))
+
+
+def _sig_compatible(a, b) -> bool:
+    """Whether two faces may fuse. Exact signature equality, or — for two
+    textured faces with the SAME image — world→UV maps within tolerance:
+    exported UV text is quantised (~6 digits) and the per-triangle affine
+    fit amplifies that, so triangles of one continuous surface land ~1e-3
+    apart and used to stay unmerged (the 'dirty triangulation' report).
+    Genuinely different mappings (a neighbouring tile mapped from its own
+    origin) differ by a large fraction of a tile and stay separate."""
+    if a == b:
+        return True
+    if not a or not b or a[0] != b[0]:
+        return False
+    ta, tb = a[1], b[1]
+    if not ta or not tb or ta[0] != tb[0]:
+        return False
+    ua, ub = ta[4], tb[4]
+    return bool(ua and ub and _uvw_close(ua, ub))
+
+
 def fuse_coplanar_loops(loops, cos_tol: float = 0.99999):
     """``loops``: list of ``(pts, attrs_dict_or_None)`` polygons (triangles or
     n-gons). Returns a list of ``(outer_pts, holes, attrs, originals)`` —
@@ -116,12 +140,13 @@ def fuse_coplanar_loops(loops, cos_tol: float = 0.99999):
             if len(e) == 2:
                 edge_map.setdefault(e, []).append(i)
 
+    root_sig = [f[3] for f in faces]
     for idxs in edge_map.values():
         if len(idxs) != 2:
             continue                      # boundary or non-manifold junction
         i, j = idxs
-        if faces[i][3] != faces[j][3]:
-            continue                      # different material
+        if not _sig_compatible(faces[i][3], faces[j][3]):
+            continue                      # different material / UV mapping
         if abs(QVector3D.dotProduct(faces[i][2], faces[j][2])) < cos_tol:
             continue                      # a real crease
         ri, rj = find(i), find(j)
@@ -129,6 +154,8 @@ def fuse_coplanar_loops(loops, cos_tol: float = 0.99999):
             continue
         if abs(QVector3D.dotProduct(root_n[ri], root_n[rj])) < cos_tol:
             continue                      # drift guard: stay planar
+        if not _sig_compatible(root_sig[ri], root_sig[rj]):
+            continue                      # drift guard: UV maps stay close
         parent[rj] = ri
 
     regions: dict = {}
@@ -214,6 +241,19 @@ def _trace_region(loops):
     return (outer, holes, loops[0][1], [pts for pts, _a, _n in loops])
 
 
+def _smooth_sig(attrs):
+    """Material identity for the smoothing pass: colour + texture IMAGE only.
+    Two faces of one curved surface carry different per-face UV maps (a
+    tree's photo foliage, a textured column), and comparing the full mapping
+    kept every seam hard — the whole surface read as dirty wireframe."""
+    if not attrs:
+        return None
+    c = attrs.get("color")
+    t = attrs.get("texture")
+    return (None if c is None else tuple(c),
+            None if not t else t.get("path"))
+
+
 def soften_smooth_edges(mesh, cos_threshold: float = 0.85) -> None:
     """Mark edges between two same-material faces meeting at a shallow
     dihedral as soft (hidden in the render) — SketchUp's import smoothing.
@@ -226,7 +266,7 @@ def soften_smooth_edges(mesh, cos_threshold: float = 0.85) -> None:
         f0, f1 = e.faces
         if f0 is f1:
             continue
-        if _attrs_sig(f0.attrs) != _attrs_sig(f1.attrs):
+        if _smooth_sig(f0.attrs) != _smooth_sig(f1.attrs):
             continue                      # material boundary: keep the line
         n0 = normals.get(id(f0))
         if n0 is None:
