@@ -63,3 +63,54 @@ def face_uvs(face, tex: dict):
     return planar_uv(face.normal(), list(face.vertices),
                      float(tex.get("sw", 1.0)), float(tex.get("sh", 1.0)),
                      float(tex.get("rot", 0.0)))
+
+
+def fit_uv_affine(points, uvs):
+    """World→UV affine map ``[gu.xyz, u0, gv.xyz, v0]`` fitted from a polygon's
+    vertices and their explicit UVs (a COLLADA/OBJ import). Any UV assignment
+    on a planar polygon is affine over its plane, so evaluating the map at a
+    vertex reproduces its UV exactly — which lets coplanar triangles of the
+    same original face merge and still texture correctly. Returns ``None``
+    when the polygon is degenerate."""
+    if len(points) < 3 or len(uvs) < len(points):
+        return None
+    p0 = points[0]
+    # The edge pair with the largest cross product gives the stablest fit.
+    best = None
+    best_len = 1e-12
+    for i in range(1, len(points)):
+        for j in range(i + 1, len(points)):
+            cl = QVector3D.crossProduct(points[i] - p0,
+                                        points[j] - p0).length()
+            if cl > best_len:
+                best_len = cl
+                best = (i, j)
+    if best is None:
+        return None
+    i, j = best
+    e1 = points[i] - p0
+    e2 = points[j] - p0
+    g11 = QVector3D.dotProduct(e1, e1)
+    g12 = QVector3D.dotProduct(e1, e2)
+    g22 = QVector3D.dotProduct(e2, e2)
+    det = g11 * g22 - g12 * g12
+    if abs(det) < 1e-18:
+        return None
+    out = []
+    for k in (0, 1):                       # u, then v
+        d1 = uvs[i][k] - uvs[0][k]
+        d2 = uvs[j][k] - uvs[0][k]
+        a = (d1 * g22 - d2 * g12) / det
+        b = (d2 * g11 - d1 * g12) / det
+        g = e1 * a + e2 * b
+        c = uvs[0][k] - QVector3D.dotProduct(g, p0)
+        out.extend([g.x(), g.y(), g.z(), c])
+    return out
+
+
+def affine_uv(uvw, positions):
+    """Evaluate a fitted world→UV map (see :func:`fit_uv_affine`) at points."""
+    gu = QVector3D(uvw[0], uvw[1], uvw[2])
+    gv = QVector3D(uvw[4], uvw[5], uvw[6])
+    return [(QVector3D.dotProduct(gu, p) + uvw[3],
+             QVector3D.dotProduct(gv, p) + uvw[7]) for p in positions]

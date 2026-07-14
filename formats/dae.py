@@ -124,29 +124,43 @@ def _positions(dae: _Dae, mesh_el) -> list[QVector3D]:
     return []
 
 
-def _vertex_offset_and_stride(prim_el) -> tuple[int, int]:
-    """The VERTEX input's offset within the interleaved ``<p>`` stream, and
-    the stream stride (max offset + 1)."""
-    v_off, max_off = 0, 0
+def _prim_inputs(prim_el) -> tuple[int, int | None, str | None, int]:
+    """``(vertex_offset, texcoord_offset, texcoord_source_url, stride)`` of
+    the interleaved ``<p>`` stream (stride = max offset + 1)."""
+    v_off, uv_off, uv_src, max_off = 0, None, None, 0
     for inp in prim_el.findall(f"{_NS}input"):
         off = int(inp.get("offset", "0"))
         max_off = max(max_off, off)
-        if inp.get("semantic") == "VERTEX":
+        sem = inp.get("semantic")
+        if sem == "VERTEX":
             v_off = off
-    return v_off, max_off + 1
+        elif sem == "TEXCOORD" and uv_off is None:
+            uv_off = off
+            uv_src = inp.get("source")
+    return v_off, uv_off, uv_src, max_off + 1
 
 
-def _prim_loops(prim_el, positions) -> list[list[int]]:
-    """Vertex-index loops of one ``triangles``/``polylist``/``polygons``."""
+def _prim_loops(prim_el, positions, uv_count: int = 0) -> list:
+    """``(vertex_loop, uv_loop_or_None)`` pairs of one ``triangles`` /
+    ``polylist`` / ``polygons`` primitive. UV loops are only produced when
+    the primitive has a TEXCOORD input and ``uv_count`` > 0."""
     kind = _tag(prim_el)
-    v_off, stride = _vertex_offset_and_stride(prim_el)
-    loops: list[list[int]] = []
+    v_off, uv_off, _src, stride = _prim_inputs(prim_el)
+    take_uv = uv_off is not None and uv_count > 0
+    loops: list = []
+
+    def emit(idx, start, nverts):
+        vl = [idx[start + j * stride + v_off] for j in range(nverts)]
+        ul = ([idx[start + j * stride + uv_off] for j in range(nverts)]
+              if take_uv else None)
+        loops.append((vl, ul))
+
     if kind == "triangles":
         p = prim_el.find(f"{_NS}p")
         idx = _ints(p.text if p is not None else "")
         verts_per = 3 * stride
         for k in range(0, len(idx) - verts_per + 1, verts_per):
-            loops.append([idx[k + j * stride + v_off] for j in range(3)])
+            emit(idx, k, 3)
     elif kind == "polylist":
         vc = prim_el.find(f"{_NS}vcount")
         p = prim_el.find(f"{_NS}p")
@@ -154,15 +168,21 @@ def _prim_loops(prim_el, positions) -> list[list[int]]:
         idx = _ints(p.text if p is not None else "")
         pos = 0
         for c in counts:
-            loops.append([idx[pos + j * stride + v_off] for j in range(c)])
+            if pos + c * stride <= len(idx):
+                emit(idx, pos, c)
             pos += c * stride
     elif kind == "polygons":
         for p in prim_el.findall(f"{_NS}p"):
             idx = _ints(p.text)
-            n = len(idx) // stride
-            loops.append([idx[j * stride + v_off] for j in range(n)])
-    return [lp for lp in loops
-            if len(lp) >= 3 and all(0 <= i < len(positions) for i in lp)]
+            emit(idx, 0, len(idx) // stride)
+    out = []
+    for vl, ul in loops:
+        if len(vl) < 3 or not all(0 <= i < len(positions) for i in vl):
+            continue
+        if ul is not None and not all(0 <= i < uv_count for i in ul):
+            ul = None
+        out.append((vl, ul))
+    return out
 
 
 def _image_color(dae: _Dae, image_el):
@@ -200,13 +220,13 @@ def _image_color(dae: _Dae, image_el):
     return color
 
 
-def _effect_color(dae: _Dae, material_el):
-    """Diffuse RGB of a material (lambert/phong): the literal colour, or a
-    representative colour of its diffuse texture, or ``None``."""
+def _effect_diffuse(dae: _Dae, material_el):
+    """``(rgb_or_None, image_el_or_None)`` of a material's diffuse: the
+    literal colour, or the diffuse texture's ``<image>`` element."""
     ie = material_el.find(f"{_NS}instance_effect")
     effect = dae.ref(ie.get("url")) if ie is not None else None
     if effect is None:
-        return None
+        return None, None
     for shader in ("lambert", "phong", "blinn", "constant"):
         for el in effect.iter(f"{_NS}{shader}"):
             diffuse = el.find(f"{_NS}diffuse")
@@ -216,7 +236,7 @@ def _effect_color(dae: _Dae, material_el):
             if col is not None:
                 vals = _floats(col.text)
                 if len(vals) >= 3:
-                    return vals[:3]
+                    return vals[:3], None
             tex = diffuse.find(f"{_NS}texture")
             if tex is not None:
                 # Chase sampler → surface → image (SketchUp sometimes puts
@@ -241,22 +261,62 @@ def _effect_color(dae: _Dae, material_el):
                                 target = dae.by_id.get(init.text.strip())
                         break
                 if target is not None and _tag(target) == "image":
-                    c = _image_color(dae, target)
-                    if c is not None:
-                        return c
-    return None
+                    return None, target
+    return None, None
+
+
+def _image_file(dae: _Dae, image_el):
+    """Absolute path of a texture image when it exists next to the ``.dae``
+    (SketchUp exports a ``<name>/`` folder), else ``None``."""
+    init = image_el.find(f"{_NS}init_from")
+    ref = (init.text or "").strip() if init is not None else ""
+    if not ref or dae.base_dir is None:
+        return None
+    from urllib.parse import unquote
+    candidate = Path(dae.base_dir) / unquote(ref)
+    return str(candidate) if candidate.is_file() else None
 
 
 def _material_map(dae: _Dae, inst_geom_el) -> dict:
-    """symbol → RGB for one ``instance_geometry``'s bound materials."""
+    """symbol → ``{"color": rgb_or_None, "path": image_path_or_None}`` for one
+    ``instance_geometry``'s bound materials. ``path`` is set only when the
+    image file actually exists on disk; the representative colour always
+    rides along as the fallback (missing TEXCOORD, missing file)."""
     out: dict = {}
     for im in inst_geom_el.iter(f"{_NS}instance_material"):
         mat = dae.ref(im.get("target"))
-        if mat is not None:
-            color = _effect_color(dae, mat)
-            if color is not None:
-                out[im.get("symbol")] = color
+        if mat is None:
+            continue
+        color, img = _effect_diffuse(dae, mat)
+        path = _image_file(dae, img) if img is not None else None
+        if color is None and img is not None:
+            color = _image_color(dae, img)
+        if color is not None or path is not None:
+            out[im.get("symbol")] = {"color": color, "path": path}
     return out
+
+
+def _face_attrs(zpts, color, tex):
+    """Face attrs for one imported polygon: a real texture (world→UV affine
+    map fitted from the file's own texture coordinates, evaluated in final
+    Z-up world space) when the image exists, else the diffuse colour."""
+    if tex is not None:
+        path, uvs = tex
+        from core.texture import fit_uv_affine
+        m = fit_uv_affine(zpts, uvs)
+        if m is not None:
+            import math as _math
+            glu = _math.hypot(m[0], m[1], m[2])
+            glv = _math.hypot(m[4], m[5], m[6])
+            return {"texture": {
+                "path": path, "uvw": m,
+                # Display/export tile size derived from the UV gradients.
+                "sw": (1.0 / glu) if glu > 1e-9 else 1.0,
+                "sh": (1.0 / glv) if glv > 1e-9 else 1.0,
+            }}
+    if color is not None:
+        return {"color": [float(c) for c in color[:3]]}
+    return None
 
 
 def _node_matrix(node_el) -> QMatrix4x4:
@@ -283,16 +343,33 @@ def _node_matrix(node_el) -> QMatrix4x4:
     return m
 
 
+def _prim_uvs(dae: _Dae, prim_el) -> list:
+    """The TEXCOORD source of a primitive as ``(s, t)`` tuples (empty when
+    the primitive carries no texture coordinates)."""
+    _v, uv_off, uv_src, _s = _prim_inputs(prim_el)
+    if uv_off is None or not uv_src:
+        return []
+    src = dae.ref(uv_src)
+    if src is None:
+        return []
+    data, stride = _source_floats(dae, src)
+    stride = max(stride, 2)
+    return [(data[i], data[i + 1])
+            for i in range(0, len(data) - stride + 1, stride)]
+
+
 def _collect_direct(dae: _Dae, node_el, m: QMatrix4x4, out: list) -> None:
     """The ``instance_geometry`` carried directly by ``node_el`` (no
-    recursion), transformed by the already-composed matrix ``m``."""
+    recursion), transformed by the already-composed matrix ``m``. Emits
+    ``(points, color, tex)`` — ``tex`` is ``(image_path, uvs)`` when the
+    material has an on-disk image and the primitive carries TEXCOORDs."""
     for el in node_el:
         if _tag(el) != "instance_geometry":
             continue
         geom = dae.ref(el.get("url"))
         if geom is None:
             continue
-        colors = _material_map(dae, el)
+        mats = _material_map(dae, el)
         mesh_el = geom.find(f"{_NS}mesh")
         if mesh_el is None:
             continue
@@ -302,9 +379,15 @@ def _collect_direct(dae: _Dae, node_el, m: QMatrix4x4, out: list) -> None:
             kind = _tag(prim)
             if kind not in ("triangles", "polylist", "polygons"):
                 continue
-            color = colors.get(prim.get("material"))
-            for lp in _prim_loops(prim, world):
-                out.append(([world[i] for i in lp], color))
+            mat = mats.get(prim.get("material")) or {}
+            color = mat.get("color")
+            path = mat.get("path")
+            uvpts = _prim_uvs(dae, prim) if path is not None else []
+            for lp, ul in _prim_loops(prim, world, uv_count=len(uvpts)):
+                tex = None
+                if ul is not None and path is not None:
+                    tex = (path, [uvpts[i] for i in ul])
+                out.append(([world[i] for i in lp], color, tex))
 
 
 def _collect(dae: _Dae, node_el, xform: QMatrix4x4, out: list,
@@ -485,10 +568,10 @@ def load_dae(scene, path, progress=None) -> None:
         done = 0
         for name, loops in buckets:
             tick(0.15 + 0.8 * done / total_loops, f"Building {name}…")
-            raw = [([dae.to_zup(p) for p in loop],
-                    None if color is None
-                    else {"color": [float(c) for c in color[:3]]})
-                   for loop, color in loops]
+            raw = []
+            for loop, color, tex in loops:
+                zpts = [dae.to_zup(p) for p in loop]
+                raw.append((zpts, _face_attrs(zpts, color, tex)))
             fused = fuse_coplanar_loops(raw)
             target = Mesh()
             for item in fused:
@@ -513,8 +596,9 @@ def load_dae(scene, path, progress=None) -> None:
             positions = _positions(dae, mesh_el)
             for prim in mesh_el:
                 if _tag(prim) in ("triangles", "polylist", "polygons"):
-                    for lp in _prim_loops(prim, positions):
-                        pending.append(([positions[i] for i in lp], None))
+                    for lp, _ul in _prim_loops(prim, positions):
+                        pending.append(([positions[i] for i in lp],
+                                        None, None))
     if not pending:
         raise ValueError("No geometry found in the COLLADA file")
 
@@ -525,10 +609,10 @@ def load_dae(scene, path, progress=None) -> None:
         from core.mesh import Mesh
         from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
         tick(0.35, "Transforming…")
-        raw = [([dae.to_zup(p) for p in loop],
-                None if color is None
-                else {"color": [float(c) for c in color[:3]]})
-               for loop, color in pending]
+        raw = []
+        for loop, color, tex in pending:
+            zpts = [dae.to_zup(p) for p in loop]
+            raw.append((zpts, _face_attrs(zpts, color, tex)))
         tick(0.5, "Merging coplanar faces…")
         fused = fuse_coplanar_loops(raw)
         target = Mesh()
@@ -547,15 +631,16 @@ def load_dae(scene, path, progress=None) -> None:
     target = scene.mesh
     seed: set = set()
     new_faces = set()
-    for loop, color in pending:
+    for loop, color, tex in pending:
         pts = [dae.to_zup(p) for p in loop]
         try:
             face = target.add_face(pts)
         except Exception:  # noqa: BLE001 — skip a degenerate polygon
             continue
         new_faces.add(face)
-        if color is not None:
-            face.attrs["color"] = [float(c) for c in color[:3]]
+        attrs = _face_attrs(pts, color, tex)
+        if attrs:
+            face.attrs.update(attrs)
         for p in pts:
             seed.add(_key(p))
 

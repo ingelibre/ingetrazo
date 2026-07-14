@@ -72,8 +72,13 @@ def save_obj(scene, path) -> None:
             sw = tex.get("sw", 1.0) or 1.0
             sh = tex.get("sh", 1.0) or 1.0
             rot = float(tex.get("rot", 0.0))
+            uvw = tex.get("uvw")
             for tri in face.triangulate():
-                uv = planar_uv(n, list(tri), sw, sh, rot)
+                if uvw:
+                    from core.texture import affine_uv
+                    uv = affine_uv(uvw, list(tri))   # imported explicit UVs
+                else:
+                    uv = planar_uv(n, list(tri), sw, sh, rot)
                 groups.setdefault(key, []).append(
                     [(vidx(tri[k]), uvidx(uv[k])) for k in range(3)])
         else:

@@ -41,9 +41,15 @@ def _attrs_sig(attrs):
         return None
     c = attrs.get("color")
     t = attrs.get("texture")
-    return (None if c is None else tuple(c),
-            None if not t else (t.get("path"), t.get("sw"), t.get("sh"),
-                                t.get("rot", 0)))
+    tsig = None
+    if t:
+        uvw = t.get("uvw")
+        # The fitted world→UV map is exact per polygon; rounding merges the
+        # float noise between triangles of the SAME original textured face
+        # while keeping differently-mapped faces apart.
+        tsig = (t.get("path"), t.get("sw"), t.get("sh"), t.get("rot", 0),
+                None if not uvw else tuple(round(x, 4) for x in uvw))
+    return (None if c is None else tuple(c), tsig)
 
 
 def fuse_coplanar_loops(loops, cos_tol: float = 0.99999):

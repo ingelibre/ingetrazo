@@ -1356,13 +1356,26 @@ class Viewport(QOpenGLWidget):
 
     def _append_textured_face(self, by_texture: dict, face, tex: dict) -> None:
         """Triangulate ``face`` into ``by_texture[path]`` as interleaved
-        ``pos(3) + uv(2)`` floats, the UVs planar-projected SketchUp-style from
-        each triangle vertex's world position (so coplanar faces tile
-        seamlessly)."""
+        ``pos(3) + uv(2)`` floats. UVs come from the face's fitted world→UV
+        affine map when present (``uvw`` — a DAE/OBJ import carrying its own
+        texture coordinates), else from the SketchUp-style planar projection
+        of each vertex's world position (so coplanar faces tile seamlessly)."""
         path = tex["path"]
         buf = by_texture.get(path)
         if buf is None:
             buf = by_texture[path] = array("f")
+        uvw = tex.get("uvw")
+        if uvw:
+            gu = QVector3D(uvw[0], uvw[1], uvw[2])
+            gv = QVector3D(uvw[4], uvw[5], uvw[6])
+            for tri in face.triangulate():
+                for p in tri:
+                    buf.extend([
+                        p.x(), p.y(), p.z(),
+                        QVector3D.dotProduct(gu, p) + uvw[3],
+                        QVector3D.dotProduct(gv, p) + uvw[7],
+                    ])
+            return
         n = face.normal().normalized()
         u_axis, v_axis = plane_axes(n)
         rot = float(tex.get("rot", 0.0))

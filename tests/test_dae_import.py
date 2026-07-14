@@ -194,3 +194,99 @@ def test_empty_document_raises(tmp_path):
         raise AssertionError("expected ValueError")
     except ValueError:
         pass
+
+
+def _textured_quad_dae(tmp_path, image_name="brick.png"):
+    """A quad textured with a real image file, split into two triangles with
+    explicit TEXCOORDs (offsets 0=vertex, 1=uv) — the SketchUp export shape."""
+    import shutil
+    img = tmp_path / image_name
+    shutil.copy("/home/sumaritux/ingetrazo/resources/textures/brick.png", img)
+    body = f"""<?xml version="1.0"?>
+<COLLADA {_NSDECL} version="1.4.1">
+  <asset><up_axis>Z_UP</up_axis></asset>
+  <library_images>
+    <image id="img1"><init_from>{image_name}</init_from></image>
+  </library_images>
+  <library_effects>
+    <effect id="fx1"><profile_COMMON>
+      <newparam sid="surf"><surface type="2D"><init_from>img1</init_from></surface></newparam>
+      <newparam sid="samp"><sampler2D><source>surf</source></sampler2D></newparam>
+      <technique sid="t"><lambert><diffuse>
+        <texture texture="samp" texcoord="UV0"/>
+      </diffuse></lambert></technique>
+    </profile_COMMON></effect>
+  </library_effects>
+  <library_materials>
+    <material id="mat1"><instance_effect url="#fx1"/></material>
+  </library_materials>
+  <library_geometries>
+    <geometry id="quad"><mesh>
+      <source id="qp"><float_array id="qpa" count="12">0 0 0  2 0 0  2 3 0  0 3 0</float_array>
+        <technique_common><accessor source="#qpa" count="4" stride="3"/></technique_common>
+      </source>
+      <source id="quv"><float_array id="quva" count="8">0 0  1 0  1 1  0 1</float_array>
+        <technique_common><accessor source="#quva" count="4" stride="2"/></technique_common>
+      </source>
+      <vertices id="qv"><input semantic="POSITION" source="#qp"/></vertices>
+      <triangles count="2" material="M">
+        <input semantic="VERTEX" source="#qv" offset="0"/>
+        <input semantic="TEXCOORD" source="#quv" offset="1" set="0"/>
+        <p>0 0 1 1 2 2  0 0 2 2 3 3</p>
+      </triangles>
+    </mesh></geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="scene">
+      <node id="n1">
+        <instance_geometry url="#quad">
+          <bind_material><technique_common>
+            <instance_material symbol="M" target="#mat1"/>
+          </technique_common></bind_material>
+        </instance_geometry>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+</COLLADA>
+"""
+    p = tmp_path / "textured.dae"
+    p.write_text(body)
+    return p, str(img)
+
+
+def test_textured_import_carries_real_uvs(tmp_path):
+    """A DAE face whose material has an on-disk image imports TEXTURED: the
+    file's own UVs are kept as a world→UV affine map, the two export
+    triangles fuse back into one quad, and evaluating the map at the corners
+    reproduces the original texture coordinates."""
+    from PySide6.QtGui import QVector3D
+    from core.texture import affine_uv
+
+    def V(x, y, z=0.0):
+        return QVector3D(float(x), float(y), float(z))
+
+    p, img = _textured_quad_dae(tmp_path)
+    scene = Scene()
+    load_dae(scene, p)
+    faces = scene.mesh.faces
+    assert len(faces) == 1                          # triangles fused
+    tex = faces[0].attrs.get("texture")
+    assert tex is not None and tex["path"] == img
+    uvs = affine_uv(tex["uvw"], [V(0, 0), V(2, 0), V(2, 3), V(0, 3)])
+    expect = [(0, 0), (1, 0), (1, 1), (0, 1)]
+    for (u, v), (eu, ev) in zip(uvs, expect):
+        assert abs(u - eu) < 1e-5 and abs(v - ev) < 1e-5
+    # derived tile size: one repeat spans the quad (2 m × 3 m)
+    assert abs(tex["sw"] - 2.0) < 1e-4 and abs(tex["sh"] - 3.0) < 1e-4
+
+
+def test_textured_import_missing_image_falls_back_to_color(tmp_path):
+    p, img = _textured_quad_dae(tmp_path)
+    import os
+    os.remove(img)                                  # user copied only the .dae
+    scene = Scene()
+    load_dae(scene, p)
+    assert len(scene.mesh.faces) == 1
+    tex = scene.mesh.faces[0].attrs.get("texture")
+    assert tex is None                              # no file -> tint fallback
+    assert scene.mesh.faces[0].attrs.get("color") is not None
