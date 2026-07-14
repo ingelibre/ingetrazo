@@ -283,6 +283,30 @@ def _node_matrix(node_el) -> QMatrix4x4:
     return m
 
 
+def _collect_direct(dae: _Dae, node_el, m: QMatrix4x4, out: list) -> None:
+    """The ``instance_geometry`` carried directly by ``node_el`` (no
+    recursion), transformed by the already-composed matrix ``m``."""
+    for el in node_el:
+        if _tag(el) != "instance_geometry":
+            continue
+        geom = dae.ref(el.get("url"))
+        if geom is None:
+            continue
+        colors = _material_map(dae, el)
+        mesh_el = geom.find(f"{_NS}mesh")
+        if mesh_el is None:
+            continue
+        positions = _positions(dae, mesh_el)
+        world = [m.map(p) for p in positions]
+        for prim in mesh_el:
+            kind = _tag(prim)
+            if kind not in ("triangles", "polylist", "polygons"):
+                continue
+            color = colors.get(prim.get("material"))
+            for lp in _prim_loops(prim, world):
+                out.append(([world[i] for i in lp], color))
+
+
 def _collect(dae: _Dae, node_el, xform: QMatrix4x4, out: list,
              depth: int = 0) -> None:
     """Walk a node tree, baking transforms; instances recurse into
@@ -290,6 +314,7 @@ def _collect(dae: _Dae, node_el, xform: QMatrix4x4, out: list,
     if depth > 32:
         return                                     # cyclic instance guard
     m = xform * _node_matrix(node_el)
+    _collect_direct(dae, node_el, m, out)
     for el in node_el:
         t = _tag(el)
         if t == "node":
@@ -298,23 +323,121 @@ def _collect(dae: _Dae, node_el, xform: QMatrix4x4, out: list,
             target = dae.ref(el.get("url"))
             if target is not None:
                 _collect(dae, target, m, out, depth + 1)
-        elif t == "instance_geometry":
-            geom = dae.ref(el.get("url"))
-            if geom is None:
+
+
+def _prim_count(prim) -> int:
+    """Cheap polygon count of a primitive from its attributes (no ``<p>``
+    parsing) — used only to decide where to split groups."""
+    kind = _tag(prim)
+    if kind in ("triangles", "polylist"):
+        try:
+            return int(prim.get("count", "0"))
+        except ValueError:
+            return 0
+    if kind == "polygons":
+        return len(prim.findall(f"{_NS}p"))
+    return 0
+
+
+def _direct_count(dae: _Dae, node_el) -> int:
+    n = 0
+    for el in node_el:
+        if _tag(el) != "instance_geometry":
+            continue
+        geom = dae.ref(el.get("url"))
+        mesh_el = geom.find(f"{_NS}mesh") if geom is not None else None
+        if mesh_el is not None:
+            n += sum(_prim_count(p) for p in mesh_el)
+    return n
+
+
+def _subtree_count(dae: _Dae, node_el, depth: int = 0) -> int:
+    if depth > 32:
+        return 0
+    n = _direct_count(dae, node_el)
+    for el in node_el:
+        t = _tag(el)
+        if t == "node":
+            n += _subtree_count(dae, el, depth)
+        elif t == "instance_node":
+            target = dae.ref(el.get("url"))
+            if target is not None:
+                n += _subtree_count(dae, target, depth + 1)
+    return n
+
+
+# Reference imports mirror SketchUp's group structure: every DAE assembly
+# (group / component instance) can become its own Group, so the user selects,
+# moves and edits a farola or a pérgola as a unit instead of one monolithic
+# 160k-face blob (exploding THAT into the loose mesh melts the editing
+# engine). The splitter is greedy — always split the largest splittable
+# bucket — bounded by _MAX_GROUPS (per-group render/pick overhead is real)
+# and _SPLIT_MIN (a small bench stays one piece even if internally grouped).
+_MAX_GROUPS = 250
+_SPLIT_MIN = 4000
+
+
+def _node_label(node_el) -> str:
+    return node_el.get("name") or node_el.get("id") or "node"
+
+
+def _bucketize(dae: _Dae, top_nodes) -> list:
+    """Split the visual scene into ``(name, loops)`` buckets along the DAE
+    node hierarchy (SketchUp groups/components). Returns at most
+    ``_MAX_GROUPS`` buckets, largest assemblies split first."""
+    import heapq
+    from itertools import count as _count
+    tie = _count()
+    # Heap entries: (-tris, tie, kind, node_el, xform, depth, name)
+    # kind "subtree": xform is the PRE-entry matrix (node's own applies at
+    # collect). kind "direct": xform is the composed matrix, no recursion.
+    heap = []
+    for nd in top_nodes:
+        n = _subtree_count(dae, nd)
+        if n > 0:
+            heapq.heappush(heap, (-n, next(tie), "subtree", nd,
+                                  QMatrix4x4(), 0, _node_label(nd)))
+    final: list = []
+    while heap and (len(final) + len(heap)) < _MAX_GROUPS:
+        entry = heapq.heappop(heap)
+        neg, _t, kind, node_el, xform, depth, name = entry
+        if -neg <= _SPLIT_MIN:
+            heapq.heappush(heap, entry)
+            break                      # largest left is small: all are done
+        kids = [el for el in node_el if _tag(el) == "node"]
+        insts = [el for el in node_el if _tag(el) == "instance_node"]
+        if kind == "direct" or depth > 32 or (not kids and not insts):
+            final.append(entry)        # big but unsplittable: keep as-is
+            continue
+        m = xform * _node_matrix(node_el)
+        dg = _direct_count(dae, node_el)
+        if dg > 0:
+            heapq.heappush(heap, (-dg, next(tie), "direct", node_el, m,
+                                  depth, name))
+        for el in kids:
+            n = _subtree_count(dae, el, depth)
+            if n > 0:
+                heapq.heappush(heap, (-n, next(tie), "subtree", el, m,
+                                      depth, _node_label(el)))
+        for el in insts:
+            target = dae.ref(el.get("url"))
+            if target is None:
                 continue
-            colors = _material_map(dae, el)
-            mesh_el = geom.find(f"{_NS}mesh")
-            if mesh_el is None:
-                continue
-            positions = _positions(dae, mesh_el)
-            world = [m.map(p) for p in positions]
-            for prim in mesh_el:
-                kind = _tag(prim)
-                if kind not in ("triangles", "polylist", "polygons"):
-                    continue
-                color = colors.get(prim.get("material"))
-                for lp in _prim_loops(prim, world):
-                    out.append(([world[i] for i in lp], color))
+            n = _subtree_count(dae, target, depth + 1)
+            if n > 0:
+                nm = el.get("name") or _node_label(target)
+                heapq.heappush(heap, (-n, next(tie), "subtree", target, m,
+                                      depth + 1, nm))
+    buckets = []
+    for neg, _t, kind, node_el, xform, depth, name in sorted(final + heap):
+        loops: list = []
+        if kind == "direct":
+            _collect_direct(dae, node_el, xform, loops)
+        else:
+            _collect(dae, node_el, xform, loops, depth)
+        if loops:
+            buckets.append((name, loops))
+    return buckets
 
 
 def load_dae(scene, path, progress=None) -> None:
@@ -341,11 +464,46 @@ def load_dae(scene, path, progress=None) -> None:
     tick(0.02, "Reading file…")
     root = ET.parse(Path(path)).getroot()
     dae = _Dae(root, base_dir=Path(path).parent)
-    tick(0.15, "Collecting geometry…")
-    pending: list = []
+    top_nodes: list = []
     for vs in root.iter(f"{_NS}visual_scene"):
-        for node in vs.findall(f"{_NS}node"):
-            _collect(dae, node, QMatrix4x4(), pending)
+        top_nodes.extend(vs.findall(f"{_NS}node"))
+    total_polys = sum(_subtree_count(dae, nd) for nd in top_nodes)
+
+    if total_polys > _MAX_FUSE_LOOPS:
+        # Reference import, SketchUp-structured: one Group per DAE assembly
+        # (group / component instance) via the greedy splitter, so elements
+        # stay individually selectable/movable/editable and the loose-mesh
+        # engine never has to swallow the whole model.
+        from core.group import Group
+        from core.mesh import Mesh
+        from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
+        tick(0.1, "Collecting geometry…")
+        buckets = _bucketize(dae, top_nodes)
+        if not buckets:
+            raise ValueError("No geometry found in the COLLADA file")
+        total_loops = max(sum(len(lp) for _n, lp in buckets), 1)
+        done = 0
+        for name, loops in buckets:
+            tick(0.15 + 0.8 * done / total_loops, f"Building {name}…")
+            raw = [([dae.to_zup(p) for p in loop],
+                    None if color is None
+                    else {"color": [float(c) for c in color[:3]]})
+                   for loop, color in loops]
+            fused = fuse_coplanar_loops(raw)
+            target = Mesh()
+            for item in fused:
+                _add_fused(target, [item])
+            soften_smooth_edges(target)
+            if target.faces:
+                scene.groups.append(Group(target, name=name))
+            done += len(loops)
+        scene.version += 1
+        tick(1.0, "Done")
+        return
+
+    pending: list = []
+    for node in top_nodes:
+        _collect(dae, node, QMatrix4x4(), pending)
     if not pending:
         # No visual scene (bare geometry library): import it un-instanced.
         for geom in root.iter(f"{_NS}geometry"):
@@ -360,12 +518,12 @@ def load_dae(scene, path, progress=None) -> None:
     if not pending:
         raise ValueError("No geometry found in the COLLADA file")
 
-    big = len(pending) > _MAX_FUSE_LOOPS
-    if big:
+    if len(pending) > _MAX_FUSE_LOOPS:
+        # Bare geometry library (no visual scene) too big for the editable
+        # pipeline: import as ONE reference group.
         from core.group import Group
         from core.mesh import Mesh
         from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
-        target = Mesh()
         tick(0.35, "Transforming…")
         raw = [([dae.to_zup(p) for p in loop],
                 None if color is None
@@ -373,6 +531,7 @@ def load_dae(scene, path, progress=None) -> None:
                for loop, color in pending]
         tick(0.5, "Merging coplanar faces…")
         fused = fuse_coplanar_loops(raw)
+        target = Mesh()
         n = max(len(fused), 1)
         for k, item in enumerate(fused):
             if progress is not None and k % 8192 == 0:
@@ -380,7 +539,7 @@ def load_dae(scene, path, progress=None) -> None:
             _add_fused(target, [item])
         tick(0.92, "Smoothing edges…")
         soften_smooth_edges(target)
-        scene.groups.append(Group(target))
+        scene.groups.append(Group(target, name=Path(path).stem))
         scene.version += 1
         tick(1.0, "Done")
         return

@@ -123,6 +123,68 @@ def test_instanced_component_with_transform(tmp_path):
     assert 10.0 in xs and 11.0 in xs               # the translate applied
 
 
+def test_big_import_mirrors_sketchup_groups(tmp_path, monkeypatch):
+    """A reference-size DAE splits into one Group per SketchUp assembly
+    (group / component instance / the root's own loose geometry) instead of
+    one monolithic blob — so a farola is selectable/movable on its own and
+    the loose editing mesh never swallows the model."""
+    body = f"""<?xml version="1.0"?>
+<COLLADA {_NSDECL} version="1.4.1">
+  <asset><up_axis>Z_UP</up_axis></asset>
+  <library_geometries>
+    <geometry id="tri"><mesh>
+      <source id="p"><float_array id="pa" count="9">0 0 0  1 0 0  0 1 0</float_array>
+        <technique_common><accessor source="#pa" count="3" stride="3"/></technique_common>
+      </source>
+      <vertices id="v"><input semantic="POSITION" source="#p"/></vertices>
+      <polylist count="1">
+        <input semantic="VERTEX" source="#v" offset="0"/>
+        <vcount>3</vcount><p>0 1 2</p>
+      </polylist>
+    </mesh></geometry>
+    <geometry id="quad"><mesh>
+      <source id="qp"><float_array id="qpa" count="12">0 0 0  1 0 0  1 1 0  0 1 0</float_array>
+        <technique_common><accessor source="#qpa" count="4" stride="3"/></technique_common>
+      </source>
+      <vertices id="qv"><input semantic="POSITION" source="#qp"/></vertices>
+      <polylist count="2">
+        <input semantic="VERTEX" source="#qv" offset="0"/>
+        <vcount>3 3</vcount><p>0 1 2 0 2 3</p>
+      </polylist>
+    </mesh></geometry>
+  </library_geometries>
+  <library_nodes>
+    <node id="comp"><instance_geometry url="#tri"/></node>
+  </library_nodes>
+  <library_visual_scenes>
+    <visual_scene id="scene">
+      <node id="root" name="SketchUp">
+        <instance_geometry url="#tri"/>
+        <node id="f1" name="farola"><translate>10 0 0</translate>
+          <instance_node url="#comp"/></node>
+        <node id="g1" name="pergola"><instance_geometry url="#quad"/></node>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+</COLLADA>
+"""
+    p = tmp_path / "proyecto.dae"
+    p.write_text(body)
+    import formats.dae as dae_mod
+    monkeypatch.setattr(dae_mod, "_MAX_FUSE_LOOPS", 2)
+    monkeypatch.setattr(dae_mod, "_SPLIT_MIN", 1)
+    scene = Scene()
+    load_dae(scene, p)
+    assert not scene.mesh.faces                     # nothing lands loose
+    names = sorted(g.name for g in scene.groups)
+    assert names == ["SketchUp", "farola", "pergola"]
+    by_name = {g.name: g for g in scene.groups}
+    assert len(by_name["pergola"].mesh.faces) == 1  # quad fused back
+    # the farola instance carries its baked transform
+    xs = [v.position.x() for v in by_name["farola"].mesh.vertices]
+    assert min(xs) >= 10.0
+
+
 def test_empty_document_raises(tmp_path):
     p = tmp_path / "empty.dae"
     p.write_text(f'<?xml version="1.0"?><COLLADA {_NSDECL} version="1.4.1"/>')
