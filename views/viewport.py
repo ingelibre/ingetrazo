@@ -112,6 +112,17 @@ class _HoverEvent:
         return self._mods
 
 
+class _SnapEdge:
+    """Lightweight edge stand-in fed to the snap engine for group geometry —
+    ``compute_snap`` only reads ``.a``/``.b`` (world endpoints)."""
+
+    __slots__ = ("a", "b")
+
+    def __init__(self, a, b) -> None:
+        self.a = a
+        self.b = b
+
+
 # OpenGL constants — kept as literals so we don't depend on PyOpenGL.
 GL_FLOAT = 0x1406
 GL_LINES = 0x0001
@@ -2284,11 +2295,12 @@ class Viewport(QOpenGLWidget):
 
         start = getattr(tool, "start_point", None) if tool is not None else None
         if start is None:
-            # First-click hover: if the cursor is over an existing face, use
-            # that face's plane so a new polygon drawn "inside" it lands on
-            # the face instead of falling to the ground.
+            # First-click hover: if the cursor is over an existing face —
+            # loose OR a group's (drawing/measuring on top of an imported
+            # reference model) — use that face's plane so a new polygon
+            # drawn "inside" it lands on the face instead of the ground.
             if cursor is not None and tool is not None:
-                face = self.pick_face(cursor[0], cursor[1])
+                face, _grp = self.pick_face_any(cursor[0], cursor[1])
                 if face is not None:
                     return face.centroid(), face.normal()
             return QVector3D(0.0, 0.0, 0.0), QVector3D(0.0, 0.0, 1.0)
@@ -3022,18 +3034,71 @@ class Viewport(QOpenGLWidget):
             return True
         return False
 
-    def _snap_scene(self):
-        """The scene the snap engine sees: real edges plus construction guides
-        as pseudo-edges (``Guide.a/.b`` span the long segment), so drawing tools
-        lock onto guides — a guide's whole purpose."""
+    def _gedge_screen(self):
+        """Screen-projected endpoints of every group hard edge —
+        ``(ax, ay, bx, by, ok)`` arrays, cached until the scene or the
+        camera moves. Shared by pick_group's edge fallback and the snap
+        prefilter (during a drawing hover the camera is still, so the two
+        big projections run once, not per mouse move)."""
+        idx = self._pick_index()
+        if idx.gedge_a is None or not len(idx.gedge_a):
+            return None
+        M = self._np_mvp()
+        key = (self.scene.version, id(self.scene.mesh), M.tobytes(),
+               self.width(), self.height())
+        cached = getattr(self, "_gedge_px_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        ax, ay, oka = self._project_px(idx.gedge_a)
+        bx, by, okb = self._project_px(idx.gedge_b)
+        data = (ax, ay, bx, by, oka & okb)
+        self._gedge_px_cache = (key, data)
+        return data
+
+    def _nearby_group_edges(self, px: float, py: float,
+                            radius_px: float = 48.0, cap: int = 48) -> list:
+        """Group hard edges whose screen-space segment passes within
+        ``radius_px`` of the cursor, as :class:`_SnapEdge` pseudo-edges —
+        at most ``cap``, nearest first. Vectorised prefilter:
+        ``compute_snap`` walks its edge list in Python several times per
+        hover, so feeding it ALL 160k edges of an import would freeze every
+        mouse move; the ~dozens near the cursor cover the point/edge snaps
+        the user can actually see."""
+        proj = self._gedge_screen()
+        if proj is None:
+            return []
+        import numpy as np
+        ax, ay, bx, by, ok = proj
+        if not ok.any():
+            return []
+        dx, dy = bx - ax, by - ay
+        l2 = dx * dx + dy * dy
+        safe = np.where(l2 > 1e-12, l2, 1.0)
+        t = np.clip(((px - ax) * dx + (py - ay) * dy) / safe, 0.0, 1.0)
+        d = np.hypot(ax + t * dx - px, ay + t * dy - py)
+        d = np.where(ok, d, np.inf)
+        cand = np.where(d < radius_px)[0]
+        if len(cand) > cap:
+            cand = cand[np.argsort(d[cand])[:cap]]
+        idx = self._pick_index()
+        ga, gb = idx.gedge_a, idx.gedge_b
+        return [_SnapEdge(QVector3D(*ga[i]), QVector3D(*gb[i]))
+                for i in cand]
+
+    def _snap_scene(self, px: Optional[float] = None,
+                    py: Optional[float] = None):
+        """The scene the snap engine sees: loose edges, construction guides as
+        pseudo-edges (``Guide.a/.b`` span the long segment), and — when the
+        cursor position is given — the group edges near it, so drawing and
+        dimensioning over an imported reference model snaps to its corners
+        and edges."""
         guides = getattr(self.scene, "guides", None)
-        if not guides:
+        lines = [g for g in guides if g.is_line] if guides else []
+        near = self._nearby_group_edges(px, py) if px is not None else []
+        if not lines and not near:
             return self.scene
         from types import SimpleNamespace
-        lines = [g for g in guides if g.is_line]
-        if not lines:
-            return self.scene
-        return SimpleNamespace(edges=list(self.scene.edges) + lines)
+        return SimpleNamespace(edges=list(self.scene.edges) + lines + near)
 
     def pick_guide(self, screen_x: float, screen_y: float):
         """Return the construction guide nearest the cursor within the pick
@@ -3062,16 +3127,32 @@ class Viewport(QOpenGLWidget):
         same answer the old per-edge scan produced)."""
         import numpy as np
         idx = self._pick_index()
-        if idx.edge_a is None:
+        parts = []
+        n = 0
+        if idx.edge_a is not None:
+            parts += [idx.edge_a, idx.edge_b]
+            n = len(idx.edges)
+        m = 0
+        if idx.gedge_a is not None and len(idx.gedge_a):
+            # Group corners too — dimensioning/drawing over an imported
+            # reference model needs its vertices as 'from points'.
+            parts += [idx.gedge_a, idx.gedge_b]
+            m = len(idx.gedge_a)
+        if not parts:
             return None
-        pts = np.concatenate([idx.edge_a, idx.edge_b])
+        pts = np.concatenate(parts)
         px, py, ok = self._project_px(pts)
         d = np.where(ok, np.hypot(px - screen_x, py - screen_y), np.inf)
-        n = len(idx.edges)
         cand = np.where(d < self.pick_threshold_px)[0]
         for i in cand[np.argsort(d[cand])]:
-            e = idx.edges[int(i) % n]
-            vertex = e.a if i < n else e.b
+            if i < 2 * n:
+                e = idx.edges[int(i) % n]
+                vertex = e.a if i < n else e.b
+            else:
+                j = int(i) - 2 * n
+                arr = idx.gedge_a if j < m else idx.gedge_b
+                p = arr[j % m]
+                vertex = QVector3D(p[0], p[1], p[2])
             if not self._is_occluded(vertex):
                 return vertex
         return None
@@ -3221,15 +3302,14 @@ class Viewport(QOpenGLWidget):
                 return best[1]
         # Edge fallback (cursor over empty space, or a lines-only group):
         # screen-space distance to every group hard edge, batched over the
-        # index arrays — the Python per-edge walk took ~300 ms per mouse move
-        # against a 300k-edge imported model.
+        # cached projected arrays — the Python per-edge walk took ~300 ms per
+        # mouse move against a 300k-edge imported model.
         import numpy as np
-        idx = self._pick_index()
-        if idx.gedge_a is None or not len(idx.gedge_a):
+        proj = self._gedge_screen()
+        if proj is None:
             return None
-        ax, ay, oka = self._project_px(idx.gedge_a)
-        bx, by, okb = self._project_px(idx.gedge_b)
-        ok = oka & okb
+        idx = self._pick_index()
+        ax, ay, bx, by, ok = proj
         if not ok.any():
             return None
         dx, dy = bx - ax, by - ay
@@ -3412,7 +3492,8 @@ class Viewport(QOpenGLWidget):
         had_plane = getattr(self.active_tool, "work_plane", None) is not None
         face_at_click = None
         if not had_start and not had_plane:
-            face_at_click = self.pick_face(ev.position().x(), ev.position().y())
+            face_at_click, _g = self.pick_face_any(ev.position().x(),
+                                                   ev.position().y())
         ctx = self._build_ctx(ev)
         if ctx is not None:
             if double:
@@ -3547,7 +3628,7 @@ class Viewport(QOpenGLWidget):
             corner = self.pick_vertex(ev.position().x(), ev.position().y())
             if corner is not None:
                 self._acquired_point = corner
-            face = self.pick_face(ev.position().x(), ev.position().y())
+            face, _g = self.pick_face_any(ev.position().x(), ev.position().y())
             if face is not None:
                 self._acquired_face_normal = face.normal()
 
@@ -3805,7 +3886,7 @@ class Viewport(QOpenGLWidget):
         snap = compute_snap(
             candidate_world=world_raw,
             candidate_pixel=(px_x, px_y),
-            scene=self._snap_scene(),
+            scene=self._snap_scene(px_x, px_y),
             world_to_pixel=self._world_to_pixel,
             threshold_px=self.snap_threshold_px,
             project_onto_line=lambda s, d: self._project_to_lock_line(s, d, px_x, px_y),
@@ -3817,7 +3898,7 @@ class Viewport(QOpenGLWidget):
             reference_mode=self.reference_mode,
             inference_angle_deg=self.inference_angle_deg,
             is_occluded=self._is_occluded,
-            face_under_cursor=self.pick_face(px_x, px_y) is not None,
+            face_under_cursor=self.pick_face_any(px_x, px_y)[0] is not None,
             edge_threshold_px=self.edge_snap_threshold_px,
             magnetic_axis_deg=getattr(self.active_tool, "magnetic_axis_deg", None),
             acquired_edge=self._acquired_edge,
@@ -3994,7 +4075,7 @@ class Viewport(QOpenGLWidget):
         snap = compute_snap(
             candidate_world=world_raw,
             candidate_pixel=(px_x, px_y),
-            scene=self._snap_scene(),
+            scene=self._snap_scene(px_x, px_y),
             world_to_pixel=self._world_to_pixel,
             threshold_px=self.snap_threshold_px,
             project_onto_line=lambda s, d: self._project_to_lock_line(s, d, px_x, px_y),
@@ -4006,7 +4087,7 @@ class Viewport(QOpenGLWidget):
             reference_mode=self.reference_mode,
             inference_angle_deg=self.inference_angle_deg,
             is_occluded=self._is_occluded,
-            face_under_cursor=self.pick_face(px_x, px_y) is not None,
+            face_under_cursor=self.pick_face_any(px_x, px_y)[0] is not None,
             edge_threshold_px=self.edge_snap_threshold_px,
             magnetic_axis_deg=getattr(self.active_tool, "magnetic_axis_deg", None),
             acquired_edge=self._acquired_edge,

@@ -36,9 +36,10 @@ def _bind(vp):
     vp._LIGHT = Viewport._LIGHT
     vp._mesh_fingerprint = Viewport._mesh_fingerprint  # staticmethod
     for name in ("_pick_index", "_ray_hits", "_hover_face_t", "pick_face",
-                 "pick_face_any", "pick_edge", "_project_px", "_np_mvp",
-                 "_group_chunk", "_append_textured_face", "_shaded_color",
-                 "_group_fp"):
+                 "pick_face_any", "pick_edge", "pick_vertex", "_project_px",
+                 "_np_mvp", "_group_chunk", "_append_textured_face",
+                 "_shaded_color", "_group_fp", "_gedge_screen",
+                 "_nearby_group_edges", "_snap_scene"):
         setattr(vp, name, getattr(Viewport, name).__get__(vp))
     return vp
 
@@ -102,3 +103,35 @@ def test_group_chunk_fingerprint_invalidation():
     for v in g.mesh.vertices:
         v.position += QVector3D(1.0, 0.0, 0.0)
     assert Viewport._mesh_fingerprint(g.mesh) != fp_paint  # move invalidates
+
+
+def test_snap_reaches_group_geometry():
+    """Dimensioning/drawing over an imported reference model must snap to the
+    group's corners and edges: pick_vertex sees group endpoints, and the snap
+    scene carries the group edges near the cursor as pseudo-edges."""
+    from core.camera import OrbitCamera
+
+    scene = Scene()
+    hist = History(scene)
+    f = scene.mesh.add_face([V(-2, -2), V(2, -2), V(2, 2), V(-2, 2)])
+    hist.execute(MakeGroupCommand([f], []))
+    vp = _bind(_VP(scene))
+    vp.camera = OrbitCamera()
+    vp.camera.set_view("top")
+    vp.camera.fit_to(V(-2, -2, 0), V(2, 2, 0))
+    vp.snap_threshold_px = 9.0
+    vp._is_occluded = lambda world: False
+
+    corner = V(2, 2, 0)
+    px, py, ok = vp._project_px(__import__("numpy").array([[2.0, 2.0, 0.0]]))
+    assert ok[0]
+    v = vp.pick_vertex(float(px[0]), float(py[0]))
+    assert v is not None and (v - corner).length() < 1e-4
+
+    pseudo = vp._nearby_group_edges(float(px[0]), float(py[0]))
+    assert pseudo, "group edges near the cursor must feed the snap engine"
+    snap_scene = vp._snap_scene(float(px[0]), float(py[0]))
+    assert len(list(snap_scene.edges)) >= len(pseudo)
+    # far from the model: no pseudo-edges, plain scene comes back
+    far = vp._nearby_group_edges(-10_000.0, -10_000.0)
+    assert far == []
