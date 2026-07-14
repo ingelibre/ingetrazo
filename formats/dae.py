@@ -69,6 +69,12 @@ class _Dae:
         self.root = root
         self.base_dir = base_dir
         self._img_colors: dict = {}
+        # Parsed <source> float arrays and UV tuple lists, keyed by element
+        # identity: sources are shared across primitives and instanced
+        # geometry, and re-splitting a big TEXCOORD array text per primitive
+        # turned a 19 s import into a 4-minute one.
+        self._src_cache: dict = {}
+        self._uv_cache: dict = {}
         self.by_id: dict = {}
         for el in root.iter():
             i = el.get("id")
@@ -98,6 +104,9 @@ class _Dae:
 
 
 def _source_floats(dae: _Dae, source_el) -> tuple[list[float], int]:
+    cached = dae._src_cache.get(id(source_el))
+    if cached is not None:
+        return cached
     arr = source_el.find(f"{_NS}float_array")
     data = _floats(arr.text if arr is not None else "")
     stride = 3
@@ -106,6 +115,7 @@ def _source_floats(dae: _Dae, source_el) -> tuple[list[float], int]:
         acc = tc.find(f"{_NS}accessor")
         if acc is not None and acc.get("stride"):
             stride = int(acc.get("stride"))
+    dae._src_cache[id(source_el)] = (data, stride)
     return data, stride
 
 
@@ -352,10 +362,14 @@ def _prim_uvs(dae: _Dae, prim_el) -> list:
     src = dae.ref(uv_src)
     if src is None:
         return []
-    data, stride = _source_floats(dae, src)
-    stride = max(stride, 2)
-    return [(data[i], data[i + 1])
+    cached = dae._uv_cache.get(id(src))
+    if cached is None:
+        data, stride = _source_floats(dae, src)
+        stride = max(stride, 2)
+        cached = dae._uv_cache[id(src)] = [
+            (data[i], data[i + 1])
             for i in range(0, len(data) - stride + 1, stride)]
+    return cached
 
 
 def _collect_direct(dae: _Dae, node_el, m: QMatrix4x4, out: list) -> None:

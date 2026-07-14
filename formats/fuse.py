@@ -52,6 +52,14 @@ def _attrs_sig(attrs):
     return (None if c is None else tuple(c), tsig)
 
 
+def _sig_rank(sig) -> int:
+    """Preference between coincident duplicate copies (SketchUp's two-sided
+    export): a textured copy beats a colour-only copy beats a bare one."""
+    if sig is None:
+        return 0
+    return 2 if sig[1] is not None else 1
+
+
 def fuse_coplanar_loops(loops, cos_tol: float = 0.99999):
     """``loops``: list of ``(pts, attrs_dict_or_None)`` polygons (triangles or
     n-gons). Returns a list of ``(outer_pts, holes, attrs, originals)`` —
@@ -86,8 +94,8 @@ def fuse_coplanar_loops(loops, cos_tol: float = 0.99999):
             if prev is None:
                 seen_tris[tkey] = len(faces)
                 faces.append(entry)
-            elif faces[prev][3] is None and entry[3] is not None:
-                faces[prev] = entry       # painted copy replaces the bare one
+            elif _sig_rank(entry[3]) > _sig_rank(faces[prev][3]):
+                faces[prev] = entry   # textured > coloured > bare copy
             continue
         faces.append(entry)
 
