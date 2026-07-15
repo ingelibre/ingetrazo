@@ -609,6 +609,42 @@ class AddGeoPathCommand(Command):
         scene.version += 1
 
 
+class AutoTagDrawnFacesCommand(Command):
+    """Tag-as-you-draw (BIM active class): the final step of a draw plan when
+    ``scene.active_ifc`` is set. Stamps the active tag on the faces the plan
+    itself created — the drawn polygon, auto-closed cycles, chord halves —
+    identified through their ``AddFaceCommand``s, so churn re-emissions
+    (``auto=False``) and neighbouring rebuilt faces are never touched. A face
+    that inherited a tag from a tagged mother keeps it.
+
+    Each draw commit becomes its OWN BIM object (a fresh id is allocated at
+    execution time; the activation only fixes class + name): a wall drawn per
+    trace = one object per wall, so the largest-face metrado stays honest —
+    one shared id across many walls would under-report (the panel/IFC read
+    the biggest face of the whole set).
+
+    Runs inside the draw's :class:`SnapshotCompound`, before the after-state
+    snapshot, so undo/redo restore the tags exactly; its own undo is a no-op
+    (the snapshot restore reverts the attrs)."""
+
+    def __init__(self, face_commands, tag: dict) -> None:
+        self._face_cmds = list(face_commands)
+        self._tag = dict(tag)
+
+    def do(self, scene) -> None:
+        from core.bim import next_object_id
+        tag = dict(self._tag)
+        tag["id"] = next_object_id(scene)
+        live = scene.mesh.faces
+        for fc in self._face_cmds:
+            f = getattr(fc, "face", None)
+            if f is not None and f in live and not f.attrs.get("ifc"):
+                f.attrs["ifc"] = dict(tag)
+
+    def undo(self, scene) -> None:
+        pass
+
+
 class AddGeoPointsCommand(Command):
     """Import a batch of survey points into ``scene.geo_points`` (Track G).
     When the import also anchored the scene datum (first georef action on the

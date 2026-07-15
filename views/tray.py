@@ -1004,6 +1004,18 @@ class BimPanel(QWidget):
         btns.addStretch(1)
         lay.addLayout(btns)
 
+        # Active class (tag-as-you-draw): while checked, every face you draw
+        # is stamped with the class/name above, and pushing it extends the
+        # tag to the whole solid. One BIM object per activation.
+        self.active_check = QCheckBox(tr("Tag as you draw"))
+        self.active_check.setToolTip(tr(
+            "New geometry assumes this class while active — each trace "
+            "becomes its own BIM object with this name"))
+        self.active_check.toggled.connect(self._on_active_toggle)
+        self.class_box.currentIndexChanged.connect(self._rearm_active)
+        self.name_edit.editingFinished.connect(self._rearm_active)
+        lay.addWidget(self.active_check)
+
         self.tree = QTreeWidget()
         self.tree.setColumnCount(4)
         self.tree.setHeaderLabels([tr("Class"), tr("Name"),
@@ -1049,6 +1061,26 @@ class BimPanel(QWidget):
         self._window.viewport.update()
         self.refresh()
 
+    def _on_active_toggle(self, checked: bool) -> None:
+        scene = self._scene()
+        if checked:
+            cls = self.class_box.currentText()
+            name = (self.name_edit.text().strip()
+                    or cls.removeprefix("Ifc"))
+            # Class + name only: each draw commit allocates its own object id
+            # (one wall per trace = one BIM object, honest per-object metrado).
+            scene.active_ifc = {"class": cls, "name": name}
+            self._window.statusBar().showMessage(tr(
+                "Drawing as {name} ({cls}) — new geometry assumes this tag",
+                name=name, cls=cls), 4000)
+        else:
+            scene.active_ifc = None
+
+    def _rearm_active(self, *_) -> None:
+        """Changing class/name while active updates what new traces assume."""
+        if self.active_check.isChecked():
+            self._on_active_toggle(True)
+
     def _on_untag(self) -> None:
         from core.bim import untag_faces, untag_group
         scene = self._scene()
@@ -1093,6 +1125,11 @@ class BimPanel(QWidget):
         from PySide6.QtWidgets import QTreeWidgetItem
         from core.bim import collect_objects
         from core.bim import class_quantities
+        # File ▸ New (scene.clear) drops the active class — mirror it in the UI.
+        if self.active_check.isChecked() and not self._scene().active_ifc:
+            self.active_check.blockSignals(True)
+            self.active_check.setChecked(False)
+            self.active_check.blockSignals(False)
         self._objects = collect_objects(self._scene())
         self.tree.clear()
         for obj in self._objects:

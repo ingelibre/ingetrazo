@@ -702,6 +702,17 @@ class PushPullTool(Tool):
         target = self._target_scene(scene)
         mesh = target.mesh
         before_edges = set(mesh.edges)
+        # Pushing a tagged face EXTENDS its BIM object: the walls and cap the
+        # extrusion creates join the base's tag (thickening a tagged slab, or
+        # raising a wall from a rect the active class stamped, yields a fully
+        # tagged solid). Capture before the mutation — the base is consumed.
+        base_tag = None
+        if self.base_face is not None:
+            t = self.base_face.attrs.get("ifc")
+            if t:
+                base_tag = dict(t)
+        before_verts = ({id(v) for v in mesh.vertices}
+                        if base_tag is not None else None)
         guard = (mesh.capture_state()
                  if is_closed(mesh) and not _mesh_is_flat(mesh) else None)
         fp_before = self._mesh_fingerprint(mesh) if guard is not None else None
@@ -718,6 +729,18 @@ class PushPullTool(Tool):
             self._refused = True
             return
         self._soften_curve_facets(mesh, before_edges)
+        if base_tag is not None:
+            # Only faces carrying at least one vertex this push created — the
+            # extrusion's own walls/cap. Rebuilt neighbours (an untagged floor
+            # plane re-emitted over its OLD vertices) are never touched, and a
+            # face that already has a tag keeps it. Runs inside the commit's
+            # SnapshotMutation (and the reverted preview), so undo is exact.
+            for f in mesh.faces:
+                if f.attrs.get("ifc"):
+                    continue
+                if any(id(v) not in before_verts
+                       for lp in (f.loop, *f.hole_loops) for v in lp):
+                    f.attrs["ifc"] = dict(base_tag)
 
     @staticmethod
     def _mesh_fingerprint(mesh):

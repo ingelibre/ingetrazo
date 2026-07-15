@@ -57,6 +57,10 @@ class Scene:
     tile_layer: object | None = None
     # 3D draped terrain (Track G, G2 full) — display-only relief mesh, runtime.
     terrain: object | None = None
+    # BIM "active class" (tag-as-you-draw): while set, faces created by the
+    # drawing tools are stamped with this tag ({"id", "class", "name"}) at
+    # commit time. Runtime UI mode — never serialised.
+    active_ifc: object | None = None
     # Group-edit context (Groups v2): while set, ``mesh`` POINTS AT the edited
     # group's mesh so every tool/command works inside the group transparently;
     # ``_loose_mesh`` keeps the real loose mesh for render and restore.
@@ -191,6 +195,7 @@ class Scene:
             self.georef = None
             self.tile_layer = None
             self.terrain = None
+            self.active_ifc = None
             self.version += 1
 
     # ---- Queries ------------------------------------------------------------
