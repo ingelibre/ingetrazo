@@ -138,11 +138,23 @@ PRESETS: dict[str, TileSource] = {
 DEFAULT_SOURCE_ID = "esri_imagery"
 
 
-def custom_source(url_template: str, max_zoom: int = 19) -> TileSource:
-    """Build a user-pasted XYZ source. Risk is the user's (invariant #5)."""
+def source_slug(name: str) -> str:
+    """Filesystem-safe id fragment for a user-named source (the tile cache
+    uses the source id as a directory name, also on Windows)."""
+    import re
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug or "fuente"
+
+
+def custom_source(url_template: str, max_zoom: int = 19,
+                  name: str | None = None) -> TileSource:
+    """Build a user-pasted XYZ source. Risk is the user's (invariant #5).
+
+    A ``name`` makes it a *saved* source (QGIS-style): distinct id → its own
+    tile-cache directory, and the name is what the source menu shows."""
     return TileSource(
-        id="custom",
-        name="XYZ personalizado",
+        id=("custom-" + source_slug(name)) if name else "custom",
+        name=name or "XYZ personalizado",
         url_template=url_template,
         max_zoom=max_zoom,
         attribution="Fuente personalizada (definida por el usuario)",

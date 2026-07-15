@@ -123,7 +123,7 @@ class BaseMapPanel(QWidget):
     never enter the modelling mesh.
     """
 
-    _CUSTOM = "__custom__"
+    _ADD = "__add__"
 
     def __init__(self, window) -> None:
         super().__init__()
@@ -133,21 +133,19 @@ class BaseMapPanel(QWidget):
 
         grid.addWidget(QLabel(tr("Source:")), 0, 0)
         self._source = QComboBox()
-        for sid, src in PRESETS.items():
-            self._source.addItem(tr(src.name), sid)
-        self._source.addItem(tr("Custom XYZ…"), self._CUSTOM)
-        self._source.setCurrentIndex(
-            self._source.findData(DEFAULT_SOURCE_ID))
+        # Saved custom XYZ sources live in the combo alongside the presets
+        # (QGIS-style: add once with a name, it is always there).
+        self._custom_entries: dict[str, dict] = {}
+        self._last_sid: str | None = None
         self._source.currentIndexChanged.connect(self._on_source_changed)
         grid.addWidget(self._source, 0, 1)
 
-        self._custom_url = QLineEdit()
-        self._custom_url.setPlaceholderText("https://…/{z}/{x}/{y}.png")
-        self._custom_url.setToolTip(tr(
-            "Paste any XYZ tile URL. You assume responsibility for its terms."))
-        self._custom_url.editingFinished.connect(self._apply_source)
-        self._custom_url.setVisible(False)
-        grid.addWidget(self._custom_url, 1, 0, 1, 2)
+        self._remove_btn = QPushButton(tr("Remove this source"))
+        self._remove_btn.setStyleSheet("font-size:11px; padding:2px 8px;")
+        self._remove_btn.clicked.connect(self._remove_current_custom)
+        self._remove_btn.setVisible(False)
+        grid.addWidget(self._remove_btn, 1, 1)
+        self._populate_sources(select=DEFAULT_SOURCE_ID)
 
         grid.addWidget(QLabel(tr("Latitude:")), 2, 0)
         self._lat = QDoubleSpinBox()
@@ -204,49 +202,161 @@ class BaseMapPanel(QWidget):
     # ---- Source -------------------------------------------------------------
     def _current_source(self):
         sid = self._source.currentData()
-        if sid == self._CUSTOM:
-            url = self._custom_url.text().strip()
-            if not url:
-                return None
-            return custom_source(url, max_zoom=self._zoom.maximum())
+        if sid in self._custom_entries:
+            entry = self._custom_entries[sid]
+            return custom_source(entry["url"], max_zoom=self._zoom.maximum(),
+                                 name=entry["name"])
+        if sid == self._ADD or sid is None:
+            return None
         return PRESETS[sid]
 
-    def _restore_saved_source(self) -> None:
-        """Bring back the tile source chosen in past sessions (QSettings).
-
-        A pasted custom XYZ URL is hand-crafted (often hunted down once and
-        hard to find again), so losing it on every restart was real pain —
-        both the URL and the selected source persist as app preferences."""
-        from PySide6.QtCore import QSettings, QSignalBlocker
+    # -- Saved custom sources (QGIS-style: named, permanent, in the menu) -----
+    def _load_custom_sources(self) -> list[dict]:
+        """``[{"name", "url"}]`` from QSettings. Migrates the short-lived
+        single-URL preference (``basemap/custom_url``) into a named entry."""
+        import json
+        from PySide6.QtCore import QSettings
         settings = QSettings()
-        url = settings.value("basemap/custom_url", "", type=str)
-        sid = settings.value("basemap/source", "", type=str)
-        blockers = [QSignalBlocker(self._source),
-                    QSignalBlocker(self._custom_url)]
-        if url:
-            self._custom_url.setText(url)
-        if sid:
+        raw = settings.value("basemap/custom_sources", "", type=str)
+        entries: list[dict] = []
+        if raw:
+            try:
+                entries = [e for e in json.loads(raw)
+                           if isinstance(e, dict)
+                           and e.get("name") and e.get("url")]
+            except ValueError:
+                entries = []
+        legacy = settings.value("basemap/custom_url", "", type=str)
+        if legacy:
+            if not any(e["url"] == legacy for e in entries):
+                entries.append({"name": "XYZ personalizado", "url": legacy})
+                self._store_custom_sources(entries)
+            settings.remove("basemap/custom_url")
+        return entries
+
+    @staticmethod
+    def _store_custom_sources(entries: list[dict]) -> None:
+        import json
+        from PySide6.QtCore import QSettings
+        settings = QSettings()
+        settings.setValue("basemap/custom_sources", json.dumps(entries))
+        # Flush NOW: a hand-added source must survive even a crash right
+        # after saving (QSettings otherwise buffers until a clean exit).
+        settings.sync()
+
+    def _populate_sources(self, select: str | None = None) -> None:
+        """Rebuild the combo: presets + every saved custom source (by name)
+        + the "Add…" action item. Passive — never kicks a tile reset."""
+        from PySide6.QtCore import QSignalBlocker
+        from georef.tiles import source_slug
+        blocker = QSignalBlocker(self._source)
+        wanted = select or self._source.currentData()
+        self._source.clear()
+        for sid, src in PRESETS.items():
+            self._source.addItem(tr(src.name), sid)
+        self._custom_entries = {}
+        for entry in self._load_custom_sources():
+            sid = "custom-" + source_slug(entry["name"])
+            self._custom_entries[sid] = entry
+            self._source.addItem(entry["name"], sid)
+        self._source.addItem(tr("Add XYZ source…"), self._ADD)
+        idx = self._source.findData(wanted)
+        if idx < 0 or wanted == self._ADD:
+            idx = self._source.findData(DEFAULT_SOURCE_ID)
+        self._source.setCurrentIndex(idx)
+        del blocker
+        self._last_sid = self._source.currentData()
+        self._refresh_remove_btn()
+
+    def _refresh_remove_btn(self) -> None:
+        self._remove_btn.setVisible(
+            self._source.currentData() in self._custom_entries)
+
+    def add_custom_source(self, name: str, url: str) -> bool:
+        """Save a named XYZ source (upsert by name) and select it. Headless —
+        the dialog flow and tests both land here. Returns ``False`` when the
+        URL lacks the {z}/{x}/{y} placeholders."""
+        from georef.tiles import source_slug
+        name = name.strip()
+        url = url.strip()
+        if not name or not all(k in url for k in ("{z}", "{x}", "{y}")):
+            return False
+        entries = self._load_custom_sources()
+        entries = [e for e in entries
+                   if source_slug(e["name"]) != source_slug(name)]
+        entries.append({"name": name, "url": url})
+        self._store_custom_sources(entries)
+        self._populate_sources(select="custom-" + source_slug(name))
+        self._save_source_pref()
+        self._apply_source()
+        return True
+
+    def _on_add_source(self) -> None:
+        name, ok = QInputDialog.getText(
+            self, tr("New XYZ source"), tr("Source name:"))
+        if not ok or not name.strip():
+            return
+        url, ok = QInputDialog.getText(
+            self, tr("New XYZ source"),
+            tr("Tile URL (with {z}/{x}/{y}):"),
+            text="https://…/{z}/{x}/{y}.png")
+        if not ok:
+            return
+        if not self.add_custom_source(name, url):
+            self._window.statusBar().showMessage(tr(
+                "The URL must contain the {z}, {x} and {y} placeholders"),
+                5000)
+            return
+        self._window.statusBar().showMessage(tr(
+            "Source '{name}' saved — it will always be in the menu",
+            name=name.strip()), 4000)
+
+    def _remove_current_custom(self) -> None:
+        from georef.tiles import source_slug
+        sid = self._source.currentData()
+        entry = self._custom_entries.get(sid)
+        if entry is None:
+            return
+        entries = [e for e in self._load_custom_sources()
+                   if source_slug(e["name"]) != source_slug(entry["name"])]
+        self._store_custom_sources(entries)
+        self._populate_sources(select=DEFAULT_SOURCE_ID)
+        self._save_source_pref()
+        self._apply_source()
+
+    def _restore_saved_source(self) -> None:
+        """Select the source used in the last session (QSettings)."""
+        from PySide6.QtCore import QSettings, QSignalBlocker
+        sid = QSettings().value("basemap/source", "", type=str)
+        if sid and sid != self._ADD:
             idx = self._source.findData(sid)
             if idx >= 0:
+                blocker = QSignalBlocker(self._source)
                 self._source.setCurrentIndex(idx)
-        del blockers
-        self._custom_url.setVisible(self._source.currentData() == self._CUSTOM)
+                del blocker
+        self._last_sid = self._source.currentData()
+        self._refresh_remove_btn()
         src = self._current_source()
         if src is not None:
             self._attribution.setText(src.attribution)
 
     def _save_source_pref(self) -> None:
         from PySide6.QtCore import QSettings
-        settings = QSettings()
-        settings.setValue("basemap/source", self._source.currentData())
-        url = self._custom_url.text().strip()
-        if url:
-            # Never clear the stored URL on an empty field: switching to a
-            # preset (or clearing to retype) must not forget the custom one.
-            settings.setValue("basemap/custom_url", url)
+        sid = self._source.currentData()
+        if sid and sid != self._ADD:
+            settings = QSettings()
+            settings.setValue("basemap/source", sid)
+            settings.sync()
 
     def _on_source_changed(self) -> None:
-        self._custom_url.setVisible(self._source.currentData() == self._CUSTOM)
+        if self._source.currentData() == self._ADD:
+            # The "Add…" row is an action, not a source: bounce back to the
+            # previous selection and open the dialog.
+            self._populate_sources(select=self._last_sid)
+            self._on_add_source()
+            return
+        self._last_sid = self._source.currentData()
+        self._refresh_remove_btn()
         self._apply_source()
 
     def _apply_source(self) -> None:
@@ -373,7 +483,7 @@ class BaseMapPanel(QWidget):
             self._attribution.setText(self._current_source().attribution
                                       if self._current_source() else "")
         del blockers  # release the signal blockers
-        self._custom_url.setVisible(self._source.currentData() == self._CUSTOM)
+        self._refresh_remove_btn()
 
     def on_scene_changed(self) -> None:
         self._sync_from_scene()
