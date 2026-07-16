@@ -489,6 +489,66 @@ class BaseMapPanel(QWidget):
         self._sync_from_scene()
 
 
+class ComponentsPanel(QWidget):
+    """SketchUp-style components tray: a grid of clickable thumbnails.
+
+    The thumbnails are STATIC images — the 2D people are their own PNGs and
+    the 3D starters ship pre-rendered PNGs in ``resources/components/thumbs``
+    (regenerate with the dev script if the models change) — so showing the
+    panel costs a handful of pixmap loads and never touches the GL renderer."""
+
+    COLS = 3
+
+    def __init__(self, window) -> None:
+        super().__init__()
+        from PySide6.QtGui import QIcon
+        self._window = window
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(8, 6, 8, 8)
+        grid = QGridLayout()
+        grid.setSpacing(4)
+        res = Path(__file__).resolve().parent.parent / "resources" / "components"
+        items = [
+            (res / "sumari.png", tr("Sumari"),
+             tr("Sumari (author, 1.65 m)"),
+             lambda _c=False: window._on_insert_person_2d(
+                 "sumari.png", 1.65, "Sumari")),
+            (res / "person_billboard.png", tr("Person 2D"),
+             tr("Person (2D, faces the camera)"),
+             lambda _c=False: window._on_insert_person_2d()),
+            (res / "person_silhouette.png", tr("Silhouette"),
+             tr("Person (silhouette)"),
+             lambda _c=False: window._on_insert_person_2d(
+                 "person_silhouette.png")),
+            (res / "thumbs" / "person.png", tr("Person 3D"), tr("Person 3D"),
+             lambda _c=False: window._on_insert_component("person")),
+            (res / "thumbs" / "tree.png", tr("Tree"), tr("Tree"),
+             lambda _c=False: window._on_insert_component("tree")),
+            (res / "thumbs" / "bush.png", tr("Bush"), tr("Bush"),
+             lambda _c=False: window._on_insert_component("bush")),
+            (res / "thumbs" / "car.png", tr("Car"), tr("Car"),
+             lambda _c=False: window._on_insert_component("car")),
+        ]
+        for i, (icon_path, label, tip, callback) in enumerate(items):
+            btn = QToolButton()
+            btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            btn.setIcon(QIcon(str(icon_path)))
+            btn.setIconSize(QSize(56, 56))
+            btn.setText(label)
+            btn.setToolTip(tip)
+            btn.setAutoRaise(True)
+            btn.setMinimumWidth(72)
+            btn.clicked.connect(callback)
+            grid.addWidget(btn, i // self.COLS, i % self.COLS)
+        lay.addLayout(grid)
+        custom = QPushButton(tr("Face-me image (PNG)…"))
+        custom.setToolTip(tr(
+            "Insert your own cutout PNG at real height, always facing "
+            "the camera"))
+        custom.clicked.connect(window._on_insert_faceme_image)
+        lay.addWidget(custom)
+
+
 class MaterialsPanel(QWidget):
     """Swatch palette: pick a colour/texture to paint with."""
 
@@ -1315,12 +1375,14 @@ class Tray(QDockWidget):
 
         self.entity_info = EntityInfoPanel(window)
         self.materials = MaterialsPanel(window)
+        self.components = ComponentsPanel(window)
         self.layers = LayersPanel(window)
         self.dim_style = DimensionStylePanel(window)
         self.setWidget(_scrolled([
             (tr("Entity info"), self.entity_info),
             (tr("Layers"), self.layers),
             (tr("Materials"), self.materials),
+            (tr("Components"), self.components),
             (tr("Dimension style"), self.dim_style),
         ]))
 

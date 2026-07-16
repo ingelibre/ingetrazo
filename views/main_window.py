@@ -498,30 +498,8 @@ class MainWindow(QMainWindow):
             export_menu.addAction(act)
         actions.append(export_menu)
 
-        components_menu = QMenu(tr("Insert component"), self)
-        sumari_act = QAction(tr("Sumari (author, 1.65 m)"), self)
-        sumari_act.triggered.connect(
-            lambda: self._on_insert_person_2d("sumari.png", 1.65, "Sumari"))
-        components_menu.addAction(sumari_act)
-        person2d = QAction(tr("Person (2D, faces the camera)"), self)
-        person2d.triggered.connect(self._on_insert_person_2d)
-        components_menu.addAction(person2d)
-        person_sil = QAction(tr("Person (silhouette)"), self)
-        person_sil.triggered.connect(
-            lambda: self._on_insert_person_2d("person_silhouette.png"))
-        components_menu.addAction(person_sil)
-        faceme_img = QAction(tr("Face-me image (PNG)…"), self)
-        faceme_img.triggered.connect(self._on_insert_faceme_image)
-        components_menu.addAction(faceme_img)
-        for key, label in (("person", tr("Person 3D")),
-                           ("tree", tr("Tree")),
-                           ("bush", tr("Bush")),
-                           ("car", tr("Car"))):
-            act = QAction(label, self)
-            act.triggered.connect(
-                lambda _c, k=key: self._on_insert_component(k))
-            components_menu.addAction(act)
-        actions.append(components_menu)
+        # Components moved to the Properties tray (SketchUp-style panel with
+        # static thumbnails) — see views/tray.py::ComponentsPanel.
 
         actions.append(self._separator())
 
