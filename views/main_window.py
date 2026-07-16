@@ -501,7 +501,8 @@ class MainWindow(QMainWindow):
         # goes out — the flat list had import/export items scattered.
         import_menu = QMenu(tr("Import"), self)
         for label, handler in (
-            (tr("SketchUp / COLLADA (.dae)…"), self._on_import_dae),
+            (tr("SketchUp (.skp)…"), self._on_import_skp),
+            (tr("COLLADA (.dae)…"), self._on_import_dae),
             (tr("Wavefront OBJ (.obj)…"), self._on_import_obj),
             (tr("Georeference (KML / GeoJSON)…"), self._on_import_georef),
             (tr("Survey points CSV (UTM)…"), self._on_import_survey_points),
@@ -1240,8 +1241,8 @@ class MainWindow(QMainWindow):
             "<b>3D Warehouse</b> — "
             "<a href='https://3dwarehouse.sketchup.com'>"
             "3dwarehouse.sketchup.com</a><br>"
-            + tr("Download as COLLADA (.dae) and use "
-                 "File → Import → SketchUp / COLLADA.")
+            + tr("Download as COLLADA (.dae) — or the .skp itself — and use "
+                 "File → Import.")
             + "<br><br>"
             "<b>Poly Haven</b> — <a href='https://polyhaven.com'>"
             "polyhaven.com</a> " + tr("(CC0: models OBJ and PBR textures)")
@@ -1287,7 +1288,9 @@ class MainWindow(QMainWindow):
             tr("COLLADA (*.dae);;All files (*)"))
         if not path_str:
             return
-        path = Path(path_str)
+        self._import_dae_path(Path(path_str))
+
+    def _import_dae_path(self, path: Path) -> None:
         dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))
         cmd = SnapshotImport(
             lambda scene: dae_format.load_dae(scene, path, progress=cb))
@@ -1301,6 +1304,87 @@ class MainWindow(QMainWindow):
         dlg.close()
         self.viewport.update()
         self.statusBar().showMessage(tr("Imported {name}", name=path.name), 3000)
+
+    # ---- SKP via the skp2dae satellite converter -----------------------------
+    @staticmethod
+    def _find_skp_converter():
+        """Locate the external skp2dae converter and return the command list
+        to invoke it, or ``None``. Search order: ``SKP2DAE_EXE`` env var,
+        ``~/.local/share/skp2dae/skp2dae.exe``, then ``skp2dae`` on PATH.
+        The converter is a SEPARATE program (it loads Trimble's proprietary
+        SketchUpAPI.dll, which can never ship inside GPL IngeTrazo); on
+        Linux a ``.exe`` runs through Wine."""
+        import os
+        import shutil
+        import sys as _sys
+        candidates = []
+        env = os.environ.get("SKP2DAE_EXE")
+        if env:
+            candidates.append(Path(env))
+        candidates.append(
+            Path.home() / ".local" / "share" / "skp2dae" / "skp2dae.exe")
+        which = shutil.which("skp2dae")
+        if which:
+            candidates.append(Path(which))
+        for cand in candidates:
+            if not cand.exists():
+                continue
+            if cand.suffix.lower() == ".exe" and _sys.platform != "win32":
+                wine = shutil.which("wine")
+                if wine:
+                    return [wine, str(cand)]
+                continue
+            return [str(cand)]
+        return None
+
+    def import_skp_path(self, skp: Path) -> bool:
+        """Convert ``skp`` with the external converter (the .dae and its
+        texture folder land NEXT TO the .skp, so texture paths stay valid
+        for the session and for saved documents) and import the result."""
+        command = self._find_skp_converter()
+        if command is None:
+            QMessageBox.information(
+                self, tr("Import SKP"),
+                tr("Opening .skp needs the skp2dae converter.\n\n"
+                   "1. Get it from github.com/tuxiasumari/skp2dae\n"
+                   "2. Put skp2dae.exe plus SketchUpAPI.dll (the Blender "
+                   "'SketchUp Importer' add-on ships that DLL) in "
+                   "~/.local/share/skp2dae/\n"
+                   "3. On Linux, install Wine.\n\n"
+                   "IngeTrazo only launches it as a separate program."))
+            return False
+        dae = skp.with_suffix(".dae")
+        import subprocess
+        from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtWidgets import QApplication
+        self.statusBar().showMessage(
+            tr("Converting {name}… (skp2dae)", name=skp.name))
+        QApplication.setOverrideCursor(_Qt.WaitCursor)
+        try:
+            result = subprocess.run(
+                command + [str(skp), str(dae)],
+                capture_output=True, text=True, timeout=600)
+        except Exception as exc:  # noqa: BLE001
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, tr("Import SKP failed"), str(exc))
+            return False
+        QApplication.restoreOverrideCursor()
+        if result.returncode != 0 or not dae.exists():
+            detail = (result.stderr or result.stdout or "").strip()[-800:]
+            QMessageBox.critical(
+                self, tr("Import SKP failed"),
+                detail or tr("The converter produced no output."))
+            return False
+        self._import_dae_path(dae)
+        return True
+
+    def _on_import_skp(self) -> None:
+        path_str, _ = QFileDialog.getOpenFileName(
+            self, tr("Import SKP"), "",
+            tr("SketchUp (*.skp);;All files (*)"))
+        if not path_str:
+            return
+        self.import_skp_path(Path(path_str))
 
     def _on_import_obj(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
