@@ -1362,28 +1362,63 @@ class MainWindow(QMainWindow):
             command = self._find_skp_converter()
             if command is None:
                 return False
-        dae = skp.with_suffix(".dae")
+        import shutil
         import subprocess
+        import tempfile
+        import unicodedata
         from PySide6.QtCore import Qt as _Qt
         from PySide6.QtWidgets import QApplication
+
+        # Wine re-encodes argv to the Windows ANSI codepage, so an accented
+        # path ("Imágenes", "ñandú.skp") reaches the converter — and the
+        # SDK's UTF-8 file API — mangled. Sidestep it: convert through a
+        # temporary ASCII path and move the results next to the original.
+        # The texture folder keeps the .dae's stem (its internal refs are
+        # relative to that name), so accented stems come back sanitized.
+        ascii_stem = unicodedata.normalize("NFKD", skp.stem)
+        ascii_stem = ascii_stem.encode("ascii", "ignore").decode() or "modelo"
+        needs_tmp = any(ord(c) > 127 for c in str(skp))
+        tmpdir: Path | None = None
+        if needs_tmp:
+            tmpdir = Path(tempfile.mkdtemp(prefix="skp2dae-"))
+            work_skp = tmpdir / (ascii_stem + ".skp")
+            shutil.copy(skp, work_skp)
+        else:
+            work_skp = skp
+        work_dae = work_skp.with_suffix(".dae")
+
         self.statusBar().showMessage(
             tr("Converting {name}… (skp2dae)", name=skp.name))
         QApplication.setOverrideCursor(_Qt.WaitCursor)
         try:
             result = subprocess.run(
-                command + [str(skp), str(dae)],
-                capture_output=True, text=True, timeout=600)
+                command + [str(work_skp), str(work_dae)],
+                capture_output=True, timeout=600)
         except Exception as exc:  # noqa: BLE001
             QApplication.restoreOverrideCursor()
             QMessageBox.critical(self, tr("Import SKP failed"), str(exc))
             return False
         QApplication.restoreOverrideCursor()
-        if result.returncode != 0 or not dae.exists():
-            detail = (result.stderr or result.stdout or "").strip()[-800:]
+        # The converter (under Wine) may emit codepage bytes — never assume
+        # UTF-8 when surfacing its output.
+        detail = (result.stderr or result.stdout or b"").decode(
+            "utf-8", errors="replace").strip()[-800:]
+        if result.returncode != 0 or not work_dae.exists():
             QMessageBox.critical(
                 self, tr("Import SKP failed"),
                 detail or tr("The converter produced no output."))
             return False
+        dae = work_dae
+        if tmpdir is not None:
+            dae = skp.parent / work_dae.name
+            shutil.move(str(work_dae), dae)
+            tex_dir = tmpdir / ascii_stem
+            if tex_dir.is_dir():
+                target = skp.parent / ascii_stem
+                if target.exists():
+                    shutil.rmtree(target)
+                shutil.move(str(tex_dir), target)
+            shutil.rmtree(tmpdir, ignore_errors=True)
         self._import_dae_path(dae)
         return True
 

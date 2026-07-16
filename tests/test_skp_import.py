@@ -85,6 +85,25 @@ def test_skp_import_end_to_end(fake_converter, tmp_path):
     assert total == 1                                  # el triangulo llego
 
 
+def test_skp_import_from_accented_folder(fake_converter, tmp_path):
+    """La ruta con acentos ("Imágenes") rompía el paso por Wine (codepage):
+    la conversión debe pasar por un path ASCII temporal y dejar el .dae
+    junto al .skp original."""
+    window = MainWindow()
+    window.viewport.scene.clear()
+    carpeta = tmp_path / "Imágenes de obra"
+    carpeta.mkdir()
+    skp = carpeta / "maqueta ática.skp"
+    skp.write_bytes(b"fake")
+    assert window.import_skp_path(skp)
+    # el resultado quedo junto al original, con nombre sin acentos
+    assert (carpeta / "maqueta atica.dae").exists()
+    scene = window.viewport.scene
+    total = len(scene.mesh.faces) + sum(
+        len(g.mesh.faces) for g in scene.groups)
+    assert total == 1
+
+
 def test_extract_skp_dlls_from_addon_zip(tmp_path):
     import io
     import zipfile
