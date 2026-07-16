@@ -282,27 +282,27 @@ class MainWindow(QMainWindow):
 
         edit_menu.addSeparator()
 
-        select_all_action = QAction(tr("Select All"), self)
-        select_all_action.setShortcut(QKeySequence.SelectAll)
-        select_all_action.triggered.connect(self._on_select_all)
-        edit_menu.addAction(select_all_action)
-
-        edit_menu.addSeparator()
+        cut_action = QAction(tr("Cut"), self)
+        cut_action.setShortcut(QKeySequence.Cut)
+        cut_action.triggered.connect(lambda: self.viewport.cut_selection())
+        edit_menu.addAction(cut_action)
 
         copy_action = QAction(tr("Copy"), self)
         copy_action.setShortcut(QKeySequence.Copy)
         copy_action.triggered.connect(lambda: self.viewport.copy_selection())
         edit_menu.addAction(copy_action)
 
-        cut_action = QAction(tr("Cut"), self)
-        cut_action.setShortcut(QKeySequence.Cut)
-        cut_action.triggered.connect(lambda: self.viewport.cut_selection())
-        edit_menu.addAction(cut_action)
-
         paste_action = QAction(tr("Paste"), self)
         paste_action.setShortcut(QKeySequence.Paste)
         paste_action.triggered.connect(self._on_paste)
         edit_menu.addAction(paste_action)
+
+        edit_menu.addSeparator()
+
+        select_all_action = QAction(tr("Select All"), self)
+        select_all_action.setShortcut(QKeySequence.SelectAll)
+        select_all_action.triggered.connect(self._on_select_all)
+        edit_menu.addAction(select_all_action)
 
         edit_menu.addSeparator()
 
@@ -334,35 +334,10 @@ class MainWindow(QMainWindow):
         rebuild_action.triggered.connect(self._on_rebuild_planar)
         edit_menu.addAction(rebuild_action)
 
-        # View menu
-        view_menu = menubar.addMenu(tr("View"))
+        # Camera menu (SketchUp: navigation + projection + canned views)
+        camera_menu = menubar.addMenu(tr("Camera"))
 
-        toggle_tray = self.tray.toggleViewAction()
-        toggle_tray.setText(tr("Properties panel"))
-        view_menu.addAction(toggle_tray)
-
-        toggle_georef = self.georef_tray.toggleViewAction()
-        toggle_georef.setText(tr("Terrain panel"))
-        view_menu.addAction(toggle_georef)
-
-        toggle_profile = self.profile_dock.toggleViewAction()
-        toggle_profile.setText(tr("Terrain profile"))
-        view_menu.addAction(toggle_profile)
-        view_menu.addSeparator()
-
-        action_proj = QAction(tr("Toggle Perspective / Parallel"), self)
-        action_proj.setShortcut(QKeySequence("P"))
-        action_proj.triggered.connect(self.viewport.toggle_projection)
-        view_menu.addAction(action_proj)
-
-        view_menu.addSeparator()
-
-        action_zoom_extents = QAction(tr("Zoom Extents"), self)
-        action_zoom_extents.setShortcut(QKeySequence("F2"))
-        action_zoom_extents.triggered.connect(self._on_zoom_extents)
-        view_menu.addAction(action_zoom_extents)
-
-        standard_menu = view_menu.addMenu(tr("Standard Views"))
+        standard_menu = camera_menu.addMenu(tr("Standard Views"))
         for label, key in [
             ("Top", "top"),
             ("Bottom", "bottom"),
@@ -376,26 +351,70 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda _checked, k=key: self._on_standard_view(k))
             standard_menu.addAction(action)
 
-        view_menu.addSeparator()
-        self._build_language_menu(view_menu)
+        action_zoom_extents = QAction(tr("Zoom Extents"), self)
+        action_zoom_extents.setShortcut(QKeySequence("F2"))
+        action_zoom_extents.triggered.connect(self._on_zoom_extents)
+        camera_menu.addAction(action_zoom_extents)
 
-        # Tools menu (mirrors the toolbar)
+        camera_menu.addSeparator()
+
+        action_proj = QAction(tr("Toggle Perspective / Parallel"), self)
+        action_proj.setShortcut(QKeySequence("P"))
+        action_proj.triggered.connect(self.viewport.toggle_projection)
+        camera_menu.addAction(action_proj)
+
+        camera_menu.addSeparator()
+        for action in self._nav_actions.values():   # Orbit / Pan
+            camera_menu.addAction(action)
+
+        # Draw menu (SketchUp: the drawing tools, grouped by family)
+        draw_menu = menubar.addMenu(tr("Draw"))
+        draw_menu.addAction(self._tool_actions["line"])
+        arcs_menu = draw_menu.addMenu(tr("Arcs"))
+        for key in ("arc", "arc3", "center_arc"):
+            arcs_menu.addAction(self._tool_actions[key])
+        shapes_menu = draw_menu.addMenu(tr("Shapes"))
+        for key in ("rectangle", "rotated_rect", "circle", "polygon"):
+            shapes_menu.addAction(self._tool_actions[key])
+        draw_menu.addSeparator()
+        draw_menu.addAction(self._tool_actions["geopath"])
+
+        # Tools menu (SketchUp: select/modify/measure — drawing lives in Draw)
         tools_menu = menubar.addMenu(tr("Tools"))
-        for action in self._tool_actions.values():
-            tools_menu.addAction(action)
-        tools_menu.addSeparator()
-        for action in self._nav_actions.values():
-            tools_menu.addAction(action)
+        for keys in (("select", "eraser", "paint"),
+                     ("move", "rotate", "scale"),
+                     ("pushpull", "followme", "offset"),
+                     ("tape", "protractor"),
+                     ("dimension",)):
+            for key in keys:
+                tools_menu.addAction(self._tool_actions[key])
+            tools_menu.addSeparator()
+        action_profile = QAction(tr("Terrain profile of selection"), self)
+        action_profile.triggered.connect(self._on_terrain_profile)
+        tools_menu.addAction(action_profile)
         tools_menu.addSeparator()
         action_cancel = QAction(tr("Cancel current tool"), self)
         action_cancel.setShortcut(QKeySequence("Esc"))
         action_cancel.triggered.connect(self._cancel_tool)
         tools_menu.addAction(action_cancel)
 
-        tools_menu.addSeparator()
-        action_profile = QAction(tr("Terrain profile of selection"), self)
-        action_profile.triggered.connect(self._on_terrain_profile)
-        tools_menu.addAction(action_profile)
+        # Window menu (SketchUp: panels + app preferences)
+        window_menu = menubar.addMenu(tr("Window"))
+
+        toggle_tray = self.tray.toggleViewAction()
+        toggle_tray.setText(tr("Properties panel"))
+        window_menu.addAction(toggle_tray)
+
+        toggle_georef = self.georef_tray.toggleViewAction()
+        toggle_georef.setText(tr("Terrain panel"))
+        window_menu.addAction(toggle_georef)
+
+        toggle_profile = self.profile_dock.toggleViewAction()
+        toggle_profile.setText(tr("Terrain profile"))
+        window_menu.addAction(toggle_profile)
+
+        window_menu.addSeparator()
+        self._build_language_menu(window_menu)
 
         help_menu = menubar.addMenu(tr("Help"))
         get_models_action = QAction(tr("Get more models and textures…"), self)
