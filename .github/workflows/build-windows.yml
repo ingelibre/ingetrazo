@@ -1,0 +1,134 @@
+name: Build Windows
+
+# Cuándo corre:
+#   - Push de un tag vX.Y.Z  → build + adjunta los binarios al Release
+#   - Manual desde la pestaña Actions (workflow_dispatch)
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# El GITHUB_TOKEN necesita esto para adjuntar archivos al release.
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # 3.12: la versión de referencia para wheels en CI (misma que
+      # IngePresupuestos). El código corre igual en 3.10+.
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 numpy pyinstaller
+
+      - name: Compilar con PyInstaller
+        shell: bash
+        run: |
+          pyinstaller ingetrazo.spec --noconfirm
+          ls -la dist/
+          du -sh dist/ingetrazo/
+
+      - name: Humo mínimo del bundle
+        shell: bash
+        run: |
+          # El exe existe y los recursos críticos quedaron dentro.
+          test -f dist/ingetrazo/ingetrazo.exe
+          test -f dist/ingetrazo/_internal/resources/shaders/basic.vert
+          test -f dist/ingetrazo/_internal/i18n/es.json
+          test -f dist/ingetrazo/_internal/resources/components/thumbs/tree.png
+          echo "bundle OK"
+
+      - name: Incluir LEEME en el bundle
+        shell: bash
+        run: |
+          cat > dist/ingetrazo/LEEME.txt <<'EOF'
+          IngeTrazo para Windows
+
+          Recomendado: usar el INSTALADOR (ingetrazo-setup-vX.Y.Z.exe).
+          Este .zip es la version portable para usuarios tecnicos.
+
+          === Modo portable (este .zip) ===
+
+          1. Descomprimi esta carpeta donde quieras (ej. C:\IngeTrazo\)
+          2. Doble clic en ingetrazo.exe
+          3. Si Windows muestra "Windows protegio tu PC" → "Mas informacion"
+             → "Ejecutar de todas formas" (falta firma digital; se agrega
+             mas adelante).
+
+          Las preferencias se guardan en el registro de Windows y el cache
+          de teselas en %LOCALAPPDATA%\IngeTrazo\.
+
+          Si al abrir falla con "Failed to load python312.dll", instala:
+            https://aka.ms/vs/17/release/vc_redist.x64.exe
+            (Visual C++ Redistributable, oficial de Microsoft).
+
+          IngeTrazo es software libre (GPL-3.0).
+          Codigo y soporte: https://github.com/tuxiasumari/ingetrazo
+          EOF
+
+      - name: Crear ZIP portable
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/ingetrazo -DestinationPath dist/ingetrazo-windows.zip
+
+      - name: Extraer versión (del tag o de core/version.py)
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION=$(grep '__version__' core/version.py | cut -d'"' -f2)
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Compilar instalador con Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-Not (Test-Path $iscc)) {
+            $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe"
+          }
+          if (-Not (Test-Path $iscc)) {
+            Write-Error "Inno Setup no encontrado"
+            exit 1
+          }
+          & $iscc "/DMyAppVersion=${{ steps.ver.outputs.version }}" "installer\ingetrazo.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Listar archivos generados
+        shell: bash
+        run: ls -lh dist/
+
+      - name: Subir artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingetrazo-windows
+          path: |
+            dist/ingetrazo-windows.zip
+            dist/ingetrazo-setup-v*.exe
+          retention-days: 7
+
+      # En push de tag: adjunta los binarios al Release de esa versión.
+      - name: Publicar en el Release (solo tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ingetrazo-windows.zip
+            dist/ingetrazo-setup-v*.exe

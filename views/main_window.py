@@ -1015,17 +1015,22 @@ class MainWindow(QMainWindow):
         )
         if not path_str:
             return
-        path = Path(path_str)
+        self.open_path(Path(path_str))
+
+    def open_path(self, path: Path) -> bool:
+        """Open an ``.igz`` document at ``path`` (File dialog, CLI argument,
+        or the OS file association's double-click all land here)."""
         try:
             igz_format.load_into(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001 - surface any IO/parse error to the user
             QMessageBox.critical(self, tr("Open failed"), str(exc))
-            return
+            return False
         self.viewport.history.clear()
         self._current_path = path
         self._saved_version = self.viewport.scene.version
         self.viewport.notify_scene_changed()
         self._update_title()
+        return True
 
     def _on_save(self) -> None:
         self.viewport.end_group_edit()

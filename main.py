@@ -78,6 +78,12 @@ def main() -> int:
     app.setDesktopFileName("ingetrazo")
     _init_language()
     window = MainWindow()
+    # A document passed on the command line (the OS file association's
+    # double-click on Windows/Linux hands it as argv[1]) opens right away.
+    if len(sys.argv) > 1:
+        doc = Path(sys.argv[1])
+        if doc.suffix.lower() == ".igz" and doc.exists():
+            window.open_path(doc)
     window.show()
     return app.exec()
 
