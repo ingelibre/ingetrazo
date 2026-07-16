@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QStatusBar,
     QToolBar,
+    QWidget,
 )
 
 from core.i18n import available_languages, current_language, set_language, tr
@@ -131,6 +132,12 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.georef_tray)
         self.tabifyDockWidget(self.tray, self.bim_tray)
         self.tabifyDockWidget(self.bim_tray, self.georef_tray)
+        # The trays are tabbed: the tab bar already names the active panel,
+        # so each dock's own title bar would say the same thing right above
+        # it. An empty title-bar widget removes the duplicate (SketchUp-tray
+        # look); panels are toggled from the View menu, not dragged around.
+        for dock in (self.tray, self.bim_tray, self.georef_tray):
+            dock.setTitleBarWidget(QWidget(dock))
         self.tray.raise_()
         self.viewport.sceneVersionChanged.connect(
             lambda _v: self.tray.on_scene_changed())
