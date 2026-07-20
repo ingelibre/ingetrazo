@@ -399,6 +399,11 @@ class Viewport(QOpenGLWidget):
         self._box_start: Optional[QPointF] = None
         self._box_cur: Optional[QPointF] = None
 
+        # Zoom Window rubber-band (nav_mode == "zoom_window").
+        self._zoom_box_active = False
+        self._zoom_box_start: Optional[QPointF] = None
+        self._zoom_box_cur: Optional[QPointF] = None
+
         # Numeric value buffer (VCB-style typed length).
         self._value_buffer = ""
 
@@ -1949,6 +1954,7 @@ class Viewport(QOpenGLWidget):
 
         # Rubber-band selection box.
         self._draw_selection_box(painter)
+        self._draw_zoom_box(painter)
 
         painter.end()
 
@@ -1987,6 +1993,35 @@ class Viewport(QOpenGLWidget):
         painter.setPen(pen)
         painter.setBrush(fill)
         painter.drawRect(rect)
+
+    def _draw_zoom_box(self, painter: QPainter) -> None:
+        if (not self._zoom_box_active or self._zoom_box_start is None
+                or self._zoom_box_cur is None):
+            return
+        s, c = self._zoom_box_start, self._zoom_box_cur
+        rect = QRectF(
+            min(s.x(), c.x()), min(s.y(), c.y()),
+            abs(c.x() - s.x()), abs(c.y() - s.y()),
+        )
+        painter.setPen(QPen(QColor(243, 115, 41), 1.5, Qt.DashLine))
+        painter.setBrush(QColor(243, 115, 41, 26))
+        painter.drawRect(rect)
+
+    def _zoom_to_box(self, start: QPointF, end: QPointF) -> None:
+        """Zoom the camera so the dragged screen rectangle fills the view
+        (Zoom Window). Re-centres on the box's centre and scales the distance
+        by the fraction of the viewport the box covers."""
+        bw, bh = abs(end.x() - start.x()), abs(end.y() - start.y())
+        if bw < 6 or bh < 6:          # a click, not a real box → ignore
+            return
+        cx, cy = (start.x() + end.x()) / 2.0, (start.y() + end.y()) / 2.0
+        focus = self._world_under_cursor(cx, cy)
+        if focus is not None:
+            self.camera.target = focus
+        frac = max(bw / max(self.width(), 1), bh / max(self.height(), 1))
+        frac = max(frac, 0.04)        # don't zoom past a sane limit in one go
+        self.camera.distance = max(0.5, min(self.camera.distance * frac, 10000.0))
+        self.update()
 
     def _draw_snap_indicator(self, painter: QPainter, snap: SnapResult) -> None:
         # Axis-lock and inference state is conveyed by the coloured rubber
@@ -3870,7 +3905,9 @@ class Viewport(QOpenGLWidget):
         self._hover_entity = None
         self.last_snap = None
         self.nav_mode = mode
-        if mode is not None:
+        if mode in ("zoom", "zoom_window"):
+            self.setCursor(Qt.CrossCursor)
+        elif mode is not None:
             self.setCursor(Qt.OpenHandCursor)
         else:
             self.unsetCursor()
@@ -3907,6 +3944,12 @@ class Viewport(QOpenGLWidget):
         # SketchUp-style nav buttons: left-drag orbits/pans the camera.
         # Hold Shift while orbiting to pan temporarily (matches MMB+Shift).
         if ev.button() == Qt.LeftButton and self.nav_mode is not None:
+            if self.nav_mode == "zoom_window":
+                # Drag a rectangle; the camera zooms to it on release.
+                self._zoom_box_active = True
+                self._zoom_box_start = ev.position()
+                self._zoom_box_cur = ev.position()
+                return
             self._last_pos = ev.position().toPoint()
             self._pan_mode = (
                 self.nav_mode == "pan"
@@ -4012,7 +4055,9 @@ class Viewport(QOpenGLWidget):
             dx = p.x() - self._last_pos.x()
             dy = p.y() - self._last_pos.y()
             self._last_pos = p
-            if self._pan_mode:
+            if self.nav_mode == "zoom":
+                self.camera.zoom(-dy * 0.035)        # drag up = zoom in
+            elif self._pan_mode:
                 self.camera.pan(dx, dy, self.height())
             else:
                 self.camera.orbit(dx, dy, self.height())
@@ -4021,6 +4066,11 @@ class Viewport(QOpenGLWidget):
 
         if self._box_active:
             self._box_cur = ev.position()
+            self.update()
+            return
+
+        if self._zoom_box_active:
+            self._zoom_box_cur = ev.position()
             self.update()
             return
 
@@ -4108,6 +4158,16 @@ class Viewport(QOpenGLWidget):
         if ev.button() == Qt.MiddleButton:
             self._last_pos = None
             self._pan_mode = False
+            return
+
+        if ev.button() == Qt.LeftButton and self._zoom_box_active:
+            self._zoom_box_active = False
+            start, end = self._zoom_box_start, self._zoom_box_cur
+            self._zoom_box_start = None
+            self._zoom_box_cur = None
+            if start is not None and end is not None:
+                self._zoom_to_box(start, end)
+            self.update()
             return
 
         if ev.button() == Qt.LeftButton and self.nav_mode is not None:

@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QSettings, QEvent
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -177,6 +177,7 @@ class MainWindow(QMainWindow):
         tool = self._tools[key]
         name = tr(tool.name)
         action = QAction(tool_icon(key), name, self)
+        self._icon_actions.append((action, key))
         action.setCheckable(True)
         if tool.shortcut:
             action.setShortcut(QKeySequence(tool.shortcut))
@@ -193,6 +194,9 @@ class MainWindow(QMainWindow):
         self._tool_group = QActionGroup(self)
         self._tool_group.setExclusive(True)
         self.toolbars: dict[str, QToolBar] = {}
+        # (action, icon_key) pairs so programmatic icons can be re-drawn when
+        # the palette flips (dark ↔ light) at runtime — see changeEvent below.
+        self._icon_actions: list[tuple[QAction, str]] = []
 
         # One toolbar per task, each independently movable (SketchUp).
         layout = [
@@ -209,30 +213,45 @@ class MainWindow(QMainWindow):
             for key in keys:
                 self._add_tool_button(tb, key)
 
+        # 3D Text opens a dialog (it's a one-shot action, not a checkable tool),
+        # so it gets its own button on the Annotate bar next to the 2D Text tool.
+        self._act_3dtext = QAction(tool_icon("text3d"), tr("3D Text"), self)
+        self._act_3dtext.setToolTip(tr("3D Text — build extruded text as a solid"))
+        self._act_3dtext.triggered.connect(self._on_insert_3d_text)
+        self.toolbars["annotate"].addAction(self._act_3dtext)
+        self._icon_actions.append((self._act_3dtext, "text3d"))
+
         # Spacebar returns to Select, like SketchUp's pointer ("S" now
         # belongs to Scale, matching SketchUp).
         select_action = self._tool_actions["select"]
         select_action.setShortcuts([QKeySequence(Qt.Key_Space)])
         select_action.setToolTip(tr("Select (Space)"))
 
-        # View toolbar: camera nav (Orbit / Pan) + Zoom Extents + iso view.
+        # View toolbar: camera nav (Orbit / Pan / Zoom / Zoom Window) + Zoom
+        # Extents + iso view.
         view_tb = self._new_toolbar(tr("View"), "view")
         self.toolbars["view"] = view_tb
         self._nav_actions: dict[str, QAction] = {}
         for key, label, short, tip in [
             ("orbit", "Orbit", "O", "Orbit (O) — left-drag to rotate the view"),
             ("pan", "Pan", "H", "Pan (H) — left-drag to slide the view"),
+            ("zoom", "Zoom", "Z", "Zoom (Z) — drag up/down to zoom in/out"),
+            ("zoom_window", "Zoom Window", "",
+             "Zoom Window — drag a box to zoom to that region"),
         ]:
             action = QAction(tool_icon(key), tr(label), self)
             action.setCheckable(True)
-            action.setShortcut(QKeySequence(short))
+            if short:
+                action.setShortcut(QKeySequence(short))
             action.setToolTip(tr(tip))
             action.triggered.connect(lambda _c, k=key: self._activate_nav(k))
             self._tool_group.addAction(action)
             view_tb.addAction(action)
             self._nav_actions[key] = action
+            self._icon_actions.append((action, key))
         view_tb.addSeparator()
         act_ze = QAction(tool_icon("zoom_extents"), tr("Zoom Extents"), self)
+        self._icon_actions.append((act_ze, "zoom_extents"))
         act_ze.setShortcut(QKeySequence("F2"))
         act_ze.setToolTip(f"{tr('Zoom Extents')}  (F2)")
         act_ze.triggered.connect(self._on_zoom_extents)
@@ -254,6 +273,24 @@ class MainWindow(QMainWindow):
             act.setToolTip(tr(label))
             act.triggered.connect(lambda _c, k=key: self._on_standard_view(k))
             views_tb.addAction(act)
+            self._icon_actions.append((act, icon))
+
+    def _refresh_toolbar_icons(self) -> None:
+        """Re-draw the programmatic toolbar icons for the current palette so a
+        dark ↔ light theme switch (while the app is open) doesn't leave the
+        icons in the previous theme's ink — they were baked at build time."""
+        for action, key in getattr(self, "_icon_actions", []):
+            action.setIcon(tool_icon(key))
+
+    def changeEvent(self, event) -> None:
+        # Qt posts these when the OS/Qt theme (palette) flips at runtime.
+        if event.type() in (
+            QEvent.ApplicationPaletteChange,
+            QEvent.PaletteChange,
+            QEvent.ThemeChange,
+        ):
+            self._refresh_toolbar_icons()
+        super().changeEvent(event)
 
     def _build_menubar(self) -> None:
         menubar = self.menuBar()
@@ -366,7 +403,7 @@ class MainWindow(QMainWindow):
         camera_menu.addAction(action_proj)
 
         camera_menu.addSeparator()
-        for action in self._nav_actions.values():   # Orbit / Pan
+        for action in self._nav_actions.values():   # Orbit / Pan / Zoom / Zoom Window
             camera_menu.addAction(action)
 
         # Draw menu (SketchUp: the drawing tools, grouped by family)
@@ -391,9 +428,10 @@ class MainWindow(QMainWindow):
             for key in keys:
                 tools_menu.addAction(self._tool_actions[key])
             tools_menu.addSeparator()
-        action_3dtext = QAction(tr("3D Text…"), self)
+        action_3dtext = QAction(tool_icon("text3d"), tr("3D Text…"), self)
         action_3dtext.triggered.connect(self._on_insert_3d_text)
         tools_menu.addAction(action_3dtext)
+        self._icon_actions.append((action_3dtext, "text3d"))
         tools_menu.addSeparator()
         action_profile = QAction(tr("Terrain profile of selection"), self)
         action_profile.triggered.connect(self._on_terrain_profile)
@@ -1019,8 +1057,18 @@ class MainWindow(QMainWindow):
         self.open_path(Path(path_str))
 
     def open_path(self, path: Path) -> bool:
-        """Open an ``.igz`` document at ``path`` (File dialog, CLI argument,
-        or the OS file association's double-click all land here)."""
+        """Open a document at ``path`` (File dialog, CLI argument, or the OS
+        file association's double-click all land here).
+
+        ``.igz`` is our native format; ``.dae``/``.skp`` are the interchange
+        formats we also register in the desktop entry, so double-clicking one
+        imports it rather than failing to parse it as an IngeTrazo document."""
+        suffix = path.suffix.lower()
+        if suffix == ".dae":
+            self._import_dae_path(path)
+            return True
+        if suffix == ".skp":
+            return self.import_skp_path(path)
         try:
             igz_format.load_into(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001 - surface any IO/parse error to the user
