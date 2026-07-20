@@ -4,6 +4,38 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.2.2] — 2026-07-20
+
+A polish release focused on the toolbar icons, plus two new zoom tools and
+branded file-type icons.
+
+### Added
+- **Zoom** and **Zoom Window** camera tools on the View toolbar (and Camera
+  menu). Zoom (`Z`) drags up/down to zoom in/out; Zoom Window drags a
+  rectangle and frames that region. Icons: a magnifier, and a magnifier
+  inside a rectangle.
+- **Branded document icons** for the file types IngeTrazo works with —
+  `.igz` (native), `.dae` (COLLADA) and `.skp` (SketchUp). On Linux a
+  freedesktop MIME package paints the icons in the file manager (installed
+  by `scripts/install_desktop.sh`); on Windows the installer associates the
+  `.igz` icon and adds IngeTrazo to the "Open with" list for `.dae`/`.skp`.
+  Double-clicking a `.dae`/`.skp` now imports it.
+- **3D Text** now has a button on the Annotate toolbar (it was menu-only).
+
+### Changed
+- **Redesigned the tool icons** so each is the plainest picture of what it
+  does, on its own visual identity: Paint is now Inkscape's tilted-bucket
+  "fill" mark, Rotate is a pair of circular arrows, Orbit is an arrow
+  circling a sphere, Pan is a cleaner open hand, and the Standard Views are
+  little houses drawn from each viewpoint (front with a door, back with a
+  window, mirrored sides, roof-from-above, an isometric house) — 3D Text is
+  a solid extruded "A".
+
+### Fixed
+- Toolbar icons are re-drawn when the OS theme flips light ↔ dark while the
+  app is open — they were baked at startup and previously stayed in the old
+  theme's ink until a restart.
+
 ## [0.2.1] — 2026-07-16
 
 Open SketchUp files directly: File ▸ Import ▸ SketchUp (.skp)…
