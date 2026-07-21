@@ -337,6 +337,58 @@ def test_openskp_adapter_bakes_positioned_texture_uvs(tmp_path):
         assert v == pytest.approx(ve, abs=2e-3)
 
 
+def test_openskp_adapter_image_entities_become_billboards(tmp_path):
+    # A def with is_image=True (upstream PR openskp#8) placed by an instance
+    # becomes its OWN group; a cutout texture (real alpha) marks it as a
+    # face-me billboard, an opaque photo stays a static panel.
+    from PySide6.QtGui import QImage
+
+    cutout = tmp_path / "toro.png"
+    img = QImage(4, 4, QImage.Format_RGBA8888)
+    img.fill(0x00000000)          # fully transparent pixels -> cutout
+    img.save(str(cutout), "PNG")
+    opaque = tmp_path / "mural.png"
+    img2 = QImage(4, 4, QImage.Format_RGB888)
+    img2.fill(0xFF8080FF)
+    img2.save(str(opaque), "PNG")
+
+    def image_def(id, name, mid):
+        d = _tri_def(id, name)
+        d.faces[20].material_id = mid
+        d.is_image = True
+        return d
+
+    toro = image_def(5, "imagen#1", 51)
+    mural = image_def(6, "imagen#2", 52)
+    i1 = NS(ref_idx=5, material_id=None,
+            matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
+    i2 = NS(ref_idx=6, material_id=None,
+            matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 100, 0, 0, 1])
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[i1, i2])
+    mats = {51: NS(name="T", color=(1, 1, 1), transparency=1, id=51,
+                   texture=NS(filename="toro.png", width=48.0, height=48.0,
+                              data=cutout.read_bytes())),
+            52: NS(name="M", color=(1, 1, 1), transparency=1, id=52,
+                   texture=NS(filename="mural.png", width=48.0, height=48.0,
+                              data=opaque.read_bytes()))}
+    model = NS(definitions={0: root, 5: toro, 6: mural},
+               materials_by_id=mats)
+    skp = tmp_path / "m.skp"
+    skp.write_bytes(b"")
+    payload = skp_openskp._adapt(model, "m", skp_path=skp)
+
+    by_name = {g["name"]: g for g in payload["groups"]}
+    assert by_name["imagen#1"]["billboard"] is True     # cutout -> face-me
+    assert by_name["imagen#2"]["billboard"] is False    # opaque -> static
+
+    scene = Scene()
+    skp_format.apply_payload(scene, payload)
+    bb = {g.name: g.billboard for g in scene.groups}
+    assert bb["imagen#1"] == "mesh"
+    assert bb["imagen#2"] is False
+
+
 def test_openskp_adapter_splits_prototypes_by_inherited_material(monkeypatch):
     # The same component painted red and green as a whole must NOT share one
     # prototype — one proto per inherited material.

@@ -157,7 +157,13 @@ def apply_payload(scene, payload) -> str:
     for gp in payload.get("groups", []):
         mesh = _build_mesh(gp["faces"])
         if mesh.faces:
-            scene.groups.append(Group(mesh, name=gp.get("name")))
+            g = Group(mesh, name=gp.get("name"))
+            if gp.get("billboard"):
+                # Image-entity cutout (photo person/animal/tree): the real
+                # geometry turns toward the camera each frame, like the DAE
+                # face-me import.
+                g.billboard = "mesh"
+            scene.groups.append(g)
     # Shared components: ONE prototype mesh (local coordinates), one Group per
     # placement with only a local->world matrix (Components v1 instances).
     for pr in payload.get("protos", []):

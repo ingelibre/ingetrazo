@@ -241,8 +241,34 @@ def _face_entry(defn, face, xform, attr_map, inherited=None):
     return (outer, holes, attrs)
 
 
+def _image_has_cutout(path, cache={}) -> bool:
+    """Whether the image carries REAL transparency (some pixels see-through)
+    — the signature of a photo sprite (a person/animal/tree cutout PNG),
+    versus an opaque photo panel (a sign or mural). Mirrors the DAE import's
+    heuristic for face-me sprites."""
+    cached = cache.get(path)
+    if cached is not None:
+        return cached
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+    img = QImage(path)
+    ok = False
+    if not img.isNull() and img.hasAlphaChannel():
+        small = img.scaled(32, 32, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+        for yy in range(small.height()):
+            for xx in range(small.width()):
+                if small.pixelColor(xx, yy).alpha() < 32:
+                    ok = True
+                    break
+            if ok:
+                break
+    cache[path] = ok
+    return ok
+
+
 def _collect(defn, xform, by_id, attr_map, out, depth, stack,
-             proto_ids=frozenset(), proto_uses=None, inherited=None) -> None:
+             proto_ids=frozenset(), proto_uses=None, inherited=None,
+             image_uses=None) -> None:
     """Append ``(outer, holes, attrs)`` faces for ``defn`` (transformed by
     ``xform``) and, recursively, for every definition its instances place.
 
@@ -269,11 +295,17 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
         placed = xform * _matrix(ins.matrix)
         child_inherited = getattr(ins, "material_id", None) or inherited
         cid = getattr(child, "id", None)
+        if image_uses is not None and getattr(child, "is_image", False):
+            # An Image entity (photo placed as an object): pulled out of its
+            # parent so it can become its own group — cutout images turn to
+            # face the camera (billboard), like the DAE face-me import.
+            image_uses.append((child, placed, child_inherited))
+            continue
         if proto_uses is not None and cid in proto_ids:
             proto_uses.setdefault((cid, child_inherited), []).append(placed)
             continue
         _collect(child, placed, by_id, attr_map, out, depth + 1, stack,
-                 proto_ids, proto_uses, child_inherited)
+                 proto_ids, proto_uses, child_inherited, image_uses)
 
 
 def _subtree_polys(defn, by_id, memo, stack) -> int:
@@ -345,10 +377,23 @@ def _adapt(model, name: str, skp_path=None):
     memo: dict = {}
     for r in roots:
         _census(r, by_id, uses, 0, set())
+    def _subtree_has_image(d, stack=frozenset()):
+        if id(d) in stack or getattr(d, "is_image", False):
+            return getattr(d, "is_image", False)
+        for ins in getattr(d, "instances", []):
+            c = by_id.get(getattr(ins, "ref_idx", None))
+            if c is not None and _subtree_has_image(c, stack | {id(d)}):
+                return True
+        return False
+
     proto_ids = set()
     for did, cnt in uses.items():
         d = by_id.get(did)
         if d is None or cnt < 2:
+            continue
+        # Image-carrying subtrees are excluded from sharing: each copy's
+        # image must be extracted at its own world spot (billboard).
+        if _subtree_has_image(d):
             continue
         polys = _subtree_polys(d, by_id, memo, set())
         if polys >= _INST_MIN_POLYS and polys * (cnt - 1) >= _INST_MIN_SAVED:
@@ -356,6 +401,7 @@ def _adapt(model, name: str, skp_path=None):
 
     groups: list = []
     proto_uses: dict = {}
+    image_uses: list = []
     for r in roots:
         # The root's own loose faces (no instance recursion).
         loose: list = []
@@ -373,15 +419,35 @@ def _adapt(model, name: str, skp_path=None):
                 continue
             placed = _matrix(ins.matrix)
             inh = getattr(ins, "material_id", None)
+            if getattr(child, "is_image", False):
+                image_uses.append((child, placed, inh))
+                continue
             if getattr(child, "id", None) in proto_ids:
                 proto_uses.setdefault((child.id, inh), []).append(placed)
                 continue
             sub: list = []
             _collect(child, placed, by_id, attr_map, sub, 0, set(),
-                     proto_ids, proto_uses, inh)
+                     proto_ids, proto_uses, inh, image_uses)
             if sub:
                 groups.append({"name": getattr(child, "name", None) or name,
                                "faces": sub})
+
+    # Image entities → their own groups; cutout images (real alpha) become
+    # face-me billboards that turn toward the camera, opaque photos stay
+    # static panels — same rule as the DAE face-me import.
+    for child, placed, inh in image_uses:
+        faces = []
+        for face in child.faces.values():
+            entry = _face_entry(child, face, placed, attr_map, inh)
+            if entry is not None:
+                faces.append(entry)
+        if not faces:
+            continue
+        tex = next((a["texture"]["path"] for _o, _h, a in faces
+                    if a and "texture" in a), None)
+        groups.append({"name": getattr(child, "name", None) or name,
+                       "faces": faces,
+                       "billboard": bool(tex and _image_has_cutout(tex))})
 
     # Build each shared prototype ONCE, in local coordinates — per inherited
     # material, so a component painted red and green as a whole yields two

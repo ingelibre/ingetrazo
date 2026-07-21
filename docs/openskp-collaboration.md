@@ -134,7 +134,21 @@ Contribution targets, most valuable first:
    component (`CASCO.dwg`, 137 verts / 156 edges, 0 faces) is never instanced.
    Positions happen to come out right; the hierarchy is wrong. Candidate for
    an upstream issue with repro.
-7. **Legacy MFC (v8–v20)** version coverage, if not already handled.
+7. ✅ **Image entities (face-me cutouts) — decoded and shipped (2026-07-21).**
+   An Image placed in the model wraps a standard `6419` instance inside the
+   image-specific `9013 → 401F` containers (previously opaque → the image
+   looked "never placed"), and its backing quad definition carries TLV kind
+   `8315 == 2`. **PR submitted**
+   ([openskp#9 → #8](https://github.com/iamahsanmehmood/openskp/pull/8)):
+   `CONTAINER_TAGS += {9013, 401F}` + `Definition.is_image`. IngeTrazo's
+   adapter pulls each image out as its own group; cutout images (real alpha)
+   become `billboard = "mesh"` face-me sprites that turn toward the camera —
+   same rule as the DAE import. Verified on the plaza: the bull
+   (`toro.png`, 1.85×2.11 m above the arch) and the statue
+   (`campesiono.png`, 2.44 m on its pedestal) both surface as billboards.
+   The exact "always face camera" component flag remains undecoded (the
+   alpha heuristic covers the practical cases).
+8. **Legacy MFC (v8–v20)** version coverage, if not already handled.
 
 The differential harness lives at **`scripts/skp_diff.py`**:
 `python scripts/skp_diff.py model.skp` converts with skp2dae (oracle) and diffs a
