@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""COLLADA (.dae) import — open the models SketchUp exports natively.
+"""COLLADA (.dae) import + export — the bridge to SketchUp, which reads and
+writes COLLADA natively.
+
+Import opens the models SketchUp exports; :func:`save_dae` writes ours back out
+(Z-up, metres, per-face colour/texture, and — when georeferenced — the standard
+``<geographic_location>`` so a sun/shadow study keeps the site).
 
 COLLADA is Khronos' open XML interchange format; parsing with the stdlib
 ``xml.etree`` keeps the project dependency-free. Scope (matching what
@@ -60,6 +65,212 @@ def _floats(text) -> list[float]:
 
 def _ints(text) -> list[int]:
     return [int(t) for t in (text or "").split()]
+
+
+# ---- Export --------------------------------------------------------------------
+
+def _xml_escape(s: str) -> str:
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;"))
+
+
+def save_dae(scene, path, project_name: str = "IngeTrazo model") -> None:
+    """Write the scene as a COLLADA (``.dae``) file at ``path``, with a sibling
+    folder of texture images copied next to it.
+
+    COLLADA is what SketchUp imports natively, so this is the "open it back in
+    SketchUp" bridge. Written Z-up (``<up_axis>Z_UP</up_axis>``) in metres.
+    Solid ``Face.attrs["color"]`` become lambert diffuse colours; textured faces
+    become ``<texture>`` effects with the image copied beside the ``.dae`` (same
+    as the OBJ exporter — send the file *and* the folder together, or use GLB to
+    avoid the split). When the scene is georeferenced, the model's location
+    rides in the standard ``<asset><coverage><geographic_location>`` — the right
+    place for it, so a sun/shadow study keeps the site.
+    """
+    import shutil
+    from datetime import datetime, timezone
+
+    from .meshexport import collect_geometry, geolocation
+
+    path = Path(path)
+    materials_in, prims = collect_geometry(scene)
+    keys = list(prims.keys())
+
+    # Deduplicated shared sources for the single <geometry>.
+    positions: list[tuple] = []
+    normals: list[tuple] = []
+    uvs: list[tuple] = []
+    pidx: dict[tuple, int] = {}
+    nidx: dict[tuple, int] = {}
+    uidx: dict[tuple, int] = {}
+
+    def _pi(p) -> int:
+        key = (round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
+        i = pidx.get(key)
+        if i is None:
+            i = pidx[key] = len(positions)
+            positions.append((p.x(), p.y(), p.z()))
+        return i
+
+    def _ni(n) -> int:
+        key = (round(n.x(), 5), round(n.y(), 5), round(n.z(), 5))
+        i = nidx.get(key)
+        if i is None:
+            i = nidx[key] = len(normals)
+            normals.append((n.x(), n.y(), n.z()))
+        return i
+
+    def _ui(uv) -> int:
+        key = (round(uv[0], 6), round(uv[1], 6))
+        i = uidx.get(key)
+        if i is None:
+            i = uidx[key] = len(uvs)
+            uvs.append((uv[0], uv[1]))
+        return i
+
+    # Per-material triangle index lists → the <p> of each <triangles>.
+    tri_groups: list[tuple[tuple, bool, list]] = []
+    for key in keys:
+        textured = key[0] == "tex"
+        p_tokens: list[str] = []
+        for normal, verts in prims[key]:
+            ni = _ni(normal)
+            for pos, uv in verts:
+                p_tokens.append(str(_pi(pos)))
+                p_tokens.append(str(ni))
+                if textured:
+                    p_tokens.append(str(_ui(uv)))
+        tri_groups.append((key, textured, p_tokens))
+
+    # Copy texture images next to the .dae so <init_from> resolves.
+    for key in keys:
+        info = materials_in[key]
+        if info.get("map"):
+            dst = path.parent / info["map"]
+            try:
+                if Path(info["src"]).resolve() != dst.resolve():
+                    shutil.copy(info["src"], dst)
+            except Exception:  # noqa: BLE001 — best-effort; export still valid
+                pass
+
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    out: list[str] = []
+    out.append('<?xml version="1.0" encoding="utf-8"?>')
+    out.append('<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" '
+               'version="1.4.1">')
+    out.append("<asset>")
+    out.append("<contributor><authoring_tool>IngeTrazo</authoring_tool>"
+               "</contributor>")
+    out.append(f"<created>{now}</created><modified>{now}</modified>")
+    geo = geolocation(scene)
+    if geo is not None:
+        lat, lon, alt = geo
+        out.append("<coverage><geographic_location>")
+        out.append(f"<longitude>{lon:.9f}</longitude>")
+        out.append(f"<latitude>{lat:.9f}</latitude>")
+        out.append(f'<altitude mode="absolute">{alt:.3f}</altitude>')
+        out.append("</geographic_location></coverage>")
+    out.append('<unit name="meter" meter="1"/>')
+    out.append("<up_axis>Z_UP</up_axis>")
+    out.append("</asset>")
+
+    # library_images / library_effects / library_materials
+    out.append("<library_images>")
+    for i, key in enumerate(keys):
+        info = materials_in[key]
+        if info.get("map"):
+            out.append(f'<image id="img{i}" name="img{i}">'
+                       f"<init_from>{_xml_escape(info['map'])}</init_from></image>")
+    out.append("</library_images>")
+
+    out.append("<library_effects>")
+    for i, key in enumerate(keys):
+        info = materials_in[key]
+        out.append(f'<effect id="eff{i}"><profile_COMMON>')
+        if info.get("map"):
+            out.append(f'<newparam sid="surf{i}"><surface type="2D">'
+                       f"<init_from>img{i}</init_from></surface></newparam>")
+            out.append(f'<newparam sid="samp{i}"><sampler2D>'
+                       f"<source>surf{i}</source></sampler2D></newparam>")
+            out.append('<technique sid="common"><lambert><diffuse>'
+                       f'<texture texture="samp{i}" texcoord="UVSET0"/>'
+                       "</diffuse></lambert></technique>")
+        else:
+            r, g, b = info["color"]
+            out.append('<technique sid="common"><lambert><diffuse>'
+                       f"<color>{r:.4f} {g:.4f} {b:.4f} 1</color>"
+                       "</diffuse></lambert></technique>")
+        out.append("</profile_COMMON></effect>")
+    out.append("</library_effects>")
+
+    out.append("<library_materials>")
+    for i in range(len(keys)):
+        out.append(f'<material id="mat{i}" name="mat{i}">'
+                   f'<instance_effect url="#eff{i}"/></material>')
+    out.append("</library_materials>")
+
+    # library_geometries — one geometry, shared sources, one <triangles>/material
+    out.append("<library_geometries>")
+    out.append('<geometry id="geom0" name="IngeTrazo"><mesh>')
+    pos_floats = " ".join(f"{c:.6f}" for xyz in positions for c in xyz)
+    out.append(f'<source id="geom0-pos"><float_array id="geom0-pos-array" '
+               f'count="{len(positions) * 3}">{pos_floats}</float_array>'
+               '<technique_common><accessor source="#geom0-pos-array" '
+               f'count="{len(positions)}" stride="3">'
+               '<param name="X" type="float"/><param name="Y" type="float"/>'
+               '<param name="Z" type="float"/></accessor></technique_common>'
+               "</source>")
+    nrm_floats = " ".join(f"{c:.5f}" for xyz in normals for c in xyz)
+    out.append(f'<source id="geom0-nrm"><float_array id="geom0-nrm-array" '
+               f'count="{len(normals) * 3}">{nrm_floats}</float_array>'
+               '<technique_common><accessor source="#geom0-nrm-array" '
+               f'count="{len(normals)}" stride="3">'
+               '<param name="X" type="float"/><param name="Y" type="float"/>'
+               '<param name="Z" type="float"/></accessor></technique_common>'
+               "</source>")
+    if uvs:
+        uv_floats = " ".join(f"{c:.6f}" for st in uvs for c in st)
+        out.append(f'<source id="geom0-uv"><float_array id="geom0-uv-array" '
+                   f'count="{len(uvs) * 2}">{uv_floats}</float_array>'
+                   '<technique_common><accessor source="#geom0-uv-array" '
+                   f'count="{len(uvs)}" stride="2">'
+                   '<param name="S" type="float"/><param name="T" type="float"/>'
+                   "</accessor></technique_common></source>")
+    out.append('<vertices id="geom0-vertices">'
+               '<input semantic="POSITION" source="#geom0-pos"/></vertices>')
+    for i, (key, textured, p_tokens) in enumerate(tri_groups):
+        stride = 3 if textured else 2
+        count = len(p_tokens) // (3 * stride)
+        out.append(f'<triangles material="sym{i}" count="{count}">')
+        out.append('<input semantic="VERTEX" source="#geom0-vertices" offset="0"/>')
+        out.append('<input semantic="NORMAL" source="#geom0-nrm" offset="1"/>')
+        if textured:
+            out.append('<input semantic="TEXCOORD" source="#geom0-uv" '
+                       'offset="2" set="0"/>')
+        out.append("<p>" + " ".join(p_tokens) + "</p>")
+        out.append("</triangles>")
+    out.append("</mesh></geometry>")
+    out.append("</library_geometries>")
+
+    # visual_scene — geometry MUST sit inside a <node> or importers skip it.
+    out.append("<library_visual_scenes>")
+    out.append('<visual_scene id="scene"><node id="model" '
+               f'name="{_xml_escape(project_name)}">')
+    out.append('<instance_geometry url="#geom0"><bind_material>'
+               "<technique_common>")
+    for i, (key, textured, _p) in enumerate(tri_groups):
+        gi = keys.index(key)
+        out.append(f'<instance_material symbol="sym{i}" target="#mat{gi}">')
+        if textured:
+            out.append('<bind_vertex_input semantic="UVSET0" '
+                       'input_semantic="TEXCOORD" input_set="0"/>')
+        out.append("</instance_material>")
+    out.append("</technique_common></bind_material></instance_geometry>")
+    out.append("</node></visual_scene></library_visual_scenes>")
+    out.append('<scene><instance_visual_scene url="#scene"/></scene>')
+    out.append("</COLLADA>")
+
+    Path(path).write_text("\n".join(out), encoding="utf-8")
 
 
 class _Dae:
@@ -689,6 +900,34 @@ def _bucketize(dae: _Dae, top_nodes, faceme: list | None = None,
     return buckets
 
 
+def _adopt_geolocation(scene, root) -> None:
+    """If the COLLADA carries ``<asset><coverage><geographic_location>`` and the
+    scene has no datum yet, anchor the scene there — so a georeferenced model
+    (e.g. one exported with its site) brings its location in, keeping sun/shadow
+    studies meaningful. Never overrides a datum the user already set."""
+    if getattr(scene, "georef", None) is not None:
+        return
+    asset = root.find(f"{_NS}asset")
+    if asset is None:
+        return
+    geo = asset.find(f"{_NS}coverage/{_NS}geographic_location")
+    if geo is None:
+        return
+    lat_el = geo.find(f"{_NS}latitude")
+    lon_el = geo.find(f"{_NS}longitude")
+    if lat_el is None or lon_el is None or not lat_el.text or not lon_el.text:
+        return
+    alt_el = geo.find(f"{_NS}altitude")
+    try:
+        lat = float(lat_el.text)
+        lon = float(lon_el.text)
+        alt = float(alt_el.text) if (alt_el is not None and alt_el.text) else 0.0
+    except ValueError:
+        return
+    from georef.datum import SceneDatum
+    scene.georef = SceneDatum(lat, lon, alt)
+
+
 def load_dae(scene, path, progress=None) -> None:
     """Add the geometry of a COLLADA file at ``path`` to ``scene``.
 
@@ -713,6 +952,7 @@ def load_dae(scene, path, progress=None) -> None:
     tick(0.02, "Reading file…")
     root = ET.parse(Path(path)).getroot()
     dae = _Dae(root, base_dir=Path(path).parent)
+    _adopt_geolocation(scene, root)
     top_nodes: list = []
     for vs in root.iter(f"{_NS}visual_scene"):
         top_nodes.extend(vs.findall(f"{_NS}node"))

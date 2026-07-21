@@ -40,6 +40,7 @@ from formats import dae as dae_format
 from formats import obj as obj_format
 from formats import ifc as ifc_format
 from formats import stl as stl_format
+from formats import gltf as gltf_format
 from tools.arc import CenterArcTool, ArcTool, ThreePointArcTool
 from tools.circle import CircleTool, PolygonTool
 from tools.dimension import DimensionTool
@@ -553,6 +554,8 @@ class MainWindow(QMainWindow):
         export_menu = QMenu(tr("Export"), self)
         for label, handler in (
             (tr("IFC (BIM)…"), self._on_export_ifc),
+            (tr("glTF / GLB (3D, single file)…"), self._on_export_glb),
+            (tr("COLLADA (.dae)…"), self._on_export_dae),
             (tr("STL (3D printing)…"), self._on_export_stl),
             (tr("Wavefront OBJ (.obj)…"), self._on_export_obj),
             (tr("Image (PNG / JPG)…"), self._on_export_image),
@@ -1666,6 +1669,17 @@ class MainWindow(QMainWindow):
 
     def _on_export_obj(self) -> None:
         self._export("OBJ", "obj", tr("Wavefront OBJ (*.obj)"), obj_format.save_obj)
+
+    def _on_export_glb(self) -> None:
+        """Single-file 3D export (geometry + materials + textures embedded).
+        Best format for 'send it so a colleague can view it' — no texture folder
+        to lose, opens in Blender / web viewers / Windows 3D Viewer."""
+        self._export("GLB", "glb", tr("glTF binary (*.glb)"), gltf_format.save_glb)
+
+    def _on_export_dae(self) -> None:
+        """COLLADA export — the 'open it back in SketchUp' bridge. Copies the
+        texture images beside the .dae (send both, or use GLB)."""
+        self._export("COLLADA", "dae", tr("COLLADA (*.dae)"), dae_format.save_dae)
 
     def _on_import_survey_points(self) -> None:
         """File-menu twin of the Terrain panel's survey-CSV import, so every
