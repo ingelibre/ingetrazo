@@ -1389,9 +1389,31 @@ class MainWindow(QMainWindow):
         return None
 
     def import_skp_path(self, skp: Path) -> bool:
-        """Convert ``skp`` with the external converter (the .dae and its
-        texture folder land NEXT TO the .skp, so texture paths stay valid
-        for the session and for saved documents) and import the result."""
+        """Import ``skp``. Prefers a pure-Python parser backend (offline, no
+        Wine/DLL — see ``formats/skp.py``); falls back to the external skp2dae
+        converter for versions no pure backend can read yet (its .dae and
+        texture folder land NEXT TO the .skp, so texture paths stay valid for
+        the session and for saved documents)."""
+        from formats import skp as skp_format
+        if skp_format.can_handle(skp):
+            dlg, cb = self._import_progress(
+                tr("Importing {name}…", name=skp.name))
+            cmd = SnapshotImport(
+                lambda scene: skp_format.load_skp(scene, skp, progress=cb))
+            try:
+                self.viewport.history.execute(cmd)
+            except Exception as exc:  # noqa: BLE001
+                dlg.close()
+                QMessageBox.critical(self, tr("Import SKP failed"), str(exc))
+                return False
+            self._prepare_import_display(cmd, cb)
+            dlg.close()
+            self.viewport.update()
+            self.statusBar().showMessage(
+                tr("Imported {name}", name=skp.name), 3000)
+            return True
+
+        # ---- Fallback: the external skp2dae converter (Trimble DLL via Wine) --
         command = self._find_skp_converter()
         if command is None:
             answer = QMessageBox.question(
