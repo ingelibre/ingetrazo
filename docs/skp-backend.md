@@ -71,10 +71,15 @@ SketchUp 2022):
 - ✅ **Bounding box exact** — units, Z-up and instance transforms correct.
 - ✅ **Geometry ~90–95% complete** — faces/vertices/triangles within ~5–9% of
   the oracle.
-- ❌ **Materials / colours** — `Face.material_id` is an id, but OpenSKP 0.2.0's
-  `Material` exposes no `id` to join on. **Blocked upstream** — a small,
-  high-value contribution: expose `Material.id`.
-- ❌ **Textures** — not extracted by the parser yet.
+- ✅ **Materials / colours** — resolved. `Face.material_id` joins through
+  `SkpModel.materials_by_id`, added by **our upstream PR**
+  ([openskp#3](https://github.com/iamahsanmehmood/openskp/pull/3)); until it
+  ships on PyPI, install from the fork
+  (`pip install git+https://github.com/tuxiasumari/openskp@expose-material-id#subdirectory=packages/python`).
+  With PyPI 0.2.0 (no join) faces import uncoloured. Measured: 20 colour
+  materials vs the oracle's 18 colours + 2 textures — exact coverage, with the
+  2 textured materials arriving as solid colours for now.
+- ❌ **Textures** — not extracted by the parser yet (next upstream target).
 - ⚠️ **Grouping** — flattened to one group (skp2dae splits by node); cosmetic.
 - ⚠️ **~5–9% of faces skipped** — degenerate/unresolved loops; to investigate.
 

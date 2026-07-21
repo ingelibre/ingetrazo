@@ -161,3 +161,25 @@ def test_openskp_adapter_places_instances_with_transform():
 def test_openskp_adapter_returns_none_without_geometry():
     root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={}, faces={})
     assert skp_openskp._adapt(NS(definitions={0: root}), "empty") is None
+
+
+def test_openskp_adapter_resolves_face_colours_via_materials_by_id():
+    # Face.material_id → SkpModel.materials_by_id (our upstream PR openskp#3)
+    # → IngeTrazo attrs["color"] in 0..1. A model without the join (PyPI
+    # 0.2.0) simply imports uncoloured.
+    root = _fake_definition(
+        id=0, name="ROOT_MODEL",
+        verts={1: (0, 0, 0), 2: (10, 0, 0), 3: (10, 10, 0)},
+        edges={10: (1, 2), 11: (2, 3), 12: (3, 1)},
+        faces={20: [[(10, 1), (11, 1), (12, 1)]]},
+    )
+    root.faces[20].material_id = 29491
+    mat = NS(name="Wood", color=(255, 0, 51), transparency=1.0, id=29491)
+
+    with_join = NS(definitions={0: root}, materials_by_id={29491: mat})
+    attrs = skp_openskp._adapt(with_join, "m")["groups"][0]["faces"][0][2]
+    assert attrs == {"color": [1.0, 0.0, 0.2]}
+
+    without_join = NS(definitions={0: root})   # PyPI 0.2.0: no materials_by_id
+    attrs = skp_openskp._adapt(without_join, "m")["groups"][0]["faces"][0][2]
+    assert attrs is None

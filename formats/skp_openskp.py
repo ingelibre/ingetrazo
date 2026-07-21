@@ -22,8 +22,10 @@ OpenSKP 0.8-era data model (v0.2.0), discovered by introspection:
 SketchUp stores lengths in **inches** and is **Z-up** — same up axis as
 IngeTrazo, so we only scale (inches → metres); no axis swap. The instance tree
 is flattened to world-space polygons (reference geometry, like the big-DAE
-import path). Materials are not mapped yet (``Face.material_id`` has no public
-id on ``Material`` in v0.2.0) — a known gap; geometry comes first.
+import path). Per-face colours resolve through ``SkpModel.materials_by_id``
+(added by our upstream PR iamahsanmehmood/openskp#3; absent on PyPI 0.2.0, in
+which case faces import uncoloured). Textures are not extracted by the parser
+yet — the remaining upstream gap.
 """
 from __future__ import annotations
 
@@ -61,7 +63,20 @@ def _matrix(m) -> QMatrix4x4:
         0.0, 0.0, 0.0, 1.0)
 
 
-def _collect(defn, xform, by_id, out, depth, stack) -> None:
+def _face_attrs(face, mat_by_id):
+    """IngeTrazo ``Face.attrs`` for an OpenSKP face — its material colour
+    (RGB 0..1) resolved through ``SkpModel.materials_by_id``, or ``None``."""
+    mid = getattr(face, "material_id", None)
+    if mid is None:
+        return None
+    mat = mat_by_id.get(mid)
+    color = getattr(mat, "color", None) if mat is not None else None
+    if not color or len(color) < 3:
+        return None
+    return {"color": [color[0] / 255.0, color[1] / 255.0, color[2] / 255.0]}
+
+
+def _collect(defn, xform, by_id, mat_by_id, out, depth, stack) -> None:
     """Append ``(outer, holes, attrs)`` world-space faces for ``defn`` and,
     recursively, for every definition its instances place."""
     if depth > _MAX_DEPTH or id(defn) in stack:
@@ -80,18 +95,23 @@ def _collect(defn, xform, by_id, out, depth, stack) -> None:
             h = _ring(defn, lp)
             if h and len(h) >= 3:
                 holes.append([xform.map(p) for p in h])
-        out.append((outer, holes, None))
+        out.append((outer, holes, _face_attrs(face, mat_by_id)))
     for ins in getattr(defn, "instances", []):
         child = by_id.get(getattr(ins, "ref_idx", None))
         if child is None:
             continue
-        _collect(child, xform * _matrix(ins.matrix), by_id, out, depth + 1, stack)
+        _collect(child, xform * _matrix(ins.matrix), by_id, mat_by_id,
+                 out, depth + 1, stack)
 
 
 def _adapt(model, name: str):
     """An ``SkpModel`` → a payload ``{"backend", "groups"}`` or ``None`` when it
     yields no geometry (so the seam can fall back to skp2dae)."""
     defs = getattr(model, "definitions", {}) or {}
+    # Face.material_id -> Material join. Present since our upstream PR
+    # (iamahsanmehmood/openskp#3); guarded so PyPI 0.2.0 (no join) still
+    # imports — faces then come in uncoloured, like before.
+    mat_by_id = getattr(model, "materials_by_id", None) or {}
     by_id = {}
     root = None
     for d in defs.values():
@@ -101,7 +121,7 @@ def _adapt(model, name: str):
     roots = [root] if root is not None else list(defs.values())
     faces: list = []
     for r in roots:
-        _collect(r, QMatrix4x4(), by_id, faces, 0, set())
+        _collect(r, QMatrix4x4(), by_id, mat_by_id, faces, 0, set())
     if not faces:
         return None
     return {"backend": "openskp",

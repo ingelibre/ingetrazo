@@ -48,9 +48,13 @@ the skp2dae/Trimble oracle on real files (`demuna.skp`, SketchUp 2022):
 
 Contribution targets, most valuable first:
 
-1. **Expose `Material.id`** (or a face→material resolver). `Face.material_id` is
-   an id (e.g. 29491), but `Material` exposes only `color/name/transparency` —
-   no id to join on — so per-face colours can't be applied. Small, high-impact.
+1. ✅ **Expose `Material.id`** — **PR submitted**
+   ([openskp#3](https://github.com/iamahsanmehmood/openskp/pull/3), 2026-07-21):
+   `Material.id` + `SkpModel.materials_by_id`, surfacing the join the internal
+   exporter already had. Validated 19/19 face material_ids on a real SU2022
+   file. Layer B insurance: branch `expose-material-id` on
+   `tuxiasumari/openskp`; IngeTrazo's adapter uses the join when present
+   (guarded, so PyPI 0.2.0 still imports, just uncoloured).
 2. **Texture extraction** — `Material.texture` / image data (0 textures vs 2 in
    the oracle).
 3. **The ~5–9% of skipped faces** — degenerate/unresolved loops on some files.
