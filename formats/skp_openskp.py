@@ -122,9 +122,15 @@ def _face_attrs(face, attr_map):
     return attr_map.get(mid) if mid is not None else None
 
 
-def _collect(defn, xform, by_id, attr_map, out, depth, stack) -> None:
-    """Append ``(outer, holes, attrs)`` world-space faces for ``defn`` and,
-    recursively, for every definition its instances place."""
+def _collect(defn, xform, by_id, attr_map, out, depth, stack,
+             proto_ids=frozenset(), proto_uses=None) -> None:
+    """Append ``(outer, holes, attrs)`` faces for ``defn`` (transformed by
+    ``xform``) and, recursively, for every definition its instances place.
+
+    When an instance references a definition in ``proto_ids``, its geometry is
+    NOT flattened here — the composed placement matrix is recorded in
+    ``proto_uses[def_id]`` instead, so the shared prototype is built once and
+    every copy becomes an O(1) instance (``Group.xform``)."""
     if depth > _MAX_DEPTH or id(defn) in stack:
         return
     stack = stack | {id(defn)}
@@ -143,19 +149,73 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack) -> None:
                 holes.append([xform.map(p) for p in h])
         out.append((outer, holes, _face_attrs(face, attr_map)))
     for ins in getattr(defn, "instances", []):
-        child = by_id.get(getattr(ins, "ref_idx", None))
+        rid = getattr(ins, "ref_idx", None)
+        child = by_id.get(rid)
         if child is None:
             continue
-        _collect(child, xform * _matrix(ins.matrix), by_id, attr_map,
-                 out, depth + 1, stack)
+        placed = xform * _matrix(ins.matrix)
+        cid = getattr(child, "id", None)
+        if proto_uses is not None and cid in proto_ids:
+            proto_uses.setdefault(cid, []).append(placed)
+            continue
+        _collect(child, placed, by_id, attr_map, out, depth + 1, stack,
+                 proto_ids, proto_uses)
+
+
+def _subtree_polys(defn, by_id, memo, stack) -> int:
+    """Total polygon count of ``defn``'s subtree (own faces + instanced)."""
+    cid = id(defn)
+    if cid in stack:
+        return 0
+    cached = memo.get(cid)
+    if cached is not None:
+        return cached
+    stack = stack | {cid}
+    n = len(getattr(defn, "faces", {}) or {})
+    for ins in getattr(defn, "instances", []):
+        child = by_id.get(getattr(ins, "ref_idx", None))
+        if child is not None:
+            n += _subtree_polys(child, by_id, memo, stack)
+    memo[cid] = n
+    return n
+
+
+def _census(defn, by_id, uses, depth, stack) -> None:
+    """Count how many times each definition id is placed, walking only the
+    tree actually reachable from ``defn`` (dangling library definitions and
+    their internal references don't inflate the counts)."""
+    if depth > _MAX_DEPTH or id(defn) in stack:
+        return
+    stack = stack | {id(defn)}
+    for ins in getattr(defn, "instances", []):
+        rid = getattr(ins, "ref_idx", None)
+        child = by_id.get(rid)
+        if child is None:
+            continue
+        uses[getattr(child, "id", None)] = uses.get(
+            getattr(child, "id", None), 0) + 1
+        _census(child, by_id, uses, depth + 1, stack)
 
 
 def _adapt(model, name: str, skp_path=None):
-    """An ``SkpModel`` → a payload ``{"backend", "groups"}`` or ``None`` when it
-    yields no geometry (so the seam can fall back to skp2dae). ``skp_path``
-    anchors where extracted texture images land; the material joins are
-    guarded so PyPI 0.2.0 (which predates them) still imports — faces then
-    come in uncoloured, like before."""
+    """An ``SkpModel`` → a payload ``{"backend", "groups", "protos"}`` or
+    ``None`` when it yields no geometry (so the seam can fall back to skp2dae).
+
+    SketchUp-style structure, mirroring the DAE reference import:
+
+    * the root's loose faces → one group named after the file;
+    * each top-level instance → its own group (its subtree flattened into it),
+      so every placed component is selectable/movable on its own;
+    * a definition placed ≥2 times whose subtree is worth sharing (same
+      thresholds as the DAE import) → ONE prototype, extracted at ANY depth,
+      each copy an O(1) placement matrix (``Group.xform``).
+
+    Definitions with faces that nothing instances are library entries not
+    placed in the model — SketchUp does not render those, and neither do we.
+    ``skp_path`` anchors where extracted texture images land; the material
+    joins are guarded so PyPI 0.2.0 still imports (uncoloured)."""
+    from formats.dae import _INST_MIN_POLYS, _INST_MIN_SAVED
+
     defs = getattr(model, "definitions", {}) or {}
     attr_map = _material_attrs(model, skp_path or name)
     by_id = {}
@@ -165,13 +225,70 @@ def _adapt(model, name: str, skp_path=None):
         if getattr(d, "name", None) == "ROOT_MODEL":
             root = d
     roots = [root] if root is not None else list(defs.values())
-    faces: list = []
+
+    # Shared-prototype census over the reachable tree.
+    uses: dict = {}
+    memo: dict = {}
     for r in roots:
-        _collect(r, QMatrix4x4(), by_id, attr_map, faces, 0, set())
-    if not faces:
+        _census(r, by_id, uses, 0, set())
+    proto_ids = set()
+    for did, cnt in uses.items():
+        d = by_id.get(did)
+        if d is None or cnt < 2:
+            continue
+        polys = _subtree_polys(d, by_id, memo, set())
+        if polys >= _INST_MIN_POLYS and polys * (cnt - 1) >= _INST_MIN_SAVED:
+            proto_ids.add(did)
+
+    groups: list = []
+    proto_uses: dict = {}
+    for r in roots:
+        # The root's own loose faces (no instance recursion).
+        loose: list = []
+        for face in r.faces.values():
+            loops = getattr(face, "loops", None)
+            if not loops:
+                continue
+            outer = _ring(r, loops[0])
+            if not outer or len(outer) < 3:
+                continue
+            holes = [h for lp in loops[1:]
+                     if (h := _ring(r, lp)) and len(h) >= 3]
+            loose.append((outer, holes, _face_attrs(face, attr_map)))
+        if loose:
+            groups.append({"name": name, "faces": loose})
+        # Each top-level instance → its own group (or a shared-proto use).
+        for ins in getattr(r, "instances", []):
+            child = by_id.get(getattr(ins, "ref_idx", None))
+            if child is None:
+                continue
+            placed = _matrix(ins.matrix)
+            if getattr(child, "id", None) in proto_ids:
+                proto_uses.setdefault(child.id, []).append(placed)
+                continue
+            sub: list = []
+            _collect(child, placed, by_id, attr_map, sub, 0, set(),
+                     proto_ids, proto_uses)
+            if sub:
+                groups.append({"name": getattr(child, "name", None) or name,
+                               "faces": sub})
+
+    # Build each shared prototype ONCE, in local coordinates. Nested proto
+    # references inside a prototype flatten into it (no proto-in-proto).
+    protos: list = []
+    for did, xforms in proto_uses.items():
+        d = by_id.get(did)
+        if d is None or not xforms:
+            continue
+        local: list = []
+        _collect(d, QMatrix4x4(), by_id, attr_map, local, 0, set())
+        if local:
+            protos.append({"name": getattr(d, "name", None) or name,
+                           "faces": local, "instances": xforms})
+
+    if not groups and not protos:
         return None
-    return {"backend": "openskp",
-            "groups": [{"name": name, "faces": faces}]}
+    return {"backend": "openskp", "groups": groups, "protos": protos}
 
 
 def parse(path, progress=None):

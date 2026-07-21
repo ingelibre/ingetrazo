@@ -101,9 +101,17 @@ SketchUp 2022):
   path fuses *better* (it starts from SketchUp's original polygons, not
   reconstructed triangles). Perf: plaza Yanque (34 MB) parses in ~12 s pure
   Python — 97k faces, 42 273 m², 19 materials + 10 textures.
-- ⚠️ **Grouping** — flattened to one group (skp2dae splits by node; the DAE
-  path builds ~290 groups for the plaza). The main remaining adapter gap —
-  matters for selection/editing UX and per-group render chunks on big models.
+- ✅ **Grouping — resolved (SketchUp-style, with shared components).** The
+  adapter now mirrors the DAE reference import: the root's loose faces become
+  one group named after the file, each top-level instance becomes its own
+  group carrying its SketchUp definition name, and a definition placed ≥2
+  times above the DAE sharing thresholds becomes **one prototype** (extracted
+  at any depth) with each copy an O(1) `Group.xform` instance. Measured:
+  demuna → 3 groups, exact parity with the oracle and with *better* names
+  ('Niraj', 'Derrick' vs the DLL's 'node'); plaza Yanque → 39 groups of which
+  31 are instances sharing 5 prototypes, and import time dropped 12.1 → 7.5 s
+  (each prototype fuses once, not per copy). Library definitions never placed
+  in the model are not emitted — same as SketchUp.
 - ⚠️ **Instance-tree misplacement (upstream, latent)** — in `demuna.skp` the
   parser hangs Rodeo#2's instance under the *Derrick* definition instead of
   the root, and `CASCO.dwg` (137 verts / 156 edges, a pure-wireframe DWG

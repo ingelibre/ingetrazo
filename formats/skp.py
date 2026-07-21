@@ -135,15 +135,14 @@ def apply_payload(scene, payload) -> str:
     from formats.dae import _add_fused
     from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
 
-    for gp in payload.get("groups", []):
+    def _build_mesh(faces):
         mesh = Mesh()
         # Fusion works on plain loops; faces with holes (window rings) keep
         # their explicit topology and are added directly.
-        raw = [(outer, attrs) for outer, holes, attrs in gp["faces"]
-               if not holes]
+        raw = [(outer, attrs) for outer, holes, attrs in faces if not holes]
         for item in fuse_coplanar_loops(raw):
             _add_fused(mesh, [item])
-        for outer, holes, attrs in gp["faces"]:
+        for outer, holes, attrs in faces:
             if not holes:
                 continue
             try:
@@ -153,8 +152,22 @@ def apply_payload(scene, payload) -> str:
             if attrs:
                 face.attrs.update(attrs)
         soften_smooth_edges(mesh)
+        return mesh
+
+    for gp in payload.get("groups", []):
+        mesh = _build_mesh(gp["faces"])
         if mesh.faces:
             scene.groups.append(Group(mesh, name=gp.get("name")))
+    # Shared components: ONE prototype mesh (local coordinates), one Group per
+    # placement with only a local->world matrix (Components v1 instances).
+    for pr in payload.get("protos", []):
+        mesh = _build_mesh(pr["faces"])
+        if not mesh.faces:
+            continue
+        for xf in pr.get("instances", []):
+            g = Group(mesh, name=pr.get("name"))
+            g.xform = xf
+            scene.groups.append(g)
     scene.version += 1
     return payload.get("backend", "?")
 

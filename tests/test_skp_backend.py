@@ -211,3 +211,57 @@ def test_openskp_adapter_extracts_textures_next_to_the_skp(tmp_path):
     assert attrs["texture"]["path"] == str(img)
     assert attrs["texture"]["sw"] == pytest.approx(24 * 0.0254)   # 0.6096 m
     assert attrs["texture"]["sh"] == pytest.approx(12 * 0.0254)
+
+
+def _tri_def(id, name, instances=()):
+    return _fake_definition(
+        id=id, name=name,
+        verts={1: (0, 0, 0), 2: (10, 0, 0), 3: (10, 10, 0)},
+        edges={10: (1, 2), 11: (2, 3), 12: (3, 1)},
+        faces={20: [[(10, 1), (11, 1), (12, 1)]]},
+        instances=instances,
+    )
+
+
+def test_openskp_adapter_groups_per_top_level_instance():
+    # Root loose faces -> one group named after the file; each top-level
+    # instance -> its own group carrying the DEFINITION's name (SketchUp).
+    child = _tri_def(5, "Farola")
+    ins = NS(ref_idx=5, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 100, 0, 0, 1])
+    root = _tri_def(0, "ROOT_MODEL", instances=[ins])
+    payload = skp_openskp._adapt(NS(definitions={0: root, 5: child}), "obra")
+
+    names = sorted(g["name"] for g in payload["groups"])
+    assert names == ["Farola", "obra"]
+    assert payload["protos"] == []
+
+
+def test_openskp_adapter_shares_repeated_components(monkeypatch):
+    # A definition placed twice above the sharing thresholds becomes ONE
+    # prototype with two placement matrices — not two flattened copies.
+    import formats.dae as dae_mod
+    monkeypatch.setattr(dae_mod, "_INST_MIN_POLYS", 1)
+    monkeypatch.setattr(dae_mod, "_INST_MIN_SAVED", 1)
+
+    child = _tri_def(5, "Arbol")
+    i1 = NS(ref_idx=5, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
+    i2 = NS(ref_idx=5, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 100, 0, 0, 1])
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[i1, i2])
+    payload = skp_openskp._adapt(NS(definitions={0: root, 5: child}), "obra")
+
+    assert payload["groups"] == []
+    assert len(payload["protos"]) == 1
+    proto = payload["protos"][0]
+    assert proto["name"] == "Arbol"
+    assert len(proto["instances"]) == 2
+    # Prototype geometry is LOCAL (translation lives in the matrices).
+    xs = [round(p.x(), 4) for p in proto["faces"][0][0]]
+    assert max(xs) == pytest.approx(10 * 0.0254)
+
+    # apply_payload: two instance Groups SHARING one prototype mesh.
+    scene = Scene()
+    skp_format.apply_payload(scene, payload)
+    inst = [g for g in scene.groups if g.xform is not None]
+    assert len(inst) == 2
+    assert inst[0].mesh is inst[1].mesh
