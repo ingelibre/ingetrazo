@@ -86,8 +86,29 @@ SketchUp 2022):
   `pip install git+https://github.com/tuxiasumari/openskp@ingetrazo#subdirectory=packages/python`
   (branch `ingetrazo` = upstream `main` + both PR branches merged). With PyPI
   0.2.0 (no joins) faces import uncoloured.
-- ⚠️ **Grouping** — flattened to one group (skp2dae splits by node); cosmetic.
-- ⚠️ **~5–9% of faces skipped** — degenerate/unresolved loops; to investigate.
+- ✅ **"~5–9% skipped faces" — resolved: it was a measurement artefact, not
+  lost geometry.** The raw DAE carries 4516 triangles = exactly what OpenSKP
+  parses, and **total surface area matches to 0.00%** (327.268 vs 327.269 m²).
+  The count deltas came from comparing a fused path (the DAE import runs
+  coplanar fusion + weld + double-face dedupe) against raw SketchUp polygons.
+  Two fixes landed: the harness fingerprint now carries **`area_m2`** (the
+  fusion-invariant completeness metric — when areas agree, count deltas are
+  labelled as post-processing); and `apply_payload` now runs the **same
+  fusion pipeline as the DAE import** (`fuse_coplanar_loops` +
+  `soften_smooth_edges`, hole-carrying faces added directly), so a `.skp`
+  through the pure backend looks identical to one through the converter.
+  After both: triangles Δ1.3%, vertices Δ0.7%, faces 262 vs 389 — the pure
+  path fuses *better* (it starts from SketchUp's original polygons, not
+  reconstructed triangles). Perf: plaza Yanque (34 MB) parses in ~12 s pure
+  Python — 97k faces, 42 273 m², 19 materials + 10 textures.
+- ⚠️ **Grouping** — flattened to one group (skp2dae splits by node; the DAE
+  path builds ~290 groups for the plaza). The main remaining adapter gap —
+  matters for selection/editing UX and per-group render chunks on big models.
+- ⚠️ **Instance-tree misplacement (upstream, latent)** — in `demuna.skp` the
+  parser hangs Rodeo#2's instance under the *Derrick* definition instead of
+  the root, and `CASCO.dwg` (137 verts / 156 edges, a pure-wireframe DWG
+  import) is never instanced. Positions still come out right in this file,
+  but the hierarchy is wrong — worth an upstream issue with the repro.
 
 These gaps are the concrete contribution targets for OpenSKP (see
 `docs/openskp-collaboration.md`). Geometry — the hard part — already works.

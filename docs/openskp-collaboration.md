@@ -63,8 +63,19 @@ Contribution targets, most valuable first:
    Integration branch `ingetrazo` on `tuxiasumari/openskp` merges #3 + #4 for
    IngeTrazo's venv until they ship on PyPI. Measured after both: **18/18
    materials, 2/2 textures — exact parity with the skp2dae oracle.**
-3. **The ~5–9% of skipped faces** — degenerate/unresolved loops on some files.
-4. **Legacy MFC (v8–v20)** version coverage, if not already handled.
+3. ✅ **"~5–9% skipped faces" — resolved 2026-07-21: measurement artefact, not
+   parser loss.** Raw DAE = 4516 tris = OpenSKP's parse exactly; surface area
+   matches to 0.00% (327.268 vs 327.269 m²). The deltas came from comparing a
+   fused path against raw polygons. Harness now uses `area_m2` as the
+   fusion-invariant truth metric; IngeTrazo's `apply_payload` runs the same
+   fusion pipeline as its DAE import. **No upstream work needed.**
+4. **Instance-tree misplacement (upstream, latent)** — found while digging
+   into #3: in a real SU2022 file, an instance is attached to the wrong parent
+   definition (Rodeo#2 under Derrick instead of the root) and a pure-wireframe
+   component (`CASCO.dwg`, 137 verts / 156 edges, 0 faces) is never instanced.
+   Positions happen to come out right; the hierarchy is wrong. Candidate for
+   an upstream issue with repro.
+5. **Legacy MFC (v8–v20)** version coverage, if not already handled.
 
 The differential harness lives at **`scripts/skp_diff.py`**:
 `python scripts/skp_diff.py model.skp` converts with skp2dae (oracle) and diffs a

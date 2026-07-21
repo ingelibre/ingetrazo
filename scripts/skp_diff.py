@@ -47,15 +47,20 @@ def fingerprint(scene) -> dict:
     group breakdown. Deliberately parser-agnostic (no identity, no ordering)."""
     from formats.meshexport import world_faces
 
+    from PySide6.QtGui import QVector3D
+
     faces = list(world_faces(scene))
     tris = 0
+    area = 0.0
     vkeys = set()
     colors = set()
     textures = set()
     xmin = ymin = zmin = float("inf")
     xmax = ymax = zmax = float("-inf")
     for f in faces:
-        tris += len(f.triangulate())
+        for a, b, c in f.triangulate():
+            tris += 1
+            area += QVector3D.crossProduct(b - a, c - a).length() / 2.0
         tex = f.attrs.get("texture")
         if tex is not None and tex.get("path"):
             textures.add(Path(tex["path"]).name)
@@ -77,6 +82,11 @@ def fingerprint(scene) -> dict:
         "faces": len(faces),
         "triangles": tris,
         "vertices": len(vkeys),
+        # Total surface area — the fusion-invariant completeness metric.
+        # Face/triangle/vertex counts shift with post-processing (coplanar
+        # fusion, welding, double-face dedupe), but the area of the same
+        # geometry does not: equal areas = complete geometry.
+        "area_m2": round(area, 3),
         "materials": len(colors),
         "textures": len(textures),
         "groups": len(groups),
@@ -86,17 +96,28 @@ def fingerprint(scene) -> dict:
 
 
 def compare(ground: dict, candidate: dict, tol: float = 1e-3) -> list[str]:
-    """Human-readable discrepancies between two fingerprints. Counts are
-    reported with absolute + relative deltas; the bbox per axis against ``tol``
-    metres. An empty list means the parses agree structurally."""
+    """Human-readable discrepancies between two fingerprints. Surface area is
+    the hard completeness metric (fusion-invariant); when areas agree within
+    0.5%, count deltas are labelled as post-processing differences rather than
+    lost geometry. The bbox is checked per axis against ``tol`` metres. An
+    empty list means the parses agree structurally."""
     issues: list[str] = []
+    ga, ca = ground.get("area_m2", 0.0), candidate.get("area_m2", 0.0)
+    area_rel = abs(ca - ga) / ga if ga else (0.0 if not ca else float("inf"))
+    areas_agree = area_rel <= 0.005
+    if not areas_agree:
+        issues.append(f"area_m2: ground={ga} candidate={ca} "
+                      f"({area_rel * 100:.2f}% — geometry incomplete)")
     for key in ("faces", "triangles", "vertices", "materials", "textures",
                 "groups"):
         a, b = ground.get(key, 0), candidate.get(key, 0)
         if a != b:
             rel = (abs(a - b) / a * 100) if a else float("inf")
+            note = (" [areas agree: post-processing, not lost geometry]"
+                    if areas_agree and key in ("faces", "triangles", "vertices")
+                    else "")
             issues.append(f"{key}: ground={a} candidate={b} "
-                          f"(Δ={b - a}, {rel:.1f}%)")
+                          f"(Δ={b - a}, {rel:.1f}%){note}")
     gb, cb = ground.get("bbox"), candidate.get("bbox")
     if gb and cb:
         for axis, i in (("x", 0), ("y", 1), ("z", 2)):

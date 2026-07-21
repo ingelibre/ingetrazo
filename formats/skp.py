@@ -124,20 +124,35 @@ def parse_skp(path, progress=None) -> dict:
 
 def apply_payload(scene, payload) -> str:
     """Add a parsed payload's geometry to ``scene`` as reference groups (an
-    isolated ``Mesh`` per group, like the big-DAE import). Cheap and mutation-
-    only; the caller wraps it in a command for undo. Returns the backend name."""
+    isolated ``Mesh`` per group, like the big-DAE import). Runs the same
+    clean-up the DAE reference import does — coplanar fusion (merges the raw
+    SketchUp polygons and drops double-sided duplicates) and smooth-edge
+    softening — so a ``.skp`` opened through the pure backend looks identical
+    to one that came through the converter. Cheap relative to the parse; the
+    caller wraps it in a command for undo. Returns the backend name."""
     from core.group import Group
     from core.mesh import Mesh
+    from formats.dae import _add_fused
+    from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
 
     for gp in payload.get("groups", []):
         mesh = Mesh()
+        # Fusion works on plain loops; faces with holes (window rings) keep
+        # their explicit topology and are added directly.
+        raw = [(outer, attrs) for outer, holes, attrs in gp["faces"]
+               if not holes]
+        for item in fuse_coplanar_loops(raw):
+            _add_fused(mesh, [item])
         for outer, holes, attrs in gp["faces"]:
+            if not holes:
+                continue
             try:
-                face = mesh.add_face(outer, holes or None)
+                face = mesh.add_face(outer, holes)
             except Exception:  # noqa: BLE001 — skip a degenerate polygon
                 continue
             if attrs:
                 face.attrs.update(attrs)
+        soften_smooth_edges(mesh)
         if mesh.faces:
             scene.groups.append(Group(mesh, name=gp.get("name")))
     scene.version += 1
