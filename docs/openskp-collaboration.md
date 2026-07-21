@@ -55,8 +55,14 @@ Contribution targets, most valuable first:
    file. Layer B insurance: branch `expose-material-id` on
    `tuxiasumari/openskp`; IngeTrazo's adapter uses the join when present
    (guarded, so PyPI 0.2.0 still imports, just uncoloured).
-2. **Texture extraction** — `Material.texture` / image data (0 textures vs 2 in
-   the oracle).
+2. ✅ **Texture extraction** — **PR submitted**
+   ([openskp#4](https://github.com/iamahsanmehmood/openskp/pull/4), 2026-07-21):
+   `Material.texture` (`Texture` dataclass — filename, tile size in inches, raw
+   image bytes, `save()`), read from the material's ZIP folder with a sibling
+   fallback for name mismatches. Validated 2/2 textures on a real SU2022 file.
+   Integration branch `ingetrazo` on `tuxiasumari/openskp` merges #3 + #4 for
+   IngeTrazo's venv until they ship on PyPI. Measured after both: **18/18
+   materials, 2/2 textures — exact parity with the skp2dae oracle.**
 3. **The ~5–9% of skipped faces** — degenerate/unresolved loops on some files.
 4. **Legacy MFC (v8–v20)** version coverage, if not already handled.
 

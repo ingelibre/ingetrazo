@@ -73,13 +73,19 @@ SketchUp 2022):
   the oracle.
 - ✅ **Materials / colours** — resolved. `Face.material_id` joins through
   `SkpModel.materials_by_id`, added by **our upstream PR**
-  ([openskp#3](https://github.com/iamahsanmehmood/openskp/pull/3)); until it
-  ships on PyPI, install from the fork
-  (`pip install git+https://github.com/tuxiasumari/openskp@expose-material-id#subdirectory=packages/python`).
-  With PyPI 0.2.0 (no join) faces import uncoloured. Measured: 20 colour
-  materials vs the oracle's 18 colours + 2 textures — exact coverage, with the
-  2 textured materials arriving as solid colours for now.
-- ❌ **Textures** — not extracted by the parser yet (next upstream target).
+  ([openskp#3](https://github.com/iamahsanmehmood/openskp/pull/3)).
+- ✅ **Textures** — resolved. `Material.texture` (image bytes + tile size in
+  inches), added by **our upstream PR**
+  ([openskp#4](https://github.com/iamahsanmehmood/openskp/pull/4)). The adapter
+  writes the images to `<stem>/` beside the `.skp` (the SketchUp-export
+  convention skp2dae also uses) and maps them with IngeTrazo's planar
+  projection at the material's real tile size. Measured: **18/18 materials and
+  2/2 textures — exact parity with the oracle**; those rows no longer appear
+  in the diff.
+  Until the PRs ship on PyPI, install from the integration branch:
+  `pip install git+https://github.com/tuxiasumari/openskp@ingetrazo#subdirectory=packages/python`
+  (branch `ingetrazo` = upstream `main` + both PR branches merged). With PyPI
+  0.2.0 (no joins) faces import uncoloured.
 - ⚠️ **Grouping** — flattened to one group (skp2dae splits by node); cosmetic.
 - ⚠️ **~5–9% of faces skipped** — degenerate/unresolved loops; to investigate.
 

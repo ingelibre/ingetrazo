@@ -183,3 +183,31 @@ def test_openskp_adapter_resolves_face_colours_via_materials_by_id():
     without_join = NS(definitions={0: root})   # PyPI 0.2.0: no materials_by_id
     attrs = skp_openskp._adapt(without_join, "m")["groups"][0]["faces"][0][2]
     assert attrs is None
+
+
+def test_openskp_adapter_extracts_textures_next_to_the_skp(tmp_path):
+    # Material.texture (our upstream PR openskp#4) → attrs["texture"] with the
+    # image written to <stem>/ beside the .skp and the tile size in metres.
+    root = _fake_definition(
+        id=0, name="ROOT_MODEL",
+        verts={1: (0, 0, 0), 2: (10, 0, 0), 3: (10, 10, 0)},
+        edges={10: (1, 2), 11: (2, 3), 12: (3, 1)},
+        faces={20: [[(10, 1), (11, 1), (12, 1)]]},
+    )
+    root.faces[20].material_id = 5
+    tex = NS(filename="glass.jpg", width=24.0, height=12.0,
+             data=b"\xff\xd8fakejpeg")
+    mat = NS(name="Glass", color=(8, 201, 241), transparency=0.5,
+             id=5, texture=tex)
+    model = NS(definitions={0: root}, materials_by_id={5: mat})
+
+    skp = tmp_path / "casa.skp"
+    skp.write_bytes(b"")
+    attrs = skp_openskp._adapt(model, "casa", skp_path=skp)
+    attrs = attrs["groups"][0]["faces"][0][2]
+
+    img = tmp_path / "casa" / "glass.jpg"
+    assert img.read_bytes() == b"\xff\xd8fakejpeg"
+    assert attrs["texture"]["path"] == str(img)
+    assert attrs["texture"]["sw"] == pytest.approx(24 * 0.0254)   # 0.6096 m
+    assert attrs["texture"]["sh"] == pytest.approx(12 * 0.0254)
