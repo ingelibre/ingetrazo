@@ -36,6 +36,26 @@ parse. This is legitimate output comparison — **never** DLL decompilation or
 copying SDK headers/internals into the parser. It matches the "observed `.skp`
 files + their COLLADA exports" methodology the reverse-engineering already uses.
 
+## Findings — OpenSKP 0.2.0 wired into IngeTrazo (2026-07-21)
+
+OpenSKP is **wired and working** (`formats/skp_openskp.py`). Measured against
+the skp2dae/Trimble oracle on real files (`demuna.skp`, SketchUp 2022):
+
+- ✅ **Bounding box exact** — units (inches→m), Z-up and instance transforms all
+  correct.
+- ✅ **Geometry ~90–95% complete** — faces/vertices/triangles within ~5–9% of
+  the oracle.
+
+Contribution targets, most valuable first:
+
+1. **Expose `Material.id`** (or a face→material resolver). `Face.material_id` is
+   an id (e.g. 29491), but `Material` exposes only `color/name/transparency` —
+   no id to join on — so per-face colours can't be applied. Small, high-impact.
+2. **Texture extraction** — `Material.texture` / image data (0 textures vs 2 in
+   the oracle).
+3. **The ~5–9% of skipped faces** — degenerate/unresolved loops on some files.
+4. **Legacy MFC (v8–v20)** version coverage, if not already handled.
+
 The differential harness lives at **`scripts/skp_diff.py`**:
 `python scripts/skp_diff.py model.skp` converts with skp2dae (oracle) and diffs a
 structural fingerprint against the pure backend's parse (unavailable until a

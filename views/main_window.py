@@ -1396,22 +1396,36 @@ class MainWindow(QMainWindow):
         the session and for saved documents)."""
         from formats import skp as skp_format
         if skp_format.can_handle(skp):
+            # Heavy parse OUTSIDE the undo history: decide pure-vs-converter
+            # before touching the scene, so a failed/empty parse never leaves a
+            # half-applied edit. NeedsConverter → fall through to skp2dae.
             dlg, cb = self._import_progress(
                 tr("Importing {name}…", name=skp.name))
-            cmd = SnapshotImport(
-                lambda scene: skp_format.load_skp(scene, skp, progress=cb))
+            payload = None
             try:
-                self.viewport.history.execute(cmd)
+                payload = skp_format.parse_skp(skp, progress=cb)
+            except skp_format.NeedsConverter:
+                payload = None
             except Exception as exc:  # noqa: BLE001
                 dlg.close()
                 QMessageBox.critical(self, tr("Import SKP failed"), str(exc))
                 return False
-            self._prepare_import_display(cmd, cb)
-            dlg.close()
-            self.viewport.update()
-            self.statusBar().showMessage(
-                tr("Imported {name}", name=skp.name), 3000)
-            return True
+            if payload is not None:
+                cmd = SnapshotImport(
+                    lambda scene: skp_format.apply_payload(scene, payload))
+                try:
+                    self.viewport.history.execute(cmd)
+                except Exception as exc:  # noqa: BLE001
+                    dlg.close()
+                    QMessageBox.critical(self, tr("Import SKP failed"), str(exc))
+                    return False
+                self._prepare_import_display(cmd, cb)
+                dlg.close()
+                self.viewport.update()
+                self.statusBar().showMessage(
+                    tr("Imported {name}", name=skp.name), 3000)
+                return True
+            dlg.close()   # no pure backend could read it → converter below
 
         # ---- Fallback: the external skp2dae converter (Trimble DLL via Wine) --
         command = self._find_skp_converter()

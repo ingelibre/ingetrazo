@@ -1,71 +1,82 @@
 # SKP import backend seam
 
 IngeTrazo aims to open **any** `.skp` (old → recent). This document describes
-the single seam that decouples the app from *how* a `.skp` is read, so the
-parser can evolve independently.
+the single seam that decouples the app from *how* a `.skp` is read.
 
-## Why a seam
+## Backends
 
-There are two eras of the SketchUp format:
-
-- **Legacy MFC binary** — SketchUp v8–v20 (~2010–2020).
-- **VFF / ZIP container** — v2021+ (a ZIP whose entries start with `PK\x03\x04`).
-
-No single free parser covers the whole range yet. The Blender importer covers
-everything only because it uses Trimble's proprietary `SketchUpAPI.dll`. Our
-strategy is to migrate to a **pure-Python parser** (offline, Linux-native, no
-Wine, no proprietary DLL) while keeping the DLL path as a full-coverage
-fallback for versions the pure parser can't read yet.
+- **OpenSKP** (pure Python, MIT — https://github.com/iamahsanmehmood/openskp).
+  Offline, Linux-native, no Wine, no proprietary DLL. **Wired and working** (see
+  "What works / what's missing"). An **optional dependency**: `pip install
+  openskp` (pulls `trimesh`). Not in `requirements.txt` yet — the seam falls
+  back gracefully when it's absent.
+- **skp2dae** (Trimble's `SketchUpAPI.dll` via Wine). The full-coverage
+  fallback: a SEPARATE program (the DLL never enters GPL IngeTrazo). Its
+  install/dialog/subprocess flow stays in `views/main_window.py`.
 
 ## The seam — `formats/skp.py`
 
-A small registry of **backends**, tried in order. Each backend implements:
-
-- `available() -> bool` — is its parser importable/wired?
-- `supports(fmt) -> bool` — can it read this container format?
-- `load(scene, path, progress=None)` — parse into the `Scene`.
+**Parse then apply.** A backend *parses* a file into a plain **payload** (world-
+space face loops), touching no `Scene`. The heavy parse runs *outside* the undo
+history; `apply_payload` then adds the geometry cheaply inside a command — so a
+failed or empty parse never leaves a half-applied edit.
 
 Public API:
 
-- `detect_format(path) -> "vff" | "legacy" | "unknown"` — from the first bytes,
-  no parser required.
-- `can_handle(path) -> bool` — a pure backend can read it directly.
-- `load_skp(scene, path, progress=None) -> str` — loads with the first
-  supporting backend and returns its name, or raises `NeedsConverter`.
-- `NeedsConverter` — signal that no pure backend can read this file; the caller
-  runs the external skp2dae converter.
-- `backends_status() -> list[(name, available)]` — diagnostics.
+- `detect_format(path) -> "skp" | "unknown"` — from the first bytes. Real `.skp`
+  files (legacy MFC **and** 2021+) begin with the same UTF-16 `SketchUp Model`
+  marker (or a `PK` ZIP wrapper), so the *era* is **not** observable from the
+  magic bytes — and doesn't need to be, since OpenSKP handles the range.
+- `can_handle(path) -> bool` — a pure backend is available and recognises it
+  (does not guarantee a non-empty parse).
+- `parse_skp(path, progress=None) -> payload` — first backend that yields
+  geometry; raises `NeedsConverter` on an unrecognised file, a parser error, or
+  an empty parse.
+- `apply_payload(scene, payload) -> backend_name` — add the payload as reference
+  groups.
+- `load_skp(scene, path)` — `apply_payload(parse_skp(...))`, for the diff harness.
+- `NeedsConverter`, `backends_status()`.
+
+Backends implement `available()`, `supports(fmt)`, `parse(path, progress)`.
 
 ### Cascade in the UI
 
-`views/main_window.py::import_skp_path` checks `can_handle(skp)` first:
+`views/main_window.py::import_skp_path`:
 
-1. **Pure backend** → import through history (`SnapshotImport`), no Wine.
-2. Else → **skp2dae** converter (Trimble `SketchUpAPI.dll` via Wine, a separate
-   process — the DLL never enters GPL IngeTrazo). Its dialog/subprocess flow
-   stays in `main_window`, not in this module.
+1. If `can_handle(skp)` → `parse_skp` (outside history). Non-empty → apply
+   through `SnapshotImport`. Empty/`NeedsConverter` → step 2.
+2. **skp2dae** converter (Wine).
 
-Today no pure backend is wired, so every file cascades to the converter —
-behaviour identical to before the seam existed.
+## The OpenSKP adapter — `formats/skp_openskp.py`
 
-## Wiring OpenSKP (or a fork)
+Isolated so `import openskp` is lazy. OpenSKP 0.2.0 model (by introspection):
 
-Preferred pure backend: **OpenSKP** (https://github.com/iamahsanmehmood/openskp,
-MIT) or a maintained downstream fork. Because it is MIT, IngeTrazo's ability to
-ship it never depends on upstream merging our contributions — we vendor a
-pinned fork behind this seam and stay decoupled (see
-`docs/openskp-collaboration.md`).
+- `SkpFile.open(path).parse()` → `SkpModel(definitions, materials, layers,
+  version)`.
+- `Definition(id, name, vertices{id→Vertex(x,y,z)}, edges{id→Edge(v1_id,v2_id)},
+  faces{id→Face}, instances[Instance])`.
+- `Face(loops, normal, material_id)`; each loop is `[(edge_id, sense), …]`,
+  first = outer, rest = holes; `sense` 1 walks `v1→v2`.
+- `Instance(matrix[13], ref_idx→def id, children)` — 3×3 row-major + translation.
 
-To activate the backend:
+SketchUp is **inches, Z-up** (same up axis as IngeTrazo) → scale ×0.0254, no
+axis swap. The instance tree is flattened to world-space polygons (reference
+geometry, one group). Enable/disable via `_OpenSkpBackend` in `formats/skp.py`.
 
-1. Vendor the parser (git submodule / vendored copy / pinned PyPI dependency),
-   keeping its MIT license notice.
-2. Implement `_OpenSkpBackend.load()` — adapt an OpenSKP model to the `Scene`:
-   meshes → `Group`s (reference geometry), materials → `Face.attrs`
-   (`color` / `texture`), component instances → shared prototypes
-   (`Group.xform`). Mirror `formats/dae.py`'s reference-import path.
-3. Widen `_OpenSkpBackend.supports()` as version coverage grows
-   (`"vff"` today; add `"legacy"` when the MFC decoder lands).
-4. Flip `_OpenSkpBackend._WIRED = True`.
+## What works / what's missing (measured with `scripts/skp_diff.py`)
 
-Keep skp2dae as the fallback until the pure backend matches its coverage.
+Validated against the skp2dae/Trimble oracle on real files (e.g. `demuna.skp`,
+SketchUp 2022):
+
+- ✅ **Bounding box exact** — units, Z-up and instance transforms correct.
+- ✅ **Geometry ~90–95% complete** — faces/vertices/triangles within ~5–9% of
+  the oracle.
+- ❌ **Materials / colours** — `Face.material_id` is an id, but OpenSKP 0.2.0's
+  `Material` exposes no `id` to join on. **Blocked upstream** — a small,
+  high-value contribution: expose `Material.id`.
+- ❌ **Textures** — not extracted by the parser yet.
+- ⚠️ **Grouping** — flattened to one group (skp2dae splits by node); cosmetic.
+- ⚠️ **~5–9% of faces skipped** — degenerate/unresolved loops; to investigate.
+
+These gaps are the concrete contribution targets for OpenSKP (see
+`docs/openskp-collaboration.md`). Geometry — the hard part — already works.
