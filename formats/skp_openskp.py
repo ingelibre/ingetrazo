@@ -434,13 +434,36 @@ def _adapt(model, name: str, skp_path=None):
 
     # Image entities → their own groups; cutout images (real alpha) become
     # face-me billboards that turn toward the camera, opaque photos stay
-    # static panels — same rule as the DAE face-me import.
+    # static panels — same rule as the DAE face-me import. An image quad
+    # always shows the WHOLE picture once: per-vertex UV = the vertex's
+    # normalised position on the local quad, baked as an exact world→UV
+    # affine (the default planar projection would sample in world space,
+    # after the placement rotation/scale — wrong region entirely).
+    from core.texture import fit_uv_affine
     for child, placed, inh in image_uses:
+        raws = [(_ring_raw(child, f.loops[0]) if getattr(f, "loops", None)
+                 else None, f) for f in child.faces.values()]
+        pts = [p for raw, _f in raws if raw for p in raw]
+        if not pts:
+            continue
+        xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+        x0, x1 = min(xs), max(xs)
+        y0, y1 = min(ys), max(ys)
+        wspan = (x1 - x0) or 1.0
+        hspan = (y1 - y0) or 1.0
         faces = []
-        for face in child.faces.values():
-            entry = _face_entry(child, face, placed, attr_map, inh)
-            if entry is not None:
-                faces.append(entry)
+        for raw, face in raws:
+            if not raw or len(raw) < 3:
+                continue
+            outer = [placed.map(QVector3D(x * _INCH, y * _INCH, z * _INCH))
+                     for x, y, z in raw]
+            attrs = _face_attrs(face, attr_map, inh)
+            if attrs and "texture" in attrs:
+                uvs = [((x - x0) / wspan, (y - y0) / hspan) for x, y, _z in raw]
+                uvw = fit_uv_affine(outer, uvs)
+                if uvw is not None:
+                    attrs = {"texture": {**attrs["texture"], "uvw": uvw}}
+            faces.append((outer, [], attrs))
         if not faces:
             continue
         tex = next((a["texture"]["path"] for _o, _h, a in faces
