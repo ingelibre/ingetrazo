@@ -429,6 +429,29 @@ def test_openskp_adapter_default_mapping_is_local(tmp_path):
     assert uv_sets[0] == uv_sets[1]     # both copies sample identically
 
 
+def test_openskp_adapter_own_back_material_beats_instance_paint():
+    # SketchUp precedence: a face's OWN material (even on its back) wins over
+    # the enclosing instance's paint. The bullring case: group painted blue,
+    # faces carrying grey on their backs — must import grey, not blue.
+    child = _tri_def(5, "Toril")
+    child.faces[20].material_id = None
+    child.faces[20].back_material_id = 30      # grey, on the back
+    child.faces[20].normal = (0.0, 0.0, 1.0)
+    ins = NS(ref_idx=5, material_id=40,        # instance painted blue
+             matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[ins])
+    mats = {30: NS(name="Grey", color=(128, 128, 128), transparency=1,
+                   id=30, texture=None),
+            40: NS(name="Blue", color=(65, 105, 225), transparency=1,
+                   id=40, texture=None)}
+    model = NS(definitions={0: root, 5: child}, materials_by_id=mats)
+    payload = skp_openskp._adapt(model, "m")
+
+    attrs = payload["groups"][0]["faces"][0][2]
+    assert attrs == {"color": [128 / 255.0] * 3}      # grey, not blue
+
+
 def test_openskp_adapter_back_painted_face_flips_and_paints():
     # A face painted ONLY on its back (Face.back_material_id, upstream PR
     # openskp#11 — the garden-bed case) imports flipped with the back

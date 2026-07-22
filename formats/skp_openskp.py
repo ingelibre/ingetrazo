@@ -225,22 +225,26 @@ def _face_entry(defn, face, xform, attr_map, inherited=None):
     raw = _ring_raw(defn, loops[0])
     if not raw or len(raw) < 3:
         return None
-    attrs = _face_attrs(face, attr_map, inherited)
+    # Material precedence, matching SketchUp: the face's OWN material wins —
+    # front side first, then back side (flipping the face so the painted
+    # side fronts, what "Reverse Faces + paint" produces) — and only a face
+    # with no material of its own inherits the enclosing instance's paint.
+    # (An instance-painted group whose faces carry their own back materials —
+    # e.g. a bullring painted blue as a group but with grey/red faces —
+    # must show the faces' colours, not the blue.)
     uv_mat = getattr(face, "uv_transform", None)
     flipped = False
+    mid = getattr(face, "material_id", None)
+    attrs = attr_map.get(mid) if mid is not None else None
     if attrs is None:
-        # Front unpainted but back painted (Face.back_material_id, upstream
-        # PR openskp#11 — the author painted the visible side of a
-        # downward-facing cap): show the back material and flip the face so
-        # the painted side fronts, exactly what "Reverse Faces + paint"
-        # would produce. SketchUp renders these green from behind; without
-        # this they'd import colourless.
         battrs = attr_map.get(getattr(face, "back_material_id", None))
         if battrs is not None:
             attrs = battrs
             uv_mat = getattr(face, "uv_transform_back", None)
             raw = list(reversed(raw))
             flipped = True
+        elif inherited is not None:
+            attrs = attr_map.get(inherited)
     outer = [xform.map(QVector3D(x * _INCH, y * _INCH, z * _INCH))
              for x, y, z in raw]
     holes = []
