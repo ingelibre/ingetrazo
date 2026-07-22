@@ -121,16 +121,24 @@ def _material_attrs(model, skp_path):
             except OSError:
                 img = None
             if img is not None:
-                attrs[mid] = {"texture": {
+                entry = {"texture": {
                     "path": str(img),
                     "sw": (tex.width or 1.0 / _INCH) * _INCH,
                     "sh": (tex.height or 1.0 / _INCH) * _INCH,
                 }}
+                op = getattr(mat, "transparency", 1.0)
+                if op < 0.999:
+                    entry["opacity"] = float(op)
+                attrs[mid] = entry
                 continue
         color = getattr(mat, "color", None)
         if color is not None and len(color) >= 3:
-            attrs[mid] = {"color": [color[0] / 255.0, color[1] / 255.0,
-                                    color[2] / 255.0]}
+            entry = {"color": [color[0] / 255.0, color[1] / 255.0,
+                               color[2] / 255.0]}
+            op = getattr(mat, "transparency", 1.0)
+            if op < 0.999:
+                entry["opacity"] = float(op)
+            attrs[mid] = entry
     return attrs
 
 
@@ -278,7 +286,7 @@ def _face_entry(defn, face, xform, attr_map, inherited=None):
         if uvs is not None:
             uvw = fit_uv_affine(outer, uvs)
             if uvw is not None:
-                attrs = {"texture": {**attrs["texture"], "uvw": uvw}}
+                attrs = {**attrs, "texture": {**attrs["texture"], "uvw": uvw}}
     return (outer, holes, attrs)
 
 
@@ -337,7 +345,7 @@ def _image_quad_faces(child, placed, attr_map, inherited):
             uvs = [((x - x0) / wspan, (y - y0) / hspan) for x, y, _z in raw]
             uvw = fit_uv_affine(outer, uvs)
             if uvw is not None:
-                attrs = {"texture": {**attrs["texture"], "uvw": uvw}}
+                attrs = {**attrs, "texture": {**attrs["texture"], "uvw": uvw}}
         faces.append((outer, [], attrs))
     return faces
 

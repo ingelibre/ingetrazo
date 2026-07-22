@@ -526,3 +526,29 @@ def test_openskp_adapter_splits_prototypes_by_inherited_material(monkeypatch):
     assert counts == [1, 2]                 # 2 red copies share, 1 green alone
     colors = sorted(p["faces"][0][2]["color"] for p in payload["protos"])
     assert colors == [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]
+
+
+def test_openskp_adapter_translucent_material_carries_opacity(tmp_path):
+    # Material.transparency < 1 (useTrans, upstream PR openskp#12) becomes
+    # attrs["opacity"] — and survives the default-mapping uvw baking.
+    from PySide6.QtGui import QImage
+    png = tmp_path / "glass.png"
+    img = QImage(4, 4, QImage.Format_RGB888)
+    img.fill(0xFF6495ED)
+    img.save(str(png), "PNG")
+
+    root = _tri_def(0, "ROOT_MODEL")
+    root.faces[20].material_id = 9
+    root.faces[20].normal = (0.0, 0.0, 1.0)
+    tex = NS(filename="glass.png", width=48.0, height=48.0,
+             data=png.read_bytes())
+    mat = NS(name="Glass", color=(100, 149, 237), transparency=0.27, id=9,
+             texture=tex)
+    model = NS(definitions={0: root}, materials_by_id={9: mat})
+    skp = tmp_path / "m.skp"
+    skp.write_bytes(b"")
+    payload = skp_openskp._adapt(model, "m", skp_path=skp)
+
+    attrs = payload["groups"][0]["faces"][0][2]
+    assert attrs["opacity"] == 0.27
+    assert "uvw" in attrs["texture"]      # baking kept the opacity alongside

@@ -345,6 +345,8 @@ class Viewport(QOpenGLWidget):
         # Textured faces (pos+uv VBO) grouped by image path: [(path, start, count)].
         self._tex_faces_count = 0
         self._tex_runs: list = []
+        self._tcol_runs: list = []
+        self._ttex_runs: list = []
         self._tex_cache: dict = {}
         self._edges_version = -1
 
@@ -455,6 +457,7 @@ class Viewport(QOpenGLWidget):
         self._loc_tex = self._program.uniformLocation("u_tex")
         self._loc_vcolor = self._program.attributeLocation("a_color")
         self._loc_use_vcolor = self._program.uniformLocation("u_use_vcolor")
+        self._loc_opacity = self._program.uniformLocation("u_opacity")
 
         # Axes rebuilt per frame (dash spacing scales with zoom), so dynamic.
         self._axes_vao, self._axes_vbo = self._create_dynamic()
@@ -595,6 +598,7 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue(self._loc_use_tex, 0)
         self._program.setUniformValue(self._loc_tex, 0)  # sampler → unit 0
         self._program.setUniformValue(self._loc_use_vcolor, 0)
+        self._program.setUniformValue(self._loc_opacity, 1.0)
 
         # Sky / ground backdrop with a horizon anchored to the camera pitch —
         # premium SketchUp feel. Fixed on zoom (it's the point at infinity),
@@ -651,6 +655,38 @@ class Viewport(QOpenGLWidget):
             self._tex_faces_vao.release()
             self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
+        # Translucent material runs (SketchUp trans with useTrans): drawn
+        # after everything opaque, blended, depth-tested but not depth-
+        # written, so glass/mesh screens show what's behind them.
+        if self._tcol_runs or self._ttex_runs:
+            self._gl.glDepthMask(GL_FALSE)
+            self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+            self._gl.glPolygonOffset(1.0, 1.0)
+            if self._tcol_runs:
+                self._program.setUniformValue(self._loc_use_vcolor, 1)
+                self._faces_vao.bind()
+                for a, start, count in self._tcol_runs:
+                    self._program.setUniformValue(self._loc_opacity, float(a))
+                    self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                self._faces_vao.release()
+                self._program.setUniformValue(self._loc_use_vcolor, 0)
+            if self._ttex_runs:
+                self._program.setUniformValue(self._loc_use_tex, 1)
+                self._tex_faces_vao.bind()
+                for path, a, start, count in self._ttex_runs:
+                    tex = self._get_texture(path)
+                    if tex is None:
+                        continue
+                    self._program.setUniformValue(self._loc_opacity, float(a))
+                    tex.bind(0)
+                    self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                    tex.release(0)
+                self._tex_faces_vao.release()
+                self._program.setUniformValue(self._loc_use_tex, 0)
+            self._program.setUniformValue(self._loc_opacity, 1.0)
+            self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+            self._gl.glDepthMask(GL_TRUE)
 
         # Face-me billboards (SketchUp 2D people): per-frame textured cutout
         # quads turned toward the camera.
@@ -1347,11 +1383,22 @@ class Viewport(QOpenGLWidget):
         group_texture: dict = {}     # chunk byte-parts per image path
         face_parts: list = []        # interleaved vcol byte chunks
 
+        tcol_runs: dict = {}         # opacity -> [byte parts] (translucent colour)
+        ttex_runs: dict = {}         # (path, opacity) -> [byte parts]
+
         def bucket_face(face):
             if face in suppressed_faces:
                 return
             tex = face.attrs.get("texture")
+            op = float(face.attrs.get("opacity", 1.0))
             if tex is not None and tex.get("path"):
+                if op < 0.999:
+                    tmp: dict = {}
+                    self._append_textured_face(tmp, face, tex)
+                    for pth, arr in tmp.items():
+                        ttex_runs.setdefault((pth, round(op, 3)),
+                                             []).append(arr.tobytes())
+                    return
                 self._append_textured_face(by_texture, face, tex)
                 return
             col = face.attrs.get("color")
@@ -1361,12 +1408,17 @@ class Viewport(QOpenGLWidget):
             # it doesn't change as you orbit. The shaded colour rides per
             # vertex, so the whole pass is ONE draw call.
             r, g, b = self._shaded_color(base, face.normal())
+            buf = array("f")
             for t0, t1, t2 in face.triangulate():
-                vcol.extend([
+                buf.extend([
                     t0.x(), t0.y(), t0.z(), r, g, b,
                     t1.x(), t1.y(), t1.z(), r, g, b,
                     t2.x(), t2.y(), t2.z(), r, g, b,
                 ])
+            if op < 0.999:
+                tcol_runs.setdefault(round(op, 3), []).append(buf.tobytes())
+            else:
+                vcol.extend(buf)
 
         for face in self.scene.loose_mesh.faces:
             if self.scene.entity_visible(face):
@@ -1384,15 +1436,29 @@ class Viewport(QOpenGLWidget):
             face_parts.append(chunk["vcol"])
             for path, raw in chunk["by_texture"].items():
                 group_texture.setdefault(path, []).append(raw)
+            for a, raw in chunk.get("tcol", {}).items():
+                tcol_runs.setdefault(a, []).append(raw)
+            for key, raw in chunk.get("ttex", {}).items():
+                ttex_runs.setdefault(key, []).append(raw)
 
         face_raw = vcol.tobytes() + b"".join(face_parts)
+        self._faces_count = len(face_raw) // 24
+        # Translucent colour runs live in the SAME VBO, after the opaque
+        # batch; drawn in their own blended pass (depth-write off).
+        self._tcol_runs = []
+        start = self._faces_count
+        for a in sorted(tcol_runs):
+            raw = b"".join(tcol_runs[a])
+            face_raw += raw
+            count = len(raw) // 24
+            self._tcol_runs.append((a, start, count))
+            start += count
         self._faces_vbo.bind()
         if face_raw:
             self._faces_vbo.allocate(face_raw, len(face_raw))
         else:
             self._faces_vbo.allocate(48)
         self._faces_vbo.release()
-        self._faces_count = len(face_raw) // 24
 
         # Textured faces: one interleaved (pos+uv) VBO, a run per image path.
         tex_parts = []
@@ -1405,6 +1471,13 @@ class Viewport(QOpenGLWidget):
             tex_parts.append(raw)
             count = len(raw) // 20
             self._tex_runs.append((path, start, count))
+            start += count
+        self._ttex_runs = []
+        for (path, a) in sorted(ttex_runs):
+            raw = b"".join(ttex_runs[(path, a)])
+            tex_parts.append(raw)
+            count = len(raw) // 20
+            self._ttex_runs.append((path, a, start, count))
             start += count
         tex_raw = b"".join(tex_parts)
         self._tex_faces_vbo.bind()
@@ -2825,6 +2898,18 @@ class Viewport(QOpenGLWidget):
             a[:, :3] += dx
             tex[k] = a.astype(np.float32).tobytes()
         entry["by_texture"] = tex
+        tc = {}
+        for k, v in entry.get("tcol", {}).items():
+            a = np.frombuffer(v, dtype=np.float32).reshape(-1, 6).copy()
+            a[:, :3] += dx
+            tc[k] = a.astype(np.float32).tobytes()
+        entry["tcol"] = tc
+        tt = {}
+        for k, v in entry.get("ttex", {}).items():
+            a = np.frombuffer(v, dtype=np.float32).reshape(-1, 5).copy()
+            a[:, :3] += dx
+            tt[k] = a.astype(np.float32).tobytes()
+        entry["ttex"] = tt
         if entry["v0"] is not None:
             entry["v0"] = entry["v0"] + dx
         for kk in ("soft_c0", "soft_c1"):
@@ -2944,6 +3029,10 @@ class Viewport(QOpenGLWidget):
             "vcol": tp32(base["vcol"], 6),
             "by_texture": {p: tp32(raw, 5)
                            for p, raw in base["by_texture"].items()},
+            "tcol": {a: tp32(raw, 6)
+                     for a, raw in base.get("tcol", {}).items()},
+            "ttex": {k: tp32(raw, 5)
+                     for k, raw in base.get("ttex", {}).items()},
             "faces": base["faces"],
             "areas": base["areas"] * (abs(det) ** (2.0 / 3.0)),
             "v0": tp(base["v0"]) if base["v0"] is not None else None,
@@ -2977,6 +3066,10 @@ class Viewport(QOpenGLWidget):
         entry["vcol"] = shift(entry["vcol"], 6)
         entry["by_texture"] = {p: shift(raw, 5)
                                for p, raw in entry["by_texture"].items()}
+        entry["tcol"] = {a: shift(raw, 6)
+                         for a, raw in entry.get("tcol", {}).items()}
+        entry["ttex"] = {k: shift(raw, 5)
+                         for k, raw in entry.get("ttex", {}).items()}
         if entry["v0"] is not None:
             entry["v0"] = entry["v0"] + dx
         if entry["soft_pts"] is not None:
@@ -3063,6 +3156,8 @@ class Viewport(QOpenGLWidget):
         from core.triangulate import triangulate as _triangulate
         vcol = array("f")             # interleaved pos(3)+rgb(3) per vertex
         by_texture: dict = {}
+        tcol: dict = {}               # opacity -> interleaved pos+rgb (translucent)
+        by_ttexture: dict = {}        # opacity -> {path: pos+uv} (translucent)
         faces: list = []
         areas: list = []
         tris: list = []
@@ -3082,14 +3177,21 @@ class Viewport(QOpenGLWidget):
                 tri_list = _triangulate(f.vertices, f.holes, normal)
             fprops[id(f)] = normal
             tex = f.attrs.get("texture")
+            op = float(f.attrs.get("opacity", 1.0))
             if tex is not None and tex.get("path"):
-                self._append_textured_face(by_texture, f, tex)
+                if op < 0.999:
+                    self._append_textured_face(
+                        by_ttexture.setdefault(round(op, 3), {}), f, tex)
+                else:
+                    self._append_textured_face(by_texture, f, tex)
             else:
                 col = f.attrs.get("color")
                 base = tuple(col) if col is not None else self.DEFAULT_FACE_COLOR
                 r, g, b = self._shaded_color(base, normal)
+                dest = (tcol.setdefault(round(op, 3), array("f"))
+                        if op < 0.999 else vcol)
                 for t0, t1, t2 in tri_list:
-                    vcol.extend([t0.x(), t0.y(), t0.z(), r, g, b,
+                    dest.extend([t0.x(), t0.y(), t0.z(), r, g, b,
                                  t1.x(), t1.y(), t1.z(), r, g, b,
                                  t2.x(), t2.y(), t2.z(), r, g, b])
             for t0, t1, t2 in tri_list:
@@ -3153,6 +3255,10 @@ class Viewport(QOpenGLWidget):
                  "edges": edges_data.tobytes(),
                  "vcol": vcol.tobytes(),
                  "by_texture": {k: v.tobytes() for k, v in by_texture.items()},
+                 "tcol": {a: v.tobytes() for a, v in tcol.items()},
+                 "ttex": {(pth, a): v.tobytes()
+                          for a, d in by_ttexture.items()
+                          for pth, v in d.items()},
                  "faces": faces,
                  "areas": np.asarray(areas, dtype=np.float64),
                  "v0": v0, "e1": e1, "e2": e2, "tri_ent": tri_ent_a,
