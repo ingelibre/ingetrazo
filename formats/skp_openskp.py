@@ -250,8 +250,27 @@ def _face_entry(defn, face, xform, attr_map, inherited=None):
             if flipped:
                 h = list(reversed(h))
             holes.append([xform.map(p) for p in h])
-    if attrs and "texture" in attrs and uv_mat is not None:
-        uvs = _positioned_uvs(face, raw, attrs["texture"], matrix=uv_mat)
+    if attrs and "texture" in attrs:
+        if uv_mat is not None:
+            uvs = _positioned_uvs(face, raw, attrs["texture"], matrix=uv_mat)
+        else:
+            # SketchUp's DEFAULT mapping runs in the face's LOCAL frame:
+            # u = (p·xr)/tile, plane basis from the local normal (the recipe
+            # calibrated with the controlled textura.skp). Baking it per face
+            # keeps every slat of a component sampling the same patch — a
+            # world-space projection would give each slat (and each copy) a
+            # different slice of the tile.
+            tex = attrs["texture"]
+            tw = (tex.get("sw", 0.0) or 0.0) / _INCH
+            th = (tex.get("sh", 0.0) or 0.0) / _INCH
+            uvs = None
+            if tw > 0 and th > 0:
+                xr, yr = _plane_basis(face.normal or (0.0, 0.0, 1.0))
+                uvs = []
+                for x, y, z in raw:
+                    p = QVector3D(x, y, z)
+                    uvs.append((QVector3D.dotProduct(p, xr) / tw,
+                                QVector3D.dotProduct(p, yr) / th))
         if uvs is not None:
             uvw = fit_uv_affine(outer, uvs)
             if uvw is not None:

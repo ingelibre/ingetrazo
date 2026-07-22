@@ -389,6 +389,46 @@ def test_openskp_adapter_image_entities_become_billboards(tmp_path):
     assert bb["imagen#2"] is False
 
 
+def test_openskp_adapter_default_mapping_is_local(tmp_path):
+    # SketchUp's default texture mapping runs in the component's LOCAL frame:
+    # two copies of the same textured component must sample the same patch of
+    # the tile (identical UVs), regardless of where each copy sits in world.
+    from core.texture import affine_uv
+    from PySide6.QtGui import QImage
+
+    png = tmp_path / "wood.png"
+    img = QImage(4, 4, QImage.Format_RGB888)
+    img.fill(0xFF884422)
+    img.save(str(png), "PNG")
+
+    child = _tri_def(5, "Banca")
+    child.faces[20].material_id = 9
+    child.faces[20].normal = (0.0, 0.0, 1.0)
+    tex = NS(filename="wood.png", width=60.0, height=60.0,
+             data=png.read_bytes())
+    mat = NS(name="Wood", color=(1, 1, 1), transparency=1.0, id=9,
+             texture=tex)
+    i1 = NS(ref_idx=5, material_id=None,
+            matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
+    i2 = NS(ref_idx=5, material_id=None,
+            matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 500, 300, 0, 1])  # far away
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[i1, i2])
+    model = NS(definitions={0: root, 5: child}, materials_by_id={9: mat})
+    skp = tmp_path / "m.skp"
+    skp.write_bytes(b"")
+    payload = skp_openskp._adapt(model, "m", skp_path=skp)
+
+    uv_sets = []
+    for gp in payload["groups"]:
+        outer, holes, attrs = gp["faces"][0]
+        uvw = attrs["texture"]["uvw"]
+        uv_sets.append([(round(u, 5), round(v, 5))
+                        for u, v in affine_uv(uvw, outer)])
+    assert len(uv_sets) == 2
+    assert uv_sets[0] == uv_sets[1]     # both copies sample identically
+
+
 def test_openskp_adapter_back_painted_face_flips_and_paints():
     # A face painted ONLY on its back (Face.back_material_id, upstream PR
     # openskp#11 — the garden-bed case) imports flipped with the back
