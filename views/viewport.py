@@ -350,6 +350,9 @@ class Viewport(QOpenGLWidget):
         self._tex_runs: list = []
         self._back_vcol_run: tuple = (0, 0)
         self._back_tex_runs: list = []
+        self._back_tcol_runs: list = []
+        self._back_ttex_runs: list = []
+        self._fvcol_run: tuple = (0, 0)
         self._tcol_runs: list = []
         self._ttex_runs: list = []
         self._tex_cache: dict = {}
@@ -642,6 +645,14 @@ class Viewport(QOpenGLWidget):
             self._set_back_face_color()
             self._faces_vao.bind()
             self._gl.glDrawArrays(GL_TRIANGLES, 0, self._faces_count)
+            fstart, fcount = self._fvcol_run
+            if fcount:
+                # opaque front copies of glass-backed faces: visible only
+                # from the front (the translucent back pass owns the rear)
+                self._gl.glEnable(GL_CULL_FACE)
+                self._gl.glCullFace(GL_BACK)
+                self._gl.glDrawArrays(GL_TRIANGLES, fstart, fcount)
+                self._gl.glDisable(GL_CULL_FACE)
             self._faces_vao.release()
             self._program.setUniformValue(self._loc_use_vcolor, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
@@ -699,30 +710,63 @@ class Viewport(QOpenGLWidget):
         # Translucent material runs (SketchUp trans with useTrans): drawn
         # after everything opaque, blended, depth-tested but not depth-
         # written, so glass/mesh screens show what's behind them.
-        if self._tcol_runs or self._ttex_runs:
+        if (self._tcol_runs or self._ttex_runs
+                or self._back_tcol_runs or self._back_ttex_runs):
             self._gl.glDepthMask(GL_FALSE)
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
-            if self._tcol_runs:
+            if self._tcol_runs or self._back_tcol_runs:
                 self._program.setUniformValue(self._loc_use_vcolor, 1)
                 self._faces_vao.bind()
-                for a, start, count in self._tcol_runs:
+                for a, fc, start, count in self._tcol_runs:
                     self._program.setUniformValue1f(self._loc_opacity, float(a))
+                    if fc:
+                        # glass-backed front copy: front side only
+                        self._gl.glEnable(GL_CULL_FACE)
+                        self._gl.glCullFace(GL_BACK)
                     self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                    if fc:
+                        self._gl.glDisable(GL_CULL_FACE)
+                if self._back_tcol_runs:
+                    # translucent BACK overrides: back side only
+                    self._gl.glEnable(GL_CULL_FACE)
+                    self._gl.glCullFace(GL_FRONT)
+                    for a, start, count in self._back_tcol_runs:
+                        self._program.setUniformValue1f(self._loc_opacity, float(a))
+                        self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                    self._gl.glDisable(GL_CULL_FACE)
                 self._faces_vao.release()
                 self._program.setUniformValue(self._loc_use_vcolor, 0)
-            if self._ttex_runs:
+            if self._ttex_runs or self._back_ttex_runs:
                 self._program.setUniformValue(self._loc_use_tex, 1)
                 self._tex_faces_vao.bind()
-                for (path, shade), a, start, count in self._ttex_runs:
+                for (path, shade), a, fc, start, count in self._ttex_runs:
                     tex = self._get_texture(path)
                     if tex is None:
                         continue
                     self._program.setUniformValue1f(self._loc_opacity, float(a))
                     self._program.setUniformValue1f(self._loc_shade, float(shade))
+                    if fc:
+                        self._gl.glEnable(GL_CULL_FACE)
+                        self._gl.glCullFace(GL_BACK)
                     tex.bind(0)
                     self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                     tex.release(0)
+                    if fc:
+                        self._gl.glDisable(GL_CULL_FACE)
+                if self._back_ttex_runs:
+                    self._gl.glEnable(GL_CULL_FACE)
+                    self._gl.glCullFace(GL_FRONT)
+                    for (path, shade), a, start, count in self._back_ttex_runs:
+                        tex = self._get_texture(path)
+                        if tex is None:
+                            continue
+                        self._program.setUniformValue1f(self._loc_opacity, float(a))
+                        self._program.setUniformValue1f(self._loc_shade, float(shade))
+                        tex.bind(0)
+                        self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                        tex.release(0)
+                    self._gl.glDisable(GL_CULL_FACE)
                 self._tex_faces_vao.release()
                 self._program.setUniformValue1f(self._loc_shade, 1.0)
                 self._program.setUniformValue(self._loc_use_tex, 0)
@@ -1438,25 +1482,34 @@ class Viewport(QOpenGLWidget):
         ttex_runs: dict = {}         # (path, opacity) -> [byte parts]
         back_vcol_parts: list = []   # back-side colour override triangles
         back_tex_runs: dict = {}     # (path, shade) -> [byte parts] (back side)
+        back_tcol_runs: dict = {}    # opacity -> [parts] (translucent back)
+        back_ttex_runs: dict = {}    # ((path, shade), op) -> [parts]
+        fcull_vcol_parts: list = []  # front copies culled to the front side
 
         def bucket_back(face):
             # attrs["back"]: the face is painted DIFFERENTLY on its back side
             # (SketchUp two-sided paint). Emit an override copy that a culled
-            # pass shows only from behind.
+            # pass shows only from behind. Returns True when the back is
+            # TRANSLUCENT — then the front copy must not show from behind
+            # (it gets back-face culling), or the two sides would blend.
             back = face.attrs.get("back")
             if not isinstance(back, dict):
-                return
-            b_v, b_t = self._bucket_back_face(face, back)
-            if b_v is not None:
-                back_vcol_parts.append(b_v)
-            if b_t is not None:
-                key, raw = b_t
-                back_tex_runs.setdefault(key, []).append(raw)
+                return False
+            kind, payload = self._bucket_back_face(face, back)
+            if kind == "bvcol":
+                back_vcol_parts.append(payload)
+            elif kind == "btex":
+                back_tex_runs.setdefault(payload[0], []).append(payload[1])
+            elif kind == "btcol":
+                back_tcol_runs.setdefault(payload[0], []).append(payload[1])
+            elif kind == "bttex":
+                back_ttex_runs.setdefault(payload[0], []).append(payload[1])
+            return kind in ("btcol", "bttex")
 
         def bucket_face(face):
             if face in suppressed_faces:
                 return
-            bucket_back(face)
+            fcull = bucket_back(face)
             tex = face.attrs.get("texture")
             op = float(face.attrs.get("opacity", 1.0))
             if tex is not None and tex.get("path"):
@@ -1464,9 +1517,12 @@ class Viewport(QOpenGLWidget):
                     tmp: dict = {}
                     self._append_textured_face(tmp, face, tex)
                     for pth, arr in tmp.items():
-                        ttex_runs.setdefault((pth, round(op, 3)),
+                        ttex_runs.setdefault((pth, round(op, 3), fcull),
                                              []).append(arr.tobytes())
                     return
+                # (textured opaque fronts of glass-backed faces keep the
+                # plain double-sided path — the opaque back pass covers
+                # opaque backs, and this combination is vanishing rare)
                 self._append_textured_face(by_texture, face, tex)
                 return
             col = face.attrs.get("color")
@@ -1484,7 +1540,10 @@ class Viewport(QOpenGLWidget):
                     t2.x(), t2.y(), t2.z(), r, g, b,
                 ])
             if op < 0.999:
-                tcol_runs.setdefault(round(op, 3), []).append(buf.tobytes())
+                tcol_runs.setdefault((round(op, 3), fcull),
+                                     []).append(buf.tobytes())
+            elif fcull:
+                fcull_vcol_parts.append(buf.tobytes())
             else:
                 vcol.extend(buf)
 
@@ -1512,6 +1571,12 @@ class Viewport(QOpenGLWidget):
                 back_vcol_parts.append(chunk["back_vcol"])
             for key, raw in chunk.get("back_tex", {}).items():
                 back_tex_runs.setdefault(key, []).append(raw)
+            for key, raw in chunk.get("back_tcol", {}).items():
+                back_tcol_runs.setdefault(key, []).append(raw)
+            for key, raw in chunk.get("back_ttex", {}).items():
+                back_ttex_runs.setdefault(key, []).append(raw)
+            if chunk.get("fvcol"):
+                fcull_vcol_parts.append(chunk["fvcol"])
 
         face_raw = vcol.tobytes() + b"".join(face_parts)
         self._faces_count = len(face_raw) // 24
@@ -1519,15 +1584,28 @@ class Viewport(QOpenGLWidget):
         # batch; drawn in their own blended pass (depth-write off).
         self._tcol_runs = []
         start = self._faces_count
-        for a in sorted(tcol_runs):
-            raw = b"".join(tcol_runs[a])
+        for key in sorted(tcol_runs):
+            a, fc = key
+            raw = b"".join(tcol_runs[key])
             face_raw += raw
             count = len(raw) // 24
-            self._tcol_runs.append((a, start, count))
+            self._tcol_runs.append((a, fc, start, count))
             start += count
         back_vcol_raw = b"".join(back_vcol_parts)
         self._back_vcol_run = (start, len(back_vcol_raw) // 24)
         face_raw += back_vcol_raw
+        start += self._back_vcol_run[1]
+        fvcol_raw = b"".join(fcull_vcol_parts)
+        self._fvcol_run = (start, len(fvcol_raw) // 24)
+        face_raw += fvcol_raw
+        start += self._fvcol_run[1]
+        self._back_tcol_runs = []
+        for a in sorted(back_tcol_runs):
+            raw = b"".join(back_tcol_runs[a])
+            face_raw += raw
+            count = len(raw) // 24
+            self._back_tcol_runs.append((a, start, count))
+            start += count
         self._faces_vbo.bind()
         if face_raw:
             self._faces_vbo.allocate(face_raw, len(face_raw))
@@ -1548,11 +1626,12 @@ class Viewport(QOpenGLWidget):
             self._tex_runs.append((key, start, count))
             start += count
         self._ttex_runs = []
-        for (key, a) in sorted(ttex_runs):
-            raw = b"".join(ttex_runs[(key, a)])
+        for full in sorted(ttex_runs):
+            key, a, fc = full
+            raw = b"".join(ttex_runs[full])
             tex_parts.append(raw)
             count = len(raw) // 20
-            self._ttex_runs.append((key, a, start, count))
+            self._ttex_runs.append((key, a, fc, start, count))
             start += count
         self._back_tex_runs = []
         for key in sorted(back_tex_runs):
@@ -1560,6 +1639,14 @@ class Viewport(QOpenGLWidget):
             tex_parts.append(raw)
             count = len(raw) // 20
             self._back_tex_runs.append((key, start, count))
+            start += count
+        self._back_ttex_runs = []
+        for full in sorted(back_ttex_runs):
+            key, a = full
+            raw = b"".join(back_ttex_runs[full])
+            tex_parts.append(raw)
+            count = len(raw) // 20
+            self._back_ttex_runs.append((key, a, start, count))
             start += count
         tex_raw = b"".join(tex_parts)
         self._tex_faces_vbo.bind()
@@ -1577,15 +1664,20 @@ class Viewport(QOpenGLWidget):
 
     def _bucket_back_face(self, face, back):
         """Build the back-side override copy of a two-side-painted face.
-        Returns ``(vcol_bytes | None, ((path, shade), raw) | None)`` — a
-        colour override as interleaved pos+rgb bytes, or a textured override
-        keyed like the normal texture runs. Drawn by the culled back pass."""
+        Returns ``(kind, payload)`` — ``("bvcol", bytes)`` /
+        ``("btex", (key, bytes))`` for opaque overrides (culled opaque back
+        pass), or ``("btcol", (op, bytes))`` / ``("bttex", ((key, op),
+        bytes))`` for translucent ones (culled blended pass). ``(None,
+        None)`` when the back carries nothing drawable."""
+        op = float(back.get("opacity", 1.0))
         tex = back.get("texture")
         if tex is not None and tex.get("path"):
             tmp: dict = {}
             self._append_textured_face(tmp, face, tex)
             for key, arr in tmp.items():
-                return None, (key, arr.tobytes())
+                if op < 0.999:
+                    return "bttex", ((key, round(op, 3)), arr.tobytes())
+                return "btex", (key, arr.tobytes())
             return None, None
         col = back.get("color")
         if col is None:
@@ -1598,7 +1690,9 @@ class Viewport(QOpenGLWidget):
                 t1.x(), t1.y(), t1.z(), r, g, b,
                 t2.x(), t2.y(), t2.z(), r, g, b,
             ])
-        return buf.tobytes(), None
+        if op < 0.999:
+            return "btcol", (round(op, 3), buf.tobytes())
+        return "bvcol", buf.tobytes()
 
     def _append_textured_face(self, by_texture: dict, face, tex: dict) -> None:
         """Triangulate ``face`` into ``by_texture[(path, shade)]`` as
@@ -3031,6 +3125,22 @@ class Viewport(QOpenGLWidget):
             a[:, :3] += dx
             bt[k] = a.astype(np.float32).tobytes()
         entry["back_tex"] = bt
+        btt = {}
+        for k, v in entry.get("back_ttex", {}).items():
+            a = np.frombuffer(v, dtype=np.float32).reshape(-1, 5).copy()
+            a[:, :3] += dx
+            btt[k] = a.astype(np.float32).tobytes()
+        entry["back_ttex"] = btt
+        btc = {}
+        for k, v in entry.get("back_tcol", {}).items():
+            a = np.frombuffer(v, dtype=np.float32).reshape(-1, 6).copy()
+            a[:, :3] += dx
+            btc[k] = a.astype(np.float32).tobytes()
+        entry["back_tcol"] = btc
+        if entry.get("fvcol"):
+            a = np.frombuffer(entry["fvcol"], dtype=np.float32).reshape(-1, 6).copy()
+            a[:, :3] += dx
+            entry["fvcol"] = a.astype(np.float32).tobytes()
         if entry["v0"] is not None:
             entry["v0"] = entry["v0"] + dx
         for kk in ("soft_c0", "soft_c1"):
@@ -3157,6 +3267,11 @@ class Viewport(QOpenGLWidget):
             "back_vcol": tp32(base.get("back_vcol", b""), 6),
             "back_tex": {k: tp32(raw, 5)
                          for k, raw in base.get("back_tex", {}).items()},
+            "back_tcol": {k: tp32(raw, 6)
+                          for k, raw in base.get("back_tcol", {}).items()},
+            "back_ttex": {k: tp32(raw, 5)
+                          for k, raw in base.get("back_ttex", {}).items()},
+            "fvcol": tp32(base.get("fvcol", b""), 6),
             "faces": base["faces"],
             "areas": base["areas"] * (abs(det) ** (2.0 / 3.0)),
             "v0": tp(base["v0"]) if base["v0"] is not None else None,
@@ -3198,6 +3313,12 @@ class Viewport(QOpenGLWidget):
             entry["back_vcol"] = shift(entry["back_vcol"], 6)
         entry["back_tex"] = {k: shift(raw, 5)
                              for k, raw in entry.get("back_tex", {}).items()}
+        entry["back_tcol"] = {k: shift(raw, 6)
+                              for k, raw in entry.get("back_tcol", {}).items()}
+        entry["back_ttex"] = {k: shift(raw, 5)
+                              for k, raw in entry.get("back_ttex", {}).items()}
+        if entry.get("fvcol"):
+            entry["fvcol"] = shift(entry["fvcol"], 6)
         if entry["v0"] is not None:
             entry["v0"] = entry["v0"] + dx
         if entry["soft_pts"] is not None:
@@ -3285,9 +3406,12 @@ class Viewport(QOpenGLWidget):
         vcol = array("f")             # interleaved pos(3)+rgb(3) per vertex
         by_texture: dict = {}
         tcol: dict = {}               # opacity -> interleaved pos+rgb (translucent)
-        by_ttexture: dict = {}        # opacity -> {path: pos+uv} (translucent)
+        by_ttexture: dict = {}        # (op, fcull) -> {path: pos+uv}
         back_vcol_parts: list = []    # back-side colour overrides
         back_tex: dict = {}           # (path, shade) -> [byte parts]
+        back_tcol: dict = {}          # opacity -> [parts] (translucent back)
+        back_ttex: dict = {}          # ((path, shade), op) -> [parts]
+        fcull_vcol_parts: list = []   # front copies culled to the front side
         faces: list = []
         areas: list = []
         tris: list = []
@@ -3307,26 +3431,46 @@ class Viewport(QOpenGLWidget):
                 tri_list = _triangulate(f.vertices, f.holes, normal)
             fprops[id(f)] = normal
             back = f.attrs.get("back")
+            fcull = 0
             if isinstance(back, dict):
-                b_v, b_t = self._bucket_back_face(f, back)
-                if b_v is not None:
-                    back_vcol_parts.append(b_v)
-                if b_t is not None:
-                    back_tex.setdefault(b_t[0], []).append(b_t[1])
+                kind, payload = self._bucket_back_face(f, back)
+                if kind == "bvcol":
+                    back_vcol_parts.append(payload)
+                elif kind == "btex":
+                    back_tex.setdefault(payload[0], []).append(payload[1])
+                elif kind == "btcol":
+                    back_tcol.setdefault(payload[0], []).append(payload[1])
+                elif kind == "bttex":
+                    back_ttex.setdefault(payload[0], []).append(payload[1])
+                if kind in ("btcol", "bttex"):
+                    fcull = 1
             tex = f.attrs.get("texture")
             op = float(f.attrs.get("opacity", 1.0))
             if tex is not None and tex.get("path"):
                 if op < 0.999:
                     self._append_textured_face(
-                        by_ttexture.setdefault(round(op, 3), {}), f, tex)
+                        by_ttexture.setdefault((round(op, 3), fcull), {}),
+                        f, tex)
                 else:
                     self._append_textured_face(by_texture, f, tex)
             else:
                 col = f.attrs.get("color")
                 base = tuple(col) if col is not None else self.DEFAULT_FACE_COLOR
                 r, g, b = self._shaded_color(base, normal)
-                dest = (tcol.setdefault(round(op, 3), array("f"))
-                        if op < 0.999 else vcol)
+                if op < 0.999:
+                    dest = tcol.setdefault((round(op, 3), fcull), array("f"))
+                elif fcull:
+                    dest = None
+                else:
+                    dest = vcol
+                if dest is None:
+                    buf = array("f")
+                    for t0, t1, t2 in tri_list:
+                        buf.extend([t0.x(), t0.y(), t0.z(), r, g, b,
+                                    t1.x(), t1.y(), t1.z(), r, g, b,
+                                    t2.x(), t2.y(), t2.z(), r, g, b])
+                    fcull_vcol_parts.append(buf.tobytes())
+                    dest = array("f")   # discarded sink for the shared loop
                 for t0, t1, t2 in tri_list:
                     dest.extend([t0.x(), t0.y(), t0.z(), r, g, b,
                                  t1.x(), t1.y(), t1.z(), r, g, b,
@@ -3393,11 +3537,14 @@ class Viewport(QOpenGLWidget):
                  "vcol": vcol.tobytes(),
                  "by_texture": {k: v.tobytes() for k, v in by_texture.items()},
                  "tcol": {a: v.tobytes() for a, v in tcol.items()},
-                 "ttex": {(pth, a): v.tobytes()
-                          for a, d in by_ttexture.items()
+                 "ttex": {(pth, a, fc): v.tobytes()
+                          for (a, fc), d in by_ttexture.items()
                           for pth, v in d.items()},
                  "back_vcol": b"".join(back_vcol_parts),
                  "back_tex": {k: b"".join(v) for k, v in back_tex.items()},
+                 "back_tcol": {k: b"".join(v) for k, v in back_tcol.items()},
+                 "back_ttex": {k: b"".join(v) for k, v in back_ttex.items()},
+                 "fvcol": b"".join(fcull_vcol_parts),
                  "faces": faces,
                  "areas": np.asarray(areas, dtype=np.float64),
                  "v0": v0, "e1": e1, "e2": e2, "tri_ent": tri_ent_a,
