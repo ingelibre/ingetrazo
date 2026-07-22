@@ -25,8 +25,13 @@ void main() {
         // genuinely inverted face).
         // u_use_vcolor: the batched face pass carries its per-face shaded
         // colour as a vertex attribute — ONE draw call for the whole model
-        // instead of one per colour run.
+        // instead of one per colour run. That pass draws imported REFERENCE
+        // groups, whose faces show their own colour on both sides (SketchUp
+        // paints each side; thin ironwork would otherwise flash the back
+        // tint). The back tint stays on the user's own drawing (u_color
+        // path), where it is honest "you are looking at the inside" feedback.
         vec4 front = (u_use_vcolor == 1) ? vec4(v_color, 1.0) : u_color;
-        fragColor = gl_FrontFacing ? front : u_back_color;
+        fragColor = (gl_FrontFacing || u_use_vcolor == 1) ? front
+                                                          : u_back_color;
     }
 }
