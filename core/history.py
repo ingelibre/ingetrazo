@@ -483,6 +483,33 @@ def _dirty_group_chunks(scene) -> None:
         g.mesh._chunk_dirty = True
 
 
+class FlipFacesCommand(Command):
+    """Reverse the winding of a set of faces — SketchUp's "Reverse Faces".
+
+    Reversing the loops flips the geometric normal while keeping the *same*
+    ``Face`` objects and their shared edges/incidence (identity preserved, so
+    selection and snapshots stay valid). The operation is an involution:
+    undo simply flips again. Faces may live in the loose mesh or inside a
+    group's mesh — the flip is per-object, so both work."""
+
+    def __init__(self, faces) -> None:
+        self._faces = [f for f in faces if hasattr(f, "loop")]
+
+    def _flip(self, scene) -> None:
+        for f in self._faces:
+            f.loop.reverse()
+            for h in getattr(f, "hole_loops", []) or []:
+                h.reverse()
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._flip(scene)
+
+    def undo(self, scene) -> None:
+        self._flip(scene)
+
+
 class SetFaceColorCommand(Command):
     """Paint a set of faces with an RGB colour (or clear it with ``None``),
     stored in each face's ``attrs["color"]`` — the first user-facing use of the

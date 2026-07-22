@@ -163,3 +163,24 @@ def test_attrs_survive_snapshot_roundtrip():
     top.attrs = {"color": "blue"}
     scene.mesh.restore_state(snap)
     assert top.attrs == RED
+
+
+def test_flip_faces_command_reverses_winding_and_undoes():
+    # SketchUp's Reverse Faces: flips the normal, undo flips back, identity
+    # of the Face object is preserved throughout.
+    from core.history import FlipFacesCommand, History
+    from core.scene import Scene
+    from PySide6.QtGui import QVector3D
+
+    scene = Scene()
+    hist = History(scene)
+    face = scene.mesh.add_face([QVector3D(0, 0, 0), QVector3D(1, 0, 0),
+                                QVector3D(1, 1, 0)])
+    assert face.normal().z() > 0
+    hist.execute(FlipFacesCommand([face]))
+    assert face.normal().z() < 0          # flipped
+    assert face in scene.mesh.faces       # same object, still in the mesh
+    hist.undo()
+    assert face.normal().z() > 0          # back
+    hist.redo()
+    assert face.normal().z() < 0

@@ -366,6 +366,10 @@ class MainWindow(QMainWindow):
 
         edit_menu.addSeparator()
 
+        reverse_action = QAction(tr("Reverse Faces"), self)
+        reverse_action.triggered.connect(self._on_reverse_faces)
+        edit_menu.addAction(reverse_action)
+
         heal_action = QAction(tr("Heal Overlapping Faces"), self)
         heal_action.triggered.connect(self._on_heal_overlaps)
         edit_menu.addAction(heal_action)
@@ -817,6 +821,22 @@ class MainWindow(QMainWindow):
         redo.setEnabled(bool(self.viewport.history.redo_stack))
 
         menu.exec(global_pos)
+
+    def _on_reverse_faces(self) -> None:
+        """SketchUp's Reverse Faces: flip the winding (and thus the front/back
+        sides) of the selected faces."""
+        from core.history import FlipFacesCommand
+        from core.mesh import Face as MeshFace
+        faces = [e for e in self.viewport.scene.selection
+                 if isinstance(e, MeshFace)]
+        if not faces:
+            self.statusBar().showMessage(
+                tr("Select one or more faces first."), 3000)
+            return
+        self.viewport.history.execute(FlipFacesCommand(faces))
+        self.viewport.update()
+        self.statusBar().showMessage(
+            tr("Reversed {n} face(s).", n=len(faces)), 3000)
 
     def _on_heal_overlaps(self) -> None:
         cmd = HealOverlapsCommand()
