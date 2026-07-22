@@ -598,7 +598,7 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue(self._loc_use_tex, 0)
         self._program.setUniformValue(self._loc_tex, 0)  # sampler → unit 0
         self._program.setUniformValue(self._loc_use_vcolor, 0)
-        self._program.setUniformValue(self._loc_opacity, 1.0)
+        self._program.setUniformValue1f(self._loc_opacity, 1.0)
 
         # Sky / ground backdrop with a horizon anchored to the camera pitch —
         # premium SketchUp feel. Fixed on zoom (it's the point at infinity),
@@ -667,7 +667,7 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue(self._loc_use_vcolor, 1)
                 self._faces_vao.bind()
                 for a, start, count in self._tcol_runs:
-                    self._program.setUniformValue(self._loc_opacity, float(a))
+                    self._program.setUniformValue1f(self._loc_opacity, float(a))
                     self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                 self._faces_vao.release()
                 self._program.setUniformValue(self._loc_use_vcolor, 0)
@@ -678,13 +678,13 @@ class Viewport(QOpenGLWidget):
                     tex = self._get_texture(path)
                     if tex is None:
                         continue
-                    self._program.setUniformValue(self._loc_opacity, float(a))
+                    self._program.setUniformValue1f(self._loc_opacity, float(a))
                     tex.bind(0)
                     self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                     tex.release(0)
                 self._tex_faces_vao.release()
                 self._program.setUniformValue(self._loc_use_tex, 0)
-            self._program.setUniformValue(self._loc_opacity, 1.0)
+            self._program.setUniformValue1f(self._loc_opacity, 1.0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
             self._gl.glDepthMask(GL_TRUE)
 
