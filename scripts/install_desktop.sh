@@ -58,7 +58,7 @@ done
 
 # ── Document icons for .igz / .dae / .skp ───────────────────────────────────
 # Copy the hicolor mimetype PNGs and register the MIME package so the file
-# manager paints the branded icon on those files. Does not steal the opener.
+# manager paints the branded icon on those files.
 HICOLOR_SRC="$ROOT/resources/icons/hicolor"
 if [ -d "$HICOLOR_SRC" ] && [ -f "$ROOT/resources/mime/ingetrazo.xml" ]; then
   cp -r "$HICOLOR_SRC/." "$ICONS_HICOLOR/"
@@ -68,5 +68,14 @@ fi
 
 refresh_caches
 
+# ── Default opener: double-click opens IngeTrazo ────────────────────────────
+# .igz is our own format; .skp now opens natively (openskp backend), so both
+# get IngeTrazo as the default handler. .dae stays "Open with" only — we do
+# not steal it from Blender & friends.
+if command -v xdg-mime >/dev/null; then
+  xdg-mime default ingetrazo.desktop application/x-ingetrazo 2>/dev/null || true
+  xdg-mime default ingetrazo.desktop application/vnd.sketchup.skp 2>/dev/null || true
+fi
+
 echo "IngeTrazo instalado en el lanzador. Buscalo como 'IngeTrazo'."
-echo "Los archivos .igz / .dae / .skp ahora muestran su icono en el explorador."
+echo "Doble clic en .igz y .skp abre IngeTrazo; .dae queda en 'Abrir con'."

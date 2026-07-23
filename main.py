@@ -80,10 +80,18 @@ def main() -> int:
     window = MainWindow()
     # A document passed on the command line (the OS file association's
     # double-click on Windows/Linux hands it as argv[1]) opens right away.
+    # .igz opens as the document; a double-clicked .skp imports through the
+    # native openskp backend AFTER the first paint (big models parse for
+    # seconds — the window must be visible, not frozen pre-show).
     if len(sys.argv) > 1:
         doc = Path(sys.argv[1])
-        if doc.suffix.lower() == ".igz" and doc.exists():
-            window.open_path(doc)
+        if doc.exists():
+            ext = doc.suffix.lower()
+            if ext == ".igz":
+                window.open_path(doc)
+            elif ext == ".skp":
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: window.import_skp_path(doc))
     window.show()
     return app.exec()
 

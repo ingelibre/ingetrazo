@@ -63,6 +63,8 @@ SetupIconFile=..\resources\icons\ingetrazo.ico
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
+Name: "skpdefault"; Description: "Abrir archivos .skp con IngeTrazo (doble clic)"; \
+    GroupDescription: "Asociaciones de archivos:"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
     GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
@@ -122,6 +124,12 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp\shell\open\command"; \
 Root: HKA; Subkey: "Software\Classes\.skp\OpenWithProgids"; \
     ValueType: string; ValueName: "IngeTrazo.skp"; ValueData: ""; \
     Flags: uninsdeletevalue
+; Optional task: make IngeTrazo the DEFAULT opener for .skp (double-click).
+; Checked by default — .skp now opens natively (openskp backend). Users who
+; keep SketchUp desktop installed can untick it; uninstall removes the value
+; and Windows falls back to the previous handler.
+Root: HKA; Subkey: "Software\Classes\.skp"; ValueType: string; \
+    ValueData: "IngeTrazo.skp"; Tasks: skpdefault; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; \

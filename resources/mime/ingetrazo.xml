@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  MIME types for the file formats IngeTrazo works with, so the file manager
-  shows a branded document icon on them (cosmetic — it does NOT change which
-  program opens the files; the default opener stays whatever the user set).
+  MIME types for the file formats IngeTrazo works with: the file manager
+  shows a branded document icon on them, and install_desktop.sh sets
+  IngeTrazo as the DEFAULT opener for .igz and .skp (double-click opens the
+  app; .skp imports natively through the openskp backend). .dae keeps its
+  existing opener — we only appear in "Open with".
 
     .igz → application/x-ingetrazo         (IngeTrazo's own document)
     .dae → model/vnd.collada+xml           (COLLADA — standard type; we only
