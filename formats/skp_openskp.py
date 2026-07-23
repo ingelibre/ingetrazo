@@ -434,8 +434,12 @@ def _face_entry(defn, face, xform, attr_map, inherited=None):
         return entry
 
     front_src = attrs
+    # projected = the format's per-side flag (legacy path) OR the geometric
+    # detection pre-pass (_mark_projected_faces, needed on the VFF path where
+    # the flag is absent).
     uv_proj = (getattr(face, "uv_projected_back", False) if flipped
-               else getattr(face, "uv_projected", False))
+               else getattr(face, "uv_projected", False)) \
+        or getattr(face, "_projected", False)
     attrs = _bake_uvs(attrs, uv_mat, uv_proj)
     # A face painted DIFFERENTLY on each side (SketchUp: front green wall,
     # back roof tiles — possibly via instance inheritance on the unpainted
@@ -625,6 +629,63 @@ def _census(defn, by_id, uses, depth, stack) -> None:
         _census(child, by_id, uses, depth + 1, stack)
 
 
+def _mark_projected_faces(defn, attr_map) -> None:
+    """Detect PROJECTED textures (SketchUp's Add Location terrain drape) and
+    set ``face._projected`` on them.
+
+    A projected texture shares one mapping matrix across many faces of a
+    curved/tilted surface — an aerial photo cast straight down, sampled in
+    plan. The FTC record itself carries no reliable projected flag on the
+    VFF (2021+) path, so this uses the definitive geometric test: group
+    textured faces by (material, matrix); if the face-LOCAL projection makes
+    the shared-vertex UVs badly discontinuous while the PLAN-XY projection
+    keeps them continuous, the group is a plan-projected drape. The test is
+    conservative — a face is only marked projected when plan-XY actually
+    resolves the seams, so it can never worsen a mapping it doesn't
+    understand (non-plan projection axes stay on the face-local path)."""
+    from collections import defaultdict
+
+    groups: dict = defaultdict(list)
+    for f in getattr(defn, "faces", {}).values():
+        mid = getattr(f, "material_id", None)
+        uvm = getattr(f, "uv_transform", None)
+        if mid is None or not uvm:
+            continue
+        tex = attr_map.get(mid)
+        if not tex or "texture" not in tex:
+            continue
+        groups[(mid, tuple(round(x, 1) for x in uvm))].append(f)
+
+    for (mid, _key), faces in groups.items():
+        if len(faces) < 8:                     # too few to judge a drape
+            continue
+        tex = attr_map[mid]["texture"]
+        sample = faces[:80]
+
+        def _disc(projected):
+            uv_at: dict = defaultdict(set)
+            for f in sample:
+                raw = _ring_raw(f_defn := defn, f.loops[0])
+                uvs = _positioned_uvs(f, raw, tex, matrix=f.uv_transform,
+                                      projected=projected)
+                if uvs is None:
+                    return None
+                for p, uv in zip(raw, uvs):
+                    uv_at[tuple(round(c, 1) for c in p)].add(
+                        (round(uv[0], 2), round(uv[1], 2)))
+            if not uv_at:
+                return None
+            bad = sum(1 for v in uv_at.values() if len(v) > 1)
+            return bad / len(uv_at)
+
+        local = _disc(False)
+        plan = _disc(True)
+        if local is not None and plan is not None \
+                and local > 0.3 and plan < 0.1:
+            for f in faces:
+                f._projected = True
+
+
 def _adapt(model, name: str, skp_path=None):
     """An ``SkpModel`` → a payload ``{"backend", "groups", "protos"}`` or
     ``None`` when it yields no geometry (so the seam can fall back to skp2dae).
@@ -646,6 +707,8 @@ def _adapt(model, name: str, skp_path=None):
 
     defs = getattr(model, "definitions", {}) or {}
     attr_map = _material_attrs(model, skp_path or name)
+    for d in defs.values():
+        _mark_projected_faces(d, attr_map)
     by_id = {}
     root = None
     for d in defs.values():
