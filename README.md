@@ -44,6 +44,11 @@ can draw, extrude, edit, paint, dimension, and export a model today. Backed by
   (planar projection with real-world tile size), applied with a Paint tool.
 - **Dimensions** — static annotations with hidden-line occlusion and styles.
 - **Side tray** — Materials, Dimension style, Entity info panels.
+- **SketchUp import** — open `.skp` files natively (double-click too), every
+  era from classic 2013–2020 to current 2021+, with materials, textures,
+  per-side face materials and translucency. Pure Python, offline, no Wine or
+  proprietary DLL — powered by [OpenSKP](https://github.com/iamahsanmehmood/openskp)
+  (see [Acknowledgements](#acknowledgements)).
 - **Files** — native `.igz` save/open, **import OBJ**, **export STL and OBJ**
   (STL for slicers; OBJ with per-material colors).
 - **Undo/redo** — every edit is a single atomic step.
@@ -96,6 +101,16 @@ Contributors from anywhere are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
 and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). All code, comments and commit
 messages are in **English**; the UI is bilingual (Spanish / English).
 
+## Acknowledgements
+
+- **[OpenSKP](https://github.com/iamahsanmehmood/openskp)** (MIT) by Ahsan
+  Mehmood — the clean-room, pure-Python SketchUp `.skp` reader that powers
+  IngeTrazo's native import. It replaced our Wine/DLL converter path entirely.
+  IngeTrazo contributes back upstream: material and texture fidelity, per-face
+  UV mapping, image entities, style colors, back-side materials, edge display
+  flags, and a full reader for the classic pre-2021 MFC container format. If
+  you need to read `.skp` files from Python, use OpenSKP — and give it a star.
+
 ## License
 
 [GPL-3.0-or-later](LICENSE) — the same copyleft family as Blender, FreeCAD and
@@ -121,7 +136,10 @@ loop **modelar → taggear → metrar → presupuestar** junto a
 **Ya funciona de punta a punta:** dibujás (línea, rectángulo, círculo, arco,
 polígono), extruís con push/pull hermético grado-BIM, hacés muros con espesor
 (offset), movés, agrupás, pintás con colores y texturas, acotás, y exportás a
-STL/OBJ. En desarrollo temprano, respaldado por ~570 tests. Software libre
-GPL-3.0, hecho en Perú. Más en [docs/](docs/).
+STL/OBJ. **Abre archivos `.skp` de SketchUp de forma nativa** (con doble clic),
+de cualquier época (clásico 2013–2020 y actual 2021+), gracias a
+[OpenSKP](https://github.com/iamahsanmehmood/openskp) — sin Wine ni DLLs. En
+desarrollo temprano, respaldado por ~870 tests. Software libre GPL-3.0, hecho
+en Perú. Más en [docs/](docs/).
 
 *Trazá. Metrá. Presupuestá.*
