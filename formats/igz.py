@@ -126,6 +126,9 @@ def save_scene(scene, path: Path) -> None:
     if layers is not None and (len(layers) > 1 or any(
             not ly.visible or ly.locked for ly in layers)):
         payload["layers"] = [ly.to_dict() for ly in layers]
+    views = getattr(scene, "saved_views", None)
+    if views:
+        payload["saved_views"] = [v.to_dict() for v in views]
     dims = getattr(scene, "dimensions", None)
     if dims:
         payload["dimensions"] = [
@@ -191,6 +194,9 @@ def load_into(scene, path: Path) -> None:
         scene.layers = [Layer.from_dict(r) for r in raw_layers]
         if not any(ly.name == DEFAULT_LAYER for ly in scene.layers):
             scene.layers.insert(0, Layer(DEFAULT_LAYER))
+    from core.saved_views import SavedView
+    scene.saved_views = [SavedView.from_dict(r)
+                         for r in payload.get("saved_views", [])]
     proto_meshes: list = []
     for raw in payload.get("protos", []):
         m = Mesh()

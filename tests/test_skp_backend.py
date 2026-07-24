@@ -688,3 +688,65 @@ def test_snapshot_import_undo_reverts_added_layers():
     assert not any(ly.name == "Curvas" for ly in scene.layers)
     history.redo()
     assert any(ly.name == "Curvas" for ly in scene.layers)
+
+
+# ---- Scenes (SketchUp pages) --------------------------------------------------
+
+
+def test_openskp_adapter_carries_scenes_in_metres():
+    root = _tri_def(0, "ROOT_MODEL")
+    model = NS(definitions={0: root}, pages=[
+        NS(name="Escena1", eye=(100.0, 0.0, 0.0), target=(0.0, 0.0, 0.0),
+           up=(0.0, 0.0, 1.0), fov=35.0, parallel=True, ortho_height=100.0,
+           hidden_layers=["Curvas"]),
+    ])
+    payload = skp_openskp._adapt(model, "m")
+    sc = payload["scenes"][0]
+    assert sc["name"] == "Escena1"
+    assert sc["eye"] == pytest.approx([2.54, 0.0, 0.0])
+    assert sc["parallel"] is True
+    assert sc["ortho_height"] == pytest.approx(2.54)
+    assert sc["hidden_layers"] == ["Curvas"]
+
+
+def test_apply_payload_creates_saved_views_once():
+    scene = Scene()
+    tri = [_V(0, 0), _V(1, 0), _V(1, 1)]
+    payload = {
+        "backend": "openskp", "protos": [],
+        "groups": [{"name": "g", "faces": [(tri, [], None)],
+                    "soft_edges": []}],
+        "scenes": [{"name": "Escena1", "eye": [10.0, 0.0, 0.0],
+                    "target": [0.0, 0.0, 0.0], "up": [0.0, 0.0, 1.0],
+                    "fov": 35.0, "parallel": False,
+                    "hidden_layers": ["Curvas"]}],
+    }
+    skp_format.apply_payload(scene, payload)
+    assert [v.name for v in scene.saved_views] == ["Escena1"]
+    v = scene.saved_views[0]
+    assert v.distance == pytest.approx(10.0)
+    assert v.fov_deg == 35.0
+    assert v.hidden_layers == ["Curvas"]
+    # Re-import: same name → not duplicated.
+    skp_format.apply_payload(scene, payload)
+    assert len(scene.saved_views) == 1
+
+
+def test_snapshot_import_undo_reverts_added_views():
+    from core.history import History, SnapshotImport
+    scene = Scene()
+    payload = {
+        "backend": "openskp", "protos": [],
+        "groups": [{"name": "g", "faces": [
+            ([_V(0, 0), _V(1, 0), _V(1, 1)], [], None)], "soft_edges": []}],
+        "scenes": [{"name": "Escena1", "eye": [10.0, 0.0, 0.0],
+                    "target": [0.0, 0.0, 0.0], "up": [0.0, 0.0, 1.0]}],
+    }
+    history = History(scene)
+    history.execute(SnapshotImport(
+        lambda s: skp_format.apply_payload(s, payload)))
+    assert [v.name for v in scene.saved_views] == ["Escena1"]
+    history.undo()
+    assert scene.saved_views == []
+    history.redo()
+    assert [v.name for v in scene.saved_views] == ["Escena1"]

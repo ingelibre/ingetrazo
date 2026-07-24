@@ -912,6 +912,24 @@ def _adapt(model, name: str, skp_path=None):
                    and ly.name not in ("Layer0", "Untagged")]
     if file_layers:
         payload["layers"] = file_layers
+    # The file's saved scenes (camera + hidden layers), inches → metres.
+    scenes = []
+    for pg in getattr(model, "pages", []) or []:
+        if getattr(pg, "eye", None) is None or \
+                getattr(pg, "target", None) is None:
+            continue
+        scenes.append({
+            "name": pg.name or f"Scene {len(scenes) + 1}",
+            "eye": [c * _INCH for c in pg.eye],
+            "target": [c * _INCH for c in pg.target],
+            "up": list(pg.up or (0.0, 0.0, 1.0)),
+            "fov": getattr(pg, "fov", 35.0),
+            "parallel": getattr(pg, "parallel", False),
+            "ortho_height": getattr(pg, "ortho_height", 0.0) * _INCH,
+            "hidden_layers": list(getattr(pg, "hidden_layers", []) or []),
+        })
+    if scenes:
+        payload["scenes"] = scenes
     # The file's style back-face colour (our upstream PR openskp#10): adopt it
     # so unpainted faces seen from behind read like they did for the author
     # (instead of IngeTrazo's own blue-grey default).

@@ -1174,6 +1174,129 @@ class LayersPanel(QWidget):
 
 
 
+class ScenesPanel(QWidget):
+    """Saved views — SketchUp's "Scenes": named camera + layer-visibility
+    snapshots. Double-click recalls one; the buttons capture the current
+    view, update the selected scene from it, or delete it. Together with
+    layers this is the '2D that emerges' workflow bottled: "Planta" = top
+    camera + parallel + plan layers, one click away."""
+
+    def __init__(self, window) -> None:
+        super().__init__()
+        from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget,
+                                       QPushButton, QVBoxLayout)
+        self._window = window
+        self._updating = False
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(8, 6, 8, 8)
+        hint = QLabel(tr("Double-click a scene to show it"))
+        hint.setStyleSheet("color: gray;")
+        lay.addWidget(hint)
+        self.list = QListWidget()
+        self.list.itemDoubleClicked.connect(self._on_activate)
+        self.list.itemChanged.connect(self._on_item_changed)
+        lay.addWidget(self.list)
+        row = QHBoxLayout()
+        add_btn = QPushButton(tr("+ Scene"))
+        add_btn.setToolTip(tr("Save the current view and layer visibility"))
+        add_btn.clicked.connect(self._on_add)
+        upd_btn = QPushButton(tr("Update"))
+        upd_btn.setToolTip(tr("Update the selected scene from the current view"))
+        upd_btn.clicked.connect(self._on_update)
+        del_btn = QPushButton(tr("−"))
+        del_btn.setToolTip(tr("Delete the selected scene"))
+        del_btn.clicked.connect(self._on_delete)
+        row.addWidget(add_btn)
+        row.addWidget(upd_btn)
+        row.addStretch(1)
+        row.addWidget(del_btn)
+        lay.addLayout(row)
+        self.refresh()
+
+    def _scene(self):
+        return self._window.viewport.scene
+
+    # ---- Model → view --------------------------------------------------------
+    def refresh(self) -> None:
+        from PySide6.QtWidgets import QListWidgetItem
+        self._updating = True
+        self.list.clear()
+        for view in self._scene().saved_views:
+            item = QListWidgetItem(view.name)
+            item.setData(Qt.UserRole, view)
+            item.setFlags(item.flags() | Qt.ItemIsEditable)
+            self.list.addItem(item)
+        self._updating = False
+
+    # ---- View → model --------------------------------------------------------
+    def _on_activate(self, item) -> None:
+        view = item.data(Qt.UserRole)
+        if view is None:
+            return
+        scene = self._scene()
+        view.apply(scene, self._window.viewport.camera)
+        # Entities that just went invisible/unpickable leave the selection,
+        # same as toggling their layer by hand.
+        dead = [s for s in scene.selection
+                if isinstance(s, (Face, Edge, Group))
+                and not scene.entity_selectable(s)]
+        for s in dead:
+            scene.selection.discard(s)
+        self._touch()
+        self._window.tray.layers.refresh()
+        self._window.statusBar().showMessage(
+            tr("Scene '{name}'", name=view.name), 2000)
+
+    def _on_item_changed(self, item) -> None:
+        if self._updating:
+            return
+        view = item.data(Qt.UserRole)
+        new_name = item.text().strip()
+        if view is not None and new_name:
+            view.name = new_name
+        self.refresh()
+        self._touch()
+
+    def _on_add(self) -> None:
+        from core.saved_views import SavedView
+        scene = self._scene()
+        base = tr("Scene")
+        n = 1
+        taken = {v.name for v in scene.saved_views}
+        while f"{base} {n}" in taken:
+            n += 1
+        scene.saved_views.append(SavedView.capture(
+            f"{base} {n}", scene, self._window.viewport.camera))
+        self.refresh()
+        self._touch()
+
+    def _on_update(self) -> None:
+        item = self.list.currentItem()
+        view = item.data(Qt.UserRole) if item is not None else None
+        if view is None:
+            return
+        view.recapture(self._scene(), self._window.viewport.camera)
+        self._touch()
+        self._window.statusBar().showMessage(
+            tr("Scene '{name}' updated", name=view.name), 2000)
+
+    def _on_delete(self) -> None:
+        item = self.list.currentItem()
+        view = item.data(Qt.UserRole) if item is not None else None
+        if view is None:
+            return
+        scene = self._scene()
+        if view in scene.saved_views:
+            scene.saved_views.remove(view)
+        self.refresh()
+        self._touch()
+
+    def _touch(self) -> None:
+        scene = self._scene()
+        scene.version += 1
+        self._window.viewport.update()
+
+
 class BimPanel(QWidget):
     """BIM tagging (the thesis layer): mark the selected geometry as an IFC
     object — class + name — and read its LIVE quantities. Freeform stays
@@ -1377,10 +1500,12 @@ class Tray(QDockWidget):
         self.materials = MaterialsPanel(window)
         self.components = ComponentsPanel(window)
         self.layers = LayersPanel(window)
+        self.scenes = ScenesPanel(window)
         self.dim_style = DimensionStylePanel(window)
         self.setWidget(_scrolled([
             (tr("Entity info"), self.entity_info),
             (tr("Layers"), self.layers),
+            (tr("Scenes"), self.scenes),
             (tr("Materials"), self.materials),
             (tr("Components"), self.components),
             (tr("Dimension style"), self.dim_style),
@@ -1390,6 +1515,7 @@ class Tray(QDockWidget):
         self.entity_info.refresh()
         self.materials.refresh_in_model()
         self.layers.refresh()
+        self.scenes.refresh()
 
 
 class BimTray(QDockWidget):
