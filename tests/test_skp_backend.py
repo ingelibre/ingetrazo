@@ -588,3 +588,103 @@ def test_openskp_adapter_colorized_material_tints_shared_texture(tmp_path):
     assert out.pixelColor(0, 0).alpha() == 0     # cutout survived the tint
     c = out.pixelColor(2, 2)
     assert c.green() > c.red() and c.green() > c.blue()   # shifted to green
+
+
+# ---- Layers (SketchUp tags) ---------------------------------------------------
+
+
+def test_openskp_adapter_carries_file_layers_with_visibility():
+    # The file's layers travel on the payload with their hidden state; the
+    # model's DEFAULT layer never travels (it IS IngeTrazo's default layer).
+    root = _tri_def(0, "ROOT_MODEL")
+    model = NS(definitions={0: root}, layers=[
+        NS(name="Layer0", visible=True, default=True),
+        NS(name="Muros", visible=True, default=False),
+        NS(name="Curvas", visible=False, default=False),
+    ])
+    payload = skp_openskp._adapt(model, "m")
+    assert payload["layers"] == [{"name": "Muros", "visible": True},
+                                 {"name": "Curvas", "visible": False}]
+
+
+def test_openskp_adapter_top_level_instance_layer_on_group():
+    child = _tri_def(5, "Arbol")
+    inst = NS(ref_idx=5, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+              layer="Vegetacion")
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[inst])
+    payload = skp_openskp._adapt(NS(definitions={0: root, 5: child}), "m")
+    assert payload["groups"][0]["layer"] == "Vegetacion"
+
+
+def test_openskp_adapter_extracts_nested_tagged_instance_as_layer_group():
+    # A TAGGED instance nested inside an untagged container must become its
+    # own group carrying the layer — reference chunks hide whole groups, so
+    # flattening it per-face would make the layer toggle a no-op.
+    leaf = _tri_def(7, "Planta")
+    tagged = NS(ref_idx=7, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+                layer="plantas")
+    container = _fake_definition(id=5, name="Jardinera", verts={}, edges={},
+                                 faces={}, instances=[tagged])
+    top = NS(ref_idx=5, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[top])
+    payload = skp_openskp._adapt(
+        NS(definitions={0: root, 5: container, 7: leaf}), "m")
+    by_layer = {gp.get("layer"): gp for gp in payload["groups"]}
+    assert "plantas" in by_layer
+    assert len(by_layer["plantas"]["faces"]) == 1
+
+
+def test_openskp_adapter_face_layer_lands_in_attrs():
+    root = _tri_def(0, "ROOT_MODEL")
+    root.faces[20].layer = "Banderas"
+    payload = skp_openskp._adapt(NS(definitions={0: root}), "m")
+    attrs = payload["groups"][0]["faces"][0][2]
+    assert attrs["layer"] == "Banderas"
+
+
+def test_apply_payload_registers_layers_and_assigns_groups():
+    from core.layers import Layer
+    scene = Scene()
+    scene.layers.append(Layer("Muros", visible=False))   # user's own state
+    tri = [_V(0, 0), _V(1, 0), _V(1, 1)]
+    payload = {
+        "backend": "openskp",
+        "layers": [{"name": "Muros", "visible": True},
+                   {"name": "Curvas", "visible": False}],
+        "groups": [{"name": "g", "faces": [(tri, [], None)],
+                    "soft_edges": [], "layer": "Curvas"}],
+        "protos": [{"name": "p", "faces": [(tri, [], None)], "soft_edges": [],
+                    "instances": [None, None],
+                    "instance_layers": ["Muros", None]}],
+    }
+    from PySide6.QtGui import QMatrix4x4
+    payload["protos"][0]["instances"] = [QMatrix4x4(), QMatrix4x4()]
+    skp_format.apply_payload(scene, payload)
+    by_name = {ly.name: ly for ly in scene.layers}
+    assert by_name["Curvas"].visible is False            # file state honoured
+    assert by_name["Muros"].visible is False             # user state untouched
+    assert scene.groups[0].layer == "Curvas"
+    proto_layers = [getattr(g, "layer", None) for g in scene.groups[1:]]
+    assert proto_layers == ["Muros", None]
+
+
+def test_snapshot_import_undo_reverts_added_layers():
+    from core.history import History, SnapshotImport
+    scene = Scene()
+    payload = {
+        "backend": "openskp",
+        "layers": [{"name": "Curvas", "visible": False}],
+        "groups": [{"name": "g", "faces": [
+            ([_V(0, 0), _V(1, 0), _V(1, 1)], [], None)], "soft_edges": []}],
+        "protos": [],
+    }
+    history = History(scene)
+    history.execute(SnapshotImport(
+        lambda s: skp_format.apply_payload(s, payload)))
+    assert any(ly.name == "Curvas" for ly in scene.layers)
+    history.undo()
+    assert not any(ly.name == "Curvas" for ly in scene.layers)
+    history.redo()
+    assert any(ly.name == "Curvas" for ly in scene.layers)

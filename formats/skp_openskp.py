@@ -358,13 +358,17 @@ def _positioned_uvs(face, raw_ring, tex, matrix=None, projected=False):
     return uvs
 
 
-def _face_entry(defn, face, xform, attr_map, inherited=None):
+def _face_entry(defn, face, xform, attr_map, inherited=None, layer=None):
     """One payload face ``(outer, holes, attrs)`` for ``face`` transformed by
     ``xform``, or ``None`` when degenerate. Bakes a positioned / photo-fitted
     texture's exact per-face UVs (``Face.uv_transform``, upstream PR
     openskp#6; computed in local inches) into a world→UV affine — the
     ``"uvw"`` IngeTrazo's renderer and exporters already consume. Exact for
-    triangles; a per-face affine fit of the projective map otherwise."""
+    triangles; a per-face affine fit of the projective map otherwise.
+
+    ``layer`` is the SketchUp layer (tag) of the nearest enclosing tagged
+    instance — a face with no tag of its own carries it, so hiding the tag's
+    layer in IngeTrazo hides what SketchUp would hide."""
     from core.texture import fit_uv_affine
 
     loops = getattr(face, "loops", None)
@@ -457,6 +461,9 @@ def _face_entry(defn, face, xform, attr_map, inherited=None):
             base = dict(attrs) if attrs else {}
             base["back"] = back
             attrs = base
+    lay = getattr(face, "layer", "") or layer
+    if lay:
+        attrs = {**(attrs or {}), "layer": lay}
     return (outer, holes, attrs)
 
 
@@ -539,12 +546,21 @@ def _soft_edge_segments(defn, xform, out) -> None:
 
 def _collect(defn, xform, by_id, attr_map, out, depth, stack,
              proto_ids=frozenset(), proto_uses=None, inherited=None,
-             image_uses=None, edges_out=None) -> None:
+             image_uses=None, edges_out=None, layer=None,
+             layer_uses=None) -> None:
     """Append ``(outer, holes, attrs)`` faces for ``defn`` (transformed by
     ``xform``) and, recursively, for every definition its instances place.
 
     ``inherited`` is the material of the nearest enclosing painted instance —
     faces with no material of their own take it (SketchUp inheritance).
+    ``layer`` is the layer (tag) of the nearest enclosing tagged instance,
+    carried onto the flattened faces the same way.
+
+    When ``layer_uses`` is given, a nested instance that carries its OWN
+    layer (tag) is NOT flattened here — it is recorded to become a separate
+    group with that layer, so hiding the layer in IngeTrazo hides exactly
+    what SketchUp would hide (reference-group chunks render whole groups;
+    per-face layers inside them are not filtered).
 
     When an instance references a definition in ``proto_ids``, its geometry is
     NOT flattened here — the composed placement matrix is recorded in
@@ -555,7 +571,7 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
         return
     stack = stack | {id(defn)}
     for face in defn.faces.values():
-        entry = _face_entry(defn, face, xform, attr_map, inherited)
+        entry = _face_entry(defn, face, xform, attr_map, inherited, layer)
         if entry is not None:
             out.append(entry)
     if edges_out is not None:
@@ -567,13 +583,15 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
             continue
         placed = xform * _matrix(ins.matrix)
         child_inherited = getattr(ins, "material_id", None) or inherited
+        child_layer = getattr(ins, "layer", "") or layer
         cid = getattr(child, "id", None)
         if getattr(child, "is_image", False):
             if image_uses is not None:
                 # An Image entity (photo placed as an object): pulled out of
                 # its parent so it can become its own group — cutout images
                 # turn to face the camera (billboard), like the DAE import.
-                image_uses.append((child, placed, child_inherited))
+                image_uses.append((child, placed, child_inherited,
+                                   child_layer))
             else:
                 # Inside a face-me component being flattened: the image
                 # stays part of it, with its whole-picture UVs.
@@ -584,14 +602,19 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
                 getattr(child, "always_faces_camera", False):
             # SketchUp's "always face camera" component (2D people like
             # Susan): extracted as its own billboard group.
-            image_uses.append((child, placed, child_inherited))
+            image_uses.append((child, placed, child_inherited, child_layer))
             continue
         if proto_uses is not None and cid in proto_ids:
-            proto_uses.setdefault((cid, child_inherited), []).append(placed)
+            proto_uses.setdefault((cid, child_inherited), []).append(
+                (placed, child_layer))
+            continue
+        if layer_uses is not None and getattr(ins, "layer", ""):
+            # Tagged nested instance → its own group carrying the layer.
+            layer_uses.append((child, placed, child_inherited, ins.layer))
             continue
         _collect(child, placed, by_id, attr_map, out, depth + 1, stack,
                  proto_ids, proto_uses, child_inherited, image_uses,
-                 edges_out)
+                 edges_out, child_layer, layer_uses)
 
 
 def _subtree_polys(defn, by_id, memo, stack) -> int:
@@ -734,6 +757,17 @@ def _adapt(model, name: str, skp_path=None):
                 return True
         return False
 
+    def _subtree_has_tagged(d, stack=frozenset()):
+        if id(d) in stack:
+            return False
+        for ins in getattr(d, "instances", []):
+            if getattr(ins, "layer", ""):
+                return True
+            c = by_id.get(getattr(ins, "ref_idx", None))
+            if c is not None and _subtree_has_tagged(c, stack | {id(d)}):
+                return True
+        return False
+
     proto_ids = set()
     for did, cnt in uses.items():
         d = by_id.get(did)
@@ -741,8 +775,11 @@ def _adapt(model, name: str, skp_path=None):
             continue
         # Face-me-carrying subtrees (images, face-camera components) are
         # excluded from sharing: each copy's billboard needs its own world
-        # spot.
-        if _subtree_has_faceme(d):
+        # spot. Tagged-instance-carrying subtrees too: each copy's tagged
+        # subtree must extract as its own layer group (the tagged child
+        # itself usually re-shares one level down, with per-placement
+        # layers).
+        if _subtree_has_faceme(d) or _subtree_has_tagged(d):
             continue
         polys = _subtree_polys(d, by_id, memo, set())
         if polys >= _INST_MIN_POLYS and polys * (cnt - 1) >= _INST_MIN_SAVED:
@@ -751,6 +788,7 @@ def _adapt(model, name: str, skp_path=None):
     groups: list = []
     proto_uses: dict = {}
     image_uses: list = []
+    layer_uses: list = []
     for r in roots:
         # The root's own loose faces (no instance recursion).
         loose: list = []
@@ -765,26 +803,52 @@ def _adapt(model, name: str, skp_path=None):
             groups.append({"name": name, "faces": loose,
                            "soft_edges": loose_edges})
         # Each top-level instance → its own group (or a shared-proto use).
+        # The instance's layer (tag) rides on the whole group; nested tagged
+        # instances land as per-face layers inside it.
         for ins in getattr(r, "instances", []):
             child = by_id.get(getattr(ins, "ref_idx", None))
             if child is None:
                 continue
             placed = _matrix(ins.matrix)
             inh = getattr(ins, "material_id", None)
+            lay = getattr(ins, "layer", "") or None
             if getattr(child, "is_image", False) or \
                     getattr(child, "always_faces_camera", False):
-                image_uses.append((child, placed, inh))
+                image_uses.append((child, placed, inh, lay))
                 continue
             if getattr(child, "id", None) in proto_ids:
-                proto_uses.setdefault((child.id, inh), []).append(placed)
+                proto_uses.setdefault((child.id, inh), []).append(
+                    (placed, lay))
                 continue
             sub: list = []
             sub_edges: list = []
             _collect(child, placed, by_id, attr_map, sub, 0, set(),
-                     proto_ids, proto_uses, inh, image_uses, sub_edges)
+                     proto_ids, proto_uses, inh, image_uses, sub_edges,
+                     layer_uses=layer_uses)
             if sub:
-                groups.append({"name": getattr(child, "name", None) or name,
-                               "faces": sub, "soft_edges": sub_edges})
+                gp = {"name": getattr(child, "name", None) or name,
+                      "faces": sub, "soft_edges": sub_edges}
+                if lay:
+                    gp["layer"] = lay
+                groups.append(gp)
+
+    # Tagged nested instances → their own groups carrying the layer, so a
+    # layer toggle hides them whole (faces AND edges) with no renderer work.
+    # The list grows while we walk it: a tagged instance inside a tagged
+    # instance extracts recursively.
+    i = 0
+    while i < len(layer_uses):
+        child, placed, inh, lay = layer_uses[i]
+        i += 1
+        sub = []
+        sub_edges = []
+        _collect(child, placed, by_id, attr_map, sub, 0, set(),
+                 proto_ids, proto_uses, inh, image_uses, sub_edges,
+                 layer_uses=layer_uses)
+        if sub:
+            groups.append({"name": getattr(child, "name", None) or name,
+                           "faces": sub, "soft_edges": sub_edges,
+                           "layer": lay})
 
     # Image entities → their own groups; cutout images (real alpha) become
     # face-me billboards that turn toward the camera, opaque photos stay
@@ -792,7 +856,7 @@ def _adapt(model, name: str, skp_path=None):
     # always shows the WHOLE picture once (see _image_quad_faces). An
     # "always faces camera" component (Susan) flattens its whole subtree
     # into one billboard group — the flag decides, no heuristic needed.
-    for child, placed, inh in image_uses:
+    for child, placed, inh, lay in image_uses:
         if getattr(child, "is_image", False):
             faces = _image_quad_faces(child, placed, attr_map, inh)
             tex = next((a["texture"]["path"] for _o, _h, a in faces
@@ -805,30 +869,49 @@ def _adapt(model, name: str, skp_path=None):
             billboard = True
         if not faces:
             continue
-        groups.append({"name": getattr(child, "name", None) or name,
-                       "faces": faces, "billboard": billboard})
+        gp = {"name": getattr(child, "name", None) or name,
+              "faces": faces, "billboard": billboard}
+        if lay:
+            gp["layer"] = lay
+        groups.append(gp)
 
     # Build each shared prototype ONCE, in local coordinates — per inherited
     # material, so a component painted red and green as a whole yields two
     # prototypes, not one wrongly shared. Nested proto references inside a
     # prototype flatten into it (no proto-in-proto).
     protos: list = []
-    for (did, inh), xforms in proto_uses.items():
+    for (did, inh), uses in proto_uses.items():
         d = by_id.get(did)
-        if d is None or not xforms:
+        if d is None or not uses:
             continue
         local: list = []
         local_edges: list = []
         _collect(d, QMatrix4x4(), by_id, attr_map, local, 0, set(),
                  inherited=inh, edges_out=local_edges)
         if local:
-            protos.append({"name": getattr(d, "name", None) or name,
-                           "faces": local, "instances": xforms,
-                           "soft_edges": local_edges})
+            entry = {"name": getattr(d, "name", None) or name,
+                     "faces": local, "instances": [xf for xf, _ly in uses],
+                     "soft_edges": local_edges}
+            if any(ly for _xf, ly in uses):
+                # Layer (tag) per PLACEMENT — copies of one component can
+                # sit on different layers.
+                entry["instance_layers"] = [ly for _xf, ly in uses]
+            protos.append(entry)
 
     if not groups and not protos:
         return None
     payload = {"backend": "openskp", "groups": groups, "protos": protos}
+    # The file's layers (tags), with their visibility — Scene-level, so the
+    # importer can register them even when nothing sits on one yet. The
+    # model's default layer never travels (it IS IngeTrazo's default layer).
+    file_layers = [{"name": ly.name,
+                    "visible": bool(getattr(ly, "visible", True))}
+                   for ly in getattr(model, "layers", []) or []
+                   if getattr(ly, "name", "")
+                   and not getattr(ly, "default", False)
+                   and ly.name not in ("Layer0", "Untagged")]
+    if file_layers:
+        payload["layers"] = file_layers
     # The file's style back-face colour (our upstream PR openskp#10): adopt it
     # so unpainted faces seen from behind read like they did for the author
     # (instead of IngeTrazo's own blue-grey default).

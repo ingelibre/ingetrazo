@@ -1405,21 +1405,28 @@ class SnapshotImport(Command):
         self.before: Optional[dict] = None
         self.after: Optional[dict] = None
         self.added_groups: list = []
+        self.added_layers: list = []
 
     def do(self, scene) -> None:
         m = scene.mesh
         if self.after is None:
             groups_before = list(scene.groups)
+            layers_before = list(scene.layers)
             self.before = m.capture_state()
             self.mutate(scene)
             self.after = m.capture_state()
             self.added_groups = [g for g in scene.groups
                                  if g not in groups_before]
+            self.added_layers = [ly for ly in scene.layers
+                                 if ly not in layers_before]
         else:
             m.restore_state(self.after)
             for g in self.added_groups:
                 if g not in scene.groups:
                     scene.groups.append(g)
+            for ly in self.added_layers:
+                if ly not in scene.layers:
+                    scene.layers.append(ly)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -1429,6 +1436,9 @@ class SnapshotImport(Command):
             if g in scene.groups:
                 scene.groups.remove(g)
             scene.selection.discard(g)
+        for ly in self.added_layers:
+            if ly in scene.layers:
+                scene.layers.remove(ly)
         scene.version += 1
 
 

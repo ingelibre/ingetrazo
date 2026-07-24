@@ -180,10 +180,24 @@ def apply_payload(scene, payload) -> str:
         soften_smooth_edges(mesh)
         return mesh
 
+    # The file's layers (SketchUp tags) join the scene's layer list, keeping
+    # their visibility — layers already present are left untouched (a re-import
+    # must not flip what the user toggled).
+    if payload.get("layers"):
+        from core.layers import Layer
+        known = {ly.name for ly in scene.layers}
+        for raw in payload["layers"]:
+            if raw.get("name") and raw["name"] not in known:
+                scene.layers.append(Layer(raw["name"],
+                                          visible=raw.get("visible", True)))
+                known.add(raw["name"])
+
     for gp in payload.get("groups", []):
         mesh = _build_mesh(gp["faces"], gp.get("soft_edges"))
         if mesh.faces:
             g = Group(mesh, name=gp.get("name"))
+            if gp.get("layer"):
+                g.layer = gp["layer"]
             if gp.get("billboard"):
                 # Image-entity cutout (photo person/animal/tree): the real
                 # geometry turns toward the camera each frame, like the DAE
@@ -196,9 +210,12 @@ def apply_payload(scene, payload) -> str:
         mesh = _build_mesh(pr["faces"], pr.get("soft_edges"))
         if not mesh.faces:
             continue
-        for xf in pr.get("instances", []):
+        layers = pr.get("instance_layers") or []
+        for i, xf in enumerate(pr.get("instances", [])):
             g = Group(mesh, name=pr.get("name"))
             g.xform = xf
+            if i < len(layers) and layers[i]:
+                g.layer = layers[i]
             scene.groups.append(g)
     back = payload.get("back_color")
     if back and getattr(scene, "back_face_color", None) is None:
