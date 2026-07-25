@@ -209,6 +209,30 @@ def apply_payload(scene, payload) -> str:
                 hidden_layers=raw.get("hidden_layers")))
             existing.add(raw["name"])
 
+    # Linear dimensions (SketchUp's Dimension tool): world endpoints + an
+    # offset distance. IngeTrazo's Dimension carries the offset as a VECTOR
+    # from the a–b segment to the dimension line, so turn the SketchUp scalar
+    # into the in-plane perpendicular direction × distance.
+    if payload.get("dimensions"):
+        from PySide6.QtGui import QVector3D
+        from core.dimension import Dimension
+        for raw in payload["dimensions"]:
+            a = QVector3D(*raw["a"])
+            b = QVector3D(*raw["b"])
+            seg = b - a
+            if seg.length() < 1e-9:
+                continue
+            n = QVector3D(*raw["normal"]) if raw.get("normal") \
+                else QVector3D(0.0, 0.0, 1.0)
+            perp = QVector3D.crossProduct(n, seg)
+            if perp.length() < 1e-9:               # normal ∥ segment: fall back
+                perp = QVector3D.crossProduct(QVector3D(0.0, 0.0, 1.0), seg)
+            if perp.length() < 1e-9:
+                perp = QVector3D.crossProduct(QVector3D(1.0, 0.0, 0.0), seg)
+            perp.normalize()
+            scene.dimensions.append(
+                Dimension(a, b, perp * float(raw.get("offset", 0.0))))
+
     for gp in payload.get("groups", []):
         mesh = _build_mesh(gp["faces"], gp.get("soft_edges"))
         if mesh.faces:

@@ -930,6 +930,21 @@ def _adapt(model, name: str, skp_path=None):
         })
     if scenes:
         payload["scenes"] = scenes
+    # Linear dimensions (SketchUp's Dimension tool), inches → metres. Endpoints
+    # come in world space for model-root dimensions (the common case).
+    dims = []
+    for dm in getattr(model, "dimensions", []) or []:
+        if getattr(dm, "a", None) is None or getattr(dm, "b", None) is None:
+            continue
+        dims.append({
+            "a": [c * _INCH for c in dm.a],
+            "b": [c * _INCH for c in dm.b],
+            "offset": getattr(dm, "offset", 0.0) * _INCH,
+            "normal": list(dm.normal) if getattr(dm, "normal", None) else None,
+            "text": getattr(dm, "text", "") or "",
+        })
+    if dims:
+        payload["dimensions"] = dims
     # The file's style back-face colour (our upstream PR openskp#10): adopt it
     # so unpainted faces seen from behind read like they did for the author
     # (instead of IngeTrazo's own blue-grey default).

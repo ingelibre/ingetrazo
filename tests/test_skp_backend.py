@@ -750,3 +750,74 @@ def test_snapshot_import_undo_reverts_added_views():
     assert scene.saved_views == []
     history.redo()
     assert [v.name for v in scene.saved_views] == ["Escena1"]
+
+
+# ---- Dimensions (SketchUp linear dimensions) ----------------------------------
+
+
+def test_openskp_adapter_carries_dimensions_in_metres():
+    root = _tri_def(0, "ROOT_MODEL")
+    model = NS(definitions={0: root}, dimensions=[
+        NS(a=(0.0, 0.0, 0.0), b=(0.0, 0.0, 100.0), offset=20.0,
+           normal=(-1.0, 0.0, 0.0), plane_x=(0.0, 1.0, 0.0), text=""),
+    ])
+    payload = skp_openskp._adapt(model, "m")
+    dm = payload["dimensions"][0]
+    assert dm["a"] == pytest.approx([0.0, 0.0, 0.0])
+    assert dm["b"] == pytest.approx([0.0, 0.0, 2.54])       # 100 in = 2.54 m
+    assert dm["offset"] == pytest.approx(0.508)             # 20 in
+    assert dm["normal"] == [-1.0, 0.0, 0.0]
+
+
+def test_apply_payload_creates_dimensions_with_perpendicular_offset():
+    scene = Scene()
+    payload = {
+        "backend": "openskp", "protos": [],
+        "groups": [{"name": "g", "faces": [
+            ([_V(0, 0), _V(1, 0), _V(1, 1)], [], None)], "soft_edges": []}],
+        # a 2 m vertical segment, offset 0.5 m, plane normal along -X →
+        # the dimension line sits along the in-plane perpendicular (±Y).
+        "dimensions": [{"a": [0.0, 0.0, 0.0], "b": [0.0, 0.0, 2.0],
+                        "offset": 0.5, "normal": [-1.0, 0.0, 0.0]}],
+    }
+    skp_format.apply_payload(scene, payload)
+    assert len(scene.dimensions) == 1
+    d = scene.dimensions[0]
+    assert d.value() == pytest.approx(2.0)                  # measured length
+    assert d.label() == "2.00 m"
+    # offset vector is perpendicular to the segment (no Z component) and 0.5 m.
+    assert d.offset.z() == pytest.approx(0.0)
+    assert d.offset.length() == pytest.approx(0.5)
+
+
+def test_apply_payload_skips_degenerate_dimension():
+    scene = Scene()
+    payload = {
+        "backend": "openskp", "protos": [],
+        "groups": [{"name": "g", "faces": [
+            ([_V(0, 0), _V(1, 0), _V(1, 1)], [], None)], "soft_edges": []}],
+        "dimensions": [{"a": [1.0, 1.0, 1.0], "b": [1.0, 1.0, 1.0],
+                        "offset": 0.5, "normal": [0.0, 0.0, 1.0]}],
+    }
+    skp_format.apply_payload(scene, payload)
+    assert scene.dimensions == []                           # zero-length: skipped
+
+
+def test_snapshot_import_undo_reverts_added_dimensions():
+    from core.history import History, SnapshotImport
+    scene = Scene()
+    payload = {
+        "backend": "openskp", "protos": [],
+        "groups": [{"name": "g", "faces": [
+            ([_V(0, 0), _V(1, 0), _V(1, 1)], [], None)], "soft_edges": []}],
+        "dimensions": [{"a": [0.0, 0.0, 0.0], "b": [3.0, 0.0, 0.0],
+                        "offset": 0.5, "normal": [0.0, 0.0, 1.0]}],
+    }
+    history = History(scene)
+    history.execute(SnapshotImport(
+        lambda s: skp_format.apply_payload(s, payload)))
+    assert len(scene.dimensions) == 1
+    history.undo()
+    assert scene.dimensions == []
+    history.redo()
+    assert len(scene.dimensions) == 1

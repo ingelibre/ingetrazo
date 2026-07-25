@@ -1407,6 +1407,8 @@ class SnapshotImport(Command):
         self.added_groups: list = []
         self.added_layers: list = []
         self.added_views: list = []
+        self.added_dims: list = []
+        self.added_texts: list = []
 
     def do(self, scene) -> None:
         m = scene.mesh
@@ -1414,6 +1416,8 @@ class SnapshotImport(Command):
             groups_before = list(scene.groups)
             layers_before = list(scene.layers)
             views_before = list(scene.saved_views)
+            dims_before = list(scene.dimensions)
+            texts_before = list(scene.text_labels)
             self.before = m.capture_state()
             self.mutate(scene)
             self.after = m.capture_state()
@@ -1423,6 +1427,10 @@ class SnapshotImport(Command):
                                  if ly not in layers_before]
             self.added_views = [v for v in scene.saved_views
                                 if v not in views_before]
+            self.added_dims = [d for d in scene.dimensions
+                               if d not in dims_before]
+            self.added_texts = [t for t in scene.text_labels
+                                if t not in texts_before]
         else:
             m.restore_state(self.after)
             for g in self.added_groups:
@@ -1434,6 +1442,12 @@ class SnapshotImport(Command):
             for v in self.added_views:
                 if v not in scene.saved_views:
                     scene.saved_views.append(v)
+            for d in self.added_dims:
+                if d not in scene.dimensions:
+                    scene.dimensions.append(d)
+            for t in self.added_texts:
+                if t not in scene.text_labels:
+                    scene.text_labels.append(t)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -1449,6 +1463,12 @@ class SnapshotImport(Command):
         for v in self.added_views:
             if v in scene.saved_views:
                 scene.saved_views.remove(v)
+        for d in self.added_dims:
+            if d in scene.dimensions:
+                scene.dimensions.remove(d)
+        for t in self.added_texts:
+            if t in scene.text_labels:
+                scene.text_labels.remove(t)
         scene.version += 1
 
 
