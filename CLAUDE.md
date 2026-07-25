@@ -27,9 +27,11 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 
 ---
 
-## 📦 Estado actual (2026-07-21)
+## 📦 Estado actual (2026-07-24)
 
 **v0.2.3 released 2026-07-22** (tag + binarios Windows por CI + `skp2dae.exe` re-adjuntado; instalado en la PC del usuario vía `scripts/install_desktop.sh`): **import .skp NATIVO puro-Python de todas las eras** — el build de Windows instala nuestro fork openskp (pineado por SHA en `build-windows.yml`; actualizar el SHA cuando avance la rama `ingetrazo` del fork) con hiddenimports en `ingetrazo.spec`; el fork hizo lazy trimesh/shapely (parse solo necesita numpy). El usuario lo usa como programa normal; las sesiones suelen arrancar con reportes de uso real.
+
+**Sesión 2026-07-24 — fidelidad de import .skp (todo pusheado, fork SHA `3c85b4d`):** se cerraron 3 de los 4 pendientes que quedaban para el "100% fiel a SketchUp": **(1) capas/etiquetas** (asignación por entidad + visibilidad, ambas eras — se llaman **Capas** en la UI, decisión de naming CAD-first), **(2) escenas** (SavedView: cámara + capas ocultas por escena, panel en la bandeja, .igz, import VFF), **(3) cotas lineales** (entidad `5BCC`, extremos resueltos a mundo vía transformación de instancia; validadas con el expediente técnico real). Queda del set original: **texto/etiquetas** (falta repro con entidades Text) + jerarquía de grupos anidados. Método de RE de esta sesión: calibrar contra los `scene_thumbnails/*.png` embebidos en el propio `.skp` (ground truth interno cuando skp2dae/DAE no sirve de oráculo).
 
 **El modelador está MUY completo:** dibujo (línea, rect, rect rotado, círculo, polígono, arcos ×4, offset, sígueme, texto 3D), push/pull robusto con **guard de hermeticidad grado-BIM** (nunca commitea un sólido roto; ops ambiguas se rechazan fail-safe), move/rotar/escala, grupos (v2: entrar con doble clic) + **componentes/instancias compartidas** (proto + xforms, O(1) transformar), materiales + texturas SketchUp-compatible (proyección planar + UVs afines por cara), pintar (B) con eyedropper, **Invertir caras**, cotas + texto guía, capas, **escenas** (SavedView: cámara + visibilidad de capas, panel en la bandeja, .igz, import .skp), bandeja lateral, face culling (dorso azul-gris, color de estilo del archivo), aristas soft/superficies curvas/profiles, **transparencias** (cutout con dither Bayer + materiales translúcidos con pase blend), zoom/zoom ventana, UI bilingüe (`tr()` + `es.json`).
 
@@ -122,8 +124,8 @@ docs/     skp-backend.md · openskp-collaboration.md · halfedge-migration-plan.
 
 ## 🎯 Pendientes (por prioridad tentativa)
 
-1. **PRÓXIMA SESIÓN (definida 2026-07-21):** el usuario declaró **paridad visual con SketchUp lograda** en sus archivos reales; quedan (a) **detalles del render de transparencias** (afinar el look del pase translúcido/cutouts) y (b) **otras optimizaciones** de IngeTrazo.
-2. **Track .skp upstream:** issue instance-tree misplacement (hallado, sin reportar — lo único no reportado), legacy MFC **HECHO local 2026-07-22** (pulir gaps + decidir aporte upstream cuando el usuario dé el OK), seguimiento de PRs #3–#13 + issue #2.
+1. **Import .skp — completar el "100% fiel" (activo 2026-07-24):** hecho capas + escenas + cotas lineales; **falta (a) TEXTO/etiquetas** (entidad Text — `plaza Yanque (1).skp` no la tenía; pedir repro con texto colocado, calibrar contra su contenido), **(b) cotas radiales/angulares** (otra entidad, sin decodificar), **(c) pulir el lado del offset de la línea de cota** (la dirección perpendicular se deriva, no calca exacto a SketchUp), **(d) jerarquía de grupos anidados**. Aparte: **detalles del render de transparencias** (pendiente viejo) y **optimizaciones**.
+2. **Track .skp upstream:** issue instance-tree misplacement (hallado, sin reportar — lo único no reportado); **capas/escenas/cotas parseadas en el fork rama `ingetrazo` (2026-07-24) AÚN sin aportar upstream como PR** (preguntar a Marco — serían PRs nuevos sobre main); legacy MFC **HECHO local** (sin capas/escenas/cotas legacy aún — falta repro); seguimiento de PRs #3–#15 (11/13 mergeados) + issue #2.
 3. **Lado IngePresupuestos** (sesión en aquel repo): `IFC_MAP` +RAILING/COVERING, preferir `Net*` sobre `Gross*`, mapear tags→partidas con el RAG "Sugerir partidas".
 4. **Flathub** (definido, sin empezar): IngeTrazo + IngeCAD; capturas PNG (videos opcionales WebM <10 MiB sin audio); `appstreamcli validate` fatal; el punto duro es PySide6+Qt6+GL en Flatpak. App-ID: `com.ingetrazo.IngeTrazo`.
 5. **Renders:** (2) glTF PBR + "Enviar a Blender" con plantilla → (3) sombras de sol en viewport → (4) AI render opcional. NUNCA motor fotorrealista propio.
