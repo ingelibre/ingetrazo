@@ -6,11 +6,13 @@ NeedsConverter fallback, and OpenSKP model → payload adaptation (fake model, s
 no ``openskp`` package or ``.skp`` file is needed)."""
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
 
 from core.scene import Scene
+from core.texture import clear_texture_cache, texture_cache_stats
 from formats import skp as skp_format
 from formats import skp_openskp
 
@@ -185,9 +187,10 @@ def test_openskp_adapter_resolves_face_colours_via_materials_by_id():
     assert attrs is None
 
 
-def test_openskp_adapter_extracts_textures_next_to_the_skp(tmp_path):
+def test_openskp_adapter_extracts_textures_to_the_app_cache(tmp_path, monkeypatch):
     # Material.texture (our upstream PR openskp#4) → attrs["texture"] with the
-    # image written to <stem>/ beside the .skp and the tile size in metres.
+    # image written to the app's own texture cache — NEVER next to the .skp,
+    # whose folder the import must leave untouched — and the tile in metres.
     root = _fake_definition(
         id=0, name="ROOT_MODEL",
         verts={1: (0, 0, 0), 2: (10, 0, 0), 3: (10, 10, 0)},
@@ -201,16 +204,45 @@ def test_openskp_adapter_extracts_textures_next_to_the_skp(tmp_path):
              id=5, texture=tex)
     model = NS(definitions={0: root}, materials_by_id={5: mat})
 
-    skp = tmp_path / "casa.skp"
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(cache))
+    src = tmp_path / "docs"
+    src.mkdir()
+    skp = src / "casa.skp"
     skp.write_bytes(b"")
     attrs = skp_openskp._adapt(model, "casa", skp_path=skp)
     attrs = attrs["groups"][0]["faces"][0][2]
 
-    img = tmp_path / "casa" / "glass.jpg"
+    img = Path(attrs["texture"]["path"])
+    assert img.parent.parent == cache / "skp"
+    assert img.name == "glass.jpg"
     assert img.read_bytes() == b"\xff\xd8fakejpeg"
-    assert attrs["texture"]["path"] == str(img)
+    # The .skp's own folder is left exactly as it was.
+    assert list(src.iterdir()) == [skp]
     assert attrs["texture"]["sw"] == pytest.approx(24 * 0.0254)   # 0.6096 m
     assert attrs["texture"]["sh"] == pytest.approx(12 * 0.0254)
+
+
+def test_texture_cache_dir_is_per_file_and_clearable(tmp_path, monkeypatch):
+    # Same .skp → same folder (a re-import reuses the images); an edited file
+    # (new size/mtime) → its own folder; clearing wipes the lot.
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(cache))
+    skp = tmp_path / "casa.skp"
+    skp.write_bytes(b"one")
+    first = skp_openskp._texture_dir(skp)
+    assert first == skp_openskp._texture_dir(skp)
+    assert first.parent == cache / "skp"
+
+    (first / "t.png").write_bytes(b"img")
+    assert texture_cache_stats() == (1, 3)
+
+    skp.write_bytes(b"edited, longer")
+    assert skp_openskp._texture_dir(skp) != first
+
+    assert clear_texture_cache() == 1
+    assert not cache.exists()
+    assert texture_cache_stats() == (0, 0)
 
 
 def _tri_def(id, name, instances=()):

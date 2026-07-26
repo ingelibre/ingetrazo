@@ -95,8 +95,15 @@ SketchUp 2022):
 - ✅ **Textures** — resolved. `Material.texture` (image bytes + tile size in
   inches), added by **our upstream PR**
   ([openskp#4](https://github.com/iamahsanmehmood/openskp/pull/4)). The adapter
-  writes the images to `<stem>/` beside the `.skp` (the SketchUp-export
-  convention skp2dae also uses) and maps them with IngeTrazo's planar
+  writes the images to the app's own cache —
+  `<user data>/IngeTrazo/textures/skp/<stem>-<hash of path+size+mtime>/`,
+  overridable with `$INGETRAZO_TEXTURE_CACHE`, emptied from
+  *File ▸ Import ▸ Clear imported texture cache…* — so importing never creates
+  a folder next to the user's `.skp` (it used to write `<stem>/` there, the
+  SketchUp-export convention skp2dae follows). Saving the document copies those
+  images **into** the `.igz` container (`formats/igz.py`), which is what makes
+  it portable; the cache is disposable and re-fills on open. It maps them with
+  IngeTrazo's planar
   projection at the material's real tile size. Measured: **18/18 materials and
   2/2 textures — exact parity with the oracle**; those rows no longer appear
   in the diff.

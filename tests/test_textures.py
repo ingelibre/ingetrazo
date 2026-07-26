@@ -107,6 +107,9 @@ def test_obj_export_writes_texture_material_and_uvs(tmp_path):
 # ---- .igz round-trip -----------------------------------------------------------
 
 def test_texture_survives_igz_round_trip(tmp_path):
+    # An image that cannot be read (here: a path that never existed) is not
+    # packed — the entry keeps its original "path" so the document is no worse
+    # off than before containers existed.
     scene = Scene()
     hist = History(scene)
     _cube(scene, hist)
@@ -114,13 +117,139 @@ def test_texture_survives_igz_round_trip(tmp_path):
     tex = {"path": "/x/brick.png", "sw": 0.5, "sh": 0.25}
     hist.execute(SetFaceTextureCommand([face], tex))
     path = tmp_path / "tex.igz"
-    igz.save_scene(scene, path)
+    stats = igz.save_scene(scene, path)
+    assert stats == {"embedded": 0, "missing": 1}
 
     loaded = Scene()
     igz.load_into(loaded, path)
     painted = [f for f in loaded.mesh.faces if f.attrs.get("texture")]
     assert len(painted) == 1
     assert painted[0].attrs["texture"] == tex
+
+
+# ---- .igz container: images ride INSIDE the document ---------------------------
+
+def _textured_cube(scene, hist, img_path, extra=None):
+    _cube(scene, hist)
+    _checker(img_path)
+    top = next(f for f in scene.mesh.faces
+               if all(abs(v.z() - 3) < 1e-9 for v in f.vertices))
+    tex = {"path": str(img_path), "sw": 1.0, "sh": 1.0}
+    hist.execute(SetFaceTextureCommand([top], tex))
+    if extra:
+        top.attrs.update(extra)
+    return top
+
+
+def test_igz_packs_texture_images_into_the_document(tmp_path, monkeypatch):
+    import zipfile
+
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "cache"))
+    scene = Scene()
+    hist = History(scene)
+    src = tmp_path / "checker.png"
+    _textured_cube(scene, hist, src)
+
+    doc = tmp_path / "casa.igz"
+    assert igz.save_scene(scene, doc) == {"embedded": 1, "missing": 0}
+
+    import json
+    with zipfile.ZipFile(doc) as zf:
+        names = zf.namelist()
+        assert "document.json" in names
+        member = next(n for n in names if n.startswith("textures/"))
+        assert zf.read(member) == src.read_bytes()      # the real image bytes
+        raw = zf.read("document.json").decode()
+    data = json.loads(raw)
+    assert data["igz_format"] == 2
+    # The entry points INSIDE the archive, and no machine-local path leaks out.
+    tex = next(f["texture"] for f in data["scene"]["faces"] if "texture" in f)
+    assert tex == {"embed": member, "sw": 1.0, "sh": 1.0}
+    assert str(tmp_path) not in raw
+
+    # Saving must not disturb the live scene: it still points at the original.
+    live = next(f.attrs["texture"] for f in scene.mesh.faces
+                if f.attrs.get("texture"))
+    assert live["path"] == str(src)
+
+
+def test_igz_document_opens_on_another_machine(tmp_path, monkeypatch):
+    # The whole point: the .igz travels alone — original image gone, texture
+    # cache empty (a different computer) — and the texture is still there.
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "cache-a"))
+    scene = Scene()
+    hist = History(scene)
+    src = tmp_path / "checker.png"
+    _textured_cube(scene, hist, src)
+    doc = tmp_path / "casa.igz"
+    igz.save_scene(scene, doc)
+    original = src.read_bytes()
+    src.unlink()
+
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "cache-b"))
+    loaded = Scene()
+    igz.load_into(loaded, doc)
+    tex = next(f.attrs["texture"] for f in loaded.mesh.faces
+               if f.attrs.get("texture"))
+    img = Path(tex["path"])
+    assert img.parent == tmp_path / "cache-b" / "embedded"
+    assert img.read_bytes() == original
+    assert tex["sw"] == 1.0 and "embed" not in tex
+
+    # Re-saving the reopened document keeps carrying the image.
+    again = tmp_path / "otra.igz"
+    assert igz.save_scene(loaded, again) == {"embedded": 1, "missing": 0}
+
+
+def test_igz_stays_plain_json_without_textures(tmp_path):
+    # The common case must remain diffable, hand-editable and readable by
+    # older builds — no container, no format bump.
+    import json
+
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist)
+    doc = tmp_path / "plain.igz"
+    assert igz.save_scene(scene, doc) == {"embedded": 0, "missing": 0}
+    data = json.loads(doc.read_text())
+    assert data["igz_format"] == 1
+
+
+def test_igz_container_is_byte_identical_across_saves(tmp_path, monkeypatch):
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "cache"))
+    scene = Scene()
+    hist = History(scene)
+    _textured_cube(scene, hist, tmp_path / "checker.png")
+    a = tmp_path / "a.igz"
+    b = tmp_path / "b.igz"
+    igz.save_scene(scene, a)
+    igz.save_scene(scene, b)
+    assert a.read_bytes() == b.read_bytes()
+
+
+def test_igz_packs_back_side_textures_without_touching_the_scene(tmp_path,
+                                                                 monkeypatch):
+    # attrs["back"] carries its own material (SketchUp paints both sides) —
+    # its image must travel too, and packing must not mutate the live face.
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "cache"))
+    scene = Scene()
+    hist = History(scene)
+    back_img = tmp_path / "back.png"
+    _checker(back_img, n=8)
+    top = _textured_cube(scene, hist, tmp_path / "checker.png")
+    top.attrs["back"] = {"texture": {"path": str(back_img),
+                                     "sw": 2.0, "sh": 2.0}}
+
+    doc = tmp_path / "dos-caras.igz"
+    assert igz.save_scene(scene, doc) == {"embedded": 2, "missing": 0}
+    assert top.attrs["back"]["texture"]["path"] == str(back_img)   # untouched
+
+    loaded = Scene()
+    igz.load_into(loaded, doc)
+    back = next(f.attrs["back"] for f in loaded.mesh.faces
+                if f.attrs.get("back"))
+    assert Path(back["texture"]["path"]).read_bytes() == back_img.read_bytes()
+    assert back["texture"]["sw"] == 2.0
 
 
 def test_textured_obj_round_trips_the_texture(tmp_path):

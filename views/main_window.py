@@ -553,6 +553,12 @@ class MainWindow(QMainWindow):
             act = QAction(label, self)
             act.triggered.connect(handler)
             import_menu.addAction(act)
+        import_menu.addSeparator()
+        clear_tex = QAction(tr("Clear imported texture cache…"), self)
+        clear_tex.setToolTip(tr(
+            "Delete the images extracted from imported .skp files."))
+        clear_tex.triggered.connect(self._on_clear_texture_cache)
+        import_menu.addAction(clear_tex)
         actions.append(import_menu)
 
         export_menu = QMenu(tr("Export"), self)
@@ -1131,10 +1137,24 @@ class MainWindow(QMainWindow):
 
     def _do_save(self, path: Path) -> None:
         try:
-            igz_format.save_scene(self.viewport.scene, path)
+            stats = igz_format.save_scene(self.viewport.scene, path) or {}
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return
+        # Textures travel inside the document — say so, and say it loudly when
+        # an image could not be read (that face's texture will NOT travel).
+        embedded = int(stats.get("embedded", 0))
+        missing = int(stats.get("missing", 0))
+        if missing:
+            QMessageBox.warning(
+                self, tr("Saved with missing textures"),
+                tr("{n} texture image(s) could not be read, so they were not "
+                   "packed into the document — those faces will lose their "
+                   "texture on another computer.", n=missing))
+        elif embedded:
+            self.statusBar().showMessage(
+                tr("Saved — {n} texture(s) packed into the document.",
+                   n=embedded), 4000)
         self._current_path = path
         self._saved_version = self.viewport.scene.version
         self._update_title()
@@ -1672,6 +1692,36 @@ class MainWindow(QMainWindow):
         if not path_str:
             return
         self.import_skp_path(Path(path_str))
+
+    def _on_clear_texture_cache(self) -> None:
+        """Empty the app's texture cache (images extracted from .skp imports
+        and unpacked from .igz containers). Saved .igz documents carry their
+        own copy and re-extract on open; .skp-imported faces lose their texture
+        until the file is imported again — hence the confirmation."""
+        from core.texture import (clear_texture_cache, texture_cache_root,
+                                  texture_cache_stats)
+        count, size = texture_cache_stats()
+        if not count:
+            QMessageBox.information(
+                self, tr("Texture cache"),
+                tr("The texture cache is already empty.\n\n{path}",
+                   path=str(texture_cache_root())))
+            return
+        answer = QMessageBox.question(
+            self, tr("Clear texture cache"),
+            tr("Delete {count} image(s) ({mb:.1f} MB) from:\n{path}\n\n"
+               "Saved .igz documents carry their own copy and rebuild it when "
+               "opened. Faces textured by a .skp import that was never saved "
+               "lose their texture until you import the .skp again.",
+               count=count, mb=size / (1024 * 1024),
+               path=str(texture_cache_root())),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        removed = clear_texture_cache()
+        self.statusBar().showMessage(
+            tr("Texture cache cleared ({count} files).", count=removed), 4000)
 
     def _on_import_obj(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(

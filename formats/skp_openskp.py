@@ -25,8 +25,8 @@ is flattened to world-space polygons (reference geometry, like the big-DAE
 import path). Per-face materials resolve through ``SkpModel.materials_by_id``
 (our upstream PR iamahsanmehmood/openskp#3): plain colours become
 ``attrs["color"]``, and textured materials (``Material.texture``, PR openskp#4)
-become ``attrs["texture"]`` — image bytes extracted to ``<stem>/`` next to the
-``.skp``, tile size in metres, rendered with IngeTrazo's planar projection
+become ``attrs["texture"]`` — image bytes extracted to the app's texture cache
+(see :func:`_texture_dir`), tile size in metres, rendered with IngeTrazo's planar projection
 (SketchUp's default texture behaviour; per-face UVs from the TLV are a later
 refinement). Both joins are guarded, so PyPI 0.2.0 still imports (uncoloured).
 """
@@ -76,13 +76,29 @@ def _matrix(m) -> QMatrix4x4:
 
 
 def _texture_dir(skp_path) -> Path:
-    """Directory for extracted texture images: ``<stem>/`` next to the
-    ``.skp`` — the SketchUp-export convention skp2dae also follows, so texture
-    paths stay valid for the session and for saved ``.igz`` documents. Falls
-    back to a temp dir when the .skp's folder is read-only."""
-    d = Path(skp_path).parent / Path(skp_path).stem
+    """Directory for a ``.skp``'s extracted texture images, inside the app's
+    own cache (``core.texture.texture_cache_root()``) — importing must never
+    litter the user's folders, which is what the old ``<stem>/`` next to the
+    ``.skp`` did. One subfolder per source file, keyed by its path + size +
+    mtime, so re-importing the same file reuses the images and an edited file
+    gets its own. Saving the document as ``.igz`` copies the images INTO the
+    container, so the cache is disposable. Falls back to a temp dir when the
+    cache is not writable."""
+    from core.texture import texture_cache_root
+    skp_path = Path(skp_path)
     try:
-        d.mkdir(exist_ok=True)
+        st = skp_path.stat()
+        stamp = f"{skp_path.resolve()}|{st.st_size}|{st.st_mtime_ns}"
+    except OSError:
+        stamp = str(skp_path)
+    import hashlib
+    key = hashlib.sha1(stamp.encode("utf-8", "replace")).hexdigest()[:10]
+    # Keep the stem in the folder name so the cache stays human-readable, but
+    # strip anything the filesystem could choke on.
+    stem = "".join(c for c in skp_path.stem if c.isalnum() or c in " ._-").strip()
+    d = texture_cache_root() / "skp" / f"{stem or 'model'}-{key}"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
         return d
     except OSError:
         import tempfile

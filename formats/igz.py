@@ -21,6 +21,22 @@ Layout::
         ]
       }
     }
+
+**Textured documents are ZIP containers** (format 2). A texture is an image
+*file*, so a plain-JSON document could only point at one — an absolute path
+that broke the moment the ``.igz`` travelled to another machine. When the scene
+uses textures the document becomes a ZIP holding the very same JSON as
+``document.json`` plus the images under ``textures/``, and each texture entry
+carries ``"embed": "textures/<hash>-<name>"`` instead of ``"path"``. The
+document is then **self-contained and portable**. Opening one unpacks the
+images into the app's texture cache (content-addressed, so documents sharing an
+image share the file and the GPU upload) and points the entries back at real
+paths — the rest of the app keeps seeing ``attrs["texture"]["path"]`` and knows
+nothing about containers.
+
+Untextured documents stay **plain JSON at format 1**: the common case remains
+diffable, hand-editable, and readable by older builds. ``load_into`` sniffs the
+ZIP magic, so both shapes open transparently.
 """
 from __future__ import annotations
 
@@ -38,7 +54,95 @@ from georef.datum import SceneDatum
 from georef.geopath import GeoPath
 
 
-CURRENT_FORMAT = 1
+PLAIN_FORMAT = 1        # bare JSON document (no images to carry)
+CURRENT_FORMAT = 2      # ZIP container: document.json + textures/
+_ZIP_MAGIC = b"PK\x03\x04"
+_DOC_ENTRY = "document.json"
+_TEX_PREFIX = "textures/"
+# Fixed timestamp for every archive member: two saves of the same scene must
+# produce byte-identical files (diffable documents, and no pointless churn in
+# whatever the user syncs them with).
+_ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
+
+
+def _texture_entries(node):
+    """Yield every ``"texture"`` dict inside a serialized payload — face
+    materials, back-side materials (``attrs["back"]``), and whatever nests one
+    later. Walking the JSON keeps this honest as the schema grows: a new place
+    to hang a texture is embedded without touching this module."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "texture" and isinstance(value, dict):
+                yield value
+            else:
+                yield from _texture_entries(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _texture_entries(value)
+
+
+def _pack_textures(payload) -> tuple[dict, int]:
+    """Rewrite the payload's texture entries in place for storage inside the
+    container: ``"path"`` (a machine-local absolute path) → ``"embed"`` (an
+    archive member name). Returns ``({member name: image bytes}, missing)``,
+    where *missing* counts images whose file could not be read — those keep
+    their ``"path"``, so a document whose cache was wiped saves no worse than
+    before instead of losing the reference outright."""
+    import hashlib
+
+    blobs: dict = {}
+    resolved: dict = {}          # source path → member name ("" = unreadable)
+    missing = 0
+    for tex in _texture_entries(payload):
+        src = tex.get("path")
+        if not src:
+            continue
+        member = resolved.get(src)
+        if member is None:
+            try:
+                data = Path(src).read_bytes()
+            except OSError:
+                resolved[src] = ""
+                missing += 1
+                continue
+            digest = hashlib.sha1(data).hexdigest()[:16]
+            safe = "".join(c for c in Path(src).name
+                           if c.isalnum() or c in " ._-").strip(" .")
+            member = f"{_TEX_PREFIX}{digest}-{safe or 'texture.png'}"
+            resolved[src] = member
+            blobs[member] = data
+        if member:
+            tex.pop("path", None)
+            tex["embed"] = member
+    return blobs, missing
+
+
+def _unpack_textures(payload, archive) -> None:
+    """Inverse of :func:`_pack_textures`: extract each embedded image into the
+    app's texture cache and point the entry back at that real file, so
+    everything downstream (renderer, exporters) keeps working with paths. A
+    member the archive lost leaves the entry without a texture path — the face
+    renders untextured rather than the load failing."""
+    from core.texture import cache_image
+
+    unpacked: dict = {}
+    for tex in _texture_entries(payload):
+        member = tex.pop("embed", None)
+        if not member or tex.get("path"):
+            continue
+        out = unpacked.get(member)
+        if out is None:
+            try:
+                data = archive.read(member)
+            except KeyError:
+                continue
+            # Drop the member's hash prefix — cache_image re-derives it from
+            # the bytes, and the same image must land on the same cached file
+            # whether it arrived in a document or straight from a .skp.
+            name = member.rsplit("/", 1)[-1].split("-", 1)[-1]
+            out = str(cache_image(data, name, "embedded"))
+            unpacked[member] = out
+        tex["path"] = out
 
 
 def _face_json(f) -> dict:
@@ -67,7 +171,10 @@ def _face_json(f) -> dict:
         entry["opacity"] = float(opacity)
     back = getattr(f, "attrs", {}).get("back")
     if isinstance(back, dict):
-        entry["back"] = dict(back)
+        # Deep-copy the nested texture: _pack_textures rewrites the entries it
+        # finds, and it must never reach into the live scene's attrs.
+        entry["back"] = {k: dict(v) if isinstance(v, dict) else v
+                         for k, v in back.items()}
     return entry
 
 
@@ -90,7 +197,10 @@ def _mesh_json(mesh) -> dict:
     }
 
 
-def save_scene(scene, path: Path) -> None:
+def save_scene(scene, path: Path) -> dict:
+    """Write ``scene`` to ``path``. Returns ``{"embedded", "missing"}``: how
+    many texture images were packed into the document, and how many could not
+    be read (those keep pointing at their original path)."""
     # Accept a Scene or a bare Mesh (the M1 read-compat path feeds a Mesh).
     mesh = scene.mesh if hasattr(scene, "mesh") else scene
     payload = _mesh_json(mesh)
@@ -160,17 +270,80 @@ def save_scene(scene, path: Path) -> None:
     guides = getattr(scene, "guides", None)
     if guides:
         payload["guides"] = [g.to_dict() for g in guides]
+    # Images ride INSIDE the document (see the module docstring). Only a scene
+    # that actually has textures pays for the container; everything else stays
+    # plain JSON at format 1, readable by older builds.
+    blobs, missing = _pack_textures(payload)
     data = {
-        "igz_format": CURRENT_FORMAT,
+        "igz_format": CURRENT_FORMAT if blobs else PLAIN_FORMAT,
         "app_version": __version__,
         "scene": payload,
     }
-    path.write_text(json.dumps(data, indent=2))
+    doc = json.dumps(data, indent=2)
+    if blobs:
+        _write_container(path, doc, blobs)
+    else:
+        _write_atomic(path, doc.encode("utf-8"))
+    return {"embedded": len(blobs), "missing": missing}
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Write via a sibling temp file + rename: a failure mid-write must not
+    leave the user's existing document truncated."""
+    tmp = path.with_name(path.name + ".part")
+    try:
+        tmp.write_bytes(data)
+        tmp.replace(path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _write_container(path: Path, doc: str, blobs: dict) -> None:
+    """The ZIP shape: ``document.json`` deflated, images stored as-is (PNG/JPG
+    are already compressed — deflating them again costs time for nothing)."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        info = zipfile.ZipInfo(_DOC_ENTRY, date_time=_ZIP_EPOCH)
+        info.compress_type = zipfile.ZIP_DEFLATED
+        zf.writestr(info, doc)
+        for member in sorted(blobs):
+            info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
+            info.compress_type = zipfile.ZIP_STORED
+            zf.writestr(info, blobs[member])
+    _write_atomic(path, buf.getvalue())
+
+
+def _read_document(path: Path):
+    """``(data, archive)`` for a document of either shape — the archive is
+    ``None`` for a plain-JSON one, and stays open while the caller extracts
+    embedded images."""
+    raw = path.read_bytes()
+    if not raw.startswith(_ZIP_MAGIC):
+        return json.loads(raw.decode("utf-8")), None
+    import zipfile
+    archive = zipfile.ZipFile(path)
+    try:
+        data = json.loads(archive.read(_DOC_ENTRY).decode("utf-8"))
+    except KeyError:
+        archive.close()
+        raise ValueError(
+            f"{path.name} is not an IngeTrazo document (no {_DOC_ENTRY}).")
+    return data, archive
 
 
 def load_into(scene, path: Path) -> None:
     """Replace ``scene`` contents with what's stored at ``path``."""
-    data = json.loads(path.read_text())
+    data, archive = _read_document(path)
+    try:
+        if archive is not None:
+            _unpack_textures(data.get("scene", {}), archive)
+    finally:
+        if archive is not None:
+            archive.close()
     fmt = data.get("igz_format", 1)
     if fmt > CURRENT_FORMAT:
         raise ValueError(
