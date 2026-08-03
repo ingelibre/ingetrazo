@@ -69,7 +69,7 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 PySide6 6.11 (única dep GUI) · OpenGL 3.3 core vía Qt (QOpenGLShaderProgram/Buffer/VAO) · math QtGui (QMatrix4x4/QVector3D) · NumPy 2.5 (DEM, picks, texturas) · openskp editable desde `~/openskp` · ifcopenshell solo como herramienta de dev (NO en requirements). Python 3.14, venv local.
 
 ```bash
-cd /home/sumaritux/ingetrazo && source venv/bin/activate && python main.py
+cd /home/sumaritux/Proyectos/ingetrazo/app && source venv/bin/activate && python main.py
 ```
 
 **Portabilidad:** wheels ARM de deps nativas son la fricción real (vigilar ifcopenshell); código propio limpio de asunciones x86. macOS: OpenGL deprecado pero Qt tiene path a Metal.
