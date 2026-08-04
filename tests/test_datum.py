@@ -150,3 +150,19 @@ def test_clear_resets_datum():
     scene.georef = SceneDatum(*LIMA)
     scene.clear()
     assert scene.georef is None
+
+
+def test_omitting_altitude_means_the_reference_plane_not_sea_level():
+    """A datum with an altitude must not push everything that has no elevation
+    of its own underground. The base map tiles and imported alignments call
+    this with lat/lon only; when a survey set the datum's alt to 1804 m, a
+    0.0-metre default silently placed them 1804 m below the scene."""
+    d = SceneDatum(*LIMA, alt=1804.63)
+    p = d.geodetic_to_local(*LIMA)
+    assert abs(p.z()) < 1e-9
+
+    # An explicit altitude still means an absolute altitude.
+    q = d.geodetic_to_local(*LIMA, alt=1804.63)
+    assert abs(q.z()) < 1e-9
+    r = d.geodetic_to_local(*LIMA, alt=1904.63)
+    assert abs(r.z() - 100.0) < 1e-6

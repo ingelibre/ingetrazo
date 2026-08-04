@@ -137,10 +137,19 @@ class SceneDatum:
 
     # ---- Conversions --------------------------------------------------------
     def geodetic_to_local(self, lat: float, lon: float,
-                          alt: float = 0.0) -> QVector3D:
-        """Geodetic (degrees + metres) → local scene metres (X east, Y north)."""
+                          alt: float | None = None) -> QVector3D:
+        """Geodetic (degrees + metres) → local scene metres (X east, Y north).
+
+        Omitting ``alt`` means **on the scene's reference plane** (local Z = 0),
+        not at sea level. Every caller that doesn't carry an elevation — base
+        map tiles, an imported KML alignment — wants the ground plane, and a
+        default of 0.0 metres absolute quietly meant "``self.alt`` below the
+        scene" the moment a datum acquired an altitude. That put the base map
+        1.8 km underground on the first georeferenced survey.
+        """
         east, north = utm_forward(lat, lon, self.zone)
-        return QVector3D(east - self._east0, north - self._north0, alt - self.alt)
+        z = 0.0 if alt is None else alt - self.alt
+        return QVector3D(east - self._east0, north - self._north0, z)
 
     def local_to_geodetic(self, point: QVector3D) -> tuple[float, float, float]:
         """Local scene metres → geodetic ``(lat, lon, alt)`` (degrees + metres)."""
