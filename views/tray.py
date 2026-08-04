@@ -191,10 +191,28 @@ class BaseMapPanel(QWidget):
         self._terrain3d.toggled.connect(self._on_toggle_terrain)
         grid.addWidget(self._terrain3d, 8, 0, 1, 2)
 
+        # The drone survey (Track G, G6). Disabled until one is imported —
+        # a checkbox you can tick with nothing behind it just looks broken.
+        self._photo_mesh = QCheckBox(tr("Photogrammetric survey"))
+        self._photo_mesh.setEnabled(False)
+        self._photo_mesh.toggled.connect(self._on_toggle_photo_mesh)
+        grid.addWidget(self._photo_mesh, 9, 0, 1, 2)
+
+        # Which layer the survey carries. The import puts it on its own so it
+        # can be switched off without taking the model with it; this is for
+        # moving it somewhere else (onto an existing "reference" layer, say).
+        self._photo_layer = QComboBox()
+        self._photo_layer.setEnabled(False)
+        self._photo_layer.setToolTip(tr(
+            "Layer the survey is on. Hiding that layer hides the survey."))
+        self._photo_layer.currentTextChanged.connect(self._on_photo_layer_changed)
+        grid.addWidget(QLabel(tr("Layer")), 10, 0)
+        grid.addWidget(self._photo_layer, 10, 1)
+
         self._attribution = QLabel("")
         self._attribution.setWordWrap(True)
         self._attribution.setStyleSheet("color:#9aa3b2; font-size:10px; margin-top:4px;")
-        grid.addWidget(self._attribution, 9, 0, 1, 2)
+        grid.addWidget(self._attribution, 11, 0, 1, 2)
 
         self._restore_saved_source()
         self._sync_from_scene()
@@ -424,6 +442,24 @@ class BaseMapPanel(QWidget):
         maxx = max(p.x() for p in pts)
         miny = min(p.y() for p in pts)
         maxy = max(p.y() for p in pts)
+        self._capture_around(src, scene, datum, minx, miny, maxx, maxy)
+
+    def setup_for_bounds(self, datum, lo, hi) -> None:
+        """Same, from a plain local-metre bounding box.
+
+        A photogrammetric survey has no ``geo_paths`` to measure — its extent is
+        the mesh itself. Without this the base map keeps whatever capture it had
+        (a 1200 m square at the origin, by default), which for a flight a few
+        hundred metres away reads as "the imagery doesn't line up" when in fact
+        it was simply never fetched for that ground.
+        """
+        src = self._current_source() or PRESETS[DEFAULT_SOURCE_ID]
+        scene = self._window.viewport.scene
+        self._capture_around(src, scene, datum,
+                             lo.x(), lo.y(), hi.x(), hi.y())
+
+    def _capture_around(self, src, scene, datum, minx, miny, maxx, maxy) -> None:
+        from PySide6.QtCore import QSignalBlocker
         margin = 0.15 * max(maxx - minx, maxy - miny, 200.0)
         cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
         self._capture_w = (maxx - minx) + 2 * margin
@@ -456,6 +492,56 @@ class BaseMapPanel(QWidget):
 
     def _on_toggle_terrain(self, on: bool) -> None:
         self._window.set_terrain_enabled(on)
+
+    def _on_toggle_photo_mesh(self, on: bool) -> None:
+        mesh = getattr(self._window.viewport.scene, "photo_mesh", None)
+        if mesh is None:
+            return
+        mesh.visible = on
+        self._window.viewport.update()
+
+    def _on_photo_layer_changed(self, name: str) -> None:
+        mesh = getattr(self._window.viewport.scene, "photo_mesh", None)
+        if mesh is None or not name:
+            return
+        from core.layers import DEFAULT_LAYER
+        mesh.layer = None if name == DEFAULT_LAYER else name
+        self._window.viewport.update()
+
+    def sync_photo_mesh(self) -> None:
+        """Enable the survey controls after an import (or on load)."""
+        from PySide6.QtCore import QSignalBlocker
+        from core.layers import DEFAULT_LAYER
+        scene = self._window.viewport.scene
+        mesh = getattr(scene, "photo_mesh", None)
+        with QSignalBlocker(self._photo_mesh):
+            self._photo_mesh.setEnabled(mesh is not None)
+            self._photo_mesh.setChecked(mesh is not None
+                                        and getattr(mesh, "visible", False))
+        with QSignalBlocker(self._photo_layer):
+            self._photo_layer.clear()
+            self._photo_layer.setEnabled(mesh is not None)
+            if mesh is None:
+                return
+            self._photo_layer.addItems([ly.name for ly in scene.layers])
+            current = getattr(mesh, "layer", None) or DEFAULT_LAYER
+            index = self._photo_layer.findText(current)
+            if index >= 0:
+                self._photo_layer.setCurrentIndex(index)
+
+    def sync_from_document(self) -> None:
+        """After opening a document: mirror its base map into the panel AND
+        fetch the tiles for the capture it carries.
+
+        The passive sync alone is not enough on open — the layer is restored
+        with an empty image cache, so without kicking the fetcher the panel
+        claims a visible base map over an empty scene.
+        """
+        self._sync_from_scene()
+        layer = getattr(self._window.viewport.scene, "tile_layer", None)
+        if layer is not None:
+            self._window.viewport.reset_tiles()
+            self._window.viewport.update()
 
     def _sync_from_scene(self) -> None:
         """Reflect a datum/layer already on the scene (e.g. loaded from .igz).

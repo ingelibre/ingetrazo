@@ -189,6 +189,42 @@ class TileLayer:
         self.patches: list[tuple[float, float, float, float]] = [
             (0.0, 0.0, self.radius_m, self.radius_m)]
 
+    def to_dict(self) -> dict:
+        """Serialisable state — the CAPTURE, not the imagery.
+
+        The tiles themselves are refetched (they are somebody else's server's
+        to serve, and caching them into the document would be both huge and a
+        licensing question). What has to survive is *which ground* the base map
+        covers: it is set up around whatever you imported, and a reopened
+        document that falls back to a default square somewhere else reads as
+        the map being misplaced — which is exactly how this was found.
+        """
+        return {"source": self.source.id, "zoom": self.zoom,
+                "radius_m": self.radius_m, "visible": bool(self.visible),
+                "patches": [list(p) for p in self.patches],
+                # Kept so a custom XYZ source survives too: presets are looked
+                # up by id, anything else is rebuilt from these.
+                "url_template": self.source.url_template,
+                "name": self.source.name,
+                "attribution": self.source.attribution}
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "TileLayer":
+        source = PRESETS.get(raw.get("source", ""))
+        if source is None:
+            source = TileSource(
+                id=raw.get("source", "custom"),
+                name=raw.get("name", raw.get("source", "custom")),
+                url_template=raw.get("url_template", ""),
+                attribution=raw.get("attribution", ""))
+        layer = cls(source, zoom=int(raw.get("zoom", 16)),
+                    radius_m=float(raw.get("radius_m", 1200.0)))
+        patches = raw.get("patches")
+        if patches:
+            layer.patches = [tuple(float(v) for v in p) for p in patches]
+        layer.visible = bool(raw.get("visible", True))
+        return layer
+
     def set_rectangle(self, width_m: float, length_m: float,
                       cx: float = 0.0, cy: float = 0.0) -> None:
         """Replace the capture with one rectangle ``width_m`` (E-W) × ``length_m``

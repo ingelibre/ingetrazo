@@ -157,9 +157,30 @@ def sample_profile(polyline: list[QVector3D], sampler,
     return Profile(samples, length, complete)
 
 
-def profile_to_csv(profile: Profile) -> str:
-    """Render the profile as CSV text (station, x, y, elevation)."""
-    lines = ["station_m,x_m,y_m,elevation_m"]
+#: What a stored elevation is measured against, spelled out for the file.
+VERTICAL_NOTES = {
+    "odm": ("photogrammetric survey (ODM); WGS84 ellipsoidal heights unless "
+            "the processing used ground control points"),
+    "dem": "global DEM (SRTM-derived, orthometric)",
+    "local": "local reference: heights are relative, not absolute",
+}
+
+
+def profile_to_csv(profile: Profile, vertical: str = "local",
+                   datum_alt: float | None = None) -> str:
+    """Render the profile as CSV text (station, x, y, elevation).
+
+    A leading comment names the vertical reference. A profile is a deliverable:
+    it ends up in an expediente, gets emailed, gets opened a year later by
+    somebody else. A column of elevations that does not say what it is measured
+    from is a number nobody can defend, and the cheapest place to fix that is
+    here, in the file itself.
+    """
+    note = VERTICAL_NOTES.get(vertical, VERTICAL_NOTES["local"])
+    lines = [f"# elevation reference: {note}"]
+    if datum_alt is not None:
+        lines.append(f"# scene Z=0 is at {datum_alt:.3f} m in that reference")
+    lines.append("station_m,x_m,y_m,elevation_m")
     for s in profile.samples:
         elev = "" if s.elevation is None else f"{s.elevation:.3f}"
         lines.append(f"{s.station:.3f},{s.x:.3f},{s.y:.3f},{elev}")

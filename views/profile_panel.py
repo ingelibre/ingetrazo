@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.i18n import tr
+from georef.photomesh import PhotoMeshSampler
 from georef.profile import (
     point_at_station,
     profile_to_csv,
@@ -290,8 +291,26 @@ class ProfileDock(QDockWidget):
 
     # ---- Compute ------------------------------------------------------------
     def _ensure_sampler(self, datum):
-        """(Re)build the DEM sampler when the datum changes."""
-        if self._sampler is not None and self._sampler_datum is datum:
+        """(Re)build the elevation sampler when the datum changes.
+
+        A loaded photogrammetric survey takes precedence over the global DEM:
+        the profile that decides where a bridge or a canal sits should come off
+        the flight the engineer actually made, not 30 m cells from space. Falls
+        back to the DEM the moment the survey is hidden or absent, so nothing
+        depends on having flown the site.
+        """
+        survey = getattr(self._window.viewport.scene, "photo_mesh", None)
+        if survey is not None and getattr(survey, "visible", False):
+            current = self._sampler
+            if (isinstance(current, PhotoMeshSampler)
+                    and current.mesh is survey and self._sampler_datum is datum):
+                return current
+            self._sampler = PhotoMeshSampler(survey, datum)
+            self._sampler_datum = datum
+            return self._sampler
+
+        if self._sampler is not None and not isinstance(self._sampler, PhotoMeshSampler) \
+                and self._sampler_datum is datum:
             return self._sampler
         from georef.dem import DEMSampler
         self._sampler = DEMSampler(datum, parent=self)
@@ -381,7 +400,11 @@ class ProfileDock(QDockWidget):
             return
         profile = sample_profile(self._geopath.profile_points(), self._sampler)
         with open(path, "w", encoding="utf-8") as f:
-            f.write(profile_to_csv(profile))
+            datum = getattr(self._window.viewport.scene, "georef", None)
+            f.write(profile_to_csv(
+                profile,
+                vertical=self._window.viewport.vertical_reference(),
+                datum_alt=float(getattr(datum, "alt", 0.0) or 0.0)))
 
     def _export_png(self) -> None:
         path, _ = QFileDialog.getSaveFileName(

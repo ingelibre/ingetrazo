@@ -258,6 +258,11 @@ def save_scene(scene, path: Path) -> dict:
     datum = getattr(scene, "georef", None)
     if datum is not None:
         payload["georef"] = {"datum": datum.to_dict()}
+    # Base-map capture (Track G, G1). Only the capture rectangle and the
+    # source, never the tiles — see TileLayer.to_dict.
+    tile_layer = getattr(scene, "tile_layer", None)
+    if tile_layer is not None:
+        payload["tile_layer"] = tile_layer.to_dict()
     paths = getattr(scene, "geo_paths", None)
     if paths:
         payload["geo_paths"] = [p.to_dict() for p in paths]
@@ -274,6 +279,15 @@ def save_scene(scene, path: Path) -> dict:
     # that actually has textures pays for the container; everything else stays
     # plain JSON at format 1, readable by older builds.
     blobs, missing = _pack_textures(payload)
+    # The photogrammetric survey (Track G, G6) rides inside the document too,
+    # for the same reason the textures do: a reference mesh that lives in a
+    # folder next to the .igz is one move away from being lost.
+    survey = getattr(scene, "photo_mesh", None)
+    if survey is not None and getattr(survey, "triangle_count", 0):
+        from georef.photomesh import pack_mesh
+        meta, survey_blobs = pack_mesh(survey)
+        payload["photo_mesh"] = meta
+        blobs.update(survey_blobs)
     data = {
         "igz_format": CURRENT_FORMAT if blobs else PLAIN_FORMAT,
         "app_version": __version__,
@@ -335,12 +349,32 @@ def _read_document(path: Path):
     return data, archive
 
 
+def _unpack_photo_mesh(payload: dict, archive):
+    """Rebuild the stored survey, or ``None`` when the document has none."""
+    meta = payload.get("photo_mesh")
+    if not meta:
+        return None
+    from georef.photomesh import unpack_mesh
+
+    def read_blob(member: str) -> bytes:
+        try:
+            return archive.read(member)
+        except KeyError:
+            return b""
+
+    return unpack_mesh(meta, read_blob)
+
+
 def load_into(scene, path: Path) -> None:
     """Replace ``scene`` contents with what's stored at ``path``."""
     data, archive = _read_document(path)
+    survey = None
     try:
         if archive is not None:
             _unpack_textures(data.get("scene", {}), archive)
+            # Rebuilt here, while the archive is still open — it closes below
+            # and the survey's blobs live inside it.
+            survey = _unpack_photo_mesh(data.get("scene", {}), archive)
     finally:
         if archive is not None:
             archive.close()
@@ -359,6 +393,8 @@ def load_into(scene, path: Path) -> None:
     scene.geo_points.clear()
     scene.text_labels.clear()
     scene.georef = None
+    scene.photo_mesh = survey
+    scene.tile_layer = None
 
     _load_mesh(scene.mesh, payload)
     raw_layers = payload.get("layers")
@@ -367,6 +403,13 @@ def load_into(scene, path: Path) -> None:
         scene.layers = [Layer.from_dict(r) for r in raw_layers]
         if not any(ly.name == DEFAULT_LAYER for ly in scene.layers):
             scene.layers.insert(0, Layer(DEFAULT_LAYER))
+    raw_tiles = payload.get("tile_layer")
+    if raw_tiles:
+        from georef.tiles import TileLayer
+        try:
+            scene.tile_layer = TileLayer.from_dict(raw_tiles)
+        except Exception:  # noqa: BLE001 — a bad block costs the map, not the file
+            scene.tile_layer = None
     from core.saved_views import SavedView
     scene.saved_views = [SavedView.from_dict(r)
                          for r in payload.get("saved_views", [])]

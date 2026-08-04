@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QVector3D
 
 from core.history import AddGeoPathCommand, MoveGeoPathNodeCommand
+from core.i18n import tr
 from georef.geopath import GeoPath
 from tools.base import Tool, ToolContext
 
@@ -34,6 +35,11 @@ class GeoPathTool(Tool):
     def __init__(self) -> None:
         self.nodes: list[QVector3D] = []
         self.hover_point: QVector3D | None = None
+        # Ground elevation under the cursor — the live readout. Cheap enough to
+        # take on every hover (the survey index answers in ~20 µs).
+        self.hover_elevation: float | None = None
+        self._start_elevation: float | None = None
+        self._saved_view = None    # camera state to put back on deactivate
         # Fixed Z=0 ground plane — the base map. The viewport reads this so
         # every click lands flat on the imagery regardless of camera tilt.
         self.work_plane = (QVector3D(0.0, 0.0, 0.0), QVector3D(0.0, 0.0, 1.0))
@@ -44,13 +50,47 @@ class GeoPathTool(Tool):
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
         self._reset()
+        self._enter_plan_view(viewport)
 
     def on_deactivate(self, viewport) -> None:
         if self._drag is not None:
             self._revert_drag(viewport)
         self._reset()
         self.hover_point = None
+        self.hover_elevation = None
         viewport._hover_geo_node = None
+        self._restore_view(viewport)
+
+    # ---- Plan view ----------------------------------------------------------
+    # An alignment is a plan decision, and only top + parallel makes the click
+    # land where the cursor is: with relief under the cursor, ANY tilt or
+    # perspective puts the visible ground and its Z=0 plan position in
+    # different screen places, so you would trace a ridge and get a line
+    # metres away from it. Top parallel has zero parallax — the screen IS the
+    # plan. Saved and restored, because hijacking the camera for good would be
+    # its own kind of rude.
+
+    def _enter_plan_view(self, viewport) -> None:
+        if not viewport.has_ground_surface():
+            return                      # nothing to trace over: leave the view alone
+        camera = viewport.camera
+        self._saved_view = (camera.perspective, camera.yaw, camera.pitch)
+        camera.perspective = False
+        camera.set_view("top")
+        viewport.flash_status(tr(
+            "Top view, parallel — so the trace lands where you click. "
+            "Restored when you leave the tool."))
+        viewport.update()
+
+    def _restore_view(self, viewport) -> None:
+        if self._saved_view is None:
+            return
+        perspective, yaw, pitch = self._saved_view
+        self._saved_view = None
+        camera = viewport.camera
+        camera.perspective = perspective
+        camera.yaw, camera.pitch = yaw, pitch
+        viewport.update()
 
     # ---- Spatial input ------------------------------------------------------
     def on_click(self, ctx: ToolContext) -> None:
@@ -71,6 +111,9 @@ class GeoPathTool(Tool):
             self._finish(ctx.viewport, closed=True)
             return
         self.nodes.append(pt)
+        # Remember the ground at the previous node so the live label can show
+        # drop and grade to the cursor.
+        self._start_elevation = ctx.viewport.ground_elevation(pt.x(), pt.y())
         ctx.viewport.update()
 
     def on_double_click(self, ctx: ToolContext) -> None:
@@ -88,6 +131,9 @@ class GeoPathTool(Tool):
             vp.update()
             return
         self.hover_point = QVector3D(ctx.world.x(), ctx.world.y(), 0.0)
+        # The REAL altitude, not the local offset — a cota without its datum
+        # is a number you cannot defend.
+        self.hover_elevation = vp.ground_elevation(ctx.world.x(), ctx.world.y())
         # Highlight a node under the cursor when idle (a grab target).
         vp._hover_geo_node = self._pick_node(ctx) if not self.nodes else None
         vp.update()
@@ -109,6 +155,7 @@ class GeoPathTool(Tool):
             nxt = self.nodes[-1] + direction.normalized() * value
             nxt.setZ(0.0)
         self.nodes.append(nxt)
+        self._start_elevation = viewport.ground_elevation(nxt.x(), nxt.y())
         self.hover_point = nxt
         viewport.update()
         return True
@@ -133,11 +180,34 @@ class GeoPathTool(Tool):
         return segs
 
     def value_label(self):
-        if not self.nodes or self.hover_point is None:
+        if self.hover_point is None:
             return None
+        elevation = self.hover_elevation
+
+        # Idle over the ground: read the spot elevation. This is the cheap
+        # "what does the terrain do here" question an engineer asks constantly,
+        # and it costs nothing to answer while the cursor is already moving.
+        if not self.nodes:
+            if elevation is None:
+                return None
+            return (f"{elevation:.2f} m", self.hover_point)
+
         d = self.hover_point - self.nodes[-1]
         mid = (self.nodes[-1] + self.hover_point) * 0.5
-        return (f"{d.length():.2f} m", mid)
+        run = d.length()
+        if elevation is None:
+            return (f"{run:.2f} m", mid)
+
+        # Tracing with ground under both ends: length, drop and grade — the
+        # three numbers a road or canal alignment is judged on, without
+        # leaving the tool to open the profile.
+        start_z = self._start_elevation
+        if start_z is None or run < 1e-6:
+            return (f"{run:.2f} m  ·  {elevation:.2f} m", mid)
+        rise = elevation - start_z
+        grade = rise / run * 100.0
+        return (f"{run:.2f} m  ·  {elevation:.2f} m  ·  {rise:+.2f} m ({grade:+.1f}%)",
+                mid)
 
     # ---- Internals ----------------------------------------------------------
     def _pick_node(self, ctx: ToolContext):
@@ -187,3 +257,4 @@ class GeoPathTool(Tool):
 
     def _reset(self) -> None:
         self.nodes = []
+        self._start_elevation = None

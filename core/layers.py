@@ -16,6 +16,14 @@ from __future__ import annotations
 
 DEFAULT_LAYER = "Layer 0"
 
+# Where an imported photogrammetric survey lands (Track G, G6). Its own layer
+# by default, not the default one: the whole point of importing a survey is to
+# draw on top of it, and you need to switch it off to look at what you drew —
+# which would take your model with it if they shared a layer. A plain stored
+# name like DEFAULT_LAYER, not a translated one: layer names are document data
+# and must not change with the interface language.
+SURVEY_LAYER = "Survey"
+
 
 class Layer:
     """A named tag with display state."""

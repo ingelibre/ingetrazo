@@ -144,6 +144,7 @@ GL_FRAMEBUFFER = 0x8D40
 GL_READ_FRAMEBUFFER = 0x8CA8
 GL_DRAW_FRAMEBUFFER = 0x8CA9
 GL_NEAREST = 0x2600
+GL_MAX_TEXTURE_SIZE = 0x0D33
 
 
 SHADER_DIR = Path(__file__).resolve().parents[1] / "resources" / "shaders"
@@ -238,6 +239,8 @@ class Viewport(QOpenGLWidget):
     # A base-map tile finished downloading (Track G) — lets the 3D terrain
     # rebuild its mosaic as imagery arrives.
     tilesChanged = Signal()
+    # UTM coordinate under the cursor, for the status bar readout (Track G).
+    coordinateChanged = Signal(str)
 
     # Soft warm white painted on faces with no material colour — like the matte
     # cardstock of an architecture model (SketchUp's near-white default).
@@ -421,6 +424,7 @@ class Viewport(QOpenGLWidget):
         # running app); GL textures are cached per tile, keyed by (source, x,y,z).
         self._tile_fetcher = None
         self._tile_textures: dict = {}
+        self._last_coordinate = ""      # so the label only repaints on change
         self._tile_quad_vao = None
         self._tile_quad_vbo = None
         # Cached base-map tile geometry (built once per capture, not per frame).
@@ -440,6 +444,14 @@ class Viewport(QOpenGLWidget):
         self._terrain_vbo = None
         self._terrain_count = 0
         self._terrain_texture = None
+        # Photogrammetric survey (Track G, G6). One VBO for the whole mesh and
+        # one texture per ODM atlas; ``_photo_ranges`` says which slice of the
+        # VBO each atlas covers, so the draw is ~20 calls, not one per triangle.
+        self._photo_vao = None
+        self._photo_vbo = None
+        self._photo_count = 0
+        self._photo_textures = []
+        self._photo_ranges = []
 
     # ---- GL lifecycle -------------------------------------------------------
     def initializeGL(self) -> None:
@@ -487,6 +499,7 @@ class Viewport(QOpenGLWidget):
         self._preview_faces_vao, self._preview_faces_vbo = self._create_dynamic()
         self._tile_quad_vao, self._tile_quad_vbo = self._create_dynamic_uv()
         self._terrain_vao, self._terrain_vbo = self._create_dynamic_uv()
+        self._photo_vao, self._photo_vbo = self._create_dynamic_uv()
 
     def resizeGL(self, w: int, h: int) -> None:
         # Qt passes framebuffer-pixel sizes here (already scaled by DPR), so
@@ -615,7 +628,8 @@ class Viewport(QOpenGLWidget):
         # premium SketchUp feel. Fixed on zoom (it's the point at infinity),
         # moves only on orbit. Skipped over the base map / terrain (which supply
         # their own ground).
-        if not self._base_map_showing() and not self._terrain_showing():
+        if (not self._base_map_showing() and not self._terrain_showing()
+                and not self._photo_showing()):
             self._draw_sky(mvp)
             self._program.setUniformValue(self._loc_mvp, mvp)
 
@@ -627,6 +641,10 @@ class Viewport(QOpenGLWidget):
         # 3D draped terrain (Track G, G2 full) — real depth-tested relief that
         # replaces the flat map when enabled.
         self._render_terrain()
+
+        # Photogrammetric survey (Track G, G6) — the user's own flight, drawn
+        # after the DEM terrain so the real capture wins where both exist.
+        self._render_photo_mesh()
 
         # No grid — the infinite axes are the spatial reference (SketchUp).
 
@@ -1223,6 +1241,135 @@ class Viewport(QOpenGLWidget):
             self._set_color(0.55, 0.60, 0.52, 1.0)
             self._gl.glDrawArrays(GL_TRIANGLES, 0, self._terrain_count)
         self._terrain_vao.release()
+        self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
+    # ---- Photogrammetric survey (Track G, G6) ------------------------------
+
+    def _photo_showing(self) -> bool:
+        m = getattr(self.scene, "photo_mesh", None)
+        if m is None or not getattr(m, "visible", False) or self._photo_count == 0:
+            return False
+        # Its own switch AND its layer, the way a Group works: an entity can be
+        # hidden individually or by the layer it carries.
+        return self.scene.entity_visible(m)
+
+    def max_texture_size(self) -> int:
+        """The driver's ``GL_MAX_TEXTURE_SIZE`` — the hard ceiling for an atlas.
+
+        Queried rather than assumed: ODM routinely emits 24576px sheets, which
+        no current GPU accepts (this machine's Radeon 780M reports 16384), and
+        an oversized upload fails outright instead of degrading.
+        """
+        if self._gl is None:
+            return 4096                      # conservative until GL is up
+        self.makeCurrent()
+        try:
+            value = self._gl.glGetIntegerv(GL_MAX_TEXTURE_SIZE)
+        finally:
+            self.doneCurrent()
+        try:
+            value = int(value[0] if hasattr(value, "__len__") else value)
+        except (TypeError, ValueError):
+            return 4096
+        return value if value > 0 else 4096
+
+    def upload_photo_mesh(self, mesh, images=None) -> None:
+        """Upload a :class:`~georef.photomesh.PhotoMesh` and its atlases.
+
+        ``images`` maps a material index → already-loaded ``QImage`` (the reader
+        is slow enough that the caller does it off the GUI thread); anything
+        missing simply draws untextured rather than blocking here.
+        """
+        if mesh is None or mesh.triangle_count == 0:
+            self.release_photo_textures()
+            self._photo_count = 0
+            self.update()
+            return
+
+        import numpy as np
+
+        self.makeCurrent()
+        try:
+            # Inside makeCurrent: destroying a QOpenGLTexture without a current
+            # context leaks it and prints "Texture has not been destroyed".
+            self._release_photo_textures_unsafe()
+            # Expand indexed triangles to the flat pos+uv layout the shared
+            # VAO expects. Vectorised: the terrain's per-vertex Python loop is
+            # fine for a 180x180 grid and hopeless for 362k triangles.
+            tri = mesh.triangles
+            pos = mesh.vertices[tri]                     # (M, 3, 3)
+            uv = mesh.uvs[tri]                           # (M, 3, 2)
+            data = np.concatenate([pos, uv], axis=2).astype(np.float32).tobytes()
+            self._photo_vbo.bind()
+            self._photo_vbo.allocate(data, len(data))
+            self._photo_vbo.release()
+            self._photo_count = int(tri.shape[0]) * 3
+
+            # Materials are contiguous triangle runs, so each becomes one
+            # glDrawArrays over its slice of the same buffer.
+            images = images or {}
+            for index, material in enumerate(mesh.materials):
+                texture = None
+                image = images.get(index)
+                if image is not None and not image.isNull():
+                    texture = QOpenGLTexture(image)
+                    texture.setWrapMode(QOpenGLTexture.ClampToEdge)
+                    texture.setMinificationFilter(QOpenGLTexture.LinearMipMapLinear)
+                    texture.setMagnificationFilter(QOpenGLTexture.Linear)
+                self._photo_textures.append(texture)
+                self._photo_ranges.append(
+                    (material.start * 3, material.count * 3, texture))
+        finally:
+            self.doneCurrent()
+        self.update()
+
+    def release_photo_textures(self) -> None:
+        """Drop the survey's atlases (closing a document, or importing another).
+
+        Half a gigabyte of VRAM is worth freeing eagerly rather than waiting for
+        Qt to notice at teardown — when there is no current context left and the
+        textures leak with a warning instead.
+        """
+        if not self._photo_textures:
+            self._photo_ranges = []
+            return
+        self.makeCurrent()
+        try:
+            self._release_photo_textures_unsafe()
+        finally:
+            self.doneCurrent()
+
+    def _release_photo_textures_unsafe(self) -> None:
+        """Destroy the atlases. The caller must hold a current GL context."""
+        for texture in self._photo_textures:
+            if texture is not None:
+                texture.destroy()
+        self._photo_textures = []
+        self._photo_ranges = []
+
+    def _render_photo_mesh(self) -> None:
+        if not self._photo_showing():
+            return
+        # Same polygon offset as the terrain: the survey is the ground, and
+        # traced lines drawn on it must win the depth fight.
+        self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+        self._gl.glPolygonOffset(1.0, 1.0)
+        self._photo_vao.bind()
+        for first, count, texture in self._photo_ranges:
+            if count <= 0:
+                continue
+            if texture is not None:
+                self._program.setUniformValue(self._loc_use_tex, 1)
+                texture.bind(0)
+                self._gl.glDrawArrays(GL_TRIANGLES, first, count)
+                texture.release(0)
+                self._program.setUniformValue(self._loc_use_tex, 0)
+            else:
+                # Untextured run (atlas missing or still loading): neutral clay
+                # so it reads as "there is geometry here", not as a hole.
+                self._set_color(0.62, 0.60, 0.56, 1.0)
+                self._gl.glDrawArrays(GL_TRIANGLES, first, count)
+        self._photo_vao.release()
         self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
     def _ensure_tile_geometry(self, layer, datum):
@@ -2494,16 +2641,96 @@ class Viewport(QOpenGLWidget):
                 painter.drawPolygon(QPolygonF([QPointF(*p0), QPointF(*p1), QPointF(*p2)]))
             painter.setBrush(Qt.NoBrush)
 
-    def drape(self, v: QVector3D) -> QVector3D:
-        """Lift a Z=0 georef point onto the 3D terrain (its relief height) when
-        the terrain is showing, so routes/markers sit on the ground instead of
-        floating at the Z=0 reference plane. A no-op otherwise."""
+    def ground_height(self, x: float, y: float) -> float | None:
+        """Ground elevation at a plan position, or ``None`` where none is known.
+
+        One place to ask, so the survey-beats-DEM precedence lives here instead
+        of being re-decided by every caller (drape, the elevation readout, the
+        profile sampler chooser).
+        """
+        survey = getattr(self.scene, "photo_mesh", None)
+        if survey is not None and getattr(survey, "visible", False):
+            z = survey.height_at(x, y)
+            if z is not None:
+                return z
         t = getattr(self.scene, "terrain", None)
         if t is not None and getattr(t, "visible", False):
-            z = t.height_at(v.x(), v.y())
-            if z is not None:
-                return QVector3D(v.x(), v.y(), z)
-        return v
+            return t.height_at(x, y)
+        return None
+
+    def _emit_coordinate(self, ev) -> None:
+        """Publish the UTM coordinate under the cursor for the status bar.
+
+        Rides the coalesced hover rather than every mouse event: the readout is
+        for reading, and 16 updates a second is already more than an eye can
+        follow. Silent without a datum — local scene metres are not a
+        coordinate anybody can use.
+        """
+        datum = getattr(self.scene, "georef", None)
+        if datum is None:
+            if self._last_coordinate:
+                self._last_coordinate = ""
+                self.coordinateChanged.emit("")
+            return
+        p = ev.position().toPoint()
+        world = self._world_from_pixel(p.x(), p.y())
+        if world is None:
+            return
+        east, north, _ = datum.local_to_utm(world)
+        text = (f"E {east:,.2f}  N {north:,.2f}  "
+                f"{datum.zone}{datum.hemisphere}")
+        z = self.ground_elevation(world.x(), world.y())
+        if z is not None:
+            text += f"  ·  {z:,.2f} m"
+        if text != self._last_coordinate:
+            self._last_coordinate = text
+            self.coordinateChanged.emit(text)
+
+    def ground_elevation(self, x: float, y: float) -> float | None:
+        """Ground elevation as a REAL altitude, not a local offset.
+
+        ``ground_height`` answers in scene metres, which is what geometry
+        needs; this adds the datum's altitude back so what reaches the user is
+        the number they would read off a level — 1783.19, not 37.19. Anything
+        shown to a person goes through here.
+        """
+        z = self.ground_height(x, y)
+        if z is None:
+            return None
+        datum = getattr(self.scene, "georef", None)
+        return z + float(getattr(datum, "alt", 0.0) or 0.0)
+
+    def vertical_reference(self) -> str:
+        """Token naming what the scene's elevations are measured against, for
+        labelling. See :mod:`georef.photomesh` for the meanings."""
+        from georef.photomesh import VERTICAL_DEM, VERTICAL_LOCAL, VERTICAL_ODM
+        survey = getattr(self.scene, "photo_mesh", None)
+        if survey is not None and getattr(survey, "visible", False):
+            return getattr(survey, "vertical_reference", VERTICAL_ODM)
+        t = getattr(self.scene, "terrain", None)
+        if t is not None and getattr(t, "visible", False):
+            return VERTICAL_DEM
+        return VERTICAL_LOCAL
+
+    def has_ground_surface(self) -> bool:
+        """Whether anything is showing that a trace could be draped onto."""
+        for name in ("photo_mesh", "terrain"):
+            obj = getattr(self.scene, name, None)
+            if obj is not None and getattr(obj, "visible", False):
+                return True
+        return False
+
+    def drape(self, v: QVector3D) -> QVector3D:
+        """Lift a Z=0 georef point onto the ground (its relief height) when a
+        ground surface is showing, so routes/markers sit on it instead of
+        floating at the Z=0 reference plane. A no-op otherwise.
+
+        The **survey wins over the DEM terrain** where both are present: it is
+        the user's own flight at centimetres per pixel against 30 m global
+        cells, so a trace should follow what was actually captured.
+        """
+        z = self.ground_height(v.x(), v.y())
+        return QVector3D(v.x(), v.y(), z) if z is not None else v
 
     def _draw_geo_points(self, painter: QPainter) -> None:
         """Draw imported survey points (GPS / total station): a small cross
@@ -4547,6 +4774,7 @@ class Viewport(QOpenGLWidget):
         ev = _HoverEvent(pos, modifiers)
         # Track cursor + hover edge so Down can capture a reference edge.
         self._last_mouse_pos = ev.position()
+        self._emit_coordinate(ev)
         # Plan↔profile link (Track G): let an open profile mark the station of
         # the route point under the cursor.
         win = self.window()

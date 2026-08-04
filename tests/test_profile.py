@@ -136,5 +136,10 @@ def test_profile_csv_round_shape():
     profile = sample_profile([V(0, 0), V(20, 0)], sampler, spacing=10.0)
     csv = profile_to_csv(profile)
     lines = csv.strip().split("\n")
-    assert lines[0] == "station_m,x_m,y_m,elevation_m"
-    assert len(lines) == len(profile.samples) + 1
+    # A leading comment names the vertical reference: a column of elevations
+    # that doesn't say what it's measured from can't be defended later.
+    notes = [ln for ln in lines if ln.startswith("#")]
+    assert notes and "reference" in notes[0]
+    rows = [ln for ln in lines if not ln.startswith("#")]
+    assert rows[0] == "station_m,x_m,y_m,elevation_m"
+    assert len(rows) == len(profile.samples) + 1

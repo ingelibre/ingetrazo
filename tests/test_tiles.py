@@ -236,3 +236,61 @@ def test_cache_lru_eviction(tmp_path):
     total = sum(len(b"0123456789") for _ in remaining)
     assert total <= 30
     assert 9 in remaining  # most-recently written kept
+
+
+# ---- the capture is part of the document -----------------------------------
+
+def test_tile_layer_round_trips_through_an_igz(tmp_path):
+    """The base map's CAPTURE is document state. It gets set up around whatever
+    you imported; a reopened file that fell back to a default square somewhere
+    else reads as the map being misplaced — which is how this was found."""
+    from core.scene import Scene
+    from formats import igz
+    from georef.tiles import PRESETS, TileLayer
+
+    layer = TileLayer(PRESETS["esri_imagery"], zoom=16)
+    layer.set_rectangle(1043.0, 907.0, cx=-12.0, cy=93.0)
+    scene = Scene()
+    scene.georef = SceneDatum(-15.56, -72.97)
+    scene.tile_layer = layer
+
+    out = tmp_path / "doc.igz"
+    igz.save_scene(scene, out)
+    back = Scene()
+    igz.load_into(back, out)
+
+    assert back.tile_layer is not None
+    assert back.tile_layer.source.id == "esri_imagery"
+    assert back.tile_layer.zoom == 16
+    assert back.tile_layer.patches == [(-12.0, 93.0, 521.5, 453.5)]
+
+
+def test_custom_source_survives_without_a_preset(tmp_path):
+    """A user's own XYZ source isn't in PRESETS, so the URL has to travel."""
+    from core.scene import Scene
+    from formats import igz
+    from georef.tiles import TileLayer, TileSource
+
+    src = TileSource(id="mine", name="Mine",
+                     url_template="https://x/{z}/{x}/{y}.png",
+                     attribution="me")
+    scene = Scene()
+    scene.tile_layer = TileLayer(src, zoom=17)
+    out = tmp_path / "custom.igz"
+    igz.save_scene(scene, out)
+    back = Scene()
+    igz.load_into(back, out)
+    assert back.tile_layer.source.url_template == "https://x/{z}/{x}/{y}.png"
+    assert back.tile_layer.zoom == 17
+
+
+def test_document_without_a_base_map_loads_clean(tmp_path):
+    from core.scene import Scene
+    from formats import igz
+
+    out = tmp_path / "plain.igz"
+    igz.save_scene(Scene(), out)
+    back = Scene()
+    back.tile_layer = "stale"          # must be cleared, not left behind
+    igz.load_into(back, out)
+    assert back.tile_layer is None

@@ -43,11 +43,22 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 
 **BIM→IFC validado end-to-end:** `.ifc` pasa `ifcopenshell.validate` limpio; cantidades honestas por clase (`Qto_*BaseQuantities`: muro NetSideArea, losa, columna/viga, puerta/ventana, por-metro); puente real con el importador de IngePresupuestos verificado (metrados exactos); "Taggear al dibujar" + push/pull propaga tags. Hallazgos pendientes del lado IngePresupuestos: su `IFC_MAP` pierde `IFCRAILING`/`IFCCOVERING` en silencio; prefiere `max()` de áreas en vez de `Net*` sobre `Gross*`.
 
-**Georref (Track G):** MVP completo — datum local (`SceneDatum`, UTM↔local exacto), teselas XYZ (presets + fuentes custom con nombre persistentes), terreno 3D drapeado (DEM AWS terrarium + mosaico), GeoPath (subsistema propio, NUNCA `Scene.mesh`) con perfil longitudinal vivo + export CSV/PNG, puntos topográficos CSV (P,N,E,Z estación total) con snap bit-exacto. Falta expansión: G5 curvas de nivel, G6 malla fotogramétrica georef (WebODM OBJ) + KML/GeoJSON/DXF.
+**Georref (Track G):** MVP completo — datum local (`SceneDatum`, UTM↔local exacto), teselas XYZ (presets + fuentes custom con nombre persistentes), terreno 3D drapeado (DEM AWS terrarium + mosaico), GeoPath (subsistema propio, NUNCA `Scene.mesh`) con perfil longitudinal vivo + export CSV/PNG, puntos topográficos CSV (P,N,E,Z estación total) con snap bit-exacto. Falta expansión: **G5 curvas de nivel** + DXF.
+
+**G6 — malla fotogramétrica (2026-08-03): HECHO.** `georef/photomesh.py` importa el modelo texturizado de WebODM/ODM como geometría de referencia display-only (invariante #4, arrays NumPy, jamás `Scene.mesh`). Dogfooding con el levantamiento real del usuario (chanchallay, 802×666 m, 362 395 triángulos, 21 atlas): carga 1,12 s, import completo por el menú 2,11 s, guardar 1,80 s → **29,6 MB**, reabrir 2,00 s. Piezas:
+- **Coordenadas:** el `_geo.obj` NO es UTM crudo pese al nombre — ODM resta un ancla entera (`odm_georeferencing_model_geo.txt`) y escribe el resto en ±400 m; la Z sí es altitud absoluta. Sin problema de float32, y las versiones recientes ya no exportan el gemelo sin `_geo`.
+- **Referencia vertical:** `vertical_origin()` = percentil 1 de las cotas (el **pie** del levantamiento; el mínimo real no sirve, hay picos de reconstrucción — 94 vértices de 222 622 y el más bajo 45 m bajo el p0,1). Se guarda en **`datum.alt`**, así que toda cota se reporta como altitud real. Deriva SOLO del levantamiento: la versión anterior la tomaba del DEM global y mezclaba datums verticales *además* de depender de que hubieran descargado las teselas — el mismo modelo importaba con cotas distintas según la red.
+- **Texturas:** ODM emite atlas de hasta 24576², que ninguna GPU acepta. `plan_texture_sizes()` recorta al `GL_MAX_TEXTURE_SIZE` real y luego encoge el mayor hasta caber en un presupuesto de 1 GiB (3,09 → 0,42 GB en la Radeon 780M). Caché en `<texture_cache_root>/odm/`: 8,6 s → 0,6 s.
+- **Consulta de superficie:** `height_at(x,y)` con rejilla en planta vectorizada y perezosa — 133 ms de construcción, **21,5 µs por consulta**. En solapes gana la Z más alta. `PhotoMeshSampler` la enchufa a `sample_profile`, así que el perfil longitudinal sale del vuelo propio y no del SRTM de 30 m.
+- **Persistencia:** dentro del `.igz` (geometría `.npz` + atlas JPEG ya reescalados). Probado moviendo la carpeta del export de WebODM: el documento abre solo. **La captura del mapa base también se guarda ahora** (`TileLayer.to_dict/from_dict`) — nunca las teselas, que son de un servidor ajeno.
+- **Capas:** `PhotoMesh.layer`; el import crea y asigna `SURVEY_LAYER`, para que apagar el levantamiento no se lleve el modelo propio.
+- **Trazado:** la herramienta Ruta entra sola en vista superior + paralela (única combinación con paralaje cero sobre relieve) y restaura la cámara al salir; etiqueta en vivo con cota bajo el cursor y, al trazar, longitud · cota · desnivel (pendiente %). Lectura UTM continua en la barra de estado.
+- **Ojo con las cotas:** sin GCP, la Z del vuelo es GNSS del dron = elipsoidal, con error de varios metros. El CSV del perfil lo declara en una línea de comentario. El DEM global es ortométrico, así que Terreno 3D y levantamiento muestran un escalón: es real, no un fallo de encaje.
+- **Falta:** dibujo directo en 3D sobre la malla (los tools siguen en el plano Z=0; una plataforma dibujada en el origen queda enterrada si el terreno ahí está más alto) y cotas persistentes como anotación.
 
 **Perf:** índice de pick NumPy vectorizado, caras en un draw call (vcolor), chunks por grupo/instancia, hover coalescing — plaza de 394k tris orbita a 60 fps. Pendiente de fondo: import DAE grande ~27 s (ítem "grupos de referencia como arrays NumPy puros").
 
-**Tests: ~871 rápidos + ~800 slow (fuzz 996/1000 limpias, 4 xfail draw-side)** — `python -m pytest tests/ -q -m "not slow"`. CI Windows en tags `v*`.
+**Tests: ~963 rápidos + ~800 slow (fuzz 996/1000 limpias, 4 xfail draw-side)** — `python -m pytest tests/ -q -m "not slow"`. CI Windows en tags `v*`.
 
 ---
 
@@ -91,6 +102,7 @@ tools/    base.py (Tool ABC) + select/line/rectangle/circle/arc/move/offset/push
           paint/dimension/text/geopath/...
 formats/  igz.py · skp.py + skp_openskp.py · dae.py · obj.py · stl.py · gltf.py · ifc.py · fuse.py
 georef/   datum.py · tiles.py + tile_fetcher.py · dem.py · terrain.py · geopath.py ·
+          photomesh.py (malla fotogramétrica ODM, G6) · geoimport.py · surface.py ·
           profile.py · points.py
 scripts/  install_desktop.sh · gen_textures/components/doc_icons/app_icon.py · skp_diff.py
 docs/     skp-backend.md · openskp-collaboration.md · halfedge-migration-plan.md
@@ -121,6 +133,11 @@ docs/     skp-backend.md · openskp-collaboration.md · halfedge-migration-plan.
 - **Verificación visual:** `QWidget.grab()` NO captura el overlay QPainter — usar `import -window` (ImageMagick) sobre XWayland, o `viewport.render_image()`. Íconos SIEMPRE validarlos a 24 px reales y en modo oscuro.
 - **QSettings en scripts sueltos:** fijar `setOrganizationName/setApplicationName` como main.py o escriben a `Unknown Organization`.
 - **Wine re-encodea argv** al codepage ANSI → rutas con acentos a skp2dae pasan por temp ASCII.
+- **`QOpenGLTexture.destroy()` sin contexto activo** filtra la textura y avisa "Texture has not been destroyed". Envolver siempre en `makeCurrent()/doneCurrent()` como hace `reset_tiles`. Con los 21 atlas de un levantamiento son 0,42 GB de VRAM sin liberar.
+- **`signal.connect(lambda…, Qt.QueuedConnection)` sin objeto receptor** ejecuta el slot en el hilo EMISOR — Qt no tiene dónde encolarlo. Síntoma: "QObject::killTimer: Timers cannot be stopped from another thread" al tocar el diálogo de progreso. Hay que conectar a un **método enlazado** de un QObject del hilo de la UI; PySide6 NO acepta la forma de 3 argumentos `connect(contexto, slot, tipo)`. *(`_parse_skp_threaded` tiene el mismo patrón con lambda — preexistente, sin arreglar.)*
+- **`QImageReader` rechaza imágenes de más de `allocationLimit()`, 256 MB por defecto**, con un error de "sin memoria" engañoso; hay que ponerlo a 0 y restaurarlo. Y **`setScaledSize` NO evita decodificar un PNG entero** (medido: 7,4 s y 2,5 GB de pico igual con y sin), de ahí la caché de atlas.
+- **Un error en Z es INVISIBLE en vista superior.** El mapa base estuvo 1804 m bajo tierra y todas las comprobaciones de encaje en planta salían perfectas. Verificar siempre en vista frontal/lateral además de la superior.
+- **`SceneDatum.geodetic_to_local(lat, lon)` sin altitud significa "sobre el plano de referencia"** (Z local = 0), no a nivel del mar. El default de 0.0 metros absolutos hundía todo lo que no lleva elevación propia en cuanto el datum tenía `alt` (teselas del mapa, alineamientos KML).
 - **`capture_state` NO sirve para copiar mallas** (preserva identidad y aliasa); copiar = add_face/add_edge profundo.
 - **`orient_outward` y glifos:** el probe de centroide falla en caras cóncavas sin huecos — los windings del texto 3D se fijan analíticamente; no tocar el probe.
 
@@ -136,7 +153,7 @@ docs/     skp-backend.md · openskp-collaboration.md · halfedge-migration-plan.
 6. **Kit restante:** Tape Measure + guías (T) · Eraser (E) por arrastre · Outliner · Texture Position.
 7. **Motor (diferido, atacar cuando duela):** iceberg de solapes coplanares (~326/1000 secuencias, invisible al bench; pre-STL/IFC en serio) + los 4 xfail draw-side + rechazos del guard → resultados correctos. La salida de fondo es **A.3: identidad/attrs por REGIÓN a través del rebuild** (el rule-set de declaraciones llegó a su techo). Limitación conocida: `apply_rebuild` disuelve diagonales de usuario en planos tocados por push.
 8. **Perf de fondo:** grupos de referencia como arrays NumPy puros (import DAE 27 s → objetivo archivos 80 MB) · edición de mallas 17k+ tris.
-9. **Georref expansión:** G5 contornos · G6 fotogrametría + KML/GeoJSON/DXF · CSV import ya hecho.
+9. **Georref expansión:** **G5 curvas de nivel** (siguiente natural: ya hay `photomesh.height_at`) · DXF · G6 y KML/GeoJSON HECHOS. Aparte, lo que pide el flujo del puente: **plano de trabajo que siga al terreno** (hoy los tools dibujan en Z=0 fijo) y **cotas persistentes** como anotación reutilizando `geo_points`.
 10. **v2:** planos profesionales (LayOut-equivalente), DWG/DXF (IngeCAD es el hermano 2D), IFC import, plugins públicos.
 
 ---

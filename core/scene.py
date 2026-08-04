@@ -66,6 +66,11 @@ class Scene:
     tile_layer: object | None = None
     # 3D draped terrain (Track G, G2 full) — display-only relief mesh, runtime.
     terrain: object | None = None
+    # Photogrammetric survey (Track G, G6) — the drone flight's own textured
+    # mesh from WebODM/ODM. Display-only like the terrain, and for the same
+    # reason: hundreds of thousands of reconstruction triangles are reference
+    # geometry to trace over, never topology-engine geometry (invariant #4).
+    photo_mesh: object | None = None
     # BIM "active class" (tag-as-you-draw): while set, faces created by the
     # drawing tools are stamped with this tag ({"id", "class", "name"}) at
     # commit time. Runtime UI mode — never serialised.

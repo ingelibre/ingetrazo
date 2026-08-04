@@ -549,6 +549,7 @@ class MainWindow(QMainWindow):
             (tr("Wavefront OBJ (.obj)…"), self._on_import_obj),
             (tr("Georeference (KML / GeoJSON)…"), self._on_import_georef),
             (tr("Survey points CSV (UTM)…"), self._on_import_survey_points),
+            (tr("Photogrammetric mesh (WebODM)…"), self._on_import_photomesh),
         ):
             act = QAction(label, self)
             act.triggered.connect(handler)
@@ -605,6 +606,14 @@ class MainWindow(QMainWindow):
         self._tool_label = QLabel(tr("Tool: none"))
         bar.addPermanentWidget(self._tool_label)
 
+        # Live UTM readout, the way a CAD shows coordinates. Local scene metres
+        # are meaningless to anyone outside the file; easting/northing is what
+        # goes on a plan, into a GPS, and into a report. Only shown once the
+        # scene has a datum — there is no coordinate without one.
+        self._coord_label = QLabel("")
+        self._coord_label.setStyleSheet("color:#5a6472; padding:0 8px;")
+        bar.addPermanentWidget(self._coord_label)
+
         # SketchUp-style Measurements box (VCB), pinned bottom-right: a caption
         # ("Length" / "Dimensions" / "Distance") plus a boxed field showing the
         # live measurement, or what you're typing (highlighted while typing).
@@ -621,6 +630,7 @@ class MainWindow(QMainWindow):
 
         self.viewport.valueBufferChanged.connect(self._on_value_buffer)
         self.viewport.measurementChanged.connect(self._on_measurement)
+        self.viewport.coordinateChanged.connect(self._coord_label.setText)
 
     _VCB_IDLE_STYLE = (
         "color:#0F141B; background:#FFFFFF; border:1px solid #9aa3ad;"
@@ -892,7 +902,15 @@ class MainWindow(QMainWindow):
     def _on_zoom_extents(self) -> None:
         bounds = self.viewport.scene.bounds()
         if bounds[0] is None:
-            return
+            # ``Scene.bounds()`` covers editable geometry only. A document
+            # holding just a survey (the normal state right after importing
+            # one) would otherwise make Zoom Extents do nothing at all.
+            survey = getattr(self.viewport.scene, "photo_mesh", None)
+            if survey is None or not getattr(survey, "visible", False):
+                return
+            bounds = survey.bounds()
+            if bounds[0] is None:
+                return
         self.viewport.camera.fit_to(bounds[0], bounds[1])
         self.viewport.update()
 
@@ -1013,7 +1031,12 @@ class MainWindow(QMainWindow):
         sampler.ensure_area(min(lo[0], hi[0]), min(lo[1], hi[1]),
                             max(lo[0], hi[0]), max(lo[1], hi[1]))
         self.viewport.prefetch_tiles(layer.source, layer.flat_tiles(datum), zoom)
-        ground = ground_reference(sampler, datum)
+        # When a survey has already fixed the scene's vertical zero, the DEM
+        # terrain must use the SAME zero or the two grounds render tens of
+        # metres apart. (They still differ by the geoid/ellipsoid separation —
+        # that gap is real, not a bug, and is why elevations are labelled with
+        # where they came from.)
+        ground = float(datum.alt) if datum.alt else ground_reference(sampler, datum)
         if ground is None:
             return                         # DEM not ready — retry on changed
         terrain = build_terrain(datum, sampler, ground, bbox, zoom=zoom)
@@ -1106,6 +1129,26 @@ class MainWindow(QMainWindow):
         self.viewport.history.clear()
         self._current_path = path
         self._saved_version = self.viewport.scene.version
+        # A stored survey (Track G, G6) arrives as plain arrays + images; the
+        # GL upload only happens here, where there's a context.
+        survey = getattr(self.viewport.scene, "photo_mesh", None)
+        if survey is not None:
+            self.viewport.upload_photo_mesh(survey, getattr(survey, "images", None))
+            # Frame it. The default camera sits ~20 m out (sized for the scale
+            # figure) and a survey is hundreds of metres across, so without this
+            # the whole thing falls outside the far plane and the document opens
+            # looking empty — with the mesh loaded and invisible.
+            mn, mx = survey.bounds()
+            if mn is not None:
+                self.viewport.camera.set_view("iso")
+                self.viewport.camera.fit_to(mn, mx)
+        else:
+            self.viewport.release_photo_textures()
+        # Mirror the document's base map and survey into the tray, and refetch
+        # the tiles for the capture the document carries — otherwise the panel
+        # shows stale defaults over a scene that has its own.
+        self.georef_tray.base_map.sync_from_document()
+        self.georef_tray.base_map.sync_photo_mesh()
         self.viewport.notify_scene_changed()
         self._update_title()
         return True
@@ -1743,6 +1786,200 @@ class MainWindow(QMainWindow):
         self.viewport.update()
         self.statusBar().showMessage(tr("Imported {name}", name=path.name), 3000)
 
+    def _on_import_photomesh(self) -> None:
+        """Import a WebODM/ODM photogrammetric survey as georeferenced reference
+        geometry (Track G, G6) — the drone flight you then trace on top of.
+
+        Display-only: it goes to ``scene.photo_mesh``, never through the
+        topology engine (invariant #4).
+        """
+        from georef.datum import SceneDatum, utm_inverse
+        from georef.photomesh import find_anchor, load_odm_obj
+
+        path_str, _ = QFileDialog.getOpenFileName(
+            self, tr("Import photogrammetric mesh"), "",
+            tr("ODM textured model (*.obj);;All files (*)"))
+        if not path_str:
+            return
+        path = Path(path_str)
+
+        scene = self.viewport.scene
+        anchor = find_anchor(path)
+        datum = getattr(scene, "georef", None)
+        datum_existed = datum is not None
+        if datum is None:
+            # The survey knows where it is — anchor the scene on it rather than
+            # making the user type coordinates they'd have to look up.
+            if anchor is None:
+                QMessageBox.warning(
+                    self, tr("Import photogrammetric mesh"),
+                    tr("This model is not georeferenced and the scene has no "
+                       "datum yet. Set a location in the Terrain tray first, or "
+                       "pick an ODM export that includes "
+                       "odm_georeferencing_model_geo.txt."))
+                return
+            lat, lon = utm_inverse(anchor.east, anchor.north,
+                                   anchor.zone, anchor.northern)
+            datum = SceneDatum(lat, lon)
+            scene.georef = datum
+
+        # Load with ODM's own heights untouched (ground_ref=0). The scene's
+        # vertical zero is decided below, from the survey alone — never from the
+        # DEM, which is a different vertical datum and would also make the
+        # result depend on whether tiles had downloaded yet.
+        dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))
+        mesh, images, exc = self._load_photomesh_threaded(path, datum, 0.0, cb)
+        if exc is not None:
+            dlg.close()
+            QMessageBox.critical(self, tr("Import failed"), str(exc))
+            return
+        if mesh is None or mesh.triangle_count == 0:
+            dlg.close()
+            self.statusBar().showMessage(
+                tr("No triangles found in the model."), 4000)
+            return
+
+        # ---- The vertical zero ------------------------------------------
+        # The scene works in local metres, so the survey's ~1750 m of altitude
+        # has to come off. What matters is that the amount taken off is
+        # RECORDED: datum.alt is the absolute elevation of local Z=0, so every
+        # elevation can be reported as a real altitude instead of a number
+        # floating above an unknown reference.
+        from georef.photomesh import vertical_origin
+        if datum_existed and datum.alt:
+            # An established scene already has a vertical zero; a second survey
+            # joins it rather than redefining it, or the two would not line up.
+            origin = float(datum.alt)
+        else:
+            origin = vertical_origin(mesh)
+            if origin is None:
+                origin = 0.0
+            datum.alt = origin
+
+        if origin:
+            mesh.vertices[:, 2] -= origin
+            mesh.invalidate_index()     # the geometry moved under the index
+
+        mesh.visible = True
+        # Its own layer, so switching the survey off to look at what you drew
+        # doesn't take your model with it.
+        from core.layers import SURVEY_LAYER, Layer
+        if scene.layer(SURVEY_LAYER) is None:
+            scene.layers.append(Layer(SURVEY_LAYER))
+        mesh.layer = SURVEY_LAYER
+        # Keep the downscaled atlases on the mesh so saving the document does
+        # not depend on the ODM export still being where it was imported from.
+        mesh.images = images or {}
+        scene.photo_mesh = mesh
+        self.viewport.upload_photo_mesh(mesh, mesh.images)
+        self.georef_tray.base_map.sync_photo_mesh()
+
+        # Point the base map at the flown ground. Survey and imagery already
+        # share the datum, so they line up by construction — but the tile layer
+        # only fetches the area it was told to capture, and by default that's a
+        # square at the origin. Without this the imagery is simply absent under
+        # the survey, which looks exactly like "it doesn't line up".
+        mn, mx = mesh.bounds()
+        if mn is not None:
+            self.georef_tray.base_map.setup_for_bounds(datum, mn, mx)
+        self.georef_tray.raise_()
+        dlg.close()
+        if mn is not None:
+            self.viewport.camera.set_view("iso")
+            self.viewport.camera.fit_to(mn, mx)
+        self.viewport.update()
+        missing = mesh.missing_textures
+        if missing:
+            self.statusBar().showMessage(
+                tr("Imported {name} — {n} texture(s) not found").format(
+                    name=path.name, n=len(missing)), 6000)
+        else:
+            self.statusBar().showMessage(
+                tr("Imported {name} — {t} triangles").format(
+                    name=path.name, t=f"{mesh.triangle_count:,}"), 4000)
+
+    def _on_photo_progress(self, fraction: float, text: str) -> None:
+        """Progress from the import worker, delivered on the UI thread."""
+        callback = getattr(self, "_photo_progress", None)
+        if callback is not None:
+            callback(fraction, text)
+
+    def _load_photomesh_threaded(self, path, datum, ground, cb):
+        """Parse the OBJ and decode its atlases off the UI thread.
+
+        Both halves are slow enough to freeze the window — the real survey this
+        was built against is 40 MB of OBJ plus 455 MB of PNG, and one atlas
+        alone takes ~9 s to decode the first time. Neither touches ``Scene``,
+        so both are safe off-thread; the GL upload stays with the caller.
+        """
+        from PySide6.QtCore import QEventLoop, QObject, QThread, Qt, Signal
+
+        from georef.photomesh import load_atlas, load_odm_obj, plan_texture_sizes
+
+        gl_max = self.viewport.max_texture_size()
+
+        class _Worker(QObject):
+            progressed = Signal(float, str)
+            finished = Signal(object, object, object)   # (mesh, images, exc)
+
+            def run(self):
+                try:
+                    self.progressed.emit(0.05, "Reading mesh…")
+                    mesh = load_odm_obj(path, datum, ground_ref=ground)
+
+                    from PySide6.QtGui import QImageReader
+                    sizes, index_of = [], []
+                    for i, material in enumerate(mesh.materials):
+                        if material.texture is None or not material.texture.is_file():
+                            continue
+                        reader = QImageReader(str(material.texture))
+                        size = reader.size()
+                        if not size.isValid():
+                            continue
+                        sizes.append((size.width(), size.height()))
+                        index_of.append(i)
+
+                    targets = plan_texture_sizes(sizes, gl_max)
+                    images = {}
+                    for n, (i, target) in enumerate(zip(index_of, targets)):
+                        self.progressed.emit(
+                            0.15 + 0.85 * n / max(1, len(index_of)),
+                            "Loading textures…")
+                        image = load_atlas(mesh.materials[i].texture, target)
+                        if not image.isNull():
+                            images[i] = image
+                    self.finished.emit(mesh, images, None)
+                except Exception as exc:  # noqa: BLE001 — reported to caller
+                    self.finished.emit(None, None, exc)
+
+        thread = QThread(self)
+        worker = _Worker()
+        worker.moveToThread(thread)
+        result = {}
+
+        # A BOUND METHOD, not a lambda. A queued connection to a bare lambda has
+        # no receiver QObject to marshal into, so Qt ends up running it on the
+        # *worker* thread and the progress dialog's timer gets stopped
+        # cross-thread ("Timers cannot be stopped from another thread"). Bound
+        # to ``self``, delivery lands on the UI thread where the dialog lives.
+        self._photo_progress = cb
+        worker.progressed.connect(self._on_photo_progress, Qt.QueuedConnection)
+
+        loop = QEventLoop()
+
+        def _done(mesh, images, exc):
+            result.update(mesh=mesh, images=images, exc=exc)
+            loop.quit()
+
+        worker.finished.connect(_done, Qt.QueuedConnection)
+        thread.started.connect(worker.run)
+        thread.start()
+        loop.exec()
+        thread.quit()
+        thread.wait()
+        worker.deleteLater()
+        return result.get("mesh"), result.get("images"), result.get("exc")
+
     def _on_import_georef(self) -> None:
         """Import a KML/KMZ/GeoJSON alignment as georeferenced GeoPath traces —
         located via the datum, ready to profile / measure (Track G)."""
@@ -1930,4 +2167,11 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard(tr("Quit IngeTrazo?")):
             event.ignore()
             return
+        # Free the survey's atlases while a GL context still exists — a
+        # photogrammetric import holds hundreds of MB, and letting Qt tear them
+        # down leaks them with a "Texture has not been destroyed" warning.
+        try:
+            self.viewport.release_photo_textures()
+        except Exception:  # noqa: BLE001 — never block quitting on cleanup
+            pass
         super().closeEvent(event)
