@@ -746,13 +746,17 @@ def _adapt(model, name: str, skp_path=None):
 
     defs = getattr(model, "definitions", {}) or {}
     attr_map = _material_attrs(model, skp_path or name)
+    # openskp ≥ 0.4 exposes the implicit root as its own field; older
+    # releases keep it inside ``definitions`` under the name ROOT_MODEL.
+    root = getattr(model, "root", None)
+    if root is not None:
+        _mark_projected_faces(root, attr_map)
     for d in defs.values():
         _mark_projected_faces(d, attr_map)
     by_id = {}
-    root = None
     for d in defs.values():
         by_id[getattr(d, "id", None)] = d
-        if getattr(d, "name", None) == "ROOT_MODEL":
+        if root is None and getattr(d, "name", None) == "ROOT_MODEL":
             root = d
     roots = [root] if root is not None else list(defs.values())
 
