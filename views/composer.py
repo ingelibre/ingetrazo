@@ -84,9 +84,25 @@ def frame_title_text(frame: MarcoVista) -> str:
 
 
 def paint_frame_mm(painter: QPainter, frame: MarcoVista,
-                   image: Optional[QImage]) -> None:
+                   image: Optional[QImage], hlr=None) -> None:
     r = QRectF(0, 0, frame.w_mm, frame.h_mm)
-    if image is not None and not image.isNull():
+    if frame.style == "vectorial":
+        painter.fillRect(r, QColor(255, 255, 255))
+        if hlr is not None and len(hlr):
+            pen = QPen(QColor(30, 36, 44))
+            pen.setWidthF(0.22)          # a 0.2 mm technical pen
+            pen.setCapStyle(Qt.RoundCap)
+            painter.setPen(pen)
+            painter.save()
+            painter.setClipRect(r)
+            for x0, y0, x1, y1 in hlr:
+                painter.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+            painter.restore()
+        else:
+            _draw_text_mm(painter, r.adjusted(2, 2, -2, -2),
+                          tr("Update the view to render"), 3.5,
+                          color=QColor(140, 150, 160))
+    elif image is not None and not image.isNull():
         painter.drawImage(r, image)
     else:
         painter.fillRect(r, QColor(245, 246, 248))
@@ -302,7 +318,8 @@ class FrameItem(_SheetItem):
 
     def paint(self, painter, option, widget=None) -> None:
         paint_frame_mm(painter, self.model,
-                       self.composer.render_cache.get(id(self.model)))
+                       self.composer.render_cache.get(id(self.model)),
+                       hlr=self.composer.hlr_cache.get(id(self.model)))
         self._paint_selection(painter)
 
 
@@ -355,6 +372,7 @@ class ComposerWindow(QMainWindow):
         self.setWindowFlag(Qt.Window, True)
         self._window = main_window
         self.render_cache: dict[int, QImage] = {}
+        self.hlr_cache: dict[int, object] = {}
         self._images: dict[str, QImage] = {}
         self._updating = False
         self.history = ComposerHistory(on_change=self._on_history_change)
@@ -460,9 +478,18 @@ class ComposerWindow(QMainWindow):
         refresh_btn = QPushButton(tr("Update all views"))
         refresh_btn.clicked.connect(self.refresh_all_frames)
         outer.addWidget(refresh_btn)
+        renum_btn = QPushButton(tr("Renumber sheets"))
+        renum_btn.setToolTip(tr(
+            "Set every title block's sheet number to L-01, L-02, … "
+            "in manager order."))
+        renum_btn.clicked.connect(self._on_renumber)
+        outer.addWidget(renum_btn)
         export_btn = QPushButton(tr("Export PDF…"))
         export_btn.clicked.connect(self._on_export_pdf)
         outer.addWidget(export_btn)
+        atlas_btn = QPushButton(tr("Export all sheets (PDF)…"))
+        atlas_btn.clicked.connect(self._on_export_all)
+        outer.addWidget(atlas_btn)
         return panel
 
     def _page_none(self) -> QWidget:
@@ -500,7 +527,8 @@ class ComposerWindow(QMainWindow):
         self.style_combo = QComboBox()
         for label, key in ((tr("Shaded"), "sombreado"),
                            (tr("Technical (white + edges)"), "tecnico"),
-                           (tr("Lines only"), "lineas")):
+                           (tr("Lines only"), "lineas"),
+                           (tr("Vector (hidden lines removed)"), "vectorial")):
             self.style_combo.addItem(label, key)
         self.style_combo.currentIndexChanged.connect(self._on_frame_props)
         form.addRow(tr("Style"), self.style_combo)
@@ -510,6 +538,12 @@ class ComposerWindow(QMainWindow):
         btn = QPushButton(tr("Update view"))
         btn.clicked.connect(self._on_refresh_selected_frame)
         form.addRow(btn)
+        dxf_btn = QPushButton(tr("Export view as DXF…"))
+        dxf_btn.setToolTip(tr(
+            "Write the hidden-line view as DXF lines in model units "
+            "(metres) — open it in IngeCAD."))
+        dxf_btn.clicked.connect(self._on_export_dxf)
+        form.addRow(dxf_btn)
         return w
 
     def _page_text(self) -> QWidget:
@@ -744,6 +778,7 @@ class ComposerWindow(QMainWindow):
     def on_item_geometry(self, item: _SheetItem, final: bool = False) -> None:
         if isinstance(item, FrameItem) and final:
             self.render_cache.pop(id(item.model), None)
+            self.hlr_cache.pop(id(item.model), None)
             item.update()
         if isinstance(item, FrameItem) and not self._updating \
                 and item is self._selected_item():
@@ -881,6 +916,7 @@ class ComposerWindow(QMainWindow):
             "style": self.style_combo.currentData() or "sombreado",
             "show_title": self.title_check.isChecked()})
         self.render_cache.pop(id(item.model), None)
+        self.hlr_cache.pop(id(item.model), None)
 
     def _on_text_props(self, *_a) -> None:
         item = self._selected_item()
@@ -961,10 +997,10 @@ class ComposerWindow(QMainWindow):
             if isinstance(it, FrameItem):
                 it.update()
 
-    def render_frame(self, frame: MarcoVista) -> Optional[QImage]:
-        """Render *frame* at exact scale through the viewport pipeline,
-        leaving the live view state untouched (snapshot → render →
-        restore); cache by model identity."""
+    def _with_frame_camera(self, frame: MarcoVista, fn):
+        """Run ``fn()`` with the live camera pointed at *frame* (exact
+        scale), restoring camera, aspect, up and layer visibility after —
+        the composer never disturbs the viewport."""
         vp = self._window.viewport
         cam = vp.camera
         scene = vp.scene
@@ -974,24 +1010,109 @@ class ComposerWindow(QMainWindow):
             saved_view = next((sv for sv in scene.saved_views
                                if sv.name == name), None)
         keep = (cam.target, cam.distance, cam.yaw, cam.pitch, cam.fov_deg,
-                cam.perspective, cam.aspect,
+                cam.perspective, cam.aspect, cam.up,
                 [(ly, ly.visible) for ly in scene.layers])
         try:
             apply_frame_camera(cam, frame, saved_view, scene)
-            if frame.style in ("tecnico", "lineas"):
-                vp.plano_style = frame.style
-            w_px, h_px = frame.render_px(RENDER_DPI)
-            image = vp.render_image(w_px, h_px, overlays=False)
+            return fn()
         finally:
-            vp.plano_style = None
             (cam.target, cam.distance, cam.yaw, cam.pitch, cam.fov_deg,
-             cam.perspective, cam.aspect) = keep[:7]
-            for ly, visible in keep[7]:
+             cam.perspective, cam.aspect, cam.up) = keep[:8]
+            for ly, visible in keep[8]:
                 ly.visible = visible
             vp.update()
+
+    def compute_hlr(self, frame: MarcoVista):
+        """Hidden-line segments of *frame*'s view in PAPER millimetres
+        (frame-local), cached by frame identity."""
+        import numpy as np
+        from core.composition import model_height_for_frame
+        from core.hlr import hlr_view
+
+        def run():
+            vp = self._window.viewport
+            segs = hlr_view(vp.scene, vp.camera)
+            model_h = model_height_for_frame(frame.h_mm, frame.scale_n)
+            k = frame.h_mm / model_h                 # paper mm per metre
+            half_h = model_h / 2.0
+            half_w = half_h * (frame.w_mm / frame.h_mm)
+            if len(segs):
+                out = np.empty_like(segs)
+                out[:, 0] = (segs[:, 0] + half_w) * k
+                out[:, 1] = (half_h - segs[:, 1]) * k
+                out[:, 2] = (segs[:, 2] + half_w) * k
+                out[:, 3] = (half_h - segs[:, 3]) * k
+            else:
+                out = segs
+            self.hlr_cache[id(frame)] = out
+            return out
+
+        return self._with_frame_camera(frame, run)
+
+    def model_view_segments(self, frame: MarcoVista):
+        """The frame's hidden-line view in MODEL units (metres, view
+        plane) — what the DXF bridge to IngeCAD writes."""
+        from core.hlr import hlr_view
+
+        def run():
+            vp = self._window.viewport
+            return hlr_view(vp.scene, vp.camera)
+
+        return self._with_frame_camera(frame, run)
+
+    def render_frame(self, frame: MarcoVista) -> Optional[QImage]:
+        """Fill *frame*: a GL render for the raster styles, the exact
+        hidden-line pass for the vector style. Cached by frame identity;
+        the live viewport state always comes back untouched."""
+        if frame.style == "vectorial":
+            self.compute_hlr(frame)
+            return None
+
+        def run():
+            vp = self._window.viewport
+            try:
+                if frame.style in ("tecnico", "lineas"):
+                    vp.plano_style = frame.style
+                w_px, h_px = frame.render_px(RENDER_DPI)
+                return vp.render_image(w_px, h_px, overlays=False)
+            finally:
+                vp.plano_style = None
+
+        image = self._with_frame_camera(frame, run)
         if image is not None:
             self.render_cache[id(frame)] = image
         return image
+
+    def _on_renumber(self) -> None:
+        for i, comp in enumerate(self._scene().compositions):
+            if comp.cajetin is not None:
+                comp.cajetin.lamina = f"L-{i + 1:02d}"
+        self._mark_dirty()
+        self._rebuild_canvas()
+
+    def _on_export_all(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("Export all sheets (PDF)…"), "laminas.pdf",
+            "PDF (*.pdf)")
+        if not path:
+            return
+        self.export_all_pdf(path)
+        self.statusBar().showMessage(tr("Exported {name}", name=path), 4000)
+
+    def _on_export_dxf(self) -> None:
+        item = self._selected_item()
+        if not isinstance(item, FrameItem):
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("Export view as DXF…"), "vista.dxf", "DXF (*.dxf)")
+        if not path:
+            return
+        segs = self.model_view_segments(item.model)
+        from formats.dxf_out import save_dxf_lines
+        layer = frame_title_text(item.model).split(" — ")[0]
+        n = save_dxf_lines(path, segs, layer=layer)
+        self.statusBar().showMessage(
+            tr("Exported {n} lines to {name}", n=n, name=path), 5000)
 
     # ---- export --------------------------------------------------------------
     def _on_export_pdf(self) -> None:
@@ -1004,9 +1125,9 @@ class ComposerWindow(QMainWindow):
         self.statusBar().showMessage(tr("Exported {name}", name=path), 4000)
 
     def export_pdf(self, path: str) -> None:
-        """Write the sheet to ``path`` with exact physical page metrics.
-        Every item paints through the same mm-space painters the canvas
-        uses; the painter is scaled device-px-per-mm once."""
+        """Write the current sheet to ``path`` with exact physical page
+        metrics. Every item paints through the same mm-space painters the
+        canvas uses; the painter is scaled device-px-per-mm once."""
         writer = QPdfWriter(path)
         writer.setPageSize(QPageSize(getattr(QPageSize, self.comp.paper)))
         if self.comp.landscape:
@@ -1014,36 +1135,71 @@ class ComposerWindow(QMainWindow):
         writer.setResolution(RENDER_DPI)
         painter = QPainter(writer)
         try:
-            k = RENDER_DPI / 25.4
-            painter.scale(k, k)
-            for f in self.comp.frames:
-                painter.save()
-                painter.translate(f.x_mm, f.y_mm)
-                paint_frame_mm(painter, f, self.render_cache.get(id(f)))
-                painter.restore()
-            for i in self.comp.images:
-                painter.save()
-                painter.translate(i.x_mm, i.y_mm)
-                paint_image_mm(painter, i, self.image_cache(i.path))
-                painter.restore()
-            for t in self.comp.texts:
-                painter.save()
-                painter.translate(t.x_mm, t.y_mm)
-                paint_text_mm(painter, t)
-                painter.restore()
-            for sb in self.comp.scalebars:
-                painter.save()
-                painter.translate(sb.x_mm, sb.y_mm)
-                paint_scalebar_mm(painter, sb)
-                painter.restore()
-            if self.comp.cajetin is not None:
-                c = self.comp.cajetin
-                painter.save()
-                painter.translate(c.x_mm, c.y_mm)
-                paint_cajetin_mm(painter, c)
-                painter.restore()
+            painter.scale(RENDER_DPI / 25.4, RENDER_DPI / 25.4)
+            self._paint_sheet(painter, self.comp)
         finally:
             painter.end()
+
+    def export_all_pdf(self, path: str) -> None:
+        """The atlas: every sheet of the document into ONE PDF, each on
+        its own page at its own paper size."""
+        comps = self._scene().compositions
+        writer = QPdfWriter(path)
+        writer.setResolution(RENDER_DPI)
+        painter = None
+        try:
+            for i, comp in enumerate(comps):
+                for f in comp.frames:          # fresh renders per sheet
+                    saved = self.comp
+                    self.comp = comp
+                    try:
+                        self.render_frame(f)
+                    finally:
+                        self.comp = saved
+                writer.setPageSize(QPageSize(getattr(QPageSize, comp.paper)))
+                writer.setPageOrientation(
+                    QPageLayout.Landscape if comp.landscape
+                    else QPageLayout.Portrait)
+                if painter is None:
+                    painter = QPainter(writer)
+                else:
+                    writer.newPage()
+                painter.resetTransform()
+                painter.scale(RENDER_DPI / 25.4, RENDER_DPI / 25.4)
+                self._paint_sheet(painter, comp)
+        finally:
+            if painter is not None:
+                painter.end()
+
+    def _paint_sheet(self, painter: QPainter, comp: Composicion) -> None:
+        """Draw one sheet's items in mm space (painter already scaled)."""
+        for f in comp.frames:
+            painter.save()
+            painter.translate(f.x_mm, f.y_mm)
+            paint_frame_mm(painter, f, self.render_cache.get(id(f)),
+                           hlr=self.hlr_cache.get(id(f)))
+            painter.restore()
+        for i in comp.images:
+            painter.save()
+            painter.translate(i.x_mm, i.y_mm)
+            paint_image_mm(painter, i, self.image_cache(i.path))
+            painter.restore()
+        for t in comp.texts:
+            painter.save()
+            painter.translate(t.x_mm, t.y_mm)
+            paint_text_mm(painter, t)
+            painter.restore()
+        for sb in comp.scalebars:
+            painter.save()
+            painter.translate(sb.x_mm, sb.y_mm)
+            paint_scalebar_mm(painter, sb)
+            painter.restore()
+        if comp.cajetin is not None:
+            c = comp.cajetin
+            painter.save()
+            painter.translate(c.x_mm, c.y_mm)
+            paint_cajetin_mm(painter, c)
+            painter.restore()
 
     # ---- lifecycle -----------------------------------------------------------
     def showEvent(self, event) -> None:

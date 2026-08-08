@@ -326,3 +326,128 @@ class TestC3Serialisation:
         c = Composicion.from_dict(d)
         assert c.frames[0].style == "sombreado"
         assert c.frames[0].show_title is False
+
+
+# ── C4: hidden-line removal ─────────────────────────────────────────────────
+
+class TestHLR:
+    """The exact kernel, on hand-checkable camera-space fixtures."""
+
+    def _spans(self, a2, b2, az, bz, tris2, trisz, eps=1e-6):
+        import numpy as np
+        from core.hlr import visible_spans
+        return visible_spans(np.array(a2, float), np.array(b2, float),
+                             az, bz, np.array(tris2, float),
+                             np.array(trisz, float), eps)
+
+    def test_unoccluded_edge_is_whole(self):
+        spans = self._spans((-1, 0), (1, 0), 0.0, 0.0,
+                            [[(-0.5, 1), (0.5, 1), (0, 2)]], [[0, 0, 0]])
+        assert spans == [(0.0, 1.0)]
+
+    def test_triangle_in_front_cuts_the_middle(self):
+        # edge along x at depth 10; triangle covering x∈[-0.5,0.5] at depth 5
+        spans = self._spans((-1, 0), (1, 0), 10.0, 10.0,
+                            [[(-0.5, -1), (0.5, -1), (0.0, 1)]],
+                            [[5.0, 5.0, 5.0]])
+        assert len(spans) == 2
+        (a0, a1), (b0, b1) = spans
+        assert a0 == 0.0 and b1 == 1.0
+        # the tri's slanted sides cross y=0 at x=±0.25 → t = 0.375 / 0.625
+        assert a1 == pytest.approx(0.375, abs=1e-9)
+        assert b0 == pytest.approx(0.625, abs=1e-9)
+
+    def test_triangle_behind_does_not_cut(self):
+        spans = self._spans((-1, 0), (1, 0), 5.0, 5.0,
+                            [[(-2, -2), (2, -2), (0, 2)]],
+                            [[9.0, 9.0, 9.0]])
+        assert spans == [(0.0, 1.0)]
+
+    def test_coplanar_face_does_not_self_occlude(self):
+        # the edge lies exactly in the triangle's plane (e ≈ 0 < eps)
+        spans = self._spans((-1, 0), (1, 0), 3.0, 3.0,
+                            [[(-2, -2), (2, -2), (0, 2)]],
+                            [[3.0, 3.0, 3.0]], eps=1e-4)
+        assert spans == [(0.0, 1.0)]
+
+    def test_two_triangles_merge_their_shadow(self):
+        # both cover the centre of the edge, so their shadows overlap
+        tris = [[(-0.6, -1), (0.3, -1), (-0.15, 1)],
+                [(-0.3, -1), (0.6, -1), (0.15, 1)]]
+        spans = self._spans((-1, 0), (1, 0), 10.0, 10.0,
+                            tris, [[5, 5, 5], [5, 5, 5]])
+        assert len(spans) == 2       # one merged hole, not two
+
+    def test_disjoint_shadows_leave_the_gap_visible(self):
+        tris = [[(-0.6, -1), (0.1, -1), (-0.25, 1)],
+                [(-0.1, -1), (0.6, -1), (0.25, 1)]]
+        spans = self._spans((-1, 0), (1, 0), 10.0, 10.0,
+                            tris, [[5, 5, 5], [5, 5, 5]])
+        assert len(spans) == 3       # the sliver between them survives
+
+    def test_full_occlusion_leaves_nothing(self):
+        spans = self._spans((-1, 0), (1, 0), 10.0, 10.0,
+                            [[(-3, -3), (3, -3), (0, 5)]],
+                            [[1.0, 1.0, 1.0]])
+        assert spans == []
+
+
+class TestHLRScene:
+    def test_box_from_top_shows_four_edges(self):
+        from PySide6.QtGui import QVector3D
+        from core.camera import OrbitCamera
+        from core.hlr import hlr_view
+        from core.scene import Scene
+
+        scene = Scene()
+        m = scene.mesh
+        V = QVector3D
+        # a 2×3×1 m closed box at the origin
+        m.add_face([V(0, 0, 0), V(2, 0, 0), V(2, 3, 0), V(0, 3, 0)])   # floor
+        m.add_face([V(0, 0, 1), V(2, 0, 1), V(2, 3, 1), V(0, 3, 1)])   # roof
+        m.add_face([V(0, 0, 0), V(2, 0, 0), V(2, 0, 1), V(0, 0, 1)])
+        m.add_face([V(0, 3, 0), V(2, 3, 0), V(2, 3, 1), V(0, 3, 1)])
+        m.add_face([V(0, 0, 0), V(0, 3, 0), V(0, 3, 1), V(0, 0, 1)])
+        m.add_face([V(2, 0, 0), V(2, 3, 0), V(2, 3, 1), V(2, 0, 1)])
+
+        cam = OrbitCamera()
+        # the composer's plan view: TRUE 90° (apply_frame_camera swaps the
+        # up vector), so verticals vanish and nothing peeks out sideways
+        f = MarcoVista(view_key="std:top", scale_n=100.0,
+                       w_mm=100.0, h_mm=100.0)
+        apply_frame_camera(cam, f, saved_view=None, scene=scene)
+        segs = hlr_view(scene, cam)
+        # From straight above only the roof's 4 edges are visible; the
+        # floor's 4 are hidden and the 4 verticals are points (dropped or
+        # zero-length). Some verticals may survive as degenerate slivers —
+        # assert on total drawn LENGTH instead of counting.
+        total = 0.0
+        for x0, y0, x1, y1 in segs:
+            total += math.hypot(x1 - x0, y1 - y0)
+        assert total == pytest.approx(2 * (2 + 3), rel=1e-3)
+
+
+class TestDxfOut:
+    def test_writes_readable_r12_lines(self, tmp_path):
+        from formats.dxf_out import save_dxf_lines
+        path = tmp_path / "vista.dxf"
+        n = save_dxf_lines(path, [(0.0, 0.0, 2.0, 0.0),
+                                  (2.0, 0.0, 2.0, 3.0)], layer="Planta 1")
+        text = path.read_text()
+        assert n == 2
+        assert text.count("0\nLINE\n") == 2
+        assert "8\nPLANTA_1\n" in text          # sanitised layer name
+        assert text.rstrip().endswith("EOF")
+        # coordinates survive verbatim
+        assert "10\n0\n" in text and "11\n2\n" in text and "21\n3\n" in text
+
+    def test_dxf_round_trips_through_ezdxf_if_available(self, tmp_path):
+        ezdxf = pytest.importorskip("ezdxf")
+        from formats.dxf_out import save_dxf_lines
+        path = tmp_path / "vista.dxf"
+        save_dxf_lines(path, [(0.0, 0.0, 9.258, 0.0)], layer="PLANTA")
+        doc = ezdxf.readfile(str(path))
+        lines = list(doc.modelspace().query("LINE"))
+        assert len(lines) == 1
+        assert lines[0].dxf.end.x == pytest.approx(9.258)
+        assert lines[0].dxf.layer == "PLANTA"

@@ -418,7 +418,19 @@ def apply_frame_camera(camera, frame: MarcoVista,
     if saved_view is not None and scene is not None:
         saved_view.apply(scene, camera)
     elif frame.view_key.startswith("std:"):
-        camera.set_view(frame.view_key[4:])
+        key = frame.view_key[4:]
+        camera.set_view(key)
+        if key in ("top", "bottom"):
+            # The interactive preset stops at 89° to dodge the lookAt
+            # singularity with up = +Z. On paper that 1° writes double
+            # lines (a 3 m wall offsets 0.5 mm at 1:100), so the plan
+            # views go to a TRUE 90° and swap the up vector to +Y.
+            camera.pitch = math.radians(90.0 if key == "top" else -90.0)
+            try:
+                from PySide6.QtGui import QVector3D
+                camera.up = QVector3D(0.0, 1.0, 0.0)
+            except ImportError:      # headless tests use plain tuples
+                camera.up = (0.0, 1.0, 0.0)
         # A standard view carries an orientation but no framing: centre on
         # the model, or a big scale leaves it cropped out of the frame (the
         # live/saved views keep their own target — the user framed those).

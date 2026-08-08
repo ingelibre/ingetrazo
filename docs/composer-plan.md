@@ -89,10 +89,18 @@ item. Título automático del marco («Planta — 1:100»).
 - **DoD:** una lámina imprimible que un colega no distingue de un plano CAD a
   primera vista.
 
-### C4 — El lujo (no abrir antes)
-HLR vectorial (aristas proyectadas + oclusión → líneas de verdad en el PDF),
-**export DXF de las vistas → puente directo a IngeCAD** (IngeTrazo genera el
-2D, IngeCAD lo firma e imprime), numeración/atlas de láminas.
+### C4 — El lujo ✅ (2026-08-08)
+HLR vectorial EXACTO (core/hlr.py: por arista, la sombra de cada triángulo es
+la intersección de 4 desigualdades lineales en t — nada de sampleo; la
+auto-oclusión contra las caras propias la resuelve el epsilon porque e(t)≈0 en
+toda la arista), estilo de marco «vectorial» (líneas de verdad en el PDF: 0
+imágenes embebidas), **export DXF R12 de las vistas en unidades de modelo
+(formats/dxf_out.py) → puente directo a IngeCAD** — verificado abriendo el DXF
+con el ezdxf de IngeCAD: extensión 9.144 m, el mismo número que midió la tinta
+del PDF en el DoD de C1 —, renumeración de láminas y atlas (todas las láminas
+en un PDF multipágina, cada una con su papel). Las vistas top/bottom van a 90°
+VERDADEROS con up=+Y (el preset interactivo para en 89° por la singularidad
+del lookAt; ese 1° escribía dobles líneas de 0.5 mm en una planta de 3 m).
 
 ## Gotchas conocidos que aplican acá
 
@@ -100,8 +108,8 @@ HLR vectorial (aristas proyectadas + oclusión → líneas de verdad en el PDF),
   `render_image` que sí los pinta — pero **con alto explícito los overlays se
   omiten** (`overlays=False`): están calibrados al aspect del widget y
   saldrían corridos. Las cotas sobre la lámina son asunto de C3.
-- La vista "planta" usa el preset `top` de `set_view` (pitch ~89°, no 90°) —
-  evita la singularidad del lookAt con up=+Z. El error de escala por el
-  coseno es 0,015 %: invisible bajo el ± 1 px del DoD.
+- La vista "planta" interactiva usa el preset `top` (pitch 89°); el
+  compositor la lleva a 90° exactos con up=+Y (ver C4) — a 89° el piso
+  asoma bajo el frente y aparecen dobles líneas en papel.
 - Wayland: el render del marco pasa por el mismo FBO propio del visor con su
   workaround de depth — no agregar otro camino GL.
