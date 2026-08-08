@@ -667,12 +667,21 @@ class ComposerWindow(QMainWindow):
         self._build_tools_toolbar()
 
         panel = self._build_panel()
-        central = QWidget()
-        lay = QHBoxLayout(central)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(view, 1)
-        lay.addWidget(panel, 0)
-        self.setCentralWidget(central)
+        from PySide6.QtCore import QSettings
+        from PySide6.QtWidgets import QSplitter
+        split = QSplitter(Qt.Horizontal)
+        split.addWidget(view)
+        split.addWidget(panel)
+        split.setStretchFactor(0, 1)      # the canvas absorbs resizes
+        split.setStretchFactor(1, 0)
+        split.setCollapsible(0, False)
+        saved = QSettings().value("composer/panel_width", 300, int)
+        split.setSizes([max(self.width() - saved, 400), saved])
+        split.splitterMoved.connect(
+            lambda *_a: QSettings().setValue(
+                "composer/panel_width", split.sizes()[1]))
+        self._splitter = split
+        self.setCentralWidget(split)
 
         self._pos_label = QLabel("")
         self._zoom_label = QLabel("")
@@ -790,7 +799,7 @@ class ComposerWindow(QMainWindow):
     def _build_panel(self) -> QWidget:
         from PySide6.QtWidgets import QListWidget, QTabWidget
         panel = QWidget()
-        panel.setFixedWidth(300)
+        panel.setMinimumWidth(230)        # resizable via the splitter
         outer = QVBoxLayout(panel)
 
         self._tabs = QTabWidget()
@@ -1847,6 +1856,12 @@ class ComposerWindow(QMainWindow):
             painter.restore()
 
     # ---- lifecycle -----------------------------------------------------------
+    def closeEvent(self, event) -> None:
+        from PySide6.QtCore import QSettings
+        QSettings().setValue("composer/panel_width",
+                             self._splitter.sizes()[1])
+        super().closeEvent(event)
+
     def showEvent(self, event) -> None:
         # The document may have been swapped under us (New / Open) while
         # the window was closed — re-adopt the scene's compositions.
