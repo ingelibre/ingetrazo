@@ -117,6 +117,13 @@ def apply_frame_camera(camera, frame: MarcoVista,
         saved_view.apply(scene, camera)
     elif frame.view_key.startswith("std:"):
         camera.set_view(frame.view_key[4:])
+        # A standard view carries an orientation but no framing: centre on
+        # the model, or a big scale leaves it cropped out of the frame (the
+        # live/saved views keep their own target — the user framed those).
+        if scene is not None:
+            lo, hi = scene.bounds()
+            if lo is not None:
+                camera.target = (lo + hi) * 0.5
     camera.perspective = False
     camera.distance = ortho_distance_for_height(
         frame.model_height_m(), camera.fov_deg)

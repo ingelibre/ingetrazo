@@ -84,3 +84,42 @@ class TestApplyFrameCamera:
         assert 2 * half_h == pytest.approx(20.0)   # 200 mm at 1:100
         w_px, h_px = f.render_px()
         assert cam.aspect == pytest.approx(w_px / h_px)
+
+
+class _FakeScene:
+    def __init__(self, lo, hi):
+        self._b = (lo, hi)
+
+    def bounds(self):
+        return self._b
+
+
+class _V3:
+    """Minimal QVector3D stand-in supporting + and *."""
+
+    def __init__(self, x, y, z):
+        self.v = (x, y, z)
+
+    def __add__(self, o):
+        return _V3(*(a + b for a, b in zip(self.v, o.v)))
+
+    def __mul__(self, k):
+        return _V3(*(a * k for a in self.v))
+
+
+class TestStdViewCentering:
+    def test_std_view_centres_on_the_model(self):
+        cam = _FakeCamera()
+        cam.target = None
+        scene = _FakeScene(_V3(2, 4, 0), _V3(6, 8, 2))
+        f = MarcoVista(view_key="std:front", scale_n=100.0)
+        apply_frame_camera(cam, f, saved_view=None, scene=scene)
+        assert cam.target.v == (4.0, 6.0, 1.0)
+
+    def test_current_view_keeps_the_user_target(self):
+        cam = _FakeCamera()
+        cam.target = "user-framed"
+        scene = _FakeScene(_V3(0, 0, 0), _V3(10, 10, 10))
+        f = MarcoVista(view_key="__current__", scale_n=100.0)
+        apply_frame_camera(cam, f, saved_view=None, scene=scene)
+        assert cam.target == "user-framed"
