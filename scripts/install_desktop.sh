@@ -55,6 +55,13 @@ for size in "${APP_SIZES[@]}"; do
   mkdir -p "$dir"
   cp "$ROOT/resources/icons/ingetrazo_${size}.png" "$dir/ingetrazo.png"
 done
+# The scalable SVG too, since 2026-08-07 there is one: a theme that prefers
+# scalable gets it crisp at any size the shell asks for, instead of upscaling
+# the 512 PNG.
+if [ -f "$ROOT/resources/icons/ingetrazo.svg" ]; then
+  mkdir -p "$ICONS_HICOLOR/scalable/apps"
+  cp "$ROOT/resources/icons/ingetrazo.svg" "$ICONS_HICOLOR/scalable/apps/ingetrazo.svg"
+fi
 
 # ── Document icons for .igz / .dae / .skp ───────────────────────────────────
 # Copy the hicolor mimetype PNGs and register the MIME package so the file
@@ -77,5 +84,5 @@ if command -v xdg-mime >/dev/null; then
   xdg-mime default ingetrazo.desktop application/vnd.sketchup.skp 2>/dev/null || true
 fi
 
-echo "IngeTrazo instalado en el lanzador. Buscalo como 'IngeTrazo'."
+echo "IngeTrazo instalado en el lanzador. Búscalo como 'IngeTrazo'."
 echo "Doble clic en .igz y .skp abre IngeTrazo; .dae queda en 'Abrir con'."
