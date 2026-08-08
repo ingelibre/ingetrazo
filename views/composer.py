@@ -584,8 +584,14 @@ class ComposerCanvasView(QGraphicsView):
         self.composer = composer
         self.setMouseTracking(True)
         self._drag_start = None
+        self._press_vp = None          # viewport px of the press (click vs drag)
+        self._ignore_release = False   # release of a finishing second click
         self._preview = None
         self._snap_marker = None       # green dot over a frame vertex/edge
+        # Tools that define a segment/rectangle take EITHER a drag or two
+        # clicks (click the first vertex, move, click the second) — the
+        # click-click habit of the model's dimension tool must work here too.
+        self._two_point = {m for m, _i, _t, drag in composer.TOOLS if drag}
 
     def _snapped(self, pos):
         """Snap *pos* (scene mm) to the nearest frame geometry point when a
@@ -630,7 +636,17 @@ class ComposerCanvasView(QGraphicsView):
         mode = self.composer.tool_mode
         if mode != "select" and event.button() == Qt.LeftButton:
             pos, _ = self._snapped(self.mapToScene(event.position().toPoint()))
+            if self._drag_start is not None:
+                # Second click of a click-move-click placement finishes it
+                # (unless it lands on the first point — keep waiting).
+                if (event.position().toPoint() - self._press_vp
+                        ).manhattanLength() >= 4:
+                    self._finish_placement(pos)
+                    self._ignore_release = True
+                event.accept()
+                return
             self._drag_start = pos
+            self._press_vp = event.position().toPoint()
             event.accept()
             return
         super().mousePressEvent(event)
@@ -651,18 +667,51 @@ class ComposerCanvasView(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
+        if self._ignore_release and event.button() == Qt.LeftButton:
+            self._ignore_release = False
+            event.accept()
+            return
         if self._drag_start is not None and event.button() == Qt.LeftButton:
+            # A press-and-release on the same spot with a two-point tool is
+            # the FIRST click of click-move-click: keep the rubber band (and
+            # the snapping) alive until the second click.
+            if (self.composer.tool_mode in self._two_point
+                    and (event.position().toPoint() - self._press_vp
+                         ).manhattanLength() < 4):
+                event.accept()
+                return
             end, _ = self._snapped(self.mapToScene(event.position().toPoint()))
-            start = self._drag_start
-            self._drag_start = None
-            if self._preview is not None:
-                self.scene().removeItem(self._preview)
-                self._preview = None
-            self._clear_snap_marker()
-            self.composer.place_tool(start.x(), start.y(), end.x(), end.y())
+            self._finish_placement(end)
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def _finish_placement(self, end) -> None:
+        start = self._drag_start
+        self._drag_start = None
+        self._press_vp = None
+        if self._preview is not None:
+            self.scene().removeItem(self._preview)
+            self._preview = None
+        self._clear_snap_marker()
+        self.composer.place_tool(start.x(), start.y(), end.x(), end.y())
+
+    def cancel_placement(self) -> None:
+        """Drop an in-progress two-point placement (Esc / tool switch)."""
+        self._drag_start = None
+        self._press_vp = None
+        self._ignore_release = False
+        if self._preview is not None:
+            self.scene().removeItem(self._preview)
+            self._preview = None
+        self._clear_snap_marker()
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Escape and self._drag_start is not None:
+            self.cancel_placement()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 # ── The window ──────────────────────────────────────────────────────────────
@@ -735,18 +784,18 @@ class ComposerWindow(QMainWindow):
     #: extent, click tools place at the click point.
     TOOLS = (
         ("select", "select", "Select / move items", False),
-        ("vista", "comp_vista", "Add a model-view frame (drag)", True),
+        ("vista", "comp_vista", "Add a model-view frame (two clicks or drag)", True),
         ("texto", "text", "Add a text block", False),
         ("imagen", "image", "Add an image", False),
         ("cajetin", "comp_cajetin", "Add the title block", False),
         ("escala", "comp_escala", "Add a graphic scale bar", False),
         ("norte", "comp_norte", "Add a north arrow", False),
         ("leyenda", "comp_leyenda", "Add the layer legend", False),
-        ("linea", "line", "Draw a line (drag)", True),
-        ("flecha", "comp_flecha", "Draw an arrow (drag)", True),
-        ("rect", "rectangle", "Draw a rectangle (drag)", True),
-        ("elipse", "circle", "Draw an ellipse (drag)", True),
-        ("cota", "dimension", "Draw a dimension (drag)", True),
+        ("linea", "line", "Draw a line (two clicks or drag)", True),
+        ("flecha", "comp_flecha", "Draw an arrow (two clicks or drag)", True),
+        ("rect", "rectangle", "Draw a rectangle (two clicks or drag)", True),
+        ("elipse", "circle", "Draw an ellipse (two clicks or drag)", True),
+        ("cota", "dimension", "Draw a dimension (two clicks or drag)", True),
     )
 
     def _build_tools_toolbar(self) -> None:
@@ -771,6 +820,8 @@ class ComposerWindow(QMainWindow):
         self.addToolBar(Qt.LeftToolBarArea, tb)
 
     def _set_tool_mode(self, mode: str) -> None:
+        if hasattr(self, "_view"):
+            self._view.cancel_placement()
         self.tool_mode = mode
         if mode == "imagen":
             # the image tool needs its file first; place at margins
