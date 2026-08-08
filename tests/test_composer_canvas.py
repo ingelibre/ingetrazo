@@ -494,7 +494,8 @@ class TestShapesAndCajetin:
         fitted = _fit_text_size_mm(long_name, cell, 3.4)
         assert 1.0 <= fitted < 3.4                # wrapped + shrunk, no clip
         one_word = "PALABRALARGUISIMASINESPACIOSQUEDEBEENCOGERSE"
-        assert _fit_text_size_mm(one_word, cell, 3.4) < 3.4
+        narrow = QRectF(0, 0, 40.0, 5.6)         # narrow cell: must shrink
+        assert _fit_text_size_mm(one_word, narrow, 3.4) < 3.4
 
     def test_cajetin_paint_smoke_all_layouts(self):
         from PySide6.QtGui import QImage, QPainter
