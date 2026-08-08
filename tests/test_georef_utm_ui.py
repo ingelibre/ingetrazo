@@ -83,6 +83,38 @@ class TestBaseMapPanelUtm:
         assert panel._lon.value() == pytest.approx(LON, abs=1e-6)
 
 
+class TestCoordModeSelector:
+    """One frame at a time: the selector shows lat/lon OR UTM, never both,
+    and the choice persists across panels and the locator dialog."""
+
+    def test_geo_mode_hides_the_utm_rows(self):
+        panel = BaseMapPanel(_Win())
+        panel._coord_mode.setCurrentIndex(
+            panel._coord_mode.findData("geo"))
+        assert not panel._utm_e.isVisibleTo(panel)
+        assert panel._lat.isVisibleTo(panel)
+
+    def test_utm_mode_hides_the_geo_rows(self):
+        panel = BaseMapPanel(_Win())
+        panel._coord_mode.setCurrentIndex(
+            panel._coord_mode.findData("utm"))
+        assert panel._utm_e.isVisibleTo(panel)
+        assert not panel._lat.isVisibleTo(panel)
+
+    def test_choice_is_remembered_everywhere(self):
+        panel = BaseMapPanel(_Win())
+        panel._coord_mode.setCurrentIndex(
+            panel._coord_mode.findData("utm"))
+        fresh = BaseMapPanel(_Win())                 # "next session"
+        assert fresh._coord_mode.currentData() == "utm"
+        from georef.tiles import PRESETS
+        from views.location_dialog import LocationDialog
+        dlg = LocationDialog(PRESETS["esri_imagery"], LAT, LON)
+        assert dlg._coord_mode.currentData() == "utm"
+        assert dlg._utm_row.isVisibleTo(dlg)
+        assert not dlg._geo_row.isVisibleTo(dlg)
+
+
 class TestLocationDialogUtm:
     def _dialog(self):
         from georef.tiles import PRESETS

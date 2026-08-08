@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import QSettings, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -148,19 +148,30 @@ class BaseMapPanel(QWidget):
         grid.addWidget(self._remove_btn, 1, 1)
         self._populate_sources(select=DEFAULT_SOURCE_ID)
 
-        grid.addWidget(QLabel(tr("Latitude:")), 2, 0)
+        # One coordinate frame at a time — lat/lon OR UTM WGS84 — chosen
+        # here and remembered across sessions (drone users live in UTM).
+        grid.addWidget(QLabel(tr("Coordinates:")), 2, 0)
+        self._coord_mode = QComboBox()
+        self._coord_mode.addItem(tr("Geographic (lat/lon)"), "geo")
+        self._coord_mode.addItem(tr("UTM WGS84"), "utm")
+        self._coord_mode.currentIndexChanged.connect(self._on_coord_mode)
+        grid.addWidget(self._coord_mode, 2, 1)
+
+        self._lat_label = QLabel(tr("Latitude:"))
+        grid.addWidget(self._lat_label, 3, 0)
         self._lat = QDoubleSpinBox()
         self._lat.setRange(-85.0, 85.0)
         self._lat.setDecimals(6)
         self._lat.setValue(-12.046400)
-        grid.addWidget(self._lat, 2, 1)
+        grid.addWidget(self._lat, 3, 1)
 
-        grid.addWidget(QLabel(tr("Longitude:")), 3, 0)
+        self._lon_label = QLabel(tr("Longitude:"))
+        grid.addWidget(self._lon_label, 4, 0)
         self._lon = QDoubleSpinBox()
         self._lon.setRange(-180.0, 180.0)
         self._lon.setDecimals(6)
         self._lon.setValue(-77.042800)
-        grid.addWidget(self._lon, 3, 1)
+        grid.addWidget(self._lon, 4, 1)
 
         # The same anchor in UTM WGS84 — the frame a drone survey or a
         # total station reports. Both entries stay in sync: type E/N from
@@ -177,35 +188,43 @@ class BaseMapPanel(QWidget):
         self._utm_hemi.addItem(tr("South"), False)
         self._utm_hemi.activated.connect(self._sync_ll_from_utm)
         zbox.addWidget(self._utm_hemi, 1)
-        grid.addWidget(QLabel(tr("UTM zone:")), 4, 0)
-        grid.addWidget(zrow, 4, 1)
+        self._utm_zone_label = QLabel(tr("UTM zone:"))
+        grid.addWidget(self._utm_zone_label, 5, 0)
+        grid.addWidget(zrow, 5, 1)
+        self._utm_zone_row = zrow
 
-        grid.addWidget(QLabel(tr("UTM E:")), 5, 0)
+        self._utm_e_label = QLabel(tr("UTM E:"))
+        grid.addWidget(self._utm_e_label, 6, 0)
         self._utm_e = QDoubleSpinBox()
         self._utm_e.setRange(100000.0, 900000.0)
         self._utm_e.setDecimals(2)
         self._utm_e.setGroupSeparatorShown(True)
         self._utm_e.editingFinished.connect(self._sync_ll_from_utm)
-        grid.addWidget(self._utm_e, 5, 1)
+        grid.addWidget(self._utm_e, 6, 1)
 
-        grid.addWidget(QLabel(tr("UTM N:")), 6, 0)
+        self._utm_n_label = QLabel(tr("UTM N:"))
+        grid.addWidget(self._utm_n_label, 7, 0)
         self._utm_n = QDoubleSpinBox()
         self._utm_n.setRange(0.0, 10000000.0)
         self._utm_n.setDecimals(2)
         self._utm_n.setGroupSeparatorShown(True)
         self._utm_n.editingFinished.connect(self._sync_ll_from_utm)
-        grid.addWidget(self._utm_n, 6, 1)
+        grid.addWidget(self._utm_n, 7, 1)
 
         self._lat.editingFinished.connect(self._sync_utm_from_ll)
         self._lon.editingFinished.connect(self._sync_utm_from_ll)
         self._sync_utm_from_ll()
+        saved_mode = str(QSettings().value("georef/coord_mode", "geo"))
+        idx = self._coord_mode.findData(saved_mode)
+        self._coord_mode.setCurrentIndex(max(idx, 0))
+        self._apply_coord_mode()
 
-        grid.addWidget(QLabel(tr("Zoom:")), 7, 0)
+        grid.addWidget(QLabel(tr("Zoom:")), 8, 0)
         self._zoom = QSpinBox()
         self._zoom.setRange(1, 21)
         self._zoom.setValue(16)
         self._zoom.valueChanged.connect(self._on_zoom_changed)
-        grid.addWidget(self._zoom, 7, 1)
+        grid.addWidget(self._zoom, 8, 1)
 
         # Capture area (metres): set by drawing a rectangle in the locator
         # dialog. A square for a site, a long strip for a road. Kept as state,
@@ -215,27 +234,27 @@ class BaseMapPanel(QWidget):
 
         self._find = QPushButton(tr("Search location…"))
         self._find.clicked.connect(self._open_locator)
-        grid.addWidget(self._find, 8, 0, 1, 2)
+        grid.addWidget(self._find, 9, 0, 1, 2)
 
         self._go = QPushButton(tr("Go to location"))
         self._go.clicked.connect(self._go_to)
-        grid.addWidget(self._go, 9, 0, 1, 2)
+        grid.addWidget(self._go, 10, 0, 1, 2)
 
         self._show = QCheckBox(tr("Show base map"))
         self._show.setChecked(True)
         self._show.toggled.connect(self._on_toggle_visible)
-        grid.addWidget(self._show, 10, 0, 1, 2)
+        grid.addWidget(self._show, 11, 0, 1, 2)
 
         self._terrain3d = QCheckBox(tr("3D terrain"))
         self._terrain3d.toggled.connect(self._on_toggle_terrain)
-        grid.addWidget(self._terrain3d, 11, 0, 1, 2)
+        grid.addWidget(self._terrain3d, 12, 0, 1, 2)
 
         # The drone survey (Track G, G6). Disabled until one is imported —
         # a checkbox you can tick with nothing behind it just looks broken.
         self._photo_mesh = QCheckBox(tr("Photogrammetric survey"))
         self._photo_mesh.setEnabled(False)
         self._photo_mesh.toggled.connect(self._on_toggle_photo_mesh)
-        grid.addWidget(self._photo_mesh, 12, 0, 1, 2)
+        grid.addWidget(self._photo_mesh, 13, 0, 1, 2)
 
         # Which layer the survey carries. The import puts it on its own so it
         # can be switched off without taking the model with it; this is for
@@ -245,13 +264,13 @@ class BaseMapPanel(QWidget):
         self._photo_layer.setToolTip(tr(
             "Layer the survey is on. Hiding that layer hides the survey."))
         self._photo_layer.currentTextChanged.connect(self._on_photo_layer_changed)
-        grid.addWidget(QLabel(tr("Layer")), 13, 0)
-        grid.addWidget(self._photo_layer, 13, 1)
+        grid.addWidget(QLabel(tr("Layer")), 14, 0)
+        grid.addWidget(self._photo_layer, 14, 1)
 
         self._attribution = QLabel("")
         self._attribution.setWordWrap(True)
         self._attribution.setStyleSheet("color:#9aa3b2; font-size:10px; margin-top:4px;")
-        grid.addWidget(self._attribution, 14, 0, 1, 2)
+        grid.addWidget(self._attribution, 15, 0, 1, 2)
 
         self._restore_saved_source()
         self._sync_from_scene()
@@ -434,6 +453,20 @@ class BaseMapPanel(QWidget):
             self._window.viewport.reset_tiles()
 
     # ---- Location -----------------------------------------------------------
+    def _on_coord_mode(self, *_a) -> None:
+        QSettings().setValue("georef/coord_mode",
+                             self._coord_mode.currentData())
+        self._apply_coord_mode()
+
+    def _apply_coord_mode(self) -> None:
+        utm = self._coord_mode.currentData() == "utm"
+        for w in (self._lat_label, self._lat, self._lon_label, self._lon):
+            w.setVisible(not utm)
+        for w in (self._utm_zone_label, self._utm_zone_row,
+                  self._utm_e_label, self._utm_e,
+                  self._utm_n_label, self._utm_n):
+            w.setVisible(utm)
+
     def _sync_utm_from_ll(self, *_a) -> None:
         from georef.datum import utm_forward, zone_for_lon
         from PySide6.QtCore import QSignalBlocker

@@ -297,7 +297,19 @@ class LocationDialog(QDialog):
         self._draw_rect.toggled.connect(self._map.set_rect_mode)
         root.addWidget(self._draw_rect)
 
-        coords = QHBoxLayout()
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel(tr("Coordinates:")))
+        self._coord_mode = QComboBox()
+        self._coord_mode.addItem(tr("Geographic (lat/lon)"), "geo")
+        self._coord_mode.addItem(tr("UTM WGS84"), "utm")
+        self._coord_mode.currentIndexChanged.connect(self._on_coord_mode)
+        mode_row.addWidget(self._coord_mode)
+        mode_row.addStretch(1)
+        root.addLayout(mode_row)
+
+        self._geo_row = QWidget()
+        coords = QHBoxLayout(self._geo_row)
+        coords.setContentsMargins(0, 0, 0, 0)
         coords.addWidget(QLabel(tr("Lat:")))
         self._lat_box = QDoubleSpinBox()
         self._lat_box.setRange(-85.0, 85.0)
@@ -311,12 +323,14 @@ class LocationDialog(QDialog):
         self._lon_box.editingFinished.connect(self._on_coords_typed)
         coords.addWidget(self._lon_box)
         coords.addStretch(1)
-        root.addLayout(coords)
+        root.addWidget(self._geo_row)
 
         # The same point in UTM WGS84 — what a drone survey or total
         # station reports. Typing E/N here moves the pin, and vice versa.
-        utm = QHBoxLayout()
-        utm.addWidget(QLabel(tr("UTM WGS84 — Zone:")))
+        self._utm_row = QWidget()
+        utm = QHBoxLayout(self._utm_row)
+        utm.setContentsMargins(0, 0, 0, 0)
+        utm.addWidget(QLabel(tr("Zone:")))
         self._zone_box = QSpinBox()
         self._zone_box.setRange(1, 60)
         self._zone_box.editingFinished.connect(self._on_utm_typed)
@@ -341,7 +355,12 @@ class LocationDialog(QDialog):
         self._north_box.editingFinished.connect(self._on_utm_typed)
         utm.addWidget(self._north_box)
         utm.addStretch(1)
-        root.addLayout(utm)
+        root.addWidget(self._utm_row)
+        from PySide6.QtCore import QSettings
+        saved_mode = str(QSettings().value("georef/coord_mode", "geo"))
+        idx = self._coord_mode.findData(saved_mode)
+        self._coord_mode.setCurrentIndex(max(idx, 0))
+        self._apply_coord_mode()
 
         self._status = QLabel(tr("The centre pin will be the model's "
                                  "ORIGIN (0,0) — put it exactly on your "
@@ -418,6 +437,17 @@ class LocationDialog(QDialog):
 
     def _on_coords_typed(self) -> None:
         self._map.set_center(self._lat_box.value(), self._lon_box.value())
+
+    def _on_coord_mode(self, *_a) -> None:
+        from PySide6.QtCore import QSettings
+        QSettings().setValue("georef/coord_mode",
+                             self._coord_mode.currentData())
+        self._apply_coord_mode()
+
+    def _apply_coord_mode(self) -> None:
+        utm = self._coord_mode.currentData() == "utm"
+        self._geo_row.setVisible(not utm)
+        self._utm_row.setVisible(utm)
 
     def _on_utm_typed(self, *_a) -> None:
         lat, lon = utm_inverse(self._east_box.value(),
