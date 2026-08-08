@@ -3186,6 +3186,19 @@ class Viewport(QOpenGLWidget):
                 face, _grp = self.pick_face_any(cursor[0], cursor[1])
                 if face is not None:
                     return face.centroid(), face.normal()
+            # In an axis-aligned (standard) view, an unsnapped first point
+            # belongs on the plane FACING the camera through the model
+            # centre — so measuring/drawing in a front view stays in the
+            # frontal plane instead of dropping to the ground. Oblique
+            # orbit views keep the ground fallback (freehand unchanged).
+            from core.snap import first_point_work_plane
+            forward = self.camera.target - self.camera.eye()
+            lo, hi = self.scene.bounds()
+            center = ((lo + hi) * 0.5 if lo is not None
+                      else QVector3D(0.0, 0.0, 0.0))
+            plane = first_point_work_plane(forward, center)
+            if plane is not None:
+                return plane
             return QVector3D(0.0, 0.0, 0.0), QVector3D(0.0, 0.0, 1.0)
 
         forward = (self.camera.target - self.camera.eye())

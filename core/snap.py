@@ -67,6 +67,34 @@ class SnapResult:
 
 # ---- Helpers ---------------------------------------------------------------
 
+def first_point_work_plane(forward: QVector3D, scene_center: QVector3D,
+                           threshold: float = 0.97):
+    """Fallback work plane for a tool's FIRST point clicked in empty space.
+
+    When the camera looks (near-)straight down a principal axis — a
+    standard view (front / plan / side) — the natural plane to place an
+    unsnapped point on is the one FACING the camera, through the model's
+    centre, not the ground: dimensioning a front view must stay in the
+    frontal plane instead of dropping the point to Z=0 at some arbitrary
+    depth. Returns ``(point, normal)`` for such axis-aligned views, or
+    ``None`` for oblique (orbit) views, where the caller keeps its usual
+    ground/face behaviour so freehand modelling is unchanged.
+    """
+    if forward.length() < 1e-9:
+        return None
+    f = forward.normalized()
+    if max(abs(f.x()), abs(f.y()), abs(f.z())) < threshold:
+        return None                     # oblique view — not axis-aligned
+    # snap the normal to the exact dominant axis so the plane is clean
+    if abs(f.x()) >= abs(f.y()) and abs(f.x()) >= abs(f.z()):
+        normal = QVector3D(1.0 if f.x() > 0 else -1.0, 0.0, 0.0)
+    elif abs(f.y()) >= abs(f.z()):
+        normal = QVector3D(0.0, 1.0 if f.y() > 0 else -1.0, 0.0)
+    else:
+        normal = QVector3D(0.0, 0.0, 1.0 if f.z() > 0 else -1.0)
+    return scene_center, normal
+
+
 def _detect_axis_alignment(
     start: QVector3D, candidate: QVector3D, angle_deg: float
 ) -> Optional[str]:
