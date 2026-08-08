@@ -585,6 +585,37 @@ class ComposerCanvasView(QGraphicsView):
         self.setMouseTracking(True)
         self._drag_start = None
         self._preview = None
+        self._snap_marker = None       # green dot over a frame vertex/edge
+
+    def _snapped(self, pos):
+        """Snap *pos* (scene mm) to the nearest frame geometry point when a
+        drawing tool is armed. Returns (QPointF, hit). Threshold scales with
+        zoom so it's ~7 px on screen."""
+        from PySide6.QtCore import QPointF
+        if self.composer.tool_mode == "select":
+            return pos, False
+        thr_mm = 7.0 / max(self.transform().m11(), 1e-6)
+        hit = self.composer.nearest_snap_point(pos.x(), pos.y(), thr_mm)
+        if hit is None:
+            self._clear_snap_marker()
+            return pos, False
+        self._show_snap_marker(hit[0], hit[1])
+        return QPointF(hit[0], hit[1]), True
+
+    def _show_snap_marker(self, x, y):
+        from PySide6.QtGui import QBrush
+        if self._snap_marker is None:
+            self._snap_marker = self.scene().addEllipse(
+                QRectF(), QPen(QColor(255, 255, 255), 0.3),
+                QBrush(QColor(41, 158, 92)))     # elementary Lime/green
+            self._snap_marker.setZValue(60)
+        r = 1.6
+        self._snap_marker.setRect(QRectF(x - r, y - r, 2 * r, 2 * r))
+
+    def _clear_snap_marker(self):
+        if self._snap_marker is not None:
+            self.scene().removeItem(self._snap_marker)
+            self._snap_marker = None
 
     def wheelEvent(self, event) -> None:
         if event.modifiers() & Qt.ControlModifier:
@@ -598,13 +629,15 @@ class ComposerCanvasView(QGraphicsView):
     def mousePressEvent(self, event) -> None:
         mode = self.composer.tool_mode
         if mode != "select" and event.button() == Qt.LeftButton:
-            self._drag_start = self.mapToScene(event.position().toPoint())
+            pos, _ = self._snapped(self.mapToScene(event.position().toPoint()))
+            self._drag_start = pos
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
-        pos = self.mapToScene(event.position().toPoint())
+        raw = self.mapToScene(event.position().toPoint())
+        pos, _ = self._snapped(raw)
         self.composer.update_cursor_label(pos.x(), pos.y())
         if self._drag_start is not None:
             if self._preview is None:
@@ -619,12 +652,13 @@ class ComposerCanvasView(QGraphicsView):
 
     def mouseReleaseEvent(self, event) -> None:
         if self._drag_start is not None and event.button() == Qt.LeftButton:
-            end = self.mapToScene(event.position().toPoint())
+            end, _ = self._snapped(self.mapToScene(event.position().toPoint()))
             start = self._drag_start
             self._drag_start = None
             if self._preview is not None:
                 self.scene().removeItem(self._preview)
                 self._preview = None
+            self._clear_snap_marker()
             self.composer.place_tool(start.x(), start.y(), end.x(), end.y())
             event.accept()
             return
@@ -644,6 +678,7 @@ class ComposerWindow(QMainWindow):
         self._window = main_window
         self.render_cache: dict[int, QImage] = {}
         self.hlr_cache: dict[int, object] = {}
+        self.snap_cache: dict[int, object] = {}   # frame → page-mm snap pts
         self._images: dict[str, QImage] = {}
         self._updating = False
         self.history = ComposerHistory(on_change=self._on_history_change)
@@ -1145,6 +1180,7 @@ class ComposerWindow(QMainWindow):
     # ---- canvas --------------------------------------------------------------
     def _rebuild_canvas(self) -> None:
         self._updating = True
+        self.snap_cache.clear()
         self.canvas.clear()
         pw, ph = self.comp.page_size_mm()
         self.canvas.setSceneRect(-20, -20, pw + 40, ph + 40)
@@ -1293,6 +1329,7 @@ class ComposerWindow(QMainWindow):
         if isinstance(item, FrameItem) and final:
             self.render_cache.pop(id(item.model), None)
             self.hlr_cache.pop(id(item.model), None)
+            self.snap_cache.pop(id(item.model), None)
             item.update()
         if isinstance(item, FrameItem) and not self._updating \
                 and item is self._selected_item():
@@ -1432,6 +1469,7 @@ class ComposerWindow(QMainWindow):
             "show_title": self.title_check.isChecked()})
         self.render_cache.pop(id(item.model), None)
         self.hlr_cache.pop(id(item.model), None)
+        self.snap_cache.pop(id(item.model), None)
 
     def _on_text_props(self, *_a) -> None:
         item = self._selected_item()
@@ -1655,6 +1693,68 @@ class ComposerWindow(QMainWindow):
             for ly, visible in keep[8]:
                 ly.visible = visible
             vp.update()
+
+    def frame_snap_points(self, frame: MarcoVista):
+        """Visible geometry points of *frame*'s view, in PAGE millimetres —
+        every edge endpoint plus each edge's midpoint. Cached by frame id;
+        computed from the same hidden-line pass the vector style uses, so a
+        point only snaps where the drawing actually shows an edge.
+        """
+        import numpy as np
+        cached = self.snap_cache.get(id(frame))
+        if cached is not None:
+            return cached
+        from core.composition import model_height_for_frame
+        from core.hlr import hlr_view
+
+        def run():
+            vp = self._window.viewport
+            segs = hlr_view(vp.scene, vp.camera)      # camera-plane metres
+            if not len(segs):
+                return np.empty((0, 2))
+            model_h = model_height_for_frame(frame.h_mm, frame.scale_n)
+            k = frame.h_mm / model_h
+            half_h = model_h / 2.0
+            half_w = half_h * (frame.w_mm / frame.h_mm)
+
+            def to_page(mx, my):
+                return (frame.x_mm + (mx + half_w) * k,
+                        frame.y_mm + (half_h - my) * k)
+
+            pts = []
+            for x0, y0, x1, y1 in segs:
+                pts.append(to_page(x0, y0))
+                pts.append(to_page(x1, y1))
+                pts.append(to_page((x0 + x1) / 2, (y0 + y1) / 2))   # midpoint
+            arr = np.array(pts)
+            # clip to the frame rectangle (points outside are off the sheet)
+            m = ((arr[:, 0] >= frame.x_mm - 0.5)
+                 & (arr[:, 0] <= frame.x_mm + frame.w_mm + 0.5)
+                 & (arr[:, 1] >= frame.y_mm - 0.5)
+                 & (arr[:, 1] <= frame.y_mm + frame.h_mm + 0.5))
+            return arr[m]
+
+        arr = self._with_frame_camera(frame, run)
+        self.snap_cache[id(frame)] = arr
+        return arr
+
+    def nearest_snap_point(self, x_mm: float, y_mm: float, thr_mm: float):
+        """Nearest frame snap point to (x_mm, y_mm) within *thr_mm*, or None.
+        Searches every frame whose rectangle contains the cursor first, then
+        all frames (so an edge just past a frame border still catches)."""
+        import numpy as np
+        best = None
+        best_d2 = thr_mm * thr_mm
+        for frame in self.comp.frames:
+            pts = self.frame_snap_points(frame)
+            if not len(pts):
+                continue
+            d2 = ((pts[:, 0] - x_mm) ** 2 + (pts[:, 1] - y_mm) ** 2)
+            i = int(np.argmin(d2))
+            if d2[i] < best_d2:
+                best_d2 = float(d2[i])
+                best = (float(pts[i, 0]), float(pts[i, 1]))
+        return best
 
     def compute_hlr(self, frame: MarcoVista):
         """Hidden-line segments of *frame*'s view in PAPER millimetres

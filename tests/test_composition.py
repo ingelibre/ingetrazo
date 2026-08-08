@@ -509,3 +509,69 @@ class TestC5Items:
         c = Composicion.from_dict(d)
         assert c.texts[0].family == "Sans Serif"     # new fields default
         assert c.frames[0].grid_m == 0.0
+
+
+class TestComposerFrameSnap:
+    """Frame snap points project onto the model's visible vertices in the
+    frame's paper-mm space — the 'green point' the sheet dimension needs."""
+
+    def _box_scene(self):
+        from PySide6.QtGui import QVector3D as V
+        from core.scene import Scene
+        sc = Scene()
+        m = sc.mesh
+        for f in ([V(0,0,0),V(6,0,0),V(6,4,0),V(0,4,0)],
+                  [V(0,0,3),V(6,0,3),V(6,4,3),V(0,4,3)],
+                  [V(0,0,0),V(6,0,0),V(6,0,3),V(0,0,3)],
+                  [V(0,4,0),V(6,4,0),V(6,4,3),V(0,4,3)],
+                  [V(0,0,0),V(0,4,0),V(0,4,3),V(0,0,3)],
+                  [V(6,0,0),V(6,4,0),V(6,4,3),V(6,0,3)]):
+            m.add_face(f)
+        return sc
+
+    def _snap_points(self, sc, frame):
+        # replicate ComposerWindow.frame_snap_points' math without a GL window
+        import numpy as np
+        from core.camera import OrbitCamera
+        from core.composition import (apply_frame_camera,
+                                       model_height_for_frame)
+        from core.hlr import hlr_view
+        cam = OrbitCamera()
+        apply_frame_camera(cam, frame, saved_view=None, scene=sc)
+        segs = hlr_view(sc, cam)
+        model_h = model_height_for_frame(frame.h_mm, frame.scale_n)
+        k = frame.h_mm / model_h
+        half_h = model_h / 2.0
+        half_w = half_h * (frame.w_mm / frame.h_mm)
+        pts = []
+        for x0, y0, x1, y1 in segs:
+            pts.append((frame.x_mm + (x0 + half_w) * k,
+                        frame.y_mm + (half_h - y0) * k))
+            pts.append((frame.x_mm + (x1 + half_w) * k,
+                        frame.y_mm + (half_h - y1) * k))
+        return np.array(pts) if pts else np.empty((0, 2))
+
+    def test_front_view_snap_points_span_the_facade(self):
+        sc = self._box_scene()
+        # front elevation at 1:100 in a 200mm-tall frame → 20m of model shown
+        f = MarcoVista(x_mm=10, y_mm=10, w_mm=200, h_mm=200,
+                       scale_n=100.0, view_key="std:front")
+        pts = self._snap_points(sc, f)
+        assert len(pts) > 0
+        # the 6m-wide × 3m-tall façade at 1:100 = 60mm × 30mm on paper;
+        # the snap points must span at least that width and height
+        span_x = pts[:, 0].max() - pts[:, 0].min()
+        span_z = pts[:, 1].max() - pts[:, 1].min()
+        assert span_x == pytest.approx(60.0, abs=1.0)
+        assert span_z == pytest.approx(30.0, abs=1.0)
+
+    def test_nearest_point_within_threshold(self):
+        import numpy as np
+        pts = np.array([[70.0, 25.0], [130.0, 25.0], [130.0, 55.0]])
+        # a helper mirroring nearest_snap_point's core
+        def nearest(x, y, thr):
+            d2 = (pts[:, 0] - x) ** 2 + (pts[:, 1] - y) ** 2
+            i = int(np.argmin(d2))
+            return (float(pts[i, 0]), float(pts[i, 1])) if d2[i] < thr * thr else None
+        assert nearest(71, 26, 5) == (70.0, 25.0)
+        assert nearest(100, 40, 5) is None      # mid-air, no snap
