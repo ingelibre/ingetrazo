@@ -231,16 +231,27 @@ class FormaItem:
 
 @dataclass
 class CotaItem:
-    """A sheet dimension between two points; the label is the REAL model
-    distance implied by the paper length at 1:N («3.45 m»)."""
+    """A sheet dimension between two measured points; the label is the REAL
+    model distance implied by the paper length at 1:N («3.45 m»).
+
+    LayOut-style: the dimension LINE runs parallel to the measured segment,
+    ``sep_mm`` away along its normal (0 = directly on the points, the pre-C5
+    look), with extension lines connecting it back to the measured points.
+    """
 
     x_mm: float = 20.0
     y_mm: float = 20.0
     dx_mm: float = 40.0
     dy_mm: float = 0.0
     scale_n: float = 100.0
-    offset_mm: float = 4.0
+    sep_mm: float = 0.0          # dimension line ⟂ offset from the points
+    offset_mm: float = 4.0       # label gap above the dimension line
     text: str = ""               # "" = automatic distance label
+    text_mm: float = 2.8         # label height on paper
+    decimals: int = 2
+    ends: str = "tick"           # tick | arrow | none
+    stroke_mm: float = 0.25
+    color: str = "#1e242c"
 
     @property
     def w_mm(self) -> float:
@@ -250,6 +261,13 @@ class CotaItem:
     def h_mm(self) -> float:
         return max(abs(self.dy_mm), 2.0)
 
+    def normal(self) -> tuple[float, float]:
+        """Unit normal of the measured segment (the ``sep_mm`` direction)."""
+        length = math.hypot(self.dx_mm, self.dy_mm)
+        if length < 1e-9:
+            return (0.0, -1.0)
+        return (-self.dy_mm / length, self.dx_mm / length)
+
     def real_distance_m(self) -> float:
         return math.hypot(self.dx_mm, self.dy_mm) * self.scale_n / 1000.0
 
@@ -257,7 +275,8 @@ class CotaItem:
         if self.text:
             return self.text
         d = self.real_distance_m()
-        return f"{d:.2f} m" if d < 1000 else f"{d / 1000:.3f} km"
+        n = max(0, min(int(self.decimals), 6))
+        return f"{d:.{n}f} m" if d < 1000 else f"{d / 1000:.3f} km"
 
 
 @dataclass

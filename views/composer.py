@@ -246,32 +246,67 @@ def paint_forma_mm(painter: QPainter, f: FormaItem) -> None:
 
 
 def paint_cota_mm(painter: QPainter, ct: CotaItem) -> None:
-    """Architect-style dimension: line, oblique ticks, centred label of the
-    REAL model distance (paper length × N)."""
+    """Architect-style dimension: the line runs ``sep_mm`` off the measured
+    points along their normal (LayOut-style), tied back with extension
+    lines; oblique ticks / arrows / bare ends; centred label of the REAL
+    model distance (paper length × N)."""
     import math as _math
+    from PySide6.QtGui import QBrush, QPolygonF
+    nx, ny = ct.normal()
+    s = ct.sep_mm
     a = QPointF(0, 0)
     b = QPointF(ct.dx_mm, ct.dy_mm)
-    pen = QPen(QColor(30, 36, 44))
-    pen.setWidthF(0.25)
+    a2 = QPointF(nx * s, ny * s)
+    b2 = QPointF(ct.dx_mm + nx * s, ct.dy_mm + ny * s)
+    color = QColor(ct.color)
+    pen = QPen(color)
+    pen.setWidthF(ct.stroke_mm)
     painter.setPen(pen)
-    painter.drawLine(a, b)
+    if abs(s) > 0.05:
+        # extension lines: small gap at the measured point, small overshoot
+        # past the dimension line (the drafting convention LayOut follows)
+        sign = 1.0 if s >= 0 else -1.0
+        gap, over = 1.0 * sign, 1.2 * sign
+        for p, p2 in ((a, a2), (b, b2)):
+            painter.drawLine(
+                QPointF(p.x() + nx * gap, p.y() + ny * gap),
+                QPointF(p2.x() + nx * over, p2.y() + ny * over))
+    painter.drawLine(a2, b2)
     ang = _math.atan2(ct.dy_mm, ct.dx_mm)
-    tick = 1.6
-    for pt in (a, b):
-        painter.drawLine(
-            QPointF(pt.x() - tick * _math.cos(ang + _math.radians(45)),
-                    pt.y() - tick * _math.sin(ang + _math.radians(45))),
-            QPointF(pt.x() + tick * _math.cos(ang + _math.radians(45)),
-                    pt.y() + tick * _math.sin(ang + _math.radians(45))))
-    mid = QPointF(ct.dx_mm / 2, ct.dy_mm / 2)
+    if ct.ends == "arrow":
+        L = max(1.8, ct.stroke_mm * 6)
+        painter.save()
+        painter.setBrush(QBrush(color))
+        painter.setPen(Qt.NoPen)
+        for pt, direction in ((a2, ang), (b2, ang + _math.pi)):
+            tip = pt
+            base = _math.radians(12)
+            painter.drawPolygon(QPolygonF([
+                tip,
+                QPointF(tip.x() + L * _math.cos(direction + base),
+                        tip.y() + L * _math.sin(direction + base)),
+                QPointF(tip.x() + L * _math.cos(direction - base),
+                        tip.y() + L * _math.sin(direction - base))]))
+        painter.restore()
+    elif ct.ends != "none":
+        tick = 1.6
+        for pt in (a2, b2):
+            painter.drawLine(
+                QPointF(pt.x() - tick * _math.cos(ang + _math.radians(45)),
+                        pt.y() - tick * _math.sin(ang + _math.radians(45))),
+                QPointF(pt.x() + tick * _math.cos(ang + _math.radians(45)),
+                        pt.y() + tick * _math.sin(ang + _math.radians(45))))
+    mid = QPointF((a2.x() + b2.x()) / 2, (a2.y() + b2.y()) / 2)
     painter.save()
     painter.translate(mid)
     deg = _math.degrees(ang)
     if deg > 90 or deg < -90:
         deg += 180                      # keep the label readable
     painter.rotate(deg)
-    _draw_text_mm(painter, QRectF(-25, -ct.offset_mm - 3.6, 50, 4),
-                  ct.label(), 2.8, align=Qt.AlignHCenter | Qt.AlignTop)
+    _draw_text_mm(painter, QRectF(-40, -ct.offset_mm - ct.text_mm, 80,
+                                  ct.text_mm * 1.3),
+                  ct.label(), ct.text_mm,
+                  align=Qt.AlignHCenter | Qt.AlignTop, color=color)
     painter.restore()
 
 
@@ -529,21 +564,42 @@ class FormaCanvasItem(_SheetItem):
 
 
 class CotaCanvasItem(_SheetItem):
+    _sep_dragging = False
+
     def size_mm(self):
         return self.model.w_mm, self.model.h_mm
 
+    def _line_mid(self) -> tuple[float, float]:
+        nx, ny = self.model.normal()
+        s = self.model.sep_mm
+        return (self.model.dx_mm / 2 + nx * s, self.model.dy_mm / 2 + ny * s)
+
     def boundingRect(self) -> QRectF:
-        x0 = min(0.0, self.model.dx_mm) - 3
-        y0 = min(0.0, self.model.dy_mm) - self.model.offset_mm - 6
-        x1 = max(0.0, self.model.dx_mm) + 3
-        y1 = max(0.0, self.model.dy_mm) + self.model.offset_mm + 6
-        return QRectF(x0, y0, x1 - x0, y1 - y0)
+        m = self.model
+        nx, ny = m.normal()
+        pad = m.offset_mm + m.text_mm + 4
+        xs = (0.0, m.dx_mm, nx * m.sep_mm, m.dx_mm + nx * m.sep_mm)
+        ys = (0.0, m.dy_mm, ny * m.sep_mm, m.dy_mm + ny * m.sep_mm)
+        return QRectF(min(xs) - pad, min(ys) - pad,
+                      max(xs) - min(xs) + 2 * pad,
+                      max(ys) - min(ys) + 2 * pad)
 
     def _on_resize_handle(self, pos: QPointF) -> bool:
         return (abs(pos.x() - self.model.dx_mm) <= _HANDLE_MM
                 and abs(pos.y() - self.model.dy_mm) <= _HANDLE_MM)
 
+    def _on_sep_handle(self, pos: QPointF) -> bool:
+        mx, my = self._line_mid()
+        return (abs(pos.x() - mx) <= _HANDLE_MM
+                and abs(pos.y() - my) <= _HANDLE_MM)
+
     def mouseMoveEvent(self, event) -> None:
+        if self._sep_dragging:
+            nx, ny = self.model.normal()
+            self.prepareGeometryChange()
+            self.model.sep_mm = (event.pos().x() * nx + event.pos().y() * ny)
+            self.update()
+            return
         if self._resizing:
             self.prepareGeometryChange()
             self.model.dx_mm = event.pos().x()
@@ -554,20 +610,29 @@ class CotaCanvasItem(_SheetItem):
 
     def mousePressEvent(self, event) -> None:
         self._press_state = {k: getattr(self.model, k)
-                             for k in ("x_mm", "y_mm", "dx_mm", "dy_mm")}
-        self._resizing = self._on_resize_handle(event.pos())
-        if self._resizing:
+                             for k in ("x_mm", "y_mm", "dx_mm", "dy_mm",
+                                       "sep_mm")}
+        self._sep_dragging = self._on_sep_handle(event.pos())
+        self._resizing = (not self._sep_dragging
+                          and self._on_resize_handle(event.pos()))
+        if self._sep_dragging or self._resizing:
             event.accept()
             self.setSelected(True)
             return
         super(_SheetItem, self).mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._sep_dragging = False
+        super().mouseReleaseEvent(event)
 
     def _paint_selection(self, painter: QPainter) -> None:
         if not self.isSelected():
             return
         painter.setBrush(QBrush(QColor(58, 110, 165)))
         painter.setPen(Qt.NoPen)
-        for px, py in ((0.0, 0.0), (self.model.dx_mm, self.model.dy_mm)):
+        mx, my = self._line_mid()
+        for px, py in ((0.0, 0.0), (self.model.dx_mm, self.model.dy_mm),
+                       (mx, my)):
             painter.drawRect(QRectF(px - 1.2, py - 1.2, 2.4, 2.4))
 
     def paint(self, painter, option, widget=None) -> None:
@@ -586,7 +651,8 @@ class ComposerCanvasView(QGraphicsView):
         self._drag_start = None
         self._press_vp = None          # viewport px of the press (click vs drag)
         self._ignore_release = False   # release of a finishing second click
-        self._preview = None
+        self._second_pt = None         # cota: measured points fixed, placing
+        self._preview = None           #       the dimension line (sep phase)
         self._snap_marker = None       # green dot over a frame vertex/edge
         # Tools that define a segment/rectangle take EITHER a drag or two
         # clicks (click the first vertex, move, click the second) — the
@@ -599,6 +665,11 @@ class ComposerCanvasView(QGraphicsView):
         zoom so it's ~7 px on screen."""
         from PySide6.QtCore import QPointF
         if self.composer.tool_mode == "select":
+            return pos, False
+        if self._second_pt is not None:
+            # sep phase: the points are fixed; the dimension line goes where
+            # the cursor says — snapping would fight the offset.
+            self._clear_snap_marker()
             return pos, False
         thr_mm = 7.0 / max(self.transform().m11(), 1e-6)
         hit = self.composer.nearest_snap_point(pos.x(), pos.y(), thr_mm)
@@ -636,12 +707,21 @@ class ComposerCanvasView(QGraphicsView):
         mode = self.composer.tool_mode
         if mode != "select" and event.button() == Qt.LeftButton:
             pos, _ = self._snapped(self.mapToScene(event.position().toPoint()))
+            if self._second_pt is not None:
+                # Third click of a dimension: fixes the line separation.
+                self._finish_cota(pos)
+                self._ignore_release = True
+                event.accept()
+                return
             if self._drag_start is not None:
                 # Second click of a click-move-click placement finishes it
                 # (unless it lands on the first point — keep waiting).
                 if (event.position().toPoint() - self._press_vp
                         ).manhattanLength() >= 4:
-                    self._finish_placement(pos)
+                    if mode == "cota":
+                        self._enter_sep_phase(pos)
+                    else:
+                        self._finish_placement(pos)
                     self._ignore_release = True
                 event.accept()
                 return
@@ -655,6 +735,10 @@ class ComposerCanvasView(QGraphicsView):
         raw = self.mapToScene(event.position().toPoint())
         pos, _ = self._snapped(raw)
         self.composer.update_cursor_label(pos.x(), pos.y())
+        if self._second_pt is not None:
+            self._update_sep_preview(pos)
+            event.accept()
+            return
         if self._drag_start is not None:
             if self._preview is None:
                 pen = QPen(QColor(58, 110, 165), 0.3, Qt.DashLine)
@@ -666,10 +750,73 @@ class ComposerCanvasView(QGraphicsView):
             return
         super().mouseMoveEvent(event)
 
+    # ---- dimension sep phase (points fixed, placing the line) ---------------
+
+    def _cota_sep(self, pos) -> float:
+        """Signed ⟂ distance from the measured segment to *pos* (page mm)."""
+        import math as _math
+        a, b = self._drag_start, self._second_pt
+        dx, dy = b.x() - a.x(), b.y() - a.y()
+        length = _math.hypot(dx, dy)
+        if length < 1e-9:
+            return 0.0
+        nx, ny = -dy / length, dx / length
+        return (pos.x() - a.x()) * nx + (pos.y() - a.y()) * ny
+
+    def _enter_sep_phase(self, second) -> None:
+        self._second_pt = second
+        self._clear_snap_marker()
+        if self._preview is not None:
+            self.scene().removeItem(self._preview)
+            self._preview = None
+        self._update_sep_preview(second)
+
+    def _update_sep_preview(self, pos) -> None:
+        import math as _math
+        from PySide6.QtGui import QPainterPath
+        from PySide6.QtWidgets import QGraphicsPathItem
+        if self._preview is None or not isinstance(
+                self._preview, QGraphicsPathItem):
+            if self._preview is not None:
+                self.scene().removeItem(self._preview)
+            pen = QPen(QColor(58, 110, 165), 0.3, Qt.DashLine)
+            self._preview = QGraphicsPathItem()
+            self._preview.setPen(pen)
+            self._preview.setZValue(50)
+            self.scene().addItem(self._preview)
+        a, b = self._drag_start, self._second_pt
+        dx, dy = b.x() - a.x(), b.y() - a.y()
+        length = _math.hypot(dx, dy)
+        nx, ny = ((-dy / length, dx / length) if length > 1e-9 else (0.0, -1.0))
+        s = self._cota_sep(pos)
+        path = QPainterPath()
+        for p in (a, b):
+            path.moveTo(p)
+            path.lineTo(p.x() + nx * s, p.y() + ny * s)
+        path.moveTo(a.x() + nx * s, a.y() + ny * s)
+        path.lineTo(b.x() + nx * s, b.y() + ny * s)
+        self._preview.setPath(path)
+
+    def _finish_cota(self, pos) -> None:
+        start, second = self._drag_start, self._second_pt
+        sep = self._cota_sep(pos)
+        self._drag_start = None
+        self._second_pt = None
+        self._press_vp = None
+        if self._preview is not None:
+            self.scene().removeItem(self._preview)
+            self._preview = None
+        self._clear_snap_marker()
+        self.composer.place_tool(start.x(), start.y(),
+                                 second.x(), second.y(), sep_mm=sep)
+
     def mouseReleaseEvent(self, event) -> None:
         if self._ignore_release and event.button() == Qt.LeftButton:
             self._ignore_release = False
             event.accept()
+            return
+        if self._second_pt is not None and event.button() == Qt.LeftButton:
+            event.accept()                # sep phase ends on the next press
             return
         if self._drag_start is not None and event.button() == Qt.LeftButton:
             # A press-and-release on the same spot with a two-point tool is
@@ -681,7 +828,10 @@ class ComposerCanvasView(QGraphicsView):
                 event.accept()
                 return
             end, _ = self._snapped(self.mapToScene(event.position().toPoint()))
-            self._finish_placement(end)
+            if self.composer.tool_mode == "cota":
+                self._enter_sep_phase(end)
+            else:
+                self._finish_placement(end)
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -699,6 +849,7 @@ class ComposerCanvasView(QGraphicsView):
     def cancel_placement(self) -> None:
         """Drop an in-progress two-point placement (Esc / tool switch)."""
         self._drag_start = None
+        self._second_pt = None
         self._press_vp = None
         self._ignore_release = False
         if self._preview is not None:
@@ -795,7 +946,7 @@ class ComposerWindow(QMainWindow):
         ("flecha", "comp_flecha", "Draw an arrow (two clicks or drag)", True),
         ("rect", "rectangle", "Draw a rectangle (two clicks or drag)", True),
         ("elipse", "circle", "Draw an ellipse (two clicks or drag)", True),
-        ("cota", "dimension", "Draw a dimension (two clicks or drag)", True),
+        ("cota", "dimension", "Draw a dimension (two points + separation)", True),
     )
 
     def _build_tools_toolbar(self) -> None:
@@ -829,7 +980,8 @@ class ComposerWindow(QMainWindow):
             self._set_tool_mode("select")
             self._tool_actions["select"].setChecked(True)
 
-    def place_tool(self, x0: float, y0: float, x1: float, y1: float) -> None:
+    def place_tool(self, x0: float, y0: float, x1: float, y1: float,
+                   sep_mm: float = 0.0) -> None:
         """A click (or drag) landed on the page with a placement tool
         armed: create the item there, through the history."""
         mode = self.tool_mode
@@ -866,7 +1018,7 @@ class ComposerWindow(QMainWindow):
         elif mode == "cota":
             n = self.comp.frames[0].scale_n if self.comp.frames else 100.0
             item = CotaItem(x_mm=x0, y_mm=y0, dx_mm=x1 - x0, dy_mm=y1 - y0,
-                            scale_n=n)
+                            scale_n=n, sep_mm=sep_mm, offset_mm=0.8)
         if item is not None:
             self._pending_sel = item
             self.history.execute(AddItemCommand(self.comp, item))
@@ -1122,6 +1274,40 @@ class ComposerWindow(QMainWindow):
         self.cota_text.setPlaceholderText(tr("(automatic)"))
         self.cota_text.editingFinished.connect(self._on_cota_props)
         form.addRow(tr("Label"), self.cota_text)
+        self.cota_sep = QDoubleSpinBox()
+        self.cota_sep.setRange(-100.0, 100.0)
+        self.cota_sep.setSingleStep(0.5)
+        self.cota_sep.setSuffix(" mm")
+        self.cota_sep.valueChanged.connect(self._on_cota_props)
+        form.addRow(tr("Separation"), self.cota_sep)
+        self.cota_text_mm = QDoubleSpinBox()
+        self.cota_text_mm.setRange(1.0, 10.0)
+        self.cota_text_mm.setSingleStep(0.2)
+        self.cota_text_mm.setSuffix(" mm")
+        self.cota_text_mm.valueChanged.connect(self._on_cota_props)
+        form.addRow(tr("Text height"), self.cota_text_mm)
+        self.cota_decimals = QDoubleSpinBox()
+        self.cota_decimals.setRange(0, 4)
+        self.cota_decimals.setDecimals(0)
+        self.cota_decimals.valueChanged.connect(self._on_cota_props)
+        form.addRow(tr("Decimals"), self.cota_decimals)
+        self.cota_ends = QComboBox()
+        for label, key in ((tr("Oblique ticks"), "tick"),
+                           (tr("Arrows"), "arrow"),
+                           (tr("None"), "none")):
+            self.cota_ends.addItem(label, key)
+        self.cota_ends.currentIndexChanged.connect(self._on_cota_props)
+        form.addRow(tr("Ends"), self.cota_ends)
+        self.cota_stroke = QDoubleSpinBox()
+        self.cota_stroke.setRange(0.1, 1.5)
+        self.cota_stroke.setSingleStep(0.05)
+        self.cota_stroke.setSuffix(" mm")
+        self.cota_stroke.valueChanged.connect(self._on_cota_props)
+        form.addRow(tr("Line width"), self.cota_stroke)
+        self.cota_color_btn = QPushButton()
+        self.cota_color_btn.setFixedHeight(22)
+        self.cota_color_btn.clicked.connect(self._on_pick_cota_color)
+        form.addRow(tr("Colour"), self.cota_color_btn)
         return w
 
     def _page_image(self) -> QWidget:
@@ -1342,6 +1528,14 @@ class ComposerWindow(QMainWindow):
             elif isinstance(item, CotaCanvasItem):
                 self.cota_scale.setCurrentText(f"1:{item.model.scale_n:g}")
                 self.cota_text.setText(item.model.text)
+                self.cota_sep.setValue(item.model.sep_mm)
+                self.cota_text_mm.setValue(item.model.text_mm)
+                self.cota_decimals.setValue(item.model.decimals)
+                eidx = self.cota_ends.findData(item.model.ends)
+                self.cota_ends.setCurrentIndex(max(eidx, 0))
+                self.cota_stroke.setValue(item.model.stroke_mm)
+                self.cota_color_btn.setStyleSheet(
+                    f"background: {item.model.color};")
                 self.props.setCurrentIndex(9)
             else:
                 self.props.setCurrentIndex(0)
@@ -1601,9 +1795,26 @@ class ComposerWindow(QMainWindow):
             n = float(text.replace(",", "."))
         except ValueError:
             n = item.model.scale_n
+        item.prepareGeometryChange()
         self._panel_edit(item, {
             "scale_n": n if n > 0 else item.model.scale_n,
-            "text": self.cota_text.text()})
+            "text": self.cota_text.text(),
+            "sep_mm": self.cota_sep.value(),
+            "text_mm": self.cota_text_mm.value(),
+            "decimals": int(self.cota_decimals.value()),
+            "ends": self.cota_ends.currentData() or "tick",
+            "stroke_mm": self.cota_stroke.value()})
+
+    def _on_pick_cota_color(self) -> None:
+        from PySide6.QtWidgets import QColorDialog
+        item = self._selected_item()
+        if not isinstance(item, CotaCanvasItem):
+            return
+        col = QColorDialog.getColor(QColor(item.model.color), self,
+                                    tr("Colour"))
+        if col.isValid():
+            self._panel_edit(item, {"color": col.name()})
+            self.cota_color_btn.setStyleSheet(f"background: {col.name()};")
 
     def _item_label(self, model) -> str:
         if isinstance(model, MarcoVista):
