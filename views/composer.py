@@ -76,6 +76,29 @@ def _draw_text_mm(painter: QPainter, rect: QRectF, text: str, size_mm: float,
     painter.restore()
 
 
+def _fit_text_size_mm(text: str, rect: QRectF, base_size_mm: float,
+                      bold: bool = False,
+                      family: str = "Sans Serif") -> float:
+    """Largest size ≤ base at which *text*, word-wrapped, fits *rect*
+    (mm units) — the title-block habit: a long project name drops to two
+    or three lines and only then starts shrinking."""
+    from PySide6.QtGui import QFontMetricsF
+    font = QFont(family or "Sans Serif")
+    font.setPixelSize(100)
+    font.setBold(bold)
+    fm = QFontMetricsF(font)
+    size = base_size_mm
+    while size > 1.0:
+        s = size / 100.0 * 0.75
+        box = QRectF(0, 0, rect.width() / s, rect.height() / s)
+        need = fm.boundingRect(box, int(Qt.AlignLeft | Qt.TextWordWrap),
+                               text)
+        if need.height() <= box.height() and need.width() <= box.width():
+            return size
+        size *= 0.88
+    return 1.0
+
+
 def frame_title_text(frame: MarcoVista) -> str:
     """The automatic title: view name — scale («Planta — 1:100»)."""
     key = frame.view_key
@@ -378,15 +401,19 @@ def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
             y = j * row_h
             if j:
                 painter.drawLine(QPointF(x0, y), QPointF(x0 + col_w, y))
-            _draw_text_mm(painter,
-                          QRectF(x0 + 1.2, y + row_h * 0.18,
-                                 label_w - 2, row_h),
-                          str(label), row_h * 0.38, bold=True,
+            # Long content wraps to more lines inside its cell and only
+            # shrinks when even wrapped it does not fit.
+            lrect = QRectF(x0 + 1.2, y + 0.5, label_w - 2, row_h - 1.0)
+            lsize = _fit_text_size_mm(str(label), lrect, row_h * 0.38,
+                                      bold=True)
+            _draw_text_mm(painter, lrect, str(label), lsize, bold=True,
+                          align=Qt.AlignLeft | Qt.AlignVCenter,
                           color=QColor(90, 98, 108))
-            _draw_text_mm(painter,
-                          QRectF(x0 + label_w + 1.5, y + row_h * 0.12,
-                                 col_w - label_w - 3, row_h),
-                          str(value), row_h * 0.52)
+            vrect = QRectF(x0 + label_w + 1.5, y + 0.5,
+                           col_w - label_w - 3, row_h - 1.0)
+            vsize = _fit_text_size_mm(str(value), vrect, row_h * 0.52)
+            _draw_text_mm(painter, vrect, str(value), vsize,
+                          align=Qt.AlignLeft | Qt.AlignVCenter)
     painter.setPen(heavy)
     painter.setBrush(Qt.NoBrush)
     painter.drawRect(r)

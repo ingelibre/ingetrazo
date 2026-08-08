@@ -482,6 +482,20 @@ class TestShapesAndCajetin:
         assert ["DISTRITO", "Yanque"] in again.campos
         assert again.border_mm == 0.5 and again.line_mm == 0.2
 
+    def test_long_values_wrap_and_shrink_to_their_cell(self):
+        from PySide6.QtCore import QRectF
+        from views.composer import _fit_text_size_mm
+        cell = QRectF(0, 0, 100.0, 5.6)          # one 180×33 cajetin row
+        short = _fit_text_size_mm("Casa Quinta", cell, 3.4)
+        assert short == pytest.approx(3.4)        # fits at base size
+        long_name = ("MEJORAMIENTO Y AMPLIACIÓN DEL SERVICIO DE AGUA "
+                     "POTABLE Y SANEAMIENTO EN LA LOCALIDAD DE YANQUE, "
+                     "DISTRITO DE YANQUE, PROVINCIA DE CAYLLOMA")
+        fitted = _fit_text_size_mm(long_name, cell, 3.4)
+        assert 1.0 <= fitted < 3.4                # wrapped + shrunk, no clip
+        one_word = "PALABRALARGUISIMASINESPACIOSQUEDEBEENCOGERSE"
+        assert _fit_text_size_mm(one_word, cell, 3.4) < 3.4
+
     def test_cajetin_paint_smoke_all_layouts(self):
         from PySide6.QtGui import QImage, QPainter
         from views.composer import paint_cajetin_mm, paint_forma_mm
