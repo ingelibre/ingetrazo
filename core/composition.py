@@ -78,6 +78,11 @@ class MarcoVista:
     h_mm: float = 170.0
     scale_n: float = 100.0
     view_key: str = "__current__"
+    #: Render style: "sombreado" (the live look), "tecnico" (white faces +
+    #: dark edges on white — the plan look) or "lineas" (edges only).
+    style: str = "sombreado"
+    #: Draw the automatic title under the frame («Planta — 1:100»).
+    show_title: bool = False
 
     def model_height_m(self) -> float:
         return model_height_for_frame(self.h_mm, self.scale_n)
@@ -134,6 +139,41 @@ class Cajetin:
 
 
 @dataclass
+class BarraEscala:
+    """A graphic scale bar: alternating black/white segments with metre
+    labels — the reader can measure even from a bad photocopy."""
+
+    x_mm: float = 20.0
+    y_mm: float = 20.0
+    scale_n: float = 100.0
+    segments: int = 4
+
+    def segment_m(self) -> float:
+        """A round model length per segment so the whole bar prints close
+        to (but under) ~100 mm of paper."""
+        target_mm = 100.0 / self.segments
+        raw_m = target_mm * self.scale_n / 1000.0
+        nice = (0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 25, 50,
+                100, 200, 250, 500, 1000, 2000, 5000)
+        best = nice[0]
+        for n in nice:
+            if n <= raw_m:
+                best = n
+        return float(best)
+
+    def segment_mm(self) -> float:
+        return self.segment_m() * 1000.0 / self.scale_n
+
+    @property
+    def w_mm(self) -> float:            # noqa: D401 — sizing protocol
+        return self.segment_mm() * self.segments
+
+    @property
+    def h_mm(self) -> float:
+        return 8.0
+
+
+@dataclass
 class Composicion:
     """One sheet: a page plus its items."""
 
@@ -144,6 +184,7 @@ class Composicion:
     frames: list = field(default_factory=list)
     texts: list = field(default_factory=list)
     images: list = field(default_factory=list)
+    scalebars: list = field(default_factory=list)
     cajetin: Optional[Cajetin] = None
 
     def page_size_mm(self) -> tuple[float, float]:
@@ -166,7 +207,8 @@ class Composicion:
         return Cajetin(x_mm=pw - m - w, y_mm=ph - m - h, w_mm=w, h_mm=h)
 
     def all_items(self) -> list:
-        out = list(self.frames) + list(self.texts) + list(self.images)
+        out = (list(self.frames) + list(self.texts) + list(self.images)
+               + list(self.scalebars))
         if self.cajetin is not None:
             out.append(self.cajetin)
         return out
@@ -181,6 +223,8 @@ class Composicion:
             d["texts"] = [asdict(t) for t in self.texts]
         if self.images:
             d["images"] = [asdict(i) for i in self.images]
+        if self.scalebars:
+            d["scalebars"] = [asdict(sb) for sb in self.scalebars]
         if self.cajetin is not None:
             d["cajetin"] = asdict(self.cajetin)
         return d
@@ -194,6 +238,7 @@ class Composicion:
         c.frames = [MarcoVista(**f) for f in d.get("frames", [])]
         c.texts = [TextoItem(**t) for t in d.get("texts", [])]
         c.images = [ImagenItem(**i) for i in d.get("images", [])]
+        c.scalebars = [BarraEscala(**sb) for sb in d.get("scalebars", [])]
         if "cajetin" in d:
             c.cajetin = Cajetin(**d["cajetin"])
         return c
@@ -230,6 +275,8 @@ class AddItemCommand(ComposerCommand):
             return self.comp.texts
         if isinstance(self.item, ImagenItem):
             return self.comp.images
+        if isinstance(self.item, BarraEscala):
+            return self.comp.scalebars
         return None
 
     def do(self) -> None:
@@ -260,6 +307,8 @@ class RemoveItemCommand(ComposerCommand):
             return self.comp.texts
         if isinstance(self.item, ImagenItem):
             return self.comp.images
+        if isinstance(self.item, BarraEscala):
+            return self.comp.scalebars
         return None
 
     def do(self) -> None:

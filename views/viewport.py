@@ -392,6 +392,10 @@ class Viewport(QOpenGLWidget):
         # FBO and stops there (no blit, no widget overlay) — the hi-res image
         # export path (render_image) reads the FBO back instead.
         self._export_size: Optional[tuple[int, int]] = None
+        # Sheet-composer technical style: None (shaded), "tecnico" (white
+        # faces + dark edges on white, no axes/sky) or "lineas" (edges only).
+        # Set around a composer render; never persists across frames.
+        self.plano_style: Optional[str] = None
         self._fbo_size = (0, 0)
 
         # Camera navigation state (middle button)
@@ -622,7 +626,10 @@ class Viewport(QOpenGLWidget):
         self._gl.glDisable(GL_CULL_FACE)
 
         self._gl.glClearDepthf(1.0)
-        self._gl.glClearColor(0.90, 0.91, 0.92, 1.0)
+        if self.plano_style is not None:
+            self._gl.glClearColor(1.0, 1.0, 1.0, 1.0)   # plan sheets: white
+        else:
+            self._gl.glClearColor(0.90, 0.91, 0.92, 1.0)
         self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
@@ -639,7 +646,8 @@ class Viewport(QOpenGLWidget):
         # premium SketchUp feel. Fixed on zoom (it's the point at infinity),
         # moves only on orbit. Skipped over the base map / terrain (which supply
         # their own ground).
-        if (not self._base_map_showing() and not self._terrain_showing()
+        if (self.plano_style is None and not self._base_map_showing()
+                and not self._terrain_showing()
                 and not self._photo_showing()):
             self._draw_sky(mvp)
             self._program.setUniformValue(self._loc_mvp, mvp)
@@ -664,14 +672,23 @@ class Viewport(QOpenGLWidget):
 
         # Faces — drawn before edges, with polygon offset so coincident
         # boundary edges sit cleanly on top instead of z-fighting.
-        if self._faces_count > 0:
+        if self._faces_count > 0 and self.plano_style != "lineas":
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
-            # Every colour run in ONE draw call: the shaded material colour
-            # rides per vertex (a_color). An imported model with hundreds of
-            # colour×shade runs paid ~2000 uniform/draw calls per frame.
-            self._program.setUniformValue(self._loc_use_vcolor, 1)
-            self._set_back_face_color()
+            if self.plano_style == "tecnico":
+                # Plan style: every face flat white, no rebatch needed —
+                # the per-vertex colours are simply not consulted.
+                self._program.setUniformValue(self._loc_use_vcolor, 0)
+                self._set_color(1.0, 1.0, 1.0, 1.0)
+                self._program.setUniformValue(
+                    self._loc_back_color, QVector4D(1.0, 1.0, 1.0, 1.0))
+            else:
+                # Every colour run in ONE draw call: the shaded material
+                # colour rides per vertex (a_color). An imported model with
+                # hundreds of colour×shade runs paid ~2000 uniform/draw
+                # calls per frame.
+                self._program.setUniformValue(self._loc_use_vcolor, 1)
+                self._set_back_face_color()
             self._faces_vao.bind()
             self._gl.glDrawArrays(GL_TRIANGLES, 0, self._faces_count)
             fstart, fcount = self._fvcol_run
@@ -688,7 +705,16 @@ class Viewport(QOpenGLWidget):
 
         # Textured faces — same depth/offset treatment, sampling each face's
         # image. One draw per texture (its GL texture bound to unit 0).
-        if self._tex_faces_count > 0:
+        if self._tex_faces_count > 0 and self.plano_style == "tecnico":
+            # Plan style: textured faces draw flat white like the rest.
+            self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+            self._gl.glPolygonOffset(1.0, 1.0)
+            self._set_color(1.0, 1.0, 1.0, 1.0)
+            self._tex_faces_vao.bind()
+            self._gl.glDrawArrays(GL_TRIANGLES, 0, self._tex_faces_count)
+            self._tex_faces_vao.release()
+            self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+        elif self._tex_faces_count > 0 and self.plano_style is None:
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
             self._program.setUniformValue(self._loc_use_tex, 1)
@@ -710,7 +736,8 @@ class Viewport(QOpenGLWidget):
         # SketchUp two-sided paint): drawn with front-face culling so they
         # only show from behind, without the face passes' polygon offset so
         # they win the depth test over the front copy there.
-        if self._back_vcol_run[1] > 0 or self._back_tex_runs:
+        if (self._back_vcol_run[1] > 0 or self._back_tex_runs) \
+                and self.plano_style is None:
             self._gl.glEnable(GL_CULL_FACE)
             self._gl.glCullFace(GL_FRONT)
             bstart, bcount = self._back_vcol_run
@@ -740,7 +767,8 @@ class Viewport(QOpenGLWidget):
         # after everything opaque, blended, depth-tested but not depth-
         # written, so glass/mesh screens show what's behind them.
         if (self._tcol_runs or self._ttex_runs
-                or self._back_tcol_runs or self._back_ttex_runs):
+                or self._back_tcol_runs or self._back_ttex_runs) \
+                and self.plano_style is None:
             self._gl.glDepthMask(GL_FALSE)
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
@@ -804,9 +832,13 @@ class Viewport(QOpenGLWidget):
             self._gl.glDepthMask(GL_TRUE)
 
         # Face-me billboards (SketchUp 2D people): per-frame textured cutout
+        # — skipped on plan sheets: a coloured cutout person on a technical
+        # drawing gives the raster away; scale figures belong to the shaded
+        # style only.
         # quads turned toward the camera.
-        self._draw_billboards()
-        self._draw_billboard_outlines()
+        if self.plano_style is None:
+            self._draw_billboards()
+            self._draw_billboard_outlines()
 
         # Face highlights (selection + hover) — translucent overlays drawn on
         # top of the cream faces. Same polygon offset as the faces so they sit
@@ -842,22 +874,23 @@ class Viewport(QOpenGLWidget):
         # stays stable across zoom. Depth-write OFF so the ground axes don't cull
         # geometry sitting on z=0; drawn BEFORE user edges so an edge along an
         # axis wins the LEQUAL depth test. Rubber-band stays on top (drawn last).
-        spacing = max(self.camera.distance * 0.03, 1e-4)
-        axes_coords, self._axes_spans = _axes_vertices(spacing)
-        data = axes_coords.tobytes()
-        self._axes_vbo.bind()
-        self._axes_vbo.allocate(data, len(data))
-        self._axes_vbo.release()
-        self._axes_vao.bind()
-        self._gl.glDepthMask(GL_FALSE)
-        for name, rgb in (("x", (0.86, 0.22, 0.27)),   # red
-                          ("y", (0.16, 0.62, 0.36)),   # green
-                          ("z", (0.20, 0.40, 0.78))):  # blue
-            start, count = self._axes_spans[name]
-            self._set_color(*rgb, 1.0)
-            self._gl.glDrawArrays(GL_LINES, start, count)
-        self._gl.glDepthMask(GL_TRUE)
-        self._axes_vao.release()
+        if self.plano_style is None:      # no axes on a plan sheet
+            spacing = max(self.camera.distance * 0.03, 1e-4)
+            axes_coords, self._axes_spans = _axes_vertices(spacing)
+            data = axes_coords.tobytes()
+            self._axes_vbo.bind()
+            self._axes_vbo.allocate(data, len(data))
+            self._axes_vbo.release()
+            self._axes_vao.bind()
+            self._gl.glDepthMask(GL_FALSE)
+            for name, rgb in (("x", (0.86, 0.22, 0.27)),   # red
+                              ("y", (0.16, 0.62, 0.36)),   # green
+                              ("z", (0.20, 0.40, 0.78))):  # blue
+                start, count = self._axes_spans[name]
+                self._set_color(*rgb, 1.0)
+                self._gl.glDrawArrays(GL_LINES, start, count)
+            self._gl.glDepthMask(GL_TRUE)
+            self._axes_vao.release()
 
         if self._edges_count > 0:
             self._set_color(0.13, 0.17, 0.23, 1.0)

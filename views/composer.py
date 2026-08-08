@@ -26,10 +26,10 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
                                QStackedWidget, QVBoxLayout, QWidget)
 
 from core.composition import (COMMON_SCALES, PAPER_SIZES_MM, RENDER_DPI,
-                              AddItemCommand, Cajetin, ComposerHistory,
-                              Composicion, EditItemCommand, ImagenItem,
-                              MarcoVista, RemoveItemCommand, TextoItem,
-                              apply_frame_camera, snap_mm)
+                              AddItemCommand, BarraEscala, Cajetin,
+                              ComposerHistory, Composicion, EditItemCommand,
+                              ImagenItem, MarcoVista, RemoveItemCommand,
+                              TextoItem, apply_frame_camera, snap_mm)
 from core.i18n import tr
 
 PT_TO_MM = 25.4 / 72.0
@@ -71,6 +71,18 @@ def _draw_text_mm(painter: QPainter, rect: QRectF, text: str, size_mm: float,
     painter.restore()
 
 
+def frame_title_text(frame: MarcoVista) -> str:
+    """The automatic title: view name — scale («Planta — 1:100»)."""
+    key = frame.view_key
+    if key.startswith("scene:"):
+        name = key[6:]
+    elif key.startswith("std:"):
+        name = {k: tr(lbl) for lbl, k in _STD_VIEWS}.get(key[4:], key[4:])
+    else:
+        name = tr("View")
+    return f"{name} — 1:{frame.scale_n:g}"
+
+
 def paint_frame_mm(painter: QPainter, frame: MarcoVista,
                    image: Optional[QImage]) -> None:
     r = QRectF(0, 0, frame.w_mm, frame.h_mm)
@@ -86,6 +98,36 @@ def paint_frame_mm(painter: QPainter, frame: MarcoVista,
     painter.setPen(pen)
     painter.setBrush(Qt.NoBrush)
     painter.drawRect(r)
+    if frame.show_title:
+        _draw_text_mm(painter,
+                      QRectF(0, frame.h_mm + 1.2, frame.w_mm, 8.0),
+                      frame_title_text(frame), 4.2, bold=True,
+                      align=Qt.AlignHCenter | Qt.AlignTop)
+
+
+def paint_scalebar_mm(painter: QPainter, sb: BarraEscala) -> None:
+    """Alternating black/white boxes + metre labels + the 1:N caption."""
+    seg_mm = sb.segment_mm()
+    seg_m = sb.segment_m()
+    bar_h = 2.4
+    pen = QPen(QColor(30, 36, 44))
+    pen.setWidthF(0.25)
+    painter.setPen(pen)
+    for i in range(sb.segments):
+        r = QRectF(i * seg_mm, 0, seg_mm, bar_h)
+        painter.setBrush(QBrush(QColor(30, 36, 44)) if i % 2 == 0
+                         else QBrush(QColor(255, 255, 255)))
+        painter.drawRect(r)
+    for i in range(sb.segments + 1):
+        v = i * seg_m
+        label = f"{v:g}"
+        _draw_text_mm(painter,
+                      QRectF(i * seg_mm - 12, bar_h + 0.8, 24, 4),
+                      label, 2.6, align=Qt.AlignHCenter | Qt.AlignTop)
+    _draw_text_mm(painter,
+                  QRectF(0, bar_h + 4.6, sb.w_mm, 4),
+                  tr("metres — scale 1:{n}", n=f"{sb.scale_n:g}"), 2.6,
+                  align=Qt.AlignHCenter | Qt.AlignTop)
 
 
 def paint_text_mm(painter: QPainter, item: TextoItem) -> None:
@@ -252,9 +294,26 @@ class _SheetItem(QGraphicsItem):
 
 
 class FrameItem(_SheetItem):
+    def boundingRect(self) -> QRectF:
+        r = super().boundingRect()
+        if self.model.show_title:
+            r.setHeight(r.height() + 9.0)
+        return r
+
     def paint(self, painter, option, widget=None) -> None:
         paint_frame_mm(painter, self.model,
                        self.composer.render_cache.get(id(self.model)))
+        self._paint_selection(painter)
+
+
+class ScaleBarItem(_SheetItem):
+    RESIZABLE = False
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(-12.5, -0.5, self.model.w_mm + 25.0, 12.0)
+
+    def paint(self, painter, option, widget=None) -> None:
+        paint_scalebar_mm(painter, self.model)
         self._paint_selection(painter)
 
 
@@ -377,7 +436,9 @@ class ComposerWindow(QMainWindow):
                 (tr("+ Text"), tr("Add a text block"), self._on_add_text),
                 (tr("+ Image"), tr("Add an image"), self._on_add_image),
                 (tr("+ Title block"), tr("Add the title block"),
-                 self._on_add_cajetin)):
+                 self._on_add_cajetin),
+                (tr("+ Scale bar"), tr("Add a graphic scale bar"),
+                 self._on_add_scalebar)):
             b = QPushButton(text)
             b.setToolTip(tip)
             b.clicked.connect(slot)
@@ -391,6 +452,7 @@ class ComposerWindow(QMainWindow):
         self.props.addWidget(self._page_text())      # 2
         self.props.addWidget(self._page_image())     # 3
         self.props.addWidget(self._page_cajetin())   # 4
+        self.props.addWidget(self._page_scalebar())  # 5
         outer.addWidget(self.props)
 
         outer.addStretch(1)
@@ -435,6 +497,16 @@ class ComposerWindow(QMainWindow):
         self.fh_spin.setSuffix(" mm")
         self.fh_spin.valueChanged.connect(self._on_frame_props)
         form.addRow(tr("Frame height"), self.fh_spin)
+        self.style_combo = QComboBox()
+        for label, key in ((tr("Shaded"), "sombreado"),
+                           (tr("Technical (white + edges)"), "tecnico"),
+                           (tr("Lines only"), "lineas")):
+            self.style_combo.addItem(label, key)
+        self.style_combo.currentIndexChanged.connect(self._on_frame_props)
+        form.addRow(tr("Style"), self.style_combo)
+        self.title_check = QCheckBox(tr("Title under the frame"))
+        self.title_check.toggled.connect(self._on_frame_props)
+        form.addRow("", self.title_check)
         btn = QPushButton(tr("Update view"))
         btn.clicked.connect(self._on_refresh_selected_frame)
         form.addRow(btn)
@@ -477,6 +549,21 @@ class ComposerWindow(QMainWindow):
             edit.editingFinished.connect(self._on_cajetin_props)
             self.caj_edits[attr] = edit
             form.addRow(label.capitalize(), edit)
+        return w
+
+    def _page_scalebar(self) -> QWidget:
+        w = QWidget()
+        form = QFormLayout(w)
+        self.sb_scale = QComboBox()
+        self.sb_scale.setEditable(True)
+        self.sb_scale.addItems([f"1:{n}" for n in COMMON_SCALES])
+        self.sb_scale.currentTextChanged.connect(self._on_scalebar_props)
+        form.addRow(tr("Scale"), self.sb_scale)
+        self.sb_segments = QDoubleSpinBox()
+        self.sb_segments.setRange(2, 10)
+        self.sb_segments.setDecimals(0)
+        self.sb_segments.valueChanged.connect(self._on_scalebar_props)
+        form.addRow(tr("Segments"), self.sb_segments)
         return w
 
     # ---- composition manager -------------------------------------------------
@@ -571,6 +658,8 @@ class ComposerWindow(QMainWindow):
             self.canvas.addItem(TextItem(self, t))
         for i in self.comp.images:
             self.canvas.addItem(ImageItem(self, i))
+        for sb in self.comp.scalebars:
+            self.canvas.addItem(ScaleBarItem(self, sb))
         if self.comp.cajetin is not None:
             self.canvas.addItem(CajetinItem(self, self.comp.cajetin))
 
@@ -600,6 +689,9 @@ class ComposerWindow(QMainWindow):
                 self.scale_combo.setCurrentText(f"1:{f.scale_n:g}")
                 self.fw_spin.setValue(f.w_mm)
                 self.fh_spin.setValue(f.h_mm)
+                sidx = self.style_combo.findData(f.style)
+                self.style_combo.setCurrentIndex(max(sidx, 0))
+                self.title_check.setChecked(f.show_title)
                 self.props.setCurrentIndex(1)
             elif isinstance(item, TextItem):
                 t: TextoItem = item.model
@@ -615,6 +707,10 @@ class ComposerWindow(QMainWindow):
                 for attr, edit in self.caj_edits.items():
                     edit.setText(getattr(item.model, attr))
                 self.props.setCurrentIndex(4)
+            elif isinstance(item, ScaleBarItem):
+                self.sb_scale.setCurrentText(f"1:{item.model.scale_n:g}")
+                self.sb_segments.setValue(item.model.segments)
+                self.props.setCurrentIndex(5)
             else:
                 self.props.setCurrentIndex(0)
         finally:
@@ -725,6 +821,13 @@ class ComposerWindow(QMainWindow):
             x_mm=self.comp.margin_mm + 4, y_mm=self.comp.margin_mm + 4,
             w_mm=w_mm, h_mm=h_mm, path=path)))
 
+    def _on_add_scalebar(self) -> None:
+        n = self.comp.frames[0].scale_n if self.comp.frames else 100.0
+        _pw, ph = self.comp.page_size_mm()
+        self.history.execute(AddItemCommand(self.comp, BarraEscala(
+            x_mm=self.comp.margin_mm + 4,
+            y_mm=ph - self.comp.margin_mm - 12, scale_n=n)))
+
     def _on_add_cajetin(self) -> None:
         if self.comp.cajetin is not None:
             return
@@ -774,7 +877,9 @@ class ComposerWindow(QMainWindow):
             "view_key": self.view_combo.currentData() or "__current__",
             "scale_n": self._current_scale_n(),
             "w_mm": self.fw_spin.value(),
-            "h_mm": self.fh_spin.value()})
+            "h_mm": self.fh_spin.value(),
+            "style": self.style_combo.currentData() or "sombreado",
+            "show_title": self.title_check.isChecked()})
         self.render_cache.pop(id(item.model), None)
 
     def _on_text_props(self, *_a) -> None:
@@ -803,6 +908,21 @@ class ComposerWindow(QMainWindow):
             return
         self._panel_edit(item, {attr: edit.text()
                                 for attr, edit in self.caj_edits.items()})
+
+    def _on_scalebar_props(self, *_a) -> None:
+        item = self._selected_item()
+        if self._updating or not isinstance(item, ScaleBarItem):
+            return
+        text = self.sb_scale.currentText().strip()
+        if ":" in text:
+            text = text.split(":", 1)[1]
+        try:
+            n = float(text.replace(",", "."))
+        except ValueError:
+            n = item.model.scale_n
+        item.prepareGeometryChange()
+        self._panel_edit(item, {"scale_n": n if n > 0 else item.model.scale_n,
+                                "segments": int(self.sb_segments.value())})
 
     # ---- rendering -----------------------------------------------------------
     def image_cache(self, path: str) -> Optional[QImage]:
@@ -858,9 +978,12 @@ class ComposerWindow(QMainWindow):
                 [(ly, ly.visible) for ly in scene.layers])
         try:
             apply_frame_camera(cam, frame, saved_view, scene)
+            if frame.style in ("tecnico", "lineas"):
+                vp.plano_style = frame.style
             w_px, h_px = frame.render_px(RENDER_DPI)
             image = vp.render_image(w_px, h_px, overlays=False)
         finally:
+            vp.plano_style = None
             (cam.target, cam.distance, cam.yaw, cam.pitch, cam.fov_deg,
              cam.perspective, cam.aspect) = keep[:7]
             for ly, visible in keep[7]:
@@ -907,6 +1030,11 @@ class ComposerWindow(QMainWindow):
                 painter.save()
                 painter.translate(t.x_mm, t.y_mm)
                 paint_text_mm(painter, t)
+                painter.restore()
+            for sb in self.comp.scalebars:
+                painter.save()
+                painter.translate(sb.x_mm, sb.y_mm)
+                paint_scalebar_mm(painter, sb)
                 painter.restore()
             if self.comp.cajetin is not None:
                 c = self.comp.cajetin

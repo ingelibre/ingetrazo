@@ -267,3 +267,62 @@ class TestIgzPersistence:
         scene.compositions.append(Composicion())
         scene.clear()
         assert scene.compositions == []
+
+
+# ── C3: technical style, scale bar, titles ──────────────────────────────────
+
+from core.composition import BarraEscala
+
+
+class TestBarraEscala:
+    def test_nice_segment_lengths(self):
+        # 1:100, 4 segments → target 25 mm/segment → 2.5 m → falls to 2.5
+        assert BarraEscala(scale_n=100).segment_m() == 2.5
+        # 1:50 → target 25 mm → 1.25 m → nice 1 m (20 mm per segment)
+        assert BarraEscala(scale_n=50).segment_m() == 1.0
+        # 1:1000 → 25 m → nice 25
+        assert BarraEscala(scale_n=1000).segment_m() == 25.0
+
+    def test_bar_prints_at_most_100mm(self):
+        for n in (50, 100, 200, 250, 500, 1000, 2000, 5000):
+            sb = BarraEscala(scale_n=n)
+            assert sb.w_mm <= 100.0 + 1e-9
+            assert sb.w_mm >= 30.0          # and never uselessly small
+
+    def test_segment_mm_matches_scale(self):
+        sb = BarraEscala(scale_n=100)
+        # 2.5 m at 1:100 is 25 mm of paper
+        assert sb.segment_mm() == pytest.approx(25.0)
+
+    def test_commands_route_to_the_scalebars_list(self):
+        c = Composicion()
+        h = ComposerHistory()
+        sb = BarraEscala()
+        h.execute(AddItemCommand(c, sb))
+        assert c.scalebars == [sb]
+        h.execute(RemoveItemCommand(c, sb))
+        assert c.scalebars == []
+        h.undo()
+        assert c.scalebars == [sb]
+
+
+class TestC3Serialisation:
+    def test_style_title_and_scalebar_round_trip(self):
+        c = Composicion()
+        c.frames = [MarcoVista(style="tecnico", show_title=True,
+                               view_key="std:top", scale_n=100)]
+        c.scalebars = [BarraEscala(x_mm=30, y_mm=380, scale_n=100,
+                                   segments=5)]
+        c2 = Composicion.from_dict(c.to_dict())
+        assert c2.frames[0].style == "tecnico"
+        assert c2.frames[0].show_title is True
+        assert c2.scalebars[0].segments == 5
+        assert c2.to_dict() == c.to_dict()
+
+    def test_old_documents_default_to_shaded(self):
+        # a C2-era dict has no style/show_title keys
+        d = {"frames": [{"x_mm": 1, "y_mm": 2, "w_mm": 3, "h_mm": 4,
+                         "scale_n": 100, "view_key": "std:top"}]}
+        c = Composicion.from_dict(d)
+        assert c.frames[0].style == "sombreado"
+        assert c.frames[0].show_title is False
