@@ -25,7 +25,8 @@ elif not isinstance(_inst, QApplication):
     pytest.skip("a non-widget QGuiApplication is already active",
                 allow_module_level=True)
 
-from core.composition import Composicion, CotaItem, MarcoVista  # noqa: E402
+from core.composition import (Composicion, CotaItem, FormaItem,  # noqa: E402
+                              MarcoVista)
 from views.composer import ComposerCanvasView, ComposerWindow   # noqa: E402
 
 
@@ -355,6 +356,89 @@ class TestAnchoredEndToEnd:
         composer._rebuild_canvas()
         assert (ct.x_mm, ct.y_mm, ct.dx_mm, ct.dy_mm) == before
         assert not ct.anchored
+
+
+class TestArrangeAndLock:
+    """QGIS-style stacking and locking: a border rectangle goes to the
+    back, the legend rides on top, and a locked item cannot be dragged."""
+
+    def _composer(self):
+        from PySide6.QtWidgets import QWidget
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        self._host = host
+        return composer
+
+    @staticmethod
+    def _handle(model):
+        import types
+        return types.SimpleNamespace(model=model)
+
+    def _order(self, composer):
+        return sorted(composer.comp.all_items(),
+                      key=lambda m: getattr(m, "z", 0.0))
+
+    def test_new_items_land_on_top(self):
+        composer = self._composer()
+        composer.tool_mode = "rect"
+        composer.place_tool(10, 10, 100, 80)
+        composer.tool_mode = "texto"
+        composer.place_tool(20, 20, 20, 20)
+        rect, text = composer.comp.shapes[0], composer.comp.texts[0]
+        frame = composer.comp.frames[0]
+        assert frame.z < rect.z < text.z
+
+    def test_send_to_back_and_bring_to_front(self):
+        composer = self._composer()
+        composer.tool_mode = "rect"
+        composer.place_tool(10, 10, 100, 80)         # the page border
+        composer.tool_mode = "texto"
+        composer.place_tool(20, 20, 20, 20)
+        rect = composer.comp.shapes[0]
+        composer.z_shift(self._handle(rect), "back")
+        assert self._order(composer)[0] is rect      # under the frame too
+        composer.z_shift(self._handle(rect), "front")
+        assert self._order(composer)[-1] is rect
+        composer.history.undo()
+        composer.history.undo()
+        assert self._order(composer)[1] is rect      # back where it started
+
+    def test_raise_and_lower_are_single_steps(self):
+        composer = self._composer()
+        for i in range(3):
+            composer.tool_mode = "rect"
+            composer.place_tool(10 + i, 10, 50, 50)
+        a, b, c = composer.comp.shapes
+        composer.z_shift(self._handle(a), "raise")   # a jumps over b only
+        order = self._order(composer)
+        assert order.index(b) < order.index(a) < order.index(c)
+        composer.z_shift(self._handle(a), "lower")
+        order = self._order(composer)
+        assert order.index(a) < order.index(b) < order.index(c)
+
+    def test_lock_freezes_the_canvas_item(self):
+        from PySide6.QtWidgets import QGraphicsItem
+        composer = self._composer()
+        composer.tool_mode = "rect"
+        composer.place_tool(10, 10, 100, 80)
+        rect = composer.comp.shapes[0]
+        composer.toggle_lock(self._handle(rect))
+        assert rect.locked
+        composer._rebuild_canvas()
+        it = next(i for i in composer.canvas.items()
+                  if getattr(i, "model", None) is rect)
+        assert not (it.flags() & QGraphicsItem.ItemIsMovable)
+        assert it.flags() & QGraphicsItem.ItemIsSelectable
+        composer.toggle_lock(self._handle(rect))
+        assert not rect.locked
+
+    def test_z_and_locked_survive_the_dict_round_trip(self):
+        comp = Composicion()
+        comp.shapes = [FormaItem(z=-1.0, locked=True)]
+        again = Composicion.from_dict(comp.to_dict())
+        assert again.shapes[0].z == -1.0
+        assert again.shapes[0].locked is True
 
 
 class TestCotaModel:

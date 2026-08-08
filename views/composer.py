@@ -378,11 +378,40 @@ class _SheetItem(QGraphicsItem):
         self.composer = composer
         self.model = model
         self.setPos(model.x_mm, model.y_mm)
-        self.setFlag(QGraphicsItem.ItemIsMovable, True)
+        self.setZValue(getattr(model, "z", 0.0))
+        # A locked item stays visible and selectable (to unlock it) but
+        # cannot be dragged or resized — QGIS's composer habit.
+        self.setFlag(QGraphicsItem.ItemIsMovable,
+                     not getattr(model, "locked", False))
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self._press_state: Optional[dict] = None
         self._resizing = False
+
+    # -- arrange / lock (context menu) ----------------------------------------
+    def contextMenuEvent(self, event) -> None:
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu()
+        front = menu.addAction(tr("Bring to front"))
+        up = menu.addAction(tr("Raise"))
+        down = menu.addAction(tr("Lower"))
+        back = menu.addAction(tr("Send to back"))
+        menu.addSeparator()
+        lock = menu.addAction(tr("Unlock")
+                              if getattr(self.model, "locked", False)
+                              else tr("Lock"))
+        chosen = menu.exec(event.screenPos())
+        if chosen is front:
+            self.composer.z_shift(self, "front")
+        elif chosen is up:
+            self.composer.z_shift(self, "raise")
+        elif chosen is down:
+            self.composer.z_shift(self, "lower")
+        elif chosen is back:
+            self.composer.z_shift(self, "back")
+        elif chosen is lock:
+            self.composer.toggle_lock(self)
+        event.accept()
 
     # -- geometry ------------------------------------------------------------
     def size_mm(self) -> tuple[float, float]:
@@ -419,7 +448,8 @@ class _SheetItem(QGraphicsItem):
             k: getattr(self.model, k)
             for k in ("x_mm", "y_mm", "w_mm", "h_mm")
             if hasattr(self.model, k)}
-        self._resizing = self._on_resize_handle(event.pos())
+        self._resizing = (not getattr(self.model, "locked", False)
+                          and self._on_resize_handle(event.pos()))
         if self._resizing:
             event.accept()
             self.setSelected(True)
@@ -613,8 +643,10 @@ class CotaCanvasItem(_SheetItem):
                              for k in ("x_mm", "y_mm", "dx_mm", "dy_mm",
                                        "sep_mm", "anchor_uid", "a_world",
                                        "b_world")}
-        self._sep_dragging = self._on_sep_handle(event.pos())
-        self._resizing = (not self._sep_dragging
+        locked = getattr(self.model, "locked", False)
+        self._sep_dragging = (not locked
+                              and self._on_sep_handle(event.pos()))
+        self._resizing = (not locked and not self._sep_dragging
                           and self._on_resize_handle(event.pos()))
         if self._sep_dragging or self._resizing:
             event.accept()
@@ -703,7 +735,7 @@ class ComposerCanvasView(QGraphicsView):
             self._snap_marker = self.scene().addEllipse(
                 QRectF(), QPen(QColor(255, 255, 255), 0.3),
                 QBrush(QColor(41, 158, 92)))     # elementary Lime/green
-            self._snap_marker.setZValue(60)
+            self._snap_marker.setZValue(100001)
         r = 1.6
         self._snap_marker.setRect(QRectF(x - r, y - r, 2 * r, 2 * r))
 
@@ -762,7 +794,7 @@ class ComposerCanvasView(QGraphicsView):
             if self._preview is None:
                 pen = QPen(QColor(58, 110, 165), 0.3, Qt.DashLine)
                 self._preview = self.scene().addRect(QRectF(), pen)
-                self._preview.setZValue(50)
+                self._preview.setZValue(100000)
             r = QRectF(self._drag_start, pos).normalized()
             self._preview.setRect(r)
             event.accept()
@@ -802,7 +834,7 @@ class ComposerCanvasView(QGraphicsView):
             pen = QPen(QColor(58, 110, 165), 0.3, Qt.DashLine)
             self._preview = QGraphicsPathItem()
             self._preview.setPen(pen)
-            self._preview.setZValue(50)
+            self._preview.setZValue(100000)
             self.scene().addItem(self._preview)
         a, b = self._drag_start, self._second_pt
         dx, dy = b.x() - a.x(), b.y() - a.y()
@@ -1061,6 +1093,7 @@ class ComposerWindow(QMainWindow):
                 item.b_world = list(b_world)
                 item.scale_n = frame.scale_n
         if item is not None:
+            item.z = self._next_z()         # new items land on top (QGIS)
             self._pending_sel = item
             self.history.execute(AddItemCommand(self.comp, item))
         self.tool_mode = "select"
@@ -1465,16 +1498,16 @@ class ComposerWindow(QMainWindow):
         self.canvas.setSceneRect(-20, -20, pw + 40, ph + 40)
         shadow = self.canvas.addRect(2.0, 2.0, pw, ph, QPen(Qt.NoPen),
                                      QBrush(QColor(0, 0, 0, 70)))
-        shadow.setZValue(-3)
+        shadow.setZValue(-100003)
         page = self.canvas.addRect(0, 0, pw, ph,
                                    QPen(QColor(120, 128, 136), 0.3),
                                    QBrush(QColor(255, 255, 255)))
-        page.setZValue(-2)
+        page.setZValue(-100002)
         m = self.comp.margin_mm
         margin = self.canvas.addRect(m, m, pw - 2 * m, ph - 2 * m,
                                      QPen(QColor(190, 196, 202), 0.2,
                                           Qt.DashLine))
-        margin.setZValue(-1)
+        margin.setZValue(-100001)
 
         for f in self.comp.frames:
             self.canvas.addItem(FrameItem(self, f))
@@ -1674,12 +1707,14 @@ class ComposerWindow(QMainWindow):
         f = MarcoVista(x_mm=self.comp.margin_mm + 5 * len(self.comp.frames),
                        y_mm=self.comp.margin_mm + 5 * len(self.comp.frames),
                        w_mm=min(120.0, pw / 2), h_mm=min(90.0, ph / 2))
+        f.z = self._next_z()
         self.history.execute(AddItemCommand(self.comp, f))
 
     def _on_add_text(self) -> None:
         t = TextoItem(x_mm=self.comp.margin_mm + 4,
                       y_mm=self.comp.margin_mm + 4,
                       text=tr("Text"))
+        t.z = self._next_z()
         self.history.execute(AddItemCommand(self.comp, t))
 
     def _on_add_image(self) -> None:
@@ -1693,14 +1728,15 @@ class ComposerWindow(QMainWindow):
         h_mm = w_mm * (img.height() / img.width()) if img.width() else 40.0
         self.history.execute(AddItemCommand(self.comp, ImagenItem(
             x_mm=self.comp.margin_mm + 4, y_mm=self.comp.margin_mm + 4,
-            w_mm=w_mm, h_mm=h_mm, path=path)))
+            w_mm=w_mm, h_mm=h_mm, path=path, z=self._next_z())))
 
     def _on_add_scalebar(self) -> None:
         n = self.comp.frames[0].scale_n if self.comp.frames else 100.0
         _pw, ph = self.comp.page_size_mm()
         self.history.execute(AddItemCommand(self.comp, BarraEscala(
             x_mm=self.comp.margin_mm + 4,
-            y_mm=ph - self.comp.margin_mm - 12, scale_n=n)))
+            y_mm=ph - self.comp.margin_mm - 12, scale_n=n,
+            z=self._next_z())))
 
     def _on_add_cajetin(self) -> None:
         if self.comp.cajetin is not None:
@@ -1710,6 +1746,7 @@ class ComposerWindow(QMainWindow):
         if self.comp.frames:
             f = self.comp.frames[0]
             c.escala = f"1:{f.scale_n:g}"
+        c.z = self._next_z()
         self.history.execute(AddItemCommand(self.comp, c))
 
     # ---- property edits ------------------------------------------------------
@@ -1730,6 +1767,47 @@ class ComposerWindow(QMainWindow):
         self.comp.landscape = self.landscape_check.isChecked()
         self._mark_dirty()
         self._rebuild_canvas()
+
+    # ---- arrange / lock ------------------------------------------------------
+    def _next_z(self) -> float:
+        """z for a NEW item: on top of everything already on the sheet."""
+        zs = [getattr(m, "z", 0.0) for m in self.comp.all_items()]
+        return (max(zs) + 1.0) if zs else 0.0
+
+    def _normalize_z(self) -> None:
+        """Re-number z as 0..N-1 in the current visual order — a visual
+        no-op that gives the step operations clean integer neighbours."""
+        for i, m in enumerate(sorted(self.comp.all_items(),
+                                     key=lambda m: getattr(m, "z", 0.0))):
+            m.z = float(i)
+
+    def z_shift(self, item: "_SheetItem", op: str) -> None:
+        """QGIS-style arrange: front / raise / lower / back, one undo step."""
+        self._normalize_z()
+        order = sorted(self.comp.all_items(),
+                       key=lambda m: getattr(m, "z", 0.0))
+        model = item.model
+        # identity, not ==: dataclasses compare by value and two identical
+        # items (say, two fresh text blocks) must not alias each other
+        idx = next(i for i, m in enumerate(order) if m is model)
+        if op == "front" and idx < len(order) - 1:
+            new = order[-1].z + 1.0
+        elif op == "back" and idx > 0:
+            new = order[0].z - 1.0
+        elif op == "raise" and idx < len(order) - 1:
+            new = order[idx + 1].z + 0.5
+        elif op == "lower" and idx > 0:
+            new = order[idx - 1].z - 0.5
+        else:
+            return                          # already at that end
+        self._pending_sel = model           # keep it selected after rebuild
+        self.history.execute(EditItemCommand(model, {"z": new}))
+
+    def toggle_lock(self, item: "_SheetItem") -> None:
+        self._pending_sel = item.model
+        self.history.execute(EditItemCommand(
+            item.model,
+            {"locked": not getattr(item.model, "locked", False)}))
 
     def _panel_edit(self, item: "_SheetItem", changes: dict) -> None:
         """A live property edit from the panel: one coalesced undo step,
@@ -1887,8 +1965,14 @@ class ComposerWindow(QMainWindow):
         from PySide6.QtWidgets import QListWidgetItem
         self.items_list.blockSignals(True)
         self.items_list.clear()
-        for model in self.comp.all_items():
-            row = QListWidgetItem(self._item_label(model))
+        # top of the stack first — the reading order of a layers panel
+        for model in sorted(self.comp.all_items(),
+                            key=lambda m: getattr(m, "z", 0.0),
+                            reverse=True):
+            label = self._item_label(model)
+            if getattr(model, "locked", False):
+                label = "🔒 " + label
+            row = QListWidgetItem(label)
             row.setData(_Qt.UserRole, id(model))
             self.items_list.addItem(row)
         self.items_list.blockSignals(False)
@@ -2274,53 +2358,34 @@ class ComposerWindow(QMainWindow):
                 painter.end()
 
     def _paint_sheet(self, painter: QPainter, comp: Composicion) -> None:
-        """Draw one sheet's items in mm space (painter already scaled)."""
-        for f in comp.frames:
+        """Draw one sheet's items in mm space (painter already scaled), in
+        STACKING order (z) — the print must layer exactly like the canvas."""
+        def paint(m) -> None:
+            if isinstance(m, MarcoVista):
+                paint_frame_mm(painter, m, self.render_cache.get(id(m)),
+                               hlr=self.hlr_cache.get(id(m)))
+            elif isinstance(m, ImagenItem):
+                paint_image_mm(painter, m, self.image_cache(m.path))
+            elif isinstance(m, TextoItem):
+                paint_text_mm(painter, m)
+            elif isinstance(m, BarraEscala):
+                paint_scalebar_mm(painter, m)
+            elif isinstance(m, FlechaNorte):
+                paint_norte_mm(painter, m)
+            elif isinstance(m, Leyenda):
+                paint_leyenda_mm(painter, m)
+            elif isinstance(m, FormaItem):
+                paint_forma_mm(painter, m)
+            elif isinstance(m, CotaItem):
+                paint_cota_mm(painter, m)
+            elif isinstance(m, Cajetin):
+                paint_cajetin_mm(painter, m)
+
+        for m in sorted(comp.all_items(),
+                        key=lambda it: getattr(it, "z", 0.0)):
             painter.save()
-            painter.translate(f.x_mm, f.y_mm)
-            paint_frame_mm(painter, f, self.render_cache.get(id(f)),
-                           hlr=self.hlr_cache.get(id(f)))
-            painter.restore()
-        for i in comp.images:
-            painter.save()
-            painter.translate(i.x_mm, i.y_mm)
-            paint_image_mm(painter, i, self.image_cache(i.path))
-            painter.restore()
-        for t in comp.texts:
-            painter.save()
-            painter.translate(t.x_mm, t.y_mm)
-            paint_text_mm(painter, t)
-            painter.restore()
-        for sb in comp.scalebars:
-            painter.save()
-            painter.translate(sb.x_mm, sb.y_mm)
-            paint_scalebar_mm(painter, sb)
-            painter.restore()
-        for n in comp.nortes:
-            painter.save()
-            painter.translate(n.x_mm, n.y_mm)
-            paint_norte_mm(painter, n)
-            painter.restore()
-        for le in comp.leyendas:
-            painter.save()
-            painter.translate(le.x_mm, le.y_mm)
-            paint_leyenda_mm(painter, le)
-            painter.restore()
-        for fo in comp.shapes:
-            painter.save()
-            painter.translate(fo.x_mm, fo.y_mm)
-            paint_forma_mm(painter, fo)
-            painter.restore()
-        for ct in comp.cotas:
-            painter.save()
-            painter.translate(ct.x_mm, ct.y_mm)
-            paint_cota_mm(painter, ct)
-            painter.restore()
-        if comp.cajetin is not None:
-            c = comp.cajetin
-            painter.save()
-            painter.translate(c.x_mm, c.y_mm)
-            paint_cajetin_mm(painter, c)
+            painter.translate(m.x_mm, m.y_mm)
+            paint(m)
             painter.restore()
 
     # ---- lifecycle -----------------------------------------------------------

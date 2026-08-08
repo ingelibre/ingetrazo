@@ -89,6 +89,8 @@ class MarcoVista:
     #: Stable identity for anchored dimensions ("" until a cota anchors to
     #: this frame — then a uuid4 hex that survives save/load and reorders).
     uid: str = ""
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
 
     def model_height_m(self) -> float:
         return model_height_for_frame(self.h_mm, self.scale_n)
@@ -112,6 +114,8 @@ class TextoItem:
     family: str = "Sans Serif"
     color: str = "#1e242c"
     align: str = "left"          # left | center | right
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
 
 
 @dataclass
@@ -124,6 +128,8 @@ class ImagenItem:
     w_mm: float = 60.0
     h_mm: float = 40.0
     path: str = ""
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
 
 
 @dataclass
@@ -140,6 +146,8 @@ class Cajetin:
     fecha: str = ""
     escala: str = ""
     lamina: str = "L-01"
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
 
     #: (label, field-name) rows, in drawing order — shared by the canvas
     #: item and the PDF export so both always agree.
@@ -157,6 +165,8 @@ class BarraEscala:
     y_mm: float = 20.0
     scale_n: float = 100.0
     segments: int = 4
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
 
     def segment_m(self) -> float:
         """A round model length per segment so the whole bar prints close
@@ -191,6 +201,8 @@ class FlechaNorte:
     y_mm: float = 20.0
     size_mm: float = 18.0
     angle_deg: float = 0.0
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
 
     @property
     def w_mm(self) -> float:
@@ -211,6 +223,8 @@ class Leyenda:
     w_mm: float = 55.0
     title: str = "LEYENDA"
     rows: list = field(default_factory=list)
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
 
     @property
     def h_mm(self) -> float:
@@ -230,6 +244,8 @@ class FormaItem:
     stroke_mm: float = 0.35
     fill: bool = False
     invert: bool = False
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
 
 
 @dataclass
@@ -263,6 +279,8 @@ class CotaItem:
     anchor_uid: str = ""
     a_world: Optional[list] = None
     b_world: Optional[list] = None
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
 
     @property
     def anchored(self) -> bool:
