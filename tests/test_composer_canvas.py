@@ -548,6 +548,61 @@ class TestCajetinResize:
         self._host = host
 
 
+class TestZoomCombo:
+    """The QGIS-style zoom combo: fit modes, presets and typed percents."""
+
+    def _composer(self):
+        from PySide6.QtWidgets import QWidget
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        composer.resize(1000, 700)
+        composer._view.resize(800, 600)
+        self._host = host
+        return composer
+
+    def test_set_zoom_and_readback(self):
+        composer = self._composer()
+        composer.set_zoom(100.0)
+        assert composer.zoom_percent() == pytest.approx(100.0)
+        assert composer._zoom_combo.currentText() == "100.0%"
+        composer.set_zoom(12.5)
+        assert composer.zoom_percent() == pytest.approx(12.5)
+
+    def test_typed_percentage_applies(self):
+        composer = self._composer()
+        composer._zoom_combo.lineEdit().setText("37%")
+        composer._on_zoom_typed()
+        assert composer.zoom_percent() == pytest.approx(37.0)
+
+    def test_fit_width_fills_the_viewport(self):
+        composer = self._composer()
+        composer.zoom_fit_width()
+        pw, _ph = composer.comp.page_size_mm()
+        scale = composer._view.transform().m11()
+        vw = composer._view.viewport().width()
+        assert scale * (pw + 10.0) == pytest.approx(vw, rel=0.02)
+
+    def test_fit_page_shows_the_whole_page(self):
+        composer = self._composer()
+        composer.set_zoom(400.0)
+        composer.zoom_fit_page()
+        pw, ph = composer.comp.page_size_mm()
+        vp = composer._view.viewport()
+        m11 = composer._view.transform().m11()
+        # the visible span covers the whole page in both axes (absolute
+        # centring is unreliable in offscreen layouts — span is what counts)
+        assert vp.width() / m11 >= pw
+        assert vp.height() / m11 >= ph
+
+    def test_garbage_input_keeps_the_current_zoom(self):
+        composer = self._composer()
+        composer.set_zoom(50.0)
+        composer._zoom_combo.lineEdit().setText("hola")
+        composer._on_zoom_typed()
+        assert composer.zoom_percent() == pytest.approx(50.0)
+
+
 class TestCotaModel:
     def test_normal_is_perpendicular_and_unit(self):
         ct = CotaItem(dx_mm=30.0, dy_mm=40.0)

@@ -17,7 +17,7 @@ from typing import Optional
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import (QBrush, QColor, QFont, QImage, QKeySequence,
                            QPageLayout, QPageSize, QPainter, QPdfWriter,
-                           QPen, QShortcut)
+                           QPen, QShortcut, QTransform)
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
                                QFileDialog, QFormLayout, QGraphicsItem,
                                QGraphicsScene, QGraphicsView, QHBoxLayout,
@@ -1058,9 +1058,20 @@ class ComposerWindow(QMainWindow):
         self.setCentralWidget(split)
 
         self._pos_label = QLabel("")
-        self._zoom_label = QLabel("")
         self.statusBar().addPermanentWidget(self._pos_label)
-        self.statusBar().addPermanentWidget(self._zoom_label)
+        # QGIS-style zoom combo: fit modes + presets, editable percentage.
+        self._zoom_combo = QComboBox()
+        self._zoom_combo.setEditable(True)
+        self._zoom_combo.setInsertPolicy(QComboBox.NoInsert)
+        self._zoom_combo.setMinimumWidth(170)
+        self._zoom_combo.addItem(tr("Fit page width"), "fitw")
+        self._zoom_combo.addItem(tr("Fit page"), "fit")
+        for pct in (800.0, 400.0, 200.0, 100.0, 50.0, 25.0, 12.5):
+            self._zoom_combo.addItem(f"{pct:g}%", pct)
+        self._zoom_combo.activated.connect(self._on_zoom_chosen)
+        self._zoom_combo.lineEdit().returnPressed.connect(
+            self._on_zoom_typed)
+        self.statusBar().addPermanentWidget(self._zoom_combo)
         self.update_zoom_label()
 
         QShortcut(QKeySequence.Undo, self, activated=self._on_undo)
@@ -1179,10 +1190,63 @@ class ComposerWindow(QMainWindow):
     def update_cursor_label(self, x: float, y: float) -> None:
         self._pos_label.setText(f"x: {x:.1f} mm  y: {y:.1f} mm")
 
+    # ---- zoom (QGIS-style combo) ---------------------------------------------
+    def _px_per_mm(self) -> float:
+        """Screen pixels per PAPER millimetre at 100% (true paper size)."""
+        return self._view.logicalDpiX() / 25.4
+
+    def zoom_percent(self) -> float:
+        return self._view.transform().m11() / self._px_per_mm() * 100.0
+
+    def set_zoom(self, pct: float) -> None:
+        """Zoom to *pct* percent of true paper size, keeping the view
+        centred where it was."""
+        pct = max(1.0, min(float(pct), 1600.0))
+        center = self._view.mapToScene(
+            self._view.viewport().rect().center())
+        s = pct / 100.0 * self._px_per_mm()
+        self._view.setTransform(QTransform().scale(s, s))
+        self._view.centerOn(center)
+        self.update_zoom_label()
+
+    def zoom_fit_page(self) -> None:
+        pw, ph = self.comp.page_size_mm()
+        self._view.fitInView(QRectF(-5, -5, pw + 10, ph + 10),
+                             Qt.KeepAspectRatio)
+        self.update_zoom_label()
+
+    def zoom_fit_width(self) -> None:
+        pw, _ph = self.comp.page_size_mm()
+        vw = max(self._view.viewport().width(), 1)
+        s = vw / (pw + 10.0)
+        y = self._view.mapToScene(
+            self._view.viewport().rect().center()).y()
+        self._view.setTransform(QTransform().scale(s, s))
+        self._view.centerOn(QPointF(pw / 2.0, y))
+        self.update_zoom_label()
+
+    def _on_zoom_chosen(self, index: int) -> None:
+        data = self._zoom_combo.itemData(index)
+        if data == "fitw":
+            self.zoom_fit_width()
+        elif data == "fit":
+            self.zoom_fit_page()
+        elif data is not None:
+            self.set_zoom(float(data))
+
+    def _on_zoom_typed(self) -> None:
+        text = self._zoom_combo.lineEdit().text().strip().rstrip("%")
+        try:
+            self.set_zoom(float(text.replace(",", ".")))
+        except ValueError:
+            self.update_zoom_label()
+
     def update_zoom_label(self) -> None:
-        z = self._view.transform().m11() if hasattr(self, "_view") else 1.0
-        # 1 scene mm on screen ≈ z px; "100%" = fit-ish 3 px/mm baseline
-        self._zoom_label.setText(f"{z * 100 / 3:.0f}%")
+        if not hasattr(self, "_zoom_combo") or not hasattr(self, "_view"):
+            return
+        self._zoom_combo.blockSignals(True)
+        self._zoom_combo.setEditText(f"{self.zoom_percent():.1f}%")
+        self._zoom_combo.blockSignals(False)
 
     # ---- panel ---------------------------------------------------------------
     def _build_panel(self) -> QWidget:
