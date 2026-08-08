@@ -1451,26 +1451,33 @@ class MainWindow(QMainWindow):
         worker = _Worker()
         worker.moveToThread(thread)
         result = {}
-
-        # Progress signals cross into the UI thread (queued) — safe to touch
-        # the dialog widgets from the callback there.
-        worker.progressed.connect(
-            lambda f, t: cb(f, t), Qt.QueuedConnection)
-
         loop = QEventLoop()
 
-        def _done(payload, exc):
-            result["payload"] = payload
-            result["exc"] = exc
-            loop.quit()
+        # The receivers MUST be bound methods of a QObject living in the UI
+        # thread: a queued connection to a bare lambda/function has no
+        # receiver object, so Qt runs it in the EMITTER (worker) thread —
+        # the progress callback then touches the dialog and pumps events
+        # off-thread, which deadlocks before the window ever paints (the
+        # ".skp double-click never opens the app" freeze).
+        class _Relay(QObject):
+            def on_progress(self, f, t):
+                cb(f, t)
 
-        worker.finished.connect(_done, Qt.QueuedConnection)
+            def on_finished(self, payload, exc):
+                result["payload"] = payload
+                result["exc"] = exc
+                loop.quit()
+
+        relay = _Relay(self)
+        worker.progressed.connect(relay.on_progress, Qt.QueuedConnection)
+        worker.finished.connect(relay.on_finished, Qt.QueuedConnection)
         thread.started.connect(worker.run)
         thread.start()
         loop.exec()
         thread.quit()
         thread.wait()
         worker.deleteLater()
+        relay.deleteLater()
         return result.get("payload"), result.get("exc")
 
     def _prepare_import_display(self, cmd, cb) -> None:
