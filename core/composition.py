@@ -87,14 +87,64 @@ class MarcoVista:
 
 
 @dataclass
+class TextoItem:
+    """A free text block on the sheet. ``size_pt`` is the printed size in
+    points (1 pt = 0.3528 mm on paper), like any DTP tool."""
+
+    x_mm: float = 20.0
+    y_mm: float = 20.0
+    w_mm: float = 80.0
+    text: str = ""
+    size_pt: float = 14.0
+    bold: bool = False
+
+
+@dataclass
+class ImagenItem:
+    """An image (logo, photo) on the sheet. The file is referenced by path;
+    the .igz stores the path, not the pixels (same policy as textures)."""
+
+    x_mm: float = 20.0
+    y_mm: float = 20.0
+    w_mm: float = 60.0
+    h_mm: float = 40.0
+    path: str = ""
+
+
+@dataclass
+class Cajetin:
+    """The title block — for the trade, THE item of a sheet. A classic
+    bordered grid of labelled fields, anchored wherever the user drops it."""
+
+    x_mm: float = 0.0
+    y_mm: float = 0.0
+    w_mm: float = 180.0
+    h_mm: float = 33.0
+    proyecto: str = ""
+    autor: str = ""
+    fecha: str = ""
+    escala: str = ""
+    lamina: str = "L-01"
+
+    #: (label, field-name) rows, in drawing order — shared by the canvas
+    #: item and the PDF export so both always agree.
+    FIELDS = (("PROYECTO", "proyecto"), ("AUTOR", "autor"),
+              ("FECHA", "fecha"), ("ESCALA", "escala"),
+              ("LÁMINA", "lamina"))
+
+
+@dataclass
 class Composicion:
-    """One sheet (C1: single page, single frame; C2 grows items/pages)."""
+    """One sheet: a page plus its items."""
 
     name: str = "Lámina 1"
     paper: str = "A4"
     landscape: bool = True
     margin_mm: float = 10.0
     frames: list = field(default_factory=list)
+    texts: list = field(default_factory=list)
+    images: list = field(default_factory=list)
+    cajetin: Optional[Cajetin] = None
 
     def page_size_mm(self) -> tuple[float, float]:
         w, h = PAPER_SIZES_MM[self.paper]
@@ -105,6 +155,209 @@ class Composicion:
         pw, ph = self.page_size_mm()
         m = self.margin_mm
         return MarcoVista(x_mm=m, y_mm=m, w_mm=pw - 2 * m, h_mm=ph - 2 * m)
+
+    def default_cajetin(self) -> Cajetin:
+        """A title block sized to the page, docked to the bottom-right
+        margin corner (where every drawing office expects it)."""
+        pw, ph = self.page_size_mm()
+        m = self.margin_mm
+        w = min(180.0, pw - 2 * m)
+        h = 33.0
+        return Cajetin(x_mm=pw - m - w, y_mm=ph - m - h, w_mm=w, h_mm=h)
+
+    def all_items(self) -> list:
+        out = list(self.frames) + list(self.texts) + list(self.images)
+        if self.cajetin is not None:
+            out.append(self.cajetin)
+        return out
+
+    # ---- Serialisation (.igz) -----------------------------------------------
+    def to_dict(self) -> dict:
+        from dataclasses import asdict
+        d = {"name": self.name, "paper": self.paper,
+             "landscape": self.landscape, "margin_mm": self.margin_mm,
+             "frames": [asdict(f) for f in self.frames]}
+        if self.texts:
+            d["texts"] = [asdict(t) for t in self.texts]
+        if self.images:
+            d["images"] = [asdict(i) for i in self.images]
+        if self.cajetin is not None:
+            d["cajetin"] = asdict(self.cajetin)
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Composicion":
+        c = cls(name=d.get("name", "Lámina 1"),
+                paper=d.get("paper", "A4"),
+                landscape=bool(d.get("landscape", True)),
+                margin_mm=float(d.get("margin_mm", 10.0)))
+        c.frames = [MarcoVista(**f) for f in d.get("frames", [])]
+        c.texts = [TextoItem(**t) for t in d.get("texts", [])]
+        c.images = [ImagenItem(**i) for i in d.get("images", [])]
+        if "cajetin" in d:
+            c.cajetin = Cajetin(**d["cajetin"])
+        return c
+
+
+# ── Composer-scoped undo ────────────────────────────────────────────────────
+#
+# Sheet items are plain dataclasses, far from the mesh; the drawing History
+# (core/history.py) snapshots the mesh transactionally, which would be pure
+# overhead here. Same Command invariant, its own light stacks — the QGIS
+# shape again (one undo stack per layout).
+
+class ComposerCommand:
+    """Reversible operation against a Composicion."""
+
+    def do(self) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def undo(self) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+
+class AddItemCommand(ComposerCommand):
+    """Append *item* to *container* (a list) or set ``comp.cajetin``."""
+
+    def __init__(self, comp: Composicion, item) -> None:
+        self.comp = comp
+        self.item = item
+
+    def _list(self):
+        if isinstance(self.item, MarcoVista):
+            return self.comp.frames
+        if isinstance(self.item, TextoItem):
+            return self.comp.texts
+        if isinstance(self.item, ImagenItem):
+            return self.comp.images
+        return None
+
+    def do(self) -> None:
+        lst = self._list()
+        if lst is None:
+            self._prev = self.comp.cajetin
+            self.comp.cajetin = self.item
+        else:
+            lst.append(self.item)
+
+    def undo(self) -> None:
+        lst = self._list()
+        if lst is None:
+            self.comp.cajetin = self._prev
+        else:
+            lst.remove(self.item)
+
+
+class RemoveItemCommand(ComposerCommand):
+    def __init__(self, comp: Composicion, item) -> None:
+        self.comp = comp
+        self.item = item
+
+    def _list(self):
+        if isinstance(self.item, MarcoVista):
+            return self.comp.frames
+        if isinstance(self.item, TextoItem):
+            return self.comp.texts
+        if isinstance(self.item, ImagenItem):
+            return self.comp.images
+        return None
+
+    def do(self) -> None:
+        lst = self._list()
+        if lst is None:
+            self.comp.cajetin = None
+        else:
+            lst.remove(self.item)
+
+    def undo(self) -> None:
+        lst = self._list()
+        if lst is None:
+            self.comp.cajetin = self.item
+        else:
+            lst.append(self.item)
+
+
+class EditItemCommand(ComposerCommand):
+    """Field-level mutation of any sheet item (move, resize, retype…):
+    captures before/after snapshots of the named fields."""
+
+    def __init__(self, item, changes: dict, before: Optional[dict] = None) -> None:
+        self.item = item
+        self.after = dict(changes)
+        # An interactive drag has already mutated the item by release time;
+        # the caller passes the state it captured at press.
+        self.before = dict(before) if before is not None else \
+            {k: getattr(item, k) for k in changes}
+
+    def do(self) -> None:
+        for k, v in self.after.items():
+            setattr(self.item, k, v)
+
+    def undo(self) -> None:
+        for k, v in self.before.items():
+            setattr(self.item, k, v)
+
+
+class ComposerHistory:
+    """Undo/redo stacks for one composer session.
+
+    ``execute(..., notify=False)`` lets live panel edits (a keystroke in a
+    text field) land on the stack without triggering the canvas rebuild —
+    the caller repaints the one item itself. Consecutive edits to the same
+    item and fields COALESCE into one undo step, so Ctrl+Z undoes "the
+    retype", not letter by letter."""
+
+    def __init__(self, on_change=None) -> None:
+        self._undo: list[ComposerCommand] = []
+        self._redo: list[ComposerCommand] = []
+        self._on_change = on_change
+
+    def execute(self, cmd: ComposerCommand, notify: bool = True,
+                coalesce: bool = False) -> None:
+        cmd.do()
+        top = self._undo[-1] if self._undo else None
+        if (coalesce and isinstance(cmd, EditItemCommand)
+                and isinstance(top, EditItemCommand)
+                and top.item is cmd.item
+                and set(top.after) == set(cmd.after)):
+            top.after = dict(cmd.after)      # keep top's `before`
+        else:
+            self._undo.append(cmd)
+        self._redo.clear()
+        if notify and self._on_change:
+            self._on_change()
+
+    def undo(self) -> bool:
+        if not self._undo:
+            return False
+        cmd = self._undo.pop()
+        cmd.undo()
+        self._redo.append(cmd)
+        if self._on_change:
+            self._on_change()
+        return True
+
+    def redo(self) -> bool:
+        if not self._redo:
+            return False
+        cmd = self._redo.pop()
+        cmd.do()
+        self._undo.append(cmd)
+        if self._on_change:
+            self._on_change()
+        return True
+
+
+def snap_mm(value: float, targets, threshold: float = 2.0) -> float:
+    """Snap *value* to the nearest target within *threshold* mm (page edges,
+    margins, other items' edges). Returns the value untouched when nothing
+    is close enough."""
+    best = None
+    for t in targets:
+        d = abs(value - t)
+        if d <= threshold and (best is None or d < abs(value - best)):
+            best = t
+    return value if best is None else best
 
 
 def apply_frame_camera(camera, frame: MarcoVista,

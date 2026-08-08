@@ -50,6 +50,8 @@ class Scene:
     # Saved views (SketchUp's "Scenes"): named camera + layer-visibility
     # snapshots (core.saved_views.SavedView). Presentation state, no geometry.
     saved_views: list = field(default_factory=list)
+    # Sheet compositions (core.composition.Composicion) — the print layouts.
+    compositions: list = field(default_factory=list)
     # Display style for dimension annotations (edited from the Tray).
     dimension_style: dict = field(default_factory=lambda: {
         "decimals": 2, "units": "m", "font_size": 9, "color": [45, 55, 75]})
@@ -197,7 +199,7 @@ class Scene:
                 or self.groups or self.dimensions or self.georef
                 or self.tile_layer or self.geo_paths or self.terrain
                 or self.guides or self.geo_points or self.text_labels
-                or self.saved_views):
+                or self.saved_views or self.compositions):
             self.mesh.clear()
             self.groups.clear()
             self.dimensions.clear()
@@ -206,6 +208,7 @@ class Scene:
             self.geo_points.clear()
             self.guides.clear()
             self.saved_views.clear()
+            self.compositions.clear()
             self.selection.clear()
             from core.layers import DEFAULT_LAYER, Layer
             self.layers = [Layer(DEFAULT_LAYER)]

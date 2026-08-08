@@ -239,6 +239,9 @@ def save_scene(scene, path: Path) -> dict:
     views = getattr(scene, "saved_views", None)
     if views:
         payload["saved_views"] = [v.to_dict() for v in views]
+    comps = getattr(scene, "compositions", None)
+    if comps:
+        payload["compositions"] = [c.to_dict() for c in comps]
     dims = getattr(scene, "dimensions", None)
     if dims:
         payload["dimensions"] = [
@@ -413,6 +416,9 @@ def load_into(scene, path: Path) -> None:
     from core.saved_views import SavedView
     scene.saved_views = [SavedView.from_dict(r)
                          for r in payload.get("saved_views", [])]
+    from core.composition import Composicion
+    scene.compositions = [Composicion.from_dict(r)
+                          for r in payload.get("compositions", [])]
     proto_meshes: list = []
     for raw in payload.get("protos", []):
         m = Mesh()
