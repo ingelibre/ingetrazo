@@ -1562,6 +1562,9 @@ class MainWindow(QMainWindow):
             payload, exc = self._parse_skp_threaded(skp, cb)
             if isinstance(exc, skp_format.NeedsConverter):
                 payload = None
+                self.statusBar().showMessage(tr(
+                    "Pure importer unavailable for this file — using the "
+                    "external converter (slower)."), 8000)
             elif exc is not None:
                 dlg.close()
                 QMessageBox.critical(self, tr("Import SKP failed"), str(exc))

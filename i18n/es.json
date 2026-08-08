@@ -339,6 +339,7 @@
   "Properties": "Propiedades",
   "Properties panel": "Panel de propiedades",
   "Protractor": "Transportador",
+  "Pure importer unavailable for this file — using the external converter (slower).": "El importador puro no está disponible para este archivo — usando el conversor externo (más lento).",
   "Push / Pull": "Empujar / Tirar",
   "Push refused: would break the solid (left it unchanged)": "Empuje rechazado: rompería el sólido (sin cambios)",
   "Push stopped at {d:.2f} m: going further would break the solid": "Push detenido en {d:.2f} m: seguir rompería el sólido",

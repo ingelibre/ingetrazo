@@ -73,7 +73,14 @@ class _OpenSkpBackend:
     def available(self) -> bool:
         try:
             import openskp  # noqa: F401
-        except Exception:  # noqa: BLE001 — optional dependency
+        except Exception as exc:  # noqa: BLE001 — optional dependency
+            # NEVER silent: a broken editable install (it happened when the
+            # repo moved and ~/openskp died) otherwise degrades every .skp
+            # to the Wine converter and reads as "slow / does not open".
+            import sys
+            print(f"IngeTrazo: openskp backend unavailable ({exc!r}); "
+                  f".skp imports fall back to the external converter",
+                  file=sys.stderr)
             return False
         return True
 
