@@ -451,3 +451,61 @@ class TestDxfOut:
         assert len(lines) == 1
         assert lines[0].dxf.end.x == pytest.approx(9.258)
         assert lines[0].dxf.layer == "PLANTA"
+
+
+# ── C5: QGIS-parity items ───────────────────────────────────────────────────
+
+from core.composition import CotaItem, FlechaNorte, FormaItem, Leyenda
+
+
+class TestC5Items:
+    def test_cota_label_is_the_real_distance(self):
+        ct = CotaItem(dx_mm=80.0, dy_mm=0.0, scale_n=100.0)
+        assert ct.label() == "8.00 m"
+        ct = CotaItem(dx_mm=30.0, dy_mm=40.0, scale_n=1000.0)  # 50 mm paper
+        assert ct.label() == "50.00 m"
+        ct.text = "VER DETALLE"
+        assert ct.label() == "VER DETALLE"
+
+    def test_leyenda_height_follows_rows(self):
+        le = Leyenda(rows=["A", "B", "C"])
+        assert le.h_mm == pytest.approx(7.5 + 16.5)
+
+    def test_full_c5_serialisation_round_trip(self):
+        c = Composicion()
+        c.frames = [MarcoVista(grid_m=2.0)]
+        c.texts = [TextoItem(text="T", family="DejaVu Serif", italic=True,
+                             color="#aa0000", align="center")]
+        c.nortes = [FlechaNorte(size_mm=22, angle_deg=15)]
+        c.leyendas = [Leyenda(title="LEY", rows=["Muros", "Puertas"])]
+        c.shapes = [FormaItem(kind="flecha", invert=True, stroke_mm=0.5)]
+        c.cotas = [CotaItem(dx_mm=50, dy_mm=10, scale_n=200, text="")]
+        c2 = Composicion.from_dict(c.to_dict())
+        assert c2.to_dict() == c.to_dict()
+        assert c2.frames[0].grid_m == 2.0
+        assert c2.texts[0].align == "center"
+        assert c2.leyendas[0].rows == ["Muros", "Puertas"]
+        assert c2.cotas[0].scale_n == 200
+
+    def test_commands_route_all_new_types(self):
+        c = Composicion()
+        h = ComposerHistory()
+        items = [FlechaNorte(), Leyenda(), FormaItem(), CotaItem()]
+        for it in items:
+            h.execute(AddItemCommand(c, it))
+        assert (c.nortes and c.leyendas and c.shapes and c.cotas)
+        for it in items:
+            h.execute(RemoveItemCommand(c, it))
+        assert not (c.nortes or c.leyendas or c.shapes or c.cotas)
+        for _ in range(4):
+            h.undo()
+        assert (c.nortes and c.leyendas and c.shapes and c.cotas)
+
+    def test_old_documents_still_load(self):
+        d = {"frames": [{"x_mm": 1, "y_mm": 2, "w_mm": 3, "h_mm": 4,
+                         "scale_n": 100, "view_key": "std:top"}],
+             "texts": [{"x_mm": 1, "y_mm": 2, "w_mm": 3, "text": "hola",
+                        "size_pt": 12, "bold": False}]}
+        c = Composicion.from_dict(d)
+        assert c.texts[0].family == "Sans Serif"     # new fields default
+        assert c.frames[0].grid_m == 0.0

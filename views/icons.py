@@ -544,8 +544,71 @@ def _text3d(p, ink):
     p.drawText(base, "A")
 
 
+# ── Composer (sheet layout) icons ──────────────────────────────────────────
+
+def _image_icon(p, ink):
+    # a photo: frame, sun and mountain
+    p.drawRect(8, 12, 32, 24)
+    p.drawEllipse(QPointF(17, 20), 3, 3)
+    p.drawPolyline(QPolygonF([QPointF(12, 32), QPointF(22, 24),
+                              QPointF(28, 29), QPointF(36, 21)]))
+
+
+def _comp_vista(p, ink):
+    # a paper frame holding a tiny iso cube — the model-view item
+    p.drawRect(8, 8, 32, 32)
+    p.drawLine(QPointF(24, 16), QPointF(33, 21))
+    p.drawLine(QPointF(24, 16), QPointF(15, 21))
+    p.drawLine(QPointF(15, 21), QPointF(15, 30))
+    p.drawLine(QPointF(33, 21), QPointF(33, 30))
+    p.drawLine(QPointF(15, 30), QPointF(24, 35))
+    p.drawLine(QPointF(33, 30), QPointF(24, 35))
+    p.drawLine(QPointF(24, 16), QPointF(24, 26))
+
+
+def _comp_norte(p, ink):
+    p.drawEllipse(QPointF(24, 24), 16, 16)
+    p.setBrush(ink)
+    poly = QPolygonF([QPointF(24, 10), QPointF(29, 28), QPointF(24, 24),
+                      QPointF(19, 28)])
+    p.drawPolygon(poly)
+
+
+def _comp_leyenda(p, ink):
+    for i, y in enumerate((12, 24, 36)):
+        p.drawRect(8, y - 3, 6, 6)
+        p.drawLine(QPointF(20, y), QPointF(40, y))
+
+
+def _comp_escala(p, ink):
+    p.setBrush(ink)
+    p.drawRect(6, 20, 9, 7)
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(15, 20, 9, 7)
+    p.setBrush(ink)
+    p.drawRect(24, 20, 9, 7)
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(33, 20, 9, 7)
+
+
+def _comp_cajetin(p, ink):
+    p.drawRect(6, 14, 36, 20)
+    p.drawLine(QPointF(6, 24), QPointF(42, 24))
+    p.drawLine(QPointF(18, 14), QPointF(18, 34))
+
+
+def _comp_flecha(p, ink):
+    p.drawLine(QPointF(10, 38), QPointF(38, 10))
+    p.drawLine(QPointF(38, 10), QPointF(26, 13))
+    p.drawLine(QPointF(38, 10), QPointF(35, 22))
+
+
 _DRAW = {
     "select": _select, "line": _line, "rectangle": _rectangle,
+    "image": _image_icon,
+    "comp_vista": _comp_vista, "comp_norte": _comp_norte,
+    "comp_leyenda": _comp_leyenda, "comp_escala": _comp_escala,
+    "comp_cajetin": _comp_cajetin, "comp_flecha": _comp_flecha,
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc,
     "rotate": _rotate, "scale": _scale, "followme": _followme, "pushpull": _pushpull, "offset": _offset,

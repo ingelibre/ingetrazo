@@ -83,6 +83,9 @@ class MarcoVista:
     style: str = "sombreado"
     #: Draw the automatic title under the frame («Planta — 1:100»).
     show_title: bool = False
+    #: Coordinate-grid spacing over the view, in model METRES (0 = off) —
+    #: QGIS's graticule, the civil habit of gridded plans.
+    grid_m: float = 0.0
 
     def model_height_m(self) -> float:
         return model_height_for_frame(self.h_mm, self.scale_n)
@@ -102,6 +105,10 @@ class TextoItem:
     text: str = ""
     size_pt: float = 14.0
     bold: bool = False
+    italic: bool = False
+    family: str = "Sans Serif"
+    color: str = "#1e242c"
+    align: str = "left"          # left | center | right
 
 
 @dataclass
@@ -174,6 +181,86 @@ class BarraEscala:
 
 
 @dataclass
+class FlechaNorte:
+    """A north arrow: circle, needle and N, rotatable to the project north."""
+
+    x_mm: float = 20.0
+    y_mm: float = 20.0
+    size_mm: float = 18.0
+    angle_deg: float = 0.0
+
+    @property
+    def w_mm(self) -> float:
+        return self.size_mm
+
+    @property
+    def h_mm(self) -> float:
+        return self.size_mm
+
+
+@dataclass
+class Leyenda:
+    """A legend box: title + one row per model layer (snapshotted when
+    added / refreshed, so the sheet stays stable if layers change)."""
+
+    x_mm: float = 20.0
+    y_mm: float = 20.0
+    w_mm: float = 55.0
+    title: str = "LEYENDA"
+    rows: list = field(default_factory=list)
+
+    @property
+    def h_mm(self) -> float:
+        return 7.5 + 5.5 * max(len(self.rows), 1)
+
+
+@dataclass
+class FormaItem:
+    """A drawing shape: line, arrow, rectangle or ellipse. Lines/arrows run
+    corner to corner of the box (``invert`` flips which diagonal)."""
+
+    kind: str = "rect"           # linea | flecha | rect | elipse
+    x_mm: float = 20.0
+    y_mm: float = 20.0
+    w_mm: float = 40.0
+    h_mm: float = 25.0
+    stroke_mm: float = 0.35
+    fill: bool = False
+    invert: bool = False
+
+
+@dataclass
+class CotaItem:
+    """A sheet dimension between two points; the label is the REAL model
+    distance implied by the paper length at 1:N («3.45 m»)."""
+
+    x_mm: float = 20.0
+    y_mm: float = 20.0
+    dx_mm: float = 40.0
+    dy_mm: float = 0.0
+    scale_n: float = 100.0
+    offset_mm: float = 4.0
+    text: str = ""               # "" = automatic distance label
+
+    @property
+    def w_mm(self) -> float:
+        return max(abs(self.dx_mm), 2.0)
+
+    @property
+    def h_mm(self) -> float:
+        return max(abs(self.dy_mm), 2.0)
+
+    def real_distance_m(self) -> float:
+        return math.hypot(self.dx_mm, self.dy_mm) * self.scale_n / 1000.0
+
+    def label(self) -> str:
+        if self.text:
+            return self.text
+        d = self.real_distance_m()
+        return f"{d:.2f} m" if d < 1000 else f"{d / 1000:.3f} km"
+
+
+@dataclass
 class Composicion:
     """One sheet: a page plus its items."""
 
@@ -185,6 +272,10 @@ class Composicion:
     texts: list = field(default_factory=list)
     images: list = field(default_factory=list)
     scalebars: list = field(default_factory=list)
+    nortes: list = field(default_factory=list)
+    leyendas: list = field(default_factory=list)
+    shapes: list = field(default_factory=list)
+    cotas: list = field(default_factory=list)
     cajetin: Optional[Cajetin] = None
 
     def page_size_mm(self) -> tuple[float, float]:
@@ -208,7 +299,8 @@ class Composicion:
 
     def all_items(self) -> list:
         out = (list(self.frames) + list(self.texts) + list(self.images)
-               + list(self.scalebars))
+               + list(self.scalebars) + list(self.nortes)
+               + list(self.leyendas) + list(self.shapes) + list(self.cotas))
         if self.cajetin is not None:
             out.append(self.cajetin)
         return out
@@ -225,6 +317,10 @@ class Composicion:
             d["images"] = [asdict(i) for i in self.images]
         if self.scalebars:
             d["scalebars"] = [asdict(sb) for sb in self.scalebars]
+        for key, lst in (("nortes", self.nortes), ("leyendas", self.leyendas),
+                         ("shapes", self.shapes), ("cotas", self.cotas)):
+            if lst:
+                d[key] = [asdict(it) for it in lst]
         if self.cajetin is not None:
             d["cajetin"] = asdict(self.cajetin)
         return d
@@ -239,6 +335,10 @@ class Composicion:
         c.texts = [TextoItem(**t) for t in d.get("texts", [])]
         c.images = [ImagenItem(**i) for i in d.get("images", [])]
         c.scalebars = [BarraEscala(**sb) for sb in d.get("scalebars", [])]
+        c.nortes = [FlechaNorte(**n) for n in d.get("nortes", [])]
+        c.leyendas = [Leyenda(**le) for le in d.get("leyendas", [])]
+        c.shapes = [FormaItem(**f) for f in d.get("shapes", [])]
+        c.cotas = [CotaItem(**ct) for ct in d.get("cotas", [])]
         if "cajetin" in d:
             c.cajetin = Cajetin(**d["cajetin"])
         return c
@@ -277,6 +377,14 @@ class AddItemCommand(ComposerCommand):
             return self.comp.images
         if isinstance(self.item, BarraEscala):
             return self.comp.scalebars
+        if isinstance(self.item, FlechaNorte):
+            return self.comp.nortes
+        if isinstance(self.item, Leyenda):
+            return self.comp.leyendas
+        if isinstance(self.item, FormaItem):
+            return self.comp.shapes
+        if isinstance(self.item, CotaItem):
+            return self.comp.cotas
         return None
 
     def do(self) -> None:
@@ -309,6 +417,14 @@ class RemoveItemCommand(ComposerCommand):
             return self.comp.images
         if isinstance(self.item, BarraEscala):
             return self.comp.scalebars
+        if isinstance(self.item, FlechaNorte):
+            return self.comp.nortes
+        if isinstance(self.item, Leyenda):
+            return self.comp.leyendas
+        if isinstance(self.item, FormaItem):
+            return self.comp.shapes
+        if isinstance(self.item, CotaItem):
+            return self.comp.cotas
         return None
 
     def do(self) -> None:
