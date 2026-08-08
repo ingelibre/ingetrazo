@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -161,12 +162,50 @@ class BaseMapPanel(QWidget):
         self._lon.setValue(-77.042800)
         grid.addWidget(self._lon, 3, 1)
 
-        grid.addWidget(QLabel(tr("Zoom:")), 4, 0)
+        # The same anchor in UTM WGS84 — the frame a drone survey or a
+        # total station reports. Both entries stay in sync: type E/N from
+        # the survey OR lat/lon, whichever the paper in hand shows.
+        zrow = QWidget()
+        zbox = QHBoxLayout(zrow)
+        zbox.setContentsMargins(0, 0, 0, 0)
+        self._utm_zone = QSpinBox()
+        self._utm_zone.setRange(1, 60)
+        self._utm_zone.editingFinished.connect(self._sync_ll_from_utm)
+        zbox.addWidget(self._utm_zone)
+        self._utm_hemi = QComboBox()
+        self._utm_hemi.addItem(tr("North"), True)
+        self._utm_hemi.addItem(tr("South"), False)
+        self._utm_hemi.activated.connect(self._sync_ll_from_utm)
+        zbox.addWidget(self._utm_hemi, 1)
+        grid.addWidget(QLabel(tr("UTM zone:")), 4, 0)
+        grid.addWidget(zrow, 4, 1)
+
+        grid.addWidget(QLabel(tr("UTM E:")), 5, 0)
+        self._utm_e = QDoubleSpinBox()
+        self._utm_e.setRange(100000.0, 900000.0)
+        self._utm_e.setDecimals(2)
+        self._utm_e.setGroupSeparatorShown(True)
+        self._utm_e.editingFinished.connect(self._sync_ll_from_utm)
+        grid.addWidget(self._utm_e, 5, 1)
+
+        grid.addWidget(QLabel(tr("UTM N:")), 6, 0)
+        self._utm_n = QDoubleSpinBox()
+        self._utm_n.setRange(0.0, 10000000.0)
+        self._utm_n.setDecimals(2)
+        self._utm_n.setGroupSeparatorShown(True)
+        self._utm_n.editingFinished.connect(self._sync_ll_from_utm)
+        grid.addWidget(self._utm_n, 6, 1)
+
+        self._lat.editingFinished.connect(self._sync_utm_from_ll)
+        self._lon.editingFinished.connect(self._sync_utm_from_ll)
+        self._sync_utm_from_ll()
+
+        grid.addWidget(QLabel(tr("Zoom:")), 7, 0)
         self._zoom = QSpinBox()
         self._zoom.setRange(1, 21)
         self._zoom.setValue(16)
         self._zoom.valueChanged.connect(self._on_zoom_changed)
-        grid.addWidget(self._zoom, 4, 1)
+        grid.addWidget(self._zoom, 7, 1)
 
         # Capture area (metres): set by drawing a rectangle in the locator
         # dialog. A square for a site, a long strip for a road. Kept as state,
@@ -176,27 +215,27 @@ class BaseMapPanel(QWidget):
 
         self._find = QPushButton(tr("Search location…"))
         self._find.clicked.connect(self._open_locator)
-        grid.addWidget(self._find, 5, 0, 1, 2)
+        grid.addWidget(self._find, 8, 0, 1, 2)
 
         self._go = QPushButton(tr("Go to location"))
         self._go.clicked.connect(self._go_to)
-        grid.addWidget(self._go, 6, 0, 1, 2)
+        grid.addWidget(self._go, 9, 0, 1, 2)
 
         self._show = QCheckBox(tr("Show base map"))
         self._show.setChecked(True)
         self._show.toggled.connect(self._on_toggle_visible)
-        grid.addWidget(self._show, 7, 0, 1, 2)
+        grid.addWidget(self._show, 10, 0, 1, 2)
 
         self._terrain3d = QCheckBox(tr("3D terrain"))
         self._terrain3d.toggled.connect(self._on_toggle_terrain)
-        grid.addWidget(self._terrain3d, 8, 0, 1, 2)
+        grid.addWidget(self._terrain3d, 11, 0, 1, 2)
 
         # The drone survey (Track G, G6). Disabled until one is imported —
         # a checkbox you can tick with nothing behind it just looks broken.
         self._photo_mesh = QCheckBox(tr("Photogrammetric survey"))
         self._photo_mesh.setEnabled(False)
         self._photo_mesh.toggled.connect(self._on_toggle_photo_mesh)
-        grid.addWidget(self._photo_mesh, 9, 0, 1, 2)
+        grid.addWidget(self._photo_mesh, 12, 0, 1, 2)
 
         # Which layer the survey carries. The import puts it on its own so it
         # can be switched off without taking the model with it; this is for
@@ -206,13 +245,13 @@ class BaseMapPanel(QWidget):
         self._photo_layer.setToolTip(tr(
             "Layer the survey is on. Hiding that layer hides the survey."))
         self._photo_layer.currentTextChanged.connect(self._on_photo_layer_changed)
-        grid.addWidget(QLabel(tr("Layer")), 10, 0)
-        grid.addWidget(self._photo_layer, 10, 1)
+        grid.addWidget(QLabel(tr("Layer")), 13, 0)
+        grid.addWidget(self._photo_layer, 13, 1)
 
         self._attribution = QLabel("")
         self._attribution.setWordWrap(True)
         self._attribution.setStyleSheet("color:#9aa3b2; font-size:10px; margin-top:4px;")
-        grid.addWidget(self._attribution, 11, 0, 1, 2)
+        grid.addWidget(self._attribution, 14, 0, 1, 2)
 
         self._restore_saved_source()
         self._sync_from_scene()
@@ -395,6 +434,34 @@ class BaseMapPanel(QWidget):
             self._window.viewport.reset_tiles()
 
     # ---- Location -----------------------------------------------------------
+    def _sync_utm_from_ll(self, *_a) -> None:
+        from georef.datum import utm_forward, zone_for_lon
+        from PySide6.QtCore import QSignalBlocker
+        lat, lon = self._lat.value(), self._lon.value()
+        zone = zone_for_lon(lon)
+        east, north = utm_forward(lat, lon, zone)
+        blockers = [QSignalBlocker(w) for w in
+                    (self._utm_zone, self._utm_hemi,
+                     self._utm_e, self._utm_n)]
+        self._utm_zone.setValue(zone)
+        self._utm_hemi.setCurrentIndex(0 if lat >= 0 else 1)
+        self._utm_e.setValue(east)
+        self._utm_n.setValue(north)
+        del blockers
+
+    def _sync_ll_from_utm(self, *_a) -> None:
+        from georef.datum import utm_inverse
+        from PySide6.QtCore import QSignalBlocker
+        lat, lon = utm_inverse(self._utm_e.value(), self._utm_n.value(),
+                               int(self._utm_zone.value()),
+                               bool(self._utm_hemi.currentData()))
+        if not (-85.0 <= lat <= 85.0 and -180.0 <= lon <= 180.0):
+            return
+        blockers = [QSignalBlocker(w) for w in (self._lat, self._lon)]
+        self._lat.setValue(lat)
+        self._lon.setValue(lon)
+        del blockers
+
     def _open_locator(self) -> None:
         """Open the map locator; on accept, drop the chosen lat/lon and go."""
         from views.location_dialog import pick_location
@@ -404,6 +471,7 @@ class BaseMapPanel(QWidget):
             lat, lon, width_m, length_m = result
             self._lat.setValue(lat)
             self._lon.setValue(lon)
+            self._sync_utm_from_ll()
             if width_m and length_m:      # a capture rectangle was drawn
                 self._capture_w = width_m
                 self._capture_l = length_m
@@ -414,7 +482,26 @@ class BaseMapPanel(QWidget):
         if src is None:
             return
         scene = self._window.viewport.scene
-        datum = SceneDatum(self._lat.value(), self._lon.value())
+        old_datum = getattr(scene, "georef", None)
+        moved = (old_datum is not None
+                 and (abs(old_datum.lat - self._lat.value()) > 1e-9
+                      or abs(old_datum.lon - self._lon.value()) > 1e-9))
+        if moved:
+            # Moving the anchor relocates everything drawn (the model keeps
+            # its LOCAL coordinates) — never do that silently.
+            answer = QMessageBox.question(
+                self, tr("Move the project origin?"),
+                tr("This project already has a location. Moving it makes "
+                   "the new point the model's origin (0,0): everything "
+                   "drawn keeps its local coordinates and shows up at the "
+                   "new spot on the map.\n\nMove the origin?"))
+            if answer != QMessageBox.Yes:
+                return
+        if old_datum is not None and not moved:
+            datum = old_datum          # keep the datum (and its altitude)
+        else:
+            datum = SceneDatum(self._lat.value(), self._lon.value(),
+                               alt=old_datum.alt if old_datum else 0.0)
         scene.georef = datum
         layer = TileLayer(src, zoom=self._zoom.value())
         layer.set_rectangle(self._capture_w, self._capture_l)
@@ -474,6 +561,7 @@ class BaseMapPanel(QWidget):
         self._lat.setValue(datum.lat)
         self._lon.setValue(datum.lon)
         del blockers
+        self._sync_utm_from_ll()
         self._window.viewport.reset_tiles()
 
     def _frame_camera(self, radius: float) -> None:
@@ -558,6 +646,7 @@ class BaseMapPanel(QWidget):
         if datum is not None:
             self._lat.setValue(datum.lat)
             self._lon.setValue(datum.lon)
+            self._sync_utm_from_ll()
         if layer is not None:
             idx = self._source.findData(layer.source.id)
             if idx >= 0:

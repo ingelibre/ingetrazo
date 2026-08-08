@@ -15,6 +15,7 @@ from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -24,11 +25,13 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from core.i18n import tr
+from georef.datum import utm_forward, utm_inverse, zone_for_lon
 from georef.geocode import Geocoder, IpLocator
 from georef.tiles import PRESETS, deg2num, num2deg
 
@@ -164,6 +167,9 @@ class MapPicker(QWidget):
         p.setPen(QPen(QColor(255, 255, 255), 1))
         p.drawLine(QPointF(cx - 11, cy), QPointF(cx + 11, cy))
         p.drawLine(QPointF(cx, cy - 11), QPointF(cx, cy + 11))
+        # this point becomes the model's local origin — say so on the map
+        p.setPen(QColor(255, 255, 255))
+        p.drawText(QPointF(cx + 14, cy + 16), tr("origin (0,0)"))
 
     def _tile(self, x: int, y: int):
         key = (x, y, self._zoom)
@@ -307,7 +313,39 @@ class LocationDialog(QDialog):
         coords.addStretch(1)
         root.addLayout(coords)
 
-        self._status = QLabel(tr("Move the map so the centre pin is on your site."))
+        # The same point in UTM WGS84 — what a drone survey or total
+        # station reports. Typing E/N here moves the pin, and vice versa.
+        utm = QHBoxLayout()
+        utm.addWidget(QLabel(tr("UTM WGS84 — Zone:")))
+        self._zone_box = QSpinBox()
+        self._zone_box.setRange(1, 60)
+        self._zone_box.editingFinished.connect(self._on_utm_typed)
+        utm.addWidget(self._zone_box)
+        self._hemi_box = QComboBox()
+        self._hemi_box.addItem(tr("North"), True)
+        self._hemi_box.addItem(tr("South"), False)
+        self._hemi_box.activated.connect(self._on_utm_typed)
+        utm.addWidget(self._hemi_box)
+        utm.addWidget(QLabel(tr("E:")))
+        self._east_box = QDoubleSpinBox()
+        self._east_box.setRange(100000.0, 900000.0)
+        self._east_box.setDecimals(2)
+        self._east_box.setGroupSeparatorShown(True)
+        self._east_box.editingFinished.connect(self._on_utm_typed)
+        utm.addWidget(self._east_box)
+        utm.addWidget(QLabel(tr("N:")))
+        self._north_box = QDoubleSpinBox()
+        self._north_box.setRange(0.0, 10000000.0)
+        self._north_box.setDecimals(2)
+        self._north_box.setGroupSeparatorShown(True)
+        self._north_box.editingFinished.connect(self._on_utm_typed)
+        utm.addWidget(self._north_box)
+        utm.addStretch(1)
+        root.addLayout(utm)
+
+        self._status = QLabel(tr("The centre pin will be the model's "
+                                 "ORIGIN (0,0) — put it exactly on your "
+                                 "site."))
         self._status.setStyleSheet("color:#7a828f; font-size:11px;")
         root.addWidget(self._status)
 
@@ -367,9 +405,27 @@ class LocationDialog(QDialog):
             box.blockSignals(True)
             box.setValue(val)
             box.blockSignals(False)
+        zone = zone_for_lon(lon)
+        east, north = utm_forward(lat, lon, zone)
+        for box, val in ((self._zone_box, zone), (self._east_box, east),
+                         (self._north_box, north)):
+            box.blockSignals(True)
+            box.setValue(val)
+            box.blockSignals(False)
+        self._hemi_box.blockSignals(True)
+        self._hemi_box.setCurrentIndex(0 if lat >= 0 else 1)
+        self._hemi_box.blockSignals(False)
 
     def _on_coords_typed(self) -> None:
         self._map.set_center(self._lat_box.value(), self._lon_box.value())
+
+    def _on_utm_typed(self, *_a) -> None:
+        lat, lon = utm_inverse(self._east_box.value(),
+                               self._north_box.value(),
+                               int(self._zone_box.value()),
+                               bool(self._hemi_box.currentData()))
+        if -85.0 <= lat <= 85.0 and -180.0 <= lon <= 180.0:
+            self._map.set_center(lat, lon)
 
     def selected(self):
         """``(lat, lon, width_m, length_m)``. If a capture rectangle was drawn,
