@@ -96,6 +96,24 @@ def _configure_surface_format() -> None:
     QSurfaceFormat.setDefaultFormat(fmt)
 
 
+def _open_document_in(window, doc: "Path") -> None:
+    """Open *doc* in *window*: .igz as the document, .skp imported through
+    the native backend after the first paint (big models parse for seconds —
+    the window must be visible, not frozen pre-show). Shared by the initial
+    launch and the single-instance second-launch handler."""
+    ext = doc.suffix.lower()
+    if ext == ".igz":
+        window.open_path(doc)
+    elif ext == ".skp":
+        from PySide6.QtCore import QTimer
+
+        def _open_skp():
+            if window.import_skp_path(doc) and hasattr(window, "_on_zoom_extents"):
+                window._on_zoom_extents()
+
+        QTimer.singleShot(0, _open_skp)
+
+
 def main() -> int:
     _configure_surface_format()
     app = QApplication(sys.argv)
@@ -117,29 +135,51 @@ def main() -> int:
     _apply_dark_theme(app)
     _init_language()
     window = MainWindow()
+
+    # Single instance: if IngeTrazo is already running, hand the document to
+    # that window and quit — so a second double-click opens the file in the
+    # existing window instead of spawning a rival instance that the desktop
+    # then kills as a duplicate (the 'it doesn't open' failure). Fail-open:
+    # any socket trouble just launches a normal standalone instance.
+    from PySide6.QtNetwork import QLocalServer, QLocalSocket
+    _SOCKET = "ingetrazo-single-instance"
+    arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    probe = QLocalSocket()
+    probe.connectToServer(_SOCKET)
+    if probe.waitForConnected(200):
+        probe.write(arg.encode("utf-8"))
+        probe.flush()
+        probe.waitForBytesWritten(200)
+        probe.disconnectFromServer()
+        return 0                       # the running instance takes over
+    # No server answered — become the server. A stale socket from a crash is
+    # cleared by removeServer before listen.
+    server = QLocalServer()
+    QLocalServer.removeServer(_SOCKET)
+    server.listen(_SOCKET)
+
+    def _handle_second_launch():
+        conn = server.nextPendingConnection()
+        if conn is None:
+            return
+        if conn.waitForReadyRead(300):
+            path = bytes(conn.readAll()).decode("utf-8", "replace").strip()
+            if path:
+                _open_document_in(window, Path(path))
+        conn.disconnectFromServer()
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    server.newConnection.connect(_handle_second_launch)
+    app._single_instance_server = server    # keep it alive
+
     # A document passed on the command line (the OS file association's
-    # double-click on Windows/Linux hands it as argv[1]) opens right away.
-    # .igz opens as the document; a double-clicked .skp imports through the
-    # native openskp backend AFTER the first paint (big models parse for
-    # seconds — the window must be visible, not frozen pre-show).
-    if len(sys.argv) > 1:
-        doc = Path(sys.argv[1])
+    # double-click hands it as argv[1]) opens right away.
+    if arg:
+        doc = Path(arg)
         if doc.exists():
-            ext = doc.suffix.lower()
-            if ext == ".igz":
-                window.open_path(doc)
-            elif ext == ".skp":
-                from PySide6.QtCore import QTimer
-
-                def _open_skp():
-                    if window.import_skp_path(doc):
-                        # Frame the model — a double-clicked import often sits
-                        # far from the origin (geolocated models), so land the
-                        # camera on it instead of on empty space.
-                        if hasattr(window, "_on_zoom_extents"):
-                            window._on_zoom_extents()
-
-                QTimer.singleShot(0, _open_skp)
+            _open_document_in(window, doc)
     window.show()
     return app.exec()
 
