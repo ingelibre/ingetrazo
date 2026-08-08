@@ -611,7 +611,8 @@ class CotaCanvasItem(_SheetItem):
     def mousePressEvent(self, event) -> None:
         self._press_state = {k: getattr(self.model, k)
                              for k in ("x_mm", "y_mm", "dx_mm", "dy_mm",
-                                       "sep_mm")}
+                                       "sep_mm", "anchor_uid", "a_world",
+                                       "b_world")}
         self._sep_dragging = self._on_sep_handle(event.pos())
         self._resizing = (not self._sep_dragging
                           and self._on_resize_handle(event.pos()))
@@ -623,12 +624,25 @@ class CotaCanvasItem(_SheetItem):
 
     def mouseReleaseEvent(self, event) -> None:
         self._sep_dragging = False
+        # Moving the cota or one of its measured points BY HAND means the
+        # user wants it off the geometry: break the model anchor (the next
+        # reprojection would otherwise snap it right back). Undoable — the
+        # anchor fields ride in the same _press_state snapshot.
+        if self._press_state is not None and self.model.anchored:
+            moved = any(getattr(self.model, k) != self._press_state[k]
+                        for k in ("x_mm", "y_mm", "dx_mm", "dy_mm"))
+            if moved:
+                self.model.anchor_uid = ""
+                self.model.a_world = None
+                self.model.b_world = None
         super().mouseReleaseEvent(event)
 
     def _paint_selection(self, painter: QPainter) -> None:
         if not self.isSelected():
             return
-        painter.setBrush(QBrush(QColor(58, 110, 165)))
+        anchored = QColor(41, 158, 92)       # green: tied to the model
+        free = QColor(58, 110, 165)          # blue: paper-only points
+        painter.setBrush(QBrush(anchored if self.model.anchored else free))
         painter.setPen(Qt.NoPen)
         mx, my = self._line_mid()
         for px, py in ((0.0, 0.0), (self.model.dx_mm, self.model.dy_mm),
@@ -654,6 +668,9 @@ class ComposerCanvasView(QGraphicsView):
         self._second_pt = None         # cota: measured points fixed, placing
         self._preview = None           #       the dimension line (sep phase)
         self._snap_marker = None       # green dot over a frame vertex/edge
+        self._last_hit = None          # richest snap hit of the last _snapped
+        self._hit_a = None             # snap hits of the two measured points
+        self._hit_b = None             # (world anchors for the cota)
         # Tools that define a segment/rectangle take EITHER a drag or two
         # clicks (click the first vertex, move, click the second) — the
         # click-click habit of the model's dimension tool must work here too.
@@ -673,6 +690,7 @@ class ComposerCanvasView(QGraphicsView):
             return pos, False
         thr_mm = 7.0 / max(self.transform().m11(), 1e-6)
         hit = self.composer.nearest_snap_point(pos.x(), pos.y(), thr_mm)
+        self._last_hit = hit
         if hit is None:
             self._clear_snap_marker()
             return pos, False
@@ -726,6 +744,7 @@ class ComposerCanvasView(QGraphicsView):
                 event.accept()
                 return
             self._drag_start = pos
+            self._hit_a = self._last_hit
             self._press_vp = event.position().toPoint()
             event.accept()
             return
@@ -765,6 +784,7 @@ class ComposerCanvasView(QGraphicsView):
 
     def _enter_sep_phase(self, second) -> None:
         self._second_pt = second
+        self._hit_b = self._last_hit
         self._clear_snap_marker()
         if self._preview is not None:
             self.scene().removeItem(self._preview)
@@ -800,15 +820,23 @@ class ComposerCanvasView(QGraphicsView):
     def _finish_cota(self, pos) -> None:
         start, second = self._drag_start, self._second_pt
         sep = self._cota_sep(pos)
+        # Both points snapped to geometry of the SAME frame → the cota
+        # anchors to those 3D model points and follows the model.
+        anchors = None
+        if (self._hit_a is not None and self._hit_b is not None
+                and self._hit_a[3] is self._hit_b[3]):
+            anchors = (self._hit_a[3], self._hit_a[2], self._hit_b[2])
         self._drag_start = None
         self._second_pt = None
         self._press_vp = None
+        self._hit_a = self._hit_b = None
         if self._preview is not None:
             self.scene().removeItem(self._preview)
             self._preview = None
         self._clear_snap_marker()
         self.composer.place_tool(start.x(), start.y(),
-                                 second.x(), second.y(), sep_mm=sep)
+                                 second.x(), second.y(), sep_mm=sep,
+                                 anchors=anchors)
 
     def mouseReleaseEvent(self, event) -> None:
         if self._ignore_release and event.button() == Qt.LeftButton:
@@ -840,6 +868,7 @@ class ComposerCanvasView(QGraphicsView):
         start = self._drag_start
         self._drag_start = None
         self._press_vp = None
+        self._hit_a = self._hit_b = None
         if self._preview is not None:
             self.scene().removeItem(self._preview)
             self._preview = None
@@ -852,6 +881,7 @@ class ComposerCanvasView(QGraphicsView):
         self._second_pt = None
         self._press_vp = None
         self._ignore_release = False
+        self._hit_a = self._hit_b = None
         if self._preview is not None:
             self.scene().removeItem(self._preview)
             self._preview = None
@@ -981,9 +1011,11 @@ class ComposerWindow(QMainWindow):
             self._tool_actions["select"].setChecked(True)
 
     def place_tool(self, x0: float, y0: float, x1: float, y1: float,
-                   sep_mm: float = 0.0) -> None:
+                   sep_mm: float = 0.0, anchors=None) -> None:
         """A click (or drag) landed on the page with a placement tool
-        armed: create the item there, through the history."""
+        armed: create the item there, through the history. ``anchors``
+        (cota only) is ``(frame, a_world, b_world)`` when both measured
+        points snapped to the same frame's geometry."""
         mode = self.tool_mode
         w = abs(x1 - x0)
         h = abs(y1 - y0)
@@ -1019,6 +1051,15 @@ class ComposerWindow(QMainWindow):
             n = self.comp.frames[0].scale_n if self.comp.frames else 100.0
             item = CotaItem(x_mm=x0, y_mm=y0, dx_mm=x1 - x0, dy_mm=y1 - y0,
                             scale_n=n, sep_mm=sep_mm, offset_mm=0.8)
+            if anchors is not None:
+                frame, a_world, b_world = anchors
+                if not frame.uid:
+                    import uuid
+                    frame.uid = uuid.uuid4().hex
+                item.anchor_uid = frame.uid
+                item.a_world = list(a_world)
+                item.b_world = list(b_world)
+                item.scale_n = frame.scale_n
         if item is not None:
             self._pending_sel = item
             self.history.execute(AddItemCommand(self.comp, item))
@@ -1418,6 +1459,7 @@ class ComposerWindow(QMainWindow):
     def _rebuild_canvas(self) -> None:
         self._updating = True
         self.snap_cache.clear()
+        self._reproject_anchored_cotas()
         self.canvas.clear()
         pw, ph = self.comp.page_size_mm()
         self.canvas.setSceneRect(-20, -20, pw + 40, ph + 40)
@@ -1957,10 +1999,12 @@ class ComposerWindow(QMainWindow):
             vp.update()
 
     def frame_snap_points(self, frame: MarcoVista):
-        """Visible geometry points of *frame*'s view, in PAGE millimetres —
-        every edge endpoint plus each edge's midpoint. Cached by frame id;
-        computed from the same hidden-line pass the vector style uses, so a
-        point only snaps where the drawing actually shows an edge.
+        """Visible geometry points of *frame*'s view — an ``(M, 2)`` array in
+        PAGE millimetres paired with the same points in WORLD metres
+        ``(M, 3)`` (the anchor data): every edge endpoint plus each edge's
+        midpoint. Cached by frame id; computed from the same hidden-line
+        pass the vector style uses, so a point only snaps where the drawing
+        actually shows an edge.
         """
         import numpy as np
         cached = self.snap_cache.get(id(frame))
@@ -1971,9 +2015,9 @@ class ComposerWindow(QMainWindow):
 
         def run():
             vp = self._window.viewport
-            segs = hlr_view(vp.scene, vp.camera)      # camera-plane metres
+            segs, world = hlr_view(vp.scene, vp.camera, return_world=True)
             if not len(segs):
-                return np.empty((0, 2))
+                return np.empty((0, 2)), np.empty((0, 3))
             model_h = model_height_for_frame(frame.h_mm, frame.scale_n)
             k = frame.h_mm / model_h
             half_h = model_h / 2.0
@@ -1984,38 +2028,100 @@ class ComposerWindow(QMainWindow):
                         frame.y_mm + (half_h - my) * k)
 
             pts = []
-            for x0, y0, x1, y1 in segs:
+            wpts = []
+            for (x0, y0, x1, y1), (w0, w1) in zip(segs, world):
                 pts.append(to_page(x0, y0))
                 pts.append(to_page(x1, y1))
-                pts.append(to_page((x0 + x1) / 2, (y0 + y1) / 2))   # midpoint
+                pts.append(to_page((x0 + x1) / 2, (y0 + y1) / 2))  # midpoint
+                wpts.extend((w0, w1, (w0 + w1) / 2))
             arr = np.array(pts)
+            warr = np.array(wpts)
             # clip to the frame rectangle (points outside are off the sheet)
             m = ((arr[:, 0] >= frame.x_mm - 0.5)
                  & (arr[:, 0] <= frame.x_mm + frame.w_mm + 0.5)
                  & (arr[:, 1] >= frame.y_mm - 0.5)
                  & (arr[:, 1] <= frame.y_mm + frame.h_mm + 0.5))
-            return arr[m]
+            return arr[m], warr[m]
 
-        arr = self._with_frame_camera(frame, run)
-        self.snap_cache[id(frame)] = arr
-        return arr
+        pair = self._with_frame_camera(frame, run)
+        self.snap_cache[id(frame)] = pair
+        return pair
+
+    def _frame_world_to_page(self, frame: MarcoVista, world_pts):
+        """Project points in WORLD metres to PAGE millimetres through
+        *frame*'s camera — the inverse trip of a snap hit."""
+        import numpy as np
+        from core.composition import model_height_for_frame
+        from core.hlr import _to_cam, camera_basis
+
+        def run():
+            vp = self._window.viewport
+            eye, right, up, fwd = camera_basis(vp.camera)
+            cam = _to_cam(np.asarray(world_pts, dtype=np.float64),
+                          eye, right, up, fwd)
+            model_h = model_height_for_frame(frame.h_mm, frame.scale_n)
+            k = frame.h_mm / model_h
+            half_h = model_h / 2.0
+            half_w = half_h * (frame.w_mm / frame.h_mm)
+            return [(frame.x_mm + (mx + half_w) * k,
+                     frame.y_mm + (half_h - my) * k)
+                    for mx, my in cam[:, :2]]
+
+        return self._with_frame_camera(frame, run)
+
+    def _reproject_anchored_cotas(self) -> None:
+        """Anchored cotas follow the model: re-attach each 3D anchor to the
+        nearest CURRENT snap point within a small paper tolerance (the
+        wall moved → the cota moves with it, and the label re-measures),
+        then reproject through the frame's camera so moving/rescaling the
+        frame or changing its view keeps the cota true. Derived-state
+        sync, like the render caches — never an undo step."""
+        import numpy as np
+        frames = {f.uid: f for f in self.comp.frames if f.uid}
+        for ct in self.comp.cotas:
+            if not ct.anchored:
+                continue
+            frame = frames.get(ct.anchor_uid)
+            if frame is None:
+                continue                  # frame gone: a free paper cota now
+            try:
+                _pts, wpts = self.frame_snap_points(frame)
+                tol = 2.5 * frame.scale_n / 1000.0   # 2.5 paper mm, metres
+                for attr in ("a_world", "b_world"):
+                    w = np.asarray(getattr(ct, attr), dtype=np.float64)
+                    if len(wpts):
+                        d2 = ((wpts - w) ** 2).sum(axis=1)
+                        i = int(np.argmin(d2))
+                        if d2[i] <= tol * tol:
+                            setattr(ct, attr, [float(v) for v in wpts[i]])
+                (ax, ay), (bx, by) = self._frame_world_to_page(
+                    frame, [ct.a_world, ct.b_world])
+                ct.x_mm, ct.y_mm = ax, ay
+                ct.dx_mm, ct.dy_mm = bx - ax, by - ay
+                ct.scale_n = frame.scale_n
+            except Exception:  # noqa: BLE001 — a broken projection must
+                pass           # never take the composer down; cota stays put
 
     def nearest_snap_point(self, x_mm: float, y_mm: float, thr_mm: float):
-        """Nearest frame snap point to (x_mm, y_mm) within *thr_mm*, or None.
+        """Nearest frame snap point to (x_mm, y_mm) within *thr_mm*, or
+        None. Returns ``(x, y, world_xyz, frame)`` — the page position, the
+        matching model point in world metres, and the frame it belongs to.
         Searches every frame whose rectangle contains the cursor first, then
         all frames (so an edge just past a frame border still catches)."""
         import numpy as np
         best = None
         best_d2 = thr_mm * thr_mm
         for frame in self.comp.frames:
-            pts = self.frame_snap_points(frame)
+            pts, wpts = self.frame_snap_points(frame)
             if not len(pts):
                 continue
             d2 = ((pts[:, 0] - x_mm) ** 2 + (pts[:, 1] - y_mm) ** 2)
             i = int(np.argmin(d2))
             if d2[i] < best_d2:
                 best_d2 = float(d2[i])
-                best = (float(pts[i, 0]), float(pts[i, 1]))
+                best = (float(pts[i, 0]), float(pts[i, 1]),
+                        (float(wpts[i, 0]), float(wpts[i, 1]),
+                         float(wpts[i, 2])), frame)
         return best
 
     def compute_hlr(self, frame: MarcoVista):

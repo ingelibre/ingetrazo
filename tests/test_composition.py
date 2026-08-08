@@ -426,6 +426,26 @@ class TestHLRScene:
             total += math.hypot(x1 - x0, y1 - y0)
         assert total == pytest.approx(2 * (2 + 3), rel=1e-3)
 
+        # return_world: every world endpoint must re-project EXACTLY onto
+        # its 2D segment — the invariant dimension anchoring relies on.
+        import numpy as np
+        from core.hlr import _to_cam, camera_basis
+        segs2, world = hlr_view(scene, cam, return_world=True)
+        assert segs2.shape[0] == world.shape[0]
+        eye, right, up, fwd = camera_basis(cam)
+        for (x0, y0, x1, y1), (w0, w1) in zip(segs2, world):
+            c0 = _to_cam(np.asarray([w0]), eye, right, up, fwd)[0]
+            c1 = _to_cam(np.asarray([w1]), eye, right, up, fwd)[0]
+            assert (c0[0], c0[1]) == pytest.approx((x0, y0), abs=1e-9)
+            assert (c1[0], c1[1]) == pytest.approx((x1, y1), abs=1e-9)
+        # and the roof's world Z is the roof's height (only real segments —
+        # degenerate vertical slivers carry intermediate Z, see above)
+        lengths = np.hypot(segs2[:, 2] - segs2[:, 0],
+                           segs2[:, 3] - segs2[:, 1])
+        roof = world[lengths > 1e-3]
+        assert len(roof) >= 4
+        assert roof[:, :, 2] == pytest.approx(np.ones_like(roof[:, :, 2]))
+
 
 class TestDxfOut:
     def test_writes_readable_r12_lines(self, tmp_path):

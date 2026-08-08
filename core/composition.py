@@ -86,6 +86,9 @@ class MarcoVista:
     #: Coordinate-grid spacing over the view, in model METRES (0 = off) —
     #: QGIS's graticule, the civil habit of gridded plans.
     grid_m: float = 0.0
+    #: Stable identity for anchored dimensions ("" until a cota anchors to
+    #: this frame — then a uuid4 hex that survives save/load and reorders).
+    uid: str = ""
 
     def model_height_m(self) -> float:
         return model_height_for_frame(self.h_mm, self.scale_n)
@@ -252,6 +255,18 @@ class CotaItem:
     ends: str = "tick"           # tick | arrow | none
     stroke_mm: float = 0.25
     color: str = "#1e242c"
+    #: Model anchoring: when both points snapped to geometry of one frame,
+    #: the cota remembers WHICH frame (its uid) and the two 3D points in
+    #: model metres; the composer reprojects it whenever the frame or the
+    #: model changes, and the label is the exact 3D distance. "" / None =
+    #: a free paper dimension (the pre-anchor behaviour).
+    anchor_uid: str = ""
+    a_world: Optional[list] = None
+    b_world: Optional[list] = None
+
+    @property
+    def anchored(self) -> bool:
+        return bool(self.anchor_uid and self.a_world and self.b_world)
 
     @property
     def w_mm(self) -> float:
@@ -269,6 +284,11 @@ class CotaItem:
         return (-self.dy_mm / length, self.dx_mm / length)
 
     def real_distance_m(self) -> float:
+        if self.anchored:
+            ax, ay, az = self.a_world
+            bx, by, bz = self.b_world
+            return math.sqrt((bx - ax) ** 2 + (by - ay) ** 2
+                             + (bz - az) ** 2)
         return math.hypot(self.dx_mm, self.dy_mm) * self.scale_n / 1000.0
 
     def label(self) -> str:

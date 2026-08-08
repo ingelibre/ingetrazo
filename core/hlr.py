@@ -194,12 +194,16 @@ def visible_spans(a2, b2, az, bz, tv2, tvz, eps: float):
     return visible
 
 
-def hlr_view(scene, camera) -> np.ndarray:
+def hlr_view(scene, camera, return_world: bool = False):
     """Visible edge segments of *scene* under *camera* (parallel), as an
     (N, 4) array of (x0, y0, x1, y1) in CAMERA-PLANE coordinates (model
     units, origin at the camera axis). This is the drawing a drafter would
     ink; the composer maps it to paper millimetres, the DXF export writes
-    it in model units."""
+    it in model units.
+
+    With ``return_world`` also return the same segments' endpoints in
+    WORLD coordinates, (N, 2, 3) — the anchor data for dimensions that
+    follow the model. Both arrays share row order."""
     tris, hard, soft = collect_geometry(scene)
     _e, _r, _u, fwd = camera_basis(camera)
 
@@ -214,7 +218,8 @@ def hlr_view(scene, camera) -> np.ndarray:
                 hard.append((p0, p1))
 
     if not hard:
-        return np.empty((0, 4))
+        empty = np.empty((0, 4))
+        return (empty, np.empty((0, 2, 3))) if return_world else empty
     eye, right, up, fwd = camera_basis(camera)
     E = np.asarray(hard, dtype=np.float64)              # (E,2,3)
     A = _to_cam(E[:, 0, :], eye, right, up, fwd)
@@ -234,6 +239,7 @@ def hlr_view(scene, camera) -> np.ndarray:
         eps = 0.0
 
     out: list = []
+    out_w: list = []
     for i in range(len(A)):
         a2, b2 = A[i, :2], B[i, :2]
         az, bz = A[i, 2], B[i, 2]
@@ -259,4 +265,11 @@ def hlr_view(scene, camera) -> np.ndarray:
             p = a2 + t0 * (b2 - a2)
             q = a2 + t1 * (b2 - a2)
             out.append((p[0], p[1], q[0], q[1]))
-    return np.asarray(out) if out else np.empty((0, 4))
+            if return_world:
+                w0, w1 = E[i, 0, :], E[i, 1, :]
+                out_w.append((w0 + t0 * (w1 - w0), w0 + t1 * (w1 - w0)))
+    segs = np.asarray(out) if out else np.empty((0, 4))
+    if not return_world:
+        return segs
+    world = np.asarray(out_w) if out_w else np.empty((0, 2, 3))
+    return segs, world
