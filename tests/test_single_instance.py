@@ -30,7 +30,10 @@ class TestSingleInstanceSocket:
         def on_conn():
             conn = server.nextPendingConnection()
             assert conn.waitForReadyRead(300)
-            received.append(bytes(conn.readAll()).decode())
+            received.append(bytes(conn.readAll()).decode().strip())
+            conn.write(b"ok\n")          # ACK, mirroring main()
+            conn.flush()
+            conn.waitForBytesWritten(300)
             conn.disconnectFromServer()
 
         server.newConnection.connect(on_conn)
@@ -38,18 +41,39 @@ class TestSingleInstanceSocket:
         probe = QLocalSocket()
         probe.connectToServer(_NAME)
         assert probe.waitForConnected(300)
-        probe.write(b"/home/user/Local de.skp")
+        probe.write(b"/home/user/Local de.skp\n")
         probe.flush()
         probe.waitForBytesWritten(300)
-        # pump the server side
+        # pump the server side, then read the ACK
+        acked = False
         for _ in range(50):
             app.processEvents()
-            if received:
+            if probe.waitForReadyRead(50) and bytes(probe.readAll()).startswith(b"ok"):
+                acked = True
                 break
         probe.disconnectFromServer()
         server.close()
         QLocalServer.removeServer(_NAME)
         assert received == ["/home/user/Local de.skp"]
+        assert acked                    # the caller got its go-ahead to cede
+
+    def test_unresponsive_peer_gives_no_ack(self):
+        # a server that accepts but never answers: the caller must NOT cede
+        app = _app()
+        QLocalServer.removeServer(_NAME)
+        server = QLocalServer()
+        assert server.listen(_NAME)
+        # deliberately connect NO handler → the connection is never serviced
+        probe = QLocalSocket()
+        probe.connectToServer(_NAME)
+        assert probe.waitForConnected(300)
+        probe.write(b"x\n")
+        probe.flush()
+        got_ack = probe.waitForReadyRead(400)
+        probe.disconnectFromServer()
+        server.close()
+        QLocalServer.removeServer(_NAME)
+        assert got_ack is False         # → main() falls through and launches
 
     def test_stale_socket_is_reclaimed(self):
         _app()

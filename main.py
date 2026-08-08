@@ -147,16 +147,23 @@ def main() -> int:
     probe = QLocalSocket()
     probe.connectToServer(_SOCKET)
     if probe.waitForConnected(200):
-        probe.write(arg.encode("utf-8"))
+        probe.write((arg + "\n").encode("utf-8"))
         probe.flush()
-        probe.waitForBytesWritten(200)
+        probe.waitForBytesWritten(300)
+        # Only cede if the running instance ACKS — a hung or window-less
+        # zombie holding the socket must NOT swallow the launch (that was
+        # the 'it does not open' failure). No ack in 1.5s → launch anyway.
+        if probe.waitForReadyRead(1500) and bytes(probe.readAll()).startswith(b"ok"):
+            probe.disconnectFromServer()
+            return 0                   # the running instance took over
         probe.disconnectFromServer()
-        return 0                       # the running instance takes over
-    # No server answered — become the server. A stale socket from a crash is
-    # cleared by removeServer before listen.
+    # No responsive server — become one. A stale socket (crash / unresponsive
+    # peer) is cleared by removeServer before listen; if even that fails we
+    # run as a plain window with no server, still fully functional.
     server = QLocalServer()
     QLocalServer.removeServer(_SOCKET)
-    server.listen(_SOCKET)
+    if not server.listen(_SOCKET):
+        server = None
 
     def _handle_second_launch():
         conn = server.nextPendingConnection()
@@ -166,13 +173,20 @@ def main() -> int:
             path = bytes(conn.readAll()).decode("utf-8", "replace").strip()
             if path:
                 _open_document_in(window, Path(path))
+        conn.write(b"ok\n")            # ACK so the caller knows we are alive
+        conn.flush()
+        conn.waitForBytesWritten(300)
         conn.disconnectFromServer()
         window.show()
         window.raise_()
         window.activateWindow()
 
-    server.newConnection.connect(_handle_second_launch)
-    app._single_instance_server = server    # keep it alive
+    if server is not None:
+        server.newConnection.connect(_handle_second_launch)
+        app._single_instance_server = server    # keep it alive
+        # Drop the socket file on exit so no stale server lingers to swallow
+        # the next launch.
+        app.aboutToQuit.connect(lambda: QLocalServer.removeServer(_SOCKET))
 
     # A document passed on the command line (the OS file association's
     # double-click hands it as argv[1]) opens right away.
