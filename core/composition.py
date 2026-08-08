@@ -148,12 +148,35 @@ class Cajetin:
     lamina: str = "L-01"
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    #: The EDITABLE rows: [label, value] pairs, in drawing order. Filled
+    #: from the legacy fixed attributes on load when absent (old docs);
+    #: all edits and painting go through this list.
+    campos: list = field(default_factory=list)
+    #: Lay the rows out in N side-by-side column groups (each with its own
+    #: label/value pair of sub-columns) — wide title blocks read that way.
+    columns: int = 1
+    border_mm: float = 0.5       # outer border line width
+    line_mm: float = 0.2         # inner grid line width
 
-    #: (label, field-name) rows, in drawing order — shared by the canvas
-    #: item and the PDF export so both always agree.
+    #: (label, field-name) legacy rows — the pre-editable schema, kept to
+    #: migrate old documents into ``campos``.
     FIELDS = (("PROYECTO", "proyecto"), ("AUTOR", "autor"),
               ("FECHA", "fecha"), ("ESCALA", "escala"),
               ("LÁMINA", "lamina"))
+
+    def __post_init__(self) -> None:
+        if not self.campos:
+            self.campos = [[label, getattr(self, attr)]
+                           for label, attr in self.FIELDS]
+
+    def set_field(self, label: str, value: str) -> None:
+        """Set the first row whose label matches (case-insensitive); add
+        the row if the title block does not have it yet."""
+        for row in self.campos:
+            if str(row[0]).strip().upper() == label.strip().upper():
+                row[1] = value
+                return
+        self.campos.append([label, value])
 
 
 @dataclass
@@ -236,7 +259,7 @@ class FormaItem:
     """A drawing shape: line, arrow, rectangle or ellipse. Lines/arrows run
     corner to corner of the box (``invert`` flips which diagonal)."""
 
-    kind: str = "rect"           # linea | flecha | rect | elipse
+    kind: str = "rect"           # linea | flecha | rect | elipse | poligono
     x_mm: float = 20.0
     y_mm: float = 20.0
     w_mm: float = 40.0
@@ -246,6 +269,10 @@ class FormaItem:
     invert: bool = False
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    radius_mm: float = 0.0       # rect: corner rounding radius
+    sides: int = 6               # poligono: number of sides (3..24)
+    color: str = "#1e242c"       # stroke colour
+    fill_color: str = "#e2e8ee"  # fill colour (when fill is on)
 
 
 @dataclass

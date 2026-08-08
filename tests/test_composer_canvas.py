@@ -25,8 +25,8 @@ elif not isinstance(_inst, QApplication):
     pytest.skip("a non-widget QGuiApplication is already active",
                 allow_module_level=True)
 
-from core.composition import (Composicion, CotaItem, FormaItem,  # noqa: E402
-                              MarcoVista)
+from core.composition import (Cajetin, Composicion, CotaItem,   # noqa: E402
+                              FormaItem, MarcoVista)
 from views.composer import ComposerCanvasView, ComposerWindow   # noqa: E402
 
 
@@ -439,6 +439,62 @@ class TestArrangeAndLock:
         again = Composicion.from_dict(comp.to_dict())
         assert again.shapes[0].z == -1.0
         assert again.shapes[0].locked is True
+
+
+class TestShapesAndCajetin:
+    def test_polygon_places_with_default_sides(self):
+        from PySide6.QtWidgets import QWidget
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        composer.tool_mode = "poligono"
+        composer.place_tool(10, 10, 60, 60)
+        self._host = host
+        f = composer.comp.shapes[0]
+        assert f.kind == "poligono" and f.sides == 6
+
+    def test_forma_style_fields_round_trip(self):
+        comp = Composicion()
+        comp.shapes = [FormaItem(kind="rect", radius_mm=4.0, fill=True,
+                                 fill_color="#ffcc00", color="#c6262e",
+                                 sides=8)]
+        again = Composicion.from_dict(comp.to_dict())
+        f = again.shapes[0]
+        assert (f.radius_mm, f.fill_color, f.color, f.sides) == \
+            (4.0, "#ffcc00", "#c6262e", 8)
+
+    def test_old_cajetin_migrates_to_campos(self):
+        c = Cajetin(**{"x_mm": 1.0, "y_mm": 2.0, "w_mm": 180.0,
+                       "h_mm": 33.0, "proyecto": "Plaza", "autor": "Marco",
+                       "fecha": "", "escala": "1:100", "lamina": "L-01"})
+        assert ["PROYECTO", "Plaza"] in c.campos
+        assert ["ESCALA", "1:100"] in c.campos
+        assert len(c.campos) == 5
+
+    def test_cajetin_set_field_and_new_rows(self):
+        c = Cajetin()
+        c.set_field("LÁMINA", "L-07")
+        assert ["LÁMINA", "L-07"] in c.campos
+        c.set_field("DISTRITO", "Yanque")          # a NEW custom row
+        assert c.campos[-1] == ["DISTRITO", "Yanque"]
+        from dataclasses import asdict
+        again = Cajetin(**asdict(c))
+        assert ["DISTRITO", "Yanque"] in again.campos
+        assert again.border_mm == 0.5 and again.line_mm == 0.2
+
+    def test_cajetin_paint_smoke_all_layouts(self):
+        from PySide6.QtGui import QImage, QPainter
+        from views.composer import paint_cajetin_mm, paint_forma_mm
+        img = QImage(400, 300, QImage.Format_RGB32)
+        p = QPainter(img)
+        c = Cajetin(columns=2, border_mm=1.0, line_mm=0.1)
+        c.set_field("DISTRITO", "Yanque")
+        paint_cajetin_mm(p, c)
+        for f in (FormaItem(kind="rect", radius_mm=5.0, fill=True),
+                  FormaItem(kind="poligono", sides=8, fill=True),
+                  FormaItem(kind="poligono", sides=3)):
+            paint_forma_mm(p, f)
+        p.end()
 
 
 class TestCotaModel:

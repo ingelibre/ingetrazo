@@ -23,7 +23,8 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
                                QGraphicsScene, QGraphicsView, QHBoxLayout,
                                QLabel, QLineEdit, QMainWindow,
                                QMessageBox, QPlainTextEdit, QPushButton,
-                               QStackedWidget, QVBoxLayout, QWidget)
+                               QStackedWidget, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
 
 from core.composition import (COMMON_SCALES, PAPER_SIZES_MM, RENDER_DPI,
                               AddItemCommand, BarraEscala, Cajetin,
@@ -218,18 +219,33 @@ def paint_leyenda_mm(painter: QPainter, le: Leyenda) -> None:
 
 
 def paint_forma_mm(painter: QPainter, f: FormaItem) -> None:
-    pen = QPen(QColor(30, 36, 44))
+    pen = QPen(QColor(f.color))
     pen.setWidthF(f.stroke_mm)
     pen.setCapStyle(Qt.RoundCap)
     painter.setPen(pen)
-    painter.setBrush(QBrush(QColor(226, 232, 238))
-                     if f.fill and f.kind in ("rect", "elipse")
+    painter.setBrush(QBrush(QColor(f.fill_color))
+                     if f.fill and f.kind in ("rect", "elipse", "poligono")
                      else Qt.NoBrush)
     r = QRectF(0, 0, f.w_mm, f.h_mm)
     if f.kind == "rect":
-        painter.drawRect(r)
+        rad = min(f.radius_mm, f.w_mm / 2, f.h_mm / 2)
+        if rad > 0.01:
+            painter.drawRoundedRect(r, rad, rad)
+        else:
+            painter.drawRect(r)
     elif f.kind == "elipse":
         painter.drawEllipse(r)
+    elif f.kind == "poligono":
+        import math as _math
+        from PySide6.QtGui import QPolygonF
+        n = max(3, min(int(f.sides), 24))
+        cx, cy = f.w_mm / 2, f.h_mm / 2
+        # vertex at the top, inscribed in the item's box (an octagon in a
+        # square box comes out regular)
+        pts = [QPointF(cx + cx * _math.sin(2 * _math.pi * i / n),
+                       cy - cy * _math.cos(2 * _math.pi * i / n))
+               for i in range(n)]
+        painter.drawPolygon(QPolygonF(pts))
     else:
         a = QPointF(0, f.h_mm if f.invert else 0)
         b = QPointF(f.w_mm, 0 if f.invert else f.h_mm)
@@ -336,30 +352,41 @@ def paint_image_mm(painter: QPainter, item: ImagenItem,
 
 
 def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
+    import math as _math
     r = QRectF(0, 0, c.w_mm, c.h_mm)
     painter.fillRect(r, QColor(255, 255, 255))
     heavy = QPen(QColor(30, 36, 44))
-    heavy.setWidthF(0.5)
+    heavy.setWidthF(c.border_mm)
     light = QPen(QColor(30, 36, 44))
-    light.setWidthF(0.2)
-    rows = len(Cajetin.FIELDS)
-    row_h = c.h_mm / rows
-    label_w = min(28.0, c.w_mm * 0.3)
+    light.setWidthF(c.line_mm)
+    campos = c.campos or [[label, getattr(c, attr)]
+                          for label, attr in Cajetin.FIELDS]
+    cols = max(1, min(int(c.columns), len(campos)))
+    per = _math.ceil(len(campos) / cols)
+    col_w = c.w_mm / cols
+    row_h = c.h_mm / per
     painter.setPen(light)
-    for i in range(1, rows):
-        y = i * row_h
-        painter.drawLine(QPointF(0, y), QPointF(c.w_mm, y))
-    painter.drawLine(QPointF(label_w, 0), QPointF(label_w, c.h_mm))
-    for i, (label, attr) in enumerate(Cajetin.FIELDS):
-        y = i * row_h
-        _draw_text_mm(painter,
-                      QRectF(1.2, y + row_h * 0.18, label_w - 2, row_h),
-                      label, row_h * 0.38, bold=True,
-                      color=QColor(90, 98, 108))
-        _draw_text_mm(painter,
-                      QRectF(label_w + 1.5, y + row_h * 0.12,
-                             c.w_mm - label_w - 3, row_h),
-                      getattr(c, attr), row_h * 0.52)
+    for k in range(cols):
+        x0 = k * col_w
+        chunk = campos[k * per:(k + 1) * per]
+        label_w = min(28.0, col_w * 0.3)
+        if k:
+            painter.drawLine(QPointF(x0, 0), QPointF(x0, c.h_mm))
+        painter.drawLine(QPointF(x0 + label_w, 0),
+                         QPointF(x0 + label_w, c.h_mm))
+        for j, (label, value) in enumerate(chunk):
+            y = j * row_h
+            if j:
+                painter.drawLine(QPointF(x0, y), QPointF(x0 + col_w, y))
+            _draw_text_mm(painter,
+                          QRectF(x0 + 1.2, y + row_h * 0.18,
+                                 label_w - 2, row_h),
+                          str(label), row_h * 0.38, bold=True,
+                          color=QColor(90, 98, 108))
+            _draw_text_mm(painter,
+                          QRectF(x0 + label_w + 1.5, y + row_h * 0.12,
+                                 col_w - label_w - 3, row_h),
+                          str(value), row_h * 0.52)
     painter.setPen(heavy)
     painter.setBrush(Qt.NoBrush)
     painter.drawRect(r)
@@ -1008,6 +1035,7 @@ class ComposerWindow(QMainWindow):
         ("flecha", "comp_flecha", "Draw an arrow (two clicks or drag)", True),
         ("rect", "rectangle", "Draw a rectangle (two clicks or drag)", True),
         ("elipse", "circle", "Draw an ellipse (two clicks or drag)", True),
+        ("poligono", "polygon", "Draw a polygon (two clicks or drag)", True),
         ("cota", "dimension", "Draw a dimension (two points + separation)", True),
     )
 
@@ -1071,9 +1099,8 @@ class ComposerWindow(QMainWindow):
             item = Leyenda(x_mm=x0, y_mm=y0,
                            rows=[ly.name for ly in
                                  self._scene().layers if ly.visible])
-        elif mode in ("linea", "flecha", "rect", "elipse"):
-            kind = {"linea": "linea", "flecha": "flecha",
-                    "rect": "rect", "elipse": "elipse"}[mode]
+        elif mode in ("linea", "flecha", "rect", "elipse", "poligono"):
+            kind = mode
             invert = (x1 < x0) != (y1 < y0)
             item = FormaItem(kind=kind, x_mm=x, y_mm=y,
                              w_mm=max(w, 2.0), h_mm=max(h, 2.0),
@@ -1322,19 +1349,59 @@ class ComposerWindow(QMainWindow):
     def _page_forma(self) -> QWidget:
         w = QWidget()
         form = QFormLayout(w)
+        self._forma_form = form
         self.forma_stroke = QDoubleSpinBox()
         self.forma_stroke.setRange(0.1, 3.0)
         self.forma_stroke.setSingleStep(0.05)
         self.forma_stroke.setSuffix(" mm")
         self.forma_stroke.valueChanged.connect(self._on_forma_props)
         form.addRow(tr("Line width"), self.forma_stroke)
+        self.forma_color_btn = QPushButton()
+        self.forma_color_btn.setFixedHeight(22)
+        self.forma_color_btn.clicked.connect(
+            lambda: self._pick_forma_color("color", self.forma_color_btn))
+        form.addRow(tr("Line colour"), self.forma_color_btn)
+        self.forma_radius = QDoubleSpinBox()
+        self.forma_radius.setRange(0.0, 100.0)
+        self.forma_radius.setSingleStep(0.5)
+        self.forma_radius.setSuffix(" mm")
+        self.forma_radius.valueChanged.connect(self._on_forma_props)
+        form.addRow(tr("Corner radius"), self.forma_radius)
+        self.forma_sides = QDoubleSpinBox()
+        self.forma_sides.setRange(3, 24)
+        self.forma_sides.setDecimals(0)
+        self.forma_sides.valueChanged.connect(self._on_forma_props)
+        form.addRow(tr("Sides"), self.forma_sides)
         self.forma_fill = QCheckBox(tr("Fill"))
         self.forma_fill.toggled.connect(self._on_forma_props)
         form.addRow("", self.forma_fill)
+        self.forma_fill_btn = QPushButton()
+        self.forma_fill_btn.setFixedHeight(22)
+        self.forma_fill_btn.clicked.connect(
+            lambda: self._pick_forma_color("fill_color",
+                                           self.forma_fill_btn))
+        form.addRow(tr("Fill colour"), self.forma_fill_btn)
         self.forma_invert = QCheckBox(tr("Flip diagonal"))
         self.forma_invert.toggled.connect(self._on_forma_props)
         form.addRow("", self.forma_invert)
         return w
+
+    def _forma_row_visible(self, widget, visible: bool) -> None:
+        widget.setVisible(visible)
+        label = self._forma_form.labelForField(widget)
+        if label is not None:
+            label.setVisible(visible)
+
+    def _pick_forma_color(self, attr: str, button) -> None:
+        from PySide6.QtWidgets import QColorDialog
+        item = self._selected_item()
+        if not isinstance(item, FormaCanvasItem):
+            return
+        col = QColorDialog.getColor(QColor(getattr(item.model, attr)),
+                                    self, tr("Colour"))
+        if col.isValid():
+            self._panel_edit(item, {attr: col.name()})
+            button.setStyleSheet(f"background: {col.name()};")
 
     def _page_cota(self) -> QWidget:
         w = QWidget()
@@ -1398,12 +1465,41 @@ class ComposerWindow(QMainWindow):
     def _page_cajetin(self) -> QWidget:
         w = QWidget()
         form = QFormLayout(w)
-        self.caj_edits: dict[str, QLineEdit] = {}
-        for label, attr in Cajetin.FIELDS:
-            edit = QLineEdit()
-            edit.editingFinished.connect(self._on_cajetin_props)
-            self.caj_edits[attr] = edit
-            form.addRow(label.capitalize(), edit)
+        self.caj_table = QTableWidget(0, 2)
+        self.caj_table.setHorizontalHeaderLabels([tr("Field"), tr("Value")])
+        self.caj_table.horizontalHeader().setStretchLastSection(True)
+        self.caj_table.verticalHeader().setVisible(False)
+        self.caj_table.setMinimumHeight(150)
+        self.caj_table.itemChanged.connect(self._on_cajetin_props)
+        form.addRow(self.caj_table)
+        btns = QWidget()
+        hb = QHBoxLayout(btns)
+        hb.setContentsMargins(0, 0, 0, 0)
+        add_btn = QPushButton(tr("+ Row"))
+        add_btn.clicked.connect(self._on_cajetin_add_row)
+        del_btn = QPushButton(tr("− Row"))
+        del_btn.clicked.connect(self._on_cajetin_del_row)
+        hb.addWidget(add_btn)
+        hb.addWidget(del_btn)
+        hb.addStretch(1)
+        form.addRow(btns)
+        self.caj_columns = QDoubleSpinBox()
+        self.caj_columns.setRange(1, 4)
+        self.caj_columns.setDecimals(0)
+        self.caj_columns.valueChanged.connect(self._on_cajetin_props)
+        form.addRow(tr("Columns"), self.caj_columns)
+        self.caj_border = QDoubleSpinBox()
+        self.caj_border.setRange(0.1, 2.5)
+        self.caj_border.setSingleStep(0.05)
+        self.caj_border.setSuffix(" mm")
+        self.caj_border.valueChanged.connect(self._on_cajetin_props)
+        form.addRow(tr("Outer border"), self.caj_border)
+        self.caj_line = QDoubleSpinBox()
+        self.caj_line.setRange(0.05, 1.5)
+        self.caj_line.setSingleStep(0.05)
+        self.caj_line.setSuffix(" mm")
+        self.caj_line.valueChanged.connect(self._on_cajetin_props)
+        form.addRow(tr("Inner lines"), self.caj_line)
         return w
 
     def _page_scalebar(self) -> QWidget:
@@ -1577,8 +1673,18 @@ class ComposerWindow(QMainWindow):
                 self.img_label.setText(item.model.path or "—")
                 self.props.setCurrentIndex(3)
             elif isinstance(item, CajetinItem):
-                for attr, edit in self.caj_edits.items():
-                    edit.setText(getattr(item.model, attr))
+                c = item.model
+                self.caj_table.blockSignals(True)
+                self.caj_table.setRowCount(len(c.campos))
+                for i, (label, value) in enumerate(c.campos):
+                    self.caj_table.setItem(
+                        i, 0, QTableWidgetItem(str(label)))
+                    self.caj_table.setItem(
+                        i, 1, QTableWidgetItem(str(value)))
+                self.caj_table.blockSignals(False)
+                self.caj_columns.setValue(c.columns)
+                self.caj_border.setValue(c.border_mm)
+                self.caj_line.setValue(c.line_mm)
                 self.props.setCurrentIndex(4)
             elif isinstance(item, ScaleBarItem):
                 self.sb_scale.setCurrentText(f"1:{item.model.scale_n:g}")
@@ -1592,13 +1698,25 @@ class ComposerWindow(QMainWindow):
                 self.ley_title.setText(item.model.title)
                 self.props.setCurrentIndex(7)
             elif isinstance(item, FormaCanvasItem):
-                self.forma_stroke.setValue(item.model.stroke_mm)
-                self.forma_fill.setChecked(item.model.fill)
-                self.forma_invert.setChecked(item.model.invert)
+                fm = item.model
+                fillable = fm.kind in ("rect", "elipse", "poligono")
+                self.forma_stroke.setValue(fm.stroke_mm)
+                self.forma_fill.setChecked(fm.fill)
+                self.forma_invert.setChecked(fm.invert)
+                self.forma_radius.setValue(fm.radius_mm)
+                self.forma_sides.setValue(fm.sides)
+                self.forma_color_btn.setStyleSheet(
+                    f"background: {fm.color};")
+                self.forma_fill_btn.setStyleSheet(
+                    f"background: {fm.fill_color};")
                 self.forma_invert.setVisible(
-                    item.model.kind in ("linea", "flecha"))
-                self.forma_fill.setVisible(
-                    item.model.kind in ("rect", "elipse"))
+                    fm.kind in ("linea", "flecha"))
+                self.forma_fill.setVisible(fillable)
+                self._forma_row_visible(self.forma_radius,
+                                        fm.kind == "rect")
+                self._forma_row_visible(self.forma_sides,
+                                        fm.kind == "poligono")
+                self._forma_row_visible(self.forma_fill_btn, fillable)
                 self.props.setCurrentIndex(8)
             elif isinstance(item, CotaCanvasItem):
                 self.cota_scale.setCurrentText(f"1:{item.model.scale_n:g}")
@@ -1742,10 +1860,10 @@ class ComposerWindow(QMainWindow):
         if self.comp.cajetin is not None:
             return
         c = self.comp.default_cajetin()
-        c.fecha = datetime.date.today().strftime("%d/%m/%Y")
+        c.set_field("FECHA", datetime.date.today().strftime("%d/%m/%Y"))
         if self.comp.frames:
             f = self.comp.frames[0]
-            c.escala = f"1:{f.scale_n:g}"
+            c.set_field("ESCALA", f"1:{f.scale_n:g}")
         c.z = self._next_z()
         self.history.execute(AddItemCommand(self.comp, c))
 
@@ -1856,12 +1974,44 @@ class ComposerWindow(QMainWindow):
             return
         self.history.execute(EditItemCommand(item.model, {"path": path}))
 
+    def _cajetin_table_rows(self) -> list:
+        rows = []
+        for i in range(self.caj_table.rowCount()):
+            label = self.caj_table.item(i, 0)
+            value = self.caj_table.item(i, 1)
+            rows.append([label.text() if label else "",
+                         value.text() if value else ""])
+        return rows
+
     def _on_cajetin_props(self, *_a) -> None:
         item = self._selected_item()
         if self._updating or not isinstance(item, CajetinItem):
             return
-        self._panel_edit(item, {attr: edit.text()
-                                for attr, edit in self.caj_edits.items()})
+        self._panel_edit(item, {
+            "campos": self._cajetin_table_rows(),
+            "columns": int(self.caj_columns.value()),
+            "border_mm": self.caj_border.value(),
+            "line_mm": self.caj_line.value()})
+
+    def _on_cajetin_add_row(self) -> None:
+        item = self._selected_item()
+        if self._updating or not isinstance(item, CajetinItem):
+            return
+        rows = self._cajetin_table_rows() + [[tr("FIELD"), ""]]
+        self._panel_edit(item, {"campos": rows})
+        self.on_selection_changed()          # refresh the table
+
+    def _on_cajetin_del_row(self) -> None:
+        item = self._selected_item()
+        if self._updating or not isinstance(item, CajetinItem):
+            return
+        rows = self._cajetin_table_rows()
+        if len(rows) <= 1:
+            return                           # a title block keeps one row
+        idx = self.caj_table.currentRow()
+        rows.pop(idx if 0 <= idx < len(rows) else len(rows) - 1)
+        self._panel_edit(item, {"campos": rows})
+        self.on_selection_changed()
 
     def _on_pick_text_color(self) -> None:
         from PySide6.QtWidgets import QColorDialog
@@ -1900,9 +2050,12 @@ class ComposerWindow(QMainWindow):
         item = self._selected_item()
         if self._updating or not isinstance(item, FormaCanvasItem):
             return
+        item.prepareGeometryChange()
         self._panel_edit(item, {"stroke_mm": self.forma_stroke.value(),
                                 "fill": self.forma_fill.isChecked(),
-                                "invert": self.forma_invert.isChecked()})
+                                "invert": self.forma_invert.isChecked(),
+                                "radius_mm": self.forma_radius.value(),
+                                "sides": int(self.forma_sides.value())})
 
     def _on_cota_props(self, *_a) -> None:
         item = self._selected_item()
@@ -1952,8 +2105,8 @@ class ComposerWindow(QMainWindow):
             return model.title or tr("Legend")
         if isinstance(model, FormaItem):
             return {"linea": tr("Line"), "flecha": tr("Arrow"),
-                    "rect": tr("Rectangle"),
-                    "elipse": tr("Ellipse")}.get(model.kind, model.kind)
+                    "rect": tr("Rectangle"), "elipse": tr("Ellipse"),
+                    "poligono": tr("Polygon")}.get(model.kind, model.kind)
         if isinstance(model, CotaItem):
             return tr("Dimension") + " " + model.label()
         if isinstance(model, Cajetin):
@@ -2272,7 +2425,7 @@ class ComposerWindow(QMainWindow):
     def _on_renumber(self) -> None:
         for i, comp in enumerate(self._scene().compositions):
             if comp.cajetin is not None:
-                comp.cajetin.lamina = f"L-{i + 1:02d}"
+                comp.cajetin.set_field("LÁMINA", f"L-{i + 1:02d}")
         self._mark_dirty()
         self._rebuild_canvas()
 
