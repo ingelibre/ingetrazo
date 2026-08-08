@@ -40,3 +40,35 @@ class TestFirstPointWorkPlane:
 
     def test_degenerate_forward_is_none(self):
         assert first_point_work_plane(QVector3D(0, 0, 0), C) is None
+
+
+from core.snap import project_to_view_plane
+
+
+class TestProjectToViewPlane:
+    def test_front_view_drops_the_depth(self):
+        # front view (forward -Y): the moving point's Y is pulled to ref's Y,
+        # so the dimension measures the frontal span (X,Z), not the diagonal
+        ref = QVector3D(0.0, 5.0, 0.0)
+        moving = QVector3D(4.0, 9.0, 3.0)      # 4 m depth away
+        out = project_to_view_plane(moving, ref, QVector3D(0, -1, 0))
+        assert out == QVector3D(4.0, 5.0, 3.0)
+        # measured span is now sqrt(4^2 + 3^2) = 5, not sqrt(16+16+9)
+        assert (out - ref).length() == 5.0
+
+    def test_plan_view_drops_z(self):
+        ref = QVector3D(1.0, 1.0, 2.0)
+        out = project_to_view_plane(QVector3D(4.0, 5.0, 9.0), ref,
+                                    QVector3D(0, 0, -1))
+        assert out == QVector3D(4.0, 5.0, 2.0)
+
+    def test_side_view_drops_x(self):
+        ref = QVector3D(2.0, 0.0, 0.0)
+        out = project_to_view_plane(QVector3D(7.0, 3.0, 4.0), ref,
+                                    QVector3D(1, 0, 0))
+        assert out == QVector3D(2.0, 3.0, 4.0)
+
+    def test_oblique_view_keeps_true_3d(self):
+        ref = QVector3D(0, 0, 0)
+        moving = QVector3D(4, 9, 3)
+        assert project_to_view_plane(moving, ref, QVector3D(1, 1, 1)) == moving

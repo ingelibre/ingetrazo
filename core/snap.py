@@ -67,6 +67,31 @@ class SnapResult:
 
 # ---- Helpers ---------------------------------------------------------------
 
+def project_to_view_plane(point: QVector3D, ref: QVector3D,
+                          forward: QVector3D, threshold: float = 0.97):
+    """Project *point* onto the plane through *ref* facing the camera, when
+    the view is axis-aligned (a standard front/plan/side view).
+
+    In a front elevation, a dimension should read the FRONTAL span — the
+    height/width you see — not the true 3-D diagonal that a bit of depth
+    between the two picked points would add. So the moving endpoint has its
+    depth (the dominant view axis) pulled to the reference point's, keeping
+    the measurement in the plane of the drawing. Oblique views return the
+    point untouched (true 3-D distance, SketchUp-style).
+    """
+    if forward.length() < 1e-9:
+        return point
+    f = forward.normalized()
+    ax, ay, az = abs(f.x()), abs(f.y()), abs(f.z())
+    if max(ax, ay, az) < threshold:
+        return point
+    if ax >= ay and ax >= az:
+        return QVector3D(ref.x(), point.y(), point.z())
+    if ay >= az:
+        return QVector3D(point.x(), ref.y(), point.z())
+    return QVector3D(point.x(), point.y(), ref.z())
+
+
 def first_point_work_plane(forward: QVector3D, scene_center: QVector3D,
                            threshold: float = 0.97):
     """Fallback work plane for a tool's FIRST point clicked in empty space.

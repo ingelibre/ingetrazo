@@ -16,6 +16,7 @@ from __future__ import annotations
 from PySide6.QtGui import QVector3D
 
 from core.dimension import Dimension
+from core.snap import project_to_view_plane
 from core.history import AddDimensionCommand
 from tools.base import Tool, ToolContext
 
@@ -41,8 +42,19 @@ class DimensionTool(Tool):
         self.hover_point = None
 
     # ---- Spatial input ------------------------------------------------------
+    def _frontal(self, ctx: ToolContext, p: QVector3D) -> QVector3D:
+        """In a standard axis-aligned view, pull *p* into the first point's
+        view plane so the dimension reads the frontal span, not the 3-D
+        diagonal. No-op before the first point, and in oblique views."""
+        if self.a is None:
+            return p
+        cam = getattr(ctx.viewport, "camera", None)
+        if cam is None:
+            return p
+        return project_to_view_plane(p, self.a, cam.target - cam.eye())
+
     def on_hover(self, ctx: ToolContext) -> None:
-        self.hover_point = ctx.world
+        self.hover_point = self._frontal(ctx, ctx.world)
 
     def on_click(self, ctx: ToolContext) -> None:
         p = ctx.world
@@ -51,6 +63,7 @@ class DimensionTool(Tool):
             self.start_point = self.a
             return
         if self.b is None:
+            p = self._frontal(ctx, p)
             if (p - self.a).length() < 1e-6:
                 return  # need two distinct endpoints
             self.b = QVector3D(p)

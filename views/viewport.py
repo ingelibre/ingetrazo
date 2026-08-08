@@ -2557,35 +2557,55 @@ class Viewport(QOpenGLWidget):
                 dash = QPen(QColor.fromRgbF(gc[0], gc[1], gc[2], 0.9), 2.0, Qt.DashLine)
                 painter.setPen(dash)
                 painter.drawLine(QPointF(*gp0), QPointF(*gp1))
-        painter.setPen(QPen(color, 2.0))
-        painter.setBrush(QColor.fromRgbF(r, g, b, 0.25))
+        # A white halo under the marker lifts it off busy geometry, then
+        # the coloured marker on top — bigger and bolder than before so the
+        # snap point reads at a glance (a common request: the dots were too
+        # small to aim with).
+        halo = QPen(QColor(255, 255, 255, 230), 4.5)
+        mark = QPen(color, 2.6)
+        painter.setBrush(QColor.fromRgbF(r, g, b, 0.30))
         px, py = pixel
         if snap.kind == "intersection":
-            # X marker at the crossing (drawn line × projected guide),
-            # SketchUp-style — reads as a distinct point on the junction.
-            painter.setPen(QPen(color, 2.0))
-            painter.drawLine(QPointF(px - 6, py - 6), QPointF(px + 6, py + 6))
-            painter.drawLine(QPointF(px - 6, py + 6), QPointF(px + 6, py - 6))
+            # X marker at the crossing (drawn line × projected guide).
+            for pen in (halo, mark):
+                painter.setPen(pen)
+                painter.drawLine(QPointF(px - 8, py - 8), QPointF(px + 8, py + 8))
+                painter.drawLine(QPointF(px - 8, py + 8), QPointF(px + 8, py - 8))
         elif snap.kind in ("endpoint", "origin", "on_edge", "extension", "from_point"):
-            painter.drawRect(QRectF(px - 5, py - 5, 10, 10))
+            rect = QRectF(px - 7, py - 7, 14, 14)
+            painter.setPen(halo)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(rect)
+            painter.setPen(mark)
+            painter.setBrush(QColor.fromRgbF(r, g, b, 0.30))
+            painter.drawRect(rect)
         elif snap.kind == "midpoint":
             # Cyan diamond, SketchUp-style.
             diamond = QPolygonF([
-                QPointF(px, py - 6),
-                QPointF(px + 6, py),
-                QPointF(px, py + 6),
-                QPointF(px - 6, py),
+                QPointF(px, py - 9), QPointF(px + 9, py),
+                QPointF(px, py + 9), QPointF(px - 9, py),
             ])
+            painter.setPen(halo)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPolygon(diamond)
+            painter.setPen(mark)
+            painter.setBrush(QColor.fromRgbF(r, g, b, 0.30))
             painter.drawPolygon(diamond)
         elif snap.kind == "on_face":
-            # Small dot — the cursor is over a face, ready to draw on it.
-            painter.drawEllipse(QPointF(px, py), 4.0, 4.0)
+            painter.setPen(halo)
+            painter.drawEllipse(QPointF(px, py), 5.5, 5.5)
+            painter.setPen(mark)
+            painter.drawEllipse(QPointF(px, py), 5.5, 5.5)
         elif snap.kind == "close":
-            painter.drawEllipse(QPointF(px, py), 7.0, 7.0)
+            painter.setPen(halo)
+            painter.drawEllipse(QPointF(px, py), 9.0, 9.0)
+            painter.setPen(mark)
+            painter.drawEllipse(QPointF(px, py), 9.0, 9.0)
         elif snap.kind in ("reference", "through_point", "perp_face"):
-            # Small circle marker for directional locks (parallel/perpendicular,
-            # through point, perpendicular to face).
-            painter.drawEllipse(QPointF(px, py), 5.0, 5.0)
+            painter.setPen(halo)
+            painter.drawEllipse(QPointF(px, py), 6.5, 6.5)
+            painter.setPen(mark)
+            painter.drawEllipse(QPointF(px, py), 6.5, 6.5)
 
         # Tooltip text next to the marker (SketchUp shows "On Edge", etc.).
         label = self._SNAP_LABELS.get(snap.kind)
