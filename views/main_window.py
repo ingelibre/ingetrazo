@@ -581,6 +581,14 @@ class MainWindow(QMainWindow):
 
         actions.append(self._separator())
 
+        composer_action = QAction(tr("Sheet composer…"), self)
+        composer_action.setToolTip(tr(
+            "Lay out the model on paper at exact scale and export a PDF plan."))
+        composer_action.triggered.connect(self._on_open_composer)
+        actions.append(composer_action)
+
+        actions.append(self._separator())
+
         quit_action = QAction(tr("Quit"), self)
         quit_action.setShortcut(QKeySequence.Quit)
         quit_action.triggered.connect(self.close)
@@ -913,6 +921,15 @@ class MainWindow(QMainWindow):
                 return
         self.viewport.camera.fit_to(bounds[0], bounds[1])
         self.viewport.update()
+
+    def _on_open_composer(self) -> None:
+        """Open (or raise) the sheet composer — see docs/composer-plan.md."""
+        if getattr(self, "_composer", None) is None:
+            from views.composer import ComposerWindow
+            self._composer = ComposerWindow(self)
+        self._composer.show()
+        self._composer.raise_()
+        self._composer.activateWindow()
 
     def _on_standard_view(self, key: str) -> None:
         self.viewport.camera.set_view(key)

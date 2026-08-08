@@ -535,19 +535,29 @@ class Viewport(QOpenGLWidget):
             self._scene_fbo = QOpenGLFramebufferObject(size[0], size[1], fmt)
         self._fbo_size = size
 
-    def render_image(self, width_px: int) -> Optional["QImage"]:
+    def render_image(self, width_px: int, height_px: Optional[int] = None,
+                     overlays: bool = True) -> Optional["QImage"]:
         """Render the current view at ``width_px`` wide (height follows the
         viewport's aspect) and return it as a ``QImage`` — the hi-res 2D
         export. Reuses the exact ``paintGL`` pipeline against a temporary
         FBO, then paints the presentation overlays (dimensions, geo paths,
         survey points, guides) on top with a scaled QPainter; interactive
-        artifacts (snap marker, hover, rubber band) are naturally absent."""
+        artifacts (snap marker, hover, rubber band) are naturally absent.
+
+        The sheet composer passes an explicit ``height_px`` (its frames have
+        their own aspect — the caller is responsible for pointing the camera
+        and setting its aspect to match) and ``overlays=False``: the overlay
+        painters are calibrated to the live widget's aspect and would land
+        misplaced under a composer camera."""
         if self._gl is None or self._program is None:
             return None
         lw = max(self.width(), 1)
         lh = max(self.height(), 1)
         width_px = max(int(width_px), 64)
-        height_px = max(int(round(width_px * lh / lw)), 64)
+        if height_px is None:
+            height_px = max(int(round(width_px * lh / lw)), 64)
+        else:
+            height_px = max(int(height_px), 64)
 
         prev_fbo = self._scene_fbo
         prev_size = self._fbo_size
@@ -566,20 +576,21 @@ class Viewport(QOpenGLWidget):
         finally:
             self.doneCurrent()
 
-        painter = QPainter(image)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setRenderHint(QPainter.TextAntialiasing, True)
-        # Overlay drawing works in logical widget pixels (_world_to_pixel);
-        # the scale maps it onto the hi-res image, thickening lines and text
-        # proportionally.
-        painter.scale(width_px / lw, height_px / lh)
-        self._draw_guides(painter)
-        self._draw_geo_surfaces(painter)
-        self._draw_geo_paths(painter)
-        self._draw_geo_points(painter)
-        self._draw_dimensions(painter)
-        self._draw_text_labels(painter)
-        painter.end()
+        if overlays:
+            painter = QPainter(image)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setRenderHint(QPainter.TextAntialiasing, True)
+            # Overlay drawing works in logical widget pixels
+            # (_world_to_pixel); the scale maps it onto the hi-res image,
+            # thickening lines and text proportionally.
+            painter.scale(width_px / lw, height_px / lh)
+            self._draw_guides(painter)
+            self._draw_geo_surfaces(painter)
+            self._draw_geo_paths(painter)
+            self._draw_geo_points(painter)
+            self._draw_dimensions(painter)
+            self._draw_text_labels(painter)
+            painter.end()
         self.update()                               # repaint the widget
         return image
 
