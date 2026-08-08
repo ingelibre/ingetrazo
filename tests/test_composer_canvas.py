@@ -497,6 +497,42 @@ class TestShapesAndCajetin:
         p.end()
 
 
+class TestCajetinResize:
+    def test_panel_width_height_resize_the_title_block(self):
+        from PySide6.QtWidgets import QWidget
+        from views.composer import CajetinItem
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        composer._on_add_cajetin()
+        composer._rebuild_canvas()
+        it = next(i for i in composer.canvas.items()
+                  if isinstance(i, CajetinItem))
+        it.setSelected(True)                     # panel adopts the cajetin
+        composer.caj_w.setValue(220.0)
+        composer.caj_h.setValue(50.0)
+        c = composer.comp.cajetin
+        assert (c.w_mm, c.h_mm) == (220.0, 50.0)
+        composer.history.undo()
+        assert c.w_mm != 220.0 or c.h_mm != 50.0
+        self._host = host
+
+    def test_corner_handle_still_resizes_by_drag(self):
+        from PySide6.QtCore import QPointF
+        from PySide6.QtWidgets import QWidget
+        from views.composer import CajetinItem
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        composer._on_add_cajetin()
+        composer._rebuild_canvas()
+        it = next(i for i in composer.canvas.items()
+                  if isinstance(i, CajetinItem))
+        m = it.model
+        assert it._on_resize_handle(QPointF(m.w_mm, m.h_mm))
+        self._host = host
+
+
 class TestCotaModel:
     def test_normal_is_perpendicular_and_unit(self):
         ct = CotaItem(dx_mm=30.0, dy_mm=40.0)

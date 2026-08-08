@@ -412,8 +412,22 @@ class _SheetItem(QGraphicsItem):
                      not getattr(model, "locked", False))
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+        self.setAcceptHoverEvents(True)
         self._press_state: Optional[dict] = None
         self._resizing = False
+
+    # -- hover: advertise the resize handle with the right cursor -------------
+    def hoverMoveEvent(self, event) -> None:
+        if (not getattr(self.model, "locked", False)
+                and self._on_resize_handle(event.pos())):
+            self.setCursor(Qt.SizeFDiagCursor)
+        else:
+            self.unsetCursor()
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event) -> None:
+        self.unsetCursor()
+        super().hoverLeaveEvent(event)
 
     # -- arrange / lock (context menu) ----------------------------------------
     def contextMenuEvent(self, event) -> None:
@@ -457,9 +471,9 @@ class _SheetItem(QGraphicsItem):
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(QRectF(0, 0, w, h))
-        if self.RESIZABLE:
+        if self.RESIZABLE and not getattr(self.model, "locked", False):
             painter.setBrush(QBrush(QColor(58, 110, 165)))
-            painter.setPen(Qt.NoPen)
+            painter.setPen(QPen(QColor(255, 255, 255), 0.3))
             painter.drawRect(QRectF(w - _HANDLE_MM / 2, h - _HANDLE_MM / 2,
                                     _HANDLE_MM, _HANDLE_MM))
 
@@ -625,6 +639,15 @@ class CotaCanvasItem(_SheetItem):
 
     def size_mm(self):
         return self.model.w_mm, self.model.h_mm
+
+    def hoverMoveEvent(self, event) -> None:
+        if not getattr(self.model, "locked", False) and (
+                self._on_sep_handle(event.pos())
+                or self._on_resize_handle(event.pos())):
+            self.setCursor(Qt.SizeAllCursor)
+        else:
+            self.unsetCursor()
+        super(_SheetItem, self).hoverMoveEvent(event)
 
     def _line_mid(self) -> tuple[float, float]:
         nx, ny = self.model.normal()
@@ -1483,6 +1506,16 @@ class ComposerWindow(QMainWindow):
         hb.addWidget(del_btn)
         hb.addStretch(1)
         form.addRow(btns)
+        self.caj_w = QDoubleSpinBox()
+        self.caj_w.setRange(30.0, 2000.0)
+        self.caj_w.setSuffix(" mm")
+        self.caj_w.valueChanged.connect(self._on_cajetin_props)
+        form.addRow(tr("Width"), self.caj_w)
+        self.caj_h = QDoubleSpinBox()
+        self.caj_h.setRange(10.0, 500.0)
+        self.caj_h.setSuffix(" mm")
+        self.caj_h.valueChanged.connect(self._on_cajetin_props)
+        form.addRow(tr("Height"), self.caj_h)
         self.caj_columns = QDoubleSpinBox()
         self.caj_columns.setRange(1, 4)
         self.caj_columns.setDecimals(0)
@@ -1682,6 +1715,8 @@ class ComposerWindow(QMainWindow):
                     self.caj_table.setItem(
                         i, 1, QTableWidgetItem(str(value)))
                 self.caj_table.blockSignals(False)
+                self.caj_w.setValue(c.w_mm)
+                self.caj_h.setValue(c.h_mm)
                 self.caj_columns.setValue(c.columns)
                 self.caj_border.setValue(c.border_mm)
                 self.caj_line.setValue(c.line_mm)
@@ -1987,8 +2022,11 @@ class ComposerWindow(QMainWindow):
         item = self._selected_item()
         if self._updating or not isinstance(item, CajetinItem):
             return
+        item.prepareGeometryChange()
         self._panel_edit(item, {
             "campos": self._cajetin_table_rows(),
+            "w_mm": self.caj_w.value(),
+            "h_mm": self.caj_h.value(),
             "columns": int(self.caj_columns.value()),
             "border_mm": self.caj_border.value(),
             "line_mm": self.caj_line.value()})
