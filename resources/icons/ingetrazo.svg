@@ -4,14 +4,17 @@
        SPDX-License-Identifier: GPL-3.0-or-later
        Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 
-       The final mark (2026-08-08, V4 of the N6 line): a line-drawn cube in
-       the brand blue #3689e6 with amber #ffc27d nodes on its three near
-       vertices and a 25% blue veil on the top face, on the IngeCAD-family
-       slate tile #273445 (rx 24/128). Source generator preserved in
-       ../../icono-propuestas/gen_n6_variantes.py (v4).
+       The definitive mark (2026-08-08, V11 of the N6 line): a line-drawn
+       cube in elementary Blueberry-500 #3689e6 with Orange-100 #ffc27d
+       nodes on its three near vertices, its faces stepped down the
+       elementary palette (Slate-500 #485a6c top, Slate-700 #273445 left,
+       Black-900 #1a1a1a right) over the Slate-900 #0e141f tile (rx 24/128,
+       the IngeCAD-family shape). Every colour is an exact elementary OS
+       brand shade. Generator: ../../icono-propuestas/gen_n6_variantes.py
+       (v11).
 
        KEEP THIS COMMENT INSIDE <svg>. A comment between the XML declaration
        and the root tag breaks gdk-pixbuf/librsvg format sniffing and GNOME
        draws an empty grey square in the dock. -->
-<rect x="4" y="4" width="120" height="120" rx="24" fill="#273445"/><polygon points="64.00,64.00 24.16,41.00 64.00,18.00 103.84,41.00" fill="#3689e6" fill-opacity="0.25"/><polygon points="64.00,18.00 24.16,41.00 24.16,87.00 64.00,110.00 103.84,87.00 103.84,41.00" stroke="#3689e6" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="64.00" y1="64.00" x2="24.16" y2="41.00" stroke="#3689e6" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="64.00" y1="64.00" x2="103.84" y2="41.00" stroke="#3689e6" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="64.00" y1="64.00" x2="64.00" y2="110.00" stroke="#3689e6" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="64.00" cy="18.00" r="7.0" fill="#ffc27d" stroke="#273445" stroke-width="2.2"/><circle cx="24.16" cy="87.00" r="7.0" fill="#ffc27d" stroke="#273445" stroke-width="2.2"/><circle cx="103.84" cy="87.00" r="7.0" fill="#ffc27d" stroke="#273445" stroke-width="2.2"/>
+<rect x="4" y="4" width="120" height="120" rx="24" fill="#0e141f"/><polygon points="64.00,64.00 24.16,41.00 64.00,18.00 103.84,41.00" fill="#485a6c"/><polygon points="64.00,64.00 24.16,41.00 24.16,87.00 64.00,110.00" fill="#273445"/><polygon points="64.00,64.00 64.00,110.00 103.84,87.00 103.84,41.00" fill="#1a1a1a"/><polygon points="64.00,18.00 24.16,41.00 24.16,87.00 64.00,110.00 103.84,87.00 103.84,41.00" stroke="#3689e6" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="64.00" y1="64.00" x2="24.16" y2="41.00" stroke="#3689e6" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="64.00" y1="64.00" x2="103.84" y2="41.00" stroke="#3689e6" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="64.00" y1="64.00" x2="64.00" y2="110.00" stroke="#3689e6" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="64.00" cy="18.00" r="7.0" fill="#ffc27d" stroke="#0e141f" stroke-width="2.2"/><circle cx="24.16" cy="87.00" r="7.0" fill="#ffc27d" stroke="#0e141f" stroke-width="2.2"/><circle cx="103.84" cy="87.00" r="7.0" fill="#ffc27d" stroke="#0e141f" stroke-width="2.2"/>
 </svg>
