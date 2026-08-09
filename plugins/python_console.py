@@ -41,7 +41,7 @@ class PythonConsoleDialog(QDialog):
         self._history: list[str] = []
         self._history_idx = -1
 
-        self.setWindowTitle("🐍 Python Console — IngeTrazo")
+        self.setWindowTitle("Python Console — IngeTrazo")
         self.setMinimumSize(640, 480)
         self.resize(720, 540)
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
@@ -57,22 +57,22 @@ class PythonConsoleDialog(QDialog):
 
         # Header bar
         header_layout = QHBoxLayout()
-        title_label = QLabel("🐍 IngeTrazo Interactive Python REPL")
+        title_label = QLabel("Interactive Python Console")
         title_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
         header_layout.addWidget(title_label)
         header_layout.addStretch()
 
-        help_btn = QPushButton("❓ API Help")
+        help_btn = QPushButton("API Help")
         help_btn.setToolTip("Show available variables and code snippets")
         help_btn.clicked.connect(self._print_help)
         header_layout.addWidget(help_btn)
 
-        run_file_btn = QPushButton("📁 Run Script File...")
+        run_file_btn = QPushButton("Run Script File...")
         run_file_btn.setToolTip("Execute a .py script file live in the console")
         run_file_btn.clicked.connect(self._on_run_script_file)
         header_layout.addWidget(run_file_btn)
 
-        clear_btn = QPushButton("🧹 Clear")
+        clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self._on_clear)
         header_layout.addWidget(clear_btn)
 
@@ -214,7 +214,7 @@ class PythonConsoleDialog(QDialog):
         self._output.setTextCursor(cursor)
         # HTML formatting for color styling
         escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
-        self._output.insertHtml(f'<span style="color: {color_hex}; font-family: Consolas;">{escaped}</span><br>')
+        self._output.appendHtml(f'<span style="color: {color_hex}; font-family: Consolas;">{escaped}</span>')
         self._output.ensureCursorVisible()
 
     def _on_execute(self) -> None:
@@ -290,10 +290,10 @@ class PythonConsoleDialog(QDialog):
                 self._append_text(out.rstrip(), "#d4d4d4")
             if err:
                 self._append_text(err.rstrip(), "#f44747")
-            self._append_text(f"✓ Script executed successfully.", "#6a9955")
+            self._append_text("Script executed successfully.", "#6a9955")
 
         except Exception as e:
-            self._append_text(f"✖ Error running script: {e}", "#f44747")
+            self._append_text(f"Error running script: {e}", "#f44747")
 
     def _on_clear(self) -> None:
         self._output.clear()
