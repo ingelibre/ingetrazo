@@ -338,6 +338,9 @@ class TestAnchoredEndToEnd:
         for v in composer._scene().mesh.vertices:
             if abs(v.position.x() - 6.0) < 1e-9:
                 v.position.setX(6.2)
+        # the cota follows when the drawing does: refreshing the frames
+        # drops the geometry caches; the rebuild then reprojects
+        composer._invalidate_geometry_caches()
         composer._rebuild_canvas()
 
         assert ct.b_world[0] == pytest.approx(6.2)

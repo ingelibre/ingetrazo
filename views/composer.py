@@ -785,12 +785,19 @@ class ComposerCanvasView(QGraphicsView):
         # click-click habit of the model's dimension tool must work here too.
         self._two_point = {m for m, _i, _t, drag in composer.TOOLS if drag}
 
+    #: Tools that draw OVER the model views and deserve geometry snapping.
+    #: Frames, text blocks, images etc. place freely — computing the snap
+    #: set for them froze the composer on photogrammetry-scale models.
+    _GEOM_SNAP_TOOLS = frozenset(
+        ("cota", "linea", "flecha", "rect", "elipse", "poligono"))
+
     def _snapped(self, pos):
         """Snap *pos* (scene mm) to the nearest frame geometry point when a
         drawing tool is armed. Returns (QPointF, hit). Threshold scales with
         zoom so it's ~7 px on screen."""
         from PySide6.QtCore import QPointF
-        if self.composer.tool_mode == "select":
+        if self.composer.tool_mode not in self._GEOM_SNAP_TOOLS:
+            self._last_hit = None
             return pos, False
         if self._second_pt is not None:
             # sep phase: the points are fixed; the dimension line goes where
@@ -1725,7 +1732,6 @@ class ComposerWindow(QMainWindow):
         # placement first or the next mouse move touches dead C++ objects.
         if hasattr(self, "_view"):
             self._view.cancel_placement()
-        self.snap_cache.clear()
         self._reproject_anchored_cotas()
         self.canvas.clear()
         pw, ph = self.comp.page_size_mm()
@@ -2342,16 +2348,17 @@ class ComposerWindow(QMainWindow):
     def _on_refresh_selected_frame(self) -> None:
         item = self._selected_item()
         if isinstance(item, FrameItem):
+            self._invalidate_geometry_caches()
             self._on_frame_props()
             self.render_frame(item.model)
-            item.update()
+            self._rebuild_canvas()
 
     def refresh_all_frames(self) -> None:
+        self._invalidate_geometry_caches()
         for f in self.comp.frames:
             self.render_frame(f)
-        for it in self.canvas.items():
-            if isinstance(it, FrameItem):
-                it.update()
+        # anchored cotas follow the refreshed drawing (rebuild reprojects)
+        self._rebuild_canvas()
 
     def _with_frame_camera(self, frame: MarcoVista, fn):
         """Run ``fn()`` with the live camera pointed at *frame* (exact
@@ -2378,26 +2385,48 @@ class ComposerWindow(QMainWindow):
                 ly.visible = visible
             vp.update()
 
+    #: Above this many hard edges the EXACT hidden-line snap pass (minutes
+    #: on a photogrammetry-scale scene — it is O(edges × triangles)) gives
+    #: way to projecting every edge point without occlusion: instant, and
+    #: an occasional snap to a hidden vertex beats a frozen composer.
+    _EXACT_SNAP_EDGE_BUDGET = 20_000
+
+    def _scene_geometry(self):
+        """collect_geometry(scene), cached — camera-independent, so every
+        frame (and every re-snap) shares one collection. Follows the same
+        staleness rule as the frame renders: refreshed when the composer
+        reopens or a frame is explicitly refreshed, not on sheet edits."""
+        from core.hlr import collect_geometry
+        cached = getattr(self, "_geom_cache", None)
+        if cached is not None:
+            return cached
+        self._geom_cache = collect_geometry(self._scene())
+        return self._geom_cache
+
+    def _invalidate_geometry_caches(self) -> None:
+        """The model may have changed: drop the collected geometry and
+        every frame's snap set (renders are handled by their own caches)."""
+        self._geom_cache = None
+        self.snap_cache.clear()
+
     def frame_snap_points(self, frame: MarcoVista):
-        """Visible geometry points of *frame*'s view — an ``(M, 2)`` array in
-        PAGE millimetres paired with the same points in WORLD metres
+        """Snappable geometry points of *frame*'s view — an ``(M, 2)`` array
+        in PAGE millimetres paired with the same points in WORLD metres
         ``(M, 3)`` (the anchor data): every edge endpoint plus each edge's
-        midpoint. Cached by frame id; computed from the same hidden-line
-        pass the vector style uses, so a point only snaps where the drawing
-        actually shows an edge.
-        """
+        midpoint. Cached by frame id. Small scenes use the same exact
+        hidden-line pass the vector style uses (a point only snaps where
+        the drawing shows an edge); big scenes project every edge without
+        the visibility kernel (see ``_EXACT_SNAP_EDGE_BUDGET``)."""
         import numpy as np
         cached = self.snap_cache.get(id(frame))
         if cached is not None:
             return cached
         from core.composition import model_height_for_frame
-        from core.hlr import hlr_view
+        from core.hlr import _to_cam, camera_basis, hlr_view
 
-        def run():
-            vp = self._window.viewport
-            segs, world = hlr_view(vp.scene, vp.camera, return_world=True)
-            if not len(segs):
-                return np.empty((0, 2)), np.empty((0, 3))
+        tris, hard, soft = self._scene_geometry()
+
+        def page_mapper():
             model_h = model_height_for_frame(frame.h_mm, frame.scale_n)
             k = frame.h_mm / model_h
             half_h = model_h / 2.0
@@ -2406,24 +2435,49 @@ class ComposerWindow(QMainWindow):
             def to_page(mx, my):
                 return (frame.x_mm + (mx + half_w) * k,
                         frame.y_mm + (half_h - my) * k)
+            return to_page
 
-            pts = []
-            wpts = []
-            for (x0, y0, x1, y1), (w0, w1) in zip(segs, world):
-                pts.append(to_page(x0, y0))
-                pts.append(to_page(x1, y1))
-                pts.append(to_page((x0 + x1) / 2, (y0 + y1) / 2))  # midpoint
-                wpts.extend((w0, w1, (w0 + w1) / 2))
-            arr = np.array(pts)
-            warr = np.array(wpts)
-            # clip to the frame rectangle (points outside are off the sheet)
+        def clip(arr, warr):
             m = ((arr[:, 0] >= frame.x_mm - 0.5)
                  & (arr[:, 0] <= frame.x_mm + frame.w_mm + 0.5)
                  & (arr[:, 1] >= frame.y_mm - 0.5)
                  & (arr[:, 1] <= frame.y_mm + frame.h_mm + 0.5))
             return arr[m], warr[m]
 
-        pair = self._with_frame_camera(frame, run)
+        def run_exact():
+            vp = self._window.viewport
+            segs, world = hlr_view(vp.scene, vp.camera, return_world=True)
+            if not len(segs):
+                return np.empty((0, 2)), np.empty((0, 3))
+            to_page = page_mapper()
+            pts = []
+            wpts = []
+            for (x0, y0, x1, y1), (w0, w1) in zip(segs, world):
+                pts.append(to_page(x0, y0))
+                pts.append(to_page(x1, y1))
+                pts.append(to_page((x0 + x1) / 2, (y0 + y1) / 2))
+                wpts.extend((w0, w1, (w0 + w1) / 2))
+            return clip(np.array(pts), np.array(wpts))
+
+        def run_fast():
+            vp = self._window.viewport
+            edges = list(hard) + [(p0, p1) for p0, p1, _na, _nb in soft]
+            if not edges:
+                return np.empty((0, 2)), np.empty((0, 3))
+            E = np.asarray(edges, dtype=np.float64)          # (N,2,3)
+            eye, right, up, fwd = camera_basis(vp.camera)
+            a2 = _to_cam(E[:, 0, :], eye, right, up, fwd)[:, :2]
+            b2 = _to_cam(E[:, 1, :], eye, right, up, fwd)[:, :2]
+            to_page = page_mapper()
+            cam = np.concatenate([a2, b2, (a2 + b2) / 2.0])
+            world = np.concatenate([E[:, 0, :], E[:, 1, :],
+                                    (E[:, 0, :] + E[:, 1, :]) / 2.0])
+            px, py = to_page(cam[:, 0], cam[:, 1])
+            return clip(np.stack([px, py], axis=1), world)
+
+        exact = len(hard) + len(soft) <= self._EXACT_SNAP_EDGE_BUDGET
+        pair = self._with_frame_camera(frame, run_exact if exact
+                                       else run_fast)
         self.snap_cache[id(frame)] = pair
         return pair
 
@@ -2718,6 +2772,7 @@ class ComposerWindow(QMainWindow):
             self.comp = scene.compositions[0]
             self.history = ComposerHistory(on_change=self._on_history_change)
         self._reload_comp_combo()
+        self._invalidate_geometry_caches()
         self._rebuild_canvas()
         super().showEvent(event)
         # First impression: the whole page in view, whatever the paper size.
