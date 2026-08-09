@@ -37,7 +37,7 @@ jobs:
           # openskp NATIVO: nuestro fork (parser VFF + legacy MFC). Pineado
           # por SHA para builds reproducibles; actualizar el SHA al avanzar
           # la rama ingetrazo del fork.
-          pip install "openskp @ git+https://github.com/tuxiasumari/openskp@3c85b4d57273a84fac8f473929f98e0db94ae3de#subdirectory=packages/python"
+          pip install "openskp @ git+https://github.com/tuxiasumari/openskp@701794838e0bc3a6fa7756bb92d9f3a7db71c539#subdirectory=packages/python"
           python -c "import openskp, openskp.legacy; print('openskp OK:', openskp.__name__)" 
 
       - name: Compilar con PyInstaller

@@ -4,6 +4,76 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.0] — 2026-08-08
+
+The sheet-composer release: model to printed plan without leaving IngeTrazo.
+
+### Added
+- **Sheet composer** (Archivo ▸ Compositor de láminas): QGIS-style page
+  layout with model-view frames at EXACT scale (1:100 on a 200 mm frame is
+  20 m of model), N sheets per document persisted in the `.igz`, its own
+  undo history, and vector PDF export (single sheet or the whole atlas in
+  one file).
+  - Frames render shaded, technical (white + dark edges via exact
+    hidden-line removal) or lines-only; automatic frame titles, graphic
+    scale bar, north arrow, layer legend, images, text and an editable
+    title block; DXF (R12) export of a frame's vector view for IngeCAD.
+  - **Sheet dimensions anchored to the model**: snap both points to frame
+    geometry (green dot) and the cota remembers the 3D points — edit the
+    model, move or rescale the frame, and the dimension follows with its
+    label re-measured (the exact 3D distance). LayOut-style placement:
+    two clicks for the points, a third pulls the line away with extension
+    lines; separation stays draggable afterwards.
+  - Dimension styles: text height, decimals, oblique ticks / arrows /
+    none, line width, colour.
+  - Shapes: line, arrow, rectangle (with corner radius), ellipse and
+    regular polygon (3–24 sides), each with line colour, fill and fill
+    colour.
+  - Title block: editable rows (add/remove/rename fields), 1–4 column
+    groups, outer border and inner line widths, exact width/height; long
+    values wrap to more lines and only then shrink.
+  - QGIS habits: stacking order (bring to front / raise / lower / send to
+    back) and per-item lock via right-click; items panel lists the stack
+    top-first; zoom combo with fit-width / fit-page / presets where 100%
+    is TRUE paper size.
+- **Photogrammetric survey import (WebODM/ODM)**: the textured drone mesh
+  loads as display-only reference geometry with its real UTM placement and
+  altitudes, texture atlases capped to the GPU budget, saved inside the
+  `.igz`, and a plan-grid `height_at` query that feeds the live profile.
+- **UTM WGS84 in the georef UI**: the base-map panel and the project
+  locator accept zone/hemisphere/E/N (what the drone or total station
+  reports) or lat/lon — one frame at a time, chosen with a remembered
+  selector. The locator's centre pin is explicitly the model's origin
+  (0,0), and moving an existing origin asks first.
+- New app icon (V11D): line-drawn cube with amber nodes on the IngeCAD
+  family tile, now a single SVG source of truth.
+
+### Fixed
+- **Opening a `.skp` by double-click could freeze before the window
+  appeared** (a progress callback ran on the worker thread and
+  deadlocked); imports also no longer fall back to the external converter
+  silently.
+- **Single instance**: a second launch opens the file in the running
+  window instead of dying to a zombie; an unresponsive instance no longer
+  swallows launches.
+- Drawing tools: the first unsnapped point stays in the plane you are
+  looking at; bigger snap markers; frontal measurement in standard views.
+- Georef: omitting altitude means "on the reference plane", not sea level.
+
+## [0.2.4] — 2026-07-26
+
+Self-contained `.igz` documents: textures travel INSIDE the file (ZIP
+container, 5× smaller than the previous flat JSON), no absolute paths
+left; `.skp` import stops creating folders next to the user's file. See
+the GitHub release notes for the details.
+
+## [0.2.3] — 2026-07-22
+
+Native pure-Python `.skp` import for ALL SketchUp eras (our OpenSKP fork:
+VFF walker + legacy MFC parser), validated for exact parity on real
+models; skp2dae becomes an emergency fallback only. See the GitHub
+release notes for the details.
+
 ## [0.2.2] — 2026-07-20
 
 A polish release focused on the toolbar icons, plus two new zoom tools and
