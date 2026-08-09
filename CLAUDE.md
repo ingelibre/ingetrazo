@@ -1,6 +1,6 @@
 # IngeTrazo — modelador 3D libre
 
-**Autor:** Marco Sumari Tellez · **Licencia:** GPL-3.0-or-later · **Repo:** `github.com/tuxiasumari/ingetrazo` (público) · **Web:** https://ingetrazo.com (deploy: `cd ~/ingetrazo-web && npx wrangler deploy && git push`)
+**Autor:** Marco Sumari Tellez · **Licencia:** GPL-3.0-or-later · **Repo:** `github.com/tuxiasumari/ingetrazo` (público) · **Web:** https://ingetrazo.com (repo `../web`; deploy: `npx wrangler deploy` + git push) · **Manual:** https://ingetrazo-docs.pages.dev (repo `../manual` → github ingelibre/ingetrazo-docs, MkDocs Material espejo de ingepresupuestos-docs; publicar: `venv/bin/mkdocs build` + `npx wrangler pages deploy site --project-name ingetrazo-docs`; dominio docs.ingetrazo.com pendiente de 1 paso en dashboard)
 
 Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D. Linux-first, multiplataforma, PySide6. Hermano open-source de [IngePresupuestos](../ingepresupuestos-pyside6/) — la integración IFC cierra el loop modelo → metrado → presupuesto. *(Se llamó **Wasia** 2026-05-21..23; extensión nativa `.igz`.)*
 
