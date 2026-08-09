@@ -533,8 +533,20 @@ class BaseMapPanel(QWidget):
         if old_datum is not None and not moved:
             datum = old_datum          # keep the datum (and its altitude)
         else:
+            # The altitude reference (e.g. a drone survey's foot elevation)
+            # only survives a NEARBY adjustment; carrying it to a distant
+            # site would misplace tiles/terrain by the sites' elevation
+            # difference — the classic invisible-in-top-view Z error.
+            keep_alt = 0.0
+            if old_datum is not None:
+                import math as _math
+                dlat = (self._lat.value() - old_datum.lat) * 111320.0
+                dlon = ((self._lon.value() - old_datum.lon) * 111320.0
+                        * _math.cos(_math.radians(self._lat.value())))
+                if _math.hypot(dlat, dlon) < 1000.0:
+                    keep_alt = old_datum.alt
             datum = SceneDatum(self._lat.value(), self._lon.value(),
-                               alt=old_datum.alt if old_datum else 0.0)
+                               alt=keep_alt)
         scene.georef = datum
         layer = TileLayer(src, zoom=self._zoom.value())
         layer.set_rectangle(self._capture_w, self._capture_l)

@@ -603,6 +603,82 @@ class TestZoomCombo:
         assert composer.zoom_percent() == pytest.approx(50.0)
 
 
+class TestReleaseReviewRegressions:
+    """The five verified findings of the 0.3 pre-release review."""
+
+    def test_rebuild_mid_placement_does_not_crash(self):
+        # Undo (or any canvas rebuild) between the two clicks used to leave
+        # the view holding DELETED preview/marker items → RuntimeError on
+        # the next mouse move.
+        from PySide6.QtWidgets import QWidget
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        view = composer._view
+        composer.tool_mode = "rect"
+        _mouse(view, QEvent.MouseButtonPress, 100, 100)
+        _mouse(view, QEvent.MouseButtonRelease, 100, 100)    # click mode
+        _mouse(view, QEvent.MouseMove, 150, 130)             # preview born
+        assert view._preview is not None
+        composer._rebuild_canvas()                           # undo etc.
+        assert view._drag_start is None                      # cancelled
+        _mouse(view, QEvent.MouseMove, 160, 140)             # must not raise
+        self._host = host
+
+    def test_second_click_threshold_is_scene_space(self):
+        # Pan/zoom between the clicks must not confuse the click-vs-drag
+        # guard: the test runs in scene mm at the current zoom (identity
+        # here → 4 mm), not against the first press's viewport pixels.
+        view, comp = _view("linea")
+        _click(view, 50, 50)
+        _mouse(view, QEvent.MouseButtonPress, 52, 50)        # 2 mm: waiting
+        assert comp.placed == []
+        _mouse(view, QEvent.MouseButtonRelease, 52, 50)
+        _mouse(view, QEvent.MouseButtonPress, 60, 50)        # 10 mm: places
+        assert len(comp.placed) == 1
+
+    def test_snapped_axis_aligned_line_stays_straight(self):
+        view, comp = _view()  # unused; place through a real composer
+        from PySide6.QtWidgets import QWidget
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        composer.tool_mode = "linea"
+        composer.place_tool(30.0, 100.0, 90.0, 100.0)        # horizontal
+        f = composer.comp.shapes[0]
+        assert f.h_mm == 0.0                                 # no 2 mm tilt
+        composer.tool_mode = "rect"
+        composer.place_tool(30.0, 100.0, 90.0, 100.0)
+        assert composer.comp.shapes[1].h_mm == 2.0           # rects clamp
+        self._host = host
+
+    def test_clipped_anchor_is_not_captured_by_another_vertex(self):
+        comp = Composicion()
+        frame = MarcoVista(x_mm=10.0, y_mm=10.0, w_mm=200.0, h_mm=150.0,
+                           scale_n=100.0, uid="f1")
+        comp.frames = [frame]
+        # b anchors at x=100 m → projects at x_mm = 10 + (100+10)... far
+        # outside the 200 mm frame; a nearby visible point (100.1) exists
+        ct = CotaItem(scale_n=100.0, anchor_uid="f1",
+                      a_world=[0.0, 0.0, 0.0], b_world=[100.0, 0.0, 0.0])
+        comp.cotas = [ct]
+        _FakeReprojector(comp, [[0.0, 0.0, 0.0],
+                                [100.1, 0.0, 0.0]]).reproject()
+        assert ct.b_world == pytest.approx([100.0, 0.0, 0.0])  # untouched
+
+    def test_resnap_tolerance_is_capped_at_half_a_metre(self):
+        comp = Composicion()
+        frame = MarcoVista(x_mm=10.0, y_mm=10.0, w_mm=200.0, h_mm=150.0,
+                           scale_n=1000.0, uid="f1")     # 1:1000 → uncapped
+        comp.frames = [frame]                            # tol would be 2.5 m
+        ct = CotaItem(scale_n=1000.0, anchor_uid="f1",
+                      a_world=[0.0, 0.0, 0.0], b_world=[6.0, 0.0, 0.0])
+        comp.cotas = [ct]
+        _FakeReprojector(comp, [[0.0, 0.0, 0.0],
+                                [7.0, 0.0, 0.0]]).reproject()   # 1 m away
+        assert ct.b_world == pytest.approx([6.0, 0.0, 0.0])     # not captured
+
+
 class TestCotaModel:
     def test_normal_is_perpendicular_and_unit(self):
         ct = CotaItem(dx_mm=30.0, dy_mm=40.0)

@@ -842,9 +842,13 @@ class ComposerCanvasView(QGraphicsView):
                 return
             if self._drag_start is not None:
                 # Second click of a click-move-click placement finishes it
-                # (unless it lands on the first point — keep waiting).
-                if (event.position().toPoint() - self._press_vp
-                        ).manhattanLength() >= 4:
+                # (unless it lands on the first point — keep waiting). The
+                # test is in SCENE mm at the current zoom: the user may
+                # have panned/zoomed between the clicks, so the first
+                # press's viewport pixels mean nothing here.
+                thr = 4.0 / max(self.transform().m11(), 1e-6)
+                if (abs(pos.x() - self._drag_start.x())
+                        + abs(pos.y() - self._drag_start.y())) >= thr:
                     if mode == "cota":
                         self._enter_sep_phase(pos)
                     else:
@@ -1163,10 +1167,14 @@ class ComposerWindow(QMainWindow):
         elif mode in ("linea", "flecha", "rect", "elipse", "poligono"):
             kind = mode
             invert = (x1 < x0) != (y1 < y0)
-            item = FormaItem(kind=kind, x_mm=x, y_mm=y,
-                             w_mm=max(w, 2.0), h_mm=max(h, 2.0),
-                             invert=invert if kind in ("linea", "flecha")
-                             else False)
+            if kind in ("linea", "flecha"):
+                # a line's box legitimately degenerates to zero in one
+                # axis — clamping tilted every snapped horizontal by 2 mm
+                item = FormaItem(kind=kind, x_mm=x, y_mm=y,
+                                 w_mm=w, h_mm=h, invert=invert)
+            else:
+                item = FormaItem(kind=kind, x_mm=x, y_mm=y,
+                                 w_mm=max(w, 2.0), h_mm=max(h, 2.0))
         elif mode == "cota":
             n = self.comp.frames[0].scale_n if self.comp.frames else 100.0
             item = CotaItem(x_mm=x0, y_mm=y0, dx_mm=x1 - x0, dy_mm=y1 - y0,
@@ -1711,6 +1719,12 @@ class ComposerWindow(QMainWindow):
     # ---- canvas --------------------------------------------------------------
     def _rebuild_canvas(self) -> None:
         self._updating = True
+        # canvas.clear() below deletes EVERY item — including the snap
+        # marker and rubber-band preview the canvas view may be holding
+        # mid-placement (undo between the two clicks is routine). Drop the
+        # placement first or the next mouse move touches dead C++ objects.
+        if hasattr(self, "_view"):
+            self._view.cancel_placement()
         self.snap_cache.clear()
         self._reproject_anchored_cotas()
         self.canvas.clear()
@@ -2452,8 +2466,23 @@ class ComposerWindow(QMainWindow):
                 continue                  # frame gone: a free paper cota now
             try:
                 _pts, wpts = self.frame_snap_points(frame)
-                tol = 2.5 * frame.scale_n / 1000.0   # 2.5 paper mm, metres
-                for attr in ("a_world", "b_world"):
+                # 2.5 paper mm at the frame scale, hard-capped at 0.5 m —
+                # at 1:1000 an uncapped tolerance is 2.5 m and captures
+                # unrelated vertices.
+                tol = min(2.5 * frame.scale_n / 1000.0, 0.5)
+                old_pages = self._frame_world_to_page(
+                    frame, [ct.a_world, ct.b_world])
+                for attr, (px, py) in zip(("a_world", "b_world"),
+                                          old_pages):
+                    # An anchor whose point projects OUTSIDE the frame is
+                    # clipped from the snap set, not moved — re-snapping it
+                    # would capture whatever visible point is nearest.
+                    inside = (frame.x_mm - 0.5 <= px
+                              <= frame.x_mm + frame.w_mm + 0.5
+                              and frame.y_mm - 0.5 <= py
+                              <= frame.y_mm + frame.h_mm + 0.5)
+                    if not inside:
+                        continue
                     w = np.asarray(getattr(ct, attr), dtype=np.float64)
                     if len(wpts):
                         d2 = ((wpts - w) ** 2).sum(axis=1)
