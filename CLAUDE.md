@@ -27,7 +27,9 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 
 ---
 
-## 📦 Estado actual (2026-07-26)
+## 📦 Estado actual (2026-08-08)
+
+**v0.3.0 released 2026-08-08** (tag en `main`, CI Windows + `skp2dae.exe` re-adjuntado): **el release del compositor de láminas** — composer C1–C5 completo (marcos a escala exacta, HLR vectorial, PDF/atlas, DXF a IngeCAD, cotas ancladas al modelo con estilos, formas con polígono/radio/colores, cajetín editable multi-columna, orden Z + bloqueo, zoom QGIS con 100% = tamaño real), G6 fotogrametría, UTM WGS84 en la UI de terreno con selector de marco de coordenadas y pin-origen explícito, fix del deadlock de import .skp e instancia única. Pre-release: review de 5 hallazgos verificados y corregidos (crash por rebuild mid-placement, guard en píxeles obsoletos, captura de re-anclaje, alt al mover origen lejos, clamp de líneas), suites completas verdes (1076 rápidos + 796 slow). Pin de openskp en CI avanzado a la cabeza del fork.
 
 **v0.2.4 released 2026-07-26** (tag `v0.2.4` + CI Windows verde + `skp2dae.exe` re-adjuntado desde v0.2.3): **`.igz` autocontenido** (texturas adentro del documento) + el import `.skp` deja de crear carpetas junto al archivo del usuario; arrastra además todo lo de la sesión 2026-07-24 (capas, escenas, cotas lineales, doble clic para abrir `.skp`, import sin congelar la ventana).
 
