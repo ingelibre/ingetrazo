@@ -7,6 +7,7 @@ Save, Save As) onto :mod:`formats.igz`.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -465,6 +466,9 @@ class MainWindow(QMainWindow):
         window_menu.addSeparator()
         self._build_language_menu(window_menu)
 
+        # Extensions menu — plugins discovered from plugins/ directory.
+        self._build_extensions_menu(menubar)
+
         help_menu = menubar.addMenu(tr("Help"))
         get_models_action = QAction(tr("Get more models and textures…"), self)
         get_models_action.triggered.connect(self._on_get_models)
@@ -499,6 +503,94 @@ class MainWindow(QMainWindow):
             tr("Language changed"),
             tr("Restart IngeTrazo to apply the new language."),
         )
+
+    def _build_extensions_menu(self, menubar) -> None:
+        """Discover plugins from the app ``plugins/`` directory and user AppData
+        directory, then build the Extensions menu. Each Python file or package
+        that contains a :class:`~tools.base.Tool` subclass gets a menu entry."""
+        import importlib
+        import inspect
+        import logging
+        import os
+        from tools.base import Tool
+
+        log = logging.getLogger("ingetrazo.plugins")
+        ext_menu = menubar.addMenu(tr("Extensions"))
+
+        # Candidate directories: app-bundled plugins + user-installed plugins
+        app_plugins_dir = Path(__file__).resolve().parent.parent / "plugins"
+        if sys.platform == "win32":
+            user_base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        else:
+            user_base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+        user_plugins_dir = user_base / "ingetrazo" / "plugins"
+
+        plugin_dirs = [app_plugins_dir]
+        if user_plugins_dir.is_dir():
+            plugin_dirs.append(user_plugins_dir)
+
+        loaded = 0
+        for p_dir in plugin_dirs:
+            if not p_dir.is_dir():
+                continue
+            if p_dir != app_plugins_dir and str(p_dir) not in sys.path:
+                sys.path.insert(0, str(p_dir))
+
+            for entry in sorted(p_dir.iterdir()):
+                # Skip __init__.py, README, __pycache__, dotfiles
+                if entry.name.startswith(("_", ".")) or entry.name == "README.md":
+                    continue
+                if entry.is_file() and entry.suffix == ".py":
+                    mod_name = f"plugins.{entry.stem}" if p_dir == app_plugins_dir else entry.stem
+                elif entry.is_dir() and (entry / "__init__.py").exists():
+                    mod_name = f"plugins.{entry.name}" if p_dir == app_plugins_dir else entry.name
+                else:
+                    continue
+
+                try:
+                    mod = importlib.import_module(mod_name)
+                except Exception:
+                    log.exception("Failed to import plugin %s from %s", mod_name, p_dir)
+                    action = ext_menu.addAction(f"⚠ {entry.stem} (load error)")
+                    action.setEnabled(False)
+                    continue
+
+                # Discover Tool subclasses defined in this module.
+                for _name, obj in inspect.getmembers(mod, inspect.isclass):
+                    if issubclass(obj, Tool) and obj is not Tool:
+                        tool_instance = obj()
+                        tool_key = f"plugin_{entry.stem}_{_name}"
+                        self._tools[tool_key] = tool_instance
+
+                        action = QAction(tr(tool_instance.name), self)
+                        if tool_instance.shortcut:
+                            action.setShortcut(QKeySequence(tool_instance.shortcut))
+                            action.setToolTip(
+                                f"{tr(tool_instance.name)} ({tool_instance.shortcut})"
+                            )
+                        action.triggered.connect(
+                            lambda _c, k=tool_key: self._activate_plugin_tool(k)
+                        )
+                        ext_menu.addAction(action)
+                        self._tool_actions[tool_key] = action
+                        loaded += 1
+                        log.info("Loaded plugin tool: %s from %s", tool_instance.name, mod_name)
+
+        if loaded == 0:
+            ext_menu.addAction(tr("(no plugins found)")).setEnabled(False)
+
+    def _activate_plugin_tool(self, key: str) -> None:
+        """Activate a plugin tool via the Extensions menu.
+
+        Unlike toolbar tools (which are checkable and exclusive), plugin tools
+        triggered from the menu run their ``on_activate`` and then the previous
+        tool is restored automatically — appropriate for dialog-based plugins
+        that don't need to stay active in the viewport."""
+        tool = self._tools[key]
+        tool.on_activate(self.viewport)
+        # Restore the previous tool (plugin tools are one-shot dialogs).
+        self._tool_label.setText(
+            tr("Tool: {name}", name=tr(tool.name)))
 
     def _on_about(self) -> None:
         QMessageBox.about(
