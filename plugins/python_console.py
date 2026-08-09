@@ -172,6 +172,7 @@ class PythonConsoleDialog(QDialog):
             "Edge": Edge,
             "Face": Face,
             "console": self,
+            "__name__": "__main__",
         }
 
     def _print_welcome(self) -> None:
@@ -245,8 +246,8 @@ class PythonConsoleDialog(QDialog):
                 # Execute as statement/block
                 exec(code, self._scope)
 
-            # Trigger viewport redraw if scene version changed
-            self._viewport.update()
+            # Trigger viewport VBO sync & redraw
+            self._viewport.notify_scene_changed()
 
         except Exception:
             traceback.print_exc()
@@ -270,7 +271,7 @@ class PythonConsoleDialog(QDialog):
             return
 
         p = Path(file_path)
-        self._append_text(f"▶ Executing script: {p.name}", "#dcdcaa")
+        self._append_text(f"Executing script: {p.name}", "#dcdcaa")
         try:
             script_code = p.read_text(encoding="utf-8")
             old_stdout, old_stderr = sys.stdout, sys.stderr
@@ -278,8 +279,12 @@ class PythonConsoleDialog(QDialog):
             sys.stdout, sys.stderr = stdout_buf, stderr_buf
 
             try:
+                self._scope["__file__"] = str(p.resolve())
                 exec(script_code, self._scope)
-                self._viewport.update()
+                self._viewport.notify_scene_changed()
+                win = self._viewport.window()
+                if hasattr(win, "_on_zoom_extents"):
+                    win._on_zoom_extents()
             finally:
                 sys.stdout, sys.stderr = old_stdout, old_stderr
 
