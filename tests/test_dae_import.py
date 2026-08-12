@@ -201,7 +201,8 @@ def _textured_quad_dae(tmp_path, image_name="brick.png"):
     explicit TEXCOORDs (offsets 0=vertex, 1=uv) — the SketchUp export shape."""
     import shutil
     img = tmp_path / image_name
-    shutil.copy("/home/sumaritux/Proyectos/ingetrazo/app/resources/textures/brick.png", img)
+    from core.paths import app_root
+    shutil.copy(app_root() / "resources" / "textures" / "brick.png", img)
     body = f"""<?xml version="1.0"?>
 <COLLADA {_NSDECL} version="1.4.1">
   <asset><up_axis>Z_UP</up_axis></asset>
@@ -299,8 +300,9 @@ def test_faceme_sprite_imports_as_mesh_billboard(tmp_path):
     the 'always face camera' flag, so the shape+alpha heuristic recovers it."""
     p, img = _textured_quad_dae(tmp_path, image_name="sprite.png")
     import shutil
-    shutil.copy("/home/sumaritux/Proyectos/ingetrazo/app/resources/components/"
-                "person_billboard.png", img)      # a real cutout PNG
+    from core.paths import app_root
+    shutil.copy(app_root() / "resources" / "components" / "person_billboard.png",
+                img)                              # a real cutout PNG
     # make the quad VERTICAL (xz plane) so it reads as a sprite
     text = (tmp_path / "textured.dae").read_text()
     text = text.replace("0 0 0  2 0 0  2 3 0  0 3 0",
