@@ -29,7 +29,7 @@ from georef.tiles import TileCache, TileSource
 # usage policy in particular requires a real User-Agent.
 from core.version import __version__
 
-_USER_AGENT = (f"IngeTrazo/{__version__} (https://github.com/tuxiasumari/ingetrazo)").encode()
+_USER_AGENT = (f"IngeTrazo/{__version__} (https://github.com/ingelibre/ingetrazo)").encode()
 
 
 def default_cache_dir() -> Path:

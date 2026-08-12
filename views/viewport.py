@@ -147,7 +147,9 @@ GL_NEAREST = 0x2600
 GL_MAX_TEXTURE_SIZE = 0x0D33
 
 
-SHADER_DIR = Path(__file__).resolve().parents[1] / "resources" / "shaders"
+from core.paths import app_root
+
+SHADER_DIR = app_root() / "resources" / "shaders"
 
 
 # ---- Geometry helpers ------------------------------------------------------

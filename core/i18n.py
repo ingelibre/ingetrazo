@@ -21,7 +21,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-_I18N_DIR = Path(__file__).resolve().parent.parent / "i18n"
+from core.paths import app_root
+
+_I18N_DIR = app_root() / "i18n"
 
 _catalog: dict[str, str] = {}
 _lang = "en"

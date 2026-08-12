@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Build the Linux AppImage + tarball on a tag and attach them to the release.
+# (The Windows installer is build-windows.yml; both fire on the same tag.)
+#
+# Runs on ubuntu-22.04 on purpose: an AppImage links against the glibc of the
+# machine that built it, so building on the newest runner would produce a file
+# that only starts on the newest distros. 22.04 covers 22.04, 24.04 and 26.04.
+name: release-linux
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:        # so the pipeline can be exercised without a tag
+
+permissions:
+  contents: write           # to upload the assets to the release
+
+jobs:
+  appimage:
+    name: AppImage + tarball (x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System packages
+        run: |
+          sudo apt-get update -qq
+          # libegl/libgl for Qt, fuse for appimagetool, xvfb for the smoke test
+          sudo apt-get install -y --no-install-recommends \
+            curl file libegl1 libgl1 libxkbcommon-x11-0 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
+            libfuse2 xvfb
+
+      - name: Python dependencies
+        run: |
+          python -m venv venv
+          ./venv/bin/python -m pip install --quiet --upgrade pip
+          ./venv/bin/python -m pip install --quiet PySide6 numpy pytest pyinstaller
+          # openskp: our fork (VFF parser + legacy MFC reader), pinned by SHA
+          # like build-windows.yml so both installers ship the same reader.
+          ./venv/bin/python -m pip install --quiet "openskp @ git+https://github.com/tuxiasumari/openskp@701794838e0bc3a6fa7756bb92d9f3a7db71c539#subdirectory=packages/python"
+          ./venv/bin/python -c "import openskp, openskp.legacy; print('openskp OK')"
+
+      - name: Tests
+        # The slow marker is long fuzz sweeps; the release gate is the fast set.
+        run: ./venv/bin/python -m pytest -q -m "not slow"
+
+      - name: Build the AppImage and the tarball
+        run: packaging/build-appimage.sh dist
+
+      # build-appimage.sh already ran --check on the bundle and on the
+      # AppImage. This is the harder question: does it start a real GUI?
+      - name: Smoke test with a display
+        run: |
+          APP=$(ls dist/IngeTrazo-*-x86_64.AppImage)
+          # No --exit-after flag, so give it a few seconds and require that it
+          # was still alive: a crash on startup exits well before the timeout.
+          set +e
+          xvfb-run -a timeout 25 "$APP" > smoke.log 2>&1
+          rc=$?
+          set -e
+          cat smoke.log
+          if [ "$rc" != "124" ]; then
+            echo "!! the AppImage exited with $rc instead of surviving to the timeout"
+            exit 1
+          fi
+          echo "OK — started and stayed up"
+
+      # The tarball is the same bundle without the AppImage wrapper. Prove it
+      # runs after extraction, not just that it was packed.
+      - name: Smoke test the tarball
+        run: |
+          mkdir -p tarcheck && tar -C tarcheck -xzf dist/IngeTrazo-*-linux-x86_64.tar.gz
+          tarcheck/IngeTrazo-*/ingetrazo --check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IngeTrazo-AppImage-x86_64
+          path: dist/IngeTrazo-*-x86_64.AppImage
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IngeTrazo-tarball-x86_64
+          path: dist/IngeTrazo-*-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The release usually exists already (created by hand with notes, or
+          # by build-windows.yml); create a bare one only if we got here first.
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
+            || gh release create "${GITHUB_REF_NAME}" --title "IngeTrazo ${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" \
+            dist/IngeTrazo-*-x86_64.AppImage \
+            dist/IngeTrazo-*-linux-x86_64.tar.gz --clobber

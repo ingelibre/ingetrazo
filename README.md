@@ -23,7 +23,25 @@ with its sister project [IngePresupuestos](https://ingepresupuestos.com).
 
 **Early development — not production-ready, but already models end to end:** you
 can draw, extrude, edit, paint, dimension, and export a model today. Backed by
-~570 automated tests. Not yet packaged as an installable release.
+~1,900 automated tests.
+
+## Install
+
+Grab the [latest release](https://github.com/ingelibre/ingetrazo/releases/latest):
+
+- **Windows**: the `-setup-` installer (or the portable `.zip`).
+- **Linux (x86_64)**: the **AppImage** — make it executable and run it — or,
+  if your distro lacks FUSE, the **tarball**:
+
+```bash
+chmod +x IngeTrazo-*-x86_64.AppImage && ./IngeTrazo-*-x86_64.AppImage
+# or
+tar -xzf IngeTrazo-*-linux-x86_64.tar.gz && IngeTrazo-*/ingetrazo
+```
+
+Python, Qt and the pure-Python `.skp` reader travel inside; nothing else to
+install. `--check` prints what the install found and exits non-zero if
+anything is missing.
 
 ## What works today
 
@@ -83,7 +101,7 @@ Deliberately minimal — heavy dependencies arrive only when a feature needs the
 ## Quick start (developers)
 
 ```bash
-git clone https://github.com/tuxiasumari/ingetrazo.git
+git clone https://github.com/ingelibre/ingetrazo.git
 cd ingetrazo
 python3 -m venv venv
 source venv/bin/activate          # Linux / macOS

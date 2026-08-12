@@ -4,6 +4,34 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.1] — 2026-08-12
+
+Linux gets first-class installers: every release now ships an **AppImage**
+(make executable and run; needs FUSE) and a **plain tarball**
+(`IngeTrazo-<version>-linux-x86_64.tar.gz` — extract and run `./ingetrazo`,
+no FUSE, unpacks anywhere), both built and smoke-tested by CI on
+ubuntu-22.04 so they start on 22.04 and later. The Windows installer is
+unchanged.
+
+### Added
+- `packaging/build-appimage.sh` (PyInstaller onedir → AppImage + tarball,
+  adapted from IngeCAD's) and the `release-linux` workflow.
+- `main.py --check`: self-diagnosis that reports whether the install can
+  find its shaders, translations, textures, components and icons, plus
+  whether the optional Wine/skp2dae converter is present. CI gates the
+  bundle, the AppImage and the extracted tarball on it.
+- `core/paths.py` (`app_root()`): the six runtime resource lookups that
+  derived paths from `__file__` now go through it, so a frozen build fails
+  loudly at `--check` instead of at first shader load if the bundle layout
+  ever drifts.
+
+### Changed
+- Composer: big models no longer freeze the sheet tools.
+- Repository references updated from `tuxiasumari/ingetrazo` to
+  `ingelibre/ingetrazo` (About dialog, tile-fetcher user agents, and the
+  skp2dae download URL, which only worked through GitHub's rename
+  redirect).
+
 ## [0.3.0] — 2026-08-08
 
 The sheet-composer release: model to printed plan without leaving IngeTrazo.

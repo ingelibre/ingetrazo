@@ -510,8 +510,8 @@ class MainWindow(QMainWindow):
             f"<p>{tr('Created by')} <b>Marco Sumari Tellez</b><br>"
             f"{tr('Civil Engineer — Lima, Peru')}</p>"
             f"<p>{tr('Licensed under GPL-3.0-or-later.')}<br>"
-            "<a href='https://github.com/tuxiasumari/ingetrazo'>"
-            "github.com/tuxiasumari/ingetrazo</a></p>"
+            "<a href='https://github.com/ingelibre/ingetrazo'>"
+            "github.com/ingelibre/ingetrazo</a></p>"
             "<p><i>Trazá. Metrá. Presupuestá.</i></p>",
         )
 
@@ -1240,8 +1240,8 @@ class MainWindow(QMainWindow):
         """A face-me scale figure (arch-viz cutout)."""
         from PySide6.QtGui import QImage
         from core.group import make_billboard_group
-        path = (Path(__file__).resolve().parent.parent / "resources"
-                / "components" / image)
+        from core.paths import app_root
+        path = app_root() / "resources" / "components" / image
         if not path.exists():
             return None
         img = QImage(str(path))
@@ -1302,8 +1302,8 @@ class MainWindow(QMainWindow):
         from core.scene import Scene as _Scene
         from formats import obj as _obj
         self.viewport.end_group_edit()
-        path = (Path(__file__).resolve().parent.parent / "resources"
-                / "components" / f"{key}.obj")
+        from core.paths import app_root
+        path = app_root() / "resources" / "components" / f"{key}.obj"
         if not path.exists():
             QMessageBox.warning(self, tr("Insert component"),
                                 tr("Component file missing: {p}", p=str(path)))
@@ -1677,7 +1677,7 @@ class MainWindow(QMainWindow):
 
     # URL del exe limpio (solo codigo MIT: bindea la DLL en runtime, no
     # contiene nada de Trimble) — se publica como asset de los releases.
-    _SKP2DAE_EXE_URL = ("https://github.com/tuxiasumari/ingetrazo/releases/"
+    _SKP2DAE_EXE_URL = ("https://github.com/ingelibre/ingetrazo/releases/"
                         "latest/download/skp2dae.exe")
     #: Repo público del add-on de Blender cuyo release trae SketchUpAPI.dll.
     _SKP_ADDON_REPO = "RedHaloStudio/Sketchup_Importer"

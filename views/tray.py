@@ -51,7 +51,9 @@ from georef.geopath import GeoPath
 from georef.tiles import DEFAULT_SOURCE_ID, PRESETS, TileLayer, custom_source
 from tools.paint import PaintTool
 
-_TEX_DIR = Path(__file__).resolve().parent.parent / "resources" / "textures"
+from core.paths import app_root
+
+_TEX_DIR = app_root() / "resources" / "textures"
 _SWATCH = 44  # swatch pixel size
 
 # A small starter colour set for the library row.
@@ -727,7 +729,7 @@ class ComponentsPanel(QWidget):
         lay.setContentsMargins(8, 6, 8, 8)
         grid = QGridLayout()
         grid.setSpacing(4)
-        res = Path(__file__).resolve().parent.parent / "resources" / "components"
+        res = app_root() / "resources" / "components"
         items = [
             (res / "sumari.png", tr("Sumari"),
              tr("Sumari (author, 1.65 m)"),

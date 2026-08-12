@@ -114,7 +114,56 @@ def _open_document_in(window, doc: "Path") -> None:
         QTimer.singleShot(0, _open_skp)
 
 
+def _self_check() -> int:
+    """Report whether this install can find everything it needs; --check.
+
+    A packaged build can be missing a shader, a translation or a texture and
+    still start, then fail the first time the user needs the piece. This is
+    what CI asserts on after building the AppImage, and what to run when an
+    install misbehaves. (Same contract as IngeCAD's --check.)
+    """
+    import shutil
+
+    from core.paths import app_root, is_frozen
+    from core.version import __version__
+
+    root = app_root()
+    print(f"IngeTrazo {__version__}")
+    print(f"  packaged   : {'yes' if is_frozen() else 'no (running from the repo)'}")
+    print(f"  app root   : {root}")
+
+    problems: list[str] = []
+    # Only files something actually reads at runtime.
+    for label, path in (
+        ("vertex shader", root / "resources" / "shaders" / "basic.vert"),
+        ("fragment shader", root / "resources" / "shaders" / "basic.frag"),
+        ("translations", root / "i18n" / "es.json"),
+        ("texture library", root / "resources" / "textures" / "library.json"),
+        ("components", root / "resources" / "components" / "thumbs" / "tree.png"),
+        ("app icon", root / "resources" / "icons" / "ingetrazo_256.png"),
+    ):
+        ok = path.is_file()
+        print(f"  {label:<15}: {'found' if ok else 'MISSING'}  {path}")
+        if not ok:
+            problems.append(label)
+
+    # The .skp fallback converter is optional (user-installed, runs under
+    # Wine); report presence without failing on absence.
+    wine = shutil.which("wine")
+    skp2dae = Path.home() / ".local" / "share" / "skp2dae" / "skp2dae.exe"
+    print(f"  wine (optional): {wine or 'not installed'}")
+    print(f"  skp2dae (opt.) : {skp2dae if skp2dae.is_file() else 'not installed'}")
+
+    if problems:
+        print(f"\nNOT OK — missing: {', '.join(problems)}")
+        return 1
+    print("\nOK")
+    return 0
+
+
 def main() -> int:
+    if "--check" in sys.argv[1:]:
+        return _self_check()
     _configure_surface_format()
     app = QApplication(sys.argv)
     app.setApplicationName("IngeTrazo")
@@ -123,7 +172,9 @@ def main() -> int:
     # scripts/gen_app_icon.py; the QIcon picks the right size per context.
     from PySide6.QtGui import QIcon
     icon = QIcon()
-    icon_dir = Path(__file__).resolve().parent / "resources" / "icons"
+    from core.paths import app_root
+
+    icon_dir = app_root() / "resources" / "icons"
     for size in (16, 32, 48, 64, 128, 256, 512):
         p = icon_dir / f"ingetrazo_{size}.png"
         if p.exists():
