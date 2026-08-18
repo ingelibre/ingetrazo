@@ -8,6 +8,7 @@
   "(loading DEM…)": "(cargando DEM…)",
   "(maximum area reached)": "(área máxima alcanzada)",
   "(no layers)": "(sin capas)",
+  "(no plugins found)": "(no hay plugins instalados)",
   "+ Color…": "+ Color…",
   "+ Image": "+ Imagen",
   "+ Layer": "+ Capa",
@@ -175,6 +176,7 @@
   "Exported {name}": "Exportado {name}",
   "Exported {n} lines to {name}": "Exportadas {n} líneas a {name}",
   "Extension": "Extensión",
+  "Extensions": "Extensiones",
   "Extruded:": "Extrusión:",
   "FIELD": "CAMPO",
   "Face": "Cara",
@@ -556,5 +558,6 @@
   "{n} texture image(s) could not be read, so they were not packed into the document — those faces will lose their texture on another computer.": "No se pudieron leer {n} imagen(es) de textura, así que no se empaquetaron en el documento — esas caras perderán su textura en otra computadora.",
   "{prompt}\n\nUnsaved changes will be lost.": "{prompt}\n\nSe perderán los cambios sin guardar.",
   "−": "−",
-  "− Row": "− Fila"
+  "− Row": "− Fila",
+  "⚠ {name} (load error)": "⚠ {name} (error al cargar)"
 }

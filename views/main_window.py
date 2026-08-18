@@ -465,6 +465,9 @@ class MainWindow(QMainWindow):
         window_menu.addSeparator()
         self._build_language_menu(window_menu)
 
+        # Extensions — third-party plugin tools (core.extensions engine).
+        self._build_extensions_menu(menubar)
+
         help_menu = menubar.addMenu(tr("Help"))
         get_models_action = QAction(tr("Get more models and textures…"), self)
         get_models_action.triggered.connect(self._on_get_models)
@@ -499,6 +502,63 @@ class MainWindow(QMainWindow):
             tr("Language changed"),
             tr("Restart IngeTrazo to apply the new language."),
         )
+
+    def _build_extensions_menu(self, menubar) -> None:
+        """The Extensions menu: one entry per plugin tool discovered by
+        :mod:`core.extensions`. The engine guarantees a broken plugin cannot
+        break startup — it arrives here as an error entry, shown disabled
+        with the exception in its tooltip so the author can fix it."""
+        import logging
+        from core.extensions import discover_plugins
+
+        log = logging.getLogger("ingetrazo.plugins")
+        ext_menu = menubar.addMenu(tr("Extensions"))
+        plugins, errors = discover_plugins()
+
+        # Shortcuts the app already claimed (toolbar tools, menus — all built
+        # before this menu): first come, first served. A plugin asking for a
+        # taken key gets its entry without the shortcut, instead of a Qt
+        # ambiguity that silently disables the built-in key for both.
+        taken = {a.shortcut().toString() for a in self.findChildren(QAction)
+                 if not a.shortcut().isEmpty()}
+
+        count = 0
+        for plug in plugins:
+            for tool in plug.tools:
+                key = f"plugin_{plug.stem}_{type(tool).__name__}"
+                self._tools[key] = tool
+                action = QAction(tr(tool.name), self)
+                if tool.shortcut:
+                    seq = QKeySequence(tool.shortcut).toString()
+                    if seq and seq not in taken:
+                        action.setShortcut(QKeySequence(tool.shortcut))
+                        action.setToolTip(f"{tr(tool.name)}  ({tool.shortcut})")
+                        taken.add(seq)
+                    else:
+                        log.warning("plugin %r wants shortcut %r, already "
+                                    "taken; entry added without it",
+                                    plug.stem, tool.shortcut)
+                action.triggered.connect(
+                    lambda _c, k=key: self._activate_plugin_tool(k))
+                ext_menu.addAction(action)
+                count += 1
+
+        for err in errors:
+            action = ext_menu.addAction(
+                tr("\u26a0 {name} (load error)", name=err.stem))
+            action.setEnabled(False)
+            action.setToolTip(err.error)
+
+        if count == 0 and not errors:
+            ext_menu.addAction(tr("(no plugins found)")).setEnabled(False)
+
+    def _activate_plugin_tool(self, key: str) -> None:
+        """Run a plugin tool from the Extensions menu.
+
+        Plugin tools are one-shot (they open a dialog and return): the
+        viewport's active tool is left untouched, so the status bar keeps
+        telling the truth about which drawing tool is current."""
+        self._tools[key].on_activate(self.viewport)
 
     def _on_about(self) -> None:
         QMessageBox.about(
