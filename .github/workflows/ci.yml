@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Run the fast test suite on every pull request and on every push to main.
+#
+# This is the gate the release workflows don't provide: build-windows.yml and
+# release.yml only fire on a vX.Y.Z tag, so until now a PR showed "no checks
+# reported" no matter what it broke. With this in place a contributor's PR
+# gets a green check or a red cross without anyone reading the code first.
+#
+# Same recipe as release.yml's test step (ubuntu-22.04, Python 3.12, the
+# "not slow" marker), minus everything packaging-related: no pyinstaller, no
+# fuse/appimagetool, no xvfb — the tests that need Qt set (or we export)
+# QT_QPA_PLATFORM=offscreen, so no display is required.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:        # manual runs from the Actions tab
+
+# A force-push to a PR branch cancels the now-obsolete run instead of
+# queueing behind it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read            # tests only ever read the checkout
+
+jobs:
+  tests:
+    name: pytest (not slow)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System packages
+        # libegl/libgl + the xcb set: what PySide6 needs to even load its
+        # platform plugins on a bare runner (same list as release.yml).
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon-x11-0 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
+
+      - name: Python dependencies
+        # Straight from requirements.txt — the single source of truth. That
+        # pulls openskp from our fork's `ingetrazo` branch, so CI always tests
+        # against the same reader local dev uses (the release workflows pin a
+        # SHA instead, on purpose: installers must be reproducible; CI should
+        # track the branch).
+        run: |
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet -r requirements.txt
+          python -c "import PySide6, numpy, openskp, openskp.legacy; print('deps OK')"
+
+      - name: Tests
+        # The slow marker is long fuzz sweeps; the PR gate is the fast set,
+        # same as the release gate. Offscreen so no test can accidentally
+        # depend on a display.
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q -m "not slow"
