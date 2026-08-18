@@ -39,6 +39,8 @@ datas = [
     ('resources/components/*.png', 'resources/components'),
     ('resources/components/thumbs/*.png', 'resources/components/thumbs'),
     ('i18n/*.json',                'i18n'),
+    # Bundled plugins (Extensions menu) — discovered by file path at runtime.
+    ('plugins/*.py',               'plugins'),
 ]
 
 # Optional trees (present today, tolerated if pruned later).
