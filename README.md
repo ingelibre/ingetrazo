@@ -67,16 +67,36 @@ anything is missing.
   per-side face materials and translucency. Pure Python, offline, no Wine or
   proprietary DLL — powered by [OpenSKP](https://github.com/iamahsanmehmood/openskp)
   (see [Acknowledgements](#acknowledgements)).
-- **Files** — native `.igz` save/open, **import OBJ**, **export STL and OBJ**
-  (STL for slicers; OBJ with per-material colors).
-- **Undo/redo** — every edit is a single atomic step.
+- **Files** — native `.igz` save/open (self-contained: textures travel inside
+  the document), **import OBJ and COLLADA `.dae`**, **export STL, OBJ,
+  COLLADA and glTF/GLB** (STL for slicers; glTF with PBR materials and
+  geolocation).
+- **Layers & Scenes** — visibility/lock tags (plans emerge from one model)
+  and saved views (camera + per-layer visibility), both imported from `.skp`.
+- **BIM tagging + IFC export** — tag freeform geometry with IFC classes
+  (walls, slabs, columns, ...); tagged objects export to `.ifc` with honest
+  quantities (areas always; volumes only when the object is watertight) —
+  the bridge to [IngePresupuestos](https://ingepresupuestos.com) quantity
+  takeoff.
+- **Geo-referencing** — UTM datum, web basemap tiles, 3D terrain (DEM),
+  traced geo-paths with a live longitudinal profile, survey-point CSV import
+  (total station / GPS), and photogrammetric mesh import (WebODM / ODM).
+- **Sheet composer** — scaled viewports of the model on paper sheets, vector
+  hidden-line rendering, model-anchored dimensions, title block, PDF export.
+- **Extensions** — a plugin system: drop a Python file in the plugins folder
+  and its tools appear in the **Extensions** menu. Two reference plugins
+  ship with the app: **Model Info** (model statistics) and a **Python
+  Console** (live scripting over the open document, undo-integrated). A
+  broken plugin can never prevent IngeTrazo from starting. See
+  [docs/plugins.md](docs/plugins.md).
+- **Undo/redo** — every edit is a single atomic step (console scripts
+  included).
 
 ## Planned
 
-Tape Measure + guides · Eraser · face culling · connected/solid selection
-gestures · **BIM tagging + IFC export** (the IngePresupuestos bridge) ·
-Layers/Tags UI · COLLADA `.dae` import · geo-referencing (DEM + orthophoto,
-photogrammetry via [OpenDroneMap](https://opendronemap.org)) · 3MF / DXF.
+Contour lines from terrain · professional 2D sheet output
+(LayOut-equivalent) · DWG/DXF (with [IngeCAD](https://ingecad.org)) ·
+IFC import · extension manager UI · Flathub packaging.
 
 ## Why IngeTrazo
 

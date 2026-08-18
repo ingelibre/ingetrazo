@@ -4,6 +4,36 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.2] — 2026-08-18
+
+**IngeTrazo has extensions.** The plugin system `docs/plugins.md` had been
+promising is implemented: an **Extensions** menu discovers Python plugins at
+startup from `<app>/plugins/` and the per-user directory
+(`~/.local/share/ingetrazo/plugins/` on Linux, `%APPDATA%\ingetrazo\plugins\`
+on Windows). Based on contributions by Ahsan Mehmood
+([OpenSKP](https://github.com/iamahsanmehmood/openskp)) — thank you! —
+consolidated and reworked in #4.
+
+### Added
+- **Extensions menu + plugin engine** (`core/extensions.py`): plugins load
+  by file path (works in the packaged builds), a broken plugin shows as a
+  disabled "⚠ (load error)" entry instead of preventing startup, only tools
+  *defined* in a plugin register, and a plugin cannot steal a built-in
+  shortcut.
+- **Model Info** (bundled plugin): geometry counts, bounding box in the
+  document's units, materials in use with painted area per material, layers,
+  and BIM objects with quantities — the same numbers the BIM tray and the
+  IFC export report.
+- **Python Console** (bundled plugin, `Ctrl+Shift+P`): a live REPL over the
+  open document. Every run is ONE undoable step through the command layer
+  (Ctrl+Z, dirty flag, immediate repaint); a failing script rolls back
+  whole; a demo script builds a BIM-tagged pavilion
+  (`scripts/create_architectural_showcase.py`).
+- **CI on pull requests**: the fast test suite runs on every PR (previously
+  only on release tags).
+- `docs/plugins.md` rewritten: the implemented contract, plus the
+  `SnapshotImport` recipe for plugins that modify the model.
+
 ## [0.3.1] — 2026-08-12
 
 Linux gets first-class installers: every release now ships an **AppImage**

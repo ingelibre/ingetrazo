@@ -13,7 +13,19 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Requires Python 3.11+.
+Requires Python 3.12+.
+
+## Tests and CI
+
+```bash
+python -m pytest -m "not slow"     # the fast suite (~40 s, what CI runs)
+python -m pytest                   # everything, including the slow fuzz sweeps
+```
+
+**Every pull request runs the fast suite automatically** — your PR gets a
+green check or a red cross within a few minutes, no maintainer needed. New
+features should come with tests; bug fixes should come with a regression
+test that fails without the fix.
 
 ## Code style
 
@@ -27,27 +39,41 @@ Requires Python 3.11+.
 
 See [docs/architecture.md](docs/architecture.md) for a tour. Briefly:
 
-- `core/` — configuration, scene graph, camera, geometry primitives, layers.
-- `views/` — Qt widgets (main window, viewport, side panels).
+- `core/` — the engine: shared-vertex mesh, scene, camera, snapping,
+  topology, undo/history (`Command`), BIM tagging, i18n, plugin discovery.
+- `views/` — Qt widgets (main window, viewport, side tray, panels).
 - `tools/` — built-in modeling tools (line, rectangle, push/pull, select, ...).
-- `plugins/` — third-party tools, loaded at runtime.
-- `georef/` — real-world location: DEM, satellite tiles, projections.
-- `styles/` — visual style presets (shader modes).
-- `materials/` — material library and editor.
-- `analysis/` — 3D-printing-oriented checks (manifold, wall thickness, overhangs).
-- `formats/` — import / export (OBJ, COLLADA, glTF, STL, 3MF, IFC, native).
-- `i18n/` — UI translations.
-- `resources/` — shaders, icons, fonts, stylesheets.
+- `plugins/` — runtime-discovered plugins; the bundled Model Info and
+  Python Console live here and double as reference implementations.
+- `georef/` — real-world location: datum, tiles, DEM terrain, geo-paths,
+  survey points, photogrammetric meshes.
+- `formats/` — import / export (`.igz` native, `.skp`, OBJ, COLLADA,
+  glTF/GLB, STL, IFC).
+- `i18n/` — UI translations (flat English → Spanish map).
+- `resources/` — shaders, icons, textures, components.
+- `scripts/` — dev utilities and console demo scripts.
 - `docs/` — architecture and contributor documentation.
-- `tests/` — automated tests.
+- `tests/` — automated tests (`pytest`).
+
+## Writing a plugin
+
+The lowest-friction way to extend IngeTrazo — no fork needed. Drop a Python
+file in your user plugins folder and its tools appear in the **Extensions**
+menu; prototype live with **Extensions → Python Console** (`Ctrl+Shift+P`),
+where every run is one undoable step. The contract (discovery rules, failure
+isolation, and the `SnapshotImport` recipe for modifying the model) is in
+[docs/plugins.md](docs/plugins.md). The plugin API is **not stable yet**
+(0.x): plugins you publish today may need updates between minor versions.
 
 ## Workflow
 
 1. **Fork** the repository.
 2. Create a feature branch: `git checkout -b feature/short-description`.
 3. Commit small, focused changes with descriptive messages.
-4. Push to your fork and open a **Pull Request**.
-5. A maintainer will review. We try to respond within a week.
+4. Run the fast suite locally: `python -m pytest -m "not slow"`.
+5. Push to your fork and open a **Pull Request** — CI will run the suite
+   on it automatically.
+6. A maintainer will review. We try to respond within a week.
 
 ## Issue triage
 
