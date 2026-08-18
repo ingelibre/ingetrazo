@@ -154,6 +154,17 @@ def test_showcase_script_produces_real_bim(console, win):
     classes = {o["class"] for o in objects}
     assert {"IfcSlab", "IfcColumn", "IfcWall", "IfcRoof"} <= classes
     assert len([o for o in objects if o["class"] == "IfcColumn"]) == 4
+
+    # The quantities must be the REAL ones. The script once wound the boxes'
+    # bottom faces backwards, and the signed-volume sum reported 3.20 m³ for
+    # the 9.60 m³ floor slab and 122.03 m³ (!) for the 8.51 m³ roof — caught
+    # by an engineer reading the numbers on a screenshot.
+    by_name = {o["name"]: o for o in objects}
+    assert abs(by_name["Losa de piso"]["volume"] - 8.0 * 6.0 * 0.20) < 1e-4
+    assert abs(by_name["Cubierta"]["volume"] - 8.6 * 6.6 * 0.15) < 1e-4
+    for o in objects:
+        if o["class"] == "IfcColumn":
+            assert abs(o["volume"] - 0.30 * 0.30 * 3.0) < 1e-4
     assert len(win.viewport.history.undo_stack) == depth0 + 1
 
     assert win.viewport.history.undo()              # one Ctrl+Z, all gone

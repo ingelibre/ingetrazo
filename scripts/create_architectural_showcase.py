@@ -30,7 +30,11 @@ def _box(target_mesh, x0, y0, z0, x1, y1, z1, color, layer=None):
     """Six quads of an axis-aligned box; returns the new faces."""
     P = QVector3D
     quads = [
-        [P(x0, y0, z0), P(x1, y0, z0), P(x1, y1, z0), P(x0, y1, z0)],  # floor
+        # Floor wound clockwise seen from above: its outward normal must
+        # point DOWN, or the signed-volume sum (core.bim.face_set_volume)
+        # counts it backwards and reports wrong m³ for any box whose base
+        # is not at z=0 — the bug Marco's first screenshot caught.
+        [P(x0, y1, z0), P(x1, y1, z0), P(x1, y0, z0), P(x0, y0, z0)],  # floor
         [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)],  # top
         [P(x0, y0, z0), P(x1, y0, z0), P(x1, y0, z1), P(x0, y0, z1)],
         [P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)],
