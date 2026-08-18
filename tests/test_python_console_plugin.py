@@ -106,6 +106,10 @@ def test_failing_script_rolls_back_whole(console, win):
     assert len(win.viewport.history.undo_stack) == depth0
     out = console._output.toPlainText()
     assert "RuntimeError" in out and "a medio camino" in out
+    # The internal compile-as-expression probe must not leak into the
+    # traceback as a chained SyntaxError ("During handling of...").
+    assert "SyntaxError" not in out
+    assert "During handling" not in out
 
 
 def test_scope_rebinds_to_the_current_mesh(console, win):

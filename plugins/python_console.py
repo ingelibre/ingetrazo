@@ -218,9 +218,17 @@ class PythonConsoleDialog(QDialog):
             old_out, old_err = sys.stdout, sys.stderr
             sys.stdout, sys.stderr = out_buf, err_buf
             try:
+                # Compile-as-expression is probed OUTSIDE the try that runs
+                # the code: running exec inside the `except SyntaxError`
+                # handler would chain that internal, irrelevant SyntaxError
+                # onto every error a multi-line script raises ("During
+                # handling of the above exception...") — caught on the first
+                # dogfooding screenshot.
                 try:
                     compiled = compile(code, label, "eval")
                 except SyntaxError:
+                    compiled = None
+                if compiled is None:
                     exec(compile(code, label, "exec"), self._scope)
                 else:
                     result = eval(compiled, self._scope)
