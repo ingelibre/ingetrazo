@@ -96,6 +96,30 @@ def test_materials_read_the_attrs_ingetrazo_writes():
     assert tex["faces"] == 1 and abs(tex["area"] - 4.0) < 1e-6
 
 
+def test_materials_group_under_their_registry_name():
+    """Slice (c) of the registry track: a named material reads as ONE
+    takeoff line — 'Concreto visto: N caras, X m²' — in stats and text."""
+    scene = Scene()
+    for z in (0.0, 1.0, 2.0):
+        f = _quad(scene.mesh, z=z)
+        f.attrs["color"] = (0.62, 0.60, 0.58)
+        f.attrs["mat"] = "Concreto visto"
+    f2 = _quad(scene.mesh, z=3.0, size=2.0)          # anonymous red, 4 m²
+    f2.attrs["color"] = (0.8, 0.1, 0.1)
+
+    stats = _collect_stats(scene)
+    named = [c for c in stats["colors"] if c.get("mat")]
+    assert len(named) == 1
+    assert named[0]["mat"] == "Concreto visto"
+    assert named[0]["faces"] == 3
+    assert abs(named[0]["area"] - 3 * 16.0) < 1e-6   # aggregated m²
+
+    text = _stats_to_text(stats)
+    assert "Concreto visto: 3" in text               # the takeoff line
+    assert "rgb(158,153,148)" not in text            # name replaces rgb
+    assert "rgb(204,26,26)" in text                  # anonymous keeps rgb
+
+
 def test_bim_counts_objects_not_faces():
     """One wall spanning six tagged faces is ONE IfcWall — the same answer
     core.bim gives the BIM tray and the IFC export. PR #2 said six."""

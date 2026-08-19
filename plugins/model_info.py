@@ -113,6 +113,11 @@ def _collect_stats(scene) -> dict:
                 continue
             entry = colors.setdefault(
                 tuple(col), {"rgb": tuple(col), "faces": 0, "area": 0.0})
+        # Registry identity (attrs["mat"], core.materials): the entry shows
+        # ITS name — "Concreto visto: 84 m²", a finishes takeoff line —
+        # instead of an anonymous rgb() or a texture-file stem.
+        if f.attrs.get("mat") and "mat" not in entry:
+            entry["mat"] = f.attrs["mat"]
         entry["faces"] += 1
         entry["area"] += f.area()
 
@@ -174,11 +179,13 @@ def _stats_to_text(stats: dict) -> str:
         "--- " + tr("Materials in use") + " ---",
     ]
     for m in s["textures"]:
-        lines.append(f"  {m['name']}: {m['faces']} {tr('faces')}, "
+        label = m.get("mat") or m["name"]
+        lines.append(f"  {label}: {m['faces']} {tr('faces')}, "
                      f"{m['area']:.2f} m²")
     for m in s["colors"]:
         r, g, b = (int(round(c * 255)) for c in m["rgb"][:3])
-        lines.append(f"  rgb({r},{g},{b}): {m['faces']} {tr('faces')}, "
+        label = m.get("mat") or f"rgb({r},{g},{b})"
+        lines.append(f"  {label}: {m['faces']} {tr('faces')}, "
                      f"{m['area']:.2f} m²")
     if not s["textures"] and not s["colors"]:
         lines.append("  " + tr("(none)"))
@@ -345,10 +352,13 @@ class ModelInfoDialog(QDialog):
 
     def _populate_materials(self) -> None:
         s = self._stats
-        mats = ([{"label": m["name"], "swatch": None, **m}
+        mats = ([{"label": m.get("mat") or m["name"], "swatch": None, **m}
                  for m in s["textures"]]
-                + [{"label": "", "swatch": m["rgb"], **m}
+                + [{"label": m.get("mat") or "", "swatch": m["rgb"], **m}
                    for m in s["colors"]])
+        # Named materials first, biggest painted area first — the order a
+        # finishes takeoff reads in.
+        mats.sort(key=lambda m: (0 if m.get("mat") else 1, -m["area"]))
         self._mat_table.setRowCount(max(len(mats), 1))
         if not mats:
             self._mat_table.setItem(
@@ -360,8 +370,13 @@ class ModelInfoDialog(QDialog):
             if m["swatch"] is not None:
                 rgb = m["swatch"][:3]
                 name_item.setBackground(QColor.fromRgbF(*rgb))
-                r, g, b = (int(round(c * 255)) for c in rgb)
-                name_item.setText(f"rgb({r},{g},{b})")
+                if not m["label"]:
+                    r, g, b = (int(round(c * 255)) for c in rgb)
+                    name_item.setText(f"rgb({r},{g},{b})")
+                # Legible over any swatch colour.
+                lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+                name_item.setForeground(
+                    QColor("black") if lum > 0.5 else QColor("white"))
             self._mat_table.setItem(i, 0, name_item)
             self._mat_table.setItem(
                 i, 1, QTableWidgetItem(f"{m['faces']:,}"))
