@@ -501,6 +501,7 @@
   "Silhouette": "Silueta",
   "Size": "Tamaño",
   "SketchUp (*.skp);;All files (*)": "SketchUp (*.skp);;Todos (*)",
+  "SketchUp (*.skp)": "SketchUp (*.skp)",
   "SketchUp (.skp)…": "SketchUp (.skp)…",
   "Smoothing edges…": "Suavizando aristas…",
   "Solid Inspector": "Inspector de sólidos",

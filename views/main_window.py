@@ -41,6 +41,7 @@ from formats import obj as obj_format
 from formats import ifc as ifc_format
 from formats import stl as stl_format
 from formats import gltf as gltf_format
+from formats import skp_out as skp_out_format
 from tools.arc import CenterArcTool, ArcTool, ThreePointArcTool
 from tools.circle import CircleTool, PolygonTool
 from tools.dimension import DimensionTool
@@ -629,6 +630,7 @@ class MainWindow(QMainWindow):
             (tr("COLLADA (.dae)…"), self._on_export_dae),
             (tr("STL (3D printing)…"), self._on_export_stl),
             (tr("Wavefront OBJ (.obj)…"), self._on_export_obj),
+            (tr("SketchUp (.skp)…"), self._on_export_skp),
             (tr("Image (PNG / JPG)…"), self._on_export_image),
         ):
             act = QAction(label, self)
@@ -2155,6 +2157,11 @@ class MainWindow(QMainWindow):
 
     def _on_export_obj(self) -> None:
         self._export("OBJ", "obj", tr("Wavefront OBJ (*.obj)"), obj_format.save_obj)
+
+    def _on_export_skp(self) -> None:
+        """Native SketchUp export — opens directly in SketchUp 2017+."""
+        self._export("SketchUp", "skp", tr("SketchUp (*.skp)"),
+                     skp_out_format.save_skp)
 
     def _on_export_glb(self) -> None:
         """Single-file 3D export (geometry + materials + textures embedded).
