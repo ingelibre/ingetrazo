@@ -46,7 +46,9 @@ def collect_geometry(scene):
     Returns ``(materials, prims)`` where
 
     * ``materials[key]`` is ``{"color": (r,g,b), "map": basename|None,
-      "src": Path}`` (``src`` present only for textured materials), and
+      "src": Path, "mat": name|absent}`` (``src`` only for textured
+      materials; ``mat`` is the registry identity — ``attrs["mat"]`` — of
+      the first face seen with one, consumed by :func:`export_names`), and
     * ``prims[key]`` is a list of triangles, each ``(normal, verts)`` with
       ``verts`` a list of three ``(position: QVector3D, uv: (u, v) | None)``.
 
@@ -65,6 +67,8 @@ def collect_geometry(scene):
             key = ("tex", src.name)
             materials.setdefault(key, {"color": (1.0, 1.0, 1.0),
                                        "map": src.name, "src": src})
+            if face.attrs.get("mat") and "mat" not in materials[key]:
+                materials[key]["mat"] = face.attrs["mat"]
             sw = tex.get("sw", 1.0) or 1.0
             sh = tex.get("sh", 1.0) or 1.0
             rot = float(tex.get("rot", 0.0))
@@ -78,11 +82,45 @@ def collect_geometry(scene):
             col = tuple(face.attrs.get("color") or _DEFAULT_COLOR)
             key = ("color", col)
             materials.setdefault(key, {"color": col, "map": None})
+            if face.attrs.get("mat") and "mat" not in materials[key]:
+                materials[key]["mat"] = face.attrs["mat"]
             for tri in face.triangulate():
                 pts = list(tri)
                 prims.setdefault(key, []).append(
                     (n, [(pts[k], None) for k in range(3)]))
     return materials, prims
+
+
+def export_names(materials) -> dict:
+    """``key`` → a unique, export-safe material name.
+
+    A material whose faces carry a registry identity (``attrs["mat"]``,
+    core.materials) exports under THAT name — ``Concreto_visto`` instead of
+    the anonymous ``mat0`` — sanitized to the least common denominator of
+    the three formats (OBJ's .mtl chokes on whitespace; DAE wants clean
+    XML attributes): whitespace → ``_``, anything but alnum/._- dropped,
+    leading digit prefixed. Anonymous materials keep the classic ``matN``,
+    and collisions (two recipes sharing one identity) get ``_2`` suffixes —
+    a name never silently merges two different materials.
+    """
+    names: dict = {}
+    used: set = set()
+    for i, (key, info) in enumerate(materials.items()):
+        raw = (info.get("mat") or "").strip()
+        if raw:
+            base = "".join(c if c.isalnum() or c in "._-" else "_"
+                           for c in raw).strip("._-") or f"mat{i}"
+            if base[0].isdigit():
+                base = f"m_{base}"
+        else:
+            base = f"mat{i}"
+        name, n = base, 2
+        while name in used:
+            name = f"{base}_{n}"
+            n += 1
+        used.add(name)
+        names[key] = name
+    return names
 
 
 def geolocation(scene):

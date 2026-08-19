@@ -23,7 +23,7 @@ import json
 import struct
 from pathlib import Path
 
-from .meshexport import collect_geometry, geolocation
+from .meshexport import collect_geometry, export_names, geolocation
 
 _F32 = 5126          # accessor componentType FLOAT
 _U32 = 5125          # accessor componentType UNSIGNED_INT
@@ -80,9 +80,10 @@ def save_glb(scene, path) -> None:
     mat_index: dict[tuple, int] = {}
     tex_for_image: dict[str, int] = {}
 
+    names = export_names(materials_in)
     for key in keys:
         info = materials_in[key]
-        mat: dict = {"name": f"mat{len(gltf_materials)}",
+        mat: dict = {"name": names[key],
                      "doubleSided": True,
                      "pbrMetallicRoughness": {"metallicFactor": 0.0,
                                               "roughnessFactor": 1.0}}

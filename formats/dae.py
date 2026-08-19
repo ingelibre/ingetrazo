@@ -90,10 +90,11 @@ def save_dae(scene, path, project_name: str = "IngeTrazo model") -> None:
     import shutil
     from datetime import datetime, timezone
 
-    from .meshexport import collect_geometry, geolocation
+    from .meshexport import collect_geometry, export_names, geolocation
 
     path = Path(path)
     materials_in, prims = collect_geometry(scene)
+    mat_names = export_names(materials_in)
     keys = list(prims.keys())
 
     # Deduplicated shared sources for the single <geometry>.
@@ -205,7 +206,7 @@ def save_dae(scene, path, project_name: str = "IngeTrazo model") -> None:
 
     out.append("<library_materials>")
     for i in range(len(keys)):
-        out.append(f'<material id="mat{i}" name="mat{i}">'
+        out.append(f'<material id="mat{i}" name="{mat_names[keys[i]]}">'
                    f'<instance_effect url="#eff{i}"/></material>')
     out.append("</library_materials>")
 

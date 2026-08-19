@@ -82,6 +82,8 @@ def save_obj(scene, path) -> None:
             key = ("tex", src.name)
             materials.setdefault(key, {"color": (1.0, 1.0, 1.0),
                                        "map": src.name, "src": src})
+            if face.attrs.get("mat") and "mat" not in materials[key]:
+                materials[key]["mat"] = face.attrs["mat"]
             n = face.normal()
             sw = tex.get("sw", 1.0) or 1.0
             sh = tex.get("sh", 1.0) or 1.0
@@ -99,12 +101,17 @@ def save_obj(scene, path) -> None:
             col = tuple(face.attrs.get("color") or _DEFAULT_COLOR)
             key = ("color", col)
             materials.setdefault(key, {"color": col, "map": None})
+            if face.attrs.get("mat") and "mat" not in materials[key]:
+                materials[key]["mat"] = face.attrs["mat"]
             for tri in face.triangulate():
                 groups.setdefault(key, []).append(
                     [(vidx(tri[k]), None) for k in range(3)])
 
     keys = list(groups.keys())
-    matname = {k: f"mat{i}" for i, k in enumerate(keys)}
+    # Registry identities (attrs["mat"]) export under their real name —
+    # "Concreto_visto", not "mat0"; anonymous paints keep matN.
+    from .meshexport import export_names
+    matname = export_names({k: materials[k] for k in keys})
 
     # Copy texture images next to the .obj so map_Kd resolves.
     for k in keys:
