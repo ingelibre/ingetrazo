@@ -8,10 +8,18 @@ Per-face paint (``Face.attrs["color"]``) becomes a SketchUp material, textured
 faces (``attrs["texture"]``) become image-mapped materials with their original
 textures embedded in the ``.skp``, and layers become SketchUp tags.
 
-Groups export as SketchUp groups; component instances (groups sharing a
-prototype mesh via ``Group.xform``) export as a single SketchUp component
-definition placed once per instance, preserving the same shared-prototype
-semantics the import brought in.
+Every face — loose mesh, group, and component instance alike — is flattened
+to world-space coordinates (see ``meshexport.world_faces()``) and written as
+an individual root-level face; none of ``openskp.create``'s ``add_group``/
+``add_component_definition``/``add_instance`` are used. So a group no longer
+shows as a "Group" in SketchUp's Outliner after export, and an instance that
+shared a prototype mesh with others duplicates its geometry rather than
+sharing one component definition — larger files for models with many
+repeated instances, though no longer at risk of corruption on large models
+(OpenSKP's slot-boundary fix). Same scope as ``formats/obj.py``'s export,
+which flattens for the same reason: OBJ has no group/instance concept
+either, so this exporter simply hasn't grown SketchUp-specific group/
+instance support yet — a real follow-up, not implemented here.
 
 Coordinates are in **inches** (SketchUp's native unit); the model's metre-based
 geometry is scaled by ``_M_TO_IN``. The file produced is the same legacy MFC
@@ -21,34 +29,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .meshexport import world_faces
+
 # IngeTrazo stores geometry in metres; SketchUp works in inches.
 _M_TO_IN = 39.37007874
 
 # Cream painted on faces with no material colour (mirrors the viewport default).
 _DEFAULT_COLOR = (0.96, 0.95, 0.925)
-
-
-def _faces(scene):
-    """Every renderable face in WORLD space: loose mesh + groups. Component
-    instances share a prototype mesh in local coordinates, so their faces
-    come from a transformed copy."""
-    if hasattr(scene, "render_faces"):
-        groups = getattr(scene, "groups", [])
-        if not any(getattr(g, "xform", None) is not None for g in groups):
-            yield from scene.render_faces()
-            return
-        from core.group import world_mesh
-        for f in scene.loose_mesh.faces:
-            if scene.entity_visible(f):
-                yield f
-        for g in groups:
-            if not scene.entity_visible(g) or getattr(g, "billboard", False):
-                continue
-            yield from world_mesh(g).faces
-    elif hasattr(scene, "mesh"):
-        yield from scene.mesh.faces
-    else:
-        yield from scene.faces
 
 
 def _color_to_rgba(color):
@@ -154,7 +141,7 @@ def save_skp(scene, path) -> None:
     materials_info: dict[tuple, dict] = {}
     face_list: list = []  # (face, key) pairs for geometry pass
 
-    for face in _faces(scene):
+    for face in world_faces(scene):
         key = _material_key(face)
         if key not in materials_info:
             materials_info[key] = _material_info(face, key)
