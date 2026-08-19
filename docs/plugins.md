@@ -89,6 +89,9 @@ builds a small BIM-tagged pavilion).
   layers / BIM statistics). A read-only, dialog-based plugin.
 - `plugins/python_console.py` — the Python Console. A stateful,
   command-layer-integrated plugin.
+- `plugins/solid_inspector.py` — Solid Inspector: per-edge watertightness
+  diagnosis with viewport highlighting. A modeless, selection-driven
+  plugin.
 
 ## Roadmap
 
