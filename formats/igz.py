@@ -169,6 +169,11 @@ def _face_json(f) -> dict:
     opacity = getattr(f, "attrs", {}).get("opacity")
     if opacity is not None:
         entry["opacity"] = float(opacity)
+    # Material identity (core.materials): the registry name this face was
+    # painted with. Written only when present; older readers ignore it.
+    mat = getattr(f, "attrs", {}).get("mat")
+    if mat:
+        entry["mat"] = mat
     back = getattr(f, "attrs", {}).get("back")
     if isinstance(back, dict):
         # Deep-copy the nested texture: _pack_textures rewrites the entries it
@@ -250,6 +255,9 @@ def save_scene(scene, path: Path) -> dict:
              "offset": [d.offset.x(), d.offset.y(), d.offset.z()]}
             for d in dims
         ]
+    mats = getattr(scene, "materials", None)
+    if mats:
+        payload["materials"] = [m.to_dict() for m in mats.values()]
     style = getattr(scene, "dimension_style", None)
     if style:
         payload["dimension_style"] = dict(style)
@@ -413,6 +421,12 @@ def load_into(scene, path: Path) -> None:
             scene.tile_layer = TileLayer.from_dict(raw_tiles)
         except Exception:  # noqa: BLE001 — a bad block costs the map, not the file
             scene.tile_layer = None
+    from core.materials import Material
+    scene.materials = {}
+    for raw in payload.get("materials", []):
+        mat = Material.from_dict(raw)
+        if mat.name:
+            scene.materials[mat.name] = mat
     from core.saved_views import SavedView
     scene.saved_views = [SavedView.from_dict(r)
                          for r in payload.get("saved_views", [])]
@@ -513,5 +527,7 @@ def _load_mesh(mesh, payload) -> None:
                 face.attrs["ifc"] = dict(raw["ifc"])
             if raw.get("opacity") is not None:
                 face.attrs["opacity"] = float(raw["opacity"])
+            if raw.get("mat"):
+                face.attrs["mat"] = raw["mat"]
             if isinstance(raw.get("back"), dict):
                 face.attrs["back"] = dict(raw["back"])

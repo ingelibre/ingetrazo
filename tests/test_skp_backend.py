@@ -180,7 +180,7 @@ def test_openskp_adapter_resolves_face_colours_via_materials_by_id():
 
     with_join = NS(definitions={0: root}, materials_by_id={29491: mat})
     attrs = skp_openskp._adapt(with_join, "m")["groups"][0]["faces"][0][2]
-    assert attrs == {"color": [1.0, 0.0, 0.2]}
+    assert attrs == {"color": [1.0, 0.0, 0.2], "mat": "Wood"}
 
     without_join = NS(definitions={0: root})   # PyPI 0.2.0: no materials_by_id
     attrs = skp_openskp._adapt(without_join, "m")["groups"][0]["faces"][0][2]
@@ -313,7 +313,7 @@ def test_openskp_adapter_inherits_instance_material():
     payload = skp_openskp._adapt(model, "obra")
 
     attrs = payload["groups"][0]["faces"][0][2]
-    assert attrs == {"color": [1.0, 0.0, 0.0]}
+    assert attrs == {"color": [1.0, 0.0, 0.0], "mat": "Wood"}
 
 
 def test_openskp_adapter_face_material_beats_inherited():
@@ -333,7 +333,8 @@ def test_openskp_adapter_face_material_beats_inherited():
     # The face's OWN material fronts; the unpainted back side shows the
     # instance's inherited paint (SketchUp two-sided rule).
     assert payload["groups"][0]["faces"][0][2] == {
-        "color": [0.0, 0.0, 1.0], "back": {"color": [1.0, 0.0, 0.0]}}
+        "color": [0.0, 0.0, 1.0], "mat": "B",
+        "back": {"color": [1.0, 0.0, 0.0], "mat": "W"}}
 
 
 def test_openskp_adapter_bakes_positioned_texture_uvs(tmp_path):
@@ -484,7 +485,8 @@ def test_openskp_adapter_own_back_material_beats_instance_paint():
     payload = skp_openskp._adapt(model, "m")
 
     attrs = payload["groups"][0]["faces"][0][2]
-    assert attrs == {"color": [128 / 255.0] * 3}      # grey, not blue
+    assert attrs == {"color": [128 / 255.0] * 3,
+                     "mat": "Grey"}                 # grey, not blue
 
 
 def test_openskp_adapter_back_painted_face_flips_and_paints():
@@ -501,7 +503,7 @@ def test_openskp_adapter_back_painted_face_flips_and_paints():
     payload = skp_openskp._adapt(model, "m")
 
     outer, holes, attrs = payload["groups"][0]["faces"][0]
-    assert attrs == {"color": [0.0, 200 / 255.0, 0.0]}
+    assert attrs == {"color": [0.0, 200 / 255.0, 0.0], "mat": "Grass"}
     # ring reversed: the original raw order was v(0,0),(10,0),(10,10) —
     # flipped means the first output vertex is the original last one.
     assert (round(outer[0].x(), 3), round(outer[0].y(), 3)) == (0.254, 0.254)
@@ -525,7 +527,8 @@ def test_openskp_adapter_face_camera_component_becomes_billboard():
 
     g = {gp["name"]: gp for gp in payload["groups"]}["Susan"]
     assert g["billboard"] is True
-    assert g["faces"][0][2] == {"color": [0.0, 128 / 255.0, 0.0]}
+    assert g["faces"][0][2] == {"color": [0.0, 128 / 255.0, 0.0],
+                                "mat": "Shirt"}
 
     scene = Scene()
     skp_format.apply_payload(scene, payload)

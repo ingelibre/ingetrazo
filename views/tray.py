@@ -968,17 +968,26 @@ class MaterialsPanel(QWidget):
                 w.deleteLater()
         colors: dict = {}
         textures: dict = {}
+        names: dict = {}     # swatch key → material name (registry identity)
         for face in self._window.viewport.scene.render_faces():
+            mat = face.attrs.get("mat")
             tex = face.attrs.get("texture")
             if tex and tex.get("path"):
                 textures.setdefault(tex["path"], tex)
+                if mat:
+                    names.setdefault(("t", tex["path"]), mat)
             else:
                 col = face.attrs.get("color")
                 if col is not None:
                     colors[tuple(col)] = col
+                    if mat:
+                        names.setdefault(("c", tuple(col)), mat)
         i = 0
         for col in colors.values():
-            b = _swatch_button(_color_pixmap(tuple(col)), tr("Color"))
+            # A named material shows its NAME (the registry identity the
+            # .skp import now preserves); an anonymous paint stays "Color".
+            label = names.get(("c", tuple(col))) or tr("Color")
+            b = _swatch_button(_color_pixmap(tuple(col)), label)
             b.clicked.connect(lambda _=False, c=tuple(col): self._apply_color(c))
             self._in_model_grid.addWidget(b, i // self.COLS, i % self.COLS)
             i += 1
@@ -986,7 +995,7 @@ class MaterialsPanel(QWidget):
             pm = _texture_pixmap(path)
             if pm is None:
                 continue
-            b = _swatch_button(pm, Path(path).stem)
+            b = _swatch_button(pm, names.get(("t", path)) or Path(path).stem)
             b.clicked.connect(
                 lambda _=False, t=dict(tex): self._apply_texture(
                     t["path"], t.get("sw", 1.0)))

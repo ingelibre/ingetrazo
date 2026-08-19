@@ -229,7 +229,13 @@ def _material_attrs(model, skp_path):
     to :func:`_texture_dir`, tile size converted inches → metres (defaulting
     to 1 m when the file omits it). A plain material becomes
     ``{"color": [r, g, b]}`` in 0..1 (PR openskp#3). Empty when the installed
-    OpenSKP predates the joins."""
+    OpenSKP predates the joins.
+
+    Since the material registry (core.materials) each entry also carries
+    ``"mat"``: the SketchUp material NAME — "Concreto visto" stops
+    dissolving into an anonymous colour at the border. Returns
+    ``(attrs, materials)`` where *materials* is the registry payload
+    (one dict per named material, `.igz`-shaped)."""
     attrs: dict = {}
     tex_dir = None
     for mid, mat in (getattr(model, "materials_by_id", None) or {}).items():
@@ -285,7 +291,28 @@ def _material_attrs(model, skp_path):
             if op < 0.999:
                 entry["opacity"] = float(op)
             attrs[mid] = entry
-    return attrs
+
+    # Registry: give every named entry its identity. register() dedups —
+    # two SketchUp materials with the same name and the same recipe merge;
+    # same name with a different recipe gets "name (2)" so neither silently
+    # repaints the other's faces. The final name lands in the shared entry
+    # dict, so every face built from it carries attrs["mat"] for free.
+    from core.materials import Material, register
+    registry: dict = {}
+    for mid, mat in (getattr(model, "materials_by_id", None) or {}).items():
+        entry = attrs.get(mid)
+        name = getattr(mat, "name", "") or ""
+        if entry is None or not name.strip():
+            continue
+        color = entry.get("color")
+        final = register(registry, Material(
+            name=name.strip(),
+            color=tuple(color) if color is not None else None,
+            texture=dict(entry["texture"]) if entry.get("texture") else None,
+            opacity=entry.get("opacity"),
+        ))
+        entry["mat"] = final
+    return attrs, [m.to_dict() for m in registry.values()]
 
 
 def _face_attrs(face, attr_map, inherited=None):
@@ -745,7 +772,7 @@ def _adapt(model, name: str, skp_path=None):
     from formats.dae import _INST_MIN_POLYS, _INST_MIN_SAVED
 
     defs = getattr(model, "definitions", {}) or {}
-    attr_map = _material_attrs(model, skp_path or name)
+    attr_map, materials = _material_attrs(model, skp_path or name)
     # openskp ≥ 0.4 exposes the implicit root as its own field; older
     # releases keep it inside ``definitions`` under the name ROOT_MODEL.
     root = getattr(model, "root", None)
@@ -921,6 +948,9 @@ def _adapt(model, name: str, skp_path=None):
     if not groups and not protos:
         return None
     payload = {"backend": "openskp", "groups": groups, "protos": protos}
+    # The file's named materials → the scene registry (core.materials).
+    if materials:
+        payload["materials"] = materials
     # The file's layers (tags), with their visibility — Scene-level, so the
     # importer can register them even when nothing sits on one yet. The
     # model's default layer never travels (it IS IngeTrazo's default layer).

@@ -187,6 +187,34 @@ def apply_payload(scene, payload) -> str:
         soften_smooth_edges(mesh)
         return mesh
 
+    # The file's named materials join the scene registry (core.materials).
+    # register() dedups: an identical re-import merges silently; a name
+    # collision with a DIFFERENT recipe lands as "name (2)" and the faces
+    # about to be built are remapped to the final name (their attrs dicts
+    # are shared per material, so each is rewritten once, by identity).
+    if payload.get("materials"):
+        from core.materials import Material, register
+        if not hasattr(scene, "materials") or scene.materials is None:
+            scene.materials = {}
+        remap: dict = {}
+        for raw in payload["materials"]:
+            mat = Material.from_dict(raw)
+            if not mat.name:
+                continue
+            final = register(scene.materials, mat)
+            if final != mat.name:
+                remap[mat.name] = final
+        if remap:
+            seen: set = set()
+            containers = list(payload.get("groups", []) or []) + \
+                list(payload.get("protos", []) or [])
+            for group in containers:
+                for _outer, _holes, attrs in group.get("faces", []) or []:
+                    if attrs and id(attrs) not in seen:
+                        seen.add(id(attrs))
+                        if attrs.get("mat") in remap:
+                            attrs["mat"] = remap[attrs["mat"]]
+
     # The file's layers (SketchUp tags) join the scene's layer list, keeping
     # their visibility — layers already present are left untouched (a re-import
     # must not flip what the user toggled).

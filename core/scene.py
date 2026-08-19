@@ -47,6 +47,11 @@ class Scene:
         __import__("core.layers", fromlist=["Layer"]).Layer(
             __import__("core.layers", fromlist=["DEFAULT_LAYER"]).DEFAULT_LAYER)
     ])
+    # Named materials (core.materials.Material), name → Material. The
+    # registry gives identity to paint recipes; faces keep their baked
+    # attrs (color/texture) as the render truth and optionally carry
+    # attrs["mat"] = name. See core/materials.py.
+    materials: dict = field(default_factory=dict)
     # Saved views (SketchUp's "Scenes"): named camera + layer-visibility
     # snapshots (core.saved_views.SavedView). Presentation state, no geometry.
     saved_views: list = field(default_factory=list)
