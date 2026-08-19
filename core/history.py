@@ -544,6 +544,108 @@ class SetFaceColorCommand(Command):
         scene.version += 1
 
 
+class SetFaceMaterialTagCommand(Command):
+    """Set (or clear with ``None``) the registry identity ``attrs["mat"]``
+    on a set of faces — the companion of the colour/texture stamp, so a
+    paint stroke carries the material's NAME (core.materials) and the
+    per-material takeoff stays truthful. Painting anonymously clears the
+    tag: a red face is no longer "Concreto visto".
+
+    When ``material`` is given, ``do`` also ensures it exists in the scene
+    registry (a library swatch registers itself on first use); ``undo``
+    removes it again only if this very command added it."""
+
+    def __init__(self, faces, name, material=None) -> None:
+        self._faces = list(faces)
+        self._name = name
+        self._material = material
+        self._old: Optional[list] = None
+        self._registered = False
+
+    def do(self, scene) -> None:
+        if self._old is None:
+            self._old = [f.attrs.get("mat") for f in self._faces]
+        if (self._material is not None and self._name
+                and self._name not in getattr(scene, "materials", {})):
+            scene.materials[self._name] = self._material
+            self._registered = True
+        for f in self._faces:
+            if self._name is None:
+                f.attrs.pop("mat", None)
+            else:
+                f.attrs["mat"] = self._name
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for f, old in zip(self._faces, self._old or []):
+            if old is None:
+                f.attrs.pop("mat", None)
+            else:
+                f.attrs["mat"] = old
+        if self._registered:
+            scene.materials.pop(self._name, None)
+            self._registered = False
+        scene.version += 1
+
+
+class RestampMaterialCommand(Command):
+    """Edit a registry material and RESTAMP every face that wears it.
+
+    "Change the concrete everywhere": the registry entry is replaced by
+    ``new_material`` (same name) and each face across the loose mesh and
+    every group whose ``attrs["mat"]`` carries that name receives the new
+    recipe — colour/texture/opacity — in one undoable step. Keys absent
+    from the new recipe are removed (a material edited from textured to
+    plain colour drops its texture). Undo restores the registry entry and
+    each face's previous values exactly."""
+
+    def __init__(self, name, new_material) -> None:
+        self._name = name
+        self._new = new_material
+        self._old_material = None
+        self._old_faces: Optional[list] = None   # (face, {key: old value})
+
+    _KEYS = ("color", "texture", "opacity")
+
+    def _targets(self, scene):
+        meshes = [scene.loose_mesh] + [g.mesh for g in scene.groups]
+        for mesh in meshes:
+            for f in mesh.faces:
+                if f.attrs.get("mat") == self._name:
+                    yield f
+
+    def do(self, scene) -> None:
+        stamp = self._new.face_attrs()
+        if self._old_faces is None:
+            self._old_material = scene.materials.get(self._name)
+            self._old_faces = [
+                (f, {k: f.attrs.get(k) for k in self._KEYS})
+                for f in self._targets(scene)]
+        scene.materials[self._name] = self._new
+        for f, _old in self._old_faces:
+            for k in self._KEYS:
+                if k in stamp:
+                    f.attrs[k] = stamp[k]
+                else:
+                    f.attrs.pop(k, None)
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self._old_material is None:
+            scene.materials.pop(self._name, None)
+        else:
+            scene.materials[self._name] = self._old_material
+        for f, old in self._old_faces or []:
+            for k in self._KEYS:
+                if old[k] is None:
+                    f.attrs.pop(k, None)
+                else:
+                    f.attrs[k] = old[k]
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+
 class AddDimensionCommand(Command):
     """Add a static dimension annotation to ``scene.dimensions``."""
 

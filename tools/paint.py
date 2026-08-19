@@ -22,6 +22,7 @@ from core.mesh import Face
 from core.history import (
     CompoundCommand,
     SetFaceColorCommand,
+    SetFaceMaterialTagCommand,
     SetFaceTextureCommand,
 )
 from tools.base import Tool, ToolContext
@@ -41,6 +42,13 @@ class PaintTool(Tool):
     # Shared current texture ({"path","sw","sh"}) or None. When set, the click
     # applies a texture instead of a colour — chosen from the toolbar.
     current_texture: dict | None = None
+    # Shared current material IDENTITY (core.materials.Material) or None.
+    # Set by the tray when the active swatch has a name; painting then
+    # stamps attrs["mat"] alongside the colour/texture (and registers the
+    # material in the scene on first use). None = anonymous paint, which
+    # CLEARS any previous identity — a red face is no longer "Concreto
+    # visto", so the per-material takeoff never lies.
+    current_material = None
 
     def on_activate(self, viewport) -> None:
         pass
@@ -60,7 +68,8 @@ class PaintTool(Tool):
 
         if ctx.modifiers & Qt.AltModifier:
             # Eyedropper: adopt the face's material (texture if it has one, else
-            # colour) as the current paint material.
+            # colour) as the current paint material — identity included, so
+            # sampling "Concreto visto" paints "Concreto visto".
             tex = face.attrs.get("texture")
             if tex is not None:
                 PaintTool.current_texture = dict(tex)
@@ -69,6 +78,9 @@ class PaintTool(Tool):
                 sampled = face.attrs.get("color")
                 PaintTool.current_color = (tuple(sampled) if sampled is not None
                                            else DEFAULT_FACE_COLOR)
+            name = face.attrs.get("mat")
+            PaintTool.current_material = (
+                vp.scene.materials.get(name) if name else None)
             vp.update()
             return
 
@@ -78,14 +90,20 @@ class PaintTool(Tool):
         sel_faces = [e for e in vp.scene.selection if isinstance(e, Face)]
         faces = (sel_faces if face in sel_faces
                  else vp.scene.mesh.surface_of(face))
+        mat = PaintTool.current_material
+        tag = SetFaceMaterialTagCommand(
+            faces, mat.name if mat is not None else None, mat)
         if PaintTool.current_texture is not None:
-            vp.history.execute(
-                SetFaceTextureCommand(faces, PaintTool.current_texture))
+            vp.history.execute(CompoundCommand([
+                SetFaceTextureCommand(faces, PaintTool.current_texture),
+                tag,
+            ]))
         else:
             # Painting a solid colour clears any texture on those faces, in one
             # undoable step.
             vp.history.execute(CompoundCommand([
                 SetFaceColorCommand(faces, PaintTool.current_color),
                 SetFaceTextureCommand(faces, None),
+                tag,
             ]))
         vp.update()

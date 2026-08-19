@@ -944,7 +944,8 @@ class MaterialsPanel(QWidget):
                     b.clicked.connect(
                         lambda _=False, p=str(path), it=item:
                         self._apply_texture(p, sw=it.get("sw"),
-                                            sh=it.get("sh")))
+                                            sh=it.get("sh"),
+                                            name=it["name"]))
                     grid.addWidget(b, i // self.COLS, i % self.COLS)
 
         loose = sorted(_TEX_DIR.glob("*.png"))
@@ -956,7 +957,8 @@ class MaterialsPanel(QWidget):
                     continue
                 b = _swatch_button(pm, path.stem)
                 b.clicked.connect(
-                    lambda _=False, p=str(path): self._apply_texture(p))
+                    lambda _=False, p=str(path), n=path.stem:
+                    self._apply_texture(p, name=n))
                 grid.addWidget(b, i // self.COLS, i % self.COLS)
 
     def refresh_in_model(self) -> None:
@@ -986,28 +988,75 @@ class MaterialsPanel(QWidget):
         for col in colors.values():
             # A named material shows its NAME (the registry identity the
             # .skp import now preserves); an anonymous paint stays "Color".
-            label = names.get(("c", tuple(col))) or tr("Color")
+            name = names.get(("c", tuple(col)))
+            label = name or tr("Color")
             b = _swatch_button(_color_pixmap(tuple(col)), label)
-            b.clicked.connect(lambda _=False, c=tuple(col): self._apply_color(c))
+            b.clicked.connect(lambda _=False, c=tuple(col), n=name:
+                              self._apply_color(c, name=n))
+            if name:
+                # Slice (b): edit the material once, restamp every face
+                # that wears it — right-click the swatch.
+                b.setContextMenuPolicy(Qt.CustomContextMenu)
+                b.customContextMenuRequested.connect(
+                    lambda _pos, n=name, c=tuple(col):
+                    self._edit_named_color(n, c))
             self._in_model_grid.addWidget(b, i // self.COLS, i % self.COLS)
             i += 1
         for path, tex in textures.items():
             pm = _texture_pixmap(path)
             if pm is None:
                 continue
-            b = _swatch_button(pm, names.get(("t", path)) or Path(path).stem)
+            t_name = names.get(("t", path))
+            b = _swatch_button(pm, t_name or Path(path).stem)
             b.clicked.connect(
-                lambda _=False, t=dict(tex): self._apply_texture(
-                    t["path"], t.get("sw", 1.0)))
+                lambda _=False, t=dict(tex), n=t_name: self._apply_texture(
+                    t["path"], t.get("sw", 1.0), name=n))
             self._in_model_grid.addWidget(b, i // self.COLS, i % self.COLS)
             i += 1
 
     # ---- Apply / add --------------------------------------------------------
-    def _apply_color(self, rgb) -> None:
+    def _apply_color(self, rgb, name: str | None = None) -> None:
         PaintTool.current_color = tuple(rgb)
         PaintTool.current_texture = None
+        PaintTool.current_material = self._material_for(
+            name, color=tuple(rgb))
         self._window._activate_tool("paint")
         self._refresh_preview()
+
+    def _edit_named_color(self, name: str, current_rgb) -> None:
+        """Slice (b) of the registry track: edit a named colour material
+        and restamp every face wearing it, one undoable step."""
+        from core.history import RestampMaterialCommand
+        from core.materials import Material
+        scene = self._window.viewport.scene
+        existing = scene.materials.get(name)
+        base = (existing.color if existing and existing.color
+                else tuple(current_rgb))
+        chosen = QColorDialog.getColor(
+            QColor.fromRgbF(*base[:3]), self,
+            tr("Edit material: {name}", name=name))
+        if not chosen.isValid():
+            return
+        new_mat = Material(
+            name, color=(chosen.redF(), chosen.greenF(), chosen.blueF()),
+            opacity=existing.opacity if existing else None)
+        self._window.viewport.history.execute(
+            RestampMaterialCommand(name, new_mat))
+        self._window.viewport.notify_scene_changed()
+        self._window.statusBar().showMessage(
+            tr("Material '{name}' updated on every face that wears it",
+               name=name), 3000)
+
+    def _material_for(self, name, color=None, texture=None):
+        """The Material identity for the active swatch: the registry's
+        entry when the name already exists (keeps its full recipe), a fresh
+        one otherwise — registered lazily by the paint command itself, so
+        merely CLICKING a library swatch never pollutes the registry."""
+        if not name:
+            return None
+        from core.materials import Material
+        existing = self._window.viewport.scene.materials.get(name)
+        return existing or Material(name, color=color, texture=texture)
 
     def _load_texture_fields(self) -> None:
         tex = PaintTool.current_texture
@@ -1052,11 +1101,14 @@ class MaterialsPanel(QWidget):
 
     def _apply_texture(self, path: str, size: float | None = None,
                        sw: float | None = None,
-                       sh: float | None = None) -> None:
+                       sh: float | None = None,
+                       name: str | None = None) -> None:
         w = sw if sw is not None else (size or self._tile_size)
         h = sh if sh is not None else (size or self._tile_size)
         PaintTool.current_texture = {"path": path, "sw": w, "sh": h,
                                      "rot": 0.0}
+        PaintTool.current_material = self._material_for(
+            name, texture=dict(PaintTool.current_texture))
         self._window._activate_tool("paint")
         self._load_texture_fields()
         self._refresh_preview()
@@ -1065,7 +1117,13 @@ class MaterialsPanel(QWidget):
         r, g, b = PaintTool.current_color
         chosen = QColorDialog.getColor(QColor.fromRgbF(r, g, b), self, tr("Color"))
         if chosen.isValid():
-            self._apply_color((chosen.redF(), chosen.greenF(), chosen.blueF()))
+            # Optional identity: a named colour becomes a registry material
+            # (registered on first paint) and shows in per-material takeoffs.
+            name, ok = QInputDialog.getText(
+                self, tr("Color"), tr("Material name (optional):"))
+            self._apply_color(
+                (chosen.redF(), chosen.greenF(), chosen.blueF()),
+                name=name.strip() if ok and name.strip() else None)
 
     def _add_texture(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
@@ -1079,7 +1137,8 @@ class MaterialsPanel(QWidget):
         if not ok:
             return
         self._tile_size = size
-        self._apply_texture(path_str, size)
+        # A texture picked from disk is a material named after its file.
+        self._apply_texture(path_str, size, name=Path(path_str).stem)
 
     def _refresh_preview(self) -> None:
         if PaintTool.current_texture is not None:
