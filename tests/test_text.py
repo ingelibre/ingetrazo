@@ -111,6 +111,56 @@ def test_label_commands_undo_redo():
     assert scene.text_labels == [lab]
 
 
+def test_label_edit_command_undo_redo():
+    from core.history import EditTextLabelCommand
+    scene = Scene()
+    history = History(scene)
+    lab = TextLabel(QVector3D(1, 2, 0), QVector3D(0.5, 0, 1), "Muro eje A")
+    scene.text_labels.append(lab)
+    history.execute(EditTextLabelCommand(lab, "Muro eje B"))
+    assert lab.text == "Muro eje B"
+    history.undo()
+    assert lab.text == "Muro eje A"
+    history.redo()
+    assert lab.text == "Muro eje B"
+
+
+def test_select_double_click_edits_label(monkeypatch):
+    """Double-clicking a leader text with Select opens the edit dialog
+    (SketchUp-style) and commits the new text as one undoable command."""
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QInputDialog
+    from tools.select import SelectTool
+
+    scene = Scene()
+    history = History(scene)
+    lab = TextLabel(QVector3D(1, 2, 0), QVector3D(0.5, 0, 1), "Muro eje A")
+    scene.text_labels.append(lab)
+
+    viewport = SimpleNamespace(
+        scene=scene, history=history,
+        pick_group=lambda x, y: None, pick_edge=lambda x, y: None,
+        pick_dimension=lambda x, y: None, pick_text_label=lambda x, y: lab,
+        pick_geopath=lambda x, y: None, pick_face=lambda x, y: None,
+        window=lambda: None, update=lambda: None)
+    ctx = SimpleNamespace(viewport=viewport,
+                          screen=SimpleNamespace(x=lambda: 0, y=lambda: 0),
+                          modifiers=0)
+
+    monkeypatch.setattr(QInputDialog, "getMultiLineText",
+                        staticmethod(lambda *a, **k: ("Muro eje B", True)))
+    SelectTool().on_double_click(ctx)
+    assert lab.text == "Muro eje B"
+    history.undo()
+    assert lab.text == "Muro eje A"
+
+    # cancelling the dialog leaves the label untouched (and no undo entry)
+    monkeypatch.setattr(QInputDialog, "getMultiLineText",
+                        staticmethod(lambda *a, **k: ("cualquier", False)))
+    SelectTool().on_double_click(ctx)
+    assert lab.text == "Muro eje A"
+
+
 def test_label_igz_round_trip(tmp_path):
     scene = Scene()
     scene.text_labels.append(TextLabel(

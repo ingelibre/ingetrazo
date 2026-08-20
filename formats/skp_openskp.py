@@ -1008,6 +1008,27 @@ def _adapt(model, name: str, skp_path=None):
         })
     if dims:
         payload["dimensions"] = dims
+    # Leader texts (SketchUp's Text tool), inches → metres. Only free
+    # (point-anchored) texts carry a resolved anchor; model-root texts are
+    # world space.
+    texts = []
+    root_def = getattr(model, "root", None)
+    for tx in (getattr(root_def, "texts", []) or []) if root_def else []:
+        pt = getattr(tx, "point", None)
+        body = (getattr(tx, "text", "") or "").strip()
+        if pt is None or not body:
+            continue
+        entry = {
+            "anchor": [c * _INCH for c in pt],
+            "text": body,
+            "hidden": bool(getattr(tx, "hidden", False)),
+        }
+        lp = getattr(tx, "label_point", None)
+        if lp is not None:
+            entry["label"] = [c * _INCH for c in lp]
+        texts.append(entry)
+    if texts:
+        payload["texts"] = texts
     # The file's style back-face colour (our upstream PR openskp#10): adopt it
     # so unpainted faces seen from behind read like they did for the author
     # (instead of IngeTrazo's own blue-grey default).

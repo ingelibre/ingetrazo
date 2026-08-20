@@ -25,6 +25,7 @@ from core.history import (
     DeleteDimensionsCommand,
     DeleteGeoPathsCommand,
     DeleteGroupCommand,
+    EditTextLabelCommand,
     EraseSelectionCommand,
 )
 from georef.geopath import GeoPath
@@ -125,6 +126,18 @@ class SelectTool(Tool):
         entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
         if isinstance(entity, Group):
             viewport.begin_group_edit(entity)
+            return
+        if isinstance(entity, TextLabel):
+            # SketchUp-style: double-clicking a leader text edits its text.
+            from PySide6.QtWidgets import QInputDialog
+            from core.i18n import tr
+            text, ok = QInputDialog.getMultiLineText(
+                viewport.window(), tr("Text"), tr("Label text:"),
+                entity.text)
+            if ok and text.strip() and text.strip() != entity.text:
+                viewport.history.execute(
+                    EditTextLabelCommand(entity, text.strip()))
+            viewport.update()
             return
         if not isinstance(entity, (Face, Edge)):
             self.on_click(ctx)

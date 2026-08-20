@@ -268,6 +268,21 @@ def apply_payload(scene, payload) -> str:
             scene.dimensions.append(
                 Dimension(a, b, perp * float(raw.get("offset", 0.0))))
 
+    # Leader texts (SketchUp's Text tool): the anchor is the pointed-at
+    # spot and the label floats at its world "label" position (leader line
+    # joins them) — screen texts carry no label position and float at the
+    # anchor itself.
+    if payload.get("texts"):
+        from PySide6.QtGui import QVector3D
+        from core.textlabel import TextLabel
+        for raw in payload["texts"]:
+            if raw.get("hidden"):
+                continue
+            anchor = QVector3D(*raw["anchor"])
+            label = QVector3D(*raw["label"]) if raw.get("label") else anchor
+            scene.text_labels.append(TextLabel(
+                anchor, label - anchor, raw["text"]))
+
     for gp in payload.get("groups", []):
         mesh = _build_mesh(gp["faces"], gp.get("soft_edges"))
         if mesh.faces:

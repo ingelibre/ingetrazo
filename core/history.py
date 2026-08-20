@@ -701,6 +701,23 @@ class AddTextLabelCommand(Command):
         scene.version += 1
 
 
+class EditTextLabelCommand(Command):
+    """Change the text of a leader-text annotation."""
+
+    def __init__(self, label, text: str) -> None:
+        self.label = label
+        self._new = text
+        self._old = label.text
+
+    def do(self, scene) -> None:
+        self.label.text = self._new
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.label.text = self._old
+        scene.version += 1
+
+
 class DeleteTextLabelsCommand(Command):
     """Remove a set of text labels from ``scene.text_labels``."""
 
