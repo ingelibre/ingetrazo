@@ -112,7 +112,8 @@ def test_skp_export_with_color(tmp_path):
 
 
 def test_skp_export_includes_groups(tmp_path):
-    """A scene with a group exports — the .skp should have faces."""
+    """A classic group exports as a SketchUp GROUP: its face lives in a
+    definition placed by one instance, not flattened into root geometry."""
     scene = Scene()
     hist = History(scene)
     from core.mesh import Mesh
@@ -124,11 +125,82 @@ def test_skp_export_includes_groups(tmp_path):
     scene.version += 1
     path = tmp_path / "grouped.skp"
     skp_out_format.save_skp(scene, path)
-    # The file should exist and be valid.
-    assert path.exists()
     model = _parse_skp(path)
-    # Group geometry flattens into root-level faces in this exporter.
-    assert len(model.root.faces) >= 1
+    assert len(model.root.faces) == 0
+    assert any(d.name == "TestGroup" and len(d.faces) == 1
+               for d in model.definitions.values())
+    assert len(model.root.instances) == 1
+
+
+def test_skp_export_instances_share_one_definition(tmp_path):
+    """Three component instances sharing a prototype mesh export as ONE
+    definition + three placements — the geometry is stored once, not
+    duplicated per instance."""
+    from PySide6.QtGui import QMatrix4x4
+    from core.mesh import Mesh
+    scene = Scene()
+    proto = Mesh()
+    proto.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    for i, dx in enumerate((0.0, 5.0, 10.0)):
+        g = Group(proto)
+        g.name = f"Col {i + 1}"
+        m = QMatrix4x4()
+        m.translate(dx, 0.0, 0.0)
+        g.xform = m
+        scene.groups.append(g)
+    scene.version += 1
+    path = tmp_path / "columns.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    assert len(model.root.instances) == 3
+    assert sum(len(d.faces) for d in model.definitions.values()) == 1
+
+
+def test_skp_export_roundtrip_instances(tmp_path):
+    """Export → re-import through IngeTrazo's OWN .skp importer: the three
+    instances come back as groups at their original world positions —
+    the strongest check that the placement matrix convention matches
+    ``skp_openskp._matrix`` (and therefore real SketchUp)."""
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import world_mesh
+    from core.mesh import Mesh
+    from formats import skp as skp_format
+    scene = Scene()
+    proto = Mesh()
+    proto.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    for i, dx in enumerate((0.0, 5.0, 10.0)):
+        g = Group(proto)
+        g.name = f"Col {i + 1}"
+        m = QMatrix4x4()
+        m.translate(dx, 0.0, 0.0)
+        g.xform = m
+        scene.groups.append(g)
+    scene.version += 1
+    path = tmp_path / "roundtrip.skp"
+    skp_out_format.save_skp(scene, path)
+
+    scene2 = Scene()
+    skp_format.load_skp(scene2, path)
+    assert len(scene2.groups) == 3
+    xs = sorted(min(v.x() for f in world_mesh(g).faces for v in f.vertices)
+                for g in scene2.groups)
+    for got, want in zip(xs, (0.0, 5.0, 10.0)):
+        assert abs(got - want) < 1e-3
+
+
+def test_skp_export_face_hole_survives(tmp_path):
+    """A face with a hole (window/door opening) exports as outer + inner
+    loops, not as a filled polygon."""
+    scene = Scene()
+    outer = [V(0, 0), V(10, 0), V(10, 10), V(0, 10)]
+    hole = [V(4, 4), V(6, 4), V(6, 6), V(4, 6)]
+    scene.mesh.add_face(outer, [hole])
+    scene.version += 1
+    path = tmp_path / "hole.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    face = next(iter(model.root.faces.values()))
+    assert len(face.loops) == 2
 
 
 def test_skp_export_unpainted_face_has_no_material(tmp_path):

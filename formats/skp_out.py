@@ -6,30 +6,28 @@ Writes the scene as a legacy-format (v17) ``.skp`` file that opens directly in
 SketchUp 2017 or later — no COLLADA round-trip, no Trimble SDK, no Wine.
 Per-face paint (``Face.attrs["color"]``) becomes a SketchUp material, textured
 faces (``attrs["texture"]``) become image-mapped materials with their original
-textures embedded in the ``.skp``, and layers become SketchUp tags.
+textures embedded in the ``.skp``, layers become SketchUp tags, and face holes
+survive as inner loops.
 
-Every face — loose mesh, group, and component instance alike — is flattened
-to world-space coordinates (see ``meshexport.world_faces()``) and written as
-an individual root-level face; none of ``openskp.create``'s ``add_group``/
-``add_component_definition``/``add_instance`` are used. So a group no longer
-shows as a "Group" in SketchUp's Outliner after export, and an instance that
-shared a prototype mesh with others duplicates its geometry rather than
-sharing one component definition — larger files for models with many
-repeated instances, though no longer at risk of corruption on large models
-(OpenSKP's slot-boundary fix). Same scope as ``formats/obj.py``'s export,
-which flattens for the same reason: OBJ has no group/instance concept
-either, so this exporter simply hasn't grown SketchUp-specific group/
-instance support yet — a real follow-up, not implemented here.
+Structure survives too: a classic group (mesh in world coordinates, no
+``xform``) becomes a SketchUp group via ``add_group``, and component instances
+— sibling groups sharing one prototype mesh — become ONE component definition
+placed by N instances (``add_component_definition`` + ``add_instance``), so
+the shared geometry is stored once and stays editable as a component on the
+SketchUp side. Loose mesh faces stay root-level. Two deliberate exclusions,
+mirroring ``meshexport.world_faces``: hidden entities and face-me billboards
+(SketchUp-specific import artifacts) are not exported. IngeTrazo's group list
+is flat, so there is no nesting to preserve.
 
 Coordinates are in **inches** (SketchUp's native unit); the model's metre-based
-geometry is scaled by ``_M_TO_IN``. The file produced is the same legacy MFC
-format that ``openskp.create`` targets — pre-2021, universally readable.
+geometry is scaled by ``_M_TO_IN``, and instance placements carry their
+rotation/scale 3×3 unchanged with the translation converted the same way.
+The file produced is the same legacy MFC format that ``openskp.create``
+targets — pre-2021, universally readable.
 """
 from __future__ import annotations
 
 from pathlib import Path
-
-from .meshexport import world_faces
 
 # IngeTrazo stores geometry in metres; SketchUp works in inches.
 _M_TO_IN = 39.37007874
@@ -40,12 +38,10 @@ def _color_to_rgba(color):
     return (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)), 255)
 
 
-def _face_points_inches(face):
-    """Return the face's outer loop as ``(x, y, z)`` tuples in inches."""
-    return [
-        (v.x() * _M_TO_IN, v.y() * _M_TO_IN, v.z() * _M_TO_IN)
-        for v in face.vertices
-    ]
+def _pts_inches(points):
+    """``QVector3D`` positions (metres) as ``(x, y, z)`` tuples in inches."""
+    return [(v.x() * _M_TO_IN, v.y() * _M_TO_IN, v.z() * _M_TO_IN)
+            for v in points]
 
 
 def _is_soft_face(face):
@@ -128,6 +124,94 @@ def _material_info(face, key):
     return info
 
 
+def _split_containers(scene):
+    """The scene's exportable geometry, structured: ``(loose_faces,
+    classic_groups, families)``.
+
+    ``families`` maps a shared prototype mesh's ``id()`` to the list of
+    component instances (groups with an ``xform``) placing it; classic
+    groups (no ``xform``) keep their mesh in world coordinates. Mirrors
+    ``meshexport.world_faces``'s rules: hidden entities and face-me
+    billboards are skipped, and loose faces come from ``scene.loose_mesh``
+    so a group being edited is not double-counted (its mesh is already in
+    ``scene.groups``)."""
+    visible = getattr(scene, "entity_visible", None) or (lambda e: True)
+    mesh = getattr(scene, "loose_mesh", None) or getattr(scene, "mesh", None)
+    faces = mesh.faces if mesh is not None else getattr(scene, "faces", [])
+    loose_faces = [f for f in faces if visible(f)]
+
+    classic, families = [], {}
+    for g in getattr(scene, "groups", []):
+        if not visible(g) or getattr(g, "billboard", False) or not g.mesh.faces:
+            continue
+        if getattr(g, "xform", None) is None:
+            classic.append(g)
+        else:
+            families.setdefault(id(g.mesh), []).append(g)
+    return loose_faces, classic, families
+
+
+def _iter_export_faces(loose_faces, classic, families):
+    """Every face the geometry pass will emit, prototype meshes ONCE — the
+    material pass must cover exactly this set, no more (a prototype's attrs
+    are shared by its instances, so visiting it per-instance is redundant)."""
+    yield from loose_faces
+    for g in classic:
+        yield from g.mesh.faces
+    for members in families.values():
+        yield from members[0].mesh.faces
+
+
+def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError):
+    """Write one face (outer loop + holes) to ``sink`` — the root builder or
+    an open group/component definition; all three expose the same
+    ``add_face``.
+
+    OpenSKP's ``add_face`` requires strict coplanarity (tolerance ~1e-6 ×
+    span) and transformed geometry can carry tiny floating-point drift, so a
+    rejected polygon falls back to triangulation — ``face.triangulate()`` is
+    hole-aware, and triangles are coplanar by definition. Most faces export
+    as clean polygons; only drifted ones get triangulated."""
+    material = mat_handles.get(_material_key(face))
+    face_layer = face.attrs.get("layer")
+    layer = layer_handles.get(face_layer) if face_layer else None
+    soft = _is_soft_face(face)
+    try:
+        sink.add_face(
+            _pts_inches(face.vertices),
+            material=material,
+            layer=layer,
+            soft_edges=soft,
+            smooth_edges=soft,
+            holes=[_pts_inches(h) for h in face.holes],
+        )
+    except SkpWriteError:
+        for tri in face.triangulate():
+            try:
+                sink.add_face(
+                    _pts_inches(tri),
+                    material=material,
+                    layer=layer,
+                    soft_edges=True,
+                    smooth_edges=True,
+                )
+            except SkpWriteError:
+                pass  # Degenerate triangle — skip silently.
+
+
+def _instance_placement(xform):
+    """Split a ``QMatrix4x4`` (local metres → world metres) into OpenSKP's
+    ``(translation, matrix3x3)``: the rotation/scale 3×3 is unitless so it
+    passes through row-major unchanged; only the translation converts to
+    inches. Inverse of ``skp_openskp._matrix``."""
+    r0, r1, r2 = xform.row(0), xform.row(1), xform.row(2)
+    matrix3x3 = (r0.x(), r0.y(), r0.z(),
+                 r1.x(), r1.y(), r1.z(),
+                 r2.x(), r2.y(), r2.z())
+    translation = (r0.w() * _M_TO_IN, r1.w() * _M_TO_IN, r2.w() * _M_TO_IN)
+    return translation, matrix3x3
+
+
 def save_skp(scene, path) -> None:
     """Write the scene as a SketchUp ``.skp`` to ``path``."""
     try:
@@ -137,21 +221,18 @@ def save_skp(scene, path) -> None:
         raise RuntimeError("OpenSKP is required for SKP export") from exc
 
     builder = openskp.create()
+    loose_faces, classic, families = _split_containers(scene)
 
     # ---- Pass 1: collect material and layer info from all faces ----------
     materials_info: dict[tuple, dict] = {}
-    face_list: list = []  # (face, key) pairs for geometry pass
-
-    for face in world_faces(scene):
+    for face in _iter_export_faces(loose_faces, classic, families):
         key = _material_key(face)
         if key is None:  # unpainted — SketchUp's default material
-            face_list.append((face, None))
             continue
         if key not in materials_info:
             materials_info[key] = _material_info(face, key)
         elif face.attrs.get("mat") and "mat" not in materials_info[key]:
             materials_info[key]["mat"] = face.attrs["mat"]
-        face_list.append((face, key))
 
     # Register materials (must be before layers and geometry).
     mat_handles = _collect_materials(materials_info, builder)
@@ -160,43 +241,35 @@ def save_skp(scene, path) -> None:
     layer_handles = _collect_layers(scene, builder)
 
     # ---- Pass 2: emit geometry -------------------------------------------
-    # OpenSKP's add_face requires strict coplanarity (tolerance ~1e-6 × span).
-    # Transformed geometry (component instances via xform.map()) can introduce
-    # tiny floating-point drift, making quads/polygons imperceptibly non-planar.
-    # When that happens, fall back to triangulation — triangles are always
-    # coplanar by definition. Most faces export as clean polygons; only drifted
-    # ones get triangulated.
+    # Groups and component definitions must ALL be written before any
+    # root-level face or instance — OpenSKP splices definitions in after
+    # materials and layers, so their slot numbering locks once root
+    # geometry starts.
+    for g in classic:
+        with builder.add_group(
+                g.name, layer=layer_handles.get(getattr(g, "layer", None))) as grp:
+            for face in g.mesh.faces:
+                _emit_face(grp, face, mat_handles, layer_handles, SkpWriteError)
 
-    for face, key in face_list:
-        points = _face_points_inches(face)
-        material = mat_handles.get(key)
-        face_layer = face.attrs.get("layer")
-        layer = layer_handles.get(face_layer) if face_layer else None
-        soft = _is_soft_face(face)
-        try:
-            builder.add_face(
-                points,
-                material=material,
-                layer=layer,
-                soft_edges=soft,
-                smooth_edges=soft,
+    placed = []  # (definition, members) — instances go in after root faces
+    for members in families.values():
+        with builder.add_component_definition(members[0].name) as defn:
+            for face in members[0].mesh.faces:
+                _emit_face(defn, face, mat_handles, layer_handles, SkpWriteError)
+        placed.append((defn, members))
+
+    for face in loose_faces:
+        _emit_face(builder, face, mat_handles, layer_handles, SkpWriteError)
+
+    for defn, members in placed:
+        for g in members:
+            translation, matrix3x3 = _instance_placement(g.xform)
+            builder.add_instance(
+                defn,
+                name=g.name,
+                translation=translation,
+                matrix3x3=matrix3x3,
+                layer=layer_handles.get(getattr(g, "layer", None)),
             )
-        except SkpWriteError:
-            # Non-coplanar polygon — split into triangles.
-            for tri in face.triangulate():
-                tri_pts = [
-                    (v.x() * _M_TO_IN, v.y() * _M_TO_IN, v.z() * _M_TO_IN)
-                    for v in tri
-                ]
-                try:
-                    builder.add_face(
-                        tri_pts,
-                        material=material,
-                        layer=layer,
-                        soft_edges=True,
-                        smooth_edges=True,
-                    )
-                except SkpWriteError:
-                    pass  # Degenerate triangle — skip silently.
 
     builder.save(str(Path(path)))
