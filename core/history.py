@@ -701,6 +701,26 @@ class AddTextLabelCommand(Command):
         scene.version += 1
 
 
+class MoveTextLabelsCommand(Command):
+    """Translate the floating label of leader texts: the label end moves,
+    the anchor stays pinned and the leader stretches (SketchUp's Move-on-
+    text behaviour)."""
+
+    def __init__(self, labels, delta) -> None:
+        self._labels = list(labels)
+        self._delta = QVector3D(delta)
+
+    def do(self, scene) -> None:
+        for t in self._labels:
+            t.offset = t.offset + self._delta
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for t in self._labels:
+            t.offset = t.offset - self._delta
+        scene.version += 1
+
+
 class EditTextLabelCommand(Command):
     """Change the text of a leader-text annotation."""
 

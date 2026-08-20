@@ -63,6 +63,7 @@ from PySide6.QtCore import QEvent, Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontMetrics,
     QImage,
     QMatrix4x4,
     QOpenGLFunctions,
@@ -4157,18 +4158,41 @@ class Viewport(QOpenGLWidget):
                     best = dim
         return best
 
-    def pick_text_label(self, screen_x: float, screen_y: float):
-        """Return the leader-text label whose leader line or text position is
-        closest to the cursor within the pick threshold, or ``None``."""
+    def pick_text_label(self, screen_x: float, screen_y: float,
+                        rect_only: bool = False):
+        """Return the leader-text label under the cursor, or ``None``.
+
+        A click anywhere on the drawn text block (same font-metrics layout
+        as ``_draw_text_labels``) is a hit — the glyphs are what the user
+        aims at. Failing that, the label position and the leader line count
+        within the pick threshold. ``rect_only`` restricts to the text
+        block: the block overdraws all geometry, so that hit outranks edge
+        and face picks, while the (thin) leader keeps normal priority."""
         labels = getattr(self.scene, "text_labels", None)
         if not labels:
             return None
+        style = getattr(self.scene, "dimension_style", {})
+        font = QFont()
+        font.setPointSize(int(style.get("font_size", 9)))
+        font.setBold(True)
+        fm = QFontMetrics(font)
         best, best_d = None, self.pick_threshold_px * 2.0
         for lab in labels:
-            pa = self._world_to_pixel(lab.anchor)
             pp = self._world_to_pixel(lab.position())
             if pp is None:
                 continue
+            # The text block: lines start at pp + (6, -4) with baselines one
+            # fm.height() apart (mirror of _draw_text_labels).
+            for i, line in enumerate(lab.text.splitlines() or [""]):
+                x0 = pp[0] + 6
+                base = pp[1] - 4 + i * fm.height()
+                if (x0 - 3 <= screen_x <= x0 + fm.horizontalAdvance(line) + 3
+                        and base - fm.ascent() - 3 <= screen_y
+                        <= base + fm.descent() + 3):
+                    return lab
+            if rect_only:
+                continue
+            pa = self._world_to_pixel(lab.anchor)
             d = math.hypot(pp[0] - screen_x, pp[1] - screen_y)
             if pa is not None:
                 d = min(d, _point_to_segment_distance_2d(
@@ -4176,7 +4200,7 @@ class Viewport(QOpenGLWidget):
             if d < best_d:
                 best_d = d
                 best = lab
-        return best
+        return None if rect_only else best
 
     def pick_geopath(self, screen_x: float, screen_y: float):
         """Return the georef path whose polyline is closest to the cursor within
@@ -4667,7 +4691,8 @@ class Viewport(QOpenGLWidget):
         if not hasattr(win, "show_viewport_context_menu"):
             return
         x, y = ev.pos().x(), ev.pos().y()
-        picked = (self.pick_group(x, y) or self.pick_edge(x, y)
+        picked = (self.pick_text_label(x, y, rect_only=True)
+                  or self.pick_group(x, y) or self.pick_edge(x, y)
                   or self.pick_geopath(x, y) or self.pick_dimension(x, y)
                   or self.pick_text_label(x, y)
                   or self.pick_face(x, y))

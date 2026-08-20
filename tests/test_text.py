@@ -140,7 +140,8 @@ def test_select_double_click_edits_label(monkeypatch):
     viewport = SimpleNamespace(
         scene=scene, history=history,
         pick_group=lambda x, y: None, pick_edge=lambda x, y: None,
-        pick_dimension=lambda x, y: None, pick_text_label=lambda x, y: lab,
+        pick_dimension=lambda x, y: None,
+        pick_text_label=lambda x, y, rect_only=False: lab,
         pick_geopath=lambda x, y: None, pick_face=lambda x, y: None,
         window=lambda: None, update=lambda: None)
     ctx = SimpleNamespace(viewport=viewport,
@@ -159,6 +160,50 @@ def test_select_double_click_edits_label(monkeypatch):
                         staticmethod(lambda *a, **k: ("cualquier", False)))
     SelectTool().on_double_click(ctx)
     assert lab.text == "Muro eje A"
+
+
+def test_label_move_command_shifts_offset_only():
+    from core.history import MoveTextLabelsCommand
+    scene = Scene()
+    history = History(scene)
+    lab = TextLabel(QVector3D(1, 2, 0), QVector3D(0.5, 0, 1), "Muro eje A")
+    scene.text_labels.append(lab)
+    history.execute(MoveTextLabelsCommand([lab], QVector3D(1, 0, 2)))
+    assert (lab.anchor - QVector3D(1, 2, 0)).length() < 1e-9   # pinned
+    assert (lab.offset - QVector3D(1.5, 0, 3)).length() < 1e-9
+    history.undo()
+    assert (lab.offset - QVector3D(0.5, 0, 1)).length() < 1e-9
+
+
+def test_move_tool_drags_selected_label():
+    """Move with a leader text selected translates its label end (one
+    undoable command), leaving the anchor pinned."""
+    from types import SimpleNamespace
+    from tools.move import MoveTool
+
+    scene = Scene()
+    history = History(scene)
+    lab = TextLabel(QVector3D(1, 2, 0), QVector3D(0.5, 0, 1), "Muro eje A")
+    scene.text_labels.append(lab)
+    scene.select([lab])
+
+    viewport = SimpleNamespace(
+        scene=scene, history=history,
+        pick_group=lambda x, y: None, pick_edge=lambda x, y: None,
+        pick_face=lambda x, y: None,
+        pick_text_label=lambda x, y, rect_only=False: None,
+        update=lambda: None)
+    screen = SimpleNamespace(x=lambda: 0, y=lambda: 0)
+    tool = MoveTool()
+    tool.on_click(SimpleNamespace(viewport=viewport, screen=screen,
+                                  world=QVector3D(0, 0, 0), modifiers=0))
+    assert tool._labels == [lab]
+    tool.on_click(SimpleNamespace(viewport=viewport, screen=screen,
+                                  world=QVector3D(2, 0, 1), modifiers=0))
+    assert (lab.anchor - QVector3D(1, 2, 0)).length() < 1e-9
+    assert (lab.offset - QVector3D(2.5, 0, 2)).length() < 1e-9
+    history.undo()
+    assert (lab.offset - QVector3D(0.5, 0, 1)).length() < 1e-9
 
 
 def test_label_igz_round_trip(tmp_path):

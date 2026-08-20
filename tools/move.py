@@ -26,7 +26,9 @@ from PySide6.QtGui import QVector3D
 
 from core.group import Group
 from core.mesh import Edge, Face
-from core.history import MoveGroupCommand, MoveVerticesCommand
+from core.history import (CompoundCommand, MoveGroupCommand,
+                          MoveTextLabelsCommand, MoveVerticesCommand)
+from core.textlabel import TextLabel
 from core.topology import _key
 from tools.base import Tool, ToolContext
 
@@ -72,6 +74,23 @@ def gather_targets(ctx: ToolContext):
     return None, _dedup(positions)
 
 
+def gather_labels(ctx: ToolContext) -> list[TextLabel]:
+    """Leader texts Move acts on: the selected ones, or (with nothing
+    selected) the one whose text block is under the cursor — the glyphs
+    overdraw all geometry, so that grab is exclusive. Their label end
+    translates while the anchor stays pinned — SketchUp's Move-on-text
+    behaviour."""
+    viewport = ctx.viewport
+    labels = [t for t in viewport.scene.selection if isinstance(t, TextLabel)]
+    if not labels and not viewport.scene.selection:
+        pick = getattr(viewport, "pick_text_label", None)
+        lab = (pick(ctx.screen.x(), ctx.screen.y(), rect_only=True)
+               if pick else None)
+        if lab is not None:
+            labels = [lab]
+    return labels
+
+
 class MoveTool(Tool):
     name = "Move"
     shortcut = "M"
@@ -96,6 +115,7 @@ class MoveTool(Tool):
         self._positions: list[QVector3D] = []  # unique positions to translate
         self._verts: list = []                 # resolved vertex objects (identity)
         self._group: Group | None = None       # set when moving a whole group
+        self._labels: list[TextLabel] = []     # leader texts whose label moves
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)  # currently applied live
 
     # ---- Lifecycle ----------------------------------------------------------
@@ -111,12 +131,18 @@ class MoveTool(Tool):
         viewport = ctx.viewport
         if self.start_point is None:
             group, positions = self._gather(ctx)
-            if group is None and not positions:
+            labels = gather_labels(ctx)
+            if labels and not viewport.scene.selection:
+                # A click on the glyphs grabs just the text, never the
+                # geometry that happens to sit behind it.
+                group, positions = None, []
+            if group is None and not positions and not labels:
                 return  # nothing under the cursor / selected to move
             self.start_point = ctx.world
             self.grab = ctx.world
             self._group = group
             self._positions = positions
+            self._labels = labels
             # Resolve the grabbed positions to vertex OBJECTS once: the live
             # preview then moves these identities directly, so dragging through
             # (or onto) a coincident vertex never drags the innocent one along.
@@ -189,6 +215,8 @@ class MoveTool(Tool):
         else:
             for v in self._verts:
                 viewport.scene.mesh.move_vertex(v, step)
+        for lab in self._labels:
+            lab.offset = lab.offset + step
         viewport.scene.version += 1
 
     def _apply_preview(self, viewport, target_delta: QVector3D) -> None:
@@ -213,10 +241,17 @@ class MoveTool(Tool):
         # by double the delta).
         self._revert_preview(viewport)
         if delta.length() > 1e-9:
+            commands = []
             if self._group is not None:
-                viewport.history.execute(MoveGroupCommand(self._group, delta))
+                commands.append(MoveGroupCommand(self._group, delta))
             elif self._positions:
-                viewport.history.execute(MoveVerticesCommand(self._positions, delta))
+                commands.append(MoveVerticesCommand(self._positions, delta))
+            if self._labels:
+                commands.append(MoveTextLabelsCommand(self._labels, delta))
+            if len(commands) == 1:
+                viewport.history.execute(commands[0])
+            elif commands:
+                viewport.history.execute(CompoundCommand(commands))
         self._reset()
         viewport.update()
 
@@ -227,4 +262,5 @@ class MoveTool(Tool):
         self._positions = []
         self._verts = []
         self._group = None
+        self._labels = []
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)

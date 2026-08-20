@@ -73,6 +73,14 @@ class SelectTool(Tool):
         """A group (picked as a unit) takes priority; then the edge under the
         cursor (screen-space priority), then a dimension annotation, then the
         front face."""
+        pick_label = getattr(viewport, "pick_text_label", None)
+        if pick_label is not None:
+            # The text block overdraws all geometry, so a click on the glyphs
+            # is unambiguous — it outranks every 3D pick. The label's thin
+            # leader line keeps its normal (post-edge) priority below.
+            label = pick_label(screen_x, screen_y, rect_only=True)
+            if label is not None:
+                return label
         group = viewport.pick_group(screen_x, screen_y)
         if group is not None:
             return group
@@ -246,6 +254,17 @@ class SelectTool(Tool):
                     picked.append(dim)
             elif _pt_in_rect(pa, rect) and _pt_in_rect(pb, rect):
                 picked.append(dim)
+        for lab in getattr(viewport.scene, "text_labels", []):
+            pa, pp = w2p(lab.anchor), w2p(lab.position())
+            if pp is None:
+                continue
+            if crossing:
+                if _pt_in_rect(pp, rect) or (
+                        pa is not None and _seg_rect_overlap(pa, pp, rect)):
+                    picked.append(lab)
+            elif _pt_in_rect(pp, rect) and (
+                    pa is None or _pt_in_rect(pa, rect)):
+                picked.append(lab)
         viewport.scene.select(picked, additive=additive)
         viewport.update()
 
