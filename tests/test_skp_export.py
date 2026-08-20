@@ -247,6 +247,25 @@ def test_skp_export_material_name(tmp_path):
     assert any("Concreto" in n for n in mat_names)
 
 
+def test_skp_export_same_color_different_names_stay_separate(tmp_path):
+    """Two materials with distinct registry names but the same RGB recipe
+    must export as TWO materials — merging them corrupts the per-material
+    takeoff after a round-trip."""
+    scene = Scene()
+    hist = History(scene)
+    F._draw_rect(scene, hist, [V(0, 0), V(4, 0), V(4, 4), V(0, 4)], [])
+    F._draw_rect(scene, hist, [V(6, 0), V(10, 0), V(10, 4), V(6, 4)], [])
+    for face, name in zip(scene.mesh.faces, ("Concreto", "Mortero")):
+        face.attrs["color"] = [0.6, 0.6, 0.6]
+        face.attrs["mat"] = name
+    path = tmp_path / "twins.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    names = {m.name for m in model.materials}
+    assert any("Concreto" in n for n in names)
+    assert any("Mortero" in n for n in names)
+
+
 def test_skp_export_with_texture(tmp_path):
     """A face with an image texture exports as a textured SketchUp
     material (add_texture_material), not just a solid fallback colour."""

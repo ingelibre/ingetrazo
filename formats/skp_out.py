@@ -98,15 +98,24 @@ def _material_key(face):
     unpainted face keys to ``None``: SketchUp has a first-class default
     material (OBJ/glTF don't, which is why meshexport bakes cream there),
     so "never painted" round-trips as "no material" instead of coming back
-    as an explicit cream paint that pollutes the per-material takeoff."""
+    as an explicit cream paint that pollutes the per-material takeoff.
+
+    Unlike meshexport, the registry identity (``attrs["mat"]``) is PART of
+    the key: two named materials sharing one recipe (e.g. "Yellow" and
+    "[0056_Yellow]", both the same RGB) stay separate materials in the
+    ``.skp`` instead of silently merging — merged names corrupt the
+    per-material takeoff after a round-trip. Measured on a real model
+    (toril 2017): 9 distinct names shared a recipe with another."""
+    mat = face.attrs.get("mat")
+    ident = (mat,) if mat else ()
     tex = face.attrs.get("texture")
     if tex is not None and tex.get("path"):
         src = Path(tex["path"])
-        return ("tex", src.name)
+        return ("tex", src.name) + ident
     col = face.attrs.get("color")
     if not col:
         return None
-    return ("color", tuple(col))
+    return ("color", tuple(col)) + ident
 
 
 def _material_info(face, key):
