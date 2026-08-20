@@ -34,10 +34,6 @@ from .meshexport import world_faces
 # IngeTrazo stores geometry in metres; SketchUp works in inches.
 _M_TO_IN = 39.37007874
 
-# Cream painted on faces with no material colour (mirrors the viewport default).
-_DEFAULT_COLOR = (0.96, 0.95, 0.925)
-
-
 def _color_to_rgba(color):
     """Convert a float (0.0-1.0) RGB colour to integer (0-255) RGBA."""
     r, g, b = color[:3]
@@ -65,8 +61,9 @@ def _is_soft_face(face):
 def _collect_materials(faces_by_key, builder):
     """Register all materials on the builder BEFORE any geometry.
 
-    Returns ``mat_handles``: ``key → material_slot`` (or ``None`` for the
-    default-painted key, which means "no material" in SketchUp).
+    Returns ``mat_handles``: ``key → material_slot``. Unpainted faces never
+    reach here — their ``None`` key stays out of ``faces_by_key``, so they
+    export with no material at all (SketchUp's default material).
     """
     mat_handles = {}
     from .meshexport import export_names
@@ -82,8 +79,7 @@ def _collect_materials(faces_by_key, builder):
                 handle = builder.add_material(names[key], _color_to_rgba(col))
             mat_handles[key] = handle
         else:
-            col = info.get("color", _DEFAULT_COLOR)
-            handle = builder.add_material(names[key], _color_to_rgba(col))
+            handle = builder.add_material(names[key], _color_to_rgba(info["color"]))
             mat_handles[key] = handle
     return mat_handles
 
@@ -102,13 +98,19 @@ def _collect_layers(scene, builder):
 
 def _material_key(face):
     """Compute the material-grouping key for a face — same logic as
-    ``formats.meshexport.collect_geometry`` and ``formats.obj``."""
+    ``formats.meshexport.collect_geometry`` and ``formats.obj``, except an
+    unpainted face keys to ``None``: SketchUp has a first-class default
+    material (OBJ/glTF don't, which is why meshexport bakes cream there),
+    so "never painted" round-trips as "no material" instead of coming back
+    as an explicit cream paint that pollutes the per-material takeoff."""
     tex = face.attrs.get("texture")
     if tex is not None and tex.get("path"):
         src = Path(tex["path"])
         return ("tex", src.name)
-    col = tuple(face.attrs.get("color") or _DEFAULT_COLOR)
-    return ("color", col)
+    col = face.attrs.get("color")
+    if not col:
+        return None
+    return ("color", tuple(col))
 
 
 def _material_info(face, key):
@@ -119,8 +121,7 @@ def _material_info(face, key):
         src = Path(tex["path"])
         info = {"color": (1.0, 1.0, 1.0), "map": src.name, "src": src}
     else:
-        col = tuple(face.attrs.get("color") or _DEFAULT_COLOR)
-        info = {"color": col, "map": None}
+        info = {"color": tuple(face.attrs["color"]), "map": None}
     mat_name = face.attrs.get("mat")
     if mat_name:
         info["mat"] = mat_name
@@ -143,6 +144,9 @@ def save_skp(scene, path) -> None:
 
     for face in world_faces(scene):
         key = _material_key(face)
+        if key is None:  # unpainted — SketchUp's default material
+            face_list.append((face, None))
+            continue
         if key not in materials_info:
             materials_info[key] = _material_info(face, key)
         elif face.attrs.get("mat") and "mat" not in materials_info[key]:

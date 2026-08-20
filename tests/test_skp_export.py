@@ -131,6 +131,34 @@ def test_skp_export_includes_groups(tmp_path):
     assert len(model.root.faces) >= 1
 
 
+def test_skp_export_unpainted_face_has_no_material(tmp_path):
+    """A face that was never painted must export with SketchUp's default
+    material (i.e. no material record at all), not an explicit cream paint —
+    otherwise a round-trip stamps attrs["color"] on faces the model left
+    unspecified and pollutes the per-material takeoff."""
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist)
+    path = tmp_path / "unpainted.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    assert len(model.materials) == 0
+
+
+def test_skp_export_mixed_painted_and_unpainted(tmp_path):
+    """Only the painted face creates a material; the unpainted one keeps
+    SketchUp's default."""
+    scene = Scene()
+    hist = History(scene)
+    F._draw_rect(scene, hist, [V(0, 0), V(4, 0), V(4, 4), V(0, 4)], [])
+    F._draw_rect(scene, hist, [V(6, 0), V(10, 0), V(10, 4), V(6, 4)], [])
+    hist.execute(SetFaceColorCommand([scene.mesh.faces[0]], [1.0, 0.0, 0.0]))
+    path = tmp_path / "mixed.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    assert len(model.materials) == 1
+
+
 def test_skp_export_material_name(tmp_path):
     """A face carrying attrs[\"mat\"] exports under that material name."""
     scene = Scene()
