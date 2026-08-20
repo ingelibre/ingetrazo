@@ -49,10 +49,10 @@ jobs:
 
       - name: Python dependencies
         # Straight from requirements.txt — the single source of truth. That
-        # pulls openskp from our fork's `ingetrazo` branch, so CI always tests
-        # against the same reader local dev uses (the release workflows pin a
-        # SHA instead, on purpose: installers must be reproducible; CI should
-        # track the branch).
+        # pulls openskp from upstream's `main` branch, so CI always tests
+        # against the same reader/writer local dev uses (the release workflows
+        # pin a SHA instead, on purpose: installers must be reproducible; CI
+        # should track the branch).
         run: |
           python -m pip install --quiet --upgrade pip
           python -m pip install --quiet -r requirements.txt
