@@ -776,10 +776,23 @@ def _adapt(model, name: str, skp_path=None):
     # openskp ≥ 0.4 exposes the implicit root as its own field; older
     # releases keep it inside ``definitions`` under the name ROOT_MODEL.
     root = getattr(model, "root", None)
-    if root is not None:
-        _mark_projected_faces(root, attr_map)
-    for d in defs.values():
-        _mark_projected_faces(d, attr_map)
+    # The geometric drape detection exists because the VFF (2021+) path has
+    # no reliable per-side projected flag. The legacy walker DOES decode the
+    # real flag (FTC flags bit 1), so on legacy files the flag rules — the
+    # heuristic must not run there: a building painted with one identity-
+    # mapped texture across many orientations reads as "plan resolves the
+    # seams" and gets falsely draped (real 2018 file: every brick wall
+    # facing ±X rendered as 1-D stripes).
+    _ver_digits = "".join(
+        ch for ch in str(getattr(model, "version", "") or "").lstrip("{")
+        if ch.isdigit() or ch == "."
+    ).split(".")[0]
+    legacy_era = _ver_digits.isdigit() and int(_ver_digits) < 21
+    if not legacy_era:
+        if root is not None:
+            _mark_projected_faces(root, attr_map)
+        for d in defs.values():
+            _mark_projected_faces(d, attr_map)
     by_id = {}
     for d in defs.values():
         by_id[getattr(d, "id", None)] = d
