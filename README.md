@@ -3,7 +3,7 @@
 **A free, SketchUp-inspired 3D modeler for architecture, civil engineering, and 3D printing — built natively for Linux.**
 
 ![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
-![Status: early development](https://img.shields.io/badge/status-early%20development-orange)
+![Status: usable](https://img.shields.io/badge/status-usable%20·%200.3.x-brightgreen)
 ![Platform: Linux · Windows · macOS](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-informational)
 ![Made in Peru](https://img.shields.io/badge/made%20in-Peru%20%F0%9F%87%B5%F0%9F%87%AA-red)
 
@@ -21,9 +21,15 @@ with its sister project [IngePresupuestos](https://ingepresupuestos.com).
 
 ## Status
 
-**Early development — not production-ready, but already models end to end:** you
-can draw, extrude, edit, paint, dimension, and export a model today. Backed by
-~1,900 automated tests.
+**Usable — real work gets done in it today.** Draw, extrude, edit, paint,
+dimension and annotate; open any SketchUp file from 2013 to 2026 and save
+back to `.skp`; tag BIM classes and export IFC quantities; georeference and
+import survey data. IngeTrazo is developed by dogfooding on real engineering
+projects, backed by ~2,000 automated tests, and its geometry engine refuses
+to commit a broken solid (the hermeticity guard) — your quantities stay
+honest. It is still a 0.x: the file format and plugin API may evolve between
+minor versions, and rough edges exist — please
+[report them](https://github.com/ingelibre/ingetrazo/issues).
 
 ## Install
 
