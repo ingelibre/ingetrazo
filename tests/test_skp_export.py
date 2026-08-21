@@ -333,3 +333,37 @@ def test_skp_export_empty_scene(tmp_path):
     except Exception:
         # SkpBuilder requires at least one face; this is fine.
         pass
+
+
+def test_skp_export_annotations_roundtrip(tmp_path):
+    """Dimensions and leader texts drawn in IngeTrazo survive the .skp
+    export: re-reading the file yields their world geometry (metres →
+    inches), with the text label floating at anchor + offset."""
+    from core.dimension import Dimension
+    from core.textlabel import TextLabel
+
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist)
+    scene.dimensions.append(
+        Dimension(V(0, 0, 0), V(4, 0, 0), V(0, -0.5, 0)))
+    scene.text_labels.append(
+        TextLabel(V(2, 0, 1.5), V(0.4, -0.3, 0.6), "MURO PRINCIPAL"))
+    path = tmp_path / "anotado.skp"
+    skp_out_format.save_skp(scene, path)
+
+    model = _parse_skp(path)
+    dims = getattr(model, "dimensions", [])
+    assert len(dims) == 1
+    assert abs(dims[0].a[0] - 0.0) < 1e-6
+    assert abs(dims[0].b[0] - 4.0 * _M_TO_IN) < 1e-6
+    assert abs(abs(dims[0].offset) - 0.5 * _M_TO_IN) < 1e-6
+    texts = getattr(model.root, "texts", [])
+    assert len(texts) == 1
+    assert texts[0].text == "MURO PRINCIPAL"
+    assert abs(texts[0].point[0] - 2.0 * _M_TO_IN) < 1e-6
+    assert abs(texts[0].point[2] - 1.5 * _M_TO_IN) < 1e-6
+    lp = texts[0].label_point
+    assert abs(lp[0] - 2.4 * _M_TO_IN) < 1e-6
+    assert abs(lp[1] + 0.3 * _M_TO_IN) < 1e-6
+    assert abs(lp[2] - 2.1 * _M_TO_IN) < 1e-6

@@ -281,4 +281,42 @@ def save_skp(scene, path) -> None:
                 layer=layer_handles.get(getattr(g, "layer", None)),
             )
 
+    _emit_annotations(scene, builder)
+
     builder.save(str(Path(path)))
+
+
+def _emit_annotations(scene, builder) -> None:
+    """Write dimensions and leader texts, when this openskp has the writer
+    (add_dimension/add_text — our annotations branch; harmless no-op before
+    it lands upstream).
+
+    The .skp free dimension stores a SCALAR offset; SketchUp derives the
+    plane itself, so the scalar is our offset vector projected on the same
+    in-plane perpendicular the importer uses (cross(Z, segment) with the
+    import's fallbacks) — export∘import is the identity on our own files.
+    """
+    from PySide6.QtGui import QVector3D
+    add_dim = getattr(builder, "add_dimension", None)
+    add_text = getattr(builder, "add_text", None)
+    if add_dim is not None:
+        for dim in getattr(scene, "dimensions", []) or []:
+            seg = dim.b - dim.a
+            if seg.length() < 1e-9:
+                continue
+            perp = QVector3D.crossProduct(QVector3D(0.0, 0.0, 1.0), seg)
+            if perp.length() < 1e-9:               # vertical dimension
+                perp = QVector3D.crossProduct(QVector3D(1.0, 0.0, 0.0), seg)
+            perp.normalize()
+            (pa, pb) = _pts_inches([dim.a, dim.b])
+            add_dim(pa, pb,
+                    offset=QVector3D.dotProduct(dim.offset, perp) * _M_TO_IN)
+    if add_text is not None:
+        for lab in getattr(scene, "text_labels", []) or []:
+            text = (lab.text or "").strip()
+            if not text:
+                continue
+            (anchor,) = _pts_inches([lab.anchor])
+            leader = (lab.offset.x() * _M_TO_IN, lab.offset.y() * _M_TO_IN,
+                      lab.offset.z() * _M_TO_IN)
+            add_text(text, anchor, leader=leader)

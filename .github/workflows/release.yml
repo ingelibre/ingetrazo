@@ -40,10 +40,12 @@ jobs:
           python -m venv venv
           ./venv/bin/python -m pip install --quiet --upgrade pip
           ./venv/bin/python -m pip install --quiet PySide6 numpy pytest pyinstaller
-          # openskp: upstream (VFF parser + legacy MFC reader + .skp writer;
-          # every fork patch is merged there), pinned by SHA like
-          # build-windows.yml so both installers ship the same reader/writer.
-          ./venv/bin/python -m pip install --quiet "openskp @ git+https://github.com/iamahsanmehmood/openskp@7f3a21bd53fd9fb2a35c799c255b35bbe69fc81e#subdirectory=packages/python"
+          # openskp: our fork's feat-write-annotations = upstream main
+          # (incl. the 186/186 legacy-corpus fixes, PRs #194/#199) +
+          # dimension/leader-text write+read (upstream PR #203). Pinned by
+          # SHA like build-windows.yml so both installers ship the same
+          # reader/writer; repoint to upstream when #203 merges.
+          ./venv/bin/python -m pip install --quiet "openskp @ git+https://github.com/tuxiasumari/openskp@9fc094784646d96e881c9abe71542a59300c0243#subdirectory=packages/python"
           ./venv/bin/python -c "import openskp, openskp.legacy; print('openskp OK')"
 
       - name: Tests

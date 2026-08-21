@@ -4,6 +4,55 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.3] — 2026-08-21
+
+**The complete SketchUp round trip.** IngeTrazo now writes native `.skp`
+(File → Export → SketchUp) and opens Marco's entire 13-year real-project
+corpus — 186 of 186 files, 2013–2026 — natively. Annotations travel BOTH
+ways: dimensions and leader texts drawn in IngeTrazo appear in SketchUp,
+and the ones in `.skp` files land in IngeTrazo as live, editable
+annotations. The underlying reader fixes are merged into upstream
+[OpenSKP](https://github.com/iamahsanmehmood/openskp) (PRs #194/#199);
+the annotation writer is proposed as PR #203.
+
+### Added
+- **Native `.skp` export** (`formats/skp_out.py`, powered by
+  `openskp.create`): faces with holes, groups, shared components (one
+  definition + N placements), named materials with textures, layers —
+  and now **dimensions and leader texts**.
+- **`.skp` annotation import**: linear dimensions (all eras) and leader
+  texts with their real label position and leader line; text records
+  decoded byte-exact against SDK-generated ground truth ("Rosetta"
+  files) and human-drawn corpus records.
+- **Material registry** — materials have NAMES that survive editing:
+  painting keeps identity, right-click a named swatch to edit-and-restamp
+  every use, Model Info reports per-material quantities (m²), and OBJ/DAE/
+  glTF/SKP exports carry the real names (`Concreto_visto`, not `mat0`).
+- **Leader-text lifecycle**: select by clicking the text itself (glyphs
+  outrank geometry), move with the anchor pinned (leader stretches, live
+  preview), edit on double-click (SketchUp's gesture), delete with
+  Supr/context menu, box-select — every step one undoable command.
+- **Solid Inspector** (bundled plugin): explains WHY a solid is not
+  watertight.
+
+### Fixed
+- Legacy (2013–2020) `.skp` reader: 16 decoded format variants merged
+  upstream — burned MapObject indices with piecewise reference
+  translation, v20 layer-list separators, self-calibrating guide-line
+  tails, CImage entities, escaped/forward entity refs, Length/Point3d
+  attributes, per-object layers on 2014-era files, and more. Every fix
+  validated against fingerprint-identical corpus parses.
+- Texture drape detection now only runs on legacy files (the projected
+  flag is authoritative there); modern VFF files trust their own flags.
+- Deleting a selected leader text with Supr raised a silent NameError
+  (missing import since the Text tool's original commit); the context
+  menu's Delete ignored leader texts entirely.
+- `.skp` export kept same-recipe named materials separate (a repaint in a
+  different name no longer merges them), and unpainted faces keep
+  SketchUp's default material instead of turning white.
+- Python Console: a failing script no longer drags an internal
+  SyntaxError into the error report.
+
 ## [0.3.2] — 2026-08-18
 
 **IngeTrazo has extensions.** The plugin system `docs/plugins.md` had been

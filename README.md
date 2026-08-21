@@ -59,13 +59,21 @@ anything is missing.
 - **Curved solids** — SketchUp-style soft edges: smooth cylinders, curved-surface
   selection, view-dependent profile/silhouette edges.
 - **Materials** — solid color per face and **SketchUp-compatible textures**
-  (planar projection with real-world tile size), applied with a Paint tool.
-- **Dimensions** — static annotations with hidden-line occlusion and styles.
+  (planar projection with real-world tile size), applied with a Paint tool —
+  with a **named material registry**: paint keeps identity, edit-and-restamp
+  updates every use, Model Info reports quantities per material, and exports
+  carry the real names.
+- **Dimensions & leader texts** — static annotations with hidden-line
+  occlusion and styles; texts select by their glyphs, move with the anchor
+  pinned, and edit on double-click. Both survive the `.skp` round trip.
 - **Side tray** — Materials, Dimension style, Entity info panels.
-- **SketchUp import** — open `.skp` files natively (double-click too), every
-  era from classic 2013–2020 to current 2021+, with materials, textures,
-  per-side face materials and translucency. Pure Python, offline, no Wine or
-  proprietary DLL — powered by [OpenSKP](https://github.com/iamahsanmehmood/openskp)
+- **SketchUp import AND export** — open `.skp` files natively (double-click
+  too), every era from classic 2013–2020 to current 2021+, with materials,
+  textures, per-side face materials, translucency, layers, scenes,
+  dimensions and leader texts — and **save your model back as `.skp`**
+  (groups, shared components, holes, named materials, dimensions and leader
+  texts included). Pure Python, offline, no Wine or proprietary DLL —
+  powered by [OpenSKP](https://github.com/iamahsanmehmood/openskp)
   (see [Acknowledgements](#acknowledgements)).
 - **Files** — native `.igz` save/open (self-contained: textures travel inside
   the document), **import OBJ and COLLADA `.dae`**, **export STL, OBJ,
