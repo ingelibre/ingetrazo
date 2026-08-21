@@ -137,10 +137,38 @@ def apply_payload(scene, payload) -> str:
     softening — so a ``.skp`` opened through the pure backend looks identical
     to one that came through the converter. Cheap relative to the parse; the
     caller wraps it in a command for undo. Returns the backend name."""
+    import gc
+    from PySide6.QtGui import QVector3D
     from core.group import Group
     from core.mesh import Mesh
     from formats.dae import _add_fused
     from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
+
+    # Mass object construction ahead (vertices/edges/faces per group): the
+    # generational GC re-scans the ever-growing heap throughout and can cost
+    # more than the build itself on many-group files. Collection is merely
+    # deferred — import cycles are still reclaimed at re-enable.
+    _gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        return _apply_payload_inner(scene, payload)
+    finally:
+        if _gc_was_enabled:
+            gc.enable()
+
+
+def _apply_payload_inner(scene, payload) -> str:
+    from PySide6.QtGui import QVector3D
+    from core.group import Group
+    from core.mesh import Mesh
+    from formats.dae import _add_fused
+    from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
+
+    def _q(p):
+        # Payload corners are plain [x, y, z] lists from the openskp
+        # adapter, or QVector3D from the image-quad path — normalize for
+        # the QVector3D-based fuse/add_face clean-up below.
+        return p if hasattr(p, "x") else QVector3D(p[0], p[1], p[2])
 
     def _build_mesh(faces, soft_edges=None):
         mesh = Mesh()
@@ -150,37 +178,85 @@ def apply_payload(scene, payload) -> str:
             # soften exactly the flagged edges. No coplanar fusion: SketchUp
             # keeps coplanar same-material faces separate with their edges
             # visible (glass mullions, beam/column lines), so fusing them
-            # dissolved real user lines.
+            # dissolved real user lines. Built in one vectorized bulk pass —
+            # the per-face add_face welding dominated big imports.
+            import numpy as np
+            from core.topology import _maximal_holes
+            flat: list = []
+            ring_sizes: list = []
+            ring_counts: list = []
+            attrs_list: list = []
             for outer, holes, attrs in faces:
-                try:
-                    face = mesh.add_face(outer, holes or None)
-                except Exception:  # noqa: BLE001 — skip a degenerate polygon
-                    continue
-                if attrs:
-                    face.attrs.update(attrs)
+                if holes and len(holes) > 1:
+                    try:
+                        holes = _maximal_holes(
+                            [[QVector3D(*p) for p in h] for h in holes])
+                        holes = [[p.toTuple() for p in h] for h in holes]
+                    except Exception:  # noqa: BLE001 — degenerate hole ring
+                        continue       # add_face would have raised: skip face
+                rings = [outer] + [h for h in (holes or [])]
+                ring_counts.append(len(rings))
+                for r in rings:
+                    ring_sizes.append(len(r))
+                    if r and hasattr(r[0], "x"):   # QVector3D payload corners
+                        flat.extend(p.toTuple() for p in r)
+                    else:
+                        flat.extend(r)
+                attrs_list.append(attrs)
+            if ring_counts:
+                if len(flat) >= 1024:          # corners; bulk wins above ~700
+                    mesh.add_faces_bulk(
+                        np.array(flat, dtype=np.float64).reshape(-1, 3),
+                        ring_sizes, ring_counts, attrs_list)
+                else:
+                    # Small group: the bulk pass's fixed NumPy cost loses to
+                    # the plain per-face walk (a file with a thousand small
+                    # groups pays that fixed cost a thousand times).
+                    corners = [QVector3D(p[0], p[1], p[2]) for p in flat]
+                    ci = 0
+                    ri = 0
+                    for fi, nr in enumerate(ring_counts):
+                        rings = []
+                        for k in range(nr):
+                            n = ring_sizes[ri + k]
+                            rings.append(corners[ci:ci + n])
+                            ci += n
+                        ri += nr
+                        try:
+                            face = mesh.add_face(rings[0], rings[1:] or None)
+                        except Exception:  # noqa: BLE001 — degenerate
+                            continue
+                        if attrs_list[fi]:
+                            face.attrs.update(attrs_list[fi])
             if soft_edges:
-                def _k(p):
-                    # Integer 1e-5 grid cells — same partition as rounding
-                    # to 5 decimals, without the (hot) float rounding.
-                    return (round(p[0] * 1e5), round(p[1] * 1e5),
-                            round(p[2] * 1e5))
-                wanted = {frozenset((_k(a), _k(b))) for a, b in soft_edges}
-                for e in mesh.edges:
-                    if frozenset((_k(e.v0.position.toTuple()),
-                                  _k(e.v1.position.toTuple()))) in wanted:
+                # Soften through the WELD itself: resolve each flagged
+                # segment's endpoints to their shared vertices and mark that
+                # edge — the weld tolerance is the matching tolerance, so
+                # float noise between the payload's segment coordinates and
+                # the stored vertex positions can never drop a flag (the old
+                # rounded-cell comparison could).
+                for a, b in soft_edges:
+                    va = mesh.vertex_at(QVector3D(a[0], a[1], a[2]))
+                    vb = mesh.vertex_at(QVector3D(b[0], b[1], b[2]))
+                    if va is None or vb is None or va is vb:
+                        continue
+                    e = mesh.find_edge(va, vb)
+                    if e is not None:
                         e.soft = True
             return mesh
         # Legacy payloads without edge flags: the DAE-style clean-up.
         # Fusion works on plain loops; faces with holes (window rings) keep
         # their explicit topology and are added directly.
-        raw = [(outer, attrs) for outer, holes, attrs in faces if not holes]
+        raw = [([_q(p) for p in outer], attrs)
+               for outer, holes, attrs in faces if not holes]
         for item in fuse_coplanar_loops(raw):
             _add_fused(mesh, [item])
         for outer, holes, attrs in faces:
             if not holes:
                 continue
             try:
-                face = mesh.add_face(outer, holes)
+                face = mesh.add_face([_q(p) for p in outer],
+                                     [[_q(p) for p in h] for h in holes])
             except Exception:  # noqa: BLE001 — skip a degenerate polygon
                 continue
             if attrs:

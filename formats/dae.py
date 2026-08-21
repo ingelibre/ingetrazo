@@ -930,6 +930,20 @@ def _adopt_geolocation(scene, root) -> None:
 
 
 def load_dae(scene, path, progress=None) -> None:
+    """See :func:`_load_dae_inner`. Wrapped to run with the generational GC off —
+    mass vertex/edge/face construction ahead (see formats.skp.apply_payload);
+    collection is merely deferred to the re-enable."""
+    import gc
+    _gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        _load_dae_inner(scene, path, progress=progress)
+    finally:
+        if _gc_was_enabled:
+            gc.enable()
+
+
+def _load_dae_inner(scene, path, progress=None) -> None:
     """Add the geometry of a COLLADA file at ``path`` to ``scene``.
 
     Small models (≤ ``_MAX_FUSE_LOOPS`` polygons) go into the loose mesh and

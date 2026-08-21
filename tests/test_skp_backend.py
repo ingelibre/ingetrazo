@@ -135,7 +135,7 @@ def test_openskp_adapter_resolves_a_face_ring_in_metres():
     faces = payload["groups"][0]["faces"]
     assert len(faces) == 1
     outer, holes, attrs = faces[0]
-    xs = sorted(round(p.x(), 4) for p in outer)
+    xs = sorted(round(p[0], 4) for p in outer)
     assert xs == [0.0, 2.54, 2.54]          # 100 in = 2.54 m
     assert holes == []
 
@@ -155,7 +155,7 @@ def test_openskp_adapter_places_instances_with_transform():
     payload = skp_openskp._adapt(model, "inst")
     outer = payload["groups"][0]["faces"][0][0]
     # child X spans 0..10 in, shifted +100 in → 100..110 in → 2.54..2.794 m
-    xs = sorted(round(p.x(), 4) for p in outer)
+    xs = sorted(round(p[0], 4) for p in outer)
     assert min(xs) == pytest.approx(2.54, abs=1e-4)
     assert max(xs) == pytest.approx(2.794, abs=1e-4)
 
@@ -288,7 +288,7 @@ def test_openskp_adapter_shares_repeated_components(monkeypatch):
     assert proto["name"] == "Arbol"
     assert len(proto["instances"]) == 2
     # Prototype geometry is LOCAL (translation lives in the matrices).
-    xs = [round(p.x(), 4) for p in proto["faces"][0][0]]
+    xs = [round(p[0], 4) for p in proto["faces"][0][0]]
     assert max(xs) == pytest.approx(10 * 0.0254)
 
     # apply_payload: two instance Groups SHARING one prototype mesh.
@@ -506,7 +506,7 @@ def test_openskp_adapter_back_painted_face_flips_and_paints():
     assert attrs == {"color": [0.0, 200 / 255.0, 0.0], "mat": "Grass"}
     # ring reversed: the original raw order was v(0,0),(10,0),(10,10) —
     # flipped means the first output vertex is the original last one.
-    assert (round(outer[0].x(), 3), round(outer[0].y(), 3)) == (0.254, 0.254)
+    assert (round(outer[0][0], 3), round(outer[0][1], 3)) == (0.254, 0.254)
 
 
 def test_openskp_adapter_face_camera_component_becomes_billboard():

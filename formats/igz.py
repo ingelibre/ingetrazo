@@ -65,18 +65,29 @@ _TEX_PREFIX = "textures/"
 _ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
 
 
+# Keys the texture walk never needs to enter: pure coordinate blocks, and
+# the edge list (fixed ``_edge_json`` schema — no attrs, no textures).
+# Descending into every vertex triple and edge dict made the walk itself
+# cost seconds on a 300k-face document.
+_TEXTURE_WALK_SKIP = frozenset(("vertices", "holes", "a", "b", "edges"))
+
+
 def _texture_entries(node):
     """Yield every ``"texture"`` dict inside a serialized payload — face
     materials, back-side materials (``attrs["back"]``), and whatever nests one
     later. Walking the JSON keeps this honest as the schema grows: a new place
-    to hang a texture is embedded without touching this module."""
+    to hang a texture is embedded without touching this module. Coordinate
+    blocks (:data:`_TEXTURE_WALK_SKIP`) and leaf value lists are skipped —
+    they are the bulk of the document and can never carry a texture."""
     if isinstance(node, dict):
         for key, value in node.items():
             if key == "texture" and isinstance(value, dict):
                 yield value
-            else:
+            elif key not in _TEXTURE_WALK_SKIP:
                 yield from _texture_entries(value)
     elif isinstance(node, list):
+        if node and not isinstance(node[0], (dict, list)):
+            return                       # a leaf value list (colour, offsets)
         for value in node:
             yield from _texture_entries(value)
 
@@ -146,12 +157,12 @@ def _unpack_textures(payload, archive) -> None:
 
 
 def _face_json(f) -> dict:
-    entry = {"vertices": [[v.x(), v.y(), v.z()] for v in f.vertices]}
+    entry = {"vertices": [list(v.position.toTuple()) for v in f.loop]}
     # Holes are written only when present, so simple documents stay terse and
     # older readers ignore the extra key gracefully.
-    if getattr(f, "holes", None):
+    if getattr(f, "hole_loops", None):
         entry["holes"] = [
-            [[v.x(), v.y(), v.z()] for v in loop] for loop in f.holes
+            [list(v.position.toTuple()) for v in loop] for loop in f.hole_loops
         ]
     # Material colour (the Paint tool), written only when set.
     color = getattr(f, "attrs", {}).get("color")
@@ -184,8 +195,8 @@ def _face_json(f) -> dict:
 
 
 def _edge_json(e) -> dict:
-    entry = {"a": [e.a.x(), e.a.y(), e.a.z()],
-             "b": [e.b.x(), e.b.y(), e.b.z()]}
+    entry = {"a": list(e.v0.position.toTuple()),
+             "b": list(e.v1.position.toTuple())}
     if getattr(e, "soft", False):
         entry["soft"] = True
     if getattr(e, "curve", None) is not None:
@@ -378,6 +389,20 @@ def _unpack_photo_mesh(payload: dict, archive):
 
 def load_into(scene, path: Path) -> None:
     """Replace ``scene`` contents with what's stored at ``path``."""
+    import gc
+
+    # Mass object construction ahead — see formats.skp.apply_payload: the
+    # generational GC re-scanning the growing heap can dominate big loads.
+    _gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        _load_into_inner(scene, path)
+    finally:
+        if _gc_was_enabled:
+            gc.enable()
+
+
+def _load_into_inner(scene, path: Path) -> None:
     data, archive = _read_document(path)
     survey = None
     try:
@@ -493,41 +518,109 @@ def load_into(scene, path: Path) -> None:
     scene.version += 1
 
 
-def _load_mesh(mesh, payload) -> None:
+def _face_attrs_from_json(raw) -> dict | None:
+    attrs: dict = {}
+    color = raw.get("color")
+    if color is not None:
+        attrs["color"] = list(color)
+    texture = raw.get("texture")
+    if texture is not None:
+        attrs["texture"] = dict(texture)
+    if raw.get("layer"):
+        attrs["layer"] = raw["layer"]
+    if raw.get("ifc"):
+        attrs["ifc"] = dict(raw["ifc"])
+    if raw.get("opacity") is not None:
+        attrs["opacity"] = float(raw["opacity"])
+    if raw.get("mat"):
+        attrs["mat"] = raw["mat"]
+    if isinstance(raw.get("back"), dict):
+        attrs["back"] = dict(raw["back"])
+    return attrs or None
+
+
+def _load_mesh_small(mesh, payload) -> None:
+    """The plain per-entity walk — faster than the bulk pass's fixed NumPy
+    cost for the many small groups a document can carry."""
     import core.mesh as _mesh_mod
     for raw in payload.get("edges", []):
         try:
             edge = mesh.add_edge(QVector3D(*raw["a"]), QVector3D(*raw["b"]))
-            if raw.get("soft"):
-                edge.soft = True
-            if raw.get("layer"):
-                edge.layer = raw["layer"]
-            cid = raw.get("curve")
-            if cid is not None:
-                edge.curve = cid
-                # Keep new curves unique after loading stored ids.
-                if cid >= _mesh_mod._CURVE_COUNTER:
-                    _mesh_mod._CURVE_COUNTER = cid + 1
         except ValueError:
-            pass  # degenerate edge in the document — skip
+            continue  # degenerate edge in the document — skip
+        if raw.get("soft"):
+            edge.soft = True
+        if raw.get("layer"):
+            edge.layer = raw["layer"]
+        cid = raw.get("curve")
+        if cid is not None:
+            edge.curve = cid
+            # Keep new curves unique after loading stored ids.
+            if cid >= _mesh_mod._CURVE_COUNTER:
+                _mesh_mod._CURVE_COUNTER = cid + 1
     for raw in payload.get("faces", []):
         verts = [QVector3D(*v) for v in raw["vertices"]]
         holes = [[QVector3D(*v) for v in loop] for loop in raw.get("holes", [])]
         face = mesh.add_face(verts, holes)
-        if face is not None:
-            color = raw.get("color")
-            if color is not None:
-                face.attrs["color"] = list(color)
-            texture = raw.get("texture")
-            if texture is not None:
-                face.attrs["texture"] = dict(texture)
-            if raw.get("layer"):
-                face.attrs["layer"] = raw["layer"]
-            if raw.get("ifc"):
-                face.attrs["ifc"] = dict(raw["ifc"])
-            if raw.get("opacity") is not None:
-                face.attrs["opacity"] = float(raw["opacity"])
-            if raw.get("mat"):
-                face.attrs["mat"] = raw["mat"]
-            if isinstance(raw.get("back"), dict):
-                face.attrs["back"] = dict(raw["back"])
+        attrs = _face_attrs_from_json(raw)
+        if attrs:
+            face.attrs.update(attrs)
+
+
+def _load_mesh(mesh, payload) -> None:
+    """Rebuild a mesh from its JSON block in ONE bulk pass: every edge
+    endpoint and face corner welds through :meth:`Mesh.bulk_weld` at once,
+    then the edges and faces are created vectorized — the per-entity
+    ``add_edge``/``add_face`` walk dominated opening big documents. Small
+    groups take the plain walk (the bulk pass's fixed cost loses there)."""
+    import numpy as np
+    import core.mesh as _mesh_mod
+    from core.topology import _maximal_holes
+
+    raw_edges = payload.get("edges", [])
+    raw_faces = payload.get("faces", [])
+    if len(raw_edges) + len(raw_faces) * 4 < 1024:   # ~corner estimate
+        _load_mesh_small(mesh, payload)
+        return
+    flat: list = []
+    for raw in raw_edges:
+        flat.append(raw["a"])
+        flat.append(raw["b"])
+    n_edge_pts = len(flat)
+    ring_sizes: list = []
+    ring_counts: list = []
+    attrs_list: list = []
+    for raw in raw_faces:
+        verts = raw["vertices"]
+        holes = raw.get("holes", [])
+        if len(holes) > 1:
+            qholes = _maximal_holes(
+                [[QVector3D(*v) for v in loop] for loop in holes])
+            holes = [[(p.x(), p.y(), p.z()) for p in loop] for loop in qholes]
+        ring_counts.append(1 + len(holes))
+        ring_sizes.append(len(verts))
+        flat.extend(verts)
+        for loop in holes:
+            ring_sizes.append(len(loop))
+            flat.extend(loop)
+        attrs_list.append(_face_attrs_from_json(raw))
+    if not flat:
+        return
+    vobjs, inverse = mesh.bulk_weld(np.array(flat, dtype=np.float64))
+    emap = None
+    if raw_edges:
+        flags = []
+        max_curve = None
+        for raw in raw_edges:
+            cid = raw.get("curve")
+            if cid is not None and (max_curve is None or cid > max_curve):
+                max_curve = cid
+            flags.append((bool(raw.get("soft")), cid, raw.get("layer")))
+        emap = mesh.add_edges_welded(
+            vobjs, inverse[0:n_edge_pts:2], inverse[1:n_edge_pts:2], flags)
+        # Keep new curves unique after loading stored ids.
+        if max_curve is not None and max_curve >= _mesh_mod._CURVE_COUNTER:
+            _mesh_mod._CURVE_COUNTER = max_curve + 1
+    if ring_counts:
+        mesh.add_faces_welded(vobjs, inverse[n_edge_pts:], ring_sizes,
+                              ring_counts, attrs_list, edge_map=emap)

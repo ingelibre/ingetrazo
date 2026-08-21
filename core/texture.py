@@ -222,8 +222,16 @@ def fit_uv_affine(points, uvs):
 
 
 def affine_uv(uvw, positions):
-    """Evaluate a fitted world→UV map (see :func:`fit_uv_affine`) at points."""
-    gu = QVector3D(uvw[0], uvw[1], uvw[2])
-    gv = QVector3D(uvw[4], uvw[5], uvw[6])
-    return [(QVector3D.dotProduct(gu, p) + uvw[3],
-             QVector3D.dotProduct(gv, p) + uvw[7]) for p in positions]
+    """Evaluate a fitted world→UV map (see :func:`fit_uv_affine`) at points
+    — ``QVector3D`` or plain ``(x, y, z)`` sequences alike."""
+    ux, uy, uz, uc = uvw[0], uvw[1], uvw[2], uvw[3]
+    vx, vy, vz, vc = uvw[4], uvw[5], uvw[6], uvw[7]
+    out = []
+    for p in positions:
+        if hasattr(p, "x"):
+            x, y, z = p.x(), p.y(), p.z()
+        else:
+            x, y, z = p[0], p[1], p[2]
+        out.append((ux * x + uy * y + uz * z + uc,
+                    vx * x + vy * y + vz * z + vc))
+    return out

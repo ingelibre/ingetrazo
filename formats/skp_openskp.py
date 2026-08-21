@@ -59,15 +59,6 @@ def _ring_raw(defn, loop):
     return pts
 
 
-def _ring(defn, loop):
-    """Resolve one ``[(edge_id, sense), …]`` loop to a list of local-space
-    ``QVector3D`` (metres). Returns ``None`` on any dangling reference."""
-    raw = _ring_raw(defn, loop)
-    if raw is None:
-        return None
-    return [QVector3D(x * _INCH, y * _INCH, z * _INCH) for x, y, z in raw]
-
-
 def _matrix(m) -> QMatrix4x4:
     """An OpenSKP instance ``matrix`` (row-major 3×3 + translation, in inches)
     as a ``QMatrix4x4`` whose translation is already in metres."""
@@ -407,23 +398,78 @@ def _positioned_uvs(face, raw_ring, tex, matrix=None, projected=False):
     return uvs
 
 
-def _face_entry(defn, face, xform, attr_map, inherited=None, layer=None):
-    """One payload face ``(outer, holes, attrs)`` for ``face`` transformed by
-    ``xform``, or ``None`` when degenerate. Bakes a positioned / photo-fitted
-    texture's exact per-face UVs (``Face.uv_transform``, upstream PR
-    openskp#6; computed in local inches) into a world→UV affine — the
-    ``"uvw"`` IngeTrazo's renderer and exporters already consume. Exact for
-    triangles; a per-face affine fit of the projective map otherwise.
+def _defn_geom(defn):
+    """The definition's face geometry, flattened once and cached: a
+    ``(P, 3)`` float64 array of every resolved ring corner in LOCAL METRES,
+    the same corners as INCH tuples (the frame the UV math runs in), and
+    per-face ``(face, outer_start, outer_end, [(hole_start, hole_end), …])``
+    metadata. An instanced component pays the ring resolution once; each
+    placement is then a single matrix multiply over the whole array instead
+    of a QVector3D construction + map per corner."""
+    geom = getattr(defn, "_geom", None)
+    if geom is not None:
+        return geom
+    import numpy as np
+    flat: list = []
+    meta: list = []
+    n = 0
+    for face in defn.faces.values():
+        loops = getattr(face, "loops", None)
+        if not loops:
+            continue
+        raw = _ring_raw(defn, loops[0])
+        if not raw or len(raw) < 3:
+            continue
+        s0 = n
+        flat.extend(raw)
+        n += len(raw)
+        s1 = n
+        hs = []
+        for lp in loops[1:]:
+            h = _ring_raw(defn, lp)
+            if h and len(h) >= 3:
+                hs.append((n, n + len(h)))
+                flat.extend(h)
+                n += len(h)
+        meta.append((face, s0, s1, hs))
+    pos_m = np.asarray(flat, dtype=np.float64).reshape(-1, 3) * _INCH
+    geom = (pos_m, flat, meta)
+    try:
+        defn._geom = geom
+    except AttributeError:          # __slots__ definition: skip the cache
+        pass
+    return geom
+
+
+def _world_points(pos_m, xform):
+    """``pos_m`` (local metres) transformed by the QMatrix4x4 ``xform``, as a
+    list of ``[x, y, z]`` lists. Float32-quantized so the payload carries the
+    same values a ``Vertex`` will store — welding and soft-edge matching key
+    on those."""
+    import numpy as np
+    if xform.isIdentity():
+        world = pos_m
+    else:
+        m = np.array(xform.data(), dtype=np.float64).reshape(4, 4, order="F")
+        world = pos_m @ m[:3, :3].T + m[:3, 3]
+    return world.astype(np.float32).astype(np.float64).tolist()
+
+
+def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
+                inherited=None, layer=None):
+    """One payload face ``(outer, holes, attrs)`` for ``face``, its corners
+    already transformed in ``wl`` (see :func:`_world_points`; ``raw_l`` keeps
+    the same corners in local inches for the UV math). Bakes a positioned /
+    photo-fitted texture's exact per-face UVs (``Face.uv_transform``,
+    upstream PR openskp#6) into a world→UV affine — the ``"uvw"``
+    IngeTrazo's renderer and exporters already consume. Exact for triangles;
+    a per-face affine fit of the projective map otherwise.
 
     ``layer`` is the SketchUp layer (tag) of the nearest enclosing tagged
     instance — a face with no tag of its own carries it, so hiding the tag's
     layer in IngeTrazo hides what SketchUp would hide."""
-    loops = getattr(face, "loops", None)
-    if not loops:
-        return None
-    raw = _ring_raw(defn, loops[0])
-    if not raw or len(raw) < 3:
-        return None
+    raw = raw_l[s0:s1]
+    outer = wl[s0:s1]
     # Material precedence, matching SketchUp: the face's OWN material wins —
     # front side first, then back side (flipping the face so the painted
     # side fronts, what "Reverse Faces + paint" produces) — and only a face
@@ -440,19 +486,17 @@ def _face_entry(defn, face, xform, attr_map, inherited=None, layer=None):
         if battrs is not None:
             attrs = battrs
             uv_mat = getattr(face, "uv_transform_back", None)
-            raw = list(reversed(raw))
+            raw = raw[::-1]
+            outer = outer[::-1]
             flipped = True
         elif inherited is not None:
             attrs = attr_map.get(inherited)
-    outer = [xform.map(QVector3D(x * _INCH, y * _INCH, z * _INCH))
-             for x, y, z in raw]
     holes = []
-    for lp in loops[1:]:
-        h = _ring(defn, lp)
-        if h and len(h) >= 3:
-            if flipped:
-                h = list(reversed(h))
-            holes.append([xform.map(p) for p in h])
+    for ha, hb in holes_sl:
+        h = wl[ha:hb]
+        if flipped:
+            h = h[::-1]
+        holes.append(h)
     def _bake_uvs(entry, uv_matrix, projected=False):
         """Return ``entry`` with the texture's per-face ``uvw`` baked in."""
         if not entry or "texture" not in entry:
@@ -575,11 +619,13 @@ def _soft_edge_segments(defn, xform, out) -> None:
     hidden edges to ``out`` — the file's own edge-display flags, used by
     ``apply_payload`` instead of angle-based softening.
 
-    The flagged endpoints (local metres) are cached on the definition — an
-    instanced component runs this once per placement, and re-filtering every
-    edge each time dominated large imports."""
-    pairs = getattr(defn, "_soft_pairs", None)
-    if pairs is None:
+    The flagged endpoints (local metres) are cached on the definition as one
+    array — an instanced component pays the edge filter once, and each
+    placement is a single matrix multiply (float32-quantized like the face
+    corners, so the soft keys match the welded vertex positions)."""
+    import numpy as np
+    arr = getattr(defn, "_soft_arr", None)
+    if arr is None:
         pairs = []
         for e in getattr(defn, "edges", {}).values():
             if not (getattr(e, "soft", False) or getattr(e, "smooth", False)
@@ -589,16 +635,20 @@ def _soft_edge_segments(defn, xform, out) -> None:
             vb = defn.vertices.get(e.v2_id)
             if va is None or vb is None:
                 continue
-            pairs.append((QVector3D(va.x * _INCH, va.y * _INCH, va.z * _INCH),
-                          QVector3D(vb.x * _INCH, vb.y * _INCH, vb.z * _INCH)))
+            pairs.append((va.x, va.y, va.z))
+            pairs.append((vb.x, vb.y, vb.z))
+        arr = np.asarray(pairs, dtype=np.float64).reshape(-1, 3) * _INCH
         try:
-            defn._soft_pairs = pairs
+            defn._soft_arr = arr
         except AttributeError:      # __slots__ definition: just skip the cache
             pass
-    for qa, qb in pairs:
-        pa = xform.map(qa)
-        pb = xform.map(qb)
-        out.append(((pa.x(), pa.y(), pa.z()), (pb.x(), pb.y(), pb.z())))
+    if not len(arr):
+        return
+    wl = _world_points(arr, xform)
+    for i in range(0, len(wl), 2):
+        a = wl[i]
+        b = wl[i + 1]
+        out.append(((a[0], a[1], a[2]), (b[0], b[1], b[2])))
 
 
 def _collect(defn, xform, by_id, attr_map, out, depth, stack,
@@ -627,10 +677,14 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
     if depth > _MAX_DEPTH or id(defn) in stack:
         return
     stack = stack | {id(defn)}
-    for face in defn.faces.values():
-        entry = _face_entry(defn, face, xform, attr_map, inherited, layer)
-        if entry is not None:
-            out.append(entry)
+    pos_m, raw_l, meta = _defn_geom(defn)
+    if meta:
+        wl = _world_points(pos_m, xform)
+        for face, s0, s1, hs in meta:
+            entry = _face_entry(face, wl, raw_l, s0, s1, hs, attr_map,
+                                inherited, layer)
+            if entry is not None:
+                out.append(entry)
     if edges_out is not None:
         _soft_edge_segments(defn, xform, edges_out)
     for ins in getattr(defn, "instances", []):
@@ -867,10 +921,13 @@ def _adapt(model, name: str, skp_path=None):
         # The root's own loose faces (no instance recursion).
         loose: list = []
         ident = QMatrix4x4()
-        for face in r.faces.values():
-            entry = _face_entry(r, face, ident, attr_map)
-            if entry is not None:
-                loose.append(entry)
+        pos_m, raw_l, meta = _defn_geom(r)
+        if meta:
+            wl = _world_points(pos_m, ident)
+            for face, s0, s1, hs in meta:
+                entry = _face_entry(face, wl, raw_l, s0, s1, hs, attr_map)
+                if entry is not None:
+                    loose.append(entry)
         if loose:
             loose_edges: list = []
             _soft_edge_segments(r, ident, loose_edges)

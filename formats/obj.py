@@ -177,6 +177,20 @@ def _parse_mtl(path: Path) -> dict:
 
 
 def load_obj(scene, path, progress=None) -> None:
+    """See :func:`_load_obj_inner`. Wrapped to run with the generational GC off —
+    mass vertex/edge/face construction ahead (see formats.skp.apply_payload);
+    collection is merely deferred to the re-enable."""
+    import gc
+    _gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        _load_obj_inner(scene, path, progress=progress)
+    finally:
+        if _gc_was_enabled:
+            gc.enable()
+
+
+def _load_obj_inner(scene, path, progress=None) -> None:
     """Add the faces of a Wavefront OBJ at ``path`` to ``scene``'s mesh, then
     weld + merge coplanar so a triangulated file (e.g. our own export, or a
     SketchUp OBJ) comes back as clean editable polygons. Material ``Kd`` colours

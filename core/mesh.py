@@ -423,6 +423,293 @@ class Mesh:
         if e in self.edges:
             self.edges.remove(e)
 
+    # ---- Bulk construction (imports / .igz load) ----------------------------
+    def bulk_weld(self, pos):
+        """Weld a ``(P, 3)`` float array of positions into shared vertices —
+        the exact vectorized equivalent of calling :meth:`vertex` on each
+        point in order. Returns ``(vobjs, point_ids)``: the list of distinct
+        :class:`Vertex` objects touched and a ``(P,)`` index array mapping
+        each input point to its vertex in that list.
+
+        Parity strategy: a cell with NO neighbouring cell present (in the
+        batch or the pre-existing registry) can never weld across a boundary
+        — all its points resolve to one vertex at its first point, no probe
+        needed. Points in *candidate* cells (a neighbour exists) replay the
+        sequential per-point logic exactly, probes and all — including the
+        subtle case where a probe welds a point WITHOUT claiming its cell,
+        so a later, farther point of the same cell creates its own vertex."""
+        import numpy as np
+        # Round-trip through float32 first: the sequential path stores every
+        # position in a QVector3D (C float), so cell keys and probe distances
+        # are computed on float32 values — a float64 input must quantize the
+        # same way or boundary cells (and thus welds) diverge.
+        pos = np.ascontiguousarray(pos, dtype=np.float32).astype(np.float64)
+        if not len(pos):
+            return [], np.empty(0, dtype=np.int64)
+        keys = np.round(pos * _KEY_SCALE).astype(np.int64)
+        view = np.ascontiguousarray(keys).view(
+            [("x", "<i8"), ("y", "<i8"), ("z", "<i8")]).reshape(-1)
+        uview, first, inverse = np.unique(
+            view, return_index=True, return_inverse=True)
+        order = np.argsort(first, kind="stable")
+        rank = np.empty_like(order)
+        rank[order] = np.arange(len(order))
+        inverse = rank[inverse]                # point → unique cell (creation order)
+        first = first[order]
+        ukeys = keys[first]                    # unique cells, creation order
+        nu = len(first)
+        # Which unique cells have a neighbouring cell in the batch? Dense
+        # per-axis ranks make the 26 membership tests plain int64
+        # searchsorted (structured-dtype searchsorted is far slower).
+        ax = [np.unique(ukeys[:, c]) for c in range(3)]
+        nx, ny, nz = (len(a) + 2 for a in ax)  # +2: room for absent ±1 ranks
+        def _pack(k3):
+            out = np.empty(len(k3), dtype=np.int64)
+            ok = np.ones(len(k3), dtype=bool)
+            acc = np.zeros(len(k3), dtype=np.int64)
+            for c, n in ((0, nx), (1, ny), (2, nz)):
+                i = np.searchsorted(ax[c], k3[:, c])
+                good = (i < len(ax[c]))
+                i_clip = np.minimum(i, len(ax[c]) - 1)
+                good &= ax[c][i_clip] == k3[:, c]
+                ok &= good
+                acc = acc * n + i_clip
+            out[:] = acc
+            return out, ok
+        upacked, _ = _pack(ukeys)
+        usorted = np.sort(upacked)
+        candidate = np.zeros(nu, dtype=bool)
+        offs = [(dx, dy, dz)
+                for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
+                if (dx, dy, dz) != (0, 0, 0)]
+        shifted = np.empty_like(ukeys)
+        for d in offs:
+            shifted[:, 0] = ukeys[:, 0] + d[0]
+            shifted[:, 1] = ukeys[:, 1] + d[1]
+            shifted[:, 2] = ukeys[:, 2] + d[2]
+            q, ok = _pack(shifted)
+            i = np.searchsorted(usorted, q)
+            i_clip = np.minimum(i, nu - 1)
+            candidate |= ok & (usorted[i_clip] == q)
+        if self._registry:
+            # Pre-existing vertices can also satisfy a probe: any batch cell
+            # whose 3×3×3 neighbourhood touches a registered cell is a
+            # candidate too. (Membership via the registry dict itself — the
+            # batch is usually far larger than the probes saved.)
+            registry = self._registry
+            key_rows = ukeys.tolist()
+            flat = ~candidate
+            for u in np.flatnonzero(flat).tolist():
+                kx, ky, kz = key_rows[u]
+                found = False
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        for dz in (-1, 0, 1):
+                            if (kx + dx, ky + dy, kz + dz) in registry:
+                                found = True
+                                break
+                        if found:
+                            break
+                    if found:
+                        break
+                candidate[u] = found
+        registry = self._registry
+        vertices = self.vertices
+        vobjs: list = []
+        vindex: dict = {}
+
+        def _vid(v):
+            i = vindex.get(id(v))
+            if i is None:
+                i = len(vobjs)
+                vindex[id(v)] = i
+                vobjs.append(v)
+            return i
+
+        point_ids = np.empty(len(pos), dtype=np.int64)
+        cand_pt = candidate[inverse]
+        # Non-candidate cells: one vertex at the cell's first point.
+        nc_cells = np.flatnonzero(~candidate)
+        cell_vid = np.full(nu, -1, dtype=np.int64)
+        if len(nc_cells):
+            nc_keys = ukeys[nc_cells].tolist()
+            nc_pos = pos[first[nc_cells]].tolist()
+            ids = np.empty(len(nc_cells), dtype=np.int64)
+            for j, (k3, p3) in enumerate(zip(nc_keys, nc_pos)):
+                v = Vertex(QVector3D(p3[0], p3[1], p3[2]))
+                registry[(k3[0], k3[1], k3[2])] = v
+                vertices.append(v)
+                ids[j] = _vid(v)
+            cell_vid[nc_cells] = ids
+            ncp = ~cand_pt
+            point_ids[ncp] = cell_vid[inverse[ncp]]
+        # Candidate points: exact sequential replay, in input order.
+        cp = np.flatnonzero(cand_pt)
+        if len(cp):
+            cp_list = cp.tolist()
+            cp_keys = keys[cp].tolist()
+            cp_pos = pos[cp].tolist()
+            probe = self._probe_neighbours
+            get = registry.get
+            for j, i in enumerate(cp_list):
+                k3 = cp_keys[j]
+                k = (k3[0], k3[1], k3[2])
+                v = get(k)
+                if v is None:
+                    p3 = cp_pos[j]
+                    p = QVector3D(p3[0], p3[1], p3[2])
+                    v = probe(k, p)
+                    if v is None:
+                        v = Vertex(p)
+                        registry[k] = v
+                        vertices.append(v)
+                point_ids[i] = _vid(v)
+        return vobjs, point_ids
+
+    def add_edges_welded(self, vobjs, ia, ib, flags=None):
+        """Create the edges ``(vobjs[ia[i]], vobjs[ib[i]])`` — the vectorized
+        equivalent of :meth:`add_edge` per pair: endpoints that welded to one
+        vertex are skipped (the ``ValueError`` case), duplicates return the
+        existing edge. ``flags`` is an optional per-edge ``(soft, curve,
+        layer)`` tuple list. Returns ``{packed pair: Edge}`` over ``vobjs``
+        indices — pass it to :meth:`add_faces_welded` so face boundaries
+        reuse these edges without rescanning ``self.edges``."""
+        self._chunk_dirty = True
+        u = len(vobjs)
+        emap: dict = {}
+        ia = list(ia.tolist() if hasattr(ia, "tolist") else ia)
+        ib = list(ib.tolist() if hasattr(ib, "tolist") else ib)
+        for i in range(len(ia)):
+            a = ia[i]
+            b = ib[i]
+            v0 = vobjs[a]
+            v1 = vobjs[b]
+            if v0 is v1:
+                continue                       # degenerate: endpoints welded
+            key = a * u + b if a <= b else b * u + a
+            e = emap.get(key)
+            if e is None:
+                e = Edge(v0, v1)
+                v0.edges.add(e)
+                v1.edges.add(e)
+                self.edges.append(e)
+                emap[key] = e
+            if flags is not None:
+                soft, curve, layer = flags[i]
+                if soft:
+                    e.soft = True
+                if curve is not None:
+                    e.curve = curve
+                if layer is not None:
+                    e.layer = layer
+        return emap
+
+    def add_faces_welded(self, vobjs, inverse, ring_sizes, face_ring_counts,
+                         attrs=None, edge_map=None):
+        """Create faces from pre-welded corners — the vectorized equivalent
+        of :meth:`add_face` per face, minus the nested-hole filter (callers
+        run :func:`core.topology._maximal_holes` while flattening, where the
+        loops still exist as positions).
+
+        ``inverse`` indexes every ring corner into ``vobjs``, rings
+        concatenated in face order (outer first, then that face's holes);
+        ``ring_sizes`` is each ring's corner count and ``face_ring_counts``
+        how many rings each face owns. ``attrs`` (optional) is one dict or
+        ``None`` per face, applied via ``face.attrs.update``. ``edge_map``
+        is the pair→edge dict from :meth:`add_edges_welded` (or ``None`` to
+        derive it from ``self.edges``). Returns the new faces in order."""
+        import numpy as np
+        self._chunk_dirty = True
+        u = len(vobjs)
+        inverse = np.ascontiguousarray(inverse, dtype=np.int64)
+        ring_sizes = np.ascontiguousarray(ring_sizes, dtype=np.int64)
+        face_ring_counts = np.ascontiguousarray(face_ring_counts,
+                                                dtype=np.int64)
+        if not len(face_ring_counts):
+            return []
+        ring_ends = np.cumsum(ring_sizes)
+        ring_starts = ring_ends - ring_sizes
+        total = int(ring_ends[-1]) if len(ring_ends) else 0
+        # Boundary segments: each corner to the next within its ring.
+        nxt = np.arange(1, total + 1, dtype=np.int64)
+        nxt[ring_ends - 1] = ring_starts
+        seg_a = inverse
+        seg_b = inverse[nxt]
+        packed = np.minimum(seg_a, seg_b) * u + np.maximum(seg_a, seg_b)
+        if edge_map is None:
+            edge_map = {}
+            if self.edges:
+                vid_of = {id(v): i for i, v in enumerate(vobjs)}
+                for e in self.edges:
+                    i0 = vid_of.get(id(e.v0))
+                    i1 = vid_of.get(id(e.v1))
+                    if i0 is not None and i1 is not None:
+                        key = i0 * u + i1 if i0 <= i1 else i1 * u + i0
+                        edge_map.setdefault(key, e)
+        upacked, efirst, einv = np.unique(
+            packed, return_index=True, return_inverse=True)
+        eorder = np.argsort(efirst, kind="stable")
+        erank = np.empty_like(eorder)
+        erank[eorder] = np.arange(len(eorder))
+        einv = erank[einv]
+        upacked = upacked[eorder]
+        efirst = efirst[eorder]
+        eobjs: list = []
+        seg_a_list = seg_a.tolist()
+        seg_b_list = seg_b.tolist()
+        for key, src in zip(upacked.tolist(), efirst.tolist()):
+            e = edge_map.get(key)
+            if e is None:
+                v0 = vobjs[seg_a_list[src]]    # first occurrence's orientation
+                v1 = vobjs[seg_b_list[src]]
+                e = Edge(v0, v1)
+                v0.edges.add(e)
+                v1.edges.add(e)
+                self.edges.append(e)
+                edge_map[key] = e
+            eobjs.append(e)
+        # Face objects, loops sliced from the welded corner list (plain list
+        # slicing — np.split into hundreds of thousands of views is slow).
+        corner_list = [vobjs[i] for i in inverse.tolist()]
+        rs_list = ring_starts.tolist()
+        re_list = ring_ends.tolist()
+        faces_out = []
+        ri = 0
+        for nr in face_ring_counts.tolist():
+            loop = corner_list[rs_list[ri]:re_list[ri]]
+            holes = [corner_list[rs_list[ri + k]:re_list[ri + k]]
+                     for k in range(1, nr)]
+            ri += nr
+            face = Face(loop, holes or None)
+            if attrs is not None:
+                a = attrs[len(faces_out)]
+                if a:
+                    face.attrs.update(a)
+            self.faces.append(face)
+            faces_out.append(face)
+        # Radial incidence: every boundary segment registers its face on its
+        # edge, in global segment order (= add_face's per-face order),
+        # multiplicity preserved.
+        seg_face = np.repeat(np.arange(len(face_ring_counts), dtype=np.int64),
+                             np.add.reduceat(ring_sizes,
+                                             np.cumsum(face_ring_counts)
+                                             - face_ring_counts))
+        order2 = np.argsort(einv, kind="stable")
+        sorted_faces = [faces_out[i] for i in seg_face[order2].tolist()]
+        bounds = np.cumsum(np.bincount(einv, minlength=len(eobjs))).tolist()
+        b0 = 0
+        for ei, b1 in enumerate(bounds):
+            if b1 > b0:
+                eobjs[ei].faces.extend(sorted_faces[b0:b1])
+            b0 = b1
+        return faces_out
+
+    def add_faces_bulk(self, pos, ring_sizes, face_ring_counts, attrs=None):
+        """Convenience: :meth:`bulk_weld` + :meth:`add_faces_welded`."""
+        vobjs, inverse = self.bulk_weld(pos)
+        return self.add_faces_welded(vobjs, inverse, ring_sizes,
+                                     face_ring_counts, attrs)
+
     # ---- Faces --------------------------------------------------------------
     def add_face(
         self,
