@@ -206,6 +206,29 @@ def test_move_tool_drags_selected_label():
     assert (lab.offset - QVector3D(0.5, 0, 1)).length() < 1e-9
 
 
+def test_select_delete_key_removes_label():
+    """Supr with a leader text selected deletes it (the import of
+    DeleteTextLabelsCommand was missing and only NameError'd at press
+    time — regression guard)."""
+    from types import SimpleNamespace
+    from PySide6.QtCore import Qt
+    from tools.select import SelectTool
+
+    scene = Scene()
+    history = History(scene)
+    lab = TextLabel(QVector3D(1, 2, 0), QVector3D(0.5, 0, 1), "Muro eje A")
+    scene.text_labels.append(lab)
+    scene.select([lab])
+    viewport = SimpleNamespace(scene=scene, history=history,
+                               update=lambda: None)
+    assert SelectTool().on_key(viewport, Qt.Key_Delete,
+                               Qt.KeyboardModifier.NoModifier)
+    assert scene.text_labels == []
+    assert not scene.selection
+    history.undo()
+    assert scene.text_labels == [lab]
+
+
 def test_label_igz_round_trip(tmp_path):
     scene = Scene()
     scene.text_labels.append(TextLabel(

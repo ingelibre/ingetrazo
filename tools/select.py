@@ -25,6 +25,7 @@ from core.history import (
     DeleteDimensionsCommand,
     DeleteGeoPathsCommand,
     DeleteGroupCommand,
+    DeleteTextLabelsCommand,
     EditTextLabelCommand,
     EraseSelectionCommand,
 )
