@@ -160,13 +160,14 @@ def apply_payload(scene, payload) -> str:
                     face.attrs.update(attrs)
             if soft_edges:
                 def _k(p):
-                    return (round(p[0], 5), round(p[1], 5), round(p[2], 5))
+                    # Integer 1e-5 grid cells — same partition as rounding
+                    # to 5 decimals, without the (hot) float rounding.
+                    return (round(p[0] * 1e5), round(p[1] * 1e5),
+                            round(p[2] * 1e5))
                 wanted = {frozenset((_k(a), _k(b))) for a, b in soft_edges}
                 for e in mesh.edges:
-                    a = e.v0.position
-                    b = e.v1.position
-                    if frozenset((_k((a.x(), a.y(), a.z())),
-                                  _k((b.x(), b.y(), b.z())))) in wanted:
+                    if frozenset((_k(e.v0.position.toTuple()),
+                                  _k(e.v1.position.toTuple()))) in wanted:
                         e.soft = True
             return mesh
         # Legacy payloads without edge flags: the DAE-style clean-up.

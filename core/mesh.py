@@ -43,10 +43,18 @@ _CURVE_COUNTER = 1
 _STITCH_TOL = 1e-4
 
 
-def _key(p: QVector3D) -> tuple[float, float, float]:
-    return (round(p.x(), _KEY_DECIMALS),
-            round(p.y(), _KEY_DECIMALS),
-            round(p.z(), _KEY_DECIMALS))
+_KEY_SCALE = 10.0 ** _KEY_DECIMALS
+
+
+def _key(p: QVector3D) -> tuple[int, int, int]:
+    # Integer grid cells (same partition as rounding to _KEY_DECIMALS):
+    # neighbouring cells are ±1, so the boundary probes in _lookup and
+    # weld_coincident need no float rounding — the rounding calls dominated
+    # large imports.
+    x, y, z = p.toTuple()
+    return (round(x * _KEY_SCALE),
+            round(y * _KEY_SCALE),
+            round(z * _KEY_SCALE))
 
 
 class Vertex:
@@ -239,16 +247,20 @@ class Mesh:
         v = self._registry.get(k)
         if v is not None:
             return v
+        return self._probe_neighbours(k, position)
+
+    def _probe_neighbours(self, k, position: QVector3D) -> Optional[Vertex]:
+        """The boundary-hole rescue of :meth:`_lookup`: probe the 26 cells
+        around ``k`` and accept a vertex within real weld distance."""
         step = 10.0 ** -_KEY_DECIMALS
         tol2 = step * step
-        for dx in (-step, 0.0, step):
-            for dy in (-step, 0.0, step):
-                for dz in (-step, 0.0, step):
-                    if dx == 0.0 and dy == 0.0 and dz == 0.0:
+        kx, ky, kz = k
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    if dx == 0 and dy == 0 and dz == 0:
                         continue
-                    n = self._registry.get((round(k[0] + dx, _KEY_DECIMALS),
-                                            round(k[1] + dy, _KEY_DECIMALS),
-                                            round(k[2] + dz, _KEY_DECIMALS)))
+                    n = self._registry.get((kx + dx, ky + dy, kz + dz))
                     if n is not None and (
                             (n.position - position).lengthSquared() < tol2):
                         return n
@@ -257,10 +269,13 @@ class Mesh:
     def vertex(self, position: QVector3D) -> Vertex:
         """Get-or-create the shared vertex at ``position`` (welds coincident
         points to one object)."""
-        v = self._lookup(position)
+        k = _key(position)
+        v = self._registry.get(k)
+        if v is None:
+            v = self._probe_neighbours(k, position)
         if v is None:
             v = Vertex(position)
-            self._registry[_key(position)] = v
+            self._registry[k] = v
             self.vertices.append(v)
         return v
 
@@ -691,12 +706,10 @@ class Mesh:
                 k = _key(v.position)
                 if self._registry.get(k) is not v:
                     continue
-                for dx in (-step, 0.0, step):
-                    for dy in (-step, 0.0, step):
-                        for dz in (-step, 0.0, step):
-                            nk = (round(k[0] + dx, _KEY_DECIMALS),
-                                  round(k[1] + dy, _KEY_DECIMALS),
-                                  round(k[2] + dz, _KEY_DECIMALS))
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        for dz in (-1, 0, 1):
+                            nk = (k[0] + dx, k[1] + dy, k[2] + dz)
                             if nk == k:
                                 continue
                             w = self._registry.get(nk)

@@ -32,9 +32,12 @@ refinement). Both joins are guarded, so PyPI 0.2.0 still imports (uncoloured).
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
+
+from core.texture import fit_uv_affine
 
 _INCH = 0.0254          # SketchUp internal unit → metres
 _MAX_DEPTH = 32         # guard against pathological instance nesting
@@ -330,16 +333,20 @@ def _face_attrs(face, attr_map, inherited=None):
 def _plane_basis(normal):
     """SketchUp's canonical in-plane axes for a face normal — the basis its
     per-face texture mapping is expressed in: ``xr = normalize(Z × n)``,
-    ``yr = n × xr``; for a vertical normal, ``xr = X`` and ``yr = ±Y``."""
-    n = QVector3D(*normal)
-    n.normalize()
-    if abs(n.x()) < 1e-9 and abs(n.y()) < 1e-9:
-        xr = QVector3D(1.0, 0.0, 0.0)
-        yr = QVector3D(0.0, 1.0 if n.z() > 0 else -1.0, 0.0)
-        return xr, yr
-    xr = QVector3D.crossProduct(QVector3D(0.0, 0.0, 1.0), n)
-    xr.normalize()
-    return xr, QVector3D.crossProduct(n, xr)
+    ``yr = n × xr``; for a vertical normal, ``xr = X`` and ``yr = ±Y``.
+    Returns two plain ``(x, y, z)`` tuples — the callers run per-vertex math
+    in float space (QVector3D per-point ops dominated large imports)."""
+    nx, ny, nz = float(normal[0]), float(normal[1]), float(normal[2])
+    ln = math.sqrt(nx * nx + ny * ny + nz * nz)
+    if ln > 1e-30:
+        nx, ny, nz = nx / ln, ny / ln, nz / ln
+    if abs(nx) < 1e-9 and abs(ny) < 1e-9:
+        return (1.0, 0.0, 0.0), (0.0, 1.0 if nz > 0 else -1.0, 0.0)
+    # xr = normalize(Z × n); yr = n × xr.
+    xx, xy = -ny, nx
+    lx = math.sqrt(xx * xx + xy * xy)
+    xx, xy = xx / lx, xy / lx
+    return (xx, xy, 0.0), (-nz * xy, nz * xx, nx * xy - ny * xx)
 
 
 def _positioned_uvs(face, raw_ring, tex, matrix=None, projected=False):
@@ -388,9 +395,8 @@ def _positioned_uvs(face, raw_ring, tex, matrix=None, projected=False):
         if projected:
             x2, y2 = x, y
         else:
-            p = QVector3D(x, y, z)
-            x2 = QVector3D.dotProduct(p, xr)
-            y2 = QVector3D.dotProduct(p, yr)
+            x2 = x * xr[0] + y * xr[1] + z * xr[2]
+            y2 = x * yr[0] + y * yr[1] + z * yr[2]
         # row-vector: uvq = [x2, y2, 1] @ inv
         u = x2*inv[0][0] + y2*inv[1][0] + inv[2][0]
         v = x2*inv[0][1] + y2*inv[1][1] + inv[2][1]
@@ -412,8 +418,6 @@ def _face_entry(defn, face, xform, attr_map, inherited=None, layer=None):
     ``layer`` is the SketchUp layer (tag) of the nearest enclosing tagged
     instance — a face with no tag of its own carries it, so hiding the tag's
     layer in IngeTrazo hides what SketchUp would hide."""
-    from core.texture import fit_uv_affine
-
     loops = getattr(face, "loops", None)
     if not loops:
         return None
@@ -469,11 +473,9 @@ def _face_entry(defn, face, xform, attr_map, inherited=None, layer=None):
             uvs = None
             if tw > 0 and th > 0:
                 xr, yr = _plane_basis(face.normal or (0.0, 0.0, 1.0))
-                uvs = []
-                for x, y, z in raw:
-                    p = QVector3D(x, y, z)
-                    uvs.append((QVector3D.dotProduct(p, xr) / tw,
-                                QVector3D.dotProduct(p, yr) / th))
+                uvs = [((x * xr[0] + y * xr[1] + z * xr[2]) / tw,
+                        (x * yr[0] + y * yr[1] + z * yr[2]) / th)
+                       for x, y, z in raw]
         if uvs is not None:
             uvw = fit_uv_affine(outer, uvs)
             if uvw is not None:
@@ -542,8 +544,6 @@ def _image_quad_faces(child, placed, attr_map, inherited):
     the vertex's normalised position on the LOCAL quad, baked as an exact
     world→UV affine (the default planar projection would sample in world
     space, after the placement rotation/scale — wrong region entirely)."""
-    from core.texture import fit_uv_affine
-
     raws = [(_ring_raw(child, f.loops[0]) if getattr(f, "loops", None)
              else None, f) for f in child.faces.values()]
     pts = [p for raw, _f in raws if raw for p in raw]
@@ -573,17 +573,31 @@ def _image_quad_faces(child, placed, attr_map, inherited):
 def _soft_edge_segments(defn, xform, out) -> None:
     """Append the transformed endpoint pairs of ``defn``'s soft/smooth/
     hidden edges to ``out`` — the file's own edge-display flags, used by
-    ``apply_payload`` instead of angle-based softening."""
-    for e in getattr(defn, "edges", {}).values():
-        if not (getattr(e, "soft", False) or getattr(e, "smooth", False)
-                or getattr(e, "hidden", False)):
-            continue
-        va = defn.vertices.get(e.v1_id)
-        vb = defn.vertices.get(e.v2_id)
-        if va is None or vb is None:
-            continue
-        pa = xform.map(QVector3D(va.x * _INCH, va.y * _INCH, va.z * _INCH))
-        pb = xform.map(QVector3D(vb.x * _INCH, vb.y * _INCH, vb.z * _INCH))
+    ``apply_payload`` instead of angle-based softening.
+
+    The flagged endpoints (local metres) are cached on the definition — an
+    instanced component runs this once per placement, and re-filtering every
+    edge each time dominated large imports."""
+    pairs = getattr(defn, "_soft_pairs", None)
+    if pairs is None:
+        pairs = []
+        for e in getattr(defn, "edges", {}).values():
+            if not (getattr(e, "soft", False) or getattr(e, "smooth", False)
+                    or getattr(e, "hidden", False)):
+                continue
+            va = defn.vertices.get(e.v1_id)
+            vb = defn.vertices.get(e.v2_id)
+            if va is None or vb is None:
+                continue
+            pairs.append((QVector3D(va.x * _INCH, va.y * _INCH, va.z * _INCH),
+                          QVector3D(vb.x * _INCH, vb.y * _INCH, vb.z * _INCH)))
+        try:
+            defn._soft_pairs = pairs
+        except AttributeError:      # __slots__ definition: just skip the cache
+            pass
+    for qa, qb in pairs:
+        pa = xform.map(qa)
+        pb = xform.map(qb)
         out.append(((pa.x(), pa.y(), pa.z()), (pb.x(), pb.y(), pb.z())))
 
 

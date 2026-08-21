@@ -156,39 +156,68 @@ def fit_uv_affine(points, uvs):
     vertex reproduces its UV exactly — which lets coplanar triangles of the
     same original face merge and still texture correctly. Returns ``None``
     when the polygon is degenerate."""
-    if len(points) < 3 or len(uvs) < len(points):
+    n = len(points)
+    if n < 3 or len(uvs) < n:
         return None
-    p0 = points[0]
+    if hasattr(points[0], "x"):
+        pts = [p.toTuple() for p in points]
+    else:
+        pts = points
     # The edge pair with the largest cross product gives the stablest fit.
-    best = None
-    best_len = 1e-12
-    for i in range(1, len(points)):
-        for j in range(i + 1, len(points)):
-            cl = QVector3D.crossProduct(points[i] - p0,
-                                        points[j] - p0).length()
-            if cl > best_len:
-                best_len = cl
-                best = (i, j)
-    if best is None:
-        return None
-    i, j = best
-    e1 = points[i] - p0
-    e2 = points[j] - p0
-    g11 = QVector3D.dotProduct(e1, e1)
-    g12 = QVector3D.dotProduct(e1, e2)
-    g22 = QVector3D.dotProduct(e2, e2)
+    # The search is O(n²); |a×b|² = |a|²|b|² − (a·b)² keeps it cheap. Small
+    # polygons (the bulk) run pure Python; big ones (imported faces can carry
+    # hundreds of vertices) go through one NumPy Gram matmul — a per-pair
+    # Python loop over those dominated .skp import.
+    x0, y0, z0 = pts[0]
+    d = [(x - x0, y - y0, z - z0) for x, y, z in pts[1:]]
+    m = n - 1
+    if m <= 12:
+        best = 1e-24
+        bi = bj = -1
+        for i in range(m):
+            ax, ay, az = d[i]
+            for j in range(i + 1, m):
+                bx, by, bz = d[j]
+                cx = ay * bz - az * by
+                cy = az * bx - ax * bz
+                cz = ax * by - ay * bx
+                c2 = cx * cx + cy * cy + cz * cz
+                if c2 > best:
+                    best = c2
+                    bi, bj = i, j
+        if bi < 0:
+            return None
+    else:
+        import numpy as np
+        dn = np.asarray(d, dtype=np.float64)
+        gram = dn @ dn.T
+        n2 = np.einsum("ij,ij->i", dn, dn)
+        cl2 = np.multiply.outer(n2, n2) - gram * gram
+        flat = int(np.argmax(cl2))
+        bi, bj = flat // m, flat % m
+        if cl2[bi, bj] <= 1e-24:
+            return None
+    e1x, e1y, e1z = d[bi]
+    e2x, e2y, e2z = d[bj]
+    g11 = e1x * e1x + e1y * e1y + e1z * e1z
+    g12 = e1x * e2x + e1y * e2y + e1z * e2z
+    g22 = e2x * e2x + e2y * e2y + e2z * e2z
     det = g11 * g22 - g12 * g12
     if abs(det) < 1e-18:
         return None
+    i = bi + 1
+    j = bj + 1
     out = []
     for k in (0, 1):                       # u, then v
         d1 = uvs[i][k] - uvs[0][k]
         d2 = uvs[j][k] - uvs[0][k]
         a = (d1 * g22 - d2 * g12) / det
         b = (d2 * g11 - d1 * g12) / det
-        g = e1 * a + e2 * b
-        c = uvs[0][k] - QVector3D.dotProduct(g, p0)
-        out.extend([g.x(), g.y(), g.z(), c])
+        gx = e1x * a + e2x * b
+        gy = e1y * a + e2y * b
+        gz = e1z * a + e2z * b
+        c = uvs[0][k] - (gx * x0 + gy * y0 + gz * z0)
+        out.extend([gx, gy, gz, c])
     return out
 
 
