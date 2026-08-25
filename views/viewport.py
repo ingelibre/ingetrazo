@@ -87,7 +87,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core.camera import OrbitCamera
 from core.i18n import tr
-from core.group import Group
+from core.group import Group, copy_group
 from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
@@ -294,8 +294,9 @@ class Viewport(QOpenGLWidget):
         self.active_tool: Optional[Tool] = None
         self.axis_lock: Optional[str] = None  # None | "x" | "y" | "z"
         self.last_snap: Optional[SnapResult] = None
-        # Copy/paste clipboard: copied geometry (faces + edges) as positions,
-        # plus a reference corner so Paste can place it under the cursor.
+        # Copy/paste clipboard: copied geometry (faces + edges as positions,
+        # groups as snapshot copies) plus a reference corner so Paste can
+        # place it under the cursor.
         self.clipboard: Optional[dict] = None
 
         # Reference-edge state (Down arrow → parallel / perpendicular).
@@ -4603,11 +4604,13 @@ class Viewport(QOpenGLWidget):
 
     # ---- Copy / paste -------------------------------------------------------
     def copy_selection(self) -> bool:
-        """Copy the selected faces and edges into the clipboard (as positions,
-        with a reference corner). Returns False if nothing is selected."""
+        """Copy the selected faces, edges and groups into the clipboard (as
+        positions, with a reference corner). Returns False if nothing is
+        selected."""
         faces = [f for f in self.scene.selection if isinstance(f, Face)]
         edges = [e for e in self.scene.selection if isinstance(e, Edge)]
-        if not faces and not edges:
+        groups = [g for g in self.scene.selection if isinstance(g, Group)]
+        if not faces and not edges and not groups:
             return False
         face_data = [
             ([QVector3D(v) for v in f.vertices],
@@ -4618,22 +4621,47 @@ class Viewport(QOpenGLWidget):
         # (ids are remapped to fresh ones at paste time).
         edge_data = [(QVector3D(e.a), QVector3D(e.b), e.soft, e.curve)
                      for e in edges]
+        # Groups are snapshotted NOW (instances keep sharing their prototype;
+        # classic groups deep-copy) so editing or deleting the original later
+        # never changes what Paste stamps.
+        group_data = [copy_group(g) for g in groups]
+        group_lines = []                     # world-space wireframe for preview
+        for g in group_data:
+            xf = g.xform
+            for e in g.mesh.edges:
+                a, b = QVector3D(e.a), QVector3D(e.b)
+                if xf is not None:
+                    a, b = xf.map(a), xf.map(b)
+                group_lines.append((a, b))
         pts = [p for loop, holes in face_data for p in loop]
         pts += [p for _, holes in face_data for h in holes for p in h]
         pts += [p for a, b, _, _ in edge_data for p in (a, b)]
+        pts += [p for a, b in group_lines for p in (a, b)]
+        if not pts:
+            return False
         ref = QVector3D(min(p.x() for p in pts),
                         min(p.y() for p in pts),
                         min(p.z() for p in pts))
-        self.clipboard = {"faces": face_data, "edges": edge_data, "ref": ref}
+        self.clipboard = {"faces": face_data, "edges": edge_data,
+                          "groups": group_data, "group_lines": group_lines,
+                          "ref": ref}
         return True
 
     def cut_selection(self) -> bool:
         """Copy the selection, then erase it (one undoable step)."""
         if not self.copy_selection():
             return False
+        from core.history import CompoundCommand, DeleteGroupCommand
         faces = [f for f in self.scene.selection if isinstance(f, Face)]
         edges = [e for e in self.scene.selection if isinstance(e, Edge)]
-        self.history.execute(EraseSelectionCommand(edges, faces))
+        groups = [g for g in self.scene.selection if isinstance(g, Group)]
+        cmds: list = []
+        if edges or faces:
+            cmds.append(EraseSelectionCommand(edges, faces))
+        cmds.extend(DeleteGroupCommand(g) for g in groups)
+        if cmds:
+            self.history.execute(
+                cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
         self.update()
         return True
 

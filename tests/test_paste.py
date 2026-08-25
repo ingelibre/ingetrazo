@@ -62,3 +62,107 @@ def test_paste_preview_follows_cursor():
     assert len(segs) == 4                    # the square's 4 edges, offset by +3 x
     xs = {round(p.x()) for seg in segs for p in seg}
     assert xs == {3, 5}
+
+
+# ---- Groups in the clipboard (the "can't copy a group" report) --------------
+
+def _make_group(scene, x0=0.0):
+    from core.group import Group
+    from core.mesh import Mesh
+    m = Mesh()
+    f = m.add_face([V(x0, 0), V(x0 + 2, 0), V(x0 + 2, 2), V(x0, 2)])
+    f.attrs["color"] = (0.5, 0.5, 0.5, 1.0)
+    g = Group(m, name="Caja")
+    g.layer = "Muros"
+    scene.groups.append(g)
+    return g
+
+
+def _copy(vp):
+    from views.viewport import Viewport
+    return Viewport.copy_selection(vp)
+
+
+def _paste_at(vp, x, y):
+    tool = PasteTool()
+    tool.on_activate(vp)
+    ctx = ToolContext(viewport=vp, world=V(x, y, 0),
+                      screen=QPointF(0, 0), modifiers=Qt.NoModifier, snap=None)
+    tool.on_click(ctx)
+    return tool
+
+
+def test_copy_paste_group():
+    scene = Scene()
+    vp = _VP(scene, History(scene), None)
+    g = _make_group(scene)
+    scene.selection.add(g)
+
+    assert _copy(vp)                        # a lone group IS copyable now
+    _paste_at(vp, 5, 0)
+
+    assert len(scene.groups) == 2
+    pasted = next(k for k in scene.groups if k is not g)
+    assert pasted.name == "Caja" and pasted.layer == "Muros"
+    assert pasted.mesh is not g.mesh        # deep copy, no aliasing
+    xs = sorted(round(v.x()) for f in pasted.mesh.faces for v in f.vertices)
+    assert xs == [5, 5, 7, 7]               # ref corner landed at the cursor
+    assert list(pasted.mesh.faces)[0].attrs.get("color") is not None
+    assert pasted in scene.selection
+
+    assert vp.history.undo() is True
+    assert scene.groups == [g]              # one undoable step
+
+
+def test_copy_paste_instance_shares_prototype():
+    from core.group import Group
+    from core.mesh import Mesh
+    from PySide6.QtGui import QMatrix4x4
+    scene = Scene()
+    vp = _VP(scene, History(scene), None)
+    proto = Mesh()
+    proto.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    inst = Group(proto, name="Poste")
+    inst.xform = QMatrix4x4()
+    scene.groups.append(inst)
+    scene.selection.add(inst)
+
+    assert _copy(vp)
+    _paste_at(vp, 10, 0)
+
+    pasted = next(k for k in scene.groups if k is not inst)
+    assert pasted.mesh is proto             # sibling instance, shared prototype
+    assert pasted.xform is not None and pasted.xform is not inst.xform
+    assert round(pasted.xform.map(V(0, 0, 0)).x()) == 10
+
+
+def test_clipboard_survives_deleting_the_original():
+    scene = Scene()
+    vp = _VP(scene, History(scene), None)
+    g = _make_group(scene)
+    scene.selection.add(g)
+    assert _copy(vp)
+
+    scene.groups.remove(g)                  # user deletes the original
+    scene.selection.clear()
+    _paste_at(vp, 3, 3)
+    assert len(scene.groups) == 1
+    assert scene.groups[0].name == "Caja"
+
+
+def test_cut_group_removes_it_and_paste_restores():
+    from views.viewport import Viewport
+    scene = Scene()
+    vp = _VP(scene, History(scene), None)
+    vp.copy_selection = lambda: Viewport.copy_selection(vp)
+    g = _make_group(scene)
+    scene.selection.add(g)
+
+    assert Viewport.cut_selection(vp)
+    assert scene.groups == []               # gone, and on the clipboard
+    _paste_at(vp, 0, 0)
+    assert len(scene.groups) == 1
+    assert vp.history.undo() is True        # undo the paste
+    assert scene.groups == []
+    assert vp.history.undo() is True        # undo the cut
+    assert scene.groups == [g]

@@ -107,8 +107,13 @@ def world_mesh(group) -> Mesh:
     m = getattr(group, "xform", None)
     if m is None:
         return group.mesh
+    return transformed_mesh(group.mesh, m)
+
+
+def transformed_mesh(src: Mesh, m) -> Mesh:
+    """A DEEP copy of ``src`` with every position mapped through ``m``,
+    carrying face attrs, soft/curve flags and re-fitted texture UV maps."""
     from PySide6.QtGui import QVector3D
-    src = group.mesh
     new = Mesh()
 
     def W(p) -> QVector3D:
@@ -136,3 +141,24 @@ def world_mesh(group) -> Mesh:
     new.resplit_curves()
     _remap_uvws(new, m)
     return new
+
+
+def copy_group(group, delta=None):
+    """A pastable duplicate of ``group``, optionally translated by ``delta``.
+
+    A component instance stays an instance: the duplicate SHARES the prototype
+    mesh and only gets its own transform (SketchUp: copying an instance adds a
+    sibling, O(1)). A classic group gets a deep mesh copy."""
+    from PySide6.QtGui import QMatrix4x4, QVector3D
+    t = QMatrix4x4()
+    if delta is not None:
+        t.translate(QVector3D(delta))
+    if group.xform is not None:
+        g = Group(group.mesh, name=group.name)
+        g.xform = t * group.xform
+    else:
+        g = Group(transformed_mesh(group.mesh, t), name=group.name)
+    g.layer = group.layer
+    g.ifc = dict(group.ifc) if group.ifc else None
+    g.billboard = group.billboard
+    return g

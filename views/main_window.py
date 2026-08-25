@@ -894,6 +894,9 @@ class MainWindow(QMainWindow):
             menu.addAction(tr("Make Group"), self._on_make_group)
         if has_group:
             menu.addAction(tr("Explode Group"), self._on_explode_group)
+        if has_mesh or has_group:
+            menu.addAction(tr("Cut"), lambda: self.viewport.cut_selection())
+            menu.addAction(tr("Copy"), lambda: self.viewport.copy_selection())
         if sel:
             menu.addAction(tr("Delete"), self._on_delete_selection)
             act_clear = menu.addAction(tr("Clear selection"),
