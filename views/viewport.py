@@ -4715,15 +4715,30 @@ class Viewport(QOpenGLWidget):
         self._acquired_face_normal = None
         if tool is not None:
             tool.on_activate(self)
-        # SketchUp: the mouse pointer becomes the active tool's icon (with an
-        # aim cross at the hotspot). Select and unknown tools keep the arrow.
-        from views.icons import tool_cursor
-        cur = (tool_cursor(getattr(tool, "icon", None))
-               if tool is not None else None)
-        if cur is not None:
-            self.setCursor(cur)
+        self._apply_tool_cursor()
         self.measurementChanged.emit(self._measurement_text())
         self.update()
+
+    def _apply_tool_cursor(self) -> None:
+        """The pointer becomes the active tool's icon (SketchUp); Select and
+        unknown tools keep the standard arrow."""
+        from views.icons import tool_cursor
+        cur = (tool_cursor(getattr(self.active_tool, "icon", None))
+               if self.active_tool is not None else None)
+        if cur is not None:
+            self.setCursor(cur)
+        else:
+            self.unsetCursor()
+
+    def _apply_nav_cursor(self) -> None:
+        """The pointer for a camera nav mode: the orbit / pan icon."""
+        from views.icons import tool_cursor
+        if self.nav_mode in ("orbit", "pan"):
+            cur = tool_cursor(self.nav_mode)
+            if cur is not None:
+                self.setCursor(cur)
+                return
+            self.setCursor(Qt.OpenHandCursor)
 
     # ---- Copy / paste -------------------------------------------------------
     def copy_selection(self) -> bool:
@@ -4827,7 +4842,7 @@ class Viewport(QOpenGLWidget):
         if mode in ("zoom", "zoom_window"):
             self.setCursor(Qt.CrossCursor)
         elif mode is not None:
-            self.setCursor(Qt.OpenHandCursor)
+            self._apply_nav_cursor()      # the orbit / pan icon (SketchUp)
         else:
             self.unsetCursor()
         self.update()
@@ -4861,6 +4876,12 @@ class Viewport(QOpenGLWidget):
         if ev.button() == Qt.MiddleButton:
             self._last_pos = ev.position().toPoint()
             self._pan_mode = bool(ev.modifiers() & Qt.ShiftModifier)
+            # SketchUp: while the wheel-drag lasts, the pointer becomes the
+            # orbit (or pan) icon; the tool cursor comes back on release.
+            from views.icons import tool_cursor
+            cur = tool_cursor("pan" if self._pan_mode else "orbit")
+            if cur is not None:
+                self.setCursor(cur)
             return
         # SketchUp-style nav buttons: left-drag orbits/pans the camera.
         # Hold Shift while orbiting to pan temporarily (matches MMB+Shift).
@@ -4876,7 +4897,8 @@ class Viewport(QOpenGLWidget):
                 self.nav_mode == "pan"
                 or bool(ev.modifiers() & Qt.ShiftModifier)
             )
-            self.setCursor(Qt.ClosedHandCursor)
+            # The orbit/pan icon stays through the drag (SketchUp).
+            self._apply_nav_cursor()
             return
         if ev.button() == Qt.LeftButton and self.active_tool is not None:
             # Triple click: a press landing right after a double-click at the
@@ -5080,6 +5102,10 @@ class Viewport(QOpenGLWidget):
         if ev.button() == Qt.MiddleButton:
             self._last_pos = None
             self._pan_mode = False
+            if self.nav_mode is not None:
+                self._apply_nav_cursor()
+            else:
+                self._apply_tool_cursor()
             return
 
         if ev.button() == Qt.LeftButton and self._zoom_box_active:
@@ -5095,7 +5121,7 @@ class Viewport(QOpenGLWidget):
         if ev.button() == Qt.LeftButton and self.nav_mode is not None:
             self._last_pos = None
             self._pan_mode = False
-            self.setCursor(Qt.OpenHandCursor)
+            self._apply_nav_cursor()
             return
 
         # Stroke tools (the Eraser): notify the release so a press-drag-release

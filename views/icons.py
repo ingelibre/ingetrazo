@@ -671,6 +671,8 @@ _CURSOR_HOTSPOTS = {
     "eraser": (13, 28),             # the rubber's working corner
     "tape": (38, 28),               # the tape's end hook
     "protractor": (24, 24),         # the protractor's vertex
+    "orbit": (24, 24),              # camera navigation (wheel-drag / modes)
+    "pan": (24, 24),
 }
 
 

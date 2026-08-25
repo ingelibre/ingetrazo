@@ -28,6 +28,9 @@ def test_tool_cursor_builds_bitmap_with_hotspot():
     assert tool_cursor("no_such_tool") is None
     assert tool_cursor(None) is None
     assert tool_cursor("line") is cur          # cached
+    orb = tool_cursor("orbit")                 # wheel-drag shows it (SketchUp)
+    assert orb is not None and (orb.hotSpot().x(), orb.hotSpot().y()) == (16, 16)
+    assert tool_cursor("pan") is not None
 
 
 def test_activating_tools_swaps_the_viewport_cursor():
