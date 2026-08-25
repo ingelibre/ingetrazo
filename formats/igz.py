@@ -275,6 +275,16 @@ def save_scene(scene, path: Path) -> dict:
     back = getattr(scene, "back_face_color", None)
     if back:
         payload["back_face_color"] = list(back)
+    splanes = getattr(scene, "section_planes", None)
+    if splanes:
+        payload["section_planes"] = [sp.to_dict() for sp in splanes]
+        vis = {}
+        if not getattr(scene, "show_section_planes", True):
+            vis["planes_hidden"] = True
+        if not getattr(scene, "show_section_cuts", True):
+            vis["cuts_hidden"] = True
+        if vis:
+            payload["section_view"] = vis
     dstyle = getattr(scene, "display_style", None)
     if dstyle is not None:
         from core.style import Style
@@ -505,6 +515,22 @@ def _load_into_inner(scene, path: Path) -> None:
     if isinstance(dstyle, dict):
         from core.style import Style
         scene.display_style = Style.from_dict(dstyle)
+
+    raw_planes = payload.get("section_planes")
+    if isinstance(raw_planes, list):
+        from core.section import SectionPlane
+        scene.section_planes = [SectionPlane.from_dict(r)
+                                for r in raw_planes]
+        # One active cut max (SketchUp): keep the FIRST marked active.
+        seen_active = False
+        for sp in scene.section_planes:
+            if sp.active and seen_active:
+                sp.active = False
+            seen_active = seen_active or sp.active
+    vis = payload.get("section_view")
+    if isinstance(vis, dict):
+        scene.show_section_planes = not vis.get("planes_hidden", False)
+        scene.show_section_cuts = not vis.get("cuts_hidden", False)
 
     georef = payload.get("georef")
     if isinstance(georef, dict) and isinstance(georef.get("datum"), dict):

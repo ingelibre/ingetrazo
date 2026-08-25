@@ -116,6 +116,7 @@ class MoveTool(Tool):
         self._positions: list[QVector3D] = []  # unique positions to translate
         self._verts: list = []                 # resolved vertex objects (identity)
         self._groups: list[Group] = []         # whole groups being moved
+        self._splanes: list = []               # section planes being moved
         self._labels: list[TextLabel] = []     # leader texts whose label moves
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)  # currently applied live
 
@@ -133,17 +134,21 @@ class MoveTool(Tool):
         if self.start_point is None:
             groups, positions = self._gather(ctx)
             labels = gather_labels(ctx)
+            from core.section import SectionPlane
+            splanes = [p for p in viewport.scene.selection
+                       if isinstance(p, SectionPlane)]
             if labels and not viewport.scene.selection:
                 # A click on the glyphs grabs just the text, never the
                 # geometry that happens to sit behind it.
                 groups, positions = [], []
-            if not groups and not positions and not labels:
+            if not groups and not positions and not labels and not splanes:
                 return  # nothing under the cursor / selected to move
             self.start_point = ctx.world
             self.grab = ctx.world
             self._groups = groups
             self._positions = positions
             self._labels = labels
+            self._splanes = splanes
             # Resolve the grabbed positions to vertex OBJECTS once: the live
             # preview then moves these identities directly, so dragging through
             # (or onto) a coincident vertex never drags the innocent one along.
@@ -218,6 +223,8 @@ class MoveTool(Tool):
             viewport.scene.mesh.move_vertex(v, step)
         for lab in self._labels:
             lab.offset = lab.offset + step
+        for sp in self._splanes:
+            sp.point = sp.point + step
         viewport.scene.version += 1
 
     def _apply_preview(self, viewport, target_delta: QVector3D) -> None:
@@ -248,6 +255,10 @@ class MoveTool(Tool):
                 commands.append(MoveVerticesCommand(self._positions, delta))
             if self._labels:
                 commands.append(MoveTextLabelsCommand(self._labels, delta))
+            if self._splanes:
+                from core.history import MoveSectionPlanesCommand
+                commands.append(
+                    MoveSectionPlanesCommand(self._splanes, delta))
             if len(commands) == 1:
                 viewport.history.execute(commands[0])
             elif commands:
@@ -263,4 +274,5 @@ class MoveTool(Tool):
         self._verts = []
         self._groups = []
         self._labels = []
+        self._splanes = []
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)

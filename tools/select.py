@@ -21,13 +21,16 @@ from core.textlabel import TextLabel
 from core.group import Group
 from core.mesh import Edge, Face
 from core.guide import Guide
+from core.section import SectionPlane
 from core.history import (
     CompoundCommand,
     DeleteDimensionsCommand,
     DeleteGeoPathsCommand,
     DeleteGroupCommand,
     DeleteGuidesCommand,
+    DeleteSectionPlanesCommand,
     DeleteTextLabelsCommand,
+    SetActiveSectionCommand,
     EditTextLabelCommand,
     EraseSelectionCommand,
 )
@@ -100,6 +103,11 @@ class SelectTool(Tool):
         path = viewport.pick_geopath(screen_x, screen_y)
         if path is not None:
             return path
+        # Section planes pick by their frame (SketchUp), above guides.
+        pick_sec = getattr(viewport, "pick_section_plane", None)
+        sec = pick_sec(screen_x, screen_y) if pick_sec else None
+        if sec is not None:
+            return sec
         # Guides select like in SketchUp (click + Delete / right-click). Real
         # geometry outranks them; a guide crossing a face still beats the face
         # (a thin line is the more deliberate target).
@@ -144,6 +152,13 @@ class SelectTool(Tool):
         entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
         if isinstance(entity, Group):
             viewport.begin_group_edit(entity)
+            return
+        if isinstance(entity, SectionPlane):
+            # SketchUp: double-clicking a section plane toggles the active cut.
+            viewport.history.execute(SetActiveSectionCommand(
+                None if entity.active else entity))
+            viewport.scene.select([entity])
+            viewport.update()
             return
         if isinstance(entity, TextLabel):
             # SketchUp-style: double-clicking a leader text edits its text.
@@ -353,6 +368,8 @@ class SelectTool(Tool):
                 labels = [t for t in selection if isinstance(t, TextLabel)]
                 paths = [p for p in selection if isinstance(p, GeoPath)]
                 guides = [g for g in selection if isinstance(g, Guide)]
+                splanes = [p for p in selection
+                           if isinstance(p, SectionPlane)]
                 commands = []
                 if edges or faces:
                     # Erasing an edge between two coplanar faces merges them back
@@ -361,6 +378,8 @@ class SelectTool(Tool):
                 commands.extend(DeleteGroupCommand(g) for g in groups)
                 if guides:
                     commands.append(DeleteGuidesCommand(guides))
+                if splanes:
+                    commands.append(DeleteSectionPlanesCommand(splanes))
                 if dims:
                     commands.append(DeleteDimensionsCommand(dims))
                 if labels:

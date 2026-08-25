@@ -200,6 +200,30 @@ def _followme(p, ink):
 
 
 
+def _section(p, ink):
+    # A section plane: a foreshortened frame with corner brackets and the
+    # normal arrow showing the side that gets cut away (SketchUp Sections).
+    quad = [QPointF(10, 30), QPointF(26, 38), QPointF(38, 24), QPointF(22, 16)]
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(quad))
+    # Corner brackets.
+    for i in range(4):
+        c = quad[i]
+        for j in (1, 3):
+            n = quad[(i + j) % 4]
+            dx, dy = n.x() - c.x(), n.y() - c.y()
+            ln = math.hypot(dx, dy) or 1.0
+            k = 4.5 / ln
+            p.drawLine(c, QPointF(c.x() + dx * k, c.y() + dy * k))
+    # The normal arrow (cut direction).
+    a0, a1 = QPointF(24, 27), QPointF(29, 9)
+    p.setPen(QPen(_accent(), 3.0, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(a0, a1)
+    p.drawLine(a1, QPointF(24.5, 12.5))
+    p.drawLine(a1, QPointF(31.5, 14.5))
+    p.setPen(QPen(ink, 3.0))
+
+
 def _protractor(p, ink):
     # A half-circle protractor with tick marks and an angled guide arm.
     p.setBrush(Qt.NoBrush)
@@ -617,6 +641,7 @@ _DRAW = {
     "geopath": _geopath, "orbit": _orbit, "pan": _pan,
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
+    "section": _section,
     "zoom": _zoom, "zoom_window": _zoom_window,
     "zoom_extents": _zoom_extents, "view_iso": _view_iso,
     # Standard views — a house drawn from each viewpoint (SketchUp-style).
@@ -675,6 +700,7 @@ _CURSOR_HOTSPOTS = {
     "pan": (24, 24),
     "zoom": (21, 21),               # the magnifier's lens centre
     "zoom_window": (21, 22),
+    "section": (24, 27),            # the plane's centre
 }
 
 

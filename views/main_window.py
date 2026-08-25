@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, QSettings, QEvent
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QVector3D
 from PySide6.QtWidgets import (
     QFileDialog,
     QLabel,
@@ -59,6 +59,7 @@ from tools.rotated_rectangle import RotatedRectangleTool
 from tools.offset import OffsetTool
 from tools.paint import PaintTool
 from tools.paste import PasteTool
+from tools.section import SectionPlaneTool
 from tools.pushpull import PushPullTool
 from tools.rectangle import RectangleTool
 from tools.select import SelectTool
@@ -101,6 +102,8 @@ class MainWindow(QMainWindow):
             "text": TextTool(),
             # Georef trace (Track G) — draws a GeoPath, never mesh geometry.
             "geopath": GeoPathTool(),
+            # SketchUp's Tools ▸ Section Plane (core/section.py).
+            "section": SectionPlaneTool(),
         }
         # Tag each tool with its icon key so the viewport can turn the mouse
         # pointer into the tool's icon (SketchUp-style cursors).
@@ -217,6 +220,7 @@ class MainWindow(QMainWindow):
               "arc", "arc3", "center_arc"]),
             ("modify", tr("Modify"), ["move", "rotate", "scale", "pushpull", "followme", "offset"]),
             ("annotate", tr("Annotate"), ["tape", "protractor", "dimension", "text", "geopath"]),
+            ("sections", tr("Sections"), ["section"]),
         ]
         for oname, title, keys in layout:
             tb = self._new_toolbar(title, oname)
@@ -446,6 +450,21 @@ class MainWindow(QMainWindow):
         style_menu.addAction(self._act_style_profiles)
         self._sync_style_menu()
 
+        # SketchUp's View ▸ Section Planes / Section Cuts.
+        camera_menu.addSeparator()
+        self._act_show_splanes = QAction(tr("Section Planes"), self)
+        self._act_show_splanes.setCheckable(True)
+        self._act_show_splanes.setChecked(True)
+        self._act_show_splanes.toggled.connect(
+            lambda on: self._set_section_visibility("show_section_planes", on))
+        camera_menu.addAction(self._act_show_splanes)
+        self._act_show_scuts = QAction(tr("Section Cuts"), self)
+        self._act_show_scuts.setCheckable(True)
+        self._act_show_scuts.setChecked(True)
+        self._act_show_scuts.toggled.connect(
+            lambda on: self._set_section_visibility("show_section_cuts", on))
+        camera_menu.addAction(self._act_show_scuts)
+
         camera_menu.addSeparator()
         for action in self._nav_actions.values():   # Orbit / Pan / Zoom / Zoom Window
             camera_menu.addAction(action)
@@ -468,7 +487,8 @@ class MainWindow(QMainWindow):
                      ("move", "rotate", "scale"),
                      ("pushpull", "followme", "offset"),
                      ("tape", "protractor"),
-                     ("dimension", "text")):
+                     ("dimension", "text"),
+                     ("section",)):
             for key in keys:
                 tools_menu.addAction(self._tool_actions[key])
             tools_menu.addSeparator()
@@ -848,6 +868,81 @@ class MainWindow(QMainWindow):
         self.viewport.history.execute(cmd)
         self.viewport.update()
 
+    # ---- Sections (SketchUp section planes) ---------------------------------
+    def _set_section_visibility(self, attr: str, on: bool) -> None:
+        setattr(self.viewport.scene, attr, bool(on))
+        self.viewport.update()
+
+    def _sync_section_menu(self) -> None:
+        scene = self.viewport.scene
+        for act, value in (
+                (self._act_show_splanes,
+                 getattr(scene, "show_section_planes", True)),
+                (self._act_show_scuts,
+                 getattr(scene, "show_section_cuts", True))):
+            act.blockSignals(True)
+            act.setChecked(value)
+            act.blockSignals(False)
+
+    def prompt_section_name(self, plane) -> None:
+        """SketchUp's post-placement prompt: name + symbol (cancel keeps
+        the defaults; the placement itself is already committed)."""
+        from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFormLayout,
+                                       QLineEdit)
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("Name Section Plane"))
+        form = QFormLayout(dlg)
+        name_edit = QLineEdit(plane.name)
+        sym_edit = QLineEdit(plane.symbol)
+        sym_edit.setMaxLength(3)
+        form.addRow(tr("Name"), name_edit)
+        form.addRow(tr("Symbol"), sym_edit)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+        if dlg.exec() == QDialog.Accepted:
+            plane.name = name_edit.text().strip() or plane.name
+            plane.symbol = sym_edit.text().strip() or plane.symbol
+            self.viewport.update()
+
+    def _selected_section_planes(self) -> list:
+        from core.section import SectionPlane
+        return [p for p in self.viewport.scene.selection
+                if isinstance(p, SectionPlane)]
+
+    def _on_reverse_section(self) -> None:
+        from core.history import ReverseSectionPlaneCommand
+        for plane in self._selected_section_planes():
+            self.viewport.history.execute(ReverseSectionPlaneCommand(plane))
+        self.viewport.update()
+
+    def _on_toggle_active_section(self) -> None:
+        from core.history import SetActiveSectionCommand
+        planes = self._selected_section_planes()
+        if not planes:
+            return
+        plane = planes[0]
+        self.viewport.history.execute(
+            SetActiveSectionCommand(None if plane.active else plane))
+        self.viewport.update()
+
+    def _on_align_view_to_section(self) -> None:
+        """SketchUp's Align View: look straight at the cut face."""
+        import math as _math
+        planes = self._selected_section_planes()
+        plane = planes[0] if planes else self.viewport.scene.active_section()
+        if plane is None:
+            return
+        cam = self.viewport.camera
+        n = plane.normal
+        cam.target = QVector3D(plane.point)
+        cam.pitch = _math.asin(max(-1.0, min(1.0, n.z())))
+        if abs(n.x()) > 1e-9 or abs(n.y()) > 1e-9:
+            cam.yaw = _math.atan2(n.y(), n.x())
+        self.viewport.update()
+
     # ---- Display styles (SketchUp Styles) -----------------------------------
     def _apply_display_style(self, preset) -> None:
         """Activate a built-in style (a COPY — presets stay pristine)."""
@@ -917,12 +1012,17 @@ class MainWindow(QMainWindow):
         labels = [t for t in sel if isinstance(t, TextLabel)]
         paths = [p for p in sel if isinstance(p, GeoPath)]
         guides = [g for g in sel if isinstance(g, Guide)]
+        from core.section import SectionPlane
+        splanes = [p for p in sel if isinstance(p, SectionPlane)]
         cmds = []
         if edges or faces:
             cmds.append(EraseSelectionCommand(edges, faces))
         cmds.extend(DeleteGroupCommand(g) for g in groups)
         if guides:
             cmds.append(DeleteGuidesCommand(guides))
+        if splanes:
+            from core.history import DeleteSectionPlanesCommand
+            cmds.append(DeleteSectionPlanesCommand(splanes))
         if dims:
             cmds.append(DeleteDimensionsCommand(dims))
         if labels:
@@ -941,10 +1041,22 @@ class MainWindow(QMainWindow):
         from georef.geopath import GeoPath
 
         sel = self.viewport.scene.selection
+        from core.section import SectionPlane
         has_geopath = any(isinstance(e, GeoPath) for e in sel)
         has_group = any(isinstance(e, Group) for e in sel)
         has_mesh = any(isinstance(e, (Edge, Face)) for e in sel)
+        sec_planes = [e for e in sel if isinstance(e, SectionPlane)]
         menu = QMenu(self)
+
+        if sec_planes:
+            # SketchUp's section-plane context menu.
+            menu.addAction(tr("Reverse"), self._on_reverse_section)
+            act_active = menu.addAction(tr("Active Cut"),
+                                        self._on_toggle_active_section)
+            act_active.setCheckable(True)
+            act_active.setChecked(sec_planes[0].active)
+            menu.addAction(tr("Align View"), self._on_align_view_to_section)
+            menu.addSeparator()
 
         if has_geopath:
             menu.addAction(tr("Terrain profile"), self._on_terrain_profile)
@@ -1256,6 +1368,7 @@ class MainWindow(QMainWindow):
         self._insert_scale_figure()
         self.viewport.notify_scene_changed()
         self._sync_style_menu()
+        self._sync_section_menu()
         self._update_title()
 
     def _on_open(self) -> None:
@@ -1296,6 +1409,7 @@ class MainWindow(QMainWindow):
         self._import_name = None
         self._saved_version = self.viewport.scene.version
         self._sync_style_menu()      # the document may carry its own style
+        self._sync_section_menu()
         # A stored survey (Track G, G6) arrives as plain arrays + images; the
         # GL upload only happens here, where there's a context.
         survey = getattr(self.viewport.scene, "photo_mesh", None)

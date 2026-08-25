@@ -60,6 +60,7 @@ class RotateTool(ProtractorBase):
     def __init__(self) -> None:
         super().__init__()
         self._groups: list[Group] = []
+        self._splanes: list = []               # section planes being rotated
         self._positions: list[QVector3D] = []
         self._verts: list = []
         self._sel_faces: list = []          # for copy mode (loose geometry)
@@ -104,11 +105,15 @@ class RotateTool(ProtractorBase):
         self._last = None            # a click ends the retype window
         if self.start_point is None:
             groups, positions = gather_targets(ctx)
-            if not groups and not positions:
+            from core.section import SectionPlane
+            splanes = [p for p in viewport.scene.selection
+                       if isinstance(p, SectionPlane)]
+            if not groups and not positions and not splanes:
                 viewport.flash_status(
                     tr("Select (or click) the geometry to rotate first"))
                 return
             self._groups = groups
+            self._splanes = splanes
             self._positions = positions
             mesh = viewport.scene.mesh
             self._verts = [v for v in (mesh.vertex_at(p) for p in positions)
@@ -294,6 +299,11 @@ class RotateTool(ProtractorBase):
         for vx in self._verts:
             viewport.scene.mesh.move_vertex(
                 vx, m.map(vx.position) - vx.position)
+        for sp in self._splanes:
+            sp.point = m.map(sp.point)
+            n2 = m.mapVector(sp.normal)
+            if n2.length() > 1e-12:
+                sp.normal = n2.normalized()
         viewport.scene.version += 1
 
     def _apply_preview(self, viewport, target_deg: float) -> None:
@@ -313,6 +323,7 @@ class RotateTool(ProtractorBase):
         axis = QVector3D(self._axis())
         copy = self._copy
         groups = list(self._groups)
+        splanes = list(self._splanes)
         positions = list(self._positions)
         faces = list(self._sel_faces)
         edges = list(self._sel_edges)
@@ -347,6 +358,10 @@ class RotateTool(ProtractorBase):
                 if positions:
                     cmds.append(RotateVerticesCommand(
                         positions, start, axis, deg))
+                if splanes:
+                    from core.history import RotateSectionPlanesCommand
+                    cmds.append(RotateSectionPlanesCommand(
+                        splanes, start, axis, deg))
             if not cmds:
                 return None
             return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
@@ -370,6 +385,7 @@ class RotateTool(ProtractorBase):
     def _reset(self) -> None:
         self._reset_protractor()
         self._groups = []
+        self._splanes = []
         self._positions = []
         self._verts = []
         self._sel_faces = []

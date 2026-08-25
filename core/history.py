@@ -782,6 +782,135 @@ class AddGuideCommand(Command):
         scene.version += 1
 
 
+class PlaceSectionPlaneCommand(Command):
+    """Place a section plane. SketchUp: the new plane immediately becomes
+    the ACTIVE cut of the context; undo restores the previous one."""
+
+    def __init__(self, plane) -> None:
+        self.plane = plane
+        self._prev_active = None
+
+    def do(self, scene) -> None:
+        self._prev_active = scene.active_section()
+        scene.section_planes.append(self.plane)
+        scene.set_active_section(self.plane)
+        scene.selection.clear()
+        scene.selection.add(self.plane)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.plane in scene.section_planes:
+            scene.section_planes.remove(self.plane)
+        scene.selection.discard(self.plane)
+        prev = self._prev_active
+        scene.set_active_section(
+            prev if prev in scene.section_planes else None)
+        scene.version += 1
+
+
+class DeleteSectionPlanesCommand(Command):
+    """Remove section planes; undo restores them at their positions with
+    their active state."""
+
+    def __init__(self, planes) -> None:
+        self._planes = list(planes)
+        self._restore: list[tuple[int, object]] = []
+
+    def do(self, scene) -> None:
+        self._restore = [(scene.section_planes.index(p), p)
+                         for p in self._planes if p in scene.section_planes]
+        for p in self._planes:
+            if p in scene.section_planes:
+                scene.section_planes.remove(p)
+            scene.selection.discard(p)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for i, p in sorted(self._restore):
+            scene.section_planes.insert(i, p)
+        scene.version += 1
+
+
+class ReverseSectionPlaneCommand(Command):
+    """SketchUp's Reverse: flip which side the plane hides."""
+
+    def __init__(self, plane) -> None:
+        self.plane = plane
+
+    def do(self, scene) -> None:
+        self.plane.flip()
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.plane.flip()
+        scene.version += 1
+
+
+class SetActiveSectionCommand(Command):
+    """Make ``plane`` the active cut (or ``None`` to deactivate) — SketchUp's
+    Active Cut toggle / double-click."""
+
+    def __init__(self, plane) -> None:
+        self.plane = plane
+        self._prev = None
+
+    def do(self, scene) -> None:
+        self._prev = scene.active_section()
+        scene.set_active_section(self.plane)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        prev = self._prev
+        scene.set_active_section(
+            prev if prev in scene.section_planes else None)
+        scene.version += 1
+
+
+class MoveSectionPlanesCommand(Command):
+    """Translate section planes (the Move tool)."""
+
+    def __init__(self, planes, delta: QVector3D) -> None:
+        self._planes = list(planes)
+        self.delta = QVector3D(delta)
+
+    def do(self, scene) -> None:
+        for p in self._planes:
+            p.point = p.point + self.delta
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for p in self._planes:
+            p.point = p.point - self.delta
+        scene.version += 1
+
+
+class RotateSectionPlanesCommand(Command):
+    """Rotate section planes about ``centre``/``axis`` (the Rotate tool):
+    the origin orbits and the normal turns."""
+
+    def __init__(self, planes, centre: QVector3D, axis: QVector3D,
+                 deg: float) -> None:
+        self._planes = list(planes)
+        self.centre = QVector3D(centre)
+        self.axis = QVector3D(axis)
+        self.deg = float(deg)
+
+    def _apply(self, scene, deg: float) -> None:
+        m = rotation_matrix(self.centre, self.axis, deg)
+        for p in self._planes:
+            p.point = m.map(p.point)
+            n = m.mapVector(p.normal)
+            if n.length() > 1e-12:
+                p.normal = n.normalized()
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._apply(scene, self.deg)
+
+    def undo(self, scene) -> None:
+        self._apply(scene, -self.deg)
+
+
 class ChangeGuideCommand(Command):
     """Re-aim an existing guide line (Protractor hot retype: after the guide
     is created, a typed angle updates it until the next click/command)."""

@@ -72,6 +72,12 @@ class Scene:
     # Active display style (SketchUp Styles): face mode, edges, background.
     # The viewport reads it every frame; scenes snapshot it (core/style.py).
     display_style: object = field(default_factory=lambda: _make_style())
+    # Section planes (SketchUp sections, core/section.py). At most ONE is
+    # ``active`` (the cut) in the model context; the two flags mirror
+    # SketchUp's View ▸ Section Planes / Section Cuts toggles.
+    section_planes: list = field(default_factory=list)
+    show_section_planes: bool = True
+    show_section_cuts: bool = True
     # Georeferencing anchor (Track G). ``None`` until the user sets a datum;
     # once set, geodetic ↔ local-metre conversion goes through it. Terrain and
     # tiles are separate display-only objects added in later phases.
@@ -129,6 +135,20 @@ class Scene:
     def entity_selectable(self, entity) -> bool:
         visible, locked = self._layer_state(entity)
         return visible and not locked
+
+    # ---- Sections (SketchUp section planes) ----------------------------------
+    def active_section(self):
+        """The section plane currently cutting the model, or ``None``."""
+        for sp in self.section_planes:
+            if sp.active:
+                return sp
+        return None
+
+    def set_active_section(self, plane) -> None:
+        """Make ``plane`` the ONE active cut (None deactivates all) —
+        SketchUp: one active cut per context."""
+        for sp in self.section_planes:
+            sp.active = sp is plane
 
     # ---- Group-edit context (Groups v2) --------------------------------------
     def begin_group_edit(self, group) -> None:
@@ -231,6 +251,9 @@ class Scene:
             self.back_face_color = None
             self.active_ifc = None
             self.display_style = _make_style()
+            self.section_planes.clear()
+            self.show_section_planes = True
+            self.show_section_cuts = True
             self.version += 1
 
     # ---- Queries ------------------------------------------------------------

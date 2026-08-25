@@ -114,6 +114,17 @@ class _HoverEvent:
         return self._mods
 
 
+def _active_cut(scene):
+    """The section plane actually CUTTING (cuts shown + one active), or
+    None. A module function so stub viewports in tests degrade gracefully;
+    picks and snaps filter by it — what the cut hides is not clickable nor
+    snappable (SketchUp)."""
+    if not getattr(scene, "show_section_cuts", True):
+        return None
+    active = getattr(scene, "active_section", None)
+    return active() if callable(active) else None
+
+
 class _SnapEdge:
     """Lightweight edge stand-in fed to the snap engine for group geometry —
     ``compute_snap`` only reads ``.a``/``.b`` (world endpoints)."""
@@ -132,6 +143,7 @@ GL_TRIANGLES = 0x0004
 GL_COLOR_BUFFER_BIT = 0x00004000
 GL_DEPTH_BUFFER_BIT = 0x00000100
 GL_DEPTH_TEST = 0x0B71
+GL_CLIP_DISTANCE0 = 0x3000
 GL_BLEND = 0x0BE2
 GL_SRC_ALPHA = 0x0302
 GL_ONE_MINUS_SRC_ALPHA = 0x0303
@@ -384,6 +396,8 @@ class Viewport(QOpenGLWidget):
         self._preview_faces_vbo = None
         self._preview_tex_vao = None
         self._preview_tex_vbo = None
+        self._section_vao = None
+        self._section_vbo = None
 
         # Faces hidden from the normal pass while a tool previews — Push/Pull
         # hides the flat inner face it's pushing in (a window/door) so the recess
@@ -494,6 +508,8 @@ class Viewport(QOpenGLWidget):
         self._loc_use_vcolor = self._program.uniformLocation("u_use_vcolor")
         self._loc_opacity = self._program.uniformLocation("u_opacity")
         self._loc_shade = self._program.uniformLocation("u_shade")
+        self._loc_clip_plane = self._program.uniformLocation("u_clip_plane")
+        self._loc_clip_enable = self._program.uniformLocation("u_clip_enable")
 
         # Axes rebuilt per frame (dash spacing scales with zoom), so dynamic.
         self._axes_vao, self._axes_vbo = self._create_dynamic()
@@ -513,6 +529,7 @@ class Viewport(QOpenGLWidget):
         self._rubber_vao, self._rubber_vbo = self._create_dynamic()
         self._preview_faces_vao, self._preview_faces_vbo = self._create_dynamic()
         self._preview_tex_vao, self._preview_tex_vbo = self._create_dynamic_uv()
+        self._section_vao, self._section_vbo = self._create_dynamic()
         self._tile_quad_vao, self._tile_quad_vbo = self._create_dynamic_uv()
         self._terrain_vao, self._terrain_vbo = self._create_dynamic_uv()
         self._photo_vao, self._photo_vbo = self._create_dynamic_uv()
@@ -601,6 +618,7 @@ class Viewport(QOpenGLWidget):
             # thickening lines and text proportionally.
             painter.scale(width_px / lw, height_px / lh)
             self._draw_guides(painter)
+            self._draw_section_planes(painter)
             self._draw_geo_surfaces(painter)
             self._draw_geo_paths(painter)
             self._draw_geo_points(painter)
@@ -652,6 +670,18 @@ class Viewport(QOpenGLWidget):
         else:
             style = getattr(self.scene, "display_style", None) or Style()
         mode = style.face_mode
+        self._frame_style = style
+
+        # Active section cut (SketchUp): ONE world-space plane; the kept
+        # side is where dot(n, p - origin) <= 0. Applies to model geometry
+        # only — sky, axes, terrain, previews and overlays stay uncut.
+        self._clip_vec = None
+        sp = (self.scene.active_section()
+              if getattr(self.scene, "show_section_cuts", True) else None)
+        if sp is not None:
+            n, o = sp.normal, sp.point
+            self._clip_vec = QVector4D(
+                -n.x(), -n.y(), -n.z(), QVector3D.dotProduct(n, o))
 
         self._gl.glClearDepthf(1.0)
         bg = style.background
@@ -699,6 +729,7 @@ class Viewport(QOpenGLWidget):
 
         # Faces — drawn before edges, with polygon offset so coincident
         # boundary edges sit cleanly on top instead of z-fighting.
+        self._set_section_clip(True)
         if self._faces_count > 0 and mode != "wireframe":
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
@@ -930,6 +961,7 @@ class Viewport(QOpenGLWidget):
         # the persistent faces, depth-tested so it occludes geometry behind it
         # and reads as a real solid; its wireframe goes on top via the rubber
         # band below.
+        self._set_section_clip(False)
         self._draw_preview_faces()
 
         # Axes — long solid positive + evenly-dashed negative per axis (SketchUp).
@@ -956,6 +988,7 @@ class Viewport(QOpenGLWidget):
             self._gl.glDepthMask(GL_TRUE)
             self._axes_vao.release()
 
+        self._set_section_clip(True)
         show_edges = style.edges or mode == "wireframe"
         ec = style.edge_color
         if self._edges_count > 0 and show_edges:
@@ -991,6 +1024,8 @@ class Viewport(QOpenGLWidget):
             self._hover_edges_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, hover_count)
             self._hover_edges_vao.release()
+        self._set_section_clip(False)
+        self._draw_section_cut_edges()   # ON the plane — drawn unclipped
 
         # Rubber band preview. Loose drawing tools float it on top (depth test
         # off, so it never z-fights with coincident axes). Push/Pull's solid
@@ -2543,6 +2578,7 @@ class Viewport(QOpenGLWidget):
 
         # Construction guides (Tape Measure) — fine dashed scaffolding lines.
         self._draw_guides(painter)
+        self._draw_section_planes(painter)
         self._draw_edit_group_box(painter)
 
         # Terrain-surface fills (draped / flat) under the georef paths — Track G.
@@ -2768,6 +2804,229 @@ class Viewport(QOpenGLWidget):
                 if j != i:
                     painter.drawLine(int(pix[i][0]), int(pix[i][1]),
                                      int(pix[j][0]), int(pix[j][1]))
+
+    # ---- Section planes (SketchUp sections) ----------------------------------
+    def _set_section_clip(self, on: bool) -> None:
+        """Enable/disable the active section cut around a model-geometry pass
+        (``gl_ClipDistance`` in basic.vert). No-op when no cut is active."""
+        if getattr(self, "_clip_vec", None) is None:
+            return
+        if on:
+            self._program.setUniformValue(self._loc_clip_plane, self._clip_vec)
+            self._program.setUniformValue(self._loc_clip_enable, 1)
+            self._gl.glEnable(GL_CLIP_DISTANCE0)
+        else:
+            self._program.setUniformValue(self._loc_clip_enable, 0)
+            self._gl.glDisable(GL_CLIP_DISTANCE0)
+
+    def _section_cut_active(self):
+        return _active_cut(self.scene)
+
+    def section_plane_frame(self, sp) -> list:
+        """Four world corners of the plane's drawn frame: the model's bounds
+        projected onto the plane, with a margin (SketchUp sizes the plane
+        object to the model)."""
+        u, v = plane_axes(sp.normal)
+        lo, hi = self.scene.bounds()
+        if lo is None:
+            half_u = half_v = 1.5
+            cu = cv = 0.0
+        else:
+            corners = [QVector3D(x, y, z)
+                       for x in (lo.x(), hi.x())
+                       for y in (lo.y(), hi.y())
+                       for z in (lo.z(), hi.z())]
+            us = [QVector3D.dotProduct(c - sp.point, u) for c in corners]
+            vs = [QVector3D.dotProduct(c - sp.point, v) for c in corners]
+            cu, cv = (min(us) + max(us)) * 0.5, (min(vs) + max(vs)) * 0.5
+            half_u = (max(us) - min(us)) * 0.56 + 0.2
+            half_v = (max(vs) - min(vs)) * 0.56 + 0.2
+        c = sp.point + u * cu + v * cv
+        return [c - u * half_u - v * half_v, c + u * half_u - v * half_v,
+                c + u * half_u + v * half_v, c - u * half_u + v * half_v]
+
+    def _draw_section_planes(self, painter: QPainter) -> None:
+        """The section plane OBJECTS (frame + corner brackets + symbol),
+        SketchUp-style: grey when inactive, ink when active, selection
+        orange when selected. Hidden by View ▸ Section Planes."""
+        planes = getattr(self.scene, "section_planes", None)
+        if not planes or not getattr(self.scene, "show_section_planes", True):
+            return
+        selection = self.scene.selection
+        for sp in planes:
+            corners = self.section_plane_frame(sp)
+            px = []
+            ok = True
+            for i in range(4):
+                seg = self._clip_segment_front(corners[i],
+                                               corners[(i + 1) % 4])
+                if seg is None:
+                    ok = False
+                    break
+                a = self._world_to_pixel(seg[0])
+                b = self._world_to_pixel(seg[1])
+                if a is None or b is None:
+                    ok = False
+                    break
+                px.append((a, b))
+            if not ok:
+                continue
+            if sp in selection:
+                pen = QPen(QColor(243, 115, 41), 2)
+            elif sp.active:
+                pen = QPen(QColor(45, 55, 75), 2)
+            else:
+                pen = QPen(QColor(150, 155, 162), 1.4)
+            painter.setPen(pen)
+            for a, b in px:
+                painter.drawLine(QPointF(*a), QPointF(*b))
+            # Corner brackets: short ticks INTO the frame at each corner.
+            for i in range(4):
+                c = self._world_to_pixel(corners[i])
+                n1 = self._world_to_pixel(corners[(i + 1) % 4])
+                n2 = self._world_to_pixel(corners[(i + 3) % 4])
+                if c is None or n1 is None or n2 is None:
+                    continue
+                for n_ in (n1, n2):
+                    dx, dy = n_[0] - c[0], n_[1] - c[1]
+                    ln = math.hypot(dx, dy) or 1.0
+                    k = min(14.0, ln * 0.18) / ln
+                    painter.drawLine(QPointF(c[0], c[1]),
+                                     QPointF(c[0] + dx * k, c[1] + dy * k))
+            label = (sp.symbol or "").strip()
+            if sp.name:
+                label = f"{label}  {sp.name}".strip()
+            if label:
+                c = self._world_to_pixel(corners[0])
+                if c is not None:
+                    painter.drawText(QPointF(c[0] + 8, c[1] - 6), label)
+
+    def pick_section_plane(self, screen_x: float, screen_y: float):
+        """The section plane whose frame is nearest the cursor within the
+        pick threshold, or ``None`` (Select / context menu / Eraser)."""
+        planes = getattr(self.scene, "section_planes", None)
+        if not planes or not getattr(self.scene, "show_section_planes", True):
+            return None
+        best, best_d = None, self.pick_threshold_px
+        for sp in planes:
+            corners = self.section_plane_frame(sp)
+            for i in range(4):
+                seg = self._clip_segment_front(corners[i],
+                                               corners[(i + 1) % 4])
+                if seg is None:
+                    continue
+                a = self._world_to_pixel(seg[0])
+                b = self._world_to_pixel(seg[1])
+                if a is None or b is None:
+                    continue
+                d = _point_to_segment_distance_2d((screen_x, screen_y), a, b)
+                if d < best_d:
+                    best_d = d
+                    best = sp
+        return best
+
+    def _section_cut_segments(self):
+        """World-space cut segments: the active plane ∩ every visible model
+        triangle, vectorized over the pick index's (v0, e1, e2) arrays.
+        Cached per (scene version, plane pose)."""
+        sp = self.scene.active_section()
+        if sp is None:
+            return None
+        import numpy as np
+        n, o = sp.normal, sp.point
+        key = (self.scene.version, round(n.x(), 9), round(n.y(), 9),
+               round(n.z(), 9), round(o.x(), 6), round(o.y(), 6),
+               round(o.z(), 6))
+        cached = getattr(self, "_section_cut_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        idx = self._pick_index()
+        segs = None
+        if idx.tri_v0 is not None and len(idx.tri_v0):
+            nv = np.array([n.x(), n.y(), n.z()], dtype=np.float64)
+            c = float(np.dot(nv, [o.x(), o.y(), o.z()]))
+            p0 = idx.tri_v0
+            p1 = idx.tri_v0 + idx.tri_e1
+            p2 = idx.tri_v0 + idx.tri_e2
+            vis = idx.ent_vis[idx.tri_ent]
+            d0 = p0 @ nv - c
+            d1 = p1 @ nv - c
+            d2 = p2 @ nv - c
+            pts = []
+            for (a, b, da, db) in ((p0, p1, d0, d1), (p1, p2, d1, d2),
+                                   (p2, p0, d2, d0)):
+                cross = (da * db) < 0
+                t = np.zeros(len(da))
+                np.divide(da, da - db, out=t, where=cross)
+                pts.append((cross, a + (b - a) * t[:, None]))
+            two = (pts[0][0].astype(np.int8) + pts[1][0] + pts[2][0]) == 2
+            two &= vis
+            if two.any():
+                acc = np.zeros((int(two.sum()), 2, 3))
+                slot = np.zeros(int(two.sum()), dtype=np.int64)
+                for cross, p in pts:
+                    m = cross[two]
+                    where = np.where(m)[0]
+                    acc[where, np.minimum(slot[where], 1)] = p[two][m]
+                    slot[where] += 1
+                segs = acc.astype(np.float32)
+        self._section_cut_cache = (key, segs)
+        return segs
+
+    def _draw_section_cut_edges(self) -> None:
+        """SketchUp's thick section-cut lines: quads in the cut plane, sized
+        ~2.5 px, nudged toward the CLIPPED side so they never z-fight the
+        remaining geometry. Skipped when cuts are hidden."""
+        if getattr(self, "_clip_vec", None) is None:
+            return
+        segs = self._section_cut_segments()
+        if segs is None or not len(segs):
+            return
+        import numpy as np
+        sp = self.scene.active_section()
+        n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()],
+                     dtype=np.float64)
+        a = segs[:, 0].astype(np.float64)
+        b = segs[:, 1].astype(np.float64)
+        t = b - a
+        ln = np.linalg.norm(t, axis=1)
+        keep = ln > 1e-9
+        if not keep.any():
+            return
+        a, b, t, ln = a[keep], b[keep], t[keep], ln[keep]
+        t /= ln[:, None]
+        side = np.cross(np.broadcast_to(n, t.shape), t)
+        # ~2.5 px of world width at each segment's distance from the eye.
+        eye = self.camera.eye()
+        eyev = np.array([eye.x(), eye.y(), eye.z()], dtype=np.float64)
+        mid = (a + b) * 0.5
+        dist = np.linalg.norm(mid - eyev, axis=1)
+        h = max(1.0, self.height())
+        fov = math.radians(getattr(self.camera, "fov_deg", 45.0))
+        wpp = np.maximum(dist * math.tan(fov * 0.5) * 2.0 / h, 1e-6)
+        w = (wpp * 1.25)[:, None]
+        lift = n * 0.6
+        off = side * w
+        q0 = a - off + lift * w
+        q1 = b - off + lift * w
+        q2 = b + off + lift * w
+        q3 = a + off + lift * w
+        tris = np.empty((len(a) * 2, 9), dtype=np.float32)
+        tris[0::2, 0:3] = q0
+        tris[0::2, 3:6] = q1
+        tris[0::2, 6:9] = q2
+        tris[1::2, 0:3] = q0
+        tris[1::2, 3:6] = q2
+        tris[1::2, 6:9] = q3
+        raw = tris.tobytes()
+        self._section_vbo.bind()
+        self._section_vbo.allocate(raw, len(raw))
+        self._section_vbo.release()
+        ec = self._frame_style.edge_color
+        self._set_color(ec[0], ec[1], ec[2], 1.0)
+        self._section_vao.bind()
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, len(a) * 6)
+        self._section_vao.release()
 
     def _clip_segment_front(
         self, a: QVector3D, b: QVector3D
@@ -4256,6 +4515,21 @@ class Viewport(QOpenGLWidget):
         if cached is not None and cached[0] == key:
             return cached[1]
         face_t = self._ray_hits(idx, origin, direction, idx.ent_sel)
+        sp = _active_cut(self.scene)
+        if sp is not None and face_t is not None:
+            # Hits beyond the active cut are on clipped-away geometry.
+            import numpy as np
+            finite = np.isfinite(face_t)
+            if finite.any():
+                o = np.array([origin.x(), origin.y(), origin.z()])
+                d = np.array([direction.x(), direction.y(), direction.z()])
+                n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()])
+                c = float(n @ [sp.point.x(), sp.point.y(), sp.point.z()])
+                pts = o + d * face_t[finite, None]
+                hidden = (pts @ n - c) > 1e-6
+                vals = face_t[finite]
+                vals[hidden] = np.inf
+                face_t[finite] = vals
         self._hover_hits_cache = (key, face_t)
         return face_t
 
@@ -4268,6 +4542,13 @@ class Viewport(QOpenGLWidget):
         ax, ay, oka = self._project_px(idx.edge_a)
         bx, by, okb = self._project_px(idx.edge_b)
         ok = oka & okb & idx.edge_sel
+        sp = _active_cut(self.scene)
+        if sp is not None:
+            n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()])
+            c = float(n @ [sp.point.x(), sp.point.y(), sp.point.z()])
+            da = idx.edge_a @ n - c
+            db = idx.edge_b @ n - c
+            ok &= ~((da > 1e-6) & (db > 1e-6))
         if not ok.any():
             return None
         dx, dy = bx - ax, by - ay
@@ -4475,16 +4756,26 @@ class Viewport(QOpenGLWidget):
         near = self._nearby_group_edges(px, py) if px is not None else []
         if px is not None:
             near += self._billboard_snap_edges()
+        sp = _active_cut(self.scene)
+        if sp is not None:
+            # What the cut hides must not attract snaps (SketchUp): drop
+            # edges whose BOTH endpoints are on the hidden side.
+            def _kept(e):
+                return not (sp.side(e.a) > 1e-6 and sp.side(e.b) > 1e-6)
+            near = [e for e in near if _kept(e)]
         # Survey points snap as degenerate pseudo-edges: the endpoint snap
         # lands EXACTLY on the surveyed coordinate (the municipal flow's whole
         # point); direction-based inferences skip zero-length edges safely.
         for gp in getattr(self.scene, "geo_points", None) or []:
             near.append(_SnapEdge(QVector3D(gp.position),
                                   QVector3D(gp.position)))
-        if not lines and not near:
+        if not lines and not near and sp is None:
             return self.scene
+        loose = list(self.scene.edges)
+        if sp is not None:
+            loose = [e for e in loose if _kept(e)]
         from types import SimpleNamespace
-        return SimpleNamespace(edges=list(self.scene.edges) + lines + near)
+        return SimpleNamespace(edges=loose + lines + near)
 
     def pick_guide(self, screen_x: float, screen_y: float):
         """Return the construction guide nearest the cursor within the pick
@@ -4603,6 +4894,12 @@ class Viewport(QOpenGLWidget):
         t = np.einsum("ij,ij->i", e2, q) * inv
         hit = (ok & (u >= 0.0) & (u <= 1.0) & (v >= 0.0) & (u + v <= 1.0)
                & (t > 1e-9) & (t < dist - 1e-3))
+        sp = _active_cut(self.scene)
+        if sp is not None and hit.any():
+            n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()])
+            c = float(n @ [sp.point.x(), sp.point.y(), sp.point.z()])
+            pts = eye + d * t[:, None]
+            hit &= ((pts @ n - c) <= 1e-6)
         return bool(hit.any())
 
     def pick_face(self, screen_x: float, screen_y: float):
@@ -4923,6 +5220,7 @@ class Viewport(QOpenGLWidget):
                   or self.pick_group(x, y) or self.pick_edge(x, y)
                   or self.pick_geopath(x, y) or self.pick_dimension(x, y)
                   or self.pick_text_label(x, y)
+                  or self.pick_section_plane(x, y)
                   or self.pick_guide(x, y)
                   or self.pick_face(x, y))
         if picked is not None and picked not in self.scene.selection:

@@ -108,6 +108,81 @@ def collect_geometry(scene):
     return tris, hard, soft
 
 
+def clip_to_section(tris, hard, soft, plane):
+    """Clip collected geometry to the KEPT side of the active section plane
+    (S5 — the point of the sections track): triangles are cut, edges are
+    shortened, and the plane∩triangle intersection segments join the hard
+    edges — the sheet composer's hidden-line pass then draws real plans and
+    cross-sections. ``plane`` is a core.section.SectionPlane; the hidden
+    side is where ``plane.side(p) > 0``."""
+    nx = plane.normal.x()
+    ny = plane.normal.y()
+    nz = plane.normal.z()
+    c = (nx * plane.point.x() + ny * plane.point.y()
+         + nz * plane.point.z())
+    eps = 1e-9
+
+    def dist(p):
+        return p[0] * nx + p[1] * ny + p[2] * nz - c
+
+    def lerp(a, b, da, db):
+        t = da / (da - db)
+        return (a[0] + (b[0] - a[0]) * t,
+                a[1] + (b[1] - a[1]) * t,
+                a[2] + (b[2] - a[2]) * t)
+
+    out_tris: list = []
+    cut_edges: list = []
+    for tri in tris:
+        d = (dist(tri[0]), dist(tri[1]), dist(tri[2]))
+        hidden = [di > eps for di in d]
+        nh = sum(hidden)
+        if nh == 0:
+            out_tris.append(tri)
+            continue
+        if nh == 3:
+            continue
+        # Clip the polygon against the plane (Sutherland–Hodgman, keep
+        # d <= 0) and remember the crossing chord — the section-cut line.
+        poly: list = []
+        crossings: list = []
+        for i in range(3):
+            a, b = tri[i], tri[(i + 1) % 3]
+            da, db = d[i], d[(i + 1) % 3]
+            if da <= eps:
+                poly.append(a)
+            if (da > eps) != (db > eps):
+                x = lerp(a, b, da, db)
+                poly.append(x)
+                crossings.append(x)
+        if len(crossings) == 2:
+            cut_edges.append((crossings[0], crossings[1]))
+        for i in range(1, len(poly) - 1):     # fan
+            out_tris.append((poly[0], poly[i], poly[i + 1]))
+
+    def clip_seg(p0, p1):
+        d0, d1 = dist(p0), dist(p1)
+        if d0 > eps and d1 > eps:
+            return None
+        if d0 <= eps and d1 <= eps:
+            return (p0, p1)
+        x = lerp(p0, p1, d0, d1)
+        return (p0, x) if d0 <= eps else (x, p1)
+
+    out_hard: list = []
+    for p0, p1 in hard:
+        seg = clip_seg(p0, p1)
+        if seg is not None:
+            out_hard.append(seg)
+    out_hard.extend(cut_edges)
+    out_soft: list = []
+    for p0, p1, na, nb in soft:
+        seg = clip_seg(p0, p1)
+        if seg is not None:
+            out_soft.append((seg[0], seg[1], na, nb))
+    return out_tris, out_hard, out_soft
+
+
 # ── The exact visibility kernel ─────────────────────────────────────────────
 
 def _interval_from_linear(c0: float, c1: float):
@@ -205,6 +280,13 @@ def hlr_view(scene, camera, return_world: bool = False):
     WORLD coordinates, (N, 2, 3) — the anchor data for dimensions that
     follow the model. Both arrays share row order."""
     tris, hard, soft = collect_geometry(scene)
+    # Active section cut (SketchUp): the composer's sheets honour it — the
+    # whole reason sections exist here (plans and cross-cuts on paper).
+    sp = (scene.active_section()
+          if getattr(scene, "show_section_cuts", True)
+          and hasattr(scene, "active_section") else None)
+    if sp is not None:
+        tris, hard, soft = clip_to_section(tris, hard, soft, sp)
     _e, _r, _u, fwd = camera_basis(camera)
 
     # silhouette rule for soft edges
