@@ -36,8 +36,10 @@ minor versions, and rough edges exist — please
 Grab the [latest release](https://github.com/ingelibre/ingetrazo/releases/latest):
 
 - **Windows**: the `-setup-` installer (or the portable `.zip`).
-- **Linux (x86_64)**: the **AppImage** — make it executable and run it — or,
-  if your distro lacks FUSE, the **tarball**:
+- **Linux (x86_64)**: the **Flatpak** — double-click `IngeTrazo.flatpak` and
+  GNOME Software / KDE Discover installs it (`.igz`/`.skp` associated) — or
+  the **AppImage** (make it executable and run it) or, if your distro lacks
+  FUSE, the **tarball**:
 
 ```bash
 chmod +x IngeTrazo-*-x86_64.AppImage && ./IngeTrazo-*-x86_64.AppImage
@@ -61,7 +63,16 @@ anything is missing.
   solid — the difference that makes the geometry valid for quantity takeoff).
 - **Offset** — walls with real thickness from a face outline.
 - **Move** — with snap, inference and exact measured input.
-- **Groups** — isolate geometry, move / explode / edit as a unit.
+- **Groups & components** — isolate geometry, move / explode / edit as a
+  unit, and **copy/paste** with a solid, textured preview under the cursor;
+  pasted component copies share their definition.
+- **Rotate & Protractor** — SketchUp's protractor: plane inference with
+  axis-coloured disc, 15° tick snapping near it, slope input as rise:run
+  (`3:12`), rotate-a-copy (Ctrl), fold-axis by dragging, and angled guide
+  lines that feed the snap engine.
+- **Display styles** — Default, Architectural (textures on white), Shaded,
+  Hidden line, Monochrome, Wireframe and X-ray; scenes remember their
+  style and the sheet composer renders each viewport in any of them.
 - **Curved solids** — SketchUp-style soft edges: smooth cylinders, curved-surface
   selection, view-dependent profile/silhouette edges.
 - **Materials** — solid color per face and **SketchUp-compatible textures**
@@ -95,8 +106,9 @@ anything is missing.
 - **Geo-referencing** — UTM datum, web basemap tiles, 3D terrain (DEM),
   traced geo-paths with a live longitudinal profile, survey-point CSV import
   (total station / GPS), and photogrammetric mesh import (WebODM / ODM).
-- **Sheet composer** — scaled viewports of the model on paper sheets, vector
-  hidden-line rendering, model-anchored dimensions, title block, PDF export.
+- **Sheet composer** — scaled viewports of the model on paper sheets (each
+  in any display style), vector hidden-line rendering, model-anchored
+  dimensions, title block, PDF export.
 - **Extensions** — a plugin system: drop a Python file in the plugins folder
   and its tools appear in the **Extensions** menu. Two reference plugins
   ship with the app: **Model Info** (model statistics) and a **Python
