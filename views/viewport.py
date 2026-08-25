@@ -630,11 +630,23 @@ class Viewport(QOpenGLWidget):
         self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         self._gl.glDisable(GL_CULL_FACE)
 
-        self._gl.glClearDepthf(1.0)
-        if self.plano_style is not None:
-            self._gl.glClearColor(1.0, 1.0, 1.0, 1.0)   # plan sheets: white
+        # Effective display style (SketchUp Styles): the composer's
+        # plano_style override maps onto the same face modes; otherwise the
+        # scene's active style drives faces, edges and background.
+        from core.style import Style
+        if self.plano_style == "tecnico":
+            style = Style(name="tecnico", face_mode="hidden_line", sky=False,
+                          background=(1.0, 1.0, 1.0))
+        elif self.plano_style == "lineas":
+            style = Style(name="lineas", face_mode="wireframe", sky=False,
+                          background=(1.0, 1.0, 1.0))
         else:
-            self._gl.glClearColor(0.90, 0.91, 0.92, 1.0)
+            style = getattr(self.scene, "display_style", None) or Style()
+        mode = style.face_mode
+
+        self._gl.glClearDepthf(1.0)
+        bg = style.background
+        self._gl.glClearColor(bg[0], bg[1], bg[2], 1.0)
         self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
@@ -651,7 +663,8 @@ class Viewport(QOpenGLWidget):
         # premium SketchUp feel. Fixed on zoom (it's the point at infinity),
         # moves only on orbit. Skipped over the base map / terrain (which supply
         # their own ground).
-        if (self.plano_style is None and not self._base_map_showing()
+        if (self.plano_style is None and style.sky
+                and not self._base_map_showing()
                 and not self._terrain_showing()
                 and not self._photo_showing()):
             self._draw_sky(mvp)
@@ -677,16 +690,24 @@ class Viewport(QOpenGLWidget):
 
         # Faces — drawn before edges, with polygon offset so coincident
         # boundary edges sit cleanly on top instead of z-fighting.
-        if self._faces_count > 0 and self.plano_style != "lineas":
+        if self._faces_count > 0 and mode != "wireframe":
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
-            if self.plano_style == "tecnico":
-                # Plan style: every face flat white, no rebatch needed —
-                # the per-vertex colours are simply not consulted.
+            if mode == "hidden_line":
+                # Plan style: every face flat in the style's front colour, no
+                # rebatch needed — per-vertex colours simply not consulted.
                 self._program.setUniformValue(self._loc_use_vcolor, 0)
-                self._set_color(1.0, 1.0, 1.0, 1.0)
+                fr = style.front_color
+                self._set_color(fr[0], fr[1], fr[2], 1.0)
                 self._program.setUniformValue(
-                    self._loc_back_color, QVector4D(1.0, 1.0, 1.0, 1.0))
+                    self._loc_back_color, QVector4D(fr[0], fr[1], fr[2], 1.0))
+            elif mode == "monochrome":
+                # Flat default front colour + the back tint — the classic
+                # reversed-face checker (SketchUp Monochrome).
+                self._program.setUniformValue(self._loc_use_vcolor, 0)
+                fr = style.front_color
+                self._set_color(fr[0], fr[1], fr[2], 1.0)
+                self._set_back_face_color()
             else:
                 # Every colour run in ONE draw call: the shaded material
                 # colour rides per vertex (a_color). An imported model with
@@ -694,6 +715,11 @@ class Viewport(QOpenGLWidget):
                 # calls per frame.
                 self._program.setUniformValue(self._loc_use_vcolor, 1)
                 self._set_back_face_color()
+            if mode == "xray":
+                # X-ray: translucent faces that do not occlude — edges stay
+                # fully visible because nothing writes depth.
+                self._program.setUniformValue1f(self._loc_opacity, 0.55)
+                self._gl.glDepthMask(GL_FALSE)
             self._faces_vao.bind()
             self._gl.glDrawArrays(GL_TRIANGLES, 0, self._faces_count)
             fstart, fcount = self._fvcol_run
@@ -705,24 +731,45 @@ class Viewport(QOpenGLWidget):
                 self._gl.glDrawArrays(GL_TRIANGLES, fstart, fcount)
                 self._gl.glDisable(GL_CULL_FACE)
             self._faces_vao.release()
+            if mode == "xray":
+                self._program.setUniformValue1f(self._loc_opacity, 1.0)
+                self._gl.glDepthMask(GL_TRUE)
             self._program.setUniformValue(self._loc_use_vcolor, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
         # Textured faces — same depth/offset treatment, sampling each face's
         # image. One draw per texture (its GL texture bound to unit 0).
-        if self._tex_faces_count > 0 and self.plano_style == "tecnico":
-            # Plan style: textured faces draw flat white like the rest.
+        if self._tex_faces_count > 0 and mode in ("hidden_line", "monochrome"):
+            # Plan styles: textured faces draw flat like the rest.
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
-            self._set_color(1.0, 1.0, 1.0, 1.0)
+            fr = style.front_color
+            self._set_color(fr[0], fr[1], fr[2], 1.0)
             self._tex_faces_vao.bind()
             self._gl.glDrawArrays(GL_TRIANGLES, 0, self._tex_faces_count)
             self._tex_faces_vao.release()
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
-        elif self._tex_faces_count > 0 and self.plano_style is None:
+        elif self._tex_faces_count > 0 and mode == "shaded":
+            # SketchUp "Shaded": textured faces draw in their texture's
+            # AVERAGE colour (the material colour), keeping the run shading.
+            self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+            self._gl.glPolygonOffset(1.0, 1.0)
+            self._tex_faces_vao.bind()
+            for (path, shade), start, count in self._tex_runs:
+                r, g, b = self._texture_avg_color(path)
+                self._program.setUniformValue1f(self._loc_shade, float(shade))
+                self._set_color(r, g, b, 1.0)
+                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+            self._tex_faces_vao.release()
+            self._program.setUniformValue1f(self._loc_shade, 1.0)
+            self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+        elif self._tex_faces_count > 0 and mode in ("textures", "xray"):
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
             self._program.setUniformValue(self._loc_use_tex, 1)
+            if mode == "xray":
+                self._program.setUniformValue1f(self._loc_opacity, 0.55)
+                self._gl.glDepthMask(GL_FALSE)
             self._tex_faces_vao.bind()
             for (path, shade), start, count in self._tex_runs:
                 tex = self._get_texture(path)
@@ -733,6 +780,9 @@ class Viewport(QOpenGLWidget):
                 self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                 tex.release(0)
             self._tex_faces_vao.release()
+            if mode == "xray":
+                self._program.setUniformValue1f(self._loc_opacity, 1.0)
+                self._gl.glDepthMask(GL_TRUE)
             self._program.setUniformValue1f(self._loc_shade, 1.0)
             self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
@@ -742,7 +792,7 @@ class Viewport(QOpenGLWidget):
         # only show from behind, without the face passes' polygon offset so
         # they win the depth test over the front copy there.
         if (self._back_vcol_run[1] > 0 or self._back_tex_runs) \
-                and self.plano_style is None:
+                and mode in ("textures", "shaded", "xray"):
             self._gl.glEnable(GL_CULL_FACE)
             self._gl.glCullFace(GL_FRONT)
             bstart, bcount = self._back_vcol_run
@@ -773,7 +823,7 @@ class Viewport(QOpenGLWidget):
         # written, so glass/mesh screens show what's behind them.
         if (self._tcol_runs or self._ttex_runs
                 or self._back_tcol_runs or self._back_ttex_runs) \
-                and self.plano_style is None:
+                and mode in ("textures", "shaded", "xray"):
             self._gl.glDepthMask(GL_FALSE)
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
@@ -837,11 +887,10 @@ class Viewport(QOpenGLWidget):
             self._gl.glDepthMask(GL_TRUE)
 
         # Face-me billboards (SketchUp 2D people): per-frame textured cutout
-        # — skipped on plan sheets: a coloured cutout person on a technical
-        # drawing gives the raster away; scale figures belong to the shaded
-        # style only.
-        # quads turned toward the camera.
-        if self.plano_style is None:
+        # — skipped on plan sheets and line styles: a coloured cutout person
+        # on a technical drawing gives the raster away; scale figures belong
+        # to the shaded looks only.
+        if self.plano_style is None and mode in ("textures", "shaded", "xray"):
             self._draw_billboards()
             self._draw_billboard_outlines()
 
@@ -897,8 +946,10 @@ class Viewport(QOpenGLWidget):
             self._gl.glDepthMask(GL_TRUE)
             self._axes_vao.release()
 
-        if self._edges_count > 0:
-            self._set_color(0.13, 0.17, 0.23, 1.0)
+        show_edges = style.edges or mode == "wireframe"
+        ec = style.edge_color
+        if self._edges_count > 0 and show_edges:
+            self._set_color(ec[0], ec[1], ec[2], 1.0)
             self._edges_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, self._edges_count)
             self._edges_vao.release()
@@ -906,12 +957,13 @@ class Viewport(QOpenGLWidget):
         # Profile (silhouette) edges: soft seams of a curved surface are hidden,
         # except where the surface turns away from the viewer — the cylinder's
         # outline. View-dependent, so rebuilt every frame, SketchUp-style.
-        sil_count = self._upload_silhouette_edges()
-        if sil_count > 0:
-            self._set_color(0.13, 0.17, 0.23, 1.0)
-            self._silhouette_vao.bind()
-            self._gl.glDrawArrays(GL_LINES, 0, sil_count)
-            self._silhouette_vao.release()
+        if show_edges and style.profiles:
+            sil_count = self._upload_silhouette_edges()
+            if sil_count > 0:
+                self._set_color(ec[0], ec[1], ec[2], 1.0)
+                self._silhouette_vao.bind()
+                self._gl.glDrawArrays(GL_LINES, 0, sil_count)
+                self._silhouette_vao.release()
 
         # Selected edges (drawn on top, highlighted)
         if self._selected_count > 0:
@@ -1095,6 +1147,33 @@ class Viewport(QOpenGLWidget):
             tex.setMagnificationFilter(QOpenGLTexture.Linear)
         cache[path] = tex
         return tex
+
+    def _texture_avg_color(self, path: str) -> tuple[float, float, float]:
+        """Average colour of a texture image — SketchUp's "Shaded" face style
+        shows the material COLOUR instead of its texture. Cached per path."""
+        cache = getattr(self, "_tex_avg_cache", None)
+        if cache is None:
+            cache = self._tex_avg_cache = {}
+        c = cache.get(path)
+        if c is None:
+            img = QImage(path)
+            if img.isNull():
+                c = (0.78, 0.78, 0.78)
+            else:
+                small = img.scaled(4, 4, Qt.IgnoreAspectRatio,
+                                   Qt.SmoothTransformation)
+                rs = gs = bs = n = 0
+                for yy in range(small.height()):
+                    for xx in range(small.width()):
+                        px = small.pixelColor(xx, yy)
+                        rs += px.red()
+                        gs += px.green()
+                        bs += px.blue()
+                        n += 1
+                c = ((rs / (255.0 * n), gs / (255.0 * n), bs / (255.0 * n))
+                     if n else (0.78, 0.78, 0.78))
+            cache[path] = c
+        return c
 
     #: Back-face colour, SketchUp's blue-grey: a visible back face means
     #: "you are looking at the inside" (or at a genuinely inverted face) —

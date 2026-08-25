@@ -1525,6 +1525,10 @@ class ScenesPanel(QWidget):
             return
         scene = self._scene()
         view.apply(scene, self._window.viewport.camera)
+        # The view may carry a style snapshot — keep the menu in step.
+        sync = getattr(self._window, "_sync_style_menu", None)
+        if sync is not None:
+            sync()
         # Entities that just went invisible/unpickable leave the selection,
         # same as toggling their layer by hand.
         dead = [s for s in scene.selection

@@ -21,7 +21,7 @@ class SavedView:
     def __init__(self, name: str, target=(0.0, 0.0, 0.0), distance: float = 20.0,
                  yaw: float = -0.7853981633974483, pitch: float = 0.5235987755982988,
                  fov_deg: float = 45.0, perspective: bool = True,
-                 hidden_layers=None) -> None:
+                 hidden_layers=None, style=None) -> None:
         self.name = name
         self.target = tuple(target)
         self.distance = float(distance)
@@ -32,6 +32,9 @@ class SavedView:
         #: Layer NAMES hidden in this view. Every other layer shows — a layer
         #: created after the view was saved defaults to visible, like SketchUp.
         self.hidden_layers = list(hidden_layers or [])
+        #: Display-style snapshot (core.style.Style.to_dict()) or ``None`` —
+        #: SketchUp scenes remember the style they were saved with.
+        self.style = dict(style) if style else None
 
     # ---- Snapshot / recall ---------------------------------------------------
     @classmethod
@@ -43,7 +46,9 @@ class SavedView:
                    pitch=camera.pitch, fov_deg=camera.fov_deg,
                    perspective=camera.perspective,
                    hidden_layers=[ly.name for ly in scene.layers
-                                  if not ly.visible])
+                                  if not ly.visible],
+                   style=(scene.display_style.to_dict()
+                          if getattr(scene, "display_style", None) else None))
 
     def recapture(self, scene, camera) -> None:
         """Update this view in place from the live state (keeps the name)."""
@@ -63,6 +68,9 @@ class SavedView:
         hidden = set(self.hidden_layers)
         for ly in scene.layers:
             ly.visible = ly.name not in hidden
+        if self.style:
+            from core.style import Style
+            scene.display_style = Style.from_dict(self.style)
 
     # ---- Serialisation (.igz) ------------------------------------------------
     def to_dict(self) -> dict:
@@ -79,6 +87,8 @@ class SavedView:
             entry["parallel"] = True
         if self.hidden_layers:
             entry["hidden_layers"] = list(self.hidden_layers)
+        if self.style:
+            entry["style"] = dict(self.style)
         return entry
 
     @classmethod
@@ -91,7 +101,8 @@ class SavedView:
                    pitch=raw.get("pitch", 0.5235987755982988),
                    fov_deg=raw.get("fov", 45.0),
                    perspective=not raw.get("parallel", False),
-                   hidden_layers=raw.get("hidden_layers"))
+                   hidden_layers=raw.get("hidden_layers"),
+                   style=raw.get("style"))
 
 
 def from_lookat(name: str, eye, target, up, fov_deg: float = 45.0,

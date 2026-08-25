@@ -21,6 +21,11 @@ from PySide6.QtGui import QVector3D
 from core.mesh import Edge, Face, Mesh
 
 
+def _make_style():
+    from core.style import Style
+    return Style()
+
+
 @dataclass
 class Scene:
     mesh: Mesh = field(default_factory=Mesh)
@@ -64,6 +69,9 @@ class Scene:
     # .skp's style so unpainted faces read like they did for the author.
     # ``None`` = the viewport's default SketchUp blue-grey.
     back_face_color: tuple | None = None
+    # Active display style (SketchUp Styles): face mode, edges, background.
+    # The viewport reads it every frame; scenes snapshot it (core/style.py).
+    display_style: object = field(default_factory=lambda: _make_style())
     # Georeferencing anchor (Track G). ``None`` until the user sets a datum;
     # once set, geodetic ↔ local-metre conversion goes through it. Terrain and
     # tiles are separate display-only objects added in later phases.
@@ -222,6 +230,7 @@ class Scene:
             self.terrain = None
             self.back_face_color = None
             self.active_ifc = None
+            self.display_style = _make_style()
             self.version += 1
 
     # ---- Queries ------------------------------------------------------------

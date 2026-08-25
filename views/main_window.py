@@ -413,6 +413,35 @@ class MainWindow(QMainWindow):
         action_proj.triggered.connect(self.viewport.toggle_projection)
         camera_menu.addAction(action_proj)
 
+        # Styles (SketchUp): the model's display look — face mode, edges,
+        # background. Scenes remember the style; the composer's live-look
+        # frames inherit it.
+        from core.style import BUILTIN_STYLES
+        camera_menu.addSeparator()
+        style_menu = camera_menu.addMenu(tr("Style"))
+        self._style_group = QActionGroup(self)
+        self._style_actions: dict[str, QAction] = {}
+        for preset in BUILTIN_STYLES:
+            act = QAction(tr(preset.name), self)
+            act.setCheckable(True)
+            self._style_group.addAction(act)
+            act.triggered.connect(
+                lambda _c=False, p=preset: self._apply_display_style(p))
+            style_menu.addAction(act)
+            self._style_actions[preset.name] = act
+        style_menu.addSeparator()
+        self._act_style_edges = QAction(tr("Edges"), self)
+        self._act_style_edges.setCheckable(True)
+        self._act_style_edges.toggled.connect(
+            lambda on: self._set_style_field("edges", on))
+        style_menu.addAction(self._act_style_edges)
+        self._act_style_profiles = QAction(tr("Profiles"), self)
+        self._act_style_profiles.setCheckable(True)
+        self._act_style_profiles.toggled.connect(
+            lambda on: self._set_style_field("profiles", on))
+        style_menu.addAction(self._act_style_profiles)
+        self._sync_style_menu()
+
         camera_menu.addSeparator()
         for action in self._nav_actions.values():   # Orbit / Pan / Zoom / Zoom Window
             camera_menu.addAction(action)
@@ -816,6 +845,35 @@ class MainWindow(QMainWindow):
         self.viewport.history.execute(cmd)
         self.viewport.update()
 
+    # ---- Display styles (SketchUp Styles) -----------------------------------
+    def _apply_display_style(self, preset) -> None:
+        """Activate a built-in style (a COPY — presets stay pristine)."""
+        self.viewport.scene.display_style = preset.copy()
+        self._sync_style_menu()
+        self.viewport.update()
+        self.statusBar().showMessage(
+            tr("Style: {name}", name=tr(preset.name)), 2000)
+
+    def _set_style_field(self, name: str, value: bool) -> None:
+        style = getattr(self.viewport.scene, "display_style", None)
+        if style is None or getattr(style, name) == bool(value):
+            return
+        setattr(style, name, bool(value))
+        self.viewport.update()
+
+    def _sync_style_menu(self) -> None:
+        """Reflect the scene's active style in the menu (loads, scene recall)."""
+        style = getattr(self.viewport.scene, "display_style", None)
+        if style is None:
+            return
+        for name, act in self._style_actions.items():
+            act.setChecked(name == style.name)
+        for act, value in ((self._act_style_edges, style.edges),
+                           (self._act_style_profiles, style.profiles)):
+            act.blockSignals(True)
+            act.setChecked(value)
+            act.blockSignals(False)
+
     def _on_delete_guides(self) -> None:
         """Remove every construction guide (SketchUp's Edit ▸ Delete Guides)."""
         from core.history import DeleteGuidesCommand
@@ -1193,6 +1251,7 @@ class MainWindow(QMainWindow):
         self._current_path = None
         self._insert_scale_figure()
         self.viewport.notify_scene_changed()
+        self._sync_style_menu()
         self._update_title()
 
     def _on_open(self) -> None:
@@ -1231,6 +1290,7 @@ class MainWindow(QMainWindow):
         self.viewport.history.clear()
         self._current_path = path
         self._saved_version = self.viewport.scene.version
+        self._sync_style_menu()      # the document may carry its own style
         # A stored survey (Track G, G6) arrives as plain arrays + images; the
         # GL upload only happens here, where there's a context.
         survey = getattr(self.viewport.scene, "photo_mesh", None)
