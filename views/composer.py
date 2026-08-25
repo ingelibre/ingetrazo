@@ -1385,11 +1385,15 @@ class ComposerWindow(QMainWindow):
         self.fh_spin.valueChanged.connect(self._on_frame_props)
         form.addRow(tr("Frame height"), self.fh_spin)
         self.style_combo = QComboBox()
-        for label, key in ((tr("Shaded"), "sombreado"),
-                           (tr("Technical (white + edges)"), "tecnico"),
-                           (tr("Lines only"), "lineas"),
-                           (tr("Vector (hidden lines removed)"), "vectorial")):
-            self.style_combo.addItem(label, key)
+        # The model's display styles, one to one (SketchUp: LayOut viewports
+        # pick any style). "Model style" = whatever is active in the model;
+        # legacy "tecnico"/"lineas" frames map onto Hidden line / Wireframe.
+        from core.style import BUILTIN_STYLES
+        self.style_combo.addItem(tr("Model style"), "sombreado")
+        for preset in BUILTIN_STYLES:
+            self.style_combo.addItem(tr(preset.name), f"style:{preset.name}")
+        self.style_combo.addItem(
+            tr("Vector (hidden lines removed)"), "vectorial")
         self.style_combo.currentIndexChanged.connect(self._on_frame_props)
         form.addRow(tr("Style"), self.style_combo)
         self.title_check = QCheckBox(tr("Title under the frame"))
@@ -1794,7 +1798,9 @@ class ComposerWindow(QMainWindow):
                 self.scale_combo.setCurrentText(f"1:{f.scale_n:g}")
                 self.fw_spin.setValue(f.w_mm)
                 self.fh_spin.setValue(f.h_mm)
-                sidx = self.style_combo.findData(f.style)
+                skey = {"tecnico": "style:Hidden line",
+                        "lineas": "style:Wireframe"}.get(f.style, f.style)
+                sidx = self.style_combo.findData(skey)
                 self.style_combo.setCurrentIndex(max(sidx, 0))
                 self.title_check.setChecked(f.show_title)
                 self.grid_spin.setValue(f.grid_m)
@@ -2624,10 +2630,15 @@ class ComposerWindow(QMainWindow):
             try:
                 if frame.style in ("tecnico", "lineas"):
                     vp.plano_style = frame.style
+                elif (isinstance(frame.style, str)
+                        and frame.style.startswith("style:")):
+                    from core.style import style_by_name
+                    vp.style_override = style_by_name(frame.style[6:])
                 w_px, h_px = frame.render_px(RENDER_DPI)
                 return vp.render_image(w_px, h_px, overlays=False)
             finally:
                 vp.plano_style = None
+                vp.style_override = None
 
         image = self._with_frame_camera(frame, run)
         if image is not None:

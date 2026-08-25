@@ -78,8 +78,12 @@ class MarcoVista:
     h_mm: float = 170.0
     scale_n: float = 100.0
     view_key: str = "__current__"
-    #: Render style: "sombreado" (the live look), "tecnico" (white faces +
-    #: dark edges on white — the plan look) or "lineas" (edges only).
+    #: Render style: "sombreado" (the model's ACTIVE display style),
+    #: "style:<name>" (a core.style built-in preset — Hidden line,
+    #: Architectural, ... — per frame, like LayOut viewports),
+    #: "vectorial" (exact HLR vector pass), or the legacy "tecnico" /
+    #: "lineas" (kept for old documents; the UI maps them onto the
+    #: Hidden line / Wireframe presets).
     style: str = "sombreado"
     #: Draw the automatic title under the frame («Planta — 1:100»).
     show_title: bool = False

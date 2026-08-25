@@ -88,6 +88,38 @@ def test_saved_view_remembers_the_style():
     assert scene.display_style.name == "Hidden line"
 
 
+def test_style_by_name_returns_copies():
+    from core.style import style_by_name
+    a = style_by_name("Architectural")
+    assert a is not None and a.face_mode == "textures"
+    assert a.background == (1.0, 1.0, 1.0) and a.sky is False
+    a.edges = False
+    b = style_by_name("Architectural")
+    assert b.edges is True                     # presets stay pristine
+    assert style_by_name("No existe") is None
+
+
+def test_composer_style_combo_lists_the_presets():
+    # The composer's per-frame style list must carry the model styles
+    # (the "Architectural is missing in layout" report) and map legacy
+    # keys onto their preset equivalents.
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        win._on_open_composer()
+        composer = win._composer
+        combo = composer.style_combo
+        keys = [combo.itemData(i) for i in range(combo.count())]
+        assert "sombreado" in keys             # the model's active style
+        assert "style:Architectural" in keys
+        assert "style:Hidden line" in keys
+        assert "vectorial" in keys
+        assert "tecnico" not in keys           # legacy keys leave the UI
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def _v(x, y, z=0.0):
     from PySide6.QtGui import QVector3D
     return QVector3D(x, y, z)

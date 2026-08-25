@@ -401,6 +401,10 @@ class Viewport(QOpenGLWidget):
         # faces + dark edges on white, no axes/sky) or "lineas" (edges only).
         # Set around a composer render; never persists across frames.
         self.plano_style: Optional[str] = None
+        # Full Style override for a composer frame ("style:<name>"): wins
+        # over the scene's display style for that render; axes are skipped
+        # (a frame is a document, not the workspace). Never persists.
+        self.style_override = None
         self._fbo_size = (0, 0)
 
         # Camera navigation state (middle button)
@@ -640,6 +644,8 @@ class Viewport(QOpenGLWidget):
         elif self.plano_style == "lineas":
             style = Style(name="lineas", face_mode="wireframe", sky=False,
                           background=(1.0, 1.0, 1.0))
+        elif self.style_override is not None:
+            style = self.style_override
         else:
             style = getattr(self.scene, "display_style", None) or Style()
         mode = style.face_mode
@@ -928,7 +934,8 @@ class Viewport(QOpenGLWidget):
         # stays stable across zoom. Depth-write OFF so the ground axes don't cull
         # geometry sitting on z=0; drawn BEFORE user edges so an edge along an
         # axis wins the LEQUAL depth test. Rubber-band stays on top (drawn last).
-        if self.plano_style is None:      # no axes on a plan sheet
+        if self.plano_style is None and self.style_override is None:
+            # No axes on a plan sheet / styled composer frame.
             spacing = max(self.camera.distance * 0.03, 1e-4)
             axes_coords, self._axes_spans = _axes_vertices(spacing)
             data = axes_coords.tobytes()

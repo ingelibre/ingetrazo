@@ -75,6 +75,15 @@ class Style:
 
 # The best of SketchUp's collections, adapted: Default (working look),
 # Architectural (clean white presentation), and the classic face styles.
+def style_by_name(name: str) -> Style | None:
+    """A COPY of the built-in preset called ``name`` (composer frames keep a
+    ``"style:<name>"`` reference), or ``None`` if unknown."""
+    for preset in BUILTIN_STYLES:
+        if preset.name == name:
+            return preset.copy()
+    return None
+
+
 BUILTIN_STYLES: list[Style] = [
     Style(name="Default"),
     Style(name="Architectural", background=(1.0, 1.0, 1.0), sky=False),
