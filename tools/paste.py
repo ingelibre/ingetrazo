@@ -13,6 +13,14 @@ from PySide6.QtGui import QVector3D
 
 from core.geometry import Face as PreviewFace
 from core.group import copy_group, translated_attrs
+
+
+def _preview_attrs(attrs, off):
+    """Attrs for a preview face at the cursor offset: a positioned texture's
+    world-anchored uvw map follows the drag (else it would stay behind)."""
+    if not attrs:
+        return None
+    return translated_attrs(attrs, off)
 from core.history import (AddEdgeCommand, AddFaceCommand, CompoundCommand,
                           InsertGroupCommand)
 from tools.base import Tool, ToolContext
@@ -116,15 +124,17 @@ class PasteTool(Tool):
         off = self._offset
         faces = [
             PreviewFace([p + off for p in loop],
-                        [[p + off for p in h] for h in holes])
-            for loop, holes, *_ in self._clip["faces"]
+                        [[p + off for p in h] for h in holes],
+                        attrs=_preview_attrs(rest[0] if rest else None, off))
+            for loop, holes, *rest in self._clip["faces"]
         ]
-        # Copied groups preview SOLID too — the model follows the cursor,
-        # not just its skeleton (huge groups are capped at copy time and
-        # keep the wireframe for the remainder).
+        # Copied groups preview SOLID too — the model (colours AND textures)
+        # follows the cursor, not just its skeleton (huge groups are capped
+        # at copy time and keep the wireframe for the remainder).
         faces += [
             PreviewFace([p + off for p in loop],
-                        [[p + off for p in h] for h in holes])
-            for loop, holes in self._clip.get("group_faces", ())
+                        [[p + off for p in h] for h in holes],
+                        attrs=_preview_attrs(attrs, off))
+            for loop, holes, attrs in self._clip.get("group_faces", ())
         ]
         return faces

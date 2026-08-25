@@ -88,7 +88,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core.camera import OrbitCamera
 from core.i18n import tr
-from core.group import Group, copy_group
+from core.group import Group, copy_group, transformed_attrs
 from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
@@ -382,6 +382,8 @@ class Viewport(QOpenGLWidget):
         # per paint while the tool drags.
         self._preview_faces_vao = None
         self._preview_faces_vbo = None
+        self._preview_tex_vao = None
+        self._preview_tex_vbo = None
 
         # Faces hidden from the normal pass while a tool previews — Push/Pull
         # hides the flat inner face it's pushing in (a window/door) so the recess
@@ -510,6 +512,7 @@ class Viewport(QOpenGLWidget):
         self._silhouette_vao, self._silhouette_vbo = self._create_dynamic()
         self._rubber_vao, self._rubber_vbo = self._create_dynamic()
         self._preview_faces_vao, self._preview_faces_vbo = self._create_dynamic()
+        self._preview_tex_vao, self._preview_tex_vbo = self._create_dynamic_uv()
         self._tile_quad_vao, self._tile_quad_vbo = self._create_dynamic_uv()
         self._terrain_vao, self._terrain_vbo = self._create_dynamic_uv()
         self._photo_vao, self._photo_vbo = self._create_dynamic_uv()
@@ -2373,10 +2376,12 @@ class Viewport(QOpenGLWidget):
         self.update()
 
     def _draw_preview_faces(self) -> None:
-        """Triangulate and draw the active tool's solid preview faces (if any)
-        in the same warm cream as real faces, so an extrusion looks solid as it
-        forms. Depth-tested with a polygon offset so the wireframe sits cleanly
-        on top."""
+        """Triangulate and draw the active tool's solid preview faces (if any).
+        A face carrying attrs shows its REAL look — painted colour, or its
+        texture (the tool re-anchors the uvw map to the drag) — so a paste
+        drags the actual model; bare faces keep the warm cream of the
+        push/pull preview. Depth-tested with a polygon offset so the
+        wireframe sits cleanly on top."""
         tool = self.active_tool
         provider = getattr(tool, "preview_faces", None) if tool is not None else None
         if not callable(provider):
@@ -2386,7 +2391,14 @@ class Viewport(QOpenGLWidget):
             return
         data = array("f")
         runs = []                        # (shaded_rgb, start_vertex, count)
+        by_texture: dict = {}            # (path, shade) -> interleaved pos+uv
         for face in faces:
+            attrs = getattr(face, "attrs", None) or {}
+            tex = attrs.get("texture")
+            if tex and tex.get("path"):
+                self._append_textured_face(by_texture, face, tex)
+                continue
+            color = attrs.get("color") or self.DEFAULT_FACE_COLOR
             start = len(data) // 3
             for t0, t1, t2 in face.triangulate():
                 data.extend([
@@ -2394,23 +2406,42 @@ class Viewport(QOpenGLWidget):
                     t1.x(), t1.y(), t1.z(),
                     t2.x(), t2.y(), t2.z(),
                 ])
-            runs.append((self._shaded_color(self.DEFAULT_FACE_COLOR, face.normal()),
+            runs.append((self._shaded_color(tuple(color[:3]), face.normal()),
                          start, len(data) // 3 - start))
-        if not data:
+        if not data and not by_texture:
             return
-        self._preview_faces_vbo.bind()
-        raw = data.tobytes()
-        self._preview_faces_vbo.allocate(raw, len(raw))
-        self._preview_faces_vbo.release()
-
         self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
         self._gl.glPolygonOffset(1.0, 1.0)
-        self._preview_faces_vao.bind()
-        for (r, g, b), start, count in runs:
-            self._set_color(r, g, b, 1.0)
-            self._set_back_face_color()
-            self._gl.glDrawArrays(GL_TRIANGLES, start, count)
-        self._preview_faces_vao.release()
+        if data:
+            self._preview_faces_vbo.bind()
+            raw = data.tobytes()
+            self._preview_faces_vbo.allocate(raw, len(raw))
+            self._preview_faces_vbo.release()
+            self._preview_faces_vao.bind()
+            for (r, g, b), start, count in runs:
+                self._set_color(r, g, b, 1.0)
+                self._set_back_face_color()
+                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+            self._preview_faces_vao.release()
+        if by_texture:
+            self._program.setUniformValue(self._loc_use_tex, 1)
+            self._preview_tex_vao.bind()
+            for key, buf in by_texture.items():
+                path, shade = key if isinstance(key, tuple) else (key, 1.0)
+                tex_obj = self._get_texture(path)
+                if tex_obj is None:
+                    continue
+                raw = buf.tobytes()
+                self._preview_tex_vbo.bind()
+                self._preview_tex_vbo.allocate(raw, len(raw))
+                self._preview_tex_vbo.release()
+                self._program.setUniformValue1f(self._loc_shade, float(shade))
+                tex_obj.bind(0)
+                self._gl.glDrawArrays(GL_TRIANGLES, 0, len(buf) // 5)
+                tex_obj.release(0)
+            self._preview_tex_vao.release()
+            self._program.setUniformValue1f(self._loc_shade, 1.0)
+            self._program.setUniformValue(self._loc_use_tex, 0)
         self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
     def _draw_rubber_band(self) -> None:
@@ -4789,8 +4820,18 @@ class Viewport(QOpenGLWidget):
                 if face_budget <= 0:
                     break
                 face_budget -= 1
+                # An instance's uvw maps live in the prototype's LOCAL frame;
+                # re-fit them through the transform so the preview texture
+                # sits on the world-space loops.
+                if not f.attrs:
+                    fattrs = None
+                elif xf is not None:
+                    fattrs = transformed_attrs(f.attrs, xf)
+                else:
+                    fattrs = copy.deepcopy(f.attrs)
                 group_faces.append(([W(v) for v in f.vertices],
-                                    [[W(v) for v in h] for h in f.holes]))
+                                    [[W(v) for v in h] for h in f.holes],
+                                    fattrs))
         pts = [p for loop, holes, _a in face_data for p in loop]
         pts += [p for _, holes, _a in face_data for h in holes for p in h]
         pts += [p for a, b, _, _ in edge_data for p in (a, b)]

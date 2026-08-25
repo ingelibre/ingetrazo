@@ -185,6 +185,35 @@ def test_group_paste_previews_solid_faces():
     assert len(faces) == 1
     xs = sorted(round(v.x()) for v in faces[0].vertices)
     assert xs == [10, 10, 12, 12]             # the square, at the cursor
+    # The preview carries the face's look (the "no texture until pasted"
+    # report): its attrs travel, colour included.
+    assert faces[0].attrs and faces[0].attrs.get("color") is not None
+
+
+def test_group_paste_preview_textures_follow_the_cursor():
+    from core.group import Group
+    from core.mesh import Mesh
+    scene = Scene()
+    vp = _VP(scene, History(scene), None)
+    m = Mesh()
+    f = m.add_face([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
+    f.attrs["texture"] = {"path": "/tmp/tex.png", "sw": 1.0, "sh": 1.0,
+                          "uvw": [1, 0, 0, 0, 0, 1, 0, 0]}
+    g = Group(m)
+    scene.groups.append(g)
+    scene.selection.add(g)
+    assert _copy(vp)
+
+    tool = PasteTool()
+    tool.on_activate(vp)
+    ctx = ToolContext(viewport=vp, world=V(5, 0, 0),
+                      screen=QPointF(0, 0), modifiers=Qt.NoModifier, snap=None)
+    tool.on_hover(ctx)
+    prev = tool.preview_faces()[0]
+    tex = prev.attrs.get("texture")
+    assert tex is not None and tex["path"] == "/tmp/tex.png"
+    # uvw re-anchored to the cursor offset: the image rides WITH the drag.
+    assert tex["uvw"][3] == -5.0 and tex["uvw"][7] == 0.0
 
 
 def test_clipboard_survives_deleting_the_original():

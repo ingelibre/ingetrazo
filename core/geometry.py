@@ -45,6 +45,9 @@ class Face:
 
     vertices: list[QVector3D] = field(default_factory=list)
     holes: list[list[QVector3D]] = field(default_factory=list)
+    #: Optional display attrs ("color", "texture") — tool PREVIEWS carry them
+    #: so a paste drags the real look; the topology mesh has its own Face.
+    attrs: dict | None = None
 
     def _newell(self) -> QVector3D:
         """Raw (un-normalized) Newell vector of the outer loop. Its length is
