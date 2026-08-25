@@ -17,7 +17,6 @@ with its sister project [IngePresupuestos](https://ingepresupuestos.com).
 ![IngeTrazo viewport](docs/images/viewport.png)
 
 > *The name is the thesis: **trazar** — to trace, as you would by hand.*
-> **Trazá. Metrá. Presupuestá.**
 
 ## Status
 
@@ -205,5 +204,3 @@ de cualquier época (clásico 2013–2020 y actual 2021+), gracias a
 [OpenSKP](https://github.com/iamahsanmehmood/openskp) — sin Wine ni DLLs. En
 desarrollo temprano, respaldado por ~870 tests. Software libre GPL-3.0, hecho
 en Perú. Más en [docs/](docs/).
-
-*Trazá. Metrá. Presupuestá.*
