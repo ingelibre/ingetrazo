@@ -141,7 +141,8 @@ def test_provider_selector_overrides_autodetect(monkeypatch):
         dlg._provider.setCurrentIndex(idx)           # explicit wins
         assert dlg._effective_provider() == "groq"
         assert "console.groq.com" in dlg._key_link.text()
-        assert dlg._model.placeholderText() == ai.DEFAULT_MODELS["groq"]
+        assert (dlg._model.lineEdit().placeholderText()
+                == ai.DEFAULT_MODELS["groq"])
 
         # Probar conexión reports through the same reply channel.
         monkeypatch.setattr(ai, "probar_conexion",
@@ -154,6 +155,49 @@ def test_provider_selector_overrides_autodetect(monkeypatch):
                 break
         assert dlg._probar.isEnabled()
         assert "Connection OK" in dlg._chat.toPlainText()
+
+        # "Models" fills the combo with what the key can actually use.
+        monkeypatch.setattr(ai, "list_models",
+                            lambda *a, **k: ["openai/gpt-oss-120b",
+                                             "qwen/qwen3-32b"])
+        dlg._model.setEditText("")
+        dlg._on_modelos()
+        for _ in range(2000):
+            app.processEvents()
+            if dlg._modelos.isEnabled():
+                break
+        assert dlg._modelos.isEnabled()
+        assert [dlg._model.itemText(i) for i in range(dlg._model.count())] \
+            == ["openai/gpt-oss-120b", "qwen/qwen3-32b"]
+        dlg._model.hidePopup()
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_list_models_filters_and_strips(monkeypatch):
+    # Groq retired llama-3.3-70b-versatile (2026-06-17, free tiers) — the
+    # picker offers the LIVE list, minus non-chat models, "models/" bare.
+    calls = {}
+
+    def fake_urlopen(url, headers, payload=None, timeout=180.0):
+        calls["url"], calls["headers"] = url, headers
+        return json.dumps({"data": [
+            {"id": "models/gemini-2.5-flash"},
+            {"id": "openai/gpt-oss-120b"},
+            {"id": "whisper-large-v3"},
+            {"id": "playai-tts"},
+            {"id": "meta-llama/llama-guard-4-12b"},
+            {"id": "text-embedding-004"},
+        ]}).encode()
+
+    monkeypatch.setattr(ai, "_urlopen", fake_urlopen)
+    models = ai.list_models("groq", "gsk_k")
+    assert models == ["gemini-2.5-flash", "openai/gpt-oss-120b"]
+    assert calls["url"] == "https://api.groq.com/openai/v1/models"
+    assert calls["headers"]["Authorization"] == "Bearer gsk_k"
+    assert calls["headers"]["User-Agent"].startswith("IngeTrazo/")
+
+    ai.list_models("anthropic", "sk-ant-k")
+    assert "api.anthropic.com/v1/models" in calls["url"]
+    assert calls["headers"]["x-api-key"] == "sk-ant-k"

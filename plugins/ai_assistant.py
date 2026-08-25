@@ -95,9 +95,17 @@ class AsistenteDialog(QDialog):
             self._provider.addItem(ai.PROVIDER_INFO[prov][0], prov)
         self._provider.currentIndexChanged.connect(self._on_key_changed)
         row0.addWidget(self._provider, 1)
-        self._model = QLineEdit()
-        self._model.setPlaceholderText(tr("model (default per provider)"))
+        self._model = QComboBox()
+        self._model.setEditable(True)
+        self._model.setInsertPolicy(QComboBox.NoInsert)
+        self._model.lineEdit().setPlaceholderText(
+            tr("model (default per provider)"))
         row0.addWidget(self._model, 1)
+        self._modelos = QPushButton(tr("Models"))
+        self._modelos.setToolTip(
+            tr("List the models your key can use"))
+        self._modelos.clicked.connect(self._on_modelos)
+        row0.addWidget(self._modelos)
         self._probar = QPushButton(tr("Test connection"))
         self._probar.clicked.connect(self._on_probar)
         row0.addWidget(self._probar)
@@ -158,7 +166,7 @@ class AsistenteDialog(QDialog):
     def _load_settings(self) -> None:
         st = self._settings()
         self._key.setText(str(st.value("ia/api_key", "") or ""))
-        self._model.setText(str(st.value("ia/modelo", "") or ""))
+        self._model.setEditText(str(st.value("ia/modelo", "") or ""))
         self._ollama.setText(str(st.value("ia/ollama_url",
                                           "http://localhost:11434") or ""))
         self._shots.setChecked(str(st.value("ia/capturas", "1")) != "0")
@@ -171,7 +179,7 @@ class AsistenteDialog(QDialog):
     def _save_settings(self) -> None:
         st = self._settings()
         st.setValue("ia/api_key", self._key.text())
-        st.setValue("ia/modelo", self._model.text().strip())
+        st.setValue("ia/modelo", self._model.currentText().strip())
         st.setValue("ia/ollama_url", self._ollama.text().strip())
         st.setValue("ia/capturas", "1" if self._shots.isChecked() else "0")
         st.setValue("ia/proveedor", self._provider.currentData())
@@ -193,14 +201,36 @@ class AsistenteDialog(QDialog):
             self._key_link.setText(tr(
                 "{name} — get your key at <a href='{url}'>{url}</a>",
                 name=label, url=url))
-        self._model.setPlaceholderText(ai.DEFAULT_MODELS[provider])
+        self._model.lineEdit().setPlaceholderText(
+            ai.DEFAULT_MODELS[provider])
         self._ollama.setVisible(provider == "ollama")
 
     def _config(self) -> tuple[str, str, str, str]:
         key = self._key.text().strip()
         provider = self._effective_provider()
-        model = self._model.text().strip() or ai.DEFAULT_MODELS[provider]
+        model = (self._model.currentText().strip()
+                 or ai.DEFAULT_MODELS[provider])
         return provider, model, key, self._ollama.text().strip()
+
+    def _on_modelos(self) -> None:
+        if self._busy:
+            return
+        self._save_settings()
+        provider, _model, key, ollama = self._config()
+        self._append(tr("Fetching the model list from {name}…",
+                        name=ai.PROVIDER_INFO[provider][0]), "#808080")
+        self._modelos.setEnabled(False)
+
+        def worker() -> None:
+            try:
+                models = ai.list_models(provider, key, ollama)
+                self._reply.emit({"modelos": True, "ok": True,
+                                  "models": models})
+            except Exception as exc:  # noqa: BLE001 — shown in the chat
+                self._reply.emit({"modelos": True, "ok": False,
+                                  "msg": str(exc)})
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_probar(self) -> None:
         if self._busy:
@@ -250,6 +280,22 @@ class AsistenteDialog(QDialog):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_reply(self, msg: dict) -> None:
+        if msg.get("modelos"):
+            self._modelos.setEnabled(True)
+            if msg.get("ok"):
+                models = msg.get("models") or []
+                current = self._model.currentText()
+                self._model.clear()
+                self._model.addItems(models)
+                self._model.setEditText(current)
+                self._append(tr(
+                    "{n} models available to your key — pick one from "
+                    "the list.", n=len(models)), "#2f855a")
+                self._model.showPopup()
+            else:
+                self._append(tr("Could not list models: {err}",
+                                err=msg.get("msg")), "#c53030")
+            return
         if msg.get("probar"):
             self._probar.setEnabled(True)
             if msg.get("ok"):
@@ -258,6 +304,10 @@ class AsistenteDialog(QDialog):
             else:
                 self._append(tr("Connection failed: {err}",
                                 err=msg.get("msg")), "#c53030")
+                if "model_not_found" in str(msg.get("msg")):
+                    self._append(tr(
+                        'That model no longer exists for your key — press '
+                        '"Models" to list the available ones.'), "#c53030")
             return
         if not msg.get("ok"):
             self._append(tr("Error: {err}", err=msg.get("error")), "#c53030")

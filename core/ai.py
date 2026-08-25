@@ -117,8 +117,11 @@ _OPENAI_BASES = {
     "deepseek": "https://api.deepseek.com/v1",
 }
 
+#: Providers ROTATE their catalogs: Groq retired llama-3.3-70b-versatile
+#: for free/dev tiers on 2026-06-17 (HTTP 404 model_not_found) and points
+#: to openai/gpt-oss-120b. list_models() exists so the UI never guesses.
 DEFAULT_MODELS = {
-    "groq": "llama-3.3-70b-versatile",
+    "groq": "openai/gpt-oss-120b",
     "anthropic": "claude-sonnet-5",
     "openai": "gpt-4o",
     "gemini": "gemini-2.5-flash",
@@ -208,18 +211,15 @@ def parse_reply(provider: str, raw: bytes) -> str:
     return choices[0].get("message", {}).get("content", "") or ""
 
 
-def chat(provider: str, model: str, api_key: str, system: str,
-         messages: list, ollama_url: str = "http://localhost:11434",
-         timeout: float = 180.0) -> str:
-    """One blocking chat turn. Raises with a readable message on failure —
-    callers run this in a worker thread, never on the UI thread."""
-    url, headers, payload = build_request(
-        provider, model, api_key, system, messages, ollama_url)
+def _urlopen(url: str, headers: dict, payload: bytes | None = None,
+             timeout: float = 180.0) -> bytes:
+    """One HTTP round trip with the readable error shaping every caller
+    wants (the raw body is the useful part of a provider error)."""
     req = urllib.request.Request(url, data=payload, headers=headers,
-                                 method="POST")
+                                 method="POST" if payload else "GET")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return parse_reply(provider, resp.read())
+            return resp.read()
     except urllib.error.HTTPError as exc:
         detail = ""
         try:
@@ -229,6 +229,50 @@ def chat(provider: str, model: str, api_key: str, system: str,
         raise RuntimeError(f"HTTP {exc.code}: {detail or exc.reason}")
     except urllib.error.URLError as exc:
         raise RuntimeError(f"sin conexión: {exc.reason}")
+
+
+def chat(provider: str, model: str, api_key: str, system: str,
+         messages: list, ollama_url: str = "http://localhost:11434",
+         timeout: float = 180.0) -> str:
+    """One blocking chat turn. Raises with a readable message on failure —
+    callers run this in a worker thread, never on the UI thread."""
+    url, headers, payload = build_request(
+        provider, model, api_key, system, messages, ollama_url)
+    return parse_reply(provider, _urlopen(url, headers, payload, timeout))
+
+
+#: Substrings of model ids that are not chat models (speech, safety,
+#: embeddings, image/video generation) — hidden from the model picker.
+_NON_CHAT = ("whisper", "tts", "embed", "guard", "moderation", "imagen",
+             "veo", "aqa", "audio", "transcribe", "image", "dall-e")
+
+
+def list_models(provider: str, api_key: str,
+                ollama_url: str = "http://localhost:11434",
+                timeout: float = 20.0) -> list[str]:
+    """The chat-capable model ids the key can ACTUALLY use, sorted.
+
+    Every provider exposes a models endpoint (Anthropic native, the rest
+    OpenAI-compatible); offering the live list beats hardcoding names that
+    rot when catalogs rotate. Run it on a worker thread."""
+    if provider == "anthropic":
+        url = "https://api.anthropic.com/v1/models?limit=100"
+        headers = {"User-Agent": USER_AGENT, "x-api-key": api_key,
+                   "anthropic-version": "2023-06-01"}
+    else:
+        base = (ollama_url.rstrip("/") + "/v1" if provider == "ollama"
+                else _OPENAI_BASES[provider])
+        url = f"{base}/models"
+        headers = {"User-Agent": USER_AGENT}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+    data = json.loads(_urlopen(url, headers, timeout=timeout))
+    ids = [str(m.get("id", "")) for m in data.get("data", [])]
+    # Gemini's OpenAI-compat endpoint prefixes ids with "models/"; chat
+    # accepts the bare name (it's what DEFAULT_MODELS already uses).
+    ids = [i.removeprefix("models/") for i in ids]
+    return sorted(i for i in ids
+                  if i and not any(t in i.lower() for t in _NON_CHAT))
 
 
 #: UI metadata: (label, where to get the key). Mirrors IngePresupuestos.
