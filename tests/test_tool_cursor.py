@@ -31,6 +31,10 @@ def test_tool_cursor_builds_bitmap_with_hotspot():
     orb = tool_cursor("orbit")                 # wheel-drag shows it (SketchUp)
     assert orb is not None and (orb.hotSpot().x(), orb.hotSpot().y()) == (16, 16)
     assert tool_cursor("pan") is not None
+    zoom = tool_cursor("zoom")                 # Z shows the magnifier, not a cross
+    assert zoom is not None
+    assert (zoom.hotSpot().x(), zoom.hotSpot().y()) == (14, 14)  # lens centre
+    assert tool_cursor("zoom_window") is not None
 
 
 def test_activating_tools_swaps_the_viewport_cursor():

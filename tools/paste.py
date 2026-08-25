@@ -9,17 +9,38 @@ draw), and a click stamps them into the scene ONCE and returns to Select
 """
 from __future__ import annotations
 
+import math
+
 from PySide6.QtGui import QVector3D
 
 from core.geometry import Face as PreviewFace
 from core.group import copy_group, translated_attrs
+from core.triangulate import plane_axes
 
 
-def _preview_attrs(attrs, off):
-    """Attrs for a preview face at the cursor offset: a positioned texture's
-    world-anchored uvw map follows the drag (else it would stay behind)."""
+def _preview_attrs(attrs, off, face):
+    """Attrs for a preview face at the cursor offset. A POSITIONED texture's
+    world-anchored uvw map is shifted to follow the drag. A PLANAR texture
+    (no uvw — hand-painted faces, billboard figures) would be re-projected
+    at every cursor position and the image SWIMS through the model; the
+    renderer's planar projection is baked into a uvw here (same axes, rot,
+    sw/sh) so the image rides with the drag looking exactly as it did at
+    the original spot."""
     if not attrs:
         return None
+    t = attrs.get("texture")
+    if t and t.get("path") and not t.get("uvw"):
+        u, v = plane_axes(face.normal())
+        rot = float(t.get("rot", 0.0))
+        if rot:
+            a = math.radians(rot)
+            ca, sa = math.cos(a), math.sin(a)
+            u, v = (u * ca + v * sa, v * ca - u * sa)
+        sw = t.get("sw", 1.0) or 1.0
+        sh = t.get("sh", 1.0) or 1.0
+        uvw = [u.x() / sw, u.y() / sw, u.z() / sw, 0.0,
+               v.x() / sh, v.y() / sh, v.z() / sh, 0.0]
+        attrs = {**attrs, "texture": {**t, "uvw": uvw}}
     return translated_attrs(attrs, off)
 from core.history import (AddEdgeCommand, AddFaceCommand, CompoundCommand,
                           InsertGroupCommand)
@@ -122,19 +143,16 @@ class PasteTool(Tool):
         if self._clip is None:
             return []
         off = self._offset
-        faces = [
-            PreviewFace([p + off for p in loop],
-                        [[p + off for p in h] for h in holes],
-                        attrs=_preview_attrs(rest[0] if rest else None, off))
-            for loop, holes, *rest in self._clip["faces"]
-        ]
+        faces = []
         # Copied groups preview SOLID too — the model (colours AND textures)
         # follows the cursor, not just its skeleton (huge groups are capped
         # at copy time and keep the wireframe for the remainder).
-        faces += [
-            PreviewFace([p + off for p in loop],
-                        [[p + off for p in h] for h in holes],
-                        attrs=_preview_attrs(attrs, off))
-            for loop, holes, attrs in self._clip.get("group_faces", ())
-        ]
+        entries = [(loop, holes, rest[0] if rest else None)
+                   for loop, holes, *rest in self._clip["faces"]]
+        entries += list(self._clip.get("group_faces", ()))
+        for loop, holes, attrs in entries:
+            face = PreviewFace([p + off for p in loop],
+                               [[p + off for p in h] for h in holes])
+            face.attrs = _preview_attrs(attrs, off, face)
+            faces.append(face)
         return faces

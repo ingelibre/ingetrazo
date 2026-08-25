@@ -216,6 +216,41 @@ def test_group_paste_preview_textures_follow_the_cursor():
     assert tex["uvw"][3] == -5.0 and tex["uvw"][7] == 0.0
 
 
+def test_planar_texture_preview_rides_with_the_drag():
+    # A texture with NO uvw (hand-painted, the billboard figure) is planar-
+    # projected from world position, so the image used to SWIM through the
+    # preview as the cursor moved. The preview must bake the projection into
+    # an anchored uvw: evaluating it at the OFFSET vertices reproduces the
+    # texture exactly as it looked at the original spot.
+    from core.group import Group
+    from core.mesh import Mesh
+    from PySide6.QtGui import QVector3D as Q
+    scene = Scene()
+    vp = _VP(scene, History(scene), None)
+    m = Mesh()
+    f = m.add_face([V(1, 1), V(3, 1), V(3, 3), V(1, 3)])
+    f.attrs["texture"] = {"path": "/tmp/tex.png", "sw": 2.0, "sh": 2.0}
+    g = Group(m)
+    scene.groups.append(g)
+    scene.selection.add(g)
+    assert _copy(vp)
+
+    tool = PasteTool()
+    tool.on_activate(vp)
+    off = Q(7, 0, 0)
+    ctx = ToolContext(viewport=vp, world=V(1, 1) + off,   # ref corner + off
+                      screen=QPointF(0, 0), modifiers=Qt.NoModifier, snap=None)
+    tool.on_hover(ctx)
+    prev = tool.preview_faces()[0]
+    uvw = prev.attrs["texture"]["uvw"]
+    gu = Q(uvw[0], uvw[1], uvw[2])
+    for orig in f.vertices:
+        moved = Q(orig) + off
+        u_prev = Q.dotProduct(gu, moved) + uvw[3]
+        u_orig = Q.dotProduct(gu, Q(orig))     # the renderer's planar value
+        assert abs(u_prev - u_orig) < 1e-6     # identical look, no swimming
+
+
 def test_clipboard_survives_deleting_the_original():
     scene = Scene()
     vp = _VP(scene, History(scene), None)

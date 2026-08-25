@@ -673,6 +673,8 @@ _CURSOR_HOTSPOTS = {
     "protractor": (24, 24),         # the protractor's vertex
     "orbit": (24, 24),              # camera navigation (wheel-drag / modes)
     "pan": (24, 24),
+    "zoom": (21, 21),               # the magnifier's lens centre
+    "zoom_window": (21, 22),
 }
 
 

@@ -4769,14 +4769,17 @@ class Viewport(QOpenGLWidget):
             self.unsetCursor()
 
     def _apply_nav_cursor(self) -> None:
-        """The pointer for a camera nav mode: the orbit / pan icon."""
+        """The pointer for a camera nav mode: orbit / pan / the magnifier
+        (SketchUp shows each navigation tool's own icon)."""
         from views.icons import tool_cursor
-        if self.nav_mode in ("orbit", "pan"):
+        if self.nav_mode in ("orbit", "pan", "zoom", "zoom_window"):
             cur = tool_cursor(self.nav_mode)
             if cur is not None:
                 self.setCursor(cur)
                 return
-            self.setCursor(Qt.OpenHandCursor)
+            self.setCursor(Qt.CrossCursor
+                           if self.nav_mode in ("zoom", "zoom_window")
+                           else Qt.OpenHandCursor)
 
     # ---- Copy / paste -------------------------------------------------------
     def copy_selection(self) -> bool:
@@ -4896,10 +4899,8 @@ class Viewport(QOpenGLWidget):
         self._hover_entity = None
         self.last_snap = None
         self.nav_mode = mode
-        if mode in ("zoom", "zoom_window"):
-            self.setCursor(Qt.CrossCursor)
-        elif mode is not None:
-            self._apply_nav_cursor()      # the orbit / pan icon (SketchUp)
+        if mode is not None:
+            self._apply_nav_cursor()      # orbit / pan / magnifier icons
         else:
             self.unsetCursor()
         self.update()
