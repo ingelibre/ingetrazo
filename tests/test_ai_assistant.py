@@ -221,3 +221,41 @@ def test_chat_colors_follow_theme():
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_each_provider_remembers_its_own_key_and_model(monkeypatch, tmp_path):
+    # Pasting the Gemini key must not erase the Groq one: switching
+    # providers when tokens run out has to be two clicks (user report).
+    from PySide6.QtCore import QSettings
+    from plugins.ai_assistant import AsistenteDialog
+    from views.main_window import MainWindow
+    ini = str(tmp_path / "cfg.ini")
+    monkeypatch.setattr(
+        AsistenteDialog, "_settings",
+        lambda self: QSettings(ini, QSettings.Format.IniFormat))
+    win = MainWindow()
+    try:
+        dlg = AsistenteDialog(win.viewport, parent=win)
+        dlg._provider.setCurrentIndex(dlg._provider.findData("groq"))
+        dlg._key.setText("gsk_AAA")
+        dlg._model.setEditText("openai/gpt-oss-120b")
+
+        dlg._provider.setCurrentIndex(dlg._provider.findData("gemini"))
+        assert dlg._key.text() == ""                 # gemini slot is empty
+        dlg._key.setText("AIzaBBB")
+
+        dlg._provider.setCurrentIndex(dlg._provider.findData("groq"))
+        assert dlg._key.text() == "gsk_AAA"          # restored
+        assert dlg._model.currentText() == "openai/gpt-oss-120b"
+
+        dlg._provider.setCurrentIndex(dlg._provider.findData("gemini"))
+        assert dlg._key.text() == "AIzaBBB"          # gemini kept its own
+
+        # A fresh dialog on the same settings restores the last provider.
+        dlg._save_settings()
+        dlg2 = AsistenteDialog(win.viewport, parent=win)
+        assert dlg2._provider.currentData() == "gemini"
+        assert dlg2._key.text() == "AIzaBBB"
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

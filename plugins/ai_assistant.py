@@ -93,7 +93,7 @@ class AsistenteDialog(QDialog):
         self._provider.addItem(tr("Auto (by key prefix)"), "auto")
         for prov in ai.PROVIDERS:
             self._provider.addItem(ai.PROVIDER_INFO[prov][0], prov)
-        self._provider.currentIndexChanged.connect(self._on_key_changed)
+        self._provider.currentIndexChanged.connect(self._on_provider_changed)
         row0.addWidget(self._provider, 1)
         self._model = QComboBox()
         self._model.setEditable(True)
@@ -193,6 +193,37 @@ class AsistenteDialog(QDialog):
         st.setValue("ia/ollama_url", self._ollama.text().strip())
         st.setValue("ia/capturas", "1" if self._shots.isChecked() else "0")
         st.setValue("ia/proveedor", self._provider.currentData())
+        self._stash_credentials(st, self._provider.currentData())
+
+    def _stash_credentials(self, st: QSettings, slot) -> None:
+        """Remember the current key/model under the provider they belong
+        to (detected by prefix when the combo is on Auto). Empty fields
+        never clobber a stored value."""
+        key = self._key.text().strip()
+        provider = (slot if slot not in (None, "auto")
+                    else ai.detect_provider(key))
+        if provider == "ollama":
+            return
+        if key:
+            st.setValue(f"ia/claves/{provider}", self._key.text())
+        model = self._model.currentText().strip()
+        if model:
+            st.setValue(f"ia/modelos/{provider}", model)
+
+    def _on_provider_changed(self) -> None:
+        """EACH provider keeps its own key and model: pasting the Gemini
+        key must not erase the Groq one (user report) — running out of
+        tokens on one plan and switching has to be two clicks."""
+        st = self._settings()
+        self._stash_credentials(st, getattr(self, "_prov_slot", None))
+        cur = self._provider.currentData()
+        self._prov_slot = cur
+        if cur and cur != "auto":
+            self._key.setText(str(st.value(f"ia/claves/{cur}", "") or ""))
+            self._model.clear()      # the fetched model list is per provider
+            self._model.setEditText(
+                str(st.value(f"ia/modelos/{cur}", "") or ""))
+        self._on_key_changed()
 
     def _effective_provider(self) -> str:
         chosen = self._provider.currentData()
