@@ -15,11 +15,15 @@ if QApplication.instance() is None:
 
 def test_tool_cursor_builds_bitmap_with_hotspot():
     from views.icons import tool_cursor
-    cur = tool_cursor("line")
+    cur = tool_cursor("line")                  # pencil, hotspot at the TIP
     assert cur is not None
     assert not cur.pixmap().isNull()
     hs = cur.hotSpot()
-    assert (hs.x(), hs.y()) == (4, 4)
+    assert (hs.x(), hs.y()) == (4, 28)         # (6,42) in 48-space → ×32/48
+    ers = tool_cursor("eraser").hotSpot()
+    assert (ers.x(), ers.y()) == (9, 19)       # the rubber's working corner
+    mv = tool_cursor("move").hotSpot()
+    assert (mv.x(), mv.y()) == (16, 16)        # centre of the cross
     assert tool_cursor("select") is None       # Select keeps the arrow
     assert tool_cursor("no_such_tool") is None
     assert tool_cursor(None) is None

@@ -641,14 +641,62 @@ def tool_icon(key: str) -> QIcon:
 
 
 # ---- Tool cursors (SketchUp-style) ------------------------------------------
-# The mouse pointer becomes the active tool: a small aim cross sits at the
-# hotspot and the tool's icon rides to its bottom-right, haloed so it reads
-# over any scene background. "select" keeps the standard arrow (SketchUp).
+# The mouse pointer BECOMES the active tool — no crosshair. Like SketchUp,
+# each cursor's hotspot is the tool's natural action point: the pencil TIP
+# for the drawing tools (whose cursor is a pencil with the shape as a small
+# badge), the eraser's working corner, the paint bucket's spout, the centre
+# of the move cross / protractor. Haloed so it reads over any background.
+# "select" keeps the standard arrow (SketchUp's Select is the plain pointer).
 
-_CURSOR_SIZE = 40   # logical canvas
-_CURSOR_ICON = 24   # logical icon size, drawn at (12, 12)
-_CURSOR_HOT = 4     # hotspot (the aim cross centre)
+_CURSOR_SIZE = 32   # logical cursor canvas (48-space icons scale onto it)
 _cursor_cache: dict = {}
+
+# Drawing tools: pencil cursor + a mini badge of the shape at bottom-right
+# (None = bare pencil, SketchUp's Line). Hotspot = the pencil tip.
+_PENCIL_TOOLS = {
+    "line": None, "rectangle": "rectangle", "rotated_rect": "rotated_rect",
+    "circle": "circle", "polygon": "polygon", "arc": "arc", "arc3": "arc3",
+    "center_arc": "center_arc", "geopath": "geopath",
+}
+_PENCIL_HOT = (6.0, 42.0)          # the tip, in 48-space
+
+# Other tools: the icon itself is the cursor; hotspot = its action point,
+# in the icon's 48-space (see each draw function's geometry).
+_CURSOR_HOTSPOTS = {
+    "move": (24, 24), "rotate": (24, 24), "scale": (24, 24),
+    "pushpull": (24, 24), "offset": (24, 24), "followme": (24, 24),
+    "dimension": (12, 30),          # left end of the dimension line
+    "text": (24, 24), "text3d": (24, 24),
+    "paint": (13, 35),              # the spout / falling drop
+    "eraser": (13, 28),             # the rubber's working corner
+    "tape": (38, 28),               # the tape's end hook
+    "protractor": (24, 24),         # the protractor's vertex
+}
+
+
+def _pencil(p, ink) -> None:
+    """SketchUp-style pencil pointing up-right, tip at (6, 42) in 48-space."""
+    p.save()
+    p.translate(6.0, 42.0)
+    p.rotate(-45.0)                 # +x runs up-right along the shaft
+    pen = QPen(ink, 3.0)
+    pen.setJoinStyle(Qt.RoundJoin)
+    pen.setCapStyle(Qt.RoundCap)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    # Sharpened tip.
+    p.drawPolygon(QPolygonF([QPointF(0.0, 0.0), QPointF(10.0, -5.5),
+                             QPointF(10.0, 5.5)]))
+    # Shaft with a flat butt.
+    p.drawLine(QPointF(10.0, -5.5), QPointF(40.0, -5.5))
+    p.drawLine(QPointF(10.0, 5.5), QPointF(40.0, 5.5))
+    p.drawLine(QPointF(40.0, -5.5), QPointF(40.0, 5.5))
+    # Accent lead at the very tip.
+    p.setPen(Qt.NoPen)
+    p.setBrush(QBrush(_accent()))
+    p.drawPolygon(QPolygonF([QPointF(-0.6, 0.0), QPointF(4.2, -2.4),
+                             QPointF(4.2, 2.4)]))
+    p.restore()
 
 
 def _silhouette(src: QPixmap, color: QColor) -> QPixmap:
@@ -665,10 +713,14 @@ def _silhouette(src: QPixmap, color: QColor) -> QPixmap:
 
 
 def tool_cursor(key: str | None) -> QCursor | None:
-    """A cursor showing the tool's icon, or ``None`` to keep the standard
-    arrow (unknown keys, and Select — SketchUp uses the plain pointer)."""
-    draw = _DRAW.get(key) if key else None
-    if draw is None or key == "select":
+    """A cursor that IS the tool (SketchUp-style), or ``None`` to keep the
+    standard arrow (unknown keys, and Select — SketchUp's plain pointer)."""
+    if not key or key == "select":
+        return None
+    pencil = key in _PENCIL_TOOLS
+    hot48 = _PENCIL_HOT if pencil else _CURSOR_HOTSPOTS.get(key)
+    draw = _DRAW.get(key)
+    if hot48 is None or (draw is None and not pencil):
         return None
     ink = _ink()
     app = QApplication.instance()
@@ -679,26 +731,33 @@ def tool_cursor(key: str | None) -> QCursor | None:
     if cached is not None:
         return cached
 
+    scale = _CURSOR_SIZE / float(_PX)
     art = QPixmap(int(_CURSOR_SIZE * dpr), int(_CURSOR_SIZE * dpr))
     art.setDevicePixelRatio(dpr)
     art.fill(Qt.transparent)
     p = QPainter(art)
     p.setRenderHint(QPainter.Antialiasing, True)
-    pen = QPen(ink, 1.6)
-    pen.setCapStyle(Qt.RoundCap)
-    p.setPen(pen)
-    h = float(_CURSOR_HOT)
-    p.drawLine(QPointF(0.0, h), QPointF(h * 2 + 1, h))   # aim cross
-    p.drawLine(QPointF(h, 0.0), QPointF(h, h * 2 + 1))
-    p.save()
-    p.translate(12.0, 12.0)
-    p.scale(_CURSOR_ICON / float(_PX), _CURSOR_ICON / float(_PX))
+    p.scale(scale, scale)
     ipen = QPen(ink, 3.0)
     ipen.setJoinStyle(Qt.RoundJoin)
     ipen.setCapStyle(Qt.RoundCap)
     p.setPen(ipen)
-    draw(p, ink)
-    p.restore()
+    if pencil:
+        _pencil(p, ink)
+        badge = _DRAW.get(_PENCIL_TOOLS[key] or "")
+        if badge is not None:
+            # Mini badge of the shape at the bottom-right (SketchUp).
+            p.save()
+            p.translate(28.0, 28.0)
+            p.scale(20.0 / _PX, 20.0 / _PX)
+            bpen = QPen(ink, 4.4)     # thicker: stays readable that small
+            bpen.setJoinStyle(Qt.RoundJoin)
+            bpen.setCapStyle(Qt.RoundCap)
+            p.setPen(bpen)
+            badge(p, ink)
+            p.restore()
+    else:
+        draw(p, ink)
     p.end()
 
     # Halo: a 1 px light (or dark, on dark themes) outline all around, so the
@@ -717,6 +776,8 @@ def tool_cursor(key: str | None) -> QCursor | None:
     p.drawPixmap(QPointF(0.0, 0.0), art)
     p.end()
 
-    cursor = QCursor(out, _CURSOR_HOT, _CURSOR_HOT)
+    hx = max(0, min(_CURSOR_SIZE - 1, round(hot48[0] * scale)))
+    hy = max(0, min(_CURSOR_SIZE - 1, round(hot48[1] * scale)))
+    cursor = QCursor(out, hx, hy)
     _cursor_cache[cache_key] = cursor
     return cursor
