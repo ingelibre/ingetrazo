@@ -4,10 +4,13 @@
 is saved as .igz (user report: opening a SketchUp file left "Untitled")."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 if QApplication.instance() is None:
     QApplication(sys.argv[:1])

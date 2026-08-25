@@ -34,8 +34,11 @@ datas = [
     ('resources/mime/*.xml',       'resources/mime'),
     ('resources/textures/*.png',   'resources/textures'),
     ('resources/textures/library.json', 'resources/textures'),
-    ('resources/components/*.obj', 'resources/components'),
-    ('resources/components/*.mtl', 'resources/components'),
+    # Starter components are .glb since 0.3.5 (the .obj/.mtl props are gone;
+    # a stale glob here is a HARD PyInstaller error, not a warning).
+    ('resources/components/*.glb', 'resources/components'),
+    ('resources/components/components.json', 'resources/components'),
+    ('resources/components/SOURCES.md', 'resources/components'),
     ('resources/components/*.png', 'resources/components'),
     ('resources/components/thumbs/*.png', 'resources/components/thumbs'),
     ('i18n/*.json',                'i18n'),

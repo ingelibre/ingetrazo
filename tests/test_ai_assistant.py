@@ -5,9 +5,12 @@ in-app agent loop with a scripted fake model."""
 from __future__ import annotations
 
 import json
+import os
 import sys
 
-from PySide6.QtWidgets import QApplication
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 if QApplication.instance() is None:
     QApplication(sys.argv[:1])
