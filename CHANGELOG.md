@@ -4,6 +4,64 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.4] — 2026-08-25
+
+**The dogfooding release: a real modelling session's bug hunt, plus
+SketchUp-parity work.** Everything here came from drawing an actual
+model and comparing, tool by tool, against SketchUp's official
+documentation.
+
+### Added
+- **Display styles** (Camera → Style), SketchUp's Styles scoped to what
+  serves printing: Default, Architectural (textures on white), Shaded
+  (materials as their texture's average colour), Hidden line (the plan
+  style), Monochrome, Wireframe and X-ray — plus Edges/Profiles toggles.
+  Scenes remember their style; `.igz` persists it.
+- **Composer frames pick any style** (LayOut-style viewports): each
+  sheet frame can render in any of the styles above, the model's active
+  style, or the exact vector hidden-line pass.
+- **Copy/paste for groups and components** (Ctrl+C/X/V, context menu):
+  instances paste as siblings of the same prototype; attrs (colours,
+  textures, layers, BIM tags) travel; positioned textures re-anchor to
+  the paste point. Paste previews the SOLID model — colours and
+  textures riding under the cursor — and stamps once, returning to
+  Select (SketchUp).
+- **Protractor rebuilt to SketchUp parity** (official docs): plane
+  inference by hover with axis-coloured disc, arrow-key plane locks,
+  Shift freeze, fixed-size disc with 15° ticks, tick snapping near the
+  disc / 0.1° free farther out, slope input as rise:run (`3:12`), and
+  the guide stays retypeable after creation.
+- **Rotate shows the same protractor**, with tick-snapped live preview,
+  Ctrl = rotate a COPY (groups, instances and loose geometry), a
+  click-drag from the centre to set a custom fold axis, and hot retype
+  after the commit. The Measurements box accepts `3:12` here too.
+- **Tool cursors**: the pointer becomes the active tool — a pencil
+  (with the shape as a badge) for the drawing tools, hotspot at its
+  tip; eraser/bucket/tape/protractor at their action points; orbit,
+  pan and the magnifier during camera navigation.
+
+### Fixed
+- Box selection now takes groups and component instances (window =
+  fully enclosed, crossing = touched), and guides (crossing only).
+- Move/Rotate/Scale transform the WHOLE mixed selection — every group
+  plus loose geometry — as one undo step (only the first group moved).
+- Guides survive perspective (an endpoint behind the camera made the
+  whole guide vanish from render, snap and eraser), and are now
+  selectable/deletable with Select + Delete, right-click, or a
+  crossing box. Guide points feed the snap engine.
+- Esc releases the arrow-key axis lock / reference before cancelling
+  the operation (it never did).
+- Copying painted or textured loose geometry pasted bare; attrs now
+  travel through the clipboard with textures re-anchored.
+- Planar-projected textures (hand-painted, the scale figure) no longer
+  swim through the paste preview as the cursor moves.
+- About dialog: Arequipa, Perú.
+
+### Changed
+- openskp dependency back on upstream (`iamahsanmehmood/openskp`):
+  every IngeTrazo patch is merged there, including the annotations
+  writer (PR #203). CI pins upstream by SHA.
+
 ## [0.3.3] — 2026-08-21
 
 **The complete SketchUp round trip.** IngeTrazo now writes native `.skp`
