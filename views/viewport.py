@@ -1787,6 +1787,7 @@ class Viewport(QOpenGLWidget):
         self._frozen_cache_version = None
         self._preview_groups = set()
         self._preview_offset = QVector3D(0.0, 0.0, 0.0)
+        self._preview_matrix = None
         self._pv_edges_count = 0
         self._pv_vcol_count = 0
         self._pv_tex_runs = []
@@ -1794,6 +1795,13 @@ class Viewport(QOpenGLWidget):
 
     def set_groups_preview_offset(self, delta: QVector3D) -> None:
         self._preview_offset = QVector3D(delta)
+        self._preview_matrix = None
+        self.update()
+
+    def set_groups_preview_matrix(self, m) -> None:
+        """Full-matrix variant (Rotate/Scale previews): the scratch copies
+        draw through ``m`` — same zero-churn frame as the translation."""
+        self._preview_matrix = QMatrix4x4(m)
         self.update()
 
     def _draw_groups_preview(self, mvp) -> None:
@@ -1801,10 +1809,12 @@ class Viewport(QOpenGLWidget):
         current preview offset: one translated MVP, zero array churn."""
         if not getattr(self, "_preview_groups", None):
             return
-        off = getattr(self, "_preview_offset", None)
-        m = QMatrix4x4()
-        if off is not None:
-            m.translate(off)
+        m = getattr(self, "_preview_matrix", None)
+        if m is None:
+            m = QMatrix4x4()
+            off = getattr(self, "_preview_offset", None)
+            if off is not None:
+                m.translate(off)
         self._program.setUniformValue(self._loc_mvp, mvp * m)
         n = getattr(self, "_pv_vcol_count", 0)
         if n:

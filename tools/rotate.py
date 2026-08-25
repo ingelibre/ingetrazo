@@ -79,6 +79,7 @@ class RotateTool(ProtractorBase):
 
     def on_deactivate(self, viewport) -> None:
         self._revert_preview(viewport)
+        self._end_vp_preview(viewport)
         self._reset()
         self._copy = False
         self._last = None
@@ -127,6 +128,15 @@ class RotateTool(ProtractorBase):
             mesh = viewport.scene.mesh
             self._verts = [v for v in (mesh.vertex_at(p) for p in positions)
                            if v is not None]
+            self._vp_preview = False
+            if groups and not self._verts and not positions:
+                # Groups-only rotate: viewport-side preview (see MoveTool) —
+                # the classic-group live rotate walked 190k vertices in
+                # Python and forced a 7 s chunk rebuild EVERY frame.
+                begin = getattr(viewport, "begin_groups_preview", None)
+                if begin is not None:
+                    begin(groups)
+                    self._vp_preview = True
             self._gather_copy_entities(ctx)
             self.start_point = ctx.world
             self._axis_drag_armed = True   # a DRAG from here sets the axis
@@ -208,6 +218,7 @@ class RotateTool(ProtractorBase):
 
     def on_cancel(self, viewport) -> None:
         self._revert_preview(viewport)
+        self._end_vp_preview(viewport)
         self._reset()
         self._last = None
         viewport.update()
@@ -298,6 +309,15 @@ class RotateTool(ProtractorBase):
         if abs(step_deg) < 1e-12:
             return
         m = rotation_matrix(self.start_point, self._axis(), step_deg)
+        if getattr(self, "_vp_preview", False):
+            # Viewport-side preview: only section planes deform live; the
+            # groups draw through the preview matrix, untouched.
+            for sp in self._splanes:
+                sp.point = m.map(sp.point)
+                n2 = m.mapVector(sp.normal)
+                if n2.length() > 1e-12:
+                    sp.normal = n2.normalized()
+            return
         for group in self._groups:
             if getattr(group, "xform", None) is not None:
                 group.xform = m * group.xform   # instance: O(1)
@@ -318,11 +338,23 @@ class RotateTool(ProtractorBase):
     def _apply_preview(self, viewport, target_deg: float) -> None:
         self._rotate_live(viewport, target_deg - self._preview_deg)
         self._preview_deg = target_deg
+        if getattr(self, "_vp_preview", False):
+            viewport.set_groups_preview_matrix(rotation_matrix(
+                self.start_point, self._axis(), target_deg))
 
     def _revert_preview(self, viewport) -> None:
         if abs(self._preview_deg) > 1e-12:
             self._rotate_live(viewport, -self._preview_deg)
             self._preview_deg = 0.0
+        if getattr(self, "_vp_preview", False):
+            from PySide6.QtGui import QMatrix4x4
+            viewport.set_groups_preview_matrix(QMatrix4x4())  # park, keep freeze
+
+    def _end_vp_preview(self, viewport) -> None:
+        end = getattr(viewport, "end_groups_preview", None)
+        if getattr(self, "_vp_preview", False) and end is not None:
+            end()
+        self._vp_preview = False
 
     def _make_builder(self):
         """A closure that builds the commit command for a given angle — kept
@@ -379,6 +411,7 @@ class RotateTool(ProtractorBase):
 
     def _commit(self, viewport, deg: float) -> None:
         self._revert_preview(viewport)
+        self._end_vp_preview(viewport)
         if abs(deg) > 1e-9:
             build = self._make_builder()
             cmd = build(deg)
