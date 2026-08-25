@@ -827,9 +827,13 @@ class Viewport(QOpenGLWidget):
                 if tex is None:
                     continue
                 self._program.setUniformValue1f(self._loc_shade, float(shade))
+                self._program.setUniformValue(
+                    self._loc_hard_cutout,
+                    1 if getattr(tex, "_cutout", False) else 0)
                 tex.bind(0)
                 self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                 tex.release(0)
+            self._program.setUniformValue(self._loc_hard_cutout, 0)
             self._tex_faces_vao.release()
             if mode == "xray":
                 self._program.setUniformValue1f(self._loc_opacity, 1.0)
@@ -861,9 +865,13 @@ class Viewport(QOpenGLWidget):
                     if tex is None:
                         continue
                     self._program.setUniformValue1f(self._loc_shade, float(shade))
+                    self._program.setUniformValue(
+                        self._loc_hard_cutout,
+                        1 if getattr(tex, "_cutout", False) else 0)
                     tex.bind(0)
                     self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                     tex.release(0)
+                self._program.setUniformValue(self._loc_hard_cutout, 0)
                 self._tex_faces_vao.release()
                 self._program.setUniformValue1f(self._loc_shade, 1.0)
                 self._program.setUniformValue(self._loc_use_tex, 0)
@@ -1203,6 +1211,22 @@ class Viewport(QOpenGLWidget):
             tex.setWrapMode(QOpenGLTexture.Repeat)
             tex.setMinificationFilter(QOpenGLTexture.LinearMipMapLinear)
             tex.setMagnificationFilter(QOpenGLTexture.Linear)
+            # Foliage cutouts (low alpha coverage): mip-averaged alpha plus
+            # atlas bleed erase or darken the leaves at distance, and the
+            # Bayer dither turns the rest into ghost speckle. Tag them: the
+            # textured passes sample the top level only and cut hard at 0.5
+            # — crisp SketchUp-style vegetation at every zoom.
+            if img.hasAlphaChannel():
+                small = img.scaled(64, 64).convertToFormat(
+                    QImage.Format_Alpha8)
+                import numpy as _np
+                al = _np.frombuffer(small.constBits(), _np.uint8,
+                                    count=small.height()
+                                    * small.bytesPerLine())
+                cov = float((al > 128).mean()) if len(al) else 1.0
+                if cov < 0.6:
+                    tex.setMinificationFilter(QOpenGLTexture.Linear)
+                    tex._cutout = True
         cache[path] = tex
         return tex
 
@@ -1728,7 +1752,8 @@ class Viewport(QOpenGLWidget):
         # (composition mirrors scene.render_edges()).
         all_loose = array("f")
         for e in self.scene.loose_mesh.edges:
-            if not self.scene.entity_visible(e) or getattr(e, "soft", False):
+            if (not self.scene.entity_visible(e) or getattr(e, "soft", False)
+                    or getattr(e, "hidden", False)):
                 continue  # hidden layer / curve segment (hidden, reads smooth)
             all_loose.extend([
                 e.a.x(), e.a.y(), e.a.z(),
@@ -2336,6 +2361,7 @@ class Viewport(QOpenGLWidget):
         if cached is None or cached[0] != key:
             cached = (key, [e for e in self.scene.loose_mesh.edges
                             if getattr(e, "soft", False)
+                            and not getattr(e, "hidden", False)
                             and self.scene.entity_visible(e)])
             self._soft_edges_cache = cached
         eye = self.camera.eye()
@@ -4315,6 +4341,8 @@ class Viewport(QOpenGLWidget):
             return r
 
         for e in mesh.edges:
+            if getattr(e, "hidden", False):
+                continue                  # invisible: no line, no profile
             if not getattr(e, "soft", False):
                 edges_data.extend([e.a.x(), e.a.y(), e.a.z(),
                                    e.b.x(), e.b.y(), e.b.z()])

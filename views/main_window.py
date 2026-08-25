@@ -719,6 +719,7 @@ class MainWindow(QMainWindow):
         for label, handler in (
             (tr("SketchUp (.skp)…"), self._on_import_skp),
             (tr("COLLADA (.dae)…"), self._on_import_dae),
+            (tr("glTF/GLB (.glb)…"), self._on_import_glb),
             (tr("Wavefront OBJ (.obj)…"), self._on_import_obj),
             (tr("Georeference (KML / GeoJSON)…"), self._on_import_georef),
             (tr("Survey points CSV (UTM)…"), self._on_import_survey_points),
@@ -1669,30 +1670,40 @@ class MainWindow(QMainWindow):
 
     def _on_insert_component(self, key: str) -> None:
         """Insert a bundled starter component as a Group at the origin,
-        selected and ready to Move into place."""
+        selected and ready to Move into place. Components are ``.glb``
+        (the Sketchfab CC-BY set) or ``.obj``."""
         from core.group import Group
         from core.scene import Scene as _Scene
-        from formats import obj as _obj
         self.viewport.end_group_edit()
         from core.paths import app_root
-        path = app_root() / "resources" / "components" / f"{key}.obj"
-        if not path.exists():
-            QMessageBox.warning(self, tr("Insert component"),
-                                tr("Component file missing: {p}", p=str(path)))
-            return
+        base = app_root() / "resources" / "components"
         temp = _Scene()
-        _obj.load_obj(temp, path)
-        mesh = temp.mesh
-        if not mesh.faces and temp.groups:
-            # Big OBJs land as a reference group (formats/obj.py), not in
-            # the loose mesh — take that mesh or we'd insert nothing.
+        glb_path = base / f"{key}.glb"
+        obj_path = base / f"{key}.obj"
+        if glb_path.exists():
+            from formats.glb import load_glb
+            load_glb(temp, glb_path)
             mesh = temp.groups[0].mesh
-        # Low-poly components read as REAL models when facet seams are
-        # soft (SketchUp import smoothing); creases and material
-        # boundaries keep their lines.
-        from formats.fuse import soften_smooth_edges
-        soften_smooth_edges(mesh, cos_threshold=0.55)
-        group = Group(mesh, name=tr(key.capitalize()))
+            name = temp.groups[0].name
+        elif obj_path.exists():
+            from formats import obj as _obj
+            _obj.load_obj(temp, obj_path)
+            mesh = temp.mesh
+            if not mesh.faces and temp.groups:
+                # Big OBJs land as a reference group (formats/obj.py), not
+                # in the loose mesh — take that mesh or we'd insert nothing.
+                mesh = temp.groups[0].mesh
+            # Low-poly components read as REAL models when facet seams are
+            # soft (SketchUp import smoothing).
+            from formats.fuse import soften_smooth_edges
+            soften_smooth_edges(mesh, cos_threshold=0.55)
+            name = tr(key.capitalize())
+        else:
+            QMessageBox.warning(
+                self, tr("Insert component"),
+                tr("Component file missing: {p}", p=str(glb_path)))
+            return
+        group = Group(mesh, name=name)
         self._start_place(group)
 
     def _on_insert_3d_text(self) -> None:
@@ -1881,6 +1892,32 @@ class MainWindow(QMainWindow):
         if not path_str:
             return
         self._import_dae_path(Path(path_str))
+
+    def _on_import_glb(self) -> None:
+        path_str, _ = QFileDialog.getOpenFileName(
+            self, tr("Import glTF/GLB"), "",
+            tr("glTF binary (*.glb *.gltf);;All files (*)"))
+        if not path_str:
+            return
+        self._import_glb_path(Path(path_str))
+
+    def _import_glb_path(self, path: Path) -> None:
+        from formats import glb as glb_format
+        dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))
+        cmd = SnapshotImport(
+            lambda scene: glb_format.load_glb(scene, path, progress=cb))
+        try:
+            self.viewport.history.execute(cmd)
+        except Exception as exc:  # noqa: BLE001
+            dlg.close()
+            QMessageBox.critical(self, tr("Import glTF/GLB failed"), str(exc))
+            return
+        self._prepare_import_display(cmd, cb)
+        dlg.close()
+        self.viewport.update()
+        self._import_name = path.name
+        self._update_title()
+        self.statusBar().showMessage(tr("Imported {name}", name=path.name), 3000)
 
     def _import_dae_path(self, path: Path) -> None:
         dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))

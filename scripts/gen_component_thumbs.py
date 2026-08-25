@@ -35,7 +35,10 @@ vpmod._axes_vertices = lambda spacing: (
 from views.main_window import MainWindow  # noqa: E402
 
 OUT = Path(__file__).resolve().parent.parent / "resources" / "components" / "thumbs"
-KEYS = ["person", "tree", "bush", "car"]
+import json as _json
+_manifest = (Path(__file__).resolve().parent.parent / "resources"
+             / "components" / "components.json")
+KEYS = [e["key"] for e in _json.loads(_manifest.read_text())]
 
 window = MainWindow()
 window.resize(700, 700)
@@ -69,9 +72,9 @@ def snap(i: int = 0) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     image.save(str(OUT / f"{key}.png"))
     print("thumb:", key, image.width(), "x", image.height(), flush=True)
-    QTimer.singleShot(300, lambda: snap(i + 1))
+    QTimer.singleShot(400, lambda: snap(i + 1))
 
 
 QTimer.singleShot(900, lambda: snap(0))
-QTimer.singleShot(30000, lambda: os._exit(1))
+QTimer.singleShot(300000, lambda: os._exit(1))
 app.exec()

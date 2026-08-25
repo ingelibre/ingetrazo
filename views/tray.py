@@ -732,25 +732,22 @@ class ComponentsPanel(QWidget):
         res = app_root() / "resources" / "components"
         items = [
             (res / "sumari.png", tr("Sumari"),
-             tr("Sumari (author, 1.65 m)"),
+             tr("Sumari (author, 1.72 m)"),
              lambda _c=False: window._on_insert_person_2d(
-                 "sumari.png", 1.65, "Sumari")),
-            (res / "person_billboard.png", tr("Person 2D"),
-             tr("Person (2D, faces the camera)"),
-             lambda _c=False: window._on_insert_person_2d()),
-            (res / "person_silhouette.png", tr("Silhouette"),
-             tr("Person (silhouette)"),
-             lambda _c=False: window._on_insert_person_2d(
-                 "person_silhouette.png")),
-            (res / "thumbs" / "person.png", tr("Person 3D"), tr("Person 3D"),
-             lambda _c=False: window._on_insert_component("person")),
-            (res / "thumbs" / "tree.png", tr("Tree"), tr("Tree"),
-             lambda _c=False: window._on_insert_component("tree")),
-            (res / "thumbs" / "bush.png", tr("Bush"), tr("Bush"),
-             lambda _c=False: window._on_insert_component("bush")),
-            (res / "thumbs" / "car.png", tr("Car"), tr("Car"),
-             lambda _c=False: window._on_insert_component("car")),
+                 "sumari.png", 1.72, "Sumari")),
         ]
+        # The 3D starters are data: resources/components/components.json
+        # lists key/name/tip; the model is <key>.glb (Sketchfab CC-BY set,
+        # see SOURCES.md) with a pre-rendered thumbs/<key>.png.
+        import json as _json
+        manifest = res / "components.json"
+        if manifest.exists():
+            for entry in _json.loads(manifest.read_text(encoding="utf-8")):
+                items.append(
+                    (res / "thumbs" / f"{entry['key']}.png",
+                     tr(entry["name"]), tr(entry.get("tip", entry["name"])),
+                     lambda _c=False, k=entry["key"]:
+                         window._on_insert_component(k)))
         for i, (icon_path, label, tip, callback) in enumerate(items):
             btn = QToolButton()
             btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)

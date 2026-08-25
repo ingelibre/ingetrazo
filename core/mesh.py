@@ -91,7 +91,8 @@ class Edge:
     architecture). Maintained by the mesh.
     """
 
-    __slots__ = ("v0", "v1", "faces", "soft", "curve", "layer")
+    __slots__ = ("v0", "v1", "faces", "soft", "curve", "layer",
+                 "hidden")
 
     def __init__(self, v0: Vertex, v1: Vertex) -> None:
         self.v0 = v0
@@ -100,6 +101,10 @@ class Edge:
         # A "soft" edge is a curve segment (circle/arc): kept in the topology but
         # hidden from the edge render, so the curve reads smooth, SketchUp-style.
         self.soft: bool = False
+        # A "hidden" edge is fully invisible: unlike soft it draws neither
+        # as a line nor as a profile/silhouette (imported foliage cards —
+        # the leaf's outline is its texture mask, not its quad).
+        self.hidden: bool = False
         # Layer / tag name (None = default layer).
         self.layer = None
         # Segments of one drawn curve (circle/arc) share a ``curve`` id, so
@@ -595,9 +600,11 @@ class Mesh:
                 self.edges.append(e)
                 emap[key] = e
             if flags is not None:
-                soft, curve, layer = flags[i]
+                soft, curve, layer = flags[i][:3]
                 if soft:
                     e.soft = True
+                if len(flags[i]) > 3 and flags[i][3]:
+                    e.hidden = True
                 if curve is not None:
                     e.curve = curve
                 if layer is not None:
@@ -844,6 +851,7 @@ class Mesh:
             "vedges": {v: set(v.edges) for v in self.vertices},
             "efaces": {e: list(e.faces) for e in self.edges},
             "esoft": {e: e.soft for e in self.edges},
+            "ehidden": {e: e.hidden for e in self.edges},
             "elayer": {e: e.layer for e in self.edges},
             "ecurve": {e: e.curve for e in self.edges},
             "floop": {f: list(f.loop) for f in self.faces},
@@ -868,6 +876,8 @@ class Mesh:
             e.faces = list(fs)
         for e, soft in snap.get("esoft", {}).items():
             e.soft = soft
+        for e, hidden in snap.get("ehidden", {}).items():
+            e.hidden = hidden
         for e, layer in snap.get("elayer", {}).items():
             e.layer = layer
         for e, cid in snap.get("ecurve", {}).items():

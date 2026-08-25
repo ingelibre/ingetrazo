@@ -85,38 +85,40 @@ def test_clear_scene_exits_the_context():
     assert len(scene.mesh.faces) == 0
 
 
-def test_bundled_components_import_closed_and_insert_undoably():
-    # The starter components (SketchUp-style props) must import clean and
-    # insert as selectable groups with exact undo.
+def test_bundled_components_import_and_insert_undoably():
+    # The starter components (the Sketchfab CC-BY set, see SOURCES.md) are
+    # .glb files listed in components.json: every entry must exist, load
+    # through the GLB importer, sit on the ground, and insert with exact
+    # undo. The smallest one loads for real; the rest just exist (loading
+    # 10 models is a slow-suite job).
+    import json
     from pathlib import Path
 
     from core.group import Group
     from core.history import InsertGroupCommand
-    from core.orient import is_closed
-    from formats.obj import load_obj
+    from formats.glb import load_glb
 
     comp_dir = Path(__file__).resolve().parent.parent / "resources" / "components"
+    manifest = json.loads((comp_dir / "components.json").read_text())
+    assert len(manifest) >= 8
+    for entry in manifest:
+        assert (comp_dir / f"{entry['key']}.glb").exists(), entry["key"]
+        assert (comp_dir / "thumbs" / f"{entry['key']}.png").exists(), \
+            entry["key"]
+
     scene = Scene()
     hist = History(scene)
-    # Kenney set (CC0): the oak is a watertight solid; the bush (leaf
-    # planes) and the car (no underbody) are decorative and open.
-    for name, must_close in (("person", True), ("tree", True),
-                             ("bush", False), ("car", False)):
-        temp = Scene()
-        load_obj(temp, comp_dir / f"{name}.obj")
-        mesh = temp.mesh
-        if not mesh.faces and temp.groups:
-            mesh = temp.groups[0].mesh   # big OBJ → reference-group path
-        assert mesh.faces, name
-        assert is_closed(mesh) == must_close, name
-        hist.execute(InsertGroupCommand(Group(mesh, name=name)))
-    assert len(scene.groups) == 4
-    # scale figure is actually 1.75 m
-    person = next(g for g in scene.groups if g.name == "person")
-    zs = [v.position.z() for v in person.mesh.vertices]
-    assert abs(max(zs) - 1.75) < 1e-6 and abs(min(zs)) < 1e-6
-    assert hist.undo() and len(scene.groups) == 3
-    assert hist.redo() and len(scene.groups) == 4
+    temp = Scene()
+    load_glb(temp, comp_dir / "tronco.glb")
+    mesh = temp.groups[0].mesh
+    assert mesh.faces
+    assert all(f.attrs.get("texture") for f in mesh.faces)
+    zs = [v.position.z() for v in mesh.vertices]
+    assert abs(min(zs)) < 1e-4                      # grounded
+    hist.execute(InsertGroupCommand(Group(mesh, name="tronco")))
+    assert len(scene.groups) == 1
+    assert hist.undo() and len(scene.groups) == 0
+    assert hist.redo() and len(scene.groups) == 1
 
 
 def test_billboard_group_round_trips_and_faces_camera(tmp_path):

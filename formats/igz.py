@@ -199,6 +199,8 @@ def _edge_json(e) -> dict:
              "b": list(e.v1.position.toTuple())}
     if getattr(e, "soft", False):
         entry["soft"] = True
+    if getattr(e, "hidden", False):
+        entry["hidden"] = True
     if getattr(e, "curve", None) is not None:
         entry["curve"] = e.curve
     if getattr(e, "layer", None) is not None:
@@ -587,6 +589,8 @@ def _load_mesh_small(mesh, payload) -> None:
             continue  # degenerate edge in the document — skip
         if raw.get("soft"):
             edge.soft = True
+        if raw.get("hidden"):
+            edge.hidden = True
         if raw.get("layer"):
             edge.layer = raw["layer"]
         cid = raw.get("curve")
@@ -652,7 +656,8 @@ def _load_mesh(mesh, payload) -> None:
             cid = raw.get("curve")
             if cid is not None and (max_curve is None or cid > max_curve):
                 max_curve = cid
-            flags.append((bool(raw.get("soft")), cid, raw.get("layer")))
+            flags.append((bool(raw.get("soft")), cid, raw.get("layer"),
+                          bool(raw.get("hidden"))))
         emap = mesh.add_edges_welded(
             vobjs, inverse[0:n_edge_pts:2], inverse[1:n_edge_pts:2], flags)
         # Keep new curves unique after loading stored ids.

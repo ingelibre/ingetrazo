@@ -86,6 +86,8 @@ def collect_geometry(scene):
                 continue
             p0 = (e.v0.position.x(), e.v0.position.y(), e.v0.position.z())
             p1 = (e.v1.position.x(), e.v1.position.y(), e.v1.position.z())
+            if getattr(e, "hidden", False):
+                continue
             if getattr(e, "soft", False):
                 fs = [f for f in e.faces if visible(f)]
                 if not fs:
