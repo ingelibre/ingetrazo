@@ -180,6 +180,14 @@ SHADER_DIR = app_root() / "resources" / "shaders"
 #: ~20k edges) froze every mouse move (user report, piscina.igz).
 _LOOSE_SNAP_CAP = 3000
 
+
+def _cache_ver(vp):
+    """The scene version the per-version caches key on — frozen during a
+    groups-only transform preview (see Viewport.begin_groups_preview).
+    Module-level so the stub viewports in tests hit it too."""
+    frozen = getattr(vp, "_frozen_cache_version", None)
+    return frozen if frozen is not None else vp.scene.version
+
 _AXIS_DIRS = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 
 
@@ -990,6 +998,7 @@ class Viewport(QOpenGLWidget):
         # band below.
         self._set_section_clip(False)
         self._draw_preview_faces()
+        self._draw_groups_preview(mvp)
 
         # Axes — long solid positive + evenly-dashed negative per axis (SketchUp).
         # Dash spacing scales with the camera distance so the on-screen density
@@ -1716,13 +1725,126 @@ class Viewport(QOpenGLWidget):
         self.sceneVersionChanged.emit(self.scene.version)
         self.update()
 
+    def begin_groups_preview(self, groups=()) -> None:
+        """Enter a groups-only transform preview: the per-version caches
+        freeze, the moving groups leave the consolidated VBOs (one resync)
+        and their chunk arrays upload ONCE to scratch VBOs that paintGL
+        draws with a translated MVP — a drag frame touches no arrays at
+        all. SketchUp-grade group dragging on a 230k-face group."""
+        self._frozen_cache_version = self.scene.version
+        self._preview_groups = set(map(id, groups))
+        self._preview_offset = QVector3D(0.0, 0.0, 0.0)
+        self._edges_version = -1          # one resync WITHOUT the movers
+        if not self._preview_groups:
+            return
+        self.makeCurrent()
+        try:
+            if getattr(self, "_pv_edges_vao", None) is None:
+                self._pv_edges_vao, self._pv_edges_vbo = self._create_dynamic()
+                self._pv_vcol_vao, self._pv_vcol_vbo = \
+                    self._create_dynamic_vcol()
+                self._pv_tex_vao, self._pv_tex_vbo = self._create_dynamic_uv()
+            edge_parts: list = []
+            vcol_parts: list = []
+            tex_parts: dict = {}
+            for g in self.scene.groups:
+                if id(g) not in self._preview_groups:
+                    continue
+                ch = self._group_chunk(g)
+                if ch["edges"]:
+                    edge_parts.append(ch["edges"])
+                if ch["vcol"]:
+                    vcol_parts.append(ch["vcol"])
+                for path, raw in ch["by_texture"].items():
+                    tex_parts.setdefault(path, []).append(raw)
+            raw = b"".join(edge_parts)
+            self._pv_edges_vbo.bind()
+            self._pv_edges_vbo.allocate(raw or b"\0" * 24, max(len(raw), 24))
+            self._pv_edges_vbo.release()
+            self._pv_edges_count = len(raw) // 12
+            raw = b"".join(vcol_parts)
+            self._pv_vcol_vbo.bind()
+            self._pv_vcol_vbo.allocate(raw or b"\0" * 24, max(len(raw), 24))
+            self._pv_vcol_vbo.release()
+            self._pv_vcol_count = len(raw) // 24
+            runs: list = []
+            blobs: list = []
+            off = 0
+            for path, parts in tex_parts.items():
+                blob = b"".join(parts)
+                runs.append((path, off // 20, len(blob) // 20))
+                blobs.append(blob)
+                off += len(blob)
+            raw = b"".join(blobs)
+            self._pv_tex_vbo.bind()
+            self._pv_tex_vbo.allocate(raw or b"\0" * 24, max(len(raw), 24))
+            self._pv_tex_vbo.release()
+            self._pv_tex_runs = runs
+        finally:
+            self.doneCurrent()
+
+    def end_groups_preview(self) -> None:
+        self._frozen_cache_version = None
+        self._preview_groups = set()
+        self._preview_offset = QVector3D(0.0, 0.0, 0.0)
+        self._pv_edges_count = 0
+        self._pv_vcol_count = 0
+        self._pv_tex_runs = []
+        self._edges_version = -1          # resync with the movers back in
+
+    def set_groups_preview_offset(self, delta: QVector3D) -> None:
+        self._preview_offset = QVector3D(delta)
+        self.update()
+
+    def _draw_groups_preview(self, mvp) -> None:
+        """Draw the frozen scratch copies of the moving groups at the
+        current preview offset: one translated MVP, zero array churn."""
+        if not getattr(self, "_preview_groups", None):
+            return
+        off = getattr(self, "_preview_offset", None)
+        m = QMatrix4x4()
+        if off is not None:
+            m.translate(off)
+        self._program.setUniformValue(self._loc_mvp, mvp * m)
+        n = getattr(self, "_pv_vcol_count", 0)
+        if n:
+            self._program.setUniformValue(self._loc_use_vcolor, 1)
+            self._pv_vcol_vao.bind()
+            self._gl.glDrawArrays(GL_TRIANGLES, 0, n)
+            self._pv_vcol_vao.release()
+            self._program.setUniformValue(self._loc_use_vcolor, 0)
+        runs = getattr(self, "_pv_tex_runs", None)
+        if runs:
+            self._program.setUniformValue(self._loc_use_tex, 1)
+            self._pv_tex_vao.bind()
+            for path, start, count in runs:
+                tex = self._get_texture(path)
+                if tex is None:
+                    continue
+                self._program.setUniformValue(
+                    self._loc_hard_cutout,
+                    1 if getattr(tex, "_cutout", False) else 0)
+                tex.bind(0)
+                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                tex.release(0)
+            self._program.setUniformValue(self._loc_hard_cutout, 0)
+            self._pv_tex_vao.release()
+            self._program.setUniformValue(self._loc_use_tex, 0)
+        n = getattr(self, "_pv_edges_count", 0)
+        if n:
+            self._set_color(1.0, 0.45, 0.0, 1.0)   # selection orange: moving
+            self._pv_edges_vao.bind()
+            self._gl.glDrawArrays(GL_LINES, 0, n)
+            self._pv_edges_vao.release()
+        self._program.setUniformValue(self._loc_mvp, mvp)
+
     def _newell_of(self, face):
         """The face's raw Newell vector, memoised per scene version — ONE
         computation feeds normal, area and triangulation (each used to pay
         its own on an exploded import's edit frame)."""
         memo = getattr(self, "_newell_memo", None)
-        if memo is None or memo[0] != self.scene.version:
-            memo = self._newell_memo = (self.scene.version, {})
+        if memo is None or memo[0] != _cache_ver(self):
+            memo = self._newell_memo = (_cache_ver(self), {})
         hit = memo[1].get(id(face))
         if hit is None or hit[0] is not face:
             hit = memo[1][id(face)] = (face, face._newell())
@@ -1740,8 +1862,8 @@ class Viewport(QOpenGLWidget):
         import. The memo holds the face itself so a recycled id() can never
         alias, and drops wholesale on the next version bump."""
         memo = getattr(self, "_tri_memo", None)
-        if memo is None or memo[0] != self.scene.version:
-            memo = self._tri_memo = (self.scene.version, {})
+        if memo is None or memo[0] != _cache_ver(self):
+            memo = self._tri_memo = (_cache_ver(self), {})
         hit = memo[1].get(id(face))
         if hit is None or hit[0] is not face:
             hit = memo[1][id(face)] = (
@@ -1759,7 +1881,7 @@ class Viewport(QOpenGLWidget):
                 else QVector3D(0.0, 0.0, 1.0))
 
     def _sync_edges(self) -> None:
-        if self.scene.version == self._edges_version:
+        if _cache_ver(self) == self._edges_version:
             return
         _st0 = _time_mod.perf_counter() if _PERF else 0.0
 
@@ -1818,8 +1940,9 @@ class Viewport(QOpenGLWidget):
                 e.b.x(), e.b.y(), e.b.z(),
             ])
         edge_parts = [all_loose.tobytes()]
+        pv = getattr(self, "_preview_groups", None) or ()
         for g in self.scene.groups:
-            if (self.scene.entity_visible(g)
+            if (self.scene.entity_visible(g) and id(g) not in pv
                     and not getattr(g, "billboard", False)):
                 edge_parts.append(self._group_chunk(g)["edges"])
         edges_raw = b"".join(edge_parts)
@@ -1966,9 +2089,11 @@ class Viewport(QOpenGLWidget):
         for face in self.scene.loose_mesh.faces:
             if self.scene.entity_visible(face):
                 bucket_face(face)
+        pv_faces = getattr(self, "_preview_groups", None) or ()
         for g in self.scene.groups:
             if (not self.scene.entity_visible(g)
-                    or getattr(g, "billboard", False)):
+                    or getattr(g, "billboard", False)
+                    or id(g) in pv_faces):
                 continue
             if suppressed_faces and any(f in suppressed_faces
                                         for f in g.mesh.faces):
@@ -2075,7 +2200,7 @@ class Viewport(QOpenGLWidget):
 
         if _PERF:
             _plog("sync_edges", (_time_mod.perf_counter() - _st0) * 1000.0)
-        self._edges_version = self.scene.version
+        self._edges_version = _cache_ver(self)
         self.sceneVersionChanged.emit(self._edges_version)
 
     def _bucket_back_face(self, face, back):
@@ -2407,7 +2532,7 @@ class Viewport(QOpenGLWidget):
         # the NumPy pass still costs ~4 ms a frame during orbits.
         import time as _time
         now = _time.monotonic()
-        key = (self.scene.version, id(self.scene.mesh))
+        key = (_cache_ver(self), id(self.scene.mesh))
         last = getattr(self, "_sil_last", None)
         if last is not None and last[0] == key and now - last[1] < 0.08:
             return last[2]        # VBO still holds the last upload
@@ -2470,8 +2595,10 @@ class Viewport(QOpenGLWidget):
             chunks.append(pts[mask].tobytes())
         else:
             chunks.append(b"")
+        pv_sil = getattr(self, "_preview_groups", None) or ()
         groups = [g for g in self.scene.groups
                   if self.scene.entity_visible(g)
+                  and id(g) not in pv_sil
                   and not getattr(g, "billboard", False)]
         if groups:
             import numpy as np
@@ -4529,7 +4656,7 @@ class Viewport(QOpenGLWidget):
         earcut per face (~1–2 s per move against an imported 17k-triangle
         building — the app read as frozen); batched over this index a pick
         is a couple of milliseconds."""
-        key = (self.scene.version, id(self.scene.mesh))
+        key = (_cache_ver(self), id(self.scene.mesh))
         cached = getattr(self, "_pick_index_cache", None)
         if cached is not None and cached[0] == key:
             return cached[1]
@@ -4602,7 +4729,8 @@ class Viewport(QOpenGLWidget):
                 sig.append((id(g), id(chunk), chunk["rev"], gvis, gsel))
                 chunks.append((g, chunk, gvis, gsel))
             blk = getattr(self, "_pick_block", None)
-            if blk is None or blk[0] != tuple(sig):
+            frozen = getattr(self, "_frozen_cache_version", None) is not None
+            if blk is None or (blk[0] != tuple(sig) and not frozen):
                 b_entities: list = []
                 b_v0, b_e1, b_e2, b_te = [], [], [], []
                 b_area, b_vis, b_sel = [], [], []
@@ -5137,7 +5265,7 @@ class Viewport(QOpenGLWidget):
         lines against the model); re-running earcut per query made orbiting a
         dimensioned plaza crawl (~280 ms/frame on the plaza.igz report —
         batched here it's ~5 ms)."""
-        key = (self.scene.version, id(self.scene.mesh))
+        key = (_cache_ver(self), id(self.scene.mesh))
         cached = getattr(self, "_occl_cache", None)
         if cached is not None and cached[0] == key:
             return cached[1]

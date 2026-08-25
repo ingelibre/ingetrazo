@@ -164,6 +164,16 @@ class MoveTool(Tool):
             mesh = viewport.scene.mesh
             self._verts = [v for v in (mesh.vertex_at(p) for p in positions)
                            if v is not None]
+            self._vp_preview = False
+            if (self._groups and not self._verts and not self._positions):
+                # Groups-only drag: viewport-side preview — the caches
+                # freeze and the movers render from one-time scratch VBOs
+                # at a translated MVP (the per-frame rebuild storm was the
+                # 'mover un grupo demora' lag).
+                begin = getattr(viewport, "begin_groups_preview", None)
+                if begin is not None:
+                    begin(self._groups)
+                    self._vp_preview = True
             return
         self._commit(viewport, ctx.world - self.grab)
 
@@ -191,6 +201,7 @@ class MoveTool(Tool):
         return True
 
     def on_cancel(self, viewport) -> None:
+        self._end_freeze(viewport)
         self._revert_preview(viewport)
         self._reset()
         viewport.update()
@@ -242,17 +253,45 @@ class MoveTool(Tool):
         step = target_delta - self._preview_delta
         if step.length() < 1e-12:
             return
+        if getattr(self, "_vp_preview", False):
+            # Groups-only drag: the viewport draws the frozen scratch copy
+            # at the offset — no geometry mutation, no version churn, no
+            # rebuilds. Labels/section planes ride along in Python (few).
+            for lab in self._labels:
+                lab.offset = lab.offset + step
+            for sp in self._splanes:
+                sp.point = sp.point + step
+            self._preview_delta = target_delta
+            viewport.set_groups_preview_offset(target_delta)
+            return
         self._shift(viewport, step)
         self._preview_delta = target_delta
 
     def _revert_preview(self, viewport) -> None:
         """Undo the live deformation, returning geometry to its grab-time spot."""
+        if getattr(self, "_vp_preview", False):
+            # Viewport-side preview: no geometry was mutated — only the
+            # labels/section planes moved live. Put those back.
+            if self._preview_delta.length() >= 1e-12:
+                step = -self._preview_delta
+                for lab in self._labels:
+                    lab.offset = lab.offset + step
+                for sp in self._splanes:
+                    sp.point = sp.point + step
+            self._preview_delta = QVector3D(0.0, 0.0, 0.0)
+            return
         if self._preview_delta.length() < 1e-12:
             return
         self._shift(viewport, -self._preview_delta)
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)
 
+    def _end_freeze(self, viewport) -> None:
+        end = getattr(viewport, "end_groups_preview", None)
+        if end is not None:
+            end()
+
     def _commit(self, viewport, delta: QVector3D) -> None:
+        self._end_freeze(viewport)
         # Revert the live preview, then apply the move as one undoable command so
         # the history holds a single clean entry (and the geometry doesn't shift
         # by double the delta).
