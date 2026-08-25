@@ -1090,11 +1090,17 @@ class Viewport(QOpenGLWidget):
             0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST
         )
         self._gl.glBindFramebuffer(GL_FRAMEBUFFER, default_fbo)
+        if _PERF:
+            _plog("paintGL.gl+blit",
+                  (_time_mod.perf_counter() - _pt0) * 1000.0, floor=30.0)
+            _ov0 = _time_mod.perf_counter()
 
         # 2D overlays on top of the OpenGL framebuffer.
         self._draw_overlay()
 
         if _PERF:
+            _plog("paintGL.overlay",
+                  (_time_mod.perf_counter() - _ov0) * 1000.0, floor=30.0)
             _dt = (_time_mod.perf_counter() - _pt0) * 1000.0
             _plog("paintGL", _dt)
             st = getattr(self, "_perf_stat", None) or \
@@ -2360,33 +2366,58 @@ class Viewport(QOpenGLWidget):
         if last is not None and last[0] == key and now - last[1] < 0.08:
             return last[2]        # VBO still holds the last upload
 
-        # Loose soft edges (few — the user's own curves) walk in Python;
-        # group soft edges (an imported project can carry ~100k) run the view
-        # test vectorised over the group chunk's cached arrays.
+        # Loose soft edges run the SAME vectorised view test as group
+        # chunks: per-edge Python here froze orbits after an explode dumped
+        # a group's curved surfaces into the loose mesh (38k soft edges =
+        # ~600 ms EVERY frame, piscina.igz user report). The cache bakes
+        # endpoints + face normals/centroids once per edit; each frame is
+        # one einsum.
+        import numpy as np
         cached = getattr(self, "_soft_edges_cache", None)
         if cached is None or cached[0] != key:
-            cached = (key, [e for e in self.scene.loose_mesh.edges
-                            if getattr(e, "soft", False)
-                            and not getattr(e, "hidden", False)
-                            and self.scene.entity_visible(e)])
+            softs = [e for e in self.scene.loose_mesh.edges
+                     if getattr(e, "soft", False)
+                     and not getattr(e, "hidden", False)
+                     and self.scene.entity_visible(e) and e.faces]
+            if softs:
+                pts = np.empty((len(softs), 6))
+                n0 = np.empty((len(softs), 3))
+                c0 = np.empty((len(softs), 3))
+                n1 = np.empty((len(softs), 3))
+                c1 = np.empty((len(softs), 3))
+                single = np.empty(len(softs), dtype=bool)
+                for i, e in enumerate(softs):
+                    pts[i] = (e.a.x(), e.a.y(), e.a.z(),
+                              e.b.x(), e.b.y(), e.b.z())
+                    f0 = e.faces[0]
+                    nn = f0.normal()
+                    cc = f0.centroid()
+                    n0[i] = (nn.x(), nn.y(), nn.z())
+                    c0[i] = (cc.x(), cc.y(), cc.z())
+                    # A 1-face soft edge is an open-surface boundary (always
+                    # a profile); a 2-face one straddles the view or hides.
+                    single[i] = len(e.faces) != 2
+                    f1 = e.faces[1] if len(e.faces) == 2 else f0
+                    nn = f1.normal()
+                    cc = f1.centroid()
+                    n1[i] = (nn.x(), nn.y(), nn.z())
+                    c1[i] = (cc.x(), cc.y(), cc.z())
+                arrays = (pts.astype(np.float32), n0, c0, n1, c1, single)
+            else:
+                arrays = None
+            cached = (key, arrays)
             self._soft_edges_cache = cached
         eye = self.camera.eye()
-        data = array("f")
-        for e in cached[1]:
-            faces = e.faces
-            # A 1-face soft edge is an open-surface boundary (a real profile); a
-            # 0-face one is a dangling line (not drawn here).
-            silhouette = len(faces) == 1
-            if len(faces) == 2:
-                s0 = QVector3D.dotProduct(faces[0].normal(),
-                                          faces[0].centroid() - eye)
-                s1 = QVector3D.dotProduct(faces[1].normal(),
-                                          faces[1].centroid() - eye)
-                silhouette = (s0 < 0) != (s1 < 0)
-            if silhouette:
-                data.extend([e.a.x(), e.a.y(), e.a.z(),
-                             e.b.x(), e.b.y(), e.b.z()])
-        chunks: list = [data.tobytes()]
+        chunks: list = []
+        if cached[1] is not None:
+            pts, n0, c0, n1, c1, single = cached[1]
+            e_np = np.array([eye.x(), eye.y(), eye.z()])
+            s0 = np.einsum("ij,ij->i", n0, c0 - e_np)
+            s1 = np.einsum("ij,ij->i", n1, c1 - e_np)
+            mask = single | ((s0 < 0) != (s1 < 0))
+            chunks.append(pts[mask].tobytes())
+        else:
+            chunks.append(b"")
         groups = [g for g in self.scene.groups
                   if self.scene.entity_visible(g)
                   and not getattr(g, "billboard", False)]
