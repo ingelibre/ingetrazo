@@ -174,6 +174,12 @@ SHADER_DIR = app_root() / "resources" / "shaders"
 
 # ---- Geometry helpers ------------------------------------------------------
 
+#: Beyond this many loose edges the snap engine gets a near-cursor subset
+#: instead of the whole mesh: compute_snap walks its edge list in Python
+#: ~a dozen times per hover, and an exploded medium import (9k faces =
+#: ~20k edges) froze every mouse move (user report, piscina.igz).
+_LOOSE_SNAP_CAP = 3000
+
 _AXIS_DIRS = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 
 
@@ -4820,6 +4826,50 @@ class Viewport(QOpenGLWidget):
         self._gedge_px_cache = (key, data)
         return data
 
+    def _ledge_screen(self):
+        """Screen-projected endpoints of every LOOSE edge — the
+        ``_gedge_screen`` twin for the snap prefilter after an explode
+        leaves a big loose mesh. Cached until the scene/camera moves."""
+        idx = self._pick_index()
+        if idx.edge_a is None or not len(idx.edge_a):
+            return None
+        M = self._np_mvp()
+        key = (self.scene.version, id(self.scene.mesh), M.tobytes(),
+               self.width(), self.height())
+        cached = getattr(self, "_ledge_px_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        ax, ay, oka = self._project_px(idx.edge_a)
+        bx, by, okb = self._project_px(idx.edge_b)
+        data = (ax, ay, bx, by, oka & okb)
+        self._ledge_px_cache = (key, data)
+        return data
+
+    def _nearby_loose_edges(self, px: float, py: float,
+                            radius_px: float = 64.0, cap: int = 400) -> list:
+        """The loose edges whose screen segment passes near the cursor —
+        real Edge objects, nearest first, at most ``cap``."""
+        proj = self._ledge_screen()
+        if proj is None:
+            return []
+        import numpy as np
+        ax, ay, bx, by, ok = proj
+        if not ok.any():
+            return []
+        dx, dy = bx - ax, by - ay
+        l2 = dx * dx + dy * dy
+        safe = np.where(l2 > 1e-12, l2, 1.0)
+        t = np.clip(((px - ax) * dx + (py - ay) * dy) / safe, 0.0, 1.0)
+        d = np.hypot(ax + t * dx - px, ay + t * dy - py)
+        d = np.where(ok, d, np.inf)
+        cand = np.where(d < radius_px)[0]
+        if len(cand) > cap:
+            cand = cand[np.argsort(d[cand])[:cap]]
+        idx = self._pick_index()
+        edges = idx.edges
+        n = len(edges)
+        return [edges[int(i)] for i in cand if int(i) < n]
+
     def _nearby_group_edges(self, px: float, py: float,
                             radius_px: float = 48.0, cap: int = 48) -> list:
         """Group hard edges whose screen-space segment passes within
@@ -4908,9 +4958,15 @@ class Viewport(QOpenGLWidget):
         for gp in getattr(self.scene, "geo_points", None) or []:
             near.append(_SnapEdge(QVector3D(gp.position),
                                   QVector3D(gp.position)))
-        if not lines and not near and sp is None:
+        big = (px is not None
+               and len(self.scene.edges) > _LOOSE_SNAP_CAP)
+        if not lines and not near and sp is None and not big:
             return self.scene
-        loose = list(self.scene.edges)
+        if big:
+            loose = self._nearby_loose_edges(px, py)
+        else:
+            loose = list(self.scene.edges)
+        loose = [e for e in loose if not getattr(e, "hidden", False)]
         if sp is not None:
             loose = [e for e in loose if _kept(e)]
         from types import SimpleNamespace

@@ -1,52 +1,7 @@
 [
  {
-  "key": "molle",
-  "name": "Molle",
-  "tip": "Molle — Peruvian pepper tree"
- },
- {
-  "key": "quinual",
-  "name": "Quenual",
-  "tip": "Quenual — Andean native tree"
- },
- {
-  "key": "quishuar",
-  "name": "Quishuar",
-  "tip": "Quishuar — Andean native tree"
- },
- {
-  "key": "arrayan",
-  "name": "Arrayan",
-  "tip": "Arrayan — Andean myrtle"
- },
- {
-  "key": "tronco",
-  "name": "Trunk seat",
-  "tip": "Cut tree trunk"
- },
- {
-  "key": "personas",
-  "name": "People 3D",
-  "tip": "Low-poly people set"
- },
- {
   "key": "cama",
   "name": "Bed",
   "tip": "Double bed"
- },
- {
-  "key": "sofa",
-  "name": "Sofa",
-  "tip": "Sofa (IKEA Nockeby)"
- },
- {
-  "key": "mesa_sillas",
-  "name": "Table + chairs",
-  "tip": "Round table with 4 chairs"
- },
- {
-  "key": "escritorio",
-  "name": "Desk",
-  "tip": "Desk (IKEA Linnmon/Alex)"
  }
 ]
