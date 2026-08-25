@@ -143,6 +143,24 @@ def transformed_mesh(src: Mesh, m) -> Mesh:
     return new
 
 
+def translated_attrs(attrs, delta) -> dict:
+    """A copy of face ``attrs`` re-anchored for geometry moved by ``delta``:
+    the texture's world→UV affine map (``uvw``) is position-anchored, so its
+    constant term must follow the translation (the gradient is unchanged) or
+    the texture stays behind while the face moves."""
+    out = dict(attrs) if attrs else {}
+    t = out.get("texture")
+    uvw = t.get("uvw") if t else None
+    if uvw and len(uvw) == 8:
+        new = list(uvw)
+        for base in (0, 4):
+            gx, gy, gz, c = uvw[base:base + 4]
+            new[base + 3] = c - (gx * delta.x() + gy * delta.y()
+                                 + gz * delta.z())
+        out["texture"] = {**t, "uvw": new}
+    return out
+
+
 def copy_group(group, delta=None):
     """A pastable duplicate of ``group``, optionally translated by ``delta``.
 

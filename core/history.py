@@ -368,12 +368,16 @@ class AddFaceCommand(Command):
         vertices: Iterable[QVector3D],
         auto: bool = True,
         holes: Optional[Iterable[Iterable[QVector3D]]] = None,
+        attrs: Optional[dict] = None,
     ) -> None:
         self.vertices = [QVector3D(v) for v in vertices]
         self.preset_holes = (
             [[QVector3D(v) for v in loop] for loop in holes] if holes else None
         )
         self.auto = auto
+        # Attrs stamped onto the face at creation (paste carries the copied
+        # colour/texture); they stay on the object across undo/redo.
+        self.attrs = dict(attrs) if attrs else None
         self.face: Optional[Face] = None
         # (face_that_gained_a_hole, the vertex loop punched) for undo.
         self._punches: list[tuple[Face, list]] = []
@@ -388,6 +392,8 @@ class AddFaceCommand(Command):
                 if self.preset_holes else None
             )
             self.face = m.add_face(self.vertices, holes)
+            if self.attrs:
+                self.face.attrs.update(self.attrs)
         else:
             m.relink_face(self.face)  # redo
 

@@ -35,6 +35,7 @@ Tool input (when a tool is active):
 """
 from __future__ import annotations
 
+import copy
 import math
 import os
 import re
@@ -4612,9 +4613,13 @@ class Viewport(QOpenGLWidget):
         groups = [g for g in self.scene.selection if isinstance(g, Group)]
         if not faces and not edges and not groups:
             return False
+        # Attrs (colour, texture, layer, BIM tag) travel with each face — a
+        # deep copy, so later re-paints of the original never touch the
+        # clipboard snapshot.
         face_data = [
             ([QVector3D(v) for v in f.vertices],
-             [[QVector3D(v) for v in h] for h in f.holes])
+             [[QVector3D(v) for v in h] for h in f.holes],
+             copy.deepcopy(f.attrs) if f.attrs else {})
             for f in faces
         ]
         # Keep soft/curve flags so a pasted circle stays ONE selectable curve
@@ -4633,8 +4638,8 @@ class Viewport(QOpenGLWidget):
                 if xf is not None:
                     a, b = xf.map(a), xf.map(b)
                 group_lines.append((a, b))
-        pts = [p for loop, holes in face_data for p in loop]
-        pts += [p for _, holes in face_data for h in holes for p in h]
+        pts = [p for loop, holes, _a in face_data for p in loop]
+        pts += [p for _, holes, _a in face_data for h in holes for p in h]
         pts += [p for a, b, _, _ in edge_data for p in (a, b)]
         pts += [p for a, b in group_lines for p in (a, b)]
         if not pts:

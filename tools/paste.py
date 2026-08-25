@@ -12,7 +12,7 @@ from __future__ import annotations
 from PySide6.QtGui import QVector3D
 
 from core.geometry import Face as PreviewFace
-from core.group import copy_group
+from core.group import copy_group, translated_attrs
 from core.history import (AddEdgeCommand, AddFaceCommand, CompoundCommand,
                           InsertGroupCommand)
 from tools.base import Tool, ToolContext
@@ -48,11 +48,15 @@ class PasteTool(Tool):
             return
         off = ctx.world - self._clip["ref"]
         commands: list = []
-        for loop, holes in self._clip["faces"]:
+        for loop, holes, *rest in self._clip["faces"]:
+            # Copied attrs travel onto the pasted face; a positioned texture's
+            # world-anchored UV map is re-fitted to the paste offset.
+            attrs = translated_attrs(rest[0], off) if rest and rest[0] else None
             commands.append(AddFaceCommand(
                 [p + off for p in loop],
                 holes=[[p + off for p in h] for h in holes] or None,
                 auto=False,
+                attrs=attrs,
             ))
         # Soft/curve flags travel with the copy; curve ids are remapped to
         # FRESH ones so each pasted circle/arc is its own selectable contour
@@ -89,7 +93,7 @@ class PasteTool(Tool):
             return []
         off = self._offset
         segments = []
-        for loop, holes in self._clip["faces"]:
+        for loop, holes, *_ in self._clip["faces"]:
             for lp in (loop, *holes):
                 n = len(lp)
                 for i in range(n):
@@ -107,5 +111,5 @@ class PasteTool(Tool):
         return [
             PreviewFace([p + off for p in loop],
                         [[p + off for p in h] for h in holes])
-            for loop, holes in self._clip["faces"]
+            for loop, holes, *_ in self._clip["faces"]
         ]

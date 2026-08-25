@@ -64,6 +64,35 @@ def test_paste_preview_follows_cursor():
     assert xs == {3, 5}
 
 
+def test_paste_keeps_face_attrs_and_reanchors_texture():
+    # Copying a painted/textured face used to paste it bare (the "copia sin
+    # textura" report): the clipboard now carries attrs, and a positioned
+    # texture's world-anchored uvw map is re-fitted to the paste offset so
+    # the image lands ON the pasted face instead of staying behind.
+    from views.viewport import Viewport
+    scene = Scene()
+    vp = _VP(scene, History(scene), None)
+    f = scene.mesh.add_face([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
+    f.attrs["color"] = (1.0, 0.0, 0.0, 1.0)
+    f.attrs["texture"] = {"path": "/tmp/tex.png", "sw": 1.0, "sh": 1.0,
+                          "uvw": [1, 0, 0, 0, 0, 1, 0, 0]}
+    scene.selection.add(f)
+    assert Viewport.copy_selection(vp)
+
+    f.attrs["color"] = (0.0, 1.0, 0.0, 1.0)   # re-paint AFTER copy: snapshot
+    _paste_at(vp, 5, 0)
+
+    pasted = next(k for k in scene.mesh.faces if k is not f)
+    assert pasted.attrs.get("color") == (1.0, 0.0, 0.0, 1.0)
+    tex = pasted.attrs.get("texture")
+    assert tex is not None and tex["path"] == "/tmp/tex.png"
+    # u = 1·x + c with the face moved +5 in x → c must become −5 so the
+    # texture's origin follows the face.
+    assert tex["uvw"][3] == -5.0 and tex["uvw"][7] == 0.0
+    # The original's map was not mutated by the re-anchor.
+    assert f.attrs["texture"]["uvw"][3] == 0
+
+
 # ---- Groups in the clipboard (the "can't copy a group" report) --------------
 
 def _make_group(scene, x0=0.0):
