@@ -26,19 +26,16 @@ the documented PySide6 threading gotcha).
 """
 from __future__ import annotations
 
-import io
 import json
 import os
 import socket
 import sys
 import tempfile
 import threading
-import traceback
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal
 
-from core.history import SnapshotImport
 from core.i18n import tr
 from tools.base import Tool
 
@@ -160,69 +157,12 @@ class _Bridge(QObject):
             job["done"].set()
 
     # ---- Tools ---------------------------------------------------------------
-    def _refresh_scope(self) -> None:
-        from PySide6.QtGui import QVector3D
-        from core import bim
-        from core.group import Group
-        from core.mesh import Edge, Face, Mesh, Vertex
-        vp = self._viewport
-        self._scope.update(
-            viewport=vp, scene=vp.scene, model=vp.scene, mesh=vp.scene.mesh,
-            selection=vp.scene.selection, groups=vp.scene.groups,
-            layers=vp.scene.layers, bim=bim, QVector3D=QVector3D, Mesh=Mesh,
-            Group=Group, Vertex=Vertex, Edge=Edge, Face=Face)
-
     def _tool_run_python(self, code: str = "") -> dict:
-        """Execute ``code`` exactly like the Python Console: one undoable
-        step, rolled back whole on error, no undo entry if nothing changed."""
-        self._refresh_scope()
-        vp = self._viewport
-        history = vp.history
-        out_buf, err_buf = io.StringIO(), io.StringIO()
-
-        def mutate(_scene) -> None:
-            old_out, old_err = sys.stdout, sys.stderr
-            sys.stdout, sys.stderr = out_buf, err_buf
-            try:
-                try:
-                    compiled = compile(code, "<ai>", "eval")
-                except SyntaxError:
-                    compiled = None
-                if compiled is None:
-                    exec(compile(code, "<ai>", "exec"), self._scope)
-                else:
-                    result = eval(compiled, self._scope)
-                    if result is not None:
-                        self._scope["_"] = result
-                        print(repr(result))
-            except Exception:
-                traceback.print_exc(file=err_buf)
-                raise
-            finally:
-                sys.stdout, sys.stderr = old_out, old_err
-
-        cmd = SnapshotImport(mutate)
-        saved_redo = list(history.redo_stack)
-        history.execute(cmd)
-        error = history.last_error
-        changed = True
-        if error is None:
-            # Same rule as the Python Console: an inspect-only run leaves no
-            # undo entry behind.
-            unchanged = (cmd.before == cmd.after
-                         and not cmd.added_groups and not cmd.added_layers
-                         and not cmd.added_views and not cmd.added_dims
-                         and not cmd.added_texts)
-            if (unchanged and history.undo_stack
-                    and history.undo_stack[-1] is cmd):
-                history.undo_stack.pop()
-                history.redo_stack[:] = saved_redo
-                changed = False
-        else:
-            changed = False
-        vp.notify_scene_changed()
-        return {"stdout": out_buf.getvalue(), "stderr": err_buf.getvalue(),
-                "error": error, "changed": changed}
+        """Execute ``code`` via the shared transactional executor (core.ai):
+        one undoable step, whole-rollback on error, no undo entry when
+        nothing changed."""
+        from core.ai import run_transactional
+        return run_transactional(self._viewport, code, self._scope)
 
     def _tool_query_model(self) -> dict:
         vp = self._viewport

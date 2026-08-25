@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
+"""Asistente IA: provider layer (IngePresupuestos convention) and the
+in-app agent loop with a scripted fake model."""
+from __future__ import annotations
+
+import json
+import sys
+
+from PySide6.QtWidgets import QApplication
+
+if QApplication.instance() is None:
+    QApplication(sys.argv[:1])
+
+from core import ai  # noqa: E402
+
+
+# ---- Provider layer ---------------------------------------------------------
+
+def test_detect_provider_by_key_prefix():
+    assert ai.detect_provider("gsk_xxx") == "groq"
+    assert ai.detect_provider("sk-ant-xxx") == "anthropic"
+    assert ai.detect_provider("AIzaXXX") == "gemini"
+    assert ai.detect_provider("sk-or-xxx") == "openrouter"
+    assert ai.detect_provider("sk-xxx") == "openai"
+    assert ai.detect_provider("") == "ollama"
+
+
+def test_build_request_shapes():
+    msgs = [{"role": "user", "text": "hola"},
+            {"role": "assistant", "text": "```python\nprint(1)\n```"},
+            {"role": "user", "text": "resultado", "image_png_b64": "QUJD"}]
+
+    url, headers, payload = ai.build_request(
+        "anthropic", "claude-sonnet-5", "sk-ant-k", "SYS", msgs)
+    assert "api.anthropic.com/v1/messages" in url
+    assert headers["x-api-key"] == "sk-ant-k"
+    body = json.loads(payload)
+    assert body["system"] == "SYS"
+    blocks = body["messages"][2]["content"]
+    assert blocks[0]["type"] == "image"
+    assert blocks[0]["source"]["data"] == "QUJD"
+
+    url, headers, payload = ai.build_request(
+        "groq", "llama-3.3-70b-versatile", "gsk_k", "SYS", msgs)
+    assert "api.groq.com/openai/v1/chat/completions" in url
+    assert headers["Authorization"] == "Bearer gsk_k"
+    body = json.loads(payload)
+    assert body["messages"][0] == {"role": "system", "content": "SYS"}
+    img = body["messages"][3]["content"][0]
+    assert img["image_url"]["url"].startswith("data:image/png;base64,")
+
+    url, _h, _p = ai.build_request("ollama", "llama3.2", "", "SYS",
+                                   [{"role": "user", "text": "x"}],
+                                   ollama_url="http://localhost:11434")
+    assert url == "http://localhost:11434/v1/chat/completions"
+
+
+def test_parse_reply_and_extract_code():
+    anth = json.dumps({"content": [{"type": "text", "text": "hola "},
+                                   {"type": "text", "text": "mundo"}]})
+    assert ai.parse_reply("anthropic", anth.encode()) == "hola mundo"
+    oai = json.dumps({"choices": [{"message": {"content": "ok"}}]})
+    assert ai.parse_reply("openai", oai.encode()) == "ok"
+
+    text = "Voy a dibujar:\n```python\nmesh.add_edge(a, b)\n```\nlisto"
+    assert ai.extract_code(text) == "mesh.add_edge(a, b)"
+    assert ai.extract_code("sin código") is None
+
+
+# ---- In-app agent loop ------------------------------------------------------
+
+def test_assistant_loop_executes_recipes_transactionally(monkeypatch):
+    from plugins.ai_assistant import AsistenteDialog
+    from views.main_window import MainWindow
+
+    replies = iter([
+        "Dibujo la arista:\n```python\n"
+        "mesh.add_edge(QVector3D(0,0,0), QVector3D(3,0,0))\n"
+        "print('arista lista')\n```",
+        "Listo: dibujé la arista de 3 m.",
+    ])
+    seen: list = []
+
+    def fake_chat(provider, model, key, system, messages, **kw):
+        seen.append([dict(m) for m in messages])
+        return next(replies)
+
+    monkeypatch.setattr(ai, "chat", fake_chat)
+
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        dlg = AsistenteDialog(vp, parent=win)
+        dlg._key.setText("sk-ant-test")
+        dlg._shots.setChecked(False)           # offscreen has no GL anyway
+        edges0 = len(vp.scene.mesh.edges)
+        depth0 = len(vp.history.undo_stack)
+
+        dlg._input.setText("dibuja una arista de 3 m")
+        dlg._on_send()
+        app = QApplication.instance()
+        for _ in range(2000):
+            app.processEvents()
+            if not dlg._busy:
+                break
+        assert not dlg._busy
+
+        assert len(vp.scene.mesh.edges) == edges0 + 1
+        assert len(vp.history.undo_stack) == depth0 + 1   # ONE undo step
+        # The model got the execution feedback on the second turn.
+        assert any("arista lista" in m["text"]
+                   for m in seen[1] if m["role"] == "user")
+        # The transcript keeps user → assistant → feedback → assistant.
+        roles = [m["role"] for m in dlg._convo]
+        assert roles == ["user", "assistant", "user", "assistant"]
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

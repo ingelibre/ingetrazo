@@ -31,3 +31,24 @@ revierte entero; el guard de hermeticidad valida sus recetas).
 Sin el puente encendido, las tools responden con el aviso de cómo
 encenderlo. El servidor acepta un cliente a la vez y nunca escucha fuera
 de localhost.
+
+## Asistente IA (dentro de la app)
+
+Para el usuario que no usa Claude Code: **Extensiones ▸ Asistente IA**
+(Ctrl+Shift+A) abre un chat DENTRO de IngeTrazo. Pega tu clave API — el
+proveedor se detecta solo por el prefijo, la convención de IngePresupuestos:
+
+| Prefijo | Proveedor | Modelo por defecto |
+|---|---|---|
+| `sk-ant-` | Anthropic | claude-sonnet-5 |
+| `gsk_` | Groq (gratis) | llama-3.3-70b-versatile |
+| `sk-or-` | OpenRouter | anthropic/claude-sonnet-5 |
+| `AIza` | Gemini | gemini-2.5-flash |
+| `sk-` | OpenAI | gpt-4o |
+| *(vacía)* | Ollama local | llama3.2 |
+
+Escribe qué quieres ("dibuja una casa de 6×4 con techo a dos aguas") y el
+asistente actúa por recetas de Python transaccionales — cada acción es un
+paso de undo, y con proveedores con visión recibe capturas del viewport
+para VER lo que construyó e iterar. El modelo es editable, y la clave se
+guarda en la configuración local.

@@ -1,0 +1,270 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
+"""Asistente IA — model with AI from INSIDE IngeTrazo (Ctrl+Shift+A).
+
+The user types what they want; the model answers in Spanish and acts by
+emitting ONE ```python recipe per turn, which runs through the shared
+transactional executor (core.ai): one undo step per action, whole-rollback
+on error, the hermeticity guard validating every solid. After each action
+the assistant receives the result — and, for vision-capable providers, a
+live viewport screenshot, so it SEES what it built and iterates.
+
+Providers follow the IngePresupuestos convention the user already knows:
+paste ONE API key and the provider is detected by its prefix (gsk_ → Groq,
+sk-ant- → Anthropic, AIza → Gemini, sk-or- → OpenRouter, sk- → OpenAI), or
+leave it empty for a local Ollama. Model name and Ollama URL are editable;
+everything persists in QSettings. Network calls run on a worker thread —
+the recipes always execute on the Qt main thread.
+"""
+from __future__ import annotations
+
+import base64
+import threading
+
+from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt, Signal
+from PySide6.QtGui import QFontDatabase
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+)
+
+from core import ai
+from core.i18n import tr
+from tools.base import Tool
+
+MAX_ROUNDS = 8
+
+SYSTEM_PROMPT = """Eres el asistente de modelado de IngeTrazo, un modelador \
+3D libre estilo SketchUp (Z-up, unidades en METROS). Conversas en español, \
+breve y claro.
+
+Para ACTUAR sobre el modelo incluye EXACTAMENTE UN bloque ```python por \
+respuesta. Tras cada bloque recibirás su resultado (stdout/errores y, si \
+está disponible, una captura del viewport) — revísalo e itera. Cuando el \
+pedido esté terminado, responde SIN bloque de código con un resumen corto.
+
+En el scope del bloque tienes: scene, mesh, selection, groups, layers, \
+viewport, QVector3D, Mesh, Group, Edge, Face, bim.
+Recetario:
+- Cara: f = mesh.add_face([QVector3D(x,y,z), ...])  (lazo antihorario visto \
+desde afuera; los sólidos se construyen cara a cara, cerrados)
+- Color: f.attrs["color"] = (r, g, b, 1.0)  (0..1)
+- Arista: mesh.add_edge(QVector3D(...), QVector3D(...))
+- Grupo: m = Mesh(); m.add_face([...]); g = Group(m, name="..."); \
+groups.append(g)
+- Cámara: viewport.camera.target/distance/yaw/pitch; viewport.update()
+- print(...) para reportar datos.
+Cada bloque es UN paso de undo y se revierte ENTERO si lanza una excepción. \
+Construye por pasos pequeños y verifica con las capturas."""
+
+
+class AsistenteDialog(QDialog):
+    _reply = Signal(object)     # object, not dict: queued dicts get COPIED
+
+    def __init__(self, viewport, parent=None) -> None:
+        super().__init__(parent or viewport.window())
+        self._viewport = viewport
+        self._scope: dict = {"__name__": "__ai__"}
+        self._convo: list[dict] = []
+        self._busy = False
+        self._round = 0
+        self._reply.connect(self._on_reply, Qt.QueuedConnection)
+
+        self.setWindowTitle(tr("AI Assistant") + " — IngeTrazo")
+        self.setMinimumSize(560, 520)
+        self.resize(640, 620)
+        self._build_ui()
+        self._load_settings()
+
+    # ---- UI -----------------------------------------------------------------
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel(tr("API key:")))
+        self._key = QLineEdit()
+        self._key.setEchoMode(QLineEdit.Password)
+        self._key.setPlaceholderText(tr("empty = local Ollama"))
+        self._key.textChanged.connect(self._on_key_changed)
+        row.addWidget(self._key, 2)
+        self._provider_lbl = QLabel("")
+        row.addWidget(self._provider_lbl)
+        self._model = QLineEdit()
+        self._model.setPlaceholderText(tr("model (default per provider)"))
+        row.addWidget(self._model, 1)
+        layout.addLayout(row)
+
+        row2 = QHBoxLayout()
+        self._shots = QCheckBox(tr("Send viewport screenshots to the model"))
+        self._shots.setChecked(True)
+        row2.addWidget(self._shots)
+        row2.addStretch()
+        self._ollama = QLineEdit("http://localhost:11434")
+        self._ollama.setMaximumWidth(220)
+        self._ollama.setToolTip(tr("Ollama URL (key left empty)"))
+        row2.addWidget(self._ollama)
+        layout.addLayout(row2)
+
+        self._chat = QTextEdit()
+        self._chat.setReadOnly(True)
+        self._chat.setFont(
+            QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        layout.addWidget(self._chat, 1)
+
+        row3 = QHBoxLayout()
+        self._input = QLineEdit()
+        self._input.setPlaceholderText(
+            tr("e.g. draw a 6×4 m house with a gable roof"))
+        self._input.returnPressed.connect(self._on_send)
+        row3.addWidget(self._input, 1)
+        self._send = QPushButton(tr("Send"))
+        self._send.clicked.connect(self._on_send)
+        row3.addWidget(self._send)
+        layout.addLayout(row3)
+
+    def _append(self, text: str, color: str) -> None:
+        self._chat.setTextColor(Qt.GlobalColor.black)
+        self._chat.append(f'<pre style="color:{color}; white-space:pre-wrap; '
+                          f'margin:2px">{_esc(text)}</pre>')
+        self._chat.verticalScrollBar().setValue(
+            self._chat.verticalScrollBar().maximum())
+
+    # ---- Settings -----------------------------------------------------------
+    def _settings(self) -> QSettings:
+        return QSettings()
+
+    def _load_settings(self) -> None:
+        st = self._settings()
+        self._key.setText(str(st.value("ia/api_key", "") or ""))
+        self._model.setText(str(st.value("ia/modelo", "") or ""))
+        self._ollama.setText(str(st.value("ia/ollama_url",
+                                          "http://localhost:11434") or ""))
+        self._shots.setChecked(str(st.value("ia/capturas", "1")) != "0")
+        self._on_key_changed()
+
+    def _save_settings(self) -> None:
+        st = self._settings()
+        st.setValue("ia/api_key", self._key.text())
+        st.setValue("ia/modelo", self._model.text().strip())
+        st.setValue("ia/ollama_url", self._ollama.text().strip())
+        st.setValue("ia/capturas", "1" if self._shots.isChecked() else "0")
+
+    def _on_key_changed(self) -> None:
+        provider = ai.detect_provider(self._key.text().strip())
+        self._provider_lbl.setText(f"→ {provider}")
+        self._ollama.setVisible(provider == "ollama")
+
+    def _config(self) -> tuple[str, str, str, str]:
+        key = self._key.text().strip()
+        provider = ai.detect_provider(key)
+        model = self._model.text().strip() or ai.DEFAULT_MODELS[provider]
+        return provider, model, key, self._ollama.text().strip()
+
+    # ---- Chat loop ----------------------------------------------------------
+    def _on_send(self) -> None:
+        if self._busy:
+            return
+        prompt = self._input.text().strip()
+        if not prompt:
+            return
+        self._input.clear()
+        self._save_settings()
+        self._append(f"Tú: {prompt}", "#2b6cb0")
+        self._convo.append({"role": "user", "text": prompt})
+        self._round = 0
+        self._next_turn()
+
+    def _next_turn(self) -> None:
+        self._busy = True
+        self._send.setEnabled(False)
+        self._append(tr("thinking…"), "#808080")
+        provider, model, key, ollama = self._config()
+        convo = list(self._convo)
+
+        def worker() -> None:
+            try:
+                text = ai.chat(provider, model, key, SYSTEM_PROMPT, convo,
+                               ollama_url=ollama)
+                self._reply.emit({"ok": True, "text": text})
+            except Exception as exc:  # noqa: BLE001 — shown in the chat
+                self._reply.emit({"ok": False, "error": str(exc)})
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_reply(self, msg: dict) -> None:
+        if not msg.get("ok"):
+            self._append(tr("Error: {err}", err=msg.get("error")), "#c53030")
+            self._finish()
+            return
+        text = msg["text"]
+        self._convo.append({"role": "assistant", "text": text})
+        self._append(f"IA: {text}", "#1a202c")
+        code = ai.extract_code(text)
+        if code is None or self._round >= MAX_ROUNDS:
+            self._finish()
+            return
+        self._round += 1
+        result = ai.run_transactional(self._viewport, code, self._scope)
+        summary = []
+        if result["stdout"]:
+            summary.append(result["stdout"].rstrip())
+        if result["error"]:
+            summary.append("ERROR (todo revertido): " + str(result["error"]))
+            if result["stderr"]:
+                summary.append(result["stderr"].rstrip()[-800:])
+        summary.append(f"(cambió el modelo: {result['changed']})")
+        feedback = "Resultado de la ejecución:\n" + "\n".join(summary)
+        self._append(feedback, "#718096")
+        provider = self._config()[0]
+        shot = None
+        if self._shots.isChecked() and provider in ai.VISION:
+            shot = self._screenshot_b64()
+        self._convo.append({"role": "user", "text": feedback,
+                            **({"image_png_b64": shot} if shot else {})})
+        self._next_turn()
+
+    def _finish(self) -> None:
+        self._busy = False
+        self._send.setEnabled(True)
+
+    def _screenshot_b64(self) -> str | None:
+        try:
+            image = self._viewport.render_image(768, 512)
+            buf = QBuffer()
+            buf.open(QIODevice.WriteOnly)
+            image.save(buf, "PNG")
+            return base64.b64encode(bytes(buf.data())).decode()
+        except Exception:  # noqa: BLE001 — vision is best-effort
+            return None
+
+
+def _esc(text: str) -> str:
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;"))
+
+
+class AIAssistantTool(Tool):
+    """Extensions-menu entry that opens (or raises) the assistant."""
+    name = "AI Assistant"
+    shortcut = "Ctrl+Shift+A"
+    uses_snap = False
+
+    def on_activate(self, viewport) -> None:
+        window = viewport.window()
+        dialog = getattr(window, "_ai_assistant", None)
+        if dialog is None or not dialog.isVisible():
+            dialog = AsistenteDialog(viewport, parent=window)
+            window._ai_assistant = dialog
+            dialog.show()
+        else:
+            dialog.raise_()
+            dialog.activateWindow()
+
+    def on_deactivate(self, viewport) -> None:
+        pass
