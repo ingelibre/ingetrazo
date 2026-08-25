@@ -959,9 +959,15 @@ class MainWindow(QMainWindow):
         self._refresh_vcb()
 
     def _cancel_tool(self) -> None:
-        """Esc, escalating like the viewport: cancel an in-progress action
-        first; with nothing in progress, clear the selection."""
+        """Esc, escalating like the viewport: release a sticky constraint
+        (axis lock / reference) first, then cancel an in-progress action;
+        with nothing in progress, clear the selection."""
         vp = self.viewport
+        if vp._value_buffer:
+            vp._set_value_buffer("")
+            return
+        if vp.release_constraints():
+            return
         if isinstance(vp.active_tool, PasteTool):
             self._activate_tool("select")
             return

@@ -5103,6 +5103,8 @@ class Viewport(QOpenGLWidget):
             if self._value_buffer:
                 self._set_value_buffer("")
                 return
+            if self.release_constraints():
+                return
             if self.active_tool is not None and self._tool_busy(self.active_tool):
                 self.active_tool.on_cancel(self)
                 return
@@ -5162,6 +5164,19 @@ class Viewport(QOpenGLWidget):
         }[self.linear_inference_mode]
         self.measurementChanged.emit(label)
         self._refresh_snap()
+
+    def release_constraints(self) -> bool:
+        """Drop the sticky drawing constraints — the arrow-key axis lock and
+        the Down-arrow parallel/perpendicular reference. First stop of the
+        Esc cascade: returns True if there was one to release (that Esc press
+        is consumed; the next one cancels the tool action as before)."""
+        if self.axis_lock is None and self.reference_mode is None:
+            return False
+        self.axis_lock = None
+        self.reference_edge = None
+        self.reference_mode = None
+        self._refresh_snap()
+        return True
 
     def _cycle_reference_mode(self) -> None:
         """Down arrow: cycle None → parallel → perpendicular → None.
