@@ -550,6 +550,38 @@ class SetFaceColorCommand(Command):
         scene.version += 1
 
 
+class SetFaceOpacityCommand(Command):
+    """Set (or clear with ``None``) ``attrs["opacity"]`` on a set of faces —
+    the translucency channel (glass): the render's blend pass reads it for
+    coloured and textured faces alike. Same direct-attrs-swap inversion as
+    the colour command."""
+
+    def __init__(self, faces, opacity) -> None:
+        self._faces = list(faces)
+        self._opacity = float(opacity) if opacity is not None else None
+        self._old: Optional[list] = None
+
+    def do(self, scene) -> None:
+        if self._old is None:
+            self._old = [f.attrs.get("opacity") for f in self._faces]
+        for f in self._faces:
+            if self._opacity is None:
+                f.attrs.pop("opacity", None)
+            else:
+                f.attrs["opacity"] = self._opacity
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for f, old in zip(self._faces, self._old or []):
+            if old is None:
+                f.attrs.pop("opacity", None)
+            else:
+                f.attrs["opacity"] = old
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+
 class SetFaceMaterialTagCommand(Command):
     """Set (or clear with ``None``) the registry identity ``attrs["mat"]``
     on a set of faces — the companion of the colour/texture stamp, so a

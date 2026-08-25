@@ -173,7 +173,8 @@
      "file": "glass/glass_blue.png",
      "name": "glass_blue",
      "sw": 1.0,
-     "sh": 1.0
+     "sh": 1.0,
+     "opacity": 0.45
     }
    ]
   }

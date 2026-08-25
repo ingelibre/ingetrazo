@@ -23,6 +23,7 @@ from core.history import (
     CompoundCommand,
     SetFaceColorCommand,
     SetFaceMaterialTagCommand,
+    SetFaceOpacityCommand,
     SetFaceTextureCommand,
 )
 from tools.base import Tool, ToolContext
@@ -49,6 +50,9 @@ class PaintTool(Tool):
     # CLEARS any previous identity — a red face is no longer "Concreto
     # visto", so the per-material takeoff never lies.
     current_material = None
+    # Shared translucency (glass): None = opaque paint, which also CLEARS
+    # any previous opacity on the painted faces.
+    current_opacity: float | None = None
 
     def on_activate(self, viewport) -> None:
         pass
@@ -78,6 +82,7 @@ class PaintTool(Tool):
                 sampled = face.attrs.get("color")
                 PaintTool.current_color = (tuple(sampled) if sampled is not None
                                            else DEFAULT_FACE_COLOR)
+            PaintTool.current_opacity = face.attrs.get("opacity")
             name = face.attrs.get("mat")
             PaintTool.current_material = (
                 vp.scene.materials.get(name) if name else None)
@@ -93,9 +98,11 @@ class PaintTool(Tool):
         mat = PaintTool.current_material
         tag = SetFaceMaterialTagCommand(
             faces, mat.name if mat is not None else None, mat)
+        opacity = SetFaceOpacityCommand(faces, PaintTool.current_opacity)
         if PaintTool.current_texture is not None:
             vp.history.execute(CompoundCommand([
                 SetFaceTextureCommand(faces, PaintTool.current_texture),
+                opacity,
                 tag,
             ]))
         else:
@@ -104,6 +111,7 @@ class PaintTool(Tool):
             vp.history.execute(CompoundCommand([
                 SetFaceColorCommand(faces, PaintTool.current_color),
                 SetFaceTextureCommand(faces, None),
+                opacity,
                 tag,
             ]))
         vp.update()

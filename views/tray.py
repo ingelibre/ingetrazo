@@ -945,7 +945,8 @@ class MaterialsPanel(QWidget):
                         lambda _=False, p=str(path), it=item:
                         self._apply_texture(p, sw=it.get("sw"),
                                             sh=it.get("sh"),
-                                            name=it["name"]))
+                                            name=it["name"],
+                                            opacity=it.get("opacity")))
                     grid.addWidget(b, i // self.COLS, i % self.COLS)
 
         loose = sorted(_TEX_DIR.glob("*.png"))
@@ -970,12 +971,16 @@ class MaterialsPanel(QWidget):
                 w.deleteLater()
         colors: dict = {}
         textures: dict = {}
+        opacities: dict = {}   # texture path → translucency (glass)
         names: dict = {}     # swatch key → material name (registry identity)
         for face in self._window.viewport.scene.render_faces():
             mat = face.attrs.get("mat")
             tex = face.attrs.get("texture")
             if tex and tex.get("path"):
                 textures.setdefault(tex["path"], tex)
+                if face.attrs.get("opacity") is not None:
+                    opacities.setdefault(tex["path"],
+                                         face.attrs.get("opacity"))
                 if mat:
                     names.setdefault(("t", tex["path"]), mat)
             else:
@@ -1009,8 +1014,9 @@ class MaterialsPanel(QWidget):
             t_name = names.get(("t", path))
             b = _swatch_button(pm, t_name or Path(path).stem)
             b.clicked.connect(
-                lambda _=False, t=dict(tex), n=t_name: self._apply_texture(
-                    t["path"], t.get("sw", 1.0), name=n))
+                lambda _=False, t=dict(tex), n=t_name,
+                o=opacities.get(path): self._apply_texture(
+                    t["path"], t.get("sw", 1.0), name=n, opacity=o))
             self._in_model_grid.addWidget(b, i // self.COLS, i % self.COLS)
             i += 1
 
@@ -1018,6 +1024,7 @@ class MaterialsPanel(QWidget):
     def _apply_color(self, rgb, name: str | None = None) -> None:
         PaintTool.current_color = tuple(rgb)
         PaintTool.current_texture = None
+        PaintTool.current_opacity = None
         PaintTool.current_material = self._material_for(
             name, color=tuple(rgb))
         self._window._activate_tool("paint")
@@ -1047,7 +1054,7 @@ class MaterialsPanel(QWidget):
             tr("Material '{name}' updated on every face that wears it",
                name=name), 3000)
 
-    def _material_for(self, name, color=None, texture=None):
+    def _material_for(self, name, color=None, texture=None, opacity=None):
         """The Material identity for the active swatch: the registry's
         entry when the name already exists (keeps its full recipe), a fresh
         one otherwise — registered lazily by the paint command itself, so
@@ -1056,7 +1063,8 @@ class MaterialsPanel(QWidget):
             return None
         from core.materials import Material
         existing = self._window.viewport.scene.materials.get(name)
-        return existing or Material(name, color=color, texture=texture)
+        return existing or Material(name, color=color, texture=texture,
+                                    opacity=opacity)
 
     def _load_texture_fields(self) -> None:
         tex = PaintTool.current_texture
@@ -1102,13 +1110,15 @@ class MaterialsPanel(QWidget):
     def _apply_texture(self, path: str, size: float | None = None,
                        sw: float | None = None,
                        sh: float | None = None,
-                       name: str | None = None) -> None:
+                       name: str | None = None,
+                       opacity: float | None = None) -> None:
         w = sw if sw is not None else (size or self._tile_size)
         h = sh if sh is not None else (size or self._tile_size)
         PaintTool.current_texture = {"path": path, "sw": w, "sh": h,
                                      "rot": 0.0}
+        PaintTool.current_opacity = opacity
         PaintTool.current_material = self._material_for(
-            name, texture=dict(PaintTool.current_texture))
+            name, texture=dict(PaintTool.current_texture), opacity=opacity)
         self._window._activate_tool("paint")
         self._load_texture_fields()
         self._refresh_preview()
