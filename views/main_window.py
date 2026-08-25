@@ -110,6 +110,10 @@ class MainWindow(QMainWindow):
         self._tool_actions: dict[str, QAction] = {}
 
         self._current_path: Optional[Path] = None
+        # Name of an IMPORTED file (.skp/.dae) shown in the title until the
+        # model is saved as .igz — opening a SketchUp file natively should
+        # read as opening THAT file (user request).
+        self._import_name: Optional[str] = None
         self._saved_version: int = 0
 
         self._setup_ui()
@@ -1248,6 +1252,7 @@ class MainWindow(QMainWindow):
         scene.version += 1
         self.viewport.history.clear()
         self._current_path = None
+        self._import_name = None
         self._insert_scale_figure()
         self.viewport.notify_scene_changed()
         self._sync_style_menu()
@@ -1288,6 +1293,7 @@ class MainWindow(QMainWindow):
             return False
         self.viewport.history.clear()
         self._current_path = path
+        self._import_name = None
         self._saved_version = self.viewport.scene.version
         self._sync_style_menu()      # the document may carry its own style
         # A stored survey (Track G, G6) arrives as plain arrays + images; the
@@ -1657,6 +1663,8 @@ class MainWindow(QMainWindow):
         self._prepare_import_display(cmd, cb)
         dlg.close()
         self.viewport.update()
+        self._import_name = path.name
+        self._update_title()
         self.statusBar().showMessage(tr("Imported {name}", name=path.name), 3000)
 
     # ---- SKP via the skp2dae satellite converter -----------------------------
@@ -1732,6 +1740,8 @@ class MainWindow(QMainWindow):
                 self._prepare_import_display(cmd, cb)
                 dlg.close()
                 self.viewport.update()
+                self._import_name = skp.name
+                self._update_title()
                 self.statusBar().showMessage(
                     tr("Imported {name}", name=skp.name), 3000)
                 return True
@@ -1817,6 +1827,8 @@ class MainWindow(QMainWindow):
                 shutil.move(str(tex_dir), target)
             shutil.rmtree(tmpdir, ignore_errors=True)
         self._import_dae_path(dae)
+        self._import_name = skp.name
+        self._update_title()
         return True
 
     # URL del exe limpio (solo codigo MIT: bindea la DLL en runtime, no
@@ -1955,6 +1967,8 @@ class MainWindow(QMainWindow):
         self._prepare_import_display(cmd, cb)
         dlg.close()
         self.viewport.update()
+        self._import_name = path.name
+        self._update_title()
         self.statusBar().showMessage(tr("Imported {name}", name=path.name), 3000)
 
     def _on_import_photomesh(self) -> None:
@@ -2333,8 +2347,12 @@ class MainWindow(QMainWindow):
         self._update_title()
 
     def _update_title(self) -> None:
-        name = (self._current_path.name if self._current_path is not None
-                else tr("Untitled"))
+        if self._current_path is not None:
+            name = self._current_path.name
+        elif self._import_name:
+            name = self._import_name
+        else:
+            name = tr("Untitled")
         marker = " *" if self._is_dirty() else ""
         self.setWindowTitle(f"IngeTrazo — {name}{marker}")
 
