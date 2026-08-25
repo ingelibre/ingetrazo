@@ -24,8 +24,9 @@ def test_scale_figure_left_of_origin_and_172():
         ys = [v.position.y() for v in fig.mesh.vertices]
         zs = [v.position.z() for v in fig.mesh.vertices]
         anchor_x = (min(xs) + max(xs)) / 2
-        assert anchor_x < -1.0                     # clear of the origin, left
-        assert abs((min(ys) + max(ys)) / 2) < 1e-6
+        anchor_y = (min(ys) + max(ys)) / 2
+        assert abs(anchor_x + 0.65) < 1e-6         # 65 cm left of the origin
+        assert abs(anchor_y + 0.60) < 1e-6         # 60 cm toward the viewer
         assert min(zs) == 0.0                      # feet on the ground
         assert abs(max(zs) - 1.72) < 1e-6          # the reference height
     finally:

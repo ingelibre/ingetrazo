@@ -1590,8 +1590,10 @@ class MainWindow(QMainWindow):
         drawing reference (user request — SketchUp does the same). 1.72 m
         tall. A plain group — select and Delete removes it. Added outside
         the undo history and without dirtying the document."""
+        # SketchUp's placement, measured by the user: 60-70 cm to the left
+        # and 60 cm forward (toward the viewer) of the origin.
         from PySide6.QtGui import QVector3D
-        at = QVector3D(-2.5, 0.0, 0.0)
+        at = QVector3D(-0.65, -0.60, 0.0)
         group = self._make_billboard_person("sumari.png", height=1.72,
                                             name="Sumari", position=at)
         if group is None:
