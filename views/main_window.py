@@ -833,11 +833,13 @@ class MainWindow(QMainWindow):
         context menu regardless of the active tool."""
         from core.mesh import Edge, Face
         from core.dimension import Dimension
+        from core.guide import Guide
         from core.textlabel import TextLabel
         from georef.geopath import GeoPath
         from core.history import (
             CompoundCommand, DeleteDimensionsCommand, DeleteGeoPathsCommand,
-            DeleteGroupCommand, DeleteTextLabelsCommand, EraseSelectionCommand,
+            DeleteGroupCommand, DeleteGuidesCommand, DeleteTextLabelsCommand,
+            EraseSelectionCommand,
         )
         sel = self.viewport.scene.selection
         if not sel:
@@ -848,10 +850,13 @@ class MainWindow(QMainWindow):
         dims = [d for d in sel if isinstance(d, Dimension)]
         labels = [t for t in sel if isinstance(t, TextLabel)]
         paths = [p for p in sel if isinstance(p, GeoPath)]
+        guides = [g for g in sel if isinstance(g, Guide)]
         cmds = []
         if edges or faces:
             cmds.append(EraseSelectionCommand(edges, faces))
         cmds.extend(DeleteGroupCommand(g) for g in groups)
+        if guides:
+            cmds.append(DeleteGuidesCommand(guides))
         if dims:
             cmds.append(DeleteDimensionsCommand(dims))
         if labels:

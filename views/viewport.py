@@ -2679,8 +2679,10 @@ class Viewport(QOpenGLWidget):
         if not guides:
             return
         pen = QPen(QColor(70, 90, 120), 1, Qt.DashLine)
-        painter.setPen(pen)
+        sel_pen = QPen(QColor(243, 115, 41), 2, Qt.DashLine)  # selection orange
+        selection = self.scene.selection
         for g in guides:
+            painter.setPen(sel_pen if g in selection else pen)
             if g.is_line:
                 seg = self._clip_segment_front(*g.segment())
                 if seg is None:
@@ -4762,6 +4764,7 @@ class Viewport(QOpenGLWidget):
                   or self.pick_group(x, y) or self.pick_edge(x, y)
                   or self.pick_geopath(x, y) or self.pick_dimension(x, y)
                   or self.pick_text_label(x, y)
+                  or self.pick_guide(x, y)
                   or self.pick_face(x, y))
         if picked is not None and picked not in self.scene.selection:
             self.scene.select([picked])

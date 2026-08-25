@@ -20,11 +20,13 @@ from core.dimension import Dimension
 from core.textlabel import TextLabel
 from core.group import Group
 from core.mesh import Edge, Face
+from core.guide import Guide
 from core.history import (
     CompoundCommand,
     DeleteDimensionsCommand,
     DeleteGeoPathsCommand,
     DeleteGroupCommand,
+    DeleteGuidesCommand,
     DeleteTextLabelsCommand,
     EditTextLabelCommand,
     EraseSelectionCommand,
@@ -98,6 +100,13 @@ class SelectTool(Tool):
         path = viewport.pick_geopath(screen_x, screen_y)
         if path is not None:
             return path
+        # Guides select like in SketchUp (click + Delete / right-click). Real
+        # geometry outranks them; a guide crossing a face still beats the face
+        # (a thin line is the more deliberate target).
+        pick_guide = getattr(viewport, "pick_guide", None)
+        guide = pick_guide(screen_x, screen_y) if pick_guide else None
+        if guide is not None:
+            return guide
         return viewport.pick_face(screen_x, screen_y)
 
     def on_click(self, ctx: ToolContext) -> None:
@@ -287,6 +296,28 @@ class SelectTool(Tool):
                             break
                     if inside:
                         picked.append(group)
+        # Guides: an infinite line can never be fully enclosed, so a window
+        # box skips it and only a crossing box takes it (SketchUp). Guide
+        # points behave like any point. The line is clipped to the part in
+        # front of the camera before projecting (as render/snap do).
+        for g in getattr(viewport.scene, "guides", []):
+            if not viewport.scene.entity_selectable(g):
+                continue
+            if g.is_line:
+                if not crossing:
+                    continue
+                clip = getattr(viewport, "_clip_segment_front", None)
+                seg = clip(*g.segment()) if clip else g.segment()
+                if seg is None:
+                    continue
+                pa, pb = w2p(seg[0]), w2p(seg[1])
+                if (pa is not None and pb is not None
+                        and _seg_rect_overlap(pa, pb, rect)):
+                    picked.append(g)
+            else:
+                p = w2p(g.point)
+                if p is not None and _pt_in_rect(p, rect):
+                    picked.append(g)
         for dim in getattr(viewport.scene, "dimensions", []):
             ap, bp = dim.line_points()
             pa, pb = w2p(ap), w2p(bp)
@@ -321,12 +352,15 @@ class SelectTool(Tool):
                 dims = [d for d in selection if isinstance(d, Dimension)]
                 labels = [t for t in selection if isinstance(t, TextLabel)]
                 paths = [p for p in selection if isinstance(p, GeoPath)]
+                guides = [g for g in selection if isinstance(g, Guide)]
                 commands = []
                 if edges or faces:
                     # Erasing an edge between two coplanar faces merges them back
                     # into one (SketchUp); any other erased edge takes its faces.
                     commands.append(EraseSelectionCommand(edges, faces))
                 commands.extend(DeleteGroupCommand(g) for g in groups)
+                if guides:
+                    commands.append(DeleteGuidesCommand(guides))
                 if dims:
                     commands.append(DeleteDimensionsCommand(dims))
                 if labels:

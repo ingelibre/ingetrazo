@@ -814,6 +814,7 @@ class DeleteGuidesCommand(Command):
         for g in self._guides:
             if g in scene.guides:
                 scene.guides.remove(g)
+            scene.selection.discard(g)
         scene.version += 1
 
     def undo(self, scene) -> None:

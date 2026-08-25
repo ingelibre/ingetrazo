@@ -153,6 +153,44 @@ def test_box_select_maps_instances_to_world():
     assert far not in scene.selection
 
 
+def test_crossing_box_selects_guides_window_does_not():
+    # An infinite guide line can never be fully enclosed → only a crossing box
+    # takes it (SketchUp). Guide points behave like any point.
+    from core.guide import Guide
+    scene = Scene()
+    vp = _StubViewport(scene)
+    line = Guide(V(2, 2), V(1, 0, 0))                 # crosses the box
+    point = Guide(V(3, 3))                            # inside the box
+    far_point = Guide(V(50, 50))
+    scene.guides += [line, point, far_point]
+
+    SelectTool().on_box_select(vp, RECT, crossing=False, additive=False)
+    assert line not in scene.selection                # window: never the line
+    assert point in scene.selection
+    assert far_point not in scene.selection
+
+    SelectTool().on_box_select(vp, RECT, crossing=True, additive=False)
+    assert line in scene.selection                    # crossing takes it
+    assert point in scene.selection
+
+
+def test_delete_key_erases_selected_guides():
+    from PySide6.QtCore import Qt
+    from core.guide import Guide
+    from core.history import History
+    scene = Scene()
+    vp = _StubViewport(scene)
+    vp.history = History(scene)
+    g = Guide(V(0, 0), V(1, 0, 0))
+    scene.guides.append(g)
+    scene.selection.add(g)
+    assert SelectTool().on_key(vp, Qt.Key_Delete, Qt.NoModifier) is True
+    assert scene.guides == []
+    assert g not in scene.selection
+    assert vp.history.undo()
+    assert scene.guides == [g]
+
+
 def test_box_ignores_other_groups_inside_group_edit():
     scene = Scene()
     vp = _StubViewport(scene)
