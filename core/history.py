@@ -271,6 +271,19 @@ class EraseSelectionCommand(Command):
             if f is not None:
                 m.remove_face(f)
                 scene.selection.discard(f)
+        # One segment->faces index for the cascade below: the per-edge scan
+        # over every face was O(edges x faces) — deleting a curved tiled
+        # wall (hundreds of curve segments) took 30+ s on an exploded
+        # 28k-face mesh (piscina.igz report). Kept live as faces merge/die.
+        seg_faces: dict = {}
+
+        def _index_face(f) -> None:
+            for ek in _loop_edges(f.vertices):
+                seg_faces.setdefault(ek, []).append(f)
+
+        for f in m.faces:
+            _index_face(f)
+        dead_faces: set = set()
         slit_planes: list = []
         for a, b in self._edge_endpoints:
             v0 = m.vertex_at(a)
@@ -297,12 +310,17 @@ class EraseSelectionCommand(Command):
                 faces[0].normal(), faces[1].normal()
             ) > 0.999:
                 merged = m.dissolve_coplanar_region(faces)  # reunite the split
+                if merged is not None:
+                    dead_faces.update(id(f) for f in faces)
+                    _index_face(merged)
             if merged is None:
                 # Cascade: the edge and every face bounding it (a face can't
                 # outlive a bounding edge) go away.
                 ekey = frozenset((_key(edge.v0.position), _key(edge.v1.position)))
-                for f in [g for g in list(m.faces)
-                          if ekey in set(_loop_edges(g.vertices))]:
+                for f in seg_faces.get(ekey, ()):
+                    if id(f) in dead_faces:
+                        continue
+                    dead_faces.add(id(f))
                     m.remove_face(f)
                     scene.selection.discard(f)
                 m.remove_edge(edge)
