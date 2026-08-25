@@ -39,6 +39,7 @@ class RotateTool(Tool):
     name = "Rotate"
     shortcut = "Q"
     vcb_label = "Angle"
+    accepts_angle_ratio = True  # VCB "3:12" (rise:run) arrives as degrees
 
     def __init__(self) -> None:
         # ``start_point`` is the protractor centre; the name plugs into the

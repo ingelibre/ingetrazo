@@ -5074,7 +5074,8 @@ class Viewport(QOpenGLWidget):
         # still reach the shortcuts.
         if ev.type() == QEvent.ShortcutOverride and self._value_buffer:
             t = ev.text().lower()
-            if t and (t.isdigit() or t in (".", ",", ";", " ", "-", "m", "c")):
+            if t and (t.isdigit() or t in (".", ",", ";", " ", "-", ":",
+                                           "m", "c")):
                 ev.accept()
                 return True
         return super().event(ev)
@@ -5307,6 +5308,13 @@ class Viewport(QOpenGLWidget):
             if value is None:
                 self._set_value_buffer("")
                 return True
+            if isinstance(value, tuple) and value and value[0] == "ratio":
+                # A slope typed as rise:run (SketchUp "3:12") — only angle
+                # tools understand it; it reaches them as plain degrees.
+                if getattr(self.active_tool, "accepts_angle_ratio", False):
+                    self.active_tool.on_value(self, value[1])
+                self._set_value_buffer("")
+                return True
             self.active_tool.on_value(self, value)
             self._set_value_buffer("")
             return True
@@ -5317,7 +5325,7 @@ class Viewport(QOpenGLWidget):
             self._set_value_buffer(self._value_buffer[:-1])
             return True
 
-        if text and (text.isdigit() or text in (".", ",", ";", " ", "-")
+        if text and (text.isdigit() or text in (".", ",", ";", " ", "-", ":")
                      or text.lower() in ("m", "c")):
             # A field separator (space / ;) with an empty buffer isn't VCB
             # input — let it fall through so Space can act as the Select
@@ -5331,6 +5339,11 @@ class Viewport(QOpenGLWidget):
             # Minus only opens a token (a sign, not an operator).
             if text == "-" and self._current_token_tail():
                 return True
+            # Colon (slope rise:run, SketchUp "3:12"): mid-token only, once.
+            if text == ":":
+                tail = self._current_token_tail()
+                if not tail or ":" in self._value_buffer:
+                    return True
             # Forbid two decimal separators in the current numeric token.
             if text in (".", ","):
                 tail = self._current_token_tail()
@@ -5349,6 +5362,16 @@ class Viewport(QOpenGLWidget):
         Fields may carry a unit suffix (``m``/``cm``/``mm``); bare numbers are
         metres, and a leading minus is kept (direction tools flip on it)."""
         normalized = buffer.replace(",", ".").replace(";", " ")
+        if ":" in normalized:
+            # Slope as rise:run (SketchUp "3:12", "1:6") → ("ratio", degrees).
+            m = re.fullmatch(
+                r"\s*(-?(?:\d+\.?\d*|\.\d+)):(\d+\.?\d*|\.\d+)\s*", normalized)
+            if m is None:
+                return None
+            rise, run = float(m.group(1)), float(m.group(2))
+            if run <= 0:
+                return None
+            return ("ratio", math.degrees(math.atan2(rise, run)))
         scale = {"": 1.0, "m": 1.0, "cm": 0.01, "mm": 0.001}
         nums = []
         for p in normalized.split():

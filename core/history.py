@@ -782,6 +782,25 @@ class AddGuideCommand(Command):
         scene.version += 1
 
 
+class ChangeGuideCommand(Command):
+    """Re-aim an existing guide line (Protractor hot retype: after the guide
+    is created, a typed angle updates it until the next click/command)."""
+
+    def __init__(self, guide, direction) -> None:
+        self.guide = guide
+        self.new = QVector3D(direction).normalized()
+        self.old: Optional[QVector3D] = None
+
+    def do(self, scene) -> None:
+        self.old = self.guide.direction
+        self.guide.direction = QVector3D(self.new)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.guide.direction = self.old
+        scene.version += 1
+
+
 class DeleteGuidesCommand(Command):
     """Remove construction guides (the Eraser, or Edit ▸ Delete Guides)."""
 
