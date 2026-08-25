@@ -191,7 +191,7 @@ def _axes_vertices(spacing: float, pos_len: float = 1.0e5):
     # clamps glLineWidth), so the dash LENGTH is what sets the perceived
     # weight — SketchUp's negative axes read as fine dotted lines.
     dash = spacing * 0.18
-    n = 260                          # dashes → reach = spacing*n past the model
+    n = 520                          # dashes → reach = spacing*n past the model
     for name, (dx, dy, dz) in _AXIS_DIRS.items():
         start = len(coords) // 3
         coords.extend([0.0, 0.0, 0.0, dx * pos_len, dy * pos_len, dz * pos_len])
@@ -984,7 +984,7 @@ class Viewport(QOpenGLWidget):
         # axis wins the LEQUAL depth test. Rubber-band stays on top (drawn last).
         if self.plano_style is None and self.style_override is None:
             # No axes on a plan sheet / styled composer frame.
-            spacing = max(self.camera.distance * 0.016, 1e-4)
+            spacing = max(self.camera.distance * 0.008, 1e-4)
             axes_coords, self._axes_spans = _axes_vertices(spacing)
             data = axes_coords.tobytes()
             self._axes_vbo.bind()
