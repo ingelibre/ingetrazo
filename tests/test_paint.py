@@ -34,3 +34,23 @@ def test_library_glass_item_declares_opacity():
                       "textures" / "library.json").read_text())
     glass = next(c for c in lib["categories"] if c["id"] == "glass")
     assert all(0.0 < it["opacity"] < 1.0 for it in glass["items"])
+
+
+def test_library_files_exist_and_declare_real_sizes():
+    # Every library item must point at a real PNG with a positive tile
+    # size — a typo'd path shows an empty swatch silently otherwise.
+    import json
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / "resources" / "textures"
+    lib = json.loads((root / "library.json").read_text())
+    cats = {c["id"] for c in lib["categories"]}
+    assert {"wood", "stone", "ground", "floor", "water"} <= cats
+    names = set()
+    for cat in lib["categories"]:
+        for it in cat["items"]:
+            assert (root / "library" / it["file"]).exists(), it["file"]
+            assert it["sw"] > 0 and it["sh"] > 0, it["name"]
+            names.add(it["name"])
+    # The urgent-project set (2026-08-25) stays available.
+    assert {"wood_bark", "stone_rock", "stone_river_pebbles",
+            "grass_lawn", "paving_concrete", "water_calm"} <= names

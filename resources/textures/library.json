@@ -60,6 +60,24 @@
      "name": "stone_cobble",
      "sw": 0.8,
      "sh": 0.8
+    },
+    {
+     "file": "stone/stone_rock.png",
+     "name": "stone_rock",
+     "sw": 1.5,
+     "sh": 1.5
+    },
+    {
+     "file": "stone/stone_moss_wall.png",
+     "name": "stone_moss_wall",
+     "sw": 1.2,
+     "sh": 1.2
+    },
+    {
+     "file": "stone/stone_river_pebbles.png",
+     "name": "stone_river_pebbles",
+     "sw": 1.0,
+     "sh": 1.0
     }
    ]
   },
@@ -77,6 +95,18 @@
      "name": "wood_planks_dark",
      "sw": 1.0,
      "sh": 1.0
+    },
+    {
+     "file": "wood/wood_bark.png",
+     "name": "wood_bark",
+     "sw": 0.8,
+     "sh": 0.8
+    },
+    {
+     "file": "wood/wood_bark_olive.png",
+     "name": "wood_bark_olive",
+     "sw": 0.8,
+     "sh": 0.8
     }
    ]
   },
@@ -123,6 +153,12 @@
      "name": "floor_pavers",
      "sw": 0.8,
      "sh": 0.8
+    },
+    {
+     "file": "floor/paving_concrete.png",
+     "name": "paving_concrete",
+     "sw": 1.2,
+     "sh": 1.2
     }
    ]
   },
@@ -163,6 +199,12 @@
      "name": "asphalt",
      "sw": 1.5,
      "sh": 1.5
+    },
+    {
+     "file": "ground/grass_lawn.png",
+     "name": "grass_lawn",
+     "sw": 1.5,
+     "sh": 1.5
     }
    ]
   },
@@ -175,6 +217,18 @@
      "sw": 1.0,
      "sh": 1.0,
      "opacity": 0.45
+    }
+   ]
+  },
+  {
+   "id": "water",
+   "items": [
+    {
+     "file": "water/water_calm.png",
+     "name": "water_calm",
+     "sw": 2.0,
+     "sh": 2.0,
+     "opacity": 0.75
     }
    ]
   }

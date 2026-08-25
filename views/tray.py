@@ -883,6 +883,7 @@ class MaterialsPanel(QWidget):
         "brick": "Brick", "concrete": "Concrete", "stone": "Stone",
         "wood": "Wood", "roof": "Roofing", "floor": "Flooring",
         "metal": "Metal", "ground": "Ground", "glass": "Glass",
+        "water": "Water",
     }
 
     def _fill_library_categories(self, root) -> None:
