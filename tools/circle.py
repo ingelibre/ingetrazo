@@ -198,5 +198,5 @@ class CircleTool(_RadialTool):
 
 class PolygonTool(_RadialTool):
     name = "Polygon"
-    shortcut = "G"   # P is taken by perspective toggle
+    shortcut = None  # SketchUp: Polygon has no default; G = Make Component
     sides = 6

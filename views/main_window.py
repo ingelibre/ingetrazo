@@ -59,6 +59,9 @@ from tools.rotated_rectangle import RotatedRectangleTool
 from tools.offset import OffsetTool
 from tools.paint import PaintTool
 from tools.paste import PasteTool
+from tools.arc import PieTool
+from tools.flip import FlipTool
+from tools.freehand import FreehandTool
 from tools.section import SectionPlaneTool
 from tools.pushpull import PushPullTool
 from tools.rectangle import RectangleTool
@@ -81,6 +84,7 @@ class MainWindow(QMainWindow):
         self._tools = {
             "select": SelectTool(),
             "line": LineTool(),
+            "freehand": FreehandTool(),
             "rectangle": RectangleTool(),
             "rotated_rect": RotatedRectangleTool(),
             "circle": CircleTool(),
@@ -88,11 +92,13 @@ class MainWindow(QMainWindow):
             "arc": ArcTool(),
             "arc3": ThreePointArcTool(),
             "center_arc": CenterArcTool(),
+            "pie": PieTool(),
             "pushpull": PushPullTool(),
             "offset": OffsetTool(),
             "move": MoveTool(),
             "rotate": RotateTool(),
             "scale": ScaleTool(),
+            "flip": FlipTool(),
             "followme": FollowMeTool(),
             "paint": PaintTool(),
             "dimension": DimensionTool(),
@@ -216,9 +222,9 @@ class MainWindow(QMainWindow):
         layout = [
             ("main", tr("Main"), ["select", "eraser", "paint"]),
             ("draw", tr("Draw"),
-             ["line", "rectangle", "rotated_rect", "circle", "polygon",
-              "arc", "arc3", "center_arc"]),
-            ("modify", tr("Modify"), ["move", "rotate", "scale", "pushpull", "followme", "offset"]),
+             ["line", "freehand", "rectangle", "rotated_rect", "circle",
+              "polygon", "arc", "arc3", "center_arc", "pie"]),
+            ("modify", tr("Modify"), ["move", "rotate", "scale", "flip", "pushpull", "followme", "offset"]),
             ("annotate", tr("Annotate"), ["tape", "protractor", "dimension", "text", "geopath"]),
             ("sections", tr("Sections"), ["section"]),
         ]
@@ -391,6 +397,11 @@ class MainWindow(QMainWindow):
         group_action.triggered.connect(self._on_make_group)
         edit_menu.addAction(group_action)
 
+        component_action = QAction(tr("Make Component…"), self)
+        component_action.setShortcut(QKeySequence("G"))   # SketchUp's G
+        component_action.triggered.connect(self._on_make_component)
+        edit_menu.addAction(component_action)
+
         explode_action = QAction(tr("Explode Group"), self)
         explode_action.setShortcut(QKeySequence("Ctrl+Shift+G"))
         explode_action.triggered.connect(self._on_explode_group)
@@ -490,8 +501,9 @@ class MainWindow(QMainWindow):
         # Draw menu (SketchUp: the drawing tools, grouped by family)
         draw_menu = menubar.addMenu(tr("Draw"))
         draw_menu.addAction(self._tool_actions["line"])
+        draw_menu.addAction(self._tool_actions["freehand"])
         arcs_menu = draw_menu.addMenu(tr("Arcs"))
-        for key in ("arc", "arc3", "center_arc"):
+        for key in ("arc", "arc3", "center_arc", "pie"):
             arcs_menu.addAction(self._tool_actions[key])
         shapes_menu = draw_menu.addMenu(tr("Shapes"))
         for key in ("rectangle", "rotated_rect", "circle", "polygon"):
@@ -502,7 +514,7 @@ class MainWindow(QMainWindow):
         # Tools menu (SketchUp: select/modify/measure — drawing lives in Draw)
         tools_menu = menubar.addMenu(tr("Tools"))
         for keys in (("select", "eraser", "paint"),
-                     ("move", "rotate", "scale"),
+                     ("move", "rotate", "scale", "flip"),
                      ("pushpull", "followme", "offset"),
                      ("tape", "protractor"),
                      ("dimension", "text"),
@@ -846,6 +858,44 @@ class MainWindow(QMainWindow):
             self.viewport.history.execute(MakeGroupCommand(faces, edges))
             self.viewport.update()
 
+    def _on_make_component(self) -> None:
+        """SketchUp's Make Component (G): the selection becomes a shared
+        DEFINITION placed as an instance — every copy shares it."""
+        if self.viewport.scene.edit_group is not None:
+            self.viewport.flash_status(tr(
+                "Leave the group first (Esc) — nested groups aren't "
+                "supported yet"))
+            return
+        sel = self.viewport.scene.selection
+        faces = [f for f in sel if isinstance(f, Face)]
+        edges = [e for e in sel if isinstance(e, Edge)]
+        if not faces and not edges:
+            self.viewport.flash_status(
+                tr("Select the geometry for the component first"))
+            return
+        from PySide6.QtWidgets import QInputDialog
+        count = sum(1 for g in self.viewport.scene.groups
+                    if getattr(g, "xform", None) is not None) + 1
+        name, ok = QInputDialog.getText(
+            self, tr("Make Component"), tr("Component name:"),
+            text=tr("Component #{n}", n=count))
+        if not ok:
+            return
+        self.viewport.history.execute(MakeGroupCommand(
+            faces, edges, component=True,
+            name=name.strip() or tr("Component #{n}", n=count)))
+        self.viewport.update()
+        self.statusBar().showMessage(tr(
+            "Component created — copies will share its definition"), 4000)
+
+    def _on_make_unique(self) -> None:
+        from core.history import MakeUniqueCommand
+        for g in [g for g in self.viewport.scene.selection
+                  if isinstance(g, Group)
+                  and getattr(g, "xform", None) is not None]:
+            self.viewport.history.execute(MakeUniqueCommand(g))
+        self.viewport.update()
+
     def _on_explode_group(self) -> None:
         if self.viewport.scene.edit_group is not None:
             self.viewport.flash_status(tr(
@@ -1097,8 +1147,12 @@ class MainWindow(QMainWindow):
             menu.addSeparator()
         if has_mesh:
             menu.addAction(tr("Make Group"), self._on_make_group)
+            menu.addAction(tr("Make Component…"), self._on_make_component)
         if has_group:
             menu.addAction(tr("Explode Group"), self._on_explode_group)
+            if any(isinstance(e, Group)
+                   and getattr(e, "xform", None) is not None for e in sel):
+                menu.addAction(tr("Make Unique"), self._on_make_unique)
         if has_mesh or has_group:
             menu.addAction(tr("Cut"), lambda: self.viewport.cut_selection())
             menu.addAction(tr("Copy"), lambda: self.viewport.copy_selection())

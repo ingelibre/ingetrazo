@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import math
 
+from core.i18n import tr
+
 from PySide6.QtGui import QVector3D
 
 from core.edits import build_add_edges
@@ -70,12 +72,16 @@ def _arc_3pts_2d(s, m, e, segments):
 
 
 
-def commit_arc(viewport, pts: list[QVector3D]) -> None:
+def commit_arc(viewport, pts: list[QVector3D], close_to=None) -> None:
     """Commit an arc polyline with the shared curve pipeline: planar
     arrangement on flat drawings, scoped per-plane arrangement when the
     drawing plane already carries content in a 3D scene, naive otherwise.
-    Used by every arc variant."""
+    Used by every arc variant. With ``close_to`` (a centre point) the two
+    radius edges close the wedge — SketchUp's Pie."""
     segments = [(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
+    if close_to is not None:
+        segments = ([(close_to, pts[0])] + segments
+                    + [(pts[-1], close_to)])
     from tools.circle import busy_plane, flat_drawing
     if flat_drawing(viewport.scene, pts):
         cmd = build_add_edges(
@@ -138,6 +144,30 @@ class ArcTool(Tool):
             return False
         sign = -1.0 if self._bulge_for(self.hover_point) < 0 else 1.0
         pts = self._points(None, bulge=sign * value)
+        if len(pts) >= 2:
+            self._commit(viewport, pts)
+        return True
+
+    def on_radius_value(self, viewport, radius: float) -> bool:
+        """SketchUp's "2r": type the RADIUS instead of the bulge. The minor
+        arc is taken (like SketchUp); a radius smaller than half the chord
+        is impossible and is refused with a status message."""
+        if self.end_point is None or radius <= 0:
+            return False
+        half = (self.end_point - self.start_point).length() * 0.5
+        if half < 1e-9:
+            return False
+        if radius < half - 1e-9:
+            viewport.flash_status(tr(
+                "Radius {r} m is smaller than half the chord ({h} m)",
+                r=f"{radius:.2f}", h=f"{half:.2f}"))
+            return True
+        radius = max(radius, half)
+        h = radius - math.sqrt(max(radius * radius - half * half, 0.0))
+        sign = 1.0
+        if self.hover_point is not None and self._bulge_for(self.hover_point) < 0:
+            sign = -1.0
+        pts = self._points(None, bulge=sign * h)
         if len(pts) >= 2:
             self._commit(viewport, pts)
         return True
@@ -420,3 +450,18 @@ class CenterArcTool(Tool):
         self.start_point = None
         self.arm_point = None
         self.work_plane = None
+
+
+class PieTool(CenterArcTool):
+    """SketchUp's Pie: the centre arc whose wedge CLOSES — the two radius
+    edges join the arc's ends to the centre and the slice becomes a face.
+    Same clicks as Center Arc: centre, radius arm, sweep."""
+
+    name = "Pie"
+    shortcut = None
+
+    def _commit(self, viewport, pts: list[QVector3D]) -> None:
+        centre = QVector3D(self.start_point)
+        commit_arc(viewport, pts, close_to=centre)
+        self._reset()
+        viewport.update()

@@ -1241,6 +1241,93 @@ def rotate_points(scene, keys: set, matrix) -> None:
     scene.version += 1
 
 
+def mirror_matrix(centre: QVector3D, axis: QVector3D):
+    """Reflection about the plane through ``centre`` with normal ``axis``
+    (Householder), as a QMatrix4x4 — SketchUp's Flip."""
+    from PySide6.QtGui import QMatrix4x4
+    n = QVector3D(axis).normalized()
+    r = QMatrix4x4(
+        1 - 2 * n.x() * n.x(), -2 * n.x() * n.y(), -2 * n.x() * n.z(), 0,
+        -2 * n.y() * n.x(), 1 - 2 * n.y() * n.y(), -2 * n.y() * n.z(), 0,
+        -2 * n.z() * n.x(), -2 * n.z() * n.y(), 1 - 2 * n.z() * n.z(), 0,
+        0, 0, 0, 1)
+    t_in = QMatrix4x4()
+    t_in.translate(-centre)
+    t_out = QMatrix4x4()
+    t_out.translate(centre)
+    return t_out * r * t_in
+
+
+class FlipGroupsCommand(Command):
+    """Flip whole groups about an axis plane (SketchUp's Flip). Instances
+    compose the reflection into their transform (O(1)); classic groups map
+    their vertices and re-reverse every face loop so the mirrored solid
+    keeps its faces pointing OUT. A reflection is an involution: undo flips
+    again."""
+
+    def __init__(self, groups, centre: QVector3D, axis: QVector3D) -> None:
+        self._groups = list(groups)
+        self.centre = QVector3D(centre)
+        self.axis = QVector3D(axis)
+
+    def _flip(self, scene) -> None:
+        m = mirror_matrix(self.centre, self.axis)
+        for g in self._groups:
+            if getattr(g, "xform", None) is not None:
+                g.xform = m * g.xform
+                continue
+            for v in list(g.mesh.vertices):
+                g.mesh.move_vertex(v, m.map(v.position) - v.position)
+            for f in g.mesh.faces:
+                f.loop.reverse()
+                for h in getattr(f, "hole_loops", []) or []:
+                    h.reverse()
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._flip(scene)
+
+    def undo(self, scene) -> None:
+        self._flip(scene)
+
+
+class FlipVerticesCommand(Command):
+    """Mirror loose positions about an axis plane and re-reverse the fully
+    selected faces' windings (their normals would flip inward otherwise).
+    Snapshot undo, the exact mirror of RotateVerticesCommand."""
+
+    def __init__(self, positions: Iterable[QVector3D], centre: QVector3D,
+                 axis: QVector3D, faces=()) -> None:
+        self.src = [QVector3D(p) for p in positions]
+        self.centre = QVector3D(centre)
+        self.axis = QVector3D(axis)
+        self._faces = list(faces)
+        self._before: Optional[dict] = None
+        self._after: Optional[dict] = None
+
+    def do(self, scene) -> None:
+        if self._after is not None:  # redo
+            scene.mesh.restore_state(self._after)
+            scene.version += 1
+            return
+        self._before = scene.mesh.capture_state()
+        m = mirror_matrix(self.centre, self.axis)
+        rotate_points(scene, {_key(p) for p in self.src}, m)
+        for f in self._faces:
+            if hasattr(f, "loop"):
+                f.loop.reverse()
+                for h in getattr(f, "hole_loops", []) or []:
+                    h.reverse()
+        fold_nonplanar_faces(scene.mesh)
+        self._after = scene.mesh.capture_state()
+
+    def undo(self, scene) -> None:
+        if self._before is not None:
+            scene.mesh.restore_state(self._before)
+            scene.version += 1
+
+
 class RotateVerticesCommand(Command):
     """Rotate every shared vertex at a set of positions around ``axis``
     through ``center`` by ``degrees``, then **autofold** (a partial rotation
@@ -1843,7 +1930,14 @@ class MakeGroupCommand(Command):
     mesh, removing them from the loose mesh so they no longer weld to the rest.
     Snapshot undo (geometry crosses meshes — too tangled for a per-op inverse)."""
 
-    def __init__(self, faces: Iterable[Face], edges: Iterable[Edge]) -> None:
+    def __init__(self, faces: Iterable[Face], edges: Iterable[Edge],
+                 component: bool = False, name: str | None = None) -> None:
+        # ``component=True`` builds the fresh mesh in LOCAL coordinates
+        # (origin at the selection's min corner) and hands back an INSTANCE
+        # (Group with an xform) — SketchUp's Make Component: copies of it
+        # share the definition through the existing prototype machinery.
+        self._component = component
+        self._name = name
         faces = list(faces)
         # Attrs (colour, texture, layer, IFC tag) must travel into the group's
         # fresh mesh with each face — grouping a painted set used to strip it.
@@ -1881,22 +1975,41 @@ class MakeGroupCommand(Command):
     def do(self, scene) -> None:
         m = scene.mesh
         self.snapshot = m.capture_state()
-        # The group is a fresh copy built from the captured positions.
+        # The group is a fresh copy built from the captured positions. A
+        # COMPONENT shifts them into local coordinates around the origin.
+        origin = QVector3D(0.0, 0.0, 0.0)
+        if self._component:
+            pts = [p for loop, holes, _a in self._face_loops
+                   for lst in (loop, *holes) for p in lst]
+            pts += [p for pair in self._edge_ends for p in pair]
+            if pts:
+                origin = QVector3D(min(p.x() for p in pts),
+                                   min(p.y() for p in pts),
+                                   min(p.z() for p in pts))
+
+        def L(p):
+            return QVector3D(p) - origin
+
         gmesh = Mesh()
         for loop, holes, attrs in self._face_loops:
-            gf = gmesh.add_face([QVector3D(p) for p in loop],
-                                [[QVector3D(p) for p in h] for h in holes] or None)
+            gf = gmesh.add_face([L(p) for p in loop],
+                                [[L(p) for p in h] for h in holes] or None)
             if attrs:
                 gf.attrs.update(attrs)
         for a, b in self._edge_ends:
-            gmesh.add_edge(QVector3D(a), QVector3D(b))
+            gmesh.add_edge(L(a), L(b))
         for a, b, soft, curve in self._flagged:
-            va, vb = gmesh.vertex_at(a), gmesh.vertex_at(b)
+            va, vb = gmesh.vertex_at(L(a)), gmesh.vertex_at(L(b))
             e = (gmesh.find_edge(va, vb)
                  if va is not None and vb is not None else None)
             if e is not None:
                 e.soft, e.curve = soft, curve
-        self.group = Group(gmesh)
+        self.group = Group(gmesh, name=self._name)
+        if self._component:
+            from PySide6.QtGui import QMatrix4x4
+            t = QMatrix4x4()
+            t.translate(origin)
+            self.group.xform = t
         # Remove the grouped geometry from the loose mesh.
         face_keysets = [frozenset(_key(p) for p in loop)
                         for loop, _h, _a in self._face_loops]
@@ -1923,6 +2036,27 @@ class MakeGroupCommand(Command):
             scene.groups.remove(self.group)
         scene.selection.discard(self.group)
         scene.mesh.restore_state(self.snapshot)
+        scene.version += 1
+
+
+class MakeUniqueCommand(Command):
+    """SketchUp's Make Unique: bake a component instance into its OWN mesh
+    so edits stop touching the siblings' shared definition."""
+
+    def __init__(self, group) -> None:
+        self.group = group
+        self._proto = None
+        self._xform = None
+
+    def do(self, scene) -> None:
+        self._proto = self.group.mesh
+        self._xform = self.group.xform
+        self.group.materialize()
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.group.mesh = self._proto
+        self.group.xform = self._xform
         scene.version += 1
 
 

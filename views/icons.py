@@ -97,6 +97,17 @@ def _line(p, ink):
     _dot(p, 36, 12)
 
 
+def _freehand(p, ink):
+    # A hand-drawn squiggle — SketchUp's Freehand (the Line flyout).
+    path = QPainterPath()
+    path.moveTo(10, 34)
+    path.cubicTo(16, 18, 22, 40, 28, 24)
+    path.cubicTo(32, 14, 36, 18, 38, 14)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    _dot(p, 10, 34)
+
+
 def _rectangle(p, ink):
     p.setBrush(Qt.NoBrush)
     p.drawRect(QRectF(12, 14, 24, 20))
@@ -138,6 +149,18 @@ def _arc3(p, ink):
     _dot(p, 24, 15)
 
 
+def _pie(p, ink):
+    # SketchUp's Pie: a closed wedge — arc plus its two radius edges.
+    p.setBrush(Qt.NoBrush)
+    p.drawArc(QRectF(10, 10, 28, 28), 15 * 16, 115 * 16)
+    import math as _m
+    for adeg in (15, 130):
+        a = _m.radians(adeg)
+        p.drawLine(QPointF(24, 24),
+                   QPointF(24 + 14 * _m.cos(a), 24 - 14 * _m.sin(a)))
+    _dot(p, 24, 24)
+
+
 def _rotate(p, ink):
     # Two curved arrows chasing each other around a pivot — the universal
     # "rotate" symbol. The small centre dot is the pivot the geometry turns about.
@@ -171,6 +194,22 @@ def _center_arc(p, ink):
     _dot(p, 38, 24, 2.6)
     _dot(p, 17, 12, 2.6)
 
+
+
+def _flip(p, ink):
+    # Flip/mirror: two triangles reflected across a dashed axis.
+    p.setBrush(Qt.NoBrush)
+    dash = QPen(ink, 2.0, Qt.DashLine)
+    p.save()
+    p.setPen(dash)
+    p.drawLine(QPointF(24, 8), QPointF(24, 40))
+    p.restore()
+    p.setBrush(QBrush(ink))
+    p.drawPolygon(QPolygonF([QPointF(20, 14), QPointF(20, 34),
+                             QPointF(10, 30)]))
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(28, 14), QPointF(28, 34),
+                             QPointF(38, 30)]))
 
 
 def _scale(p, ink):
@@ -669,14 +708,15 @@ def _comp_flecha(p, ink):
 
 
 _DRAW = {
-    "select": _select, "line": _line, "rectangle": _rectangle,
+    "select": _select, "line": _line, "freehand": _freehand,
+    "rectangle": _rectangle,
     "image": _image_icon,
     "comp_vista": _comp_vista, "comp_norte": _comp_norte,
     "comp_leyenda": _comp_leyenda, "comp_escala": _comp_escala,
     "comp_cajetin": _comp_cajetin, "comp_flecha": _comp_flecha,
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
-    "arc": _arc, "arc3": _arc3, "center_arc": _center_arc,
-    "rotate": _rotate, "scale": _scale, "followme": _followme, "pushpull": _pushpull, "offset": _offset,
+    "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
+    "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset,
     "move": _move, "paint": _paint, "dimension": _dimension,
     "geopath": _geopath, "orbit": _orbit, "pan": _pan,
     "text": _text, "text3d": _text3d,
@@ -721,9 +761,10 @@ _cursor_cache: dict = {}
 # Drawing tools: pencil cursor + a mini badge of the shape at bottom-right
 # (None = bare pencil, SketchUp's Line). Hotspot = the pencil tip.
 _PENCIL_TOOLS = {
-    "line": None, "rectangle": "rectangle", "rotated_rect": "rotated_rect",
+    "line": None, "freehand": "freehand",
+    "rectangle": "rectangle", "rotated_rect": "rotated_rect",
     "circle": "circle", "polygon": "polygon", "arc": "arc", "arc3": "arc3",
-    "center_arc": "center_arc", "geopath": "geopath",
+    "center_arc": "center_arc", "pie": "pie", "geopath": "geopath",
 }
 _PENCIL_HOT = (6.0, 42.0)          # the tip, in 48-space
 
@@ -731,6 +772,7 @@ _PENCIL_HOT = (6.0, 42.0)          # the tip, in 48-space
 # in the icon's 48-space (see each draw function's geometry).
 _CURSOR_HOTSPOTS = {
     "move": (24, 24), "rotate": (24, 24), "scale": (24, 24),
+    "flip": (24, 24),
     "pushpull": (24, 24), "offset": (24, 24), "followme": (24, 24),
     "dimension": (12, 30),          # left end of the dimension line
     "text": (24, 24), "text3d": (24, 24),

@@ -2587,6 +2587,12 @@ class Viewport(QOpenGLWidget):
         # Construction guides (Tape Measure) — fine dashed scaffolding lines.
         self._draw_guides(painter)
         self._draw_section_planes(painter)
+        # Tool-owned overlay (the Flip planes; the future Axes gizmo): a tool
+        # exposing ``draw_overlay(viewport, painter)`` paints after the
+        # document annotations, before the edit-group frame.
+        hook = getattr(self.active_tool, "draw_overlay", None)
+        if callable(hook):
+            hook(self, painter)
         self._draw_edit_group_box(painter)
 
         # Terrain-surface fills (draped / flat) under the georef paths — Track G.
@@ -5675,7 +5681,7 @@ class Viewport(QOpenGLWidget):
         if ev.type() == QEvent.ShortcutOverride and self._value_buffer:
             t = ev.text().lower()
             if t and (t.isdigit() or t in (".", ",", ";", " ", "-", ":",
-                                           "m", "c")):
+                                           "m", "c", "r")):
                 ev.accept()
                 return True
         return super().event(ev)
@@ -5915,6 +5921,14 @@ class Viewport(QOpenGLWidget):
                     self.active_tool.on_value(self, value[1])
                 self._set_value_buffer("")
                 return True
+            if isinstance(value, tuple) and value and value[0] == "radius":
+                # SketchUp's "2r": the 2-point arc takes a RADIUS instead
+                # of the bulge. Only tools that declare it understand.
+                handler = getattr(self.active_tool, "on_radius_value", None)
+                if handler is not None:
+                    handler(self, value[1])
+                self._set_value_buffer("")
+                return True
             self.active_tool.on_value(self, value)
             self._set_value_buffer("")
             return True
@@ -5926,15 +5940,17 @@ class Viewport(QOpenGLWidget):
             return True
 
         if text and (text.isdigit() or text in (".", ",", ";", " ", "-", ":")
-                     or text.lower() in ("m", "c")):
+                     or text.lower() in ("m", "c", "r")):
             # A field separator (space / ;) with an empty buffer isn't VCB
             # input — let it fall through so Space can act as the Select
             # shortcut (SketchUp-style). It only separates fields mid-number.
             if text in (";", " ") and not self._value_buffer:
                 return False
             # A unit letter with an empty buffer is a tool shortcut (M = Move,
-            # C = Circle), not VCB input — only buffer it after a digit.
-            if text.lower() in ("m", "c") and not self._current_token_tail():
+            # C = Circle, R = Rectangle), not VCB input — only buffer it
+            # after a digit. "r" is SketchUp's radius suffix for arcs (2r).
+            if (text.lower() in ("m", "c", "r")
+                    and not self._current_token_tail()):
                 return False
             # Minus only opens a token (a sign, not an operator).
             if text == "-" and self._current_token_tail():
@@ -5962,6 +5978,13 @@ class Viewport(QOpenGLWidget):
         Fields may carry a unit suffix (``m``/``cm``/``mm``); bare numbers are
         metres, and a leading minus is kept (direction tools flip on it)."""
         normalized = buffer.replace(",", ".").replace(";", " ")
+        stripped = normalized.strip()
+        if stripped.lower().endswith("r") and ":" not in stripped:
+            import re as _re
+            m = _re.fullmatch(r"(\d+\.?\d*|\.\d+)r", stripped.lower())
+            if m is None:
+                return None
+            return ("radius", float(m.group(1)))
         if ":" in normalized:
             # Slope as rise:run (SketchUp "3:12", "1:6") → ("ratio", degrees).
             m = re.fullmatch(
