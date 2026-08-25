@@ -187,7 +187,10 @@ def _axes_vertices(spacing: float, pos_len: float = 1.0e5):
     coords = array("f")
     spans: dict[str, tuple[int, int]] = {}
     spacing = max(spacing, 1e-4)
-    dash = spacing * 0.5
+    # Short dots, not half-duty dashes: GL lines are stuck at 1px (Mesa
+    # clamps glLineWidth), so the dash LENGTH is what sets the perceived
+    # weight — SketchUp's negative axes read as fine dotted lines.
+    dash = spacing * 0.18
     n = 140                          # dashes → reach = spacing*n past the model
     for name, (dx, dy, dz) in _AXIS_DIRS.items():
         start = len(coords) // 3
