@@ -201,3 +201,23 @@ def test_list_models_filters_and_strips(monkeypatch):
     ai.list_models("anthropic", "sk-ant-k")
     assert "api.anthropic.com/v1/models" in calls["url"]
     assert calls["headers"]["x-api-key"] == "sk-ant-k"
+
+
+def test_chat_colors_follow_theme():
+    from PySide6.QtGui import QColor, QPalette
+    from plugins.ai_assistant import AsistenteDialog
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        dlg = AsistenteDialog(win.viewport, parent=win)
+        light = QPalette()
+        light.setColor(QPalette.ColorRole.Base, QColor("#ffffff"))
+        dlg.setPalette(light)
+        assert dlg._chat_colors()["ai"] == "#1a202c"
+        dark = QPalette()
+        dark.setColor(QPalette.ColorRole.Base, QColor("#252525"))
+        dlg.setPalette(dark)
+        assert dlg._chat_colors()["ai"] == "#e8eaed"   # readable on dark
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

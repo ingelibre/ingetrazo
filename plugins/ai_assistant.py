@@ -22,7 +22,7 @@ import base64
 import threading
 
 from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt, Signal
-from PySide6.QtGui import QFontDatabase
+from PySide6.QtGui import QFontDatabase, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -152,8 +152,18 @@ class AsistenteDialog(QDialog):
         row3.addWidget(self._send)
         layout.addLayout(row3)
 
-    def _append(self, text: str, color: str) -> None:
-        self._chat.setTextColor(Qt.GlobalColor.black)
+    def _chat_colors(self) -> dict:
+        """Text colors that read on the CURRENT theme — hardcoded
+        light-theme grays vanish on a dark chat background (user report)."""
+        dark = self.palette().color(QPalette.ColorRole.Base).lightness() < 128
+        if dark:
+            return {"user": "#7ab7ff", "ai": "#e8eaed", "muted": "#9aa5b1",
+                    "ok": "#7ce0a3", "err": "#ff8f8f"}
+        return {"user": "#2b6cb0", "ai": "#1a202c", "muted": "#718096",
+                "ok": "#2f855a", "err": "#c53030"}
+
+    def _append(self, text: str, role: str) -> None:
+        color = self._chat_colors()[role]
         self._chat.append(f'<pre style="color:{color}; white-space:pre-wrap; '
                           f'margin:2px">{_esc(text)}</pre>')
         self._chat.verticalScrollBar().setValue(
@@ -218,7 +228,7 @@ class AsistenteDialog(QDialog):
         self._save_settings()
         provider, _model, key, ollama = self._config()
         self._append(tr("Fetching the model list from {name}…",
-                        name=ai.PROVIDER_INFO[provider][0]), "#808080")
+                        name=ai.PROVIDER_INFO[provider][0]), "muted")
         self._modelos.setEnabled(False)
 
         def worker() -> None:
@@ -239,7 +249,7 @@ class AsistenteDialog(QDialog):
         provider, model, key, ollama = self._config()
         self._append(tr("Testing {name} ({model})…",
                         name=ai.PROVIDER_INFO[provider][0], model=model),
-                     "#808080")
+                     "muted")
         self._probar.setEnabled(False)
 
         def worker() -> None:
@@ -257,7 +267,7 @@ class AsistenteDialog(QDialog):
             return
         self._input.clear()
         self._save_settings()
-        self._append(f"Tú: {prompt}", "#2b6cb0")
+        self._append(f"Tú: {prompt}", "user")
         self._convo.append({"role": "user", "text": prompt})
         self._round = 0
         self._next_turn()
@@ -265,7 +275,7 @@ class AsistenteDialog(QDialog):
     def _next_turn(self) -> None:
         self._busy = True
         self._send.setEnabled(False)
-        self._append(tr("thinking…"), "#808080")
+        self._append(tr("thinking…"), "muted")
         provider, model, key, ollama = self._config()
         convo = list(self._convo)
 
@@ -290,32 +300,32 @@ class AsistenteDialog(QDialog):
                 self._model.setEditText(current)
                 self._append(tr(
                     "{n} models available to your key — pick one from "
-                    "the list.", n=len(models)), "#2f855a")
+                    "the list.", n=len(models)), "ok")
                 self._model.showPopup()
             else:
                 self._append(tr("Could not list models: {err}",
-                                err=msg.get("msg")), "#c53030")
+                                err=msg.get("msg")), "err")
             return
         if msg.get("probar"):
             self._probar.setEnabled(True)
             if msg.get("ok"):
                 self._append(tr("Connection OK — the model answered."),
-                             "#2f855a")
+                             "ok")
             else:
                 self._append(tr("Connection failed: {err}",
-                                err=msg.get("msg")), "#c53030")
+                                err=msg.get("msg")), "err")
                 if "model_not_found" in str(msg.get("msg")):
                     self._append(tr(
                         'That model no longer exists for your key — press '
-                        '"Models" to list the available ones.'), "#c53030")
+                        '"Models" to list the available ones.'), "err")
             return
         if not msg.get("ok"):
-            self._append(tr("Error: {err}", err=msg.get("error")), "#c53030")
+            self._append(tr("Error: {err}", err=msg.get("error")), "err")
             self._finish()
             return
         text = msg["text"]
         self._convo.append({"role": "assistant", "text": text})
-        self._append(f"IA: {text}", "#1a202c")
+        self._append(f"IA: {text}", "ai")
         code = ai.extract_code(text)
         if code is None or self._round >= MAX_ROUNDS:
             self._finish()
@@ -331,7 +341,7 @@ class AsistenteDialog(QDialog):
                 summary.append(result["stderr"].rstrip()[-800:])
         summary.append(f"(cambió el modelo: {result['changed']})")
         feedback = "Resultado de la ejecución:\n" + "\n".join(summary)
-        self._append(feedback, "#718096")
+        self._append(feedback, "muted")
         provider = self._config()[0]
         shot = None
         if self._shots.isChecked() and provider in ai.VISION:
