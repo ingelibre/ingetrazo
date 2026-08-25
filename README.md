@@ -182,7 +182,7 @@ provided derivative works stay under the same license.
 
 ## Author
 
-**Marco Sumari Tellez** — Civil Engineer, Lima, Peru. See [AUTHORS](AUTHORS).
+**Marco Sumari Tellez** — Civil Engineer, Arequipa, Peru. See [AUTHORS](AUTHORS).
 
 ---
 
