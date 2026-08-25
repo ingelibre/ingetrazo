@@ -26,6 +26,12 @@ import urllib.error
 import urllib.request
 
 from core.history import SnapshotImport
+from core.version import __version__
+
+#: Cloudflare fronts several providers (Groq above all) and rejects
+#: urllib's default "Python-urllib/3.x" agent with HTTP 403 error 1010 —
+#: caught on the user's first real Groq key. Always send a real identity.
+USER_AGENT = f"IngeTrazo/{__version__} (+https://ingetrazo.com)"
 
 # ---- Transactional executor -------------------------------------------------
 
@@ -165,6 +171,7 @@ def build_request(provider: str, model: str, api_key: str,
                    "system": system, "messages": content_msgs}
         return ("https://api.anthropic.com/v1/messages",
                 {"Content-Type": "application/json",
+                 "User-Agent": USER_AGENT,
                  "x-api-key": api_key,
                  "anthropic-version": "2023-06-01"},
                 json.dumps(payload).encode())
@@ -181,7 +188,8 @@ def build_request(provider: str, model: str, api_key: str,
             ]})
         else:
             oai_msgs.append({"role": m["role"], "content": m["text"]})
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json",
+               "User-Agent": USER_AGENT}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     payload = {"model": model, "max_tokens": max_tokens,
@@ -221,6 +229,32 @@ def chat(provider: str, model: str, api_key: str, system: str,
         raise RuntimeError(f"HTTP {exc.code}: {detail or exc.reason}")
     except urllib.error.URLError as exc:
         raise RuntimeError(f"sin conexión: {exc.reason}")
+
+
+#: UI metadata: (label, where to get the key). Mirrors IngePresupuestos.
+PROVIDER_INFO = {
+    "groq": ("Groq (gratis)", "https://console.groq.com/keys"),
+    "anthropic": ("Anthropic (Claude)",
+                  "https://console.anthropic.com/settings/keys"),
+    "openai": ("OpenAI", "https://platform.openai.com/api-keys"),
+    "gemini": ("Google Gemini", "https://aistudio.google.com/app/apikey"),
+    "openrouter": ("OpenRouter", "https://openrouter.ai/keys"),
+    "deepseek": ("DeepSeek", "https://platform.deepseek.com/api_keys"),
+    "ollama": ("Ollama (local)", "https://ollama.com/download"),
+}
+
+
+def probar_conexion(provider: str, model: str, api_key: str,
+                    ollama_url: str = "http://localhost:11434"):
+    """One tiny round trip: (ok, message). Run it on a worker thread."""
+    try:
+        reply = chat(provider, model, api_key,
+                     "Responde únicamente: OK",
+                     [{"role": "user", "text": "ping"}],
+                     ollama_url=ollama_url, timeout=30.0)
+    except Exception as exc:  # noqa: BLE001 — the message IS the result
+        return False, str(exc)
+    return True, (reply or "").strip()[:80] or "OK"
 
 
 def extract_code(text: str) -> str | None:

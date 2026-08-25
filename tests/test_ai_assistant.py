@@ -117,3 +117,43 @@ def test_assistant_loop_executes_recipes_transactionally(monkeypatch):
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_user_agent_defeats_cloudflare_and_headers_carry_it():
+    # Groq sits behind Cloudflare, which rejects urllib's default agent with
+    # HTTP 403 error 1010 (the user's first real key hit it).
+    for provider in ("groq", "anthropic", "openai"):
+        _u, headers, _p = ai.build_request(
+            provider, "m", "k", "SYS", [{"role": "user", "text": "x"}])
+        assert headers["User-Agent"].startswith("IngeTrazo/")
+
+
+def test_provider_selector_overrides_autodetect(monkeypatch):
+    from plugins.ai_assistant import AsistenteDialog
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        dlg = AsistenteDialog(win.viewport, parent=win)
+        dlg._provider.setCurrentIndex(0)             # Auto (QSettings persist
+        dlg._key.setText("sk-ant-algo")              # between tests) → key wins
+        assert dlg._effective_provider() == "anthropic"
+        idx = dlg._provider.findData("groq")
+        dlg._provider.setCurrentIndex(idx)           # explicit wins
+        assert dlg._effective_provider() == "groq"
+        assert "console.groq.com" in dlg._key_link.text()
+        assert dlg._model.placeholderText() == ai.DEFAULT_MODELS["groq"]
+
+        # Probar conexión reports through the same reply channel.
+        monkeypatch.setattr(ai, "probar_conexion",
+                            lambda *a, **k: (True, "OK"))
+        dlg._on_probar()
+        app = QApplication.instance()
+        for _ in range(2000):
+            app.processEvents()
+            if dlg._probar.isEnabled():
+                break
+        assert dlg._probar.isEnabled()
+        assert "Connection OK" in dlg._chat.toPlainText()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

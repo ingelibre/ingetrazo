@@ -25,6 +25,7 @@ from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt, Signal
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -86,19 +87,34 @@ class AsistenteDialog(QDialog):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
 
+        row0 = QHBoxLayout()
+        row0.addWidget(QLabel(tr("Provider:")))
+        self._provider = QComboBox()
+        self._provider.addItem(tr("Auto (by key prefix)"), "auto")
+        for prov in ai.PROVIDERS:
+            self._provider.addItem(ai.PROVIDER_INFO[prov][0], prov)
+        self._provider.currentIndexChanged.connect(self._on_key_changed)
+        row0.addWidget(self._provider, 1)
+        self._model = QLineEdit()
+        self._model.setPlaceholderText(tr("model (default per provider)"))
+        row0.addWidget(self._model, 1)
+        self._probar = QPushButton(tr("Test connection"))
+        self._probar.clicked.connect(self._on_probar)
+        row0.addWidget(self._probar)
+        layout.addLayout(row0)
+
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("API key:")))
         self._key = QLineEdit()
         self._key.setEchoMode(QLineEdit.Password)
         self._key.setPlaceholderText(tr("empty = local Ollama"))
         self._key.textChanged.connect(self._on_key_changed)
-        row.addWidget(self._key, 2)
-        self._provider_lbl = QLabel("")
-        row.addWidget(self._provider_lbl)
-        self._model = QLineEdit()
-        self._model.setPlaceholderText(tr("model (default per provider)"))
-        row.addWidget(self._model, 1)
+        row.addWidget(self._key, 1)
         layout.addLayout(row)
+
+        self._key_link = QLabel("")
+        self._key_link.setOpenExternalLinks(True)
+        layout.addWidget(self._key_link)
 
         row2 = QHBoxLayout()
         self._shots = QCheckBox(tr("Send viewport screenshots to the model"))
@@ -146,6 +162,10 @@ class AsistenteDialog(QDialog):
         self._ollama.setText(str(st.value("ia/ollama_url",
                                           "http://localhost:11434") or ""))
         self._shots.setChecked(str(st.value("ia/capturas", "1")) != "0")
+        stored = str(st.value("ia/proveedor", "auto") or "auto")
+        idx = self._provider.findData(stored)
+        if idx >= 0:
+            self._provider.setCurrentIndex(idx)
         self._on_key_changed()
 
     def _save_settings(self) -> None:
@@ -154,17 +174,49 @@ class AsistenteDialog(QDialog):
         st.setValue("ia/modelo", self._model.text().strip())
         st.setValue("ia/ollama_url", self._ollama.text().strip())
         st.setValue("ia/capturas", "1" if self._shots.isChecked() else "0")
+        st.setValue("ia/proveedor", self._provider.currentData())
+
+    def _effective_provider(self) -> str:
+        chosen = self._provider.currentData()
+        if chosen and chosen != "auto":
+            return chosen
+        return ai.detect_provider(self._key.text().strip())
 
     def _on_key_changed(self) -> None:
-        provider = ai.detect_provider(self._key.text().strip())
-        self._provider_lbl.setText(f"→ {provider}")
+        provider = self._effective_provider()
+        label, url = ai.PROVIDER_INFO[provider]
+        if provider == "ollama":
+            self._key_link.setText(tr(
+                "Local models — install from <a href='{url}'>{url}</a>",
+                url=url))
+        else:
+            self._key_link.setText(tr(
+                "{name} — get your key at <a href='{url}'>{url}</a>",
+                name=label, url=url))
+        self._model.setPlaceholderText(ai.DEFAULT_MODELS[provider])
         self._ollama.setVisible(provider == "ollama")
 
     def _config(self) -> tuple[str, str, str, str]:
         key = self._key.text().strip()
-        provider = ai.detect_provider(key)
+        provider = self._effective_provider()
         model = self._model.text().strip() or ai.DEFAULT_MODELS[provider]
         return provider, model, key, self._ollama.text().strip()
+
+    def _on_probar(self) -> None:
+        if self._busy:
+            return
+        self._save_settings()
+        provider, model, key, ollama = self._config()
+        self._append(tr("Testing {name} ({model})…",
+                        name=ai.PROVIDER_INFO[provider][0], model=model),
+                     "#808080")
+        self._probar.setEnabled(False)
+
+        def worker() -> None:
+            ok, msg = ai.probar_conexion(provider, model, key, ollama)
+            self._reply.emit({"probar": True, "ok": ok, "msg": msg})
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # ---- Chat loop ----------------------------------------------------------
     def _on_send(self) -> None:
@@ -198,6 +250,15 @@ class AsistenteDialog(QDialog):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_reply(self, msg: dict) -> None:
+        if msg.get("probar"):
+            self._probar.setEnabled(True)
+            if msg.get("ok"):
+                self._append(tr("Connection OK — the model answered."),
+                             "#2f855a")
+            else:
+                self._append(tr("Connection failed: {err}",
+                                err=msg.get("msg")), "#c53030")
+            return
         if not msg.get("ok"):
             self._append(tr("Error: {err}", err=msg.get("error")), "#c53030")
             self._finish()
