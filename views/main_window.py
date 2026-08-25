@@ -102,6 +102,11 @@ class MainWindow(QMainWindow):
             # Georef trace (Track G) — draws a GeoPath, never mesh geometry.
             "geopath": GeoPathTool(),
         }
+        # Tag each tool with its icon key so the viewport can turn the mouse
+        # pointer into the tool's icon (SketchUp-style cursors).
+        for key, tool in self._tools.items():
+            if not getattr(tool, "icon", None):
+                tool.icon = key
         self._tool_actions: dict[str, QAction] = {}
 
         self._current_path: Optional[Path] = None

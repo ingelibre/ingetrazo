@@ -22,6 +22,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QBrush,
     QColor,
+    QCursor,
     QIcon,
     QPainter,
     QPainterPath,
@@ -637,3 +638,85 @@ def tool_icon(key: str) -> QIcon:
     draw(p, ink)
     p.end()
     return QIcon(pm)
+
+
+# ---- Tool cursors (SketchUp-style) ------------------------------------------
+# The mouse pointer becomes the active tool: a small aim cross sits at the
+# hotspot and the tool's icon rides to its bottom-right, haloed so it reads
+# over any scene background. "select" keeps the standard arrow (SketchUp).
+
+_CURSOR_SIZE = 40   # logical canvas
+_CURSOR_ICON = 24   # logical icon size, drawn at (12, 12)
+_CURSOR_HOT = 4     # hotspot (the aim cross centre)
+_cursor_cache: dict = {}
+
+
+def _silhouette(src: QPixmap, color: QColor) -> QPixmap:
+    """The pixmap's alpha shape filled with ``color`` (for the halo)."""
+    s = QPixmap(src.size())
+    s.setDevicePixelRatio(src.devicePixelRatio())
+    s.fill(Qt.transparent)
+    p = QPainter(s)
+    p.drawPixmap(0, 0, src)
+    p.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    p.fillRect(s.rect(), color)
+    p.end()
+    return s
+
+
+def tool_cursor(key: str | None) -> QCursor | None:
+    """A cursor showing the tool's icon, or ``None`` to keep the standard
+    arrow (unknown keys, and Select — SketchUp uses the plain pointer)."""
+    draw = _DRAW.get(key) if key else None
+    if draw is None or key == "select":
+        return None
+    ink = _ink()
+    app = QApplication.instance()
+    screen = app.primaryScreen() if app is not None else None
+    dpr = screen.devicePixelRatio() if screen is not None else 1.0
+    cache_key = (key, ink.rgb(), round(dpr, 2))
+    cached = _cursor_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    art = QPixmap(int(_CURSOR_SIZE * dpr), int(_CURSOR_SIZE * dpr))
+    art.setDevicePixelRatio(dpr)
+    art.fill(Qt.transparent)
+    p = QPainter(art)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    pen = QPen(ink, 1.6)
+    pen.setCapStyle(Qt.RoundCap)
+    p.setPen(pen)
+    h = float(_CURSOR_HOT)
+    p.drawLine(QPointF(0.0, h), QPointF(h * 2 + 1, h))   # aim cross
+    p.drawLine(QPointF(h, 0.0), QPointF(h, h * 2 + 1))
+    p.save()
+    p.translate(12.0, 12.0)
+    p.scale(_CURSOR_ICON / float(_PX), _CURSOR_ICON / float(_PX))
+    ipen = QPen(ink, 3.0)
+    ipen.setJoinStyle(Qt.RoundJoin)
+    ipen.setCapStyle(Qt.RoundCap)
+    p.setPen(ipen)
+    draw(p, ink)
+    p.restore()
+    p.end()
+
+    # Halo: a 1 px light (or dark, on dark themes) outline all around, so the
+    # cursor stays legible over faces, sky and ground alike.
+    halo_col = (QColor(255, 255, 255, 225) if ink.lightness() < 128
+                else QColor(28, 32, 38, 225))
+    halo = _silhouette(art, halo_col)
+    out = QPixmap(art.size())
+    out.setDevicePixelRatio(dpr)
+    out.fill(Qt.transparent)
+    p = QPainter(out)
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            if dx or dy:
+                p.drawPixmap(QPointF(float(dx), float(dy)), halo)
+    p.drawPixmap(QPointF(0.0, 0.0), art)
+    p.end()
+
+    cursor = QCursor(out, _CURSOR_HOT, _CURSOR_HOT)
+    _cursor_cache[cache_key] = cursor
+    return cursor

@@ -4636,6 +4636,13 @@ class Viewport(QOpenGLWidget):
         self._acquired_face_normal = None
         if tool is not None:
             tool.on_activate(self)
+        # SketchUp: the mouse pointer becomes the active tool's icon (with an
+        # aim cross at the hotspot). Select and unknown tools keep the arrow.
+        from views.icons import tool_cursor
+        cur = (tool_cursor(getattr(tool, "icon", None))
+               if tool is not None else None)
+        if cur is not None:
+            self.setCursor(cur)
         self.measurementChanged.emit(self._measurement_text())
         self.update()
 
