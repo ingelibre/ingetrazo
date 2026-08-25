@@ -224,6 +224,46 @@ def _section(p, ink):
     p.setPen(QPen(ink, 3.0))
 
 
+def _section_planes(p, ink):
+    # Display Section Planes: the bare plane frame with corner brackets.
+    quad = [QPointF(10, 30), QPointF(26, 38), QPointF(38, 24), QPointF(22, 16)]
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(quad))
+    for i in range(4):
+        c = quad[i]
+        for j in (1, 3):
+            n = quad[(i + j) % 4]
+            dx, dy = n.x() - c.x(), n.y() - c.y()
+            ln = math.hypot(dx, dy) or 1.0
+            k = 5.5 / ln
+            p.drawLine(c, QPointF(c.x() + dx * k, c.y() + dy * k))
+
+
+def _section_cuts(p, ink):
+    # Display Section Cuts: a solid sliced open — outline + thick cut chord.
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(12, 18, 24, 18))
+    p.drawLine(QPointF(12, 18), QPointF(20, 10))
+    p.drawLine(QPointF(36, 18), QPointF(40, 12))
+    cut = QPen(_accent(), 4.0)
+    cut.setCapStyle(Qt.RoundCap)
+    p.setPen(cut)
+    p.drawLine(QPointF(10, 26), QPointF(38, 26))
+    p.setPen(QPen(ink, 3.0))
+
+
+def _section_fill(p, ink):
+    # Display Section Fill: the cut face painted solid.
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(12, 12, 24, 24))
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QBrush(_accent()))
+    p.drawRect(QRectF(13.5, 25, 21, 9.5))
+    p.restore()
+    p.drawLine(QPointF(12, 24), QPointF(36, 24))
+
+
 def _protractor(p, ink):
     # A half-circle protractor with tick marks and an angled guide arm.
     p.setBrush(Qt.NoBrush)
@@ -642,6 +682,8 @@ _DRAW = {
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
     "section": _section,
+    "section_planes": _section_planes, "section_cuts": _section_cuts,
+    "section_fill": _section_fill,
     "zoom": _zoom, "zoom_window": _zoom_window,
     "zoom_extents": _zoom_extents, "view_iso": _view_iso,
     # Standard views — a house drawn from each viewpoint (SketchUp-style).

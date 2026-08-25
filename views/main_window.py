@@ -228,6 +228,32 @@ class MainWindow(QMainWindow):
             for key in keys:
                 self._add_tool_button(tb, key)
 
+        # The Sections toolbar carries SketchUp's three display toggles next
+        # to the tool: Display Section Planes / Cuts / Fill. Created here
+        # (the menubar builds later and reuses the same actions).
+        sec_tb = self.toolbars["sections"]
+        sec_tb.addSeparator()
+
+        def _sec_toggle(key: str, text: str, slot):
+            act = QAction(tool_icon(key), text, self)
+            act.setCheckable(True)
+            act.setChecked(True)
+            act.setToolTip(text)
+            act.toggled.connect(slot)
+            self._icon_actions.append((act, key))
+            sec_tb.addAction(act)
+            return act
+
+        self._act_show_splanes = _sec_toggle(
+            "section_planes", tr("Section Planes"),
+            lambda on: self._set_section_visibility("show_section_planes", on))
+        self._act_show_scuts = _sec_toggle(
+            "section_cuts", tr("Section Cuts"),
+            lambda on: self._set_section_visibility("show_section_cuts", on))
+        self._act_section_fill = _sec_toggle(
+            "section_fill", tr("Section Fill"),
+            lambda on: self._set_style_field("section_fill", on))
+
         # 3D Text opens a dialog (it's a one-shot action, not a checkable tool),
         # so it gets its own button on the Annotate bar next to the 2D Text tool.
         self._act_3dtext = QAction(tool_icon("text3d"), tr("3D Text"), self)
@@ -450,26 +476,11 @@ class MainWindow(QMainWindow):
         style_menu.addAction(self._act_style_profiles)
         self._sync_style_menu()
 
-        # SketchUp's View ▸ Section Planes / Section Cuts.
+        # SketchUp's View ▸ Section Planes / Cuts / Fill — the same actions
+        # as the Sections toolbar buttons (created in _build_toolbar).
         camera_menu.addSeparator()
-        self._act_show_splanes = QAction(tr("Section Planes"), self)
-        self._act_show_splanes.setCheckable(True)
-        self._act_show_splanes.setChecked(True)
-        self._act_show_splanes.toggled.connect(
-            lambda on: self._set_section_visibility("show_section_planes", on))
         camera_menu.addAction(self._act_show_splanes)
-        self._act_show_scuts = QAction(tr("Section Cuts"), self)
-        self._act_show_scuts.setCheckable(True)
-        self._act_show_scuts.setChecked(True)
-        self._act_show_scuts.toggled.connect(
-            lambda on: self._set_section_visibility("show_section_cuts", on))
         camera_menu.addAction(self._act_show_scuts)
-        # SketchUp 2018+ Section Fill — lives in the model's STYLE.
-        self._act_section_fill = QAction(tr("Section Fill"), self)
-        self._act_section_fill.setCheckable(True)
-        self._act_section_fill.setChecked(True)
-        self._act_section_fill.toggled.connect(
-            lambda on: self._set_style_field("section_fill", on))
         camera_menu.addAction(self._act_section_fill)
 
         camera_menu.addSeparator()

@@ -2880,15 +2880,21 @@ class Viewport(QOpenGLWidget):
             if not ok:
                 continue
             if sp in selection:
-                pen = QPen(QColor(243, 115, 41), 2)
+                col = QColor(243, 115, 41)
+                width = 2
             elif sp.active:
-                pen = QPen(QColor(45, 55, 75), 2)
+                col = QColor(45, 55, 75)
+                width = 2
             else:
-                pen = QPen(QColor(150, 155, 162), 1.4)
+                col = QColor(150, 155, 162)
+                width = 1.4
+            # SketchUp draws the frame edges dashed.
+            pen = QPen(col, width, Qt.DashLine)
             painter.setPen(pen)
             for a, b in px:
                 painter.drawLine(QPointF(*a), QPointF(*b))
-            # Corner brackets: short ticks INTO the frame at each corner.
+            # Corner brackets: short SOLID ticks into the frame.
+            painter.setPen(QPen(col, width))
             for i in range(4):
                 c = self._world_to_pixel(corners[i])
                 n1 = self._world_to_pixel(corners[(i + 1) % 4])
@@ -2901,13 +2907,29 @@ class Viewport(QOpenGLWidget):
                     k = min(14.0, ln * 0.18) / ln
                     painter.drawLine(QPointF(c[0], c[1]),
                                      QPointF(c[0] + dx * k, c[1] + dy * k))
-            label = (sp.symbol or "").strip()
-            if sp.name:
-                label = f"{label}  {sp.name}".strip()
-            if label:
-                c = self._world_to_pixel(corners[0])
-                if c is not None:
-                    painter.drawText(QPointF(c[0] + 8, c[1] - 6), label)
+            # SketchUp: the section SYMBOL rides in a little balloon at EVERY
+            # corner of the frame.
+            symbol = (sp.symbol or "").strip()
+            if symbol:
+                painter.save()
+                font = painter.font()
+                font.setPointSizeF(8.5)
+                font.setBold(True)
+                painter.setFont(font)
+                r = 9.0
+                for i in range(4):
+                    c = self._world_to_pixel(corners[i])
+                    if c is None:
+                        continue
+                    centre = QPointF(c[0], c[1])
+                    painter.setBrush(QColor(255, 255, 255, 220))
+                    painter.setPen(QPen(col, width))
+                    painter.drawEllipse(centre, r, r)
+                    painter.setPen(QPen(col, 1))
+                    painter.drawText(
+                        QRectF(c[0] - r, c[1] - r, 2 * r, 2 * r),
+                        Qt.AlignCenter, symbol[:3])
+                painter.restore()
 
     def pick_section_plane(self, screen_x: float, screen_y: float):
         """The section plane whose frame is nearest the cursor within the
