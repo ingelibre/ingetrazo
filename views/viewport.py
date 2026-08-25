@@ -4705,10 +4705,12 @@ class Viewport(QOpenGLWidget):
         self._pick_index_cache = (key, idx)
         return idx
 
-    def _ray_hits(self, idx, origin, direction, ent_mask):
+    def _ray_hits(self, idx, origin, direction, ent_mask,
+                  reduce_global: bool = False):
         """Per-entity nearest ray parameter over the index triangles whose
         entity passes ``ent_mask``. Returns an (E,) array of t (``inf`` = no
-        hit) or ``None`` when the index has no triangles. Same acceptance
+        hit), the single nearest t as a float when ``reduce_global``, or
+        ``None`` when the index has no triangles. Same acceptance
         thresholds as :func:`_ray_triangle`."""
         import numpy as np
         if idx.tri_v0 is None:
@@ -4728,6 +4730,11 @@ class Viewport(QOpenGLWidget):
         hit = (ok & (u >= 0.0) & (u <= 1.0) & (v >= 0.0) & (u + v <= 1.0)
                & (t > 1e-6) & ent_mask[idx.tri_ent])
         tvals = np.where(hit, t, np.inf)
+        if reduce_global:
+            # Zoom focus wants ONE nearest t, not per-entity buckets —
+            # np.minimum.at was most of this function's 145 ms per wheel
+            # burst on a 280k-triangle scene.
+            return float(tvals.min())
         face_t = np.full(len(idx.entities), np.inf)
         np.minimum.at(face_t, idx.tri_ent, tvals)
         return face_t
@@ -5803,11 +5810,10 @@ class Viewport(QOpenGLWidget):
         idx = self._pick_index()
         if idx.entities:
             import numpy as np
-            face_t = self._ray_hits(idx, origin, direction, idx.ent_vis)
-            if face_t is not None:
-                t = face_t.min()
-                if np.isfinite(t):
-                    best_t = float(t)
+            t = self._ray_hits(idx, origin, direction, idx.ent_vis,
+                               reduce_global=True)
+            if t is not None and np.isfinite(t):
+                best_t = float(t)
         if best_t is not None:
             return origin + direction * best_t
         if abs(direction.z()) > 1e-6:
@@ -5835,9 +5841,12 @@ class Viewport(QOpenGLWidget):
         pos = ev.position()
         now = _time.monotonic()
         cached = getattr(self, "_zoom_focus", None)
-        if (cached is not None and now - cached[0] < 0.4
-                and abs(pos.x() - cached[1]) < 3.0
-                and abs(pos.y() - cached[2]) < 3.0
+        # Generous reuse: while zooming the hand always drifts a few px,
+        # and re-picking 280k triangles per tick is the lag itself. A pin
+        # a couple dozen pixels stale still zooms where the eye expects.
+        if (cached is not None and now - cached[0] < 1.0
+                and abs(pos.x() - cached[1]) < 24.0
+                and abs(pos.y() - cached[2]) < 24.0
                 and self.scene.version == cached[3]):
             focus = cached[4]
         else:
