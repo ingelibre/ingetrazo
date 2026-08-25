@@ -179,6 +179,34 @@ def test_clipboard_survives_deleting_the_original():
     assert scene.groups[0].name == "Caja"
 
 
+def test_paste_stamps_once_and_returns_to_select():
+    # One stamp per paste (SketchUp): after the click the Select tool is back,
+    # nothing keeps following the cursor. The clipboard survives, so pasting
+    # again stamps another copy.
+    import sys
+    from PySide6.QtWidgets import QApplication
+    if QApplication.instance() is None:
+        QApplication(sys.argv[:1])
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        vp.clipboard = {"faces": [([V(0, 0), V(1, 0), V(1, 1), V(0, 1)], [])],
+                        "edges": [], "ref": V(0, 0, 0)}
+        win._on_paste()
+        assert isinstance(vp.active_tool, PasteTool)
+        ctx = ToolContext(viewport=vp, world=V(5, 5, 0), screen=QPointF(0, 0),
+                          modifiers=Qt.NoModifier, snap=None)
+        vp.active_tool.on_click(ctx)
+        assert vp.active_tool is win._tools["select"]
+        assert len(vp.scene.mesh.faces) == 1
+        win._on_paste()                      # clipboard kept: paste again works
+        assert isinstance(vp.active_tool, PasteTool)
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def test_cut_group_removes_it_and_paste_restores():
     from views.viewport import Viewport
     scene = Scene()

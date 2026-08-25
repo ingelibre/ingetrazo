@@ -4,8 +4,8 @@
 
 After Copy/Cut fills ``viewport.clipboard``, Paste activates this tool: the copied
 faces, edges and groups follow the cursor as a live preview (snapping like any
-draw), and a click stamps them into the scene. It stays active so you can place
-several copies; switch tools (or Esc) when done.
+draw), and a click stamps them into the scene ONCE and returns to Select
+(SketchUp). The clipboard is kept — paste again for another copy.
 """
 from __future__ import annotations
 
@@ -81,7 +81,13 @@ class PasteTool(Tool):
         if pasted_groups:
             # InsertGroupCommand selects only the last one — select them all.
             ctx.viewport.scene.select(pasted_groups)
-        ctx.viewport.update()  # stay active for further stamps
+        # One stamp per paste (SketchUp): hand back to Select. The clipboard
+        # survives, so Ctrl+V stamps another copy.
+        window = getattr(ctx.viewport, "window", None)
+        window = window() if callable(window) else None
+        if window is not None and hasattr(window, "_activate_tool"):
+            window._activate_tool("select")
+        ctx.viewport.update()
 
     def on_cancel(self, viewport) -> None:
         self._clip = None
