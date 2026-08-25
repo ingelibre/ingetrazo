@@ -114,8 +114,17 @@ class PasteTool(Tool):
         if self._clip is None:
             return []
         off = self._offset
-        return [
+        faces = [
             PreviewFace([p + off for p in loop],
                         [[p + off for p in h] for h in holes])
             for loop, holes, *_ in self._clip["faces"]
         ]
+        # Copied groups preview SOLID too — the model follows the cursor,
+        # not just its skeleton (huge groups are capped at copy time and
+        # keep the wireframe for the remainder).
+        faces += [
+            PreviewFace([p + off for p in loop],
+                        [[p + off for p in h] for h in holes])
+            for loop, holes in self._clip.get("group_faces", ())
+        ]
+        return faces

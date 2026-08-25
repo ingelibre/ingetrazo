@@ -603,11 +603,10 @@ class MainWindow(QMainWindow):
             f"<p>{tr('Version')} {__version__}</p>"
             f"<p>{tr('Free 3D modeler for architecture, civil engineering and 3D printing.')}</p>"
             f"<p>{tr('Created by')} <b>Marco Sumari Tellez</b><br>"
-            f"{tr('Civil Engineer — Lima, Peru')}</p>"
+            f"{tr('Civil Engineer — Arequipa, Peru')}</p>"
             f"<p>{tr('Licensed under GPL-3.0-or-later.')}<br>"
             "<a href='https://github.com/ingelibre/ingetrazo'>"
-            "github.com/ingelibre/ingetrazo</a></p>"
-            "<p><i>Trazá. Metrá. Presupuestá.</i></p>",
+            "github.com/ingelibre/ingetrazo</a></p>",
         )
 
     def _file_actions(self) -> list[QAction]:

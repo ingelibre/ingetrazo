@@ -4775,13 +4775,22 @@ class Viewport(QOpenGLWidget):
         # never changes what Paste stamps.
         group_data = [copy_group(g) for g in groups]
         group_lines = []                     # world-space wireframe for preview
+        group_faces = []                     # world-space loops: SOLID preview
+        face_budget = 2000                   # huge groups fall back to lines
         for g in group_data:
             xf = g.xform
+
+            def W(p):
+                return xf.map(p) if xf is not None else QVector3D(p)
+
             for e in g.mesh.edges:
-                a, b = QVector3D(e.a), QVector3D(e.b)
-                if xf is not None:
-                    a, b = xf.map(a), xf.map(b)
-                group_lines.append((a, b))
+                group_lines.append((W(e.a), W(e.b)))
+            for f in g.mesh.faces:
+                if face_budget <= 0:
+                    break
+                face_budget -= 1
+                group_faces.append(([W(v) for v in f.vertices],
+                                    [[W(v) for v in h] for h in f.holes]))
         pts = [p for loop, holes, _a in face_data for p in loop]
         pts += [p for _, holes, _a in face_data for h in holes for p in h]
         pts += [p for a, b, _, _ in edge_data for p in (a, b)]
@@ -4793,7 +4802,7 @@ class Viewport(QOpenGLWidget):
                         min(p.z() for p in pts))
         self.clipboard = {"faces": face_data, "edges": edge_data,
                           "groups": group_data, "group_lines": group_lines,
-                          "ref": ref}
+                          "group_faces": group_faces, "ref": ref}
         return True
 
     def cut_selection(self) -> bool:

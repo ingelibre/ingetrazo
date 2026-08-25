@@ -165,6 +165,28 @@ def test_copy_paste_instance_shares_prototype():
     assert round(pasted.xform.map(V(0, 0, 0)).x()) == 10
 
 
+def test_group_paste_previews_solid_faces():
+    # The copied group must follow the cursor as a SOLID model, not just a
+    # skeleton (user request): the clipboard carries its face loops and
+    # PasteTool serves them as preview faces, offset to the cursor.
+    scene = Scene()
+    vp = _VP(scene, History(scene), None)
+    g = _make_group(scene)                    # a 2×2 square at the origin
+    scene.selection.add(g)
+    assert _copy(vp)
+    assert len(vp.clipboard["group_faces"]) == 1
+
+    tool = PasteTool()
+    tool.on_activate(vp)
+    ctx = ToolContext(viewport=vp, world=V(10, 0, 0),
+                      screen=QPointF(0, 0), modifiers=Qt.NoModifier, snap=None)
+    tool.on_hover(ctx)
+    faces = tool.preview_faces()
+    assert len(faces) == 1
+    xs = sorted(round(v.x()) for v in faces[0].vertices)
+    assert xs == [10, 10, 12, 12]             # the square, at the cursor
+
+
 def test_clipboard_survives_deleting_the_original():
     scene = Scene()
     vp = _VP(scene, History(scene), None)
