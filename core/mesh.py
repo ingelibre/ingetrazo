@@ -214,12 +214,14 @@ class Face:
         cz = sum(v.position.z() for v in self.loop) / count
         return QVector3D(cx, cy, cz)
 
-    def triangulate(self) -> list[tuple[QVector3D, QVector3D, QVector3D]]:
+    def triangulate(self, normal: QVector3D | None = None
+                    ) -> list[tuple[QVector3D, QVector3D, QVector3D]]:
         if len(self.loop) < 3:
             return []
         from core.triangulate import triangulate
 
-        return triangulate(self.vertices, self.holes, self.normal())
+        return triangulate(self.vertices, self.holes,
+                           normal if normal is not None else self.normal())
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return f"Face({len(self.loop)} verts, {len(self.holes)} holes)"

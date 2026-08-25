@@ -1716,6 +1716,48 @@ class Viewport(QOpenGLWidget):
         self.sceneVersionChanged.emit(self.scene.version)
         self.update()
 
+    def _newell_of(self, face):
+        """The face's raw Newell vector, memoised per scene version — ONE
+        computation feeds normal, area and triangulation (each used to pay
+        its own on an exploded import's edit frame)."""
+        memo = getattr(self, "_newell_memo", None)
+        if memo is None or memo[0] != self.scene.version:
+            memo = self._newell_memo = (self.scene.version, {})
+        hit = memo[1].get(id(face))
+        if hit is None or hit[0] is not face:
+            hit = memo[1][id(face)] = (face, face._newell())
+        return hit[1]
+
+    def _area_of(self, face) -> float:
+        if len(face.loop) < 3:
+            return 0.0
+        return 0.5 * self._newell_of(face).length()
+
+    def _tris_of(self, face):
+        """``face.triangulate()`` memoised per scene version: one edit frame
+        triangulates every loose face for the colour VBOs, the textured
+        VBOs AND the pick index — 3x the earcut/_newell cost on an exploded
+        import. The memo holds the face itself so a recycled id() can never
+        alias, and drops wholesale on the next version bump."""
+        memo = getattr(self, "_tri_memo", None)
+        if memo is None or memo[0] != self.scene.version:
+            memo = self._tri_memo = (self.scene.version, {})
+        hit = memo[1].get(id(face))
+        if hit is None or hit[0] is not face:
+            hit = memo[1][id(face)] = (
+                face, face.triangulate(self._normal_of(face)))
+        return hit[1]
+
+    def _normal_of(self, face):
+        """``face.normal()`` memoised per scene version (see _tris_of):
+        the shading of every loose face recomputes the Newell normal 3-4
+        times per edit frame otherwise."""
+        if len(face.loop) < 3:
+            return QVector3D(0.0, 0.0, 1.0)
+        n = self._newell_of(face)
+        return (n.normalized() if n.length() > 1e-9
+                else QVector3D(0.0, 0.0, 1.0))
+
     def _sync_edges(self) -> None:
         if self.scene.version == self._edges_version:
             return
@@ -1901,9 +1943,9 @@ class Viewport(QOpenGLWidget):
             # world light — the matte-model look of SketchUp. World-fixed, so
             # it doesn't change as you orbit. The shaded colour rides per
             # vertex, so the whole pass is ONE draw call.
-            r, g, b = self._shaded_color(base, face.normal())
+            r, g, b = self._shaded_color(base, self._normal_of(face))
             buf = array("f")
-            for t0, t1, t2 in face.triangulate():
+            for t0, t1, t2 in self._tris_of(face):
                 buf.extend([
                     t0.x(), t0.y(), t0.z(), r, g, b,
                     t1.x(), t1.y(), t1.z(), r, g, b,
@@ -2052,9 +2094,9 @@ class Viewport(QOpenGLWidget):
         col = back.get("color")
         if col is None:
             return None, None
-        r, g, b = self._shaded_color(tuple(col), face.normal())
+        r, g, b = self._shaded_color(tuple(col), self._normal_of(face))
         buf = array("f")
-        for t0, t1, t2 in face.triangulate():
+        for t0, t1, t2 in self._tris_of(face):
             buf.extend([
                 t0.x(), t0.y(), t0.z(), r, g, b,
                 t1.x(), t1.y(), t1.z(), r, g, b,
@@ -2073,7 +2115,7 @@ class Viewport(QOpenGLWidget):
         its own texture coordinates), else from the SketchUp-style planar
         projection of each vertex's world position (so coplanar faces tile
         seamlessly)."""
-        key = (tex["path"], self._shade_factor(face.normal()))
+        key = (tex["path"], self._shade_factor(self._normal_of(face)))
         buf = by_texture.get(key)
         if buf is None:
             buf = by_texture[key] = array("f")
@@ -2081,7 +2123,7 @@ class Viewport(QOpenGLWidget):
         if uvw:
             gu = QVector3D(uvw[0], uvw[1], uvw[2])
             gv = QVector3D(uvw[4], uvw[5], uvw[6])
-            for tri in face.triangulate():
+            for tri in self._tris_of(face):
                 for p in tri:
                     buf.extend([
                         p.x(), p.y(), p.z(),
@@ -2099,7 +2141,7 @@ class Viewport(QOpenGLWidget):
                               v_axis * cos_a - u_axis * sin_a)
         sw = tex.get("sw", 1.0) or 1.0
         sh = tex.get("sh", 1.0) or 1.0
-        for tri in face.triangulate():
+        for tri in self._tris_of(face):
             for p in tri:
                 buf.extend([
                     p.x(), p.y(), p.z(),
@@ -2253,7 +2295,7 @@ class Viewport(QOpenGLWidget):
             # same interleaved layout, uv ignored, drawn with u_color.
             col = tuple(f.attrs.get("color") or (0.96, 0.95, 0.925))
             buf = by_color.setdefault(col, array("f"))
-            for t0, t1, t2 in f.triangulate():
+            for t0, t1, t2 in self._tris_of(f):
                 for p in (t0, t1, t2):
                     buf.extend([p.x(), p.y(), p.z(), 0.0, 0.0])
         verts = g.mesh.vertices
@@ -2381,27 +2423,33 @@ class Viewport(QOpenGLWidget):
                      and self.scene.entity_visible(e) and e.faces]
             if softs:
                 pts = np.empty((len(softs), 6))
-                n0 = np.empty((len(softs), 3))
-                c0 = np.empty((len(softs), 3))
-                n1 = np.empty((len(softs), 3))
-                c1 = np.empty((len(softs), 3))
                 single = np.empty(len(softs), dtype=bool)
+                # Face planes via one vectorized cross product instead of
+                # per-face Python normal()/centroid() (_newell dominated the
+                # edit frame at 25k+ faces). For the view-side sign test any
+                # point ON the plane works, so the first loop vertex serves
+                # as the anchor; the plane normal comes from the first two
+                # loop edges (faces are planar).
+                tri0 = np.empty((len(softs), 3, 3))
+                tri1 = np.empty((len(softs), 3, 3))
                 for i, e in enumerate(softs):
                     pts[i] = (e.a.x(), e.a.y(), e.a.z(),
                               e.b.x(), e.b.y(), e.b.z())
-                    f0 = e.faces[0]
-                    nn = f0.normal()
-                    cc = f0.centroid()
-                    n0[i] = (nn.x(), nn.y(), nn.z())
-                    c0[i] = (cc.x(), cc.y(), cc.z())
+                    v = e.faces[0].vertices
+                    tri0[i] = ((v[0].x(), v[0].y(), v[0].z()),
+                               (v[1].x(), v[1].y(), v[1].z()),
+                               (v[2].x(), v[2].y(), v[2].z()))
                     # A 1-face soft edge is an open-surface boundary (always
                     # a profile); a 2-face one straddles the view or hides.
                     single[i] = len(e.faces) != 2
-                    f1 = e.faces[1] if len(e.faces) == 2 else f0
-                    nn = f1.normal()
-                    cc = f1.centroid()
-                    n1[i] = (nn.x(), nn.y(), nn.z())
-                    c1[i] = (cc.x(), cc.y(), cc.z())
+                    v = (e.faces[1] if len(e.faces) == 2 else e.faces[0]).vertices
+                    tri1[i] = ((v[0].x(), v[0].y(), v[0].z()),
+                               (v[1].x(), v[1].y(), v[1].z()),
+                               (v[2].x(), v[2].y(), v[2].z()))
+                n0 = np.cross(tri0[:, 1] - tri0[:, 0], tri0[:, 2] - tri0[:, 0])
+                n1 = np.cross(tri1[:, 1] - tri1[:, 0], tri1[:, 2] - tri1[:, 0])
+                c0 = tri0[:, 0]
+                c1 = tri1[:, 0]
                 arrays = (pts.astype(np.float32), n0, c0, n1, c1, single)
             else:
                 arrays = None
@@ -2516,13 +2564,13 @@ class Viewport(QOpenGLWidget):
                 continue
             color = attrs.get("color") or self.DEFAULT_FACE_COLOR
             start = len(data) // 3
-            for t0, t1, t2 in face.triangulate():
+            for t0, t1, t2 in self._tris_of(face):
                 data.extend([
                     t0.x(), t0.y(), t0.z(),
                     t1.x(), t1.y(), t1.z(),
                     t2.x(), t2.y(), t2.z(),
                 ])
-            runs.append((self._shaded_color(tuple(color[:3]), face.normal()),
+            runs.append((self._shaded_color(tuple(color[:3]), self._normal_of(face)),
                          start, len(data) // 3 - start))
         if not data and not by_texture:
             return
@@ -4493,14 +4541,20 @@ class Viewport(QOpenGLWidget):
         tris: list = []
         tri_ent: list = []
 
+        # Stub viewports in tests call this unbound — fall back to the
+        # uncached face methods when the memo helpers aren't there.
+        area_of = getattr(self, "_area_of", None) or (lambda f: f.area())
+        tris_of = getattr(self, "_tris_of", None) or \
+            (lambda f: f.triangulate())
+
         def add_face(f, grp, vis, sel):
             i = len(entities)
             entities.append((f, grp))
-            ent_area.append(f.area())
+            ent_area.append(area_of(f))
             ent_vis.append(vis)
             ent_sel.append(sel)
             ent_loose.append(grp is None)
-            for t0, t1, t2 in f.triangulate():
+            for t0, t1, t2 in tris_of(f):
                 tris.append([[t0.x(), t0.y(), t0.z()],
                              [t1.x(), t1.y(), t1.z()],
                              [t2.x(), t2.y(), t2.z()]])

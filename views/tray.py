@@ -1815,7 +1815,16 @@ class Tray(QDockWidget):
 
     def on_scene_changed(self) -> None:
         self.entity_info.refresh()
-        self.materials.refresh_in_model()
+        # The materials panel scans every render face for its swatches —
+        # ~0.5 s on an exploded 28k-face mesh, paid per EDIT when run
+        # inline. Debounced: one refresh 300 ms after the last edit.
+        timer = getattr(self, "_mat_refresh_timer", None)
+        if timer is None:
+            from PySide6.QtCore import QTimer
+            timer = self._mat_refresh_timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self.materials.refresh_in_model)
+        timer.start(300)
         self.layers.refresh()
         self.scenes.refresh()
 
