@@ -37,7 +37,7 @@ class ScaleTool(Tool):
         self.start_point: QVector3D | None = None   # the anchor
         self.ref_point: QVector3D | None = None     # distance = factor 1.0
         self.hover_point: QVector3D | None = None
-        self._group: Group | None = None
+        self._groups: list[Group] = []
         self._positions: list[QVector3D] = []
         self._verts: list = []
         self._preview_factor = 1.0
@@ -54,12 +54,12 @@ class ScaleTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         if self.start_point is None:
-            group, positions = gather_targets(ctx)
-            if group is None and not positions:
+            groups, positions = gather_targets(ctx)
+            if not groups and not positions:
                 viewport.flash_status(
                     tr("Select (or click) the geometry to scale first"))
                 return
-            self._group = group
+            self._groups = groups
             self._positions = positions
             mesh = viewport.scene.mesh
             self._verts = [v for v in (mesh.vertex_at(p) for p in positions)
@@ -128,17 +128,16 @@ class ScaleTool(Tool):
         if abs(step - 1.0) < 1e-12:
             return
         m = scale_matrix(self.start_point, step)
-        if self._group is not None:
-            if getattr(self._group, "xform", None) is not None:
-                self._group.xform = m * self._group.xform   # instance: O(1)
+        for group in self._groups:
+            if getattr(group, "xform", None) is not None:
+                group.xform = m * group.xform   # instance: O(1)
             else:
-                gmesh = self._group.mesh
+                gmesh = group.mesh
                 for vx in list(gmesh.vertices):
                     gmesh.move_vertex(vx, m.map(vx.position) - vx.position)
-        else:
-            for vx in self._verts:
-                viewport.scene.mesh.move_vertex(
-                    vx, m.map(vx.position) - vx.position)
+        for vx in self._verts:
+            viewport.scene.mesh.move_vertex(
+                vx, m.map(vx.position) - vx.position)
         viewport.scene.version += 1
 
     def _apply_preview(self, viewport, target: float) -> None:
@@ -153,12 +152,15 @@ class ScaleTool(Tool):
     def _commit(self, viewport, factor: float) -> None:
         self._revert_preview(viewport)
         if abs(factor - 1.0) > 1e-9 and abs(factor) >= _MIN_FACTOR:
-            if self._group is not None:
-                viewport.history.execute(ScaleGroupCommand(
-                    self._group, self.start_point, factor))
-            elif self._positions:
-                viewport.history.execute(ScaleVerticesCommand(
+            from core.history import CompoundCommand
+            cmds: list = [ScaleGroupCommand(g, self.start_point, factor)
+                          for g in self._groups]
+            if self._positions:
+                cmds.append(ScaleVerticesCommand(
                     self._positions, self.start_point, factor))
+            if cmds:
+                viewport.history.execute(
+                    cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
         self._reset()
         viewport.update()
 
@@ -166,7 +168,7 @@ class ScaleTool(Tool):
         self.start_point = None
         self.ref_point = None
         self.hover_point = None
-        self._group = None
+        self._groups = []
         self._positions = []
         self._verts = []
         self._preview_factor = 1.0

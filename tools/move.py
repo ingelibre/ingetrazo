@@ -46,15 +46,18 @@ def _dedup(positions: list[QVector3D]) -> list[QVector3D]:
 
 
 def gather_targets(ctx: ToolContext):
-    """What a transform tool acts on: ``(group, positions)``. A selected or
-    hovered group transforms as a unit; otherwise unique positions from the
-    selection or the entity under the cursor. Shared by Move and Rotate."""
+    """What a transform tool acts on: ``(groups, positions)``. EVERY selected
+    (or hovered) group transforms as a unit — a mixed selection carries the
+    groups AND the loose geometry together (rotating a whole drawing used to
+    grab only the first group). Positions are the unique loose coordinates
+    from the selection or the entity under the cursor. Shared by Move,
+    Rotate and Scale."""
     viewport = ctx.viewport
     entities = list(viewport.scene.selection)
     if not entities:
         group = viewport.pick_group(ctx.screen.x(), ctx.screen.y())
         if group is not None:
-            return group, []
+            return [group], []
         edge = viewport.pick_edge(ctx.screen.x(), ctx.screen.y())
         if edge is not None:
             entities = [edge]
@@ -62,16 +65,14 @@ def gather_targets(ctx: ToolContext):
             face = viewport.pick_face(ctx.screen.x(), ctx.screen.y())
             if face is not None:
                 entities = [face]
-    for ent in entities:
-        if isinstance(ent, Group):
-            return ent, []
+    groups = [ent for ent in entities if isinstance(ent, Group)]
     positions: list[QVector3D] = []
     for ent in entities:
         if isinstance(ent, Edge):
             positions.extend([ent.a, ent.b])
         elif isinstance(ent, Face):
             positions.extend(ent.vertices)
-    return None, _dedup(positions)
+    return groups, _dedup(positions)
 
 
 def gather_labels(ctx: ToolContext) -> list[TextLabel]:
@@ -114,7 +115,7 @@ class MoveTool(Tool):
         self.chain_first_point: QVector3D | None = None  # silence close-snap
         self._positions: list[QVector3D] = []  # unique positions to translate
         self._verts: list = []                 # resolved vertex objects (identity)
-        self._group: Group | None = None       # set when moving a whole group
+        self._groups: list[Group] = []         # whole groups being moved
         self._labels: list[TextLabel] = []     # leader texts whose label moves
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)  # currently applied live
 
@@ -130,17 +131,17 @@ class MoveTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         if self.start_point is None:
-            group, positions = self._gather(ctx)
+            groups, positions = self._gather(ctx)
             labels = gather_labels(ctx)
             if labels and not viewport.scene.selection:
                 # A click on the glyphs grabs just the text, never the
                 # geometry that happens to sit behind it.
-                group, positions = None, []
-            if group is None and not positions and not labels:
+                groups, positions = [], []
+            if not groups and not positions and not labels:
                 return  # nothing under the cursor / selected to move
             self.start_point = ctx.world
             self.grab = ctx.world
-            self._group = group
+            self._groups = groups
             self._positions = positions
             self._labels = labels
             # Resolve the grabbed positions to vertex OBJECTS once: the live
@@ -200,21 +201,21 @@ class MoveTool(Tool):
         return gather_targets(ctx)
 
     def _shift(self, viewport, step: QVector3D) -> None:
-        """Translate the live geometry by ``step`` — a whole group's mesh, or the
-        grabbed vertex objects (identity-exact: apply and revert stay symmetric
-        even when the drag crosses another vertex's position)."""
-        if self._group is not None:
-            if getattr(self._group, "xform", None) is not None:
+        """Translate the live geometry by ``step`` — every grabbed group's
+        mesh AND the grabbed loose vertex objects (identity-exact: apply and
+        revert stay symmetric even when the drag crosses another vertex's
+        position)."""
+        for group in self._groups:
+            if getattr(group, "xform", None) is not None:
                 from PySide6.QtGui import QMatrix4x4
                 t = QMatrix4x4()
                 t.translate(step)
-                self._group.xform = t * self._group.xform   # instance: O(1)
+                group.xform = t * group.xform   # instance: O(1)
             else:
-                for v in list(self._group.mesh.vertices):
-                    self._group.mesh.move_vertex(v, step)
-        else:
-            for v in self._verts:
-                viewport.scene.mesh.move_vertex(v, step)
+                for v in list(group.mesh.vertices):
+                    group.mesh.move_vertex(v, step)
+        for v in self._verts:
+            viewport.scene.mesh.move_vertex(v, step)
         for lab in self._labels:
             lab.offset = lab.offset + step
         viewport.scene.version += 1
@@ -242,9 +243,8 @@ class MoveTool(Tool):
         self._revert_preview(viewport)
         if delta.length() > 1e-9:
             commands = []
-            if self._group is not None:
-                commands.append(MoveGroupCommand(self._group, delta))
-            elif self._positions:
+            commands.extend(MoveGroupCommand(g, delta) for g in self._groups)
+            if self._positions:
                 commands.append(MoveVerticesCommand(self._positions, delta))
             if self._labels:
                 commands.append(MoveTextLabelsCommand(self._labels, delta))
@@ -261,6 +261,6 @@ class MoveTool(Tool):
         self.hover_point = None
         self._positions = []
         self._verts = []
-        self._group = None
+        self._groups = []
         self._labels = []
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)

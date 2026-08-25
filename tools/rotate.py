@@ -59,7 +59,7 @@ class RotateTool(ProtractorBase):
 
     def __init__(self) -> None:
         super().__init__()
-        self._group: Group | None = None
+        self._groups: list[Group] = []
         self._positions: list[QVector3D] = []
         self._verts: list = []
         self._sel_faces: list = []          # for copy mode (loose geometry)
@@ -103,12 +103,12 @@ class RotateTool(ProtractorBase):
         viewport = ctx.viewport
         self._last = None            # a click ends the retype window
         if self.start_point is None:
-            group, positions = gather_targets(ctx)
-            if group is None and not positions:
+            groups, positions = gather_targets(ctx)
+            if not groups and not positions:
                 viewport.flash_status(
                     tr("Select (or click) the geometry to rotate first"))
                 return
-            self._group = group
+            self._groups = groups
             self._positions = positions
             mesh = viewport.scene.mesh
             self._verts = [v for v in (mesh.vertex_at(p) for p in positions)
@@ -251,16 +251,17 @@ class RotateTool(ProtractorBase):
         the copy preview swings (group wireframe, or the loose selection)."""
         viewport = ctx.viewport
         self._sel_faces, self._sel_edges, self._base_segments = [], [], []
-        if self._group is not None:
-            xf = getattr(self._group, "xform", None)
-            for e in self._group.mesh.edges:
+        for group in self._groups:
+            xf = getattr(group, "xform", None)
+            for e in group.mesh.edges:
                 a, b = QVector3D(e.a), QVector3D(e.b)
                 if xf is not None:
                     a, b = xf.map(a), xf.map(b)
                 self._base_segments.append((a, b))
-            return
         sel = list(viewport.scene.selection)
-        if not sel:
+        if not sel and not self._groups:
+            # Nothing selected and no group hover-picked: the click grabbed
+            # the loose entity under the cursor (mirror of gather_targets).
             edge = viewport.pick_edge(ctx.screen.x(), ctx.screen.y())
             if edge is not None:
                 sel = [edge]
@@ -283,17 +284,16 @@ class RotateTool(ProtractorBase):
         if abs(step_deg) < 1e-12:
             return
         m = rotation_matrix(self.start_point, self._axis(), step_deg)
-        if self._group is not None:
-            if getattr(self._group, "xform", None) is not None:
-                self._group.xform = m * self._group.xform   # instance: O(1)
+        for group in self._groups:
+            if getattr(group, "xform", None) is not None:
+                group.xform = m * group.xform   # instance: O(1)
             else:
-                gmesh = self._group.mesh
+                gmesh = group.mesh
                 for vx in list(gmesh.vertices):
                     gmesh.move_vertex(vx, m.map(vx.position) - vx.position)
-        else:
-            for vx in self._verts:
-                viewport.scene.mesh.move_vertex(
-                    vx, m.map(vx.position) - vx.position)
+        for vx in self._verts:
+            viewport.scene.mesh.move_vertex(
+                vx, m.map(vx.position) - vx.position)
         viewport.scene.version += 1
 
     def _apply_preview(self, viewport, target_deg: float) -> None:
@@ -312,21 +312,19 @@ class RotateTool(ProtractorBase):
         start = QVector3D(self.start_point)
         axis = QVector3D(self._axis())
         copy = self._copy
-        group = self._group
+        groups = list(self._groups)
         positions = list(self._positions)
         faces = list(self._sel_faces)
         edges = list(self._sel_edges)
 
         def build(deg: float):
+            cmds: list = []
             if copy:
-                if group is not None:
-                    g = copy_group(group)   # instance → sibling instance
-                    return CompoundCommand([
-                        InsertGroupCommand(g),
-                        RotateGroupCommand(g, start, axis, deg),
-                    ])
                 m = rotation_matrix(start, axis, deg)
-                cmds: list = []
+                for group in groups:
+                    g = copy_group(group)   # instance → sibling instance
+                    cmds.append(InsertGroupCommand(g))
+                    cmds.append(RotateGroupCommand(g, start, axis, deg))
                 for f in faces:
                     cmds.append(AddFaceCommand(
                         [m.map(v) for v in f.vertices],
@@ -343,14 +341,15 @@ class RotateTool(ProtractorBase):
                         m.map(e.a), m.map(e.b),
                         soft=getattr(e, "soft", False) or None,
                         curve=id_map.get(curve)))
-                if not cmds:
-                    return None
-                return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
-            if group is not None:
-                return RotateGroupCommand(group, start, axis, deg)
-            if positions:
-                return RotateVerticesCommand(positions, start, axis, deg)
-            return None
+            else:
+                cmds.extend(RotateGroupCommand(g, start, axis, deg)
+                            for g in groups)
+                if positions:
+                    cmds.append(RotateVerticesCommand(
+                        positions, start, axis, deg))
+            if not cmds:
+                return None
+            return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
 
         return build
 
@@ -370,7 +369,7 @@ class RotateTool(ProtractorBase):
 
     def _reset(self) -> None:
         self._reset_protractor()
-        self._group = None
+        self._groups = []
         self._positions = []
         self._verts = []
         self._sel_faces = []

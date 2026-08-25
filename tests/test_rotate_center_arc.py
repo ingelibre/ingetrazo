@@ -494,3 +494,99 @@ def test_drag_from_centre_sets_custom_axis():
     _hover(vp, t2, 0.01, 0)                        # 1 px: not a drag
     t2.on_release(vp)
     assert t2._custom_axis is None
+
+
+def test_rotate_mixed_selection_groups_and_loose():
+    # A whole drawing: two groups + loose geometry, all selected — everything
+    # must turn together as ONE undo step (only the first group used to).
+    from core.group import Group
+    from core.mesh import Mesh
+    scene = Scene()
+    vp = _Vp(scene)
+    _rect(scene, vp.history, 2, 0, 6, 2)           # loose slab
+    def grp(x0):
+        m = Mesh()
+        m.add_face([QVector3D(x0, 0, 0), QVector3D(x0 + 1, 0, 0),
+                    QVector3D(x0 + 1, 1, 0), QVector3D(x0, 1, 0)])
+        g = Group(m)
+        scene.groups.append(g)
+        return g
+    g1, g2 = grp(10), grp(20)
+    scene.selection.update(scene.mesh.faces)
+    scene.selection.update(scene.mesh.edges)
+    scene.selection.update([g1, g2])
+
+    t = RotateTool()
+    t.on_activate(vp)
+    _click(vp, t, 0, 0)
+    _click(vp, t, 1, 0)
+    _hover(vp, t, 0, 1)
+    _click(vp, t, 0, 1)                            # +90° for EVERYTHING
+
+    assert (0.0, 2.0, 0.0) in _keys(scene.mesh)    # loose (2,0) → (0,2)
+    assert (0.0, 10.0, 0.0) in _keys(g1.mesh)      # group 1 (10,0) → (0,10)
+    assert (0.0, 20.0, 0.0) in _keys(g2.mesh)      # group 2 (20,0) → (0,20)
+    assert vp.history.undo()                       # ONE step restores all
+    assert (2.0, 0.0, 0.0) in _keys(scene.mesh)
+    assert (10.0, 0.0, 0.0) in _keys(g1.mesh)
+    assert (20.0, 0.0, 0.0) in _keys(g2.mesh)
+
+
+def test_move_mixed_selection_groups_and_loose():
+    from PySide6.QtCore import QPointF
+    from core.group import Group
+    from core.mesh import Mesh
+    from tools.move import MoveTool
+    scene = Scene()
+    vp = _Vp(scene)
+    _rect(scene, vp.history, 0, 0, 2, 1)
+    m = Mesh()
+    m.add_face([QVector3D(5, 0, 0), QVector3D(6, 0, 0),
+                QVector3D(6, 1, 0), QVector3D(5, 1, 0)])
+    g = Group(m)
+    scene.groups.append(g)
+    scene.selection.update(scene.mesh.faces)
+    scene.selection.update(scene.mesh.edges)
+    scene.selection.add(g)
+
+    t = MoveTool()
+    t.on_activate(vp)
+    _click(vp, t, 0, 0)                            # grab
+    _hover(vp, t, 0, 3)
+    _click(vp, t, 0, 3)                            # +3 in Y for everything
+
+    assert (0.0, 3.0, 0.0) in _keys(scene.mesh)
+    assert (5.0, 3.0, 0.0) in _keys(g.mesh)
+    assert vp.history.undo()
+    assert (0.0, 0.0, 0.0) in _keys(scene.mesh)
+    assert (5.0, 0.0, 0.0) in _keys(g.mesh)
+
+
+def test_scale_mixed_selection_groups_and_loose():
+    from core.group import Group
+    from core.mesh import Mesh
+    from tools.scale import ScaleTool
+    scene = Scene()
+    vp = _Vp(scene)
+    _rect(scene, vp.history, 1, 0, 2, 1)
+    m = Mesh()
+    m.add_face([QVector3D(4, 0, 0), QVector3D(5, 0, 0),
+                QVector3D(5, 1, 0), QVector3D(4, 1, 0)])
+    g = Group(m)
+    scene.groups.append(g)
+    scene.selection.update(scene.mesh.faces)
+    scene.selection.update(scene.mesh.edges)
+    scene.selection.add(g)
+
+    t = ScaleTool()
+    t.on_activate(vp)
+    _click(vp, t, 0, 0)                            # centre at origin
+    _click(vp, t, 1, 0)                            # reference at 1
+    _hover(vp, t, 2, 0)                            # ×2
+    _click(vp, t, 2, 0)
+
+    assert (2.0, 0.0, 0.0) in _keys(scene.mesh)    # loose (1,0) → (2,0)
+    assert (8.0, 0.0, 0.0) in _keys(g.mesh)        # group (4,0) → (8,0)
+    assert vp.history.undo()
+    assert (1.0, 0.0, 0.0) in _keys(scene.mesh)
+    assert (4.0, 0.0, 0.0) in _keys(g.mesh)
