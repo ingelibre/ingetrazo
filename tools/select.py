@@ -245,6 +245,48 @@ class SelectTool(Tool):
                     picked.append(face)
             elif all(_pt_in_rect(p, rect) for p in pts):
                 picked.append(face)
+        # Groups and component instances (the "box select skips groups"
+        # report). Window mode: every vertex inside. Crossing mode: any vertex
+        # inside, else any wireframe edge touching the box. Early exits keep
+        # the common reject cheap; inside a group-edit context the box works
+        # on the open group's internals only (SketchUp), so skip.
+        if viewport.scene.edit_group is None:
+            for group in getattr(viewport.scene, "groups", []):
+                if not viewport.scene.entity_selectable(group):
+                    continue
+                xf = getattr(group, "xform", None)
+
+                def gw2p(p):
+                    return w2p(xf.map(p) if xf is not None else p)
+
+                verts = group.mesh.vertices
+                if not verts:
+                    continue
+                if crossing:
+                    hit = False
+                    for v in verts:
+                        p = gw2p(v.position)
+                        if p is not None and _pt_in_rect(p, rect):
+                            hit = True
+                            break
+                    if not hit:
+                        for e in group.mesh.edges:
+                            pa, pb = gw2p(e.a), gw2p(e.b)
+                            if (pa is not None and pb is not None
+                                    and _seg_rect_overlap(pa, pb, rect)):
+                                hit = True
+                                break
+                    if hit:
+                        picked.append(group)
+                else:
+                    inside = True
+                    for v in verts:
+                        p = gw2p(v.position)
+                        if p is None or not _pt_in_rect(p, rect):
+                            inside = False
+                            break
+                    if inside:
+                        picked.append(group)
         for dim in getattr(viewport.scene, "dimensions", []):
             ap, bp = dim.line_points()
             pa, pb = w2p(ap), w2p(bp)

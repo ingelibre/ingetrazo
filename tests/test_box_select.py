@@ -74,3 +74,91 @@ def test_box_select_additive_keeps_previous():
     SelectTool().on_box_select(vp, RECT, crossing=False, additive=True)
     assert scene.edges[2] in scene.selection          # kept
     assert scene.edges[0] in scene.selection          # added by the box
+
+
+# ---- Groups (the "box select skips groups" report) --------------------------
+
+def _group_at(scene, x0, y0, size=2.0):
+    from core.group import Group
+    from core.mesh import Mesh
+    m = Mesh()
+    m.add_face([V(x0, y0), V(x0 + size, y0),
+                V(x0 + size, y0 + size), V(x0, y0 + size)])
+    g = Group(m)
+    scene.groups.append(g)
+    return g
+
+
+def test_window_box_selects_groups_fully_inside():
+    scene = Scene()
+    vp = _StubViewport(scene)
+    g_in = _group_at(scene, 1, 1)                     # fully inside (0,0,5,5)
+    g_part = _group_at(scene, 4, 4)                   # sticks out
+    g_out = _group_at(scene, 20, 20)
+    SelectTool().on_box_select(vp, RECT, crossing=False, additive=False)
+    assert g_in in scene.selection
+    assert g_part not in scene.selection
+    assert g_out not in scene.selection
+
+
+def test_crossing_box_selects_touched_groups():
+    scene = Scene()
+    vp = _StubViewport(scene)
+    g_in = _group_at(scene, 1, 1)
+    g_part = _group_at(scene, 4, 4)
+    g_out = _group_at(scene, 20, 20)
+    SelectTool().on_box_select(vp, RECT, crossing=True, additive=False)
+    assert g_in in scene.selection
+    assert g_part in scene.selection                  # touched → selected
+    assert g_out not in scene.selection
+
+
+def test_crossing_box_catches_group_edge_straddling_it():
+    # No vertex lands inside the box; a wireframe edge passes through it.
+    from core.group import Group
+    from core.mesh import Mesh
+    scene = Scene()
+    vp = _StubViewport(scene)
+    m = Mesh()
+    m.add_edge(V(-10, 2.5), V(10, 2.5))
+    g = Group(m)
+    scene.groups.append(g)
+    SelectTool().on_box_select(vp, RECT, crossing=True, additive=False)
+    assert g in scene.selection
+
+
+def test_box_select_maps_instances_to_world():
+    # The prototype lives at the origin; only the instance whose TRANSFORM
+    # puts it inside the box may be selected.
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import Group
+    from core.mesh import Mesh
+    scene = Scene()
+    vp = _StubViewport(scene)
+    proto = Mesh()
+    proto.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+
+    def instance(dx, dy):
+        g = Group(proto)
+        t = QMatrix4x4()
+        t.translate(V(dx, dy, 0))
+        g.xform = t
+        scene.groups.append(g)
+        return g
+
+    near = instance(1, 1)                             # world (1,1)-(2,2): inside
+    far = instance(20, 20)                            # world (20,20)-(21,21)
+    SelectTool().on_box_select(vp, RECT, crossing=False, additive=False)
+    assert near in scene.selection
+    assert far not in scene.selection
+
+
+def test_box_ignores_other_groups_inside_group_edit():
+    scene = Scene()
+    vp = _StubViewport(scene)
+    edited = _group_at(scene, 30, 30)
+    other = _group_at(scene, 1, 1)                    # would fall in the box
+    scene.begin_group_edit(edited)
+    SelectTool().on_box_select(vp, RECT, crossing=True, additive=False)
+    assert other not in scene.selection
+    scene.end_group_edit()
