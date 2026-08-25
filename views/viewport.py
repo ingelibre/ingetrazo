@@ -4733,14 +4733,17 @@ class Viewport(QOpenGLWidget):
         t = np.einsum("ij,ij->i", e2, q) * inv
         hit = (ok & (u >= 0.0) & (u <= 1.0) & (v >= 0.0) & (u + v <= 1.0)
                & (t > 1e-6) & ent_mask[idx.tri_ent])
-        tvals = np.where(hit, t, np.inf)
         if reduce_global:
-            # Zoom focus wants ONE nearest t, not per-entity buckets —
-            # np.minimum.at was most of this function's 145 ms per wheel
-            # burst on a 280k-triangle scene.
-            return float(tvals.min())
+            # Zoom focus wants ONE nearest t, not per-entity buckets.
+            th = t[hit]
+            return float(th.min()) if len(th) else float("inf")
         face_t = np.full(len(idx.entities), np.inf)
-        np.minimum.at(face_t, idx.tri_ent, tvals)
+        hit_rows = np.where(hit)[0]
+        if len(hit_rows):
+            # minimum.at only over the triangles the ray actually hits (a
+            # handful) — over the full 280k-row array it alone cost ~100 ms
+            # per snap hover (the paste-drag lag near the palm tree).
+            np.minimum.at(face_t, idx.tri_ent[hit_rows], t[hit_rows])
         return face_t
 
     def _hover_face_t(self, idx, origin, direction):
