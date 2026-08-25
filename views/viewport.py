@@ -5557,6 +5557,21 @@ class Viewport(QOpenGLWidget):
         # pipeline (the old per-edge tuple walk took seconds on a leafy
         # plant, and again on EVERY preview frame — the piscina hang).
         group_data = [copy_group(g) for g in groups]
+        # A classic group's snapshot becomes an identity INSTANCE of its
+        # fresh mesh: every stamp is an O(1) sibling of the clipboard
+        # prototype instead of a full deep copy per paste (the 230k-face
+        # hedge took seconds per stamp). SketchUp semantics hold: pasted
+        # copies share the definition until edited — begin_group_edit
+        # already materializes instances on entry. The prototype's chunk is
+        # pre-seeded from the SOURCE group's cached entry (content-identical
+        # deep copy), so preview and stamps skip the from-scratch rebuild.
+        old_clip = getattr(self, "clipboard", None)
+        seed = getattr(self, "_seed_proto_chunk", None)
+        for src, tpl in zip(groups, group_data):
+            if tpl.xform is None:
+                tpl.xform = QMatrix4x4()
+                if callable(seed):
+                    seed(tpl.mesh, src)
         # Reference corner (what the cursor holds the set by): min corner of
         # everything copied, via NumPy — one pass over vertices instead of
         # four Python min() scans over every edge endpoint.
@@ -5582,9 +5597,51 @@ class Viewport(QOpenGLWidget):
         if lo is None:
             return False
         ref = QVector3D(float(lo[0]), float(lo[1]), float(lo[2]))
+        drop = getattr(self, "_drop_clip_protos", None)
+        if old_clip and callable(drop):
+            drop(old_clip)
         self.clipboard = {"faces": face_data, "edges": edge_data,
                           "groups": group_data, "ref": ref}
         return True
+
+    def _seed_proto_chunk(self, mesh, src_group) -> None:
+        """Pre-seed the prototype-chunk cache of a clipboard snapshot with
+        its SOURCE group's cached chunk. The snapshot is a content-identical
+        deep copy, so the seeded entry revalidates through the fingerprint
+        self-heal (~120 ms) instead of a from-scratch rebuild (~7 s on the
+        230k-face hedge). A wrong guess is harmless: a fingerprint mismatch
+        just rebuilds."""
+        cache = getattr(self, "_group_chunks", None)
+        if not cache or getattr(src_group, "xform", None) is not None:
+            return
+        src_entry = cache.get(id(src_group))
+        if src_entry is None:
+            return
+        from types import SimpleNamespace
+        wrappers = getattr(self, "_proto_wrappers", None)
+        if wrappers is None:
+            wrappers = self._proto_wrappers = {}
+        w = wrappers.get(id(mesh))
+        if w is None:
+            w = wrappers[id(mesh)] = SimpleNamespace(mesh=mesh, xform=None)
+        cache[id(w)] = dict(src_entry)
+
+    def _drop_clip_protos(self, clip) -> None:
+        """A replaced clipboard's prototype chunks are dead weight (hundreds
+        of MB for a big copy) — drop them unless a stamped sibling in the
+        scene still shares the mesh."""
+        wrappers = getattr(self, "_proto_wrappers", None)
+        cache = getattr(self, "_group_chunks", None)
+        if not wrappers:
+            return
+        live = {id(g.mesh) for g in self.scene.groups}
+        for g in clip.get("groups", ()):
+            mid = id(g.mesh)
+            if mid in live:
+                continue
+            w = wrappers.pop(mid, None)
+            if w is not None and cache:
+                cache.pop(id(w), None)
 
     def cut_selection(self) -> bool:
         """Copy the selection, then erase it (one undoable step)."""

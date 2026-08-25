@@ -133,14 +133,25 @@ def test_copy_paste_group():
     assert len(scene.groups) == 2
     pasted = next(k for k in scene.groups if k is not g)
     assert pasted.name == "Caja" and pasted.layer == "Muros"
-    assert pasted.mesh is not g.mesh        # deep copy, no aliasing
-    xs = sorted(round(v.x()) for f in pasted.mesh.faces for v in f.vertices)
+    assert pasted.mesh is not g.mesh        # snapshot: no aliasing the source
+    # A pasted classic group is an INSTANCE of the clipboard snapshot
+    # (SketchUp: copies share the definition until edited): stamping is O(1)
+    # even on a 230k-face group, and begin_group_edit materializes on entry.
+    assert pasted.xform is not None
+    xs = sorted(round(pasted.xform.map(QVector3D(v)).x())
+                for f in pasted.mesh.faces for v in f.vertices)
     assert xs == [5, 5, 7, 7]               # ref corner landed at the cursor
     assert list(pasted.mesh.faces)[0].attrs.get("color") is not None
     assert pasted in scene.selection
 
+    _paste_at(vp, 9, 0)                     # stamp again: sibling instance
+    third = next(k for k in scene.groups if k is not g and k is not pasted)
+    assert third.mesh is pasted.mesh        # shared prototype, O(1) stamp
+    assert round(third.xform.map(QVector3D(0, 0, 0)).x()) == 9
+
+    assert vp.history.undo() is True        # undo the second paste
     assert vp.history.undo() is True
-    assert scene.groups == [g]              # one undoable step
+    assert scene.groups == [g]              # one undoable step per paste
 
 
 def test_copy_paste_instance_shares_prototype():
