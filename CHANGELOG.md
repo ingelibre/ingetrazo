@@ -4,6 +4,70 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.5] — 2026-08-25
+
+**Sections, the SketchUp parity batch, AI modelling, and the performance
+marathon** — a full real-world modelling session (a 280k-face pool
+project) hunted down every freeze it hit.
+
+### Added
+- **Section planes** (SketchUp's Sections, complete): place the active
+  cut with hover plane inference (arrow keys / Shift to lock), one
+  active cut per context, GPU-clipped model with **thick cut edges**,
+  **section fill**, corner symbol balloons and the Sections toolbar.
+  Sections move/rotate/delete like geometry, reverse and "Align View"
+  from the context menu, picks and snaps ignore the clipped side, and
+  scenes + `.igz` remember the active cut. The composer's hidden-line
+  pass clips too and draws the cut chords — real plans and sections on
+  sheets.
+- **SketchUp tool parity batch**: **Flip** (2023-style axis planes,
+  Ctrl = flip a copy, classic context-menu entries), **Make Component**
+  (G, shared definitions + Make Unique), **Freehand** (sampled,
+  RDP-simplified, selects as one contour), **Pie** arc (closes the
+  wedge with a face) and chord bulge / radius suffixes in the
+  Measurements box. "Offset" is now **Equidistancia** (SketchUp's
+  Spanish name).
+- **AI Assistant** (Extensions menu): chat with an AI provider from
+  inside IngeTrazo — provider picker with per-provider API key and
+  model memory; every AI edit lands as ONE undoable command with full
+  rollback on failure. Plus the **AI Bridge (MCP)**: model with Claude
+  from outside the app over the Model Context Protocol.
+- **Native glTF/GLB import** (PBR materials mapped to the paint
+  system).
+- **Starter components and textures**: CC0/CC-BY sedan, oak, bush and
+  a scale figure standing at SketchUp's real offset; texture library
+  additions (bark, rock, river pebbles, lawn, concrete pavers, water);
+  glass paints translucent end-to-end (library → paint → face).
+- Drawing axes recalibrated against SketchUp (fine-dot negative
+  directions, denser dots); imported files show their name in the
+  window title; the plugin path is documented for outside developers.
+
+### Fixed
+- **The paste "app not responding" hang**: `Scene.bounds()` walked the
+  whole model in Python and ran twice per hover over empty space (work
+  plane + status-bar coordinate) — the event loop starved for 10+
+  seconds on big scenes. Now cached per scene version with a
+  vectorized walk. This was most of the "zoom feels slow" report too.
+- Billboards keep mipmaps with a hard alpha cut (no more dither dots
+  at distance); Groq 403/404 in the AI Assistant.
+
+### Performance
+The pool-project marathon, in order of pain: box select vectorized ·
+loose-edge silhouettes vectorized (the constant orbit/zoom lag) ·
+erase cascade indexed (30 s curved-surface deletes → instant) ·
+`heal_overlapping_faces` capped at hand-drawing scale · zoom focus
+pinned to the camera pose and revalidated by projection after an orbit
+(no ~25 ms re-pick per notch) · ray picks bucket only hit triangles ·
+**Move, Rotate AND Paste preview through frozen scratch VBOs** (one
+upload, every drag/hover frame is a translated MVP — SketchUp-grade
+dragging of a 230k-face group) · Merge Groups fuses group-to-group
+without the loose-mesh detour · one Newell per face on edit frames ·
+group copies go through the bulk-weld pass · **pasting a huge classic
+group stamps an O(1) sibling of the clipboard prototype** (SketchUp
+semantics: copies share the definition until edited) — stamping the
+230k-face group went from ~12 s to instant, rotating a pasted copy
+from seconds to 0.1 s.
+
 ## [0.3.4] — 2026-08-25
 
 **The dogfooding release: a real modelling session's bug hunt, plus
