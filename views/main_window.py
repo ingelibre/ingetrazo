@@ -1682,7 +1682,17 @@ class MainWindow(QMainWindow):
             return
         temp = _Scene()
         _obj.load_obj(temp, path)
-        group = Group(temp.mesh, name=tr(key.capitalize()))
+        mesh = temp.mesh
+        if not mesh.faces and temp.groups:
+            # Big OBJs land as a reference group (formats/obj.py), not in
+            # the loose mesh — take that mesh or we'd insert nothing.
+            mesh = temp.groups[0].mesh
+        # Low-poly components read as REAL models when facet seams are
+        # soft (SketchUp import smoothing); creases and material
+        # boundaries keep their lines.
+        from formats.fuse import soften_smooth_edges
+        soften_smooth_edges(mesh, cos_threshold=0.55)
+        group = Group(mesh, name=tr(key.capitalize()))
         self._start_place(group)
 
     def _on_insert_3d_text(self) -> None:

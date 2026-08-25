@@ -98,13 +98,18 @@ def test_bundled_components_import_closed_and_insert_undoably():
     comp_dir = Path(__file__).resolve().parent.parent / "resources" / "components"
     scene = Scene()
     hist = History(scene)
+    # Kenney set (CC0): the oak is a watertight solid; the bush (leaf
+    # planes) and the car (no underbody) are decorative and open.
     for name, must_close in (("person", True), ("tree", True),
-                             ("bush", True), ("car", False)):
+                             ("bush", False), ("car", False)):
         temp = Scene()
         load_obj(temp, comp_dir / f"{name}.obj")
-        assert temp.mesh.faces, name
-        assert is_closed(temp.mesh) == must_close, name
-        hist.execute(InsertGroupCommand(Group(temp.mesh, name=name)))
+        mesh = temp.mesh
+        if not mesh.faces and temp.groups:
+            mesh = temp.groups[0].mesh   # big OBJ → reference-group path
+        assert mesh.faces, name
+        assert is_closed(mesh) == must_close, name
+        hist.execute(InsertGroupCommand(Group(mesh, name=name)))
     assert len(scene.groups) == 4
     # scale figure is actually 1.75 m
     person = next(g for g in scene.groups if g.name == "person")

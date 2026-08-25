@@ -51,6 +51,11 @@ def snap(i: int = 0) -> None:
     viewport.scene.clear()
     viewport.scene.groups.clear()
     window._on_insert_component(key)
+    # Since the placement-preview rework, insert hands the group to the
+    # placement tool instead of stamping it — stamp it ourselves.
+    tool = viewport.active_tool
+    viewport.scene.groups.append(tool._group)
+    viewport.set_active_tool(None)
     viewport.scene.selection.clear()      # no orange selection tint
     lo, hi = viewport.scene.bounds()
     cam = viewport.camera
