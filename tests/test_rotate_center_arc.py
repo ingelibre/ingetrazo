@@ -360,3 +360,137 @@ def test_triple_click_selects_whole_connected_solid():
     far = next(f for f in scene.mesh.faces
                if f.loop[0].position.x() >= 10)
     assert far not in sel                        # disconnected slab untouched
+
+
+# ---- SketchUp protractor parity on Rotate -----------------------------------
+
+def test_ctrl_copy_rotates_a_group_copy():
+    # Ctrl = copy mode: the original group stays put, a rotated copy appears,
+    # all as ONE undo step.
+    from core.group import Group
+    from core.mesh import Mesh
+    scene = Scene()
+    vp = _Vp(scene)
+    m = Mesh()
+    m.add_face([QVector3D(2, 0, 0), QVector3D(4, 0, 0),
+                QVector3D(4, 1, 0), QVector3D(2, 1, 0)])
+    g = Group(m, name="Losa")
+    scene.groups.append(g)
+    scene.selection.add(g)
+    before = _keys(g.mesh)
+
+    t = RotateTool()
+    t.on_activate(vp)
+    assert t.on_key(vp, Qt.Key_Control, Qt.NoModifier) is True
+    _click(vp, t, 0, 0)
+    _click(vp, t, 1, 0)
+    _hover(vp, t, 0, 1)
+    _click(vp, t, 0, 1)                            # commit +90° as a COPY
+
+    assert len(scene.groups) == 2
+    assert _keys(g.mesh) == before                 # original untouched
+    copy = next(k for k in scene.groups if k is not g)
+    assert (0.0, 2.0, 0.0) in _keys(copy.mesh)     # (2,0) rotated to (0,2)
+    assert vp.history.undo()
+    assert scene.groups == [g]                     # one step removes the copy
+    assert t._copy is False                        # the modifier arms ONE op
+
+
+def test_ctrl_copy_of_instance_shares_prototype():
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import Group
+    from core.mesh import Mesh
+    scene = Scene()
+    vp = _Vp(scene)
+    proto = Mesh()
+    proto.add_face([QVector3D(0, 0, 0), QVector3D(1, 0, 0),
+                    QVector3D(1, 1, 0), QVector3D(0, 1, 0)])
+    inst = Group(proto, name="Poste")
+    inst.xform = QMatrix4x4()
+    scene.groups.append(inst)
+    scene.selection.add(inst)
+
+    t = RotateTool()
+    t.on_activate(vp)
+    t.on_key(vp, Qt.Key_Control, Qt.NoModifier)
+    _click(vp, t, 0, 0)
+    _click(vp, t, 1, 0)
+    _hover(vp, t, 0, 1)
+    _click(vp, t, 0, 1)
+    copy = next(k for k in scene.groups if k is not inst)
+    assert copy.mesh is proto                      # sibling instance
+    assert copy.xform is not None
+
+
+def test_ctrl_copy_duplicates_loose_faces_rotated():
+    scene = Scene()
+    vp = _Vp(scene)
+    _rect(scene, vp.history, 2, 0, 6, 2)
+    scene.selection.update(scene.mesh.faces)
+    scene.selection.update(scene.mesh.edges)
+
+    t = RotateTool()
+    t.on_activate(vp)
+    t.on_key(vp, Qt.Key_Control, Qt.NoModifier)
+    _click(vp, t, 0, 0)
+    _click(vp, t, 1, 0)
+    _hover(vp, t, 0, 1)
+    _click(vp, t, 0, 1)                            # copy at +90°
+
+    assert len(scene.mesh.faces) == 2              # original + rotated copy
+    got = _keys(scene.mesh)
+    assert (2.0, 0.0, 0.0) in got                  # original still there
+    assert (0.0, 2.0, 0.0) in got                  # copy landed rotated
+
+
+def test_hot_retype_redoes_the_rotation():
+    scene = Scene()
+    vp = _Vp(scene)
+    _rect(scene, vp.history, 2, 0, 6, 2)
+    scene.selection.update(scene.mesh.faces)
+    scene.selection.update(scene.mesh.edges)
+
+    t = RotateTool()
+    t.on_activate(vp)
+    _click(vp, t, 0, 0)
+    _click(vp, t, 1, 0)
+    _hover(vp, t, 0, 1)
+    _click(vp, t, 0, 1)                            # +90°, tool resets
+    depth = len(vp.history.undo_stack)
+
+    assert t.on_value(vp, 180.0) is True           # retype: REDO at 180°
+    assert (-2.0, 0.0, 0.0) in _keys(scene.mesh)   # (2,0) → (-2,0)
+    assert len(vp.history.undo_stack) == depth     # replaced, not stacked
+    assert t.on_value(vp, -90.0) is True           # negative flips the side
+    assert (0.0, -2.0, 0.0) in _keys(scene.mesh)   # (2,0) → (0,-2)
+    _click(vp, t, 9, 9)                            # a click closes the window
+    t.on_cancel(vp)
+    assert t.on_value(vp, 15.0) is False
+
+
+def test_drag_from_centre_sets_custom_axis():
+    class _VpScreen(_Vp):
+        def _world_to_pixel(self, v):
+            return (v.x() * 100.0, v.y() * 100.0)
+
+    scene = Scene()
+    vp = _VpScreen(scene)
+    _rect(scene, vp.history, 2, 0, 6, 2)
+    scene.selection.update(scene.mesh.faces)
+    scene.selection.update(scene.mesh.edges)
+
+    t = RotateTool()
+    t.on_activate(vp)
+    _click(vp, t, 0, 0)                            # press the centre...
+    _hover(vp, t, 3, 0)                            # ...drag along +X...
+    t.on_release(vp)                               # ...release: axis = +X
+    assert t._custom_axis is not None
+    assert abs(t._axis().x() - 1.0) < 1e-9         # fold axis along the drag
+
+    # A plain click (release at the press point) keeps the inferred plane.
+    t2 = RotateTool()
+    t2.on_activate(vp)
+    _click(vp, t2, 0, 0)
+    _hover(vp, t2, 0.01, 0)                        # 1 px: not a drag
+    t2.on_release(vp)
+    assert t2._custom_axis is None

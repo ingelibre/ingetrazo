@@ -143,6 +143,32 @@ def transformed_mesh(src: Mesh, m) -> Mesh:
     return new
 
 
+def transformed_attrs(attrs, m) -> dict:
+    """A copy of face ``attrs`` with the texture's world→UV affine map
+    (``uvw``) re-fitted for geometry mapped through ``m`` — the single-face
+    analogue of :func:`_remap_uvws` (g' = L⁻ᵀ·g, c' = c − g'·t). Used when a
+    transform duplicates loose faces (rotate-a-copy)."""
+    out = dict(attrs) if attrs else {}
+    t = out.get("texture")
+    uvw = t.get("uvw") if t else None
+    if not uvw or len(uvw) != 8:
+        return out
+    minv, ok = m.inverted()
+    if not ok:
+        return out
+    tx, ty, tz = m(0, 3), m(1, 3), m(2, 3)
+    new = list(uvw)
+    for base in (0, 4):
+        gx, gy, gz, c = uvw[base:base + 4]
+        gpx = minv(0, 0) * gx + minv(1, 0) * gy + minv(2, 0) * gz
+        gpy = minv(0, 1) * gx + minv(1, 1) * gy + minv(2, 1) * gz
+        gpz = minv(0, 2) * gx + minv(1, 2) * gy + minv(2, 2) * gz
+        new[base:base + 4] = [gpx, gpy, gpz,
+                              c - (gpx * tx + gpy * ty + gpz * tz)]
+    out["texture"] = {**t, "uvw": new}
+    return out
+
+
 def translated_attrs(attrs, delta) -> dict:
     """A copy of face ``attrs`` re-anchored for geometry moved by ``delta``:
     the texture's world→UV affine map (``uvw``) is position-anchored, so its

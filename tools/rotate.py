@@ -1,17 +1,26 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""Rotate tool: turn geometry around a point, SketchUp's protractor (Q).
+"""Rotate tool (Q): turn geometry with SketchUp's protractor.
 
-UX:
-- If there's a selection, Rotate acts on it; otherwise the first click grabs
-  the group / edge / face under the cursor.
-- First click places the protractor CENTER. Clicking on a face aligns the
-  rotation plane to it (the viewport's work-plane capture); on empty ground
-  the rotation is around the vertical axis — the common plan rotation.
-- Second click sets the REFERENCE arm (the 0° direction).
-- Moving the mouse swings the geometry live; a third click commits. Typing an
-  angle + Enter (VCB, degrees) commits exactly; the sign follows the current
-  drag direction.
+The instrument is the shared :class:`~tools.protractor.ProtractorBase` —
+Rotate shows the same protractor as the Protractor tool (SketchUp,
+help.sketchup.com "Flipping, Mirroring, Rotating and Arrays"):
+
+- Before the centre click the disc follows the cursor, aligned to the face
+  underneath and coloured by the rotation axis (red/green/blue on axis
+  planes); arrow keys lock the plane, Shift freezes it.
+- CLICK-DRAG from the centre sets a custom rotation axis along the drag
+  (SketchUp's fold-along-a-line gesture); a plain click keeps the inferred
+  plane.
+- Second click sets the reference arm; the geometry swings live with the
+  cursor, snapping to the 15° ticks near the disc and free at 0.1° farther
+  out. A third click commits; typing degrees or a rise:run slope commits
+  exactly (sign follows the current drag direction).
+- Tapping Ctrl toggles COPY mode: the original stays put and a rotated copy
+  is created (a component instance copies as a sibling instance). The copy's
+  wireframe previews at the cursor angle.
+- After the commit the angle stays hot: typing a value + Enter redoes the
+  rotation at the new angle, until the next click or tool change.
 - Esc cancels and puts the geometry back.
 
 Rotation is rigid on the rotated set, but rotating a subset of a connected
@@ -21,49 +30,78 @@ from __future__ import annotations
 
 import math
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QVector3D
 
-from core.group import Group
+from core.group import Group, copy_group, transformed_attrs
 from core.history import (
+    AddEdgeCommand,
+    AddFaceCommand,
+    CompoundCommand,
+    InsertGroupCommand,
     RotateGroupCommand,
     RotateVerticesCommand,
     rotation_matrix,
 )
 from core.i18n import tr
+from core.mesh import Edge, Face, Mesh
 from core.triangulate import plane_axes
-from tools.base import Tool, ToolContext
+from tools.base import ToolContext
 from tools.move import gather_targets
+from tools.protractor import ProtractorBase
 
 
-class RotateTool(Tool):
+class RotateTool(ProtractorBase):
     name = "Rotate"
     shortcut = "Q"
     vcb_label = "Angle"
     accepts_angle_ratio = True  # VCB "3:12" (rise:run) arrives as degrees
 
     def __init__(self) -> None:
-        # ``start_point`` is the protractor centre; the name plugs into the
-        # viewport's snap and work-plane capture like every drawing tool.
-        self.start_point: QVector3D | None = None
-        self.ref_point: QVector3D | None = None
-        self.hover_point: QVector3D | None = None
-        self.work_plane: tuple[QVector3D, QVector3D] | None = None
+        super().__init__()
         self._group: Group | None = None
         self._positions: list[QVector3D] = []
         self._verts: list = []
+        self._sel_faces: list = []          # for copy mode (loose geometry)
+        self._sel_edges: list = []
+        self._base_segments: list = []      # wireframe for the copy preview
         self._preview_deg = 0.0
+        self._copy = False                  # Ctrl: rotate a COPY
+        self._axis_drag_armed = False       # centre press → release watches
+        self._last: dict | None = None      # hot retype of the last rotation
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
         self._reset()
+        self._copy = False
+        self._last = None
 
     def on_deactivate(self, viewport) -> None:
         self._revert_preview(viewport)
         self._reset()
+        self._copy = False
+        self._last = None
+        self._axis_pick = None
+        self.hover_point = None
+
+    # ---- Keyboard -----------------------------------------------------------
+    def on_key(self, viewport, key: int, modifiers) -> bool:
+        # Ctrl toggles copy mode (SketchUp: rotate a copy, original stays).
+        if key == Qt.Key_Control:
+            self._copy = not self._copy
+            if self._copy:
+                self._revert_preview(viewport)  # the original stops swinging
+                viewport.flash_status(tr("Rotate a copy: on"))
+            else:
+                viewport.flash_status(tr("Rotate a copy: off"))
+            viewport.update()
+            return True
+        return super().on_key(viewport, key, modifiers)
 
     # ---- Spatial input ------------------------------------------------------
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
+        self._last = None            # a click ends the retype window
         if self.start_point is None:
             group, positions = gather_targets(ctx)
             if group is None and not positions:
@@ -75,102 +113,113 @@ class RotateTool(Tool):
             mesh = viewport.scene.mesh
             self._verts = [v for v in (mesh.vertex_at(p) for p in positions)
                            if v is not None]
+            self._gather_copy_entities(ctx)
             self.start_point = ctx.world
+            self._axis_drag_armed = True   # a DRAG from here sets the axis
             return
         if self.ref_point is None:
             if (ctx.world - self.start_point).length() < 1e-6:
                 return
             self.ref_point = ctx.world
             return
-        deg = self._angle_to(ctx.world)
+        deg = self._display_deg(ctx.world)
         if deg is not None:
             self._commit(viewport, deg)
 
     def on_hover(self, ctx: ToolContext) -> None:
         self.hover_point = ctx.world
-        if self.ref_point is not None:
-            deg = self._angle_to(ctx.world)
+        self._infer_plane(ctx)
+        self._update_screen_metrics(ctx)
+        if self.ref_point is not None and not self._copy:
+            deg = self._display_deg(ctx.world)
             if deg is not None:
                 self._apply_preview(ctx.viewport, deg)
         ctx.viewport.update()
 
+    def on_release(self, viewport) -> None:
+        """A real DRAG from the centre fixes the rotation axis along it
+        (SketchUp's fold gesture); a plain click keeps the inferred plane."""
+        if not self._axis_drag_armed:
+            return
+        self._axis_drag_armed = False
+        if self.hover_point is None or self.start_point is None:
+            return
+        w2p = getattr(viewport, "_world_to_pixel", None)
+        dragged = False
+        if w2p is not None:
+            p0 = w2p(self.start_point)
+            p1 = w2p(self.hover_point)
+            if p0 is not None and p1 is not None:
+                dragged = math.hypot(p1[0] - p0[0], p1[1] - p0[1]) > 8.0
+        if not dragged:
+            return
+        d = self.hover_point - self.start_point
+        if d.length() < 1e-9:
+            return
+        self._custom_axis = d.normalized()
+        viewport.flash_status(tr("Rotation axis set along the drag"))
+        viewport.update()
+
     def on_value(self, viewport, value) -> bool:
-        if self.ref_point is None or isinstance(value, tuple):
+        if isinstance(value, tuple):
             return False
-        # The typed angle turns the way the user is currently dragging.
-        sign = -1.0 if self._preview_deg < 0 else 1.0
-        self._commit(viewport, sign * abs(value))
-        return True
+        if self.ref_point is not None:
+            # The typed angle turns the way the user is currently dragging.
+            sign = -1.0 if self._preview_deg < 0 else 1.0
+            if self._copy and self.hover_point is not None:
+                cur = self._angle_to(self.hover_point)
+                sign = -1.0 if (cur is not None and cur < 0) else 1.0
+            self._commit(viewport, sign * abs(value))
+            return True
+        if self._last is not None:
+            # Hot retype (SketchUp): redo the rotation just made at the new
+            # angle. A typed negative flips the side.
+            last = self._last
+            stack = getattr(viewport.history, "undo_stack", None)
+            if not stack or stack[-1] is not last["cmd"]:
+                self._last = None
+                return False
+            side = last["sign"] * (1.0 if value >= 0 else -1.0)
+            deg = side * abs(value)
+            viewport.history.undo()
+            cmd = last["build"](deg)
+            if cmd is None:
+                self._last = None
+                return False
+            viewport.history.execute(cmd)
+            last["cmd"] = cmd
+            viewport.update()
+            return True
+        return False
 
     def on_cancel(self, viewport) -> None:
         self._revert_preview(viewport)
         self._reset()
+        self._last = None
         viewport.update()
 
     # ---- Visual preview -----------------------------------------------------
     def rubber_band_lines(self):
-        if self.start_point is None or self.hover_point is None:
+        centre = (self.start_point if self.start_point is not None
+                  else self.hover_point)
+        if centre is None:
             return []
-        # The protractor circle makes the rotation PLANE legible the moment
-        # the centre is placed — clicking a slanted face rotates about its
-        # normal, and without this cue the axis was invisible.
-        segments = list(self._protractor_segments())
+        segments = list(self._protractor_disc(centre))
+        if self.start_point is None or self.hover_point is None:
+            return segments
         segments.append((self.start_point, self.hover_point))
         if self.ref_point is not None:
             segments.append((self.start_point, self.ref_point))
-            deg = self._angle_to(self.hover_point)
+            deg = self._display_deg(self.hover_point)
             if deg is not None:
                 segments.extend(self._arc_segments(deg))
+                if self._copy and self._base_segments:
+                    # Copy mode: the original stays put — preview the rotated
+                    # COPY as a wireframe at the cursor angle.
+                    m = rotation_matrix(self.start_point, self._axis(), deg)
+                    segments.extend(
+                        (m.map(a), m.map(b)) for a, b in self._base_segments)
         return segments
-
-    def _protractor_segments(self):
-        """A 24-gon circle in the rotation plane around the centre, sized to
-        the reference arm (or the cursor distance before the arm is set)."""
-        anchor = self.ref_point or self.hover_point
-        if anchor is None:
-            return []
-        r = (anchor - self.start_point).length()
-        if r < 1e-9:
-            return []
-        u, v = plane_axes(self._axis())
-        pts = [self.start_point + (u * math.cos(2 * math.pi * k / 24)
-                                   + v * math.sin(2 * math.pi * k / 24)) * r
-               for k in range(24)]
-        return [(pts[k], pts[(k + 1) % 24]) for k in range(24)]
-
-    def value_label(self):
-        if self.ref_point is None or self.hover_point is None:
-            return None
-        deg = self._angle_to(self.hover_point)
-        if deg is None:
-            return None
-        return (f"{deg:+.1f}°", self.hover_point)
-
-    def vcb_caption(self) -> str:
-        return "Angle" if self.ref_point is not None else "Radius"
-
-    # ---- Internals ----------------------------------------------------------
-    def _axis(self) -> QVector3D:
-        if self.work_plane is not None:
-            return self.work_plane[1].normalized()
-        return QVector3D(0.0, 0.0, 1.0)
-
-    def _angle_to(self, point: QVector3D) -> float | None:
-        """Signed degrees from the reference arm to ``point``, in the
-        protractor plane."""
-        u, v = plane_axes(self._axis())
-        a = self.ref_point - self.start_point
-        b = point - self.start_point
-        a2 = (QVector3D.dotProduct(a, u), QVector3D.dotProduct(a, v))
-        b2 = (QVector3D.dotProduct(b, u), QVector3D.dotProduct(b, v))
-        if math.hypot(*a2) < 1e-9 or math.hypot(*b2) < 1e-9:
-            return None
-        ang = math.degrees(math.atan2(b2[1], b2[0]) - math.atan2(a2[1], a2[0]))
-        while ang <= -180.0:
-            ang += 360.0
-        while ang > 180.0:
-            ang -= 360.0
-        return ang
 
     def _arc_segments(self, deg: float):
         """Protractor arc between the two arms, at the reference radius."""
@@ -184,6 +233,51 @@ class RotateTool(Tool):
             t = a0 + math.radians(deg) * k / steps
             pts.append(self.start_point + (u * math.cos(t) + v * math.sin(t)) * r)
         return list(zip(pts, pts[1:]))
+
+    def value_label(self):
+        if self.ref_point is None or self.hover_point is None:
+            return None
+        deg = self._display_deg(self.hover_point)
+        if deg is None:
+            return None
+        return (f"{deg:+.1f}°", self.hover_point)
+
+    def vcb_caption(self) -> str:
+        return "Angle"
+
+    # ---- Internals ----------------------------------------------------------
+    def _gather_copy_entities(self, ctx: ToolContext) -> None:
+        """The faces/edges copy mode duplicates, and the wireframe segments
+        the copy preview swings (group wireframe, or the loose selection)."""
+        viewport = ctx.viewport
+        self._sel_faces, self._sel_edges, self._base_segments = [], [], []
+        if self._group is not None:
+            xf = getattr(self._group, "xform", None)
+            for e in self._group.mesh.edges:
+                a, b = QVector3D(e.a), QVector3D(e.b)
+                if xf is not None:
+                    a, b = xf.map(a), xf.map(b)
+                self._base_segments.append((a, b))
+            return
+        sel = list(viewport.scene.selection)
+        if not sel:
+            edge = viewport.pick_edge(ctx.screen.x(), ctx.screen.y())
+            if edge is not None:
+                sel = [edge]
+            else:
+                face = viewport.pick_face(ctx.screen.x(), ctx.screen.y())
+                if face is not None:
+                    sel = [face]
+        self._sel_faces = [f for f in sel if isinstance(f, Face)]
+        self._sel_edges = [e for e in sel if isinstance(e, Edge)]
+        for f in self._sel_faces:
+            for lp in (list(f.vertices), *[list(h) for h in f.holes]):
+                n = len(lp)
+                for i in range(n):
+                    self._base_segments.append(
+                        (QVector3D(lp[i]), QVector3D(lp[(i + 1) % n])))
+        for e in self._sel_edges:
+            self._base_segments.append((QVector3D(e.a), QVector3D(e.b)))
 
     def _rotate_live(self, viewport, step_deg: float) -> None:
         if abs(step_deg) < 1e-12:
@@ -211,24 +305,77 @@ class RotateTool(Tool):
             self._rotate_live(viewport, -self._preview_deg)
             self._preview_deg = 0.0
 
+    def _make_builder(self):
+        """A closure that builds the commit command for a given angle — kept
+        by the hot-retype window so the rotation can be redone at a new angle
+        after the tool has reset."""
+        start = QVector3D(self.start_point)
+        axis = QVector3D(self._axis())
+        copy = self._copy
+        group = self._group
+        positions = list(self._positions)
+        faces = list(self._sel_faces)
+        edges = list(self._sel_edges)
+
+        def build(deg: float):
+            if copy:
+                if group is not None:
+                    g = copy_group(group)   # instance → sibling instance
+                    return CompoundCommand([
+                        InsertGroupCommand(g),
+                        RotateGroupCommand(g, start, axis, deg),
+                    ])
+                m = rotation_matrix(start, axis, deg)
+                cmds: list = []
+                for f in faces:
+                    cmds.append(AddFaceCommand(
+                        [m.map(v) for v in f.vertices],
+                        holes=[[m.map(v) for v in h] for h in f.holes] or None,
+                        auto=False,
+                        attrs=transformed_attrs(f.attrs, m),
+                    ))
+                id_map: dict[int, int] = {}
+                for e in edges:
+                    curve = getattr(e, "curve", None)
+                    if curve is not None and curve not in id_map:
+                        id_map[curve] = Mesh.next_curve_id()
+                    cmds.append(AddEdgeCommand(
+                        m.map(e.a), m.map(e.b),
+                        soft=getattr(e, "soft", False) or None,
+                        curve=id_map.get(curve)))
+                if not cmds:
+                    return None
+                return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
+            if group is not None:
+                return RotateGroupCommand(group, start, axis, deg)
+            if positions:
+                return RotateVerticesCommand(positions, start, axis, deg)
+            return None
+
+        return build
+
     def _commit(self, viewport, deg: float) -> None:
         self._revert_preview(viewport)
         if abs(deg) > 1e-9:
-            if self._group is not None:
-                viewport.history.execute(RotateGroupCommand(
-                    self._group, self.start_point, self._axis(), deg))
-            elif self._positions:
-                viewport.history.execute(RotateVerticesCommand(
-                    self._positions, self.start_point, self._axis(), deg))
+            build = self._make_builder()
+            cmd = build(deg)
+            if cmd is not None:
+                viewport.history.execute(cmd)
+                # SketchUp: the angle stays hot — typing a value + Enter
+                # redoes this rotation until the next click or tool change.
+                self._last = {"cmd": cmd, "build": build,
+                              "sign": -1.0 if deg < 0 else 1.0}
         self._reset()
         viewport.update()
 
     def _reset(self) -> None:
-        self.start_point = None
-        self.ref_point = None
-        self.hover_point = None
-        self.work_plane = None
+        self._reset_protractor()
         self._group = None
         self._positions = []
         self._verts = []
+        self._sel_faces = []
+        self._sel_edges = []
+        self._base_segments = []
         self._preview_deg = 0.0
+        self._axis_drag_armed = False
+        self._copy = False      # the Ctrl modifier arms ONE operation

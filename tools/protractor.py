@@ -1,29 +1,32 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""Protractor tool (H): create ANGLED guide lines — SketchUp's Protractor.
+"""Protractor tool (H) and the shared SketchUp protractor mechanics.
 
-Flow (SketchUp, help.sketchup.com "Measuring Angles" / "Using Guides"):
-1. Before the first click the protractor disc follows the cursor, aligned to
-   the face underneath (empty ground measures in plan) and coloured by the
-   axis it rotates about — red/green/blue on an axis plane, dark otherwise.
-   Arrow keys lock the plane to an axis (Right=red, Left=green, Up=blue;
-   same arrow again releases); holding Shift freezes the current plane.
-2. Click the VERTEX where the angle is measured. The plane is now fixed.
-3. Click along the BASE direction (snap to an edge endpoint — a roof eave,
-   a lot line — to measure from it). The Measurements box reads the angle
-   live as the cursor sweeps.
-4. Near the disc the cursor snaps to its 15° tick marks; farther out the
-   angle is free at 0.1° precision (SketchUp). Click to create an infinite
-   dashed GUIDE line through the vertex — then the tool resets for the next
-   measurement, but the angle stays "hot": typing a value + Enter re-aims
-   the guide just created, until the next click or tool change.
-5. The Measurements box accepts degrees (``34.1``) or a slope as
-   rise:run (``3:12``, ``1:6``) — how a roof pitch or a battered wall is
-   set out without converting to degrees.
+:class:`ProtractorBase` holds everything SketchUp's protractor cursor does —
+Rotate (Q) shows the same instrument, so both tools share it:
+
+- Before the first click the disc follows the cursor, aligned to the face
+  underneath (empty ground measures in plan) and coloured by the axis it
+  rotates about — red/green/blue on an axis plane, dark otherwise. Arrow keys
+  lock the plane to an axis (Right=red, Left=green, Up=blue; same arrow again
+  releases); holding Shift freezes the current plane. The plane fixes once
+  the vertex/centre is placed.
+- The disc keeps a fixed SCREEN size, with tick marks every 15° (long at
+  90°), zero aligned to the base arm once set.
+- SketchUp's distance rule: near the disc the cursor snaps to the 15° ticks;
+  farther out the angle is free at 0.1° precision.
+- The Measurements box accepts degrees (``34.1``) or a slope as rise:run
+  (``3:12``, ``1:6``) — ``accepts_angle_ratio`` delivers it as degrees.
+
+:class:`ProtractorTool` (this file) creates ANGLED guide lines with it
+(help.sketchup.com "Measuring Angles" / "Using Guides"): vertex → base arm →
+sweep & click = an infinite dashed guide through the vertex. The tool then
+resets, but the angle stays "hot": typing a value re-aims the guide just
+created until the next click or tool change.
 
 Guides are scaffolding, not geometry: they feed the snap engine so Line /
-Rectangle can lock onto the angled direction, and are deleted from Edit ▸
-Delete Guides like the Tape Measure ones.
+Rectangle can lock onto the angled direction, and are deleted with Select /
+Eraser / Edit ▸ Delete Guides.
 """
 from __future__ import annotations
 
@@ -48,11 +51,8 @@ _AXIS_RGBA = {"x": (*COLOR_AXIS_X, 1.0), "y": (*COLOR_AXIS_Y, 1.0),
 _OFF_AXIS_RGBA = (0.24, 0.27, 0.32, 1.0)
 
 
-class ProtractorTool(Tool):
-    name = "Protractor"
-    shortcut = "H"
-    vcb_label = "Angle"
-    accepts_angle_ratio = True  # VCB "3:12" (rise:run) arrives as degrees
+class ProtractorBase(Tool):
+    """Shared protractor state + behaviour (see module docstring)."""
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None   # the protractor centre
@@ -61,42 +61,11 @@ class ProtractorTool(Tool):
         self.work_plane: tuple[QVector3D, QVector3D] | None = None
         self._axis_pick: str | None = None          # arrow-key plane lock
         self._shift_normal: QVector3D | None = None  # Shift-frozen plane
+        self._custom_axis: QVector3D | None = None  # drag-defined axis (Rotate)
         self._disc_r = 1.0                          # world radius of the disc
         self._snap_ticks = False                    # cursor near the disc?
-        self._last: dict | None = None              # hot retype of last guide
 
-    # ---- Lifecycle ----------------------------------------------------------
-    def on_activate(self, viewport) -> None:
-        self._reset()
-        self._last = None
-
-    def on_deactivate(self, viewport) -> None:
-        self._reset()
-        self._last = None
-        self._axis_pick = None
-        self.hover_point = None
-
-    # ---- Spatial input ------------------------------------------------------
-    def on_click(self, ctx: ToolContext) -> None:
-        self._last = None            # a click ends the retype window
-        if self.start_point is None:
-            self.start_point = ctx.world
-            return
-        if self.ref_point is None:
-            if (ctx.world - self.start_point).length() < 1e-6:
-                return
-            self.ref_point = ctx.world
-            return
-        deg = self._display_deg(ctx.world)
-        if deg is not None:
-            self._commit(ctx.viewport, deg)
-
-    def on_hover(self, ctx: ToolContext) -> None:
-        self.hover_point = ctx.world
-        self._infer_plane(ctx)
-        self._update_screen_metrics(ctx)
-        ctx.viewport.update()
-
+    # ---- Keyboard -----------------------------------------------------------
     def on_key(self, viewport, key: int, modifiers) -> bool:
         # Arrow keys lock the protractor plane to an axis (SketchUp): Right =
         # red, Left = green, Up = blue; the same arrow again releases it.
@@ -112,39 +81,7 @@ class ProtractorTool(Tool):
         viewport.update()
         return True
 
-    def on_value(self, viewport, value) -> bool:
-        if isinstance(value, tuple):
-            return False
-        if self.ref_point is not None:
-            # Mid-flow: the typed angle turns the way the cursor is sweeping.
-            sign = 1.0
-            if self.hover_point is not None:
-                cur = self._angle_to(self.hover_point)
-                if cur is not None and cur < 0:
-                    sign = -1.0
-            self._commit(viewport, sign * abs(value))
-            return True
-        if self._last is not None:
-            # Hot retype (SketchUp): re-aim the guide just created. A typed
-            # negative flips to the other side of the base.
-            last = self._last
-            if last["guide"] not in viewport.scene.guides:
-                self._last = None
-                return False
-            side = last["sign"] * (1.0 if value >= 0 else -1.0)
-            t = last["a0"] + math.radians(side * abs(value))
-            d = (last["u"] * math.cos(t) + last["v"] * math.sin(t))
-            viewport.history.execute(ChangeGuideCommand(last["guide"], d))
-            viewport.update()
-            return True
-        return False
-
-    def on_cancel(self, viewport) -> None:
-        self._reset()
-        self._last = None
-        viewport.update()
-
-    # ---- Preview ------------------------------------------------------------
+    # ---- Plane / colour -----------------------------------------------------
     @property
     def wireframe_color(self):  # type: ignore[override]
         # The disc is coloured by its rotation axis (SketchUp): red/green/blue
@@ -155,38 +92,9 @@ class ProtractorTool(Tool):
                 return _AXIS_RGBA[axis]
         return _OFF_AXIS_RGBA
 
-    def rubber_band_lines(self):
-        centre = (self.start_point if self.start_point is not None
-                  else self.hover_point)
-        if centre is None:
-            return []
-        segments = list(self._protractor_disc(centre))
-        if self.start_point is None or self.hover_point is None:
-            return segments
-        segments.append((self.start_point, self.hover_point))
-        if self.ref_point is not None:
-            segments.append((self.start_point, self.ref_point))
-            deg = self._display_deg(self.hover_point)
-            if deg is not None:
-                d = self._direction_at(deg)
-                # Preview of the future guide, long enough to read as a line.
-                segments.append((self.start_point - d * 50.0,
-                                 self.start_point + d * 50.0))
-        return segments
-
-    def value_label(self):
-        if self.ref_point is None or self.hover_point is None:
-            return None
-        deg = self._display_deg(self.hover_point)
-        if deg is None:
-            return None
-        return (f"{deg:+.1f}°", self.hover_point)
-
-    def vcb_caption(self) -> str:
-        return "Angle"
-
-    # ---- Internals ----------------------------------------------------------
     def _axis(self) -> QVector3D:
+        if self._custom_axis is not None:
+            return self._custom_axis
         if self._shift_normal is not None:
             return self._shift_normal
         if self._axis_pick is not None:
@@ -220,6 +128,7 @@ class ProtractorTool(Tool):
         else:
             self.work_plane = None         # ground: measure in plan
 
+    # ---- Screen metrics / snapping ------------------------------------------
     def _update_screen_metrics(self, ctx: ToolContext) -> None:
         """Fixed screen-size disc + SketchUp's distance rule: near the disc
         the cursor snaps to the 15° ticks, farther out it measures free at
@@ -244,6 +153,7 @@ class ProtractorTool(Tool):
         else:
             self._snap_ticks = False
 
+    # ---- Angles -------------------------------------------------------------
     def _angle_to(self, point: QVector3D) -> float | None:
         u, v = plane_axes(self._axis())
         a = self.ref_point - self.start_point
@@ -279,6 +189,7 @@ class ProtractorTool(Tool):
         t = a0 + math.radians(deg)
         return (u * math.cos(t) + v * math.sin(t)).normalized()
 
+    # ---- Disc rendering -----------------------------------------------------
     def _protractor_disc(self, centre: QVector3D):
         """The fixed-screen-size disc with tick marks every 15° (long at 90°),
         rotated so its zero sits on the base arm once that is set."""
@@ -302,6 +213,121 @@ class ProtractorTool(Tool):
             segments.append((rim(t, inner), rim(t)))
         return segments
 
+    def _reset_protractor(self) -> None:
+        self.start_point = None
+        self.ref_point = None
+        self.work_plane = None
+        self._shift_normal = None
+        self._custom_axis = None
+        self._snap_ticks = False
+
+
+class ProtractorTool(ProtractorBase):
+    name = "Protractor"
+    shortcut = "H"
+    vcb_label = "Angle"
+    accepts_angle_ratio = True  # VCB "3:12" (rise:run) arrives as degrees
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._last: dict | None = None              # hot retype of last guide
+
+    # ---- Lifecycle ----------------------------------------------------------
+    def on_activate(self, viewport) -> None:
+        self._reset()
+        self._last = None
+
+    def on_deactivate(self, viewport) -> None:
+        self._reset()
+        self._last = None
+        self._axis_pick = None
+        self.hover_point = None
+
+    # ---- Spatial input ------------------------------------------------------
+    def on_click(self, ctx: ToolContext) -> None:
+        self._last = None            # a click ends the retype window
+        if self.start_point is None:
+            self.start_point = ctx.world
+            return
+        if self.ref_point is None:
+            if (ctx.world - self.start_point).length() < 1e-6:
+                return
+            self.ref_point = ctx.world
+            return
+        deg = self._display_deg(ctx.world)
+        if deg is not None:
+            self._commit(ctx.viewport, deg)
+
+    def on_hover(self, ctx: ToolContext) -> None:
+        self.hover_point = ctx.world
+        self._infer_plane(ctx)
+        self._update_screen_metrics(ctx)
+        ctx.viewport.update()
+
+    def on_value(self, viewport, value) -> bool:
+        if isinstance(value, tuple):
+            return False
+        if self.ref_point is not None:
+            # Mid-flow: the typed angle turns the way the cursor is sweeping.
+            sign = 1.0
+            if self.hover_point is not None:
+                cur = self._angle_to(self.hover_point)
+                if cur is not None and cur < 0:
+                    sign = -1.0
+            self._commit(viewport, sign * abs(value))
+            return True
+        if self._last is not None:
+            # Hot retype (SketchUp): re-aim the guide just created. A typed
+            # negative flips to the other side of the base.
+            last = self._last
+            if last["guide"] not in viewport.scene.guides:
+                self._last = None
+                return False
+            side = last["sign"] * (1.0 if value >= 0 else -1.0)
+            t = last["a0"] + math.radians(side * abs(value))
+            d = (last["u"] * math.cos(t) + last["v"] * math.sin(t))
+            viewport.history.execute(ChangeGuideCommand(last["guide"], d))
+            viewport.update()
+            return True
+        return False
+
+    def on_cancel(self, viewport) -> None:
+        self._reset()
+        self._last = None
+        viewport.update()
+
+    # ---- Preview ------------------------------------------------------------
+    def rubber_band_lines(self):
+        centre = (self.start_point if self.start_point is not None
+                  else self.hover_point)
+        if centre is None:
+            return []
+        segments = list(self._protractor_disc(centre))
+        if self.start_point is None or self.hover_point is None:
+            return segments
+        segments.append((self.start_point, self.hover_point))
+        if self.ref_point is not None:
+            segments.append((self.start_point, self.ref_point))
+            deg = self._display_deg(self.hover_point)
+            if deg is not None:
+                d = self._direction_at(deg)
+                # Preview of the future guide, long enough to read as a line.
+                segments.append((self.start_point - d * 50.0,
+                                 self.start_point + d * 50.0))
+        return segments
+
+    def value_label(self):
+        if self.ref_point is None or self.hover_point is None:
+            return None
+        deg = self._display_deg(self.hover_point)
+        if deg is None:
+            return None
+        return (f"{deg:+.1f}°", self.hover_point)
+
+    def vcb_caption(self) -> str:
+        return "Angle"
+
+    # ---- Internals ----------------------------------------------------------
     def _commit(self, viewport, deg: float) -> None:
         d = self._direction_at(deg)
         guide = Guide(self.start_point, d)
@@ -322,8 +348,4 @@ class ProtractorTool(Tool):
         viewport.update()
 
     def _reset(self) -> None:
-        self.start_point = None
-        self.ref_point = None
-        self.work_plane = None
-        self._shift_normal = None
-        self._snap_ticks = False
+        self._reset_protractor()
