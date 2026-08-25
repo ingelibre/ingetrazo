@@ -266,8 +266,16 @@ class EraseSelectionCommand(Command):
     def do(self, scene) -> None:
         m = scene.mesh
         self.snapshot = m.capture_state()
+        # Loop->face lookups through ONE index: _find_face_by_loop scans the
+        # whole mesh per call, and deleting thousands of box-selected faces
+        # froze for ~26 s on a 28k-face mesh (piscina.igz report, round 2).
+        by_loop: dict = {}
+        for f in m.faces:
+            by_loop.setdefault(
+                frozenset(_key(p) for p in f.vertices), []).append(f)
         for loop in self._face_loops:
-            f = _find_face_by_loop(m, loop)
+            bucket = by_loop.get(frozenset(_key(p) for p in loop))
+            f = bucket.pop(0) if bucket else None
             if f is not None:
                 m.remove_face(f)
                 scene.selection.discard(f)
