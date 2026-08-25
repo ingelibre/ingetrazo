@@ -2652,6 +2652,26 @@ class Viewport(QOpenGLWidget):
                     painter.drawLine(int(pix[i][0]), int(pix[i][1]),
                                      int(pix[j][0]), int(pix[j][1]))
 
+    def _clip_segment_front(
+        self, a: QVector3D, b: QVector3D
+    ) -> Optional[tuple[QVector3D, QVector3D]]:
+        """Clip a world segment to the part in FRONT of the camera. The long
+        'infinite' guide segments (±10 km) routinely have an endpoint behind
+        the eye, where ``_world_to_pixel`` returns None — which used to make
+        the whole guide vanish from render, snap and pick in ordinary 3D
+        views. Returns the visible sub-segment, or ``None``."""
+        mvp = self.camera.projection_matrix() * self.camera.view_matrix()
+        wa = mvp.map(QVector4D(a.x(), a.y(), a.z(), 1.0)).w()
+        wb = mvp.map(QVector4D(b.x(), b.y(), b.z(), 1.0)).w()
+        eps = 1e-3
+        if wa <= eps and wb <= eps:
+            return None
+        if wa <= eps or wb <= eps:
+            t = (eps - wa) / (wb - wa)   # w is linear along the segment
+            cut = a + (b - a) * t
+            return (cut, QVector3D(b)) if wa <= eps else (QVector3D(a), cut)
+        return (QVector3D(a), QVector3D(b))
+
     def _draw_guides(self, painter: QPainter) -> None:
         """Draw construction guides: fine dashed lines (and small crosses for
         guide points), SketchUp-style scaffolding."""
@@ -2662,9 +2682,11 @@ class Viewport(QOpenGLWidget):
         painter.setPen(pen)
         for g in guides:
             if g.is_line:
-                a, b = g.segment()
-                pa = self._world_to_pixel(a)
-                pb = self._world_to_pixel(b)
+                seg = self._clip_segment_front(*g.segment())
+                if seg is None:
+                    continue
+                pa = self._world_to_pixel(seg[0])
+                pb = self._world_to_pixel(seg[1])
                 if pa is not None and pb is not None:
                     painter.drawLine(QPointF(*pa), QPointF(*pb))
             else:
@@ -4319,8 +4341,18 @@ class Viewport(QOpenGLWidget):
         cursor position is given — the group edges near it plus the face-me
         billboard anchors, so drawing and dimensioning over an imported
         reference model snaps to its corners and edges."""
-        guides = getattr(self.scene, "guides", None)
-        lines = [g for g in guides if g.is_line] if guides else []
+        # Guide lines are clipped to the part in front of the camera so the
+        # snap engine gets projectable endpoints (an endpoint behind the eye
+        # used to kill on-line snapping in ordinary 3D views); guide POINTS
+        # snap as degenerate pseudo-edges, exactly like survey points.
+        lines = []
+        for g in getattr(self.scene, "guides", None) or []:
+            if g.is_line:
+                seg = self._clip_segment_front(*g.segment())
+                if seg is not None:
+                    lines.append(_SnapEdge(*seg))
+            else:
+                lines.append(_SnapEdge(QVector3D(g.point), QVector3D(g.point)))
         near = self._nearby_group_edges(px, py) if px is not None else []
         if px is not None:
             near += self._billboard_snap_edges()
@@ -4343,9 +4375,11 @@ class Viewport(QOpenGLWidget):
             return None
         best, best_d = None, self.pick_threshold_px
         for g in guides:
-            a, b = g.segment()
-            pa = self._world_to_pixel(a)
-            pb = self._world_to_pixel(b)
+            seg = self._clip_segment_front(*g.segment())
+            if seg is None:
+                continue
+            pa = self._world_to_pixel(seg[0])
+            pb = self._world_to_pixel(seg[1])
             if pa is None or pb is None:
                 continue
             d = _point_to_segment_distance_2d((screen_x, screen_y), pa, pb)
