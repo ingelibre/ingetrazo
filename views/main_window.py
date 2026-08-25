@@ -922,6 +922,18 @@ class MainWindow(QMainWindow):
             self.viewport.history.execute(MakeUniqueCommand(g))
         self.viewport.update()
 
+    def _on_merge_groups(self) -> None:
+        from core.history import MergeGroupsCommand
+        groups = [e for e in self.viewport.scene.selection
+                  if isinstance(e, Group)]
+        if len(groups) < 2:
+            return
+        self.viewport.end_group_edit()
+        self.viewport.history.execute(MergeGroupsCommand(groups))
+        self.viewport.update()
+        self.statusBar().showMessage(
+            tr("{n} groups merged into one", n=len(groups)), 3000)
+
     def _on_explode_group(self) -> None:
         if self.viewport.scene.edit_group is not None:
             self.viewport.flash_status(tr(
@@ -1176,6 +1188,11 @@ class MainWindow(QMainWindow):
             menu.addAction(tr("Make Component…"), self._on_make_component)
         if has_group:
             menu.addAction(tr("Explode Group"), self._on_explode_group)
+            if sum(1 for e in sel if isinstance(e, Group)) >= 2:
+                # The fix-my-grouping path: fuse the selected groups into
+                # one WITHOUT routing their geometry through the loose mesh
+                # (explode + regroup chokes on leafy imports).
+                menu.addAction(tr("Merge Groups"), self._on_merge_groups)
             if any(isinstance(e, Group)
                    and getattr(e, "xform", None) is not None for e in sel):
                 menu.addAction(tr("Make Unique"), self._on_make_unique)

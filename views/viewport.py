@@ -1776,12 +1776,16 @@ class Viewport(QOpenGLWidget):
                   if isinstance(s, (Edge, Face))]
         if cands:
             if len(cands) > 64:
-                alive_e: set = set(self.scene.render_edges())
-                alive_f: set = set(self.scene.render_faces())
+                # Selected/hovered Edge/Face refs only ever point into the
+                # active mesh (loose, or the group being edited) — the old
+                # render_edges()/render_faces() sets walked EVERY group's
+                # entities (~283k) per edit frame after an explode.
+                alive_e: set = set(map(id, self.scene.mesh.edges))
+                alive_f: set = set(map(id, self.scene.mesh.faces))
 
                 def alive(ent):
-                    return ent in (alive_e if isinstance(ent, Edge)
-                                   else alive_f)
+                    return id(ent) in (alive_e if isinstance(ent, Edge)
+                                       else alive_f)
             else:
                 gmeshes = [g.mesh for g in self.scene.groups
                            if self.scene.entity_visible(g)
@@ -4555,9 +4559,9 @@ class Viewport(QOpenGLWidget):
             ent_sel.append(sel)
             ent_loose.append(grp is None)
             for t0, t1, t2 in tris_of(f):
-                tris.append([[t0.x(), t0.y(), t0.z()],
-                             [t1.x(), t1.y(), t1.z()],
-                             [t2.x(), t2.y(), t2.z()]])
+                tris.append((t0.x(), t0.y(), t0.z(),
+                             t1.x(), t1.y(), t1.z(),
+                             t2.x(), t2.y(), t2.z()))
                 tri_ent.append(i)
 
         for f in scene.faces:
@@ -4566,7 +4570,7 @@ class Viewport(QOpenGLWidget):
 
         # Loose part → arrays; groups append their cached chunk arrays.
         if tris:
-            t = np.asarray(tris, dtype=np.float64)
+            t = np.asarray(tris, dtype=np.float64).reshape(-1, 3, 3)
             v0s = [t[:, 0]]
             e1s = [t[:, 1] - t[:, 0]]
             e2s = [t[:, 2] - t[:, 0]]

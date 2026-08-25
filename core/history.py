@@ -2138,6 +2138,86 @@ class InsertGroupCommand(Command):
         scene.version += 1
 
 
+class MergeGroupsCommand(Command):
+    """Fuse several groups (component instances included) into ONE new
+    group holding their combined world-space geometry — the fix-my-
+    grouping path. Explode + regroup routes everything through the loose
+    mesh, whose per-face machinery froze on a 100k-leaf import (piscina
+    report); this merge goes group-to-group through the bulk-weld API and
+    the loose mesh never hears about it. Undo restores the original
+    groups at their positions."""
+
+    def __init__(self, groups) -> None:
+        self._groups = list(groups)
+        self._indices: Optional[list] = None
+        self._merged = None
+
+    def do(self, scene) -> None:
+        import numpy as np
+        from core.group import Group, world_mesh
+        from core.mesh import Mesh
+        if self._merged is None:
+            flat: list = []
+            e_flat: list = []
+            e_flags: list = []
+            ring_sizes: list = []
+            ring_counts: list = []
+            attrs_list: list = []
+            for g in self._groups:
+                src = world_mesh(g)      # instances: transformed, UVs refit
+                for f in src.faces:
+                    holes = f.holes or []
+                    ring_counts.append(1 + len(holes))
+                    ring_sizes.append(len(f.vertices))
+                    flat.extend((v.x(), v.y(), v.z()) for v in f.vertices)
+                    for h in holes:
+                        ring_sizes.append(len(h))
+                        flat.extend((v.x(), v.y(), v.z()) for v in h)
+                    attrs_list.append(dict(f.attrs) if f.attrs else None)
+                for e in src.edges:
+                    e_flat.append((e.a.x(), e.a.y(), e.a.z()))
+                    e_flat.append((e.b.x(), e.b.y(), e.b.z()))
+                    e_flags.append((bool(getattr(e, "soft", False)),
+                                    getattr(e, "curve", None),
+                                    getattr(e, "layer", None),
+                                    bool(getattr(e, "hidden", False))))
+            mesh = Mesh()
+            n_edge_pts = len(e_flat)
+            if e_flat or flat:
+                vobjs, inverse = mesh.bulk_weld(
+                    np.array(e_flat + flat, dtype=np.float64))
+                emap = None
+                if e_flat:
+                    emap = mesh.add_edges_welded(
+                        vobjs, inverse[0:n_edge_pts:2],
+                        inverse[1:n_edge_pts:2], e_flags)
+                if ring_counts:
+                    mesh.add_faces_welded(
+                        vobjs, inverse[n_edge_pts:],
+                        np.asarray(ring_sizes, dtype=np.int64),
+                        np.asarray(ring_counts, dtype=np.int64),
+                        attrs_list, edge_map=emap)
+            merged = Group(mesh, name=self._groups[0].name)
+            merged.layer = getattr(self._groups[0], "layer", None)
+            self._merged = merged
+        self._indices = [scene.groups.index(g) for g in self._groups]
+        for g in self._groups:
+            scene.groups.remove(g)
+            scene.selection.discard(g)
+        scene.groups.append(self._merged)
+        scene.selection.clear()
+        scene.selection.add(self._merged)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self._merged in scene.groups:
+            scene.groups.remove(self._merged)
+        scene.selection.discard(self._merged)
+        for idx, g in sorted(zip(self._indices or [], self._groups)):
+            scene.groups.insert(min(idx, len(scene.groups)), g)
+        scene.version += 1
+
+
 class ExplodeGroupCommand(Command):
     """Dissolve a group: merge its geometry back into the loose mesh (welding to
     whatever it touches). Snapshot undo restores the loose mesh and the group."""

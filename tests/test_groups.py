@@ -153,3 +153,51 @@ def test_group_keeps_face_attrs_round_trip():
     back = next(f for f in scene.mesh.faces
                 if f.attrs.get("color") == [0.8, 0.2, 0.1])
     assert back.attrs.get("texture") == {"path": "brick.png", "sw": 1.0, "sh": 1.0}
+
+
+def test_merge_groups_fuses_without_touching_loose_mesh():
+    # "Unir grupos": the fix-my-grouping path — the selected groups fuse
+    # into ONE group (instances baked to world, attrs and soft/hidden
+    # flags carried) and the loose mesh never changes. Exact undo.
+    from PySide6.QtGui import QMatrix4x4, QVector3D
+    from core.group import Group
+    from core.history import History, MergeGroupsCommand
+    from core.mesh import Mesh
+    from core.scene import Scene
+
+    scene = Scene()
+    hist = History(scene)
+    m1 = Mesh()
+    f = m1.add_face([QVector3D(0, 0, 0), QVector3D(1, 0, 0),
+                     QVector3D(1, 1, 0), QVector3D(0, 1, 0)])
+    f.attrs["color"] = [1.0, 0.0, 0.0]
+    e = m1.add_edge(QVector3D(0, 0, 0), QVector3D(0, 0, 2))
+    e.soft = True
+    g1 = Group(m1, name="Planta")
+    proto = Mesh()
+    proto.add_face([QVector3D(0, 0, 0), QVector3D(1, 0, 0),
+                    QVector3D(0, 1, 0)])
+    xf = QMatrix4x4()
+    xf.translate(5, 0, 0)
+    g2 = Group(proto, name="Hoja")
+    g2.xform = xf
+    scene.groups.extend([g1, g2])
+    loose0 = len(scene.mesh.faces)
+
+    hist.execute(MergeGroupsCommand([g1, g2]))
+    assert len(scene.groups) == 1
+    merged = scene.groups[0]
+    assert merged.name == "Planta"
+    assert len(merged.mesh.faces) == 2
+    assert len(scene.mesh.faces) == loose0          # loose mesh untouched
+    red = next(fc for fc in merged.mesh.faces
+               if fc.attrs.get("color") == [1.0, 0.0, 0.0])
+    assert red is not None
+    tri = next(fc for fc in merged.mesh.faces if len(fc.vertices) == 3)
+    assert min(v.x() for v in tri.vertices) >= 5.0  # instance baked to world
+    assert any(ed.soft for ed in merged.mesh.edges)
+    assert merged in scene.selection
+
+    assert hist.undo()
+    assert scene.groups == [g1, g2]
+    assert hist.redo() and len(scene.groups) == 1
