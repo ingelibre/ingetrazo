@@ -56,13 +56,34 @@ class PasteTool(Tool):
     def __init__(self) -> None:
         self._clip = None
         self._offset = QVector3D(0.0, 0.0, 0.0)
+        self._preview_on = False
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
         self._clip = getattr(viewport, "clipboard", None)
         self._offset = QVector3D(0.0, 0.0, 0.0)
+        self._preview_on = False
+        groups = (self._clip or {}).get("groups") or ()
+        begin = getattr(viewport, "begin_groups_preview", None)
+        if groups and callable(begin):
+            # Copied groups preview through the frozen-scratch pipeline
+            # (chunk arrays upload ONCE; each hover frame is one translated
+            # MVP): the FULL model — colours, textures, every face — follows
+            # the cursor at zero per-frame cost. The old path rebuilt a
+            # Python wireframe of every group edge per paint; a 17k-face
+            # plant froze the app for seconds per frame (piscina report).
+            begin(groups, external=True)
+            self._preview_on = True
+
+    def _end_preview(self, viewport) -> None:
+        if self._preview_on:
+            end = getattr(viewport, "end_groups_preview", None)
+            if callable(end):
+                end()
+            self._preview_on = False
 
     def on_deactivate(self, viewport) -> None:
+        self._end_preview(viewport)
         self._clip = None
 
     # ---- Spatial input ------------------------------------------------------
@@ -70,7 +91,10 @@ class PasteTool(Tool):
         if self._clip is None:
             return
         self._offset = ctx.world - self._clip["ref"]
-        ctx.viewport.update()
+        if self._preview_on:
+            ctx.viewport.set_groups_preview_offset(self._offset)
+        else:
+            ctx.viewport.update()
 
     def on_click(self, ctx: ToolContext) -> None:
         if self._clip is None:
@@ -105,6 +129,9 @@ class PasteTool(Tool):
         commands.extend(InsertGroupCommand(g) for g in pasted_groups)
         if not commands:
             return
+        # The scratch preview ends BEFORE the stamp: the pasted groups enter
+        # the consolidated VBOs on the version bump like any other insert.
+        self._end_preview(ctx.viewport)
         cmd = commands[0] if len(commands) == 1 else CompoundCommand(commands)
         ctx.viewport.history.execute(cmd)
         if pasted_groups:
@@ -119,10 +146,14 @@ class PasteTool(Tool):
         ctx.viewport.update()
 
     def on_cancel(self, viewport) -> None:
+        self._end_preview(viewport)
         self._clip = None
         viewport.update()
 
     # ---- Visual preview -----------------------------------------------------
+    # Copied GROUPS preview via the viewport's frozen-scratch VBOs (set up in
+    # ``on_activate``); only the LOOSE faces/edges of the clipboard go through
+    # the per-frame paths below — those sets are small.
     def rubber_band_lines(self):
         if self._clip is None:
             return []
@@ -135,8 +166,6 @@ class PasteTool(Tool):
                     segments.append((lp[i] + off, lp[(i + 1) % n] + off))
         for a, b, _, _ in self._clip["edges"]:
             segments.append((a + off, b + off))
-        for a, b in self._clip.get("group_lines", ()):
-            segments.append((a + off, b + off))
         return segments
 
     def preview_faces(self):
@@ -144,12 +173,8 @@ class PasteTool(Tool):
             return []
         off = self._offset
         faces = []
-        # Copied groups preview SOLID too — the model (colours AND textures)
-        # follows the cursor, not just its skeleton (huge groups are capped
-        # at copy time and keep the wireframe for the remainder).
         entries = [(loop, holes, rest[0] if rest else None)
                    for loop, holes, *rest in self._clip["faces"]]
-        entries += list(self._clip.get("group_faces", ()))
         for loop, holes, attrs in entries:
             face = PreviewFace([p + off for p in loop],
                                [[p + off for p in h] for h in holes])

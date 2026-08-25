@@ -165,74 +165,79 @@ def test_copy_paste_instance_shares_prototype():
     assert round(pasted.xform.map(V(0, 0, 0)).x()) == 10
 
 
-def test_group_paste_previews_solid_faces():
-    # The copied group must follow the cursor as a SOLID model, not just a
-    # skeleton (user request): the clipboard carries its face loops and
-    # PasteTool serves them as preview faces, offset to the cursor.
+class _PreviewVP(_VP):
+    """Stub viewport recording the frozen-scratch preview calls — the
+    pipeline that draws copied groups following the cursor (chunk arrays
+    upload once; each hover frame is one translated MVP)."""
+
+    def __init__(self, scene, history, clipboard):
+        super().__init__(scene, history, clipboard)
+        self.began = None
+        self.offsets = []
+        self.ended = 0
+
+    def begin_groups_preview(self, groups=(), external=False):
+        self.began = (list(groups), external)
+
+    def set_groups_preview_offset(self, off):
+        self.offsets.append(off)
+
+    def end_groups_preview(self):
+        self.ended += 1
+
+
+def test_group_paste_previews_via_frozen_scratch():
+    # A copied group follows the cursor through the scratch-VBO pipeline —
+    # the FULL model at zero per-frame cost. The old per-frame Python
+    # wireframe/face rebuild froze the app on a 17k-face plant (piscina).
     scene = Scene()
-    vp = _VP(scene, History(scene), None)
+    vp = _PreviewVP(scene, History(scene), None)
     g = _make_group(scene)                    # a 2×2 square at the origin
     scene.selection.add(g)
     assert _copy(vp)
-    assert len(vp.clipboard["group_faces"]) == 1
+    assert "group_lines" not in vp.clipboard  # no per-edge preview walk
 
     tool = PasteTool()
     tool.on_activate(vp)
+    assert vp.began is not None and vp.began[1] is True
+    assert vp.began[0] == vp.clipboard["groups"]   # the snapshots, not g
     ctx = ToolContext(viewport=vp, world=V(10, 0, 0),
                       screen=QPointF(0, 0), modifiers=Qt.NoModifier, snap=None)
     tool.on_hover(ctx)
-    faces = tool.preview_faces()
-    assert len(faces) == 1
-    xs = sorted(round(v.x()) for v in faces[0].vertices)
-    assert xs == [10, 10, 12, 12]             # the square, at the cursor
-    # The preview carries the face's look (the "no texture until pasted"
-    # report): its attrs travel, colour included.
-    assert faces[0].attrs and faces[0].attrs.get("color") is not None
+    assert round(vp.offsets[-1].x()) == 10    # offset = cursor − ref corner
+    # Groups no longer flow through the per-frame preview paths.
+    assert tool.preview_faces() == []
+    assert tool.rubber_band_lines() == []
+    tool.on_deactivate(vp)
+    assert vp.ended == 1                      # scratch preview torn down
 
 
-def test_group_paste_preview_textures_follow_the_cursor():
-    from core.group import Group
-    from core.mesh import Mesh
+def test_group_paste_stamp_ends_the_scratch_preview():
     scene = Scene()
-    vp = _VP(scene, History(scene), None)
-    m = Mesh()
-    f = m.add_face([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
-    f.attrs["texture"] = {"path": "/tmp/tex.png", "sw": 1.0, "sh": 1.0,
-                          "uvw": [1, 0, 0, 0, 0, 1, 0, 0]}
-    g = Group(m)
-    scene.groups.append(g)
+    vp = _PreviewVP(scene, History(scene), None)
+    g = _make_group(scene)
     scene.selection.add(g)
     assert _copy(vp)
-
-    tool = PasteTool()
-    tool.on_activate(vp)
-    ctx = ToolContext(viewport=vp, world=V(5, 0, 0),
-                      screen=QPointF(0, 0), modifiers=Qt.NoModifier, snap=None)
-    tool.on_hover(ctx)
-    prev = tool.preview_faces()[0]
-    tex = prev.attrs.get("texture")
-    assert tex is not None and tex["path"] == "/tmp/tex.png"
-    # uvw re-anchored to the cursor offset: the image rides WITH the drag.
-    assert tex["uvw"][3] == -5.0 and tex["uvw"][7] == 0.0
+    tool = _paste_at(vp, 5, 0)
+    assert len(scene.groups) == 2             # stamped
+    assert vp.ended == 1                      # ended at the stamp...
+    tool.on_deactivate(vp)
+    assert vp.ended == 1                      # ...and not torn down twice
 
 
 def test_planar_texture_preview_rides_with_the_drag():
-    # A texture with NO uvw (hand-painted, the billboard figure) is planar-
-    # projected from world position, so the image used to SWIM through the
-    # preview as the cursor moved. The preview must bake the projection into
-    # an anchored uvw: evaluating it at the OFFSET vertices reproduces the
-    # texture exactly as it looked at the original spot.
-    from core.group import Group
-    from core.mesh import Mesh
+    # A LOOSE face's texture with NO uvw (hand-painted, the billboard
+    # figure) is planar-projected from world position, so the image used to
+    # SWIM through the preview as the cursor moved. The preview must bake
+    # the projection into an anchored uvw: evaluating it at the OFFSET
+    # vertices reproduces the texture exactly as it looked at the original
+    # spot. (Group previews ride in the scratch VBOs, UVs already baked.)
     from PySide6.QtGui import QVector3D as Q
     scene = Scene()
     vp = _VP(scene, History(scene), None)
-    m = Mesh()
-    f = m.add_face([V(1, 1), V(3, 1), V(3, 3), V(1, 3)])
+    f = scene.mesh.add_face([V(1, 1), V(3, 1), V(3, 3), V(1, 3)])
     f.attrs["texture"] = {"path": "/tmp/tex.png", "sw": 2.0, "sh": 2.0}
-    g = Group(m)
-    scene.groups.append(g)
-    scene.selection.add(g)
+    scene.selection.add(f)
     assert _copy(vp)
 
     tool = PasteTool()

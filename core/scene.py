@@ -273,7 +273,28 @@ class Scene:
                 yield f, m
 
     def bounds(self) -> tuple[QVector3D, QVector3D] | tuple[None, None]:
-        """Axis-aligned bounding box of all geometry. ``(None, None)`` if empty."""
+        """Axis-aligned bounding box of all geometry. ``(None, None)`` if empty.
+
+        CACHED per ``version`` — hovering over empty space derives the work
+        plane (and the status-bar coordinate) from the model centre, so this
+        runs on EVERY mouse move across sky or base map. The old per-corner
+        Python walk cost ~1.7 s per call against piscina's 230k-face merged
+        group, twice per hover: the event loop starved and GNOME declared
+        the app dead (the paste "no responde" hang). Every mutation —
+        commands, layer toggles — bumps ``version``, the same invariant the
+        viewport's chunk caches key on.
+
+        Group bounds are vectorized over each mesh's welded vertex list
+        (as the instance branch always was), so an orphaned vertex left by
+        a deletion may pad them slightly until the weld reuses it; loose
+        entities keep the exact per-entity visibility walk."""
+        cached = getattr(self, "_bounds_cache", None)
+        if cached is not None and cached[0] == self.version:
+            lo, hi = cached[1]
+            if lo is None:
+                return None, None
+            return QVector3D(*lo), QVector3D(*hi)
+        import numpy as np
         inf = float("inf")
         minx = miny = minz = inf
         maxx = maxy = maxz = -inf
@@ -290,14 +311,6 @@ class Scene:
             if y > maxy: maxy = y
             if z > maxz: maxz = z
 
-        def absorb_mesh(mesh) -> None:
-            for edge in mesh.edges:
-                absorb(edge.a)
-                absorb(edge.b)
-            for face in mesh.faces:
-                for v in face.vertices:
-                    absorb(v)
-
         for edge in self.loose_mesh.edges:
             if self.entity_visible(edge):
                 absorb(edge.a)
@@ -309,21 +322,27 @@ class Scene:
         for g in self.groups:
             if not self.entity_visible(g):
                 continue
-            m = getattr(g, "xform", None)
-            if m is None:
-                absorb_mesh(g.mesh)
-                continue
-            # Instance: transform the prototype's bbox corners to world.
             verts = g.mesh.vertices
             if not verts:
                 continue
-            xs = [v.position.x() for v in verts]
-            ys = [v.position.y() for v in verts]
-            zs = [v.position.z() for v in verts]
-            for cx in (min(xs), max(xs)):
-                for cy in (min(ys), max(ys)):
-                    for cz in (min(zs), max(zs)):
-                        absorb(m.map(QVector3D(cx, cy, cz)))
+            arr = np.array([[v.position.x(), v.position.y(), v.position.z()]
+                            for v in verts])
+            m = getattr(g, "xform", None)
+            if m is not None:
+                d = m.data()          # column-major
+                rot = np.array([[d[0], d[4], d[8]],
+                                [d[1], d[5], d[9]],
+                                [d[2], d[6], d[10]]])
+                arr = arr @ rot.T + np.array([d[12], d[13], d[14]])
+            glo, ghi = arr.min(axis=0), arr.max(axis=0)
+            seen = True
+            minx = min(minx, glo[0]); miny = min(miny, glo[1])
+            minz = min(minz, glo[2])
+            maxx = max(maxx, ghi[0]); maxy = max(maxy, ghi[1])
+            maxz = max(maxz, ghi[2])
         if not seen:
+            self._bounds_cache = (self.version, (None, None))
             return None, None
+        self._bounds_cache = (self.version, ((minx, miny, minz),
+                                             (maxx, maxy, maxz)))
         return QVector3D(minx, miny, minz), QVector3D(maxx, maxy, maxz)

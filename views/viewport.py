@@ -88,7 +88,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core.camera import OrbitCamera
 from core.i18n import tr
-from core.group import Group, copy_group, transformed_attrs
+from core.group import Group, copy_group
 from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
@@ -1725,16 +1725,23 @@ class Viewport(QOpenGLWidget):
         self.sceneVersionChanged.emit(self.scene.version)
         self.update()
 
-    def begin_groups_preview(self, groups=()) -> None:
+    def begin_groups_preview(self, groups=(), external: bool = False) -> None:
         """Enter a groups-only transform preview: the per-version caches
         freeze, the moving groups leave the consolidated VBOs (one resync)
         and their chunk arrays upload ONCE to scratch VBOs that paintGL
         draws with a translated MVP — a drag frame touches no arrays at
-        all. SketchUp-grade group dragging on a 230k-face group."""
-        self._frozen_cache_version = self.scene.version
+        all. SketchUp-grade group dragging on a 230k-face group.
+
+        ``external=True`` previews OFF-scene template groups (Paste's
+        clipboard): same scratch upload, but nothing leaves the consolidated
+        VBOs and the caches stay live — no freeze, no resyncs."""
+        groups = list(groups)
+        self._preview_external = external
+        if not external:
+            self._frozen_cache_version = self.scene.version
+            self._edges_version = -1      # one resync WITHOUT the movers
         self._preview_groups = set(map(id, groups))
         self._preview_offset = QVector3D(0.0, 0.0, 0.0)
-        self._edges_version = -1          # one resync WITHOUT the movers
         if not self._preview_groups:
             return
         self.makeCurrent()
@@ -1747,9 +1754,7 @@ class Viewport(QOpenGLWidget):
             edge_parts: list = []
             vcol_parts: list = []
             tex_parts: dict = {}
-            for g in self.scene.groups:
-                if id(g) not in self._preview_groups:
-                    continue
+            for g in groups:
                 ch = self._group_chunk(g)
                 if ch["edges"]:
                     edge_parts.append(ch["edges"])
@@ -1784,14 +1789,26 @@ class Viewport(QOpenGLWidget):
             self.doneCurrent()
 
     def end_groups_preview(self) -> None:
-        self._frozen_cache_version = None
+        if not getattr(self, "_preview_external", False):
+            self._frozen_cache_version = None
+            self._edges_version = -1      # resync with the movers back in
+        else:
+            # Off-scene templates never left the consolidated VBOs (nothing
+            # to resync) and their scratch chunks are one-shot — drop them
+            # so a big clipboard doesn't pin megabytes of arrays.
+            scene_ids = {id(g) for g in self.scene.groups}
+            for cache_name in ("_group_chunks", "_inst_chunks"):
+                cache = getattr(self, cache_name, None)
+                if cache:
+                    for gid in self._preview_groups - scene_ids:
+                        cache.pop(gid, None)
+        self._preview_external = False
         self._preview_groups = set()
         self._preview_offset = QVector3D(0.0, 0.0, 0.0)
         self._preview_matrix = None
         self._pv_edges_count = 0
         self._pv_vcol_count = 0
         self._pv_tex_runs = []
-        self._edges_version = -1          # resync with the movers back in
 
     def set_groups_preview_offset(self, delta: QVector3D) -> None:
         self._preview_offset = QVector3D(delta)
@@ -5535,47 +5552,38 @@ class Viewport(QOpenGLWidget):
                      for e in edges]
         # Groups are snapshotted NOW (instances keep sharing their prototype;
         # classic groups deep-copy) so editing or deleting the original later
-        # never changes what Paste stamps.
+        # never changes what Paste stamps. No preview wireframe is built here
+        # any more: Paste previews the groups through the frozen-scratch VBO
+        # pipeline (the old per-edge tuple walk took seconds on a leafy
+        # plant, and again on EVERY preview frame — the piscina hang).
         group_data = [copy_group(g) for g in groups]
-        group_lines = []                     # world-space wireframe for preview
-        group_faces = []                     # world-space loops: SOLID preview
-        face_budget = 2000                   # huge groups fall back to lines
-        for g in group_data:
-            xf = g.xform
-
-            def W(p):
-                return xf.map(p) if xf is not None else QVector3D(p)
-
-            for e in g.mesh.edges:
-                group_lines.append((W(e.a), W(e.b)))
-            for f in g.mesh.faces:
-                if face_budget <= 0:
-                    break
-                face_budget -= 1
-                # An instance's uvw maps live in the prototype's LOCAL frame;
-                # re-fit them through the transform so the preview texture
-                # sits on the world-space loops.
-                if not f.attrs:
-                    fattrs = None
-                elif xf is not None:
-                    fattrs = transformed_attrs(f.attrs, xf)
-                else:
-                    fattrs = copy.deepcopy(f.attrs)
-                group_faces.append(([W(v) for v in f.vertices],
-                                    [[W(v) for v in h] for h in f.holes],
-                                    fattrs))
+        # Reference corner (what the cursor holds the set by): min corner of
+        # everything copied, via NumPy — one pass over vertices instead of
+        # four Python min() scans over every edge endpoint.
+        import numpy as np
+        from core.group import np_affine
+        lo = None
         pts = [p for loop, holes, _a in face_data for p in loop]
         pts += [p for _, holes, _a in face_data for h in holes for p in h]
         pts += [p for a, b, _, _ in edge_data for p in (a, b)]
-        pts += [p for a, b in group_lines for p in (a, b)]
-        if not pts:
+        if pts:
+            lo = np.array([[p.x(), p.y(), p.z()] for p in pts]).min(axis=0)
+        for g in group_data:
+            verts = g.mesh.vertices
+            if not verts:
+                continue
+            arr = np.array([[v.position.x(), v.position.y(), v.position.z()]
+                            for v in verts])
+            if g.xform is not None:
+                rot, trans = np_affine(g.xform)
+                arr = arr @ rot.T + trans
+            gmin = arr.min(axis=0)
+            lo = gmin if lo is None else np.minimum(lo, gmin)
+        if lo is None:
             return False
-        ref = QVector3D(min(p.x() for p in pts),
-                        min(p.y() for p in pts),
-                        min(p.z() for p in pts))
+        ref = QVector3D(float(lo[0]), float(lo[1]), float(lo[2]))
         self.clipboard = {"faces": face_data, "edges": edge_data,
-                          "groups": group_data, "group_lines": group_lines,
-                          "group_faces": group_faces, "ref": ref}
+                          "groups": group_data, "ref": ref}
         return True
 
     def cut_selection(self) -> bool:
@@ -6004,10 +6012,25 @@ class Viewport(QOpenGLWidget):
                   and abs(pos.x() - cached[1]) < 24.0
                   and abs(pos.y() - cached[2]) < 24.0
                   and self.scene.version == cached[3])
+        reproj = False
         if reused:
             focus = cached[4]
         else:
-            focus = self._world_under_cursor(pos.x(), pos.y())
+            focus = None
+            if (cached is not None and cached[4] is not None
+                    and self.scene.version == cached[3]):
+                # Orbit/pan changed the pose, but the cursor usually still
+                # rests on the SAME world point (zoom → orbit a touch → zoom
+                # again, the modeling rhythm). Re-validate the pin by
+                # projecting it with the current camera: one matrix map
+                # instead of a ~25 ms re-pick of the whole model per notch.
+                p = self._world_to_pixel(cached[4])
+                if (p is not None and abs(p[0] - pos.x()) < 24.0
+                        and abs(p[1] - pos.y()) < 24.0):
+                    focus = cached[4]
+                    reproj = True
+            if focus is None:
+                focus = self._world_under_cursor(pos.x(), pos.y())
         if focus is not None:
             self.camera.zoom_to(steps, focus)
         else:
@@ -6016,7 +6039,7 @@ class Viewport(QOpenGLWidget):
                             self.scene.version, focus)
         if _PERF:
             _plog("wheel", (_time_mod.monotonic() - now) * 1000.0,
-                  extra=f"reused={reused}", floor=10.0)
+                  extra=f"reused={'proj' if reproj else reused}", floor=10.0)
         self.update()
 
     def event(self, ev) -> bool:

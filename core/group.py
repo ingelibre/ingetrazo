@@ -112,9 +112,70 @@ def world_mesh(group) -> Mesh:
     return transformed_mesh(group.mesh, m)
 
 
+def np_affine(m):
+    """``QMatrix4x4`` → ``(rot, trans)`` NumPy arrays: ``pts @ rot.T + trans``
+    is ``m.map(p)`` for every row. ``data()`` is column-major."""
+    import numpy as np
+    d = m.data()
+    rot = np.array([[d[0], d[4], d[8]],
+                    [d[1], d[5], d[9]],
+                    [d[2], d[6], d[10]]], dtype=np.float64)
+    return rot, np.array([d[12], d[13], d[14]], dtype=np.float64)
+
+
 def transformed_mesh(src: Mesh, m) -> Mesh:
     """A DEEP copy of ``src`` with every position mapped through ``m``,
-    carrying face attrs, soft/curve flags and re-fitted texture UV maps."""
+    carrying face attrs, soft/curve flags and re-fitted texture UV maps.
+
+    Big meshes go through one vectorized ``bulk_weld`` pass (same recipe as
+    the ``.igz`` loader): the per-entity ``add_face``/``add_edge`` walk froze
+    the UI for ~16 s copying a 17k-face plant group (piscina report) — and
+    ran TWICE, once at copy and once per paste stamp. Small meshes keep the
+    plain walk (the bulk pass's fixed cost loses there)."""
+    if len(src.edges) * 2 + len(src.faces) * 4 < 1024:
+        return _transformed_mesh_walk(src, m)
+    import numpy as np
+    from core.topology import _maximal_holes
+    new = Mesh()
+    flat: list = []
+    for e in src.edges:
+        flat.append((e.a.x(), e.a.y(), e.a.z()))
+        flat.append((e.b.x(), e.b.y(), e.b.z()))
+    n_edge_pts = len(flat)
+    ring_sizes: list = []
+    ring_counts: list = []
+    attrs_list: list = []
+    for f in src.faces:
+        holes = f.holes or []
+        if len(holes) > 1:
+            holes = _maximal_holes([list(h) for h in holes])
+        ring_counts.append(1 + len(holes))
+        ring_sizes.append(len(f.vertices))
+        flat.extend((v.x(), v.y(), v.z()) for v in f.vertices)
+        for h in holes:
+            ring_sizes.append(len(h))
+            flat.extend((v.x(), v.y(), v.z()) for v in h)
+        attrs_list.append(dict(f.attrs) if f.attrs else None)
+    if not flat:
+        return new
+    rot, trans = np_affine(m)
+    pts = np.array(flat, dtype=np.float64) @ rot.T + trans
+    vobjs, inverse = new.bulk_weld(pts)
+    emap = None
+    if src.edges:
+        flags = [(e.soft, e.curve, None) for e in src.edges]
+        emap = new.add_edges_welded(
+            vobjs, inverse[0:n_edge_pts:2], inverse[1:n_edge_pts:2], flags)
+    if ring_counts:
+        new.add_faces_welded(vobjs, inverse[n_edge_pts:], ring_sizes,
+                             ring_counts, attrs_list, edge_map=emap)
+    new.resplit_curves()
+    _remap_uvws(new, m)
+    return new
+
+
+def _transformed_mesh_walk(src: Mesh, m) -> Mesh:
+    """Sequential per-entity copy — exact semantics for small meshes."""
     from PySide6.QtGui import QVector3D
     new = Mesh()
 
