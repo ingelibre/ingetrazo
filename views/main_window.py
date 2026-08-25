@@ -1585,13 +1585,17 @@ class MainWindow(QMainWindow):
         self._update_title()
 
     def _insert_scale_figure(self) -> None:
-        """Place the 1.75 m scale figure near the origin in a fresh document,
-        SketchUp-style. A plain group — select and Delete removes it. Added
-        outside the undo history and without dirtying the document."""
-        group = self._make_billboard_person("sumari.png", height=1.65,
-                                            name="Sumari")
+        """Place the scale figure in a fresh document, SketchUp-style: OFF
+        to the left of the origin, so the origin stays visible as the
+        drawing reference (user request — SketchUp does the same). 1.72 m
+        tall. A plain group — select and Delete removes it. Added outside
+        the undo history and without dirtying the document."""
+        from PySide6.QtGui import QVector3D
+        at = QVector3D(-2.5, 0.0, 0.0)
+        group = self._make_billboard_person("sumari.png", height=1.72,
+                                            name="Sumari", position=at)
         if group is None:
-            group = self._make_billboard_person()
+            group = self._make_billboard_person(position=at)
         if group is None:
             return
         scene = self.viewport.scene
@@ -1601,7 +1605,7 @@ class MainWindow(QMainWindow):
 
     def _make_billboard_person(self, image: str = "person_billboard.png",
                                height: float = 1.75,
-                               name: str | None = None):
+                               name: str | None = None, position=None):
         """A face-me scale figure (arch-viz cutout)."""
         from PySide6.QtGui import QImage
         from core.group import make_billboard_group
@@ -1613,7 +1617,8 @@ class MainWindow(QMainWindow):
         if img.isNull() or img.height() == 0:
             return None
         return make_billboard_group(str(path), height, name or tr("Person"),
-                                    img.width() / img.height())
+                                    img.width() / img.height(),
+                                    position=position)
 
     def _on_insert_person_2d(self, image: str = "person_billboard.png",
                              height: float = 1.75,

@@ -58,14 +58,16 @@ class Group:
 
 
 def make_billboard_group(image_path: str, height: float, name: str,
-                         aspect: float) -> Group:
+                         aspect: float, position=None) -> Group:
     """A face-me billboard group: one textured quad, ``height`` metres tall,
-    anchored at the origin. The viewport rotates it to face the camera."""
+    anchored at ``position`` (origin by default). The viewport rotates it
+    around that anchor to face the camera."""
     from PySide6.QtGui import QVector3D
     mesh = Mesh()
     w = height * aspect
-    quad = [QVector3D(-w / 2, 0, 0), QVector3D(w / 2, 0, 0),
-            QVector3D(w / 2, 0, height), QVector3D(-w / 2, 0, height)]
+    p = position if position is not None else QVector3D(0, 0, 0)
+    quad = [p + QVector3D(-w / 2, 0, 0), p + QVector3D(w / 2, 0, 0),
+            p + QVector3D(w / 2, 0, height), p + QVector3D(-w / 2, 0, height)]
     face = mesh.add_face(quad)
     face.attrs["texture"] = {"path": str(image_path), "sw": w, "sh": height}
     g = Group(mesh, name=name)
