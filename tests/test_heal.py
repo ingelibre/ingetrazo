@@ -119,3 +119,21 @@ def test_partial_overlap_resolved_by_holing_on_flat_off_in_3d():
     d3.add_face([V(0, 0, 3), V(1, 0, 3), V(1, 1, 3), V(0, 1, 3)])  # 3D
     heal_overlapping_faces(d3)
     assert not any(f.holes for f in d3.faces)               # not flat -> untouched
+
+
+def test_heal_skips_import_scale_meshes():
+    # The overlap heal is O(F^2) in its mother-face pass: after exploding a
+    # 9k-face import, ONE Delete took >120 s (piscina.igz user report).
+    # Above the cap it must return immediately and touch nothing.
+    import time
+    from core import topology
+    from core.mesh import Mesh
+    from PySide6.QtGui import QVector3D as V
+    m = Mesh()
+    m.add_face([V(0, 0, 0), V(1, 0, 0), V(1, 1, 0), V(0, 1, 0)])
+    real_faces = list(m.faces)
+    m.faces.extend(real_faces * topology._HEAL_FACE_CAP)  # fake the count
+    t0 = time.time()
+    assert topology.heal_overlapping_faces(m) == []
+    assert time.time() - t0 < 0.05
+    m.faces[:] = real_faces

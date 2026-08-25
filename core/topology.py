@@ -1196,6 +1196,11 @@ def _mesh_is_flat(mesh) -> bool:
     return True
 
 
+#: Above this many faces the overlap heal is skipped entirely — see the
+#: guard at the top of :func:`heal_overlapping_faces`.
+_HEAL_FACE_CAP = 3000
+
+
 def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None) -> list:
     """Clean up coplanar face overlaps that draw/delete sequences can leave:
 
@@ -1219,6 +1224,13 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None) -> list:
 
     Returns the faces removed (the rebuilt/flipped ones don't count).
     """
+    if len(mesh.faces) > _HEAL_FACE_CAP:
+        # This heal exists for hand-drawing scale (the overlaps draw/delete
+        # sequences leave); its mother-face pass is O(F²) and froze the UI
+        # for minutes after exploding a 9k-face import (piscina.igz user
+        # report — a single Delete took >120 s). At import scale the
+        # cosmetic overlap cleanup is skipped; editing stays correct.
+        return []
     flat = _mesh_is_flat(mesh)
     if partial is None:
         partial = flat
