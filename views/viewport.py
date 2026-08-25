@@ -5840,24 +5840,38 @@ class Viewport(QOpenGLWidget):
         steps = ev.angleDelta().y() / 120.0
         pos = ev.position()
         now = _time.monotonic()
+
+        def pose():
+            c = self.camera
+            t = c.target
+            return (round(c.yaw, 9), round(c.pitch, 9),
+                    round(c.distance, 6),
+                    round(t.x(), 6), round(t.y(), 6), round(t.z(), 6))
+
+        # The pin is anchored to the CAMERA POSE, not a time window:
+        # zoom_to keeps the focus fixed on screen by construction, so slow
+        # one-notch-per-second zooming reuses it indefinitely (a 1 s window
+        # expired between deliberate notches and re-picked 280k triangles
+        # per notch — the zoom jank). Orbit/pan or an edit changes the pose
+        # or the version and honestly invalidates it.
         cached = getattr(self, "_zoom_focus", None)
-        # Generous reuse: while zooming the hand always drifts a few px,
-        # and re-picking 280k triangles per tick is the lag itself. A pin
-        # a couple dozen pixels stale still zooms where the eye expects.
-        if (cached is not None and now - cached[0] < 1.0
-                and abs(pos.x() - cached[1]) < 24.0
-                and abs(pos.y() - cached[2]) < 24.0
-                and self.scene.version == cached[3]):
+        reused = (cached is not None and cached[0] == pose()
+                  and abs(pos.x() - cached[1]) < 24.0
+                  and abs(pos.y() - cached[2]) < 24.0
+                  and self.scene.version == cached[3])
+        if reused:
             focus = cached[4]
         else:
             focus = self._world_under_cursor(pos.x(), pos.y())
-        self._zoom_focus = (now, pos.x(), pos.y(), self.scene.version, focus)
         if focus is not None:
             self.camera.zoom_to(steps, focus)
         else:
             self.camera.zoom(steps)
+        self._zoom_focus = (pose(), pos.x(), pos.y(),
+                            self.scene.version, focus)
         if _PERF:
-            _plog("wheel", (_time_mod.monotonic() - now) * 1000.0)
+            _plog("wheel", (_time_mod.monotonic() - now) * 1000.0,
+                  extra=f"reused={reused}", floor=10.0)
         self.update()
 
     def event(self, ev) -> bool:
