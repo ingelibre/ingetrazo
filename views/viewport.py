@@ -2129,6 +2129,13 @@ class Viewport(QOpenGLWidget):
             tex = self._get_texture(path)
             if tex is None:
                 continue
+            if not getattr(tex, "_billboard_filter", False):
+                # Mipmap minification re-averages the cutout's binary alpha
+                # into semi values, which the Bayer dither renders as stipple
+                # dots when zoomed out (user report). Face-me figures sample
+                # the top level only — crisp at every distance.
+                tex.setMinificationFilter(QOpenGLTexture.Linear)
+                tex._billboard_filter = True
             data = array("f")
             uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
             for idx in (0, 1, 2, 0, 2, 3):
