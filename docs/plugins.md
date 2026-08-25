@@ -10,6 +10,7 @@ tools. Drop it in either of the two places IngeTrazo scans at startup:
   installed build);
 - your per-user directory — `~/.local/share/ingetrazo/plugins/` on Linux
   (honouring `$XDG_DATA_HOME`), `%APPDATA%\ingetrazo\plugins\` on Windows.
+  **Extensions ▸ Open plugins folder** creates and opens it for you.
 
 Every `Tool` subclass **defined in the file** gets an entry in the
 **Extensions** menu. (Classes a plugin merely imports are ignored, so
@@ -68,7 +69,8 @@ Useful, honest data points (what the app itself uses — see the bundled
 - geometry: `scene.loose_mesh` (NOT `scene.mesh`, which is swapped while a
   group is open for editing), `scene.groups`;
 - materials: per-face `attrs["color"]` (floats 0–1) and `attrs["texture"]`
-  — there is no material registry;
+  are the render truth; named identity lives in the registry
+  (`scene.materials`, `attrs["mat"]` on faces — see `core/materials.py`);
 - BIM: `core.bim` (`tag_faces`, `tag_group`, `collect_objects`) — the same
   calls behind the BIM tray and the IFC export;
 - lengths for display: `scene.dimension_style` + the viewport's
@@ -83,6 +85,34 @@ script file…" executes a `.py` against the model the same way
 (`scripts/create_architectural_showcase.py` is a worked example that
 builds a small BIM-tagged pavilion).
 
+## Building on the AI layer (`core/ai.py`)
+
+The two AI plugins share a reusable layer that any plugin can import:
+
+- `ai.run_transactional(viewport, code, scope)` — execute Python against
+  the live document with the Python Console's guarantees: ONE undo step,
+  whole rollback on error, no undo entry for inspect-only runs. This is
+  the canonical way for generated or scripted code to mutate the model.
+- A provider layer following the IngePresupuestos convention: one API
+  key, provider detected by its prefix (`ai.detect_provider`), seven
+  providers over two wire formats (Anthropic native + OpenAI-compatible),
+  stdlib `urllib` only. `ai.chat(...)` does one blocking turn (run it on
+  a worker thread), `ai.list_models(...)` returns what the key can
+  actually use, `ai.probar_conexion(...)` validates credentials, and
+  `ai.PROVIDERS` / `ai.DEFAULT_MODELS` / `ai.PROVIDER_INFO` feed a UI.
+
+So "an assistant that speaks my domain" is a small plugin: your own
+system prompt + `ai.chat` + `ai.run_transactional`. See
+`plugins/ai_assistant.py` for the full worked example (agent loop with
+screenshot feedback) and `docs/ai-bridge.md` for the MCP route.
+
+Threading rule for any plugin doing network or background work: never
+touch the document off the main thread. Relay results with a
+`Signal(object)` on a queued connection to a bound method —
+`Signal(dict)` would hand the slot a COPY of the payload, and a lambda
+receiver runs on the WRONG thread (both bugs were hunted in these very
+plugins; the details are in the AI plugins' comments).
+
 ## Bundled reference plugins
 
 - `plugins/model_info.py` — Model Info dialog (geometry / materials /
@@ -92,6 +122,12 @@ builds a small BIM-tagged pavilion).
 - `plugins/solid_inspector.py` — Solid Inspector: per-edge watertightness
   diagnosis with viewport highlighting. A modeless, selection-driven
   plugin.
+- `plugins/ai_assistant.py` — the in-app AI assistant (Ctrl+Shift+A): a
+  multi-provider chat agent that models through `core.ai`. The reference
+  for dialogs with worker threads and per-provider settings.
+- `plugins/ai_bridge.py` — the MCP bridge: a localhost TCP server that
+  lets an external agent (Claude Code/Desktop) drive the document. The
+  reference for socket servers and main-thread relays.
 
 ## Roadmap
 

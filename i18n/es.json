@@ -40,6 +40,8 @@
   "Connection OK — the model answered.": "Conexión OK — el modelo respondió.",
   "Connection failed: {err}": "Falló la conexión: {err}",
   "Models": "Modelos",
+  "Open plugins folder": "Abrir carpeta de complementos",
+  "Develop a plugin…": "Desarrollar un complemento…",
   "List the models your key can use": "Listar los modelos que tu clave puede usar",
   "Fetching the model list from {name}…": "Consultando la lista de modelos de {name}…",
   "{n} models available to your key — pick one from the list.": "{n} modelos disponibles para tu clave — elige uno de la lista.",

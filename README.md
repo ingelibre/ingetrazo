@@ -109,11 +109,15 @@ anything is missing.
   in any display style), vector hidden-line rendering, model-anchored
   dimensions, title block, PDF export.
 - **Extensions** — a plugin system: drop a Python file in the plugins folder
-  and its tools appear in the **Extensions** menu. Two reference plugins
-  ship with the app: **Model Info** (model statistics) and a **Python
-  Console** (live scripting over the open document, undo-integrated). A
-  broken plugin can never prevent IngeTrazo from starting. See
-  [docs/plugins.md](docs/plugins.md).
+  and its tools appear in the **Extensions** menu. Reference plugins ship
+  with the app: **Model Info** (model statistics), a **Python Console**
+  (live scripting over the open document, undo-integrated), **Solid
+  Inspector**, and two AI plugins — an in-app **AI Assistant** (chat that
+  models for you; Groq/Claude/GPT/Gemini/OpenRouter/DeepSeek/local Ollama)
+  and an **AI Bridge** (drive the live document from Claude Code/Desktop
+  via MCP). Every AI action is one transactional undo step. A broken
+  plugin can never prevent IngeTrazo from starting. Plugins are the
+  lowest-friction way to contribute — see [docs/plugins.md](docs/plugins.md).
 - **Undo/redo** — every edit is a single atomic step (console scripts
   included).
 

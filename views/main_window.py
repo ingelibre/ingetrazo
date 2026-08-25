@@ -641,6 +641,31 @@ class MainWindow(QMainWindow):
         if count == 0 and not errors:
             ext_menu.addAction(tr("(no plugins found)")).setEnabled(False)
 
+        # The on-ramp for plugin authors: their folder and the dev guide.
+        ext_menu.addSeparator()
+        act = ext_menu.addAction(tr("Open plugins folder"))
+        act.triggered.connect(self._on_open_plugins_folder)
+        act = ext_menu.addAction(tr("Develop a plugin…"))
+        act.triggered.connect(self._on_develop_plugin)
+
+    PLUGIN_GUIDE_URL = ("https://github.com/ingelibre/ingetrazo"
+                        "/blob/main/docs/plugins.md")
+
+    def _on_open_plugins_folder(self) -> None:
+        """Open (creating if needed) the per-user plugins directory — drop
+        a .py here and its tools appear in Extensions on next start."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from core.extensions import user_plugins_dir
+        folder = user_plugins_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def _on_develop_plugin(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(self.PLUGIN_GUIDE_URL))
+
     def _activate_plugin_tool(self, key: str) -> None:
         """Run a plugin tool from the Extensions menu.
 

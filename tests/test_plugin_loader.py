@@ -216,9 +216,12 @@ def test_menu_lists_tools_and_disabled_errors(tmp_path, main_window):
 def test_menu_placeholder_when_no_plugins(main_window):
     win = main_window()
     actions = _extensions_menu(win).actions()
-    assert len(actions) == 1
     assert actions[0].text() == "(no plugins found)"
     assert not actions[0].isEnabled()
+    # The plugin-author on-ramp is always at the bottom of the menu.
+    texts = [a.text() for a in actions]
+    assert "Open plugins folder" in texts
+    assert "Develop a plugin…" in texts
 
 
 def test_plugin_cannot_steal_a_builtin_shortcut(tmp_path, main_window):
