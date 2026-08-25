@@ -191,7 +191,7 @@ def _axes_vertices(spacing: float, pos_len: float = 1.0e5):
     # clamps glLineWidth), so the dash LENGTH is what sets the perceived
     # weight — SketchUp's negative axes read as fine dotted lines.
     dash = spacing * 0.18
-    n = 140                          # dashes → reach = spacing*n past the model
+    n = 260                          # dashes → reach = spacing*n past the model
     for name, (dx, dy, dz) in _AXIS_DIRS.items():
         start = len(coords) // 3
         coords.extend([0.0, 0.0, 0.0, dx * pos_len, dy * pos_len, dz * pos_len])
@@ -516,6 +516,7 @@ class Viewport(QOpenGLWidget):
         self._loc_vcolor = self._program.attributeLocation("a_color")
         self._loc_use_vcolor = self._program.uniformLocation("u_use_vcolor")
         self._loc_opacity = self._program.uniformLocation("u_opacity")
+        self._loc_hard_cutout = self._program.uniformLocation("u_hard_cutout")
         self._loc_shade = self._program.uniformLocation("u_shade")
         self._loc_clip_plane = self._program.uniformLocation("u_clip_plane")
         self._loc_clip_enable = self._program.uniformLocation("u_clip_enable")
@@ -706,6 +707,7 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue(self._loc_use_vcolor, 0)
         self._program.setUniformValue1f(self._loc_opacity, 1.0)
         self._program.setUniformValue1f(self._loc_shade, 1.0)
+        self._program.setUniformValue(self._loc_hard_cutout, 0)
 
         # Sky / ground backdrop with a horizon anchored to the camera pitch —
         # premium SketchUp feel. Fixed on zoom (it's the point at infinity),
@@ -982,7 +984,7 @@ class Viewport(QOpenGLWidget):
         # axis wins the LEQUAL depth test. Rubber-band stays on top (drawn last).
         if self.plano_style is None and self.style_override is None:
             # No axes on a plan sheet / styled composer frame.
-            spacing = max(self.camera.distance * 0.03, 1e-4)
+            spacing = max(self.camera.distance * 0.016, 1e-4)
             axes_coords, self._axes_spans = _axes_vertices(spacing)
             data = axes_coords.tobytes()
             self._axes_vbo.bind()
@@ -2118,6 +2120,10 @@ class Viewport(QOpenGLWidget):
         if not groups:
             return
         self._program.setUniformValue(self._loc_use_tex, 1)
+        # Hard alpha cut for face-me figures: their mipmapped edge alpha
+        # under the Bayer dither would stipple dots around the silhouette
+        # (user report); scene cutouts keep the dither (distant fences).
+        self._program.setUniformValue(self._loc_hard_cutout, 1)
         self._billboard_vao.bind()
         for g in groups:
             if getattr(g, "billboard", False) == "mesh":
@@ -2132,13 +2138,6 @@ class Viewport(QOpenGLWidget):
             tex = self._get_texture(path)
             if tex is None:
                 continue
-            if not getattr(tex, "_billboard_filter", False):
-                # Mipmap minification re-averages the cutout's binary alpha
-                # into semi values, which the Bayer dither renders as stipple
-                # dots when zoomed out (user report). Face-me figures sample
-                # the top level only — crisp at every distance.
-                tex.setMinificationFilter(QOpenGLTexture.Linear)
-                tex._billboard_filter = True
             data = array("f")
             uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
             for idx in (0, 1, 2, 0, 2, 3):
@@ -2155,6 +2154,7 @@ class Viewport(QOpenGLWidget):
                 # Selection cue: repaint with the highlight colour untextured.
                 pass
         self._billboard_vao.release()
+        self._program.setUniformValue(self._loc_hard_cutout, 0)
         self._program.setUniformValue(self._loc_use_tex, 0)
 
     def _draw_billboard_outlines(self) -> None:

@@ -8,6 +8,11 @@ uniform int u_use_vcolor;
 // Uniform opacity of the current draw (1.0 = opaque pass). Translucent
 // material runs (SketchUp trans with useTrans) draw last with this < 1.
 uniform float u_opacity;
+// 1 while drawing face-me billboards: a HARD alpha cut at 0.5 instead of
+// the Bayer dither below. Their mipmapped edge alpha would otherwise
+// render as stipple dots around the figure; the dither stays for scene
+// cutouts (fences, leaves), which need it to survive minification.
+uniform int u_hard_cutout;
 // Per-run diffuse shade for textured faces (colour faces bake it into
 // their vertex colours) — 1.0 everywhere else (billboards, previews).
 uniform float u_shade;
@@ -37,6 +42,7 @@ void main() {
         // opaque, so distant fences stay visible as a faint weave.
         // Translucent runs (u_opacity < 1) blend instead of cutting.
         if (u_opacity > 0.999 && texel.a < 0.5) {
+            if (u_hard_cutout == 1) discard;
             int bx = int(mod(gl_FragCoord.x, 4.0));
             int by = int(mod(gl_FragCoord.y, 4.0));
             if (texel.a < BAYER[by * 4 + bx]) discard;
