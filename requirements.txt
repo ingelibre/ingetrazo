@@ -13,7 +13,7 @@ numpy>=1.26        # DEM heightfield decode + sampling (georef Track G, G2)
 # plus the legacy-format writer behind File → Export → SketchUp). Our fork's
 # feat-write-annotations = upstream main + dimension/leader-text write+read
 # (upstream PR #203); return to @main when that PR merges.
-openskp @ git+https://github.com/tuxiasumari/openskp@feat-write-annotations#subdirectory=packages/python
+openskp @ git+https://github.com/iamahsanmehmood/openskp@main#subdirectory=packages/python
 
 # --- Development ---
 pytest>=8.0
