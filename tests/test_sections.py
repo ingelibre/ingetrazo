@@ -220,3 +220,66 @@ def test_hlr_view_honours_the_active_section():
     scene.show_section_cuts = False                # cuts hidden → full drawing
     back = hlr_view(scene, cam)
     assert len(back) == len(full)
+
+
+# ---- Section fill + direct grab (round 2) -----------------------------------
+
+def test_style_carries_section_fill():
+    from core.style import Style
+    st = Style()
+    assert st.section_fill is True             # SketchUp 2018+ default: on
+    st.section_fill = False
+    st.section_fill_color = (0.1, 0.2, 0.3)
+    again = Style.from_dict(st.to_dict())
+    assert again.section_fill is False
+    assert again.section_fill_color == (0.1, 0.2, 0.3)
+
+
+def test_move_grabs_a_section_plane_directly():
+    # SketchUp: no pre-selection — Move grabs the plane by its frame and the
+    # cut follows live; the drop is one undoable command.
+    from tools.move import MoveTool
+    scene = Scene()
+    vp = _Vp(scene)
+    sp = SectionPlane(V(0, 0, 1), V(0, 0, 1))
+    scene.section_planes.append(sp)
+    scene.set_active_section(sp)
+    vp.pick_section_plane = lambda x, y: sp
+    vp.pick_group = lambda x, y: None
+    vp.pick_edge = lambda x, y: None
+    vp.pick_face = lambda x, y: None
+    vp.pick_text_label = lambda *a, **k: None
+
+    t = MoveTool()
+    t.on_activate(vp)
+    t.on_click(_ctx(vp, 0, 0, 1))              # grab the plane directly
+    assert t._splanes == [sp]
+    t.on_hover(_ctx(vp, 0, 0, 3))              # live: the cut moves with it
+    assert abs(sp.point.z() - 3.0) < 1e-9
+    t.on_click(_ctx(vp, 0, 0, 3))              # drop
+    assert abs(sp.point.z() - 3.0) < 1e-9
+    assert vp.history.undo()
+    assert abs(sp.point.z() - 1.0) < 1e-9
+
+
+def test_rotate_grabs_a_section_plane_directly():
+    from tools.rotate import RotateTool
+    scene = Scene()
+    vp = _Vp(scene)
+    sp = SectionPlane(V(0, 0, 0), V(0, 0, 1))
+    scene.section_planes.append(sp)
+    vp.pick_section_plane = lambda x, y: sp
+    vp.pick_group = lambda x, y: None
+    vp.pick_edge = lambda x, y: None
+    vp.pick_face = lambda x, y: None
+
+    t = RotateTool()
+    t.on_activate(vp)
+    t.on_click(_ctx(vp, 0, 0))                 # centre grabs the plane
+    assert t._splanes == [sp]
+    t.on_click(_ctx(vp, 1, 0))                 # base arm
+    t.on_hover(_ctx(vp, 0, 1))
+    t.on_click(_ctx(vp, 0, 1))                 # +90° about Z... plane normal Z
+    # Rotating about the world Z axis keeps a Z normal: check the command ran.
+    assert len(vp.history.undo_stack) == 1
+    assert vp.history.undo()

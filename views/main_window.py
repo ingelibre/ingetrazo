@@ -464,6 +464,13 @@ class MainWindow(QMainWindow):
         self._act_show_scuts.toggled.connect(
             lambda on: self._set_section_visibility("show_section_cuts", on))
         camera_menu.addAction(self._act_show_scuts)
+        # SketchUp 2018+ Section Fill — lives in the model's STYLE.
+        self._act_section_fill = QAction(tr("Section Fill"), self)
+        self._act_section_fill.setCheckable(True)
+        self._act_section_fill.setChecked(True)
+        self._act_section_fill.toggled.connect(
+            lambda on: self._set_style_field("section_fill", on))
+        camera_menu.addAction(self._act_section_fill)
 
         camera_menu.addSeparator()
         for action in self._nav_actions.values():   # Orbit / Pan / Zoom / Zoom Window
@@ -967,7 +974,11 @@ class MainWindow(QMainWindow):
         for name, act in self._style_actions.items():
             act.setChecked(name == style.name)
         for act, value in ((self._act_style_edges, style.edges),
-                           (self._act_style_profiles, style.profiles)):
+                           (self._act_style_profiles, style.profiles),
+                           (getattr(self, "_act_section_fill", None),
+                            getattr(style, "section_fill", True))):
+            if act is None:      # menu still under construction
+                continue
             act.blockSignals(True)
             act.setChecked(value)
             act.blockSignals(False)

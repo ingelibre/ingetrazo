@@ -108,6 +108,15 @@ class RotateTool(ProtractorBase):
             from core.section import SectionPlane
             splanes = [p for p in viewport.scene.selection
                        if isinstance(p, SectionPlane)]
+            if not splanes and not viewport.scene.selection:
+                # SketchUp: Rotate grabs a section plane directly by its
+                # frame, no pre-selection needed.
+                pick = getattr(viewport, "pick_section_plane", None)
+                sp = (pick(ctx.screen.x(), ctx.screen.y())
+                      if pick is not None else None)
+                if sp is not None:
+                    splanes = [sp]
+                    groups, positions = [], []
             if not groups and not positions and not splanes:
                 viewport.flash_status(
                     tr("Select (or click) the geometry to rotate first"))

@@ -137,6 +137,15 @@ class MoveTool(Tool):
             from core.section import SectionPlane
             splanes = [p for p in viewport.scene.selection
                        if isinstance(p, SectionPlane)]
+            if not splanes and not viewport.scene.selection:
+                # SketchUp: Move grabs a section plane directly by hovering
+                # its frame — no pre-selection needed. The cut follows live.
+                pick = getattr(viewport, "pick_section_plane", None)
+                sp = (pick(ctx.screen.x(), ctx.screen.y())
+                      if pick is not None else None)
+                if sp is not None:
+                    splanes = [sp]
+                    groups, positions = [], []
             if labels and not viewport.scene.selection:
                 # A click on the glyphs grabs just the text, never the
                 # geometry that happens to sit behind it.

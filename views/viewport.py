@@ -144,6 +144,12 @@ GL_COLOR_BUFFER_BIT = 0x00004000
 GL_DEPTH_BUFFER_BIT = 0x00000100
 GL_DEPTH_TEST = 0x0B71
 GL_CLIP_DISTANCE0 = 0x3000
+GL_STENCIL_TEST = 0x0B90
+GL_STENCIL_BUFFER_BIT = 0x00000400
+GL_ALWAYS = 0x0207
+GL_EQUAL = 0x0202
+GL_KEEP = 0x1E00
+GL_REPLACE = 0x1E01
 GL_BLEND = 0x0BE2
 GL_SRC_ALPHA = 0x0302
 GL_ONE_MINUS_SRC_ALPHA = 0x0303
@@ -857,6 +863,8 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue1f(self._loc_shade, 1.0)
                 self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_CULL_FACE)
+
+        self._draw_section_fill(mode, style)
 
         # Translucent material runs (SketchUp trans with useTrans): drawn
         # after everything opaque, blended, depth-tested but not depth-
@@ -2972,6 +2980,71 @@ class Viewport(QOpenGLWidget):
                 segs = acc.astype(np.float32)
         self._section_cut_cache = (key, segs)
         return segs
+
+    def _draw_section_fill(self, mode, style) -> None:
+        """SketchUp 2018+ Section Fill: paint the areas where the active cut
+        slices THROUGH a solid. Per-pixel GL capping — wherever the visible
+        surface is a BACK face, the eye is looking at the inside of a solid
+        opened by the clip, so the plane fills it. Open (non-watertight)
+        surfaces can leak the fill, exactly SketchUp's own troubleshoot
+        case. Lives in the style (style.section_fill), like SketchUp."""
+        if getattr(self, "_clip_vec", None) is None:
+            return
+        if not getattr(style, "section_fill", True):
+            return
+        if mode in ("wireframe", "xray"):
+            return
+        sp = self.scene.active_section()
+        if sp is None:
+            return
+        # Pass 1 — stencil the pixels whose visible surface is a back face.
+        self._gl.glStencilMask(0xFF)
+        self._gl.glClear(GL_STENCIL_BUFFER_BIT)
+        self._gl.glEnable(GL_STENCIL_TEST)
+        self._gl.glStencilFunc(GL_ALWAYS, 1, 0xFF)
+        self._gl.glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE)
+        self._gl.glColorMask(False, False, False, False)
+        self._gl.glDepthMask(GL_FALSE)
+        self._gl.glEnable(GL_CULL_FACE)
+        self._gl.glCullFace(GL_FRONT)          # rasterize BACK faces only
+        if self._faces_count > 0:
+            self._faces_vao.bind()
+            self._gl.glDrawArrays(GL_TRIANGLES, 0, self._faces_count)
+            self._faces_vao.release()
+        if self._tex_faces_count > 0:
+            self._tex_faces_vao.bind()
+            self._gl.glDrawArrays(GL_TRIANGLES, 0, self._tex_faces_count)
+            self._tex_faces_vao.release()
+        self._gl.glDisable(GL_CULL_FACE)
+        self._gl.glColorMask(True, True, True, True)
+        self._gl.glDepthMask(GL_TRUE)
+        # Pass 2 — the plane quad, only through the stencil, nudged a hair
+        # behind so the thick cut lines drawn later win the depth test.
+        self._gl.glStencilFunc(GL_EQUAL, 1, 0xFF)
+        self._gl.glStencilMask(0x00)
+        self._set_section_clip(False)
+        import numpy as np
+        corners = self.section_plane_frame(sp)
+        c = [np.array([q.x(), q.y(), q.z()], dtype=np.float32)
+             for q in corners]
+        tris = np.concatenate([c[0], c[1], c[2], c[0], c[2], c[3]])
+        raw = tris.astype(np.float32).tobytes()
+        self._section_vbo.bind()
+        self._section_vbo.allocate(raw, len(raw))
+        self._section_vbo.release()
+        fc = getattr(style, "section_fill_color", (0.35, 0.37, 0.41))
+        self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+        self._gl.glPolygonOffset(2.0, 2.0)
+        self._set_color(fc[0], fc[1], fc[2], 1.0)
+        self._program.setUniformValue(
+            self._loc_back_color, QVector4D(fc[0], fc[1], fc[2], 1.0))
+        self._section_vao.bind()
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, 6)
+        self._section_vao.release()
+        self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+        self._gl.glStencilMask(0xFF)
+        self._gl.glDisable(GL_STENCIL_TEST)
+        self._set_section_clip(True)
 
     def _draw_section_cut_edges(self) -> None:
         """SketchUp's thick section-cut lines: quads in the cut plane, sized

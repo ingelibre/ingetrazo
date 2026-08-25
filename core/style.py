@@ -39,6 +39,10 @@ class Style:
     front_color: tuple = (1.0, 1.0, 1.0)     # hidden line / monochrome faces
     background: tuple = (0.90, 0.91, 0.92)
     sky: bool = True
+    # SketchUp 2018+ Section Fill: paint the cut-through areas of solids.
+    # Lives in the STYLE, exactly like SketchUp's modeling settings.
+    section_fill: bool = True
+    section_fill_color: tuple = (0.35, 0.37, 0.41)
 
     def to_dict(self) -> dict:
         return {
@@ -50,6 +54,8 @@ class Style:
             "front_color": list(self.front_color),
             "background": list(self.background),
             "sky": self.sky,
+            "section_fill": self.section_fill,
+            "section_fill_color": list(self.section_fill_color),
         }
 
     @classmethod
@@ -67,6 +73,9 @@ class Style:
             front_color=tuple(raw.get("front_color", d.front_color)),
             background=tuple(raw.get("background", d.background)),
             sky=bool(raw.get("sky", d.sky)),
+            section_fill=bool(raw.get("section_fill", d.section_fill)),
+            section_fill_color=tuple(raw.get("section_fill_color",
+                                             d.section_fill_color)),
         )
 
     def copy(self) -> "Style":
