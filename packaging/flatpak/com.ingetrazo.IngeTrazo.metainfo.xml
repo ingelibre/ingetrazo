@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.ingetrazo.IngeTrazo</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>IngeTrazo</name>
+  <summary>SketchUp-style 3D modeler for civil engineering</summary>
+  <summary xml:lang="es">Modelador 3D estilo SketchUp para ingeniería civil</summary>
+  <developer id="com.ingetrazo">
+    <name>Marco Sumari Tellez</name>
+  </developer>
+  <description>
+    <p>
+      Free 3D modeler in the spirit of SketchUp: push/pull modelling that
+      feels like sketching by hand, groups and components, materials with
+      textures, dimensions and leader texts, layers, scenes and display
+      styles — plus a sheet composer that turns the model into printable,
+      to-scale plan sheets (PDF/DXF).
+    </p>
+    <p xml:lang="es">
+      Modelador 3D libre al estilo SketchUp: empujar/tirar que se siente
+      como trazar a mano, grupos y componentes, materiales con texturas,
+      cotas y textos guía, capas, escenas y estilos de visualización — más
+      un compositor de láminas que convierte el modelo en planos imprimibles
+      a escala (PDF/DXF).
+    </p>
+    <p>
+      Opens SketchUp .skp files natively (2013–2026, read AND write, through
+      the pure-Python OpenSKP library), imports and exports COLLADA and OBJ,
+      exports STL, glTF/GLB and IFC4 for BIM quantity take-off, and brings
+      real terrain in: base-map tiles, 3D elevation, photogrammetry meshes
+      and survey points.
+    </p>
+    <p xml:lang="es">
+      Abre archivos .skp de SketchUp de forma nativa (2013–2026, lee Y
+      escribe, vía la librería puro-Python OpenSKP), importa y exporta
+      COLLADA y OBJ, exporta STL, glTF/GLB e IFC4 para metrados BIM, y trae
+      el terreno real: mapas base, elevación 3D, mallas de fotogrametría y
+      puntos topográficos.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.ingetrazo.IngeTrazo.desktop</launchable>
+  <url type="homepage">https://ingetrazo.com</url>
+  <url type="bugtracker">https://github.com/ingelibre/ingetrazo/issues</url>
+  <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.3.4" date="2026-08-25">
+      <description>
+        <p>Copy/paste for groups and components with a solid, textured
+        preview; the Protractor and Rotate rebuilt to SketchUp parity
+        (angle snapping, rise:run slopes, rotate-a-copy); tool cursors;
+        display styles with per-frame styles in the sheet composer; and a
+        real modelling session's worth of selection and guide fixes.</p>
+        <p xml:lang="es">Copiar/pegar grupos y componentes con vista previa
+        sólida y texturada; transportador y Rotar en paridad SketchUp
+        (imanes de ángulo, pendientes subida:avance, rotar copia); cursores
+        de herramienta; estilos de visualización con estilo por marco en el
+        compositor; y una sesión real de fixes de selección y guías.</p>
+      </description>
+    </release>
+    <release version="0.3.3" date="2026-08-21">
+      <description>
+        <p>The complete SketchUp round trip: native .skp export, the full
+        2013–2026 corpus opens natively, and dimensions and leader texts
+        travel both ways. Named materials with per-material quantities.</p>
+        <p xml:lang="es">El viaje redondo SketchUp completo: export .skp
+        nativo, todo el corpus 2013–2026 abre nativo, y cotas y textos guía
+        viajan en ambas direcciones. Materiales con nombre y metrados por
+        material.</p>
+      </description>
+    </release>
+    <release version="0.3.2" date="2026-08-18">
+      <description>
+        <p>Extensions: a runtime plugin system with two bundled reference
+        plugins (Model info, Python console).</p>
+        <p xml:lang="es">Extensiones: sistema de plugins en runtime con dos
+        plugins de referencia incluidos (Info del modelo, Consola Python).</p>
+      </description>
+    </release>
+  </releases>
+</component>

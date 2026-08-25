@@ -58,3 +58,7 @@ capturas/
 /ss.igz
 /xxxd.dwg
 /xxxdd.dwg
+
+# Flatpak builder state and staging (packaging/flatpak/build-flatpak.sh)
+packaging/flatpak/.flatpak-builder/
+packaging/flatpak/.staging/

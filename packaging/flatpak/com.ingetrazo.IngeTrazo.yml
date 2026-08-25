@@ -1,0 +1,111 @@
+# IngeTrazo's Flatpak, for self-distribution (bundle on each GitHub
+# release), NOT Flathub — Flathub forbids network during build, and the app
+# module below lets pip download wheels. The shape follows IngeCAD's proven
+# manifest (packaging/flatpak/ in that repo), krb5 lesson included.
+app-id: com.ingetrazo.IngeTrazo
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: ingetrazo
+
+finish-args:
+  # GUI — native Wayland when present, X11 as fallback. Never force xcb:
+  # the sandbox gets no DISPLAY under Wayland.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri                 # the OpenGL viewport IS the application
+  # The user's models live anywhere (~/Descargas, pCloud mounts, USB).
+  - --filesystem=home
+  # Unlike IngeCAD, IngeTrazo DOES use the network: base-map tiles, the
+  # AWS terrarium DEM for 3D terrain, and location geocoding (Track G).
+  - --share=network
+
+modules:
+  # PySide6's Qt links QtNetwork against GSSAPI; the Freedesktop runtime
+  # carries no libgssapi_krb5.so.2. Without this, importing QtNetwork (the
+  # tile fetcher) dies at load time. Verbatim from the IngeCAD manifest,
+  # C23 workaround included.
+  - name: krb5
+    subdir: src
+    build-options:
+      cflags: -std=gnu17 -Wno-implicit-function-declaration -Wno-implicit-int -Wno-int-conversion -Wno-incompatible-pointer-types
+    config-opts:
+      - --disable-static
+      - --without-ldap
+      - --without-tcl
+      - --without-libedit
+      - --without-readline
+      - --disable-rpath
+    cleanup:
+      - /bin
+      - /sbin
+      - /share
+      - /include
+      - /etc
+      - '*.la'
+    sources:
+      - type: archive
+        url: https://kerberos.org/dist/krb5/1.21/krb5-1.21.3.tar.gz
+        sha256: b7a4cd5ead67fb08b980b21abd150ff7217e85ea320c9ed0c6dadd304840ad35
+        mirror-urls:
+          - https://web.mit.edu/kerberos/dist/krb5/1.21/krb5-1.21.3.tar.gz
+
+  - name: ingetrazo
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network        # pip downloads the wheels (self-dist only)
+    build-commands:
+      # 1. Python dependencies into /app's prefix. pytest is a test tool.
+      - grep -vE '^\s*pytest\b' requirements.txt > reqs.txt
+      - pip3 install --prefix=${FLATPAK_DEST} --no-warn-script-location -r reqs.txt
+      # 2. The application, as source — GPL code hides from nobody.
+      #    materials/ and styles/ are importable packages; plugins/ carries
+      #    the bundled reference extensions (core/extensions.py discovers
+      #    them under app_root(), which resolves to /app/ingetrazo here).
+      - mkdir -p ${FLATPAK_DEST}/ingetrazo
+      - cp -a main.py core views tools formats georef materials styles plugins resources i18n LICENSE ${FLATPAK_DEST}/ingetrazo/
+      - find ${FLATPAK_DEST}/ingetrazo -name '__pycache__' -type d -exec rm -rf {} +
+      # 3. Launcher + desktop integration (exports must carry the app id).
+      - install -Dm755 packaging/flatpak/flatpak-launcher.sh ${FLATPAK_DEST}/bin/ingetrazo
+      - install -Dm644 packaging/flatpak/${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 resources/icons/ingetrazo_256.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm644 packaging/flatpak/${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
+      # 4. MIME types (.igz / .skp / .dae) so double-click opens IngeTrazo.
+      - install -Dm644 resources/mime/ingetrazo.xml ${FLATPAK_DEST}/share/mime/packages/${FLATPAK_ID}.xml
+      # 5. Trim PySide6 to the Qt modules IngeTrazo imports (QtCore, QtGui,
+      #    QtWidgets, QtOpenGL(+Widgets), QtNetwork — tiles/DEM). The full
+      #    wheel installs 771 MB, 195 of them a WebEngine no line of this
+      #    program touches. Blocklist, not allowlist: an unknown library
+      #    stays, so a Qt upgrade can add deps without blanking the app.
+      - |
+        set -e
+        PYVER=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+        PS=${FLATPAK_DEST}/lib/python${PYVER}/site-packages/PySide6
+        cd "$PS"
+        rm -rf Qt/qml Qt/resources Qt/libexec Qt/metatypes examples typesystems glue include
+        rm -f  assistant designer linguist lupdate lrelease qmlformat qmllint qmlls qsb balsam* svgtoqml
+        for stem in WebEngine Pdf PrintSupport Quick Qml 3D Quick3D Multimedia SpatialAudio                     Location Positioning Sensors SerialPort SerialBus Bluetooth                     Nfc WebSockets WebChannel WebView RemoteObjects Scxml                     TextToSpeech Charts DataVisualization Graphs Sql Help                     UiTools Designer NetworkAuth HttpServer VirtualKeyboard                     LabsAnimation LabsFolderListModel LabsPlatform LabsQmlModels                     LabsSettings LabsSharedImage LabsWavefrontMesh Test; do
+          rm -f  Qt${stem}*.abi3.so Qt${stem}*.pyi
+          rm -f  Qt/lib/libQt6${stem}*.so*
+        done
+        # Quick/Qml family again by lib name (Quick3D matches Quick prefix)
+        rm -f Qt/lib/libQt6Quick*.so* Qt/lib/libQt6Qml*.so*
+        # ffmpeg came along for Multimedia
+        rm -f Qt/lib/libav*.so* Qt/lib/libsw*.so*
+        rm -rf Qt/plugins/multimedia Qt/plugins/webview Qt/plugins/qmltooling                Qt/plugins/scenegraph Qt/plugins/designer Qt/plugins/assetimporters                Qt/plugins/sceneparsers Qt/plugins/renderers Qt/plugins/geometryloaders                Qt/plugins/sqldrivers Qt/plugins/position Qt/plugins/sensors                Qt/plugins/canbus Qt/plugins/virtualkeyboard Qt/plugins/texttospeech
+        du -sh "$PS"
+    sources:
+      - type: dir
+        path: ../../
+        skip:
+          - venv
+          - build
+          - dist
+          - .git
+          - capturas
+          - analysis
+          - tests
+          - packaging/flatpak/.staging
+          - packaging/flatpak/.flatpak-builder
