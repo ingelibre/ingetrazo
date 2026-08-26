@@ -140,6 +140,17 @@ def test_openskp_adapter_resolves_a_face_ring_in_metres():
     assert holes == []
 
 
+
+def _placed(payload):
+    """The single placed definition's entry. Every top-level instance imports
+    as a prototype now (a component placed once is still a component), so the
+    material/layer rules below read it there; the classic-group path is what
+    is left for subtrees instancing cannot carry (face-me, tagged children)."""
+    if payload.get("protos"):
+        assert len(payload["protos"]) == 1
+        return payload["protos"][0]
+    return payload["groups"][0]
+
 def test_openskp_adapter_places_instances_with_transform():
     # Child def placed by an instance translated +100 in on X appears shifted.
     child = _fake_definition(
@@ -153,11 +164,17 @@ def test_openskp_adapter_places_instances_with_transform():
         id=0, name="ROOT_MODEL", verts={}, edges={}, faces={}, instances=[inst])
     model = NS(definitions={0: root, 5: child})
     payload = skp_openskp._adapt(model, "inst")
-    outer = payload["groups"][0]["faces"][0][0]
-    # child X spans 0..10 in, shifted +100 in → 100..110 in → 2.54..2.794 m
+    # The definition keeps its own coordinates and the placement rides on the
+    # instance matrix — that is what lets the group know its own axes.
+    proto = payload["protos"][0]
+    outer = proto["faces"][0][0]
     xs = sorted(round(p[0], 4) for p in outer)
-    assert min(xs) == pytest.approx(2.54, abs=1e-4)
-    assert max(xs) == pytest.approx(2.794, abs=1e-4)
+    assert min(xs) == pytest.approx(0.0, abs=1e-4)      # local: 0..10 in
+    assert max(xs) == pytest.approx(0.254, abs=1e-4)
+    assert len(proto["instances"]) == 1
+    from PySide6.QtGui import QVector3D
+    placed = proto["instances"][0].map(QVector3D(0.0, 0.0, 0.0))
+    assert placed.x() == pytest.approx(2.54, abs=1e-4)  # +100 in on X
 
 
 def test_openskp_adapter_returns_none_without_geometry():
@@ -263,9 +280,10 @@ def test_openskp_adapter_groups_per_top_level_instance():
     root = _tri_def(0, "ROOT_MODEL", instances=[ins])
     payload = skp_openskp._adapt(NS(definitions={0: root, 5: child}), "obra")
 
-    names = sorted(g["name"] for g in payload["groups"])
-    assert names == ["Farola", "obra"]
-    assert payload["protos"] == []
+    # The root's loose faces stay a group; the placed definition is a proto.
+    assert sorted(g["name"] for g in payload["groups"]) == ["obra"]
+    assert [p["name"] for p in payload["protos"]] == ["Farola"]
+    assert len(payload["protos"][0]["instances"]) == 1
 
 
 def test_openskp_adapter_shares_repeated_components(monkeypatch):
@@ -312,7 +330,7 @@ def test_openskp_adapter_inherits_instance_material():
     model = NS(definitions={0: root, 5: child}, materials_by_id={77: wood})
     payload = skp_openskp._adapt(model, "obra")
 
-    attrs = payload["groups"][0]["faces"][0][2]
+    attrs = _placed(payload)["faces"][0][2]
     assert attrs == {"color": [1.0, 0.0, 0.0], "mat": "Wood"}
 
 
@@ -332,7 +350,7 @@ def test_openskp_adapter_face_material_beats_inherited():
 
     # The face's OWN material fronts; the unpainted back side shows the
     # instance's inherited paint (SketchUp two-sided rule).
-    assert payload["groups"][0]["faces"][0][2] == {
+    assert _placed(payload)["faces"][0][2] == {
         "color": [0.0, 0.0, 1.0], "mat": "B",
         "back": {"color": [1.0, 0.0, 0.0], "mat": "W"}}
 
@@ -484,7 +502,7 @@ def test_openskp_adapter_own_back_material_beats_instance_paint():
     model = NS(definitions={0: root, 5: child}, materials_by_id=mats)
     payload = skp_openskp._adapt(model, "m")
 
-    attrs = payload["groups"][0]["faces"][0][2]
+    attrs = _placed(payload)["faces"][0][2]
     assert attrs == {"color": [128 / 255.0] * 3,
                      "mat": "Grey"}                 # grey, not blue
 
@@ -649,7 +667,10 @@ def test_openskp_adapter_top_level_instance_layer_on_group():
     root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
                             faces={}, instances=[inst])
     payload = skp_openskp._adapt(NS(definitions={0: root, 5: child}), "m")
-    assert payload["groups"][0]["layer"] == "Vegetacion"
+    # The tag rides per PLACEMENT now (copies of one component can sit on
+    # different layers), which is the same mechanism nested tagged instances
+    # already used.
+    assert _placed(payload)["instance_layers"] == ["Vegetacion"]
 
 
 def test_openskp_adapter_extracts_nested_tagged_instance_as_layer_group():
@@ -856,3 +877,54 @@ def test_snapshot_import_undo_reverts_added_dimensions():
     assert scene.dimensions == []
     history.redo()
     assert len(scene.dimensions) == 1
+
+
+def test_openskp_adapter_keeps_a_component_placed_once_a_component():
+    """A definition placed ONCE is still a definition.
+
+    The sharing thresholds ask "does this save memory", which is the wrong
+    question for a component placed a single time: the answer is no, and the
+    model's structure was lost for it. Marco's pool: the Warehouse barbecue is
+    a component definition in the .skp and arrived as a flat group with its
+    placement baked into the vertices, so the group had no axes of its own."""
+    child = _tri_def(5, "Parrilla")
+    ins = NS(ref_idx=5, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 100, 0, 0, 1])
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[ins])
+    payload = skp_openskp._adapt(NS(definitions={0: root, 5: child}), "obra")
+    assert [p["name"] for p in payload["protos"]] == ["Parrilla"]
+    assert payload["groups"] == []          # nothing flattened
+
+
+def test_openskp_adapter_flattens_a_face_me_subtree_placed_once():
+    """The exclusions are about what instancing cannot carry, not about copy
+    counts: a billboard inside a prototype would flatten into its geometry and
+    stop turning toward the camera."""
+    leaf = _tri_def(7, "Susan")
+    leaf.always_faces_camera = True
+    nested = NS(ref_idx=7, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
+    container = _fake_definition(id=5, name="Patio", verts={}, edges={},
+                                 faces={}, instances=[nested])
+    top = NS(ref_idx=5, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[top])
+    payload = skp_openskp._adapt(
+        NS(definitions={0: root, 5: container, 7: leaf}), "obra")
+    assert not any(p["name"] == "Patio" for p in payload.get("protos", []))
+
+
+def test_openskp_adapter_flattens_a_tagged_subtree_placed_once():
+    """Same reason: a tagged child has to come out as its own group for the
+    layer toggle to hide it, and a prototype flattens its subtree."""
+    leaf = _tri_def(7, "Planta")
+    tagged = NS(ref_idx=7, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+                layer="plantas")
+    container = _fake_definition(id=5, name="Jardinera", verts={}, edges={},
+                                 faces={}, instances=[tagged])
+    top = NS(ref_idx=5, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[top])
+    payload = skp_openskp._adapt(
+        NS(definitions={0: root, 5: container, 7: leaf}), "obra")
+    assert not any(p["name"] == "Jardinera" for p in payload.get("protos", []))
+    assert any(g.get("layer") == "plantas" for g in payload["groups"])

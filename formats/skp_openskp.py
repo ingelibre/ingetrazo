@@ -896,22 +896,70 @@ def _adapt(model, name: str, skp_path=None):
                 return True
         return False
 
-    proto_ids = set()
-    for did, cnt in uses.items():
-        d = by_id.get(did)
-        if d is None or cnt < 2:
-            continue
+    def _shareable(d) -> bool:
         # Face-me-carrying subtrees (images, face-camera components) are
         # excluded from sharing: each copy's billboard needs its own world
         # spot. Tagged-instance-carrying subtrees too: each copy's tagged
         # subtree must extract as its own layer group (the tagged child
         # itself usually re-shares one level down, with per-placement
         # layers).
-        if _subtree_has_faceme(d) or _subtree_has_tagged(d):
+        return not (_subtree_has_faceme(d) or _subtree_has_tagged(d))
+
+    proto_ids = set()
+    for did, cnt in uses.items():
+        d = by_id.get(did)
+        if d is None or cnt < 2 or not _shareable(d):
             continue
         polys = _subtree_polys(d, by_id, memo, set())
         if polys >= _INST_MIN_POLYS and polys * (cnt - 1) >= _INST_MIN_SAVED:
             proto_ids.add(did)
+    # A definition placed ONCE is still a definition. The thresholds above ask
+    # "does sharing this save memory", which is the wrong question for a
+    # component placed a single time: the answer is no, and the model's
+    # structure is lost for it — the Warehouse pieces in Marco's pool (the
+    # barbecue, the pool itself) are component definitions in the .skp and
+    # arrived as flat groups, with their placement matrix baked into the
+    # vertices. Keeping the placement means the group knows its own axes (the
+    # selection box has real ones to draw instead of derived), and Move,
+    # Rotate and copy take the O(1) instance paths.
+    #
+    # Only where the definition is placed at the TOP level: a ``cnt == 1``
+    # definition is placed exactly once, so this can never pull a nested part
+    # out into a group of its own — which is what would happen if every
+    # definition became a prototype, since ``_collect`` extracts proto
+    # references instead of flattening them.
+    def _subtree_uses(d, wanted, stack=frozenset()):
+        """Whether ``d``'s subtree places any definition in ``wanted``."""
+        if id(d) in stack:
+            return False
+        for ins in getattr(d, "instances", []):
+            cid = getattr(ins, "ref_idx", None)
+            if cid in wanted:
+                return True
+            c = by_id.get(cid)
+            if c is not None and _subtree_uses(c, wanted, stack | {id(d)}):
+                return True
+        return False
+
+    for r in roots:
+        for ins in getattr(r, "instances", []):
+            child = by_id.get(getattr(ins, "ref_idx", None))
+            if child is None or uses.get(getattr(child, "id", None)) != 1:
+                continue
+            if getattr(child, "is_image", False) or \
+                    getattr(child, "always_faces_camera", False):
+                continue
+            if not _shareable(child):
+                continue
+            # A prototype flattens its subtree (no proto-in-proto), so a
+            # container whose children are themselves shared would swallow
+            # them: they would stop being separately selectable and their
+            # sharing would be lost. Promote only what costs nothing —
+            # measured on the corpus, where the unguarded version quietly
+            # merged 47 groups of one file into their parents.
+            if _subtree_uses(child, proto_ids):
+                continue
+            proto_ids.add(child.id)
 
     groups: list = []
     proto_uses: dict = {}

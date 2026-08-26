@@ -124,7 +124,10 @@ def parse_skp(path, progress=None) -> dict:
             payload = backend.parse(path, progress=progress)
         except Exception:  # noqa: BLE001 — a parser that chokes → try next / fall back
             payload = None
-        if payload and payload.get("groups"):
+        # Protos count as geometry: a file whose whole content is
+        # components placed once yields no plain groups at all, and
+        # reading that as "empty parse" sent it to skp2dae.
+        if payload and (payload.get("groups") or payload.get("protos")):
             return payload
     raise NeedsConverter(path, fmt)
 
