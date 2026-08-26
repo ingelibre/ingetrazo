@@ -208,7 +208,6 @@ class PushPullTool(Tool):
         # vertices) rather than a strip-by-strip extrude.
         self._prism_cap: bool = False
         self._drag_pre_oriented: bool = False
-        self._last_good_extrusion: float | None = None
         self._anchor: QVector3D | None = None  # fixed centroid for measuring extrusion
         self._normal: QVector3D | None = None
         self._cap_positions: list[QVector3D] = []  # original cap vertices
@@ -222,17 +221,16 @@ class PushPullTool(Tool):
         # Set when the last _mutate refused the push to keep the solid valid
         # (the BIM-grade guard); _commit surfaces it in the status bar.
         self._refused: bool = False
-        # ---- Hybrid drag preview --------------------------------------------
-        # While the cursor is MOVING the drag shows the naive sweep as an
-        # overlay — cap plus wall quads, nothing touched in the mesh. The real
-        # pipeline (stitch, per-plane rebuild, hermeticity guard) runs when the
-        # cursor SETTLES, which is the moment you are actually reading the
-        # result. Applying it per mouse-move cost ~0.3 s a frame on an
-        # imported barbecue; the shape you drag against is the same either way,
-        # only the cleanup of coincident geometry waits for the pause.
+        self._topped_out: bool = False
+        # ---- Drag preview -----------------------------------------------
+        # The drag shows the naive sweep as an overlay — cap plus wall quads,
+        # nothing touched in the mesh — and the real pipeline (stitch,
+        # per-plane rebuild, hermeticity guard) runs ONCE, at the commit. This
+        # is how SketchUp drags: the shape you pull against is the same either
+        # way, and the cleanup of coincident geometry is not something you can
+        # read mid-drag anyway. Running it per mouse-move cost ~0.3 s a frame
+        # on an imported barbecue.
         self._light_faces: list = []
-        self._settle_timer = None
-        self._settle_target = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -274,10 +272,9 @@ class PushPullTool(Tool):
             self.extrusion = QVector3D.dotProduct(
                 projected - self._anchor, self._normal)
         self._clamp_extrusion(viewport)
-        # Moving: the cheap sweep overlay. The real pipeline runs from
-        # _on_settled once the cursor holds still — see _build_light_faces.
+        # The drag shows the sweep; the real pipeline runs once, at the
+        # commit — see _build_light_faces.
         self._show_light_preview(viewport)
-        self._arm_settle(viewport)
 
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
@@ -315,7 +312,6 @@ class PushPullTool(Tool):
             self._cap_positions = self._cap_loop_positions(face)
             self._compute_inward_limit(target)
             self._preview_snapshot = None
-            self._last_good_extrusion = None
             # The live preview takes over from the hover shade now.
             viewport.set_hover(None)
             viewport.update()
@@ -382,7 +378,6 @@ class PushPullTool(Tool):
         return True
 
     def on_cancel(self, viewport) -> None:
-        self._disarm_settle()
         self._light_faces = []
         self._revert_preview(viewport)
         viewport.set_hover(None)
@@ -391,21 +386,16 @@ class PushPullTool(Tool):
         viewport.update()
 
     # ---- Visual preview -----------------------------------------------------
-    # While the cursor MOVES the drag shows the naive sweep as overlay faces
-    # (``preview_faces``); once it settles the real stitched geometry replaces
-    # them in the mesh and the overlay empties. Its outline comes from those
-    # faces, so there is no separate rubber band.
+    # The drag shows the naive sweep as overlay faces (``preview_faces``); the
+    # commit replaces them with the real stitched geometry. Their outline comes
+    # from the faces themselves, so there is no separate rubber band.
     def rubber_band_lines(self):
         return []
 
     def preview_faces(self):
         return self._light_faces
 
-    # ---- Hybrid drag preview -------------------------------------------------
-    #: How long the cursor must hold still before the real pipeline runs. Long
-    #: enough that a continuous drag never triggers it, short enough that it
-    #: has landed by the time you have looked at where you stopped.
-    SETTLE_MS = 110
+    # ---- Drag preview ------------------------------------------------------
 
     def _build_light_faces(self):
         """The naive sweep of the base face as plain preview polygons: the
@@ -441,50 +431,19 @@ class PushPullTool(Tool):
         preview upload."""
         self._revert_preview(viewport)
         self._light_faces = self._build_light_faces()
-        # Hide the base face exactly when the commit would consume it (an
-        # embedded face, not a Ctrl-stack): that is what lets an inward drag
-        # read as a recess opening instead of a box buried in the solid. A
-        # free-standing face keeps its cap, so hiding it would be a lie — and
-        # suppression costs a resync, since a group with a hidden face cannot
-        # use its cached chunk.
-        consumed = (self._light_faces and self.base_face is not None
-                    and self._attached and not self._keep_base)
-        viewport.set_suppressed_faces({self.base_face} if consumed else set())
+        # Hiding the base face is what lets an INWARD drag read as a recess
+        # opening instead of a cap buried in the solid. Outward, the sweep
+        # covers the base anyway and the frame is identical either way — worth
+        # distinguishing, because suppression is the one expensive thing left
+        # in a drag frame: a group with a hidden face cannot use its cached
+        # chunk, so all of its faces are bucketed in Python (measured at
+        # 317 ms cold on the 3054-face barbecue, 13 ms once the triangulation
+        # memo is warm). A Ctrl-stack keeps its base, so it never hides it.
+        recessing = (self._light_faces and self.base_face is not None
+                     and self._attached and not self._keep_base
+                     and self.extrusion < 0.0)
+        viewport.set_suppressed_faces({self.base_face} if recessing else set())
         viewport.update()
-
-    def _arm_settle(self, viewport) -> None:
-        """(Re)start the pause that swaps the overlay for the real geometry.
-
-        Without a Qt event loop to hang the timer on — a headless driver, the
-        AI bridge, a test's stub viewport — there is no "cursor settles"
-        moment to wait for, so the real pipeline runs right away and the
-        caller sees exactly the behaviour it saw before the split."""
-        from PySide6.QtCore import QObject, QTimer
-        if not isinstance(viewport, QObject):
-            self._settle_target = viewport
-            self._on_settled()
-            return
-        if self._settle_timer is None:
-            self._settle_timer = QTimer(viewport)
-            self._settle_timer.setSingleShot(True)
-            self._settle_timer.timeout.connect(self._on_settled)
-        self._settle_target = viewport
-        self._settle_timer.start(self.SETTLE_MS)
-
-    def _disarm_settle(self) -> None:
-        if self._settle_timer is not None:
-            self._settle_timer.stop()
-        self._settle_target = None
-
-    def _on_settled(self) -> None:
-        """The cursor stopped: replace the overlay with the geometry that will
-        actually commit — clamped by the guard, seams dissolved."""
-        viewport = self._settle_target
-        if viewport is None or not self.dragging:
-            return
-        self._light_faces = []
-        viewport.set_suppressed_faces(set())
-        self._apply_preview(viewport)
 
     def _target_scene(self, scene):
         """The scene the machinery edits: the real one, or a facade over the
@@ -493,46 +452,6 @@ class PushPullTool(Tool):
 
     def _target_mesh(self, scene):
         return self._group.mesh if self._group is not None else scene.mesh
-
-    def _apply_preview(self, viewport) -> None:
-        """Show the forming solid by applying the real commit to the mesh, after
-        reverting the previous frame's preview.
-
-        When the distance under the cursor is REFUSED by the guard (a flush
-        landing the rebuild digests — e.g. an annulus pushed level with an
-        already-raised neighbour), the drag must not read as 'the solid
-        vanished': the preview sticks at the last distance that worked and the
-        drag tops out there, SketchUp-clamp style. The commit then lands at
-        that reachable height too (self.extrusion is pinned back)."""
-        import time as _t
-        from core.history import _plog as _hplog
-        _p0 = _t.perf_counter()
-        try:
-            return self._apply_preview_inner(viewport)
-        finally:
-            _hplog("push.preview", (_t.perf_counter() - _p0) * 1000.0,
-                   floor=30.0)
-
-    def _apply_preview_inner(self, viewport) -> None:
-        self._revert_preview(viewport)
-        if self.base_face is None or abs(self.extrusion) < _MIN_EXTRUDE:
-            viewport.update()
-            return
-        self._preview_snapshot = self._target_mesh(viewport.scene).capture_state()
-        self._mutate(viewport.scene, preview=True)
-        if self._refused:
-            # _mutate already restored the mesh to the pre-op state.
-            if self._last_good_extrusion is not None:
-                self.extrusion = self._last_good_extrusion
-                self._mutate(viewport.scene, preview=True)
-                if not self._refused:
-                    viewport.flash_status(tr(
-                        "Push stopped at {d:.2f} m: going further would "
-                        "break the solid", d=abs(self.extrusion)), 1500)
-        else:
-            self._last_good_extrusion = self.extrusion
-        viewport.scene.version += 1
-        viewport.update()
 
     def _revert_preview(self, viewport) -> None:
         if self._preview_snapshot is not None:
@@ -812,7 +731,6 @@ class PushPullTool(Tool):
 
     def _commit(self, viewport) -> None:
         viewport.set_hover(None)  # the hovered face is about to be replaced
-        self._disarm_settle()     # a pending settle must not fire mid-commit
         self._light_faces = []
         viewport.set_suppressed_faces(set())
         self._revert_preview(viewport)  # drop the live preview; redo it for real
@@ -823,10 +741,16 @@ class PushPullTool(Tool):
         # One snapshot wraps the edit *and* the watertight stitch: undo is exact,
         # and it is the identical mutation the live preview just showed. A push
         # aimed at a group snapshots that group's mesh instead.
+        self._topped_out = False
         viewport.history.execute(SnapshotMutation(
-            self._mutate,
+            self._mutate_or_top_out,
             mesh=self._group.mesh if self._group is not None else None))
-        if self._refused:
+        if self._topped_out:
+            viewport.flash_status(tr(
+                "Push stopped at {d:.2f} m: going further would break the "
+                "solid", d=abs(self.extrusion)), 4000)
+            PushPullTool.last_distance = self.extrusion
+        elif self._refused:
             # The guard rolled the push back to keep the solid watertight; tell
             # the user so the no-op isn't silent — long timeout, it's easy to
             # miss and the tool otherwise looks broken.
@@ -837,6 +761,52 @@ class PushPullTool(Tool):
             PushPullTool.last_distance = self.extrusion  # double-click repeats it
         self._reset()
         viewport.update()
+
+    #: How many halvings the commit tries when the guard refuses the distance
+    #: the user dragged to. Each costs a full pipeline run, so this buys a
+    #: reachable height for about a second in the worst case — only ever spent
+    #: on a push that would otherwise do nothing at all.
+    _CLAMP_TRIES = 6
+
+    def _mutate_or_top_out(self, scene) -> None:
+        """Commit the push; if the guard refuses the dragged distance, commit
+        the furthest one it accepts instead.
+
+        A flush landing the rebuild digests — an annulus pushed exactly level
+        with an already-raised neighbour — is refused, and refusing outright
+        would leave the user's drag doing nothing. The live preview used to
+        carry this: it re-ran the pipeline per mouse-move and remembered the
+        last distance that worked. Now that the drag is an overlay there is no
+        such record, so the search happens here, where it is paid once and only
+        on a push that was going to be a no-op. Bisection finds a closer height
+        than the old sampling did — it converges on the true limit rather than
+        on wherever the cursor happened to be."""
+        self._mutate(scene)
+        if not self._refused:
+            return
+        target = self._target_mesh(scene)
+        wanted = self.extrusion
+        lo, hi = 0.0, 1.0          # fractions of the dragged distance
+        best = None
+        for _ in range(self._CLAMP_TRIES):
+            mid = (lo + hi) / 2.0
+            snap = target.capture_state()
+            self.extrusion = wanted * mid
+            self._mutate(scene)
+            if self._refused or abs(self.extrusion) < _MIN_EXTRUDE:
+                target.restore_state(snap)
+                hi = mid
+            else:
+                best = self.extrusion
+                target.restore_state(snap)
+                lo = mid
+        if best is None:
+            self.extrusion = wanted
+            self._refused = True
+            return
+        self.extrusion = best
+        self._mutate(scene)
+        self._topped_out = True
 
     def _mutate(self, scene, preview: bool = False) -> None:
         """Apply the push and stitch watertight, with a **BIM-grade refusal
@@ -1302,11 +1272,9 @@ class PushPullTool(Tool):
         self._normal = None
         self._cap_positions = []
         self._preview_snapshot = None
-        self._last_good_extrusion = None
         self._drag_pre_oriented = False
         self._inference_point = None
         self._inference_kind = None
         self._infer_cache = None       # per-drag projected-vertex candidates
         self._refused = False
         self._light_faces = []
-        self._disarm_settle()

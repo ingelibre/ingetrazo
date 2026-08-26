@@ -35,6 +35,7 @@ class _StubViewport:
     def __init__(self, scene):
         self.scene = scene
         self.history = History(scene)
+        self.suppressed = set()
 
     def update(self):
         pass
@@ -43,7 +44,7 @@ class _StubViewport:
         pass
 
     def set_suppressed_faces(self, faces):
-        pass
+        self.suppressed = faces
 
 
 def _embedded_scene():
@@ -607,30 +608,32 @@ def test_light_preview_is_empty_below_the_minimum():
     assert _dragging_tool(scene, small, 0.0)._build_light_faces() == []
 
 
-def test_moving_leaves_the_mesh_untouched_until_it_settles():
+def test_dragging_leaves_the_mesh_untouched():
     """The whole point of the split: a mouse-move costs an overlay, not a
-    rebuild."""
+    rebuild. The mesh changes once, at the commit."""
     scene, _big, small = _embedded_scene()
     vp = _StubViewport(scene)
     tool = _dragging_tool(scene, small, -1.0)
     before = (len(scene.mesh.faces), len(scene.mesh.edges))
-    tool._show_light_preview(vp)
-    assert (len(scene.mesh.faces), len(scene.mesh.edges)) == before
-    assert tool.preview_faces()                     # ...but something is shown
-    # settling runs the real thing and drops the overlay
-    tool._settle_target = vp
-    tool._on_settled()
+    for d in (-0.2, -0.5, -1.0):        # a drag: several moves
+        tool.extrusion = d
+        tool._show_light_preview(vp)
+        assert (len(scene.mesh.faces), len(scene.mesh.edges)) == before
+        assert tool.preview_faces()     # ...but something is on screen
+    tool._commit(vp)
     assert tool.preview_faces() == []
     assert (len(scene.mesh.faces), len(scene.mesh.edges)) != before
 
 
-def test_settle_without_an_event_loop_applies_immediately():
-    """A stub viewport is no QObject: with no loop to wait on, the real
-    pipeline must run inline so headless callers behave as before."""
+def test_inward_drag_hides_the_face_it_consumes():
+    """Hiding the base is what lets a recess read as opening; an outward pull
+    covers it anyway, and suppression is the one costly thing in a frame."""
     scene, _big, small = _embedded_scene()
     vp = _StubViewport(scene)
     tool = _dragging_tool(scene, small, -1.0)
-    before = len(scene.mesh.faces)
-    tool._arm_settle(vp)
-    assert tool._settle_timer is None               # never created one
-    assert len(scene.mesh.faces) != before          # applied inline
+    tool._attached = True
+    tool._show_light_preview(vp)
+    assert vp.suppressed == {small}
+    tool.extrusion = 1.0                # same face, pulled out instead
+    tool._show_light_preview(vp)
+    assert vp.suppressed == set()

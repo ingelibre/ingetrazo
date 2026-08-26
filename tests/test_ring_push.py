@@ -114,13 +114,14 @@ def test_ring_push_refusal_is_failsafe_and_announced():
     assert any("refused" in m.lower() for m in vp.messages)  # user is told
 
 
-def test_refused_drag_tops_out_at_last_good_height():
+def test_refused_push_tops_out_at_the_reachable_height():
     # The pure eye model: three concentric circles ONLY (the whole disc, so
-    # the first push leaves a closed mesh and the guard is armed). Dragging
-    # the iris (middle annulus) up to the EXACT level of the already-raised
-    # outer ring is digested by the rebuild and refused by the guard. The
-    # drag preview must not read as 'the solid vanished': it sticks at the
-    # last distance that worked and the commit lands there.
+    # the first push leaves a closed mesh and the guard is armed). Pushing the
+    # iris (middle annulus) up to the EXACT level of the already-raised outer
+    # ring is digested by the rebuild and refused by the guard. Refusing
+    # outright would leave the user's drag doing nothing, so the COMMIT
+    # bisects down to the furthest height the guard accepts and lands there.
+    # (The drag itself is an overlay now — no pipeline runs until the commit.)
     from tools.circle import CircleTool
 
     scene = Scene()
@@ -147,16 +148,21 @@ def test_refused_drag_tops_out_at_last_good_height():
     pp.on_click(ToolContext(viewport=vp, world=QVector3D(0, 0, 0),
                             screen=QPointF(500, 350),
                             modifiers=Qt.NoModifier, snap=None))
-    for d in (1.5, 1.9, 2.0, 2.4):                 # drag across the flush level
+    faces_before = len(scene.mesh.faces)
+    for d in (1.5, 1.9, 2.0, 2.4):                 # a drag across the level
         pp.extrusion = d
-        pp._apply_preview(vp)
-    assert pp.extrusion == 1.9                     # topped out, not vanished
-    cap = [f for f in scene.mesh.faces
-           if all(abs(v.position.z() - 1.9) < 1e-6 for v in f.loop)]
-    assert cap                                     # the forming solid is shown
-    assert any("stopped" in m.lower() for m in vp.messages)
+        pp._show_light_preview(vp)
+        assert len(scene.mesh.faces) == faces_before   # overlay only
+    pp.extrusion = 2.4
     pp._commit(vp)
-    assert is_closed(scene.mesh)
+
+    assert is_closed(scene.mesh)                   # never commits a crack
+    assert len(scene.mesh.faces) != faces_before   # ...and it DID something
+    assert 0.0 < PushPullTool.last_distance < 2.4  # topped out below the level
+    cap_z = {round(v.position.z(), 4)
+             for f in scene.mesh.faces for v in f.loop}
+    assert any(abs(z - PushPullTool.last_distance) < 1e-3 for z in cap_z)
+    assert any("stopped" in m.lower() for m in vp.messages)
 
 
 def test_add_face_drops_nested_holes():
