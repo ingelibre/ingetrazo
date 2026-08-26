@@ -181,6 +181,31 @@ SHADER_DIR = app_root() / "resources" / "shaders"
 _LOOSE_SNAP_CAP = 3000
 
 
+def _ray_aabb(o, d, lo, hi) -> bool:
+    """Slab test: does the forward ray (t >= 0) touch the AABB? Plain
+    floats — the pick prefilter tests ~tens of chunk boxes per ray."""
+    tmin = 0.0
+    tmax = float("inf")
+    for i in range(3):
+        di = d[i]
+        if -1e-12 < di < 1e-12:
+            if o[i] < lo[i] - 1e-9 or o[i] > hi[i] + 1e-9:
+                return False
+            continue
+        inv = 1.0 / di
+        t1 = (lo[i] - o[i]) * inv
+        t2 = (hi[i] - o[i]) * inv
+        if t1 > t2:
+            t1, t2 = t2, t1
+        if t1 > tmin:
+            tmin = t1
+        if t2 < tmax:
+            tmax = t2
+        if tmin > tmax:
+            return False
+    return True
+
+
 def _cache_ver(vp):
     """The scene version the per-version caches key on — frozen during a
     groups-only transform preview (see Viewport.begin_groups_preview).
@@ -4957,6 +4982,9 @@ class Viewport(QOpenGLWidget):
         sel_parts = [np.asarray(ent_sel, dtype=bool)]
         loose_parts = [np.asarray(ent_loose, dtype=bool)]
 
+        # Per-chunk triangle spans (P3): a hover/zoom ray prefilters chunks
+        # by AABB and runs Möller-Trumbore only on the spans it crosses.
+        tri_spans: list = [(None, 0, len(tris))] if tris else []
         if scene.edit_group is None:
             # The group block is cached across versions (keyed by each
             # chunk's identity + rev + flags): re-deriving per-face masks and
@@ -4982,6 +5010,8 @@ class Viewport(QOpenGLWidget):
                 b_entities: list = []
                 b_v0, b_e1, b_e2, b_te = [], [], [], []
                 b_area, b_vis, b_sel = [], [], []
+                b_spans: list = []    # (bbox, tri start, count) per chunk
+                b_tri_off = 0
                 # Group hard edges, flat — pick_group's fallback (cursor over
                 # empty space / lines-only group) walked every group edge in
                 # Python (~300 ms per mouse move against a 300k-edge import).
@@ -4999,6 +5029,9 @@ class Viewport(QOpenGLWidget):
                         b_e1.append(chunk["e1"])
                         b_e2.append(chunk["e2"])
                         b_te.append(chunk["tri_ent"] + off)
+                        b_spans.append((chunk.get("bbox"), b_tri_off,
+                                        len(chunk["v0"])))
+                        b_tri_off += len(chunk["v0"])
                     if gsel and chunk["edges"]:
                         ge = np.frombuffer(chunk["edges"], dtype=np.float32)
                         ge = ge.reshape(-1, 2, 3).astype(np.float64)
@@ -5023,6 +5056,7 @@ class Viewport(QOpenGLWidget):
                     "gedge_b": np.concatenate(b_geb) if b_gea else None,
                     "gedge_gi": np.concatenate(b_ggi) if b_gea else None,
                     "gedge_groups": b_ggroups,
+                    "spans": b_spans,
                 })
                 self._pick_block = blk
             block = blk[1]
@@ -5039,6 +5073,8 @@ class Viewport(QOpenGLWidget):
                     e1s.append(block["e1"])
                     e2s.append(block["e2"])
                     tents.append(block["te"] + offset)
+                    tri_spans += [(bb, len(tris) + s, n)
+                                  for bb, s, n in block.get("spans", ())]
 
         gedge_a = gedge_b = gedge_gi = None
         gedge_groups: list = []
@@ -5079,7 +5115,13 @@ class Viewport(QOpenGLWidget):
             gedge_b=gedge_b,
             gedge_gi=gedge_gi,
             gedge_groups=gedge_groups,
+            tri_spans=None,
         )
+        # Spans must tile the triangle array exactly, or the prefilter would
+        # silently drop triangles (a stale cached block predating spans).
+        total_tris = len(idx.tri_v0) if idx.tri_v0 is not None else 0
+        if tri_spans and sum(n for _, _, n in tri_spans) == total_tris:
+            idx.tri_spans = tri_spans
         if _PERF:
             _plog("pick_index", (_time_mod.perf_counter() - _p0) * 1000.0)
         self._pick_index_cache = (key, idx)
@@ -5091,36 +5133,57 @@ class Viewport(QOpenGLWidget):
         entity passes ``ent_mask``. Returns an (E,) array of t (``inf`` = no
         hit), the single nearest t as a float when ``reduce_global``, or
         ``None`` when the index has no triangles. Same acceptance
-        thresholds as :func:`_ray_triangle`."""
+        thresholds as :func:`_ray_triangle`.
+
+        P3: the Möller–Trumbore pass runs per chunk SPAN on array views,
+        after a ray-vs-AABB prefilter — a hover/zoom ray only pays for the
+        chunks it actually crosses (the full 700k-row pass cost 25–45 ms
+        per pick against the piscina scene)."""
         import numpy as np
         if idx.tri_v0 is None:
             return None
         o = np.array([origin.x(), origin.y(), origin.z()])
         d = np.array([direction.x(), direction.y(), direction.z()])
-        v0, e1, e2 = idx.tri_v0, idx.tri_e1, idx.tri_e2
-        p = np.cross(d, e2)
-        det = np.einsum("ij,ij->i", e1, p)
-        ok = np.abs(det) > 1e-6
-        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
-        s = o - v0
-        u = np.einsum("ij,ij->i", s, p) * inv
-        q = np.cross(s, e1)
-        v = (q @ d) * inv
-        t = np.einsum("ij,ij->i", e2, q) * inv
-        hit = (ok & (u >= 0.0) & (u <= 1.0) & (v >= 0.0) & (u + v <= 1.0)
-               & (t > 1e-6) & ent_mask[idx.tri_ent])
-        if reduce_global:
-            # Zoom focus wants ONE nearest t, not per-entity buckets.
-            th = t[hit]
-            return float(th.min()) if len(th) else float("inf")
-        face_t = np.full(len(idx.entities), np.inf)
-        hit_rows = np.where(hit)[0]
-        if len(hit_rows):
-            # minimum.at only over the triangles the ray actually hits (a
-            # handful) — over the full 280k-row array it alone cost ~100 ms
-            # per snap hover (the paste-drag lag near the palm tree).
-            np.minimum.at(face_t, idx.tri_ent[hit_rows], t[hit_rows])
-        return face_t
+        spans = getattr(idx, "tri_spans", None) or [(None, 0, len(idx.tri_v0))]
+        o3 = (float(o[0]), float(o[1]), float(o[2]))
+        d3 = (float(d[0]), float(d[1]), float(d[2]))
+        best = float("inf")
+        face_t = None if reduce_global else np.full(len(idx.entities), np.inf)
+        for bb, s0, n in spans:
+            if not n:
+                continue
+            if bb is not None and not _ray_aabb(o3, d3, bb[0], bb[1]):
+                continue
+            v0 = idx.tri_v0[s0:s0 + n]
+            e1 = idx.tri_e1[s0:s0 + n]
+            e2 = idx.tri_e2[s0:s0 + n]
+            te = idx.tri_ent[s0:s0 + n]
+            p = np.cross(d, e2)
+            det = np.einsum("ij,ij->i", e1, p)
+            ok = np.abs(det) > 1e-6
+            inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+            s = o - v0
+            u = np.einsum("ij,ij->i", s, p) * inv
+            q = np.cross(s, e1)
+            v = (q @ d) * inv
+            t = np.einsum("ij,ij->i", e2, q) * inv
+            hit = (ok & (u >= 0.0) & (u <= 1.0) & (v >= 0.0) & (u + v <= 1.0)
+                   & (t > 1e-6) & ent_mask[te])
+            if reduce_global:
+                # Zoom focus wants ONE nearest t, not per-entity buckets.
+                th = t[hit]
+                if len(th):
+                    tm = float(th.min())
+                    if tm < best:
+                        best = tm
+            else:
+                hit_rows = np.where(hit)[0]
+                if len(hit_rows):
+                    # minimum.at only over the triangles the ray actually
+                    # hits (a handful) — over the full array it alone cost
+                    # ~100 ms per snap hover.
+                    np.minimum.at(face_t, te[hit_rows], t[hit_rows])
+        return best if reduce_global else face_t
 
     def _hover_face_t(self, idx, origin, direction):
         """Per-entity nearest-hit ``t`` against every *selectable* entity,
