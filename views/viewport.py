@@ -6629,15 +6629,26 @@ class Viewport(QOpenGLWidget):
         if self._last_pos is not None or self._box_active:
             return          # a camera drag / box select started meanwhile
         ev = _HoverEvent(pos, modifiers)
+        _hp0 = _time_mod.perf_counter() if _PERF else 0.0
+
+        def _hmark(name):
+            nonlocal _hp0
+            if _PERF:
+                now = _time_mod.perf_counter()
+                _plog(f"hover.{name}", (now - _hp0) * 1000.0, floor=200.0)
+                _hp0 = now
+
         # Track cursor + hover edge so Down can capture a reference edge.
         self._last_mouse_pos = ev.position()
         self._emit_coordinate(ev)
+        _hmark("coord")
         # Plan↔profile link (Track G): let an open profile mark the station of
         # the route point under the cursor.
         win = self.window()
         if hasattr(win, "on_viewport_hover"):
             win.on_viewport_hover(ev.position().x(), ev.position().y())
         self._hover_edge = self.pick_edge(ev.position().x(), ev.position().y())
+        _hmark("pickedge")
 
         # While a segment is being drawn, hovering an edge acquires it as a soft
         # parallel reference; the acquisition is dropped once nothing is in
@@ -6662,12 +6673,16 @@ class Viewport(QOpenGLWidget):
 
         if self.active_tool is None:
             return
+        _hmark("acquire")
         ctx = self._build_ctx(ev)
+        _hmark("ctx")
         if ctx is None:
             return
         self.last_snap = ctx.snap
         self.active_tool.on_hover(ctx)
+        _hmark("tool")
         self.measurementChanged.emit(self._measurement_text())
+        _hmark("measure")
         self.update()
 
     # Below this many pixels of drag, a left press/release is a click, not a box.
