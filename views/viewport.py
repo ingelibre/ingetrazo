@@ -1819,6 +1819,11 @@ class Viewport(QOpenGLWidget):
             vcol_parts: list = []
             tex_parts: dict = {}
             for g in groups:
+                if getattr(g, "billboard", False):
+                    # Face-me figures preview through their OWN pass (the
+                    # anchor rides the preview transform): their raw mesh
+                    # quad in the scratch VBOs showed a swimming texture.
+                    continue
                 ch = self._group_chunk(g)
                 if ch["edges"]:
                     edge_parts.append(ch["edges"])
@@ -2417,6 +2422,18 @@ class Viewport(QOpenGLWidget):
         zs = [v.position.z() for v in verts]
         anchor = QVector3D((min(xs) + max(xs)) / 2,
                            (min(ys) + max(ys)) / 2, min(zs))
+        # A billboard being Move/Rotate-dragged previews through THIS pass
+        # (its raw mesh quad in the scratch VBOs showed the texture swimming
+        # and ignored the face-me turn): carry the preview transform on the
+        # anchor so the figure follows the cursor, camera-facing, fixed UVs.
+        if id(group) in (getattr(self, "_preview_groups", None) or ()):
+            m = getattr(self, "_preview_matrix", None)
+            if m is not None:
+                anchor = m.map(anchor)
+            else:
+                off = getattr(self, "_preview_offset", None)
+                if off is not None:
+                    anchor = anchor + off
         # Planar width: hypot handles a sprite plane at any yaw (an imported
         # face-me sits wherever its baked transform left it); an axis-aligned
         # quad gives the same value as before.
@@ -2583,8 +2600,22 @@ class Viewport(QOpenGLWidget):
             return
         arrays, colors, anchor, nh = base
         import numpy as np
+        # Preview transform (Move/Rotate drag): the figure follows the
+        # cursor through THIS pass, camera-facing with its baked UVs —
+        # see _billboard_quad for the simple-quad twin.
+        ox = oy = oz = 0.0
+        if id(g) in (getattr(self, "_preview_groups", None) or ()):
+            m = getattr(self, "_preview_matrix", None)
+            if m is not None:
+                p = m.map(QVector3D(anchor[0], anchor[1], anchor[2]))
+                ox, oy, oz = (p.x() - anchor[0], p.y() - anchor[1],
+                              p.z() - anchor[2])
+            else:
+                off = getattr(self, "_preview_offset", None)
+                if off is not None:
+                    ox, oy, oz = off.x(), off.y(), off.z()
         eye = self.camera.eye()
-        d = np.array([eye.x() - anchor[0], eye.y() - anchor[1]])
+        d = np.array([eye.x() - (anchor[0] + ox), eye.y() - (anchor[1] + oy)])
         ln = float(np.hypot(d[0], d[1]))
         d = nh if ln < 1e-9 else d / ln
         cos = float(nh[0] * d[0] + nh[1] * d[1])
@@ -2594,8 +2625,10 @@ class Viewport(QOpenGLWidget):
             a = arr.copy()
             x = a[:, 0] - anchor[0]
             y = a[:, 1] - anchor[1]
-            a[:, 0] = anchor[0] + cos * x - sin * y
-            a[:, 1] = anchor[1] + sin * x + cos * y
+            a[:, 0] = anchor[0] + cos * x - sin * y + ox
+            a[:, 1] = anchor[1] + sin * x + cos * y + oy
+            if oz:
+                a[:, 2] += oz
             return a
 
         for (path, _shade), arr in arrays.items():
