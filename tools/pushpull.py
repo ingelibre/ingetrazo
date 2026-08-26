@@ -578,19 +578,56 @@ class PushPullTool(Tool):
         thr = getattr(vp, "snap_threshold_px", 9.0)
         exclude = {_key(p) for p in self._cap_positions}
         best = None
-        meshes = [vp.scene.mesh] + [g.mesh for g in getattr(vp.scene, "groups", [])]
-        for mesh in meshes:
-            for vtx in mesh.vertices:
-                if _key(vtx.position) in exclude:
-                    continue  # the base's own corners would pin the drag to 0
-                pix = vp._world_to_pixel(vtx.position)
-                if pix is None:
+        # Batch-project the candidate vertices ONCE per mesh (positions
+        # cached for the whole drag — the clean mesh is constant between
+        # reverts). The per-vertex ``_world_to_pixel`` walk projected the
+        # WHOLE scene (~250k QMatrix4x4.map calls) on EVERY drag move —
+        # 1.3 s per move, the "push sticks" report; paints starved until
+        # the hand paused.
+        import numpy as np
+        cache = getattr(self, "_infer_cache", None)
+        if cache is None:
+            cache = []
+            meshes = ([vp.scene.mesh]
+                      + [g.mesh for g in getattr(vp.scene, "groups", [])])
+            seen = set()
+            for mesh in meshes:
+                if id(mesh) in seen:      # shared prototypes: project once
                     continue
-                d2 = (pix[0] - sx) ** 2 + (pix[1] - sy) ** 2
-                if d2 <= thr * thr and (best is None or d2 < best[0]):
-                    best = (d2, QVector3D.dotProduct(
-                        vtx.position - self._anchor, self._normal),
-                        QVector3D(vtx.position), "vertex")
+                seen.add(id(mesh))
+                verts = mesh.vertices
+                if not verts:
+                    continue
+                arr = np.array(
+                    [[v.position.x(), v.position.y(), v.position.z()]
+                     for v in verts])
+                cache.append((verts, arr))
+            self._infer_cache = cache
+        proj = getattr(vp, "_project_px", None)
+        for verts, arr in cache:
+            if proj is not None:
+                px, py, ok = proj(arr)
+                d2 = (px - sx) ** 2 + (py - sy) ** 2
+                cand = [(int(i), float(d2[i]))
+                        for i in np.flatnonzero(ok & (d2 <= thr * thr))]
+            else:
+                # Stub viewports (tests) expose only the scalar projector.
+                cand = []
+                for i, vtx in enumerate(verts):
+                    pix = vp._world_to_pixel(vtx.position)
+                    if pix is None:
+                        continue
+                    dd = (pix[0] - sx) ** 2 + (pix[1] - sy) ** 2
+                    if dd <= thr * thr:
+                        cand.append((i, dd))
+            for i, dd in cand:
+                p = verts[i].position
+                if _key(p) in exclude:
+                    continue  # the base's own corners would pin the drag to 0
+                if best is None or dd < best[0]:
+                    best = (dd, QVector3D.dotProduct(
+                        p - self._anchor, self._normal),
+                        QVector3D(p), "vertex")
         if best is not None:
             self._inference_point = best[2]
             self._inference_kind = best[3]
@@ -1136,4 +1173,5 @@ class PushPullTool(Tool):
         self._drag_pre_oriented = False
         self._inference_point = None
         self._inference_kind = None
+        self._infer_cache = None       # per-drag projected-vertex candidates
         self._refused = False
