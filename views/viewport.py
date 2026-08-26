@@ -1844,16 +1844,23 @@ class Viewport(QOpenGLWidget):
         if runs:
             self._program.setUniformValue(self._loc_use_tex, 1)
             self._pv_tex_vao.bind()
-            for path, start, count in runs:
+            for key, start, count in runs:
+                # Chunk texture runs key by (path, shade) tuples (bare path
+                # when unshaded) — passing the tuple to QImage raised inside
+                # paintGL and KILLED the whole preview frame ("moving shows
+                # nothing until release", flatpak report).
+                path, shade = key if isinstance(key, tuple) else (key, 1.0)
                 tex = self._get_texture(path)
                 if tex is None:
                     continue
+                self._program.setUniformValue1f(self._loc_shade, float(shade))
                 self._program.setUniformValue(
                     self._loc_hard_cutout,
                     1 if getattr(tex, "_cutout", False) else 0)
                 tex.bind(0)
                 self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                 tex.release(0)
+            self._program.setUniformValue1f(self._loc_shade, 1.0)
             self._program.setUniformValue(self._loc_hard_cutout, 0)
             self._pv_tex_vao.release()
             self._program.setUniformValue(self._loc_use_tex, 0)
