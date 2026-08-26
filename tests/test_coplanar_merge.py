@@ -345,3 +345,42 @@ def test_erase_non_coplanar_edge_cascades_faces():
     assert _shared_edge(m, V(0, 0, 0), V(2, 0, 0)) is None
     assert hist.undo() is True
     assert len(m.faces) == 2
+
+
+# ---- phase 1 is scoped to the operation ------------------------------------
+
+def test_stitch_leaves_a_t_junction_outside_the_operation_alone():
+    """A stitch repairs what its operation disturbed, not the whole model.
+
+    Two independent T-junctions: one where the seed is, one far away. Only the
+    seeded one is resolved. Sweeping every edge made a push silently
+    re-topologise distant geometry — on an imported barbecue, pushing one brick
+    split eight edges a metre off, and a drag preview (which reverts each frame)
+    redid that work on every mouse move."""
+    from core.history import StitchSolidCommand
+
+    scene = Scene()
+    hist = History(scene)
+    m = scene.mesh
+    # Near pair, around the origin: left quad's right edge is naked, the two
+    # right quads split it at (2, 1).
+    m.add_face([V(0, 0, 0), V(2, 0, 0), V(2, 2, 0), V(0, 2, 0)])
+    m.add_face([V(2, 0, 0), V(4, 0, 0), V(4, 1, 0), V(2, 1, 0)])
+    m.add_face([V(2, 1, 0), V(4, 1, 0), V(4, 2, 0), V(2, 2, 0)])
+    # The same shape again, translated far along +y — untouched by the op.
+    FAR = 50.0
+    m.add_face([V(0, FAR, 0), V(2, FAR, 0), V(2, FAR + 2, 0), V(0, FAR + 2, 0)])
+    m.add_face([V(2, FAR, 0), V(4, FAR, 0), V(4, FAR + 1, 0), V(2, FAR + 1, 0)])
+    m.add_face([V(2, FAR + 1, 0), V(4, FAR + 1, 0), V(4, FAR + 2, 0),
+                V(2, FAR + 2, 0)])
+    assert len(_shared_edge(m, V(2, 0, 0), V(2, 2, 0)).faces) == 1
+    assert len(_shared_edge(m, V(2, FAR, 0), V(2, FAR + 2, 0)).faces) == 1
+
+    # Seed only the near shape.
+    near_seed = [QVector3D(v.position) for v in list(m.vertices)
+                 if v.position.y() < FAR / 2]
+    hist.execute(StitchSolidCommand(near_seed))
+
+    assert _shared_edge(m, V(2, 0, 0), V(2, 2, 0)) is None   # near: resolved
+    far_seam = _shared_edge(m, V(2, FAR, 0), V(2, FAR + 2, 0))
+    assert far_seam is not None and len(far_seam.faces) == 1  # far: untouched

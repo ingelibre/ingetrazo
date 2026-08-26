@@ -92,6 +92,42 @@ def _face_triangles(mesh) -> dict:
     return tris
 
 
+def _face_components(mesh) -> dict:
+    """Face → edge-connected component label (union-find through shared
+    edges).
+
+    Inside/outside is a property of one closed shell, so parity is decided
+    against the face's *own* component: a ray from a probe outside a
+    *different* closed component crosses it an even number of times (in and
+    back out), so those triangles never change the verdict — and for probes
+    on nested or coincident imported solids, judging each shell by itself is
+    the semantically right call (a box modelled inside a room is its own
+    outward solid, not "interior" of the room). The payoff is the imported
+    group mesh (many welded bricks in one mesh): O(F·T) becomes Σ O(F_c·T_c)
+    — the barbecue's orientation pass dropped ~7×."""
+    idx = {f: i for i, f in enumerate(mesh.faces)}
+    parent = list(range(len(mesh.faces)))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for e in mesh.edges:
+        it = iter(e.faces)
+        first = next((idx[f] for f in it if f in idx), None)
+        if first is None:
+            continue
+        for f in it:
+            j = idx.get(f)
+            if j is not None:
+                ra, rb = find(first), find(j)
+                if ra != rb:
+                    parent[ra] = rb
+    return {f: find(i) for f, i in idx.items()}
+
+
 class _PackedTris:
     """Triangles flattened to NumPy arrays for batched Möller–Trumbore.
 
@@ -321,7 +357,7 @@ def signed_volume(mesh) -> float:
     return total
 
 
-def orient_outward(mesh, seed: int = 12345) -> list:
+def orient_outward(mesh, seed: int = 12345, only=None) -> list:
     """Flip the faces of a closed solid so every boundary normal points
     outward, and mark interior partitions (``face.interior``). Returns the
     faces that were flipped.
@@ -336,7 +372,15 @@ def orient_outward(mesh, seed: int = 12345) -> list:
     against the current boundary set, drop the ones that read interior,
     reclassify — to a fixpoint (typically 1 extra round; capped). Boundary
     faces judged inward are then flipped; partitions keep their winding (no
-    winding of theirs is outward)."""
+    winding of theirs is outward).
+
+    ``only`` (faces) restricts the pass to the edge-connected components those
+    faces belong to; every other face keeps its winding and its ``interior``
+    mark. Since orientation is decided per component anyway, an edit that
+    touched one solid has nothing to say about the others — and re-deciding
+    them costs the same as deciding the edit's own. A group holding many
+    welded bricks is the case that makes it matter: pushing one brick used to
+    re-run parity over all of them."""
     if not mesh.faces:
         return []
     if _all_coplanar(mesh):
@@ -351,6 +395,19 @@ def orient_outward(mesh, seed: int = 12345) -> list:
     # Pack every triangle once; per-face queries exclude by mask instead of
     # re-listing the other faces' triangles (the old O(F²·T) hot loop).
     packed = _pack_lists([all_tris[f] for f in faces])
+    # Each face is judged against its own edge-connected component only (see
+    # :func:`_face_components`): slice the packed rows per component up front.
+    # A single-component mesh gets exactly one slice — the whole array — so
+    # drawn geometry behaves bit-identically to the unsliced pass.
+    comp_of = _face_components(mesh)
+    comp_idx = np.asarray([comp_of[f] for f in faces], dtype=np.int64)
+    row_comp = (comp_idx[packed.face_idx] if len(packed.face_idx)
+                else np.zeros(0, dtype=np.int64))
+    comp_rows = {int(c): np.flatnonzero(row_comp == c)
+                 for c in np.unique(comp_idx)}
+    sub = {c: _PackedTris(packed.a[r], packed.e1[r], packed.e2[r],
+                          packed.face_idx[r])
+           for c, r in comp_rows.items()}
 
     def _boundary_base(boundary_set):
         # ONE isin per round — rebuilding the boundary-id array and running
@@ -359,23 +416,37 @@ def orient_outward(mesh, seed: int = 12345) -> list:
         # for minutes at 195% CPU; SIGUSR1 autopsy pinned np.isin here).
         ids = np.fromiter((fidx[f] for f in boundary_set), dtype=np.int64,
                           count=len(boundary_set))
-        return np.isin(packed.face_idx, ids)
+        base = np.isin(packed.face_idx, ids)
+        return {c: base[r] for c, r in comp_rows.items()}
+
+    # Faces this call decides. Out-of-scope faces stay in ``boundary`` (so the
+    # in-scope components' masks are built the same way) but are never queried
+    # and never re-marked.
+    if only is None:
+        scope = list(mesh.faces)
+    else:
+        live_comps = {comp_of[f] for f in only if f in comp_of}
+        if not live_comps:
+            return []
+        scope = [f for f in mesh.faces if comp_of[f] in live_comps]
 
     boundary = dict(all_tris)
     for _ in range(4):
         rng = random.Random(seed)
-        bset = set(boundary)
-        base = _boundary_base(bset)
-        interior_now = {
-            f for f in mesh.faces
-            if _face_side_state(f, boundary, rng, packed=packed,
-                                mask=base & (packed.face_idx != fidx[f]))
-            == "interior"
-        }
-        if interior_now == {f for f in mesh.faces if f not in boundary}:
+        base_by_comp = _boundary_base(set(boundary))
+        interior_now = set()
+        for f in scope:
+            c = comp_of[f]
+            sp = sub[c]
+            state = _face_side_state(
+                f, boundary, rng, packed=sp,
+                mask=base_by_comp[c] & (sp.face_idx != fidx[f]))
+            if state == "interior":
+                interior_now.add(f)
+        if interior_now == {f for f in scope if f not in boundary}:
             break
         boundary = {f: t for f, t in all_tris.items() if f not in interior_now}
-    for f in mesh.faces:
+    for f in scope:
         f.interior = f not in boundary
 
     # Flipping needs a real outside, which only a closed mesh has. The marks
@@ -385,14 +456,17 @@ def orient_outward(mesh, seed: int = 12345) -> list:
     if not is_closed(mesh):
         return []
     rng = random.Random(seed)
-    bset = set(boundary)
-    base = _boundary_base(bset)
-    to_flip = [
-        f for f in boundary
-        if _face_side_state(f, boundary, rng, packed=packed,
-                            mask=base & (packed.face_idx != fidx[f]))
-        == "inward"
-    ]
+    base_by_comp = _boundary_base(set(boundary))
+    to_flip = []
+    for f in scope:
+        if f not in boundary:
+            continue
+        c = comp_of[f]
+        sp = sub[c]
+        if _face_side_state(f, boundary, rng, packed=sp,
+                            mask=base_by_comp[c] & (sp.face_idx != fidx[f])) \
+                == "inward":
+            to_flip.append(f)
     for f in to_flip:
         # Flip in place: reversing the loops reverses the winding (so the normal
         # flips) while keeping the *same* Face object and its shared edges/

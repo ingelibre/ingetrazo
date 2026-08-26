@@ -1658,17 +1658,18 @@ class StitchSolidCommand(Command):
     collinear vertices left by mismatched subdivision, and coplanar faces that
     should be one. This runs in three phases:
 
-    1. **Resolve T-junctions** (global): split every edge at any vertex on its
-       interior, so mismatched subdivisions share edges → no naked cracks.
+    1. **Resolve T-junctions** (seeded): split every edge that reaches the
+       operation's own bounds at any vertex on its interior, so mismatched
+       subdivisions share edges → no naked cracks.
     2. **Collapse collinear vertices** (global): drop spurious valence-2 points.
     3. **Coplanar-merge** (seeded): fuse coplanar faces around the operation
        into one — seeded so a deliberately drawn coplanar line elsewhere stays.
 
-    Phases 1–2 only repair connectivity (no shape change), so they are safe to
-    run model-wide. The splits, collapses and merges interact too tightly for a
-    clean per-op inverse, so undo restores an identity-preserving snapshot taken
-    before the pass — robust, and it keeps the surrounding delta commands' object
-    references valid (this command runs last in the push/pull compound).
+    Phases 1–2 only repair connectivity (no shape change). The splits,
+    collapses and merges interact too tightly for a clean per-op inverse, so
+    undo restores an identity-preserving snapshot taken before the pass —
+    robust, and it keeps the surrounding delta commands' object references
+    valid (this command runs last in the push/pull compound).
     """
 
     def __init__(self, seed_positions: Iterable[QVector3D]) -> None:
@@ -1690,6 +1691,11 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
                coplanar_merge: bool = True, dedupe: bool = True) -> None:
     """Three-phase watertight cleanup (no undo bookkeeping — the caller snapshots).
     See :class:`StitchSolidCommand` for the rationale of each phase.
+
+    ``seedkeys`` are the operation's own positions (``core.topology._key``
+    tuples). They bound phase 1 — only an edge reaching that box can be split,
+    which is every T-junction the op can have created and none of the ones it
+    found lying around — and seed phase 3.
 
     ``new_faces`` (when given) are the faces this operation created; phase 3 only
     fuses a coplanar component that contains one of them, so a seam a push just
@@ -1719,50 +1725,122 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
     # restarted from edge zero after each split — O(splits × E × V). An
     # imported brick barbecue (3k faces, T-junctions everywhere) hung the
     # push preview for minutes per drag frame (SIGUSR1 autopsy: two stacks
-    # pinned at interior_vertex_on). One NumPy pass per edge and no
-    # restart; fresh sub-edges wait for the next outer sweep, which runs
-    # until a sweep splits nothing — same fixed point as before.
+    # pinned at interior_vertex_on).
+    #
+    # Now the sweep is ONE vectorised pass, and it is **scoped to the
+    # operation**: only edges whose box meets the seed's box can be split.
+    #
+    # That scope is a correctness fix as much as a speed one. Sweeping every
+    # edge made a push *silently re-topologise geometry it never touched* —
+    # on an imported barbecue, pushing one brick split ten edges, eight of
+    # them a metre away on an unrelated plane, and since a drag preview
+    # reverts each frame it redid that same distant repair on every mouse
+    # move. A stitch repairs what its operation disturbed; a T-junction the
+    # op did not create is not its business.
+    #
+    # The scope is exact for what the op *can* create: a split needs the
+    # splitting vertex to lie on the edge, and either the vertex is the op's
+    # (so it is in the seed box, and the edge's box must reach it) or the
+    # edge is the op's (so its box is inside the seed box). Either way the
+    # edge's box meets the seed box.
     import numpy as np
     from core.mesh import _STITCH_TOL
+    tol2 = _STITCH_TOL * _STITCH_TOL
+    # Cap on candidate pairs materialised at once, so a model-spanning edge
+    # whose slab holds every vertex can't blow memory: edges run in chunks.
+    pair_cap = 1 << 21
+    # ``seedkeys`` are ``core.topology._key`` tuples — the seed positions
+    # rounded to the weld tolerance, so they ARE coordinates and bound the
+    # operation directly. (Not ``core.mesh._key``, whose integer cell indices
+    # would read as positions 10⁴× too small and shrink the scope to nothing.)
+    seed_lo = seed_hi = None
+    if seedkeys:
+        skeys = np.array(sorted(seedkeys), dtype=np.float64)
+        seed_lo = skeys.min(axis=0) - _STITCH_TOL
+        seed_hi = skeys.max(axis=0) + _STITCH_TOL
     while True:
-        split = False
         verts = mesh.vertices
-        if not verts:
+        edges = list(mesh.edges)
+        if not verts or not edges:
             break
         vpos = np.array([[v.position.x(), v.position.y(), v.position.z()]
                          for v in verts])
-        removed: set = set()
-        for e in list(mesh.edges):
-            if id(e) in removed:
-                continue
-            a, b = e.v0.position, e.v1.position
-            ab = np.array([b.x() - a.x(), b.y() - a.y(), b.z() - a.z()])
-            l2 = float(ab @ ab)
-            length = l2 ** 0.5
-            if length < _STITCH_TOL:
-                continue
-            rel = vpos - (a.x(), a.y(), a.z())
-            t = (rel @ ab) / l2
-            tol_t = _STITCH_TOL / length
-            cand = np.flatnonzero((t > tol_t) & (t < 1.0 - tol_t))
-            if not len(cand):
-                continue
-            d = rel[cand] - np.outer(t[cand], ab)
-            close = cand[np.einsum("ij,ij->i", d, d)
-                         < _STITCH_TOL * _STITCH_TOL]
-            mid = None
-            for i in close:
-                v = verts[int(i)]
-                if v is not e.v0 and v is not e.v1:
-                    mid = v
-                    break
-            if mid is None:
-                continue
-            mesh.split_edge_at(e, mid)
-            removed.add(id(e))
-            split = True
-        if not split:
+        vslot = {id(v): i for i, v in enumerate(verts)}
+        ends = np.array([(vslot[id(e.v0)], vslot[id(e.v1)]) for e in edges],
+                        dtype=np.int64)
+        va, vb = vpos[ends[:, 0]], vpos[ends[:, 1]]
+        elo, ehi = np.minimum(va, vb), np.maximum(va, vb)
+        if seed_lo is None:
+            live = np.ones(len(edges), dtype=bool)
+        else:
+            live = ((ehi >= seed_lo).all(axis=1)
+                    & (elo <= seed_hi).all(axis=1))
+        # Degenerate edges never split.
+        seg_all = vb - va
+        live &= np.einsum("ij,ij->i", seg_all, seg_all) > tol2
+        pick = np.flatnonzero(live)
+        if not len(pick):
             break
+        # Broad phase over the scoped edges: a splitting vertex sits in the
+        # edge's box, so only that slice of the x-sorted vertices is tested.
+        order = np.argsort(vpos[:, 0], kind="stable")
+        xs = vpos[order, 0]
+        lo = np.searchsorted(xs, elo[pick, 0] - _STITCH_TOL, side="left")
+        counts = np.searchsorted(xs, ehi[pick, 0] + _STITCH_TOL,
+                                 side="right") - lo
+        counts = np.maximum(counts, 0)
+        # Lowest-indexed interior vertex per edge — the scalar sweep walked
+        # ``mesh.vertices`` in order, and which vertex splits first must not
+        # depend on the x-sort. ``len(verts)`` is the "none" sentinel so
+        # ``np.minimum.at`` can reduce into it.
+        best = np.full(len(edges), len(verts), dtype=np.int64)
+        cum = np.cumsum(counts)
+        p0 = 0
+        while p0 < len(pick):
+            base = int(cum[p0] - counts[p0])
+            p1 = max(int(np.searchsorted(cum, base + pair_cap, side="right")),
+                     p0 + 1)
+            block = slice(p0, p1)
+            c = counts[block]
+            total = int(c.sum())
+            p0 = p1
+            if not total:
+                continue
+            eidx = np.repeat(pick[block], c)
+            rank = np.arange(total) - np.repeat(np.cumsum(c) - c, c)
+            vidx = order[np.repeat(lo[block], c) + rank]
+            keep = (vidx != ends[eidx, 0]) & (vidx != ends[eidx, 1])
+            # Narrow the x-slab down the other two axes before projecting.
+            # One axis at a time on 1-D gathers is far cheaper than pulling
+            # the (N, 3) vertex/edge rows the projection needs, and on a dense
+            # model it is what keeps the slab's false positives off that step.
+            for ax in (1, 2):
+                if not keep.any():
+                    break
+                on = eidx[keep]
+                coord = vpos[vidx[keep], ax]
+                keep[keep] = ((coord >= elo[on, ax] - _STITCH_TOL)
+                              & (coord <= ehi[on, ax] + _STITCH_TOL))
+            if not keep.any():
+                continue
+            eidx, vidx = eidx[keep], vidx[keep]
+            seg = seg_all[eidx]
+            rel = vpos[vidx] - va[eidx]
+            l2 = np.einsum("ij,ij->i", seg, seg)
+            t = np.einsum("ij,ij->i", rel, seg) / l2
+            tol_t = _STITCH_TOL / np.sqrt(l2)
+            ok = (t > tol_t) & (t < 1.0 - tol_t)
+            d = rel - seg * t[:, None]
+            ok &= np.einsum("ij,ij->i", d, d) < tol2
+            if ok.any():
+                np.minimum.at(best, eidx[ok], vidx[ok])
+        hits = np.flatnonzero(best < len(verts))
+        if not len(hits):
+            break
+        for i in hits:
+            # Only the split edge is removed and only existing vertices are
+            # reused, so the sweep's arrays stay valid across these splits.
+            mesh.split_edge_at(edges[int(i)], verts[int(best[int(i)])])
     # Phase 2 — collapse redundant valence-2 collinear vertices (global).
     while True:
         collapsed = False

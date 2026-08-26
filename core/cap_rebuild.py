@@ -45,10 +45,92 @@ from core.arrangement import (
     plane_basis,
 )
 from core.mesh import _key as _vkey
-from core.orient import _face_triangles, ray_parity_outside
+from core.orient import (
+    _face_components,
+    _face_triangles,
+    _pack_lists,
+    ray_parity_outside,
+)
 
 # A point this close to the plane (along its normal) counts as on it.
 _ON_PLANE = 1e-4
+
+
+class RebuildCache:
+    """Per-face memos shared across one push's plane rebuilds.
+
+    Every plane rebuild scans the whole mesh three ways — "which faces are
+    coplanar here", "triangulate everything for the parity set" — and each
+    scan recomputed Newell normals and earcut triangulations from scratch. On
+    an imported 3k-face barbecue that was 76k normal computations per drag
+    frame, dwarfing the parity work it was feeding.
+
+    Safe because the fixpoint loop never mutates a face in place: a rebuild
+    *removes* faces and *adds* new ones, so an identity key is either still
+    the same geometry or gone. (The trailing ``run_stitch``, which does mutate
+    loops, runs after the loop and takes no cache.) Faces are kept as keys, not
+    ``id()``s, so a dead face can never have its address reused under a live
+    entry."""
+
+    __slots__ = ("tris", "norm", "cent", "token", "_packed", "_comp",
+                 "_comp_token")
+
+    def __init__(self) -> None:
+        self.tris: dict = {}
+        self.norm: dict = {}
+        self.cent: dict = {}
+        #: Bumped by the caller whenever a rebuild actually changed the mesh;
+        #: the packed parity set and the component map are memoised against it.
+        self.token = 0
+        self._packed: tuple = (None, None, None)
+        self._comp: Optional[dict] = None
+        self._comp_token = -1
+
+    def components(self, mesh) -> dict:
+        """Face → edge-connected component label, recomputed when the mesh
+        changes."""
+        if self._comp is None or self._comp_token != self.token:
+            self._comp = _face_components(mesh)
+            self._comp_token = self.token
+        return self._comp
+
+    def triangles(self, f):
+        t = self.tris.get(f)
+        if t is None:
+            t = f.triangulate()
+            self.tris[f] = t
+        return t
+
+    def normal(self, f):
+        n = self.norm.get(f)
+        if n is None:
+            n = f.normal().normalized()
+            self.norm[f] = n
+        return n
+
+    def centroid(self, f):
+        c = self.cent.get(f)
+        if c is None:
+            c = f.centroid()
+            self.cent[f] = c
+        return c
+
+    def packed(self, mesh, shadowed, want=None):
+        """The packed parity triangles of the counted faces (boundary, not
+        shadowed, and — when ``want`` is given — in one of those components),
+        memoised until the mesh changes."""
+        key = (frozenset(shadowed) if shadowed else None,
+               frozenset(want) if want is not None else None)
+        tok, k, val = self._packed
+        if tok == self.token and k == key and val is not None:
+            return val
+        comp = self.components(mesh) if want is not None else None
+        val = _pack_lists([
+            self.triangles(f) for f in mesh.faces
+            if not f.interior and f not in shadowed
+            and (want is None or comp.get(f) in want)])
+        self._packed = (self.token, key, val)
+        return val
 
 
 def _key2(p) -> tuple[int, int]:
@@ -217,7 +299,8 @@ def _union_outline(solid_regions_xy, keep_segs=None) -> list:
 
 def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
                   fresh=(), keep_mode: bool = False,
-                  removing: bool = True, op=None) -> Optional[list]:
+                  removing: bool = True, op=None,
+                  cache: Optional[RebuildCache] = None) -> Optional[list]:
     """Recompute the solid *boundary* faces of ``mesh`` on the plane
     ``(origin, normal)``.
 
@@ -285,8 +368,8 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
     for f in (fresh_set if keep_mode else ()):
         if f.interior:
             continue
-        fn = f.normal().normalized()
-        fc = f.centroid()
+        fn = f.normal().normalized() if cache is None else cache.normal(f)
+        fc = f.centroid() if cache is None else cache.centroid(f)
         fu, fv = plane_basis(fn)
 
         def fto2d(p, fc=fc, fu=fu, fv=fv):
@@ -296,9 +379,11 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
         for g in mesh.faces:
             if g is f or g in fresh_set:
                 continue
-            if abs(QVector3D.dotProduct(g.normal().normalized(), fn)) < 0.999:
+            gn = g.normal().normalized() if cache is None else cache.normal(g)
+            if abs(QVector3D.dotProduct(gn, fn)) < 0.999:
                 continue
-            if abs(QVector3D.dotProduct(g.centroid() - fc, fn)) > _ON_PLANE:
+            gc = g.centroid() if cache is None else cache.centroid(g)
+            if abs(QVector3D.dotProduct(gc - fc, fn)) > _ON_PLANE:
                 continue
             if _point_in_polygon((0.0, 0.0), [fto2d(p) for p in g.vertices]) \
                     and not any(_point_in_polygon((0.0, 0.0),
@@ -306,16 +391,41 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
                                 for h in g.holes):
                 shadowed.add(f)
                 break
-    tris = [t for f, t in _face_triangles(mesh).items()
-            if not f.interior and f not in shadowed]
+    # Pack the counted triangles ONCE per plane. Each region's two parity
+    # queries used to hand ``ray_parity_outside`` the raw triangle lists,
+    # which re-packed the whole mesh per call — on an imported 3k-face
+    # barbecue (hundreds of regions per drag frame) the packing alone
+    # dominated the push preview.
+    #
+    # The parity set is also restricted to the **edge-connected component(s)**
+    # this plane belongs to — the same domain :func:`core.orient.orient_outward`
+    # decides orientation over, so the two agree. Inside/outside is a property
+    # of one shell: a disjoint solid elsewhere in the mesh (a group holding
+    # nineteen welded bricks) is crossed in and back out by any ray, so it
+    # cannot change the verdict — while its *unmarked* interior partitions
+    # could, by adding a lone third crossing. A single-component mesh gets the
+    # whole mesh, so ordinary drawn geometry is unaffected.
+    if cache is None:
+        packed = _pack_lists([t for f, t in _face_triangles(mesh).items()
+                              if not f.interior and f not in shadowed])
+    else:
+        comp = cache.components(mesh)
+        want = {comp[f] for f in mesh.faces
+                if f in comp and _coplanar_on(f, origin, normal, cache)}
+        # A push welding a new wall onto a neighbouring solid must see both.
+        want |= {comp[f] for f in fresh_set if f in comp}
+        packed = cache.packed(mesh, shadowed, want or None)
     rng = random.Random(54321)
+
+    def _fnormal(f):
+        return f.normal().normalized() if cache is None else cache.normal(f)
 
     def _proj_polys(faces):
         return [
             (([to2d(p) for p in f.vertices],
               [[to2d(p) for p in h] for h in f.holes]),
-             QVector3D.dotProduct(f.normal().normalized(), normal) > 0)
-            for f in faces if _coplanar_on(f, origin, normal)
+             QVector3D.dotProduct(_fnormal(f), normal) > 0)
+            for f in faces if _coplanar_on(f, origin, normal, cache)
         ]
 
     def _poly_covers(poly, pt_xy) -> bool:
@@ -362,9 +472,11 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
         ip_xy = _region_test_point(outer_xy, holes_xy)
         ip = to3d(ip_xy)
         mat_plus = ray_parity_outside(
-            ip + normal * _SAMPLE_OFF, normal, tris, rng) is False
+            ip + normal * _SAMPLE_OFF, normal, None, rng,
+            packed=packed) is False
         mat_minus = ray_parity_outside(
-            ip - normal * _SAMPLE_OFF, -normal, tris, rng) is False
+            ip - normal * _SAMPLE_OFF, -normal, None, rng,
+            packed=packed) is False
         if mat_plus != mat_minus:
             solid_by_side[mat_plus].append((outer_xy, holes_xy))
             continue
@@ -427,7 +539,7 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
     for e in mesh.edges:
         if not (_on_plane(e.a, origin, normal) and _on_plane(e.b, origin, normal)):
             continue
-        if any(abs(QVector3D.dotProduct(f.normal().normalized(), normal)) < 0.999
+        if any(abs(QVector3D.dotProduct(_fnormal(f), normal)) < 0.999
                for f in e.faces):
             keep_segs.append((to2d(e.a), to2d(e.b)))
         elif op is not None and e.faces and not _on_op_rim(e):
@@ -466,11 +578,12 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
     return result
 
 
-def _coplanar_on(face, origin, normal) -> bool:
-    return (
-        abs(QVector3D.dotProduct(face.normal().normalized(), normal)) > 0.999
-        and _on_plane(face.centroid(), origin, normal)
-    )
+def _coplanar_on(face, origin, normal, cache=None) -> bool:
+    fn = face.normal().normalized() if cache is None else cache.normal(face)
+    if abs(QVector3D.dotProduct(fn, normal)) <= 0.999:
+        return False
+    fc = face.centroid() if cache is None else cache.centroid(face)
+    return _on_plane(fc, origin, normal)
 
 
 def _canon_loop(loop) -> tuple:
@@ -494,7 +607,7 @@ def _canon_faces(faces_as_loops) -> frozenset:
 def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D,
                   fresh=(), keep_mode: bool = False,
                   removing: bool = True, prune: bool = True,
-                  op=None) -> bool:
+                  op=None, cache: Optional[RebuildCache] = None) -> bool:
     """Rebuild one plane of ``mesh`` in place: replace its coplanar faces with the
     deterministic solid faces from :func:`rebuild_plane`, and prune the edges left
     interior to the plane (a dissolved seam) that now border nothing. Returns
@@ -516,15 +629,19 @@ def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D,
     keeps no inverse of its own."""
     normal = normal.normalized()
     rebuilt = rebuild_plane(mesh, origin, normal, fresh, keep_mode, removing,
-                            op)
+                            op, cache)
     if rebuilt is None:
         return False
-    old = [f for f in mesh.faces if _coplanar_on(f, origin, normal)]
+    old = [f for f in mesh.faces if _coplanar_on(f, origin, normal, cache)]
     if _canon_faces(rebuilt) == _canon_faces(
         [(list(f.vertices), [list(h) for h in f.holes], f.interior)
          for f in old]
     ):
         return False  # plane already in its rebuilt form — stable
+    if cache is not None:
+        # From here the mesh changes, so the memoised parity set is stale.
+        # (Per-face memos stay valid: faces are replaced, never mutated.)
+        cache.token += 1
     # Region inheritance: a new face takes the attrs (material, future BIM
     # tag) of the old face whose interior contains its interior point — the
     # face it is the continuation of. Captured before the removal.

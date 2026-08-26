@@ -54,6 +54,7 @@ from core.history import (
 from core.arrangement import _interior_point, _point_in_polygon, plane_basis
 from core.orient import _ray_triangle, is_closed, orient_outward
 from core.cap_rebuild import (
+    RebuildCache,
     apply_rebuild,
     crack_planes,
     plane_key,
@@ -292,7 +293,9 @@ class PushPullTool(Tool):
             # after this), so every frame sees an already-oriented mesh and
             # _mutate_inner skips the per-frame parity pass — the drag on the
             # eye model lagged at ~4 fps re-orienting the same mesh each frame.
-            orient_outward(target.mesh)
+            # Scoped to the pushed solid: a group of welded bricks holds many,
+            # and the others are not this push's business.
+            orient_outward(target.mesh, only=(face,))
             self._drag_pre_oriented = True
             self._anchor = face.centroid()
             self._normal = face.normal()
@@ -336,7 +339,7 @@ class PushPullTool(Tool):
             self.dragging = True
             self._group = grp
             target = self._target_scene(viewport.scene)
-            orient_outward(target.mesh)
+            orient_outward(target.mesh, only=(face,))
             self._drag_pre_oriented = True
             self._anchor = face.centroid()
             self._normal = face.normal()
@@ -855,7 +858,14 @@ class PushPullTool(Tool):
                 # identical): it is now a redundant mother over the
                 # subdivision — exactly what the flat-drawing heal removes.
                 heal_overlapping_faces(scene.mesh)
-            orient_outward(scene.mesh)
+            # Deferred during drag PREVIEW frames, same as the extrude path
+            # below: the state is discarded next frame and the shading is
+            # winding-proof, so a parity pass per mouse move only added lag
+            # (~10 s/frame on an imported 3k-face barbecue). The commit runs
+            # it for real.
+            if not preview:
+                orient_outward(scene.mesh, only=self._touched_faces(
+                    scene.mesh, seedkeys))
             return
 
         # Establish the outward invariant *up front* instead of trusting history:
@@ -875,7 +885,7 @@ class PushPullTool(Tool):
         entry_closed = is_closed(scene.mesh)
         pre_normal = face.normal()
         if entry_closed and not self._drag_pre_oriented:
-            orient_outward(scene.mesh)
+            orient_outward(scene.mesh, only=(face,))
         normal = face.normal()
         if QVector3D.dotProduct(normal, pre_normal) < 0:
             d = -d
@@ -936,7 +946,7 @@ class PushPullTool(Tool):
         if was_solid and not entry_closed and not self._drag_pre_oriented:
             # Open mixed mesh taking the solid path: mark interior partitions
             # for the rebuild's parity (orient never flips faces here).
-            orient_outward(scene.mesh)
+            orient_outward(scene.mesh, only=(face,))
 
         before = set(scene.mesh.faces)
         self._cap_cmd = None
@@ -995,7 +1005,18 @@ class PushPullTool(Tool):
         # nothing to orient either way (open meshes never flip; interior
         # marking is recomputed by the next solid op).
         if not preview and (not sheet_fast or is_closed(scene.mesh)):
-            orient_outward(scene.mesh)
+            orient_outward(scene.mesh,
+                           only=self._touched_faces(scene.mesh, seedkeys))
+
+    @staticmethod
+    def _touched_faces(mesh, seedkeys: set):
+        """The faces carrying one of the operation's seed positions — the
+        entry point into the solid(s) it edited, for scoping the orientation
+        pass to those components. ``None`` (meaning "the whole mesh") when the
+        op left none, so a collapse can never silently skip orientation."""
+        hit = [f for f in mesh.faces
+               if any(_key(v) in seedkeys for v in f.vertices)]
+        return hit or None
 
     @staticmethod
     def _rebuild_planes_fixpoint(mesh, fresh: set, seedkeys: set,
@@ -1030,6 +1051,12 @@ class PushPullTool(Tool):
                 for i in range(cnt):
                     op_rims.append((QVector3D(lp[i].position),
                                     QVector3D(lp[(i + 1) % cnt].position)))
+        # Per-face memos (normal, centroid, triangles) and the packed parity
+        # set, shared across every plane and round: faces are never mutated in
+        # place inside this loop (rebuilds remove + add), so identity-keyed
+        # entries stay valid. Without it each plane visit re-ran Newell over
+        # the whole mesh — 76k normals per drag frame on the barbecue.
+        cache = RebuildCache()
         for _ in range(4):  # converges in 1-2 rounds; hard cap for safety
             planes: dict = {}
             for origin, plane_n in seam_planes(mesh, fresh):
@@ -1043,7 +1070,7 @@ class PushPullTool(Tool):
                 origin, plane_n = planes[key]
                 before_faces = set(mesh.faces)
                 if apply_rebuild(mesh, origin, plane_n, fresh, keep_mode,
-                                 removing, op=op_rims):
+                                 removing, op=op_rims, cache=cache):
                     changed = True
                     fresh |= set(mesh.faces) - before_faces
             if not changed:

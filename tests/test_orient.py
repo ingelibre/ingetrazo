@@ -185,3 +185,107 @@ def test_flat_plan_is_noop():
     m.add_face([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
     m.add_face([V(2, 0), V(4, 0), V(4, 2), V(2, 2)])
     assert orient_outward(m) == []
+
+
+# ---- many solids in one mesh (imported groups) ------------------------------
+#
+# An imported group holds one mesh with many welded-but-disjoint solids (a
+# barbecue's bricks, a pergola's beams). Inside/outside is a property of ONE
+# shell, so each is oriented against itself: a ray from a probe on solid A
+# crosses a disjoint solid B in and back out, which cannot change A's parity,
+# and judging A against B is what used to mark unrelated faces as partitions.
+
+
+def _box_at(mesh: Mesh, ox: float, oy: float = 0.0, s: float = 1.0) -> None:
+    """A cube of side ``s`` with its corner at ``(ox, oy, 0)``, windings
+    arbitrary (as a loaded mesh's are)."""
+    def P(x, y, z):
+        return V(ox + x * s, oy + y * s, z * s)
+    mesh.add_face([P(0, 0, 0), P(1, 0, 0), P(1, 1, 0), P(0, 1, 0)])
+    mesh.add_face([P(0, 0, 1), P(1, 0, 1), P(1, 1, 1), P(0, 1, 1)])
+    mesh.add_face([P(0, 0, 0), P(1, 0, 0), P(1, 0, 1), P(0, 0, 1)])
+    mesh.add_face([P(0, 1, 0), P(1, 1, 0), P(1, 1, 1), P(0, 1, 1)])
+    mesh.add_face([P(0, 0, 0), P(0, 1, 0), P(0, 1, 1), P(0, 0, 1)])
+    mesh.add_face([P(1, 0, 0), P(1, 1, 0), P(1, 1, 1), P(1, 0, 1)])
+
+
+def test_disjoint_solids_each_oriented_outward():
+    m = Mesh()
+    _box_at(m, 0.0)
+    _box_at(m, 5.0)
+    orient_outward(m)
+    for center in (V(0.5, 0.5, 0.5), V(5.5, 0.5, 0.5)):
+        assert all(
+            QVector3D.dotProduct(f.normal(), f.centroid() - center) > 0
+            for f in m.faces
+            if abs(f.centroid().x() - center.x()) < 1.0
+        )
+
+
+def test_disjoint_solid_is_not_an_interior_partition():
+    """Neither box's faces are partitions: each is a boundary of its own
+    solid, however many other solids share the mesh."""
+    m = Mesh()
+    _box_at(m, 0.0)
+    _box_at(m, 5.0)
+    orient_outward(m)
+    assert not [f for f in m.faces if f.interior]
+
+
+def test_only_restricts_the_pass_to_its_components():
+    """``only`` leaves other solids' winding and marks untouched."""
+    m = Mesh()
+    _box_at(m, 0.0)
+    _box_at(m, 5.0)
+    far = [f for f in m.faces if f.centroid().x() > 4.0]
+    before = [[(v.x(), v.y(), v.z()) for v in f.vertices] for f in far]
+    near = next(f for f in m.faces if f.centroid().x() < 1.0)
+    orient_outward(m, only=(near,))
+    after = [[(v.x(), v.y(), v.z()) for v in f.vertices] for f in far]
+    assert after == before
+    # and the scoped solid still came out consistently outward
+    center = V(0.5, 0.5, 0.5)
+    assert all(
+        QVector3D.dotProduct(f.normal(), f.centroid() - center) > 0
+        for f in m.faces if f.centroid().x() < 1.0
+    )
+
+
+def test_only_matches_the_full_pass_on_the_component_it_scopes():
+    m = Mesh()
+    _box_at(m, 0.0)
+    _box_at(m, 5.0)
+    scoped = Mesh()
+    _box_at(scoped, 0.0)
+    _box_at(scoped, 5.0)
+    orient_outward(m)
+    near = next(f for f in scoped.faces if f.centroid().x() < 1.0)
+    orient_outward(scoped, only=(near,))
+    full = [[(v.x(), v.y(), v.z()) for v in f.vertices]
+            for f in m.faces if f.centroid().x() < 1.0]
+    part = [[(v.x(), v.y(), v.z()) for v in f.vertices]
+            for f in scoped.faces if f.centroid().x() < 1.0]
+    assert part == full
+
+
+def test_nearby_open_sheet_does_not_mark_a_solid_face_interior():
+    """A separate *open* shell in the same mesh must not corrupt a solid's
+    classification.
+
+    A disjoint **closed** neighbour is harmless — a ray crosses it in and back
+    out, an even count — but an open one is crossed once, and whole-mesh parity
+    read that lone crossing as "material ahead". The box's +x face then found
+    material on both sides and was marked an interior partition, which drops it
+    from every later parity query and from the volume. Imported models are full
+    of loose sheets next to solids (the barbecue's grate beside its bricks),
+    which is where this showed up."""
+    m = Mesh()
+    _box_at(m, 0.0)
+    # A loose quad standing in the path of the box's +x face normal.
+    m.add_face([V(5, -1, -1), V(5, 2, -1), V(5, 2, 2), V(5, -1, 2)])
+    orient_outward(m)
+    right = next(f for f in m.faces
+                 if all(abs(v.x() - 1.0) < 1e-9 for v in f.vertices))
+    assert not right.interior
+    assert QVector3D.dotProduct(
+        right.normal(), right.centroid() - V(0.5, 0.5, 0.5)) > 0
