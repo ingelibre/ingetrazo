@@ -56,7 +56,7 @@ jobs:
           test -f dist/ingetrazo/ingetrazo.exe
           test -f dist/ingetrazo/_internal/resources/shaders/basic.vert
           test -f dist/ingetrazo/_internal/i18n/es.json
-          test -f dist/ingetrazo/_internal/resources/components/thumbs/tree.png
+          test -f dist/ingetrazo/_internal/resources/components/components.json
           echo "bundle OK"
 
       - name: Incluir LEEME en el bundle

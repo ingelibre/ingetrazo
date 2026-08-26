@@ -139,7 +139,7 @@ def _self_check() -> int:
         ("fragment shader", root / "resources" / "shaders" / "basic.frag"),
         ("translations", root / "i18n" / "es.json"),
         ("texture library", root / "resources" / "textures" / "library.json"),
-        ("components", root / "resources" / "components" / "thumbs" / "tree.png"),
+        ("components", root / "resources" / "components" / "components.json"),
         ("app icon", root / "resources" / "icons" / "ingetrazo_256.png"),
     ):
         ok = path.is_file()
