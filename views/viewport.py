@@ -6118,6 +6118,7 @@ class Viewport(QOpenGLWidget):
         near = self._nearby_group_edges(px, py) if px is not None else []
         if px is not None:
             near += self._billboard_snap_edges()
+        near += self._selection_box_points()
         sp = _active_cut(self.scene)
         if sp is not None:
             # What the cut hides must not attract snaps (SketchUp): drop
@@ -6144,6 +6145,31 @@ class Viewport(QOpenGLWidget):
             loose = [e for e in loose if _kept(e)]
         from types import SimpleNamespace
         return SimpleNamespace(edges=loose + lines + near)
+
+    def _selection_box_points(self) -> list:
+        """The corners of a selected group's bounding box, as degenerate
+        pseudo-edges so the snap engine offers them as endpoints.
+
+        SketchUp makes those corners grabbable: with a group selected they are
+        what you take hold of to move it somewhere exact, and the green dot
+        tells you the grab landed. The box is the group's selection cue here
+        too (see ``_sync_edges``), so the corners were already on screen —
+        they just were not snap targets. Costs nothing: the chunk's bbox is
+        already cached, so a 230k-face group contributes eight points."""
+        pts: list = []
+        for ent in self.scene.selection:
+            if not isinstance(ent, Group) or getattr(ent, "billboard", False):
+                continue
+            bb = self._group_chunk(ent).get("bbox")
+            if bb is None:
+                continue
+            lo, hi = bb
+            for i in range(8):
+                p = QVector3D(float(hi[0]) if i & 1 else float(lo[0]),
+                              float(hi[1]) if i & 2 else float(lo[1]),
+                              float(hi[2]) if i & 4 else float(lo[2]))
+                pts.append(_SnapEdge(p, QVector3D(p)))
+        return pts
 
     def pick_guide(self, screen_x: float, screen_y: float):
         """Return the construction guide nearest the cursor within the pick

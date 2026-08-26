@@ -43,6 +43,7 @@ def _bind(vp):
                  "_np_mvp", "_group_chunk", "_append_textured_face",
                  "_shaded_color", "_shade_factor", "_group_fp", "_gedge_screen",
                  "_nearby_group_edges", "_snap_scene",
+                 "_selection_box_points",
                  "_billboard_snap_edges", "_billboard_quad",
                  "_instance_chunk", "_shift_instance_entry"):
         setattr(vp, name, getattr(Viewport, name).__get__(vp))
@@ -176,3 +177,32 @@ def test_instance_groups_pick_through_transformed_chunks():
     assert grp is g2
     f, grp = vp.pick_face_any(0.5, 0.5)
     assert grp is g1
+
+
+def test_selected_group_offers_its_box_corners_to_the_snap_engine():
+    """SketchUp makes a selected group's bounding-box corners grabbable — they
+    are what you take hold of to move it somewhere exact. The box is already
+    the selection cue here; this puts its corners in reach of the snap."""
+    from core.camera import OrbitCamera
+
+    scene = Scene()
+    hist = History(scene)
+    f = scene.mesh.add_face([V(-2, -2), V(2, -2), V(2, 2), V(-2, 2)])
+    hist.execute(MakeGroupCommand([f], []))
+    group = scene.groups[0]
+    vp = _bind(_VP(scene))
+    vp.camera = OrbitCamera()
+    vp.camera.set_view("top")
+    vp.camera.fit_to(V(-2, -2, 0), V(2, 2, 0))
+
+    scene.selection.clear()                          # grouping leaves it selected
+    assert vp._selection_box_points() == []
+    scene.selection.add(group)
+    pts = vp._selection_box_points()
+    assert len(pts) == 8                             # the box's corners
+    assert all(p.a is not p.b and (p.a - p.b).length() < 1e-9 for p in pts)
+    corners = {(round(p.a.x(), 3), round(p.a.y(), 3), round(p.a.z(), 3))
+               for p in pts}
+    assert (2.0, 2.0, 0.0) in corners and (-2.0, -2.0, 0.0) in corners
+    # and they reach the engine even with no cursor position to look near
+    assert len(list(vp._snap_scene().edges)) >= 8
