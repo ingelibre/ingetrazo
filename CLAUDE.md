@@ -35,6 +35,7 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 1. **Ctrl+C 5.2 s** en el seto de 230k (la copia profunda del snapshot). Candidatos: compartir la malla convirtiendo TAMBIÉN el original a instancia al copiar (la maquinaria F3/Make Component ya existe; `begin_group_edit` materializa al entrar), o copy-on-write.
 2. **BUG export .skp: texturas mal en SketchUp Web** (reporte de Marco con piscina: guardó .skp, lo abrió en SketchUp Web y "las texturas salieron mal"). Pedir el `.skp` exportado exacto + captura de cómo se ve; sospechosos: `skp_out.py` uvw por cara (matriz texture→plane inversa), materiales colorizados/texturas compartidas, y el proto compartido de 230k del paste nuevo.
 3. **Más perf**: primer paint frío tras abrir piscina ~11 s (chunk del grupo 230k 7.3 s + sync_edges + pick_index) → ¿chunks perezosos o en hilo?; el `paintGL 100ms` suelto durante zoom (¿upload de teselas?); confirmar que el 149% CPU en reposo no vuelve tras sesión larga.
+4. **Dedup de protos al guardar `.igz`**: las copias pegadas ANTES del paste O(1) pesan geometría completa (piscina: 2 duplicados del seto = +66 MB y 460k caras extra en escena). Al guardar, content-hash de mallas de grupos idénticas → UN proto + N instancias (recupera archivos viejos sin tocar la escena). Diagnóstico medido 2026-08-25: la escena con 5 setos = 1.2M caras → paints de 37-40 ms; el lag "tras suspender" era solo eso (GPU bostea bien, CPU 0%).
 
 ## 📦 Estado anterior (2026-08-25)
 
