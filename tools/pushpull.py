@@ -1058,6 +1058,9 @@ class PushPullTool(Tool):
         # the whole mesh — 76k normals per drag frame on the barbecue.
         cache = RebuildCache()
         for _ in range(4):  # converges in 1-2 rounds; hard cap for safety
+            # The op's own faces name the solids it may touch, so the plane
+            # scans narrow to them instead of walking the whole group.
+            cache.seed_faces = set(fresh)
             planes: dict = {}
             for origin, plane_n in seam_planes(mesh, fresh):
                 planes.setdefault(plane_key(origin, plane_n)[0],

@@ -227,10 +227,30 @@ def _cache_ver(vp):
 #: ``normal`` draws it as always, ``fade`` washes it out behind the group
 #: being edited (SketchUp's default), ``hide`` leaves it out of the frame.
 EDIT_REST_MODES = ("normal", "fade", "hide")
-#: Opacity the faded context draws at. SketchUp's slider default sits around
-#: here — enough to place the group in its surroundings, faint enough that the
-#: geometry you are actually editing reads as the subject.
-EDIT_REST_FADE = 0.22
+#: How far the context is mixed TOWARD the background (0 = untouched, 1 =
+#: gone). It is a wash, not an opacity: the context keeps writing depth, so it
+#: still occludes itself and never turns the model into glass. Enough to place
+#: the group in its surroundings, faint enough that what you are editing reads
+#: as the subject.
+EDIT_REST_FADE = 0.75
+
+
+def _box_edges(lo, hi) -> bytes:
+    """The twelve segments of an axis-aligned box, as an interleaved float32
+    line buffer — the selection cue for a whole group."""
+    xs = (float(lo[0]), float(hi[0]))
+    ys = (float(lo[1]), float(hi[1]))
+    zs = (float(lo[2]), float(hi[2]))
+    corners = [(xs[i & 1], ys[(i >> 1) & 1], zs[(i >> 2) & 1])
+               for i in range(8)]
+    buf = array("f")
+    for i in range(8):
+        for bit in (1, 2, 4):      # neighbours differ in exactly one axis
+            j = i | bit
+            if j != i:
+                buf.extend(corners[i])
+                buf.extend(corners[j])
+    return buf.tobytes()
 
 
 def _load_edit_rest_mode() -> str:
@@ -583,6 +603,8 @@ class Viewport(QOpenGLWidget):
         self._loc_mvp = self._program.uniformLocation("u_mvp")
         self._loc_color = self._program.uniformLocation("u_color")
         self._loc_back_color = self._program.uniformLocation("u_back_color")
+        self._loc_fade = self._program.uniformLocation("u_fade")
+        self._loc_fade_color = self._program.uniformLocation("u_fade_color")
         self._loc_pos = self._program.attributeLocation("a_pos")
         self._loc_uv = self._program.attributeLocation("a_uv")
         self._loc_use_tex = self._program.uniformLocation("u_use_texture")
@@ -809,6 +831,7 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue1f(self._loc_opacity, 1.0)
         self._program.setUniformValue1f(self._loc_shade, 1.0)
         self._program.setUniformValue(self._loc_hard_cutout, 0)
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
 
         # Sky / ground backdrop with a horizon anchored to the camera pitch —
         # premium SketchUp feel. Fixed on zoom (it's the point at infinity),
@@ -856,6 +879,10 @@ class Viewport(QOpenGLWidget):
                   and getattr(self, "_edit_split_f", None) is not None)
         split_f = self._edit_split_f if fading else None
         split_e = self._edit_split_e if fading else None
+        if fading:
+            bg = style.background
+            self._program.setUniformValue(
+                self._loc_fade_color, QVector3D(bg[0], bg[1], bg[2]))
         spans = getattr(self, "_face_spans", None)
         if spans:
             face_spans, culled_fv = self._visible_spans(spans, planes, split_f)
@@ -908,17 +935,16 @@ class Viewport(QOpenGLWidget):
                 for _vs, _vc in face_spans:
                     self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
             else:
-                # Context first, washed out and writing no depth, so the group
-                # you are editing reads through it (SketchUp's faded rest of
-                # model); then the group itself, fully opaque.
-                self._program.setUniformValue1f(self._loc_opacity,
+                # Context first, washed toward the background but fully
+                # opaque and still writing depth (SketchUp's faded rest of
+                # model reads as haze, not as glass); then the group itself
+                # at full strength.
+                self._program.setUniformValue1f(self._loc_fade,
                                                 EDIT_REST_FADE)
-                self._gl.glDepthMask(GL_FALSE)
                 for _vs, _vc in face_spans:
                     if _vs < split_f:
                         self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
-                self._program.setUniformValue1f(self._loc_opacity, 1.0)
-                self._gl.glDepthMask(GL_TRUE)
+                self._program.setUniformValue1f(self._loc_fade, 0.0)
                 for _vs, _vc in face_spans:
                     if _vs >= split_f:
                         self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
@@ -966,15 +992,15 @@ class Viewport(QOpenGLWidget):
                     continue
                 r, g, b = self._texture_avg_color(path)
                 self._program.setUniformValue1f(self._loc_shade, float(shade))
-                for alpha, spans in ((EDIT_REST_FADE, vis), (1.0, subj)) \
-                        if fading else ((1.0, vis),):
+                self._set_color(r, g, b, 1.0)
+                for fade, spans in ((EDIT_REST_FADE, vis), (0.0, subj)) \
+                        if fading else ((0.0, vis),):
                     if not spans:
                         continue
-                    self._set_color(r, g, b, alpha)
-                    self._gl.glDepthMask(GL_FALSE if alpha < 1.0 else GL_TRUE)
+                    self._program.setUniformValue1f(self._loc_fade, fade)
                     for _vs, _vc in spans:
                         self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
-                self._gl.glDepthMask(GL_TRUE)
+            self._program.setUniformValue1f(self._loc_fade, 0.0)
             self._tex_faces_vao.release()
             self._program.setUniformValue1f(self._loc_shade, 1.0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
@@ -1003,21 +1029,15 @@ class Viewport(QOpenGLWidget):
                     self._loc_hard_cutout,
                     1 if getattr(tex, "_cutout", False) else 0)
                 tex.bind(0)
-                for alpha, spans in ((EDIT_REST_FADE, vis), (1.0, subj)) \
-                        if fading else ((None, vis),):
+                for fade, spans in ((EDIT_REST_FADE, vis), (0.0, subj)) \
+                        if fading else ((0.0, vis),):
                     if not spans:
                         continue
-                    if alpha is not None:
-                        self._program.setUniformValue1f(self._loc_opacity,
-                                                        alpha)
-                        self._gl.glDepthMask(
-                            GL_FALSE if alpha < 1.0 else GL_TRUE)
+                    self._program.setUniformValue1f(self._loc_fade, fade)
                     for _vs, _vc in spans:
                         self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
                 tex.release(0)
-            if fading:
-                self._program.setUniformValue1f(self._loc_opacity, 1.0)
-                self._gl.glDepthMask(GL_TRUE)
+            self._program.setUniformValue1f(self._loc_fade, 0.0)
             self._program.setUniformValue(self._loc_hard_cutout, 0)
             self._tex_faces_vao.release()
             if mode == "xray":
@@ -1213,15 +1233,14 @@ class Viewport(QOpenGLWidget):
                 for _vs, _vc in _espans:
                     self._gl.glDrawArrays(GL_LINES, _vs, _vc)
             else:
-                # Same two-tier draw as the faces: faded surroundings, then
-                # the edited group's own edges at full strength.
-                self._set_color(ec[0], ec[1], ec[2], EDIT_REST_FADE)
-                self._gl.glDepthMask(GL_FALSE)
+                # Same two-tier draw as the faces: washed-out surroundings,
+                # then the edited group's own edges at full strength.
+                self._program.setUniformValue1f(self._loc_fade,
+                                                EDIT_REST_FADE)
                 for _vs, _vc in _espans:
                     if _vs < split_e:
                         self._gl.glDrawArrays(GL_LINES, _vs, _vc)
-                self._gl.glDepthMask(GL_TRUE)
-                self._set_color(ec[0], ec[1], ec[2], 1.0)
+                self._program.setUniformValue1f(self._loc_fade, 0.0)
                 for _vs, _vc in _espans:
                     if _vs >= split_e:
                         self._gl.glDrawArrays(GL_LINES, _vs, _vc)
@@ -2561,7 +2580,6 @@ class Viewport(QOpenGLWidget):
         # moment the user clicked it.
         sel_loose = array("f")
         sel_edge_parts = []
-        sel_face_parts = []
         for ent in self.scene.selection:
             if isinstance(ent, Edge):
                 sel_loose.extend([ent.a.x(), ent.a.y(), ent.a.z(),
@@ -2580,11 +2598,18 @@ class Viewport(QOpenGLWidget):
                     # the chunk here left an orange GHOST at the origin
                     # until the commit (user report).
                     continue
-                # Chunk edges already exclude soft seams (a grouped smooth
-                # cylinder must not flash its segment seams in orange).
+                # A selected group reads as its BOUNDING BOX, the way
+                # SketchUp shows one — twelve segments instead of the whole
+                # object. Highlighting the geometry meant uploading every
+                # edge AND a triangle copy of every face on each click: the
+                # 230k-face hedge in piscina.igz pushed 416k edges through
+                # the selection buffers just to say "this is selected". The
+                # box also reads better on a dense group, where an all-orange
+                # mass says less than an outline does.
                 chunk = self._group_chunk(ent)
-                sel_edge_parts.append(chunk["edges"])
-                sel_face_parts.append(self._chunk_tri_pos(chunk))
+                bb = chunk.get("bbox")
+                if bb is not None:
+                    sel_edge_parts.append(_box_edges(bb[0], bb[1]))
         self._selected_count = self._upload_vbo(
             self._selected_vbo, "sel_edges",
             [sel_loose.tobytes()] + sel_edge_parts) // 12
@@ -2600,7 +2625,7 @@ class Viewport(QOpenGLWidget):
                     ])
         self._sel_faces_count = self._upload_vbo(
             self._sel_faces_vbo, "sel_faces",
-            [sel_face_loose.tobytes()] + sel_face_parts) // 12
+            [sel_face_loose.tobytes()]) // 12
 
         # Faces: triangulate each face (fan when simple, hole-aware when the
         # face has been divided) into one VBO, but grouped by material colour
@@ -4878,7 +4903,6 @@ class Viewport(QOpenGLWidget):
         if entry["soft_pts"] is not None:
             sp = entry["soft_pts"].reshape(-1, 3) + dx
             entry["soft_pts"] = sp.astype(np.float32).reshape(-1, 6)
-        entry["tri_pos"] = None            # lazy; rebuilt from v0 on demand
         entry["samples"] = [(i, (mesh.vertices[i].position.x(),
                                  mesh.vertices[i].position.y(),
                                  mesh.vertices[i].position.z()))
@@ -4893,25 +4917,6 @@ class Viewport(QOpenGLWidget):
         # verifies by samples instead of rebuilding 100k faces for nothing.
         entry["fp_approx"] = True
 
-    @staticmethod
-    def _chunk_tri_pos(entry):
-        """Flat float32 triangle positions of a chunk (for the selection
-        tint) — derived lazily from the pick arrays, never by re-running
-        earcut over the group."""
-        tp = entry.get("tri_pos")
-        if tp is None:
-            if entry["v0"] is None:
-                tp = b""
-            else:
-                import numpy as np
-                v0, e1, e2 = entry["v0"], entry["e1"], entry["e2"]
-                arr = np.empty((len(v0), 9), dtype=np.float32)
-                arr[:, 0:3] = v0
-                arr[:, 3:6] = v0 + e1
-                arr[:, 6:9] = v0 + e2
-                tp = arr.tobytes()
-            entry["tri_pos"] = tp
-        return tp
 
     def _instance_chunk(self, group):
         """Chunk of a component INSTANCE: the shared prototype's chunk (built
@@ -5007,7 +5012,6 @@ class Viewport(QOpenGLWidget):
             "e1": tv(base["e1"]) if base["e1"] is not None else None,
             "e2": tv(base["e2"]) if base["e2"] is not None else None,
             "tri_ent": base["tri_ent"],
-            "tri_pos": None,
             "soft_pts": sp,
             "soft_n0": tn(base["soft_n0"]),
             "soft_c0": (tp(base["soft_c0"]) if len(base["soft_c0"])
@@ -5074,7 +5078,6 @@ class Viewport(QOpenGLWidget):
         for kk in ("soft_c0", "soft_c1"):
             if len(entry[kk]):
                 entry[kk] = entry[kk] + dx
-        entry["tri_pos"] = None
 
     def _group_chunk(self, group):
         """Cached render + pick payload of one group, keyed by its content
@@ -5325,8 +5328,7 @@ class Viewport(QOpenGLWidget):
                  "faces": faces,
                  "areas": np.asarray(areas, dtype=np.float64),
                  "v0": v0, "e1": e1, "e2": e2, "tri_ent": tri_ent_a,
-                 "tri_pos": None,
-                 "soft_pts": (np.asarray(soft_pts, dtype=np.float32)
+                      "soft_pts": (np.asarray(soft_pts, dtype=np.float32)
                               if soft_pts else None),
                  "soft_n0": np.asarray(soft_n0, dtype=np.float64),
                  "soft_c0": np.asarray(soft_c0, dtype=np.float64),
@@ -5405,7 +5407,7 @@ class Viewport(QOpenGLWidget):
             if stored.get("nf") != len(mesh.faces):
                 return None
             entry = dict(stored)
-            entry.update(fp=fp, vkey=vkey, rev=0, tri_pos=None,
+            entry.update(fp=fp, vkey=vkey, rev=0,
                          faces=list(mesh.faces))
             path.touch()                     # LRU freshness
             return entry

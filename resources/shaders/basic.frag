@@ -16,6 +16,14 @@ uniform int u_hard_cutout;
 // Per-run diffuse shade for textured faces (colour faces bake it into
 // their vertex colours) — 1.0 everywhere else (billboards, previews).
 uniform float u_shade;
+// While a group is open for editing, the model AROUND it is washed toward
+// the background (SketchUp's faded rest of model). A mix, not blending:
+// the pass stays opaque and keeps writing depth, so the context still
+// occludes itself. Drawing it translucent instead let every surface show
+// through every other one and turned coplanar faces into colour speckle.
+// 0 = untouched.
+uniform float u_fade;
+uniform vec3 u_fade_color;
 
 in vec2 v_uv;
 in vec3 v_color;
@@ -31,6 +39,7 @@ const float BAYER[16] = float[16](
     15.5/16.0,  7.5/16.0, 13.5/16.0,  5.5/16.0);
 
 void main() {
+    vec4 c;
     if (u_use_texture == 1) {
         vec4 texel = texture(u_tex, v_uv);
         // Cutout transparency (face-me billboards, leaves, chain-link):
@@ -46,10 +55,10 @@ void main() {
             int bx = int(mod(gl_FragCoord.x, 4.0));
             int by = int(mod(gl_FragCoord.y, 4.0));
             if (texel.a < BAYER[by * 4 + bx]) discard;
-            fragColor = vec4(texel.rgb * u_shade, 1.0);
-            return;
+            c = vec4(texel.rgb * u_shade, 1.0);
+        } else {
+            c = vec4(texel.rgb * u_shade, texel.a * u_opacity);
         }
-        fragColor = vec4(texel.rgb * u_shade, texel.a * u_opacity);
     } else {
         // SketchUp-style face culling colours: front = paper white, back =
         // blue-grey. Orientation is guaranteed outward by the engine, so a
@@ -63,7 +72,7 @@ void main() {
         // tint). The back tint stays on the user's own drawing (u_color
         // path), where it is honest "you are looking at the inside" feedback.
         vec4 front = (u_use_vcolor == 1) ? vec4(v_color, u_opacity) : u_color;
-        fragColor = (gl_FrontFacing || u_use_vcolor == 1) ? front
-                                                          : u_back_color;
+        c = (gl_FrontFacing || u_use_vcolor == 1) ? front : u_back_color;
     }
+    fragColor = vec4(mix(c.rgb, u_fade_color, u_fade), c.a);
 }

@@ -73,7 +73,7 @@ class RebuildCache:
     entry."""
 
     __slots__ = ("tris", "norm", "cent", "token", "_packed", "_comp",
-                 "_comp_token")
+                 "_comp_token", "seed_faces", "_scope", "_scope_token")
 
     def __init__(self) -> None:
         self.tris: dict = {}
@@ -85,6 +85,11 @@ class RebuildCache:
         self._packed: tuple = (None, None, None)
         self._comp: Optional[dict] = None
         self._comp_token = -1
+        #: The operation's own faces. Their components are the only solids a
+        #: rebuild may touch, so every whole-mesh scan narrows to them.
+        self.seed_faces: set = set()
+        self._scope: Optional[tuple] = None
+        self._scope_token = -1
 
     def components(self, mesh) -> dict:
         """Face → edge-connected component label, recomputed when the mesh
@@ -93,6 +98,40 @@ class RebuildCache:
             self._comp = _face_components(mesh)
             self._comp_token = self.token
         return self._comp
+
+    def scope(self, mesh):
+        """``(faces, edges)`` of the solids the operation is working in, or
+        ``None`` when it has no seed to narrow by (then callers scan the whole
+        mesh, as before).
+
+        A plane rebuild reads the mesh three ways per plane — which edges lie
+        on the plane, which faces are coplanar with it, which faces cover a
+        region — and each scan walked every edge and face of the group. Inside
+        an imported barbecue that is nineteen welded solids re-examined to
+        rebuild one brick's planes, twelve planes over. Narrowing is also more
+        correct: a *different* solid that happens to be coplanar was feeding
+        its edges into this plane's arrangement.
+
+        Computed once per mesh state, not once per plane — that repetition was
+        the cost, more than the scans themselves."""
+        if not self.seed_faces:
+            return None
+        if self._scope is not None and self._scope_token == self.token:
+            return self._scope
+        comp = self.components(mesh)
+        live = {comp[f] for f in self.seed_faces if f in comp}
+        if not live:
+            self._scope, self._scope_token = None, self.token
+            return None
+        faces = [f for f in mesh.faces if comp.get(f) in live]
+        fset = set(faces)
+        # An edge belongs to the scope when a face of it does. A faceless edge
+        # is plane debris a rebuild may still need to re-trace, so it stays.
+        edges = [e for e in mesh.edges
+                 if not e.faces or any(f in fset for f in e.faces)]
+        self._scope = (faces, edges)
+        self._scope_token = self.token
+        return self._scope
 
     def triangles(self, f):
         t = self.tris.get(f)
@@ -324,6 +363,12 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
     """
     normal = normal.normalized()
     u, v = plane_basis(normal)
+    # The solids this operation may touch (see RebuildCache.scope). Falling
+    # back to the whole mesh keeps direct callers — and any op with no seed —
+    # behaving exactly as before.
+    scope = cache.scope(mesh) if cache is not None else None
+    scope_faces = mesh.faces if scope is None else scope[0]
+    scope_edges = mesh.edges if scope is None else scope[1]
 
     def to2d(p):
         d = p - origin
@@ -334,7 +379,7 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
 
     segs = [
         (e.a, e.b)
-        for e in mesh.edges
+        for e in scope_edges
         if _on_plane(e.a, origin, normal) and _on_plane(e.b, origin, normal)
     ]
     if len(segs) < 3:
@@ -376,7 +421,7 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
             d = p - fc
             return (QVector3D.dotProduct(d, fu), QVector3D.dotProduct(d, fv))
 
-        for g in mesh.faces:
+        for g in scope_faces:
             if g is f or g in fresh_set:
                 continue
             gn = g.normal().normalized() if cache is None else cache.normal(g)
@@ -410,7 +455,7 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
                               if not f.interior and f not in shadowed])
     else:
         comp = cache.components(mesh)
-        want = {comp[f] for f in mesh.faces
+        want = {comp[f] for f in scope_faces
                 if f in comp and _coplanar_on(f, origin, normal, cache)}
         # A push welding a new wall onto a neighbouring solid must see both.
         want |= {comp[f] for f in fresh_set if f in comp}
@@ -445,7 +490,7 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
     fresh_polys = ([] if keep_mode else
                    _proj_polys(f for f in fresh_set if not f.interior))
     fresh_cover_polys = _proj_polys(f for f in fresh_set if not f.interior)
-    old_polys = _proj_polys(f for f in mesh.faces
+    old_polys = _proj_polys(f for f in scope_faces
                             if f not in fresh_set or f.interior)
 
     # Group boundary regions by which side holds the material — each group is
@@ -536,7 +581,7 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
                    for a, b in op_rim_segs)
 
     keep_segs: list = []
-    for e in mesh.edges:
+    for e in scope_edges:
         if not (_on_plane(e.a, origin, normal) and _on_plane(e.b, origin, normal)):
             continue
         if any(abs(QVector3D.dotProduct(_fnormal(f), normal)) < 0.999
@@ -632,7 +677,9 @@ def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D,
                             op, cache)
     if rebuilt is None:
         return False
-    old = [f for f in mesh.faces if _coplanar_on(f, origin, normal, cache)]
+    scope = cache.scope(mesh) if cache is not None else None
+    old = [f for f in (mesh.faces if scope is None else scope[0])
+           if _coplanar_on(f, origin, normal, cache)]
     if _canon_faces(rebuilt) == _canon_faces(
         [(list(f.vertices), [list(h) for h in f.holes], f.interior)
          for f in old]
