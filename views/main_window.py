@@ -898,6 +898,16 @@ class MainWindow(QMainWindow):
         sel = self.viewport.scene.selection
         faces = [f for f in sel if isinstance(f, Face)]
         edges = [e for e in sel if isinstance(e, Edge)]
+        groups = [g for g in sel if isinstance(g, Group)]
+        if groups:
+            # Grouping the loose part and dropping the groups is the WRONG
+            # result dressed as success — the planks-into-a-bench flow reads
+            # as done while the planks stayed outside. Refuse and say so
+            # until nesting exists.
+            self.viewport.flash_status(tr(
+                "Can't put a group inside another one yet — deselect the "
+                "{n} group(s) or explode them first", n=len(groups)), 5000)
+            return
         if faces or edges:
             self.viewport.history.execute(MakeGroupCommand(faces, edges))
             self.viewport.update()
@@ -942,6 +952,13 @@ class MainWindow(QMainWindow):
                 return
             self.viewport.flash_status(
                 tr("Select the geometry for the component first"))
+            return
+        if [g for g in sel if isinstance(g, Group)]:
+            # Loose geometry AND a group selected: the component would take
+            # the loose part only and quietly leave the group out.
+            self.viewport.flash_status(tr(
+                "Can't put a group inside a component yet — select only the "
+                "loose geometry, or only the group to convert it"), 5000)
             return
         from PySide6.QtWidgets import QInputDialog
         count = sum(1 for g in self.viewport.scene.groups

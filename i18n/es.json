@@ -723,5 +723,7 @@
   "− Row": "− Fila",
   "⚠ {name} (load error)": "⚠ {name} (error al cargar)",
   "No components yet": "Aún no hay componentes",
-  "Components placed in this drawing — click one to select its copies": "Componentes colocados en este dibujo — hacé clic para seleccionar sus copias"
+  "Components placed in this drawing — click one to select its copies": "Componentes colocados en este dibujo — hacé clic para seleccionar sus copias",
+  "Can't put a group inside another one yet — deselect the {n} group(s) or explode them first": "Todavía no se puede meter un grupo dentro de otro — deseleccioná los {n} grupo(s) o explotalos primero",
+  "Can't put a group inside a component yet — select only the loose geometry, or only the group to convert it": "Todavía no se puede meter un grupo dentro de un componente — seleccioná solo la geometría suelta, o solo el grupo para convertirlo"
 }
