@@ -1761,7 +1761,11 @@ class Viewport(QOpenGLWidget):
     # capture) overwhelms Mesa and reads back as garbage (black/green tears at
     # the far edge); creating a few per frame spreads it — the map fills in over
     # a second and repaints itself until done.
-    _TEX_PER_FRAME = 6
+    # P4: 6 uploads (each with mipmap generation, ~5-15 ms on the iGPU)
+    # stacked into one frame was the ~100 ms hitch while zooming over the
+    # base map. 2 per frame keeps every frame under the 33 ms gate; the
+    # deferred-repaint loop below spreads the rest across frames.
+    _TEX_PER_FRAME = 2
 
     def _tile_texture(self, layer, x, y):
         """GL texture for tile ``(x, y)`` of ``layer``, or ``None`` if not yet
@@ -4959,6 +4963,20 @@ class Viewport(QOpenGLWidget):
                 mesh._chunk_dirty = False
                 return entry
         _c0 = _time_mod.perf_counter() if _PERF else 0.0
+        # P4: before the expensive rebuild, try the on-disk chunk cache —
+        # the arrays are deterministic from the mesh content, so a cold
+        # open loads the 230k-face hedge in ~0.3 s instead of building it
+        # for ~6 s. Keyed by a STABLE content digest (the in-session
+        # fingerprint uses process-salted hash()).
+        disk = self._chunk_cache_load(group, fp, vkey)
+        if disk is not None:
+            cache[id(group)] = disk
+            mesh._chunk_dirty = False
+            if _PERF:
+                _plog("chunk_from_disk",
+                      (_time_mod.perf_counter() - _c0) * 1000.0,
+                      extra=f"faces={disk['nf']}", floor=0.0)
+            return disk
         import numpy as np
         mesh = group.mesh
         edges_data = array("f")
@@ -5153,7 +5171,105 @@ class Viewport(QOpenGLWidget):
                   extra=f"faces={len(faces)}")
         mesh._chunk_dirty = False
         cache[id(group)] = entry
+        self._chunk_cache_store(mesh, entry)
         return entry
+
+    # ---- On-disk chunk cache (P4: fast cold start) --------------------------
+    # Chunk arrays are a pure function of the mesh content; persisting them
+    # turns the multi-second cold build of a big group into a disk read.
+    # Lives in the app's own cache dir (like extracted textures) and is
+    # keyed by a STABLE sha1 content digest — a stale entry can only miss.
+
+    _CHUNK_CACHE_MIN_FACES = 5000       # small groups rebuild faster than IO
+    _CHUNK_CACHE_KEEP = 120             # files kept; oldest pruned at save
+
+    @staticmethod
+    def _chunk_cache_dir():
+        from core.texture import texture_cache_root
+        d = texture_cache_root().parent / "chunks"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @staticmethod
+    def _chunk_cache_key(mesh, fp) -> str:
+        """Stable content digest: the fingerprint's counts/coordsum/soft
+        plus a per-face attrs walk covering everything the chunk bakes
+        (colour, texture path/uvw/scale/rot, opacity, back side). The
+        session fingerprint's attrs term uses salted hash() — useless
+        across runs."""
+        import hashlib
+        h = hashlib.sha1()
+        h.update(repr((fp[0], fp[1], fp[2], fp[3], fp[5])).encode())
+        for i, f in enumerate(mesh.faces):
+            a = f.attrs
+            if not a:
+                continue
+            t = a.get("texture")
+            h.update(repr((
+                i, a.get("color") and tuple(a["color"]),
+                None if not t else (t.get("path"), t.get("sw"), t.get("sh"),
+                                    t.get("rot", 0),
+                                    tuple(t.get("uvw") or ())),
+                a.get("opacity"), repr(a.get("back")) if a.get("back")
+                else None, a.get("layer"))).encode())
+        return h.hexdigest()
+
+    _CHUNK_CACHE_FIELDS = (
+        "edges", "vcol", "by_texture", "tcol", "ttex", "back_vcol",
+        "back_tex", "back_tcol", "back_ttex", "fvcol", "areas",
+        "v0", "e1", "e2", "tri_ent", "soft_pts", "soft_n0", "soft_c0",
+        "soft_n1", "soft_c1", "soft_single", "bbox", "coordsum",
+        "nv", "ne", "nf", "samples")
+
+    def _chunk_cache_load(self, group, fp, vkey):
+        mesh = group.mesh
+        if len(mesh.faces) < self._CHUNK_CACHE_MIN_FACES:
+            return None
+        import pickle
+        try:
+            path = self._chunk_cache_dir() / \
+                (self._chunk_cache_key(mesh, fp) + ".chunk")
+            if not path.is_file():
+                return None
+            with open(path, "rb") as fh:
+                stored = pickle.load(fh)     # our own cache dir only
+            if stored.get("nf") != len(mesh.faces):
+                return None
+            entry = dict(stored)
+            entry.update(fp=fp, vkey=vkey, rev=0, tri_pos=None,
+                         faces=list(mesh.faces))
+            path.touch()                     # LRU freshness
+            return entry
+        except Exception:                    # noqa: BLE001 — a cache can only miss
+            return None
+
+    def _chunk_cache_store(self, mesh, entry) -> None:
+        if entry["nf"] < self._CHUNK_CACHE_MIN_FACES:
+            return
+        import pickle
+        import threading
+        try:
+            key = self._chunk_cache_key(mesh, entry["fp"])
+            payload = {k: entry[k] for k in self._CHUNK_CACHE_FIELDS}
+            cdir = self._chunk_cache_dir()
+        except Exception:                    # noqa: BLE001
+            return
+
+        def write():
+            try:
+                path = cdir / (key + ".chunk")
+                tmp = path.with_suffix(".part")
+                with open(tmp, "wb") as fh:
+                    pickle.dump(payload, fh, protocol=5)
+                tmp.replace(path)
+                files = sorted(cdir.glob("*.chunk"),
+                               key=lambda p: p.stat().st_mtime)
+                for old in files[:-self._CHUNK_CACHE_KEEP]:
+                    old.unlink(missing_ok=True)
+            except Exception:                # noqa: BLE001
+                pass
+
+        threading.Thread(target=write, daemon=True).start()
 
     def _np_mvp(self):
         """Current MVP as a (4, 4) float64 NumPy matrix (row-major indexing).
