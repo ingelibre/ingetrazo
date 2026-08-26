@@ -215,3 +215,90 @@ def test_edit_rest_mode_defaults_to_fade_and_validates():
     from views.viewport import EDIT_REST_MODES, _load_edit_rest_mode
     assert "fade" in EDIT_REST_MODES and "hide" in EDIT_REST_MODES
     assert _load_edit_rest_mode() in EDIT_REST_MODES
+
+
+# ---- incremental VBO upload -------------------------------------------------
+
+class _FakeVBO:
+    """Records the allocate/write traffic so a test can assert what actually
+    reached the GPU."""
+
+    def __init__(self):
+        self.calls: list = []
+        self.data = bytearray()
+
+    def bind(self):
+        pass
+
+    def release(self):
+        pass
+
+    def allocate(self, arg, count=None):
+        self.calls.append(("allocate", arg if count is None else count))
+        size = arg if count is None else count
+        self.data = bytearray(size)
+
+    def write(self, offset, data, count):
+        self.calls.append(("write", offset, count))
+        self.data[offset:offset + count] = data[:count]
+
+
+class _UploadStub:
+    from views.viewport import Viewport
+    _upload_vbo = Viewport._upload_vbo
+
+    def __init__(self):
+        self._vbo_parts = {}
+
+
+def test_upload_vbo_first_call_allocates_and_writes_everything():
+    vp, vbo = _UploadStub(), _FakeVBO()
+    total = vp._upload_vbo(vbo, "e", [b"aaaa", b"bbbb"])
+    assert total == 8
+    assert vbo.calls[0][0] == "allocate"
+    assert ("write", 0, 8) in vbo.calls
+    assert bytes(vbo.data[:8]) == b"aaaabbbb"
+
+
+def test_upload_vbo_resends_only_the_changed_tail():
+    """The whole point: an unchanged prefix is already on the GPU."""
+    vp, vbo = _UploadStub(), _FakeVBO()
+    head = b"a" * 100                       # a group chunk: cached object
+    vp._upload_vbo(vbo, "e", [head, b"bbbb"])
+    vbo.calls.clear()
+    vp._upload_vbo(vbo, "e", [head, b"cccc"])
+    assert vbo.calls == [("write", 100, 4)]       # no allocate, no re-send
+    assert bytes(vbo.data[:104]) == head + b"cccc"
+
+
+def test_upload_vbo_prefix_matches_by_value_not_only_identity():
+    """The loose block is rebuilt fresh every sync, so identity never holds
+    for it; equal bytes must still count as already uploaded."""
+    vp, vbo = _UploadStub(), _FakeVBO()
+    vp._upload_vbo(vbo, "e", [b"a" * 50, b"bbbb"])
+    vbo.calls.clear()
+    vp._upload_vbo(vbo, "e", [b"a" * 50, b"dddd"])   # equal, not identical
+    assert vbo.calls == [("write", 50, 4)]
+
+
+def test_upload_vbo_growing_past_capacity_reallocates_and_rewrites():
+    vp, vbo = _UploadStub(), _FakeVBO()
+    head = b"a" * 16
+    vp._upload_vbo(vbo, "e", [head])
+    cap = vbo.calls[0][1]
+    vbo.calls.clear()
+    big = b"c" * (cap * 4)
+    vp._upload_vbo(vbo, "e", [head, big])
+    assert vbo.calls[0][0] == "allocate"             # outgrew the slack
+    assert vbo.calls[1] == ("write", 0, 16 + len(big))
+    assert bytes(vbo.data[:16 + len(big)]) == head + big
+
+
+def test_upload_vbo_shrinking_keeps_the_prefix_and_the_count():
+    vp, vbo = _UploadStub(), _FakeVBO()
+    head = b"a" * 40
+    vp._upload_vbo(vbo, "e", [head, b"b" * 40])
+    vbo.calls.clear()
+    total = vp._upload_vbo(vbo, "e", [head, b"b" * 8])
+    assert total == 48
+    assert vbo.calls == [("write", 40, 8)]           # capacity still fits

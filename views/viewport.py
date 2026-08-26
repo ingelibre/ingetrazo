@@ -444,6 +444,9 @@ class Viewport(QOpenGLWidget):
         self._ttex_runs: list = []
         self._tex_cache: dict = {}
         self._edges_version = -1
+        #: Per consolidated VBO: the byte parts last uploaded and the buffer's
+        #: allocated capacity, so a resync re-sends only what changed.
+        self._vbo_parts: dict = {}
 
         # How the rest of the model reads while you are INSIDE a group
         # (SketchUp's Model Info ▸ Components). "fade" keeps the context
@@ -2404,6 +2407,46 @@ class Viewport(QOpenGLWidget):
         return (n.normalized() if n.length() > 1e-9
                 else QVector3D(0.0, 0.0, 1.0))
 
+    def _upload_vbo(self, vbo, slot: str, parts, empty: int = 24) -> int:
+        """Put ``b"".join(parts)`` in ``vbo``, re-sending only the tail that
+        actually changed. Returns the total byte length.
+
+        Every scene-version bump re-uploaded each buffer whole, so an edit
+        inside one group re-sent the entire model each drag frame — on
+        piscina.igz that is ~25 MB of edges plus more of faces, and the
+        telemetry read ``sync=197ms`` against ``faces=11ms edges=7ms``: the
+        frame was the upload, not the drawing.
+
+        Parts that compare equal form a prefix the GPU already holds. Chunk
+        buffers are cached objects, so that comparison is an identity hit for
+        every group that did not change; the freshly built loose block falls
+        back to a bytes compare, which is memcmp and still an order of
+        magnitude under the transfer it saves. The buffer is over-allocated so
+        a growing tail usually fits without a reallocation (which would
+        discard the prefix along with everything else)."""
+        raw = b"".join(parts)
+        total = len(raw)
+        prev = self._vbo_parts.get(slot)
+        keep = 0
+        cap = prev[1] if prev is not None else 0
+        if prev is not None and total <= cap:
+            for a, b in zip(parts, prev[0]):
+                if a is b or a == b:
+                    keep += len(a)
+                else:
+                    break
+            keep = min(keep, total)
+        vbo.bind()
+        if total > cap:
+            cap = max(int(total * 1.25) + 4096, empty)
+            vbo.allocate(cap)      # reserve; a realloc keeps no contents
+            keep = 0
+        if total > keep:
+            vbo.write(keep, raw[keep:], total - keep)
+        vbo.release()
+        self._vbo_parts[slot] = (list(parts), cap)
+        return total
+
     def _sync_edges(self) -> None:
         if _cache_ver(self) == self._edges_version:
             return
@@ -2503,14 +2546,8 @@ class Viewport(QOpenGLWidget):
                 edge_spans.append((ch.get("bbox"), estart, n))
                 estart += n
         self._edge_spans = edge_spans
-        edges_raw = b"".join(edge_parts)
-        self._edges_vbo.bind()
-        if edges_raw:
-            self._edges_vbo.allocate(edges_raw, len(edges_raw))
-        else:
-            self._edges_vbo.allocate(24)
-        self._edges_vbo.release()
-        self._edges_count = len(edges_raw) // 12
+        self._edges_count = self._upload_vbo(
+            self._edges_vbo, "edges", edge_parts) // 12
 
         # The selection set is heterogeneous (edges, faces and/or whole
         # groups). A selected GROUP highlights via its cached chunk — walking
@@ -2542,14 +2579,9 @@ class Viewport(QOpenGLWidget):
                 chunk = self._group_chunk(ent)
                 sel_edge_parts.append(chunk["edges"])
                 sel_face_parts.append(self._chunk_tri_pos(chunk))
-        sel_raw = sel_loose.tobytes() + b"".join(sel_edge_parts)
-        self._selected_vbo.bind()
-        if sel_raw:
-            self._selected_vbo.allocate(sel_raw, len(sel_raw))
-        else:
-            self._selected_vbo.allocate(24)
-        self._selected_vbo.release()
-        self._selected_count = len(sel_raw) // 12
+        self._selected_count = self._upload_vbo(
+            self._selected_vbo, "sel_edges",
+            [sel_loose.tobytes()] + sel_edge_parts) // 12
 
         sel_face_loose = array("f")
         for ent in self.scene.selection:
@@ -2560,14 +2592,9 @@ class Viewport(QOpenGLWidget):
                         t1.x(), t1.y(), t1.z(),
                         t2.x(), t2.y(), t2.z(),
                     ])
-        sel_face_raw = sel_face_loose.tobytes() + b"".join(sel_face_parts)
-        self._sel_faces_vbo.bind()
-        if sel_face_raw:
-            self._sel_faces_vbo.allocate(sel_face_raw, len(sel_face_raw))
-        else:
-            self._sel_faces_vbo.allocate(24)
-        self._sel_faces_vbo.release()
-        self._sel_faces_count = len(sel_face_raw) // 12
+        self._sel_faces_count = self._upload_vbo(
+            self._sel_faces_vbo, "sel_faces",
+            [sel_face_loose.tobytes()] + sel_face_parts) // 12
 
         # Faces: triangulate each face (fan when simple, hole-aware when the
         # face has been divided) into one VBO, but grouped by material colour
@@ -2700,8 +2727,10 @@ class Viewport(QOpenGLWidget):
             if chunk.get("fvcol"):
                 fcull_vcol_parts.append(chunk["fvcol"])
 
-        face_raw = vcol.tobytes() + b"".join(face_parts)
-        self._faces_count = len(face_raw) // 24
+        # Kept as a part LIST (not one concatenated blob) so the upload can
+        # tell which pieces changed; the trailing runs below append to it.
+        all_face_parts = [vcol.tobytes()] + face_parts
+        self._faces_count = sum(len(p) for p in all_face_parts) // 24
         # Loose faces (including any bucketed inside the group loop) sit at
         # the front of the VBO and always draw; group spans follow them.
         loose_n = len(vcol) // 6
@@ -2717,31 +2746,26 @@ class Viewport(QOpenGLWidget):
         for key in sorted(tcol_runs):
             a, fc = key
             raw = b"".join(tcol_runs[key])
-            face_raw += raw
+            all_face_parts.append(raw)
             count = len(raw) // 24
             self._tcol_runs.append((a, fc, start, count))
             start += count
         back_vcol_raw = b"".join(back_vcol_parts)
         self._back_vcol_run = (start, len(back_vcol_raw) // 24)
-        face_raw += back_vcol_raw
+        all_face_parts.append(back_vcol_raw)
         start += self._back_vcol_run[1]
         fvcol_raw = b"".join(fcull_vcol_parts)
         self._fvcol_run = (start, len(fvcol_raw) // 24)
-        face_raw += fvcol_raw
+        all_face_parts.append(fvcol_raw)
         start += self._fvcol_run[1]
         self._back_tcol_runs = []
         for a in sorted(back_tcol_runs):
             raw = b"".join(back_tcol_runs[a])
-            face_raw += raw
+            all_face_parts.append(raw)
             count = len(raw) // 24
             self._back_tcol_runs.append((a, start, count))
             start += count
-        self._faces_vbo.bind()
-        if face_raw:
-            self._faces_vbo.allocate(face_raw, len(face_raw))
-        else:
-            self._faces_vbo.allocate(48)
-        self._faces_vbo.release()
+        self._upload_vbo(self._faces_vbo, "faces", all_face_parts, empty=48)
 
         # Textured faces: one interleaved (pos+uv) VBO, a run per image path.
         tex_parts = []
@@ -2787,14 +2811,8 @@ class Viewport(QOpenGLWidget):
             count = len(raw) // 20
             self._back_ttex_runs.append((key, a, start, count))
             start += count
-        tex_raw = b"".join(tex_parts)
-        self._tex_faces_vbo.bind()
-        if tex_raw:
-            self._tex_faces_vbo.allocate(tex_raw, len(tex_raw))
-        else:
-            self._tex_faces_vbo.allocate(40)
-        self._tex_faces_vbo.release()
-        self._tex_faces_count = len(tex_raw) // 20
+        self._tex_faces_count = self._upload_vbo(
+            self._tex_faces_vbo, "tex", tex_parts, empty=40) // 20
 
         if _PERF:
             _plog("sync_edges", (_time_mod.perf_counter() - _st0) * 1000.0)
