@@ -222,6 +222,17 @@ class PushPullTool(Tool):
         # Set when the last _mutate refused the push to keep the solid valid
         # (the BIM-grade guard); _commit surfaces it in the status bar.
         self._refused: bool = False
+        # ---- Hybrid drag preview --------------------------------------------
+        # While the cursor is MOVING the drag shows the naive sweep as an
+        # overlay — cap plus wall quads, nothing touched in the mesh. The real
+        # pipeline (stitch, per-plane rebuild, hermeticity guard) runs when the
+        # cursor SETTLES, which is the moment you are actually reading the
+        # result. Applying it per mouse-move cost ~0.3 s a frame on an
+        # imported barbecue; the shape you drag against is the same either way,
+        # only the cleanup of coincident geometry waits for the pause.
+        self._light_faces: list = []
+        self._settle_timer = None
+        self._settle_target = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -263,9 +274,10 @@ class PushPullTool(Tool):
             self.extrusion = QVector3D.dotProduct(
                 projected - self._anchor, self._normal)
         self._clamp_extrusion(viewport)
-        # Apply the real commit to the mesh as a live preview (reverting last
-        # frame's first), so the forming solid renders exactly as it will commit.
-        self._apply_preview(viewport)
+        # Moving: the cheap sweep overlay. The real pipeline runs from
+        # _on_settled once the cursor holds still — see _build_light_faces.
+        self._show_light_preview(viewport)
+        self._arm_settle(viewport)
 
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
@@ -370,6 +382,8 @@ class PushPullTool(Tool):
         return True
 
     def on_cancel(self, viewport) -> None:
+        self._disarm_settle()
+        self._light_faces = []
         self._revert_preview(viewport)
         viewport.set_hover(None)
         viewport.set_suppressed_faces(set())
@@ -377,13 +391,100 @@ class PushPullTool(Tool):
         viewport.update()
 
     # ---- Visual preview -----------------------------------------------------
-    # The drag preview is the real (stitched) geometry applied each frame, so no
-    # overlay wireframe or shaded faces are needed.
+    # While the cursor MOVES the drag shows the naive sweep as overlay faces
+    # (``preview_faces``); once it settles the real stitched geometry replaces
+    # them in the mesh and the overlay empties. Its outline comes from those
+    # faces, so there is no separate rubber band.
     def rubber_band_lines(self):
         return []
 
     def preview_faces(self):
-        return []
+        return self._light_faces
+
+    # ---- Hybrid drag preview -------------------------------------------------
+    #: How long the cursor must hold still before the real pipeline runs. Long
+    #: enough that a continuous drag never triggers it, short enough that it
+    #: has landed by the time you have looked at where you stopped.
+    SETTLE_MS = 110
+
+    def _build_light_faces(self):
+        """The naive sweep of the base face as plain preview polygons: the
+        moved cap (holes carried) and one quad per boundary and hole edge.
+
+        This is the *shape* the push makes, without any of the work that makes
+        it a valid solid — no stitch, no per-plane rebuild, no guard. Those
+        decide how the new geometry MERGES with what is already there, which
+        is exactly what you cannot see while the shape is still moving."""
+        face = self.base_face
+        d = self.extrusion
+        if face is None or self._normal is None or abs(d) < _MIN_EXTRUDE:
+            return []
+        n = self._normal
+        off = n * d
+        attrs = dict(face.attrs) if face.attrs else None
+        rings = [(list(face.vertices), [p + off for p in face.vertices])]
+        rings += [(list(h), [p + off for p in h]) for h in face.holes]
+        cap = Face(rings[0][1], [r[1] for r in rings[1:]], attrs=attrs)
+        out = [cap]
+        for low, high in rings:
+            count = len(low)
+            for i in range(count):
+                j = (i + 1) % count
+                out.append(Face([low[i], low[j], high[j], high[i]],
+                                attrs=attrs))
+        return out
+
+    def _show_light_preview(self, viewport) -> None:
+        """Drop any applied preview and show the sweep as an overlay instead.
+        The mesh is left untouched, so the scene version does not move and the
+        consolidated buffers are not touched either — the frame costs one small
+        preview upload."""
+        self._revert_preview(viewport)
+        self._light_faces = self._build_light_faces()
+        # Hide the base face exactly when the commit would consume it (an
+        # embedded face, not a Ctrl-stack): that is what lets an inward drag
+        # read as a recess opening instead of a box buried in the solid. A
+        # free-standing face keeps its cap, so hiding it would be a lie — and
+        # suppression costs a resync, since a group with a hidden face cannot
+        # use its cached chunk.
+        consumed = (self._light_faces and self.base_face is not None
+                    and self._attached and not self._keep_base)
+        viewport.set_suppressed_faces({self.base_face} if consumed else set())
+        viewport.update()
+
+    def _arm_settle(self, viewport) -> None:
+        """(Re)start the pause that swaps the overlay for the real geometry.
+
+        Without a Qt event loop to hang the timer on — a headless driver, the
+        AI bridge, a test's stub viewport — there is no "cursor settles"
+        moment to wait for, so the real pipeline runs right away and the
+        caller sees exactly the behaviour it saw before the split."""
+        from PySide6.QtCore import QObject, QTimer
+        if not isinstance(viewport, QObject):
+            self._settle_target = viewport
+            self._on_settled()
+            return
+        if self._settle_timer is None:
+            self._settle_timer = QTimer(viewport)
+            self._settle_timer.setSingleShot(True)
+            self._settle_timer.timeout.connect(self._on_settled)
+        self._settle_target = viewport
+        self._settle_timer.start(self.SETTLE_MS)
+
+    def _disarm_settle(self) -> None:
+        if self._settle_timer is not None:
+            self._settle_timer.stop()
+        self._settle_target = None
+
+    def _on_settled(self) -> None:
+        """The cursor stopped: replace the overlay with the geometry that will
+        actually commit — clamped by the guard, seams dissolved."""
+        viewport = self._settle_target
+        if viewport is None or not self.dragging:
+            return
+        self._light_faces = []
+        viewport.set_suppressed_faces(set())
+        self._apply_preview(viewport)
 
     def _target_scene(self, scene):
         """The scene the machinery edits: the real one, or a facade over the
@@ -711,6 +812,8 @@ class PushPullTool(Tool):
 
     def _commit(self, viewport) -> None:
         viewport.set_hover(None)  # the hovered face is about to be replaced
+        self._disarm_settle()     # a pending settle must not fire mid-commit
+        self._light_faces = []
         viewport.set_suppressed_faces(set())
         self._revert_preview(viewport)  # drop the live preview; redo it for real
         if self.base_face is None or abs(self.extrusion) < _MIN_EXTRUDE:
@@ -1205,3 +1308,5 @@ class PushPullTool(Tool):
         self._inference_kind = None
         self._infer_cache = None       # per-drag projected-vertex candidates
         self._refused = False
+        self._light_faces = []
+        self._disarm_settle()

@@ -2636,6 +2636,17 @@ class Viewport(QOpenGLWidget):
         suppressed_faces = self._suppressed_faces
         vcol = array("f")            # loose faces, interleaved pos(3)+rgb(3)
         by_texture: dict = {}        # image path -> interleaved pos+uv array
+        # A group with SUPPRESSED faces (a push preview hides the face being
+        # extruded) cannot use its cached chunk, so its faces are bucketed one
+        # by one — and that output must not land in the loose block at the
+        # HEAD of the buffer. There it would be on the context side of the
+        # fade split, washing out the very geometry being edited, and it would
+        # break the stable prefix the incremental upload rides on. It goes to
+        # its own block at the tail instead; ``sink`` is what bucket_face
+        # writes through.
+        subj_vcol = array("f")
+        subj_by_texture: dict = {}
+        sink = {"vcol": vcol, "tex": by_texture}
         group_texture: dict = {}     # chunk byte-parts per image path
         face_parts: list = []        # interleaved vcol byte chunks
 
@@ -2684,7 +2695,7 @@ class Viewport(QOpenGLWidget):
                 # (textured opaque fronts of glass-backed faces keep the
                 # plain double-sided path — the opaque back pass covers
                 # opaque backs, and this combination is vanishing rare)
-                self._append_textured_face(by_texture, face, tex)
+                self._append_textured_face(sink["tex"], face, tex)
                 return
             col = face.attrs.get("color")
             base = tuple(col) if col is not None else self.DEFAULT_FACE_COLOR
@@ -2706,7 +2717,7 @@ class Viewport(QOpenGLWidget):
             elif fcull:
                 fcull_vcol_parts.append(buf.tobytes())
             else:
-                vcol.extend(buf)
+                sink["vcol"].extend(buf)
 
         if not hide_rest:
             for face in self.scene.loose_mesh.faces:
@@ -2714,6 +2725,7 @@ class Viewport(QOpenGLWidget):
                     bucket_face(face)
         group_face_spans: list = []   # (bbox, start-within-groups, count)
         gface_start = 0
+        subject_bucketed = False
         pv_faces = getattr(self, "_preview_groups", None) or ()
         for g in draw_groups:         # context first, edited group last
             if (not self.scene.entity_visible(g)
@@ -2725,14 +2737,14 @@ class Viewport(QOpenGLWidget):
                 self._edit_split_f = gface_start   # made absolute below
             if suppressed_faces and any(f in suppressed_faces
                                         for f in g.mesh.faces):
+                # Bucketed into the SUBJECT block at the tail, not the loose
+                # head — see ``sink``. The chunk is unusable while a face of
+                # it is hidden.
+                sink["vcol"], sink["tex"] = subj_vcol, subj_by_texture
                 for face in g.mesh.faces:
                     bucket_face(face)   # push/pull preview suppresses faces
-                if g is self.scene.edit_group:
-                    # Those faces land in the LOOSE block at the head of the
-                    # buffer, on the context side of the split — fading by
-                    # position would wash out the very geometry being pushed.
-                    # No split for this frame: everything draws opaque.
-                    self._edit_split_f = None
+                sink["vcol"], sink["tex"] = vcol, by_texture
+                subject_bucketed = True
                 continue
             chunk = self._group_chunk(g)
             face_parts.append(chunk["vcol"])
@@ -2760,16 +2772,24 @@ class Viewport(QOpenGLWidget):
 
         # Kept as a part LIST (not one concatenated blob) so the upload can
         # tell which pieces changed; the trailing runs below append to it.
-        all_face_parts = [vcol.tobytes()] + face_parts
+        subj_raw = subj_vcol.tobytes()
+        all_face_parts = [vcol.tobytes()] + face_parts + [subj_raw]
         self._faces_count = sum(len(p) for p in all_face_parts) // 24
-        # Loose faces (including any bucketed inside the group loop) sit at
-        # the front of the VBO and always draw; group spans follow them.
+        # Loose faces sit at the front of the VBO and always draw; group spans
+        # follow them, and a bucketed subject block closes the buffer.
         loose_n = len(vcol) // 6
         self._face_spans = ([(None, 0, loose_n)]
                             + [(bb, loose_n + s, n)
                                for bb, s, n in group_face_spans])
         if self._edit_split_f is not None:
             self._edit_split_f += loose_n   # was relative to the group block
+        if subj_raw:
+            subj_start = loose_n + gface_start
+            self._face_spans.append((None, subj_start, len(subj_raw) // 24))
+            if subject_bucketed and self.scene.edit_group is not None:
+                # The bucketed block IS the subject, and it is last: the fade
+                # split moves to its start so the context still fades.
+                self._edit_split_f = subj_start
         # Translucent colour runs live in the SAME VBO, after the opaque
         # batch; drawn in their own blended pass (depth-write off).
         self._tcol_runs = []
@@ -2806,12 +2826,17 @@ class Viewport(QOpenGLWidget):
         # which a single buffer offset cannot (runs interleave by image).
         self._tex_run_parts = []
         start = 0
-        for key in dict.fromkeys(list(by_texture) + list(group_texture)):
+        for key in dict.fromkeys(list(by_texture) + list(group_texture)
+                                 + list(subj_by_texture)):
             run_start = start
             run_parts: list = []
             parts = ([(by_texture[key].tobytes(), None, False)]
                      if key in by_texture else [])
             parts += group_texture.get(key, [])
+            # A bucketed subject's textured faces are the subject too, so the
+            # fade pass must not wash them out with the surroundings.
+            if key in subj_by_texture:
+                parts.append((subj_by_texture[key].tobytes(), None, True))
             for raw, bb, subj in parts:
                 tex_parts.append(raw)
                 n = len(raw) // 20

@@ -555,3 +555,82 @@ def test_bump_pushed_flush_back_dissolves_to_clean_cube():
     fronts = [f for f in m.faces if all(abs(v.y()) < 1e-9 for v in f.vertices)]
     assert len(fronts) == 1 and fronts[0].holes == []  # pane + ring dissolved
     assert signed_volume(m) > 0                        # outward
+
+
+# ---- hybrid drag preview ----------------------------------------------------
+#
+# While the cursor MOVES the drag shows the naive sweep as overlay faces and
+# leaves the mesh alone; the real pipeline (stitch, per-plane rebuild, guard)
+# runs once the cursor SETTLES. Applying it per mouse-move cost ~0.3 s a frame
+# on an imported barbecue.
+
+
+def _dragging_tool(scene, base_face, distance):
+    tool = PushPullTool()
+    tool.base_face = base_face
+    tool.dragging = True
+    tool.extrusion = distance
+    tool._anchor = base_face.centroid()
+    tool._normal = base_face.normal()
+    return tool
+
+
+def test_light_preview_sweeps_the_base_face():
+    scene, _big, small = _embedded_scene()
+    tool = _dragging_tool(scene, small, 2.0)
+    faces = tool._build_light_faces()
+    # one cap + one quad per boundary edge
+    assert len(faces) == 1 + len(small.vertices)
+    n = small.normal()
+    cap = faces[0]
+    for v, w in zip(small.vertices, cap.vertices):
+        assert (w - (v + n * 2.0)).length() < 1e-9
+    assert all(len(q.vertices) == 4 for q in faces[1:])
+
+
+def test_light_preview_carries_the_holes():
+    scene = Scene()
+    hist = History(scene)
+    hist.execute(AddFaceCommand(BIG))
+    hist.execute(AddFaceCommand(SMALL))
+    big = scene.faces[0]
+    assert len(big.holes) == 1
+    tool = _dragging_tool(scene, big, 1.0)
+    faces = tool._build_light_faces()
+    assert len(faces[0].holes) == 1                     # cap keeps the opening
+    # walls for the outer loop AND the hole loop
+    assert len(faces) == 1 + len(big.vertices) + len(big.holes[0])
+
+
+def test_light_preview_is_empty_below_the_minimum():
+    scene, _big, small = _embedded_scene()
+    assert _dragging_tool(scene, small, 0.0)._build_light_faces() == []
+
+
+def test_moving_leaves_the_mesh_untouched_until_it_settles():
+    """The whole point of the split: a mouse-move costs an overlay, not a
+    rebuild."""
+    scene, _big, small = _embedded_scene()
+    vp = _StubViewport(scene)
+    tool = _dragging_tool(scene, small, -1.0)
+    before = (len(scene.mesh.faces), len(scene.mesh.edges))
+    tool._show_light_preview(vp)
+    assert (len(scene.mesh.faces), len(scene.mesh.edges)) == before
+    assert tool.preview_faces()                     # ...but something is shown
+    # settling runs the real thing and drops the overlay
+    tool._settle_target = vp
+    tool._on_settled()
+    assert tool.preview_faces() == []
+    assert (len(scene.mesh.faces), len(scene.mesh.edges)) != before
+
+
+def test_settle_without_an_event_loop_applies_immediately():
+    """A stub viewport is no QObject: with no loop to wait on, the real
+    pipeline must run inline so headless callers behave as before."""
+    scene, _big, small = _embedded_scene()
+    vp = _StubViewport(scene)
+    tool = _dragging_tool(scene, small, -1.0)
+    before = len(scene.mesh.faces)
+    tool._arm_settle(vp)
+    assert tool._settle_timer is None               # never created one
+    assert len(scene.mesh.faces) != before          # applied inline
