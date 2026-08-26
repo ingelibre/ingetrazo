@@ -4968,7 +4968,8 @@ class Viewport(QOpenGLWidget):
         # open loads the 230k-face hedge in ~0.3 s instead of building it
         # for ~6 s. Keyed by a STABLE content digest (the in-session
         # fingerprint uses process-salted hash()).
-        disk = self._chunk_cache_load(group, fp, vkey)
+        _loader = getattr(self, "_chunk_cache_load", None)   # stub VPs in tests
+        disk = _loader(group, fp, vkey) if callable(_loader) else None
         if disk is not None:
             cache[id(group)] = disk
             mesh._chunk_dirty = False
@@ -5171,7 +5172,9 @@ class Viewport(QOpenGLWidget):
                   extra=f"faces={len(faces)}")
         mesh._chunk_dirty = False
         cache[id(group)] = entry
-        self._chunk_cache_store(mesh, entry)
+        _store = getattr(self, "_chunk_cache_store", None)   # stub VPs in tests
+        if callable(_store):
+            _store(mesh, entry)
         return entry
 
     # ---- On-disk chunk cache (P4: fast cold start) --------------------------
