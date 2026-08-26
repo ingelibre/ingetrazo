@@ -1714,15 +1714,53 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
     mesh.weld_coincident()
     if dedupe:
         mesh.dedupe_faces()
-    # Phase 1 — resolve T-junctions (global).
+    # Phase 1 — resolve T-junctions (global). Batch form: the per-edge
+    # ``interior_vertex_on`` walked EVERY vertex in Python and the loop
+    # restarted from edge zero after each split — O(splits × E × V). An
+    # imported brick barbecue (3k faces, T-junctions everywhere) hung the
+    # push preview for minutes per drag frame (SIGUSR1 autopsy: two stacks
+    # pinned at interior_vertex_on). One NumPy pass per edge and no
+    # restart; fresh sub-edges wait for the next outer sweep, which runs
+    # until a sweep splits nothing — same fixed point as before.
+    import numpy as np
+    from core.mesh import _STITCH_TOL
     while True:
         split = False
+        verts = mesh.vertices
+        if not verts:
+            break
+        vpos = np.array([[v.position.x(), v.position.y(), v.position.z()]
+                         for v in verts])
+        removed: set = set()
         for e in list(mesh.edges):
-            mid = mesh.interior_vertex_on(e)
-            if mid is not None:
-                mesh.split_edge_at(e, mid)
-                split = True
-                break
+            if id(e) in removed:
+                continue
+            a, b = e.v0.position, e.v1.position
+            ab = np.array([b.x() - a.x(), b.y() - a.y(), b.z() - a.z()])
+            l2 = float(ab @ ab)
+            length = l2 ** 0.5
+            if length < _STITCH_TOL:
+                continue
+            rel = vpos - (a.x(), a.y(), a.z())
+            t = (rel @ ab) / l2
+            tol_t = _STITCH_TOL / length
+            cand = np.flatnonzero((t > tol_t) & (t < 1.0 - tol_t))
+            if not len(cand):
+                continue
+            d = rel[cand] - np.outer(t[cand], ab)
+            close = cand[np.einsum("ij,ij->i", d, d)
+                         < _STITCH_TOL * _STITCH_TOL]
+            mid = None
+            for i in close:
+                v = verts[int(i)]
+                if v is not e.v0 and v is not e.v1:
+                    mid = v
+                    break
+            if mid is None:
+                continue
+            mesh.split_edge_at(e, mid)
+            removed.add(id(e))
+            split = True
         if not split:
             break
     # Phase 2 — collapse redundant valence-2 collinear vertices (global).
