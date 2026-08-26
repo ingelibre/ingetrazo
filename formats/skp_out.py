@@ -36,6 +36,16 @@ from core.texture import face_uv_axes, uv_reference_points
 # IngeTrazo stores geometry in metres; SketchUp works in inches.
 _M_TO_IN = 39.37007874
 
+# The physical tile a material ends up with in the written file. OpenSKP's
+# ``add_texture_material`` has no size parameter and hardcodes a one-inch
+# applied width, so every texture arrives claiming to span one inch however
+# large it really is — a 3.26 x 8.82 m grass repeats 128 times and loses its
+# aspect (Marco's export: the lawn came out as vertical stripes), while a
+# 4 cm metal, already near an inch, looked right. Until the size can be
+# written, the UVs carry the correction. REMOVE this the day OpenSKP can
+# express the real size.
+_APPLIED_TILE_M = 0.0254
+
 def _color_to_rgba(color):
     """Convert a float (0.0-1.0) RGB colour to integer (0-255) RGBA."""
     r, g, b = color[:3]
@@ -198,9 +208,16 @@ def _face_uv_pairs(face, points=None):
     if ref is None:
         return None
     gu, cu, gv, cv = face_uv_axes(tex, face.normal())
+    # Compensate for the tile size the file cannot carry (see
+    # _APPLIED_TILE_M): our UVs count repeats of the texture's REAL tile, and
+    # the reader will count repeats of a one-inch one. Scaling each axis
+    # separately also restores a non-square tile's aspect, which is what
+    # turned a 3.26 x 8.82 m grass into vertical stripes.
+    su = (tex.get("sw") or _APPLIED_TILE_M) / _APPLIED_TILE_M
+    sv = (tex.get("sh") or _APPLIED_TILE_M) / _APPLIED_TILE_M
     return [
-        (pt, (QVector3D.dotProduct(gu, p) + cu,
-              QVector3D.dotProduct(gv, p) + cv))
+        (pt, ((QVector3D.dotProduct(gu, p) + cu) * su,
+              (QVector3D.dotProduct(gv, p) + cv) * sv))
         for p, pt in zip(ref, _pts_inches(ref))
     ]
 
