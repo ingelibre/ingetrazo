@@ -713,6 +713,21 @@ class Viewport(QOpenGLWidget):
         self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
+        # Frustum planes for chunk culling — also consumed by the
+        # silhouette pass (skip whole chunks that are off screen).
+        self._frame_planes = self._frustum_planes(mvp)
+        # P0 frame telemetry: coarse per-section CPU times, logged with the
+        # cull counters when the frame is slow (INGETRAZO_PERF=1).
+        _fseg: dict = {}
+        _fprev = _pt0
+
+        def _fmark(name: str) -> None:
+            nonlocal _fprev
+            if _PERF:
+                now = _time_mod.perf_counter()
+                _fseg[name] = _fseg.get(name, 0.0) + (now - _fprev) * 1000.0
+                _fprev = now
+
         self._program.bind()
         self._program.setUniformValue(self._loc_mvp, mvp)
         # Solid-colour by default; the textured-face pass flips this on.
@@ -746,11 +761,31 @@ class Viewport(QOpenGLWidget):
         # Photogrammetric survey (Track G, G6) — the user's own flight, drawn
         # after the DEM terrain so the real capture wins where both exist.
         self._render_photo_mesh()
+        _fmark("ground")
 
         # No grid — the infinite axes are the spatial reference (SketchUp).
 
         # Persistent edges + faces
         self._sync_edges()
+        _fmark("sync")
+
+        # Frustum culling (P1): the consolidated VBOs carry per-chunk draw
+        # spans; only spans whose chunk AABB touches the frustum are
+        # submitted. Conservative — a missing bbox always draws.
+        planes = self._frame_planes
+        spans = getattr(self, "_face_spans", None)
+        if spans:
+            face_spans, culled_fv = self._visible_spans(spans, planes)
+        else:
+            face_spans, culled_fv = [(0, self._faces_count)], 0
+        espans = getattr(self, "_edge_spans", None)
+        if espans:
+            edge_spans, culled_ev = self._visible_spans(espans, planes)
+        else:
+            edge_spans, culled_ev = [(0, self._edges_count)], 0
+        self._frame_edge_spans = edge_spans
+        self._cull_stats = (culled_fv // 3, self._faces_count // 3,
+                            culled_ev // 2)
 
         # Faces — drawn before edges, with polygon offset so coincident
         # boundary edges sit cleanly on top instead of z-fighting.
@@ -786,7 +821,8 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue1f(self._loc_opacity, 0.55)
                 self._gl.glDepthMask(GL_FALSE)
             self._faces_vao.bind()
-            self._gl.glDrawArrays(GL_TRIANGLES, 0, self._faces_count)
+            for _vs, _vc in face_spans:
+                self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
             fstart, fcount = self._fvcol_run
             if fcount:
                 # opaque front copies of glass-backed faces: visible only
@@ -820,11 +856,17 @@ class Viewport(QOpenGLWidget):
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
             self._tex_faces_vao.bind()
-            for (path, shade), start, count in self._tex_runs:
+            run_parts = getattr(self, "_tex_run_parts", None)
+            for ri, ((path, shade), start, count) in enumerate(self._tex_runs):
+                vis = ([(start, count)] if not run_parts else
+                       self._visible_spans(run_parts[ri], planes)[0])
+                if not vis:
+                    continue
                 r, g, b = self._texture_avg_color(path)
                 self._program.setUniformValue1f(self._loc_shade, float(shade))
                 self._set_color(r, g, b, 1.0)
-                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                for _vs, _vc in vis:
+                    self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
             self._tex_faces_vao.release()
             self._program.setUniformValue1f(self._loc_shade, 1.0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
@@ -836,7 +878,12 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue1f(self._loc_opacity, 0.55)
                 self._gl.glDepthMask(GL_FALSE)
             self._tex_faces_vao.bind()
-            for (path, shade), start, count in self._tex_runs:
+            run_parts = getattr(self, "_tex_run_parts", None)
+            for ri, ((path, shade), start, count) in enumerate(self._tex_runs):
+                vis = ([(start, count)] if not run_parts else
+                       self._visible_spans(run_parts[ri], planes)[0])
+                if not vis:
+                    continue
                 tex = self._get_texture(path)
                 if tex is None:
                     continue
@@ -845,7 +892,8 @@ class Viewport(QOpenGLWidget):
                     self._loc_hard_cutout,
                     1 if getattr(tex, "_cutout", False) else 0)
                 tex.bind(0)
-                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                for _vs, _vc in vis:
+                    self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
                 tex.release(0)
             self._program.setUniformValue(self._loc_hard_cutout, 0)
             self._tex_faces_vao.release()
@@ -992,6 +1040,7 @@ class Viewport(QOpenGLWidget):
             self._gl.glDepthMask(GL_TRUE)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
+        _fmark("faces")
         # Shaded solid preview (Push/Pull box forming as you drag). Drawn after
         # the persistent faces, depth-tested so it occludes geometry behind it
         # and reads as a real solid; its wireframe goes on top via the rubber
@@ -1030,7 +1079,9 @@ class Viewport(QOpenGLWidget):
         if self._edges_count > 0 and show_edges:
             self._set_color(ec[0], ec[1], ec[2], 1.0)
             self._edges_vao.bind()
-            self._gl.glDrawArrays(GL_LINES, 0, self._edges_count)
+            for _vs, _vc in getattr(self, "_frame_edge_spans",
+                                    ((0, self._edges_count),)):
+                self._gl.glDrawArrays(GL_LINES, _vs, _vc)
             self._edges_vao.release()
 
         # Profile (silhouette) edges: soft seams of a curved surface are hidden,
@@ -1043,6 +1094,7 @@ class Viewport(QOpenGLWidget):
                 self._silhouette_vao.bind()
                 self._gl.glDrawArrays(GL_LINES, 0, sil_count)
                 self._silhouette_vao.release()
+        _fmark("edges")
 
         # Selected edges (drawn on top, highlighted)
         if self._selected_count > 0:
@@ -1112,6 +1164,18 @@ class Viewport(QOpenGLWidget):
                   (_time_mod.perf_counter() - _ov0) * 1000.0, floor=30.0)
             _dt = (_time_mod.perf_counter() - _pt0) * 1000.0
             _plog("paintGL", _dt)
+            # P0 breakdown: per-section CPU ms + cull counters + the
+            # input→paint latency of the gesture that triggered this frame.
+            if _dt >= 25.0:
+                cf, tf, ce = getattr(self, "_cull_stats", (0, 0, 0))
+                it = getattr(self, "_input_t", None)
+                lat = (f" lat={( _time_mod.monotonic() - it) * 1000.0:.0f}ms"
+                       if it is not None else "")
+                segs = " ".join(f"{k}={v:.0f}ms" for k, v in _fseg.items())
+                _plog("frame", _dt,
+                      extra=f"{segs} cull={cf//1000}k/{tf//1000}k"
+                            f" tris +{ce//1000}k edges{lat}", floor=0.0)
+            self._input_t = None
             st = getattr(self, "_perf_stat", None) or \
                 [_time_mod.perf_counter(), 0, 0.0]
             st[1] += 1
@@ -1974,11 +2038,21 @@ class Viewport(QOpenGLWidget):
                 e.b.x(), e.b.y(), e.b.z(),
             ])
         edge_parts = [all_loose.tobytes()]
+        # Per-chunk draw spans (vertices) for frustum culling: the loose
+        # block always draws (bbox None); each group's block carries its
+        # chunk's world AABB.
+        edge_spans = [(None, 0, len(all_loose) // 3)]
+        estart = len(all_loose) // 3
         pv = getattr(self, "_preview_groups", None) or ()
         for g in self.scene.groups:
             if (self.scene.entity_visible(g) and id(g) not in pv
                     and not getattr(g, "billboard", False)):
-                edge_parts.append(self._group_chunk(g)["edges"])
+                ch = self._group_chunk(g)
+                edge_parts.append(ch["edges"])
+                n = len(ch["edges"]) // 12
+                edge_spans.append((ch.get("bbox"), estart, n))
+                estart += n
+        self._edge_spans = edge_spans
         edges_raw = b"".join(edge_parts)
         self._edges_vbo.bind()
         if edges_raw:
@@ -2123,6 +2197,8 @@ class Viewport(QOpenGLWidget):
         for face in self.scene.loose_mesh.faces:
             if self.scene.entity_visible(face):
                 bucket_face(face)
+        group_face_spans: list = []   # (bbox, start-within-groups, count)
+        gface_start = 0
         pv_faces = getattr(self, "_preview_groups", None) or ()
         for g in self.scene.groups:
             if (not self.scene.entity_visible(g)
@@ -2136,8 +2212,12 @@ class Viewport(QOpenGLWidget):
                 continue
             chunk = self._group_chunk(g)
             face_parts.append(chunk["vcol"])
+            group_face_spans.append((chunk.get("bbox"), gface_start,
+                                     len(chunk["vcol"]) // 24))
+            gface_start += len(chunk["vcol"]) // 24
             for path, raw in chunk["by_texture"].items():
-                group_texture.setdefault(path, []).append(raw)
+                group_texture.setdefault(path, []).append(
+                    (raw, chunk.get("bbox")))
             for a, raw in chunk.get("tcol", {}).items():
                 tcol_runs.setdefault(a, []).append(raw)
             for key, raw in chunk.get("ttex", {}).items():
@@ -2155,6 +2235,12 @@ class Viewport(QOpenGLWidget):
 
         face_raw = vcol.tobytes() + b"".join(face_parts)
         self._faces_count = len(face_raw) // 24
+        # Loose faces (including any bucketed inside the group loop) sit at
+        # the front of the VBO and always draw; group spans follow them.
+        loose_n = len(vcol) // 6
+        self._face_spans = ([(None, 0, loose_n)]
+                            + [(bb, loose_n + s, n)
+                               for bb, s, n in group_face_spans])
         # Translucent colour runs live in the SAME VBO, after the opaque
         # batch; drawn in their own blended pass (depth-write off).
         self._tcol_runs = []
@@ -2191,15 +2277,21 @@ class Viewport(QOpenGLWidget):
         # Textured faces: one interleaved (pos+uv) VBO, a run per image path.
         tex_parts = []
         self._tex_runs = []
+        self._tex_run_parts = []      # per run: [(bbox, start, count)]
         start = 0
         for key in dict.fromkeys(list(by_texture) + list(group_texture)):
-            parts = ([by_texture[key].tobytes()] if key in by_texture else [])
+            run_start = start
+            run_parts: list = []
+            parts = ([(by_texture[key].tobytes(), None)]
+                     if key in by_texture else [])
             parts += group_texture.get(key, [])
-            raw = b"".join(parts)
-            tex_parts.append(raw)
-            count = len(raw) // 20
-            self._tex_runs.append((key, start, count))
-            start += count
+            for raw, bb in parts:
+                tex_parts.append(raw)
+                n = len(raw) // 20
+                run_parts.append((bb, start, n))
+                start += n
+            self._tex_runs.append((key, run_start, start - run_start))
+            self._tex_run_parts.append(run_parts)
         self._ttex_runs = []
         for full in sorted(ttex_runs):
             key, a, fc = full
@@ -2637,10 +2729,15 @@ class Viewport(QOpenGLWidget):
         if groups:
             import numpy as np
             e_np = np.array([eye.x(), eye.y(), eye.z()])
+            planes = getattr(self, "_frame_planes", None)
             for g in groups:
                 ch = self._group_chunk(g)
                 if ch["soft_pts"] is None:
                     continue
+                bb = ch.get("bbox")
+                if (planes is not None and bb is not None
+                        and not self._aabb_visible(planes, bb[0], bb[1])):
+                    continue        # whole chunk off screen: skip the einsum
                 s0 = np.einsum("ij,ij->i", ch["soft_n0"],
                                ch["soft_c0"] - e_np)
                 s1 = np.einsum("ij,ij->i", ch["soft_n1"],
@@ -4183,6 +4280,11 @@ class Viewport(QOpenGLWidget):
         analytically."""
         import numpy as np
         dx = np.array([d.x(), d.y(), d.z()])
+        bb = entry.get("bbox")
+        if bb is not None:
+            entry["bbox"] = (
+                (bb[0][0] + d.x(), bb[0][1] + d.y(), bb[0][2] + d.z()),
+                (bb[1][0] + d.x(), bb[1][1] + d.y(), bb[1][2] + d.z()))
 
         def flat3(b):
             a = np.frombuffer(b, dtype=np.float32).reshape(-1, 3).copy()
@@ -4384,6 +4486,17 @@ class Viewport(QOpenGLWidget):
                         else base["soft_c1"]),
             "soft_single": base["soft_single"],
         }
+        bb = base.get("bbox")
+        if bb is not None:
+            corners = np.array([(x, y, z)
+                                for x in (bb[0][0], bb[1][0])
+                                for y in (bb[0][1], bb[1][1])
+                                for z in (bb[0][2], bb[1][2])])
+            tc = tp(corners)
+            entry["bbox"] = (tuple(float(v) for v in tc.min(axis=0)),
+                             tuple(float(v) for v in tc.max(axis=0)))
+        else:
+            entry["bbox"] = None
         cache[id(group)] = entry
         return entry
 
@@ -4391,6 +4504,11 @@ class Viewport(QOpenGLWidget):
         """Translate a cached instance chunk in place (Move drag fast path)."""
         import numpy as np
         dx = np.array([d.x(), d.y(), d.z()])
+        bb = entry.get("bbox")
+        if bb is not None:
+            entry["bbox"] = (
+                (bb[0][0] + d.x(), bb[0][1] + d.y(), bb[0][2] + d.z()),
+                (bb[1][0] + d.x(), bb[1][1] + d.y(), bb[1][2] + d.z()))
 
         def shift(raw, stride):
             a = np.frombuffer(raw, np.float32).reshape(-1, stride).copy()
@@ -4619,6 +4737,21 @@ class Viewport(QOpenGLWidget):
             tri_ent_a = np.asarray(tri_ent, dtype=np.int64)
         else:
             v0 = e1 = e2 = tri_ent_a = None
+        # World AABB of the chunk (frustum culling): triangle corners cover
+        # every face; hard-edge endpoints cover edge-only content.
+        blo = bhi = None
+        if v0 is not None:
+            allv = np.concatenate((v0, v0 + e1, v0 + e2))
+            blo, bhi = allv.min(axis=0), allv.max(axis=0)
+        if len(edges_data):
+            ea = np.frombuffer(edges_data.tobytes(),
+                               dtype=np.float32).reshape(-1, 3)
+            elo, ehi = ea.min(axis=0), ea.max(axis=0)
+            blo = elo if blo is None else np.minimum(blo, elo)
+            bhi = ehi if bhi is None else np.maximum(bhi, ehi)
+        bbox = (((float(blo[0]), float(blo[1]), float(blo[2])),
+                 (float(bhi[0]), float(bhi[1]), float(bhi[2])))
+                if blo is not None else None)
         verts = mesh.vertices
         nv = len(verts)
         coordsum = 0.0
@@ -4630,7 +4763,7 @@ class Viewport(QOpenGLWidget):
                         verts[i].position.z())) for i in idxs]
         entry = {"fp": fp, "vkey": vkey, "rev": 0,
                  "nv": nv, "ne": len(mesh.edges), "nf": len(mesh.faces),
-                 "samples": samples, "coordsum": coordsum,
+                 "samples": samples, "coordsum": coordsum, "bbox": bbox,
                  "edges": edges_data.tobytes(),
                  "vcol": vcol.tobytes(),
                  "by_texture": {k: v.tobytes() for k, v in by_texture.items()},
@@ -4680,6 +4813,54 @@ class Viewport(QOpenGLWidget):
         px = (clip[:, 0] / safe * 0.5 + 0.5) * self.width()
         py = (1.0 - (clip[:, 1] / safe * 0.5 + 0.5)) * self.height()
         return px, py, ok
+
+    @staticmethod
+    def _frustum_planes(mvp):
+        """The six view-frustum planes of ``mvp`` as (nx, ny, nz, d) tuples
+        (Gribb–Hartmann rows); a point is inside when n·p + d ≥ 0 for all
+        six. Plain floats — the per-frame consumer tests ~tens of chunk
+        boxes, where NumPy overhead would dominate."""
+        m = mvp.data()                    # column-major
+        rows = [(m[i], m[i + 4], m[i + 8], m[i + 12]) for i in range(4)]
+        r3 = rows[3]
+        planes = []
+        for row in rows[:3]:
+            planes.append(tuple(r3[i] + row[i] for i in range(4)))
+            planes.append(tuple(r3[i] - row[i] for i in range(4)))
+        return planes
+
+    @staticmethod
+    def _aabb_visible(planes, lo, hi) -> bool:
+        """Conservative AABB-vs-frustum p-vertex test: culled only when the
+        box lies fully outside one plane (never drops visible geometry)."""
+        lx, ly, lz = lo
+        hx, hy, hz = hi
+        for nx, ny, nz, d in planes:
+            px = hx if nx >= 0.0 else lx
+            py = hy if ny >= 0.0 else ly
+            pz = hz if nz >= 0.0 else lz
+            if nx * px + ny * py + nz * pz + d < 0.0:
+                return False
+        return True
+
+    def _visible_spans(self, spans, planes):
+        """Filter draw spans ``[(bbox, start, count)]`` by the frustum and
+        merge adjacent survivors: returns ``([(start, count)], culled)``.
+        ``bbox None`` = always drawn (loose geometry, unknown extents)."""
+        out: list = []
+        culled = 0
+        for bbox, start, count in spans:
+            if not count:
+                continue
+            if bbox is not None and not self._aabb_visible(
+                    planes, bbox[0], bbox[1]):
+                culled += count
+                continue
+            if out and out[-1][0] + out[-1][1] == start:
+                out[-1] = (out[-1][0], out[-1][1] + count)
+            else:
+                out.append((start, count))
+        return out, culled
 
     def _pick_index(self):
         """Flat NumPy pick index of the scene — triangles of every loose and
@@ -5733,6 +5914,7 @@ class Viewport(QOpenGLWidget):
         win.show_viewport_context_menu(ev.globalPos())
 
     def mousePressEvent(self, ev) -> None:
+        self._input_t = _time_mod.monotonic()   # P0: input→paint latency
         if ev.button() == Qt.MiddleButton:
             self._last_pos = ev.position().toPoint()
             self._pan_mode = bool(ev.modifiers() & Qt.ShiftModifier)
@@ -5853,6 +6035,7 @@ class Viewport(QOpenGLWidget):
         self._dispatch_tool_click(ev, double=True)
 
     def mouseMoveEvent(self, ev) -> None:
+        self._input_t = _time_mod.monotonic()   # P0: input→paint latency
         if self._last_pos is not None:
             p = ev.position().toPoint()
             dx = p.x() - self._last_pos.x()
@@ -6048,6 +6231,7 @@ class Viewport(QOpenGLWidget):
         return None
 
     def wheelEvent(self, ev) -> None:
+        self._input_t = _time_mod.monotonic()   # P0: input→paint latency
         # Zoom toward the cursor (SketchUp-style): keep the point under the
         # pointer fixed on screen, not the origin. During a wheel burst the
         # focus is CACHED: zoom_to pins that world point, so re-picking every
