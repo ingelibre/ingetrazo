@@ -164,6 +164,15 @@ def _self_check() -> int:
 def main() -> int:
     if "--check" in sys.argv[1:]:
         return _self_check()
+    # Hang autopsy (Linux): `kill -USR1 <pid>` dumps every thread's Python
+    # stack to stderr, so a frozen main loop names its exact line without a
+    # debugger or elevated ptrace. No-op where SIGUSR1 doesn't exist.
+    try:
+        import faulthandler
+        import signal as _signal
+        faulthandler.register(_signal.SIGUSR1, all_threads=True)
+    except (ImportError, AttributeError, ValueError):
+        pass
     _configure_surface_format()
     app = QApplication(sys.argv)
     app.setApplicationName("IngeTrazo")
