@@ -406,7 +406,8 @@ class PushPullTool(Tool):
         try:
             return self._apply_preview_inner(viewport)
         finally:
-            _hplog("push.preview", (_t.perf_counter() - _p0) * 1000.0)
+            _hplog("push.preview", (_t.perf_counter() - _p0) * 1000.0,
+                   floor=30.0)
 
     def _apply_preview_inner(self, viewport) -> None:
         self._revert_preview(viewport)

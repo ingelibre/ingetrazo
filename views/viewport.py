@@ -6619,6 +6619,11 @@ class Viewport(QOpenGLWidget):
         self._process_hover(pos, modifiers)
         self._hover_last_t = _time_mod.monotonic()
         self._hover_cost = self._hover_last_t - t0
+        if _PERF:
+            # A per-move cost near ~100 ms starves paints during a tool drag
+            # (the push "sticks"): name it in the log instead of hiding
+            # under the frame telemetry's floor.
+            _plog("hover.move", self._hover_cost * 1000.0, floor=80.0)
 
     def _process_hover(self, pos, modifiers) -> None:
         if self._last_pos is not None or self._box_active:
