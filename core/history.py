@@ -18,8 +18,28 @@ cost stays proportional to the action, not to the model size.
 """
 from __future__ import annotations
 
+import os as _os
+import time as _time_mod
 from abc import ABC, abstractmethod
+from pathlib import Path as _Path
 from typing import Iterable, Optional
+
+_PERF = bool(_os.environ.get("INGETRAZO_PERF"))
+_perf_file = None
+
+
+def _plog(tag: str, ms: float, extra: str = "", floor: float = 100.0) -> None:
+    """Same log the viewport telemetry writes (P0): any COMMAND slower than
+    the floor lands here with its class name, so a sticky edit names its
+    culprit without a profiler round-trip."""
+    global _perf_file
+    if not _PERF or ms < floor:
+        return
+    if _perf_file is None:
+        _perf_file = open(_Path.home() / "ingetrazo-perf.log", "a",
+                          buffering=1)
+    _perf_file.write(f"{_time_mod.strftime('%H:%M:%S')} {tag} {ms:.0f}ms"
+                     f"{' ' + extra if extra else ''}\n")
 
 from PySide6.QtGui import QVector3D
 
@@ -80,7 +100,12 @@ class History:
         self.last_error: Optional[str] = None
 
     def execute(self, cmd: Command) -> None:
+        _t0 = _time_mod.perf_counter() if _PERF else 0.0
         snapshot = self.scene.mesh.capture_state()
+        if _PERF:
+            _plog("command.snapshot",
+                  (_time_mod.perf_counter() - _t0) * 1000.0,
+                  extra=type(cmd).__name__)
         try:
             cmd.do(self.scene)
         except Exception as exc:
@@ -91,6 +116,9 @@ class History:
             self._log_failure(cmd, exc)
             return
         self.last_error = None
+        if _PERF:
+            _plog("command", (_time_mod.perf_counter() - _t0) * 1000.0,
+                  extra=type(cmd).__name__)
         # Remember which mesh was active (the loose one, or a group being
         # edited): undo/redo re-enter that context so a snapshot restore never
         # lands on the wrong mesh after the user exits the group.

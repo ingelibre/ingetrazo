@@ -400,6 +400,15 @@ class PushPullTool(Tool):
         vanished': the preview sticks at the last distance that worked and the
         drag tops out there, SketchUp-clamp style. The commit then lands at
         that reachable height too (self.extrusion is pinned back)."""
+        import time as _t
+        from core.history import _plog as _hplog
+        _p0 = _t.perf_counter()
+        try:
+            return self._apply_preview_inner(viewport)
+        finally:
+            _hplog("push.preview", (_t.perf_counter() - _p0) * 1000.0)
+
+    def _apply_preview_inner(self, viewport) -> None:
         self._revert_preview(viewport)
         if self.base_face is None or abs(self.extrusion) < _MIN_EXTRUDE:
             viewport.update()
