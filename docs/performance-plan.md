@@ -73,7 +73,7 @@ Move/Rotate of instances updates a 64-byte matrix, not arrays.
 *Gate: 5 hedges paint ≈ 1 hedge + ε; cold start no longer rebuilds
 per-instance.*
 
-### P3 — Input latency (the feel)
+### P3 — Input latency (the feel) — core LANDED 2026-08-25 (ray-pick chunk prefilter: model 41→1.8 ms, sky 34→0.03 ms; budgeted-hover gate shrinks with it. Deferred: FBO depth-readback for the wheel (superseded — pick is ≤2 ms now), overlay dirty-flag)
 - Budgeted hover: hard 10 ms budget — pick against the P1-culled index,
   defer the expensive snap refinements to the trailing-edge timer.
 - Wheel focus: depth-readback under the cursor (1 px from the existing
