@@ -31,14 +31,24 @@ _perf_file = None
 def _plog(tag: str, ms: float, extra: str = "", floor: float = 100.0) -> None:
     """Same log the viewport telemetry writes (P0): any COMMAND slower than
     the floor lands here with its class name, so a sticky edit names its
-    culprit without a profiler round-trip."""
+    culprit without a profiler round-trip.
+
+    Every line carries the writer's **pid**. One log file collects whatever is
+    running — a second window opened to compare a fix, an offscreen repro
+    script — and without it two builds' numbers interleave into one
+    indistinguishable stream (which has already sent one reading the wrong
+    way). ``$INGETRAZO_PERF_LOG`` overrides the path when a run wants its own
+    file."""
     global _perf_file
     if not _PERF or ms < floor:
         return
     if _perf_file is None:
-        _perf_file = open(_Path.home() / "ingetrazo-perf.log", "a",
-                          buffering=1)
-    _perf_file.write(f"{_time_mod.strftime('%H:%M:%S')} {tag} {ms:.0f}ms"
+        path = _os.environ.get("INGETRAZO_PERF_LOG")
+        _perf_file = open(_Path(path) if path
+                          else _Path.home() / "ingetrazo-perf.log",
+                          "a", buffering=1)
+    _perf_file.write(f"{_time_mod.strftime('%H:%M:%S')} [{_os.getpid()}] "
+                     f"{tag} {ms:.0f}ms"
                      f"{' ' + extra if extra else ''}\n")
 
 from PySide6.QtGui import QVector3D

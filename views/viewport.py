@@ -55,12 +55,18 @@ _perf_file = None
 
 
 def _plog(tag: str, ms: float, extra: str = "", floor: float = 50.0) -> None:
+    """Frame telemetry (P0). Lines carry the writer's pid and honour
+    ``$INGETRAZO_PERF_LOG`` — see ``core.history._plog`` for why."""
     global _perf_file
     if not _PERF or ms < floor:
         return
     if _perf_file is None:
-        _perf_file = open(Path.home() / "ingetrazo-perf.log", "a", buffering=1)
-    _perf_file.write(f"{_time_mod.strftime('%H:%M:%S')} {tag} {ms:.0f}ms"
+        path = os.environ.get("INGETRAZO_PERF_LOG")
+        _perf_file = open(Path(path) if path
+                          else Path.home() / "ingetrazo-perf.log",
+                          "a", buffering=1)
+    _perf_file.write(f"{_time_mod.strftime('%H:%M:%S')} [{os.getpid()}] "
+                     f"{tag} {ms:.0f}ms"
                      f"{' ' + extra if extra else ''}\n")
 
 from PySide6.QtCore import QEvent, Qt, QPointF, QRectF, Signal
