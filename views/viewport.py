@@ -97,7 +97,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core.camera import OrbitCamera
 from core.i18n import tr
-from core.group import Group, copy_group
+from core.group import Group, copy_group, world_mesh
 from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
@@ -235,21 +235,18 @@ EDIT_REST_MODES = ("normal", "fade", "hide")
 EDIT_REST_FADE = 0.75
 
 
-def _box_edges(lo, hi) -> bytes:
-    """The twelve segments of an axis-aligned box, as an interleaved float32
-    line buffer — the selection cue for a whole group."""
-    xs = (float(lo[0]), float(hi[0]))
-    ys = (float(lo[1]), float(hi[1]))
-    zs = (float(lo[2]), float(hi[2]))
-    corners = [(xs[i & 1], ys[(i >> 1) & 1], zs[(i >> 2) & 1])
-               for i in range(8)]
+def _box_edges(frame, lo, hi) -> bytes:
+    """The twelve segments of a box given in ``frame``'s axes, as an
+    interleaved float32 line buffer — the selection cue for a whole group."""
+    from core.group import oriented_box_corners
+    corners = oriented_box_corners(frame, lo, hi)
     buf = array("f")
     for i in range(8):
         for bit in (1, 2, 4):      # neighbours differ in exactly one axis
             j = i | bit
             if j != i:
-                buf.extend(corners[i])
-                buf.extend(corners[j])
+                for p in (corners[i], corners[j]):
+                    buf.extend((p.x(), p.y(), p.z()))
     return buf.tobytes()
 
 
@@ -2606,10 +2603,7 @@ class Viewport(QOpenGLWidget):
                 # the selection buffers just to say "this is selected". The
                 # box also reads better on a dense group, where an all-orange
                 # mass says less than an outline does.
-                chunk = self._group_chunk(ent)
-                bb = chunk.get("bbox")
-                if bb is not None:
-                    sel_edge_parts.append(_box_edges(bb[0], bb[1]))
+                sel_edge_parts.append(_box_edges(*self._group_obb(ent)))
         self._selected_count = self._upload_vbo(
             self._selected_vbo, "sel_edges",
             [sel_loose.tobytes()] + sel_edge_parts) // 12
@@ -3760,15 +3754,10 @@ class Viewport(QOpenGLWidget):
         group = self.scene.edit_group
         if group is None or not group.mesh.vertices:
             return
-        xs = [v.position.x() for v in group.mesh.vertices]
-        ys = [v.position.y() for v in group.mesh.vertices]
-        zs = [v.position.z() for v in group.mesh.vertices]
-        lo = (min(xs), min(ys), min(zs))
-        hi = (max(xs), max(ys), max(zs))
-        corners = [QVector3D(x, y, z)
-                   for x in (lo[0], hi[0])
-                   for y in (lo[1], hi[1])
-                   for z in (lo[2], hi[2])]
+        # In the group's OWN axes, like the selection cue: on a rotated
+        # object a world-aligned box reads as skewed and wraps mostly air.
+        from core.group import oriented_box_corners
+        corners = oriented_box_corners(*self._group_obb(group))
         pix = [self._world_to_pixel(c) for c in corners]
         if any(p is None for p in pix):
             return
@@ -5338,6 +5327,9 @@ class Viewport(QOpenGLWidget):
         entry = {"fp": fp, "vkey": vkey, "rev": 0,
                  "nv": nv, "ne": len(mesh.edges), "nf": len(mesh.faces),
                  "samples": samples, "coordsum": coordsum, "bbox": bbox,
+                 # Lazily filled by ``_group_obb``: the box in the group's own
+                 # axes, which is the one the selection cue draws.
+                 "obb": None,
                  "edges": edges_data.tobytes(),
                  "vcol": vcol.tobytes(),
                  "by_texture": {k: v.tobytes() for k, v in by_texture.items()},
@@ -6146,6 +6138,38 @@ class Viewport(QOpenGLWidget):
         from types import SimpleNamespace
         return SimpleNamespace(edges=loose + lines + near)
 
+    def _group_obb(self, group):
+        """``(frame, lo, hi)`` of the group in its OWN axes, cached on its
+        chunk. A world-aligned box on a rotated object reads as skewed and
+        wraps far more air than object — and its corners, which are the
+        handles you grab, end up nowhere near the thing."""
+        entry = self._group_chunk(group)
+        obb = entry.get("obb")
+        if obb is not None:
+            return obb
+        import numpy as np
+        from core.group import frame_from_points, oriented_bounds
+        mesh = (group.mesh if getattr(group, "xform", None) is None
+                else world_mesh(group))
+        world = oriented_bounds(mesh)                     # world axes
+        pos = np.array([[v.position.x(), v.position.y(), v.position.z()]
+                        for v in mesh.vertices], dtype=np.float64) \
+            if mesh.vertices else None
+        own = oriented_bounds(mesh, frame_from_points(pos))
+
+        def volume(b):
+            _f, lo, hi = b
+            # A flat group has zero volume; rank those by their largest face.
+            side = sorted(hi[i] - lo[i] for i in range(3))
+            return side[1] * side[2] * max(side[0], 1e-6)
+
+        # Derived axes are meaningless on organic geometry — a hedge has no
+        # dominant plane, and its "own" box came out 25% LARGER than the world
+        # one. Keep the derived frame only when it earns its place.
+        obb = own if volume(own) < 0.9 * volume(world) else world
+        entry["obb"] = obb
+        return obb
+
     def _selection_box_points(self) -> list:
         """The corners of a selected group's bounding box, as degenerate
         pseudo-edges so the snap engine offers them as endpoints.
@@ -6160,14 +6184,8 @@ class Viewport(QOpenGLWidget):
         for ent in self.scene.selection:
             if not isinstance(ent, Group) or getattr(ent, "billboard", False):
                 continue
-            bb = self._group_chunk(ent).get("bbox")
-            if bb is None:
-                continue
-            lo, hi = bb
-            for i in range(8):
-                p = QVector3D(float(hi[0]) if i & 1 else float(lo[0]),
-                              float(hi[1]) if i & 2 else float(lo[1]),
-                              float(hi[2]) if i & 4 else float(lo[2]))
+            from core.group import oriented_box_corners
+            for p in oriented_box_corners(*self._group_obb(ent)):
                 pts.append(_SnapEdge(p, QVector3D(p)))
         return pts
 

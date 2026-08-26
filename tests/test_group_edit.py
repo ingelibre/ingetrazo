@@ -3,6 +3,7 @@
 """Groups v2: edit-inside-group context (double-click into a group)."""
 from __future__ import annotations
 
+import pytest
 from PySide6.QtGui import QVector3D
 
 from core.edits import build_add_edges
@@ -302,3 +303,87 @@ def test_upload_vbo_shrinking_keeps_the_prefix_and_the_count():
     total = vp._upload_vbo(vbo, "e", [head, b"b" * 8])
     assert total == 48
     assert vbo.calls == [("write", 40, 8)]           # capacity still fits
+
+
+# ---- oriented selection box -------------------------------------------------
+#
+# SketchUp draws a group's box in the group's OWN axes, so it hugs the object.
+# A world-aligned box on a rotated object reads as skewed and wraps far more
+# air than object — and its corners, which are the handles you grab to move it,
+# end up nowhere near the thing.
+
+def _rotated_slab(angle_deg):
+    """A flat 4x1 slab lying in Z=0, turned ``angle_deg`` about Z."""
+    import math
+    from core.mesh import Mesh
+    a = math.radians(angle_deg)
+    ca, sa = math.cos(a), math.sin(a)
+    pts = [(0, 0), (4, 0), (4, 1), (0, 1)]
+    m = Mesh()
+    m.add_face([V(x * ca - y * sa, x * sa + y * ca, 0.0) for x, y in pts])
+    return m
+
+
+def _own_bounds(mesh):
+    from core.group import frame_from_points, oriented_bounds
+    import numpy as np
+    pos = np.array([[v.position.x(), v.position.y(), v.position.z()]
+                    for v in mesh.vertices])
+    return oriented_bounds(mesh, frame_from_points(pos))
+
+
+def test_oriented_bounds_wrap_a_rotated_slab_tightly():
+    frame, lo, hi = _own_bounds(_rotated_slab(35.0))
+    sides = sorted(hi[i] - lo[i] for i in range(3))
+    assert sides[0] == pytest.approx(0.0, abs=1e-9)
+    assert sides[1] == pytest.approx(1.0)     # the slab's own 4 x 1 x 0
+    assert sides[2] == pytest.approx(4.0)
+
+
+def test_derived_frame_finds_the_true_minimum():
+    """The minimum-area rectangle has a side flush with a hull edge, so trying
+    each one finds the real optimum — not an approximation of it."""
+    import math
+    import numpy as np
+    from core.group import frame_from_points
+    m = _rotated_slab(23.5)
+    pos = np.array([[v.position.x(), v.position.y(), v.position.z()]
+                    for v in m.vertices])
+    u = frame_from_points(pos)[0]
+    ang = math.degrees(math.atan2(u.y(), u.x())) % 90.0
+    assert min(abs(ang - 23.5), abs(ang - 66.5)) < 1e-6
+
+
+def test_world_aligned_bounds_would_wrap_mostly_air():
+    """The point of the change, stated as a test: on the same rotated slab the
+    world-aligned box wraps several times the footprint the object has."""
+    m = _rotated_slab(35.0)
+    xs = [v.position.x() for v in m.vertices]
+    ys = [v.position.y() for v in m.vertices]
+    world_area = (max(xs) - min(xs)) * (max(ys) - min(ys))
+    _frame, lo, hi = _own_bounds(m)
+    sides = sorted(hi[i] - lo[i] for i in range(3))
+    own_area = sides[1] * sides[2]                  # 4 x 1
+    assert own_area == pytest.approx(4.0)
+    assert world_area > 2.5 * own_area
+
+
+def test_oriented_bounds_match_world_axes_when_the_object_does():
+    frame, lo, hi = _own_bounds(_rotated_slab(0.0))
+    sides = sorted(hi[i] - lo[i] for i in range(3))
+    assert sides[1] == pytest.approx(1.0) and sides[2] == pytest.approx(4.0)
+    for axis in frame:                       # each axis is a world axis
+        comps = sorted(abs(round(c, 6)) for c in (axis.x(), axis.y(), axis.z()))
+        assert comps == [0.0, 0.0, 1.0]
+
+
+def test_box_corners_lie_on_the_geometry_of_a_rotated_slab():
+    """A flat slab's box IS the slab, so every corner sits in its plane —
+    which is what makes the corner a useful handle."""
+    from core.group import oriented_box_corners
+    corners = oriented_box_corners(*_own_bounds(_rotated_slab(35.0)))
+    assert len(corners) == 8
+    assert all(abs(c.z()) < 1e-9 for c in corners)
+    # ...and they are the slab's four corners, each appearing twice (zero depth)
+    keys = {(round(c.x(), 6), round(c.y(), 6)) for c in corners}
+    assert len(keys) == 4

@@ -269,3 +269,123 @@ def copy_group(group, delta=None):
     g.ifc = dict(group.ifc) if group.ifc else None
     g.billboard = group.billboard
     return g
+
+
+def _hull_2d(pts):
+    """Convex hull of 2D points (monotone chain), counter-clockwise.
+
+    Points strictly inside the quadrilateral of the four axis extremes cannot
+    be hull vertices, so they are dropped first (Akl-Toussaint). That test is
+    one vectorised pass and typically discards almost everything: the 189k
+    vertices of the hedge in piscina.igz come down to a few hundred before the
+    Python scan, which is the difference between half a second and a blink."""
+    import numpy as np
+    pts = np.asarray(pts, dtype=np.float64)
+    if len(pts) > 64:
+        quad = pts[[int(np.argmin(pts[:, 0])), int(np.argmin(pts[:, 1])),
+                    int(np.argmax(pts[:, 0])), int(np.argmax(pts[:, 1]))]]
+        inside = np.ones(len(pts), dtype=bool)
+        for i in range(4):
+            a, b = quad[i], quad[(i + 1) % 4]
+            side = ((b[0] - a[0]) * (pts[:, 1] - a[1])
+                    - (b[1] - a[1]) * (pts[:, 0] - a[0]))
+            inside &= side > 1e-12          # strictly left of every edge
+        keep = ~inside
+        if keep.any():
+            pts = pts[keep]
+    p = pts[np.lexsort((pts[:, 1], pts[:, 0]))]
+    if len(p) < 3:
+        return p
+
+    def half(seq):
+        out: list = []
+        for q in seq:
+            while len(out) >= 2:
+                a, b = out[-2], out[-1]
+                if (b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0]) > 0:
+                    break
+                out.pop()
+            out.append(q)
+        return out
+
+    lower, upper = half(p), half(p[::-1])
+    return np.array(lower[:-1] + upper[:-1])
+
+
+def frame_from_points(positions) -> tuple:
+    """An orthonormal frame for a group, derived from its vertices: the yaw
+    about Z whose footprint is tightest, with Z kept upright.
+
+    SketchUp gives every group its own axes and draws the selection box in
+    them, so the box hugs the object. Nothing stores those axes here yet (an
+    imported group is baked to world coordinates, a classic group never had
+    a frame), so they are derived — and derived *exactly*: the minimum-area
+    rectangle around a point set always has a side flush with an edge of its
+    convex hull, so trying each hull edge finds the true optimum rather than
+    guessing at it. The barbecue in piscina.igz sits at 23.5 degrees and needs
+    half the footprint the world axes give it.
+
+    Keeping Z upright is the domain's assumption, not a shortcut: buildings,
+    walls and furniture stand up, and a box tilted off vertical would read as
+    an error even where it wrapped tighter. An earlier attempt derived the
+    frame from face geometry instead and picked triangulation DIAGONALS for
+    the long axis, which is how a rectangle ends up with a skew frame."""
+    import numpy as np
+    from PySide6.QtGui import QVector3D
+    world = (QVector3D(1.0, 0.0, 0.0), QVector3D(0.0, 1.0, 0.0),
+             QVector3D(0.0, 0.0, 1.0))
+    if positions is None or len(positions) < 3:
+        return world
+    hull = _hull_2d(np.asarray(positions, dtype=np.float64)[:, :2])
+    if len(hull) < 3:
+        return world
+    best = None
+    for i in range(len(hull)):
+        d = hull[(i + 1) % len(hull)] - hull[i]
+        length = float(np.hypot(d[0], d[1]))
+        if length < 1e-12:
+            continue
+        u = d / length
+        v = np.array([-u[1], u[0]])
+        a, b = hull @ u, hull @ v
+        area = float((a.max() - a.min()) * (b.max() - b.min()))
+        if best is None or area < best[0]:
+            best = (area, u)
+    if best is None:
+        return world
+    u = best[1]
+    return (QVector3D(float(u[0]), float(u[1]), 0.0),
+            QVector3D(float(-u[1]), float(u[0]), 0.0),
+            QVector3D(0.0, 0.0, 1.0))
+
+
+def oriented_bounds(mesh, frame=None) -> tuple:
+    """``(frame, lo, hi)`` — the mesh's extent along ``frame``'s axes (derived
+    with :func:`local_frame` when not given). ``lo``/``hi`` are the min/max
+    coordinates in that frame, so the box corners are
+    ``sum(axis * c for axis, c in zip(frame, corner))``."""
+    import numpy as np
+    from PySide6.QtGui import QVector3D
+    if frame is None:
+        frame = (QVector3D(1.0, 0.0, 0.0), QVector3D(0.0, 1.0, 0.0),
+                 QVector3D(0.0, 0.0, 1.0))
+    verts = mesh.vertices
+    if not verts:
+        return frame, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+    pos = np.array([[v.position.x(), v.position.y(), v.position.z()]
+                    for v in verts], dtype=np.float64)
+    axes = np.array([[a.x(), a.y(), a.z()] for a in frame], dtype=np.float64)
+    proj = pos @ axes.T
+    return frame, tuple(proj.min(axis=0)), tuple(proj.max(axis=0))
+
+
+def oriented_box_corners(frame, lo, hi) -> list:
+    """The eight corners of an oriented box, in world coordinates."""
+    from PySide6.QtGui import QVector3D
+    u, v, w = frame
+    out = []
+    for i in range(8):
+        out.append(u * (hi[0] if i & 1 else lo[0])
+                   + v * (hi[1] if i & 2 else lo[1])
+                   + w * (hi[2] if i & 4 else lo[2]))
+    return [QVector3D(p) for p in out]

@@ -43,7 +43,7 @@ def _bind(vp):
                  "_np_mvp", "_group_chunk", "_append_textured_face",
                  "_shaded_color", "_shade_factor", "_group_fp", "_gedge_screen",
                  "_nearby_group_edges", "_snap_scene",
-                 "_selection_box_points",
+                 "_selection_box_points", "_group_obb",
                  "_billboard_snap_edges", "_billboard_quad",
                  "_instance_chunk", "_shift_instance_entry"):
         setattr(vp, name, getattr(Viewport, name).__get__(vp))
