@@ -64,7 +64,7 @@ pick index the same way for hover rays.
 *Gate: camera inside the casita → paint cost drops to the visible
 subset; orbiting a corner of a big scene never submits the far side.*
 
-### P2 — GPU instancing for components (the hedge killer)
+### P2 — GPU instancing for components (the hedge killer) — slice 1 LANDED 2026-08-25 (instanced draw all modes + sections; validated live with 5 copies. Remaining: drop baked per-instance pick arrays via ray transform)
 Replace world-baked instance chunks with ONE proto VBO + per-instance
 matrices via `glDrawArraysInstanced` + `glVertexAttribDivisor`
 (GL 3.3 core ✓). Wins: N hedges cost 1× vertex memory and 1 draw; the
@@ -83,7 +83,7 @@ per-instance.*
 *Gate: hover ≤ 10 ms on piscina; zoom gesture start indistinguishable
 from mid-burst.*
 
-### P4 — Async the stalls
+### P4 — Async the stalls — LANDED 2026-08-25 (disk chunk cache: hedge 8.5→0.47 s, scene chunks ~7-8→~1.5 s warm; tile uploads paced 6→2/frame. Remaining: the .igz parse itself (~8 s) is now the cold-open floor)
 - Tile/texture uploads staged through PBOs or split across frames
   (≤ 2 ms of upload per frame) — kills the 100 ms zoom hitch.
 - Progressive cold start: paint what is chunked, build remaining group
