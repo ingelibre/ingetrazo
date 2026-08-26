@@ -2118,6 +2118,34 @@ class MakeUniqueCommand(Command):
         scene.version += 1
 
 
+class GroupToComponentCommand(Command):
+    """Convert a CLASSIC group into a component instance in place: its mesh
+    becomes the shared definition (world frame == local frame) under an
+    identity transform. Free — no geometry is copied — and from then on
+    Move/Rotate compose the matrix (O(1)) and copies share the definition.
+    The reverse road exists too (Make Unique). Exploding a 230k-face group
+    to feed Make Component ground the loose-mesh machinery for minutes
+    (piscina report); this is the door that was missing."""
+
+    def __init__(self, group, name=None) -> None:
+        self.group = group
+        self._name = name
+        self._old_name = None
+
+    def do(self, scene) -> None:
+        from PySide6.QtGui import QMatrix4x4
+        self._old_name = self.group.name
+        self.group.xform = QMatrix4x4()
+        if self._name:
+            self.group.name = self._name
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.group.xform = None
+        self.group.name = self._old_name
+        scene.version += 1
+
+
 class InsertGroupCommand(Command):
     """Insert a ready-made Group (a bundled component, a future collection
     item) into the scene, selected so the user can Move it into place."""

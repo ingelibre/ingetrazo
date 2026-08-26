@@ -229,3 +229,30 @@ def test_freehand_closed_stroke_forms_a_face():
     t.on_hover(_ctx(vp, 0.001, 0.001, sx=0.4, sy=0.4))
     t.on_release(vp)
     assert len(scene.mesh.faces) == 1              # the loop became a face
+
+
+def test_group_converts_to_component_in_place():
+    # Make Component on a CLASSIC group: in-place conversion, free — the
+    # mesh becomes the shared definition under an identity transform (no
+    # explode detour, no geometry copied).
+    from PySide6.QtGui import QVector3D
+    from core.group import Group
+    from core.history import GroupToComponentCommand, History
+    from core.mesh import Mesh
+    from core.scene import Scene
+
+    scene = Scene()
+    hist = History(scene)
+    m = Mesh()
+    m.add_face([QVector3D(0, 0, 0), QVector3D(1, 0, 0),
+                QVector3D(1, 1, 0), QVector3D(0, 1, 0)])
+    g = Group(m, name="Seto")
+    scene.groups.append(g)
+
+    hist.execute(GroupToComponentCommand(g, "Arbusto"))
+    assert g.xform is not None and g.xform.isIdentity()
+    assert g.mesh is m                      # free: same mesh, no copy
+    assert g.name == "Arbusto"
+
+    assert hist.undo() is True
+    assert g.xform is None and g.name == "Seto"

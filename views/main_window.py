@@ -895,7 +895,33 @@ class MainWindow(QMainWindow):
         sel = self.viewport.scene.selection
         faces = [f for f in sel if isinstance(f, Face)]
         edges = [e for e in sel if isinstance(e, Edge)]
+        classic = [g for g in sel if isinstance(g, Group)
+                   and getattr(g, "xform", None) is None
+                   and not getattr(g, "billboard", False)]
         if not faces and not edges:
+            if classic:
+                # A selected GROUP converts in place — its mesh becomes the
+                # shared definition, free (no geometry copied). The old
+                # answer was "explode it first", which fed 230k faces
+                # through the loose mesh for minutes (piscina report).
+                from PySide6.QtWidgets import QInputDialog
+                from core.history import GroupToComponentCommand
+                name = None
+                if len(classic) == 1:
+                    name, ok = QInputDialog.getText(
+                        self, tr("Make Component"), tr("Component name:"),
+                        text=classic[0].name or tr("Component"))
+                    if not ok:
+                        return
+                    name = name.strip() or None
+                for g in classic:
+                    self.viewport.history.execute(
+                        GroupToComponentCommand(g, name))
+                self.viewport.update()
+                self.statusBar().showMessage(tr(
+                    "Component created — copies will share its definition"),
+                    4000)
+                return
             self.viewport.flash_status(
                 tr("Select the geometry for the component first"))
             return
@@ -1187,6 +1213,11 @@ class MainWindow(QMainWindow):
             menu.addAction(tr("Make Group"), self._on_make_group)
             menu.addAction(tr("Make Component…"), self._on_make_component)
         if has_group:
+            if any(isinstance(e, Group) and getattr(e, "xform", None) is None
+                   and not getattr(e, "billboard", False) for e in sel):
+                # Convert a classic group into a component IN PLACE (free —
+                # no explode detour): the door the piscina hedge needed.
+                menu.addAction(tr("Make Component…"), self._on_make_component)
             menu.addAction(tr("Explode Group"), self._on_explode_group)
             if sum(1 for e in sel if isinstance(e, Group)) >= 2:
                 # The fix-my-grouping path: fuse the selected groups into
