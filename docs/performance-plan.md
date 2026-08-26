@@ -50,13 +50,13 @@ numbers in the commit message, like the marathon did.
 
 ## Phases
 
-### P0 — Frame telemetry (the microscope)
+### P0 — Frame telemetry (the microscope) — DONE 2026-08-25 (`4a9de47`)
 GL timer queries + per-pass timings (faces / edges / silhouettes /
 overlay / blit) and an input-to-paint latency stamp, behind a perf HUD
 toggle. The perf log gains `frame gl=..ms ovl=..ms py=..ms lat=..ms`.
 *Gate: we can name the top 3 costs of any janky frame in one look.*
 
-### P1 — Frustum culling per chunk (draw less)
+### P1 — Frustum culling per chunk (draw less) — DONE 2026-08-25 (`4a9de47`)
 Every chunk/instance already has (or can cheaply cache) a bbox; cull
 against the view frustum before submitting, vectorized over all bboxes
 at once (one NumPy pass, ~µs for hundreds of chunks). Also cull the
@@ -116,6 +116,13 @@ cores once PySide6 supports it cleanly), Qt RHI.
   billboard impostors for distant vegetation are a later, separate
   conversation (SketchUp doesn't have them either — it would be a
   leapfrog, not parity).
+
+## First P0 findings (2026-08-25, live piscina session)
+
+Slow frames (25–29 ms) are dominated by the **edges pass** (19–22 ms:
+271k-face wireframe lines + silhouettes) — a P3-adjacent target.
+Gesture latency measured at 30–70 ms. Culling live: 12–25k tris
+dropped while orbiting; paints 5–12 ms.
 
 ## Order and sizing
 
