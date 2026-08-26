@@ -2111,6 +2111,12 @@ class Viewport(QOpenGLWidget):
                     # Its selection cue is the per-frame outline drawn in
                     # _draw_billboard_outlines instead.
                     continue
+                if id(ent) in pv:
+                    # Mid Move/Rotate drag: the scratch preview draws the
+                    # mover WITH its own orange cue at the cursor — tinting
+                    # the chunk here left an orange GHOST at the origin
+                    # until the commit (user report).
+                    continue
                 # Chunk edges already exclude soft seams (a grouped smooth
                 # cylinder must not flash its segment seams in orange).
                 chunk = self._group_chunk(ent)
