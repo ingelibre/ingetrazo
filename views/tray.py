@@ -33,6 +33,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -767,6 +769,54 @@ class ComponentsPanel(QWidget):
         custom.clicked.connect(window._on_insert_faceme_image)
         lay.addWidget(custom)
 
+        # "In model": what THIS drawing contains, the way SketchUp's
+        # Components tray lists it. The grid above is a library to insert
+        # from; it says nothing about what you already have, which is what
+        # you actually look for when you want to find or re-place a piece.
+        lay.addWidget(QLabel(f"<b>{tr('In model')}</b>"))
+        self._in_model = QListWidget()
+        self._in_model.setToolTip(tr(
+            "Components placed in this drawing — click one to select its "
+            "copies"))
+        self._in_model.itemClicked.connect(self._select_component)
+        lay.addWidget(self._in_model, 1)
+        self.refresh_in_model()
+
+    def _components_in_model(self) -> list:
+        """``[(name, faces, [groups])]`` per distinct prototype, most copies
+        first. Instances share their prototype mesh, so identity groups them —
+        no geometry is walked."""
+        by_proto: dict = {}
+        for g in self._window.viewport.scene.groups:
+            if not g.is_instance() or getattr(g, "billboard", False):
+                continue
+            by_proto.setdefault(id(g.mesh), []).append(g)
+        rows = [(gs[0].name, len(gs[0].mesh.faces), gs)
+                for gs in by_proto.values()]
+        rows.sort(key=lambda r: (-len(r[2]), r[0].lower()))
+        return rows
+
+    def refresh_in_model(self) -> None:
+        self._in_model.clear()
+        for name, faces, gs in self._components_in_model():
+            copies = len(gs)
+            label = f"{name}  ({copies}×, {faces} " + tr("Faces").lower() + ")"
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, gs)
+            self._in_model.addItem(item)
+        if self._in_model.count() == 0:
+            self._in_model.addItem(QListWidgetItem(tr("No components yet")))
+
+    def _select_component(self, item) -> None:
+        groups = item.data(Qt.UserRole)
+        if not groups:
+            return
+        scene = self._window.viewport.scene
+        scene.selection.clear()
+        scene.selection.update(groups)
+        scene.version += 1
+        self._window.viewport.update()
+
 
 class MaterialsPanel(QWidget):
     """Swatch palette: pick a colour/texture to paint with."""
@@ -1256,6 +1306,17 @@ class EntityInfoPanel(QWidget):
             if isinstance(e, GeoPath):
                 return self._describe_geopath(e)
             if isinstance(e, Group):
+                if e.is_instance():
+                    # SketchUp's Entity Info tells a component from a group and
+                    # says how many copies share the definition. Without it the
+                    # two are indistinguishable here, which also made an import
+                    # that flattened components impossible to spot.
+                    kin = sum(1 for g in self._window.viewport.scene.groups
+                              if g.mesh is e.mesh)
+                    return (f"<b>{tr('Component')}</b><br>"
+                            f"{tr('Name')}: {e.name}<br>"
+                            f"{tr('Faces')}: {len(e.mesh.faces)}<br>"
+                            f"{tr('In model')}: {kin}")
                 return f"<b>{tr('Group')}</b><br>{tr('Faces')}: {len(e.mesh.faces)}"
             return f"<b>{tr('1 entity')}</b>"
         counts = {"faces": 0, "edges": 0, "dimensions": 0, "groups": 0}
@@ -1827,6 +1888,7 @@ class Tray(QDockWidget):
         timer.start(300)
         self.layers.refresh()
         self.scenes.refresh()
+        self.components.refresh_in_model()
 
 
 class BimTray(QDockWidget):

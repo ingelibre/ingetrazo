@@ -135,6 +135,7 @@
   "Component file missing: {p}": "Falta el archivo del componente: {p}",
   "Component instances": "Instancias de componente",
   "Component placed — Move (M) adjusts it": "Componente colocado — Mover (M) lo ajusta",
+  "Component": "Componente",
   "Components": "Componentes",
   "Composer tools": "Herramientas del compositor",
   "Concrete": "Concreto",
@@ -720,5 +721,7 @@
   "{prompt}\n\nUnsaved changes will be lost.": "{prompt}\n\nSe perderán los cambios sin guardar.",
   "−": "−",
   "− Row": "− Fila",
-  "⚠ {name} (load error)": "⚠ {name} (error al cargar)"
+  "⚠ {name} (load error)": "⚠ {name} (error al cargar)",
+  "No components yet": "Aún no hay componentes",
+  "Components placed in this drawing — click one to select its copies": "Componentes colocados en este dibujo — hacé clic para seleccionar sus copias"
 }
