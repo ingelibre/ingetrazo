@@ -487,6 +487,24 @@ class MainWindow(QMainWindow):
         style_menu.addAction(self._act_style_profiles)
         self._sync_style_menu()
 
+        # How the model outside a group reads while you edit it (SketchUp's
+        # Model Info ▸ Components). Hiding it is also the fastest on a heavy
+        # import: what is not in the frame never reaches the GPU.
+        rest_menu = camera_menu.addMenu(tr("Rest of model while editing"))
+        self._rest_group = QActionGroup(self)
+        self._rest_actions: dict[str, QAction] = {}
+        for key, label in (("normal", tr("Show normally")),
+                           ("fade", tr("Fade")),
+                           ("hide", tr("Hide (fastest)"))):
+            act = QAction(label, self)
+            act.setCheckable(True)
+            act.setChecked(self.viewport.edit_rest_mode == key)
+            self._rest_group.addAction(act)
+            act.triggered.connect(
+                lambda _c=False, k=key: self.viewport.set_edit_rest_mode(k))
+            rest_menu.addAction(act)
+            self._rest_actions[key] = act
+
         # SketchUp's View ▸ Section Planes / Cuts / Fill — the same actions
         # as the Sections toolbar buttons (created in _build_toolbar).
         camera_menu.addSeparator()

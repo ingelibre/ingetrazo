@@ -165,3 +165,53 @@ def test_billboard_group_round_trips_and_faces_camera(tmp_path):
         assert QVector3D.dotProduct(n, expect_normal) > 0.99 or \
             QVector3D.dotProduct(-n, expect_normal) > 0.99
         assert abs((corners[3] - corners[0]).z() - 1.75) < 1e-6
+
+
+# ---- rest-of-model context while editing (SketchUp Model Info ▸ Components)
+
+class _SpanStub:
+    """Just enough Viewport to exercise the span splitting: everything is
+    inside the frustum, so only the merge rule is under test."""
+
+    from views.viewport import Viewport
+    _visible_spans = Viewport._visible_spans
+    _tex_run_spans = Viewport._tex_run_spans
+
+    def _aabb_visible(self, planes, lo, hi):
+        return True
+
+
+def test_visible_spans_merge_adjacent_by_default():
+    vp = _SpanStub()
+    spans = [(None, 0, 10), ((0, 1), 10, 5), ((0, 1), 15, 7)]
+    out, culled = vp._visible_spans(spans, planes=None)
+    assert out == [(0, 22)] and culled == 0
+
+
+def test_visible_spans_never_merge_across_the_split():
+    """The context ends and the edited group begins at ``split``; merging
+    across it would leave the fade pass unable to tell them apart."""
+    vp = _SpanStub()
+    spans = [(None, 0, 10), ((0, 1), 10, 5), ((0, 1), 15, 7)]
+    out, _ = vp._visible_spans(spans, planes=None, split=15)
+    assert out == [(0, 15), (15, 7)]
+    # a split that falls on no boundary changes nothing
+    out2, _ = vp._visible_spans(spans, planes=None, split=99)
+    assert out2 == [(0, 22)]
+
+
+def test_tex_run_spans_split_subject_from_context():
+    vp = _SpanStub()
+    parts = [(None, 0, 6, False), ((0, 1), 6, 4, False), ((0, 1), 10, 8, True)]
+    ctx, subj = vp._tex_run_spans(parts, planes=None, fading=True)
+    assert ctx == [(0, 10)]
+    assert subj == [(10, 8)]
+    # not fading: one list, everything in it
+    ctx2, subj2 = vp._tex_run_spans(parts, planes=None, fading=False)
+    assert ctx2 == [(0, 18)] and subj2 == []
+
+
+def test_edit_rest_mode_defaults_to_fade_and_validates():
+    from views.viewport import EDIT_REST_MODES, _load_edit_rest_mode
+    assert "fade" in EDIT_REST_MODES and "hide" in EDIT_REST_MODES
+    assert _load_edit_rest_mode() in EDIT_REST_MODES

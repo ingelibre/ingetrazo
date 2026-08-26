@@ -216,6 +216,22 @@ def _cache_ver(vp):
     frozen = getattr(vp, "_frozen_cache_version", None)
     return frozen if frozen is not None else vp.scene.version
 
+
+#: How the rest of the model reads while a group is open for editing.
+#: ``normal`` draws it as always, ``fade`` washes it out behind the group
+#: being edited (SketchUp's default), ``hide`` leaves it out of the frame.
+EDIT_REST_MODES = ("normal", "fade", "hide")
+#: Opacity the faded context draws at. SketchUp's slider default sits around
+#: here — enough to place the group in its surroundings, faint enough that the
+#: geometry you are actually editing reads as the subject.
+EDIT_REST_FADE = 0.22
+
+
+def _load_edit_rest_mode() -> str:
+    from PySide6.QtCore import QSettings
+    mode = str(QSettings().value("display/edit_rest_mode", "fade"))
+    return mode if mode in EDIT_REST_MODES else "fade"
+
 _AXIS_DIRS = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 
 
@@ -428,6 +444,13 @@ class Viewport(QOpenGLWidget):
         self._ttex_runs: list = []
         self._tex_cache: dict = {}
         self._edges_version = -1
+
+        # How the rest of the model reads while you are INSIDE a group
+        # (SketchUp's Model Info ▸ Components). "fade" keeps the context
+        # visible but out of the way, "hide" drops it from the frame
+        # entirely — on a heavy import that is also the fastest, since a
+        # hidden group never reaches the VBOs. See `edit_rest_mode`.
+        self._edit_rest_mode = _load_edit_rest_mode()
 
         # Hover highlight (Select tool). Not version-tracked — it changes with
         # the cursor, not with scene mutations — so it's uploaded per paint.
@@ -813,14 +836,25 @@ class Viewport(QOpenGLWidget):
         # spans; only spans whose chunk AABB touches the frustum are
         # submitted. Conservative — a missing bbox always draws.
         planes = self._frame_planes
+        # Inside a group with the context faded, the buffers hold the
+        # surroundings first and the edited group last; the split keeps the
+        # two apart so each is drawn with its own opacity.
+        # Both splits or neither: a frame that faded the context's edges but
+        # not its faces would read as a glitch rather than a mode.
+        fading = (self.scene.edit_group is not None
+                  and self._edit_rest_mode == "fade"
+                  and getattr(self, "_edit_split_e", None) is not None
+                  and getattr(self, "_edit_split_f", None) is not None)
+        split_f = self._edit_split_f if fading else None
+        split_e = self._edit_split_e if fading else None
         spans = getattr(self, "_face_spans", None)
         if spans:
-            face_spans, culled_fv = self._visible_spans(spans, planes)
+            face_spans, culled_fv = self._visible_spans(spans, planes, split_f)
         else:
             face_spans, culled_fv = [(0, self._faces_count)], 0
         espans = getattr(self, "_edge_spans", None)
         if espans:
-            edge_spans, culled_ev = self._visible_spans(espans, planes)
+            edge_spans, culled_ev = self._visible_spans(espans, planes, split_e)
         else:
             edge_spans, culled_ev = [(0, self._edges_count)], 0
         self._frame_edge_spans = edge_spans
@@ -861,8 +895,24 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue1f(self._loc_opacity, 0.55)
                 self._gl.glDepthMask(GL_FALSE)
             self._faces_vao.bind()
-            for _vs, _vc in face_spans:
-                self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
+            if split_f is None:
+                for _vs, _vc in face_spans:
+                    self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
+            else:
+                # Context first, washed out and writing no depth, so the group
+                # you are editing reads through it (SketchUp's faded rest of
+                # model); then the group itself, fully opaque.
+                self._program.setUniformValue1f(self._loc_opacity,
+                                                EDIT_REST_FADE)
+                self._gl.glDepthMask(GL_FALSE)
+                for _vs, _vc in face_spans:
+                    if _vs < split_f:
+                        self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
+                self._program.setUniformValue1f(self._loc_opacity, 1.0)
+                self._gl.glDepthMask(GL_TRUE)
+                for _vs, _vc in face_spans:
+                    if _vs >= split_f:
+                        self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
             fstart, fcount = self._fvcol_run
             if fcount:
                 # opaque front copies of glass-backed faces: visible only
@@ -898,15 +948,24 @@ class Viewport(QOpenGLWidget):
             self._tex_faces_vao.bind()
             run_parts = getattr(self, "_tex_run_parts", None)
             for ri, ((path, shade), start, count) in enumerate(self._tex_runs):
-                vis = ([(start, count)] if not run_parts else
-                       self._visible_spans(run_parts[ri], planes)[0])
-                if not vis:
+                if not run_parts:
+                    vis, subj = [(start, count)], []
+                else:
+                    vis, subj = self._tex_run_spans(run_parts[ri], planes,
+                                                    fading)
+                if not vis and not subj:
                     continue
                 r, g, b = self._texture_avg_color(path)
                 self._program.setUniformValue1f(self._loc_shade, float(shade))
-                self._set_color(r, g, b, 1.0)
-                for _vs, _vc in vis:
-                    self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
+                for alpha, spans in ((EDIT_REST_FADE, vis), (1.0, subj)) \
+                        if fading else ((1.0, vis),):
+                    if not spans:
+                        continue
+                    self._set_color(r, g, b, alpha)
+                    self._gl.glDepthMask(GL_FALSE if alpha < 1.0 else GL_TRUE)
+                    for _vs, _vc in spans:
+                        self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
+                self._gl.glDepthMask(GL_TRUE)
             self._tex_faces_vao.release()
             self._program.setUniformValue1f(self._loc_shade, 1.0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
@@ -920,9 +979,12 @@ class Viewport(QOpenGLWidget):
             self._tex_faces_vao.bind()
             run_parts = getattr(self, "_tex_run_parts", None)
             for ri, ((path, shade), start, count) in enumerate(self._tex_runs):
-                vis = ([(start, count)] if not run_parts else
-                       self._visible_spans(run_parts[ri], planes)[0])
-                if not vis:
+                if not run_parts:
+                    vis, subj = [(start, count)], []
+                else:
+                    vis, subj = self._tex_run_spans(run_parts[ri], planes,
+                                                    fading)
+                if not vis and not subj:
                     continue
                 tex = self._get_texture(path)
                 if tex is None:
@@ -932,9 +994,21 @@ class Viewport(QOpenGLWidget):
                     self._loc_hard_cutout,
                     1 if getattr(tex, "_cutout", False) else 0)
                 tex.bind(0)
-                for _vs, _vc in vis:
-                    self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
+                for alpha, spans in ((EDIT_REST_FADE, vis), (1.0, subj)) \
+                        if fading else ((None, vis),):
+                    if not spans:
+                        continue
+                    if alpha is not None:
+                        self._program.setUniformValue1f(self._loc_opacity,
+                                                        alpha)
+                        self._gl.glDepthMask(
+                            GL_FALSE if alpha < 1.0 else GL_TRUE)
+                    for _vs, _vc in spans:
+                        self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
                 tex.release(0)
+            if fading:
+                self._program.setUniformValue1f(self._loc_opacity, 1.0)
+                self._gl.glDepthMask(GL_TRUE)
             self._program.setUniformValue(self._loc_hard_cutout, 0)
             self._tex_faces_vao.release()
             if mode == "xray":
@@ -1124,9 +1198,24 @@ class Viewport(QOpenGLWidget):
         if self._edges_count > 0 and show_edges:
             self._set_color(ec[0], ec[1], ec[2], 1.0)
             self._edges_vao.bind()
-            for _vs, _vc in getattr(self, "_frame_edge_spans",
-                                    ((0, self._edges_count),)):
-                self._gl.glDrawArrays(GL_LINES, _vs, _vc)
+            _espans = getattr(self, "_frame_edge_spans",
+                              ((0, self._edges_count),))
+            if split_e is None:
+                for _vs, _vc in _espans:
+                    self._gl.glDrawArrays(GL_LINES, _vs, _vc)
+            else:
+                # Same two-tier draw as the faces: faded surroundings, then
+                # the edited group's own edges at full strength.
+                self._set_color(ec[0], ec[1], ec[2], EDIT_REST_FADE)
+                self._gl.glDepthMask(GL_FALSE)
+                for _vs, _vc in _espans:
+                    if _vs < split_e:
+                        self._gl.glDrawArrays(GL_LINES, _vs, _vc)
+                self._gl.glDepthMask(GL_TRUE)
+                self._set_color(ec[0], ec[1], ec[2], 1.0)
+                for _vs, _vc in _espans:
+                    if _vs >= split_e:
+                        self._gl.glDrawArrays(GL_LINES, _vs, _vc)
             self._edges_vao.release()
         if show_edges:
             self._set_color(ec[0], ec[1], ec[2], 1.0)
@@ -2363,17 +2452,29 @@ class Viewport(QOpenGLWidget):
                       if isinstance(s, (Edge, Face)) and not alive(s)]:
                 self.scene.selection.discard(s)
 
+        # Inside a group, the surroundings can fade out or leave the frame
+        # altogether (SketchUp's Model Info ▸ Components). Hidden means gone
+        # from the VBOs, not merely skipped at draw time — that is what makes
+        # it the fast mode on a heavy import.
+        hide_rest = self._rest_is_hidden()
+        # Vertex offset where the edited group's own block starts; everything
+        # before it is context. ``None`` = no subject (not editing, or the
+        # context is hidden and there is nothing to separate it from).
+        self._edit_split_e = None
+        self._edit_split_f = None
         # Hard edges: loose ones rebuilt fresh, group ones from cached chunks
         # (composition mirrors scene.render_edges()).
         all_loose = array("f")
-        for e in self.scene.loose_mesh.edges:
-            if (not self.scene.entity_visible(e) or getattr(e, "soft", False)
-                    or getattr(e, "hidden", False)):
-                continue  # hidden layer / curve segment (hidden, reads smooth)
-            all_loose.extend([
-                e.a.x(), e.a.y(), e.a.z(),
-                e.b.x(), e.b.y(), e.b.z(),
-            ])
+        if not hide_rest:
+            for e in self.scene.loose_mesh.edges:
+                if (not self.scene.entity_visible(e)
+                        or getattr(e, "soft", False)
+                        or getattr(e, "hidden", False)):
+                    continue  # hidden layer / curve segment (reads smooth)
+                all_loose.extend([
+                    e.a.x(), e.a.y(), e.a.z(),
+                    e.b.x(), e.b.y(), e.b.z(),
+                ])
         edge_parts = [all_loose.tobytes()]
         # Per-chunk draw spans (vertices) for frustum culling: the loose
         # block always draws (bbox None); each group's block carries its
@@ -2381,10 +2482,21 @@ class Viewport(QOpenGLWidget):
         edge_spans = [(None, 0, len(all_loose) // 3)]
         estart = len(all_loose) // 3
         pv = getattr(self, "_preview_groups", None) or ()
-        for g in self.scene.groups:
+        # The group being edited goes LAST, so the surroundings occupy a
+        # contiguous head the fade pass can draw in one go (and, since
+        # nothing outside the group can change while you are in it, a head
+        # that stays put in the buffer).
+        draw_groups = [g for g in self.scene.groups
+                       if not self._draws_in_edit_context(g)]
+        if not hide_rest:
+            draw_groups = [g for g in self.scene.groups
+                           if self._draws_in_edit_context(g)] + draw_groups
+        for g in draw_groups:
             if (self.scene.entity_visible(g) and id(g) not in pv
                     and not getattr(g, "billboard", False)
                     and not self._instanced_eligible(g)):
+                if g is self.scene.edit_group:
+                    self._edit_split_e = estart
                 ch = self._group_chunk(g)
                 edge_parts.append(ch["edges"])
                 n = len(ch["edges"]) // 12
@@ -2538,31 +2650,41 @@ class Viewport(QOpenGLWidget):
             else:
                 vcol.extend(buf)
 
-        for face in self.scene.loose_mesh.faces:
-            if self.scene.entity_visible(face):
-                bucket_face(face)
+        if not hide_rest:
+            for face in self.scene.loose_mesh.faces:
+                if self.scene.entity_visible(face):
+                    bucket_face(face)
         group_face_spans: list = []   # (bbox, start-within-groups, count)
         gface_start = 0
         pv_faces = getattr(self, "_preview_groups", None) or ()
-        for g in self.scene.groups:
+        for g in draw_groups:         # context first, edited group last
             if (not self.scene.entity_visible(g)
                     or getattr(g, "billboard", False)
                     or id(g) in pv_faces
                     or self._instanced_eligible(g)):
                 continue
+            if g is self.scene.edit_group:
+                self._edit_split_f = gface_start   # made absolute below
             if suppressed_faces and any(f in suppressed_faces
                                         for f in g.mesh.faces):
                 for face in g.mesh.faces:
                     bucket_face(face)   # push/pull preview suppresses faces
+                if g is self.scene.edit_group:
+                    # Those faces land in the LOOSE block at the head of the
+                    # buffer, on the context side of the split — fading by
+                    # position would wash out the very geometry being pushed.
+                    # No split for this frame: everything draws opaque.
+                    self._edit_split_f = None
                 continue
             chunk = self._group_chunk(g)
             face_parts.append(chunk["vcol"])
             group_face_spans.append((chunk.get("bbox"), gface_start,
                                      len(chunk["vcol"]) // 24))
             gface_start += len(chunk["vcol"]) // 24
+            subj = g is self.scene.edit_group
             for path, raw in chunk["by_texture"].items():
                 group_texture.setdefault(path, []).append(
-                    (raw, chunk.get("bbox")))
+                    (raw, chunk.get("bbox"), subj))
             for a, raw in chunk.get("tcol", {}).items():
                 tcol_runs.setdefault(a, []).append(raw)
             for key, raw in chunk.get("ttex", {}).items():
@@ -2586,6 +2708,8 @@ class Viewport(QOpenGLWidget):
         self._face_spans = ([(None, 0, loose_n)]
                             + [(bb, loose_n + s, n)
                                for bb, s, n in group_face_spans])
+        if self._edit_split_f is not None:
+            self._edit_split_f += loose_n   # was relative to the group block
         # Translucent colour runs live in the SAME VBO, after the opaque
         # batch; drawn in their own blended pass (depth-write off).
         self._tcol_runs = []
@@ -2622,18 +2746,21 @@ class Viewport(QOpenGLWidget):
         # Textured faces: one interleaved (pos+uv) VBO, a run per image path.
         tex_parts = []
         self._tex_runs = []
-        self._tex_run_parts = []      # per run: [(bbox, start, count)]
+        # per run: [(bbox, start, count, is_subject)] — the flag lets the fade
+        # pass tell the edited group's textured faces from its surroundings,
+        # which a single buffer offset cannot (runs interleave by image).
+        self._tex_run_parts = []
         start = 0
         for key in dict.fromkeys(list(by_texture) + list(group_texture)):
             run_start = start
             run_parts: list = []
-            parts = ([(by_texture[key].tobytes(), None)]
+            parts = ([(by_texture[key].tobytes(), None, False)]
                      if key in by_texture else [])
             parts += group_texture.get(key, [])
-            for raw, bb in parts:
+            for raw, bb, subj in parts:
                 tex_parts.append(raw)
                 n = len(raw) // 20
-                run_parts.append((bb, start, n))
+                run_parts.append((bb, start, n, subj))
                 start += n
             self._tex_runs.append((key, run_start, start - run_start))
             self._tex_run_parts.append(run_parts)
@@ -3095,10 +3222,16 @@ class Viewport(QOpenGLWidget):
         else:
             chunks.append(b"")
         pv_sil = getattr(self, "_preview_groups", None) or ()
+        # Silhouettes are a full-strength black outline; drawing them over a
+        # faded (or hidden) context would put the heaviest line in the frame
+        # on exactly the geometry meant to recede. Only the subject profiles.
+        skip_context = (self.scene.edit_group is not None
+                        and self._edit_rest_mode in ("fade", "hide"))
         groups = [g for g in self.scene.groups
                   if self.scene.entity_visible(g)
                   and id(g) not in pv_sil
-                  and not getattr(g, "billboard", False)]
+                  and not getattr(g, "billboard", False)
+                  and not (skip_context and self._draws_in_edit_context(g))]
         if groups:
             import numpy as np
             e_np = np.array([eye.x(), eye.y(), eye.z()])
@@ -5332,10 +5465,14 @@ class Viewport(QOpenGLWidget):
                 return False
         return True
 
-    def _visible_spans(self, spans, planes):
+    def _visible_spans(self, spans, planes, split=None):
         """Filter draw spans ``[(bbox, start, count)]`` by the frustum and
         merge adjacent survivors: returns ``([(start, count)], culled)``.
-        ``bbox None`` = always drawn (loose geometry, unknown extents)."""
+        ``bbox None`` = always drawn (loose geometry, unknown extents).
+
+        ``split`` (a vertex offset) is a boundary merging never crosses, so
+        the caller can still tell the two sides apart — the faded context
+        before it, the group being edited from it on."""
         out: list = []
         culled = 0
         for bbox, start, count in spans:
@@ -5345,11 +5482,27 @@ class Viewport(QOpenGLWidget):
                     planes, bbox[0], bbox[1]):
                 culled += count
                 continue
-            if out and out[-1][0] + out[-1][1] == start:
+            if (out and out[-1][0] + out[-1][1] == start
+                    and not (split is not None
+                             and out[-1][0] < split <= start)):
                 out[-1] = (out[-1][0], out[-1][1] + count)
             else:
                 out.append((start, count))
         return out, culled
+
+    def _tex_run_spans(self, parts, planes, fading: bool):
+        """Frustum-culled draw spans of one texture run, split into
+        ``(context, subject)`` when the edited group's surroundings are
+        fading. Without a fade everything is context and ``subject`` is
+        empty, so callers draw one list either way."""
+        if not fading:
+            return self._visible_spans(
+                [(bb, s, n) for bb, s, n, _ in parts], planes)[0], []
+        ctx = self._visible_spans(
+            [(bb, s, n) for bb, s, n, sub in parts if not sub], planes)[0]
+        subj = self._visible_spans(
+            [(bb, s, n) for bb, s, n, sub in parts if sub], planes)[0]
+        return ctx, subj
 
     def _pick_index(self):
         """Flat NumPy pick index of the scene — triangles of every loose and
@@ -6381,6 +6534,7 @@ class Viewport(QOpenGLWidget):
         """Enter a group for editing (SketchUp double-click-into-group)."""
         self.scene.begin_group_edit(group)
         self._hover_entity = None
+        self._edges_version = -1     # the rest may fade out or leave the VBOs
         self.flash_status(tr(
             "Editing group '{name}' — Esc or click outside to leave",
             name=group.name), 4000)
@@ -6391,8 +6545,38 @@ class Viewport(QOpenGLWidget):
             return
         self.scene.end_group_edit()
         self._hover_entity = None
-        self.flash_status(tr("Left the group"), 2000)
+        self._edges_version = -1     # the rest comes back
         self.update()
+        self.flash_status(tr("Left the group"), 2000)
+
+    # ---- Rest-of-model context while editing a group -------------------------
+    @property
+    def edit_rest_mode(self) -> str:
+        """``normal`` / ``fade`` / ``hide`` — how the model outside the group
+        being edited reads. See :data:`EDIT_REST_MODES`."""
+        return self._edit_rest_mode
+
+    def set_edit_rest_mode(self, mode: str) -> None:
+        if mode not in EDIT_REST_MODES or mode == self._edit_rest_mode:
+            return
+        self._edit_rest_mode = mode
+        from PySide6.QtCore import QSettings
+        QSettings().setValue("display/edit_rest_mode", mode)
+        # "hide" keeps the rest out of the VBOs entirely, so switching to or
+        # from it changes what is uploaded, not just how it is drawn.
+        self._edges_version = -1
+        self.update()
+
+    def _rest_is_hidden(self) -> bool:
+        """Whether the model outside the edited group is out of this frame."""
+        return (self.scene.edit_group is not None
+                and self._edit_rest_mode == "hide")
+
+    def _draws_in_edit_context(self, group) -> bool:
+        """Whether ``group`` is part of the surroundings of the group being
+        edited (so it fades or hides), rather than the subject itself."""
+        return (self.scene.edit_group is not None
+                and group is not self.scene.edit_group)
 
     def set_nav_mode(self, mode: Optional[str]) -> None:
         """Enter a SketchUp-style camera navigation mode ("orbit" / "pan").
