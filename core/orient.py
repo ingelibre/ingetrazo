@@ -352,21 +352,24 @@ def orient_outward(mesh, seed: int = 12345) -> list:
     # re-listing the other faces' triangles (the old O(F²·T) hot loop).
     packed = _pack_lists([all_tris[f] for f in faces])
 
-    def query_mask(boundary_set, face):
-        m = np.isin(packed.face_idx,
-                    np.fromiter((fidx[f] for f in boundary_set), dtype=np.int64,
-                                count=len(boundary_set)))
-        m &= packed.face_idx != fidx[face]
-        return m
+    def _boundary_base(boundary_set):
+        # ONE isin per round — rebuilding the boundary-id array and running
+        # isin over every packed triangle PER FACE repeated identical work
+        # F times per round (imported brick barbecue: the push click hung
+        # for minutes at 195% CPU; SIGUSR1 autopsy pinned np.isin here).
+        ids = np.fromiter((fidx[f] for f in boundary_set), dtype=np.int64,
+                          count=len(boundary_set))
+        return np.isin(packed.face_idx, ids)
 
     boundary = dict(all_tris)
     for _ in range(4):
         rng = random.Random(seed)
         bset = set(boundary)
+        base = _boundary_base(bset)
         interior_now = {
             f for f in mesh.faces
-            if _face_side_state(f, boundary, rng,
-                                packed=packed, mask=query_mask(bset, f))
+            if _face_side_state(f, boundary, rng, packed=packed,
+                                mask=base & (packed.face_idx != fidx[f]))
             == "interior"
         }
         if interior_now == {f for f in mesh.faces if f not in boundary}:
@@ -383,10 +386,12 @@ def orient_outward(mesh, seed: int = 12345) -> list:
         return []
     rng = random.Random(seed)
     bset = set(boundary)
+    base = _boundary_base(bset)
     to_flip = [
         f for f in boundary
-        if _face_side_state(f, boundary, rng,
-                            packed=packed, mask=query_mask(bset, f)) == "inward"
+        if _face_side_state(f, boundary, rng, packed=packed,
+                            mask=base & (packed.face_idx != fidx[f]))
+        == "inward"
     ]
     for f in to_flip:
         # Flip in place: reversing the loops reverses the winding (so the normal
