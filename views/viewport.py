@@ -2277,6 +2277,8 @@ class Viewport(QOpenGLWidget):
         return hit[1]
 
     def _area_of(self, face) -> float:
+        if not hasattr(face, "loop"):
+            return face.area()          # preview face (core.geometry)
         if len(face.loop) < 3:
             return 0.0
         return 0.5 * self._newell_of(face).length()
@@ -2287,6 +2289,8 @@ class Viewport(QOpenGLWidget):
         VBOs AND the pick index — 3x the earcut/_newell cost on an exploded
         import. The memo holds the face itself so a recycled id() can never
         alias, and drops wholesale on the next version bump."""
+        if not hasattr(face, "loop"):
+            return face.triangulate()   # preview face: own earcut, no memo
         memo = getattr(self, "_tri_memo", None)
         if memo is None or memo[0] != _cache_ver(self):
             memo = self._tri_memo = (_cache_ver(self), {})
@@ -2299,7 +2303,12 @@ class Viewport(QOpenGLWidget):
     def _normal_of(self, face):
         """``face.normal()`` memoised per scene version (see _tris_of):
         the shading of every loose face recomputes the Newell normal 3-4
-        times per edit frame otherwise."""
+        times per edit frame otherwise. Tool PREVIEW faces (core.geometry,
+        no ``loop``) take their own methods unmemoised — fresh objects every
+        frame; treating them as mesh faces crashed EVERY paint of a loose
+        paste preview (nothing followed the cursor)."""
+        if not hasattr(face, "loop"):
+            return face.normal()
         if len(face.loop) < 3:
             return QVector3D(0.0, 0.0, 1.0)
         n = self._newell_of(face)

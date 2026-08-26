@@ -325,3 +325,24 @@ def test_cut_group_removes_it_and_paste_restores():
     assert scene.groups == []
     assert vp.history.undo() is True        # undo the cut
     assert scene.groups == [g]
+
+
+def test_preview_faces_survive_viewport_memo_helpers():
+    # The memoised _tris_of/_normal_of/_area_of assumed mesh faces (.loop);
+    # a PREVIEW face (core.geometry) crashed every paint of a loose paste
+    # preview — nothing followed the cursor (user report). Duck-typed now.
+    from core.geometry import Face as PreviewFace
+    from core.scene import Scene
+    from views.viewport import Viewport
+
+    class _MemoVP:
+        def __init__(self):
+            self.scene = Scene()
+
+    vp = _MemoVP()
+    face = PreviewFace([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
+    tris = Viewport._tris_of(vp, face)
+    assert len(tris) == 2
+    n = Viewport._normal_of(vp, face)
+    assert round(abs(n.z()), 3) == 1.0
+    assert Viewport._area_of(vp, face) == 4.0
