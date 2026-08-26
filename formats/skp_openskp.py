@@ -215,6 +215,37 @@ def _colorize_image(data, target_rgb, ctype):
         return data
 
 
+def _tile_size(width, height):
+    """The texture's physical tile as ``(sw, sh)`` in metres, from a
+    material's stored applied size.
+
+    A file need not carry a usable one. ``openskp.create`` writes a fixed
+    1-inch width and a SENTINEL for the height, which decodes as a denormal
+    around 1e-231 — and the UV reconstruction divides by it, so every
+    coordinate came out infinite and the mapping was lost. Anything that is
+    not a sane positive size reads as "not specified": fall back to the other
+    axis, or to the one-metre default this importer has always used when a
+    material carried no size at all.
+    """
+    def _sane(v):
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return None
+        # A tile below a micron or above a kilometre is not a size anyone
+        # meant; a denormal sentinel lands far outside both.
+        return v if 1e-6 < v < 1e5 else None
+
+    w, h = _sane(width), _sane(height)
+    if w is None and h is None:
+        w = h = 1.0 / _INCH
+    elif w is None:
+        w = h
+    elif h is None:
+        h = w
+    return w * _INCH, h * _INCH
+
+
 def _material_attrs(model, skp_path):
     """Map ``material_id`` → IngeTrazo ``Face.attrs`` dict.
 
@@ -267,11 +298,9 @@ def _material_attrs(model, skp_path):
             except OSError:
                 img = None
             if img is not None:
-                entry = {"texture": {
-                    "path": str(img),
-                    "sw": (tex.width or 1.0 / _INCH) * _INCH,
-                    "sh": (tex.height or 1.0 / _INCH) * _INCH,
-                }}
+                sw, sh = _tile_size(getattr(tex, "width", None),
+                                    getattr(tex, "height", None))
+                entry = {"texture": {"path": str(img), "sw": sw, "sh": sh}}
                 op = getattr(mat, "transparency", 1.0)
                 if op < 0.999:
                     entry["opacity"] = float(op)

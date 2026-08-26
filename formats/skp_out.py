@@ -29,6 +29,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtGui import QVector3D
+
+from core.texture import face_uv_axes, uv_reference_points
+
 # IngeTrazo stores geometry in metres; SketchUp works in inches.
 _M_TO_IN = 39.37007874
 
@@ -171,6 +175,36 @@ def _iter_export_faces(loose_faces, classic, families):
         yield from members[0].mesh.faces
 
 
+def _face_uv_pairs(face, points=None):
+    """Where the face's texture sits, as the three ``(point, (u, v))`` pairs
+    OpenSKP fits its UV matrix through — or ``None`` for an untextured or
+    degenerate face, which then takes SketchUp's default projection.
+
+    Without this the exporter wrote textured faces with no mapping at all,
+    and a model saved from IngeTrazo opened in SketchUp Web with every
+    texture gone, each surface flat in its average colour (Marco's pool: the
+    water lavender, the deck terracotta, the palm a black silhouette). The
+    recipe is shared with the renderer through ``core.texture.face_uv_axes``,
+    so what the .skp carries is what the viewport showed.
+
+    The points are handed over in INCHES, like the rest of the geometry, but
+    the coordinates are read in metres — a pair only says "this point lands
+    on that texture coordinate", and the two spaces must not be mixed."""
+    tex = face.attrs.get("texture")
+    if not tex or not tex.get("path"):
+        return None
+    ref = uv_reference_points(points if points is not None else face.vertices,
+                              face.normal())
+    if ref is None:
+        return None
+    gu, cu, gv, cv = face_uv_axes(tex, face.normal())
+    return [
+        (pt, (QVector3D.dotProduct(gu, p) + cu,
+              QVector3D.dotProduct(gv, p) + cv))
+        for p, pt in zip(ref, _pts_inches(ref))
+    ]
+
+
 def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError):
     """Write one face (outer loop + holes) to ``sink`` — the root builder or
     an open group/component definition; all three expose the same
@@ -185,6 +219,7 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError):
     face_layer = face.attrs.get("layer")
     layer = layer_handles.get(face_layer) if face_layer else None
     soft = _is_soft_face(face)
+    uv = _face_uv_pairs(face)
     try:
         sink.add_face(
             _pts_inches(face.vertices),
@@ -192,6 +227,7 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError):
             layer=layer,
             soft_edges=soft,
             smooth_edges=soft,
+            front_uv=uv,
             holes=[_pts_inches(h) for h in face.holes],
         )
     except SkpWriteError:
@@ -203,6 +239,7 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError):
                     layer=layer,
                     soft_edges=True,
                     smooth_edges=True,
+                    front_uv=_face_uv_pairs(face, tri),
                 )
             except SkpWriteError:
                 pass  # Degenerate triangle — skip silently.

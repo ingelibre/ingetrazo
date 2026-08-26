@@ -235,3 +235,74 @@ def affine_uv(uvw, positions):
         out.append((ux * x + uy * y + uz * z + uc,
                     vx * x + vy * y + vz * z + vc))
     return out
+
+
+def face_uv_axes(tex: dict, normal):
+    """The affine world→UV map a textured face renders with, as
+    ``(gu, cu, gv, cv)``: ``u = gu·p + cu`` and ``v = gv·p + cv`` at any
+    world point ``p``.
+
+    ONE definition of "where does the texture sit on this face", so the
+    renderer and the ``.skp`` exporter cannot drift apart — the exporter had
+    no UV recipe at all and wrote textured faces with no mapping, which is
+    why a model saved from IngeTrazo opened in SketchUp with every texture
+    gone and only its average colour left.
+
+    Two sources, matching what the face carries: a fitted ``uvw`` (an import
+    that brought its own texture coordinates) or, failing that, the
+    SketchUp-style planar projection of world position, so coplanar faces
+    tile seamlessly."""
+    import math
+
+    uvw = tex.get("uvw")
+    if uvw:
+        return (QVector3D(uvw[0], uvw[1], uvw[2]), float(uvw[3]),
+                QVector3D(uvw[4], uvw[5], uvw[6]), float(uvw[7]))
+    u_axis, v_axis = plane_axes(QVector3D(normal).normalized())
+    rot = float(tex.get("rot", 0.0) or 0.0)
+    if rot:
+        a = math.radians(rot)
+        cos_a, sin_a = math.cos(a), math.sin(a)
+        u_axis, v_axis = (u_axis * cos_a + v_axis * sin_a,
+                          v_axis * cos_a - u_axis * sin_a)
+    sw = tex.get("sw", 1.0) or 1.0
+    sh = tex.get("sh", 1.0) or 1.0
+    return (u_axis / sw, 0.0, v_axis / sh, 0.0)
+
+
+def uv_reference_points(points, normal=None):
+    """Three points on the face's plane, forming a well-conditioned triangle,
+    for pinning an affine UV map. ``None`` when the face is degenerate.
+
+    NOT face vertices: the map is affine, so it can be sampled anywhere on
+    the plane, and picking real corners is what broke the first attempt. A
+    long thin face gives three nearly collinear corners — one sampled face in
+    piscina.igz had two of them 1.8 inches apart and the third 19 away — and
+    fitting a map through that sliver amplifies float error enough to come
+    back rotated. A right-angled triad on the face's own plane, sized to the
+    face, is exact and always conditioned."""
+    pts = [QVector3D(p) for p in points]
+    if len(pts) < 3:
+        return None
+    centre = QVector3D()
+    for p in pts:
+        centre += p
+    centre /= float(len(pts))
+    n = QVector3D(normal) if normal is not None else None
+    if n is None or n.lengthSquared() < 1e-18:
+        # Newell over the ring: robust for any polygon, and the caller may
+        # not have a normal to give.
+        n = QVector3D()
+        count = len(pts)
+        for i in range(count):
+            a, b = pts[i], pts[(i + 1) % count]
+            n += QVector3D((a.y() - b.y()) * (a.z() + b.z()),
+                           (a.z() - b.z()) * (a.x() + b.x()),
+                           (a.x() - b.x()) * (a.y() + b.y()))
+    if n.lengthSquared() < 1e-18:
+        return None
+    e1, e2 = plane_axes(n.normalized())
+    span = max((p - centre).length() for p in pts)
+    if span < 1e-9:
+        return None
+    return centre, centre + e1 * span, centre + e2 * span
