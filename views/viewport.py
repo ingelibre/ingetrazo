@@ -48,6 +48,9 @@ from typing import Optional
 # once-per-second frame summary land in ~/ingetrazo-perf.log — the tool for
 # "it feels slow" reports from real sessions, where synthetic benchmarks lie.
 _PERF = bool(os.environ.get("INGETRAZO_PERF"))
+# Kill-switch for the instanced component pass (P2): set to 1 to draw
+# every instance through the consolidated VBOs like before.
+_NO_INSTANCING = os.environ.get("INGETRAZO_NO_INSTANCING", "") == "1"
 _perf_file = None
 
 
@@ -557,6 +560,9 @@ class Viewport(QOpenGLWidget):
         self._loc_opacity = self._program.uniformLocation("u_opacity")
         self._loc_hard_cutout = self._program.uniformLocation("u_hard_cutout")
         self._loc_shade = self._program.uniformLocation("u_shade")
+        # Per-instance model matrix columns (P2 instanced components).
+        self._loc_inst = [self._program.attributeLocation(f"a_inst{i}")
+                          for i in range(4)]
         self._loc_clip_plane = self._program.uniformLocation("u_clip_plane")
         self._loc_clip_enable = self._program.uniformLocation("u_clip_enable")
 
@@ -755,6 +761,15 @@ class Viewport(QOpenGLWidget):
 
         self._program.bind()
         self._program.setUniformValue(self._loc_mvp, mvp)
+        # Instanced-matrix attributes default to IDENTITY for every
+        # non-instanced draw (the GL default (0,0,0,1) collapses geometry,
+        # and QPainter may clobber generic attribute state — reset per frame).
+        li = getattr(self, "_loc_inst", None)
+        if li and li[0] >= 0:
+            self._gl.glVertexAttrib4f(li[0], 1.0, 0.0, 0.0, 0.0)
+            self._gl.glVertexAttrib4f(li[1], 0.0, 1.0, 0.0, 0.0)
+            self._gl.glVertexAttrib4f(li[2], 0.0, 0.0, 1.0, 0.0)
+            self._gl.glVertexAttrib4f(li[3], 0.0, 0.0, 0.0, 1.0)
         # Solid-colour by default; the textured-face pass flips this on.
         self._program.setUniformValue(self._loc_use_tex, 0)
         self._program.setUniformValue(self._loc_tex, 0)  # sampler → unit 0
@@ -928,6 +943,11 @@ class Viewport(QOpenGLWidget):
             self._program.setUniformValue1f(self._loc_shade, 1.0)
             self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
+        # Instanced components (P2): eligible instances draw from their
+        # prototype's local VBOs with per-instance matrices — the
+        # consolidated passes above excluded them in _sync_edges.
+        self._draw_instanced_faces(mode, style)
 
         # Back-side material overrides (faces painted DIFFERENTLY per side,
         # SketchUp two-sided paint): drawn with front-face culling so they
@@ -1108,6 +1128,9 @@ class Viewport(QOpenGLWidget):
                                     ((0, self._edges_count),)):
                 self._gl.glDrawArrays(GL_LINES, _vs, _vc)
             self._edges_vao.release()
+        if show_edges:
+            self._set_color(ec[0], ec[1], ec[2], 1.0)
+            self._draw_instanced_edges()
 
         # Profile (silhouette) edges: soft seams of a curved surface are hidden,
         # except where the surface turns away from the viewer — the cylinder's
@@ -1304,6 +1327,277 @@ class Viewport(QOpenGLWidget):
         vbo.release()
         vao.release()
         return vao, vbo
+
+    # ---- Instanced components (P2) ------------------------------------------
+    # Component instances draw from ONE static proto VBO (local coords) plus
+    # a per-instance matrix buffer (divisor 1): N hedges cost one upload and
+    # one draw per proto run. Instances keep their baked chunks for picks,
+    # silhouettes, selection and the drag preview; only the CONSOLIDATED
+    # draw excludes them. INGETRAZO_NO_INSTANCING=1 reverts to the old path.
+
+    def _instanced_eligible(self, g) -> bool:
+        if (_NO_INSTANCING or getattr(g, "xform", None) is None
+                or getattr(g, "billboard", False)):
+            return False
+        base = self._proto_base_chunk(g.mesh)
+        # Translucent / back-side / glass content still rides the
+        # consolidated passes (they need global draw ordering).
+        return not (base.get("tcol") or base.get("ttex")
+                    or base.get("back_vcol") or base.get("back_tex")
+                    or base.get("back_tcol") or base.get("back_ttex")
+                    or base.get("fvcol"))
+
+    def _proto_base_chunk(self, mesh):
+        """The prototype's chunk in LOCAL coordinates (the same wrapper
+        ``_instance_chunk`` derives from)."""
+        wrappers = getattr(self, "_proto_wrappers", None)
+        if wrappers is None:
+            wrappers = self._proto_wrappers = {}
+        w = wrappers.get(id(mesh))
+        if w is None:
+            from types import SimpleNamespace
+            w = wrappers[id(mesh)] = SimpleNamespace(mesh=mesh, xform=None)
+        return self._group_chunk(w)
+
+    def _gather_instanced(self):
+        """Visible, eligible instances grouped by prototype mesh — computed
+        once per frame (faces pass), reused by the edges pass. Instances are
+        frustum-culled by their baked chunk's world AABB."""
+        out: dict = {}
+        pv = getattr(self, "_preview_groups", None) or ()
+        planes = getattr(self, "_frame_planes", None)
+        for g in self.scene.groups:
+            if id(g) in pv or not self.scene.entity_visible(g):
+                continue
+            if not self._instanced_eligible(g):
+                continue
+            ch = self._group_chunk(g)
+            bb = ch.get("bbox")
+            if (planes is not None and bb is not None
+                    and not self._aabb_visible(planes, bb[0], bb[1])):
+                continue
+            out.setdefault(id(g.mesh), (g.mesh, []))[1].append(g)
+        self._frame_instanced = out
+        return out
+
+    def _ensure_proto_draw(self, mesh):
+        """Static draw entry of one prototype: vcol/edges/texture VBOs from
+        the LOCAL base chunk, three VAOs wiring them to the shared
+        per-instance matrix buffer (divisor 1), built once per proto rev."""
+        cache = getattr(self, "_proto_draw", None)
+        if cache is None:
+            cache = self._proto_draw = {}
+        base = self._proto_base_chunk(mesh)
+        key = (id(base), base.get("rev"))
+        entry = cache.get(id(mesh))
+        if entry is not None and entry["key"] == key:
+            return entry
+        extra = self.context().extraFunctions()
+
+        def static_vbo(raw):
+            vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+            vbo.setUsagePattern(QOpenGLBuffer.StaticDraw)
+            vbo.create()
+            vbo.bind()
+            vbo.allocate(raw or b"\0" * 4, max(len(raw), 4))
+            vbo.release()
+            return vbo
+
+        mat_vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+        mat_vbo.setUsagePattern(QOpenGLBuffer.DynamicDraw)
+        mat_vbo.create()
+        mat_vbo.bind()
+        mat_vbo.allocate(64)
+        mat_vbo.release()
+
+        def wire_matrix():
+            # Caller keeps the VAO bound; attach the matrix columns.
+            mat_vbo.bind()
+            for i, loc in enumerate(self._loc_inst):
+                self._program.enableAttributeArray(loc)
+                self._program.setAttributeBuffer(loc, GL_FLOAT, i * 16, 4, 64)
+                extra.glVertexAttribDivisor(loc, 1)
+            mat_vbo.release()
+
+        self._program.bind()
+        # vcol: pos(3)+rgb(3)
+        vcol_raw = base["vcol"]
+        vcol_vbo = static_vbo(vcol_raw)
+        vcol_vao = QOpenGLVertexArrayObject(self)
+        vcol_vao.create()
+        vcol_vao.bind()
+        vcol_vbo.bind()
+        self._program.enableAttributeArray(self._loc_pos)
+        self._program.setAttributeBuffer(self._loc_pos, GL_FLOAT, 0, 3, 24)
+        self._program.enableAttributeArray(self._loc_vcolor)
+        self._program.setAttributeBuffer(self._loc_vcolor, GL_FLOAT, 12, 3, 24)
+        vcol_vbo.release()
+        wire_matrix()
+        vcol_vao.release()
+        # edges: pos(3)
+        edges_raw = base["edges"]
+        edges_vbo = static_vbo(edges_raw)
+        edges_vao = QOpenGLVertexArrayObject(self)
+        edges_vao.create()
+        edges_vao.bind()
+        edges_vbo.bind()
+        self._program.enableAttributeArray(self._loc_pos)
+        self._program.setAttributeBuffer(self._loc_pos, GL_FLOAT, 0, 3, 12)
+        edges_vbo.release()
+        wire_matrix()
+        edges_vao.release()
+        # textures: pos(3)+uv(2), one run per (path, shade)
+        tex_parts = []
+        tex_runs = []
+        start = 0
+        for tkey, raw in base["by_texture"].items():
+            tex_parts.append(raw)
+            n = len(raw) // 20
+            tex_runs.append((tkey, start, n))
+            start += n
+        tex_raw = b"".join(tex_parts)
+        tex_vbo = static_vbo(tex_raw)
+        tex_vao = QOpenGLVertexArrayObject(self)
+        tex_vao.create()
+        tex_vao.bind()
+        tex_vbo.bind()
+        self._program.enableAttributeArray(self._loc_pos)
+        self._program.setAttributeBuffer(self._loc_pos, GL_FLOAT, 0, 3, 20)
+        self._program.enableAttributeArray(self._loc_uv)
+        self._program.setAttributeBuffer(self._loc_uv, GL_FLOAT, 12, 2, 20)
+        tex_vbo.release()
+        wire_matrix()
+        tex_vao.release()
+        self._program.release()
+        entry = {"key": key, "mat_sig": None, "mat_vbo": mat_vbo,
+                 "vcol_vao": vcol_vao, "vcol_vbo": vcol_vbo,
+                 "vcol_count": len(vcol_raw) // 24,
+                 "edges_vao": edges_vao, "edges_vbo": edges_vbo,
+                 "edge_count": len(edges_raw) // 12,
+                 "tex_vao": tex_vao, "tex_vbo": tex_vbo,
+                 "tex_runs": tex_runs}
+        cache[id(mesh)] = entry
+        return entry
+
+    def _update_inst_matrices(self, entry, groups) -> int:
+        sig = tuple((id(g), tuple(g.xform.data())) for g in groups)
+        if entry["mat_sig"] != sig:
+            import numpy as np
+            raw = np.asarray([list(g.xform.data()) for g in groups],
+                             dtype=np.float32).tobytes()
+            entry["mat_vbo"].bind()
+            entry["mat_vbo"].allocate(raw, len(raw))
+            entry["mat_vbo"].release()
+            entry["mat_sig"] = sig
+        return len(groups)
+
+    def _draw_instanced_faces(self, mode, style) -> None:
+        by_proto = self._gather_instanced()
+        if not by_proto or mode == "wireframe":
+            return
+        extra = self.context().extraFunctions()
+        self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+        self._gl.glPolygonOffset(1.0, 1.0)
+        if mode == "xray":
+            self._program.setUniformValue1f(self._loc_opacity, 0.55)
+            self._gl.glDepthMask(GL_FALSE)
+        for mesh, groups in by_proto.values():
+            entry = self._ensure_proto_draw(mesh)
+            n = self._update_inst_matrices(entry, groups)
+            if entry["vcol_count"]:
+                if mode in ("hidden_line", "monochrome"):
+                    self._program.setUniformValue(self._loc_use_vcolor, 0)
+                    fr = style.front_color
+                    self._set_color(fr[0], fr[1], fr[2], 1.0)
+                    if mode == "hidden_line":
+                        self._program.setUniformValue(
+                            self._loc_back_color,
+                            QVector4D(fr[0], fr[1], fr[2], 1.0))
+                    else:
+                        self._set_back_face_color()
+                else:
+                    self._program.setUniformValue(self._loc_use_vcolor, 1)
+                    self._set_back_face_color()
+                entry["vcol_vao"].bind()
+                extra.glDrawArraysInstanced(
+                    GL_TRIANGLES, 0, entry["vcol_count"], n)
+                entry["vcol_vao"].release()
+                self._program.setUniformValue(self._loc_use_vcolor, 0)
+            if entry["tex_runs"]:
+                if mode in ("hidden_line", "monochrome"):
+                    fr = style.front_color
+                    self._set_color(fr[0], fr[1], fr[2], 1.0)
+                    entry["tex_vao"].bind()
+                    for _tk, s0, cnt in entry["tex_runs"]:
+                        extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                    entry["tex_vao"].release()
+                elif mode == "shaded":
+                    entry["tex_vao"].bind()
+                    for (path, shade), s0, cnt in entry["tex_runs"]:
+                        r, g, b = self._texture_avg_color(path)
+                        self._program.setUniformValue1f(
+                            self._loc_shade, float(shade))
+                        self._set_color(r, g, b, 1.0)
+                        extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                    entry["tex_vao"].release()
+                    self._program.setUniformValue1f(self._loc_shade, 1.0)
+                else:            # textures / xray
+                    self._program.setUniformValue(self._loc_use_tex, 1)
+                    entry["tex_vao"].bind()
+                    for (path, shade), s0, cnt in entry["tex_runs"]:
+                        tex = self._get_texture(path)
+                        if tex is None:
+                            continue
+                        self._program.setUniformValue1f(
+                            self._loc_shade, float(shade))
+                        self._program.setUniformValue(
+                            self._loc_hard_cutout,
+                            1 if getattr(tex, "_cutout", False) else 0)
+                        tex.bind(0)
+                        extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                        tex.release(0)
+                    entry["tex_vao"].release()
+                    self._program.setUniformValue(self._loc_hard_cutout, 0)
+                    self._program.setUniformValue1f(self._loc_shade, 1.0)
+                    self._program.setUniformValue(self._loc_use_tex, 0)
+        if mode == "xray":
+            self._program.setUniformValue1f(self._loc_opacity, 1.0)
+            self._gl.glDepthMask(GL_TRUE)
+        self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
+    def _draw_instanced_raw(self) -> None:
+        """Geometry-only instanced draw — the section-fill stencil pass."""
+        by_proto = getattr(self, "_frame_instanced", None)
+        if not by_proto:
+            return
+        extra = self.context().extraFunctions()
+        for mesh, groups in by_proto.values():
+            entry = self._ensure_proto_draw(mesh)
+            n = self._update_inst_matrices(entry, groups)
+            if entry["vcol_count"]:
+                entry["vcol_vao"].bind()
+                extra.glDrawArraysInstanced(
+                    GL_TRIANGLES, 0, entry["vcol_count"], n)
+                entry["vcol_vao"].release()
+            if entry["tex_runs"]:
+                entry["tex_vao"].bind()
+                for _tk, s0, cnt in entry["tex_runs"]:
+                    extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                entry["tex_vao"].release()
+
+    def _draw_instanced_edges(self) -> None:
+        by_proto = getattr(self, "_frame_instanced", None)
+        if not by_proto:
+            return
+        extra = self.context().extraFunctions()
+        for mesh, groups in by_proto.values():
+            entry = self._ensure_proto_draw(mesh)
+            if not entry["edge_count"]:
+                continue
+            n = self._update_inst_matrices(entry, groups)
+            entry["edges_vao"].bind()
+            extra.glDrawArraysInstanced(GL_LINES, 0, entry["edge_count"], n)
+            entry["edges_vao"].release()
 
     def _get_texture(self, path: str):
         """GL texture for an image ``path``, cached on the viewport. Returns the
@@ -2076,7 +2370,8 @@ class Viewport(QOpenGLWidget):
         pv = getattr(self, "_preview_groups", None) or ()
         for g in self.scene.groups:
             if (self.scene.entity_visible(g) and id(g) not in pv
-                    and not getattr(g, "billboard", False)):
+                    and not getattr(g, "billboard", False)
+                    and not self._instanced_eligible(g)):
                 ch = self._group_chunk(g)
                 edge_parts.append(ch["edges"])
                 n = len(ch["edges"]) // 12
@@ -2239,7 +2534,8 @@ class Viewport(QOpenGLWidget):
         for g in self.scene.groups:
             if (not self.scene.entity_visible(g)
                     or getattr(g, "billboard", False)
-                    or id(g) in pv_faces):
+                    or id(g) in pv_faces
+                    or self._instanced_eligible(g)):
                 continue
             if suppressed_faces and any(f in suppressed_faces
                                         for f in g.mesh.faces):
@@ -3490,6 +3786,7 @@ class Viewport(QOpenGLWidget):
             self._tex_faces_vao.bind()
             self._gl.glDrawArrays(GL_TRIANGLES, 0, self._tex_faces_count)
             self._tex_faces_vao.release()
+        self._draw_instanced_raw()   # instanced components join the stencil
         self._gl.glDisable(GL_CULL_FACE)
         self._gl.glColorMask(True, True, True, True)
         self._gl.glDepthMask(GL_TRUE)
