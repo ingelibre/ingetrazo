@@ -14,8 +14,9 @@ OpenSKP 0.8-era data model (v0.2.0), discovered by introspection:
   ``edges`` (dict id → ``Edge(v1_id, v2_id)``), ``faces`` (dict id → ``Face``),
   ``instances`` (list of ``Instance``).
 * ``Face``: ``loops`` — a list of loops, each ``[(edge_id, sense), …]``; the
-  first loop is the outer boundary, the rest are holes. ``sense`` 1 walks the
-  edge ``v1→v2``, 0 walks ``v2→v1``. Plus ``normal`` and ``material_id``.
+  first loop is the outer boundary, the rest are holes. Plus ``normal`` and
+  ``material_id``. ``sense`` is NOT read: what it holds changed between
+  OpenSKP releases, so ``_ring_raw`` walks the loop's connectivity instead.
 * ``Instance``: ``matrix`` (a 3×3 rotation/scale row-major + a translation, 13
   floats), ``ref_idx`` (→ the placed definition's id), ``children``.
 
@@ -45,14 +46,48 @@ _MAX_DEPTH = 32         # guard against pathological instance nesting
 
 def _ring_raw(defn, loop):
     """Resolve one ``[(edge_id, sense), …]`` loop to raw local ``(x, y, z)``
-    tuples in INCHES. Returns ``None`` on any dangling reference."""
-    pts = []
-    for eid, sense in loop:
+    tuples in INCHES. Returns ``None`` on any dangling reference.
+
+    The ring is read from the loop's CONNECTIVITY — each coedge contributes
+    the vertex it shares with the next one — and NOT from ``sense``, because
+    OpenSKP changed what that flag carries. It used to be SketchUp's own
+    storage bit (0 = forward, 1 = reversed); upstream 0cd14d7 normalized it
+    to the documented +1 / -1, and under ±1 BOTH values are truthy, so a
+    boolean test silently took the same endpoint for every coedge. Every
+    polygon with a reversed coedge then came out as a self-intersecting star:
+    plaza Yanque lost 68% of its surface (43008 → 13590 m², same faces, same
+    bounding box) and drew as spikes across the whole terrain.
+
+    Consecutive coedges connect head-to-tail under either encoding, so each
+    coedge ENDS at the vertex it shares with the next one — which is the very
+    vertex the flag used to select, so a parser on either contract now yields
+    the identical ring (verified corner-for-corner over a 116k-face file).
+    ``sense`` only breaks the tie for a degenerate loop whose neighbours share
+    both endpoints."""
+    n = len(loop)
+    edges = []
+    for eid, _sense in loop:
         edge = defn.edges.get(eid)
         if edge is None:
             return None
-        vid = edge.v1_id if sense else edge.v2_id
-        v = defn.vertices.get(vid)
+        edges.append(edge)
+    pts = []
+    vertices = defn.vertices
+    for i, edge in enumerate(edges):
+        a = edge.v1_id
+        b = edge.v2_id
+        nxt = edges[i + 1] if i + 1 < n else edges[0]
+        vid = None
+        if nxt is not edge:
+            na = nxt.v1_id
+            nb = nxt.v2_id
+            a_shared = a == na or a == nb
+            b_shared = b == na or b == nb
+            if a_shared != b_shared:
+                vid = b if b_shared else a
+        if vid is None:         # degenerate loop: fall back to the flag
+            vid = a if loop[i][1] else b
+        v = vertices.get(vid)
         if v is None:
             return None
         pts.append((v.x, v.y, v.z))

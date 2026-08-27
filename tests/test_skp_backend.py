@@ -141,6 +141,31 @@ def test_openskp_adapter_resolves_a_face_ring_in_metres():
 
 
 
+@pytest.mark.parametrize("senses, era", [
+    ((0, 0, 1, 0), "raw storage bit: 0 forward, 1 reversed"),
+    ((1, 1, -1, 1), "documented contract: +1 forward, -1 reversed"),
+])
+def test_face_ring_reads_the_same_square_under_either_coedge_contract(senses,
+                                                                      era):
+    # OpenSKP changed what a coedge's flag holds (upstream 0cd14d7). Reading it
+    # as a boolean took the SAME endpoint for both +1 and -1, so every polygon
+    # with a reversed coedge came out as a self-intersecting star — plaza
+    # Yanque lost 68% of its surface and drew as spikes. The ring must come
+    # from the loop's connectivity, so both encodings give the real square.
+    # Edge 12 is stored 4→3 while the loop walks 3→4: the reversed one.
+    defn = _fake_definition(
+        id=0, name="ROOT_MODEL",
+        verts={1: (0, 0, 0), 2: (100, 0, 0), 3: (100, 100, 0), 4: (0, 100, 0)},
+        edges={10: (1, 2), 11: (2, 3), 12: (4, 3), 13: (4, 1)},
+        faces={20: [[]]},
+    )
+    loop = list(zip((10, 11, 12, 13), senses))
+    ring = skp_openskp._ring_raw(defn, loop)
+    corners = [(p[0], p[1]) for p in ring]
+    square = [(0, 0), (100, 0), (100, 100), (0, 100)]
+    assert any(corners == square[k:] + square[:k] for k in range(4)), era
+
+
 def _placed(payload):
     """The single placed definition's entry. Every top-level instance imports
     as a prototype now (a component placed once is still a component), so the
@@ -263,11 +288,14 @@ def test_texture_cache_dir_is_per_file_and_clearable(tmp_path, monkeypatch):
 
 
 def _tri_def(id, name, instances=()):
+    # The loop connects head-to-tail like a real one: edge 12 (3→1) is walked
+    # first, so the ring starts at vertex 1. The adapter reads the ring from
+    # that connectivity, not from the flag — see _ring_raw.
     return _fake_definition(
         id=id, name=name,
         verts={1: (0, 0, 0), 2: (10, 0, 0), 3: (10, 10, 0)},
         edges={10: (1, 2), 11: (2, 3), 12: (3, 1)},
-        faces={20: [[(10, 1), (11, 1), (12, 1)]]},
+        faces={20: [[(12, 1), (10, 1), (11, 1)]]},
         instances=instances,
     )
 
@@ -367,7 +395,8 @@ def test_openskp_adapter_bakes_positioned_texture_uvs(tmp_path):
         verts={1: (82.64, 0, 0), 2: (122.01, 0, 0), 3: (122.01, 39.37, 0),
                4: (82.64, 39.37, 0)},
         edges={10: (1, 2), 11: (2, 3), 12: (3, 4), 13: (4, 1)},
-        faces={20: [[(10, 1), (11, 1), (12, 1), (13, 1)]]},
+        # Head-to-tail, starting on the coedge that arrives at vertex 1.
+        faces={20: [[(13, 1), (10, 1), (11, 1), (12, 1)]]},
     )
     root.faces[20].material_id = 5
     root.faces[20].normal = (0.0, 0.0, 1.0)
