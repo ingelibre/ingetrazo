@@ -8,7 +8,16 @@ Behavior (SketchUp's Paint Bucket, ``B``):
   A.3), so it survives push/pull and the plane rebuild.
 - If the clicked face is part of the current face selection, the whole
   selection is painted in one undoable step (paint many at once).
-- **Alt**+click samples the face's colour into the current colour (eyedropper).
+- **Alt**+click samples the face's material into the current one (SketchUp's
+  eyedropper): image, applied size, rotation, translucency and the material
+  identity all travel, so the next click reproduces that material on another
+  face. A face carrying an explicit world→UV map (an imported texture, or one
+  positioned by hand) hands that map on only to faces on the SAME plane, where
+  it keeps the pattern lined up; a face on another plane gets the material with
+  its OWN planar projection at the same applied size. Copying the map across
+  planes is what SketchUp calls a *projected* texture, and doing it by default
+  degenerates: on a wall perpendicular to the sampled floor the ``v`` axis
+  lands along the wall's normal and the image smears into stripes.
 - Works on loose geometry and group faces alike (``pick_face_any``).
 
 The current colour is class-level (shared across activations) and is set from
@@ -33,6 +42,45 @@ from tools.base import Tool, ToolContext
 DEFAULT_FACE_COLOR = (0.96, 0.95, 0.925)
 
 
+def _face_plane(face) -> tuple:
+    """``(unit normal, offset)`` of the face's plane."""
+    from PySide6.QtGui import QVector3D
+    n = face.normal()
+    p = face.vertices[0] if face.vertices else QVector3D()
+    return (n, QVector3D.dotProduct(n, p))
+
+
+def _same_plane(face, plane, tol: float = 1e-4) -> bool:
+    from PySide6.QtGui import QVector3D
+    n, d = plane
+    fn = face.normal()
+    if abs(abs(QVector3D.dotProduct(fn, n)) - 1.0) > 1e-3:
+        return False
+    p = face.vertices[0] if face.vertices else QVector3D()
+    return abs(QVector3D.dotProduct(n, p) - d) <= tol
+
+
+def _texture_commands(faces, tex, plane) -> list:
+    """Apply ``tex`` the way SketchUp's eyedropper does.
+
+    An explicit ``uvw`` is where the image sits IN THE WORLD; it only means
+    the same thing on the plane it was fitted for. Faces on that plane keep
+    it, so a pattern continues across a seam; every other face takes the
+    material without it and projects the image on its own plane at the same
+    applied size."""
+    if not tex.get("uvw") or plane is None:
+        return [SetFaceTextureCommand(faces, tex)]
+    same = [f for f in faces if _same_plane(f, plane)]
+    other = [f for f in faces if not _same_plane(f, plane)]
+    cmds = []
+    if same:
+        cmds.append(SetFaceTextureCommand(same, tex))
+    if other:
+        flat = {k: v for k, v in tex.items() if k != "uvw"}
+        cmds.append(SetFaceTextureCommand(other, flat))
+    return cmds
+
+
 class PaintTool(Tool):
     name = "Paint"
     shortcut = "B"
@@ -53,6 +101,11 @@ class PaintTool(Tool):
     # Shared translucency (glass): None = opaque paint, which also CLEARS
     # any previous opacity on the painted faces.
     current_opacity: float | None = None
+    # Plane the current texture's explicit ``uvw`` belongs to, as
+    # ``(normal, offset)`` — set when the eyedropper samples a face that
+    # carries one. Only faces on that plane inherit the map; see the module
+    # docstring. ``None`` = the texture has no map of its own to hand on.
+    current_texture_plane: tuple | None = None
 
     def on_activate(self, viewport) -> None:
         pass
@@ -77,8 +130,11 @@ class PaintTool(Tool):
             tex = face.attrs.get("texture")
             if tex is not None:
                 PaintTool.current_texture = dict(tex)
+                PaintTool.current_texture_plane = (
+                    _face_plane(face) if tex.get("uvw") else None)
             else:
                 PaintTool.current_texture = None
+                PaintTool.current_texture_plane = None
                 sampled = face.attrs.get("color")
                 PaintTool.current_color = (tuple(sampled) if sampled is not None
                                            else DEFAULT_FACE_COLOR)
@@ -100,11 +156,10 @@ class PaintTool(Tool):
             faces, mat.name if mat is not None else None, mat)
         opacity = SetFaceOpacityCommand(faces, PaintTool.current_opacity)
         if PaintTool.current_texture is not None:
-            vp.history.execute(CompoundCommand([
-                SetFaceTextureCommand(faces, PaintTool.current_texture),
-                opacity,
-                tag,
-            ]))
+            vp.history.execute(CompoundCommand(
+                _texture_commands(faces, PaintTool.current_texture,
+                                  PaintTool.current_texture_plane)
+                + [opacity, tag]))
         else:
             # Painting a solid colour clears any texture on those faces, in one
             # undoable step.

@@ -191,3 +191,37 @@ def test_restamp_from_texture_to_colour_drops_the_texture():
     history.undo()
     assert f.attrs["texture"]["path"] == "/tex/p.png"
     assert "color" not in f.attrs
+
+
+def test_eyedropper_carries_a_positioned_texture_only_within_its_plane():
+    """SketchUp's eyedropper reproduces the MATERIAL on the next face. An
+    explicit world->UV map says where the image sits in the world, so it only
+    means the same thing on the plane it was fitted for: handing it to a
+    perpendicular face put the ``v`` axis along that face's normal and smeared
+    the image into stripes."""
+    from core.texture import face_uv_axes
+
+    vp = _FakeViewport()
+    floor = _quad(vp.scene.mesh)                       # z = 0, normal +Z
+    wall = vp.scene.mesh.add_face([QVector3D(0, 8, 0), QVector3D(2, 8, 0),
+                                   QVector3D(2, 8, 2), QVector3D(0, 8, 2)])
+    same_plane = vp.scene.mesh.add_face(
+        [QVector3D(10, 0, 0), QVector3D(14, 0, 0),
+         QVector3D(14, 4, 0), QVector3D(10, 4, 0)])    # z = 0 too
+    floor.attrs["texture"] = {"path": "/tex/madera.png", "sw": 1.0,
+                              "sh": 1.0, "rot": 0.0,
+                              "uvw": [1, 0, 0, 0, 0, 1, 0, 0]}
+
+    _click(vp, floor, modifiers=Qt.AltModifier)        # sample
+    assert PaintTool.current_texture["uvw"]
+
+    _click(vp, wall)                                   # paint another plane
+    wtex = wall.attrs["texture"]
+    assert wtex["path"] == "/tex/madera.png"
+    assert wtex["sw"] == 1.0 and wtex["sh"] == 1.0     # same applied size
+    assert "uvw" not in wtex                           # ...its own projection
+    _gu, _cu, gv, _cv = face_uv_axes(wtex, wall.normal())
+    assert abs(QVector3D.dotProduct(gv, wall.normal())) < 1e-6   # v IN plane
+
+    _click(vp, same_plane)                             # paint the same plane
+    assert same_plane.attrs["texture"]["uvw"] == [1, 0, 0, 0, 0, 1, 0, 0]

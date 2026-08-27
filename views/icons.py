@@ -348,6 +348,35 @@ def _move(p, ink):
         p.drawLine(QPointF(x, y), QPointF(x + dx2, y + dy2))
 
 
+def _eyedropper(p, ink):
+    """The Paint tool while Alt is held: SketchUp swaps the bucket for an
+    eyedropper, which is how you know the next click SAMPLES instead of
+    paints. A slanted pipette — bulb top-right, barrel down-left, tip at the
+    hotspot — with the accent showing through the glass."""
+    barrel = QPen(ink, 3.4)
+    barrel.setCapStyle(Qt.RoundCap)
+    barrel.setJoinStyle(Qt.RoundJoin)
+    # Barrel: from the tip (lower-left) up to the collar.
+    tip, collar = QPointF(7.0, 41.0), QPointF(27.0, 21.0)
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    p.drawPolygon(QPolygonF([QPointF(9.0, 39.0), QPointF(26.0, 22.0),
+                             QPointF(29.0, 25.0), QPointF(12.0, 42.0)]))
+    p.setPen(barrel)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([tip, QPointF(24.5, 18.5), QPointF(30.5, 24.5),
+                             QPointF(11.0, 44.0)]))
+    # Collar and bulb.
+    p.setPen(QPen(ink, 3.4, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(QPointF(23.0, 22.0), QPointF(30.0, 15.0))
+    p.setBrush(QBrush(ink))
+    p.setPen(Qt.NoPen)
+    p.drawEllipse(QPointF(35.0, 12.0), 8.5, 8.5)
+    # A drop leaving the tip, so it reads as "picks up material".
+    p.setBrush(_accent())
+    p.drawEllipse(QPointF(5.0, 44.0), 2.6, 2.6)
+
+
 def _paint(p, ink):
     # IngeTrazo's Paint tool (apply a colour/material to a face), replicating
     # Inkscape's symbolic "color-fill": a tilted square bucket (a diamond) half
@@ -717,7 +746,8 @@ _DRAW = {
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
     "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset,
-    "move": _move, "paint": _paint, "dimension": _dimension,
+    "move": _move, "paint": _paint, "eyedropper": _eyedropper,
+    "dimension": _dimension,
     "geopath": _geopath, "orbit": _orbit, "pan": _pan,
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
@@ -777,6 +807,7 @@ _CURSOR_HOTSPOTS = {
     "dimension": (12, 30),          # left end of the dimension line
     "text": (24, 24), "text3d": (24, 24),
     "paint": (13, 35),              # the spout / falling drop
+    "eyedropper": (7, 41),          # the pipette's tip
     "eraser": (13, 28),             # the rubber's working corner
     "tape": (38, 28),               # the tape's end hook
     "protractor": (24, 24),         # the protractor's vertex
