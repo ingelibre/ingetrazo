@@ -225,3 +225,30 @@ def test_eyedropper_carries_a_positioned_texture_only_within_its_plane():
 
     _click(vp, same_plane)                             # paint the same plane
     assert same_plane.attrs["texture"]["uvw"] == [1, 0, 0, 0, 0, 1, 0, 0]
+
+
+def test_the_eyedropper_button_arms_one_sample_and_pops_out():
+    """SketchUp keeps a pipette beside the material: arm it, the next click
+    samples (no Alt needed), and the button releases itself so what you see
+    is the state you are in."""
+    vp = _FakeViewport()
+    released = []
+
+    class _Win:
+        def release_eyedropper(self):
+            released.append(True)
+
+    vp.window = lambda: _Win()
+    src = _quad(vp.scene.mesh)
+    src.attrs["color"] = (0.2, 0.4, 0.6)
+    target = _quad(vp.scene.mesh, z=3.0)
+    target.attrs["color"] = (0.9, 0.9, 0.9)
+
+    PaintTool.sample_armed = True
+    _click(vp, src)                                   # no Alt: still samples
+    assert PaintTool.current_color == (0.2, 0.4, 0.6)
+    assert PaintTool.sample_armed is False            # one shot
+    assert released == [True]                         # the button popped out
+
+    _click(vp, target)                                # and now it paints
+    assert tuple(target.attrs["color"]) == (0.2, 0.4, 0.6)

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 
+from core.i18n import tr
 from core.mesh import Face
 from core.history import (
     CompoundCommand,
@@ -101,6 +102,11 @@ class PaintTool(Tool):
     # Shared translucency (glass): None = opaque paint, which also CLEARS
     # any previous opacity on the painted faces.
     current_opacity: float | None = None
+    # Armed by the toolbar's eyedropper button: the NEXT click samples
+    # instead of painting, then disarms. SketchUp puts the same pipette
+    # beside the material — Alt works for people who know it, the button is
+    # how you find it.
+    sample_armed: bool = False
     # Plane the current texture's explicit ``uvw`` belongs to, as
     # ``(normal, offset)`` — set when the eyedropper samples a face that
     # carries one. Only faces on that plane inherit the map; see the module
@@ -123,7 +129,7 @@ class PaintTool(Tool):
         if face is None:
             return
 
-        if ctx.modifiers & Qt.AltModifier:
+        if (ctx.modifiers & Qt.AltModifier) or PaintTool.sample_armed:
             # Eyedropper: adopt the face's material (texture if it has one, else
             # colour) as the current paint material — identity included, so
             # sampling "Concreto visto" paints "Concreto visto".
@@ -142,7 +148,17 @@ class PaintTool(Tool):
             name = face.attrs.get("mat")
             PaintTool.current_material = (
                 vp.scene.materials.get(name) if name else None)
+            if PaintTool.sample_armed:
+                PaintTool.sample_armed = False
+                win = vp.window()
+                if hasattr(win, "release_eyedropper"):
+                    win.release_eyedropper()
             vp.update()
+            # Optional, like the other viewport niceties this package uses:
+            # the tool has to work against a bare viewport too.
+            flash = getattr(vp, "flash_status", None)
+            if callable(flash):
+                flash(tr("Material sampled — click a face to paint it"))
             return
 
         # Paint the clicked face — or, if it is part of the current face

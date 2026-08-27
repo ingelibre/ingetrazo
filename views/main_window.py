@@ -234,6 +234,21 @@ class MainWindow(QMainWindow):
             for key in keys:
                 self._add_tool_button(tb, key)
 
+        # SketchUp keeps a pipette beside the material you paint with: it is
+        # how you FIND the eyedropper. Alt+click does the same for people who
+        # know the modifier — Marco asked for the button because that is what
+        # he reaches for ("hay un icono al costado de pintura").
+        main_tb = self.toolbars["main"]
+        self._act_eyedropper = QAction(
+            tool_icon("eyedropper"), tr("Sample material"), self)
+        self._act_eyedropper.setCheckable(True)
+        self._act_eyedropper.setToolTip(tr(
+            "Sample material — click a face to pick up its paint or texture "
+            "(or hold Alt with the Paint tool)"))
+        self._act_eyedropper.toggled.connect(self._on_toggle_eyedropper)
+        main_tb.addAction(self._act_eyedropper)
+        self._icon_actions.append((self._act_eyedropper, "eyedropper"))
+
         # The Sections toolbar carries SketchUp's three display toggles next
         # to the tool: Display Section Planes / Cuts / Fill. Created here
         # (the menubar builds later and reuses the same actions).
@@ -1204,6 +1219,28 @@ class MainWindow(QMainWindow):
             self.viewport.history.execute(
                 cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
             self.viewport.update()
+
+    def _on_toggle_eyedropper(self, on: bool) -> None:
+        """Arm (or cancel) a one-shot material sample. Arming picks the Paint
+        tool too, so the click that follows the sample paints with what was
+        just picked up — the SketchUp round trip in two clicks."""
+        PaintTool.sample_armed = bool(on)
+        if on:
+            self._activate_tool("paint")
+            self.viewport.flash_status(
+                tr("Click a face to sample its material"))
+        self.viewport._apply_tool_cursor()
+
+    def release_eyedropper(self) -> None:
+        """Called back by the tool once it has sampled: the button pops out
+        on its own, so the state you see is the state you are in."""
+        PaintTool.sample_armed = False      # the sample is done either way
+        act = getattr(self, "_act_eyedropper", None)
+        if act is not None and act.isChecked():
+            act.blockSignals(True)
+            act.setChecked(False)
+            act.blockSignals(False)
+        self.viewport._apply_tool_cursor()
 
     def show_viewport_context_menu(self, global_pos) -> None:
         """SketchUp-style right-click menu, tailored to what's selected."""

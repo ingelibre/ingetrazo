@@ -6625,9 +6625,11 @@ class Viewport(QOpenGLWidget):
         from PySide6.QtWidgets import QApplication
         from views.icons import tool_cursor
         icon = getattr(self.active_tool, "icon", None)
-        if (icon == "paint"
-                and QApplication.keyboardModifiers() & Qt.AltModifier):
-            icon = "eyedropper"
+        if icon == "paint":
+            from tools.paint import PaintTool
+            if (PaintTool.sample_armed
+                    or QApplication.keyboardModifiers() & Qt.AltModifier):
+                icon = "eyedropper"
         cur = (tool_cursor(icon)
                if self.active_tool is not None else None)
         if cur is not None:
