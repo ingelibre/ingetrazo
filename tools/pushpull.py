@@ -439,6 +439,16 @@ class PushPullTool(Tool):
         2026-08-27). The mesh-mutating preview it replaced got its edges for
         free, from the mesh; the overlay has to say them out loud.
 
+        A riser that the commit is going to SOFTEN is left out: pushing a
+        circle drew every facet seam of the cylinder's side, so the shape
+        arrived streaked with lines and only cleaned up on release (Marco,
+        2026-08-27). The same dihedral rule ``_soften_curve_facets`` applies
+        afterwards decides it here — read off the sweep's own wall normals,
+        no mesh needed — so a circle previews as a smooth cylinder while a
+        hexagon keeps the edges it will really have. The rings themselves
+        always draw: a circle's own segments stay visible (the Circle tool
+        does not soften them; only the sweep's verticals are).
+
         They cost a handful of points: the rings are the base face's own
         loops, already built for the sweep. Drawn in ``wireframe_color`` and
         depth-tested (class attributes above), so the box hides its own back
@@ -446,10 +456,24 @@ class PushPullTool(Tool):
         segs = []
         for low, high in self._light_rings:
             n = len(low)
+            if n < 2:
+                continue
+            # Wall i spans low[i]→low[i+1]; its normal is that edge crossed
+            # with the sweep. The riser at corner i divides walls i-1 and i.
+            off = high[0] - low[0]
+            normals = []
+            for i in range(n):
+                nv = QVector3D.crossProduct(low[(i + 1) % n] - low[i], off)
+                normals.append(nv.normalized() if nv.length() > 1e-12 else None)
             for i in range(n):
                 j = (i + 1) % n
                 segs.append((low[i], low[j]))
                 segs.append((high[i], high[j]))
+                a, b = normals[i - 1], normals[i]
+                if a is not None and b is not None:
+                    d = QVector3D.dotProduct(a, b)
+                    if self._CURVE_FACET_COS < d < 0.99995:
+                        continue          # curve facet: soft once committed
                 segs.append((low[i], high[i]))
         return segs
 

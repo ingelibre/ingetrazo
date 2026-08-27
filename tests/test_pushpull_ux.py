@@ -853,3 +853,52 @@ def test_unpainted_push_stays_unpainted():
     rect = _painted_rect(scene, hist)
     _push(scene, rect, 3.0)
     assert all(not f.attrs for f in scene.faces)
+
+
+# ---- The drag wireframe follows the same softening as the commit ------------
+
+def _ngon_face(scene, n, r=2.0):
+    """A regular n-gon on the ground, as one face."""
+    import math
+    ring = [V(r * math.cos(2 * math.pi * k / n),
+              r * math.sin(2 * math.pi * k / n)) for k in range(n)]
+    return scene.mesh.add_face(ring)
+
+
+def _preview_segments(scene, face, dist=3.0):
+    vp = _StubViewport(scene)
+    tool = PushPullTool()
+    tool.base_face = face
+    tool._normal = face.normal()
+    tool.extrusion = dist
+    tool.dragging = True
+    tool._show_light_preview(vp)
+    return tool.rubber_band_lines()
+
+
+def test_pushing_a_circle_previews_a_smooth_cylinder():
+    # Pushing a circle drew every facet seam of the side, so the cylinder came
+    # out streaked with lines and only cleaned up on release (Marco). The drag
+    # must hide exactly the risers the commit is going to soften.
+    scene = Scene()
+    circle = _ngon_face(scene, 24)          # 15 deg steps: a curve
+    segs = _preview_segments(scene, circle)
+
+    def key(p):
+        return (round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
+
+    risers = [s for s in segs
+              if abs(key(s[0])[2] - key(s[1])[2]) > 1e-6]
+    assert risers == [], "the cylinder's side is drawn with facet lines"
+    assert len(segs) == 48                  # both circles, nothing else
+
+
+def test_pushing_a_hexagon_keeps_its_real_edges():
+    # A hexagon's sides meet at 60 deg: those are real corners, not a curve,
+    # and the commit leaves them visible — so the drag must too.
+    scene = Scene()
+    hexagon = _ngon_face(scene, 6)
+    segs = _preview_segments(scene, hexagon)
+    risers = [s for s in segs if abs(s[0].z() - s[1].z()) > 1e-6]
+    assert len(risers) == 6
+    assert len(segs) == 18
