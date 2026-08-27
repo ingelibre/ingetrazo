@@ -327,3 +327,78 @@ def test_soft_survives_snapshot_and_igz(tmp_path):
     loaded = Scene()
     igz.load_into(loaded, path)
     assert sum(1 for e in loaded.mesh.edges if e.soft) == n_soft
+
+
+# ---- Splitting a painted face keeps its paint -------------------------------
+
+_TEX = {"path": "/tmp/piedra.jpg", "sw": 0.5, "sh": 0.5,
+        "uvw": [2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0]}
+
+
+def _painted_square(scene, hist, size=4.0, z=0.0):
+    from core.edits import build_add_edges
+    from core.history import AddFaceCommand
+    ring = [V(0, 0, z), V(size, 0, z), V(size, size, z), V(0, size, z)]
+    hist.execute(build_add_edges(
+        scene, [(ring[i], ring[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(ring))]))
+    face = scene.faces[0]
+    face.attrs.update({"mat": "Piedra", "texture": dict(_TEX)})
+    return face
+
+
+def test_a_line_across_a_painted_face_keeps_the_paint_on_both_halves():
+    # Drawing a line across a textured rectangle wiped the texture off both
+    # halves (Marco, 2026-08-27): the chord split deleted the mother and added
+    # two bare faces. The halves ARE the mother, cut in two.
+    from core.edits import build_add_edges
+
+    scene = Scene()
+    hist = History(scene)
+    _painted_square(scene, hist)
+    hist.execute(build_add_edges(scene, [(V(2, 0), V(2, 4))]))
+
+    assert len(scene.faces) == 2
+    for f in scene.faces:
+        assert f.attrs.get("mat") == "Piedra"
+        t = f.attrs.get("texture")
+        assert t is not None and t["path"] == _TEX["path"]
+        # Verbatim: both halves stay on the mother's world→UV map, so the
+        # image runs straight across the cut instead of restarting.
+        assert t["uvw"] == _TEX["uvw"]
+
+
+def test_the_split_survives_undo():
+    from core.edits import build_add_edges
+
+    scene = Scene()
+    hist = History(scene)
+    _painted_square(scene, hist)
+    hist.execute(build_add_edges(scene, [(V(2, 0), V(2, 4))]))
+    assert hist.undo() is True
+    assert len(scene.faces) == 1
+    assert scene.faces[0].attrs.get("mat") == "Piedra"
+
+
+def test_a_line_across_one_face_of_a_painted_box_keeps_every_face_painted():
+    # The cut also inserts a collinear vertex into the two side faces whose
+    # top edge it lands on; those are the SAME faces and must keep their paint
+    # too (they lost it as well — four faces went bare, not two).
+    from core.edits import build_add_edges
+
+    scene = Scene()
+    hist = History(scene)
+    z = 3.0
+    c = [V(0, 0, 0), V(4, 0, 0), V(4, 4, 0), V(0, 4, 0),
+         V(0, 0, z), V(4, 0, z), V(4, 4, z), V(0, 4, z)]
+    for q in [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4),
+              (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]:
+        scene.mesh.add_face([c[i] for i in q])
+    for f in scene.faces:
+        f.attrs.update({"mat": "Piedra", "texture": dict(_TEX)})
+
+    hist.execute(build_add_edges(scene, [(V(2, 0, z), V(2, 4, z))]))
+
+    assert len(scene.faces) == 7               # the top split in two
+    bare = [f for f in scene.faces if not f.attrs.get("texture")]
+    assert bare == [], "%d faces came out bare" % len(bare)

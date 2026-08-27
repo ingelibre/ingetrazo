@@ -94,12 +94,18 @@ def plan_edge_commands(
                 for f, new_verts in split_edge_in_faces(
                     faces_snapshot, edge.a, edge.b, point, skip_endpoints=(a, b)
                 ):
+                    # Same face, one collinear vertex richer: it keeps its own
+                    # paint, exactly as it stands (the texture's world→UV map
+                    # included — the plane has not moved).
+                    keep = dict(f.attrs) if f.attrs else None
                     commands.append(DeleteFaceCommand(f))
                     commands.append(
-                        AddFaceCommand(new_verts, auto=False, holes=f.holes or None)
+                        AddFaceCommand(new_verts, auto=False,
+                                       holes=f.holes or None, attrs=keep)
                     )
                     faces_snapshot[faces_snapshot.index(f)] = Face(
-                        list(new_verts), [list(h) for h in f.holes]
+                        list(new_verts), [list(h) for h in f.holes],
+                        attrs=keep
                     )
 
         # Add the new segment's pieces (welding duplicates), auto-facing.
@@ -132,12 +138,19 @@ def _plan_faces(commands, faces_snapshot, simulated, sa, sb) -> None:
     chord = find_chord_split(faces_snapshot, sa, sb)
     if chord is not None:
         mother, loop_a, loop_b = chord
+        # Both halves ARE the mother, cut in two: they keep her paint, and
+        # keep it VERBATIM. They are coplanar with her, so carrying the
+        # texture's world→UV map over is what makes the image run straight
+        # across the cut instead of restarting on each half — the SketchUp
+        # result. Without this, drawing a line across a textured face wiped
+        # the texture off both halves (Marco, 2026-08-27).
+        keep = dict(mother.attrs) if mother.attrs else None
         commands.append(DeleteFaceCommand(mother))
         faces_snapshot.remove(mother)
         for loop in (loop_a, loop_b):
             if is_planar(loop) and not face_exists(faces_snapshot, loop):
-                commands.append(AddFaceCommand(loop))
-                faces_snapshot.append(Face(list(loop)))
+                commands.append(AddFaceCommand(loop, attrs=keep))
+                faces_snapshot.append(Face(list(loop), attrs=keep))
         return
 
     for cycle in find_cycles_through(simulated, sa, sb):
