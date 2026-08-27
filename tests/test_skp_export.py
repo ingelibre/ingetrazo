@@ -367,3 +367,63 @@ def test_skp_export_annotations_roundtrip(tmp_path):
     assert abs(lp[0] - 2.4 * _M_TO_IN) < 1e-6
     assert abs(lp[1] + 0.3 * _M_TO_IN) < 1e-6
     assert abs(lp[2] - 2.1 * _M_TO_IN) < 1e-6
+
+
+def test_export_survives_an_older_openskp_writer():
+    """The applied size and the opacity gate are OUR additions to the writer;
+    upstream's has neither. Passing them blind raised ``TypeError:
+    add_material() got an unexpected keyword argument 'opacity'`` — CI red,
+    and every .skp save broken in a build made against the pinned library.
+    The file must still be written, just without what the writer can't do."""
+    from formats.skp_out import _collect_materials
+
+    calls = []
+
+    class _OldBuilder:
+        def add_material(self, name, rgba):          # no opacity
+            calls.append(("color", name))
+            return len(calls)
+
+        def add_texture_material(self, name, path):  # no width/height/opacity
+            calls.append(("texture", name))
+            return len(calls)
+
+    faces_by_key = {
+        ("c", (1.0, 0.0, 0.0), None): {"color": (1.0, 0.0, 0.0),
+                                       "opacity": 0.5},
+        ("t", "/tex/x.png", None): {"map": True, "src": "/tex/x.png",
+                                    "color": (1.0, 1.0, 1.0),
+                                    "sw_in": 39.37, "sh_in": 39.37,
+                                    "opacity": 0.6},
+    }
+    handles = _collect_materials(faces_by_key, _OldBuilder())
+    assert len(handles) == 2
+    assert sorted(k for k, _n in calls) == ["color", "texture"]
+
+
+def test_export_uses_the_new_writer_arguments_when_they_exist():
+    from formats.skp_out import _collect_materials
+
+    seen = {}
+
+    class _NewBuilder:
+        def add_material(self, name, rgba, opacity=None):
+            seen["color_opacity"] = opacity
+            return 1
+
+        def add_texture_material(self, name, path, width=None, height=None,
+                                 opacity=None):
+            seen["tex"] = (width, height, opacity)
+            return 2
+
+    faces_by_key = {
+        ("c", (1.0, 0.0, 0.0), None): {"color": (1.0, 0.0, 0.0),
+                                       "opacity": 0.5},
+        ("t", "/tex/x.png", None): {"map": True, "src": "/tex/x.png",
+                                    "color": (1.0, 1.0, 1.0),
+                                    "sw_in": 39.37, "sh_in": 78.74,
+                                    "opacity": 0.6},
+    }
+    _collect_materials(faces_by_key, _NewBuilder())
+    assert seen["color_opacity"] == 0.5
+    assert seen["tex"] == (39.37, 78.74, 0.6)

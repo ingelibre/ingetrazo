@@ -59,6 +59,28 @@ def _is_soft_face(face):
     return False
 
 
+def _supported(fn, *names) -> set:
+    """Which of ``names`` the installed OpenSKP's ``fn`` actually accepts.
+
+    The applied size and the opacity gate are OUR additions to the writer
+    (fork branch ``texture-applied-size``, not upstream yet). Passing them
+    blind raised ``TypeError: add_material() got an unexpected keyword
+    argument 'opacity'`` against the pinned upstream — CI red and, worse,
+    every .skp save broken in a build made from it. The rest of this module
+    already guards its OpenSKP joins the same way; these two slipped
+    through.  Older library: the file is written without them (a texture
+    claims one inch per tile, glass exports opaque) instead of not written
+    at all."""
+    import inspect
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):          # C accelerator / builtin
+        return set(names)
+    if any(pm.kind is inspect.Parameter.VAR_KEYWORD for pm in params.values()):
+        return set(names)
+    return {n for n in names if n in params}
+
+
 def _collect_materials(faces_by_key, builder):
     """Register all materials on the builder BEFORE any geometry.
 
@@ -70,6 +92,9 @@ def _collect_materials(faces_by_key, builder):
     from .meshexport import export_names
 
     names = export_names(faces_by_key)
+    tex_ok = _supported(builder.add_texture_material,
+                        "width", "height", "opacity")
+    col_ok = _supported(builder.add_material, "opacity")
     for key, info in faces_by_key.items():
         if info.get("map"):
             src = info["src"]
@@ -81,18 +106,23 @@ def _collect_materials(faces_by_key, builder):
                 # inch however large it was. Marco's lawn (3.26 x 8.82 m)
                 # repeated 128 times and lost its aspect; only the surfaces
                 # whose tile was already inch-sized came out right.
+                extra = {k: v for k, v in
+                         (("width", info.get("sw_in")),
+                          ("height", info.get("sh_in")),
+                          ("opacity", info.get("opacity")))
+                         if k in tex_ok}
                 handle = builder.add_texture_material(
-                    names[key], str(src),
-                    width=info.get("sw_in"), height=info.get("sh_in"),
-                    opacity=info.get("opacity"))
+                    names[key], str(src), **extra)
             except Exception:  # noqa: BLE001 — fallback to solid
                 col = info.get("color", (1.0, 1.0, 1.0))
                 handle = builder.add_material(names[key], _color_to_rgba(col))
             mat_handles[key] = handle
         else:
+            extra = ({"opacity": info.get("opacity")} if "opacity" in col_ok
+                     else {})
             handle = builder.add_material(names[key],
                                           _color_to_rgba(info["color"]),
-                                          opacity=info.get("opacity"))
+                                          **extra)
             mat_handles[key] = handle
     return mat_handles
 
