@@ -342,7 +342,7 @@ class PushPullTool(Tool):
             orient_outward(target.mesh, only=(face,))
             self._drag_pre_oriented = True
             self._anchor = face.centroid()
-            self._normal = self._surface_normal(face)
+            self._normal = self._outward_normal(face, target.mesh)
             self._attached, self._prism_cap = self._classify_base(target)
             self._cap_positions = self._cap_loop_positions(face)
             self._compute_inward_limit(target)
@@ -385,7 +385,7 @@ class PushPullTool(Tool):
             orient_outward(target.mesh, only=(face,))
             self._drag_pre_oriented = True
             self._anchor = face.centroid()
-            self._normal = self._surface_normal(face)
+            self._normal = self._outward_normal(face, target.mesh)
             self._attached, self._prism_cap = self._classify_base(target)
             self._cap_positions = self._cap_loop_positions(face)
             self._compute_inward_limit(target)
@@ -779,29 +779,40 @@ class PushPullTool(Tool):
             pts.extend(QVector3D(v) for v in hole)
         return pts
 
+    @classmethod
+    def _outward_normal(cls, face, mesh) -> QVector3D:
+        """The normal this drag signs ``extrusion`` along: ``face``'s own, or
+        the surface's when the face disagrees with it and nothing else can say.
+
+        The tool's whole sign convention rests on the base pointing OUTWARD —
+        the recess rule reads "negative = into the material, so hide the base
+        and show an opening". ``orient_outward`` establishes that at drag
+        start and is the authority whenever it HAS a volume to test parity
+        against, so a closed mesh is left to it untouched. A flat sheet has no
+        outward at all, and is left alone too.
+
+        What is left is the OPEN shell, where orient_outward has nothing to
+        count and leaves every winding as the draw made it. A face that came
+        out wound the other way then points INTO the model, a drag into the
+        wall reads as positive, the base is never hidden, and the outer face
+        stands there covering the pocket forming behind it: pushing a door
+        into Marco's cube looked like nothing was happening while the push
+        itself worked (cubo.igz, 2026-08-27 — a door disagreeing with all
+        five of its coplanar neighbours).
+
+        There, the coplanar faces across the boundary ARE the surface this
+        face was cut out of, so they are what it has to agree with; a majority
+        settles it, and no coplanar neighbour at all leaves the normal alone.
+        """
+        if is_closed(mesh) or _mesh_is_flat(mesh):
+            return face.normal()
+        return cls._surface_normal(face)
+
     @staticmethod
     def _surface_normal(face) -> QVector3D:
-        """``face``'s normal, turned to agree with the surface it belongs to.
-
-        This tool's whole sign convention rests on the base's normal pointing
-        OUTWARD: ``extrusion`` is signed along it, and the recess rule reads
-        "negative = into the material, so hide the base face and show an
-        opening". ``orient_outward`` establishes that invariant at drag
-        start — but only where there is a volume to test parity against. On
-        an OPEN shell it leaves every winding as the draw left it, so a face
-        that came out wound the other way keeps pointing INTO the model.
-
-        The rule then reads a drag into the wall as a drag out of it, never
-        hides the base, and the outer face stands there covering the recess
-        forming behind it: pushing a door into Marco's cube looked like
-        nothing was happening, while the push itself worked (cubo.igz,
-        2026-08-27 — an open shell whose door face disagreed with all five
-        of its coplanar neighbours).
-
-        Coplanar faces across the boundary ARE the surface this face was cut
-        out of, so they are what it has to agree with; a majority settles it.
-        Nothing coplanar to ask — a lone sheet — leaves the normal alone.
-        """
+        """``face``'s normal, turned to agree with its coplanar neighbours —
+        the surface it was cut out of. See :meth:`_outward_normal` for when
+        this is the right question to ask."""
         n = face.normal().normalized()
         on_loop = {id(v) for v in face.loop}
         agree = disagree = 0
@@ -1095,7 +1106,15 @@ class PushPullTool(Tool):
         # snapshot preserves the oriented state). Re-orienting the eye model
         # each frame made the drag lag at ~4 fps.
         entry_closed = is_closed(scene.mesh)
-        pre_normal = face.normal()
+        # ``d`` is signed along the normal the DRAG used, which is the base's
+        # surface normal (see _surface_normal) — not necessarily the winding
+        # the face carries. Reconcile the two, the same way this already
+        # reconciles a face orient_outward flips underneath it: on an open
+        # shell the two disagree, and taking the face's word for it swept the
+        # push the wrong way, so a door previewed going IN and came out going
+        # OUT at the commit (Marco, 2026-08-27).
+        pre_normal = (self._normal if self._normal is not None
+                      else face.normal())
         if entry_closed and not self._drag_pre_oriented:
             orient_outward(scene.mesh, only=(face,))
         normal = face.normal()

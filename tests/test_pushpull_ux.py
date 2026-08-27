@@ -983,3 +983,35 @@ def test_pushing_a_reversed_door_inward_hides_the_base_face():
     dist, hidden = _drag_into_the_wall(PushPullTool._surface_normal(door))
     assert dist < 0.0, "a drag into the wall must read as negative"
     assert hidden == {door}, "the base face was left covering the recess"
+
+
+def test_a_reversed_door_commits_the_push_the_way_it_previewed():
+    # The preview and the commit have to agree on which way is in. ``d`` is
+    # signed along the normal the DRAG used; the commit took the face's own
+    # winding instead, so on an open shell a door previewed going IN and came
+    # out going OUT once the command ran (Marco, 2026-08-27).
+    scene = Scene()
+    wall, door = _wall_with_door(scene)
+    inside = 1.0        # the wall faces -Y, so the material is toward +Y
+    assert door.normal().normalized().y() > 0        # wound the wrong way
+
+    vp = _StubViewport(scene)
+    tool = PushPullTool()
+    tool.base_face = door
+    tool._normal = PushPullTool._surface_normal(door)
+    tool._anchor = door.centroid()
+    tool._drag_pre_oriented = True
+    tool.dragging = True
+    tool._attached, tool._prism_cap = tool._classify_base(scene)
+    tool._cap_positions = tool._cap_loop_positions(door)
+    tool.extrusion = -0.6                            # a drag INTO the wall
+    tool._commit(vp)
+
+    moved = [f for f in scene.faces
+             if abs(f.normal().normalized().y()) > 0.99
+             and abs(f.area() - 3.0) < 1e-6
+             and abs(f.centroid().y()) > 1e-6]
+    assert moved, "the door did not move at all"
+    y = moved[0].centroid().y()
+    assert y * inside > 0, (
+        "the push came out the wrong way: the pocket floor landed at y=%.3f" % y)
