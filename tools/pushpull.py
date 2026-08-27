@@ -169,6 +169,42 @@ def _swept_by_push(neighbour: Face, push_normal: QVector3D) -> bool:
 _MIN_EXTRUDE = 2e-4
 
 
+# What "painted" means on a face: the look (colour or texture, its opacity)
+# plus the material identity that survives the churn. NOT ``layer`` (new
+# geometry belongs to the active tag, not the source's) and not ``ifc``, which
+# travels on its own rule.
+_PAINT_KEYS = ("color", "mat", "texture", "opacity")
+
+
+def _paint_of(face) -> dict:
+    """The base face's paint, ready to stamp on the geometry a push creates.
+
+    SketchUp extrudes the material with the shape: pull a textured rectangle
+    up and the four sides come out textured too, not bare. Only the moved cap
+    inherited it here, so a pushed rectangle gave a box with one painted face
+    (Marco, 2026-08-27).
+
+    The texture's per-face ``uvw`` is deliberately NOT carried. It is a
+    world→UV map fitted in the BASE's plane, so evaluating it on a wall that
+    stands up out of that plane leaves the image constant along the extrusion
+    — the texture smears into stripes. Dropped, each new face falls to the
+    default planar projection in its OWN plane at the material's tile size,
+    which is what SketchUp draws; ``planar`` says so out loud, so the .skp
+    exporter writes the default projection instead of pinning a matrix.
+
+    The cap is not handled here: it is the base's continuation, keeps the full
+    attrs (``uvw`` included), and so keeps the exact texture placement — a
+    translation along the normal leaves an in-plane map unchanged.
+    """
+    attrs = face.attrs or {}
+    paint = {k: attrs[k] for k in _PAINT_KEYS if k in attrs}
+    tex = paint.get("texture")
+    if tex:
+        paint["texture"] = {**{k: v for k, v in tex.items() if k != "uvw"},
+                            "planar": True}
+    return paint
+
+
 class PushPullTool(Tool):
     name = "Push / Pull"
     shortcut = "U"
@@ -438,6 +474,10 @@ class PushPullTool(Tool):
         n = self._normal
         off = n * d
         attrs = dict(face.attrs) if face.attrs else None
+        # The walls take the base's PAINT, re-anchored to their own planes —
+        # the same thing the commit stamps on them, so the drag shows the
+        # material the push is about to produce instead of bare cream.
+        wall_attrs = _paint_of(face) or None
         rings = [(list(face.vertices), [p + off for p in face.vertices])]
         rings += [(list(h), [p + off for p in h]) for h in face.holes]
         self._light_rings = rings      # the wireframe reads these back
@@ -448,7 +488,7 @@ class PushPullTool(Tool):
             for i in range(count):
                 j = (i + 1) % count
                 out.append(Face([low[i], low[j], high[j], high[i]],
-                                attrs=attrs))
+                                attrs=wall_attrs))
         return out
 
     def _show_light_preview(self, viewport) -> None:
@@ -858,12 +898,14 @@ class PushPullTool(Tool):
         # raising a wall from a rect the active class stamped, yields a fully
         # tagged solid). Capture before the mutation — the base is consumed.
         base_tag = None
+        base_paint = None
         if self.base_face is not None:
             t = self.base_face.attrs.get("ifc")
             if t:
                 base_tag = dict(t)
+            base_paint = _paint_of(self.base_face)
         before_verts = ({id(v) for v in mesh.vertices}
-                        if base_tag is not None else None)
+                        if base_tag is not None or base_paint else None)
         guard = (mesh.capture_state()
                  if is_closed(mesh) and not _mesh_is_flat(mesh) else None)
         fp_before = self._mesh_fingerprint(mesh) if guard is not None else None
@@ -880,18 +922,26 @@ class PushPullTool(Tool):
             self._refused = True
             return
         self._soften_curve_facets(mesh, before_edges)
-        if base_tag is not None:
+        if base_tag is not None or base_paint:
             # Only faces carrying at least one vertex this push created — the
             # extrusion's own walls/cap. Rebuilt neighbours (an untagged floor
             # plane re-emitted over its OLD vertices) are never touched, and a
-            # face that already has a tag keeps it. Runs inside the commit's
-            # SnapshotMutation (and the reverted preview), so undo is exact.
-            for f in mesh.faces:
-                if f.attrs.get("ifc"):
-                    continue
-                if any(id(v) not in before_verts
-                       for lp in (f.loop, *f.hole_loops) for v in lp):
+            # face that already carries a tag (or its own paint) keeps it. Runs
+            # inside the commit's SnapshotMutation (and the reverted preview),
+            # so undo is exact.
+            #
+            # Reached FROM the new vertices instead of by scanning the model:
+            # a face is fresh exactly when it holds one, so the pass costs the
+            # push rather than the mesh.
+            fresh: set = set()
+            for v in mesh.vertices:
+                if id(v) not in before_verts:
+                    fresh.update(v.faces())
+            for f in fresh:
+                if base_tag is not None and not f.attrs.get("ifc"):
                     f.attrs["ifc"] = dict(base_tag)
+                if base_paint and not any(k in f.attrs for k in _PAINT_KEYS):
+                    f.attrs.update(base_paint)
 
     @staticmethod
     def _mesh_fingerprint(mesh):

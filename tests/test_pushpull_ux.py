@@ -773,3 +773,83 @@ def test_drag_preview_wireframe_carries_holes():
     assert len(segs) == 24          # 12 for the outer loop, 12 for the hole
     xs = {round(a.x(), 6) for a, _b in segs}
     assert 2.0 in xs and 4.0 in xs  # the hole's own corners are drawn
+
+
+# ---- The material extrudes with the shape -----------------------------------
+
+def _painted_rect(scene, hist, size=4.0, attrs=None):
+    """A rectangle on the ground carrying ``attrs``, ready to be pushed."""
+    ring = [V(0, 0), V(size, 0), V(size, size), V(0, size)]
+    hist.execute(build_add_edges(
+        scene, [(ring[i], ring[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(ring))]))
+    face = scene.faces[0]
+    face.attrs.update(attrs or {})
+    return face
+
+
+def test_push_carries_the_colour_onto_the_new_sides():
+    # SketchUp extrudes the material with the shape: a painted rectangle pulled
+    # up is a painted box, not a box with one painted face (Marco, 2026-08-27).
+    scene = Scene()
+    hist = History(scene)
+    rect = _painted_rect(scene, hist,
+                         attrs={"color": [0.8, 0.2, 0.1], "mat": "Ladrillo"})
+    _push(scene, rect, 3.0)
+
+    assert len(scene.faces) == 6
+    assert all(f.attrs.get("mat") == "Ladrillo" for f in scene.faces)
+    assert all(f.attrs.get("color") == [0.8, 0.2, 0.1] for f in scene.faces)
+
+
+def test_push_carries_the_texture_but_re_anchors_it_per_face():
+    # The base's uvw is a world->UV map fitted in the GROUND plane; evaluating
+    # it on a wall leaves the image constant along the extrusion, so the
+    # texture would smear into stripes. The walls must map in their own plane.
+    scene = Scene()
+    hist = History(scene)
+    tex = {"path": "/tmp/piedra.jpg", "sw": 0.5, "sh": 0.5,
+           "uvw": [2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0]}
+    rect = _painted_rect(scene, hist, attrs={"texture": dict(tex),
+                                             "mat": "Piedra"})
+    _push(scene, rect, 3.0)
+
+    walls = [f for f in scene.faces
+             if abs(f.normal().normalized().z()) < 1e-6]
+    assert len(walls) == 4
+    for w in walls:
+        t = w.attrs.get("texture")
+        assert t is not None, "the wall came out bare"
+        assert t["path"] == "/tmp/piedra.jpg"
+        assert t["sw"] == 0.5 and t["sh"] == 0.5   # same tile size
+        assert "uvw" not in t                      # re-anchored, not smeared
+        assert t["planar"] is True                 # default projection
+
+    # The moved cap continues the base, so it keeps the exact placement.
+    cap = _top(scene, 3.0)
+    assert cap.attrs["texture"]["uvw"] == tex["uvw"]
+
+
+def test_push_leaves_a_face_that_has_its_own_paint_alone():
+    # Only bare new geometry inherits; a neighbour the rebuild re-emitted with
+    # its own material must not be repainted by the push.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    for f in scene.faces:
+        if f is not top:
+            f.attrs["mat"] = "Original"
+    top.attrs["mat"] = "Nuevo"
+    _push(scene, top, 2.0)
+
+    keep = [f for f in scene.faces if f.attrs.get("mat") == "Original"]
+    assert keep, "the untouched faces lost their own material"
+
+
+def test_unpainted_push_stays_unpainted():
+    scene = Scene()
+    hist = History(scene)
+    rect = _painted_rect(scene, hist)
+    _push(scene, rect, 3.0)
+    assert all(not f.attrs for f in scene.faces)
