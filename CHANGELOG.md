@@ -4,6 +4,59 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.6] — 2026-08-27
+
+**The nested-placement release**: an imported component keeps the sharing
+SketchUp gave it inside itself, which is what makes the files we write
+small again — and, hunting that through a real modelling session, three
+long-standing freezes fell with it.
+
+### Added
+- **Nested placements**: a group owns placements of shared prototype
+  meshes, drawn, picked, saved and exported as part of it — one object
+  to you, however deep the tree. An imported component no longer arrives
+  flattened, so a hedge stored as 9600 faces placed 48 times stays that
+  way instead of becoming 230400 real ones.
+- **Eyedropper parity (Paint ▸ Alt)**: sampling a face now carries its
+  material to the next click the way SketchUp does — image, applied
+  size, rotation, translucency and the material identity. A face with an
+  explicit world→UV map hands it on only within its own plane, where it
+  keeps the pattern lined up; a face on another plane takes the material
+  with its own projection at the same size (copying the map across
+  planes smeared the image into stripes). The pointer becomes an
+  eyedropper while Alt is down.
+
+### Fixed
+- **`.skp` files were five times too big.** Saving Marco's pool wrote
+  80 MB against SketchUp's 14. Not textures (6.7 MB embedded there
+  against 7.1 here) — geometry duplicated by losing a component's
+  internal sharing. Now **72.4 MB → 28.7 MB**, with stored faces down
+  from 1 294 258 to 75 599 and the world geometry identical (same
+  bounding box, area within 0.08%). Prototypes with identical content
+  are folded too: a .skp can carry the SAME material under two ids,
+  which was splitting the hedge's leaves into twin prototypes.
+- **Deleting inside an imported group hung the app** — 206 s to erase
+  60 faces in a 3054-face barbecue, and a cliff that made it look
+  random: the heal's 3000-face guard let the work through only once you
+  had deleted enough. Three passes that scaled with the whole model for
+  an edit that touched a part: the T-junction sweep (one pass alone
+  measured 24.8 s and repeated per split — the batched version already
+  written for Push/Pull now serves both call sites), the heal's
+  quadratic coplanar pairing (4.2M face-normal recomputations), and the
+  orphan-edge prune. **206 s → 3.07 s**, with a byte-identical result.
+- **A moved group left a ghost selection box** where it used to be: the
+  translation fast paths carried every cached array except that one.
+- **Selecting a big component took seconds** — the box was derived by
+  welding a merged copy of the whole component (23.6 s with nested
+  placements, 5.1 s before) to read eight corners. Now it works from
+  the points: **0.11 s**, and the box is identical.
+- Drag previews, rubber-band selection, Explode and the scene queries
+  (bounds, world faces, BIM quantities, model info) all reach a
+  component's nested geometry; Explode used to leave it behind entirely.
+- Zoom got its lightness back: the per-frame instance gather is cached
+  per scene version and its frustum cull is one vectorised pass
+  (2.5 ms → 0.1 ms per frame).
+
 ## [0.3.5] — 2026-08-25
 
 **Sections, the SketchUp parity batch, AI modelling, and the performance
