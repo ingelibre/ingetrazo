@@ -183,12 +183,22 @@ def test_is_occluded_matches_geometry():
             return QVector3D(0.0, -10.0, 0.0)
 
     class _VP:
-        pass
+        # Occlusion reaches into the pick index, which pulls in a handful of
+        # viewport helpers; bind whatever it asks for rather than listing them.
+        def __getattr__(self, name):
+            import inspect
+            raw = inspect.getattr_static(Viewport, name, None)
+            if raw is None:
+                raise AttributeError(name)
+            # Plain functions bind to the stub; staticmethods are taken as-is.
+            bound = (raw.__get__(self) if inspect.isfunction(raw)
+                     else getattr(Viewport, name))
+            setattr(self, name, bound)
+            return bound
 
     vp = _VP()
     vp.scene = scene
     vp.camera = _Cam()
-    vp._occlusion_triangles = Viewport._occlusion_triangles.__get__(vp)
     occluded = Viewport._is_occluded.__get__(vp)
 
     assert occluded(QVector3D(0, 5, 0)) is True       # behind the wall
@@ -200,6 +210,54 @@ def test_is_occluded_matches_geometry():
     scene.version += 1                                # cache must refresh
     assert occluded(QVector3D(0, 5, 0)) is True
     assert occluded(QVector3D(0, 1, 0)) is True       # behind wall 1 only
+
+
+def test_geometry_inside_a_group_occludes_too():
+    """A group is solid to the eye, so it must hide what is behind it.
+
+    Occlusion read ``scene.faces`` — the LOOSE mesh — so a wall that lived in
+    a group hid nothing, and drawing on a box snapped through it to the edge
+    on the far side (Marco, 2026-08-27). It asks the pick index now, which
+    holds every group's triangles as well.
+    """
+    from PySide6.QtGui import QVector3D
+    from core.group import Group
+    from core.mesh import Mesh
+    from views.viewport import Viewport
+
+    wall = Mesh()
+    wall.add_face([QVector3D(-2, 0, -2), QVector3D(2, 0, -2),
+                   QVector3D(2, 0, 2), QVector3D(-2, 0, 2)])
+    scene = Scene()
+    scene.groups.append(Group(wall, name="Muro"))
+    assert scene.faces == []                       # nothing loose at all
+
+    class _Cam:
+        def eye(self):
+            return QVector3D(0.0, -10.0, 0.0)
+
+    class _VP:
+        # Occlusion reaches into the pick index, which pulls in a handful of
+        # viewport helpers; bind whatever it asks for rather than listing them.
+        def __getattr__(self, name):
+            import inspect
+            raw = inspect.getattr_static(Viewport, name, None)
+            if raw is None:
+                raise AttributeError(name)
+            # Plain functions bind to the stub; staticmethods are taken as-is.
+            bound = (raw.__get__(self) if inspect.isfunction(raw)
+                     else getattr(Viewport, name))
+            setattr(self, name, bound)
+            return bound
+
+    vp = _VP()
+    vp.scene = scene
+    vp.camera = _Cam()
+    occluded = Viewport._is_occluded.__get__(vp)
+
+    assert occluded(QVector3D(0, 5, 0)) is True     # behind the grouped wall
+    assert occluded(QVector3D(0, -5, 0)) is False   # in front of it
+    assert occluded(QVector3D(5, 5, 0)) is False    # past its edge
 
 
 def test_world_under_cursor_uses_cached_pick():
@@ -221,7 +279,18 @@ def test_world_under_cursor_uses_cached_pick():
             return QVector3D(0.0, -10.0, 0.0)
 
     class _VP:
-        pass
+        # Occlusion reaches into the pick index, which pulls in a handful of
+        # viewport helpers; bind whatever it asks for rather than listing them.
+        def __getattr__(self, name):
+            import inspect
+            raw = inspect.getattr_static(Viewport, name, None)
+            if raw is None:
+                raise AttributeError(name)
+            # Plain functions bind to the stub; staticmethods are taken as-is.
+            bound = (raw.__get__(self) if inspect.isfunction(raw)
+                     else getattr(Viewport, name))
+            setattr(self, name, bound)
+            return bound
 
     vp = _VP()
     vp.scene = scene

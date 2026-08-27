@@ -6396,71 +6396,59 @@ class Viewport(QOpenGLWidget):
                 return vertex
         return None
 
-    def _occlusion_triangles(self):
-        """Cached NumPy arrays ``(v0, e1, e2)`` of every loose-mesh triangle,
-        rebuilt when the scene changes. ``_is_occluded`` fires dozens of times
-        per frame while dimensions are on screen (each cota samples its three
-        lines against the model); re-running earcut per query made orbiting a
-        dimensioned plaza crawl (~280 ms/frame on the plaza.igz report —
-        batched here it's ~5 ms)."""
-        key = (_cache_ver(self), id(self.scene.mesh))
-        cached = getattr(self, "_occl_cache", None)
-        if cached is not None and cached[0] == key:
-            return cached[1]
-        import numpy as np
-        tris = []
-        for face in self.scene.faces:
-            for t0, t1, t2 in face.triangulate():
-                tris.append([[t0.x(), t0.y(), t0.z()],
-                             [t1.x(), t1.y(), t1.z()],
-                             [t2.x(), t2.y(), t2.z()]])
-        if tris:
-            t = np.asarray(tris, dtype=np.float64)
-            arrays = (t[:, 0], t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
-        else:
-            arrays = None
-        self._occl_cache = (key, arrays)
-        return arrays
-
     def _is_occluded(self, world: QVector3D) -> bool:
-        """Whether a face sits between the camera and ``world`` — i.e. the
-        point is hidden behind solid geometry from the current view. Used to
-        keep snaps from firing on edges/vertices the user can't see.
+        """Whether geometry sits between the camera and ``world`` — i.e. the
+        point is hidden from the current view. Used to keep snaps from firing
+        on edges and vertices the user cannot see.
 
-        A small epsilon keeps a point that lies *on* a face (e.g. an edge on
-        that face's boundary) from being reported as occluded by its own
-        face. Vectorised Möller–Trumbore over the cached triangle arrays."""
-        arrays = self._occlusion_triangles()
-        if arrays is None:
+        Asks the PICK INDEX, which is the only place that knows the whole
+        model: it holds the loose mesh AND every group's cached triangles, in
+        world space, with per-chunk boxes to prefilter the ray. The old pass
+        triangulated ``scene.faces`` alone — the loose mesh — so nothing
+        inside a group ever hid anything, and drawing on a box snapped
+        straight through it to the edge on the far side (Marco, 2026-08-27).
+        Sharing the index also means occlusion and picking can never disagree
+        about what is in front.
+
+        Only VISIBLE geometry occludes (``ent_vis``, not ``ent_sel``): an
+        object on a locked layer is still solid to the eye, while one on a
+        hidden layer must not hide anything. A small epsilon on the far end
+        keeps a point lying ON a face — an edge on that face's boundary —
+        from being reported as occluded by its own face.
+        """
+        idx = self._pick_index()
+        if getattr(idx, "tri_v0", None) is None:
             return False
-        import numpy as np
         origin = self.camera.eye()
-        eye = np.array([origin.x(), origin.y(), origin.z()])
-        w = np.array([world.x(), world.y(), world.z()])
-        delta = w - eye
-        dist = float(np.linalg.norm(delta))
+        delta = world - origin
+        dist = delta.length()
         if dist < 1e-9:
             return False
         d = delta / dist
-        v0, e1, e2 = arrays
-        p = np.cross(d, e2)
-        det = np.einsum("ij,ij->i", e1, p)
-        ok = np.abs(det) > 1e-9
-        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
-        s = eye - v0
-        u = np.einsum("ij,ij->i", s, p) * inv
-        q = np.cross(s, e1)
-        v = (q @ d) * inv
-        t = np.einsum("ij,ij->i", e2, q) * inv
-        hit = (ok & (u >= 0.0) & (u <= 1.0) & (v >= 0.0) & (u + v <= 1.0)
-               & (t > 1e-9) & (t < dist - 1e-3))
         sp = _active_cut(self.scene)
-        if sp is not None and hit.any():
-            n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()])
-            c = float(n @ [sp.point.x(), sp.point.y(), sp.point.z()])
-            pts = eye + d * t[:, None]
-            hit &= ((pts @ n - c) <= 1e-6)
-        return bool(hit.any())
+        if sp is None:
+            # Nothing to sort out per face: the single nearest hit decides,
+            # and asking for it skips allocating a per-face array on every
+            # query (this fires dozens of times a frame).
+            nearest = self._ray_hits(idx, origin, d, idx.ent_vis,
+                                     reduce_global=True)
+            return nearest is not None and nearest < dist - 1e-3
+        face_t = self._ray_hits(idx, origin, d, idx.ent_vis)
+        if face_t is None:
+            return False
+        import numpy as np
+        hit = np.isfinite(face_t) & (face_t < dist - 1e-3)
+        if not hit.any():
+            return False
+        # An active cut removes what it hides, so a hit on the clipped-away
+        # side is not an occluder. A ray meets a planar face at most once, so
+        # the per-face nearest hit IS the hit — testing it is exact.
+        eye = np.array([origin.x(), origin.y(), origin.z()])
+        dv = np.array([d.x(), d.y(), d.z()])
+        n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()])
+        c = float(n @ [sp.point.x(), sp.point.y(), sp.point.z()])
+        pts = eye + dv * face_t[hit][:, None]
+        return bool(((pts @ n - c) <= 1e-6).any())
 
     def pick_face(self, screen_x: float, screen_y: float):
         """Return the face the cursor ray hits, or ``None``.
