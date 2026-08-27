@@ -411,6 +411,13 @@ def _faces_coplanar(n1: QVector3D, n2: QVector3D) -> bool:
     return abs(QVector3D.dotProduct(n1.normalized(), n2.normalized())) > 0.999
 
 
+def _unit_coplanar(n1: QVector3D, n2: QVector3D) -> bool:
+    """``_faces_coplanar`` for normals already known to be unit length —
+    ``Face.normal()`` returns one, and re-normalising both sides ran 14.3M
+    times inside the heal's O(F^2) passes."""
+    return abs(n1.x() * n2.x() + n1.y() * n2.y() + n1.z() * n2.z()) > 0.999
+
+
 def _face_all_edges(face: Face) -> set:
     edges = set(_loop_edges(face.vertices))
     for hole in face.holes:
@@ -1086,6 +1093,123 @@ def _collinear_overlapping(e1, e2) -> bool:
     return min(hi1, d2.length()) - max(lo1, 0.0) > 1e-4
 
 
+def sweep_tjunctions(mesh, seedkeys=None) -> None:
+    """Split every edge that runs past a vertex belonging to another face, in
+    ONE vectorised pass per round instead of a Python walk per edge.
+
+    ``seedkeys`` (``core.topology._key`` tuples — positions rounded to the weld
+    tolerance, NOT ``core.mesh._key``'s integer cells) bound the sweep to an
+    operation's own box: only an edge reaching that box can be split, which is
+    every T-junction the op can have created and none it merely found lying
+    around. ``None`` sweeps the whole mesh, which is what a repair pass wants.
+
+    The scalar form was O(splits x E x V) — ``interior_vertex_on`` walked EVERY
+    vertex in Python and the loop restarted from edge zero after each split. On
+    the imported brick barbecue (3054 faces) one pass alone measured 24.8 s
+    (6983 edges x 3993 vertices), and the pass repeats per split: that is the
+    hang Marco hit deleting a few faces inside it, and the same hang the push
+    preview hit before phase 1 was batched. ONE implementation now serves both.
+    """
+    import numpy as np
+    from core.mesh import _STITCH_TOL
+    tol2 = _STITCH_TOL * _STITCH_TOL
+    # Cap on candidate pairs materialised at once, so a model-spanning edge
+    # whose slab holds every vertex can't blow memory: edges run in chunks.
+    pair_cap = 1 << 21
+    # ``seedkeys`` are ``core.topology._key`` tuples — the seed positions
+    # rounded to the weld tolerance, so they ARE coordinates and bound the
+    # operation directly. (Not ``core.mesh._key``, whose integer cell indices
+    # would read as positions 10⁴× too small and shrink the scope to nothing.)
+    seed_lo = seed_hi = None
+    if seedkeys:
+        skeys = np.array(sorted(seedkeys), dtype=np.float64)
+        seed_lo = skeys.min(axis=0) - _STITCH_TOL
+        seed_hi = skeys.max(axis=0) + _STITCH_TOL
+    while True:
+        verts = mesh.vertices
+        edges = list(mesh.edges)
+        if not verts or not edges:
+            break
+        vpos = np.array([[v.position.x(), v.position.y(), v.position.z()]
+                         for v in verts])
+        vslot = {id(v): i for i, v in enumerate(verts)}
+        ends = np.array([(vslot[id(e.v0)], vslot[id(e.v1)]) for e in edges],
+                        dtype=np.int64)
+        va, vb = vpos[ends[:, 0]], vpos[ends[:, 1]]
+        elo, ehi = np.minimum(va, vb), np.maximum(va, vb)
+        if seed_lo is None:
+            live = np.ones(len(edges), dtype=bool)
+        else:
+            live = ((ehi >= seed_lo).all(axis=1)
+                    & (elo <= seed_hi).all(axis=1))
+        # Degenerate edges never split.
+        seg_all = vb - va
+        live &= np.einsum("ij,ij->i", seg_all, seg_all) > tol2
+        pick = np.flatnonzero(live)
+        if not len(pick):
+            break
+        # Broad phase over the scoped edges: a splitting vertex sits in the
+        # edge's box, so only that slice of the x-sorted vertices is tested.
+        order = np.argsort(vpos[:, 0], kind="stable")
+        xs = vpos[order, 0]
+        lo = np.searchsorted(xs, elo[pick, 0] - _STITCH_TOL, side="left")
+        counts = np.searchsorted(xs, ehi[pick, 0] + _STITCH_TOL,
+                                 side="right") - lo
+        counts = np.maximum(counts, 0)
+        # Lowest-indexed interior vertex per edge — the scalar sweep walked
+        # ``mesh.vertices`` in order, and which vertex splits first must not
+        # depend on the x-sort. ``len(verts)`` is the "none" sentinel so
+        # ``np.minimum.at`` can reduce into it.
+        best = np.full(len(edges), len(verts), dtype=np.int64)
+        cum = np.cumsum(counts)
+        p0 = 0
+        while p0 < len(pick):
+            base = int(cum[p0] - counts[p0])
+            p1 = max(int(np.searchsorted(cum, base + pair_cap, side="right")),
+                     p0 + 1)
+            block = slice(p0, p1)
+            c = counts[block]
+            total = int(c.sum())
+            p0 = p1
+            if not total:
+                continue
+            eidx = np.repeat(pick[block], c)
+            rank = np.arange(total) - np.repeat(np.cumsum(c) - c, c)
+            vidx = order[np.repeat(lo[block], c) + rank]
+            keep = (vidx != ends[eidx, 0]) & (vidx != ends[eidx, 1])
+            # Narrow the x-slab down the other two axes before projecting.
+            # One axis at a time on 1-D gathers is far cheaper than pulling
+            # the (N, 3) vertex/edge rows the projection needs, and on a dense
+            # model it is what keeps the slab's false positives off that step.
+            for ax in (1, 2):
+                if not keep.any():
+                    break
+                on = eidx[keep]
+                coord = vpos[vidx[keep], ax]
+                keep[keep] = ((coord >= elo[on, ax] - _STITCH_TOL)
+                              & (coord <= ehi[on, ax] + _STITCH_TOL))
+            if not keep.any():
+                continue
+            eidx, vidx = eidx[keep], vidx[keep]
+            seg = seg_all[eidx]
+            rel = vpos[vidx] - va[eidx]
+            l2 = np.einsum("ij,ij->i", seg, seg)
+            t = np.einsum("ij,ij->i", rel, seg) / l2
+            tol_t = _STITCH_TOL / np.sqrt(l2)
+            ok = (t > tol_t) & (t < 1.0 - tol_t)
+            d = rel - seg * t[:, None]
+            ok &= np.einsum("ij,ij->i", d, d) < tol2
+            if ok.any():
+                np.minimum.at(best, eidx[ok], vidx[ok])
+        hits = np.flatnonzero(best < len(verts))
+        if not len(hits):
+            break
+        for i in hits:
+            # Only the split edge is removed and only existing vertices are
+            # reused, so the sweep's arrays stay valid across these splits.
+            mesh.split_edge_at(edges[int(i)], verts[int(best[int(i)])])
+
+
 def resolve_tjunctions(mesh, max_iter: int = 1000) -> None:
     """Split edges at T-junction vertices so faces with mismatched subdivisions
     share connectivity instead of a naked collinear seam.
@@ -1094,17 +1218,13 @@ def resolve_tjunctions(mesh, max_iter: int = 1000) -> None:
     where the other face is split (the door, a perpendicular wall). Their shared
     boundary is then two separate naked edges, not one border-2 edge — so erasing
     the dividing line cascades and deletes a wall instead of merging. Splitting at
-    each interior vertex welds the seam; erase-merge then reunites the walls."""
-    for _ in range(max_iter):
-        target = None
-        for e in mesh.edges:
-            v = mesh.interior_vertex_on(e)
-            if v is not None:
-                target = (e, v)
-                break
-        if target is None:
-            return
-        mesh.split_edge_at(*target)
+    each interior vertex welds the seam; erase-merge then reunites the walls.
+
+    Whole-mesh repair, so it sweeps unscoped — but through the same batched
+    pass the push stitch uses, not the per-edge Python walk that hung on a
+    3k-face import. ``max_iter`` is kept for callers; the sweep runs to its
+    own fixpoint."""
+    sweep_tjunctions(mesh)
 
 
 def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
@@ -1171,11 +1291,35 @@ def prune_collinear_orphan_edges(mesh) -> list:
     unwelded collinear overlaps that leave a duplicate 'division line'. Returns
     the removed edges."""
     removed = []
-    for e in [edge for edge in mesh.edges if len(edge.faces) == 0]:
-        if any(other is not e and _collinear_overlapping(e, other)
-               for other in mesh.edges):
-            mesh.remove_edge(e)
-            removed.append(e)
+    edges = list(mesh.edges)
+    orphans = [e for e in edges if len(e.faces) == 0]
+    if not orphans:
+        return removed
+    import numpy as np
+    # Broad phase: an edge can only overlap one whose box it meets. The bare
+    # loop tested every orphan against EVERY edge — 850k calls to the
+    # collinearity predicate on the imported barbecue, 2.8 s of a Delete.
+    P = np.array([[e.a.x(), e.a.y(), e.a.z(), e.b.x(), e.b.y(), e.b.z()]
+                  for e in edges], dtype=np.float64)
+    lo = np.minimum(P[:, :3], P[:, 3:]) - _PLANAR_TOLERANCE
+    hi = np.maximum(P[:, :3], P[:, 3:]) + _PLANAR_TOLERANCE
+    slot = {id(e): i for i, e in enumerate(edges)}
+    # An orphan already pruned must not prune the one it lay on: the bare
+    # loop read the LIVE edge list, so the partner had to still be there.
+    gone: set = set()
+    for e in orphans:
+        i = slot[id(e)]
+        near = np.flatnonzero((hi >= lo[i]).all(axis=1)
+                              & (lo <= hi[i]).all(axis=1))
+        for j in near:
+            other = edges[j]
+            if other is e or id(other) in gone:
+                continue
+            if _collinear_overlapping(e, other):
+                mesh.remove_edge(e)
+                removed.append(e)
+                gone.add(id(e))
+                break
     return removed
 
 
@@ -1265,22 +1409,39 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None) -> list:
 
     # 2. Remove a redundant mother covered by faces that aren't in its holes.
     removed: list = []
-    for face in list(mesh.faces):
-        if face.area() < _SPLIT_TOLERANCE:
+    # Normals and areas ONCE per face, not once per pair: this sweep is
+    # O(F^2) and it re-derived ``Face.normal()`` (a Newell walk over
+    # QVector3D) inside the inner loop — 4.2M Newell computations, 66 s of
+    # the 82 s a Delete cost on the imported barbecue. Faces are only
+    # REMOVED here, and a removed face stays alive in ``removed``, so no
+    # cached id can be reused under us.
+    import numpy as np
+    snap = list(mesh.faces)
+    N = np.array([[(n := f.normal()).x(), n.y(), n.z()] for f in snap],
+                 dtype=np.float64) if snap else np.empty((0, 3))
+    A = np.array([f.area() for f in snap], dtype=np.float64)
+    gone: set = set()
+    for i, face in enumerate(snap):
+        a_face = A[i]
+        if a_face < _SPLIT_TOLERANCE:
             continue
-        fn = face.normal()
+        # The coplanar partner test for the WHOLE mesh in one dot product.
+        # Same tolerance, same pairs — but the scalar form ran 4.2M times in
+        # Python (66 s of the 82 s a Delete cost inside the imported
+        # barbecue, plus 5 s once its normals were cached).
+        cand = np.flatnonzero((np.abs(N @ N[i]) > 0.999) & (A < a_face))
         covered = 0.0
-        for g in mesh.faces:
-            if g is face or g in removed:
+        for j in cand:
+            g = snap[j]
+            if g is face or id(g) in gone:
                 continue
-            if not _faces_coplanar(fn, g.normal()):
-                continue
-            if (g.area() < face.area() and loop_inside_face(face, g.vertices)
+            if (loop_inside_face(face, g.vertices)
                     and not _g_inside_a_hole(face, g.vertices)):
-                covered += g.area()
-        if covered > coverage * face.area():
+                covered += A[j]
+        if covered > coverage * a_face:
             mesh.remove_face(face)
             removed.append(face)
+            gone.add(id(face))
 
     # 3. (Flat plans) A small face whose body lies in a bigger coplanar face's
     #    solid region is a partial overlap the auto-divide missed (a door piece
@@ -1289,9 +1450,16 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None) -> list:
     #    they no longer overlap. The small face fills that hole.
     if partial:
         from collections import defaultdict
+        # Rebuilt for THIS pass: pass 2 removed faces and the earlier passes
+        # may have rebuilt some, so the pass-2 caches no longer cover the
+        # mesh. Same reason as there — the sweep is O(F^2).
+        snap3 = list(mesh.faces)
+        N3 = np.array([[(n := f.normal()).x(), n.y(), n.z()] for f in snap3],
+                      dtype=np.float64) if snap3 else np.empty((0, 3))
+        A3 = np.array([f.area() for f in snap3], dtype=np.float64)
         punch: dict = defaultdict(list)
-        for face in mesh.faces:
-            if face in removed:
+        for i3, face in enumerate(snap3):
+            if id(face) in gone:
                 continue
             # Guaranteed-interior probes: triangle centroids. A concave face's
             # polygon centroid can fall OUTSIDE itself (an L around a circular
@@ -1302,11 +1470,11 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None) -> list:
             if not tris:
                 continue
             probes = [(t0 + t1 + t2) / 3.0 for t0, t1, t2 in tris]
-            fn = face.normal()
-            for g in mesh.faces:
-                if g is face or g in removed or g.area() <= face.area():
-                    continue
-                if not _faces_coplanar(fn, g.normal()):
+            a_face = A3[i3]
+            for j3 in np.flatnonzero((np.abs(N3 @ N3[i3]) > 0.999)
+                                     & (A3 > a_face)):
+                g = snap3[j3]
+                if g is face or id(g) in gone:
                     continue
                 if _g_inside_a_hole(g, face.vertices):
                     continue  # already filling a hole — no overlap
