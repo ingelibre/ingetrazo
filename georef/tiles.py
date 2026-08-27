@@ -320,7 +320,9 @@ class TileCache:
         p = self.path_for(source_id, x, y, z)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)
-        self._evict_if_needed()
+        files = [f for f in self.root.rglob("*") if f.is_file()]
+        self._stamp_newest(p, files)
+        self._evict_if_needed(files)
 
     def _touch(self, p: Path) -> None:
         # Bump mtime so LRU eviction treats a just-read tile as fresh. Best
@@ -332,8 +334,28 @@ class TileCache:
         except OSError:
             pass
 
-    def _evict_if_needed(self) -> None:
-        files = [f for f in self.root.rglob("*") if f.is_file()]
+    def _stamp_newest(self, p: Path, files) -> None:
+        """Give ``p`` an mtime strictly newer than every other cached tile.
+
+        Eviction is oldest-mtime-first, and a filesystem's timestamp
+        granularity can be coarser than the gap between two writes: ten
+        tiles written in a loop share one tick, the sort has no order left
+        to give, and the tile just written is as likely to be dropped as the
+        oldest one. That is a cache that thrashes exactly when it is busy —
+        CI caught it evicting the newest of ten."""
+        try:
+            import os
+            st = p.stat()
+            newest = max((f.stat().st_mtime for f in files if f != p),
+                         default=st.st_mtime)
+            if st.st_mtime <= newest:
+                os.utime(p, (st.st_atime, newest + 1))
+        except OSError:
+            pass
+
+    def _evict_if_needed(self, files=None) -> None:
+        if files is None:
+            files = [f for f in self.root.rglob("*") if f.is_file()]
         total = sum(f.stat().st_size for f in files)
         if total <= self.max_bytes:
             return
