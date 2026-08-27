@@ -40,8 +40,10 @@ class _StubViewport:
     def set_hover(self, entity):
         pass
 
+    suppressed: set | None = None
+
     def set_suppressed_faces(self, faces):
-        pass
+        self.suppressed = set(faces)
 
     def pick_face(self, x, y):
         return self._pick
@@ -902,3 +904,82 @@ def test_pushing_a_hexagon_keeps_its_real_edges():
     risers = [s for s in segs if abs(s[0].z() - s[1].z()) > 1e-6]
     assert len(risers) == 6
     assert len(segs) == 18
+
+
+# ---- The base's normal must agree with the surface it belongs to ------------
+
+def _wall_with_door(scene):
+    """An OPEN shell (no volume for orient_outward to judge): a wall with a
+    door carved out of it, the door wound the OTHER way — Marco's cubo.igz."""
+    door_ring = [V(1, 0, 0), V(1, 0, 2), V(2.5, 0, 2), V(2.5, 0, 0)]
+    # wall minus the door notch, wound so its normal points -Y (outward)
+    outer = [V(0, 0, 0), V(1, 0, 0), V(1, 0, 2), V(2.5, 0, 2),
+             V(2.5, 0, 0), V(4, 0, 0), V(4, 0, 3), V(0, 0, 3)]
+    wall = scene.mesh.add_face(outer)
+    if wall.normal().normalized().y() > 0:
+        scene.mesh.remove_face(wall)
+        wall = scene.mesh.add_face(outer[::-1])
+    # A floor, its front boundary split where the door meets it, so every one
+    # of the door's edges is shared — what makes the push read as a recess.
+    scene.mesh.add_face([V(0, 0, 0), V(1, 0, 0), V(2.5, 0, 0), V(4, 0, 0),
+                         V(4, 3, 0), V(0, 3, 0)])
+    # the door, deliberately facing the OTHER way (+Y, into the model)
+    door = scene.mesh.add_face(door_ring)
+    if door.normal().normalized().y() < 0:
+        scene.mesh.remove_face(door)
+        door = scene.mesh.add_face(door_ring[::-1])
+    return wall, door
+
+
+def test_a_reversed_face_takes_the_facing_of_its_own_surface():
+    # orient_outward can only judge a closed volume; on an open shell a face
+    # keeps whatever winding the draw gave it. Push/Pull's whole sign
+    # convention rests on the base pointing OUTWARD, so it has to agree with
+    # the surface around it.
+    scene = Scene()
+    wall, door = _wall_with_door(scene)
+    assert door.normal().normalized().y() > 0      # wound inward
+    assert wall.normal().normalized().y() < 0      # the surface faces out
+
+    n = PushPullTool._surface_normal(door)
+    assert n.normalized().y() < 0, "the door still disagrees with its wall"
+
+
+def test_a_lone_sheet_keeps_its_own_normal():
+    # Nothing coplanar to ask: leave it alone.
+    scene = Scene()
+    sheet = scene.mesh.add_face([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
+    n0 = sheet.normal().normalized()
+    n = PushPullTool._surface_normal(sheet).normalized()
+    assert abs(QVector3D.dotProduct(n, n0) - 1.0) < 1e-9
+
+
+def test_pushing_a_reversed_door_inward_hides_the_base_face():
+    # The bug Marco hit: with the sign inverted the tool read a drag INTO the
+    # wall as a drag out of it, never hid the base, and the outer face stood
+    # there covering the recess ("la cara de afuera del cubo parece intacto").
+    scene = Scene()
+    wall, door = _wall_with_door(scene)
+
+    def _drag_into_the_wall(normal):
+        vp = _StubViewport(scene)
+        tool = PushPullTool()
+        tool.base_face = door
+        tool._normal = normal
+        tool._attached, tool._prism_cap = tool._classify_base(scene)
+        tool.dragging = True
+        # The SAME drag either way: into the wall, along +Y. Its sign is
+        # whatever the normal in hand makes of it.
+        tool.extrusion = -0.6 if normal.normalized().y() < 0 else 0.6
+        tool._show_light_preview(vp)
+        return tool.extrusion, vp.suppressed
+
+    # What the tool used to do: take the face's own normal, which here points
+    # the wrong way. The drag reads POSITIVE, so the recess rule never fires.
+    dist, hidden = _drag_into_the_wall(door.normal())
+    assert dist > 0.0 and not hidden      # the outer face is left covering it
+
+    # With the surface's facing the same drag reads as what it is.
+    dist, hidden = _drag_into_the_wall(PushPullTool._surface_normal(door))
+    assert dist < 0.0, "a drag into the wall must read as negative"
+    assert hidden == {door}, "the base face was left covering the recess"

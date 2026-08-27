@@ -342,7 +342,7 @@ class PushPullTool(Tool):
             orient_outward(target.mesh, only=(face,))
             self._drag_pre_oriented = True
             self._anchor = face.centroid()
-            self._normal = face.normal()
+            self._normal = self._surface_normal(face)
             self._attached, self._prism_cap = self._classify_base(target)
             self._cap_positions = self._cap_loop_positions(face)
             self._compute_inward_limit(target)
@@ -385,7 +385,7 @@ class PushPullTool(Tool):
             orient_outward(target.mesh, only=(face,))
             self._drag_pre_oriented = True
             self._anchor = face.centroid()
-            self._normal = face.normal()
+            self._normal = self._surface_normal(face)
             self._attached, self._prism_cap = self._classify_base(target)
             self._cap_positions = self._cap_loop_positions(face)
             self._compute_inward_limit(target)
@@ -778,6 +778,47 @@ class PushPullTool(Tool):
         for hole in face.holes:
             pts.extend(QVector3D(v) for v in hole)
         return pts
+
+    @staticmethod
+    def _surface_normal(face) -> QVector3D:
+        """``face``'s normal, turned to agree with the surface it belongs to.
+
+        This tool's whole sign convention rests on the base's normal pointing
+        OUTWARD: ``extrusion`` is signed along it, and the recess rule reads
+        "negative = into the material, so hide the base face and show an
+        opening". ``orient_outward`` establishes that invariant at drag
+        start — but only where there is a volume to test parity against. On
+        an OPEN shell it leaves every winding as the draw left it, so a face
+        that came out wound the other way keeps pointing INTO the model.
+
+        The rule then reads a drag into the wall as a drag out of it, never
+        hides the base, and the outer face stands there covering the recess
+        forming behind it: pushing a door into Marco's cube looked like
+        nothing was happening, while the push itself worked (cubo.igz,
+        2026-08-27 — an open shell whose door face disagreed with all five
+        of its coplanar neighbours).
+
+        Coplanar faces across the boundary ARE the surface this face was cut
+        out of, so they are what it has to agree with; a majority settles it.
+        Nothing coplanar to ask — a lone sheet — leaves the normal alone.
+        """
+        n = face.normal().normalized()
+        on_loop = {id(v) for v in face.loop}
+        agree = disagree = 0
+        for v in face.loop:
+            for edge in v.edges:
+                if id(edge.v0) not in on_loop or id(edge.v1) not in on_loop:
+                    continue                      # not a boundary edge
+                for other in edge.faces:
+                    if other is face:
+                        continue
+                    d = QVector3D.dotProduct(other.normal().normalized(), n)
+                    if abs(d) > 0.999:            # the same plane
+                        if d > 0:
+                            agree += 1
+                        else:
+                            disagree += 1
+        return -n if disagree > agree else n
 
     def _classify_base(self, scene) -> tuple[bool, bool]:
         """Classify the base face for previewing.
