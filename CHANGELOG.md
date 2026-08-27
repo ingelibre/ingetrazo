@@ -4,6 +4,15 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.6.2] — 2026-08-27
+
+### Fixed
+- **Base-map tile cache evicted the tile it had just written.** Eviction
+  reads the filesystem's modification times, and their granularity can be
+  coarser than the gap between two writes — so a busy cache had no order
+  left to sort by and dropped fresh tiles while keeping stale ones. Each
+  write now stamps its tile as strictly the newest.
+
 ## [0.3.6.1] — 2026-08-27
 
 ### Fixed
