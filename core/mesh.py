@@ -137,6 +137,15 @@ class Edge:
         return f"Edge({self.v0!r} -> {self.v1!r})"
 
 
+#: The ``Face.attrs`` keys that make up a face's PAINT — how it looks (colour
+#: or texture, and its opacity) plus the material identity that survives the
+#: churn. ``layer`` and ``ifc`` are deliberately NOT here: they travel by their
+#: own rules (new geometry belongs to the active tag, and a BIM tag extends its
+#: object). Anything that hands paint from one face to another — a face carved
+#: out of another, an extrusion's walls — keys on these.
+PAINT_KEYS = ("color", "mat", "texture", "opacity")
+
+
 class Face:
     """A planar polygon: an outer ``loop`` of shared vertices, plus optional
     inner ``hole_loops``. Geometry is derived from the vertices' positions, so

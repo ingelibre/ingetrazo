@@ -402,3 +402,65 @@ def test_a_line_across_one_face_of_a_painted_box_keeps_every_face_painted():
     assert len(scene.faces) == 7               # the top split in two
     bare = [f for f in scene.faces if not f.attrs.get("texture")]
     assert bare == [], "%d faces came out bare" % len(bare)
+
+
+def test_a_door_drawn_down_to_the_floor_edge_takes_the_wall_texture():
+    # Three edges plus the wall's own bottom edge close the door: it is carved
+    # out of the wall (AddFaceCommand's direction C). Only the REMAINDER
+    # inherited, so the door came out bare (Marco, 2026-08-27).
+    from core.edits import build_add_edges
+    from core.history import AddFaceCommand
+
+    scene = Scene()
+    hist = History(scene)
+    wall = [V(0, 0, 0), V(4, 0, 0), V(4, 0, 3), V(0, 0, 3)]
+    hist.execute(build_add_edges(
+        scene, [(wall[i], wall[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(wall))]))
+    scene.faces[0].attrs.update({"mat": "Piedra", "texture": dict(_TEX)})
+
+    door = [V(1, 0, 0), V(1, 0, 2), V(2.5, 0, 2), V(2.5, 0, 0)]
+    hist.execute(build_add_edges(scene, [(door[0], door[1]), (door[1], door[2]),
+                                         (door[2], door[3])]))
+
+    assert len(scene.faces) == 2
+    for f in scene.faces:
+        assert f.attrs.get("mat") == "Piedra"
+        t = f.attrs.get("texture")
+        assert t is not None, "%d-vertex face came out bare" % len(f.vertices)
+        # Coplanar with the wall, so the same map: the image runs straight
+        # across the door's outline instead of restarting inside it.
+        assert t["uvw"] == _TEX["uvw"]
+
+
+def test_a_rectangle_drawn_inside_a_painted_face_takes_its_paint_too():
+    # Same gesture, not touching the boundary: the new face falls strictly
+    # inside the mother (direction A, which punches a hole in her).
+    from core.edits import build_add_edges
+    from core.history import AddFaceCommand
+
+    scene = Scene()
+    hist = History(scene)
+    _painted_square(scene, hist, size=6.0)
+    inner = [V(2, 2), V(4, 2), V(4, 4), V(2, 4)]
+    hist.execute(build_add_edges(
+        scene, [(inner[i], inner[(i + 1) % 4]) for i in range(4)]))
+
+    small = min(scene.faces, key=lambda f: f.area())
+    assert small.attrs.get("mat") == "Piedra"
+    assert small.attrs.get("texture", {}).get("uvw") == _TEX["uvw"]
+
+
+def test_a_face_drawn_with_its_own_paint_keeps_it():
+    # Inheritance fills gaps only: whatever the face already declares wins.
+    from core.history import AddFaceCommand
+
+    scene = Scene()
+    hist = History(scene)
+    _painted_square(scene, hist, size=6.0)
+    inner = [V(2, 2), V(4, 2), V(4, 4), V(2, 4)]
+    hist.execute(AddFaceCommand(inner, attrs={"mat": "Vidrio"}))
+
+    small = min(scene.faces, key=lambda f: f.area())
+    assert small.attrs["mat"] == "Vidrio"          # its own, not the mother's
+    assert small.attrs.get("texture", {}).get("uvw") == _TEX["uvw"]

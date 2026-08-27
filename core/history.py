@@ -54,7 +54,7 @@ def _plog(tag: str, ms: float, extra: str = "", floor: float = 100.0) -> None:
 from PySide6.QtGui import QVector3D
 
 from core.group import Group
-from core.mesh import Edge, Face, Mesh, Vertex
+from core.mesh import PAINT_KEYS, Edge, Face, Mesh, Vertex
 from core.topology import (
     _key,
     _loop_edges,
@@ -419,6 +419,30 @@ class TagCurveCommand(Command):
         pass
 
 
+def _inherit_paint(face, mother) -> None:
+    """Give ``face`` the paint of the ``mother`` it was drawn on, for the keys
+    it does not already carry itself.
+
+    A face drawn on a painted one is part of that surface: a door outlined on
+    a textured wall comes out textured in SketchUp, and lines up with the wall
+    because both keep the same world→UV map. Only the remainder of a carved
+    mother inherited here, so the cut-out itself came back bare (Marco,
+    2026-08-27). Verbatim, map included — the two are coplanar, so the image
+    has to run straight across the outline.
+
+    Whatever the face already declares wins: a rectangle drawn with a material
+    active, or one the caller stamped (the chord split hands its halves the
+    mother's attrs directly), keeps what it was given.
+    """
+    src = getattr(mother, "attrs", None)
+    if not src:
+        return
+    for k in PAINT_KEYS:
+        if k in src and k not in face.attrs:
+            v = src[k]
+            face.attrs[k] = dict(v) if isinstance(v, dict) else v
+
+
 class AddFaceCommand(Command):
     """Add a face, dividing any coplanar face it lands strictly inside.
 
@@ -471,6 +495,7 @@ class AddFaceCommand(Command):
         if mother is not None:
             loop = m.add_hole(mother, self.face.vertices)
             self._punches.append((mother, loop))
+            _inherit_paint(self.face, mother)
 
         # Direction B: the new face encloses existing smaller faces → it gains
         # each of them as a hole.
@@ -503,6 +528,7 @@ class AddFaceCommand(Command):
                 m.remove_face(other)
                 rem_face = m.add_face(remainder, rem_holes)
                 rem_face.attrs = dict(other.attrs)  # carved mother continues
+                _inherit_paint(self.face, other)    # ...and so does the cut-out
                 self._subdiv_mother = other
                 self._subdiv_remainder = rem_face
                 break

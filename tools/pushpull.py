@@ -42,6 +42,7 @@ from PySide6.QtGui import QVector3D
 
 from core.geometry import Face
 from core.i18n import tr
+from core.mesh import PAINT_KEYS
 from core.history import (
     AddEdgeCommand,
     AddFaceCommand,
@@ -169,11 +170,6 @@ def _swept_by_push(neighbour: Face, push_normal: QVector3D) -> bool:
 _MIN_EXTRUDE = 2e-4
 
 
-# What "painted" means on a face: the look (colour or texture, its opacity)
-# plus the material identity that survives the churn. NOT ``layer`` (new
-# geometry belongs to the active tag, not the source's) and not ``ifc``, which
-# travels on its own rule.
-_PAINT_KEYS = ("color", "mat", "texture", "opacity")
 
 
 def _paint_of(face) -> dict:
@@ -197,7 +193,7 @@ def _paint_of(face) -> dict:
     translation along the normal leaves an in-plane map unchanged.
     """
     attrs = face.attrs or {}
-    paint = {k: attrs[k] for k in _PAINT_KEYS if k in attrs}
+    paint = {k: attrs[k] for k in PAINT_KEYS if k in attrs}
     tex = paint.get("texture")
     if tex:
         paint["texture"] = {**{k: v for k, v in tex.items() if k != "uvw"},
@@ -964,7 +960,7 @@ class PushPullTool(Tool):
             for f in fresh:
                 if base_tag is not None and not f.attrs.get("ifc"):
                     f.attrs["ifc"] = dict(base_tag)
-                if base_paint and not any(k in f.attrs for k in _PAINT_KEYS):
+                if base_paint and not any(k in f.attrs for k in PAINT_KEYS):
                     f.attrs.update(base_paint)
 
     @staticmethod
