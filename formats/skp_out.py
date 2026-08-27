@@ -36,15 +36,6 @@ from core.texture import face_uv_axes, uv_reference_points
 # IngeTrazo stores geometry in metres; SketchUp works in inches.
 _M_TO_IN = 39.37007874
 
-# The physical tile a material ends up with in the written file. OpenSKP's
-# ``add_texture_material`` has no size parameter and hardcodes a one-inch
-# applied width, so every texture arrives claiming to span one inch however
-# large it really is — a 3.26 x 8.82 m grass repeats 128 times and loses its
-# aspect (Marco's export: the lawn came out as vertical stripes), while a
-# 4 cm metal, already near an inch, looked right. Until the size can be
-# written, the UVs carry the correction. REMOVE this the day OpenSKP can
-# express the real size.
-_APPLIED_TILE_M = 0.0254
 
 def _color_to_rgba(color):
     """Convert a float (0.0-1.0) RGB colour to integer (0-255) RGBA."""
@@ -83,7 +74,16 @@ def _collect_materials(faces_by_key, builder):
         if info.get("map"):
             src = info["src"]
             try:
-                handle = builder.add_texture_material(names[key], str(src))
+                # The applied size, in inches: how much model space one tile
+                # covers. For a texture applied without positioning this IS
+                # the mapping — SketchUp writes no per-face record for those
+                # — so leaving it out made every texture claim to span one
+                # inch however large it was. Marco's lawn (3.26 x 8.82 m)
+                # repeated 128 times and lost its aspect; only the surfaces
+                # whose tile was already inch-sized came out right.
+                handle = builder.add_texture_material(
+                    names[key], str(src),
+                    width=info.get("sw_in"), height=info.get("sh_in"))
             except Exception:  # noqa: BLE001 — fallback to solid
                 col = info.get("color", (1.0, 1.0, 1.0))
                 handle = builder.add_material(names[key], _color_to_rgba(col))
@@ -139,6 +139,11 @@ def _material_info(face, key):
     if tex is not None and tex.get("path"):
         src = Path(tex["path"])
         info = {"color": (1.0, 1.0, 1.0), "map": src.name, "src": src}
+        sw, sh = tex.get("sw"), tex.get("sh")
+        if sw:
+            info["sw_in"] = float(sw) * _M_TO_IN
+        if sh:
+            info["sh_in"] = float(sh) * _M_TO_IN
     else:
         info = {"color": tuple(face.attrs["color"]), "map": None}
     mat_name = face.attrs.get("mat")
@@ -203,21 +208,24 @@ def _face_uv_pairs(face, points=None):
     tex = face.attrs.get("texture")
     if not tex or not tex.get("path"):
         return None
+    if tex.get("planar"):
+        # SketchUp's default projection: the material's applied size is the
+        # whole mapping and the file carries no per-face record — its own
+        # files do exactly this for a texture applied without positioning
+        # (all three faces of the calibration model, and two thirds of the
+        # textured faces in Marco's pool). Pinning one here would fight the
+        # format AND rotate the result, since the writer expresses a UV
+        # matrix in the face's first-edge basis while the reader uses one
+        # derived from the normal.
+        return None
     ref = uv_reference_points(points if points is not None else face.vertices,
                               face.normal())
     if ref is None:
         return None
     gu, cu, gv, cv = face_uv_axes(tex, face.normal())
-    # Compensate for the tile size the file cannot carry (see
-    # _APPLIED_TILE_M): our UVs count repeats of the texture's REAL tile, and
-    # the reader will count repeats of a one-inch one. Scaling each axis
-    # separately also restores a non-square tile's aspect, which is what
-    # turned a 3.26 x 8.82 m grass into vertical stripes.
-    su = (tex.get("sw") or _APPLIED_TILE_M) / _APPLIED_TILE_M
-    sv = (tex.get("sh") or _APPLIED_TILE_M) / _APPLIED_TILE_M
     return [
-        (pt, ((QVector3D.dotProduct(gu, p) + cu) * su,
-              (QVector3D.dotProduct(gv, p) + cv) * sv))
+        (pt, (QVector3D.dotProduct(gu, p) + cu,
+              QVector3D.dotProduct(gv, p) + cv))
         for p, pt in zip(ref, _pts_inches(ref))
     ]
 

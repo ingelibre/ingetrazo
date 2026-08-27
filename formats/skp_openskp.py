@@ -552,7 +552,14 @@ def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
         if uvs is not None:
             uvw = fit_uv_affine(outer, uvs)
             if uvw is not None:
-                return {**entry, "texture": {**entry["texture"], "uvw": uvw}}
+                tex = {**entry["texture"], "uvw": uvw}
+                if uv_matrix is None:
+                    # SketchUp's DEFAULT projection: the file carries no
+                    # per-face record for it, the material's applied size IS
+                    # the mapping. Marked so the exporter writes it back the
+                    # same way instead of pinning an explicit one.
+                    tex["planar"] = True
+                return {**entry, "texture": tex}
         return entry
 
     front_src = attrs
