@@ -4,6 +4,16 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.6.1] — 2026-08-27
+
+### Fixed
+- **Saving `.skp` was broken in the 0.3.6 build.** The exporter passed the
+  writer two arguments only our OpenSKP fork has (a texture's applied size
+  and the opacity gate), so against the library the release is built with,
+  every scene with a painted face failed to save. The joins now ask the
+  installed writer what it accepts and pass only that; an older library
+  writes the file without them rather than not at all.
+
 ## [0.3.6] — 2026-08-27
 
 **The nested-placement release**: an imported component keeps the sharing
