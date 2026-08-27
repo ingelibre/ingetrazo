@@ -231,6 +231,9 @@ class PushPullTool(Tool):
         # read mid-drag anyway. Running it per mouse-move cost ~0.3 s a frame
         # on an imported barbecue.
         self._light_faces: list = []
+        # The sweep's rings, ``[(base_ring, moved_ring), …]`` (outer first,
+        # then holes) — the wireframe is drawn straight off them.
+        self._light_rings: list = []
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -379,6 +382,7 @@ class PushPullTool(Tool):
 
     def on_cancel(self, viewport) -> None:
         self._light_faces = []
+        self._light_rings = []
         self._revert_preview(viewport)
         viewport.set_hover(None)
         viewport.set_suppressed_faces(set())
@@ -386,11 +390,32 @@ class PushPullTool(Tool):
         viewport.update()
 
     # ---- Visual preview -----------------------------------------------------
-    # The drag shows the naive sweep as overlay faces (``preview_faces``); the
-    # commit replaces them with the real stitched geometry. Their outline comes
-    # from the faces themselves, so there is no separate rubber band.
+    # The drag shows the naive sweep as overlay faces (``preview_faces``) plus
+    # its own wireframe (``rubber_band_lines``); the commit replaces both with
+    # the real stitched geometry.
     def rubber_band_lines(self):
-        return []
+        """The sweep's edges: the base ring, the moved ring, and one riser per
+        corner — for the outer loop and every hole.
+
+        The overlay draws its faces FILLED and nothing else, so without this
+        the forming solid slid under the cursor as a flat silhouette with no
+        edges, and only snapped into a real box once the drag ended (Marco,
+        2026-08-27). The mesh-mutating preview it replaced got its edges for
+        free, from the mesh; the overlay has to say them out loud.
+
+        They cost a handful of points: the rings are the base face's own
+        loops, already built for the sweep. Drawn in ``wireframe_color`` and
+        depth-tested (class attributes above), so the box hides its own back
+        edges and reads like real geometry rather than a loose rubber band."""
+        segs = []
+        for low, high in self._light_rings:
+            n = len(low)
+            for i in range(n):
+                j = (i + 1) % n
+                segs.append((low[i], low[j]))
+                segs.append((high[i], high[j]))
+                segs.append((low[i], high[i]))
+        return segs
 
     def preview_faces(self):
         return self._light_faces
@@ -407,6 +432,7 @@ class PushPullTool(Tool):
         is exactly what you cannot see while the shape is still moving."""
         face = self.base_face
         d = self.extrusion
+        self._light_rings = []
         if face is None or self._normal is None or abs(d) < _MIN_EXTRUDE:
             return []
         n = self._normal
@@ -414,6 +440,7 @@ class PushPullTool(Tool):
         attrs = dict(face.attrs) if face.attrs else None
         rings = [(list(face.vertices), [p + off for p in face.vertices])]
         rings += [(list(h), [p + off for p in h]) for h in face.holes]
+        self._light_rings = rings      # the wireframe reads these back
         cap = Face(rings[0][1], [r[1] for r in rings[1:]], attrs=attrs)
         out = [cap]
         for low, high in rings:
@@ -732,6 +759,7 @@ class PushPullTool(Tool):
     def _commit(self, viewport) -> None:
         viewport.set_hover(None)  # the hovered face is about to be replaced
         self._light_faces = []
+        self._light_rings = []
         viewport.set_suppressed_faces(set())
         self._revert_preview(viewport)  # drop the live preview; redo it for real
         if self.base_face is None or abs(self.extrusion) < _MIN_EXTRUDE:
@@ -1278,3 +1306,4 @@ class PushPullTool(Tool):
         self._infer_cache = None       # per-drag projected-vertex candidates
         self._refused = False
         self._light_faces = []
+        self._light_rings = []

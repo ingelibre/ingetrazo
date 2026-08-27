@@ -711,3 +711,65 @@ def test_two_room_plan_raises_cleanly():
              QVector3D.dotProduct(e.faces[0].normal().normalized(),
                                   e.faces[1].normal().normalized()) > 0.999]
     assert seams == []
+
+
+# ---- Drag preview: the sweep draws its own edges -----------------------------
+
+def test_drag_preview_draws_the_sweep_wireframe():
+    # The drag overlay paints its faces FILLED and nothing else, so without a
+    # wireframe the forming solid slid under the cursor as a flat silhouette
+    # and only snapped into a box once the drag ended (Marco, 2026-08-27).
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, size=4.0, height=3.0)
+    top = _top(scene, 3.0)
+
+    vp = _StubViewport(scene)
+    tool = PushPullTool()
+    tool.base_face = top
+    tool._normal = top.normal()
+    tool.extrusion = 2.0
+    tool.dragging = True
+    tool._show_light_preview(vp)
+
+    segs = tool.rubber_band_lines()
+    assert segs, "the drag preview drew no edges at all"
+
+    def key(p):
+        return (round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
+
+    drawn = {frozenset((key(a), key(b))) for a, b in segs}
+    # A square cap swept 2 m: 4 base edges + 4 moved edges + 4 risers.
+    assert len(drawn) == 12
+    base_z = {round(v.z(), 6) for v in top.vertices}
+    zs = {z for seg in drawn for _x, _y, z in seg}
+    assert base_z == {3.0} and zs == {3.0, 5.0}   # both rings are there
+    # Every corner is joined to where it moved to.
+    risers = [s for s in drawn if len({z for _x, _y, z in s}) == 2]
+    assert len(risers) == 4
+
+    # Nothing left behind once the drag is over.
+    tool._commit(vp)
+    assert tool.rubber_band_lines() == []
+
+
+def test_drag_preview_wireframe_carries_holes():
+    # A ring push must outline the hole too, not just the outer boundary.
+    scene = Scene()
+    outer = [V(0, 0), V(6, 0), V(6, 6), V(0, 6)]
+    inner = [V(2, 2), V(4, 2), V(4, 4), V(2, 4)]
+    ring = scene.mesh.add_face(outer, [inner])
+    assert ring.holes
+
+    vp = _StubViewport(scene)
+    tool = PushPullTool()
+    tool.base_face = ring
+    tool._normal = ring.normal()
+    tool.extrusion = 1.0
+    tool.dragging = True
+    tool._show_light_preview(vp)
+
+    segs = tool.rubber_band_lines()
+    assert len(segs) == 24          # 12 for the outer loop, 12 for the hole
+    xs = {round(a.x(), 6) for a, _b in segs}
+    assert 2.0 in xs and 4.0 in xs  # the hole's own corners are drawn
