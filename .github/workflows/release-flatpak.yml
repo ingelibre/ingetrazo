@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Build the Flatpak bundle on a tag and attach it to the release.
+# (The AppImage + tarball are release.yml; the Windows installer is
+# build-windows.yml. All three fire on the same tag.)
+#
+# The bundle used to be built by hand on the maintainer's machine, so it rode
+# whichever release he remembered — v0.3.5 had one, v0.3.6.2 did not. This is
+# the same `packaging/flatpak/build-flatpak.sh --bundle` the manifest was
+# written for, run by the pipeline instead.
+name: release-flatpak
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:        # so the pipeline can be exercised without a tag
+
+permissions:
+  contents: write           # to upload the asset to the release
+
+jobs:
+  bundle:
+    name: Flatpak bundle (x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flatpak and the builder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
+          # The manifest's runtime, from Flathub. --user keeps everything in
+          # the runner's home, so no root is needed past the apt step.
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Install the runtime and SDK the manifest asks for
+        run: |
+          # Read them from the manifest instead of hard-coding: the version
+          # moves, and a workflow that pins its own would build against the
+          # wrong one without saying so.
+          RUNTIME=$(grep -m1 '^runtime:' packaging/flatpak/com.ingetrazo.IngeTrazo.yml | awk '{print $2}')
+          SDK=$(grep -m1 '^sdk:' packaging/flatpak/com.ingetrazo.IngeTrazo.yml | awk '{print $2}')
+          VER=$(grep -m1 '^runtime-version:' packaging/flatpak/com.ingetrazo.IngeTrazo.yml | tr -d "'\"" | awk '{print $2}')
+          echo "runtime=$RUNTIME//$VER  sdk=$SDK//$VER"
+          flatpak install --user --noninteractive flathub "$RUNTIME//$VER" "$SDK//$VER"
+
+      - name: Build the bundle
+        run: packaging/flatpak/build-flatpak.sh --bundle
+
+      - name: Name it after the version
+        id: name
+        run: |
+          # Anchor on the assignment: a bare quoted-string search picks up
+          # the module docstring instead.
+          VERSION=$(python3 -c "import re,pathlib; \
+            print(re.search(r'__version__\s*=\s*.([^\x27\"]+)', \
+            pathlib.Path('core/version.py').read_text()).group(1))")
+          mkdir -p dist
+          cp packaging/flatpak/.staging/IngeTrazo.flatpak \
+             "dist/IngeTrazo-${VERSION}-x86_64.flatpak"
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IngeTrazo-flatpak-x86_64
+          path: dist/IngeTrazo-*.flatpak
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The release usually exists already (created by hand with notes, or
+          # by one of the sibling workflows); create a bare one only if we got
+          # here first.
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
+            || gh release create "${GITHUB_REF_NAME}" --title "IngeTrazo ${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" dist/IngeTrazo-*.flatpak --clobber
