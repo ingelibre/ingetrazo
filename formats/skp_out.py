@@ -83,13 +83,16 @@ def _collect_materials(faces_by_key, builder):
                 # whose tile was already inch-sized came out right.
                 handle = builder.add_texture_material(
                     names[key], str(src),
-                    width=info.get("sw_in"), height=info.get("sh_in"))
+                    width=info.get("sw_in"), height=info.get("sh_in"),
+                    opacity=info.get("opacity"))
             except Exception:  # noqa: BLE001 — fallback to solid
                 col = info.get("color", (1.0, 1.0, 1.0))
                 handle = builder.add_material(names[key], _color_to_rgba(col))
             mat_handles[key] = handle
         else:
-            handle = builder.add_material(names[key], _color_to_rgba(info["color"]))
+            handle = builder.add_material(names[key],
+                                          _color_to_rgba(info["color"]),
+                                          opacity=info.get("opacity"))
             mat_handles[key] = handle
     return mat_handles
 
@@ -104,6 +107,14 @@ def _collect_layers(scene, builder):
         if name and name not in layer_handles:
             layer_handles[name] = builder.add_layer(name)
     return layer_handles
+
+
+def _opacity_key(face) -> tuple:
+    """Translucency is part of a material's identity: the same image painted
+    at two opacities is two SketchUp materials, and merging them would make
+    one of them wrong."""
+    op = face.attrs.get("opacity")
+    return () if op is None or float(op) >= 0.999 else (round(float(op), 3),)
 
 
 def _material_key(face):
@@ -125,11 +136,11 @@ def _material_key(face):
     tex = face.attrs.get("texture")
     if tex is not None and tex.get("path"):
         src = Path(tex["path"])
-        return ("tex", src.name) + ident
+        return ("tex", src.name) + ident + _opacity_key(face)
     col = face.attrs.get("color")
     if not col:
         return None
-    return ("color", tuple(col)) + ident
+    return ("color", tuple(col)) + ident + _opacity_key(face)
 
 
 def _material_info(face, key):
@@ -146,6 +157,12 @@ def _material_info(face, key):
             info["sh_in"] = float(sh) * _M_TO_IN
     else:
         info = {"color": tuple(face.attrs["color"]), "map": None}
+    op = face.attrs.get("opacity")
+    if op is not None and float(op) < 0.999:
+        # Translucency lives on the MATERIAL in SketchUp, so it has to reach
+        # the material record: a pool's water (0.6) exported as an opaque
+        # slab without it.
+        info["opacity"] = float(op)
     mat_name = face.attrs.get("mat")
     if mat_name:
         info["mat"] = mat_name
