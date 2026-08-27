@@ -23,7 +23,8 @@ def world_faces(scene):
     from a transformed copy. Same rule as ``formats.stl`` / ``formats.obj``."""
     if hasattr(scene, "render_faces"):
         groups = getattr(scene, "groups", [])
-        if not any(getattr(g, "xform", None) is not None for g in groups):
+        if not any(getattr(g, "xform", None) is not None
+                   or getattr(g, "children", None) for g in groups):
             yield from scene.render_faces()
             return
         from core.group import world_mesh

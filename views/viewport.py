@@ -1473,23 +1473,139 @@ class Viewport(QOpenGLWidget):
             w = wrappers[id(mesh)] = SimpleNamespace(mesh=mesh, xform=None)
         return self._group_chunk(w)
 
+    def _placements(self):
+        """``scene.groups`` with every nested placement expanded into a proxy
+        group carrying its composed world matrix.
+
+        Drawing and picking want one entry per PLACEMENT — each renders its
+        own prototype through its own matrix, which is the whole point of
+        keeping a component's internal sharing. The USER wants one entry per
+        top-level object. The proxies bridge that: they look exactly like
+        ordinary component instances, so no draw or pick path needs a special
+        case, and ``owner`` maps a hit back to the group in ``scene.groups``.
+
+        Proxies are cached per child object and mutated in place: a fresh
+        object per frame would miss ``_instance_chunk``'s cache (keyed on
+        ``id(group)``) and re-transform every instance's arrays every frame.
+        A scene with no nested placements returns ``scene.groups`` itself."""
+        groups = self.scene.groups
+        if not any(getattr(g, "children", None) for g in groups):
+            return groups                      # unchanged for flat scenes
+        cache = getattr(self, "_placement_proxies", None)
+        if cache is None:
+            cache = self._placement_proxies = {}
+        out: list = []
+        seen: set = set()
+        for g in groups:
+            self._expand_placements(g, out, seen)
+        # Proxies are pinned while a preview is running: the movers' ids are
+        # what the draw passes skip on, and dropping one mid-drag would make
+        # a fresh object (chunk cache miss) that the preview no longer knows.
+        if len(cache) > len(seen) and not getattr(self, "_preview_groups",
+                                                  None):
+            for k in [k for k in cache if k not in seen]:
+                cache.pop(k, None)
+        return out
+
+    def _expand_placements(self, group, out=None, seen=None):
+        """``group`` followed by its nested placements, as stable proxies.
+
+        Used both for the whole scene (``_placements``) and for ONE group's
+        subtree — a caller that used to treat a group as "its mesh" has to
+        take the subtree instead, or a component drags an empty ghost while
+        its children sit frozen at the old spot."""
+        if out is None:
+            out = []
+        cache = getattr(self, "_placement_proxies", None)
+        if cache is None:
+            cache = self._placement_proxies = {}
+        out.append(group)
+        kids = getattr(group, "children", None)
+        if not kids:
+            return out
+        vis, locked = self.scene._layer_state(group)
+        forced = group.layer if (not vis or locked) else None
+
+        def walk(node, world):
+            for child in node.children:
+                m = (child.xform if world is None
+                     else (world * child.xform if child.xform is not None
+                           else world))
+                proxy = cache.get(id(child))
+                if proxy is None:
+                    proxy = cache[id(child)] = Group(child.mesh,
+                                                     name=child.name)
+                if seen is not None:
+                    seen.add(id(child))
+                proxy.mesh = child.mesh
+                # A nested entity with no tag of its own inherits the
+                # parent's (SketchUp); and when the parent's tag is hidden or
+                # locked the whole instance goes with it, whatever its
+                # children are tagged.
+                proxy.layer = forced or child.layer or node.layer
+                proxy.billboard = child.billboard
+                proxy.owner = group
+                proxy.xform = m
+                out.append(proxy)
+                if child.children:
+                    walk(child, m)
+
+        walk(group, getattr(group, "xform", None))
+        return out
+
     def _gather_instanced(self):
         """Visible, eligible instances grouped by prototype mesh — computed
         once per frame (faces pass), reused by the edges pass. Instances are
-        frustum-culled by their baked chunk's world AABB."""
-        out: dict = {}
+        frustum-culled by their baked chunk's world AABB.
+
+        WHICH placements are eligible changes only with the scene; only the
+        frustum test is per frame. Keeping a component's internal sharing
+        multiplied the candidates (89 groups -> 411 placements on Marco's
+        pool) and re-deriving eligibility every frame cost 2.5 ms of pure
+        Python per zoom notch against 0.4 ms before — the wheel felt heavier.
+        The pool is cached per scene version and the cull is one NumPy pass
+        over every box at once."""
+        import numpy as np
         pv = getattr(self, "_preview_groups", None) or ()
         planes = getattr(self, "_frame_planes", None)
-        for g in self.scene.groups:
-            if id(g) in pv or not self.scene.entity_visible(g):
-                continue
-            if not self._instanced_eligible(g):
-                continue
-            ch = self._group_chunk(g)
-            bb = ch.get("bbox")
-            if (planes is not None and bb is not None
-                    and not self._aabb_visible(planes, bb[0], bb[1])):
-                continue
+        key = (self.scene.version, id(self.scene.mesh),
+               getattr(self, "_preview_epoch", 0),
+               getattr(self, "_frozen_cache_version", None))
+        pool = getattr(self, "_inst_pool", None)
+        if pool is None or pool[0] != key:
+            groups: list = []
+            boxes: list = []
+            for g in self._placements():
+                if id(g) in pv or not self.scene.entity_visible(g):
+                    continue
+                if not self._instanced_eligible(g):
+                    continue
+                groups.append(g)
+                boxes.append(self._group_chunk(g).get("bbox"))
+            # Boxless chunks (unknown extents) always draw: give them an
+            # infinite box so the vectorised test keeps them.
+            lo = np.array([b[0] if b else (-np.inf,) * 3 for b in boxes],
+                          dtype=np.float64).reshape(-1, 3)
+            hi = np.array([b[1] if b else (np.inf,) * 3 for b in boxes],
+                          dtype=np.float64).reshape(-1, 3)
+            pool = self._inst_pool = (key, groups, lo, hi)
+        _k, groups, lo, hi = pool
+        out: dict = {}
+        if not groups:
+            self._frame_instanced = out
+            return out
+        if planes is None:
+            keep = np.ones(len(groups), dtype=bool)
+        else:
+            # Same p-vertex test as ``_aabb_visible``, all boxes at once.
+            pl = np.asarray(planes, dtype=np.float64)
+            n = pl[:, :3]
+            pick = np.where(n[:, None, :] >= 0.0, hi[None, :, :],
+                            lo[None, :, :])
+            keep = ((pick * n[:, None, :]).sum(axis=2)
+                    + pl[:, 3][:, None] >= 0.0).all(axis=0)
+        for i in np.flatnonzero(keep):
+            g = groups[i]
             out.setdefault(id(g.mesh), (g.mesh, []))[1].append(g)
         self._frame_instanced = out
         return out
@@ -2236,12 +2352,21 @@ class Viewport(QOpenGLWidget):
         ``external=True`` previews OFF-scene template groups (Paste's
         clipboard): same scratch upload, but nothing leaves the consolidated
         VBOs and the caches stay live — no freeze, no resyncs."""
-        groups = list(groups)
+        # A component keeps placements inside itself, and THOSE hold the
+        # geometry: previewing only the top-level group uploaded an empty
+        # scratch copy while the children kept drawing, frozen, at the old
+        # spot — the hedge stood still through the whole drag and teleported
+        # on release (Marco: "cuando roto o muevo tiene laj bastante").
+        movers: list = []
+        for g in groups:
+            self._expand_placements(g, movers)
+        groups = movers
         self._preview_external = external
         if not external:
             self._frozen_cache_version = self.scene.version
             self._edges_version = -1      # one resync WITHOUT the movers
         self._preview_groups = set(map(id, groups))
+        self._preview_epoch = getattr(self, "_preview_epoch", 0) + 1
         self._preview_offset = QVector3D(0.0, 0.0, 0.0)
         if not self._preview_groups:
             return
@@ -2302,7 +2427,7 @@ class Viewport(QOpenGLWidget):
             # Off-scene templates never left the consolidated VBOs (nothing
             # to resync) and their scratch chunks are one-shot — drop them
             # so a big clipboard doesn't pin megabytes of arrays.
-            scene_ids = {id(g) for g in self.scene.groups}
+            scene_ids = {id(g) for g in self._placements()}
             for cache_name in ("_group_chunks", "_inst_chunks"):
                 cache = getattr(self, cache_name, None)
                 if cache:
@@ -2310,6 +2435,7 @@ class Viewport(QOpenGLWidget):
                         cache.pop(gid, None)
         self._preview_external = False
         self._preview_groups = set()
+        self._preview_epoch = getattr(self, "_preview_epoch", 0) + 1
         self._preview_offset = QVector3D(0.0, 0.0, 0.0)
         self._preview_matrix = None
         self._pv_edges_count = 0
@@ -2498,7 +2624,7 @@ class Viewport(QOpenGLWidget):
                     return id(ent) in (alive_e if isinstance(ent, Edge)
                                        else alive_f)
             else:
-                gmeshes = [g.mesh for g in self.scene.groups
+                gmeshes = [g.mesh for g in self._placements()
                            if self.scene.entity_visible(g)
                            and not getattr(g, "billboard", False)]
 
@@ -2551,10 +2677,11 @@ class Viewport(QOpenGLWidget):
         # contiguous head the fade pass can draw in one go (and, since
         # nothing outside the group can change while you are in it, a head
         # that stays put in the buffer).
-        draw_groups = [g for g in self.scene.groups
+        placements = self._placements()
+        draw_groups = [g for g in placements
                        if not self._draws_in_edit_context(g)]
         if not hide_rest:
-            draw_groups = [g for g in self.scene.groups
+            draw_groups = [g for g in placements
                            if self._draws_in_edit_context(g)] + draw_groups
         for g in draw_groups:
             if (self.scene.entity_visible(g) and id(g) not in pv
@@ -3000,7 +3127,7 @@ class Viewport(QOpenGLWidget):
         """Per-frame pass: each face-me billboard is a textured cutout quad
         turned toward the camera (SketchUp's 2D people). Depth-tested, so it
         hides behind walls correctly; the shader discards transparent texels."""
-        groups = [g for g in self.scene.groups
+        groups = [g for g in self._placements()
                   if getattr(g, "billboard", False)
                   and self.scene.entity_visible(g)]
         if not groups:
@@ -3295,7 +3422,7 @@ class Viewport(QOpenGLWidget):
         # on exactly the geometry meant to recede. Only the subject profiles.
         skip_context = (self.scene.edit_group is not None
                         and self._edit_rest_mode in ("fade", "hide"))
-        groups = [g for g in self.scene.groups
+        groups = [g for g in self._placements()
                   if self.scene.entity_visible(g)
                   and id(g) not in pv_sil
                   and not getattr(g, "billboard", False)
@@ -4844,12 +4971,32 @@ class Viewport(QOpenGLWidget):
                 return False
         return True
 
+    @staticmethod
+    def _shift_obb(entry, d) -> None:
+        """Carry the cached selection box along a pure translation.
+
+        The box is world-space geometry cached ON the chunk, and the shift
+        fast paths moved every array except this one — so moving a component
+        left its selection box behind, drawing a ghost rectangle where the
+        object used to be (Marco, on the hedge). ``lo``/``hi`` are the
+        extents along the box's own axes, so a translation moves them by the
+        projection of ``d`` on each axis; the frame itself never turns."""
+        obb = entry.get("obb")
+        if obb is None:
+            return
+        frame, lo, hi = obb
+        off = [a.x() * d.x() + a.y() * d.y() + a.z() * d.z() for a in frame]
+        entry["obb"] = (frame,
+                        tuple(c + o for c, o in zip(lo, off)),
+                        tuple(c + o for c, o in zip(hi, off)))
+
     def _shift_chunk(self, entry, d, mesh) -> None:
         """Translate every cached array of ``entry`` by ``d`` in place —
         NumPy adds instead of a rebuild — and refresh samples + fingerprint
         analytically."""
         import numpy as np
         dx = np.array([d.x(), d.y(), d.z()])
+        self._shift_obb(entry, d)
         bb = entry.get("bbox")
         if bb is not None:
             entry["bbox"] = (
@@ -5053,6 +5200,7 @@ class Viewport(QOpenGLWidget):
         """Translate a cached instance chunk in place (Move drag fast path)."""
         import numpy as np
         dx = np.array([d.x(), d.y(), d.z()])
+        self._shift_obb(entry, d)
         bb = entry.get("bbox")
         if bb is not None:
             entry["bbox"] = (
@@ -5619,7 +5767,7 @@ class Viewport(QOpenGLWidget):
             # per stroke/drag frame beside a big import.
             sig = []
             chunks = []
-            for g in scene.groups:
+            for g in self._placements():
                 if getattr(g, "billboard", False):
                     continue          # per-frame quad; picked separately
                 gvis = scene.entity_visible(g)
@@ -5647,7 +5795,8 @@ class Viewport(QOpenGLWidget):
                 for g, chunk, gvis, gsel in chunks:
                     n = len(chunk["faces"])
                     off = len(b_entities)
-                    b_entities.extend((f, g) for f in chunk["faces"])
+                    owner = self._owner_of(g)
+                    b_entities.extend((f, owner) for f in chunk["faces"])
                     b_area.append(chunk["areas"])
                     b_vis.append(np.full(n, gvis, dtype=bool))
                     b_sel.append(np.full(n, gsel, dtype=bool))
@@ -5666,7 +5815,7 @@ class Viewport(QOpenGLWidget):
                         b_geb.append(ge[:, 1])
                         b_ggi.append(np.full(len(ge), len(b_ggroups),
                                              dtype=np.int64))
-                        b_ggroups.append(g)
+                        b_ggroups.append(owner)
                 blk = (tuple(sig), {
                     "entities": b_entities,
                     "areas": (np.concatenate(b_area) if b_area
@@ -6073,7 +6222,7 @@ class Viewport(QOpenGLWidget):
         currently dragging is excluded (it would snap to itself)."""
         moving = getattr(self.active_tool, "_group", None)
         out: list = []
-        for g in self.scene.groups:
+        for g in self._placements():
             if not getattr(g, "billboard", False) or g is moving:
                 continue
             if not self.scene.entity_selectable(g):
@@ -6147,15 +6296,14 @@ class Viewport(QOpenGLWidget):
         obb = entry.get("obb")
         if obb is not None:
             return obb
-        import numpy as np
-        from core.group import frame_from_points, oriented_bounds
-        mesh = (group.mesh if getattr(group, "xform", None) is None
-                else world_mesh(group))
-        world = oriented_bounds(mesh)                     # world axes
-        pos = np.array([[v.position.x(), v.position.y(), v.position.z()]
-                        for v in mesh.vertices], dtype=np.float64) \
-            if mesh.vertices else None
-        own = oriented_bounds(mesh, frame_from_points(pos))
+        from core.group import (frame_from_points, oriented_bounds,
+                                placement_points)
+        # The corners come from the POINTS — never from a merged copy of the
+        # component (see ``placement_points``).
+        pos = placement_points(group)
+        world = oriented_bounds(None, points=pos)         # world axes
+        own = oriented_bounds(None, frame_from_points(pos if len(pos) else None),
+                              points=pos)
 
         def volume(b):
             _f, lo, hi = b
@@ -6384,7 +6532,7 @@ class Viewport(QOpenGLWidget):
                     i = int(np.argmin(face_t))
                     if np.isfinite(face_t[i]):
                         best = (float(face_t[i]), idx.entities[i][1])
-            for g in self.scene.groups:
+            for g in self._placements():
                 if not self.scene.entity_selectable(g):
                     continue                    # hidden or locked layer
                 if getattr(g, "billboard", False):
@@ -6394,7 +6542,7 @@ class Viewport(QOpenGLWidget):
                         for tri in ((c[0], c[1], c[2]), (c[0], c[2], c[3])):
                             t = _ray_triangle(origin, direction, *tri)
                             if t is not None and (best is None or t < best[0]):
-                                best = (t, g)
+                                best = (t, self._owner_of(g))
             if best is not None:
                 return best[1]
         # Edge fallback (cursor over empty space, or a lines-only group):
@@ -6424,7 +6572,7 @@ class Viewport(QOpenGLWidget):
         # Billboard outlines: clicking a figure exactly on its snapped feet
         # point lands ON the quad's boundary, which the ray-triangle test
         # rejects — the outline proximity test catches it.
-        for g in self.scene.groups:
+        for g in self._placements():
             if not getattr(g, "billboard", False):
                 continue
             if not self.scene.entity_selectable(g):
@@ -6442,7 +6590,7 @@ class Viewport(QOpenGLWidget):
                     (screen_x, screen_y), pa, pb)
                 if d2 < best_d:
                     best_d = d2
-                    best_g = g
+                    best_g = self._owner_of(g)
         return best_g
 
     # ---- Tool management ----------------------------------------------------
@@ -6468,9 +6616,19 @@ class Viewport(QOpenGLWidget):
 
     def _apply_tool_cursor(self) -> None:
         """The pointer becomes the active tool's icon (SketchUp); Select and
-        unknown tools keep the standard arrow."""
+        unknown tools keep the standard arrow.
+
+        A tool that does something else under a modifier says so with the
+        pointer: Paint holds Alt to SAMPLE a face's material instead of
+        painting it, and SketchUp swaps the bucket for an eyedropper while
+        it is down."""
+        from PySide6.QtWidgets import QApplication
         from views.icons import tool_cursor
-        cur = (tool_cursor(getattr(self.active_tool, "icon", None))
+        icon = getattr(self.active_tool, "icon", None)
+        if (icon == "paint"
+                and QApplication.keyboardModifiers() & Qt.AltModifier):
+            icon = "eyedropper"
+        cur = (tool_cursor(icon)
                if self.active_tool is not None else None)
         if cur is not None:
             self.setCursor(cur)
@@ -6597,7 +6755,9 @@ class Viewport(QOpenGLWidget):
         cache = getattr(self, "_group_chunks", None)
         if not wrappers:
             return
-        live = {id(g.mesh) for g in self.scene.groups}
+        from core.group import iter_placements
+        live = {id(pg.mesh) for g in self.scene.groups
+                for pg, _ in iter_placements(g)}
         for g in clip.get("groups", ()):
             mid = id(g.mesh)
             if mid in live:
@@ -6667,11 +6827,16 @@ class Viewport(QOpenGLWidget):
         return (self.scene.edit_group is not None
                 and self._edit_rest_mode == "hide")
 
+    def _owner_of(self, group):
+        """The object a click on ``group`` must select: a nested placement
+        proxy stands for the top-level group that owns it."""
+        return getattr(group, "owner", None) or group
+
     def _draws_in_edit_context(self, group) -> bool:
         """Whether ``group`` is part of the surroundings of the group being
         edited (so it fades or hides), rather than the subject itself."""
         return (self.scene.edit_group is not None
-                and group is not self.scene.edit_group)
+                and self._owner_of(group) is not self.scene.edit_group)
 
     def set_nav_mode(self, mode: Optional[str]) -> None:
         """Enter a SketchUp-style camera navigation mode ("orbit" / "pan").
@@ -7137,6 +7302,10 @@ class Viewport(QOpenGLWidget):
             self._capture_shift_lock()
             self._refresh_snap()
             # Do not return — Shift is a modifier; let the rest fall through.
+        # 0b. Alt turns Paint into the eyedropper: show it on the pointer the
+        #     moment the key goes down, not after the next mouse move.
+        if ev.key() == Qt.Key_Alt and not ev.isAutoRepeat():
+            self._apply_alt_cursor()
 
         # 1. Numeric value buffer (VCB-style length input).
         if self._handle_value_key(ev):
@@ -7303,7 +7472,16 @@ class Viewport(QOpenGLWidget):
         self.active_tool.on_hover(ctx)
         self.measurementChanged.emit(self._measurement_text())
 
+    def _apply_alt_cursor(self) -> None:
+        """Refresh the pointer for an Alt state change (Paint <-> eyedropper);
+        no-op while a camera nav mode owns the cursor."""
+        if self.nav_mode is None and getattr(
+                self.active_tool, "icon", None) == "paint":
+            self._apply_tool_cursor()
+
     def keyReleaseEvent(self, ev) -> None:
+        if ev.key() == Qt.Key_Alt and not ev.isAutoRepeat():
+            self._apply_alt_cursor()
         if ev.key() == Qt.Key_Shift and not ev.isAutoRepeat():
             self._shift_lock = None
             self._refresh_snap()

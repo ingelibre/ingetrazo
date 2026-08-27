@@ -105,7 +105,8 @@ def collect_geometry(scene):
     for g in scene.groups:
         if not scene.entity_visible(g) or getattr(g, "billboard", False):
             continue
-        mesh = world_mesh(g) if g.xform is not None else g.mesh
+        mesh = (world_mesh(g) if g.xform is not None or g.children
+                else g.mesh)
         eat_mesh(mesh)
     return tris, hard, soft
 

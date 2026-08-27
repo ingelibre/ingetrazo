@@ -70,18 +70,21 @@ def _collect_stats(scene) -> dict:
     # Instances share their prototype mesh; counting it once per instance is
     # deliberate — these are render/entity counts, the way SketchUp reports
     # them, not a dedup of prototypes.
-    group_verts = sum(len(g.mesh.vertices) for g in groups)
-    group_edges = sum(len(g.mesh.edges) for g in groups)
-    group_faces = sum(len(g.mesh.faces) for g in groups)
+    from core.group import iter_placements
+    placed = [(pg, m) for g in groups for pg, m in iter_placements(g)]
 
-    all_faces = list(loose.faces) + [f for g in groups for f in g.mesh.faces]
+    group_verts = sum(len(g.mesh.vertices) for g, _m in placed)
+    group_edges = sum(len(g.mesh.edges) for g, _m in placed)
+    group_faces = sum(len(g.mesh.faces) for g, _m in placed)
+
+    all_faces = list(loose.faces) + [f for g, _m in placed for f in g.mesh.faces]
     tri_count = sum(len(f.loop) - 2 for f in all_faces if len(f.loop) >= 3)
 
     # --- Bounding box (world space: instance prototypes through their xform)
     positions = [v.position for v in loose.vertices]
-    for g in groups:
-        if g.xform is not None:
-            positions.extend(g.xform.map(v.position) for v in g.mesh.vertices)
+    for g, m in placed:
+        if m is not None:
+            positions.extend(m.map(v.position) for v in g.mesh.vertices)
         else:
             positions.extend(v.position for v in g.mesh.vertices)
     if positions:

@@ -137,7 +137,14 @@ def collect_objects(scene) -> list[dict]:
         tag = getattr(g, "ifc", None)
         if not tag:
             continue
-        faces = list(g.mesh.faces)
+        # Quantities are world-space, and a component's nested placements
+        # are part of the object being measured.
+        if getattr(g, "xform", None) is not None or getattr(g, "children",
+                                                            None):
+            from core.group import world_mesh
+            faces = list(world_mesh(g).faces)
+        else:
+            faces = list(g.mesh.faces)
         out.append({
             "key": ("group", id(g)),
             "class": tag.get("class", ""),

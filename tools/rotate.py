@@ -276,13 +276,17 @@ class RotateTool(ProtractorBase):
         the copy preview swings (group wireframe, or the loose selection)."""
         viewport = ctx.viewport
         self._sel_faces, self._sel_edges, self._base_segments = [], [], []
+        from core.group import iter_placements
         for group in self._groups:
-            xf = getattr(group, "xform", None)
-            for e in group.mesh.edges:
-                a, b = QVector3D(e.a), QVector3D(e.b)
-                if xf is not None:
-                    a, b = xf.map(a), xf.map(b)
-                self._base_segments.append((a, b))
+            # A component's geometry lives in the placements it holds, so the
+            # ghost has to swing the whole subtree — the top-level mesh of an
+            # imported component is often empty.
+            for pg, xf in iter_placements(group):
+                for e in pg.mesh.edges:
+                    a, b = QVector3D(e.a), QVector3D(e.b)
+                    if xf is not None:
+                        a, b = xf.map(a), xf.map(b)
+                    self._base_segments.append((a, b))
         sel = list(viewport.scene.selection)
         if not sel and not self._groups:
             # Nothing selected and no group hover-picked: the click grabbed

@@ -123,15 +123,28 @@ def _box_group_fast(viewport, group, rect, crossing):
             or getattr(viewport, "_project_px", None) is None):
         return None
     import numpy as np
+    # A component's geometry lives in the placements it holds, each with its
+    # own chunk: reading only the top-level one found an EMPTY array for an
+    # imported component and dropped the whole test to the per-vertex Python
+    # walk — 1.15M vertices for the hedge.
+    expand = getattr(viewport, "_expand_placements", None)
+    places = expand(group) if expand is not None else [group]
+    corners, edge_parts = [], []
     try:
-        ch = viewport._group_chunk(group)
-        pairs = np.frombuffer(ch["edges"], np.float32).reshape(-1, 3)
-        v0, e1, e2 = ch["v0"], ch["e1"], ch["e2"]
+        for pg in places:
+            ch = viewport._group_chunk(pg)
+            v0, e1, e2 = ch["v0"], ch["e1"], ch["e2"]
+            if v0 is not None:
+                corners.extend((v0, v0 + e1, v0 + e2))
+            pair = np.frombuffer(ch["edges"], np.float32).reshape(-1, 3)
+            if len(pair):
+                edge_parts.append(pair.astype(np.float64))
     except Exception:  # noqa: BLE001
         return None
-    corners = [] if v0 is None else [v0, v0 + e1, v0 + e2]
+    pairs = (np.concatenate(edge_parts, axis=0) if edge_parts
+             else np.empty((0, 3)))
     if len(pairs):
-        corners.append(pairs.astype(np.float64))
+        corners.append(pairs)
     if not corners:
         return None
     pts = np.concatenate(corners, axis=0)
@@ -401,36 +414,50 @@ class SelectTool(Tool):
                     if verdict:
                         picked.append(group)
                     continue
-                xf = getattr(group, "xform", None)
-
-                def gw2p(p):
-                    return w2p(xf.map(p) if xf is not None else p)
-
-                verts = group.mesh.vertices
-                if not verts:
+                # A component's geometry lives in the placements it holds,
+                # so the box has to test the whole subtree — the top-level
+                # mesh of an imported component is often empty, and reading
+                # only that made it unselectable by rubber band.
+                from core.group import iter_placements
+                places = [(pg, xf) for pg, xf in iter_placements(group)
+                          if pg.mesh.vertices]
+                if not places:
                     continue
+
+                def gw2p(point, xf):
+                    return w2p(xf.map(point) if xf is not None else point)
+
                 if crossing:
                     hit = False
-                    for v in verts:
-                        p = gw2p(v.position)
-                        if p is not None and _pt_in_rect(p, rect):
-                            hit = True
+                    for pg, xf in places:
+                        for v in pg.mesh.vertices:
+                            p = gw2p(v.position, xf)
+                            if p is not None and _pt_in_rect(p, rect):
+                                hit = True
+                                break
+                        if hit:
                             break
                     if not hit:
-                        for e in group.mesh.edges:
-                            pa, pb = gw2p(e.a), gw2p(e.b)
-                            if (pa is not None and pb is not None
-                                    and _seg_rect_overlap(pa, pb, rect)):
-                                hit = True
+                        for pg, xf in places:
+                            for e in pg.mesh.edges:
+                                pa, pb = gw2p(e.a, xf), gw2p(e.b, xf)
+                                if (pa is not None and pb is not None
+                                        and _seg_rect_overlap(pa, pb, rect)):
+                                    hit = True
+                                    break
+                            if hit:
                                 break
                     if hit:
                         picked.append(group)
                 else:
                     inside = True
-                    for v in verts:
-                        p = gw2p(v.position)
-                        if p is None or not _pt_in_rect(p, rect):
-                            inside = False
+                    for pg, xf in places:
+                        for v in pg.mesh.vertices:
+                            p = gw2p(v.position, xf)
+                            if p is None or not _pt_in_rect(p, rect):
+                                inside = False
+                                break
+                        if not inside:
                             break
                     if inside:
                         picked.append(group)

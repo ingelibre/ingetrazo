@@ -224,21 +224,23 @@ def save_scene(scene, path: Path) -> dict:
     payload = _mesh_json(mesh)
     groups = getattr(scene, "groups", None)
     if groups:
-        payload["groups"] = []
-        # Component prototypes: each shared instance mesh is written ONCE.
+        # Component prototypes: each shared instance mesh is written ONCE —
+        # including the ones only NESTED placements reference, which is what
+        # keeps a component's internal repetition (the hedge: 9600 faces
+        # placed 48 times) from being written out 48 times over.
         proto_index: dict = {}
         protos: list = []
-        for g in groups:
-            if getattr(g, "xform", None) is not None \
-                    and id(g.mesh) not in proto_index:
-                proto_index[id(g.mesh)] = len(protos)
-                protos.append(_mesh_json(g.mesh))
-        if protos:
-            payload["protos"] = protos
-        for g in groups:
-            if getattr(g, "xform", None) is not None:
-                entry = {"proto": proto_index[id(g.mesh)],
-                         "xform": [float(x) for x in g.xform.data()]}
+
+        def _entry(g):
+            xf = getattr(g, "xform", None)
+            if xf is not None:
+                idx = proto_index.get(id(g.mesh))
+                if idx is None:
+                    idx = proto_index[id(g.mesh)] = len(protos)
+                    protos.append(None)          # reserve: recursion is depth
+                    protos[idx] = _mesh_json(g.mesh)
+                entry = {"proto": idx,
+                         "xform": [float(x) for x in xf.data()]}
             else:
                 entry = _mesh_json(g.mesh)
             if getattr(g, "layer", None) is not None:
@@ -249,7 +251,14 @@ def save_scene(scene, path: Path) -> dict:
                 # True = legacy textured-quad face-me; "mesh" = imported
                 # silhouette whose real geometry turns toward the camera.
                 entry["billboard"] = g.billboard
-            payload["groups"].append(entry)
+            kids = getattr(g, "children", None)
+            if kids:
+                entry["children"] = [_entry(c) for c in kids]
+            return entry
+
+        payload["groups"] = [_entry(g) for g in groups]
+        if protos:
+            payload["protos"] = protos
     layers = getattr(scene, "layers", None)
     if layers is not None and (len(layers) > 1 or any(
             not ly.visible or ly.locked for ly in layers)):
@@ -481,7 +490,7 @@ def _load_into_inner(scene, path: Path) -> None:
         m = Mesh()
         _load_mesh(m, raw)
         proto_meshes.append(m)
-    for raw in payload.get("groups", []):
+    def _group_from(raw, depth=0):
         if raw.get("xform") is not None and "proto" in raw:
             from PySide6.QtGui import QMatrix4x4
             group = Group(proto_meshes[int(raw["proto"])])
@@ -498,7 +507,13 @@ def _load_into_inner(scene, path: Path) -> None:
             group.ifc = dict(raw["ifc"])
         if raw.get("billboard"):
             group.billboard = raw["billboard"]   # True | "mesh"
-        scene.groups.append(group)
+        if depth < 32:              # a corrupt document must not spin
+            group.adopt(_group_from(c, depth + 1)
+                        for c in raw.get("children", []) or [])
+        return group
+
+    for raw in payload.get("groups", []):
+        scene.groups.append(_group_from(raw))
 
     for raw in payload.get("dimensions", []):
         scene.dimensions.append(Dimension(

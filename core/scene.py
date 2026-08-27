@@ -158,7 +158,11 @@ class Scene:
         its prototype mesh is shared with siblings and holds local coords."""
         if self.edit_group is not None:
             self.end_group_edit()
-        if getattr(group, "xform", None) is not None:
+        if (getattr(group, "xform", None) is not None
+                or getattr(group, "children", None)):
+            # Nested placements bake in too: inside the group you edit real
+            # geometry, so its internal sharing has to become real faces
+            # first (SketchUp does the same when you edit into a component).
             group.materialize()
         self._loose_mesh = self.mesh
         self.mesh = group.mesh
@@ -182,21 +186,38 @@ class Scene:
         return self._loose_mesh if self.edit_group is not None else self.mesh
 
     # ---- Render views (loose + every group) ---------------------------------
+    def placements(self):
+        """Every visible placement in the scene: each group and, below it,
+        the nested ones a component keeps inside itself, as
+        ``(group, world_matrix_or_None)``.
+
+        Face-me billboards are left out (they are drawn per frame, not from
+        their mesh). Consumers that used to walk ``self.groups`` and read
+        ``g.mesh`` want this — otherwise the geometry a component places
+        inside itself is simply invisible to them."""
+        from core.group import iter_placements
+        for g in self.groups:
+            if not self.entity_visible(g) or getattr(g, "billboard", False):
+                continue
+            for pg, m in iter_placements(g):
+                if pg is not g and (getattr(pg, "billboard", False)
+                                    or not self.entity_visible(pg)):
+                    continue
+                yield pg, m
+
     def render_edges(self):
         for e in self.loose_mesh.edges:
             if self.entity_visible(e):
                 yield e
-        for g in self.groups:
-            if self.entity_visible(g) and not getattr(g, "billboard", False):
-                yield from g.mesh.edges
+        for g, _m in self.placements():
+            yield from g.mesh.edges
 
     def render_faces(self):
         for f in self.loose_mesh.faces:
             if self.entity_visible(f):
                 yield f
-        for g in self.groups:
-            if self.entity_visible(g) and not getattr(g, "billboard", False):
-                yield from g.mesh.faces
+        for g, _m in self.placements():
+            yield from g.mesh.faces
 
     # ---- Mutations ----------------------------------------------------------
     def add_edge(self, a: QVector3D, b: QVector3D) -> Edge:
@@ -265,10 +286,7 @@ class Scene:
         for f in self.loose_mesh.faces:
             if self.entity_visible(f):
                 yield f, None
-        for g in self.groups:
-            if not self.entity_visible(g) or getattr(g, "billboard", False):
-                continue
-            m = getattr(g, "xform", None)
+        for g, m in self.placements():
             for f in g.mesh.faces:
                 yield f, m
 
@@ -319,15 +337,12 @@ class Scene:
             if self.entity_visible(face):
                 for v in face.vertices:
                     absorb(v)
-        for g in self.groups:
-            if not self.entity_visible(g):
-                continue
+        for g, m in self.placements():
             verts = g.mesh.vertices
             if not verts:
                 continue
             arr = np.array([[v.position.x(), v.position.y(), v.position.z()]
                             for v in verts])
-            m = getattr(g, "xform", None)
             if m is not None:
                 d = m.data()          # column-major
                 rot = np.array([[d[0], d[4], d[8]],

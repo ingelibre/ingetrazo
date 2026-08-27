@@ -171,12 +171,21 @@ def _material_info(face, key):
 
 def _split_containers(scene):
     """The scene's exportable geometry, structured: ``(loose_faces,
-    classic_groups, families)``.
+    classic_groups, definitions, root_placements)``.
 
-    ``families`` maps a shared prototype mesh's ``id()`` to the list of
-    component instances (groups with an ``xform``) placing it; classic
-    groups (no ``xform``) keep their mesh in world coordinates. Mirrors
-    ``meshexport.world_faces``'s rules: hidden entities and face-me
+    ``defs`` is the component definitions to write, CHILDREN BEFORE PARENTS
+    (a .skp definition may only reference ones already closed): each
+    ``{"name", "mesh", "children"}`` where ``children`` is
+    ``(definition index, placing group)`` pairs. ``roots`` places the
+    top-level ones. Classic groups (no ``xform``) keep their mesh in world
+    coordinates and may place definitions too.
+
+    Definitions are keyed by prototype mesh AND nested structure, so the
+    hedge's 9600 faces are written ONCE and placed 48 times instead of
+    landing in the file 48 times over — which is the difference between the
+    14 MB SketchUp writes for that model and the 80 MB we used to.
+
+    Mirrors ``meshexport.world_faces``'s rules: hidden entities and face-me
     billboards are skipped, and loose faces come from ``scene.loose_mesh``
     so a group being edited is not double-counted (its mesh is already in
     ``scene.groups``)."""
@@ -185,26 +194,56 @@ def _split_containers(scene):
     faces = mesh.faces if mesh is not None else getattr(scene, "faces", [])
     loose_faces = [f for f in faces if visible(f)]
 
-    classic, families = [], {}
+    defs: list = []
+    index_of: dict = {}
+
+    def _kids(g):
+        return [c for c in (getattr(g, "children", None) or ())
+                if visible(c) and not getattr(c, "billboard", False)
+                and (c.mesh.faces or getattr(c, "children", None))]
+
+    def _key(g):
+        return (id(g.mesh),
+                tuple((_key(c),
+                       tuple(c.xform.data()) if c.xform is not None else None,
+                       getattr(c, "layer", None)) for c in _kids(g)))
+
+    def _register(g):
+        """Definition index of ``g``'s content, registering its nested
+        definitions FIRST — post-order, which is exactly the order the
+        format needs them written in."""
+        key = _key(g)
+        idx = index_of.get(key)
+        if idx is not None:
+            return idx
+        children = [(_register(c), c) for c in _kids(g)]
+        idx = index_of[key] = len(defs)
+        defs.append({"name": g.name, "mesh": g.mesh, "children": children})
+        return idx
+
+    classic, roots = [], []
     for g in getattr(scene, "groups", []):
-        if not visible(g) or getattr(g, "billboard", False) or not g.mesh.faces:
+        if not visible(g) or getattr(g, "billboard", False):
+            continue
+        kids = _kids(g)
+        if not g.mesh.faces and not kids:
             continue
         if getattr(g, "xform", None) is None:
-            classic.append(g)
+            classic.append((g, [(_register(c), c) for c in kids]))
         else:
-            families.setdefault(id(g.mesh), []).append(g)
-    return loose_faces, classic, families
+            roots.append((_register(g), g))
+    return loose_faces, classic, defs, roots
 
 
-def _iter_export_faces(loose_faces, classic, families):
+def _iter_export_faces(loose_faces, classic, defs):
     """Every face the geometry pass will emit, prototype meshes ONCE — the
     material pass must cover exactly this set, no more (a prototype's attrs
     are shared by its instances, so visiting it per-instance is redundant)."""
     yield from loose_faces
-    for g in classic:
+    for g, _ in classic:
         yield from g.mesh.faces
-    for members in families.values():
-        yield from members[0].mesh.faces
+    for d in defs:
+        yield from d["mesh"].faces
 
 
 def _face_uv_pairs(face, points=None):
@@ -253,10 +292,18 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError):
     ``add_face``.
 
     OpenSKP's ``add_face`` requires strict coplanarity (tolerance ~1e-6 ×
-    span) and transformed geometry can carry tiny floating-point drift, so a
-    rejected polygon falls back to triangulation — ``face.triangulate()`` is
-    hole-aware, and triangles are coplanar by definition. Most faces export
-    as clean polygons; only drifted ones get triangulated."""
+    the face's SPAN) and our vertices are float32, so a small face far from
+    the origin inherits the rounding of a big number and is refused: 15516 of
+    the 75486 faces of Marco's pool, each then written as a fan of triangles
+    (+18k face records, and the edges that come with them). Snapping each
+    face onto its own best-fit plane fixes the test and costs more: it moves
+    corners PER FACE, so neighbours stop sharing vertices and every shared
+    edge gets written twice (measured: 169878 edges -> 222473, file 28.7 ->
+    30.8 MB). The tolerance wants to scale with coordinate magnitude rather
+    than face span — an OpenSKP matter. Until then a rejected polygon falls
+    back to triangulation: ``face.triangulate()`` is hole-aware, triangles
+    are coplanar by definition, and the original corners are kept, so the
+    welding survives."""
     material = mat_handles.get(_material_key(face))
     face_layer = face.attrs.get("layer")
     layer = layer_handles.get(face_layer) if face_layer else None
@@ -309,11 +356,11 @@ def save_skp(scene, path) -> None:
         raise RuntimeError("OpenSKP is required for SKP export") from exc
 
     builder = openskp.create()
-    loose_faces, classic, families = _split_containers(scene)
+    loose_faces, classic, defs, roots = _split_containers(scene)
 
     # ---- Pass 1: collect material and layer info from all faces ----------
     materials_info: dict[tuple, dict] = {}
-    for face in _iter_export_faces(loose_faces, classic, families):
+    for face in _iter_export_faces(loose_faces, classic, defs):
         key = _material_key(face)
         if key is None:  # unpainted — SketchUp's default material
             continue
@@ -333,32 +380,49 @@ def save_skp(scene, path) -> None:
     # root-level face or instance — OpenSKP splices definitions in after
     # materials and layers, so their slot numbering locks once root
     # geometry starts.
-    for g in classic:
+    def _place_children(container, children):
+        """Write a container's nested placements — the component's own
+        internal sharing, kept instead of flattened."""
+        for ci, c in children:
+            translation, matrix3x3 = _instance_placement(c.xform)
+            container.add_instance(
+                handles[ci],
+                name=c.name,
+                translation=translation,
+                matrix3x3=matrix3x3,
+                layer=layer_handles.get(getattr(c, "layer", None)),
+            )
+
+    # Definitions come first and in registration order — post-order, so a
+    # definition is always closed before the one that places it is opened,
+    # which is the only order this format accepts.
+    handles: list = []
+    for d in defs:
+        with builder.add_component_definition(d["name"]) as defn:
+            for face in d["mesh"].faces:
+                _emit_face(defn, face, mat_handles, layer_handles, SkpWriteError)
+            _place_children(defn, d["children"])
+        handles.append(defn)
+
+    for g, kids in classic:
         with builder.add_group(
                 g.name, layer=layer_handles.get(getattr(g, "layer", None))) as grp:
             for face in g.mesh.faces:
                 _emit_face(grp, face, mat_handles, layer_handles, SkpWriteError)
-
-    placed = []  # (definition, members) — instances go in after root faces
-    for members in families.values():
-        with builder.add_component_definition(members[0].name) as defn:
-            for face in members[0].mesh.faces:
-                _emit_face(defn, face, mat_handles, layer_handles, SkpWriteError)
-        placed.append((defn, members))
+            _place_children(grp, kids)
 
     for face in loose_faces:
         _emit_face(builder, face, mat_handles, layer_handles, SkpWriteError)
 
-    for defn, members in placed:
-        for g in members:
-            translation, matrix3x3 = _instance_placement(g.xform)
-            builder.add_instance(
-                defn,
-                name=g.name,
-                translation=translation,
-                matrix3x3=matrix3x3,
-                layer=layer_handles.get(getattr(g, "layer", None)),
-            )
+    for di, g in roots:
+        translation, matrix3x3 = _instance_placement(g.xform)
+        builder.add_instance(
+            handles[di],
+            name=g.name,
+            translation=translation,
+            matrix3x3=matrix3x3,
+            layer=layer_handles.get(getattr(g, "layer", None)),
+        )
 
     _emit_annotations(scene, builder)
 

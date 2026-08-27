@@ -376,17 +376,32 @@ def _apply_payload_inner(scene, payload) -> str:
                 g.billboard = "mesh"
             scene.groups.append(g)
     # Shared components: ONE prototype mesh (local coordinates), one Group per
-    # placement with only a local->world matrix (Components v1 instances).
-    for pr in payload.get("protos", []):
-        mesh = _build_mesh(pr["faces"], pr.get("soft_edges"))
-        if not mesh.faces:
+    # placement with only a local->world matrix (Components v1 instances). A
+    # prototype may PLACE other prototypes — the sharing a component already
+    # has inside itself — and those become the instance's ``children``, one
+    # object to the user however deep the tree.
+    protos = payload.get("protos", []) or []
+    proto_meshes = [_build_mesh(pr["faces"], pr.get("soft_edges"))
+                    for pr in protos]
+
+    def _place(idx, xf, layer=None, depth=0):
+        pr = protos[idx]
+        g = Group(proto_meshes[idx], name=pr.get("name"))
+        g.xform = xf
+        if layer:
+            g.layer = layer
+        if depth < 32:      # a malformed file must not spin
+            g.adopt(_place(kid["proto"], kid["xform"], kid.get("layer"),
+                           depth + 1)
+                    for kid in pr.get("children", []) or [])
+        return g
+
+    for idx, pr in enumerate(protos):
+        if not proto_meshes[idx].faces and not (pr.get("children") or []):
             continue
         layers = pr.get("instance_layers") or []
-        for i, xf in enumerate(pr.get("instances", [])):
-            g = Group(mesh, name=pr.get("name"))
-            g.xform = xf
-            if i < len(layers) and layers[i]:
-                g.layer = layers[i]
+        for i, xf in enumerate(pr.get("instances", []) or []):
+            g = _place(idx, xf, layers[i] if i < len(layers) else None)
             scene.groups.append(g)
     back = payload.get("back_color")
     if back and getattr(scene, "back_face_color", None) is None:

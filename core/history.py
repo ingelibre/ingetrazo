@@ -1753,104 +1753,8 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
     # (so it is in the seed box, and the edge's box must reach it) or the
     # edge is the op's (so its box is inside the seed box). Either way the
     # edge's box meets the seed box.
-    import numpy as np
-    from core.mesh import _STITCH_TOL
-    tol2 = _STITCH_TOL * _STITCH_TOL
-    # Cap on candidate pairs materialised at once, so a model-spanning edge
-    # whose slab holds every vertex can't blow memory: edges run in chunks.
-    pair_cap = 1 << 21
-    # ``seedkeys`` are ``core.topology._key`` tuples — the seed positions
-    # rounded to the weld tolerance, so they ARE coordinates and bound the
-    # operation directly. (Not ``core.mesh._key``, whose integer cell indices
-    # would read as positions 10⁴× too small and shrink the scope to nothing.)
-    seed_lo = seed_hi = None
-    if seedkeys:
-        skeys = np.array(sorted(seedkeys), dtype=np.float64)
-        seed_lo = skeys.min(axis=0) - _STITCH_TOL
-        seed_hi = skeys.max(axis=0) + _STITCH_TOL
-    while True:
-        verts = mesh.vertices
-        edges = list(mesh.edges)
-        if not verts or not edges:
-            break
-        vpos = np.array([[v.position.x(), v.position.y(), v.position.z()]
-                         for v in verts])
-        vslot = {id(v): i for i, v in enumerate(verts)}
-        ends = np.array([(vslot[id(e.v0)], vslot[id(e.v1)]) for e in edges],
-                        dtype=np.int64)
-        va, vb = vpos[ends[:, 0]], vpos[ends[:, 1]]
-        elo, ehi = np.minimum(va, vb), np.maximum(va, vb)
-        if seed_lo is None:
-            live = np.ones(len(edges), dtype=bool)
-        else:
-            live = ((ehi >= seed_lo).all(axis=1)
-                    & (elo <= seed_hi).all(axis=1))
-        # Degenerate edges never split.
-        seg_all = vb - va
-        live &= np.einsum("ij,ij->i", seg_all, seg_all) > tol2
-        pick = np.flatnonzero(live)
-        if not len(pick):
-            break
-        # Broad phase over the scoped edges: a splitting vertex sits in the
-        # edge's box, so only that slice of the x-sorted vertices is tested.
-        order = np.argsort(vpos[:, 0], kind="stable")
-        xs = vpos[order, 0]
-        lo = np.searchsorted(xs, elo[pick, 0] - _STITCH_TOL, side="left")
-        counts = np.searchsorted(xs, ehi[pick, 0] + _STITCH_TOL,
-                                 side="right") - lo
-        counts = np.maximum(counts, 0)
-        # Lowest-indexed interior vertex per edge — the scalar sweep walked
-        # ``mesh.vertices`` in order, and which vertex splits first must not
-        # depend on the x-sort. ``len(verts)`` is the "none" sentinel so
-        # ``np.minimum.at`` can reduce into it.
-        best = np.full(len(edges), len(verts), dtype=np.int64)
-        cum = np.cumsum(counts)
-        p0 = 0
-        while p0 < len(pick):
-            base = int(cum[p0] - counts[p0])
-            p1 = max(int(np.searchsorted(cum, base + pair_cap, side="right")),
-                     p0 + 1)
-            block = slice(p0, p1)
-            c = counts[block]
-            total = int(c.sum())
-            p0 = p1
-            if not total:
-                continue
-            eidx = np.repeat(pick[block], c)
-            rank = np.arange(total) - np.repeat(np.cumsum(c) - c, c)
-            vidx = order[np.repeat(lo[block], c) + rank]
-            keep = (vidx != ends[eidx, 0]) & (vidx != ends[eidx, 1])
-            # Narrow the x-slab down the other two axes before projecting.
-            # One axis at a time on 1-D gathers is far cheaper than pulling
-            # the (N, 3) vertex/edge rows the projection needs, and on a dense
-            # model it is what keeps the slab's false positives off that step.
-            for ax in (1, 2):
-                if not keep.any():
-                    break
-                on = eidx[keep]
-                coord = vpos[vidx[keep], ax]
-                keep[keep] = ((coord >= elo[on, ax] - _STITCH_TOL)
-                              & (coord <= ehi[on, ax] + _STITCH_TOL))
-            if not keep.any():
-                continue
-            eidx, vidx = eidx[keep], vidx[keep]
-            seg = seg_all[eidx]
-            rel = vpos[vidx] - va[eidx]
-            l2 = np.einsum("ij,ij->i", seg, seg)
-            t = np.einsum("ij,ij->i", rel, seg) / l2
-            tol_t = _STITCH_TOL / np.sqrt(l2)
-            ok = (t > tol_t) & (t < 1.0 - tol_t)
-            d = rel - seg * t[:, None]
-            ok &= np.einsum("ij,ij->i", d, d) < tol2
-            if ok.any():
-                np.minimum.at(best, eidx[ok], vidx[ok])
-        hits = np.flatnonzero(best < len(verts))
-        if not len(hits):
-            break
-        for i in hits:
-            # Only the split edge is removed and only existing vertices are
-            # reused, so the sweep's arrays stay valid across these splits.
-            mesh.split_edge_at(edges[int(i)], verts[int(best[int(i)])])
+    from core.topology import sweep_tjunctions
+    sweep_tjunctions(mesh, seedkeys)
     # Phase 2 — collapse redundant valence-2 collinear vertices (global).
     while True:
         collapsed = False
@@ -2259,16 +2163,19 @@ class MakeUniqueCommand(Command):
         self.group = group
         self._proto = None
         self._xform = None
+        self._children = None
 
     def do(self, scene) -> None:
         self._proto = self.group.mesh
         self._xform = self.group.xform
+        self._children = self.group.children
         self.group.materialize()
         scene.version += 1
 
     def undo(self, scene) -> None:
         self.group.mesh = self._proto
         self.group.xform = self._xform
+        self.group.children = self._children or []
         scene.version += 1
 
 
@@ -2413,26 +2320,38 @@ class ExplodeGroupCommand(Command):
         m = scene.mesh
         self.snapshot = m.capture_state()
         self.index = scene.groups.index(self.group)
-        xf = getattr(self.group, "xform", None)
+        from core.group import iter_placements
+        # Every placement the group holds, each through its own composed
+        # matrix — exploding only the top-level mesh would drop a component's
+        # nested geometry on the floor.
+        places = list(iter_placements(self.group))
 
-        def W(p):
-            # Instance prototypes hold LOCAL coords — explode in world.
-            return xf.map(p) if xf is not None else QVector3D(p)
+        def _W(xf):
+            def W(p):
+                # Instance prototypes hold LOCAL coords — explode in world.
+                return xf.map(p) if xf is not None else QVector3D(p)
+            return W
 
-        for f in self.group.mesh.faces:
-            nf = m.add_face([W(v) for v in f.vertices],
-                            [[W(v) for v in h] for h in f.holes] or None)
-            if f.attrs:
-                nf.attrs.update(dict(f.attrs))   # colour/texture travel back out
-        for e in self.group.mesh.edges:
-            v0, v1 = m.vertex_at(W(e.a)), m.vertex_at(W(e.b))
-            if v0 is None or v1 is None or m.find_edge(v0, v1) is None:
-                m.add_edge(W(e.a), W(e.b))
+        for pg, xf in places:
+            W = _W(xf)
+            for f in pg.mesh.faces:
+                nf = m.add_face([W(v) for v in f.vertices],
+                                [[W(v) for v in h] for h in f.holes] or None)
+                if f.attrs:
+                    nf.attrs.update(dict(f.attrs))   # colour/texture travel out
+            for e in pg.mesh.edges:
+                v0, v1 = m.vertex_at(W(e.a)), m.vertex_at(W(e.b))
+                if v0 is None or v1 is None or m.find_edge(v0, v1) is None:
+                    m.add_edge(W(e.a), W(e.b))
         # Soft/curve flags travel back out of the group (the mirror of
         # MakeGroupCommand): an exploded cylinder must stay smooth and its
         # rims keep selecting as whole curves.
-        for e in self.group.mesh.edges:
-            if getattr(e, "soft", False) or getattr(e, "curve", None) is not None:
+        for pg, xf in places:
+            W = _W(xf)
+            for e in pg.mesh.edges:
+                if not (getattr(e, "soft", False)
+                        or getattr(e, "curve", None) is not None):
+                    continue
                 v0, v1 = m.vertex_at(W(e.a)), m.vertex_at(W(e.b))
                 k = (m.find_edge(v0, v1)
                      if v0 is not None and v1 is not None else None)

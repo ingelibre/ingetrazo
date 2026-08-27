@@ -20,7 +20,8 @@ _counter = itertools.count(1)
 
 
 class Group:
-    __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform")
+    __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
+                 "children", "owner")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -39,17 +40,54 @@ class Group:
         # tools compose into ``xform`` (O(1)); geometry edits first
         # ``materialize`` the instance (SketchUp's "make unique").
         self.xform = None
+        # Nested placements the group OWNS: each a Group with an ``xform``
+        # over a SHARED prototype mesh, in this group's coordinates. They
+        # render, pick and export as part of their parent — one object to
+        # the user, however deep the tree — which is what lets an imported
+        # component keep the sharing SketchUp gave it.
+        #
+        # Without them a component's internal repetition was flattened on
+        # import: the hedge in piscina.igz is 4480 + 5120 faces placed 48
+        # times, and it arrived as 230400 real ones. Twenty-four times the
+        # geometry, for the element that is 89% of that model — which is
+        # why the .skp we wrote was 80 MB against the original's 14, and
+        # why SketchUp Web laboured over our copy of a model it draws
+        # fluently itself.
+        self.children: list = []
+        # Set only on the throwaway placement proxies the viewport builds for
+        # nested children: the top-level object a click must select. A real
+        # group in ``scene.groups`` always has ``owner is None``.
+        self.owner = None
+
+    def adopt(self, children) -> None:
+        """Take ``children`` as nested placements, guaranteeing the invariant
+        every consumer relies on: **a group that owns placements is always an
+        instance**.
+
+        Move, Rotate and Scale compose into ``xform`` for an instance and walk
+        the vertices otherwise — and walking the vertices would move the
+        group's own mesh while leaving its children behind. An identity
+        transform costs nothing and closes that road."""
+        from PySide6.QtGui import QMatrix4x4
+        self.children = list(children)
+        if self.children and self.xform is None:
+            self.xform = QMatrix4x4()
 
     def is_instance(self) -> bool:
         return self.xform is not None
 
     def materialize(self) -> None:
         """Bake this instance into its OWN world-space mesh (SketchUp 'make
-        unique'): sibling instances keep the shared prototype untouched."""
-        if self.xform is None:
+        unique'): sibling instances keep the shared prototype untouched.
+
+        Nested placements are baked in too and then dropped — ``world_mesh``
+        already folded them, so keeping them would draw and export the
+        child geometry a second time."""
+        if self.xform is None and not self.children:
             return
         self.mesh = world_mesh(self)
         self.xform = None
+        self.children = []
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         kind = " instance" if self.xform is not None else ""
@@ -105,11 +143,133 @@ def world_mesh(group) -> Mesh:
     instances — the shared prototype is never touched. (``capture_state``
     keeps object identity, so it can NOT be used to copy: restoring it into
     a new mesh aliases the prototype's vertices and a later move would
-    corrupt every sibling.)"""
+    corrupt every sibling.)
+
+    A group's nested placements (``children``) are folded in, each through
+    its own transform composed with this one — the group's full geometry,
+    which is what every consumer that used to read ``group.mesh`` directly
+    needs once a component keeps its internal sharing."""
     m = getattr(group, "xform", None)
-    if m is None:
-        return group.mesh
-    return transformed_mesh(group.mesh, m)
+    kids = getattr(group, "children", None)
+    if not kids:
+        return group.mesh if m is None else transformed_mesh(group.mesh, m)
+    return _merged_placements(group)
+
+
+def _merged_placements(group) -> Mesh:
+    """Every placement of ``group`` welded into ONE mesh, in a single
+    vectorized pass.
+
+    Folding the children by copying each subtree and appending it face by
+    face cost 20 s on the hedge against 4.5 s for the old single
+    ``transformed_mesh`` — the per-entity walk this codebase already learned
+    to avoid. Here each placement's corners are transformed as one array and
+    the whole component welds once, the same recipe ``transformed_mesh`` and
+    the ``.igz`` loader use."""
+    import numpy as np
+    from core.topology import _maximal_holes
+    new = Mesh()
+    edge_parts: list = []
+    face_parts: list = []
+    edge_flags: list = []
+    ring_sizes: list = []
+    ring_counts: list = []
+    attrs_list: list = []
+    for g, m in iter_placements(group):
+        src = g.mesh
+        epts: list = []
+        fpts: list = []
+        for e in src.edges:
+            epts.append((e.a.x(), e.a.y(), e.a.z()))
+            epts.append((e.b.x(), e.b.y(), e.b.z()))
+            edge_flags.append((e.soft, e.curve, None))
+        for f in src.faces:
+            holes = f.holes or []
+            if len(holes) > 1:
+                holes = _maximal_holes([list(h) for h in holes])
+            ring_counts.append(1 + len(holes))
+            ring_sizes.append(len(f.vertices))
+            fpts.extend((v.x(), v.y(), v.z()) for v in f.vertices)
+            for h in holes:
+                ring_sizes.append(len(h))
+                fpts.extend((v.x(), v.y(), v.z()) for v in h)
+            # The texture's world->UV map travels with the placement, so a
+            # nested leaf keeps its wood grain instead of inheriting the
+            # parent's frame.
+            attrs_list.append(transformed_attrs(f.attrs, m)
+                              if (f.attrs and m is not None)
+                              else (dict(f.attrs) if f.attrs else None))
+        if m is not None:
+            rot, trans = np_affine(m)
+            if epts:
+                epts = np.asarray(epts, dtype=np.float64) @ rot.T + trans
+            if fpts:
+                fpts = np.asarray(fpts, dtype=np.float64) @ rot.T + trans
+        else:
+            epts = np.asarray(epts, dtype=np.float64) if epts else None
+            fpts = np.asarray(fpts, dtype=np.float64) if fpts else None
+        if epts is not None and len(epts):
+            edge_parts.append(epts)
+        if fpts is not None and len(fpts):
+            face_parts.append(fpts)
+    e_all = (np.concatenate(edge_parts) if edge_parts
+             else np.empty((0, 3), dtype=np.float64))
+    f_all = (np.concatenate(face_parts) if face_parts
+             else np.empty((0, 3), dtype=np.float64))
+    if not len(e_all) and not len(f_all):
+        return new
+    pts = np.concatenate([e_all, f_all])
+    n_edge_pts = len(e_all)
+    vobjs, inverse = new.bulk_weld(pts)
+    emap = None
+    if n_edge_pts:
+        emap = new.add_edges_welded(
+            vobjs, inverse[0:n_edge_pts:2], inverse[1:n_edge_pts:2],
+            edge_flags)
+    if ring_counts:
+        new.add_faces_welded(vobjs, inverse[n_edge_pts:], ring_sizes,
+                             ring_counts, attrs_list, edge_map=emap)
+    new.resplit_curves()
+    return new
+
+
+def iter_placements(group, base=None):
+    """Yield ``(group, world_matrix)`` for ``group`` and every nested
+    placement below it, depth first, each matrix already composed from the
+    root down.
+
+    One call is all a consumer needs to walk a component that keeps its
+    internal sharing: the geometry lives in ``g.mesh`` (prototype, local
+    coordinates) and the matrix puts it in the world. Consumers that want a
+    single merged mesh instead should use :func:`world_mesh`; consumers that
+    draw or pick per prototype want this, because it does NOT copy anything.
+    ``world_matrix`` is ``None`` only when the whole chain is untransformed,
+    i.e. a classic group whose mesh already sits in world coordinates."""
+    m = getattr(group, "xform", None)
+    if base is not None:
+        m = base if m is None else base * m
+    yield group, m
+    for child in getattr(group, "children", None) or ():
+        yield from iter_placements(child, m)
+
+
+def _copy_mesh(mesh) -> Mesh:
+    from PySide6.QtGui import QMatrix4x4
+    return transformed_mesh(mesh, QMatrix4x4())
+
+
+def _append_mesh(dst, src) -> None:
+    """Add every face and loose edge of ``src`` to ``dst`` (positions only —
+    the meshes are independent, so nothing aliases)."""
+    for f in src.faces:
+        nf = dst.add_face([v.position for v in f.loop],
+                          [[v.position for v in h] for h in f.hole_loops]
+                          or None)
+        nf.attrs = dict(f.attrs)
+        nf.interior = f.interior
+    for e in src.edges:
+        if not e.faces:
+            dst.add_edge(e.a, e.b)
 
 
 def np_affine(m):
@@ -268,6 +428,9 @@ def copy_group(group, delta=None):
     g.layer = group.layer
     g.ifc = dict(group.ifc) if group.ifc else None
     g.billboard = group.billboard
+    # Nested placements ride along untranslated: ``delta`` already moved the
+    # parent, and a child's transform is relative to it.
+    g.children = [copy_group(c) for c in (group.children or ())]
     return g
 
 
@@ -359,21 +522,62 @@ def frame_from_points(positions) -> tuple:
             QVector3D(0.0, 0.0, 1.0))
 
 
-def oriented_bounds(mesh, frame=None) -> tuple:
+def placement_points(group):
+    """Every vertex position of ``group`` and its nested placements, in WORLD
+    space, as an ``(N, 3)`` float64 array.
+
+    A bounding box only ever needed the POINTS, but the only way to get them
+    used to be ``world_mesh`` — which welds a merged copy of the whole
+    component to answer a question about eight corners. On the hedge that was
+    23 s per selection once its geometry moved into nested placements (5 s
+    before, already the wrong shape of work). Here each prototype's array is
+    built ONCE and every placement is one matrix multiply over it."""
+    import numpy as np
+    out: list = []
+    cache: dict = {}
+    for g, m in iter_placements(group):
+        verts = g.mesh.vertices
+        if not verts:
+            continue
+        arr = cache.get(id(g.mesh))
+        if arr is None:
+            arr = cache[id(g.mesh)] = np.array(
+                [[v.position.x(), v.position.y(), v.position.z()]
+                 for v in verts], dtype=np.float64)
+        if m is not None:
+            d = m.data()                      # column-major
+            rot = np.array([[d[0], d[4], d[8]],
+                            [d[1], d[5], d[9]],
+                            [d[2], d[6], d[10]]])
+            arr = arr @ rot.T + np.array([d[12], d[13], d[14]])
+        out.append(arr)
+    return np.concatenate(out) if out else np.empty((0, 3))
+
+
+def oriented_bounds(mesh, frame=None, points=None) -> tuple:
     """``(frame, lo, hi)`` — the mesh's extent along ``frame``'s axes (derived
     with :func:`local_frame` when not given). ``lo``/``hi`` are the min/max
     coordinates in that frame, so the box corners are
-    ``sum(axis * c for axis, c in zip(frame, corner))``."""
+    ``sum(axis * c for axis, c in zip(frame, corner))``.
+
+    ``points`` short-circuits the mesh: an ``(N, 3)`` world-space array from
+    :func:`placement_points`, so a component with nested placements is not
+    merged into one mesh just to be measured."""
     import numpy as np
     from PySide6.QtGui import QVector3D
     if frame is None:
         frame = (QVector3D(1.0, 0.0, 0.0), QVector3D(0.0, 1.0, 0.0),
                  QVector3D(0.0, 0.0, 1.0))
-    verts = mesh.vertices
-    if not verts:
-        return frame, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
-    pos = np.array([[v.position.x(), v.position.y(), v.position.z()]
-                    for v in verts], dtype=np.float64)
+    if points is not None:
+        if len(points) == 0:
+            return frame, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+        pos = points
+    else:
+        verts = mesh.vertices
+        if not verts:
+            return frame, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+        pos = np.array([[v.position.x(), v.position.y(), v.position.z()]
+                        for v in verts], dtype=np.float64)
     axes = np.array([[a.x(), a.y(), a.z()] for a in frame], dtype=np.float64)
     proj = pos @ axes.T
     return frame, tuple(proj.min(axis=0)), tuple(proj.max(axis=0))

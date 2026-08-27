@@ -856,6 +856,67 @@ def _mark_projected_faces(defn, attr_map) -> None:
                 f._projected = True
 
 
+def _merge_equal_protos(protos):
+    """Fold prototypes with identical content onto one entry, repointing
+    every reference.
+
+    Prototypes are keyed while building by ``(definition, inherited
+    material)``, and a .skp can hold the SAME material under two ids — two
+    entries of SketchUp's material table that a component's placements paint
+    with interchangeably. That split the hedge's leaves into two identical
+    prototypes of 4480 and 5120 faces: 9600 faces stored twice for no reason.
+    Comparing the built content catches that, and any other route to the same
+    duplication, instead of trusting the ids.
+
+    Signatures are computed over child indices, so folding a child can make
+    two parents equal: the pass repeats until it settles. Candidates are
+    bucketed by cheap shape first, so the full comparison only ever runs
+    between prototypes that could actually be equal."""
+    if len(protos) < 2:
+        return protos
+    for _round in range(8):
+        buckets: dict = {}
+        for i, e in enumerate(protos):
+            buckets.setdefault(
+                (e["name"], len(e["faces"]), len(e["soft_edges"]),
+                 len(e["children"])), []).append(i)
+        remap: dict = {}
+        for bucket in buckets.values():
+            if len(bucket) < 2:
+                continue
+            seen: dict = {}
+            for i in bucket:
+                e = protos[i]
+                sig = repr((e["faces"], e["soft_edges"], e["children"]))
+                first = seen.setdefault(sig, i)
+                if first != i:
+                    remap[i] = first
+        if not remap:
+            break
+        # Placements of a folded prototype move to the one that survives.
+        for i, keep in remap.items():
+            src, dst = protos[i], protos[keep]
+            if not src["instances"]:
+                continue
+            if "instance_layers" in src or "instance_layers" in dst:
+                dst.setdefault("instance_layers",
+                               [None] * len(dst["instances"])).extend(
+                    src.get("instance_layers")
+                    or [None] * len(src["instances"]))
+            dst["instances"].extend(src["instances"])
+        keep_ix = [i for i in range(len(protos)) if i not in remap]
+        new_of = {old_i: new_i for new_i, old_i in enumerate(keep_ix)}
+        out = []
+        for i in keep_ix:
+            e = protos[i]
+            e["children"] = [{**k, "proto": new_of[remap.get(k["proto"],
+                                                             k["proto"])]}
+                             for k in e["children"]]
+            out.append(e)
+        protos = out
+    return protos
+
+
 def _adapt(model, name: str, skp_path=None):
     """An ``SkpModel`` → a payload ``{"backend", "groups", "protos"}`` or
     ``None`` when it yields no geometry (so the seam can fall back to skp2dae).
@@ -1092,28 +1153,68 @@ def _adapt(model, name: str, skp_path=None):
 
     # Build each shared prototype ONCE, in local coordinates — per inherited
     # material, so a component painted red and green as a whole yields two
-    # prototypes, not one wrongly shared. Nested proto references inside a
-    # prototype flatten into it (no proto-in-proto).
+    # prototypes, not one wrongly shared.
+    #
+    # A prototype KEEPS the prototypes its own subtree places, as ``children``
+    # (proto index + local matrix). Flattening them instead — the old
+    # "no proto-in-proto" rule — threw away the sharing SketchUp had already
+    # done inside a component: the hedge in piscina.igz is 4480 + 5120 faces
+    # placed 48 times, and it arrived as 230400 real ones, twenty-four times
+    # over, for the element that is 89% of that model.
     protos: list = []
-    for (did, inh), uses in proto_uses.items():
+    index_of: dict = {}
+
+    def _build_proto(did, inh):
+        """Index of the prototype for ``(did, inh)``, building it (and any
+        prototype it places) on the way. Reserves its slot before recursing
+        so a cycle cannot spin."""
+        key = (did, inh)
+        if key in index_of:
+            return index_of[key]
         d = by_id.get(did)
-        if d is None or not uses:
-            continue
+        if d is None:
+            return None
+        idx = index_of[key] = len(protos)
+        protos.append(None)
         local: list = []
         local_edges: list = []
+        child_uses: dict = {}
         _collect(d, QMatrix4x4(), by_id, attr_map, local, 0, set(),
-                 inherited=inh, edges_out=local_edges)
-        if local:
-            entry = {"name": getattr(d, "name", None) or name,
-                     "faces": local, "instances": [xf for xf, _ly in uses],
-                     "soft_edges": local_edges}
-            if any(ly for _xf, ly in uses):
-                # Layer (tag) per PLACEMENT — copies of one component can
-                # sit on different layers.
-                entry["instance_layers"] = [ly for _xf, ly in uses]
-            protos.append(entry)
+                 proto_ids, child_uses, inh, edges_out=local_edges)
+        children: list = []
+        for (cid, cinh), places in child_uses.items():
+            ci = _build_proto(cid, cinh)
+            if ci is None:
+                continue
+            for xf, ly in places:
+                kid = {"proto": ci, "xform": xf}
+                if ly:
+                    kid["layer"] = ly
+                children.append(kid)
+        protos[idx] = {"name": getattr(d, "name", None) or name,
+                       "faces": local, "soft_edges": local_edges,
+                       "children": children, "instances": []}
+        return idx
 
-    if not groups and not protos:
+    for (did, inh), uses in list(proto_uses.items()):
+        if not uses:
+            continue
+        idx = _build_proto(did, inh)
+        if idx is None:
+            continue
+        protos[idx]["instances"] = [xf for xf, _ly in uses]
+        if any(ly for _xf, ly in uses):
+            # Layer (tag) per PLACEMENT — copies of one component can sit on
+            # different layers.
+            protos[idx]["instance_layers"] = [ly for _xf, ly in uses]
+    # NOT filtered: ``children`` reference prototypes by INDEX, so dropping
+    # an entry would silently repoint every reference after it. A container
+    # with no faces of its own is real anyway — the hedge's top definition
+    # holds nothing but one placement — and a wholly empty entry simply
+    # places nothing.
+    protos = _merge_equal_protos(protos)
+
+    if not groups and not any(e["faces"] or e["children"] for e in protos):
         return None
     payload = {"backend": "openskp", "groups": groups, "protos": protos}
     # The file's named materials → the scene registry (core.materials).
