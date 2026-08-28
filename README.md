@@ -35,10 +35,20 @@ minor versions, and rough edges exist — please
 Grab the [latest release](https://github.com/ingelibre/ingetrazo/releases/latest):
 
 - **Windows**: the `-setup-` installer (or the portable `.zip`).
-- **Linux (x86_64)**: the **Flatpak** — double-click `IngeTrazo.flatpak` and
-  GNOME Software / KDE Discover installs it (`.igz`/`.skp` associated) — or
-  the **AppImage** (make it executable and run it) or, if your distro lacks
-  FUSE, the **tarball**:
+- **Linux (x86_64)**: the **Flatpak, from our repository** — this is the one
+  that keeps itself current, because `flatpak update` has somewhere to look.
+  It lands in your applications menu with `.igz`/`.skp` associated.
+
+```bash
+flatpak remote-add --if-not-exists ingetrazo https://ingetrazo.com/ingetrazo.flatpakrepo
+flatpak install --user ingetrazo com.ingetrazo.IngeTrazo
+flatpak run com.ingetrazo.IngeTrazo
+```
+
+  The release also carries a single-file `IngeTrazo.flatpak` you can
+  double-click, but a bundle has no update channel — it stays on the version
+  you installed. Or take the **AppImage** (make it executable and run it),
+  or the **tarball** if your distro lacks FUSE:
 
 ```bash
 chmod +x IngeTrazo-*-x86_64.AppImage && ./IngeTrazo-*-x86_64.AppImage
