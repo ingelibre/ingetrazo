@@ -4,6 +4,34 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.7.1] — 2026-08-28
+
+**La 0.3.7 revisada en inglés.** Marco la usó con la interfaz en ese idioma
+y encontró que el catálogo hablaba español por su cuenta.
+
+### Corregido
+- **La biblioteca de componentes salía en español con la interfaz en
+  inglés**: la categoría, el nombre del modelo y la licencia. Ahora cada
+  uno se dice en el idioma que se está leyendo, y el buscador acepta los
+  dos («chair» y «silla» encuentran lo mismo). Las categorías se traducen
+  desde una sola lista canónica porque **las dos del catálogo se
+  contradicen** — el mismo modelo es «Dormitorio» en español y «Office» en
+  inglés, y tomar las dos partiría una categoría entre dos filtros.
+- **Fuera las medidas en cm de la ficha del modelo.** Todo llega ya al
+  tamaño que declara el catálogo, así que el dato no decía nada que no se
+  pueda medir en el dibujo, y se leía como una especificación que el
+  componente no tiene.
+
+### Cambiado
+- **Las figuras de escala van por nombre de pila**: Richard, Linus, Elon,
+  Stephen.
+- **Fuera los ocho colores sin nombre** de la bandeja de Materiales. Al
+  lado de 213 colores RAL que llevan una referencia comprable, un cuadrado
+  anónimo solo confunde.
+- **Sumari nuevo**, a su altura real de 1,68 m. `SOURCES.md` decía 1,65 y
+  el programa insertaba 1,72: la nota y el código no coincidían y ninguno
+  acertaba.
+
 ## [0.3.7] — 2026-08-28
 
 **La release de los componentes, las texturas y los colores.** Una sesión

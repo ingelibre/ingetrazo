@@ -45,6 +45,21 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.7.1" date="2026-08-28">
+      <description>
+        <p>The component library now speaks the language the interface is
+        being read in — its categories, the models' names and the licence.
+        Scale figures go by first name, the model card no longer prints
+        sizes in centimetres, and the eight unnamed colour swatches are
+        gone from the Materials tray.</p>
+        <p xml:lang="es">La biblioteca de componentes habla ahora el idioma
+        en que se lee la interfaz — sus categorías, los nombres de los
+        modelos y la licencia. Las figuras de escala van por nombre de
+        pila, la ficha del modelo ya no imprime medidas en centímetros, y
+        los ocho colores sin nombre desaparecen de la bandeja de
+        Materiales.</p>
+      </description>
+    </release>
     <release version="0.3.7" date="2026-08-28">
       <description>
         <p>An online component library of 1510 models browsed from the

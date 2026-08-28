@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """The single source of truth for the application version."""
 
-__version__ = "0.3.7"
+__version__ = "0.3.7.1"
 
 #: What this program calls itself when it asks a server for something.
 #: Not decoration: Cloudflare answers 403 to Python's default
