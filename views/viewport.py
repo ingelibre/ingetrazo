@@ -3547,9 +3547,17 @@ class Viewport(QOpenGLWidget):
             self._preview_faces_vao.bind()
             for (r, g, b), start, count in runs:
                 self._set_color(r, g, b, 1.0)
-                self._set_back_face_color()
+                # A preview has no back: it is an overlay, not a solid with an
+                # inside. Its walls are wound however the sweep produced them
+                # and nothing surrounds them to hide the ones turned away, so
+                # the real back-face tint painted the pocket of a push-in blue
+                # over the shape being formed (Marco, 2026-08-27). Both sides
+                # take the face's own colour.
+                self._program.setUniformValue(self._loc_back_color,
+                                              QVector4D(r, g, b, 1.0))
                 self._gl.glDrawArrays(GL_TRIANGLES, start, count)
             self._preview_faces_vao.release()
+            self._set_back_face_color()          # leave the real tint behind
         if by_texture:
             self._program.setUniformValue(self._loc_use_tex, 1)
             self._preview_tex_vao.bind()

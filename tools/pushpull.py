@@ -210,6 +210,13 @@ class PushPullTool(Tool):
     # and depth-tested so the forming box hides its own back edges.
     wireframe_color = (0.13, 0.17, 0.23, 1.0)
     wireframe_depth_tested = True
+    # The sweep is an OVERLAY, with no material around it to hide anything: a
+    # recess drew all four of its walls, and the ones between the eye and the
+    # pocket came out back-side-on, in back-face blue, over the shape the user
+    # is forming (Marco, 2026-08-27). Real geometry never shows that because
+    # the solid hides them. Culling the faces that point away is the same
+    # result, and it costs a dot product each.
+    preview_cull_back = True
 
     # Last committed distance (signed along the base's outward normal), shared
     # across activations: double-click repeats it on another face, SketchUp-style.
@@ -441,9 +448,15 @@ class PushPullTool(Tool):
         2026-08-27). The same dihedral rule ``_soften_curve_facets`` applies
         afterwards decides it here — read off the sweep's own wall normals,
         no mesh needed — so a circle previews as a smooth cylinder while a
-        hexagon keeps the edges it will really have. The rings themselves
-        always draw: a circle's own segments stay visible (the Circle tool
-        does not soften them; only the sweep's verticals are).
+        hexagon keeps the edges it will really have. A circle's own segments
+        stay visible either way: the Circle tool does not soften them, only
+        the sweep's verticals are.
+
+        The BASE ring is not drawn at all. Those edges belong to the base
+        face and are already in the mesh, so the model draws them itself —
+        saying them again put a seam across the block the drag was forming,
+        because the preview's polygon offset let the repeat win the depth
+        test against its own faces (Marco, 2026-08-27).
 
         They cost a handful of points: the rings are the base face's own
         loops, already built for the sweep. Drawn in ``wireframe_color`` and
@@ -463,7 +476,6 @@ class PushPullTool(Tool):
                 normals.append(nv.normalized() if nv.length() > 1e-12 else None)
             for i in range(n):
                 j = (i + 1) % n
-                segs.append((low[i], low[j]))
                 segs.append((high[i], high[j]))
                 a, b = normals[i - 1], normals[i]
                 if a is not None and b is not None:

@@ -741,11 +741,12 @@ def test_drag_preview_draws_the_sweep_wireframe():
         return (round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
 
     drawn = {frozenset((key(a), key(b))) for a, b in segs}
-    # A square cap swept 2 m: 4 base edges + 4 moved edges + 4 risers.
-    assert len(drawn) == 12
-    base_z = {round(v.z(), 6) for v in top.vertices}
+    # A square cap swept 2 m: the 4 MOVED edges plus 4 risers. The base ring
+    # is not drawn — those edges are the base face's own and the model
+    # already draws them (see rubber_band_lines).
+    assert len(drawn) == 8
     zs = {z for seg in drawn for _x, _y, z in seg}
-    assert base_z == {3.0} and zs == {3.0, 5.0}   # both rings are there
+    assert zs == {3.0, 5.0}                       # risers span base to cap
     # Every corner is joined to where it moved to.
     risers = [s for s in drawn if len({z for _x, _y, z in s}) == 2]
     assert len(risers) == 4
@@ -772,7 +773,7 @@ def test_drag_preview_wireframe_carries_holes():
     tool._show_light_preview(vp)
 
     segs = tool.rubber_band_lines()
-    assert len(segs) == 24          # 12 for the outer loop, 12 for the hole
+    assert len(segs) == 16          # 8 for the outer loop, 8 for the hole
     xs = {round(a.x(), 6) for a, _b in segs}
     assert 2.0 in xs and 4.0 in xs  # the hole's own corners are drawn
 
@@ -892,7 +893,7 @@ def test_pushing_a_circle_previews_a_smooth_cylinder():
     risers = [s for s in segs
               if abs(key(s[0])[2] - key(s[1])[2]) > 1e-6]
     assert risers == [], "the cylinder's side is drawn with facet lines"
-    assert len(segs) == 48                  # both circles, nothing else
+    assert len(segs) == 24                  # the moved circle, nothing else
 
 
 def test_pushing_a_hexagon_keeps_its_real_edges():
@@ -903,7 +904,7 @@ def test_pushing_a_hexagon_keeps_its_real_edges():
     segs = _preview_segments(scene, hexagon)
     risers = [s for s in segs if abs(s[0].z() - s[1].z()) > 1e-6]
     assert len(risers) == 6
-    assert len(segs) == 18
+    assert len(segs) == 12                  # the moved hexagon plus its risers
 
 
 # ---- The base's normal must agree with the surface it belongs to ------------
