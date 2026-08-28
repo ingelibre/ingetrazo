@@ -1478,6 +1478,11 @@ def _trace_loops(outline: list[tuple[Vertex, Vertex]]) -> Optional[list[list[Ver
     adj: dict[Vertex, list[Vertex]] = {}
     edges: set = set()
     for u, w in outline:
+        if u is w:
+            # An edge onto itself: the outline is pinched, not simple. Some
+            # imported models carry one, and it must be a refusal here rather
+            # than a set of one endpoint further down.
+            return None
         adj.setdefault(u, []).append(w)
         adj.setdefault(w, []).append(u)
         edges.add(frozenset((u, w)))
