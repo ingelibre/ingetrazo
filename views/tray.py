@@ -762,6 +762,13 @@ class ComponentsPanel(QWidget):
             btn.clicked.connect(callback)
             grid.addWidget(btn, i // self.COLS, i % self.COLS)
         lay.addLayout(grid)
+        # The bundled grid is a handful; the rest of the catalogue lives
+        # online and is browsed from here (see core/library.py).
+        more = QPushButton(tr("More components…"))
+        more.setToolTip(tr(
+            "Browse the online library and download a model as a component"))
+        more.clicked.connect(window._on_open_library)
+        lay.addWidget(more)
         custom = QPushButton(tr("Face-me image (PNG)…"))
         custom.setToolTip(tr(
             "Insert your own cutout PNG at real height, always facing "

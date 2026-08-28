@@ -1826,6 +1826,50 @@ class MainWindow(QMainWindow):
         group = Group(mesh, name=name)
         self._start_place(group)
 
+    def insert_library_component(self, entry: dict) -> None:
+        """Download a model from the online library and hand it to the
+        placement tool, at its real size.
+
+        No unit is guessed: these OBJs are written in centimetres and the
+        catalogue says so, which is exactly what the generic importer has to
+        ask the user about (see ``_obj_unit``). The facet seams are softened
+        like the bundled starters, so a low-poly piece reads as a real one.
+        """
+        from core import library
+        from core.group import Group
+        from core.scene import Scene as _Scene
+        from formats import obj as _obj
+        from formats.fuse import soften_smooth_edges
+
+        obj = library.model_file(entry)
+        if obj is None:
+            QMessageBox.warning(
+                self, tr("Component library"),
+                tr("Could not download “{name}”. Check your connection.",
+                   name=entry.get("nombre", "")))
+            return
+        self.viewport.end_group_edit()
+        temp = _Scene()
+        try:
+            _obj.load_obj(temp, obj, scale=_obj.OBJ_UNITS["cm"])
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, tr("Component library"), str(exc))
+            return
+        mesh = temp.mesh
+        if not mesh.faces and temp.groups:
+            mesh = temp.groups[0].mesh       # a big OBJ lands as a group
+        if not mesh.faces:
+            QMessageBox.warning(
+                self, tr("Component library"),
+                tr("“{name}” has no geometry.", name=entry.get("nombre", "")))
+            return
+        soften_smooth_edges(mesh, cos_threshold=0.55)
+        self._start_place(Group(mesh, name=entry.get("nombre", "")))
+
+    def _on_open_library(self) -> None:
+        from views.library_dialog import LibraryDialog
+        LibraryDialog(self).exec()
+
     def _on_insert_3d_text(self) -> None:
         """SketchUp's 3D Text: a small dialog (text, font, bold, height,
         thickness) generates REAL extruded geometry as a Group, handed to the
