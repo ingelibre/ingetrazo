@@ -27,7 +27,12 @@ jobs:
       - name: Install flatpak and the builder
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
+          # elfutils: flatpak-builder strips debuginfo out of every module
+          # with eu-strip, and the runner does not ship it — the krb5 module
+          # got as far as installing and then died on "Failed to execute
+          # child process eu-strip" (first tag run, v0.3.6.3).
+          sudo apt-get install -y --no-install-recommends \
+            flatpak flatpak-builder elfutils
           # The manifest's runtime, from Flathub. --user keeps everything in
           # the runner's home, so no root is needed past the apt step.
           flatpak remote-add --user --if-not-exists flathub \
