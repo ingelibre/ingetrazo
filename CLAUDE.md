@@ -71,6 +71,54 @@ modelos.** Lo entregado y lo aprendido:
 2. **✅ CERRADO 2026-08-26 (`35987b5`) — Import .skp: los componentes llegan como componentes.** Las definiciones colocadas UNA vez ya no se aplanan: toda colocación de nivel superior es prototipo+xform, así el grupo conserva sus ejes propios (la caja de selección tiene ejes reales en vez de deducidos) y Move/Rotate/copias toman los caminos O(1). Solo al nivel superior y solo donde no se pierde nada: un prototipo aplana su subárbol (no hay proto-en-proto), así que se rechaza un contenedor cuyos hijos ya son compartidos, y también los subárboles face-me o con capas (tienen que salir como grupos propios para seguir mirando a cámara y para poder ocultarse por capa). **El corpus fue lo que lo volvió honesto:** la primera versión pasaba ambas suites y aun así rompía dos cosas — tres archivos dejaban de importar (un payload de solo prototipos se leía como parse vacío y caía a skp2dae; arreglado en `formats/skp.py`) y seis perdían grupos, 47 en uno, porque los contenedores promovidos se tragaban a sus hijos compartidos. A/B sobre 25 `.skp` locales: grupos y caras idénticos en todos, instancias +1 a +32, y los tres que fallaban importan de nuevo. **Queda:** `Piscina Karen` (subárbol con capas) y `barp 1` (face-me + capas) siguen aplanados — llevarlos por instancia exige extraer los hijos etiquetados componiendo la matriz del prototipo.
 3. Resto de la cola (detalle en los ítems de abajo): Ctrl+C 5.2 s del seto → compartir definición al copiar; P2 rebanada 2 (picks por rayo transformado, quitar arrays horneados por instancia); siluetas al GPU / pase de aristas (el nuevo top de la telemetría); dedup de protos al guardar .igz; parse del .igz (~8 s, hoy el piso del arranque frío); y **auditar el patrón que dio 3 bugs hoy**: helpers del viewport que asumen `mesh.Face` (`.loop`) y walks O(escena) dentro de handlers de eventos.
 
+**🎯 Objetivos anotados para 0.3.8+ (pedido de Marco 2026-08-28, al cerrar la 0.3.7.1).**
+Estado del código MIRADO antes de estimar; el orden es la recomendación, no el pedido.
+
+**A. Baratos porque el motor ya lo soporta — caben en la 0.3.8**
+1. **Ocultar/mostrar aristas.** `Edge.hidden` YA existe en el modelo, lo respeta
+   el render y viaja en el `.igz` (`ehidden` en `capture_state`). **Falta solo la
+   orden de menú + comando deshacible.** Es la más barata de toda la lista.
+2. **Editor de estilos.** `core.style.Style` ya es un dato con `to_dict`/
+   `from_dict` (modo de cara, aristas, perfiles, colores, cielo, relleno de
+   sección) y el compositor ya aplica estilo por marco. **Falta el panel** para
+   editarlos, guardarlos con nombre y aplicarlos.
+3. **Ventana de configuración.** Hoy los ajustes están sueltos en QSettings
+   (`language`, `import/obj_unit`, `ia/*`, el modo del resto del modelo al
+   editar…). Recogerlos en un sitio es trabajo de UI, no de motor.
+4. **⭐ Escalar no es como SketchUp** (Marco lo notó usándolo). Nuestro
+   `scale_matrix(center, factor)` es **un solo float: uniforme**. SketchUp tiene
+   26 agarraderas — esquina (uniforme), arista (2 ejes), cara (1 eje), Ctrl para
+   escalar desde el centro y factor negativo para espejar. Hay que pasar de
+   factor a vector/matriz en `ScaleVerticesCommand`/`ScaleGroupCommand` y dibujar
+   las agarraderas. **Es una brecha de paridad real, no un capricho.**
+
+**B. La grande, y la que más cambia cómo se percibe el producto**
+5. **Sombras.** Hoy no hay ninguna: el shader es `basic.vert/frag` y no existe
+   pase de profundidad desde la luz. Es un mapa de sombras + su pase + resolver
+   la interacción con los planos de sección y el compositor. **Pero aquí hay algo
+   que SketchUp cobra y nosotros ya tenemos medio hecho:** el modelo lleva datum
+   geográfico (lat/lon), así que la posición REAL del sol por fecha y hora es
+   alcanzable — eso es un **estudio de asoleamiento**, un entregable de obra, no
+   un adorno. Es la que yo haría después de las baratas.
+
+**C. Para después, y por qué**
+6. **Oclusión ambiental (SSAO).** Ya renderizamos a FBO, así que la fontanería
+   está. Pero es *pulido encima* de las sombras y comparte con ellas el pase de
+   profundidad: hacerla antes es trabajo que habría que rehacer.
+7. **⚠️ Elegir unidad de trabajo — MÁS HONDO DE LO QUE PARECE.** **No existe
+   `core/units.py` ni un formateador de longitudes**: la app trabaja en metros y
+   punto. «Elegir unidad» toca *todo lo que muestra o lee una longitud* — el VCB,
+   las cotas, la barra de estado, las láminas, los importadores. Merece su propia
+   release, no ser un desplegable de una ventana de bienvenida.
+8. **Ventana de inicio con recientes y vista previa.** No hay lista de recientes
+   ni miniatura guardada por archivo (habría que meterla en el `.igz` al guardar).
+   La ventana es fácil; **lo caro es el punto 7, que Marco quiere dentro de ella**.
+   Hacerla sin unidades es media ventana; con unidades, es la release entera.
+9. **Anunciar el Asistente IA** (decisión de Marco, 2026-08-28). Estuvo MUERTO en
+   todo paquete hasta la 0.3.7 (`core.ai` no entraba al bundle); ahora carga, pero
+   **cargar no es funcionar**: probarlo de punta a punta con clave real antes de
+   ponerlo en la web.
+
 **🎯 Objetivos anotados para 0.3.7 (pedido de Marco 2026-08-27, al cerrar la 0.3.6.2):**
 0. **⚠️ NVIDIA + X11: ARREGLO APLICADO EN LA 0.3.7 (`8d1b30c`), MITAD SIN VERIFICAR** — issue #6 de `jloveric`.
    El `.spec` excluye ahora `libX11.so.6`, `libX11-xcb.so.1` y `libxcb-glx.so.0`
