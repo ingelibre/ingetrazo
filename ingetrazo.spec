@@ -32,12 +32,20 @@ datas = [
     ('resources/icons/*.ico',      'resources/icons'),
     ('resources/icons/mimetypes/*.ico', 'resources/icons/mimetypes'),
     ('resources/mime/*.xml',       'resources/mime'),
+    ('resources/colors/*.json',    'resources/colors'),
     ('resources/textures/*.png',   'resources/textures'),
     ('resources/textures/library.json', 'resources/textures'),
-    # Starter components are .glb since 0.3.5 (the .obj/.mtl props are gone;
-    # a stale glob here is a HARD PyInstaller error, not a warning).
-    ('resources/components/*.glb', 'resources/components'),
+    # The library itself — a whole tree, and it was MISSING: the Materials
+    # tray read library.json and then found no images, so every category
+    # came up empty in the packaged build (the Flatpak copies all of
+    # resources/ and was fine, which is why it went unnoticed).
+    ('resources/textures/library', 'resources/textures/library'),
+    # Starter components are .igz since 0.3.7: one group per file with its
+    # images packed inside, so the tray works with no network. (A stale glob
+    # here is a HARD PyInstaller error, not a warning — the .glb set is gone.)
+    ('resources/components/*.igz', 'resources/components'),
     ('resources/components/components.json', 'resources/components'),
+    ('resources/components/people.json', 'resources/components'),
     ('resources/components/SOURCES.md', 'resources/components'),
     ('resources/components/*.png', 'resources/components'),
     ('resources/components/thumbs/*.png', 'resources/components/thumbs'),
@@ -63,6 +71,11 @@ hiddenimports = [
     # Lazily imported project modules (inside functions) — listed for safety.
     'core.text3d',
     'core.textlabel',
+    # The bundled plugins import these at RUN time, so static analysis never
+    # sees them and they were left out: the AI assistant died on load with
+    # "cannot import name 'ai' from 'core'" in every packaged build.
+    'core.ai',
+    'core.bim',
     'tools.place_group',
     'tools.paste',
     'georef.points',
@@ -113,6 +126,29 @@ a = Analysis(
     excludes=excludes,
     noarchive=False,
 )
+# ── The X client libraries come from the HOST, never from here ───────────────
+# Bundling libX11 puts a SECOND copy of it in the process: Qt loads ours
+# through $ORIGIN while the host's GL driver loads the system one, and the
+# Display of one is not the Display of the other. Mesa tolerates it; NVIDIA
+# does not, and the packaged builds die at start-up with
+#   qt.glx: qglx_findConfig: Failed to finding matching FBConfig
+#   Could not initialize GLX
+# (issue #6 — the tarball and the AppImage fail on an NVIDIA + X11 machine
+# where the same tag from source works). Note that `libxcb.so.1` was never
+# bundled, which is what makes the split possible in the first place.
+#
+# Only these three go: they are on every system that can draw a window at
+# all, and every one of them is also loaded by the host's GL driver. The
+# other libxcb-* helpers stay — Qt's xcb plugin needs them and a minimal
+# host may not have them.
+_HOST_ONLY = {'libX11.so.6', 'libX11-xcb.so.1', 'libxcb-glx.so.0'}
+if sys.platform.startswith('linux'):
+    _before = len(a.binaries)
+    a.binaries = [b for b in a.binaries
+                  if Path(b[0]).name not in _HOST_ONLY]
+    print('spec: dropped %d bundled X libraries (issue #6)'
+          % (_before - len(a.binaries)))
+
 pyz = PYZ(a.pure, a.zipped_data)
 
 icon = None
