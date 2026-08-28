@@ -220,3 +220,61 @@ def test_a_preview_that_cannot_be_had_never_raises(tmp_path, monkeypatch):
     import time
     time.sleep(0.3)
     assert library.cached_thumbnail("no-existe") is None
+
+
+def test_the_catalogues_categories_are_said_in_the_interface_language():
+    # The entries carry the category in Spanish, because that is what the
+    # source catalogues ship. Reading an English interface and finding
+    # "Cocina" in the filter is the catalogue's word leaking through ours.
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    if QApplication.instance() is None:
+        QApplication([])
+
+    from core.i18n import current_language, set_language
+    from views.library_dialog import LibraryDialog
+
+    was = current_language()
+    try:
+        set_language("en")
+        assert LibraryDialog._cat_label("Cocina") == "Kitchen"
+        assert LibraryDialog._cat_label("Puertas y Ventanas") == \
+            "Doors and windows"
+        set_language("es")
+        assert LibraryDialog._cat_label("Cocina") == "Cocina"
+        # A category the map does not know still shows, untranslated,
+        # rather than coming out blank.
+        assert LibraryDialog._cat_label("Inventada") == "Inventada"
+    finally:
+        set_language(was)
+
+
+def test_a_model_is_named_in_the_interface_language():
+    # The catalogue names every model in both, one to one. An English
+    # interface listing "Camarera con ruedas" is the catalogue's word
+    # leaking through ours, the same way its categories did.
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    if QApplication.instance() is None:
+        QApplication([])
+
+    from core.i18n import current_language, set_language
+    from views.library_dialog import LibraryDialog
+
+    entry = {"nombre": "Silla", "nombre_en": "Chair", "id": "x"}
+    was = current_language()
+    try:
+        set_language("en")
+        assert LibraryDialog._name_of(entry) == "Chair"
+        set_language("es")
+        assert LibraryDialog._name_of(entry) == "Silla"
+        # An older index has no English name; it must still say something.
+        set_language("en")
+        assert LibraryDialog._name_of({"nombre": "Silla"}) == "Silla"
+        assert LibraryDialog._name_of({}) == "?"
+    finally:
+        set_language(was)

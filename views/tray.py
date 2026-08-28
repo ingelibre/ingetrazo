@@ -71,13 +71,6 @@ def _ral_name(entry: dict) -> str:
         return entry["name_es"]
     return entry["name"]
 
-# A small starter colour set for the library row.
-_LIBRARY_COLORS = [
-    (0.96, 0.95, 0.925), (0.80, 0.45, 0.30), (0.20, 0.45, 0.75),
-    (0.45, 0.62, 0.35), (0.85, 0.78, 0.45), (0.55, 0.55, 0.58),
-    (0.30, 0.30, 0.33), (0.95, 0.95, 0.95),
-]
-
 
 class _Section(QWidget):
     """A collapsible section: a header button that toggles its content."""
@@ -1014,10 +1007,12 @@ class MaterialsPanel(QWidget):
             root.addWidget(body)
             return grid
 
-        # ONE Colours section (SketchUp has a Colors category too): the
-        # working handful first, then RAL Classic in code order — which is
-        # family order, yellows through blacks, without carving the tray up
-        # into nine more headings to click through.
+        # ONE Colours section (SketchUp has a Colors category too): RAL
+        # Classic in code order — which is family order, yellows through
+        # blacks, without carving the tray up into nine more headings to
+        # click through. The eight unnamed swatches that used to sit at the
+        # top are gone at Marco's request: beside 213 colours that each
+        # carry a reference, a nameless square is only confusing.
         #
         # RAL is the paint you can actually specify, so a colour picked here
         # paints as a NAMED material ("RAL 7035 Gris claro"): what the
@@ -1031,11 +1026,6 @@ class MaterialsPanel(QWidget):
 
         def fill_colors(grid):
             row = 0
-            for rgb in _LIBRARY_COLORS:
-                b = _swatch_button(_color_pixmap(rgb), tr("Color"))
-                b.clicked.connect(lambda _=False, c=rgb: self._apply_color(c))
-                grid.addWidget(b, row // self.COLS, row % self.COLS)
-                row += 1
             for c in ral_colors:
                 label = "%s · %s" % (c["code"], _ral_name(c))
                 b = _swatch_button(_color_pixmap(c["rgb"]), label)
@@ -1045,9 +1035,7 @@ class MaterialsPanel(QWidget):
                 grid.addWidget(b, row // self.COLS, row % self.COLS)
                 row += 1
 
-        section("%s  (%d)" % (tr("Colors"),
-                              len(_LIBRARY_COLORS) + len(ral_colors)),
-                fill_colors)
+        section("%s  (%d)" % (tr("Colors"), len(ral_colors)), fill_colors)
 
         def fill_items(grid, items):
             row = 0

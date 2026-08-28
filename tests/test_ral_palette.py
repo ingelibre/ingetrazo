@@ -92,3 +92,27 @@ def test_the_ral_name_follows_the_language():
         assert _ral_name({"name": "Grey"}) == "Grey"
     finally:
         set_language(was)
+
+
+def test_every_colour_in_the_tray_has_a_name():
+    # The eight unnamed starter swatches are gone: beside 213 colours that
+    # each carry a reference a painter can buy, a nameless square is only
+    # confusing (Marco).
+    from views.main_window import MainWindow
+
+    win = MainWindow()
+    try:
+        panel = _panel(win)
+        header = next(b for b in panel.findChildren(QToolButton)
+                      if b.isCheckable()
+                      and b.text().strip().startswith(tr("Colors")))
+        header.setChecked(True)
+        swatches = [b for b in panel.findChildren(QToolButton)
+                    if not b.isCheckable() and b.toolTip()
+                    and not b.toolTip().startswith("RAL")]
+        assert swatches == [], [b.toolTip() for b in swatches[:5]]
+        assert len([b for b in panel.findChildren(QToolButton)
+                    if not b.isCheckable()
+                    and b.toolTip().startswith("RAL")]) == 213
+    finally:
+        win.close()

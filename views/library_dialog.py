@@ -75,10 +75,14 @@ class LibraryDialog(QDialog):
         lay.addLayout(row)
 
         self._entries = library.index()
-        cats = sorted({e.get("categoria", "") for e in self._entries})
+        # Sorted by what is SHOWN, so the list reads alphabetically in the
+        # language it is being read in; the raw category stays as the item's
+        # data, because that is what the entries carry and what filters.
+        cats = sorted({e.get("categoria", "") for e in self._entries},
+                      key=self._cat_label)
         self._cat.addItem(tr("All categories"), "")
         for c in cats:
-            self._cat.addItem(c, c)
+            self._cat.addItem(self._cat_label(c), c)
         self._refill()
 
         # Thumbnails arrive for what is on screen, a few per tick, so
@@ -88,6 +92,40 @@ class LibraryDialog(QDialog):
         self._timer.start(120)
 
     # ---- listing -------------------------------------------------------
+    #: The catalogue's categories, which arrive in Spanish, said in the
+    #: language the program is running in. They are translated HERE and not
+    #: taken from the catalogue's own English list, because the two
+    #: disagree: the same model is "Dormitorio" in one and "Office" in the
+    #: other, so reading both would scatter a category across two filters.
+    CATEGORY_EN = {
+        "Cocina": "Kitchen",
+        "Cuarto de Baño": "Bathroom",
+        "Dormitorio": "Bedroom",
+        "Escaleras": "Staircases",
+        "Exterior": "Exterior",
+        "Iluminación": "Lights",
+        "Oficina": "Office",
+        "Personajes": "People",
+        "Puertas y Ventanas": "Doors and windows",
+        "Salón": "Living room",
+        "Varios": "Miscellaneous",
+        "Vehículos": "Vehicles",
+    }
+
+    @classmethod
+    def _cat_label(cls, cat: str) -> str:
+        return tr(cls.CATEGORY_EN.get(cat, cat))
+
+    @staticmethod
+    def _name_of(entry: dict) -> str:
+        """The model's name in the language being read. The catalogue names
+        each one in both and they agree one-to-one, so this is its own word
+        either way — not a translation of ours."""
+        from core.i18n import current_language
+        if not current_language().startswith("es") and entry.get("nombre_en"):
+            return entry["nombre_en"]
+        return entry.get("nombre", entry.get("id", "?"))
+
     def _refill(self) -> None:
         text = self._search.text().strip().lower()
         cat = self._cat.currentData() or ""
@@ -96,12 +134,14 @@ class LibraryDialog(QDialog):
         for e in self._entries:
             if cat and e.get("categoria") != cat:
                 continue
-            if text and text not in e.get("nombre", "").lower():
+            # Search both names: someone typing "chair" and someone
+            # typing "silla" are both looking for the same model.
+            if text and text not in e.get("nombre", "").lower() \
+                    and text not in e.get("nombre_en", "").lower():
                 continue
-            it = QListWidgetItem(e.get("nombre", e.get("id", "?")))
+            it = QListWidgetItem(self._name_of(e))
             it.setData(Qt.UserRole, e)
-            it.setToolTip("%s · %s" % (e.get("categoria", ""),
-                                       self._size_text(e)))
+            it.setToolTip(self._cat_label(e.get("categoria", "")))
             self._list.addItem(it)
             shown += 1
         if not self._entries:
@@ -110,11 +150,6 @@ class LibraryDialog(QDialog):
         else:
             self._status.setText(tr("{n} of {total} models",
                                     n=shown, total=len(self._entries)))
-
-    @staticmethod
-    def _size_text(entry) -> str:
-        cm = [c for c in (entry.get("cm") or []) if c]
-        return " × ".join("%s cm" % c for c in cm) if cm else ""
 
     #: Rows past the bottom of the view whose preview is fetched anyway, so
     #: scrolling lands on pictures instead of on empty squares.
@@ -161,10 +196,14 @@ class LibraryDialog(QDialog):
             self._credit.setText("")
             return
         author = e.get("autor") or tr("unknown author")
+        # No size here. Every model arrives at the size the catalogue
+        # declares (core.library.model_matrix), so printing the centimetres
+        # says nothing you cannot measure in the drawing — and it read as a
+        # specification the component did not have.
         self._credit.setText(tr(
-            "{name} — {size} · {licence} · by {author}",
-            name=e.get("nombre", ""), size=self._size_text(e),
-            licence=e.get("licencia_nombre") or e.get("licencia", ""),
+            "{name} · {licence} · by {author}",
+            name=self._name_of(e),
+            licence=tr(e.get("licencia_nombre") or e.get("licencia", "")),
             author=author))
 
     # ---- inserting -----------------------------------------------------
