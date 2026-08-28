@@ -27,7 +27,40 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 
 ---
 
-## 📦 Estado actual (2026-08-25, tarde)
+## 📦 Estado actual (2026-08-28) — v0.3.7, componentes/texturas/colores
+
+Sesión entera de dogfooding sobre la biblioteca. **Cada defecto lo reportó
+Marco mirando la bandeja, y todos resultaron ser nuestros, no de los
+modelos.** Lo entregado y lo aprendido:
+
+- **Publicada la biblioteca en línea** (1510 modelos) en `ingetrazo.com`, vía
+  los assets estáticos del Worker: gratis y sin coste de tráfico (la doc de
+  Cloudflare es explícita), 3.021 archivos de un tope de 20.000 y el mayor de
+  2,6 MB de un tope de 25 MiB. Vive en el repo de la web **ignorada por git y
+  no por wrangler**: son datos derivados, se regeneran en 23 s (ver el
+  CLAUDE.md de `web/`).
+- **Un modelo llega como su fichero lo describe**: eje vertical, matriz del
+  catálogo, talla declarada, coordenadas de textura y grupos de suavizado.
+  Ver `8c3fc0a`. La lección de método: *un OBJ dice más de lo que estábamos
+  leyendo, y adivinar donde el fichero afirma es lo que producía el desastre.*
+- **El mapa de textura viaja con la geometría** al colocar/mover/girar/escalar.
+  Estaba anclado a coordenadas del mundo y el mecanismo para reanclarlo ya
+  existía (lo usaba pegar); simplemente no se llamaba.
+- **427 texturas y 213 colores RAL**, ambos con su tamaño/nombre reales.
+- **Bandeja: 21,6 s → 1,2 s** por pantalla de miniaturas (16 en paralelo, fuera
+  del hilo de la interfaz, 40 filas por adelantado).
+- **Tres bugs que se iban a la release y que solo cazó probar de verdad:**
+  (a) Cloudflare devuelve **403 al User-Agent por defecto de Python** — la
+  biblioteca en línea habría estado muerta para todos, y como el diseño
+  devuelve lista vacía en vez de fallar, en silencio; lo destapó probar contra
+  el sitio publicado en vez de contra una carpeta local. (b) `libX11` duplicada
+  en el bundle (issue #6). (c) `resources/textures/library/` sin empaquetar.
+- **Método, otra vez:** el arranque se alargó de 0,21 a 0,95 s al meter las
+  texturas — trabajo que escalaba con TODO el catálogo para pintar secciones
+  plegadas que nadie mira. Construirlas al abrir cada sección lo dejó en 0,14 s,
+  **más rápido que antes de añadir nada**.
+
+## 📦 Estado anterior (2026-08-25, tarde)
 
 **v0.3.5 released 2026-08-25 — secciones + paridad + IA + la maratón de perf.** Decisión de Marco: las secciones salen (el dogfooding continúa sobre el release). Trae: **secciones S1–S5 completas** (+ section fill, globos de símbolo, toolbar), **batch de paridad F1–F5** (Flip, Crear componente G, Mano alzada, Pie, Equidistancia), **Asistente IA + AI Bridge MCP** (invariante #5 real), **import glTF/GLB nativo**, componentes/texturas de arranque, y la **maratón piscina.igz** (~13 cuellos: box select/siluetas/borrado vectorizados, zoom con ancla por pose + re-validación por proyección, previews congelados por VBO scratch para Move/Rotate/**Paste**, Merge Groups sin loose-mesh, **`Scene.bounds()` cacheado por versión** — el "no responde" del paste: corría 2×/hover en Python sobre 230k caras — y **paste O(1)**: el snapshot del clipboard es instancia identidad y cada estampado una hermana del proto; estampar 230k pasó de ~12 s a instantáneo). Gotcha nuevo: la cadena hover→`_world_from_pixel`→`_current_work_plane`→`_emit_coordinate` corre en CADA mouse-move sobre cielo/mapa base — todo lo que cuelgue de ahí debe ser O(1) o cacheado.
 
@@ -39,10 +72,17 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 3. Resto de la cola (detalle en los ítems de abajo): Ctrl+C 5.2 s del seto → compartir definición al copiar; P2 rebanada 2 (picks por rayo transformado, quitar arrays horneados por instancia); siluetas al GPU / pase de aristas (el nuevo top de la telemetría); dedup de protos al guardar .igz; parse del .igz (~8 s, hoy el piso del arranque frío); y **auditar el patrón que dio 3 bugs hoy**: helpers del viewport que asumen `mesh.Face` (`.loop`) y walks O(escena) dentro de handlers de eventos.
 
 **🎯 Objetivos anotados para 0.3.7 (pedido de Marco 2026-08-27, al cerrar la 0.3.6.2):**
-0. **NVIDIA + X11: los paquetes de Linux no arrancan** — issue #6 de `jloveric`. `qglx_findConfig: Failed to finding matching FBConfig` en tarball y AppImage; el mismo tag desde el fuente con PySide6 de pip sí abre. Verificado sobre el tarball PUBLICADO de la 0.3.6.2: el bundle no lleva Mesa (causa clásica descartada) pero **sí lleva `libX11.so.6`, `libX11-xcb.so.1` y `libxcb-glx.so.0` y NO lleva `libxcb.so.1`** — el driver GL del anfitrión resuelve por el libX11 del sistema mientras Qt pregunta por el del paquete. Mesa lo tolera, NVIDIA no. Arreglo propuesto: excluirlas del bundle. **SIN VERIFICAR** (la máquina de Marco es AMD + Wayland); él conecta un eGPU NVIDIA en la oficina y se prueba ahí antes de tocar el empaquetado y antes de contestar el issue. Observación suya y correcta: la prueba de humo de la CI usa `xvfb` (Mesa por software), por eso nunca lo iba a cazar.
+0. **⚠️ NVIDIA + X11: ARREGLO APLICADO EN LA 0.3.7 (`8d1b30c`), MITAD SIN VERIFICAR** — issue #6 de `jloveric`.
+   El `.spec` excluye ahora `libX11.so.6`, `libX11-xcb.so.1` y `libxcb-glx.so.0`
+   del bundle de Linux: vienen del anfitrión. **Verificado solo que NO rompe el
+   caso que funcionaba** — paquete construido y arrancado aquí sobre AMD + X11,
+   log limpio, sin error de GLX. **La mitad NVIDIA sigue sin verificar**: hay que
+   probarlo con el eGPU antes de contestar el issue. Los otros trece `libxcb-*`
+   se quedan (Qt los necesita y un anfitrión mínimo puede no tenerlos).
+   Diagnóstico original, que sigue siendo el porqué: `qglx_findConfig: Failed to finding matching FBConfig` en tarball y AppImage; el mismo tag desde el fuente con PySide6 de pip sí abre. Verificado sobre el tarball PUBLICADO de la 0.3.6.2: el bundle no lleva Mesa (causa clásica descartada) pero **sí lleva `libX11.so.6`, `libX11-xcb.so.1` y `libxcb-glx.so.0` y NO lleva `libxcb.so.1`** — el driver GL del anfitrión resuelve por el libX11 del sistema mientras Qt pregunta por el del paquete. Mesa lo tolera, NVIDIA no. Arreglo propuesto: excluirlas del bundle. **SIN VERIFICAR** (la máquina de Marco es AMD + Wayland); él conecta un eGPU NVIDIA en la oficina y se prueba ahí antes de tocar el empaquetado y antes de contestar el issue. Observación suya y correcta: la prueba de humo de la CI usa `xvfb` (Mesa por software), por eso nunca lo iba a cazar.
 1. **Iconos**: a Marco no le gustan los dibujados en `views/icons.py`. Pedido explícito para una release futura, no urgente.
 2. **Texturas** (diferido desde el 26): el agua y el tronco de la palmera. Falta el 2º archivo de calibración — una textura colocada con "Posicionar textura" de SketchUp.
-3. **Bug menor cazado de paso, sin arreglar:** en el build empaquetado el plugin `ai_assistant` no carga (`ImportError: cannot import name 'ai' from 'core'`) — `core/ai.py` no entra al bundle. Visible en el log del tarball 0.3.6.2.
+3. **✅ CERRADO 2026-08-28 (`8d1b30c`)** — el plugin `ai_assistant` no cargaba en el paquete: los plugins importan `core.ai` y `core.bim` en tiempo de ejecución, así que el análisis estático nunca los veía. Van a `hiddenimports`. **Y salió otro del mismo tipo, peor:** `resources/textures/library/` no se empaquetaba **nunca** — el `.spec` copiaba el manifiesto pero no las imágenes, así que en Windows la biblioteca de materiales salía **vacía**; el Flatpak copia todo `resources/` y por eso no se había notado. El paquete arranca ahora con el log limpio.
 4. `skp2dae.exe` sigue adjuntándose a mano al release (vive sólo en la máquina de Marco). El flatpak ya no: desde el próximo tag lo arma `release-flatpak.yml`.
 5. **⭐ EL RECTÁNGULO QUE SE DISUELVE AL VOLVER AL RAS — diagnosticado, intentado y REVERTIDO 2026-08-27.** Marco: dibuja un rectángulo en una cara, lo empuja hacia afuera y lo empuja de vuelta al ras — y el rectángulo desaparece, fundido en el muro. **Aislado pase por pase: tras `run_stitch` sigue ahí (7 caras); es `apply_rebuild` quien lo funde (6).** El reconstructor por plano vuelve a trazar las regiones desde las aristas y disuelve deliberadamente las costuras de la operación, que es lo que evita que cada push deje cicatriz. Su regla: una arista del **borde de la operación** (`op_rims`) puede disolverse, cualquier otra es estructura del usuario y sobrevive (`keep_segs`). **El rectángulo es las dos cosas a la vez**: al empujar una cara, el borde de esa cara ES por definición el borde de la operación, así que la regla no puede distinguir la línea que trazó Marco de la costura que dejó el push.
    **Intento medido y descartado:** "sólo puede disolverse lo que ESTA operación creó" (filtrar de `op_rims` las aristas que ya existían, vía las `before_edges` que `_mutate` ya captura). Arregla el caso de Marco —7 caras, el rectángulo de 3,0 m² intacto— y **rompe el motor: 39 tests rápidos y 6 secuencias del fuzz**, entre ellos `test_bump_pushed_flush_back_dissolves_to_clean_cube`, que pide **lo contrario**: un bulto hecho con un push ANTERIOR, empujado de vuelta al ras, debe disolverse y dejar el cubo limpio. Su contorno también "existía antes" de este push — lo creó el push anterior, no la mano del usuario. Es decir: **"antes de este push" ≠ "lo dibujó el usuario"**, y esa es justo la información que falta.

@@ -4,6 +4,63 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.7] — 2026-08-28
+
+**La release de los componentes, las texturas y los colores.** Una sesión
+entera de dogfooding sobre la biblioteca en línea: cada arreglo salió de
+Marco abriendo la bandeja y diciendo qué se veía mal, y todos resultaron ser
+nuestros, no de los modelos.
+
+### Añadido
+- **Biblioteca de componentes en línea publicada** en `ingetrazo.com`:
+  1510 modelos con miniatura, tamaño real, licencia y autor. Navegar cuesta
+  medio mega; solo se descarga el modelo que se pulsa, y queda en caché.
+- **8 modelos y 6 figuras de escala dentro del programa**, para trabajar sin
+  red. Las figuras van a su altura real: la cartela mapea la imagen entera a
+  esa altura, así que el recorte tiene que ser exacto.
+- **427 texturas** (antes 30), de las bibliotecas de Sweet Home 3D. Lo que
+  importa no son las fotos: el catálogo declara el tamaño real de cada una,
+  y un ladrillo puesto a ojo se ve como un mosaico.
+- **213 colores RAL Classic** con su nombre. Al pintar dejan un material CON
+  NOMBRE — «RAL 7035 Gris claro» —, o sea una referencia que un pintor puede
+  comprar, no tres números.
+
+### Corregido
+- **Los modelos importados entraban tumbados.** Un OBJ no dice cuál es su
+  vertical y las dos convenciones del mundo no coinciden. Al arreglar el
+  giro apareció el resto: el catálogo aplica su propia matriz y estira el
+  modelo al tamaño declarado, y **uno de cada cuatro de estos ficheros no
+  está en centímetros** (una barandilla de 126 cm cuyo OBJ mide 3,7).
+- **Las texturas salían hechas añicos en lo curvo.** Se descartaban las
+  coordenadas del propio fichero y se proyectaba la imagen en plano sobre
+  cada faceta.
+- **Y se quedaban atrás al colocar.** El mapa está anclado a coordenadas del
+  mundo; ahora viaja con la geometría al colocar, mover, girar y escalar.
+- **Las aristas de la triangulación se dibujaban todas.** El fichero dice
+  qué caras forman una superficie continua (`s`); ahora se le cree.
+- **No se podía uno acercar a un componente**: la cámara tenía un tope de
+  50 cm. Ahora 2 cm, con el plano cercano acompañando.
+- **Dos modelos tumbaban la importación** por una arista que empieza y acaba
+  en el mismo vértice.
+- **Issue #6 — los paquetes de Linux no arrancaban con NVIDIA + X11.** El
+  bundle llevaba `libX11` y el driver del anfitrión cargaba la del sistema:
+  dos copias en un mismo proceso. Ahora vienen del anfitrión. *Verificado
+  solo que no rompe el caso que funcionaba (AMD + X11); la mitad NVIDIA
+  sigue sin verificar.*
+- **El plugin del asistente no cargaba en el paquete** (`core.ai` no
+  entraba), y **la biblioteca de texturas no se empaquetaba** en Windows,
+  así que la sección Materiales salía vacía.
+- **La biblioteca en línea habría salido muerta**: Cloudflare responde 403
+  al User-Agent por defecto de Python.
+
+### Rendimiento
+- **Llenar la bandeja de componentes: 21,6 s → 1,2 s.** Las miniaturas son
+  de 10 KB y el coste es el viaje, no los bytes; se piden 16 a la vez, fuera
+  del hilo de la interfaz, con 40 filas por adelantado.
+- **El arranque no se alargó** pese a meter 427 texturas y 213 colores: las
+  muestras de cada sección se construyen al abrirla, no al abrir el
+  programa. Medido: 0,21 → 0,95 s al añadirlas, y 0,14 s ya arreglado.
+
 ## [0.3.6.3] — 2026-08-27
 
 **The release that puts .skp import back.** A change in OpenSKP upstream
