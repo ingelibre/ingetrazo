@@ -311,3 +311,65 @@ def test_texture_rotation_round_trips_igz(tmp_path):
     igz.load_into(scene2, p)
     tex = scene2.mesh.faces[0].attrs["texture"]
     assert tex["rot"] == 45.0 and tex["sw"] == 1.5
+
+
+# ---- A dead map_Kd costs its own texture, not the model ----------------------
+
+def _model_with_map(tmp_path, map_line, image=None):
+    """A one-triangle OBJ whose material carries ``map_line`` and a red Kd."""
+    if image is not None:
+        QImage(2, 2, QImage.Format_RGB32).save(str(tmp_path / image))
+    (tmp_path / "m.mtl").write_text(
+        "newmtl skin\nKd 0.8 0.1 0.1\n%s\n" % map_line)
+    obj = tmp_path / "m.obj"
+    obj.write_text(
+        "mtllib m.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl skin\nf 1 2 3\n")
+    return obj
+
+
+def test_a_windows_path_with_spaces_finds_the_image_that_travelled_along(tmp_path):
+    # Third-party OBJs point at the machine they were made on. Taking the
+    # line's last token broke on the spaces every Windows path has, and
+    # Path.with_name then raised on the fragment and took the whole import
+    # down: four models of the Sweet Home 3D CC0 library would not load.
+    obj = _model_with_map(
+        tmp_path,
+        "map_Kd C:/Documents and Settings/Jeremy.KIDSXP/Desktop/wood.jpg",
+        image="wood.jpg")
+    scene = Scene()
+    obj_format.load_obj(scene, obj)
+    assert scene.faces
+    tex = scene.faces[0].attrs.get("texture")
+    assert tex and Path(tex["path"]).name == "wood.jpg"
+
+
+def test_a_map_that_leads_nowhere_falls_back_to_the_colour(tmp_path):
+    obj = _model_with_map(
+        tmp_path, "map_Kd C:/Documents and Settings/jeremy/gone.jpg")
+    scene = Scene()
+    obj_format.load_obj(scene, obj)              # must not raise
+    assert scene.faces
+    attrs = scene.faces[0].attrs
+    assert "texture" not in attrs, "kept a path that leads nowhere"
+    assert attrs.get("color") == [0.8, 0.1, 0.1]
+
+
+def test_map_options_are_not_mistaken_for_the_filename(tmp_path):
+    # map_Kd takes options before the file: -s scales, -o offsets.
+    obj = _model_with_map(tmp_path, "map_Kd -s 1 1 1 -o 0 0 0 wood.jpg",
+                          image="wood.jpg")
+    scene = Scene()
+    obj_format.load_obj(scene, obj)
+    tex = scene.faces[0].attrs.get("texture")
+    assert tex and Path(tex["path"]).name == "wood.jpg"
+
+
+def test_an_mtl_in_a_foreign_encoding_still_loads(tmp_path):
+    (tmp_path / "m.mtl").write_bytes(
+        b"# color caf\xe9\nnewmtl skin\nKd 0.8 0.1 0.1\n")
+    obj = tmp_path / "m.obj"
+    obj.write_text(
+        "mtllib m.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl skin\nf 1 2 3\n")
+    scene = Scene()
+    obj_format.load_obj(scene, obj)              # must not raise
+    assert scene.faces[0].attrs.get("color") == [0.8, 0.1, 0.1]

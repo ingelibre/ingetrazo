@@ -9,7 +9,7 @@ material. Opens in Blender, MeshLab, etc. with the painted colours intact.
 """
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from PySide6.QtGui import QVector3D
 
@@ -152,14 +152,63 @@ def save_obj(scene, path) -> None:
 
 # ---- Import --------------------------------------------------------------------
 
+def _is_number(tok: str) -> bool:
+    try:
+        float(tok)
+    except ValueError:
+        return False
+    return True
+
+
+def _resolve_map(mtl: Path, line: str):
+    """The image file a ``map_Kd`` line points at, or ``None``.
+
+    Third-party OBJs point wherever the model was made. Taking the line's
+    last token broke on the spaces every Windows path has — a bed from this
+    library carries ``map_Kd C:/Documents and Settings/Jeremy.KIDSXP/Desktop/
+    WoodFine0031_10_S.jpg`` and the tail alone, "Settings/…/WoodFine…jpg",
+    then blew up ``Path.with_name`` (Invalid name) and took the WHOLE import
+    down with it. One dead reference must cost its own texture, nothing more.
+
+    So: the value is everything after the tag, minus the ``-s``/``-o`` option
+    groups the format allows; it is looked for beside the ``.mtl`` as written
+    and then by bare filename, which is what rescues a foreign absolute path
+    whose image did travel with the model; and anything still missing returns
+    ``None``, leaving the material to fall back to its ``Kd`` colour.
+    """
+    rest = line.split(None, 1)
+    if len(rest) < 2:
+        return None
+    toks = rest[1].split()
+    while toks and toks[0].startswith("-"):        # -s 1 1 1, -o 0 0 0, -bm 1
+        toks = toks[1:]
+        while toks and _is_number(toks[0]):
+            toks = toks[1:]
+    value = " ".join(toks).strip().strip('"')
+    if not value:
+        return None
+    here = mtl.parent
+    ref = PurePosixPath(value.replace("\\", "/"))
+    for cand in (here / value, here / ref.name):
+        try:
+            if cand.is_file():
+                return cand
+        except OSError:                            # a path the OS refuses
+            continue
+    return None
+
+
 def _parse_mtl(path: Path) -> dict:
-    """Map material name → ``{"color": (r,g,b), "map": filename|None}`` from a
-    ``.mtl`` file's ``Kd`` / ``map_Kd`` lines."""
+    """Map material name → ``{"color": (r,g,b), "map": Path|None}`` from a
+    ``.mtl`` file's ``Kd`` / ``map_Kd`` lines. The image is resolved here,
+    once — see :func:`_resolve_map` for what a dead reference costs."""
     mats: dict[str, dict] = {}
     if not path.exists():
         return mats
     current = None
-    for line in path.read_text().splitlines():
+    # errors="replace": these files carry whatever encoding the author's
+    # machine had, and a stray byte must not cost the model either.
+    for line in path.read_text(errors="replace").splitlines():
         parts = line.split()
         if not parts:
             continue
@@ -172,7 +221,7 @@ def _parse_mtl(path: Path) -> dict:
             mats[current]["color"] = (float(parts[1]), float(parts[2]),
                                       float(parts[3]))
         elif parts[0] == "map_Kd" and len(parts) >= 2:
-            mats[current]["map"] = parts[-1]  # last token = filename
+            mats[current]["map"] = _resolve_map(path, line)
     return mats
 
 
@@ -235,8 +284,7 @@ def _load_obj_inner(scene, path, progress=None) -> None:
         if mat is None:
             return None
         if mat.get("map"):
-            img = path.with_name(mat["map"])
-            return {"texture": {"path": str(img), "sw": 1.0, "sh": 1.0}}
+            return {"texture": {"path": str(mat["map"]), "sw": 1.0, "sh": 1.0}}
         color = mat.get("color")
         if color is not None and tuple(round(c, 4) for c in color) != \
                 tuple(round(c, 4) for c in _DEFAULT_COLOR):
@@ -279,11 +327,11 @@ def _load_obj_inner(scene, path, progress=None) -> None:
         new_faces.add(face)
         if mat is not None:
             if mat.get("map"):
-                # Resolve the image next to the .obj. Tile size isn't in the OBJ
-                # (the vt carry it), so default to 1 m — the texture shows; the
-                # exact tiling can be re-set with the Paint tool.
-                img = path.with_name(mat["map"])
-                face.attrs["texture"] = {"path": str(img), "sw": 1.0, "sh": 1.0}
+                # Tile size isn't in the OBJ (the vt carry it), so default to
+                # 1 m — the texture shows; the exact tiling can be re-set with
+                # the Paint tool.
+                face.attrs["texture"] = {"path": str(mat["map"]),
+                                         "sw": 1.0, "sh": 1.0}
             else:
                 color = mat.get("color")
                 if color is not None and tuple(round(c, 4) for c in color) != \
