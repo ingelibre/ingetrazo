@@ -373,3 +373,44 @@ def test_an_mtl_in_a_foreign_encoding_still_loads(tmp_path):
     scene = Scene()
     obj_format.load_obj(scene, obj)              # must not raise
     assert scene.faces[0].attrs.get("color") == [0.8, 0.1, 0.1]
+
+
+# ---- The unit an OBJ never records ------------------------------------------
+
+def _obj_of_size(tmp_path, span):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    obj = tmp_path / "s.obj"
+    obj.write_text("v 0 0 0\nv %g 0 0\nv 0 %g 0\nf 1 2 3\n" % (span, span))
+    return obj
+
+
+def test_suggest_unit_only_speaks_when_metres_are_impossible(tmp_path):
+    # OBJ records no unit, so the size is the only clue — and it is only
+    # conclusive at the top: 234 units across is not a 234 m sofa, but 115
+    # reads the same for a chair in centimetres and a tower in metres.
+    from formats.obj import suggest_unit
+    assert suggest_unit(_obj_of_size(tmp_path / "a", 234)) == "cm"
+    assert suggest_unit(_obj_of_size(tmp_path / "b", 45000)) == "mm"
+    assert suggest_unit(_obj_of_size(tmp_path / "c", 115)) == "m"
+    assert suggest_unit(_obj_of_size(tmp_path / "d", 3.2)) == "m"
+
+
+def test_the_import_scale_lands_the_model_in_metres(tmp_path):
+    # A Sweet Home 3D chair is 51 x 80 x 53 centimetres.
+    obj = tmp_path / "chair.obj"
+    obj.write_text("v 0 0 0\nv 51 0 0\nv 0 80 0\nf 1 2 3\n")
+    scene = Scene()
+    obj_format.load_obj(scene, obj, scale=0.01)
+    xs = [v.x() for f in scene.faces for v in f.vertices]
+    ys = [v.y() for f in scene.faces for v in f.vertices]
+    assert abs(max(xs) - 0.51) < 1e-6 and abs(max(ys) - 0.80) < 1e-6
+
+
+def test_the_default_scale_leaves_a_model_untouched(tmp_path):
+    # Our own exports are metres: a round trip must not be rescaled.
+    obj = tmp_path / "m.obj"
+    obj.write_text("v 0 0 0\nv 2 0 0\nv 0 3 0\nf 1 2 3\n")
+    scene = Scene()
+    obj_format.load_obj(scene, obj)
+    xs = [v.x() for f in scene.faces for v in f.vertices]
+    assert abs(max(xs) - 2.0) < 1e-9

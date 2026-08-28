@@ -2338,15 +2338,53 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             tr("Texture cache cleared ({count} files).", count=removed), 4000)
 
+    def _obj_unit(self, path) -> "float | None":
+        """The metres-per-unit factor for an OBJ, asked once per import.
+
+        The format records no unit at all, so the file cannot say and the
+        importer must not guess in silence: Sweet Home 3D's furniture is in
+        centimetres and comes in a hundred times too big, while our own
+        exports are metres and must round-trip untouched.
+
+        Asked, but with the answer already filled in. Where the model's own
+        size rules metres out — 200 units across is not a 200 m chair — that
+        reading is preselected; where it is genuinely ambiguous the last
+        choice is, so importing a folder of one library is one confirmation
+        and then muscle memory. Cancel means cancel the import.
+        """
+        from PySide6.QtWidgets import QInputDialog
+        from formats.obj import OBJ_UNITS, suggest_unit
+
+        keys = ["m", "cm", "mm", "in", "ft"]
+        labels = [tr("Metres"), tr("Centimetres"), tr("Millimetres"),
+                  tr("Inches"), tr("Feet")]
+        guess = suggest_unit(path)
+        if guess == "m":
+            guess = str(QSettings().value("import/obj_unit", "m") or "m")
+        idx = keys.index(guess) if guess in keys else 0
+        label, ok = QInputDialog.getItem(
+            self, tr("Import OBJ"),
+            tr("An OBJ file does not record its unit. What is this model in?"),
+            labels, idx, False)
+        if not ok:
+            return None
+        key = keys[labels.index(label)]
+        QSettings().setValue("import/obj_unit", key)
+        return OBJ_UNITS[key]
+
     def _on_import_obj(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
             self, tr("Import OBJ"), "", tr("Wavefront OBJ (*.obj);;All files (*)"))
         if not path_str:
             return
         path = Path(path_str)
+        scale = self._obj_unit(path)
+        if scale is None:
+            return
         dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))
         cmd = SnapshotImport(
-            lambda scene: obj_format.load_obj(scene, path, progress=cb))
+            lambda scene: obj_format.load_obj(scene, path, progress=cb,
+                                              scale=scale))
         try:
             self.viewport.history.execute(cmd)
         except Exception as exc:  # noqa: BLE001

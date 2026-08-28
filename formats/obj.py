@@ -225,7 +225,50 @@ def _parse_mtl(path: Path) -> dict:
     return mats
 
 
-def load_obj(scene, path, progress=None) -> None:
+#: What a unit is worth in metres. OBJ carries no unit of its own — the
+#: format simply does not say — so the importer has to be told, and every
+#: library picks its own: Sweet Home 3D's models are centimetres, CAD
+#: exports are often millimetres, ours are metres.
+OBJ_UNITS = {"m": 1.0, "cm": 0.01, "mm": 0.001, "in": 0.0254, "ft": 0.3048}
+
+
+def suggest_unit(path) -> str:
+    """The unit an OBJ was most likely written in, from its own size.
+
+    Only useful where the number cannot be metres: a model 200 units across
+    is not a 200 m object, so it is centimetres (or millimetres above 20000).
+    Below that it is genuinely ambiguous — a chair 115 units tall reads the
+    same as a 115 m tower — and the caller is better off asking. Metres is
+    the answer there: it is what this app writes, so a round trip through
+    our own exporter never asks the user to correct it.
+
+    One pass over the ``v`` lines; it does not parse the model.
+    """
+    lo = [float("inf")] * 3
+    hi = [float("-inf")] * 3
+    try:
+        with open(path, "rb") as fh:
+            for line in fh:
+                if not line.startswith(b"v "):
+                    continue
+                p = line.split()
+                if len(p) < 4:
+                    continue
+                for k in range(3):
+                    v = float(p[k + 1])
+                    lo[k] = min(lo[k], v)
+                    hi[k] = max(hi[k], v)
+    except (OSError, ValueError):
+        return "m"
+    span = max((hi[k] - lo[k]) for k in range(3)) if hi[0] > lo[0] else 0.0
+    if span > 20000.0:
+        return "mm"
+    if span > 200.0:
+        return "cm"
+    return "m"
+
+
+def load_obj(scene, path, progress=None, scale: float = 1.0) -> None:
     """See :func:`_load_obj_inner`. Wrapped to run with the generational GC off —
     mass vertex/edge/face construction ahead (see formats.skp.apply_payload);
     collection is merely deferred to the re-enable."""
@@ -233,13 +276,13 @@ def load_obj(scene, path, progress=None) -> None:
     _gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        _load_obj_inner(scene, path, progress=progress)
+        _load_obj_inner(scene, path, progress=progress, scale=scale)
     finally:
         if _gc_was_enabled:
             gc.enable()
 
 
-def _load_obj_inner(scene, path, progress=None) -> None:
+def _load_obj_inner(scene, path, progress=None, scale: float = 1.0) -> None:
     """Add the faces of a Wavefront OBJ at ``path`` to ``scene``'s mesh, then
     weld + merge coplanar so a triangulated file (e.g. our own export, or a
     SketchUp OBJ) comes back as clean editable polygons. Material ``Kd`` colours
@@ -267,7 +310,9 @@ def _load_obj_inner(scene, path, progress=None) -> None:
             continue
         tag = parts[0]
         if tag == "v":
-            verts.append(QVector3D(float(parts[1]), float(parts[2]), float(parts[3])))
+            verts.append(QVector3D(float(parts[1]) * scale,
+                                   float(parts[2]) * scale,
+                                   float(parts[3]) * scale))
         elif tag == "mtllib":
             materials = _parse_mtl(path.with_name(parts[1]))
         elif tag == "usemtl":
