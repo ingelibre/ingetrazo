@@ -45,6 +45,25 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.7" date="2026-08-28">
+      <description>
+        <p>An online component library of 1510 models browsed from the
+        tray, 8 models and 6 scale figures bundled for offline use, 427
+        textures and the 213 RAL Classic colours — each with the real size
+        or the real name a specification needs. Plus the import fixes a
+        session of dogfooding turned up: models arrived lying on their
+        side, textures shattered on curved surfaces and were left behind
+        when a component was placed.</p>
+        <p xml:lang="es">Biblioteca de componentes en línea con 1510
+        modelos navegables desde la bandeja, 8 modelos y 6 figuras de
+        escala dentro del programa para trabajar sin red, 427 texturas y
+        los 213 colores RAL Classic — cada uno con el tamaño real o el
+        nombre real que hace falta para especificar. Y los arreglos de
+        importación que destapó una sesión de uso: los modelos entraban
+        tumbados, las texturas salían hechas añicos en lo curvo y se
+        quedaban atrás al colocar un componente.</p>
+      </description>
+    </release>
     <release version="0.3.4" date="2026-08-25">
       <description>
         <p>Copy/paste for groups and components with a solid, textured

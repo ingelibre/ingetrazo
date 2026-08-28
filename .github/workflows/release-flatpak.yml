@@ -49,6 +49,33 @@ jobs:
           echo "runtime=$RUNTIME//$VER  sdk=$SDK//$VER"
           flatpak install --user --noninteractive flathub "$RUNTIME//$VER" "$SDK//$VER"
 
+      - name: The metainfo must name the version being shipped
+        run: |
+          # `flatpak list` and every software centre read the version from
+          # the newest <release> in the metainfo, not from the code. It was
+          # hand-maintained and drifted: v0.3.7 installed and still reported
+          # itself as 0.3.4. A missing entry is injected rather than failing
+          # the release — but write one by hand with a real description.
+          python3 - <<'PY'
+          import datetime, pathlib, re
+          ver = re.search(r"__version__\s*=\s*.([^'\"]+)",
+                          pathlib.Path("core/version.py").read_text()).group(1)
+          f = pathlib.Path(
+              "packaging/flatpak/com.ingetrazo.IngeTrazo.metainfo.xml")
+          xml = f.read_text(encoding="utf-8")
+          if 'version="%s"' % ver in xml:
+              print("metainfo already names %s" % ver)
+          else:
+              today = datetime.date.today().isoformat()
+              xml = xml.replace(
+                  "  <releases>\n",
+                  '  <releases>\n    <release version="%s" date="%s"/>\n'
+                  % (ver, today), 1)
+              f.write_text(xml, encoding="utf-8")
+              print("::warning::metainfo had no entry for %s — a bare one "
+                    "was injected; add a description in the repo" % ver)
+          PY
+
       - name: Build the bundle
         run: packaging/flatpak/build-flatpak.sh --bundle
 
