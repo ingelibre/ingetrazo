@@ -253,6 +253,10 @@ class PushPullTool(Tool):
         # The live preview applies the real commit each frame and reverts it from
         # this snapshot before the next, so the drag shows the stitched result.
         self._preview_snapshot: dict | None = None
+        # How much of ``extrusion`` the prism preview has already applied to
+        # the model, so a frame moves only the delta and the revert knows the
+        # total to undo.
+        self._prism_applied: float = 0.0
         # The model point the distance inference is currently locked onto (a
         # corner or a face hit), drawn as a green marker by the viewport overlay.
         self._inference_point: QVector3D | None = None
@@ -314,9 +318,14 @@ class PushPullTool(Tool):
             self.extrusion = QVector3D.dotProduct(
                 projected - self._anchor, self._normal)
         self._clamp_extrusion(viewport)
-        # The drag shows the sweep; the real pipeline runs once, at the
-        # commit — see _build_light_faces.
-        self._show_light_preview(viewport)
+        # A clean prism extend/shrink is previewed by MOVING the cap, so the
+        # model itself shows the result and nothing of the old shape is left
+        # standing. Anything else shows the sweep as an overlay; the real
+        # pipeline runs once, at the commit — see _build_light_faces.
+        if self._prism_cap and not self._keep_base:
+            self._show_prism_preview(viewport)
+        else:
+            self._show_light_preview(viewport)
 
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
@@ -552,7 +561,51 @@ class PushPullTool(Tool):
     def _target_mesh(self, scene):
         return self._group.mesh if self._group is not None else scene.mesh
 
+    def _show_prism_preview(self, viewport) -> None:
+        """Preview a prism extend/shrink by translating the cap in the MODEL,
+        the way SketchUp does — the walls follow it and the old shape simply
+        is not there any more.
+
+        The overlay cannot do that. It can only ADD faces on top, so pushing
+        the end of a block left the original cap's edges cutting across the
+        block being formed, and pushing in left the whole original block
+        standing around the pocket (Marco, 2026-08-27, with SketchUp beside
+        it for comparison).
+
+        Reversible by ARITHMETIC, not by a snapshot: the frame moves the cap
+        by the delta since the last one, and the revert moves it back by the
+        total. Snapshots are what made the mesh-mutating preview too slow to
+        keep — measured on this machine, capture+restore is 11 ms a frame at
+        3k faces and 151 ms at 40k, where translating a cap is a handful of
+        points. ``_prism_cap`` is exactly the case where a translation IS the
+        operation, so the two always agree.
+        """
+        self._light_faces = []
+        self._light_rings = []
+        viewport.set_suppressed_faces(set())
+        target = self._target_scene(viewport.scene)
+        delta = self.extrusion - self._prism_applied
+        if abs(delta) > 1e-12:
+            moved = {_key(p + self._normal * self._prism_applied)
+                     for p in self._cap_positions}
+            translate_points(target, moved, self._normal * delta)
+            self._prism_applied = self.extrusion
+            viewport.scene.version += 1
+        viewport.update()
+
+    def _revert_prism_preview(self, viewport) -> None:
+        """Put a translated cap back where it started."""
+        if not self._prism_applied:
+            return
+        target = self._target_scene(viewport.scene)
+        moved = {_key(p + self._normal * self._prism_applied)
+                 for p in self._cap_positions}
+        translate_points(target, moved, self._normal * -self._prism_applied)
+        self._prism_applied = 0.0
+        viewport.scene.version += 1
+
     def _revert_preview(self, viewport) -> None:
+        self._revert_prism_preview(viewport)
         if self._preview_snapshot is not None:
             self._target_mesh(viewport.scene).restore_state(self._preview_snapshot)
             self._preview_snapshot = None
@@ -1434,6 +1487,7 @@ class PushPullTool(Tool):
         self.dragging = False
         self._attached = False
         self._prism_cap = False
+        self._prism_applied = 0.0
         self._keep_base = False
         self._limit_in = None
         self._group = None

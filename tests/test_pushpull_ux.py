@@ -1016,3 +1016,79 @@ def test_a_reversed_door_commits_the_push_the_way_it_previewed():
     y = moved[0].centroid().y()
     assert y * inside > 0, (
         "the push came out the wrong way: the pocket floor landed at y=%.3f" % y)
+
+
+# ---- A prism extend/shrink previews by moving the model ----------------------
+
+def _fingerprint(scene):
+    return sorted((len(f.vertices), round(f.area(), 6),
+                   round(f.centroid().x(), 6), round(f.centroid().y(), 6),
+                   round(f.centroid().z(), 6)) for f in scene.faces)
+
+
+def _prism_drag(scene, face, dists):
+    """Drive the drag the way on_drag does, through the prism preview."""
+    vp = _StubViewport(scene)
+    tool = PushPullTool()
+    tool.base_face = face
+    tool._normal = face.normal()
+    tool._anchor = face.centroid()
+    tool.dragging = True
+    tool._attached, tool._prism_cap = tool._classify_base(scene)
+    tool._cap_positions = tool._cap_loop_positions(face)
+    assert tool._prism_cap, "this is meant to be the prism case"
+    for d in dists:
+        tool.extrusion = d
+        tool._show_prism_preview(vp)
+    return tool, vp
+
+
+def test_the_prism_preview_moves_the_model_and_adds_no_overlay():
+    # The overlay can only ADD faces on top: pushing the end of a block left
+    # the original cap's edges cutting across it, and pushing in left the old
+    # block standing around the pocket (Marco, 2026-08-27). A prism is a pure
+    # translation, so the preview does the translation.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    tool, _vp = _prism_drag(scene, top, [1.0])
+
+    assert tool.preview_faces() == []          # nothing drawn on top
+    assert tool.rubber_band_lines() == []      # and no wireframe either
+    assert _top(scene, 4.0) is not None        # the cap really moved
+    assert len(scene.faces) == 6               # still just the box
+
+
+def test_the_prism_preview_moves_only_the_delta_and_reverts_exactly():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    before = _fingerprint(scene)
+
+    # A drag wanders: several frames, in and out, before the user settles.
+    tool, vp = _prism_drag(scene, top, [0.5, 1.7, 1.2, -0.8, 2.0])
+    assert _top(scene, 5.0) is not None        # follows the last frame only
+    assert tool._prism_applied == 2.0
+
+    tool._revert_preview(vp)
+    assert tool._prism_applied == 0.0
+    assert _fingerprint(scene) == before, "the drag left the model moved"
+
+
+def test_a_prism_drag_commits_the_same_as_a_direct_push():
+    # The preview must not change what the commit produces.
+    direct = Scene()
+    hist = History(direct)
+    _cube(direct, hist, height=3.0)
+    _push(direct, _top(direct, 3.0), 1.5)
+
+    dragged = Scene()
+    hist2 = History(dragged)
+    _cube(dragged, hist2, height=3.0)
+    top = _top(dragged, 3.0)
+    tool, vp = _prism_drag(dragged, top, [0.4, 1.1, 1.5])
+    tool._commit(vp)
+
+    assert _fingerprint(dragged) == _fingerprint(direct)
