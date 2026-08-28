@@ -3795,7 +3795,9 @@ class Viewport(QOpenGLWidget):
             self.camera.target = focus
         frac = max(bw / max(self.width(), 1), bh / max(self.height(), 1))
         frac = max(frac, 0.04)        # don't zoom past a sane limit in one go
-        self.camera.distance = max(0.5, min(self.camera.distance * frac, 10000.0))
+        from core.camera import MAX_DISTANCE, MIN_DISTANCE
+        self.camera.distance = max(
+            MIN_DISTANCE, min(self.camera.distance * frac, MAX_DISTANCE))
         self.update()
 
     def _draw_snap_indicator(self, painter: QPainter, snap: SnapResult) -> None:

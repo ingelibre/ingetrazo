@@ -14,6 +14,16 @@ import math
 from PySide6.QtGui import QMatrix4x4, QVector3D
 
 
+#: How close the camera may get to what it is looking at. A component is
+#: centimetres, not metres: half a metre away is as close as you can stand
+#: to a wall, and it left the face of a figure or the rim of a wheel
+#: impossible to look at. Two centimetres is close enough for any of it.
+MIN_DISTANCE = 0.02
+
+#: Ceiling: past this the model is a dot and the depth buffer is noise.
+MAX_DISTANCE = 10000.0
+
+
 class OrbitCamera:
     """Camera that orbits around a target point."""
 
@@ -49,7 +59,12 @@ class OrbitCamera:
     def projection_matrix(self) -> QMatrix4x4:
         m = QMatrix4x4()
         if self.perspective:
-            m.perspective(self.fov_deg, self.aspect, self.znear, self.zfar)
+            # The near plane follows the camera in: at any normal working
+            # distance it is the usual 0.1 m, and only when you come right up
+            # to something does it step back out of the way — otherwise the
+            # near plane itself is what stops you.
+            near = min(self.znear, max(self.distance * 0.02, 1e-4))
+            m.perspective(self.fov_deg, self.aspect, near, self.zfar)
         else:
             # Parallel projection — size derived from camera distance so the
             # framing matches what the user sees in perspective.
@@ -90,13 +105,15 @@ class OrbitCamera:
 
     def zoom(self, steps: float) -> None:
         factor = 0.9 ** steps
-        self.distance = max(0.5, min(self.distance * factor, 10000.0))
+        self.distance = max(MIN_DISTANCE,
+                            min(self.distance * factor, MAX_DISTANCE))
 
     def zoom_to(self, steps: float, focus: QVector3D) -> None:
         """Zoom keeping the world point ``focus`` (under the cursor) fixed on
         screen, SketchUp-style. The whole frame scales toward ``focus``, so both
         the distance and the target move by the same (clamped) factor."""
-        new_distance = max(0.5, min(self.distance * (0.9 ** steps), 10000.0))
+        new_distance = max(MIN_DISTANCE,
+                           min(self.distance * (0.9 ** steps), MAX_DISTANCE))
         factor = new_distance / self.distance if self.distance > 1e-9 else 1.0
         self.target = focus + (self.target - focus) * factor
         self.distance = new_distance
@@ -116,11 +133,12 @@ class OrbitCamera:
             (min_pt.z() + max_pt.z()) * 0.5,
         )
         diag = (max_pt - min_pt).length()
-        if diag < 1.0:
-            diag = 1.0
+        if diag < MIN_DISTANCE:
+            diag = MIN_DISTANCE      # an empty scene still needs a distance
         self.target = center
         fov_rad = math.radians(self.fov_deg)
-        self.distance = max(diag * margin / (2.0 * math.tan(fov_rad / 2.0)), 1.0)
+        self.distance = max(diag * margin / (2.0 * math.tan(fov_rad / 2.0)),
+                            MIN_DISTANCE)
 
     # Yaw / pitch presets for standard architectural views (Z-up convention).
     _STANDARD_VIEWS = {
