@@ -86,27 +86,36 @@ def plan_edge_commands(
             # Carry the split into faces sharing this edge — but not the face
             # the drawn segment chord-splits, which inserts the point itself.
             # This is what makes a gable wall gain the ridge apex (and fill its
-            # triangular gap) when the ridge is later moved up. Gated on
-            # ``detect_faces``: tools that manage their own faces (Rectangle, and
-            # push/pull's prep edges) opt out of auto-topology, so they keep
-            # their simple rectangular walls for the push machinery.
-            if detect_faces:
-                for f, new_verts in split_edge_in_faces(
-                    faces_snapshot, edge.a, edge.b, point, skip_endpoints=(a, b)
-                ):
-                    # Same face, one collinear vertex richer: it keeps its own
-                    # paint, exactly as it stands (the texture's world→UV map
-                    # included — the plane has not moved).
-                    keep = dict(f.attrs) if f.attrs else None
-                    commands.append(DeleteFaceCommand(f))
-                    commands.append(
-                        AddFaceCommand(new_verts, auto=False,
-                                       holes=f.holes or None, attrs=keep)
-                    )
-                    faces_snapshot[faces_snapshot.index(f)] = Face(
-                        list(new_verts), [list(h) for h in f.holes],
-                        attrs=keep
-                    )
+            # triangular gap) when the ridge is later moved up.
+            #
+            # NOT gated on ``detect_faces``. That flag says "I add my own
+            # faces, don't auto-close cycles for me" — it is about FACING, and
+            # bundling this in with it left the mesh non-manifold: a door drawn
+            # on a wall with the Rectangle tool split the wall's bottom edge in
+            # three while the FLOOR kept the original long one, so the two no
+            # longer shared it and the box stopped being closed (Marco's
+            # cubo.igz: four edges carrying one face each, all on that line).
+            # Everything volumetric then quietly stops working on it —
+            # orient_outward has no volume to judge windings against, the
+            # push's recess rule reads the wrong sign, the coplanar merge
+            # dissolves the door back into the wall. The same door drawn with
+            # three lines left the box closed, which is what gave it away.
+            for f, new_verts in split_edge_in_faces(
+                faces_snapshot, edge.a, edge.b, point, skip_endpoints=(a, b)
+            ):
+                # Same face, one collinear vertex richer: it keeps its own
+                # paint, exactly as it stands (the texture's world→UV map
+                # included — the plane has not moved).
+                keep = dict(f.attrs) if f.attrs else None
+                commands.append(DeleteFaceCommand(f))
+                commands.append(
+                    AddFaceCommand(new_verts, auto=False,
+                                   holes=f.holes or None, attrs=keep)
+                )
+                faces_snapshot[faces_snapshot.index(f)] = Face(
+                    list(new_verts), [list(h) for h in f.holes],
+                    attrs=keep
+                )
 
         # Add the new segment's pieces (welding duplicates), auto-facing.
         for sa, sb in new_segments:

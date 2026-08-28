@@ -464,3 +464,42 @@ def test_a_face_drawn_with_its_own_paint_keeps_it():
     small = min(scene.faces, key=lambda f: f.area())
     assert small.attrs["mat"] == "Vidrio"          # its own, not the mother's
     assert small.attrs.get("texture", {}).get("uvw") == _TEX["uvw"]
+
+
+def test_a_rectangle_drawn_on_a_box_keeps_the_box_closed():
+    """Drawing a door on a wall must not open the solid.
+
+    The Rectangle tool passes ``detect_faces=False`` — it adds its own face —
+    and that flag also gated the propagation of an edge SPLIT into the other
+    faces carrying that edge. So the wall's bottom edge became three while the
+    FLOOR kept the original long one: coincident, but not shared, and the box
+    stopped being closed (Marco's cubo.igz — four edges with a single face
+    each, all on that line). Everything volumetric quietly stops working on an
+    open shell: orient_outward has no volume to judge windings against, the
+    push reads the wrong sign, the coplanar merge dissolves the door.
+    """
+    from PySide6.QtCore import QPointF, Qt
+    from core.orient import is_closed
+    from tools.base import ToolContext
+    from tools.rectangle import RectangleTool
+
+    scene = Scene()
+    z = 3.0
+    c = [V(0, 0, 0), V(4, 0, 0), V(4, 4, 0), V(0, 4, 0),
+         V(0, 0, z), V(4, 0, z), V(4, 4, z), V(0, 4, z)]
+    for q in [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4),
+              (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]:
+        scene.mesh.add_face([c[i] for i in q])
+    assert is_closed(scene.mesh)
+
+    vp = _VP(scene)
+    tool = RectangleTool()
+    tool.work_plane = (V(0, 0, 0), V(0, -1, 0))
+    for p in (V(1, 0, 0), V(2.5, 0, 2)):          # a door down to the floor
+        tool.on_click(ToolContext(viewport=vp, world=p, screen=QPointF(0, 0),
+                                  modifiers=Qt.NoModifier, snap=None))
+
+    assert len(scene.faces) == 7                  # the wall split in two
+    assert is_closed(scene.mesh), "the door opened the box"
+    lonely = [e for e in scene.mesh.edges if len(e.faces) != 2]
+    assert lonely == [], "%d edges left carrying one face" % len(lonely)

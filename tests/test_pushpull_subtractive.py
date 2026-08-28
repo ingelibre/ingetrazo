@@ -341,8 +341,13 @@ def test_corner_step_notches_adjacent_walls():
 
     assert vp.history.undo() is True
     assert corner in scene.faces                           # fully restored
-    assert any(len(f.vertices) == 4 and all(abs(v.y()) < 1e-9 for v in f.vertices)
-               for f in scene.faces)                       # walls back to rects
+    # Walls back to un-notched rectangles. Not "four vertices": drawing the
+    # corner rectangle split the top edge, and the wall carrying that edge
+    # keeps the collinear vertex — which is exactly what keeps the two sharing
+    # it, and the box closed. The shape is what matters, so check the area.
+    front = [f for f in scene.faces if all(abs(v.y()) < 1e-9 for v in f.vertices)]
+    assert front and not any(len(f.vertices) == 6 for f in front)
+    assert abs(sum(f.area() for f in front) - 30.0) < 1e-3   # 10 x 3, whole
 
 
 def test_corner_step_leaves_no_orphan_edges():
