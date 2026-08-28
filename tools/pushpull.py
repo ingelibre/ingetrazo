@@ -255,8 +255,9 @@ class PushPullTool(Tool):
         self._preview_snapshot: dict | None = None
         # How much of ``extrusion`` the prism preview has already applied to
         # the model, so a frame moves only the delta and the revert knows the
-        # total to undo.
+        # total to undo, and the very Vertex OBJECTS it moves.
         self._prism_applied: float = 0.0
+        self._prism_verts: list = []
         # The model point the distance inference is currently locked onto (a
         # corner or a face hit), drawn as a green marker by the viewport overlay.
         self._inference_point: QVector3D | None = None
@@ -361,6 +362,7 @@ class PushPullTool(Tool):
             self._normal = self._outward_normal(face, target.mesh)
             self._attached, self._prism_cap = self._classify_base(target)
             self._cap_positions = self._cap_loop_positions(face)
+            self._prism_verts = self._cap_vertices(target)
             self._compute_inward_limit(target)
             self._preview_snapshot = None
             # The live preview takes over from the hover shade now.
@@ -404,6 +406,7 @@ class PushPullTool(Tool):
             self._normal = self._outward_normal(face, target.mesh)
             self._attached, self._prism_cap = self._classify_base(target)
             self._cap_positions = self._cap_loop_positions(face)
+            self._prism_verts = self._cap_vertices(target)
             self._compute_inward_limit(target)
             self._preview_snapshot = None
         elif abs(self.extrusion) > _MIN_EXTRUDE:
@@ -583,26 +586,41 @@ class PushPullTool(Tool):
         self._light_faces = []
         self._light_rings = []
         viewport.set_suppressed_faces(set())
-        target = self._target_scene(viewport.scene)
         delta = self.extrusion - self._prism_applied
         if abs(delta) > 1e-12:
-            moved = {_key(p + self._normal * self._prism_applied)
-                     for p in self._cap_positions}
-            translate_points(target, moved, self._normal * delta)
-            self._prism_applied = self.extrusion
-            viewport.scene.version += 1
+            self._move_cap(viewport, delta, self.extrusion)
         viewport.update()
+
+    def _cap_vertices(self, scene) -> list:
+        """The Vertex OBJECTS the cap loop stands on, resolved once."""
+        keys = {_key(p) for p in self._cap_positions}
+        mesh = self._group.mesh if self._group is not None else scene.mesh
+        return [v for v in mesh.vertices if _key(v.position) in keys]
+
+    def _move_cap(self, viewport, delta: float, applied: float) -> None:
+        """Slide the cap's own vertices by ``delta`` along the normal.
+
+        By IDENTITY, never by position. Resolving them by position each frame
+        is what warped Marco's cube (2026-08-27): pushed back until the cap
+        sat flush against the far face, its key matched that face's vertices
+        too, and the next frame dragged them along — the corner came out
+        chamfered. ``MoveVerticesCommand`` carries the same lesson in its
+        docstring; this is the cheap inverse it warns about, and holding the
+        objects is what makes it safe.
+        """
+        mesh = self._target_mesh(viewport.scene)
+        step = self._normal * delta
+        for v in self._prism_verts:
+            mesh.move_vertex(v, step)
+        # Booked as the TARGET, not as a running sum: adding deltas frame by
+        # frame drifts, and the revert has to undo exactly what it applied.
+        self._prism_applied = applied
+        viewport.scene.version += 1
 
     def _revert_prism_preview(self, viewport) -> None:
         """Put a translated cap back where it started."""
-        if not self._prism_applied:
-            return
-        target = self._target_scene(viewport.scene)
-        moved = {_key(p + self._normal * self._prism_applied)
-                 for p in self._cap_positions}
-        translate_points(target, moved, self._normal * -self._prism_applied)
-        self._prism_applied = 0.0
-        viewport.scene.version += 1
+        if self._prism_applied:
+            self._move_cap(viewport, -self._prism_applied, 0.0)
 
     def _revert_preview(self, viewport) -> None:
         self._revert_prism_preview(viewport)
@@ -1488,6 +1506,7 @@ class PushPullTool(Tool):
         self._attached = False
         self._prism_cap = False
         self._prism_applied = 0.0
+        self._prism_verts = []
         self._keep_base = False
         self._limit_in = None
         self._group = None

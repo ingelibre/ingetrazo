@@ -1036,6 +1036,7 @@ def _prism_drag(scene, face, dists):
     tool.dragging = True
     tool._attached, tool._prism_cap = tool._classify_base(scene)
     tool._cap_positions = tool._cap_loop_positions(face)
+    tool._prism_verts = tool._cap_vertices(scene)   # as on_click does
     assert tool._prism_cap, "this is meant to be the prism case"
     for d in dists:
         tool.extrusion = d
@@ -1092,3 +1093,43 @@ def test_a_prism_drag_commits_the_same_as_a_direct_push():
     tool._commit(vp)
 
     assert _fingerprint(dragged) == _fingerprint(direct)
+
+
+def test_pushing_a_block_back_flush_does_not_drag_the_wall_with_it():
+    """Marco's cube came out with a chamfered corner (2026-08-27).
+
+    He pushed a block back until its cap sat flush against the wall it grew
+    from, and kept going. Resolving the moving vertices BY POSITION each
+    frame, the cap's key then matched that wall's own vertices too, so the
+    next frame took them along and the corner sheared off.
+    ``MoveVerticesCommand`` records the same lesson in its docstring; the
+    moving vertices are held by IDENTITY here, so a coincidence means
+    nothing.
+    """
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, size=4.0, height=3.0)
+    door = [V(1, 0, 0), V(1, 0, 2), V(2.5, 0, 2), V(2.5, 0, 0)]
+    hist.execute(build_add_edges(scene, [(door[0], door[1]), (door[1], door[2]),
+                                         (door[2], door[3])]))
+    panel = min((f for f in scene.faces
+                 if all(abs(v.y()) < 1e-9 for v in f.vertices)),
+                key=lambda f: f.area())
+    _push(scene, panel, 2.0)                    # a block out of the front wall
+    cap = min((f for f in scene.faces
+               if all(abs(v.y() + 2.0) < 1e-6 for v in f.vertices)),
+              key=lambda f: f.area())
+    before = _fingerprint(scene)
+    far = sorted(round(v.y(), 6) for f in scene.faces for v in f.vertices)
+
+    # In to flush with the wall (y = 0) and a touch past it.
+    tool, vp = _prism_drag(scene, cap, [-0.5, -1.5, -1.95, -2.0, -2.2])
+    # Mid-drag, the WALL is still the wall: nothing of the box has moved past
+    # its own plane because the cap happened to land on it.
+    assert all(round(v.y(), 6) >= -0.2 - 1e-6
+               for f in scene.faces for v in f.vertices)
+
+    tool._revert_preview(vp)
+    assert _fingerprint(scene) == before, "the drag warped the model"
+    assert sorted(round(v.y(), 6)
+                  for f in scene.faces for v in f.vertices) == far
