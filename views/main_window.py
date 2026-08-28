@@ -1750,8 +1750,7 @@ class MainWindow(QMainWindow):
         group = self._make_billboard_person(image, height, name)
         if group is None:
             QMessageBox.warning(self, tr("Insert component"),
-                                tr("Component file missing: {p}",
-                                   p="person_billboard.png"))
+                                tr("Component file missing: {p}", p=image))
             return
         self._start_place(group)
 
@@ -1788,23 +1787,36 @@ class MainWindow(QMainWindow):
             img.width() / img.height())
         self._start_place(group)
 
-    def _on_insert_component(self, key: str) -> None:
+    def _on_insert_component(self, key: str, name: str | None = None) -> None:
         """Insert a bundled starter component as a Group at the origin,
-        selected and ready to Move into place. Components are ``.glb``
-        (the Sketchfab CC-BY set) or ``.obj``."""
+        selected and ready to Move into place. Components are ``.igz``
+        (models kept for offline use, textures packed in), ``.glb`` (the
+        Sketchfab CC-BY set) or ``.obj``."""
         from core.group import Group
         from core.scene import Scene as _Scene
         self.viewport.end_group_edit()
         from core.paths import app_root
         base = app_root() / "resources" / "components"
         temp = _Scene()
+        igz_path = base / f"{key}.igz"
         glb_path = base / f"{key}.glb"
         obj_path = base / f"{key}.obj"
-        if glb_path.exists():
+        if igz_path.exists():
+            # Our own format: one group, its images inside the file — so a
+            # bundled component needs no network and no sidecar textures.
+            from formats import igz as _igz
+            _igz.load_into(temp, igz_path)
+            if not temp.groups:
+                QMessageBox.warning(
+                    self, tr("Insert component"),
+                    tr("Component file missing: {p}", p=str(igz_path)))
+                return
+            mesh = temp.groups[0].mesh
+        elif glb_path.exists():
             from formats.glb import load_glb
             load_glb(temp, glb_path)
             mesh = temp.groups[0].mesh
-            name = temp.groups[0].name
+            name = name or temp.groups[0].name
         elif obj_path.exists():
             from formats import obj as _obj
             _obj.load_obj(temp, obj_path)
@@ -1817,22 +1829,23 @@ class MainWindow(QMainWindow):
             # soft (SketchUp import smoothing).
             from formats.fuse import soften_smooth_edges
             soften_smooth_edges(mesh, cos_threshold=0.55)
-            name = tr(key.capitalize())
         else:
             QMessageBox.warning(
                 self, tr("Insert component"),
                 tr("Component file missing: {p}", p=str(glb_path)))
             return
-        group = Group(mesh, name=name)
+        group = Group(mesh, name=name or tr(key.capitalize()))
         self._start_place(group)
 
     def insert_library_component(self, entry: dict) -> None:
         """Download a model from the online library and hand it to the
         placement tool, at its real size.
 
-        No unit is guessed: these OBJs are written in centimetres and the
-        catalogue says so, which is exactly what the generic importer has to
-        ask the user about (see ``_obj_unit``). The facet seams are softened
+        Nothing is guessed — not the unit, not the vertical, not even the
+        model's own turn: the catalogue declares all three, and
+        :func:`core.library.model_matrix` reproduces them. That is the
+        difference with the generic importer, which has only the file and
+        so has to ask (see ``_obj_unit``). The facet seams are softened
         like the bundled starters, so a low-poly piece reads as a real one.
         """
         from core import library
@@ -1851,7 +1864,8 @@ class MainWindow(QMainWindow):
         self.viewport.end_group_edit()
         temp = _Scene()
         try:
-            _obj.load_obj(temp, obj, scale=_obj.OBJ_UNITS["cm"])
+            _obj.load_obj(temp, obj,
+                           matrix=library.model_matrix(entry, obj))
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Component library"), str(exc))
             return

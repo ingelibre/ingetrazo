@@ -1,0 +1,38 @@
+[
+ {
+  "key": "sumari",
+  "name": "Sumari",
+  "tip": "Sumari (author, 1.72 m)",
+  "height": 1.72
+ },
+ {
+  "key": "ingeniero",
+  "name": "Engineer",
+  "tip": "Engineer with hard hat (1.75 m)",
+  "height": 1.75
+ },
+ {
+  "key": "stallman",
+  "name": "Richard Stallman",
+  "tip": "Richard Stallman (1.78 m)",
+  "height": 1.78
+ },
+ {
+  "key": "torvalds",
+  "name": "Linus Torvalds",
+  "tip": "Linus Torvalds (1.75 m)",
+  "height": 1.75
+ },
+ {
+  "key": "musk",
+  "name": "Elon Musk",
+  "tip": "Elon Musk (1.88 m)",
+  "height": 1.88
+ },
+ {
+  "key": "hawking",
+  "name": "Stephen Hawking",
+  "tip": "Stephen Hawking, seated (1.35 m)",
+  "height": 1.35
+ }
+]

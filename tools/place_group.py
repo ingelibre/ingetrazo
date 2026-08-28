@@ -104,6 +104,20 @@ class PlaceGroupTool(Tool):
         right, y_axis, up = self._face_frame(self._face_normal)
         return right * p.x() + y_axis * p.y() + up * p.z()
 
+    def _pose_matrix(self, shift: QVector3D):
+        """The move just applied, as one matrix: the alignment turn followed
+        by ``shift`` — what :func:`core.group._remap_uvws` needs."""
+        from PySide6.QtGui import QMatrix4x4
+        m = QMatrix4x4()
+        m.translate(shift)
+        if self._face_normal is not None:
+            r, y, u = self._face_frame(self._face_normal)
+            m = m * QMatrix4x4(r.x(), y.x(), u.x(), 0.0,
+                               r.y(), y.y(), u.y(), 0.0,
+                               r.z(), y.z(), u.z(), 0.0,
+                               0.0, 0.0, 0.0, 1.0)
+        return m
+
     def _update_alignment(self, ctx: ToolContext) -> None:
         if not self._align:
             return
@@ -135,6 +149,12 @@ class PlaceGroupTool(Tool):
             delta = target - v.position
             if delta.length() > 1e-9:
                 self._group.mesh.move_vertex(v, delta)
+        # A texture that came with its own coordinates is anchored to world
+        # position, so the map has to travel with the geometry — otherwise
+        # the image stays where the component was built and the piece
+        # arrives wearing whatever happens to fall on it.
+        from core.group import _remap_uvws
+        _remap_uvws(self._group.mesh, self._pose_matrix(shift))
         group = self._group
         self._group = None
         ctx.viewport.history.execute(InsertGroupCommand(group))

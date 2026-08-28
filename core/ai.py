@@ -26,12 +26,12 @@ import urllib.error
 import urllib.request
 
 from core.history import SnapshotImport
-from core.version import __version__
+from core.version import USER_AGENT as _UA, __version__
 
 #: Cloudflare fronts several providers (Groq above all) and rejects
 #: urllib's default "Python-urllib/3.x" agent with HTTP 403 error 1010 —
 #: caught on the user's first real Groq key. Always send a real identity.
-USER_AGENT = f"IngeTrazo/{__version__} (+https://ingetrazo.com)"
+USER_AGENT = _UA
 
 # ---- Transactional executor -------------------------------------------------
 

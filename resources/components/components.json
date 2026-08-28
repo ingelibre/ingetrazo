@@ -1,7 +1,42 @@
 [
  {
-  "key": "cama",
-  "name": "Bed",
-  "tip": "Double bed"
+  "key": "sofa",
+  "name": "Sofa",
+  "tip": "Three-seater sofa (1.67 m)"
+ },
+ {
+  "key": "banco",
+  "name": "Bench",
+  "tip": "Park bench (1.42 m)"
+ },
+ {
+  "key": "fuente",
+  "name": "Fountain",
+  "tip": "Round fountain (1.85 m across)"
+ },
+ {
+  "key": "arbol",
+  "name": "Tree",
+  "tip": "Broad tree (8.0 m)"
+ },
+ {
+  "key": "abedul",
+  "name": "Birch",
+  "tip": "Birch (7.5 m)"
+ },
+ {
+  "key": "chica",
+  "name": "Woman",
+  "tip": "Standing woman, 3D (1.56 m)"
+ },
+ {
+  "key": "pickup",
+  "name": "Pickup",
+  "tip": "Pickup truck (5.24 m)"
+ },
+ {
+  "key": "suv",
+  "name": "SUV",
+  "tip": "SUV (4.27 m)"
  }
 ]

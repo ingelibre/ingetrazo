@@ -87,39 +87,58 @@ def test_clear_scene_exits_the_context():
 
 
 def test_bundled_components_import_and_insert_undoably():
-    # The starter components (the Sketchfab CC-BY set, see SOURCES.md) are
-    # .glb files listed in components.json: every entry must exist, load
-    # through the GLB importer, sit on the ground, and insert with exact
-    # undo. The smallest one loads for real; the rest just exist (loading
-    # 10 models is a slow-suite job).
+    # The starter components are listed in components.json and ship as a
+    # .igz (kept offline, images packed in), a .glb or an .obj: every entry
+    # must have its model and its thumbnail, load, sit on the ground, and
+    # insert with exact undo. One loads for real; the rest just exist
+    # (loading every model is a slow-suite job).
     import json
     from pathlib import Path
 
     from core.group import Group
     from core.history import InsertGroupCommand
-    from formats.glb import load_glb
+    from formats import igz
 
     comp_dir = Path(__file__).resolve().parent.parent / "resources" / "components"
     manifest = json.loads((comp_dir / "components.json").read_text())
     assert len(manifest) >= 1
     for entry in manifest:
-        assert (comp_dir / f"{entry['key']}.glb").exists(), entry["key"]
+        assert any((comp_dir / f"{entry['key']}{ext}").exists()
+                   for ext in (".igz", ".glb", ".obj")), entry["key"]
         assert (comp_dir / "thumbs" / f"{entry['key']}.png").exists(), \
             entry["key"]
 
     scene = Scene()
     hist = History(scene)
     temp = Scene()
-    load_glb(temp, comp_dir / "cama.glb")
+    igz.load_into(temp, comp_dir / "fuente.igz")
     mesh = temp.groups[0].mesh
     assert mesh.faces
-    assert sum(1 for f in mesh.faces if f.attrs.get("texture")) > 1000
+    assert sum(1 for f in mesh.faces if f.attrs.get("texture")) > 100
     zs = [v.position.z() for v in mesh.vertices]
     assert abs(min(zs)) < 1e-4                      # grounded
-    hist.execute(InsertGroupCommand(Group(mesh, name="cama")))
+    hist.execute(InsertGroupCommand(Group(mesh, name="fuente")))
     assert len(scene.groups) == 1
     assert hist.undo() and len(scene.groups) == 0
     assert hist.redo() and len(scene.groups) == 1
+
+
+def test_a_glb_component_still_imports(tmp_path):
+    # No .glb ships any more, and that used to be the only thing exercising
+    # the GLB *importer* — `_on_insert_component` still offers the format, so
+    # keep it covered with a file our own exporter writes.
+    from formats import gltf as gltf_format
+    from formats.glb import load_glb
+
+    scene = Scene()
+    hist = History(scene)
+    _rect(scene, hist, 0, 0, 2, 1)
+    path = tmp_path / "pieza.glb"
+    gltf_format.save_glb(scene, path)
+
+    temp = Scene()
+    load_glb(temp, path)
+    assert temp.groups and temp.groups[0].mesh.faces
 
 
 def test_billboard_group_round_trips_and_faces_camera(tmp_path):
@@ -387,3 +406,57 @@ def test_box_corners_lie_on_the_geometry_of_a_rotated_slab():
     # ...and they are the slab's four corners, each appearing twice (zero depth)
     keys = {(round(c.x(), 6), round(c.y(), 6)) for c in corners}
     assert len(keys) == 4
+
+
+def test_every_offline_component_is_one_group_with_geometry():
+    # The .igz starters are what the tray offers with no network. A file that
+    # loads to nothing would be a button that does nothing.
+    import json
+    from pathlib import Path
+
+    from formats import igz
+
+    comp_dir = Path(__file__).resolve().parent.parent / "resources" / "components"
+    manifest = json.loads((comp_dir / "components.json").read_text())
+    keys = [e["key"] for e in manifest
+            if (comp_dir / f"{e['key']}.igz").exists()]
+    assert keys, "no offline component ships"
+    for key in keys:
+        scene = Scene()
+        igz.load_into(scene, comp_dir / f"{key}.igz")
+        assert len(scene.groups) == 1, key
+        assert scene.groups[0].mesh.faces, key
+
+
+def test_every_scale_figure_has_its_cutout_and_a_real_height():
+    # A scale figure whose height is wrong is worse than no figure: the whole
+    # point is telling you how big the drawing is. The image must also be
+    # cropped tight to the person — the billboard maps the WHOLE image to the
+    # given height, so empty pixels above the head make everyone short.
+    import json
+    from pathlib import Path
+
+    from PySide6.QtGui import QImage
+
+    comp_dir = Path(__file__).resolve().parent.parent / "resources" / "components"
+    people = json.loads((comp_dir / "people.json").read_text())
+    assert len(people) >= 2
+    for entry in people:
+        png = comp_dir / f"{entry['key']}.png"
+        assert png.exists(), entry["key"]
+        h = entry["height"]
+        assert 0.5 <= h <= 2.5, entry["key"]      # a person, not a tower
+        img = QImage(str(png))
+        assert not img.isNull() and img.height() > 0, entry["key"]
+        assert img.hasAlphaChannel(), entry["key"]
+        # The figure must fill the frame: the billboard maps the WHOLE image
+        # to `height`, so blank pixels above the head shorten the person by
+        # exactly their share of it.
+        rows = [y for y in range(img.height())
+                if any(img.pixelColor(x, y).alpha() > 8
+                       for x in range(0, img.width(), 3))]
+        assert rows, entry["key"]
+        filled = (rows[-1] - rows[0] + 1) / img.height()
+        assert filled > 0.99, \
+            "%s: the figure fills %.1f%% of its image, so it stands %.2f m " \
+            "instead of %.2f" % (entry["key"], filled * 100, h * filled, h)

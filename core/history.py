@@ -1511,6 +1511,8 @@ class RotateGroupCommand(Command):
         m = rotation_matrix(self.center, self.axis, self.degrees)
         for v in list(gmesh.vertices):
             gmesh.move_vertex(v, m.map(v.position) - v.position)
+        from core.group import _remap_uvws
+        _remap_uvws(gmesh, m)                 # the texture turns with it
         self._after = gmesh.capture_state()
         scene.version += 1
 
@@ -1593,6 +1595,8 @@ class ScaleGroupCommand(Command):
         m = scale_matrix(self.center, self.factor)
         for v in list(gmesh.vertices):
             gmesh.move_vertex(v, m.map(v.position) - v.position)
+        from core.group import _remap_uvws
+        _remap_uvws(gmesh, m)                 # the texture scales with it
         self._after = gmesh.capture_state()
         scene.version += 1
 
@@ -2411,8 +2415,13 @@ class MoveGroupCommand(Command):
             t.translate(delta)
             self.group.xform = t * self.group.xform
         else:
+            from core.group import _remap_uvws
+            from PySide6.QtGui import QMatrix4x4
             for v in list(self.group.mesh.vertices):
                 self.group.mesh.move_vertex(v, delta)
+            t = QMatrix4x4()
+            t.translate(delta)
+            _remap_uvws(self.group.mesh, t)   # the texture travels along
         scene.version += 1
 
     def do(self, scene) -> None:

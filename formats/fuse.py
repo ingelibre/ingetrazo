@@ -254,6 +254,55 @@ def _smooth_sig(attrs):
             None if not t else t.get("path"))
 
 
+#: Where the import parks the smoothing group a face came in with. Private
+#: to the import — :func:`drop_smoothing_groups` clears it before the model
+#: is anyone's to edit or save.
+SMOOTH_KEY = "_s"
+
+
+def soften_by_smoothing_group(mesh, crease_cos: float = 0.17) -> None:
+    """Soften the edges the FILE itself calls smooth.
+
+    An OBJ groups its faces with ``s`` statements: everything inside one
+    group is one continuous surface, and the modeller who wrote it said so.
+    Guessing from the angle instead leaves a car bonnet or a face covered in
+    the lines of its own triangulation — the dihedral there is real, the
+    surface is still meant to read as one piece.
+
+    Two guards stay: a material boundary keeps its line (the black trim
+    around a window is not the window), and so does a genuine crease — above
+    ``crease_cos`` apart the two faces are a corner, not a curve, whatever
+    group they were filed under.
+
+    A face with no area has no direction either, and asking it for one reads
+    as a right angle: a figure's eyelashes and hair cards are full of them,
+    and they alone drew three thousand lines across one model's face. Where
+    the normal means nothing, the file's word is all there is — take it.
+    """
+    for e in mesh.edges:
+        if e.soft or len(e.faces) != 2:
+            continue
+        f0, f1 = e.faces
+        if f0 is f1 or not f0.attrs or not f1.attrs:
+            continue
+        g = f0.attrs.get(SMOOTH_KEY)
+        if not g or g != f1.attrs.get(SMOOTH_KEY):
+            continue
+        if _smooth_sig(f0.attrs) != _smooth_sig(f1.attrs):
+            continue
+        n0, n1 = f0.normal(), f1.normal()
+        if n0.length() < 1e-9 or n1.length() < 1e-9 or \
+                abs(QVector3D.dotProduct(n0, n1)) > crease_cos:
+            e.soft = True
+
+
+def drop_smoothing_groups(mesh) -> None:
+    """Forget the file's smoothing groups once they have been used."""
+    for f in mesh.faces:
+        if f.attrs:
+            f.attrs.pop(SMOOTH_KEY, None)
+
+
 def soften_smooth_edges(mesh, cos_threshold: float = 0.85) -> None:
     """Mark edges between two same-material faces meeting at a shallow
     dihedral as soft (hidden in the render) — SketchUp's import smoothing.

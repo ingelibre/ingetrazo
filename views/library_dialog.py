@@ -116,26 +116,44 @@ class LibraryDialog(QDialog):
         cm = [c for c in (entry.get("cm") or []) if c]
         return " × ".join("%s cm" % c for c in cm) if cm else ""
 
+    #: Rows past the bottom of the view whose preview is fetched anyway, so
+    #: scrolling lands on pictures instead of on empty squares.
+    _LOOKAHEAD = 40
+
     def _fill_visible_thumbs(self) -> None:
+        """Paint the previews that have arrived and ask for the ones that
+        have not — the asking happens in the background (see
+        :func:`core.library.prefetch_thumbnails`), so this never waits on
+        the network and the dialog never freezes while it fills."""
         rect = self._list.viewport().rect()
-        done = 0
+        wanted, first, last = [], None, None
         for i in range(self._list.count()):
             it = self._list.item(i)
-            if it is None or not it.icon().isNull():
+            if it is None:
                 continue
             if not rect.intersects(self._list.visualItemRect(it)):
                 continue
+            first = i if first is None else first
+            last = i
+            if not it.icon().isNull():
+                continue
             entry = it.data(Qt.UserRole) or {}
-            p = library.thumbnail(entry.get("id", ""))
-            if p is not None:
-                pix = QPixmap(str(p))
-                if not pix.isNull():
-                    it.setIcon(QIcon(pix))
-            else:
-                it.setIcon(QIcon())          # unreachable: leave it blank
-            done += 1
-            if done >= 4:                    # a few per tick, never a stall
-                return
+            ident = entry.get("id", "")
+            p = library.cached_thumbnail(ident)
+            if p is None:
+                wanted.append(ident)
+                continue
+            pix = QPixmap(str(p))
+            if not pix.isNull():
+                it.setIcon(QIcon(pix))
+        if last is not None:
+            for i in range(last + 1, min(last + 1 + self._LOOKAHEAD,
+                                         self._list.count())):
+                it = self._list.item(i)
+                if it is not None and it.icon().isNull():
+                    wanted.append((it.data(Qt.UserRole) or {}).get("id", ""))
+        if wanted:
+            library.prefetch_thumbnails(wanted)
 
     def _show_credit(self, current, _prev=None) -> None:
         e = current.data(Qt.UserRole) if current is not None else None

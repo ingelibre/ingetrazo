@@ -231,6 +231,15 @@ def _parse_mtl(path: Path) -> dict:
 #: exports are often millimetres, ours are metres.
 OBJ_UNITS = {"m": 1.0, "cm": 0.01, "mm": 0.001, "in": 0.0254, "ft": 0.3048}
 
+#: The quarter turn about X that stands a Y-up file up in this app's Z-up
+#: world, row-major. OBJ never records which axis is the vertical, and the
+#: two conventions in the wild disagree: this app (and what it writes) puts Z
+#: up, Sweet Home 3D and Blender's exporter put Y up. Handedness is kept, so
+#: nothing arrives mirrored.
+Y_UP_TO_Z_UP = (1.0, 0.0, 0.0,
+                0.0, 0.0, -1.0,
+                0.0, 1.0, 0.0)
+
 
 def suggest_unit(path) -> str:
     """The unit an OBJ was most likely written in, from its own size.
@@ -268,7 +277,8 @@ def suggest_unit(path) -> str:
     return "m"
 
 
-def load_obj(scene, path, progress=None, scale: float = 1.0) -> None:
+def load_obj(scene, path, progress=None, scale: float = 1.0,
+             matrix=None) -> None:
     """See :func:`_load_obj_inner`. Wrapped to run with the generational GC off —
     mass vertex/edge/face construction ahead (see formats.skp.apply_payload);
     collection is merely deferred to the re-enable."""
@@ -276,19 +286,27 @@ def load_obj(scene, path, progress=None, scale: float = 1.0) -> None:
     _gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        _load_obj_inner(scene, path, progress=progress, scale=scale)
+        _load_obj_inner(scene, path, progress=progress, scale=scale,
+                        matrix=matrix)
     finally:
         if _gc_was_enabled:
             gc.enable()
 
 
-def _load_obj_inner(scene, path, progress=None, scale: float = 1.0) -> None:
+def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
+                    matrix=None) -> None:
     """Add the faces of a Wavefront OBJ at ``path`` to ``scene``'s mesh, then
     weld + merge coplanar so a triangulated file (e.g. our own export, or a
     SketchUp OBJ) comes back as clean editable polygons. Material ``Kd`` colours
     become per-face ``attrs["color"]`` (skipped when they match the default
     cream, so plain faces stay unpainted). Adds to the current scene; the caller
-    wraps it for undo."""
+    wraps it for undo.
+
+    ``matrix`` is an optional row-major 3x3 applied to every vertex after
+    ``scale``: it stands a Y-up file up (:data:`Y_UP_TO_Z_UP`) and can carry
+    whatever else the source says about the model — a catalogue's own
+    rotation, a fit to a declared size. The file itself never says which
+    axis is the vertical, so this is the caller's to know, not a guess."""
     from core.history import run_stitch
     from core.orient import orient_outward
     from core.topology import _key
@@ -300,9 +318,11 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0) -> None:
     tick(0.05, "Reading file…")
     path = Path(path)
     verts: list[QVector3D] = []
+    uvs: list[tuple[float, float]] = []
     materials: dict = {}
     current_mat = None
-    pending: list[tuple[list[QVector3D], object]] = []
+    current_smooth = 0
+    pending: list[tuple[list[QVector3D], object, object]] = []
 
     for line in path.read_text().splitlines():
         parts = line.split()
@@ -310,43 +330,100 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0) -> None:
             continue
         tag = parts[0]
         if tag == "v":
-            verts.append(QVector3D(float(parts[1]) * scale,
-                                   float(parts[2]) * scale,
-                                   float(parts[3]) * scale))
+            x = float(parts[1]) * scale
+            y = float(parts[2]) * scale
+            z = float(parts[3]) * scale
+            if matrix is not None:
+                m = matrix
+                x, y, z = (m[0] * x + m[1] * y + m[2] * z,
+                           m[3] * x + m[4] * y + m[5] * z,
+                           m[6] * x + m[7] * y + m[8] * z)
+            verts.append(QVector3D(x, y, z))
+        elif tag == "vt":
+            try:
+                uvs.append((float(parts[1]),
+                            float(parts[2]) if len(parts) > 2 else 0.0))
+            except (IndexError, ValueError):
+                uvs.append((0.0, 0.0))
         elif tag == "mtllib":
             materials = _parse_mtl(path.with_name(parts[1]))
         elif tag == "usemtl":
             current_mat = materials.get(parts[1])
+        elif tag == "s":
+            # "s 1", "s off": which faces the file means as one surface.
+            v = parts[1].lower() if len(parts) > 1 else "off"
+            current_smooth = int(v) if v.isdigit() else 0
         elif tag == "f":
-            idxs = []
-            for tok in parts[1:]:
-                raw = int(tok.split("/")[0])
-                idxs.append(raw - 1 if raw > 0 else len(verts) + raw)
+            idxs, tidxs = [], []
+            try:
+                for tok in parts[1:]:
+                    bits = tok.split("/")
+                    raw = int(bits[0])
+                    idxs.append(raw - 1 if raw > 0 else len(verts) + raw)
+                    t = bits[1] if len(bits) > 1 else ""
+                    ti = int(t) if t else 0
+                    tidxs.append((ti - 1 if ti > 0 else len(uvs) + ti)
+                                 if t else -1)
+            except ValueError:
+                continue                       # a face this file cannot mean
             if len(idxs) >= 3 and all(0 <= i < len(verts) for i in idxs):
-                pending.append(([verts[i] for i in idxs], current_mat))
+                # The file's own texture coordinates, when it gives one per
+                # corner — without them a curved surface can only be guessed
+                # at, and the guess shatters (see _face_attrs).
+                loop_uv = ([uvs[t] for t in tidxs]
+                           if all(0 <= t < len(uvs) for t in tidxs) else None)
+                pending.append(([verts[i] for i in idxs], current_mat,
+                                loop_uv, current_smooth))
 
-    def _face_attrs(mat):
+    def _face_attrs(mat, loop=None, loop_uv=None, smooth=0):
+        """The attrs of one imported polygon.
+
+        A textured face carries the file's own ``vt`` as a world→UV affine
+        (the same map a COLLADA import fits). It matters most where the
+        surface curves: a car wheel or a person's clothing is hundreds of
+        small facets, and projecting an image flatly onto each one in turn
+        breaks the image into confetti. Only when the file gives no texture
+        coordinates does the planar projection remain, which is right for
+        what it is meant for — a wall, a floor, a flat panel.
+        """
+        base = {SMOOTH_KEY: smooth} if smooth else {}
         if mat is None:
-            return None
+            return base or None
         if mat.get("map"):
-            return {"texture": {"path": str(mat["map"]), "sw": 1.0, "sh": 1.0}}
+            tex = {"path": str(mat["map"]), "sw": 1.0, "sh": 1.0}
+            if loop and loop_uv:
+                from core.texture import fit_uv_affine
+                uvw = fit_uv_affine(loop, loop_uv)
+                if uvw is not None:
+                    import math as _math
+                    glu = _math.hypot(uvw[0], uvw[1], uvw[2])
+                    glv = _math.hypot(uvw[4], uvw[5], uvw[6])
+                    tex["uvw"] = uvw
+                    # Tile size for display and re-export, read back from the
+                    # gradients the fit produced.
+                    tex["sw"] = (1.0 / glu) if glu > 1e-9 else 1.0
+                    tex["sh"] = (1.0 / glv) if glv > 1e-9 else 1.0
+            return {**base, "texture": tex}
         color = mat.get("color")
         if color is not None and tuple(round(c, 4) for c in color) != \
                 tuple(round(c, 4) for c in _DEFAULT_COLOR):
-            return {"color": list(color)}
-        return None
+            return {**base, "color": list(color)}
+        return base or None
 
     # Library-scale meshes are *reference* geometry: they land in their own
     # Group (isolated mesh, coplanar triangles fast-fused into clean facade
     # polygons + smooth edges softened — the SketchUp import look) so drawing
     # beside them never scans their triangles — see formats/dae.py.
     from formats.dae import _MAX_FUSE_LOOPS, _add_fused
+    from formats.fuse import (SMOOTH_KEY, drop_smoothing_groups,
+                              soften_by_smoothing_group)
     if len(pending) > _MAX_FUSE_LOOPS:
         from core.group import Group
         from core.mesh import Mesh
         from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
         target = Mesh()
-        raw = [(loop, _face_attrs(mat)) for loop, mat in pending]
+        raw = [(loop, _face_attrs(mat, loop, loop_uv, sm))
+               for loop, mat, loop_uv, sm in pending]
         tick(0.5, "Merging coplanar faces…")
         fused = fuse_coplanar_loops(raw)
         n = max(len(fused), 1)
@@ -355,7 +432,9 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0) -> None:
                 tick(0.6 + 0.3 * k / n, "Building the model…")
             _add_fused(target, [item])
         tick(0.92, "Smoothing edges…")
+        soften_by_smoothing_group(target)
         soften_smooth_edges(target)
+        drop_smoothing_groups(target)
         scene.groups.append(Group(target))
         scene.version += 1
         tick(1.0, "Done")
@@ -364,24 +443,15 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0) -> None:
     target = scene.mesh
     seed: set = set()
     new_faces = set()
-    for loop, mat in pending:
+    for loop, mat, loop_uv, sm in pending:
         try:
             face = target.add_face(loop)
         except Exception:  # noqa: BLE001 — skip a degenerate polygon
             continue
         new_faces.add(face)
-        if mat is not None:
-            if mat.get("map"):
-                # Tile size isn't in the OBJ (the vt carry it), so default to
-                # 1 m — the texture shows; the exact tiling can be re-set with
-                # the Paint tool.
-                face.attrs["texture"] = {"path": str(mat["map"]),
-                                         "sw": 1.0, "sh": 1.0}
-            else:
-                color = mat.get("color")
-                if color is not None and tuple(round(c, 4) for c in color) != \
-                        tuple(round(c, 4) for c in _DEFAULT_COLOR):
-                    face.attrs["color"] = list(color)
+        attrs = _face_attrs(mat, loop, loop_uv, sm)
+        if attrs:
+            face.attrs.update(attrs)
         for v in loop:
             seed.add(_key(v))
 
@@ -392,4 +462,6 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0) -> None:
     # expect. (Big models took the reference-group path above.)
     run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
     orient_outward(scene.mesh)
+    soften_by_smoothing_group(scene.mesh)
+    drop_smoothing_groups(scene.mesh)
     scene.version += 1

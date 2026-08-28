@@ -82,6 +82,979 @@
    ]
   },
   {
+   "id": "wall",
+   "items": [
+    {
+     "file": "wall/dark_blue_tiles.jpg",
+     "name": "Dark blue tiles",
+     "sw": 0.15,
+     "sh": 0.3,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/dark_wood.jpg",
+     "name": "Dark wood",
+     "sw": 1.0,
+     "sh": 0.5,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/roughcast.jpg",
+     "name": "Roughcast",
+     "sw": 0.7,
+     "sh": 0.7,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/swimming_pool_ceramic.jpg",
+     "name": "Swimming pool ceramic",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/log_wall.jpg",
+     "name": "Log wall",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/rectangular_stones.jpg",
+     "name": "Rectangular stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/white_fiberglass.jpg",
+     "name": "White fiberglass",
+     "sw": 0.05,
+     "sh": 0.05,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/red_fiberglass.jpg",
+     "name": "Red fiberglass",
+     "sw": 0.05,
+     "sh": 0.05,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_fiberglass.jpg",
+     "name": "Green fiberglass",
+     "sw": 0.05,
+     "sh": 0.05,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/blue_fiberglass.jpg",
+     "name": "Blue fiberglass",
+     "sw": 0.05,
+     "sh": 0.05,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/roughcast.png",
+     "name": "Roughcast",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/red_bricks.jpg",
+     "name": "Red bricks",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/wood_paneling.jpg",
+     "name": "Wood paneling",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/wood_logs.jpg",
+     "name": "Wood logs",
+     "sw": 1.0,
+     "sh": 0.25,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/wood_logs_2.jpg",
+     "name": "Wood logs",
+     "sw": 2.0,
+     "sh": 2.0,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/dark_wood_logs.jpg",
+     "name": "Dark wood logs",
+     "sw": 2.0,
+     "sh": 2.0,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/brown_tiles_with_frieze.jpg",
+     "name": "Brown tiles with frieze",
+     "sw": 0.3125,
+     "sh": 2.5,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/beige_tiles_with_frieze.jpg",
+     "name": "Beige tiles with frieze",
+     "sw": 0.5,
+     "sh": 2.5,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/white_tiles_with_frieze.png",
+     "name": "White tiles with frieze",
+     "sw": 0.21,
+     "sh": 2.5,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/blue_tiles_with_frieze.png",
+     "name": "Blue tiles with frieze",
+     "sw": 0.6,
+     "sh": 2.5,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/white_tiles_with_gray_frieze.png",
+     "name": "White tiles with gray frieze",
+     "sw": 0.625,
+     "sh": 2.5,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/red_tiles_2.jpg",
+     "name": "Red tiles",
+     "sw": 0.3,
+     "sh": 0.3,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/white_wood.jpg",
+     "name": "White wood",
+     "sw": 1.8,
+     "sh": 1.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/gray_wood.jpg",
+     "name": "Gray wood",
+     "sw": 1.8,
+     "sh": 1.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/wood_paneling_2.jpg",
+     "name": "Wood paneling",
+     "sw": 1.8,
+     "sh": 1.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/colored_stones.jpg",
+     "name": "Colored stones",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/little_stones.jpg",
+     "name": "Little stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/white_roughcast.jpg",
+     "name": "White roughcast",
+     "sw": 0.7,
+     "sh": 0.7,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/blue_small_ceramic.jpg",
+     "name": "Blue small ceramic",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/vertical_wood.jpg",
+     "name": "Vertical wood",
+     "sw": 2.5,
+     "sh": 2.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/white_tile.jpg",
+     "name": "White tile",
+     "sw": 0.2,
+     "sh": 0.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/marble_tiles.jpg",
+     "name": "Marble tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/travertine_tiles.jpg",
+     "name": "Travertine tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/small_tiles.jpg",
+     "name": "Small tiles",
+     "sw": 0.15,
+     "sh": 0.15,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/brown_tiles.jpg",
+     "name": "Brown tiles",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/beige_bricks.jpg",
+     "name": "Beige bricks",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/old_gray_bricks.jpg",
+     "name": "Old gray bricks",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/red_raw_bricks.jpg",
+     "name": "Red raw bricks",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/brown_stones.jpg",
+     "name": "Brown stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/beige_roughcast_with_white_stones.jpg",
+     "name": "Beige roughcast with white stones",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/small_stones_roughcast.jpg",
+     "name": "Small stones roughcast",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/colored_stones_2.jpg",
+     "name": "Colored stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/stone_bricks.jpg",
+     "name": "Stone bricks",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/cinderblock.jpg",
+     "name": "Cinderblock",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/old_stones.jpg",
+     "name": "Old stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/blue_and_geometric_tiles.png",
+     "name": "Blue and geometric tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/blue_rectangles_tiles.png",
+     "name": "Blue rectangles tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/brown_and_beige_tiles.jpg",
+     "name": "Brown and beige tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/geometric_tiles.png",
+     "name": "Geometric tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_and_yellow_geometry_tiles.png",
+     "name": "Green and yellow geometry tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_apples_and_white_tiles.png",
+     "name": "Green apples and white tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_apples_tiles.png",
+     "name": "Green apples tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/brown_tiles_2.jpg",
+     "name": "Brown tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/brown_and_beige_tiles_2.jpg",
+     "name": "Brown and beige tiles",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/fruits_multicolor_tiles.png",
+     "name": "Fruits multicolor tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/fruits_orange_tiles.png",
+     "name": "Fruits orange tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/orange_and_brown_tiles.png",
+     "name": "Orange and brown tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/red_tomatoes_and_white_tiles.png",
+     "name": "Red tomatoes and white tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/red_tomatoes_tiles.png",
+     "name": "Red tomatoes tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/rough_brown_tiles.jpg",
+     "name": "Rough brown tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/white_tiles_with_border.png",
+     "name": "White tiles with border",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/yellow_lemon_and_white_tiles.png",
+     "name": "Yellow lemon and white tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/yellow_lemon_tiles.png",
+     "name": "Yellow lemon tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/yellow_pears_and_white_tiles.png",
+     "name": "Yellow pears and white tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/yellow_pears_tiles.png",
+     "name": "Yellow pears tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/browns_and_blue_tiles.jpg",
+     "name": "Browns and blue tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/fruits_kitchen_tiles.jpg",
+     "name": "Fruits kitchen tiles",
+     "sw": 0.25,
+     "sh": 0.25,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_and_black_tiles.png",
+     "name": "Green and black tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_and_bone_tiles.png",
+     "name": "Green and bone tiles",
+     "sw": 2.0,
+     "sh": 2.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/orange_line_and_flowers_tiles.png",
+     "name": "Orange line and flowers tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/rustic_brown_beige_tiles.jpg",
+     "name": "Rustic brown beige tiles",
+     "sw": 2.0,
+     "sh": 2.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/balanced_blue_sponge_wallpaint.jpg",
+     "name": "Balanced blue sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/balanced_green_sponge_wallpaint.jpg",
+     "name": "Balanced green sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/blue_sponge_wallpaint.jpg",
+     "name": "Blue sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/brown_sponge_wallpaint.jpg",
+     "name": "Brown sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/dark_blue_sponge_wallpaint.jpg",
+     "name": "Dark blue sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/dark_brown_sponge_wallpaint.jpg",
+     "name": "Dark brown sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/dark_green_sponge_wallpaint.jpg",
+     "name": "Dark green sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_sponge_wallpaint.jpg",
+     "name": "Green sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/light_brown_sponge_wallpaint.jpg",
+     "name": "Light brown sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/red_sponge_wallpaint.jpg",
+     "name": "Red sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/salmon_sponge_wallpaint.jpg",
+     "name": "Salmon sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/pastel_blue_sponge_wallpaint.jpg",
+     "name": "Pastel blue sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/pastel_brown_sponge_wallpaint.jpg",
+     "name": "Pastel brown sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/pastel_cyan_sponge_wallpaint.jpg",
+     "name": "Pastel cyan sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/pastel_gray_sponge_wallpaint.jpg",
+     "name": "Pastel gray sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/pastel_lilac_sponge_wallpaint.jpg",
+     "name": "Pastel lilac sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/pastel_orange_sponge_wallpaint.jpg",
+     "name": "Pastel orange sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/pastel_yellow_sponge_wallpaint.jpg",
+     "name": "Pastel yellow sponge wallpaint",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_small_ceramic.jpg",
+     "name": "Green small ceramic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/multicolor_small_ceramic.jpg",
+     "name": "Multicolor small ceramic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/dark_blue_small_ceramic.jpg",
+     "name": "Dark blue small ceramic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/beige_tiles_2.jpg",
+     "name": "Beige tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/detailed_mosaic.jpg",
+     "name": "Detailed mosaic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/fantasy_mosaic.jpg",
+     "name": "Fantasy mosaic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/little_stones_2.jpg",
+     "name": "Little stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/mosaic_patchwork.jpg",
+     "name": "Mosaic patchwork",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/old_mosaic.jpg",
+     "name": "Old mosaic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/old_mosaic_2.jpg",
+     "name": "Old mosaic",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/blue_mosaic.jpg",
+     "name": "Blue mosaic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_mosaic.jpg",
+     "name": "Green mosaic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/tiled_stones.jpg",
+     "name": "Tiled stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_mosaic_2.jpg",
+     "name": "Green mosaic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/blue_mosaic_2.jpg",
+     "name": "Blue mosaic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/old_red_bricks_wall.jpg",
+     "name": "Old red bricks wall",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/red_bricks_2.jpg",
+     "name": "Red bricks",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/concrete.jpg",
+     "name": "Concrete",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/rough_concrete.jpg",
+     "name": "Rough concrete",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/concrete_2.jpg",
+     "name": "Concrete",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/beige_tadelakt.jpg",
+     "name": "Beige tadelakt",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/gray_tadelakt.jpg",
+     "name": "Gray tadelakt",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/green_tadelakt.jpg",
+     "name": "Green tadelakt",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/old_bricks.jpg",
+     "name": "Old bricks",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/gray_wood_2.jpg",
+     "name": "Gray wood",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/wood_log.jpg",
+     "name": "Wood log",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/dark_wood_log.jpg",
+     "name": "Dark wood log",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/wood_log_2.jpg",
+     "name": "Wood log",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/old_stones_2.jpg",
+     "name": "Old stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/old_wood_2.jpg",
+     "name": "Old wood",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/stones.jpg",
+     "name": "Stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wall/wood_paneling_3.jpg",
+     "name": "Wood paneling",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    }
+   ]
+  },
+  {
    "id": "wood",
    "items": [
     {
@@ -107,6 +1080,150 @@
      "name": "wood_bark_olive",
      "sw": 0.8,
      "sh": 0.8
+    },
+    {
+     "file": "wood/pine.jpg",
+     "name": "Pine",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/old_wood.jpg",
+     "name": "Old wood",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/bleached_wood.jpg",
+     "name": "Bleached wood",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/raw_pine.jpg",
+     "name": "Raw pine",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/birch.jpg",
+     "name": "Birch",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/oak.jpg",
+     "name": "Oak",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/oak_2.jpg",
+     "name": "Oak",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/dark_brown.jpg",
+     "name": "Dark brown",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/red_oak.jpg",
+     "name": "Red oak",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/oak_3.jpg",
+     "name": "Oak",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/cherry.jpg",
+     "name": "Cherry",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/poplar.jpg",
+     "name": "Poplar",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/beech.jpg",
+     "name": "Beech",
+     "sw": 0.4,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/light_wood.png",
+     "name": "Light wood",
+     "sw": 0.2,
+     "sh": 0.2,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/blue_painted_wood.jpg",
+     "name": "Blue painted wood",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/trunk.jpg",
+     "name": "Trunk",
+     "sw": 0.25,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/pine_2.jpg",
+     "name": "Pine",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wood/red_wood.jpg",
+     "name": "Red wood",
+     "sw": 0.6,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
     }
    ]
   },
@@ -124,6 +1241,102 @@
      "name": "roof_corrugated",
      "sw": 0.9,
      "sh": 0.9
+    },
+    {
+     "file": "roof/round_blue_slates.jpg",
+     "name": "Round blue slates",
+     "sw": 0.75,
+     "sh": 0.75,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/blue_slates.jpg",
+     "name": "Blue slates",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/blue_slates_2.jpg",
+     "name": "Blue slates",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/red_slates.jpg",
+     "name": "Red slates",
+     "sw": 0.1,
+     "sh": 0.15,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/red_roof.jpg",
+     "name": "Red roof",
+     "sw": 2.6,
+     "sh": 2.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/hexagon_red_slates.jpg",
+     "name": "Hexagon red slates",
+     "sw": 1.5,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/square_roof_slates.jpg",
+     "name": "Square roof slates",
+     "sw": 1.5,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/corrugated_sheet.jpg",
+     "name": "Corrugated sheet",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/corrugated_sheet_2.jpg",
+     "name": "Corrugated sheet",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/old_red_roof.jpg",
+     "name": "Old red roof",
+     "sw": 2.0,
+     "sh": 2.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/straw_roof.jpg",
+     "name": "Straw roof",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "roof/thatched_roof.jpg",
+     "name": "Thatched roof",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
     }
    ]
   },
@@ -159,6 +1372,1621 @@
      "name": "paving_concrete",
      "sw": 1.2,
      "sh": 1.2
+    },
+    {
+     "file": "floor/grass.jpg",
+     "name": "Grass",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/beige_and_brown_tiles.jpg",
+     "name": "Beige and brown tiles",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/grass_2.jpg",
+     "name": "Grass",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/beige_tiles.jpg",
+     "name": "Beige tiles",
+     "sw": 0.32,
+     "sh": 0.32,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/pavement.png",
+     "name": "Pavement",
+     "sw": 0.3,
+     "sh": 0.3,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/paving_stone.jpg",
+     "name": "Paving stone",
+     "sw": 2.5,
+     "sh": 2.5,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/red_tiles.jpg",
+     "name": "Red tiles",
+     "sw": 0.32,
+     "sh": 0.32,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_and_white_carpeting.jpg",
+     "name": "Gray and white carpeting",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_carpeting.jpg",
+     "name": "Gray carpeting",
+     "sw": 1.5,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/pink_carpeting.jpg",
+     "name": "Pink carpeting",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/dark_ceramic_tiles.jpg",
+     "name": "Dark ceramic tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_ceramic_tiles.jpg",
+     "name": "Gray ceramic tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/light_brown_tiles.jpg",
+     "name": "Light brown tiles",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/marble_floor_tiles.jpg",
+     "name": "Marble floor tiles",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_tiles.jpg",
+     "name": "Gray Tiles",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/grass_darker.jpg",
+     "name": "Grass darker",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/grass_3.jpg",
+     "name": "Grass",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/pavement.jpg",
+     "name": "Pavement",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/pavement_2.jpg",
+     "name": "Pavement",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/chess_wooden_floor.jpg",
+     "name": "Chess wooden floor",
+     "sw": 0.3,
+     "sh": 0.3,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/wooden_floor.jpg",
+     "name": "Wooden floor",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/wooden_floor_2.jpg",
+     "name": "Wooden floor",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/wooden_floor_3.jpg",
+     "name": "Wooden floor",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/wooden_floor_4.jpg",
+     "name": "Wooden floor",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/hungarian_wooden_floor.jpg",
+     "name": "Hungarian wooden floor",
+     "sw": 0.9983,
+     "sh": 0.7,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/brown_circles_carpeting.jpg",
+     "name": "Brown circles carpeting",
+     "sw": 0.9,
+     "sh": 0.9,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/dark_blue_carpeting.jpg",
+     "name": "Dark blue carpeting",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_and_cyan_carpeting.jpg",
+     "name": "Gray and cyan carpeting",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_and_green_carpeting.jpg",
+     "name": "Gray and green carpeting",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_medium_thick_carpeting.jpg",
+     "name": "Gray medium thick carpeting",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_with_squares_carpeting.jpg",
+     "name": "Gray with squares carpeting",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/hairy_gray_floor_carpeting.jpg",
+     "name": "Hairy gray floor carpeting",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/red_and_yellow_carpeting.jpg",
+     "name": "Red and yellow carpeting",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/yellow_medium_carpeting.jpg",
+     "name": "Yellow medium carpeting",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/brown_terrace_tiles.jpg",
+     "name": "Brown terrace tiles",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/beige_and_blue_tiles.jpg",
+     "name": "Beige and blue tiles",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/big_stones.jpg",
+     "name": "Big stones",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_stones_tiles.jpg",
+     "name": "Gray stones tiles",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/stained_brown_tiles.jpg",
+     "name": "Stained brown tiles",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/stoneway_tiles.jpg",
+     "name": "Stoneway tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/thin_gray_ceramic_tiles.jpg",
+     "name": "Thin gray ceramic tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_dark_wooden_floor.jpg",
+     "name": "Gray dark wooden floor",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/light_beige_wooden_floor.jpg",
+     "name": "Light beige wooden floor",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/oak_wooden_floor.jpg",
+     "name": "Oak wooden floor",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/red_brown_wooden_floor.jpg",
+     "name": "Red brown wooden floor",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/light_gray_wooden_floor.jpg",
+     "name": "Light gray wooden floor",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/old_brown_wooden_floor.jpg",
+     "name": "Old brown wooden floor",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/old_gray_wooden_floor.jpg",
+     "name": "Old gray wooden floor",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/black_and_white_stones.jpg",
+     "name": "Black and white stones",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/colored_glass_stones.jpg",
+     "name": "Colored glass stones",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/floor_stones.jpg",
+     "name": "Floor stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/floor_stones_2.jpg",
+     "name": "Floor stones",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/blue_and_beige_tiles.jpg",
+     "name": "Blue and beige tiles",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/red_metal.jpg",
+     "name": "Red metal",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_metal.jpg",
+     "name": "Gray metal",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/clay_small_tiles.jpg",
+     "name": "Clay small tiles",
+     "sw": 2.0,
+     "sh": 2.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/dry_soil.jpg",
+     "name": "Dry soil",
+     "sw": 2.0,
+     "sh": 2.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/field_of_daisies.jpg",
+     "name": "Field of daisies",
+     "sw": 1.5,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/field_of_poppies.jpg",
+     "name": "Field of poppies",
+     "sw": 1.5,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/field_with_floral_stripes.jpg",
+     "name": "Field with floral stripes",
+     "sw": 2.0,
+     "sh": 2.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/field_with_white_and_yellow_flowers.jpg",
+     "name": "Field with white and yellow flowers",
+     "sw": 1.5,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/blue_slates_3.jpg",
+     "name": "Blue slates",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/hexagonal_tiles.jpg",
+     "name": "Hexagonal tiles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/soil_gravel.jpg",
+     "name": "Soil gravel",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/multicolor_pebbles.jpg",
+     "name": "Multicolor pebbles",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/old_bricks_2.jpg",
+     "name": "Old bricks",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/sandy_soil.jpg",
+     "name": "Sandy soil",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/sandy_soil_2.jpg",
+     "name": "Sandy soil",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/woven_sea_rush.jpg",
+     "name": "Woven sea rush",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/wet_soil.jpg",
+     "name": "Wet soil",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/wooden_floor_5.jpg",
+     "name": "Wooden floor",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/soil.jpg",
+     "name": "Soil",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/beige_tiles_3.jpg",
+     "name": "Beige tiles",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/pebbles.jpg",
+     "name": "Pebbles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/gray_pebbles.jpg",
+     "name": "Gray pebbles",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/light_asphalt.jpg",
+     "name": "Light asphalt",
+     "sw": 4.0,
+     "sh": 4.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/dark_asphalt.jpg",
+     "name": "Dark asphalt",
+     "sw": 4.0,
+     "sh": 4.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/striped_light_asphalt.jpg",
+     "name": "Striped light asphalt",
+     "sw": 4.0,
+     "sh": 4.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/striped_dark_asphalt.jpg",
+     "name": "Striped dark asphalt",
+     "sw": 4.0,
+     "sh": 4.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "floor/pavement_3.jpg",
+     "name": "Pavement",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    }
+   ]
+  },
+  {
+   "id": "wallpaper",
+   "items": [
+    {
+     "file": "wallpaper/blue_fleur_de_lis.png",
+     "name": "Blue fleur de lis",
+     "sw": 0.24,
+     "sh": 0.24,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/green_fleur_de_lis.png",
+     "name": "Green fleur de lis",
+     "sw": 0.24,
+     "sh": 0.24,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/red_fleur_de_lis.png",
+     "name": "Red fleur de lis",
+     "sw": 0.24,
+     "sh": 0.24,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/tomatoes.jpg",
+     "name": "Tomatoes",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/beige_waves.png",
+     "name": "Beige waves",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_wallpaper.jpg",
+     "name": "Blue wallpaper",
+     "sw": 2.0,
+     "sh": 2.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/brown_circles.png",
+     "name": "Brown circles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/butterflies.png",
+     "name": "Butterflies",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/dark_wallpaper.png",
+     "name": "Dark wallpaper",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/moon_and_stars.png",
+     "name": "Moon and stars",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_and_white_wallpaper.jpg",
+     "name": "Blue and white wallpaper",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_wallpaper_with_stars.png",
+     "name": "Blue wallpaper with stars",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/beige_lines.png",
+     "name": "Beige lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/classic_red.png",
+     "name": "Classic red",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/dry_flowers.jpg",
+     "name": "Dry flowers",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/gold_circles.png",
+     "name": "Gold circles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/green_waves.png",
+     "name": "Green waves",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/green_wallpaper_with_leaves.jpg",
+     "name": "Green wallpaper with leaves",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/natural_colors.png",
+     "name": "Natural colors",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/pink_clouds.jpg",
+     "name": "Pink clouds",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/pink_wallpaper_with_stars.png",
+     "name": "Pink wallpaper with stars",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/red_wallpaper_with_stars.png",
+     "name": "Red wallpaper with stars",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/white_wallpaper_with_stars.png",
+     "name": "White wallpaper with stars",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_lines_2.png",
+     "name": "Blue lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/brown_lines_2.png",
+     "name": "Brown lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/green_lines_2.png",
+     "name": "Green lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_cells.jpg",
+     "name": "Blue cells",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_lines_3.png",
+     "name": "Blue lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/brown_lines_3.png",
+     "name": "Brown lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/gray_waves.jpg",
+     "name": "Gray waves",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/drawing_lines.png",
+     "name": "Drawing lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/gray_circles.png",
+     "name": "Gray circles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/brown_circles_2.png",
+     "name": "Brown circles",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/geometric_dark_wallpaper.png",
+     "name": "Geometric dark wallpaper",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/geometric_wallpaper.png",
+     "name": "Geometric wallpaper",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/multicolor_wallpaper.jpg",
+     "name": "Multicolor wallpaper",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/letter_o.jpg",
+     "name": "Letter O",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/orange_70_s_style.jpg",
+     "name": "Orange 70's style",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/words_of_world.jpg",
+     "name": "Words of world",
+     "sw": 1.5,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/yellow_classic.jpg",
+     "name": "Yellow classic",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/red_lines.jpg",
+     "name": "Red lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/gray_diamonds.jpg",
+     "name": "Gray diamonds",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_diamonds.png",
+     "name": "Blue diamonds",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/brown_waves.jpg",
+     "name": "Brown waves",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/circles_and_stars.png",
+     "name": "Circles and stars",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/fish_in_the_sea.jpg",
+     "name": "Fish in the sea",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/lilac_70_s_style.png",
+     "name": "Lilac 70's style",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/pink_squares_2.jpg",
+     "name": "Pink squares",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/red_lines.png",
+     "name": "Red lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/navy_blue_lines.png",
+     "name": "Navy blue lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/african_style.jpg",
+     "name": "African style",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/african_style_2.jpg",
+     "name": "African style",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/multicolor_leaves.jpg",
+     "name": "Multicolor leaves",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/red_flowers.jpg",
+     "name": "Red flowers",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_flowers.jpg",
+     "name": "Blue flowers",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/half_round_geometry.jpg",
+     "name": "Half round geometry",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/pink_flowers.jpg",
+     "name": "Pink flowers",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/pink_geometry.jpg",
+     "name": "Pink geometry",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/pink_pansy.jpg",
+     "name": "Pink pansy",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/multicolor_pansy.jpg",
+     "name": "Multicolor pansy",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/white_and_pink_flowers.jpg",
+     "name": "White and pink flowers",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/red_wallpaper_with_beige_dots.jpg",
+     "name": "Red wallpaper with beige dots",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_wallpaper_with_beige_dots.jpg",
+     "name": "Blue wallpaper with beige dots",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/white_wallpaper_with_red_dots.jpg",
+     "name": "White wallpaper with red dots",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/cranes_and_pine_trees.jpg",
+     "name": "Cranes and pine trees",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/cranes.jpg",
+     "name": "Cranes",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_duck_flowers.jpg",
+     "name": "Blue duck flowers",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/blue_ink_flowers.jpg",
+     "name": "Blue ink flowers",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/gold_flowers.jpg",
+     "name": "Gold flowers",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/green_lines.jpg",
+     "name": "Green lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/flamingos.jpg",
+     "name": "Flamingos",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/flowers.jpg",
+     "name": "Flowers",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/pink_and_lila_flowers.jpg",
+     "name": "Pink and lila flowers",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/multicolor_flowers.jpg",
+     "name": "Multicolor flowers",
+     "sw": 1.5,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "wallpaper/white_and_yellow_flowers.jpg",
+     "name": "White and yellow flowers",
+     "sw": 0.512,
+     "sh": 0.512,
+     "author": "Scopia",
+     "src": "sh3t"
+    }
+   ]
+  },
+  {
+   "id": "fabric",
+   "items": [
+    {
+     "file": "fabric/curtains.png",
+     "name": "Curtains",
+     "sw": 0.2,
+     "sh": 0.2,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/knit.jpg",
+     "name": "Knit",
+     "sw": 0.02,
+     "sh": 0.02,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/beige_fabric.jpg",
+     "name": "Beige fabric",
+     "sw": 0.85,
+     "sh": 0.85,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/beige_fabric_2.jpg",
+     "name": "Beige fabric",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/beige_pattern.png",
+     "name": "Beige pattern",
+     "sw": 0.45,
+     "sh": 0.45,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/irregular_circles.png",
+     "name": "Irregular circles",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/orange_pattern.png",
+     "name": "Orange pattern",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/orange_napkin.png",
+     "name": "Orange napkin",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/square_shapes.png",
+     "name": "Square shapes",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/blue_lines.png",
+     "name": "Blue lines",
+     "sw": 2.4,
+     "sh": 2.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/brown_lines.png",
+     "name": "Brown lines",
+     "sw": 2.4,
+     "sh": 2.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/green_lines.png",
+     "name": "Green lines",
+     "sw": 2.4,
+     "sh": 2.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/blue_fibres.jpg",
+     "name": "Blue fibres",
+     "sw": 0.2,
+     "sh": 0.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/flowers_and_yellow.png",
+     "name": "Flowers and yellow",
+     "sw": 0.3,
+     "sh": 0.3,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/pink_squares.jpg",
+     "name": "Pink squares",
+     "sw": 0.2,
+     "sh": 0.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/yellow_and_gray_squares.jpg",
+     "name": "Yellow and gray squares",
+     "sw": 0.2,
+     "sh": 0.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/brown_fibers.jpg",
+     "name": "Brown fibers",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/classic_red_squares.jpg",
+     "name": "Classic red squares",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/teira_blue_velvet.jpg",
+     "name": "Teira blue velvet",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/pansy_purple_velvet.jpg",
+     "name": "Pansy purple velvet",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/peacock_velvet.jpg",
+     "name": "Peacock velvet",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/light_moss_yellow.jpg",
+     "name": "Light moss yellow",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/claret_red_velvet.jpg",
+     "name": "Claret red velvet",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/peacock_blue_velvet.jpg",
+     "name": "Peacock blue velvet",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/green_fabric.jpg",
+     "name": "Green fabric",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/orange_fabric.jpg",
+     "name": "Orange fabric",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/red_and_black_plaid.png",
+     "name": "Red and black plaid",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/yellow_and_black_plaid.png",
+     "name": "Yellow and black plaid",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/blue_and_green_plaid.png",
+     "name": "Blue and green plaid",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/beige_lines.jpg",
+     "name": "Beige lines",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "fabric/blue_jean.jpg",
+     "name": "Blue jean",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    }
+   ]
+  },
+  {
+   "id": "rug",
+   "items": [
+    {
+     "file": "rug/persian_carpet.jpg",
+     "name": "Persian carpet",
+     "sw": 3.0,
+     "sh": 1.8,
+     "author": "Emmanuel Puybaret",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/dark_carpet.jpg",
+     "name": "Dark carpet",
+     "sw": 1.8732,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/yellow_carpet.jpg",
+     "name": "Yellow carpet",
+     "sw": 1.8732,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/carpet_with_colored_tiles.jpg",
+     "name": "Carpet with colored tiles",
+     "sw": 2.05,
+     "sh": 1.366,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/red_carpet_with_thick_hair.jpg",
+     "name": "Red carpet with thick hair",
+     "sw": 2.168,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/round_beige_carpet.jpg",
+     "name": "Round beige carpet",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/oriental_carpet.jpg",
+     "name": "Oriental carpet",
+     "sw": 2.549,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/gray_carpet.jpg",
+     "name": "Gray carpet",
+     "sw": 2.651,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/mexican_carpet.jpg",
+     "name": "Mexican carpet",
+     "sw": 2.883,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/geometric_brown_carpet.jpg",
+     "name": "Geometric brown carpet",
+     "sw": 2.379,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/red_american_carpet.jpg",
+     "name": "Red American carpet",
+     "sw": 2.0,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/oriental_carpet_2.jpg",
+     "name": "Oriental carpet",
+     "sw": 2.675,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/carpet_with_geometric_shapes.jpg",
+     "name": "Carpet with geometric shapes",
+     "sw": 2.05,
+     "sh": 1.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "rug/beige_carpet.jpg",
+     "name": "Beige carpet",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
     }
    ]
   },
@@ -229,6 +3057,384 @@
      "sw": 2.0,
      "sh": 2.0,
      "opacity": 0.75
+    }
+   ]
+  },
+  {
+   "id": "sky",
+   "items": [
+    {
+     "file": "sky/big_sun.jpg",
+     "name": "Big sun",
+     "sw": 3.0,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "sky/sunset.jpg",
+     "name": "Sunset",
+     "sw": 3.0,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "sky/night_sky.jpg",
+     "name": "Night sky",
+     "sw": 4.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "sky/sky_dawn.jpg",
+     "name": "Sky dawn",
+     "sw": 4.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    }
+   ]
+  },
+  {
+   "id": "misc",
+   "items": [
+    {
+     "file": "misc/stained_glass.png",
+     "name": "Stained glass",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/stained_glass_2.png",
+     "name": "Stained glass",
+     "sw": 0.2,
+     "sh": 0.2,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/aluminium.png",
+     "name": "Aluminium",
+     "sw": 0.064,
+     "sh": 0.064,
+     "author": "Ola-Kristian Hoff",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/beige_leather.jpg",
+     "name": "Beige leather",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/dark_leather.jpg",
+     "name": "Dark leather",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/orange_leather.jpg",
+     "name": "Orange leather",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/beige_granite.jpg",
+     "name": "Beige granite",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/dark_granite.jpg",
+     "name": "Dark granite",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/white_marble.jpg",
+     "name": "White marble",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/swimming_pool_water.jpg",
+     "name": "Swimming pool water",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/swimming_pool_water_2.jpg",
+     "name": "Swimming pool water",
+     "sw": 1.2,
+     "sh": 1.2,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/compact_gray_marble.jpg",
+     "name": "Compact gray marble",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/doormat.jpg",
+     "name": "Doormat",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/gray_marble.jpg",
+     "name": "Gray marble",
+     "sw": 0.4,
+     "sh": 0.4,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/dark_brown_leather.jpg",
+     "name": "Dark brown leather",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/green_leather.jpg",
+     "name": "Green leather",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/zebra_skin.jpg",
+     "name": "Zebra skin",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/cheetah_skin.jpg",
+     "name": "Cheetah skin",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/tiger_skin.jpg",
+     "name": "Tiger skin",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/leopard_skin.jpg",
+     "name": "Leopard skin",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/giraffe_skin.jpg",
+     "name": "Giraffe skin",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/feline_skin.jpg",
+     "name": "Feline skin",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/animal_skin.jpg",
+     "name": "Animal skin",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/brass.jpg",
+     "name": "Brass",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/gray_rattan.jpg",
+     "name": "Gray rattan",
+     "sw": 0.3,
+     "sh": 0.3,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/red_rattan.jpg",
+     "name": "Red rattan",
+     "sw": 0.15,
+     "sh": 0.15,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/dark_gray_rattan.jpg",
+     "name": "Dark gray rattan",
+     "sw": 0.15,
+     "sh": 0.15,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/dark_gray_rattan_2.jpg",
+     "name": "Dark gray rattan",
+     "sw": 0.12,
+     "sh": 0.12,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/rattan.jpg",
+     "name": "Rattan",
+     "sw": 0.25,
+     "sh": 0.25,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/beige_rattan.jpg",
+     "name": "Beige rattan",
+     "sw": 0.12,
+     "sh": 0.12,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/glass_tiles.jpg",
+     "name": "Glass tiles",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/rusty_metal.jpg",
+     "name": "Rusty metal",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/frosted_glass.jpg",
+     "name": "Frosted glass",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/glass_geometric_tiles.jpg",
+     "name": "Glass geometric tiles",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/glass_with_bubbles.jpg",
+     "name": "Glass with bubbles",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/metal.jpg",
+     "name": "Metal",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/false_ceiling.jpg",
+     "name": "False ceiling",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/false_ceiling_with_small_squares.png",
+     "name": "False ceiling with small squares",
+     "sw": 0.5,
+     "sh": 0.5,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/false_ceiling_2.jpg",
+     "name": "False ceiling",
+     "sw": 1.0,
+     "sh": 1.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/sea.jpg",
+     "name": "Sea",
+     "sw": 4.0,
+     "sh": 4.0,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/colored_glass.jpg",
+     "name": "Colored glass",
+     "sw": 0.8,
+     "sh": 0.8,
+     "author": "Scopia",
+     "src": "sh3t"
+    },
+    {
+     "file": "misc/granite.jpg",
+     "name": "Granite",
+     "sw": 0.6,
+     "sh": 0.6,
+     "author": "Scopia",
+     "src": "sh3t"
     }
    ]
   }

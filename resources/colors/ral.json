@@ -1,0 +1,2198 @@
+{
+ "palette": "RAL Classic",
+ "families": [
+  {
+   "id": "yellow",
+   "name": "Yellow and beige",
+   "name_es": "Amarillos y beis",
+   "colors": [
+    {
+     "code": "RAL 1000",
+     "name": "Green beige",
+     "name_es": "Beige verdoso",
+     "rgb": [
+      0.8039,
+      0.7294,
+      0.5333
+     ]
+    },
+    {
+     "code": "RAL 1001",
+     "name": "Beige",
+     "name_es": "Beige",
+     "rgb": [
+      0.8157,
+      0.6902,
+      0.5176
+     ]
+    },
+    {
+     "code": "RAL 1002",
+     "name": "Sand yellow",
+     "name_es": "Amarillo arena",
+     "rgb": [
+      0.8235,
+      0.6667,
+      0.4275
+     ]
+    },
+    {
+     "code": "RAL 1003",
+     "name": "Signal yellow",
+     "name_es": "Amarillo señales",
+     "rgb": [
+      0.9765,
+      0.6588,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 1004",
+     "name": "Golden yellow",
+     "name_es": "Amarillo oro",
+     "rgb": [
+      0.8941,
+      0.6196,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 1005",
+     "name": "Honey yellow",
+     "name_es": "Amarillo miel",
+     "rgb": [
+      0.7961,
+      0.5569,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 1006",
+     "name": "Maize yellow",
+     "name_es": "Amarillo maíz",
+     "rgb": [
+      0.8863,
+      0.5647,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 1007",
+     "name": "Daffodil yellow",
+     "name_es": "Amarillo narciso",
+     "rgb": [
+      0.9098,
+      0.549,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 1011",
+     "name": "Brown beige",
+     "name_es": "Beige pardo",
+     "rgb": [
+      0.6863,
+      0.502,
+      0.3098
+     ]
+    },
+    {
+     "code": "RAL 1012",
+     "name": "Lemon yellow",
+     "name_es": "Amarillo limón",
+     "rgb": [
+      0.8667,
+      0.6863,
+      0.1529
+     ]
+    },
+    {
+     "code": "RAL 1013",
+     "name": "Oyster white",
+     "name_es": "Blanco perla",
+     "rgb": [
+      0.8902,
+      0.851,
+      0.7765
+     ]
+    },
+    {
+     "code": "RAL 1014",
+     "name": "Ivory",
+     "name_es": "Marfil",
+     "rgb": [
+      0.8667,
+      0.7686,
+      0.6039
+     ]
+    },
+    {
+     "code": "RAL 1015",
+     "name": "Light ivory",
+     "name_es": "Marfil claro",
+     "rgb": [
+      0.902,
+      0.8235,
+      0.7098
+     ]
+    },
+    {
+     "code": "RAL 1016",
+     "name": "Sulfur yellow",
+     "name_es": "Amarillo azufre",
+     "rgb": [
+      0.9451,
+      0.8667,
+      0.2196
+     ]
+    },
+    {
+     "code": "RAL 1017",
+     "name": "Saffron yellow",
+     "name_es": "Amarillo azafrán",
+     "rgb": [
+      0.9647,
+      0.6627,
+      0.3137
+     ]
+    },
+    {
+     "code": "RAL 1018",
+     "name": "Zinc yellow",
+     "name_es": "Amarillo zinc",
+     "rgb": [
+      0.9804,
+      0.7922,
+      0.1882
+     ]
+    },
+    {
+     "code": "RAL 1019",
+     "name": "Grey beige",
+     "name_es": "Beige agrisado",
+     "rgb": [
+      0.6431,
+      0.5608,
+      0.4784
+     ]
+    },
+    {
+     "code": "RAL 1020",
+     "name": "Olive yellow",
+     "name_es": "Amarillo oliva",
+     "rgb": [
+      0.6275,
+      0.5608,
+      0.3961
+     ]
+    },
+    {
+     "code": "RAL 1021",
+     "name": "Rape yellow",
+     "name_es": "Amarillo colza",
+     "rgb": [
+      0.9647,
+      0.7137,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 1023",
+     "name": "Traffic yellow",
+     "name_es": "Amarillo tráfico",
+     "rgb": [
+      0.9686,
+      0.7098,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 1024",
+     "name": "Ochre yellow",
+     "name_es": "Amarillo ocre",
+     "rgb": [
+      0.7294,
+      0.5608,
+      0.298
+     ]
+    },
+    {
+     "code": "RAL 1026",
+     "name": "Luminous yellow",
+     "name_es": "Amarillo brillante",
+     "rgb": [
+      1.0,
+      1.0,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 1027",
+     "name": "Curry",
+     "name_es": "Curry",
+     "rgb": [
+      0.6549,
+      0.498,
+      0.0549
+     ]
+    },
+    {
+     "code": "RAL 1028",
+     "name": "Melon yellow",
+     "name_es": "Amarillo melón",
+     "rgb": [
+      1.0,
+      0.6078,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 1032",
+     "name": "Broom yellow",
+     "name_es": "Amarillo retama",
+     "rgb": [
+      0.8863,
+      0.6392,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 1033",
+     "name": "Dahlia yellow",
+     "name_es": "Amarillo dalia",
+     "rgb": [
+      0.9765,
+      0.6039,
+      0.1098
+     ]
+    },
+    {
+     "code": "RAL 1034",
+     "name": "Pastel yellow",
+     "name_es": "Amarillo pastel",
+     "rgb": [
+      0.9216,
+      0.6118,
+      0.3216
+     ]
+    },
+    {
+     "code": "RAL 1035",
+     "name": "Pearl beige",
+     "name_es": "Beige perlado",
+     "rgb": [
+      0.5647,
+      0.5137,
+      0.4392
+     ]
+    },
+    {
+     "code": "RAL 1036",
+     "name": "Pearl gold",
+     "name_es": "Oro perlado",
+     "rgb": [
+      0.502,
+      0.3922,
+      0.2471
+     ]
+    },
+    {
+     "code": "RAL 1037",
+     "name": "Sun yellow",
+     "name_es": "Amarillo sol",
+     "rgb": [
+      0.9412,
+      0.5725,
+      0.0
+     ]
+    }
+   ]
+  },
+  {
+   "id": "orange",
+   "name": "Orange",
+   "name_es": "Naranjas",
+   "colors": [
+    {
+     "code": "RAL 2000",
+     "name": "Yellow orange",
+     "name_es": "Naranja amarillento",
+     "rgb": [
+      0.8667,
+      0.4745,
+      0.0275
+     ]
+    },
+    {
+     "code": "RAL 2001",
+     "name": "Red orange",
+     "name_es": "Naranja rojizo",
+     "rgb": [
+      0.7451,
+      0.3059,
+      0.1255
+     ]
+    },
+    {
+     "code": "RAL 2002",
+     "name": "Vermillion",
+     "name_es": "Naranja sanguíneo",
+     "rgb": [
+      0.7765,
+      0.2235,
+      0.1529
+     ]
+    },
+    {
+     "code": "RAL 2003",
+     "name": "Pastel orange",
+     "name_es": "Naranja pastel",
+     "rgb": [
+      0.9804,
+      0.5176,
+      0.1686
+     ]
+    },
+    {
+     "code": "RAL 2004",
+     "name": "Pure orange",
+     "name_es": "Naranja puro",
+     "rgb": [
+      0.9059,
+      0.3569,
+      0.0706
+     ]
+    },
+    {
+     "code": "RAL 2005",
+     "name": "Luminous orange",
+     "name_es": "Naranja brillante",
+     "rgb": [
+      1.0,
+      0.1373,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 2007",
+     "name": "Luminous bright orange",
+     "name_es": "Naranja claro brillante",
+     "rgb": [
+      1.0,
+      0.6431,
+      0.1294
+     ]
+    },
+    {
+     "code": "RAL 2008",
+     "name": "Bright red orange",
+     "name_es": "Naranja rojo claro",
+     "rgb": [
+      0.9529,
+      0.4588,
+      0.1725
+     ]
+    },
+    {
+     "code": "RAL 2009",
+     "name": "Traffic orange",
+     "name_es": "Naranja tráfico",
+     "rgb": [
+      0.8824,
+      0.3333,
+      0.0039
+     ]
+    },
+    {
+     "code": "RAL 2010",
+     "name": "Signal orange",
+     "name_es": "Naranja señales",
+     "rgb": [
+      0.8314,
+      0.3961,
+      0.1843
+     ]
+    },
+    {
+     "code": "RAL 2011",
+     "name": "Deep orange",
+     "name_es": "Naranja intenso",
+     "rgb": [
+      0.9255,
+      0.4863,
+      0.1451
+     ]
+    },
+    {
+     "code": "RAL 2012",
+     "name": "Salmon orange",
+     "name_es": "Naranja salmón",
+     "rgb": [
+      0.8588,
+      0.4157,
+      0.3137
+     ]
+    },
+    {
+     "code": "RAL 2013",
+     "name": "Pearl orange",
+     "name_es": "Naranja perlado",
+     "rgb": [
+      0.5843,
+      0.2706,
+      0.1529
+     ]
+    }
+   ]
+  },
+  {
+   "id": "red",
+   "name": "Red",
+   "name_es": "Rojos",
+   "colors": [
+    {
+     "code": "RAL 3000",
+     "name": "Flame red",
+     "name_es": "Rojo vivo",
+     "rgb": [
+      0.6706,
+      0.1451,
+      0.1412
+     ]
+    },
+    {
+     "code": "RAL 3001",
+     "name": "Signal red",
+     "name_es": "Rojo señales",
+     "rgb": [
+      0.6275,
+      0.1294,
+      0.1569
+     ]
+    },
+    {
+     "code": "RAL 3002",
+     "name": "Carmine red",
+     "name_es": "Rojo carmín",
+     "rgb": [
+      0.6314,
+      0.1373,
+      0.1686
+     ]
+    },
+    {
+     "code": "RAL 3003",
+     "name": "Ruby red",
+     "name_es": "Rojo rubí",
+     "rgb": [
+      0.5529,
+      0.1137,
+      0.1725
+     ]
+    },
+    {
+     "code": "RAL 3004",
+     "name": "Purple red",
+     "name_es": "Rojo púrpura",
+     "rgb": [
+      0.4392,
+      0.1216,
+      0.1608
+     ]
+    },
+    {
+     "code": "RAL 3005",
+     "name": "Wine red",
+     "name_es": "Rojo vino",
+     "rgb": [
+      0.3686,
+      0.1255,
+      0.1569
+     ]
+    },
+    {
+     "code": "RAL 3007",
+     "name": "Black red",
+     "name_es": "Rojo negruzco",
+     "rgb": [
+      0.251,
+      0.1333,
+      0.1451
+     ]
+    },
+    {
+     "code": "RAL 3009",
+     "name": "Oxide red",
+     "name_es": "Rojo óxido",
+     "rgb": [
+      0.4392,
+      0.2157,
+      0.1922
+     ]
+    },
+    {
+     "code": "RAL 3011",
+     "name": "Brown red",
+     "name_es": "Rojo pardo",
+     "rgb": [
+      0.4941,
+      0.1608,
+      0.1725
+     ]
+    },
+    {
+     "code": "RAL 3012",
+     "name": "Beige red",
+     "name_es": "Rojo beige",
+     "rgb": [
+      0.7961,
+      0.5529,
+      0.451
+     ]
+    },
+    {
+     "code": "RAL 3013",
+     "name": "Tomato red",
+     "name_es": "Rojo tomate",
+     "rgb": [
+      0.6118,
+      0.1961,
+      0.1804
+     ]
+    },
+    {
+     "code": "RAL 3014",
+     "name": "Antique pink",
+     "name_es": "Rosa antiguo",
+     "rgb": [
+      0.8314,
+      0.4549,
+      0.4745
+     ]
+    },
+    {
+     "code": "RAL 3015",
+     "name": "Light pink",
+     "name_es": "Rosa claro",
+     "rgb": [
+      0.8824,
+      0.651,
+      0.6784
+     ]
+    },
+    {
+     "code": "RAL 3016",
+     "name": "Coral red",
+     "name_es": "Rojo coral",
+     "rgb": [
+      0.6745,
+      0.251,
+      0.2039
+     ]
+    },
+    {
+     "code": "RAL 3017",
+     "name": "Rose",
+     "name_es": "Rosa",
+     "rgb": [
+      0.8275,
+      0.3294,
+      0.3725
+     ]
+    },
+    {
+     "code": "RAL 3018",
+     "name": "Strawberry red",
+     "name_es": "Rojo fresa",
+     "rgb": [
+      0.8196,
+      0.2549,
+      0.3216
+     ]
+    },
+    {
+     "code": "RAL 3020",
+     "name": "Traffic red",
+     "name_es": "Rojo tráfico",
+     "rgb": [
+      0.7569,
+      0.0706,
+      0.1098
+     ]
+    },
+    {
+     "code": "RAL 3022",
+     "name": "Salmon pink",
+     "name_es": "Rosa salmón",
+     "rgb": [
+      0.8353,
+      0.4275,
+      0.3373
+     ]
+    },
+    {
+     "code": "RAL 3024",
+     "name": "Luminous red",
+     "name_es": "Rojo brillante",
+     "rgb": [
+      0.9686,
+      0.0,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 3026",
+     "name": "Luminous bright red",
+     "name_es": "Rojo claro brillante",
+     "rgb": [
+      1.0,
+      0.0,
+      0.0
+     ]
+    },
+    {
+     "code": "RAL 3027",
+     "name": "Raspberry red",
+     "name_es": "Rojo frambuesa",
+     "rgb": [
+      0.7059,
+      0.1255,
+      0.2549
+     ]
+    },
+    {
+     "code": "RAL 3028",
+     "name": "Pure red",
+     "name_es": "Rojo puro",
+     "rgb": [
+      0.9059,
+      0.1451,
+      0.0706
+     ]
+    },
+    {
+     "code": "RAL 3031",
+     "name": "Orient red",
+     "name_es": "Rojo oriente",
+     "rgb": [
+      0.6745,
+      0.1961,
+      0.2314
+     ]
+    },
+    {
+     "code": "RAL 3032",
+     "name": "Pearl ruby red",
+     "name_es": "Rojo rubí perlado",
+     "rgb": [
+      0.4431,
+      0.0824,
+      0.1294
+     ]
+    },
+    {
+     "code": "RAL 3033",
+     "name": "Pearl pink",
+     "name_es": "Rosa perlado",
+     "rgb": [
+      0.698,
+      0.298,
+      0.2627
+     ]
+    }
+   ]
+  },
+  {
+   "id": "violet",
+   "name": "Violet",
+   "name_es": "Violetas",
+   "colors": [
+    {
+     "code": "RAL 4001",
+     "name": "Red lilac",
+     "name_es": "Lila rojizo",
+     "rgb": [
+      0.5412,
+      0.3529,
+      0.5137
+     ]
+    },
+    {
+     "code": "RAL 4002",
+     "name": "Red violet",
+     "name_es": "Violeta rojizo",
+     "rgb": [
+      0.5765,
+      0.2392,
+      0.3137
+     ]
+    },
+    {
+     "code": "RAL 4003",
+     "name": "Heather violet",
+     "name_es": "Violeta brezo",
+     "rgb": [
+      0.8196,
+      0.3569,
+      0.5608
+     ]
+    },
+    {
+     "code": "RAL 4004",
+     "name": "Claret violet",
+     "name_es": "Violeta burdeos",
+     "rgb": [
+      0.4118,
+      0.0863,
+      0.2235
+     ]
+    },
+    {
+     "code": "RAL 4005",
+     "name": "Blue lilac",
+     "name_es": "Lila azulado",
+     "rgb": [
+      0.5137,
+      0.3882,
+      0.6157
+     ]
+    },
+    {
+     "code": "RAL 4006",
+     "name": "Traffic purple",
+     "name_es": "Púrpura tráfico",
+     "rgb": [
+      0.6,
+      0.1451,
+      0.4471
+     ]
+    },
+    {
+     "code": "RAL 4007",
+     "name": "Purple violet",
+     "name_es": "Violeta púrpura",
+     "rgb": [
+      0.2902,
+      0.1255,
+      0.2314
+     ]
+    },
+    {
+     "code": "RAL 4008",
+     "name": "Signal violet",
+     "name_es": "Violeta señales",
+     "rgb": [
+      0.5647,
+      0.2745,
+      0.5176
+     ]
+    },
+    {
+     "code": "RAL 4009",
+     "name": "Pastel violet",
+     "name_es": "Violeta pastel",
+     "rgb": [
+      0.6392,
+      0.5373,
+      0.5843
+     ]
+    },
+    {
+     "code": "RAL 4010",
+     "name": "Telemagenta",
+     "name_es": "Telemagenta",
+     "rgb": [
+      0.7765,
+      0.2118,
+      0.4706
+     ]
+    },
+    {
+     "code": "RAL 4011",
+     "name": "Pearl violet",
+     "name_es": "Violeta perlado",
+     "rgb": [
+      0.5294,
+      0.451,
+      0.6314
+     ]
+    },
+    {
+     "code": "RAL 4012",
+     "name": "Pearl blackberry",
+     "name_es": "Mora perlado",
+     "rgb": [
+      0.4196,
+      0.4078,
+      0.502
+     ]
+    }
+   ]
+  },
+  {
+   "id": "blue",
+   "name": "Blue",
+   "name_es": "Azules",
+   "colors": [
+    {
+     "code": "RAL 5000",
+     "name": "Violet blue",
+     "name_es": "Azul violeta",
+     "rgb": [
+      0.2196,
+      0.298,
+      0.4392
+     ]
+    },
+    {
+     "code": "RAL 5001",
+     "name": "Green blue",
+     "name_es": "Azul verdoso",
+     "rgb": [
+      0.1216,
+      0.2784,
+      0.3922
+     ]
+    },
+    {
+     "code": "RAL 5002",
+     "name": "Ultramarine blue",
+     "name_es": "Azul ultramar",
+     "rgb": [
+      0.1686,
+      0.1725,
+      0.4863
+     ]
+    },
+    {
+     "code": "RAL 5003",
+     "name": "Sapphire blue",
+     "name_es": "Azul zafiro",
+     "rgb": [
+      0.1647,
+      0.2157,
+      0.3373
+     ]
+    },
+    {
+     "code": "RAL 5004",
+     "name": "Black blue",
+     "name_es": "Azul negruzco",
+     "rgb": [
+      0.1137,
+      0.1216,
+      0.1647
+     ]
+    },
+    {
+     "code": "RAL 5005",
+     "name": "Signal blue",
+     "name_es": "Azul señales",
+     "rgb": [
+      0.0824,
+      0.2824,
+      0.5373
+     ]
+    },
+    {
+     "code": "RAL 5007",
+     "name": "Brilliant blue",
+     "name_es": "Azul brillante",
+     "rgb": [
+      0.2549,
+      0.4039,
+      0.5529
+     ]
+    },
+    {
+     "code": "RAL 5008",
+     "name": "Grey blue",
+     "name_es": "Azul grisáceo",
+     "rgb": [
+      0.1922,
+      0.2353,
+      0.2824
+     ]
+    },
+    {
+     "code": "RAL 5009",
+     "name": "Azure blue",
+     "name_es": "Azul azur",
+     "rgb": [
+      0.1804,
+      0.349,
+      0.4706
+     ]
+    },
+    {
+     "code": "RAL 5010",
+     "name": "Gentian blue",
+     "name_es": "Azul genciana",
+     "rgb": [
+      0.0745,
+      0.2667,
+      0.4863
+     ]
+    },
+    {
+     "code": "RAL 5011",
+     "name": "Steel blue",
+     "name_es": "Azul acero",
+     "rgb": [
+      0.1373,
+      0.1725,
+      0.2471
+     ]
+    },
+    {
+     "code": "RAL 5012",
+     "name": "Light blue",
+     "name_es": "Azul claro",
+     "rgb": [
+      0.2039,
+      0.5059,
+      0.7216
+     ]
+    },
+    {
+     "code": "RAL 5013",
+     "name": "Cobalt blue",
+     "name_es": "Azul cobalto",
+     "rgb": [
+      0.1373,
+      0.1765,
+      0.3255
+     ]
+    },
+    {
+     "code": "RAL 5014",
+     "name": "Pigeon blue",
+     "name_es": "Azul pizarra",
+     "rgb": [
+      0.4235,
+      0.4863,
+      0.5961
+     ]
+    },
+    {
+     "code": "RAL 5015",
+     "name": "Sky blue",
+     "name_es": "Azul celeste",
+     "rgb": [
+      0.1569,
+      0.4549,
+      0.698
+     ]
+    },
+    {
+     "code": "RAL 5017",
+     "name": "Traffic blue",
+     "name_es": "Azul tráfico",
+     "rgb": [
+      0.0549,
+      0.3176,
+      0.5529
+     ]
+    },
+    {
+     "code": "RAL 5018",
+     "name": "Turquoise blue",
+     "name_es": "Azul turquesa",
+     "rgb": [
+      0.1294,
+      0.5333,
+      0.5608
+     ]
+    },
+    {
+     "code": "RAL 5019",
+     "name": "Capri blue",
+     "name_es": "Azul capri",
+     "rgb": [
+      0.102,
+      0.3412,
+      0.5176
+     ]
+    },
+    {
+     "code": "RAL 5020",
+     "name": "Ocean blue",
+     "name_es": "Azul océano",
+     "rgb": [
+      0.0431,
+      0.2549,
+      0.3176
+     ]
+    },
+    {
+     "code": "RAL 5021",
+     "name": "Water blue",
+     "name_es": "Azul agua",
+     "rgb": [
+      0.0275,
+      0.451,
+      0.4784
+     ]
+    },
+    {
+     "code": "RAL 5022",
+     "name": "Night blue",
+     "name_es": "Azul noche",
+     "rgb": [
+      0.1843,
+      0.1647,
+      0.3529
+     ]
+    },
+    {
+     "code": "RAL 5023",
+     "name": "Distant blue",
+     "name_es": "Azul lejanía",
+     "rgb": [
+      0.302,
+      0.4,
+      0.5569
+     ]
+    },
+    {
+     "code": "RAL 5024",
+     "name": "Pastel blue",
+     "name_es": "Azul pastel",
+     "rgb": [
+      0.4157,
+      0.5765,
+      0.6902
+     ]
+    },
+    {
+     "code": "RAL 5025",
+     "name": "Pearl Gentian blue",
+     "name_es": "Azul genciana perlado",
+     "rgb": [
+      0.1608,
+      0.3922,
+      0.4706
+     ]
+    },
+    {
+     "code": "RAL 5026",
+     "name": "Pearl night blue",
+     "name_es": "Azul noche perlado",
+     "rgb": [
+      0.0627,
+      0.1725,
+      0.3294
+     ]
+    }
+   ]
+  },
+  {
+   "id": "green",
+   "name": "Green",
+   "name_es": "Verdes",
+   "colors": [
+    {
+     "code": "RAL 6000",
+     "name": "Patina green",
+     "name_es": "Verde patina",
+     "rgb": [
+      0.1961,
+      0.4627,
+      0.3843
+     ]
+    },
+    {
+     "code": "RAL 6001",
+     "name": "Emerald green",
+     "name_es": "Verde esmeralda",
+     "rgb": [
+      0.1569,
+      0.4431,
+      0.2431
+     ]
+    },
+    {
+     "code": "RAL 6002",
+     "name": "Leaf green",
+     "name_es": "Verde hoja",
+     "rgb": [
+      0.1529,
+      0.3843,
+      0.2078
+     ]
+    },
+    {
+     "code": "RAL 6003",
+     "name": "Olive green",
+     "name_es": "Verde oliva",
+     "rgb": [
+      0.2941,
+      0.3412,
+      0.2431
+     ]
+    },
+    {
+     "code": "RAL 6004",
+     "name": "Blue green",
+     "name_es": "Verde azulado",
+     "rgb": [
+      0.0549,
+      0.2588,
+      0.2627
+     ]
+    },
+    {
+     "code": "RAL 6005",
+     "name": "Moss green",
+     "name_es": "Verde musgo",
+     "rgb": [
+      0.0588,
+      0.2627,
+      0.2118
+     ]
+    },
+    {
+     "code": "RAL 6006",
+     "name": "Grey olive",
+     "name_es": "Oliva grisáceo",
+     "rgb": [
+      0.251,
+      0.2627,
+      0.2314
+     ]
+    },
+    {
+     "code": "RAL 6007",
+     "name": "Bottle green",
+     "name_es": "Verde botella",
+     "rgb": [
+      0.1569,
+      0.2039,
+      0.1412
+     ]
+    },
+    {
+     "code": "RAL 6008",
+     "name": "Brown green",
+     "name_es": "Verde parduzco",
+     "rgb": [
+      0.2078,
+      0.2196,
+      0.1804
+     ]
+    },
+    {
+     "code": "RAL 6009",
+     "name": "Fir green",
+     "name_es": "Verde abeto",
+     "rgb": [
+      0.149,
+      0.2235,
+      0.1843
+     ]
+    },
+    {
+     "code": "RAL 6010",
+     "name": "Grass green",
+     "name_es": "Verde hierba",
+     "rgb": [
+      0.2431,
+      0.4588,
+      0.2314
+     ]
+    },
+    {
+     "code": "RAL 6011",
+     "name": "Reseda green",
+     "name_es": "Verde reseda",
+     "rgb": [
+      0.4078,
+      0.5098,
+      0.3569
+     ]
+    },
+    {
+     "code": "RAL 6012",
+     "name": "Black green",
+     "name_es": "Verde negruzco",
+     "rgb": [
+      0.1922,
+      0.251,
+      0.2392
+     ]
+    },
+    {
+     "code": "RAL 6013",
+     "name": "Reed green",
+     "name_es": "Verde caña",
+     "rgb": [
+      0.4745,
+      0.4863,
+      0.3529
+     ]
+    },
+    {
+     "code": "RAL 6014",
+     "name": "Yellow olive",
+     "name_es": "Oliva amarillento",
+     "rgb": [
+      0.2667,
+      0.2627,
+      0.2157
+     ]
+    },
+    {
+     "code": "RAL 6015",
+     "name": "Black olive",
+     "name_es": "Oliva negruzco",
+     "rgb": [
+      0.2392,
+      0.251,
+      0.2275
+     ]
+    },
+    {
+     "code": "RAL 6016",
+     "name": "Turquoise green",
+     "name_es": "Verde turquesa",
+     "rgb": [
+      0.0078,
+      0.4157,
+      0.3216
+     ]
+    },
+    {
+     "code": "RAL 6017",
+     "name": "May green",
+     "name_es": "Verde mayo",
+     "rgb": [
+      0.2745,
+      0.5255,
+      0.2549
+     ]
+    },
+    {
+     "code": "RAL 6018",
+     "name": "Yellow green",
+     "name_es": "Verde amarillento",
+     "rgb": [
+      0.2824,
+      0.6431,
+      0.2471
+     ]
+    },
+    {
+     "code": "RAL 6019",
+     "name": "Pastel green",
+     "name_es": "Verde pastel",
+     "rgb": [
+      0.7176,
+      0.851,
+      0.6941
+     ]
+    },
+    {
+     "code": "RAL 6020",
+     "name": "Chrome green",
+     "name_es": "Verde cromo",
+     "rgb": [
+      0.2078,
+      0.2784,
+      0.2
+     ]
+    },
+    {
+     "code": "RAL 6021",
+     "name": "Pale green",
+     "name_es": "Verde pálido",
+     "rgb": [
+      0.5255,
+      0.6431,
+      0.4863
+     ]
+    },
+    {
+     "code": "RAL 6022",
+     "name": "Brown olive",
+     "name_es": "Oliva parduzco",
+     "rgb": [
+      0.2431,
+      0.2353,
+      0.1961
+     ]
+    },
+    {
+     "code": "RAL 6024",
+     "name": "Traffic green",
+     "name_es": "Verde tráfico",
+     "rgb": [
+      0.0,
+      0.5294,
+      0.3294
+     ]
+    },
+    {
+     "code": "RAL 6025",
+     "name": "Fern green",
+     "name_es": "Verde helecho",
+     "rgb": [
+      0.3255,
+      0.4588,
+      0.2353
+     ]
+    },
+    {
+     "code": "RAL 6026",
+     "name": "Opal green",
+     "name_es": "Verde ópalo",
+     "rgb": [
+      0.0,
+      0.3647,
+      0.3216
+     ]
+    },
+    {
+     "code": "RAL 6027",
+     "name": "Light green",
+     "name_es": "Verde claro",
+     "rgb": [
+      0.5059,
+      0.7529,
+      0.7333
+     ]
+    },
+    {
+     "code": "RAL 6028",
+     "name": "Pine green",
+     "name_es": "Verde pino",
+     "rgb": [
+      0.1765,
+      0.3333,
+      0.2745
+     ]
+    },
+    {
+     "code": "RAL 6029",
+     "name": "Mint green",
+     "name_es": "Verde menta",
+     "rgb": [
+      0.0,
+      0.4471,
+      0.2627
+     ]
+    },
+    {
+     "code": "RAL 6032",
+     "name": "Signal green",
+     "name_es": "Verde señales",
+     "rgb": [
+      0.0588,
+      0.5216,
+      0.3451
+     ]
+    },
+    {
+     "code": "RAL 6033",
+     "name": "Mint turquoise",
+     "name_es": "Turquesa menta",
+     "rgb": [
+      0.2784,
+      0.5412,
+      0.5176
+     ]
+    },
+    {
+     "code": "RAL 6034",
+     "name": "Pastel turquoise",
+     "name_es": "Turquesa pastel",
+     "rgb": [
+      0.498,
+      0.6902,
+      0.698
+     ]
+    },
+    {
+     "code": "RAL 6035",
+     "name": "Pearl green",
+     "name_es": "Verde perlado",
+     "rgb": [
+      0.1059,
+      0.3294,
+      0.1725
+     ]
+    },
+    {
+     "code": "RAL 6036",
+     "name": "Pearl opal green",
+     "name_es": "Verde ópalo perlado",
+     "rgb": [
+      0.0,
+      0.3647,
+      0.298
+     ]
+    },
+    {
+     "code": "RAL 6037",
+     "name": "Pure green",
+     "name_es": "Verde puro",
+     "rgb": [
+      0.1451,
+      0.9059,
+      0.0706
+     ]
+    },
+    {
+     "code": "RAL 6038",
+     "name": "Luminous green",
+     "name_es": "Verde brillante",
+     "rgb": [
+      0.0,
+      0.9686,
+      0.0
+     ]
+    }
+   ]
+  },
+  {
+   "id": "grey",
+   "name": "Grey",
+   "name_es": "Grises",
+   "colors": [
+    {
+     "code": "RAL 7000",
+     "name": "Squirrel grey",
+     "name_es": "Gris ardilla",
+     "rgb": [
+      0.4941,
+      0.5451,
+      0.5725
+     ]
+    },
+    {
+     "code": "RAL 7001",
+     "name": "Silver grey",
+     "name_es": "Gris plata",
+     "rgb": [
+      0.5608,
+      0.6,
+      0.6235
+     ]
+    },
+    {
+     "code": "RAL 7002",
+     "name": "Olive grey",
+     "name_es": "Gris oliva",
+     "rgb": [
+      0.5059,
+      0.498,
+      0.4078
+     ]
+    },
+    {
+     "code": "RAL 7003",
+     "name": "Moss grey",
+     "name_es": "Gris musgo",
+     "rgb": [
+      0.4784,
+      0.4824,
+      0.4275
+     ]
+    },
+    {
+     "code": "RAL 7004",
+     "name": "Signal grey",
+     "name_es": "Gris señales",
+     "rgb": [
+      0.6196,
+      0.6275,
+      0.6314
+     ]
+    },
+    {
+     "code": "RAL 7005",
+     "name": "Mouse grey",
+     "name_es": "Gris ratón",
+     "rgb": [
+      0.4196,
+      0.4431,
+      0.4353
+     ]
+    },
+    {
+     "code": "RAL 7006",
+     "name": "Beige grey",
+     "name_es": "Gris beige",
+     "rgb": [
+      0.4588,
+      0.4353,
+      0.3804
+     ]
+    },
+    {
+     "code": "RAL 7008",
+     "name": "Khaki grey",
+     "name_es": "Gris caqui",
+     "rgb": [
+      0.4549,
+      0.4,
+      0.2627
+     ]
+    },
+    {
+     "code": "RAL 7009",
+     "name": "Green grey",
+     "name_es": "Gris verdoso",
+     "rgb": [
+      0.3569,
+      0.3843,
+      0.349
+     ]
+    },
+    {
+     "code": "RAL 7010",
+     "name": "Tarpaulin grey",
+     "name_es": "Gris lona",
+     "rgb": [
+      0.3412,
+      0.3647,
+      0.3412
+     ]
+    },
+    {
+     "code": "RAL 7011",
+     "name": "Iron grey",
+     "name_es": "Gris hierro",
+     "rgb": [
+      0.3333,
+      0.3647,
+      0.3804
+     ]
+    },
+    {
+     "code": "RAL 7012",
+     "name": "Basalt grey",
+     "name_es": "Gris basalto",
+     "rgb": [
+      0.349,
+      0.3804,
+      0.3882
+     ]
+    },
+    {
+     "code": "RAL 7013",
+     "name": "Brown grey",
+     "name_es": "Gris parduzco",
+     "rgb": [
+      0.3333,
+      0.3333,
+      0.2824
+     ]
+    },
+    {
+     "code": "RAL 7015",
+     "name": "Slate grey",
+     "name_es": "Gris pizarra",
+     "rgb": [
+      0.3176,
+      0.3373,
+      0.3608
+     ]
+    },
+    {
+     "code": "RAL 7016",
+     "name": "Anthracite grey",
+     "name_es": "Gris antracita",
+     "rgb": [
+      0.2157,
+      0.2471,
+      0.2627
+     ]
+    },
+    {
+     "code": "RAL 7021",
+     "name": "Black grey",
+     "name_es": "Gris negruzco",
+     "rgb": [
+      0.1804,
+      0.1961,
+      0.2039
+     ]
+    },
+    {
+     "code": "RAL 7022",
+     "name": "Umbra grey",
+     "name_es": "Gris sombra",
+     "rgb": [
+      0.2941,
+      0.302,
+      0.2745
+     ]
+    },
+    {
+     "code": "RAL 7023",
+     "name": "Concrete grey",
+     "name_es": "Gris hormigón",
+     "rgb": [
+      0.5059,
+      0.5176,
+      0.4745
+     ]
+    },
+    {
+     "code": "RAL 7024",
+     "name": "Graphite grey",
+     "name_es": "Gris grafito",
+     "rgb": [
+      0.2784,
+      0.2902,
+      0.3137
+     ]
+    },
+    {
+     "code": "RAL 7026",
+     "name": "Granite grey",
+     "name_es": "Gris granito",
+     "rgb": [
+      0.2157,
+      0.2667,
+      0.2784
+     ]
+    },
+    {
+     "code": "RAL 7030",
+     "name": "Stone grey",
+     "name_es": "Gris piedra",
+     "rgb": [
+      0.5765,
+      0.5765,
+      0.5333
+     ]
+    },
+    {
+     "code": "RAL 7031",
+     "name": "Blue grey",
+     "name_es": "Gris azulado",
+     "rgb": [
+      0.3647,
+      0.4118,
+      0.4392
+     ]
+    },
+    {
+     "code": "RAL 7032",
+     "name": "Pebble grey",
+     "name_es": "Gris guijarro",
+     "rgb": [
+      0.7255,
+      0.7255,
+      0.6588
+     ]
+    },
+    {
+     "code": "RAL 7033",
+     "name": "Cement grey",
+     "name_es": "Gris cemento",
+     "rgb": [
+      0.5059,
+      0.5373,
+      0.4745
+     ]
+    },
+    {
+     "code": "RAL 7034",
+     "name": "Yellow grey",
+     "name_es": "Gris amarillento",
+     "rgb": [
+      0.5765,
+      0.5686,
+      0.4627
+     ]
+    },
+    {
+     "code": "RAL 7035",
+     "name": "Light grey",
+     "name_es": "Gris claro",
+     "rgb": [
+      0.7961,
+      0.8157,
+      0.8
+     ]
+    },
+    {
+     "code": "RAL 7036",
+     "name": "Platinum grey",
+     "name_es": "Gris platino",
+     "rgb": [
+      0.6039,
+      0.5882,
+      0.5922
+     ]
+    },
+    {
+     "code": "RAL 7037",
+     "name": "Dusty grey",
+     "name_es": "Gris polvo",
+     "rgb": [
+      0.4863,
+      0.498,
+      0.4941
+     ]
+    },
+    {
+     "code": "RAL 7038",
+     "name": "Agate grey",
+     "name_es": "Gris ágata",
+     "rgb": [
+      0.7059,
+      0.7216,
+      0.6902
+     ]
+    },
+    {
+     "code": "RAL 7039",
+     "name": "Quartz grey",
+     "name_es": "Gris cuarzo",
+     "rgb": [
+      0.4196,
+      0.4118,
+      0.3725
+     ]
+    },
+    {
+     "code": "RAL 7040",
+     "name": "Window grey",
+     "name_es": "Gris ventana",
+     "rgb": [
+      0.6157,
+      0.6392,
+      0.651
+     ]
+    },
+    {
+     "code": "RAL 7042",
+     "name": "Traffic grey A",
+     "name_es": "Gris tráfico A",
+     "rgb": [
+      0.5608,
+      0.5882,
+      0.5843
+     ]
+    },
+    {
+     "code": "RAL 7043",
+     "name": "Traffic grey B",
+     "name_es": "Gris tráfico B",
+     "rgb": [
+      0.3059,
+      0.3294,
+      0.3176
+     ]
+    },
+    {
+     "code": "RAL 7044",
+     "name": "Silk grey",
+     "name_es": "Gris seda",
+     "rgb": [
+      0.7412,
+      0.7412,
+      0.698
+     ]
+    },
+    {
+     "code": "RAL 7045",
+     "name": "Telegrey 1",
+     "name_es": "Telegris 1",
+     "rgb": [
+      0.5686,
+      0.5882,
+      0.6039
+     ]
+    },
+    {
+     "code": "RAL 7046",
+     "name": "Telegrey 2",
+     "name_es": "Telegris 2",
+     "rgb": [
+      0.5098,
+      0.5373,
+      0.5569
+     ]
+    },
+    {
+     "code": "RAL 7047",
+     "name": "Telegrey 4",
+     "name_es": "Telegris 4",
+     "rgb": [
+      0.8118,
+      0.8157,
+      0.8118
+     ]
+    },
+    {
+     "code": "RAL 7048",
+     "name": "Pearl mouse grey",
+     "name_es": "Gris ratón perlado",
+     "rgb": [
+      0.5333,
+      0.5059,
+      0.4588
+     ]
+    }
+   ]
+  },
+  {
+   "id": "brown",
+   "name": "Brown",
+   "name_es": "Marrones",
+   "colors": [
+    {
+     "code": "RAL 8000",
+     "name": "Green brown",
+     "name_es": "Pardo verdoso",
+     "rgb": [
+      0.5333,
+      0.4431,
+      0.2588
+     ]
+    },
+    {
+     "code": "RAL 8001",
+     "name": "Ochre brown",
+     "name_es": "Pardo ocre",
+     "rgb": [
+      0.6118,
+      0.4196,
+      0.1882
+     ]
+    },
+    {
+     "code": "RAL 8002",
+     "name": "Signal brown",
+     "name_es": "Marrón señales",
+     "rgb": [
+      0.4824,
+      0.3176,
+      0.2549
+     ]
+    },
+    {
+     "code": "RAL 8003",
+     "name": "Clay brown",
+     "name_es": "Pardo arcilla",
+     "rgb": [
+      0.502,
+      0.3294,
+      0.1843
+     ]
+    },
+    {
+     "code": "RAL 8004",
+     "name": "Copper brown",
+     "name_es": "Pardo cobre",
+     "rgb": [
+      0.5608,
+      0.3059,
+      0.2078
+     ]
+    },
+    {
+     "code": "RAL 8007",
+     "name": "Fawn brown",
+     "name_es": "Pardo corzo",
+     "rgb": [
+      0.4353,
+      0.2902,
+      0.1843
+     ]
+    },
+    {
+     "code": "RAL 8008",
+     "name": "Olive brown",
+     "name_es": "Pardo oliva",
+     "rgb": [
+      0.4353,
+      0.3098,
+      0.1569
+     ]
+    },
+    {
+     "code": "RAL 8011",
+     "name": "Nut brown",
+     "name_es": "Pardo nuez",
+     "rgb": [
+      0.3529,
+      0.2275,
+      0.1608
+     ]
+    },
+    {
+     "code": "RAL 8012",
+     "name": "Red brown",
+     "name_es": "Pardo rojo",
+     "rgb": [
+      0.4039,
+      0.2196,
+      0.1922
+     ]
+    },
+    {
+     "code": "RAL 8014",
+     "name": "Sepia brown",
+     "name_es": "Pardo sepia",
+     "rgb": [
+      0.2863,
+      0.2235,
+      0.1765
+     ]
+    },
+    {
+     "code": "RAL 8015",
+     "name": "Chestnut brown",
+     "name_es": "Castaño",
+     "rgb": [
+      0.3882,
+      0.2275,
+      0.2039
+     ]
+    },
+    {
+     "code": "RAL 8016",
+     "name": "Mahogany brown",
+     "name_es": "Pardo caoba",
+     "rgb": [
+      0.298,
+      0.1843,
+      0.149
+     ]
+    },
+    {
+     "code": "RAL 8017",
+     "name": "Chocolate brown",
+     "name_es": "Pardo chocolate",
+     "rgb": [
+      0.2667,
+      0.1961,
+      0.1765
+     ]
+    },
+    {
+     "code": "RAL 8019",
+     "name": "Grey brown",
+     "name_es": "Pardo grisáceo",
+     "rgb": [
+      0.2471,
+      0.2275,
+      0.2275
+     ]
+    },
+    {
+     "code": "RAL 8022",
+     "name": "Black brown",
+     "name_es": "Pardo negruzco",
+     "rgb": [
+      0.1294,
+      0.1216,
+      0.1255
+     ]
+    },
+    {
+     "code": "RAL 8023",
+     "name": "Orange brown",
+     "name_es": "Pardo anaranjado",
+     "rgb": [
+      0.651,
+      0.3686,
+      0.1843
+     ]
+    },
+    {
+     "code": "RAL 8024",
+     "name": "Beige brown",
+     "name_es": "Pardo beige",
+     "rgb": [
+      0.4745,
+      0.3333,
+      0.2353
+     ]
+    },
+    {
+     "code": "RAL 8025",
+     "name": "Pale brown",
+     "name_es": "Pardo pálido",
+     "rgb": [
+      0.4588,
+      0.3608,
+      0.2863
+     ]
+    },
+    {
+     "code": "RAL 8028",
+     "name": "Terra brown",
+     "name_es": "Pardo tierra",
+     "rgb": [
+      0.3059,
+      0.2314,
+      0.1686
+     ]
+    },
+    {
+     "code": "RAL 8029",
+     "name": "Pearl copper",
+     "name_es": "Cobre perlado",
+     "rgb": [
+      0.4667,
+      0.2353,
+      0.1529
+     ]
+    }
+   ]
+  },
+  {
+   "id": "neutral",
+   "name": "White and black",
+   "name_es": "Blancos y negros",
+   "colors": [
+    {
+     "code": "RAL 9001",
+     "name": "Cream",
+     "name_es": "Blanco crema",
+     "rgb": [
+      0.9373,
+      0.9216,
+      0.8627
+     ]
+    },
+    {
+     "code": "RAL 9002",
+     "name": "Grey white",
+     "name_es": "Blanco grisáceo",
+     "rgb": [
+      0.8667,
+      0.8706,
+      0.8314
+     ]
+    },
+    {
+     "code": "RAL 9003",
+     "name": "Signal white",
+     "name_es": "Blanco señales",
+     "rgb": [
+      0.9569,
+      0.9725,
+      0.9569
+     ]
+    },
+    {
+     "code": "RAL 9004",
+     "name": "Signal black",
+     "name_es": "Negro señales",
+     "rgb": [
+      0.1804,
+      0.1882,
+      0.1961
+     ]
+    },
+    {
+     "code": "RAL 9005",
+     "name": "Jet black",
+     "name_es": "Negro intenso",
+     "rgb": [
+      0.0392,
+      0.0392,
+      0.051
+     ]
+    },
+    {
+     "code": "RAL 9006",
+     "name": "White aluminium",
+     "name_es": "Aluminio blanco",
+     "rgb": [
+      0.6471,
+      0.6588,
+      0.651
+     ]
+    },
+    {
+     "code": "RAL 9007",
+     "name": "Grey aluminium",
+     "name_es": "Aluminio gris",
+     "rgb": [
+      0.5608,
+      0.5608,
+      0.549
+     ]
+    },
+    {
+     "code": "RAL 9010",
+     "name": "Pure white",
+     "name_es": "Blanco puro",
+     "rgb": [
+      0.9686,
+      0.9765,
+      0.9373
+     ]
+    },
+    {
+     "code": "RAL 9011",
+     "name": "Graphite black",
+     "name_es": "Negro grafito",
+     "rgb": [
+      0.1608,
+      0.1725,
+      0.1843
+     ]
+    },
+    {
+     "code": "RAL 9016",
+     "name": "Traffic white",
+     "name_es": "Blanco tráfico",
+     "rgb": [
+      0.9686,
+      0.9843,
+      0.9608
+     ]
+    },
+    {
+     "code": "RAL 9017",
+     "name": "Traffic black",
+     "name_es": "Negro tráfico",
+     "rgb": [
+      0.1647,
+      0.1765,
+      0.1843
+     ]
+    },
+    {
+     "code": "RAL 9018",
+     "name": "Papyrus white",
+     "name_es": "Blanco papiro",
+     "rgb": [
+      0.8118,
+      0.8275,
+      0.8039
+     ]
+    },
+    {
+     "code": "RAL 9022",
+     "name": "Pearl light grey",
+     "name_es": "Gris claro perlado",
+     "rgb": [
+      0.6118,
+      0.6118,
+      0.6118
+     ]
+    },
+    {
+     "code": "RAL 9023",
+     "name": "Pearl dark grey",
+     "name_es": "Gris oscuro perlado",
+     "rgb": [
+      0.4941,
+      0.5059,
+      0.5098
+     ]
+    }
+   ]
+  }
+ ]
+}

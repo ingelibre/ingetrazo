@@ -82,3 +82,141 @@ def test_a_model_zip_cannot_write_outside_its_folder(served):
     assert d is not None
     assert {p.name for p in d.iterdir()} == {"fuera.txt", "ok.obj"}
     assert not (d.parent.parent / "fuera.txt").exists()
+
+
+def _load(obj, entry):
+    """The model as the tray inserts it, and the size it ends up."""
+    from core.scene import Scene
+    from formats import obj as _obj
+    scene = Scene()
+    _obj.load_obj(scene, obj, matrix=library.model_matrix(entry, obj))
+    pts = [v for f in scene.mesh.faces for v in f.vertices] or \
+          [v for g in scene.groups for f in g.mesh.faces for v in f.vertices]
+    return tuple(round((max(a) - min(a)) * 100, 2) for a in
+                 ([p.x() for p in pts], [p.y() for p in pts],
+                  [p.z() for p in pts]))
+
+
+def _box(tmp_path, name, w, d, h):
+    """An OBJ box ``w`` x ``d`` x ``h`` in the catalogue's Y-up space."""
+    p = tmp_path / name
+    v = [(0, 0, 0), (w, 0, 0), (w, h, 0), (0, h, 0),
+         (0, 0, d), (w, 0, d), (w, h, d), (0, h, d)]
+    faces = [(1, 2, 3, 4), (5, 6, 7, 8), (1, 2, 6, 5),
+             (2, 3, 7, 6), (3, 4, 8, 7), (4, 1, 5, 8)]
+    p.write_text("".join("v %g %g %g\n" % t for t in v) +
+                 "".join("f %d %d %d %d\n" % f for f in faces))
+    return p
+
+
+def test_a_model_arrives_standing_up_and_the_size_the_catalogue_promised(
+        tmp_path):
+    # The file is Y-up and in units of its own; the catalogue says the piece
+    # is 51 x 53 x 80 cm. Both have to be honoured or a bus lands on its side
+    # (and a 126 cm handrail arrives 3 cm long).
+    obj = _box(tmp_path, "chair.obj", 2.0, 3.0, 5.0)     # arbitrary units
+    entry = {"cm": ["51", "53", "80"]}
+    assert _load(obj, entry) == (51.0, 53.0, 80.0)
+
+
+def test_the_catalogues_own_rotation_is_applied_before_the_fit(tmp_path):
+    # Some entries carry a 3x3 that turns the model before it is sized. Here
+    # it swaps Y and Z, so the file's 5-long axis becomes the depth.
+    obj = _box(tmp_path, "pen.obj", 2.0, 3.0, 5.0)
+    entry = {"cm": ["20", "50", "30"],
+             "rot": ["1", "0", "0", "0", "0", "1", "0", "-1", "0"]}
+    assert _load(obj, entry) == (20.0, 50.0, 30.0)
+
+
+def test_a_flat_model_is_not_collapsed_by_the_fit(tmp_path):
+    # A pane of glass has no thickness to fit, so that axis borrows the
+    # others' scale instead of dividing by zero.
+    obj = _box(tmp_path, "pane.obj", 2.0, 0.0, 4.0)
+    entry = {"cm": ["100", "1", "200"]}
+    w, d, h = _load(obj, entry)
+    assert (w, h) == (100.0, 200.0)
+    assert d == 0.0
+
+
+def test_an_entry_without_a_size_still_loads(tmp_path):
+    # A catalogue that says nothing must not produce a zero-sized model.
+    obj = _box(tmp_path, "x.obj", 2.0, 3.0, 5.0)
+    assert all(v > 0 for v in _load(obj, {}))
+
+
+def test_a_download_says_who_it_is(monkeypatch, tmp_path):
+    # Cloudflare — which is what serves ingetrazo.com — answers 403 to
+    # Python's default "Python-urllib/3.x". A request that does not identify
+    # itself comes back Forbidden, and the whole online library is dead
+    # while curl on the same machine works fine. It cost a live deploy to
+    # find; it should cost a test to find again.
+    import urllib.request
+
+    seen = {}
+
+    class _Resp:
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        seen["ua"] = req.get_header("User-agent")
+        return _Resp()
+
+    monkeypatch.setenv("INGETRAZO_LIBRARY", "https://ingetrazo.com/biblioteca")
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "tex"))
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    library.index(refresh=True)
+
+    ua = seen.get("ua")
+    assert ua, "the request carried no User-Agent"
+    assert "urllib" not in ua.lower()
+    assert "IngeTrazo" in ua
+
+
+def test_previews_are_fetched_in_the_background_and_then_come_from_disk(served):
+    # Browsing must not wait on the network one preview at a time: that is
+    # what made a screenful of them take twenty seconds. The tray asks for
+    # what it can see and paints what has landed.
+    import time
+
+    assert library.cached_thumbnail("silla") is None   # nothing yet
+    library.prefetch_thumbnails(["silla"])
+    for _ in range(100):                                # up to 5 s
+        if library.cached_thumbnail("silla") is not None:
+            break
+        time.sleep(0.05)
+    assert library.cached_thumbnail("silla") is not None
+
+
+def test_asking_for_the_same_preview_again_costs_nothing(served):
+    # The tray calls this on every tick with the same visible rows, so a
+    # repeat must be free — not a second download, and never a hang.
+    import time
+
+    library.prefetch_thumbnails(["silla"])
+    for _ in range(100):
+        if library.cached_thumbnail("silla") is not None:
+            break
+        time.sleep(0.05)
+    before = library.cached_thumbnail("silla").stat().st_mtime_ns
+    for _ in range(20):
+        library.prefetch_thumbnails(["silla"])
+    time.sleep(0.2)
+    assert library.cached_thumbnail("silla").stat().st_mtime_ns == before
+
+
+def test_a_preview_that_cannot_be_had_never_raises(tmp_path, monkeypatch):
+    # A blank square is the right answer to an unreachable server; an
+    # exception on a worker thread is not.
+    monkeypatch.setenv("INGETRAZO_LIBRARY", "https://0.0.0.0/nada")
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "tex"))
+    library.prefetch_thumbnails(["no-existe"])
+    import time
+    time.sleep(0.3)
+    assert library.cached_thumbnail("no-existe") is None
