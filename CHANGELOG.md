@@ -4,6 +4,65 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.6.3] — 2026-08-27
+
+**The release that puts .skp import back.** A change in OpenSKP upstream
+turned every imported model into a field of spikes, and hunting Marco's
+report through a modelling session took five more defects with it.
+
+### Fixed
+- **Imported `.skp` models came in shattered into triangles and spikes.**
+  OpenSKP normalized what a coedge's flag carries — SketchUp's raw storage
+  bit (0 forward, 1 reversed) became the documented +1 / −1 — and reading it
+  as a boolean then took the same endpoint for every coedge, so any polygon
+  holding a reversed one came out as a self-intersecting star. Measured on
+  Marco's plaza: the same 115973 faces and the same bounding box, with the
+  model's surface down from 43008 to 13590 m². The ring now comes from the
+  loop's connectivity, which reads the same under either contract, so a
+  future rename cannot break it again. v0.3.5 was built before that change
+  and was never affected; every 0.3.6.x build was.
+- **Drawing a rectangle on a solid opened it.** The Rectangle tool adds its
+  own faces, and the flag that says so also gated propagating an edge SPLIT
+  into the other faces carrying that edge — so a door drawn on a wall split
+  the wall's bottom edge in three while the floor kept the original long
+  one. Coincident, not shared, and the box stopped being closed. Everything
+  volumetric quietly stops working on an open shell, which is where the next
+  three came from. Three fuzz sequences that used to hit a known engine gap
+  now pass.
+- **Push/Pull into a face read the drag backwards on an open shell.** The
+  tool signs the distance along the base's outward normal, which
+  `orient_outward` can only establish where there is a volume to test parity
+  against. On an open shell a face keeps whatever winding the draw gave it,
+  so a drag INTO a wall read as positive: the base face was never hidden and
+  the outer face stood there covering the pocket forming behind it, and the
+  commit then swept the push the wrong way entirely.
+- **Push/Pull's drag preview now reads as one clean solid.** It draws the
+  sweep's own edges (they were missing), softens a curve's facet seams the
+  way the commit does, carries the material and re-anchors the texture to
+  each new face, and paints both sides of a preview face alike — an overlay
+  has no back. A clean prism extend or shrink is previewed by moving the
+  cap in the model instead, so nothing of the old shape is left standing.
+- **Push/Pull extrudes the material with the shape.** Pulling a painted
+  rectangle up gave a box with one painted face; the new sides come out
+  painted too, each mapping the texture in its own plane.
+- **Splitting or carving a painted face keeps the paint.** A line drawn
+  across a textured face wiped it off both halves, and a door outlined on a
+  textured wall came out bare. Both keep the mother's paint now, and keep
+  its texture map, so the image runs straight across the cut instead of
+  restarting on each piece.
+- **Snapping no longer reaches through a group.** Occlusion only knew the
+  loose mesh, so nothing inside a group hid anything and drawing on a box
+  snapped to the edge on its far side. It asks the pick index now — the one
+  structure that holds the whole model — so occlusion and picking can never
+  disagree about what is in front.
+
+### Known
+- A rectangle drawn on a face, pushed out and pushed back flush, dissolves
+  into the wall. Isolated to the per-plane rebuild: its rule may dissolve
+  the operation's own seams, and a pushed face's boundary is both the user's
+  line and the operation's rim. Telling them apart needs an edge to carry
+  where it came from — the identity work already on the list.
+
 ## [0.3.6.2] — 2026-08-27
 
 ### Fixed
