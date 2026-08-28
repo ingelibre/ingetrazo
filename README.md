@@ -40,7 +40,7 @@ Grab the [latest release](https://github.com/ingelibre/ingetrazo/releases/latest
   It lands in your applications menu with `.igz`/`.skp` associated.
 
 ```bash
-flatpak remote-add --if-not-exists ingetrazo https://ingetrazo.com/ingetrazo.flatpakrepo
+flatpak remote-add --user --if-not-exists ingetrazo https://ingetrazo.com/ingetrazo.flatpakrepo
 flatpak install --user ingetrazo com.ingetrazo.IngeTrazo
 flatpak run com.ingetrazo.IngeTrazo
 ```
