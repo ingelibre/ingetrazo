@@ -342,6 +342,56 @@ docs/     skp-backend.md · openskp-collaboration.md · halfedge-migration-plan.
 
 ---
 
+## 🧭 Conceptos duplicados — medido el 2026-08-29 (pedido de Marco)
+
+Marco pidió, mirando IngeCAD: *«dime si IngeTrazo e IngePresupuestos tienen
+los mismos problemas de conceptos duplicados»*. Se midió con el mismo
+escáner en los tres (nombres definidos en más de un archivo + funciones
+**estructuralmente idénticas** en archivos distintos, AST normalizado):
+
+| | archivos | líneas | nombres repetidos | clones reales |
+|---|---|---|---|---|
+| IngeCAD | 99 | 41 413 | 9 | 4 |
+| **IngeTrazo (`app/`)** | **115** | **50 516** | **16** | **8** |
+| IngePresupuestos (`app/`) | 90 | 88 606 | 17 | 11 |
+
+**Los clones de acá, del más caro al más barato** (los dos primeros son
+matemática, y ahí duplicar no da un bug de interfaz sino **dos resultados
+distintos** el día que uno de los dos se toque):
+
+1. `_loop_area` — **la misma función Newell, dos veces**: `core/mesh.py:1510`
+   y `core/bim.py:68`. Idénticas salvo el docstring y el nombre de una
+   variable (`cur` / `curr`). El área de un contorno es una pregunta del
+   modelo: debe tener una sola respuesta.
+2. `_faces` — `formats/obj.py` y `formats/stl.py` (131 nodos): la
+   triangulación que va al archivo, dos veces. Un exportador arreglado y el
+   otro no es exactamente el bug que nadie ve hasta que el colega abre el
+   STL.
+3. `_key` en **cuatro** archivos del núcleo (`formats/fuse.py`,
+   `core/mesh.py`, `core/topology.py`, `core/arrangement.py`): la
+   cuantización de un vértice a clave. Si dos de ellas redondean distinto,
+   dos partes del motor dejan de reconocer el mismo punto.
+4. `_newell` (`formats/fuse.py`, `core/triangulate.py`), `collect_geometry`
+   (`formats/meshexport.py`, `core/hlr.py`), `_face_attrs` /
+   `_image_has_cutout` / `_collect` (`formats/dae.py`,
+   `formats/skp_openskp.py`), `_plog` (`views/viewport.py`,
+   `core/history.py`), `value_label` (`tools/rotate.py`,
+   `tools/protractor.py`), `on_activate` (los dos plugins).
+
+**El método, que es lo que evita romper lo andado:** por cada concepto,
+primero una prueba que **fije la conducta actual de los DOS sitios**,
+después unificar, después medir que la salida no cambió (el bench de mallas
+y el round-trip .igz/.skp ya dan ese "no cambió nada" gratis). Sin la
+prueba previa, unificar es adivinar.
+
+⚠️ **La medición detecta clones, no conceptos duplicados.** Los peores
+casos que aparecieron en IngeCAD —dos constantes para la misma apertura de
+picado, dos formas de resolver el color de un ACI— **no salen en esta
+tabla**, porque son código distinto contestando la misma pregunta. Los
+números de arriba son un piso, no un total.
+
+---
+
 ## Memorias de Claude relacionadas
 
 En `~/.claude/projects/-home-sumaritux-ingetrazo/memory/`: filosofía/flujo unificado · casita dogfooding · AI-native · estrategia OpenSKP (`project-skp-import-strategy-openskp`) · skp2dae · sitio web · migración SketchUp · IngeCAD. Del hermano IngePresupuestos: `project_integracion_ingetrazo_flujo` · gotchas Wayland/PySide6 originales.
