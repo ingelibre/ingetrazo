@@ -755,6 +755,7 @@ class MainWindow(QMainWindow):
             (tr("glTF/GLB (.glb)…"), self._on_import_glb),
             (tr("Wavefront OBJ (.obj)…"), self._on_import_obj),
             (tr("Image (PNG / JPG)…"), self._on_import_image),
+            (tr("AutoCAD DXF (.dxf)…"), self._on_import_dxf),
             (tr("Georeference (KML / GeoJSON)…"), self._on_import_georef),
             (tr("Survey points CSV (UTM)…"), self._on_import_survey_points),
             (tr("Photogrammetric mesh (WebODM)…"), self._on_import_photomesh),
@@ -1638,6 +1639,8 @@ class MainWindow(QMainWindow):
             return True
         if suffix == ".skp":
             return self.import_skp_path(path)
+        if suffix == ".dxf":
+            return self._import_dxf_path(path)
         try:
             igz_format.load_into(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001 - surface any IO/parse error to the user
@@ -2560,6 +2563,82 @@ class MainWindow(QMainWindow):
         """Back to Select — what the Image tool calls once a picture is
         placed, so the next click doesn't stamp a second copy."""
         self._activate_tool("select")
+
+    def _on_import_dxf(self) -> None:
+        path_str, _ = QFileDialog.getOpenFileName(
+            self, tr("Import DXF"), "",
+            tr("AutoCAD DXF (*.dxf);;All files (*)"))
+        if path_str:
+            self._import_dxf_path(Path(path_str))
+
+    def _import_dxf_path(self, path: Path) -> bool:
+        """Import a DXF: 2D CAD linework as tagged layer groups (D1). The
+        unit comes from the header; a unitless file is asked about, the OBJ
+        importer's rule — never guess in silence."""
+        from formats.dxf_in import load_dxf, read_unit_scale
+
+        # ALWAYS confirmed, header preselected (the OBJ importer's doctrine:
+        # asked, but with the answer already filled in). CAD headers lie —
+        # plans drawn 1 unit = 1 metre routinely ship $INSUNITS = mm from
+        # whatever template the office copied.
+        scale = self._dxf_unit(path, read_unit_scale(path)[0])
+        if scale is None:
+            return False
+        dlg, cb = self._import_progress(tr("Importing {name}…",
+                                           name=path.name))
+        stats: dict = {}
+        cmd = SnapshotImport(
+            lambda scene: stats.update(
+                load_dxf(scene, path, progress=cb, scale=scale)))
+        try:
+            self.viewport.history.execute(cmd)
+        except Exception as exc:  # noqa: BLE001 — surface parse errors
+            dlg.close()
+            QMessageBox.critical(self, tr("Import DXF failed"), str(exc))
+            return False
+        self._prepare_import_display(cmd, cb)
+        dlg.close()
+        # A plan drawn kilometres from the origin (or huge next to the 20 m
+        # default camera) reads as "nothing imported" without this.
+        self._on_zoom_extents()
+        self.viewport.update()
+        self._import_name = path.name
+        self._update_title()
+        msg = tr("Imported {name}: {edges} edges in {groups} tagged groups",
+                 name=path.name, edges=stats.get("edges", 0),
+                 groups=stats.get("groups", 0))
+        offset = stats.get("offset")
+        if offset:
+            msg += "  ·  " + tr(
+                "moved near the origin (survey coordinates); offset "
+                "{x:,.0f}, {y:,.0f} m", x=offset[0], y=offset[1])
+        self.statusBar().showMessage(msg, 8000)
+        return True
+
+    def _dxf_unit(self, path, header_scale=None) -> "float | None":
+        """Confirm the drawing's unit. The header's declaration (when there
+        is one) arrives preselected; without one, the last answer does —
+        importing a batch from one office is Enter, Enter, Enter."""
+        from PySide6.QtWidgets import QInputDialog
+
+        keys = ["mm", "cm", "m", "in", "ft"]
+        factors = {"mm": 0.001, "cm": 0.01, "m": 1.0,
+                   "in": 0.0254, "ft": 0.3048}
+        labels = [tr("Millimetres"), tr("Centimetres"), tr("Metres"),
+                  tr("Inches"), tr("Feet")]
+        by_scale = {v: k for k, v in factors.items()}
+        last = (by_scale.get(header_scale)
+                or str(QSettings().value("import/dxf_unit", "mm") or "mm"))
+        idx = keys.index(last) if last in keys else 0
+        label, ok = QInputDialog.getItem(
+            self, tr("Import DXF"),
+            tr("What unit is this drawing in? (CAD headers often lie)"),
+            labels, idx, False)
+        if not ok:
+            return None
+        key = keys[labels.index(label)]
+        QSettings().setValue("import/dxf_unit", key)
+        return factors[key]
 
     def _on_import_photomesh(self) -> None:
         """Import a WebODM/ODM photogrammetric survey as georeferenced reference
