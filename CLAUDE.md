@@ -115,9 +115,19 @@ modelos.** Lo entregado y lo aprendido:
 Estado del código MIRADO antes de estimar; el orden es la recomendación, no el pedido.
 
 **A. Baratos porque el motor ya lo soporta — caben en la 0.3.8**
-1. **Ocultar/mostrar aristas.** `Edge.hidden` YA existe en el modelo, lo respeta
-   el render y viaja en el `.igz` (`ehidden` en `capture_state`). **Falta solo la
-   orden de menú + comando deshacible.** Es la más barata de toda la lista.
+1. **✅ Ocultar/mostrar aristas — HECHO 2026-08-31.** `HideEdgesCommand`
+   (deshacible, restaura estados mixtos), Edición ▸ «Ocultar aristas» /
+   «Mostrar todas las aristas» (todas = las del contexto de edición actual:
+   sin modo "geometría oculta" una arista oculta no se puede clicar, así que
+   "todas" es el inverso honesto), clic derecho con aristas, y **Shift+goma =
+   ocultar el trazo** (gesto SketchUp). Lo no-obvio que pedía: el fingerprint
+   del chunk NO veía `hidden` (contaba solo `soft`) — un toggle dentro de un
+   grupo servía el chunk viejo; ahora lleva término sensible al índice
+   (7º elemento; `_shift_chunk` y el digest de disco actualizados — el digest
+   solo añade el término cuando ≠0 para no invalidar el caché existente).
+   HLR/láminas ya filtraban. DIFERIDO: modo «ver geometría oculta»
+   (punteado + clicable) y export del flag al `.skp` (el escritor openskp
+   hoy es por cara, no por arista). Tests: `tests/test_hide_edges.py`.
 2. **Editor de estilos.** `core.style.Style` ya es un dato con `to_dict`/
    `from_dict` (modo de cara, aristas, perfiles, colores, cielo, relleno de
    sección) y el compositor ya aplica estilo por marco. **Falta el panel** para
@@ -125,12 +135,11 @@ Estado del código MIRADO antes de estimar; el orden es la recomendación, no el
 3. **Ventana de configuración.** Hoy los ajustes están sueltos en QSettings
    (`language`, `import/obj_unit`, `ia/*`, el modo del resto del modelo al
    editar…). Recogerlos en un sitio es trabajo de UI, no de motor.
-4. **⭐ Escalar no es como SketchUp** (Marco lo notó usándolo). Nuestro
-   `scale_matrix(center, factor)` es **un solo float: uniforme**. SketchUp tiene
-   26 agarraderas — esquina (uniforme), arista (2 ejes), cara (1 eje), Ctrl para
-   escalar desde el centro y factor negativo para espejar. Hay que pasar de
-   factor a vector/matriz en `ScaleVerticesCommand`/`ScaleGroupCommand` y dibujar
-   las agarraderas. **Es una brecha de paridad real, no un capricho.**
+4. **✅ Escalar como SketchUp — HECHO 2026-08-31 (`75e455d`, sesión de la
+   mañana).** Cajón amarillo con grips, ancla opuesta/centro, Shift, VCB por
+   eje, espejo con negativo. Diferidos documentados en `tools/scale.py`
+   (cajón alineado a ejes del componente; re-escalado global con Medir).
+   Detalle en «Estado actual (2026-08-31)» arriba.
 
 **B. La grande, y la que más cambia cómo se percibe el producto**
 5. **Sombras.** Hoy no hay ninguna: el shader es `basic.vert/frag` y no existe
