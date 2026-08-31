@@ -154,9 +154,37 @@ Estado del código MIRADO antes de estimar; el orden es la recomendación, no el
    estado de dónde se verá (`_color_hint`). Texturas de cielo/suelo tipo
    render: DIFERIDO a propósito — el suelo actual es quad de pantalla, no
    plano del mundo; las sombras reales dan más "render" por menos.
-3. **Ventana de configuración.** Hoy los ajustes están sueltos en QSettings
-   (`language`, `import/obj_unit`, `ia/*`, el modo del resto del modelo al
-   editar…). Recogerlos en un sitio es trabajo de UI, no de motor.
+3. **✅ Ventana de configuración — HECHA 2026-08-31.** Ventana ▸ Preferencias…
+   (`views/preferences_dialog.py`): General (idioma — mismo contrato que el
+   menú, aplica al reiniciar; resto del modelo al editar — aplica EN VIVO por
+   `set_edit_rest_mode`, el mismo camino del menú Cámara, y la marca del menú
+   se actualiza), Importar (unidad sugerida OBJ/DXF — los diálogos siguen
+   preguntando, esto es la respuesta preseleccionada; modo de coordenadas
+   geo/UTM) y Asistente IA (las MISMAS claves `ia/*` que lee el diálogo del
+   asistente al abrirse — sin duplicar lógica). OK escribe + `sync()`;
+   Cancelar no toca nada. De paso: el submenú «Rest of model while editing» y
+   sus tres opciones NO estaban en `es.json` (salían en inglés) — añadidos.
+   Tests: `tests/test_preferences.py`.
+   **Ronda 2 (cotejo contra las Preferences de SketchUp, pedido de Marco):**
+   - **Auto-guardado** (General de SketchUp): `core/autosave.py` — slots
+     `.igz` en el dir de datos del usuario (NO junto al documento: pCloud ha
+     truncado escrituras ahí), uno por ruta absoluta + `untitled`. Invariante:
+     **un slot existe solo entre un cambio y el siguiente guardado/cierre
+     limpio** → slot en disco = sesión interrumpida; se ofrece recuperar al
+     abrir ese documento (o al arrancar, para el sin-título). El timer no
+     dispara con un botón del ratón apretado (guardar 283k caras a media
+     arrastrada leería como cuelgue). Tests: `tests/test_autosave.py`.
+   - **Copia de seguridad al guardar** (`nombre.igz.bak`, copiada ANTES de
+     escribir — la versión buena anterior sobrevive a un guardado truncado).
+   - **Invertir rueda** (Compatibility de SketchUp): `nav/invert_wheel`.
+   - **MSAA configurable 0/2/4/8×** (Graphics): era un 4 fijo en
+     `_ensure_scene_fbo`; cambiarlo desde Preferencias anula `_fbo_size` y el
+     siguiente paint reconstruye el FBO. El fallback a 0 muestras se conserva.
+   **DIFERIDO de SketchUp, con motivo:** editor de atajos (feature entera),
+   click style de dibujo (es motor de herramientas, no preferencia), carpetas
+   por defecto (Qt ya recuerda la última), plantilla/template y unidades →
+   van con la ventana de inicio (0.3.9), colores de ejes/inferencias y editor
+   de imágenes externo (nicho), buscar actualizaciones (política de red).
 4. **✅ Escalar como SketchUp — HECHO 2026-08-31 (`75e455d`, sesión de la
    mañana).** Cajón amarillo con grips, ancla opuesta/centro, Shift, VCB por
    eje, espejo con negativo. Diferidos documentados en `tools/scale.py`
