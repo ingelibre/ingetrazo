@@ -255,6 +255,23 @@ def _load_edit_rest_mode() -> str:
     mode = str(QSettings().value("display/edit_rest_mode", "fade"))
     return mode if mode in EDIT_REST_MODES else "fade"
 
+
+def _load_invert_wheel() -> bool:
+    from PySide6.QtCore import QSettings
+    return str(QSettings().value("nav/invert_wheel", "0")) != "0"
+
+
+def _load_msaa() -> int:
+    """Scene-FBO multisample count (Preferences ▸ General). 4 is the
+    historical hardcoded value; the FBO still falls back to 0 on drivers
+    that refuse multisampling."""
+    from PySide6.QtCore import QSettings
+    try:
+        n = int(QSettings().value("display/msaa", 4))
+    except (TypeError, ValueError):
+        n = 4
+    return n if n in (0, 2, 4, 8) else 4
+
 _AXIS_DIRS = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 
 
@@ -477,6 +494,8 @@ class Viewport(QOpenGLWidget):
         # entirely — on a heavy import that is also the fastest, since a
         # hidden group never reaches the VBOs. See `edit_rest_mode`.
         self._edit_rest_mode = _load_edit_rest_mode()
+        self._invert_wheel = _load_invert_wheel()
+        self._msaa = _load_msaa()
 
         # Hover highlight (Select tool). Not version-tracked — it changes with
         # the cursor, not with scene mutations — so it's uploaded per paint.
@@ -669,10 +688,11 @@ class Viewport(QOpenGLWidget):
         # Real MSAA happens HERE, where the scene actually renders; the blit
         # to the widget's single-sample FBO is the resolve (MSAA read → plain
         # draw is the legal direction). The widget surface itself stays
-        # single-sample — see __init__.
-        fmt.setSamples(4)
+        # single-sample — see __init__. Sample count from Preferences
+        # (Graphics in SketchUp); changing it just voids _fbo_size.
+        fmt.setSamples(getattr(self, "_msaa", 4))
         self._scene_fbo = QOpenGLFramebufferObject(size[0], size[1], fmt)
-        if self._scene_fbo.format().samples() == 0:
+        if fmt.samples() and self._scene_fbo.format().samples() == 0:
             # Driver refused multisampling — retry single-sample but KEEP the
             # depth/stencil attachment (the Wayland depth workaround).
             fmt.setSamples(0)
@@ -7585,6 +7605,8 @@ class Viewport(QOpenGLWidget):
         # heavy) and let float error drift the pinned point.
         import time as _time
         steps = ev.angleDelta().y() / 120.0
+        if self._invert_wheel:          # Preferences ▸ General (SketchUp's
+            steps = -steps              # Compatibility ▸ invert wheel)
         pos = ev.position()
         now = _time.monotonic()
 

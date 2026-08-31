@@ -143,6 +143,80 @@ class MainWindow(QMainWindow):
         self._saved_version = self.viewport.scene.version
         self.viewport.sceneVersionChanged.connect(self._on_scene_version_changed)
 
+        self._setup_autosave()
+        # An untitled recovery slot on disk means the last session died with
+        # unsaved work (a clean exit clears it) — offer it back, once the
+        # window is up (QTimer 0: not during __init__, the viewport isn't
+        # ready to paint a restored scene yet).
+        from core import autosave
+        if autosave.pending(None):
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, self._offer_untitled_recovery)
+
+    # ---- Auto-save (Preferences ▸ General) ----------------------------------
+    def _setup_autosave(self) -> None:
+        """(Re)arm the auto-save timer from settings — called at startup and
+        by the Preferences dialog after a change."""
+        from PySide6.QtCore import QTimer
+        timer = getattr(self, "_autosave_timer", None)
+        if timer is None:
+            timer = self._autosave_timer = QTimer(self)
+            timer.timeout.connect(self._on_autosave_tick)
+        st = QSettings()
+        enabled = str(st.value("general/autosave", "1")) != "0"
+        minutes = max(1, min(60, int(st.value("general/autosave_min", 5))))
+        timer.stop()
+        if enabled:
+            timer.start(minutes * 60 * 1000)
+
+    def _on_autosave_tick(self) -> None:
+        """Write the recovery slot — only when there is something new to
+        keep, and never under the user's hands (a 283k-face save takes real
+        time; mid-drag it would read as a freeze)."""
+        from PySide6.QtWidgets import QApplication
+        if not self._is_dirty():
+            return
+        version = self.viewport.scene.version
+        if version == getattr(self, "_autosaved_version", None):
+            return
+        if QApplication.mouseButtons() != Qt.NoButton:
+            return                      # try again next tick
+        from core import autosave
+        try:
+            autosave.write(self.viewport.scene, self._current_path)
+        except Exception:  # noqa: BLE001 — recovery must never break modeling
+            return
+        self._autosaved_version = version
+        self.statusBar().showMessage(tr("Auto-saved."), 2000)
+
+    def _offer_untitled_recovery(self) -> None:
+        from core import autosave
+        slot = autosave.pending(None)
+        if slot is None:
+            return
+        answer = QMessageBox.question(
+            self, tr("Recovered drawing"),
+            tr("The last session ended without saving an untitled drawing "
+               "(auto-saved copy found). Recover it?"),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if answer != QMessageBox.Yes:
+            autosave.clear(None)
+            return
+        try:
+            igz_format.load_into(self.viewport.scene, slot)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, tr("Open failed"), str(exc))
+            return
+        self.viewport.history.clear()
+        self.viewport.reset_texture_cache()
+        self._current_path = None
+        self._import_name = None
+        self._saved_version = -1        # recovered ≠ saved: title shows *
+        self.viewport.notify_scene_changed()
+        self._sync_style_menu()
+        self._sync_section_menu()
+        self._update_title()
+
     def _build_tray(self) -> None:
         # Two role-based right-side docks (tabbed): Properties (what you're
         # working with) and Georef (the location workspace).
@@ -593,6 +667,9 @@ class MainWindow(QMainWindow):
         window_menu.addAction(toggle_profile)
 
         window_menu.addSeparator()
+        prefs_action = QAction(tr("Preferences…"), self)
+        prefs_action.triggered.connect(self._on_preferences)
+        window_menu.addAction(prefs_action)
         self._build_language_menu(window_menu)
 
         # Extensions — third-party plugin tools (core.extensions engine).
@@ -620,6 +697,11 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda _checked, c=code: self._on_set_language(c))
             group.addAction(action)
             lang_menu.addAction(action)
+
+    def _on_preferences(self) -> None:
+        """Window ▸ Preferences: the scattered QSettings in one dialog."""
+        from views.preferences_dialog import PreferencesDialog
+        PreferencesDialog(self).exec()
 
     def _on_set_language(self, code: str) -> None:
         """Persist the chosen UI language (applied on next start)."""
@@ -1645,6 +1727,10 @@ class MainWindow(QMainWindow):
         self.viewport.end_group_edit()
         if not self._confirm_discard(tr("Discard current drawing?")):
             return
+        # The discarded drawing's recovery slot dies with it.
+        from core import autosave
+        autosave.clear(self._current_path)
+        self._autosaved_version = None
         scene = self.viewport.scene
         scene.clear()
         scene.version += 1
@@ -1691,8 +1777,25 @@ class MainWindow(QMainWindow):
             return self._import_dxf_path(path)
         if suffix == ".dwg":
             return self._import_dwg_path(path)
+        # An existing recovery slot for this document means a session that
+        # never got to save it (the invariant in core/autosave.py) — offer
+        # the auto-saved copy before loading the file itself.
+        from core import autosave
+        recovered = False
+        slot = autosave.pending(path)
+        if slot is not None:
+            answer = QMessageBox.question(
+                self, tr("Recovered drawing"),
+                tr("A session with '{name}' ended without saving (auto-saved "
+                   "copy found). Recover it instead of the file on disk?",
+                   name=path.name),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            recovered = answer == QMessageBox.Yes
+            if not recovered:
+                autosave.clear(path)
         try:
-            igz_format.load_into(self.viewport.scene, path)
+            igz_format.load_into(self.viewport.scene,
+                                 slot if recovered else path)
         except Exception as exc:  # noqa: BLE001 - surface any IO/parse error to the user
             QMessageBox.critical(self, tr("Open failed"), str(exc))
             return False
@@ -1700,7 +1803,12 @@ class MainWindow(QMainWindow):
         self.viewport.reset_texture_cache()
         self._current_path = path
         self._import_name = None
-        self._saved_version = self.viewport.scene.version
+        self._autosaved_version = None
+        # A recovered drawing is NOT the file on disk yet: keep it dirty so
+        # the title shows * and Ctrl+S makes it real (the slot stays until
+        # that clean save).
+        self._saved_version = (-1 if recovered
+                               else self.viewport.scene.version)
         self._sync_style_menu()      # the document may carry its own style
         self._sync_section_menu()
         # A stored survey (Track G, G6) arrives as plain arrays + images; the
@@ -1753,11 +1861,28 @@ class MainWindow(QMainWindow):
         self._do_save(path)
 
     def _do_save(self, path: Path) -> None:
+        # Backup BEFORE writing (Preferences ▸ General): the previous good
+        # version survives even a save that dies mid-write — which a syncing
+        # drive has actually produced (pCloud truncation).
+        if str(QSettings().value("general/backup", "1")) != "0" \
+                and path.is_file():
+            import shutil
+            try:
+                shutil.copy2(path, path.with_name(path.name + ".bak"))
+            except OSError:
+                self.statusBar().showMessage(
+                    tr("Could not write the backup copy."), 4000)
         try:
             stats = igz_format.save_scene(self.viewport.scene, path) or {}
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return
+        # A clean save ends the recovery window for this document — and for
+        # the untitled slot when this save gave the document its first name.
+        from core import autosave
+        autosave.clear(path)
+        if self._current_path is None:
+            autosave.clear(None)
         # Textures travel inside the document — say so, and say it loudly when
         # an image could not be read (that face's texture will NOT travel).
         embedded = int(stats.get("embedded", 0))
@@ -3127,6 +3252,10 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard(tr("Quit IngeTrazo?")):
             event.ignore()
             return
+        # A clean goodbye: whatever the user decided (save or discard), this
+        # session's recovery slot no longer speaks for anyone.
+        from core import autosave
+        autosave.clear(self._current_path)
         # Free every GL texture while a GL context still exists — the survey
         # atlases (hundreds of MB), the tile and terrain textures, and the
         # general texture cache (faces, reference images). Letting Qt tear
