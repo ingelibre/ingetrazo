@@ -27,7 +27,47 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 
 ---
 
-## 📦 Estado actual (2026-08-28) — v0.3.7, componentes/texturas/colores
+## 📦 Estado actual (2026-08-31) — imágenes de referencia, Escala SketchUp, import CAD
+
+Sesión larga de tres frentes (commits `aa43a2e`, `75e455d`, `4f4aec9`,
+`c73cc84`, `76889df`); todo verificado contra archivos municipales reales.
+
+- **Imágenes de referencia** (`Archivo ▸ Importar ▸ Imagen`): PNG/JPG como
+  plano para calcar — display-only (invariante #4), en su capa `Images`,
+  viaja DENTRO del `.igz` por el walker de texturas, da plano de trabajo y
+  snap en sus bordes, y Mover/Girar/Escalar la tratan como entidad de
+  primera clase. Clic derecho: tamaño exacto en metros y Bloquear (bloqueada
+  no acepta clics pero SIGUE dando plano — el estado de calco).
+- **Escala = SketchUp** (doc oficial): cajón amarillo con 26/8/2 grips
+  (esquina=uniforme, arista=2 ejes, cara=1 eje), ancla opuesta o centro
+  (Ctrl al toque), Shift = uniforme, VCB con factor / `a;b` por eje /
+  absoluto con unidad / negativo espeja, re-tecleo en caliente. Funciona
+  sobre suelto+grupos+imágenes mezclados. El flujo viejo ancla+referencia
+  se fue; sus 4 pruebas se portaron conservando la intención.
+- **Import CAD (D1–D3)**: DXF con ezdxf (nueva dep, MIT — la misma de
+  IngeCAD) y DWG vía satélite `dwg2dxf` (porte del `dwg_bridge` de IngeCAD
+  con sus dos remiendos: handles 0 y duplicados/LibreDWG#1356). Capas→
+  grupos etiquetados, curvas con UN curve-id, bloques→componentes (42
+  instancias/20 protos en el archivo real), 3DFACE/SOLID→caras + fusión
+  coplanar, texto/cotas omitidos como SketchUp. **La unidad se sugiere
+  midiendo el dibujo** (mediana del tamaño de entidad): la cabecera es un
+  reclamo, no un hecho — Plaza Yanque declara mm y está en metros. UTM
+  >100 km recentra solo (float32 del motor resuelve ~0,5 m a N=8,2M).
+  Doble clic en `.dxf`/`.dwg` abre. Plaza Yanque DWG entero: 5,3 s.
+- **Fuga del caché de texturas GL cerrada**: `Nuevo/Abrir` devuelven las
+  texturas del documento anterior (`reset_texture_cache`) y `closeEvent`
+  libera todas las familias — avisos "Texture has not been destroyed" al
+  salir: 2 → 0. El gancho `aboutToBeDestroyed` solo NO alcanza (dispara
+  cuando Python ya se desmonta).
+- Método, otra vez: el bug del grupo llamado `'asrco'` (el bucle de bloques
+  pisaba el parámetro `name`) lo cazó ÚNICAMENTE el DWG real — el sintético
+  no tenía bloques. Y la sesión dejó regla nueva de sistema: un ayudante
+  que el escritorio deba invocar no puede vivir en `~/.local/bin` (sandbox
+  bwrap de GNOME 50 sin $HOME).
+
+---
+
+## 📦 Estado anterior (2026-08-28) — v0.3.7, componentes/texturas/colores
 
 Sesión entera de dogfooding sobre la biblioteca. **Cada defecto lo reportó
 Marco mirando la bandeja, y todos resultaron ser nuestros, no de los
@@ -311,6 +351,12 @@ docs/     skp-backend.md · openskp-collaboration.md · halfedge-migration-plan.
 ---
 
 ## 🎯 Pendientes (por prioridad tentativa)
+
+0pre. **CAD / imágenes / Escala — flecos de la sesión 2026-08-31:**
+   - **Empaquetado DWG (lo primero que duele en release):** `vendor/libredwg/bin/dwg2dxf` está FUERA de git (copiado del build de IngeCAD, estático); hay que meterlo al manifest del Flatpak y al instalador de Windows, o la release tendrá DXF pero no DWG. Registrar también los MIME `.dxf`/`.dwg` en `install_desktop.sh` para que el doble clic funcione desde Nautilus.
+   - Import CAD diferidos (documentados en `formats/dxf_in.py`): sharing anidado de bloques (hoy los INSERT internos se explotan al proto), opción «aplanar a Z=0», contornos de HATCH como bordes.
+   - Escala diferidos (documentados en `tools/scale.py`): cajón alineado a los ejes propios del componente (hoy ejes del mundo), y re-escalado global con Medir (Tape Measure).
+   - Imágenes, siguiente natural (NO urgente): control de opacidad para atenuar el escaneo mientras se calca.
 
 0. **⭐ SECCIONES estilo SketchUp — S1–S5 RELEASED en v0.3.5 (2026-08-25; el dogfooding continúa sobre el release).** Todo contra la doc oficial ("Slicing a Model to Peer Inside"): entidad `core/section.py` (uid estable + nombre/símbolo), UNA activa por contexto, colocar la ACTIVA (SketchUp), herramienta con inferencia por hover + Shift + flechas (Up=Z/Right=X/Left=Y/Down=cara) + diálogo nombre/símbolo, clip por `gl_ClipDistance` gateado a los pases de geometría (cielo/ejes/terreno/previews intactos), **aristas de corte gruesas** (plano∩triángulos vectorizado sobre `tri_v0/e1/e2` del pick index, quads en el plano con ancho ~px, nudge al lado recortado), picks/snaps/oclusión filtran lo oculto (`_active_cut`), Move/Rotate/Supr/doble-clic (toggle activo)/menú contextual (Invertir/Corte activo/Alinear vista), toggles Cámara ▸ Planos/Cortes de sección, `.igz` + SavedView recuerdan la sección activa + toggles, y **HLR clipea + añade las cuerdas de corte** (`clip_to_section`) → plantas/cortes reales en láminas. DIFERIDO documentado: section fill + Troubleshoot, Crear grupo desde corte, cortes por contexto de grupo, import .skp de section planes, export Section Slice DWG. Plan original por fases (referencia histórica):
    - **S1 — Núcleo + corte visual:** entidad `SectionPlane` (`core/section.py`: origen + normal + `active` + nombre/símbolo; máx. una activa por contexto, como SketchUp), `Scene.section_planes`, y el corte en render vía **`gl_ClipDistance`** en `resources/shaders/basic.vert` (UN solo par de shaders para todo el render — verificado) + `glEnable(GL_CLIP_DISTANCE0)` + uniform vec4 del plano; toggle "Mostrar corte". Cuidado: el clip aplica a caras, aristas, chunks de grupos, instancias y silhouettes (mismo programa ✓); billboards y overlays QPainter (cotas/textos) decidir si se cortan (SketchUp: sí a geometría, no a UI).
