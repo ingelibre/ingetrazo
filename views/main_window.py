@@ -432,6 +432,14 @@ class MainWindow(QMainWindow):
 
         edit_menu.addSeparator()
 
+        hide_edges_action = QAction(tr("Hide Edges"), self)
+        hide_edges_action.triggered.connect(self._on_hide_edges)
+        edit_menu.addAction(hide_edges_action)
+
+        unhide_edges_action = QAction(tr("Unhide All Edges"), self)
+        unhide_edges_action.triggered.connect(self._on_unhide_all_edges)
+        edit_menu.addAction(unhide_edges_action)
+
         reverse_action = QAction(tr("Reverse Faces"), self)
         reverse_action.triggered.connect(self._on_reverse_faces)
         edit_menu.addAction(reverse_action)
@@ -1301,6 +1309,8 @@ class MainWindow(QMainWindow):
         if has_mesh:
             menu.addAction(tr("Make Group"), self._on_make_group)
             menu.addAction(tr("Make Component…"), self._on_make_component)
+        if any(isinstance(e, Edge) for e in sel):
+            menu.addAction(tr("Hide Edges"), self._on_hide_edges)
         if has_group:
             if any(isinstance(e, Group) and getattr(e, "xform", None) is None
                    and not getattr(e, "billboard", False) for e in sel):
@@ -1336,6 +1346,38 @@ class MainWindow(QMainWindow):
         redo.setEnabled(bool(self.viewport.history.redo_stack))
 
         menu.exec(global_pos)
+
+    def _on_hide_edges(self) -> None:
+        """SketchUp's Edit ▸ Hide, scoped to edges: the selected edges stop
+        drawing (no line, no profile) but stay in the topology, so their
+        faces keep reading as one surface."""
+        from core.history import HideEdgesCommand
+        from core.mesh import Edge as MeshEdge
+        edges = [e for e in self.viewport.scene.selection
+                 if isinstance(e, MeshEdge) and not getattr(e, "hidden", False)]
+        if not edges:
+            self.statusBar().showMessage(
+                tr("Select one or more edges first."), 3000)
+            return
+        self.viewport.history.execute(HideEdgesCommand(edges, hidden=True))
+        self.viewport.update()
+        self.statusBar().showMessage(tr("Hid {n} edge(s).", n=len(edges)), 3000)
+
+    def _on_unhide_all_edges(self) -> None:
+        """SketchUp's Edit ▸ Unhide ▸ All, scoped to the current editing
+        context: every hidden edge of the loose mesh — or of the group being
+        edited — becomes visible again. (Without a hidden-geometry view mode
+        a hidden edge can't be clicked, so "all" is the honest inverse.)"""
+        from core.history import HideEdgesCommand
+        edges = [e for e in self.viewport.scene.mesh.edges
+                 if getattr(e, "hidden", False)]
+        if not edges:
+            self.statusBar().showMessage(tr("No hidden edges here."), 3000)
+            return
+        self.viewport.history.execute(HideEdgesCommand(edges, hidden=False))
+        self.viewport.update()
+        self.statusBar().showMessage(
+            tr("Unhid {n} edge(s).", n=len(edges)), 3000)
 
     def _on_reverse_faces(self) -> None:
         """SketchUp's Reverse Faces: flip the winding (and thus the front/back

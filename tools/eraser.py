@@ -9,6 +9,11 @@ it (and rubbing out a divider between coplanar faces merges them back — the
 EraseSelectionCommand semantics). A segment of a drawn curve (circle/arc)
 erases its whole contour, curves being single entities. Guides, dimensions and
 georef paths are erased too. Esc cancels the in-progress stroke.
+
+Shift held at press starts a HIDE stroke instead (SketchUp's Shift+eraser):
+the swept edges are hidden, not erased — still one undo step. Only edges can
+hide, so a hide stroke ignores guides/dimensions/paths rather than deleting
+what the gesture promised to keep.
 """
 from __future__ import annotations
 
@@ -22,6 +27,7 @@ from core.history import (
     DeleteGeoPathsCommand,
     DeleteGuidesCommand,
     EraseSelectionCommand,
+    HideEdgesCommand,
 )
 from core.mesh import Edge
 from georef.geopath import GeoPath
@@ -36,6 +42,7 @@ class EraserTool(Tool):
 
     def __init__(self) -> None:
         self._stroke = False
+        self._hide = False       # Shift at press: hide the stroke, don't erase
         self.marked: set = set()
 
     # ---- Lifecycle ----------------------------------------------------------
@@ -47,8 +54,10 @@ class EraserTool(Tool):
 
     # ---- Spatial input ------------------------------------------------------
     def on_click(self, ctx: ToolContext) -> None:
-        """Press: start a stroke and mark whatever is under the cursor."""
+        """Press: start a stroke and mark whatever is under the cursor. The
+        modifier latches here — a whole stroke is one gesture, erase or hide."""
         self._stroke = True
+        self._hide = bool(ctx.modifiers & Qt.ShiftModifier)
         self._mark(ctx.viewport, ctx.screen.x(), ctx.screen.y())
         ctx.viewport.update()
 
@@ -73,6 +82,12 @@ class EraserTool(Tool):
             viewport.update()
             return
         edges = [m for m in marked if isinstance(m, Edge)]
+        if self._hide:
+            edges = [e for e in edges if not getattr(e, "hidden", False)]
+            if edges:
+                viewport.history.execute(HideEdgesCommand(edges, hidden=True))
+            viewport.update()
+            return
         guides = [m for m in marked if isinstance(m, Guide)]
         dims = [m for m in marked if isinstance(m, Dimension)]
         paths = [m for m in marked if isinstance(m, GeoPath)]
@@ -117,6 +132,8 @@ class EraserTool(Tool):
             for e in viewport.scene.mesh.curve_edges(edge):
                 self.marked.add(e)
             return
+        if self._hide:
+            return          # only edges can hide: don't mark what won't act
         guide = viewport.pick_guide(sx, sy)
         if guide is not None:
             self.marked.add(guide)
@@ -131,4 +148,5 @@ class EraserTool(Tool):
 
     def _reset(self) -> None:
         self._stroke = False
+        self._hide = False
         self.marked = set()

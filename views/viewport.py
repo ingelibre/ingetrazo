@@ -5179,9 +5179,19 @@ class Viewport(QOpenGLWidget):
                            None if not t else (t.get("path"), t.get("sw"),
                                                t.get("sh"), t.get("rot", 0)),
                            f.attrs.get("layer")))
-        soft = sum(1 for e in mesh.edges if getattr(e, "soft", False))
+        soft = 0
+        hid = 0
+        for i, e in enumerate(mesh.edges):
+            if getattr(e, "soft", False):
+                soft += 1
+            if getattr(e, "hidden", False):
+                # Index-sensitive (not a count): Hide edge A + undo + hide
+                # edge B leaves the count equal while the baked edge VBO
+                # differs. Deterministic mix, no hash() — the disk digest
+                # reuses this term across runs.
+                hid ^= ((i + 1) * 2654435761) & 0xFFFFFFFF
         return (len(mesh.vertices), len(mesh.edges), len(mesh.faces),
-                round(s, 4), a, soft)
+                round(s, 4), a, soft, hid)
 
     def _group_fp(self, group):
         """Fingerprint of a group's mesh, memoised per scene version — the
@@ -5336,8 +5346,8 @@ class Viewport(QOpenGLWidget):
         entry["coordsum"] += entry["nv"] * (
             d.x() + d.y() * 1.000003 + d.z() * 1.000007)
         fp = entry["fp"]
-        entry["fp"] = (fp[0], fp[1], fp[2], round(entry["coordsum"], 4),
-                       fp[4], fp[5])
+        entry["fp"] = ((fp[0], fp[1], fp[2], round(entry["coordsum"], 4))
+                       + fp[4:])
         # float32 vertex storage makes the analytic checksum drift from a
         # fresh walk — mark it approximate so the next full comparison
         # verifies by samples instead of rebuilding 100k faces for nothing.
@@ -5801,6 +5811,11 @@ class Viewport(QOpenGLWidget):
         import hashlib
         h = hashlib.sha1()
         h.update(repr((fp[0], fp[1], fp[2], fp[3], fp[5])).encode())
+        if fp[6]:
+            # Hidden-edge term, only when some edge IS hidden: meshes without
+            # any (the overwhelming majority) keep their pre-existing digests,
+            # so adding the term didn't cold-invalidate the whole cache.
+            h.update(repr(("ehidden", fp[6])).encode())
         for i, f in enumerate(mesh.faces):
             a = f.attrs
             if not a:

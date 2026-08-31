@@ -606,6 +606,39 @@ class FlipFacesCommand(Command):
         self._flip(scene)
 
 
+class HideEdgesCommand(Command):
+    """Hide (or unhide) a set of edges — SketchUp's Edit ▸ Hide on edges.
+
+    A hidden edge stays in the topology (its faces keep their boundary) but
+    draws neither as a line nor as a profile/silhouette; render, picking and
+    the ``.igz`` already honour ``Edge.hidden``, this command is the missing
+    reversible way to set it. Previous per-edge flags are captured at ``do``
+    time, so a mixed selection (some already hidden) undoes exactly."""
+
+    def __init__(self, edges, hidden: bool = True) -> None:
+        self._edges = list(edges)
+        self._hidden = hidden
+        self._prev: list[bool] = []
+
+    def do(self, scene) -> None:
+        self._prev = [bool(getattr(e, "hidden", False)) for e in self._edges]
+        for e in self._edges:
+            e.hidden = self._hidden
+            if self._hidden:
+                # An invisible entity must not linger in the selection: every
+                # selection consumer (move, delete, paint) assumes it can see
+                # what it operates on.
+                scene.selection.discard(e)
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for e, prev in zip(self._edges, self._prev):
+            e.hidden = prev
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+
 class SetFaceColorCommand(Command):
     """Paint a set of faces with an RGB colour (or clear it with ``None``),
     stored in each face's ``attrs["color"]`` — the first user-facing use of the
