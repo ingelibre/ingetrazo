@@ -181,6 +181,8 @@ def test_center_arc_typed_angle_and_circle_weld():
 
 
 def test_scale_selection_doubles_about_anchor():
+    # Grip-box flow (SketchUp): the far corner grip doubles the selection
+    # about the OPPOSITE corner, which stays put.
     from tools.scale import ScaleTool
 
     scene = Scene()
@@ -191,12 +193,12 @@ def test_scale_selection_doubles_about_anchor():
     before = _keys(scene.mesh)
     t = ScaleTool()
     t.on_activate(vp)
-    _click(vp, t, 0, 0)                            # anchor at the origin
-    _click(vp, t, 1, 0)                            # reference distance 1.0
-    _hover(vp, t, 2, 0)                            # live ×2
-    _click(vp, t, 2, 0)                            # commit ×2
+    grip = next(g for g in t._grips if g.params == (1.0, 1.0, 0.5))
+    t._grab(vp, grip, (0.0, 0.0))
+    t._commit(vp, (2.0, 2.0, 1.0))
     got = _keys(scene.mesh)
-    assert (4.0, 0.0, 0.0) in got and (12.0, 4.0, 0.0) in got
+    assert (2.0, 0.0, 0.0) in got                  # the anchor corner held
+    assert (10.0, 4.0, 0.0) in got                 # the grabbed corner ×2
     assert vp.history.undo()
     assert _keys(scene.mesh) == before
     assert vp.history.redo()
@@ -213,12 +215,12 @@ def test_scale_typed_factor_and_mirror():
     scene.selection.update(scene.mesh.edges)
     t = ScaleTool()
     t.on_activate(vp)
-    _click(vp, t, 0, 0)
-    _click(vp, t, 1, 0)
-    _hover(vp, t, 1.5, 0)
+    grip = next(g for g in t._grips if g.params == (1.0, 0.5, 0.5))
+    t._grab(vp, grip, (0.0, 0.0))                  # red-axis face grip
     assert t.on_value(vp, -1.0) is True            # mirror through the anchor
     got = _keys(scene.mesh)
-    assert (-2.0, 0.0, 0.0) in got and (-6.0, -2.0, 0.0) in got
+    assert (2.0, 0.0, 0.0) in got                  # the anchor side held
+    assert (-2.0, 2.0, 0.0) in got                 # x=6 mirrored across x=2
     assert len(scene.mesh.faces) == 1              # still one clean face
 
 
@@ -235,10 +237,9 @@ def test_scale_group_as_unit():
     scene.selection.add(group)
     t = ScaleTool()
     t.on_activate(vp)
-    _click(vp, t, 2, 0)                            # anchor on the slab corner
-    _click(vp, t, 3, 0)
-    _hover(vp, t, 3.5, 0)
-    _click(vp, t, 3.5, 0)                          # ×1.5 about (2,0)
+    grip = next(g for g in t._grips if g.params == (1.0, 1.0, 0.5))
+    t._grab(vp, grip, (0.0, 0.0))                  # anchor = corner (2, 0)
+    t._commit(vp, (1.5, 1.5, 1.0))                 # ×1.5 about (2,0)
     gk = sorted((round(v.position.x(), 3), round(v.position.y(), 3))
                 for v in group.mesh.vertices)
     assert (2.0, 0.0) in gk and (8.0, 3.0) in gk   # corner fixed, far corner ×1.5
@@ -580,13 +581,12 @@ def test_scale_mixed_selection_groups_and_loose():
 
     t = ScaleTool()
     t.on_activate(vp)
-    _click(vp, t, 0, 0)                            # centre at origin
-    _click(vp, t, 1, 0)                            # reference at 1
-    _hover(vp, t, 2, 0)                            # ×2
-    _click(vp, t, 2, 0)
+    grip = next(gr for gr in t._grips if gr.params == (1.0, 0.5, 0.5))
+    t._grab(vp, grip, (0.0, 0.0))                  # anchor = x=1 side
+    t._commit(vp, (2.0, 1.0, 1.0))                 # ×2 along red
 
-    assert (2.0, 0.0, 0.0) in _keys(scene.mesh)    # loose (1,0) → (2,0)
-    assert (8.0, 0.0, 0.0) in _keys(g.mesh)        # group (4,0) → (8,0)
+    assert (3.0, 0.0, 0.0) in _keys(scene.mesh)    # loose (2,0) → (3,0)
+    assert (9.0, 0.0, 0.0) in _keys(g.mesh)        # group (5,0) → (9,0)
     assert vp.history.undo()
-    assert (1.0, 0.0, 0.0) in _keys(scene.mesh)
-    assert (4.0, 0.0, 0.0) in _keys(g.mesh)
+    assert (2.0, 0.0, 0.0) in _keys(scene.mesh)
+    assert (5.0, 0.0, 0.0) in _keys(g.mesh)
