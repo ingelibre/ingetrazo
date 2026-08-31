@@ -92,6 +92,22 @@ def gather_labels(ctx: ToolContext) -> list[TextLabel]:
     return labels
 
 
+def gather_images(ctx: ToolContext):
+    """Reference images a transform tool acts on: the selected ones, or (with
+    nothing selected) the picture under the cursor. Locked images are already
+    filtered out by ``pick_image_plane`` — an aligned scan should not jump
+    because the user grabbed near it. Shared by Move, Rotate and Scale."""
+    from core.image_plane import ImagePlane
+    viewport = ctx.viewport
+    images = [e for e in viewport.scene.selection if isinstance(e, ImagePlane)]
+    if not images and not viewport.scene.selection:
+        pick = getattr(viewport, "pick_image_plane", None)
+        hit = pick(ctx.screen.x(), ctx.screen.y()) if pick else None
+        if hit is not None:
+            images = [hit]
+    return images
+
+
 class MoveTool(Tool):
     name = "Move"
     shortcut = "M"
@@ -117,6 +133,7 @@ class MoveTool(Tool):
         self._verts: list = []                 # resolved vertex objects (identity)
         self._groups: list[Group] = []         # whole groups being moved
         self._splanes: list = []               # section planes being moved
+        self._images: list = []                # reference images being moved
         self._labels: list[TextLabel] = []     # leader texts whose label moves
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)  # currently applied live
 
@@ -150,7 +167,8 @@ class MoveTool(Tool):
                 # A click on the glyphs grabs just the text, never the
                 # geometry that happens to sit behind it.
                 groups, positions = [], []
-            if not groups and not positions and not labels and not splanes:
+            images = gather_images(ctx)
+            if not (groups or positions or labels or splanes or images):
                 return  # nothing under the cursor / selected to move
             self.start_point = ctx.world
             self.grab = ctx.world
@@ -158,6 +176,7 @@ class MoveTool(Tool):
             self._positions = positions
             self._labels = labels
             self._splanes = splanes
+            self._images = images
             # Resolve the grabbed positions to vertex OBJECTS once: the live
             # preview then moves these identities directly, so dragging through
             # (or onto) a coincident vertex never drags the innocent one along.
@@ -245,6 +264,8 @@ class MoveTool(Tool):
             lab.offset = lab.offset + step
         for sp in self._splanes:
             sp.point = sp.point + step
+        for im in self._images:
+            im.origin = im.origin + step
         viewport.scene.version += 1
 
     def _apply_preview(self, viewport, target_delta: QVector3D) -> None:
@@ -261,6 +282,8 @@ class MoveTool(Tool):
                 lab.offset = lab.offset + step
             for sp in self._splanes:
                 sp.point = sp.point + step
+            for im in self._images:
+                im.origin = im.origin + step
             self._preview_delta = target_delta
             viewport.set_groups_preview_offset(target_delta)
             return
@@ -278,6 +301,8 @@ class MoveTool(Tool):
                     lab.offset = lab.offset + step
                 for sp in self._splanes:
                     sp.point = sp.point + step
+                for im in self._images:
+                    im.origin = im.origin + step
             self._preview_delta = QVector3D(0.0, 0.0, 0.0)
             return
         if self._preview_delta.length() < 1e-12:
@@ -307,6 +332,10 @@ class MoveTool(Tool):
                 from core.history import MoveSectionPlanesCommand
                 commands.append(
                     MoveSectionPlanesCommand(self._splanes, delta))
+            if self._images:
+                from core.history import MoveImagePlanesCommand
+                commands.append(
+                    MoveImagePlanesCommand(self._images, delta))
             if len(commands) == 1:
                 viewport.history.execute(commands[0])
             elif commands:
@@ -323,4 +352,5 @@ class MoveTool(Tool):
         self._groups = []
         self._labels = []
         self._splanes = []
+        self._images = []
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)

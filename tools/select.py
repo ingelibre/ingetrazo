@@ -240,7 +240,14 @@ class SelectTool(Tool):
         guide = pick_guide(screen_x, screen_y) if pick_guide else None
         if guide is not None:
             return guide
-        return viewport.pick_face(screen_x, screen_y)
+        face = viewport.pick_face(screen_x, screen_y)
+        if face is not None:
+            return face
+        # A reference image is the last candidate: it is an underlay, so
+        # anything drawn on top of it must win the click. Only bare picture
+        # selects the picture — which is how you then move or resize it.
+        pick_image = getattr(viewport, "pick_image_plane", None)
+        return pick_image(screen_x, screen_y) if pick_image else None
 
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport

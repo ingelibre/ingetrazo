@@ -46,6 +46,10 @@ class Scene:
     # Construction guides (Tape Measure): infinite dashed lines / points used to
     # align real drawing. Scaffolding, never part of the mesh.
     guides: list = field(default_factory=list)
+    # Imported reference images (core.image_plane.ImagePlane) — a scanned plan
+    # or photo you trace over. Display-only like the terrain and for the same
+    # reason (invariant #4): reference to draw on top of, never topology.
+    image_planes: list = field(default_factory=list)
     # Layers / tags (SketchUp): labels with visibility + lock. The default
     # layer always exists; entities reference layers by name.
     layers: list = field(default_factory=lambda: [
@@ -253,7 +257,8 @@ class Scene:
                 or self.groups or self.dimensions or self.georef
                 or self.tile_layer or self.geo_paths or self.terrain
                 or self.guides or self.geo_points or self.text_labels
-                or self.saved_views or self.compositions):
+                or self.saved_views or self.compositions
+                or self.image_planes):
             self.mesh.clear()
             self.groups.clear()
             self.dimensions.clear()
@@ -261,6 +266,7 @@ class Scene:
             self.geo_paths.clear()
             self.geo_points.clear()
             self.guides.clear()
+            self.image_planes.clear()
             self.saved_views.clear()
             self.compositions.clear()
             self.selection.clear()

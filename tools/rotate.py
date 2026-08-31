@@ -61,6 +61,7 @@ class RotateTool(ProtractorBase):
         super().__init__()
         self._groups: list[Group] = []
         self._splanes: list = []               # section planes being rotated
+        self._images: list = []                # reference images being rotated
         self._positions: list[QVector3D] = []
         self._verts: list = []
         self._sel_faces: list = []          # for copy mode (loose geometry)
@@ -118,12 +119,15 @@ class RotateTool(ProtractorBase):
                 if sp is not None:
                     splanes = [sp]
                     groups, positions = [], []
-            if not groups and not positions and not splanes:
+            from tools.move import gather_images
+            images = gather_images(ctx)
+            if not (groups or positions or splanes or images):
                 viewport.flash_status(
                     tr("Select (or click) the geometry to rotate first"))
                 return
             self._groups = groups
             self._splanes = splanes
+            self._images = images
             self._positions = positions
             mesh = viewport.scene.mesh
             self._verts = [v for v in (mesh.vertex_at(p) for p in positions)
@@ -321,6 +325,10 @@ class RotateTool(ProtractorBase):
                 n2 = m.mapVector(sp.normal)
                 if n2.length() > 1e-12:
                     sp.normal = n2.normalized()
+            for im in self._images:
+                im.origin = m.map(im.origin)
+                im.u = m.mapVector(im.u)
+                im.v = m.mapVector(im.v)
             return
         for group in self._groups:
             if getattr(group, "xform", None) is not None:
@@ -337,6 +345,10 @@ class RotateTool(ProtractorBase):
             n2 = m.mapVector(sp.normal)
             if n2.length() > 1e-12:
                 sp.normal = n2.normalized()
+        for im in self._images:
+            im.origin = m.map(im.origin)
+            im.u = m.mapVector(im.u)
+            im.v = m.mapVector(im.v)
         viewport.scene.version += 1
 
     def _apply_preview(self, viewport, target_deg: float) -> None:
@@ -369,6 +381,7 @@ class RotateTool(ProtractorBase):
         copy = self._copy
         groups = list(self._groups)
         splanes = list(self._splanes)
+        images = list(self._images)
         positions = list(self._positions)
         faces = list(self._sel_faces)
         edges = list(self._sel_edges)
@@ -407,6 +420,10 @@ class RotateTool(ProtractorBase):
                     from core.history import RotateSectionPlanesCommand
                     cmds.append(RotateSectionPlanesCommand(
                         splanes, start, axis, deg))
+                if images:
+                    from core.history import RotateImagePlanesCommand
+                    cmds.append(RotateImagePlanesCommand(
+                        images, start, axis, deg))
             if not cmds:
                 return None
             return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
@@ -432,6 +449,7 @@ class RotateTool(ProtractorBase):
         self._reset_protractor()
         self._groups = []
         self._splanes = []
+        self._images = []
         self._positions = []
         self._verts = []
         self._sel_faces = []

@@ -324,6 +324,12 @@ def save_scene(scene, path: Path) -> dict:
     guides = getattr(scene, "guides", None)
     if guides:
         payload["guides"] = [g.to_dict() for g in guides]
+    # Reference images. Written BEFORE the packing step below on purpose:
+    # each entry hangs its file under a "texture" key, so the same walk that
+    # embeds face textures embeds the scans too.
+    images = getattr(scene, "image_planes", None)
+    if images:
+        payload["image_planes"] = [im.to_dict() for im in images]
     # Images ride INSIDE the document (see the module docstring). Only a scene
     # that actually has textures pays for the container; everything else stays
     # plain JSON at format 1, readable by older builds.
@@ -568,6 +574,11 @@ def _load_into_inner(scene, path: Path) -> None:
     scene.guides.clear()
     for raw in payload.get("guides", []):
         scene.guides.append(Guide.from_dict(raw))
+
+    from core.image_plane import ImagePlane
+    scene.image_planes.clear()
+    for raw in payload.get("image_planes", []):
+        scene.image_planes.append(ImagePlane.from_dict(raw))
 
     scene.version += 1
 

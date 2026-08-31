@@ -1074,6 +1074,188 @@ class DeleteGuidesCommand(Command):
         scene.version += 1
 
 
+class AddImagePlaneCommand(Command):
+    """Place an imported reference image (``File ▸ Import ▸ Image``).
+
+    The image lands on its own layer so it can be switched off without taking
+    the drawing with it (the reasoning behind ``layers.SURVEY_LAYER``); the
+    command creates that layer when missing and takes it back on undo, so
+    importing and undoing leaves the document exactly as it was.
+    """
+
+    def __init__(self, image) -> None:
+        self.image = image
+        self._made_layer = False
+
+    def do(self, scene) -> None:
+        from core.layers import Layer
+        name = getattr(self.image, "layer", None)
+        self._made_layer = False
+        if name and scene.layer(name) is None:
+            scene.layers.append(Layer(name))
+            self._made_layer = True
+        scene.image_planes.append(self.image)
+        scene.selection.clear()
+        scene.selection.add(self.image)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.image in scene.image_planes:
+            scene.image_planes.remove(self.image)
+        scene.selection.discard(self.image)
+        if self._made_layer:
+            name = getattr(self.image, "layer", None)
+            ly = scene.layer(name) if name else None
+            if ly is not None:
+                scene.layers.remove(ly)
+            self._made_layer = False
+        scene.version += 1
+
+
+class DeleteImagePlanesCommand(Command):
+    """Remove reference images (Delete / the Eraser). Positions are restored
+    so undo puts each one back where it sat in the stacking order."""
+
+    def __init__(self, images) -> None:
+        self._images = list(images)
+        self._restore: list[tuple[int, object]] = []
+
+    def do(self, scene) -> None:
+        self._restore = [(scene.image_planes.index(im), im)
+                         for im in self._images if im in scene.image_planes]
+        for im in self._images:
+            if im in scene.image_planes:
+                scene.image_planes.remove(im)
+            scene.selection.discard(im)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for i, im in sorted(self._restore, key=lambda t: t[0]):
+            scene.image_planes.insert(i, im)
+        scene.version += 1
+
+
+class TransformImagePlaneCommand(Command):
+    """Set an image's corner and edge vectors — the one undoable step behind
+    scaling, moving and rotating it. Callers compute the new frame (e.g.
+    ``ImagePlane.scaled``) and hand it over; the command only swaps it in, so
+    every way of reshaping an image shares one reversible operation."""
+
+    def __init__(self, image, origin=None, u=None, v=None) -> None:
+        from PySide6.QtGui import QVector3D
+        self.image = image
+        self._new = (
+            QVector3D(origin) if origin is not None else None,
+            QVector3D(u) if u is not None else None,
+            QVector3D(v) if v is not None else None,
+        )
+        self._old: tuple | None = None
+
+    def do(self, scene) -> None:
+        from PySide6.QtGui import QVector3D
+        im = self.image
+        self._old = (QVector3D(im.origin), QVector3D(im.u), QVector3D(im.v))
+        origin, u, v = self._new
+        if origin is not None:
+            im.origin = QVector3D(origin)
+        if u is not None:
+            im.u = QVector3D(u)
+        if v is not None:
+            im.v = QVector3D(v)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from PySide6.QtGui import QVector3D
+        if self._old is None:
+            return
+        origin, u, v = self._old
+        self.image.origin = QVector3D(origin)
+        self.image.u = QVector3D(u)
+        self.image.v = QVector3D(v)
+        scene.version += 1
+
+
+class MoveImagePlanesCommand(Command):
+    """Translate reference images (the Move tool). Only the origin corner
+    moves — the edge vectors carry size and orientation, so a move can never
+    resize or turn the picture by accident."""
+
+    def __init__(self, images, delta: QVector3D) -> None:
+        self._images = list(images)
+        self.delta = QVector3D(delta)
+
+    def _apply(self, scene, delta: QVector3D) -> None:
+        for im in self._images:
+            im.origin = im.origin + delta
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._apply(scene, self.delta)
+
+    def undo(self, scene) -> None:
+        self._apply(scene, -self.delta)
+
+
+class RotateImagePlanesCommand(Command):
+    """Rotate reference images about ``centre``/``axis`` (the Rotate tool):
+    the origin orbits and both edge vectors turn with it, so the picture keeps
+    its size and its proportions and simply faces a new way. Rotating about an
+    axis off the image's own plane tilts it, which is how a facade photo gets
+    stood up against a wall."""
+
+    def __init__(self, images, centre: QVector3D, axis: QVector3D,
+                 deg: float) -> None:
+        self._images = list(images)
+        self.centre = QVector3D(centre)
+        self.axis = QVector3D(axis)
+        self.deg = float(deg)
+
+    def _apply(self, scene, deg: float) -> None:
+        m = rotation_matrix(self.centre, self.axis, deg)
+        for im in self._images:
+            im.origin = m.map(im.origin)
+            im.u = m.mapVector(im.u)
+            im.v = m.mapVector(im.v)
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._apply(scene, self.deg)
+
+    def undo(self, scene) -> None:
+        self._apply(scene, -self.deg)
+
+
+class ScaleImagePlanesCommand(Command):
+    """Uniformly scale reference images about ``anchor`` (the Scale tool).
+
+    Both edge vectors take the same factor, so the picture is never distorted
+    — which is the whole reason a scan is worth scaling: you set it against a
+    distance you know and everything else on it becomes measurable. A negative
+    factor mirrors the image through the anchor, as it does for geometry.
+    """
+
+    def __init__(self, images, anchor: QVector3D, factor) -> None:
+        self._images = list(images)
+        self.anchor = QVector3D(anchor)
+        # A float scales uniformly; a 3-tuple per axis (the grip box).
+        self.factor = (tuple(float(f) for f in factor)
+                       if isinstance(factor, (tuple, list)) else float(factor))
+
+    def _apply(self, scene, factor: float) -> None:
+        m = scale_matrix(self.anchor, factor)
+        for im in self._images:
+            im.origin = m.map(im.origin)
+            im.u = m.mapVector(im.u)
+            im.v = m.mapVector(im.v)
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._apply(scene, self.factor)
+
+    def undo(self, scene) -> None:
+        self._apply(scene, invert_scale_factor(self.factor))
+
+
 class AddGeoPathCommand(Command):
     """Add a traced georef path to ``scene.geo_paths`` (Track G)."""
 
@@ -1527,15 +1709,30 @@ class RotateGroupCommand(Command):
             scene.version += 1
 
 
-def scale_matrix(center: QVector3D, factor: float):
-    """Uniform scale by ``factor`` about ``center``. A negative factor mirrors
-    through the centre (SketchUp allows it)."""
+def scale_matrix(center: QVector3D, factor):
+    """Scale about ``center``: a float scales uniformly, a 3-tuple scales each
+    axis by its own factor (SketchUp's edge/face grips). A negative factor
+    mirrors through the centre along that axis (SketchUp allows it — dragging
+    a grip past its anchor, or typing -1)."""
     from PySide6.QtGui import QMatrix4x4
     m = QMatrix4x4()
     m.translate(center)
-    m.scale(factor)
+    if isinstance(factor, (tuple, list)):
+        m.scale(float(factor[0]), float(factor[1]), float(factor[2]))
+    else:
+        m.scale(float(factor))
     m.translate(-center)
     return m
+
+
+def invert_scale_factor(factor):
+    """The factor that undoes ``factor`` — per-axis for tuples. Zero factors
+    (already rejected upstream) invert to 1.0 instead of dividing by zero."""
+    def inv(f):
+        return 1.0 / f if abs(f) > 1e-12 else 1.0
+    if isinstance(factor, (tuple, list)):
+        return tuple(inv(float(f)) for f in factor)
+    return inv(float(factor))
 
 
 class ScaleVerticesCommand(Command):
@@ -1602,8 +1799,9 @@ class ScaleGroupCommand(Command):
 
     def undo(self, scene) -> None:
         if getattr(self.group, "xform", None) is not None:
-            self.group.xform = scale_matrix(self.center,
-                                            1.0 / self.factor) * self.group.xform
+            self.group.xform = scale_matrix(
+                self.center,
+                invert_scale_factor(self.factor)) * self.group.xform
             scene.version += 1
             return
         if self._before is not None:

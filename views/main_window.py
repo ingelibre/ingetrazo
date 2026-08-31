@@ -754,6 +754,7 @@ class MainWindow(QMainWindow):
             (tr("COLLADA (.dae)…"), self._on_import_dae),
             (tr("glTF/GLB (.glb)…"), self._on_import_glb),
             (tr("Wavefront OBJ (.obj)…"), self._on_import_obj),
+            (tr("Image (PNG / JPG)…"), self._on_import_image),
             (tr("Georeference (KML / GeoJSON)…"), self._on_import_georef),
             (tr("Survey points CSV (UTM)…"), self._on_import_survey_points),
             (tr("Photogrammetric mesh (WebODM)…"), self._on_import_photomesh),
@@ -1185,9 +1186,11 @@ class MainWindow(QMainWindow):
         from georef.geopath import GeoPath
         from core.history import (
             CompoundCommand, DeleteDimensionsCommand, DeleteGeoPathsCommand,
-            DeleteGroupCommand, DeleteGuidesCommand, DeleteTextLabelsCommand,
+            DeleteGroupCommand, DeleteGuidesCommand,
+            DeleteImagePlanesCommand, DeleteTextLabelsCommand,
             EraseSelectionCommand,
         )
+        from core.image_plane import ImagePlane
         sel = self.viewport.scene.selection
         if not sel:
             return
@@ -1206,6 +1209,9 @@ class MainWindow(QMainWindow):
         cmds.extend(DeleteGroupCommand(g) for g in groups)
         if guides:
             cmds.append(DeleteGuidesCommand(guides))
+        images = [im for im in sel if isinstance(im, ImagePlane)]
+        if images:
+            cmds.append(DeleteImagePlanesCommand(images))
         if splanes:
             from core.history import DeleteSectionPlanesCommand
             cmds.append(DeleteSectionPlanesCommand(splanes))
@@ -1264,6 +1270,15 @@ class MainWindow(QMainWindow):
             act_active.setCheckable(True)
             act_active.setChecked(sec_planes[0].active)
             menu.addAction(tr("Align View"), self._on_align_view_to_section)
+            menu.addSeparator()
+
+        from core.image_plane import ImagePlane
+        images = [e for e in sel if isinstance(e, ImagePlane)]
+        if images:
+            menu.addAction(tr("Image size…"), self._on_image_size)
+            act_lock = menu.addAction(tr("Lock"), self._on_toggle_image_lock)
+            act_lock.setCheckable(True)
+            act_lock.setChecked(bool(images[0].locked))
             menu.addSeparator()
 
         if has_geopath:
@@ -1585,6 +1600,8 @@ class MainWindow(QMainWindow):
         scene.clear()
         scene.version += 1
         self.viewport.history.clear()
+        # Document boundary: the old drawing's textures go back to the driver.
+        self.viewport.reset_texture_cache()
         self._current_path = None
         self._import_name = None
         self._insert_scale_figure()
@@ -1627,6 +1644,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, tr("Open failed"), str(exc))
             return False
         self.viewport.history.clear()
+        self.viewport.reset_texture_cache()
         self._current_path = path
         self._import_name = None
         self._saved_version = self.viewport.scene.version
@@ -2456,6 +2474,93 @@ class MainWindow(QMainWindow):
         self._update_title()
         self.statusBar().showMessage(tr("Imported {name}", name=path.name), 3000)
 
+    def _on_import_image(self) -> None:
+        """Import a picture to trace over (SketchUp's ``Import ▸ image``).
+
+        The file is copied into the texture cache straight away, so the model
+        never depends on where the user happened to leave the original — the
+        same content-addressed store the .skp importer fills, which also means
+        importing the same scan twice costs one copy.
+        """
+        path_str, _ = QFileDialog.getOpenFileName(
+            self, tr("Import image"), "",
+            tr("Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp);;"
+               "All files (*)"))
+        if not path_str:
+            return
+        path = Path(path_str)
+        from core.image_plane import image_aspect
+        aspect, pw, ph = image_aspect(path)
+        if pw <= 0 or ph <= 0:
+            QMessageBox.critical(
+                self, tr("Import image failed"),
+                tr("{name} is not an image this build can read.",
+                   name=path.name))
+            return
+        from core.texture import cache_image
+        try:
+            cached = cache_image(path.read_bytes(), path.name, "imported")
+        except OSError as exc:
+            QMessageBox.critical(self, tr("Import image failed"), str(exc))
+            return
+
+        from tools.image import ImageTool
+        tool = ImageTool()
+        tool.load(str(cached), aspect, label=path.stem)
+        self.viewport.set_active_tool(tool)
+        for action in self._tool_actions.values():
+            action.setChecked(False)
+        self._tool_label.setText(tr("Tool: {name}", name=tr("Image")))
+        self._refresh_vcb()
+        self.viewport.flash_status(
+            tr("Click a corner and drag to size the image, or type a width "
+               "and press Enter (Esc cancels)"), 6000)
+        self.viewport.update()
+
+    def _on_image_size(self) -> None:
+        """Resize a placed reference image to a real-world width.
+
+        This is the step that makes a scan usable: you place it roughly, then
+        measure one thing on it you already know — a wall, a scale bar — and
+        type that. Proportions are kept by default, and the image grows from
+        its origin corner so what you already traced stays put relative to it.
+        """
+        from PySide6.QtWidgets import QInputDialog
+        from core.image_plane import ImagePlane
+        from core.history import TransformImagePlaneCommand
+        sel = [e for e in self.viewport.scene.selection
+               if isinstance(e, ImagePlane)]
+        if not sel:
+            return
+        image = sel[0]
+        width, ok = QInputDialog.getDouble(
+            self, tr("Image size"), tr("Width (m):"),
+            image.width(), 0.0001, 1_000_000.0, 4)
+        if not ok or width <= 0.0:
+            return
+        u, v = image.scaled(width, keep_aspect=True)
+        self.viewport.history.execute(
+            TransformImagePlaneCommand(image, u=u, v=v))
+        self.viewport.update()
+        self.statusBar().showMessage(
+            tr("Image resized to {w:.2f} × {h:.2f} m",
+               w=u.length(), h=v.length()), 4000)
+
+    def _on_toggle_image_lock(self) -> None:
+        """Lock an image so clicks fall through to what you are drawing on top
+        of it — the usual state once a scan is aligned."""
+        from core.image_plane import ImagePlane
+        for image in [e for e in self.viewport.scene.selection
+                      if isinstance(e, ImagePlane)]:
+            image.locked = not image.locked
+        self.viewport.scene.version += 1
+        self.viewport.update()
+
+    def activate_select_tool(self) -> None:
+        """Back to Select — what the Image tool calls once a picture is
+        placed, so the next click doesn't stamp a second copy."""
+        self._activate_tool("select")
+
     def _on_import_photomesh(self) -> None:
         """Import a WebODM/ODM photogrammetric survey as georeferenced reference
         geometry (Track G, G6) — the drone flight you then trace on top of.
@@ -2846,11 +2951,14 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard(tr("Quit IngeTrazo?")):
             event.ignore()
             return
-        # Free the survey's atlases while a GL context still exists — a
-        # photogrammetric import holds hundreds of MB, and letting Qt tear them
-        # down leaks them with a "Texture has not been destroyed" warning.
+        # Free every GL texture while a GL context still exists — the survey
+        # atlases (hundreds of MB), the tile and terrain textures, and the
+        # general texture cache (faces, reference images). Letting Qt tear
+        # them down leaks each with a "Texture has not been destroyed"
+        # warning; the context's aboutToBeDestroyed hook alone fires too late
+        # on app exit, when the Python side is already coming apart.
         try:
-            self.viewport.release_photo_textures()
+            self.viewport.release_gl_textures()
         except Exception:  # noqa: BLE001 — never block quitting on cleanup
             pass
         super().closeEvent(event)
