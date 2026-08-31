@@ -755,6 +755,7 @@ class MainWindow(QMainWindow):
             (tr("glTF/GLB (.glb)…"), self._on_import_glb),
             (tr("Wavefront OBJ (.obj)…"), self._on_import_obj),
             (tr("Image (PNG / JPG)…"), self._on_import_image),
+            (tr("AutoCAD DWG (.dwg)…"), self._on_import_dwg),
             (tr("AutoCAD DXF (.dxf)…"), self._on_import_dxf),
             (tr("Georeference (KML / GeoJSON)…"), self._on_import_georef),
             (tr("Survey points CSV (UTM)…"), self._on_import_survey_points),
@@ -1641,6 +1642,8 @@ class MainWindow(QMainWindow):
             return self.import_skp_path(path)
         if suffix == ".dxf":
             return self._import_dxf_path(path)
+        if suffix == ".dwg":
+            return self._import_dwg_path(path)
         try:
             igz_format.load_into(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001 - surface any IO/parse error to the user
@@ -2564,6 +2567,42 @@ class MainWindow(QMainWindow):
         placed, so the next click doesn't stamp a second copy."""
         self._activate_tool("select")
 
+    def _on_import_dwg(self) -> None:
+        path_str, _ = QFileDialog.getOpenFileName(
+            self, tr("Import DWG"), "",
+            tr("AutoCAD DWG (*.dwg);;All files (*)"))
+        if path_str:
+            self._import_dwg_path(Path(path_str))
+
+    def _import_dwg_path(self, path: Path) -> bool:
+        """Import a DWG through the LibreDWG satellite (D3): convert to a
+        temporary DXF, feed the DXF pipeline, discard the temp. The user
+        never sees the intermediate — IngeCAD's dwg_bridge pattern."""
+        from formats.dwg_bridge import (DwgBridgeError, discard_temp_dxf,
+                                        dwg_to_dxf, have_dwg_support)
+
+        if not have_dwg_support():
+            QMessageBox.critical(
+                self, tr("Import DWG failed"),
+                tr("The LibreDWG converter (dwg2dxf) is not available in "
+                   "this installation."))
+            return False
+        dlg, cb = self._import_progress(tr("Importing {name}…",
+                                           name=path.name))
+        cb(0.02, tr("Converting DWG…"))
+        try:
+            dxf = dwg_to_dxf(path)
+        except DwgBridgeError as exc:
+            dlg.close()
+            QMessageBox.critical(self, tr("Import DWG failed"), str(exc))
+            return False
+        dlg.close()
+        try:
+            ok = self._import_dxf_path(dxf, label=path)
+        finally:
+            discard_temp_dxf(dxf)
+        return ok
+
     def _on_import_dxf(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
             self, tr("Import DXF"), "",
@@ -2571,25 +2610,36 @@ class MainWindow(QMainWindow):
         if path_str:
             self._import_dxf_path(Path(path_str))
 
-    def _import_dxf_path(self, path: Path) -> bool:
+    def _import_dxf_path(self, path: Path, label: "Path | None" = None) -> bool:
         """Import a DXF: 2D CAD linework as tagged layer groups (D1). The
         unit comes from the header; a unitless file is asked about, the OBJ
-        importer's rule — never guess in silence."""
-        from formats.dxf_in import load_dxf, read_unit_scale
+        importer's rule — never guess in silence. ``label`` is the file the
+        USER opened when ``path`` is an intermediate (the DWG bridge)."""
+        shown = label or path
+        from formats.dxf_in import (load_dxf, open_document,
+                                    suggest_unit_scale)
 
-        # ALWAYS confirmed, header preselected (the OBJ importer's doctrine:
-        # asked, but with the answer already filled in). CAD headers lie —
-        # plans drawn 1 unit = 1 metre routinely ship $INSUNITS = mm from
-        # whatever template the office copied.
-        scale = self._dxf_unit(path, read_unit_scale(path)[0])
+        # ALWAYS confirmed, suggestion preselected (the OBJ importer's
+        # doctrine: asked, but with the answer already filled in). The
+        # suggestion measures the drawing itself, because CAD headers lie —
+        # this session's test plan declares millimetres while drawn in
+        # metres. Parsed once; the same document feeds the load.
+        try:
+            doc = open_document(path)
+        except Exception as exc:  # noqa: BLE001 — unreadable file
+            QMessageBox.critical(self, tr("Import DXF failed"), str(exc))
+            return False
+        suggested, _code = suggest_unit_scale(doc)
+        scale = self._dxf_unit(shown, suggested)
         if scale is None:
             return False
         dlg, cb = self._import_progress(tr("Importing {name}…",
-                                           name=path.name))
+                                           name=shown.name))
         stats: dict = {}
         cmd = SnapshotImport(
             lambda scene: stats.update(
-                load_dxf(scene, path, progress=cb, scale=scale)))
+                load_dxf(scene, path, progress=cb, scale=scale, doc=doc,
+                         name=shown.stem)))
         try:
             self.viewport.history.execute(cmd)
         except Exception as exc:  # noqa: BLE001 — surface parse errors
@@ -2602,10 +2652,10 @@ class MainWindow(QMainWindow):
         # default camera) reads as "nothing imported" without this.
         self._on_zoom_extents()
         self.viewport.update()
-        self._import_name = path.name
+        self._import_name = shown.name
         self._update_title()
         msg = tr("Imported {name}: {edges} edges in {groups} tagged groups",
-                 name=path.name, edges=stats.get("edges", 0),
+                 name=shown.name, edges=stats.get("edges", 0),
                  groups=stats.get("groups", 0))
         offset = stats.get("offset")
         if offset:
