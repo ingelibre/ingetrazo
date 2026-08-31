@@ -626,6 +626,7 @@ class Viewport(QOpenGLWidget):
         self._axes_spans: dict = {}
 
         self._sky_vao, self._sky_vbo = self._create_dynamic()
+        self._sky_grad_vao, self._sky_grad_vbo = self._create_dynamic_color()
         self._edges_vao, self._edges_vbo = self._create_dynamic()
         self._selected_vao, self._selected_vbo = self._create_dynamic()
         self._sel_faces_vao, self._sel_faces_vbo = self._create_dynamic()
@@ -1401,6 +1402,29 @@ class Viewport(QOpenGLWidget):
         self._program.bind()
         self._program.enableAttributeArray(self._loc_pos)
         self._program.setAttributeBuffer(self._loc_pos, GL_FLOAT, 0, 3)
+        self._program.release()
+        vbo.release()
+        vao.release()
+        return vao, vbo
+
+    def _create_dynamic_color(self):
+        """A dynamic VAO/VBO interleaving position (3f) + RGB (3f) per
+        vertex — the sky-gradient backdrop (drawn with ``u_use_vcolor``)."""
+        vao = QOpenGLVertexArrayObject(self)
+        vao.create()
+        vao.bind()
+        vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+        vbo.setUsagePattern(QOpenGLBuffer.DynamicDraw)
+        vbo.create()
+        vbo.bind()
+        vbo.allocate(48)  # 2 vertices × 6 floats × 4 bytes
+        stride = 6 * 4
+        self._program.bind()
+        self._program.enableAttributeArray(self._loc_pos)
+        self._program.setAttributeBuffer(self._loc_pos, GL_FLOAT, 0, 3, stride)
+        self._program.enableAttributeArray(self._loc_vcolor)
+        self._program.setAttributeBuffer(self._loc_vcolor, GL_FLOAT, 12, 3,
+                                         stride)
         self._program.release()
         vbo.release()
         vao.release()
@@ -2470,36 +2494,87 @@ class Viewport(QOpenGLWidget):
             return 2.0 if fwd.z() < 0 else -2.0
         return clip.y() / clip.w()
 
+    #: NDC span over which each half of the backdrop completes its ramp.
+    _SKY_GRAD_SPAN = 1.4
+    _GROUND_GRAD_SPAN = 0.9
+
+    @staticmethod
+    def _sky_gradient(sky_rgb, ground_rgb, hy):
+        """Corner colours of the backdrop gradient: the style's sky tone at
+        the zenith and ground tone underfoot, both hazed toward white at the
+        horizon (atmosphere — the one-colour input stays the one the user
+        picked). Computed against the UNCLAMPED horizon ``hy``, so a pitched
+        camera sees the right slice of the ramp (all zenith when looking up,
+        all ground when looking down). Returns ``(sky_bottom, sky_top,
+        ground_top, ground_bottom, horizon_line)``; the ramps are linear in
+        NDC y, so colouring only the quad corners is exact."""
+        def mix(a, b, t):
+            return (a[0] + (b[0] - a[0]) * t,
+                    a[1] + (b[1] - a[1]) * t,
+                    a[2] + (b[2] - a[2]) * t)
+
+        white = (1.0, 1.0, 1.0)
+        sky_h = mix(sky_rgb, white, 0.55)
+        gnd_h = mix(ground_rgb, white, 0.30)
+
+        def sky_at(y):
+            t = min(1.0, max(0.0, (y - hy) / Viewport._SKY_GRAD_SPAN))
+            return mix(sky_h, sky_rgb, t)
+
+        def gnd_at(y):
+            t = min(1.0, max(0.0, (hy - y) / Viewport._GROUND_GRAD_SPAN))
+            return mix(gnd_h, ground_rgb, t)
+
+        y0 = max(-1.0, min(1.0, hy))
+        line = mix(mix(sky_h, gnd_h, 0.5), (0.0, 0.0, 0.0), 0.12)
+        return sky_at(y0), sky_at(1.0), gnd_at(y0), gnd_at(-1.0), line
+
     def _draw_sky(self, mvp) -> None:
-        """Fill sky above the horizon and ground below with two flat tones."""
-        hy = max(-1.0, min(1.0, self._horizon_ndc_y(mvp)))
+        """Sky above the horizon and ground below, each a vertical gradient
+        (style tones hazed toward the horizon — see ``_sky_gradient``), with
+        a subtle horizon line where they meet. Per-vertex colours; GL
+        interpolates per pixel. The class constants ``_SKY_RGB`` /
+        ``_GROUND_RGB`` are the historical defaults, kept as fallbacks."""
+        style = getattr(self, "_frame_style", None)
+        sky_rgb = tuple(getattr(style, "sky_color", None)
+                        or self._SKY_RGB)[:3]
+        ground_rgb = tuple(getattr(style, "ground_color", None)
+                           or self._GROUND_RGB)[:3]
+        hy_raw = self._horizon_ndc_y(mvp)
+        hy = max(-1.0, min(1.0, hy_raw))
+        c_sky0, c_sky1, c_gnd0, c_gnd1, c_line = self._sky_gradient(
+            sky_rgb, ground_rgb, hy_raw)
         self._program.setUniformValue(self._loc_mvp, QMatrix4x4())  # identity/NDC
         self._gl.glDisable(GL_DEPTH_TEST)
         self._gl.glDepthMask(GL_FALSE)
-        self._sky_vao.bind()
 
-        def quad(y0, y1, rgb):
-            data = array("f", [-1, y0, 0, 1, y0, 0, 1, y1, 0,
-                               -1, y0, 0, 1, y1, 0, -1, y1, 0])
-            self._sky_vbo.bind()
-            self._sky_vbo.allocate(data.tobytes(), len(data) * 4)
-            self._sky_vbo.release()
-            self._set_color(*rgb, 1.0)
+        def gquad(y0, y1, c0, c1):
+            data = array("f", [-1, y0, 0, *c0, 1, y0, 0, *c0, 1, y1, 0, *c1,
+                               -1, y0, 0, *c0, 1, y1, 0, *c1, -1, y1, 0, *c1])
+            self._sky_grad_vbo.bind()
+            self._sky_grad_vbo.allocate(data.tobytes(), len(data) * 4)
+            self._sky_grad_vbo.release()
             self._gl.glDrawArrays(GL_TRIANGLES, 0, 6)
 
+        self._sky_grad_vao.bind()
+        self._program.setUniformValue(self._loc_use_vcolor, 1)
         if hy < 1.0:
-            quad(hy, 1.0, self._SKY_RGB)
+            gquad(hy, 1.0, c_sky0, c_sky1)
         if hy > -1.0:
-            quad(-1.0, hy, self._GROUND_RGB)
-        # A subtle horizon line where sky meets ground (SketchUp).
+            gquad(-1.0, hy, c_gnd1, c_gnd0)
+        self._program.setUniformValue(self._loc_use_vcolor, 0)
+        self._sky_grad_vao.release()
+        # A subtle horizon line where sky meets ground (SketchUp), in a tone
+        # derived from the two haze colours so custom skies keep it legible.
         if -1.0 < hy < 1.0:
             line = array("f", [-1.0, hy, 0.0, 1.0, hy, 0.0])
+            self._sky_vao.bind()
             self._sky_vbo.bind()
             self._sky_vbo.allocate(line.tobytes(), len(line) * 4)
             self._sky_vbo.release()
-            self._set_color(0.62, 0.64, 0.66, 1.0)
+            self._set_color(*c_line, 1.0)
             self._gl.glDrawArrays(GL_LINES, 0, 2)
-        self._sky_vao.release()
+            self._sky_vao.release()
         self._gl.glEnable(GL_DEPTH_TEST)
         self._gl.glDepthMask(GL_TRUE)
 

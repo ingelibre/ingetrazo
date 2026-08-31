@@ -1168,6 +1168,11 @@ class MainWindow(QMainWindow):
             act.blockSignals(True)
             act.setChecked(value)
             act.blockSignals(False)
+        # The tray's Styles panel mirrors the same state (guarded: the menu
+        # builds before the tray on startup).
+        tray = getattr(self, "tray", None)
+        if tray is not None and hasattr(tray, "styles"):
+            tray.styles.refresh()
 
     def _on_delete_guides(self) -> None:
         """Remove every construction guide (SketchUp's Edit ▸ Delete Guides)."""

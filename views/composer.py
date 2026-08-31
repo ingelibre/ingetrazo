@@ -1388,10 +1388,14 @@ class ComposerWindow(QMainWindow):
         # The model's display styles, one to one (SketchUp: LayOut viewports
         # pick any style). "Model style" = whatever is active in the model;
         # legacy "tecnico"/"lineas" frames map onto Hidden line / Wireframe.
-        from core.style import BUILTIN_STYLES
+        from core.style import BUILTIN_STYLES, user_styles
         self.style_combo.addItem(tr("Model style"), "sombreado")
         for preset in BUILTIN_STYLES:
             self.style_combo.addItem(tr(preset.name), f"style:{preset.name}")
+        for saved in user_styles():
+            # The user library too (saved names stay verbatim — they are the
+            # user's own words, not ours to translate).
+            self.style_combo.addItem(saved.name, f"style:{saved.name}")
         self.style_combo.addItem(
             tr("Vector (hidden lines removed)"), "vectorial")
         self.style_combo.currentIndexChanged.connect(self._on_frame_props)

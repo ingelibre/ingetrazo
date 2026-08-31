@@ -1340,6 +1340,243 @@ class DimensionStylePanel(QWidget):
             f"background: rgb({c[0]},{c[1]},{c[2]}); min-height: 18px;")
 
 
+class StylesPanel(QWidget):
+    """Live editor for ``scene.display_style`` — SketchUp's Styles panel.
+
+    The top combo picks a style (built-ins + the user's saved library); the
+    controls below edit the ACTIVE style in place, live — the viewport reads
+    it every frame, so there is nothing to "apply". «Save style…» snapshots
+    the current look under a name into the user library (QSettings), where
+    ``style_by_name`` — and with it the composer's per-frame style combo —
+    resolves it like any preset. Edits are not undoable, same as the
+    dimension-style panel: they change how the model draws, not what it is.
+    """
+
+    #: (mode key, translatable label) — labels, not the builtin style names:
+    #: "Shaded" the style is a preset bundle, "Shaded" the mode is one field.
+    _MODES = (("textures", "Textures"), ("shaded", "Shaded"),
+              ("hidden_line", "Hidden line"), ("monochrome", "Monochrome"),
+              ("wireframe", "Wireframe"), ("xray", "X-ray"))
+
+    def __init__(self, window) -> None:
+        super().__init__()
+        self._window = window
+        self._updating = False
+        grid = QGridLayout(self)
+        grid.setContentsMargins(8, 6, 8, 8)
+
+        self._combo = QComboBox()
+        self._combo.activated.connect(self._on_pick)
+        grid.addWidget(self._combo, 0, 0, 1, 2)
+
+        grid.addWidget(QLabel(tr("Face mode:")), 1, 0)
+        self._mode = QComboBox()
+        for key, label in self._MODES:
+            self._mode.addItem(tr(label), key)
+        self._mode.currentIndexChanged.connect(self._apply_edits)
+        grid.addWidget(self._mode, 1, 1)
+
+        self._edges = QCheckBox(tr("Edges"))
+        self._edges.toggled.connect(self._apply_edits)
+        grid.addWidget(self._edges, 2, 0)
+        self._edge_c = self._swatch(tr("Edge color"), "edge_color")
+        grid.addWidget(self._edge_c, 2, 1)
+
+        self._profiles = QCheckBox(tr("Profiles"))
+        self._profiles.toggled.connect(self._apply_edits)
+        grid.addWidget(self._profiles, 3, 0)
+
+        grid.addWidget(QLabel(tr("Front color:")), 4, 0)
+        self._front_c = self._swatch(
+            tr("Front color — paints faces in Hidden line and Monochrome"),
+            "front_color")
+        grid.addWidget(self._front_c, 4, 1)
+
+        self._sky = QCheckBox(tr("Sky"))
+        self._sky.toggled.connect(self._apply_edits)
+        grid.addWidget(self._sky, 5, 0)
+        self._sky_c = self._swatch(tr("Sky color"), "sky_color")
+        grid.addWidget(self._sky_c, 5, 1)
+
+        grid.addWidget(QLabel(tr("Ground:")), 6, 0)
+        self._ground_c = self._swatch(tr("Ground color"), "ground_color")
+        grid.addWidget(self._ground_c, 6, 1)
+
+        grid.addWidget(QLabel(tr("Background:")), 7, 0)
+        self._bg_c = self._swatch(
+            tr("Background — visible with the sky off"), "background")
+        grid.addWidget(self._bg_c, 7, 1)
+
+        self._fill = QCheckBox(tr("Section Fill"))
+        self._fill.toggled.connect(self._apply_edits)
+        grid.addWidget(self._fill, 8, 0)
+        self._fill_c = self._swatch(tr("Section fill color"),
+                                    "section_fill_color")
+        grid.addWidget(self._fill_c, 8, 1)
+
+        row = QHBoxLayout()
+        save_btn = QPushButton(tr("Save style…"))
+        save_btn.clicked.connect(self._on_save)
+        row.addWidget(save_btn)
+        self._del_btn = QPushButton(tr("Delete"))
+        self._del_btn.clicked.connect(self._on_delete)
+        row.addWidget(self._del_btn)
+        grid.addLayout(row, 9, 0, 1, 2)
+
+        self.refresh()
+
+    # ---- Plumbing -----------------------------------------------------------
+    def _style(self):
+        return getattr(self._window.viewport.scene, "display_style", None)
+
+    def _swatch(self, title: str, attr: str) -> QPushButton:
+        btn = QPushButton()
+        btn.setToolTip(title)
+        btn.clicked.connect(lambda: self._pick_color(title, attr))
+        return btn
+
+    @staticmethod
+    def _css(color) -> str:
+        r, g, b = (max(0, min(255, round(c * 255))) for c in color[:3])
+        return f"background: rgb({r},{g},{b}); min-height: 18px;"
+
+    def refresh(self) -> None:
+        """Mirror the active style and the user library (called on loads,
+        preset applies and saves via ``_sync_style_menu``)."""
+        from core.style import BUILTIN_STYLES, user_styles
+        style = self._style()
+        users = user_styles()
+        self._updating = True
+        try:
+            self._combo.clear()
+            for p in BUILTIN_STYLES:
+                self._combo.addItem(tr(p.name), p.name)
+            if users:
+                self._combo.insertSeparator(self._combo.count())
+                for s in users:
+                    self._combo.addItem(s.name, s.name)
+            if style is None:
+                return
+            # -1 (nothing shown) when the active style matches no entry —
+            # e.g. a document carrying a look that is in no library.
+            self._combo.setCurrentIndex(self._combo.findData(style.name))
+            self._mode.setCurrentIndex(
+                self._mode.findData(style.face_mode))
+            self._edges.setChecked(style.edges)
+            self._profiles.setChecked(style.profiles)
+            self._sky.setChecked(style.sky)
+            self._fill.setChecked(style.section_fill)
+            self._edge_c.setStyleSheet(self._css(style.edge_color))
+            self._front_c.setStyleSheet(self._css(style.front_color))
+            self._sky_c.setStyleSheet(self._css(style.sky_color))
+            self._ground_c.setStyleSheet(self._css(style.ground_color))
+            self._bg_c.setStyleSheet(self._css(style.background))
+            self._fill_c.setStyleSheet(self._css(style.section_fill_color))
+            self._del_btn.setEnabled(
+                any(s.name == self._combo.currentData() for s in users))
+        finally:
+            self._updating = False
+
+    # ---- Actions ------------------------------------------------------------
+    def _on_pick(self, index: int) -> None:
+        from core.style import style_by_name
+        picked = style_by_name(self._combo.itemData(index))
+        if picked is None:
+            return
+        self._window.viewport.scene.display_style = picked
+        self._window._sync_style_menu()          # menu + this panel
+        self._window.viewport.update()
+
+    def _apply_edits(self, *_a) -> None:
+        style = self._style()
+        if style is None or self._updating:
+            return
+        style.face_mode = self._mode.currentData()
+        style.edges = self._edges.isChecked()
+        style.profiles = self._profiles.isChecked()
+        style.sky = self._sky.isChecked()
+        style.section_fill = self._fill.isChecked()
+        self._window._sync_style_menu()
+        self._window.viewport.update()
+
+    def _pick_color(self, title: str, attr: str) -> None:
+        style = self._style()
+        if style is None:
+            return
+        c = getattr(style, attr)
+        chosen = QColorDialog.getColor(
+            QColor.fromRgbF(*(float(v) for v in c[:3])), self, title)
+        if not chosen.isValid():
+            return
+        setattr(style, attr, (chosen.redF(), chosen.greenF(), chosen.blueF()))
+        self.refresh()
+        self._window.viewport.update()
+        # Every colour is editable in every mode (build the look, save it) —
+        # but an edit that can't show RIGHT NOW says so, or it reads as
+        # "styles don't work" (it did, live, 2026-08-31).
+        hint = self._color_hint(attr)
+        if hint:
+            bar = getattr(self._window, "statusBar", None)
+            if callable(bar):
+                bar().showMessage(hint, 4000)
+
+    def _color_hint(self, attr: str) -> str | None:
+        """Why the colour just edited may not be visible right now (``None``
+        when it should be showing)."""
+        style = self._style()
+        if style is None:
+            return None
+        mode = style.face_mode
+        if attr == "front_color" and mode not in ("hidden_line", "monochrome"):
+            return tr("Front color saved — it paints faces in Hidden line "
+                      "and Monochrome modes.")
+        if attr == "background" and style.sky:
+            return tr("Background saved — it shows with the sky off.")
+        if attr in ("sky_color", "ground_color") and not style.sky:
+            return tr("Sky and ground colors show with the sky on.")
+        if attr == "edge_color" and not style.edges and mode != "wireframe":
+            return tr("Edge color saved — this style has edges off.")
+        if attr == "section_fill_color" and not style.section_fill:
+            return tr("Section fill color saved — section fill is off in "
+                      "this style.")
+        return None
+
+    def _on_save(self) -> None:
+        style = self._style()
+        if style is None:
+            return
+        from core.style import builtin_names, save_user_style
+        suggested = "" if style.name in builtin_names() else style.name
+        name, ok = QInputDialog.getText(
+            self, tr("Save style"), tr("Style name:"), text=suggested)
+        name = name.strip()
+        if not ok or not name:
+            return
+        if name in builtin_names():
+            QMessageBox.warning(
+                self, tr("Save style"),
+                tr("'{name}' is a built-in style — pick another name.",
+                   name=name))
+            return
+        style.name = name        # the active style takes the saved identity
+        save_user_style(style)
+        self._window._sync_style_menu()
+        self._window.statusBar().showMessage(
+            tr("Style '{name}' saved.", name=name), 3000)
+
+    def _on_delete(self) -> None:
+        from core.style import delete_user_style
+        name = self._combo.currentData()
+        if not name:
+            return
+        if QMessageBox.question(
+                self, tr("Delete style"),
+                tr("Delete style '{name}'?", name=name)) != QMessageBox.Yes:
+            return
+        delete_user_style(name)
+        self._window._sync_style_menu()
+
+
 class EntityInfoPanel(QWidget):
     """Read-only facts about the current selection."""
 
@@ -1934,11 +2171,13 @@ class Tray(QDockWidget):
         self.components = ComponentsPanel(window)
         self.layers = LayersPanel(window)
         self.scenes = ScenesPanel(window)
+        self.styles = StylesPanel(window)
         self.dim_style = DimensionStylePanel(window)
         self.setWidget(_scrolled([
             (tr("Entity info"), self.entity_info),
             (tr("Layers"), self.layers),
             (tr("Scenes"), self.scenes),
+            (tr("Styles"), self.styles),
             (tr("Materials"), self.materials),
             (tr("Components"), self.components),
             (tr("Dimension style"), self.dim_style),
