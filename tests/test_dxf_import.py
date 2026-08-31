@@ -97,7 +97,8 @@ def test_a_drawing_with_no_linework_refuses_loudly(tmp_path):
 
 
 # ---- Blocks -----------------------------------------------------------------
-def test_inserts_are_expanded_in_place(tmp_path):
+def test_inserts_become_component_instances_sharing_one_proto(tmp_path):
+    """D2: 500 trees are one prototype and 500 matrices, not 500 meshes."""
     doc = _doc()
     blk = doc.blocks.new("ARBOL")
     blk.add_line((0, 0), (0, 2))
@@ -106,11 +107,46 @@ def test_inserts_are_expanded_in_place(tmp_path):
     msp.add_blockref("ARBOL", (10, 10))
     msp.add_blockref("ARBOL", (20, 10))
     scene, stats = _load(tmp_path, doc)
-    g = scene.groups[0]
-    xs = [v.position.x() for v in g.mesh.vertices]
-    assert any(abs(x - 10) < 1e-6 for x in xs)
-    assert any(abs(x - 20) < 1e-6 for x in xs)
-    assert stats["entities"] == 4            # 2 lines + 2 circles, placed
+    instances = [g for g in scene.groups if g.xform is not None]
+    assert len(instances) == 2
+    a, b = instances
+    assert a.mesh is b.mesh                  # SHARED prototype
+    assert stats["components"] == {"ARBOL": 2}
+    # the xform places the proto: local (0,0) lands at each insert point
+    pa = a.xform.map(__import__("PySide6.QtGui", fromlist=["QVector3D"])
+                     .QVector3D(0, 0, 0))
+    pb = b.xform.map(__import__("PySide6.QtGui", fromlist=["QVector3D"])
+                     .QVector3D(0, 0, 0))
+    assert sorted((round(pa.x()), round(pb.x()))) == [10, 20]
+    # and the circle inside the proto is still one contour
+    curves = {e.curve for e in a.mesh.edges if e.curve is not None}
+    assert len(curves) == 1
+
+
+def test_a_rotated_scaled_insert_lands_where_autocad_put_it(tmp_path):
+    doc = _doc()
+    blk = doc.blocks.new("B")
+    blk.add_line((0, 0), (1, 0))
+    doc.modelspace().add_blockref(
+        "B", (10, 20), dxfattribs={"rotation": 90.0,
+                                   "xscale": 2.0, "yscale": 2.0})
+    scene, _ = _load(tmp_path, doc)
+    inst = next(g for g in scene.groups if g.xform is not None)
+    from PySide6.QtGui import QVector3D
+    tip = inst.xform.map(QVector3D(1, 0, 0))
+    assert (round(tip.x(), 6), round(tip.y(), 6)) == (10.0, 22.0)
+
+
+def test_an_annotation_only_block_places_nothing_quietly(tmp_path):
+    doc = _doc()
+    blk = doc.blocks.new("ROTULO")
+    blk.add_text("N.P.T. +0.15")
+    msp = doc.modelspace()
+    msp.add_blockref("ROTULO", (5, 5))
+    msp.add_line((0, 0), (1, 0))             # so the file is not empty
+    scene, stats = _load(tmp_path, doc)
+    assert stats["components"] == {}
+    assert all(g.xform is None for g in scene.groups)
 
 
 def test_block_children_on_layer_zero_inherit_the_inserts_layer(tmp_path):
@@ -210,3 +246,83 @@ def test_the_whole_import_is_one_undoable_step(tmp_path):
     assert all(ly.name != "MUROS" for ly in scene.layers)
     hist.redo()
     assert len(scene.groups) == 1
+
+
+# ---- Faces (D2) -------------------------------------------------------------
+def test_3dfaces_become_faces(tmp_path):
+    doc = _doc()
+    doc.modelspace().add_3dface([(0, 0, 0), (2, 0, 0), (2, 2, 0), (0, 2, 0)])
+    scene, stats = _load(tmp_path, doc)
+    g = scene.groups[0]
+    assert len(g.mesh.faces) == 1
+    assert stats["faces"] == 1
+
+
+def test_solid_corners_unswap_their_z_order(tmp_path):
+    # SOLID stores its quad zigzagged (0,1,3,2 walks the perimeter); imported
+    # naively it makes a bow-tie. The area tells: a 2x2 square is 4, the
+    # bow-tie folds to ~0.
+    doc = _doc()
+    doc.modelspace().add_solid([(0, 0), (2, 0), (0, 2), (2, 2)])
+    scene, _ = _load(tmp_path, doc)
+    f = scene.groups[0].mesh.faces[0]
+    assert abs(f.area() - 4.0) < 1e-6
+
+
+def test_a_triangulated_plane_merges_back_to_one_face(tmp_path):
+    """SketchUp's "Merge coplanar faces" option, always on: a CAD export
+    that triangulated a slab comes back as the slab."""
+    doc = _doc()
+    msp = doc.modelspace()
+    msp.add_3dface([(0, 0, 0), (4, 0, 0), (4, 3, 0)])
+    msp.add_3dface([(0, 0, 0), (4, 3, 0), (0, 3, 0)])
+    scene, _ = _load(tmp_path, doc)
+    g = scene.groups[0]
+    assert len(g.mesh.faces) == 1            # the diagonal dissolved
+    assert abs(g.mesh.faces[0].area() - 12.0) < 1e-6
+
+
+# ---- The lying header (D2) --------------------------------------------------
+def test_a_lying_millimetre_header_is_vetoed_by_the_drawing(tmp_path):
+    """Detalles Plaza Yanque's disease: $INSUNITS says mm, the drawing is
+    1 unit = 1 metre. Median entity size rules mm out; metres suggested."""
+    from formats.dxf_in import open_document, suggest_unit_scale
+
+    doc = _doc(4)                            # header claims millimetres
+    msp = doc.modelspace()
+    for i in range(30):                      # walls 3-6 "units" long
+        msp.add_line((i, 0), (i, 3.0 + (i % 4)))
+    path = _save(doc, tmp_path)
+    scale, code = suggest_unit_scale(open_document(path))
+    assert code == 4                         # the header still says mm...
+    assert scale == 1.0                      # ...and the drawing says metres
+
+
+def test_an_honest_header_is_believed(tmp_path):
+    from formats.dxf_in import open_document, suggest_unit_scale
+
+    doc = _doc(4)                            # mm, honestly: walls 3500 units
+    msp = doc.modelspace()
+    for i in range(30):
+        msp.add_line((i * 1000, 0), (i * 1000, 3500))
+    path = _save(doc, tmp_path)
+    scale, code = suggest_unit_scale(open_document(path))
+    assert (scale, code) == (0.001, 4)
+
+
+def test_the_display_name_survives_a_file_with_blocks(tmp_path):
+    """Regression: the block loop shadowed the ``name`` parameter, so the
+    layer-0 group of a real DWG came out named after the LAST BLOCK in the
+    file ('asrco') instead of the drawing."""
+    doc = _doc()
+    blk = doc.blocks.new("asrco")
+    blk.add_line((0, 0), (1, 0))
+    msp = doc.modelspace()
+    msp.add_blockref("asrco", (5, 5))
+    msp.add_line((0, 0), (2, 0))             # layer-0 loose content
+    scene = Scene()
+    load_dxf(scene, _save(doc, tmp_path), scale=1.0,
+             name="Detalles Plaza Yanque")
+    loose = next(g for g in scene.groups
+                 if g.layer is None and g.xform is None)
+    assert loose.name == "Detalles Plaza Yanque"
