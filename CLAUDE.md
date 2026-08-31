@@ -128,10 +128,32 @@ Estado del código MIRADO antes de estimar; el orden es la recomendación, no el
    HLR/láminas ya filtraban. DIFERIDO: modo «ver geometría oculta»
    (punteado + clicable) y export del flag al `.skp` (el escritor openskp
    hoy es por cara, no por arista). Tests: `tests/test_hide_edges.py`.
-2. **Editor de estilos.** `core.style.Style` ya es un dato con `to_dict`/
-   `from_dict` (modo de cara, aristas, perfiles, colores, cielo, relleno de
-   sección) y el compositor ya aplica estilo por marco. **Falta el panel** para
-   editarlos, guardarlos con nombre y aplicarlos.
+2. **✅ Editor de estilos — HECHO 2026-08-31.** `StylesPanel` en la bandeja de
+   Propiedades (entre Escenas y Materiales): combo de estilos (integrados +
+   biblioteca del usuario), edición EN VIVO del `display_style` activo (modo
+   de cara, aristas/perfiles/cielo/relleno + 4 colores), «Guardar estilo…» /
+   Eliminar. La biblioteca vive en QSettings `styles/user` (JSON, mismo patrón
+   que las fuentes de mapa custom, con `.sync()`); `core.style` ganó
+   `user_styles`/`save_user_style`/`delete_user_style` y **`style_by_name`
+   resuelve también la biblioteca** → los marcos del compositor pueden
+   referenciar `style:<nombre de usuario>` (su combo los lista; se puebla al
+   abrir el compositor, no en caliente). Un nombre integrado se rechaza al
+   guardar (los presets son el vocabulario estable de las referencias).
+   Sincronía en ambos sentidos vía `_sync_style_menu` (menú Cámara ▸ Estilo ⇄
+   panel). No deshacible, como el panel de cotas. El `.igz` y las escenas ya
+   llevaban el dict completo del estilo, así que un documento no depende de la
+   biblioteca. Tests: `tests/test_style_editor.py`.
+   **Del dogfooding del mismo día:** (a) `sky_color`/`ground_color` ahora son
+   DATO del estilo (eran constantes del render — "no puedo cambiar el color
+   del sky"); (b) **cielo y suelo con degradado** hacia bruma blanca en el
+   horizonte (`_sky_gradient`, matemática pura testeable; color por vértice
+   vía `_create_dynamic_color`, la línea del horizonte se deriva de los dos
+   tonos); (c) lección de UX que costó dos iteraciones: **desactivar una
+   muestra de color que "no se ve en este modo" fue peor** — Marco leyó "no
+   puedo cambiarlo"; lo correcto es siempre editable + aviso en barra de
+   estado de dónde se verá (`_color_hint`). Texturas de cielo/suelo tipo
+   render: DIFERIDO a propósito — el suelo actual es quad de pantalla, no
+   plano del mundo; las sombras reales dan más "render" por menos.
 3. **Ventana de configuración.** Hoy los ajustes están sueltos en QSettings
    (`language`, `import/obj_unit`, `ia/*`, el modo del resto del modelo al
    editar…). Recogerlos en un sitio es trabajo de UI, no de motor.
