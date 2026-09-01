@@ -62,4 +62,12 @@ capturas/
 # Flatpak builder state and staging (packaging/flatpak/build-flatpak.sh)
 packaging/flatpak/.flatpak-builder/
 packaging/flatpak/.staging/
-vendor/
+# vendor/ stays out of git EXCEPT the LibreDWG satellite the packages need
+# (DWG import): a 15 MB static-ish ELF beats "DXF yes, DWG no" in a release.
+vendor/*
+!vendor/libredwg
+vendor/libredwg/*
+!vendor/libredwg/bin
+vendor/libredwg/bin/*
+!vendor/libredwg/bin/dwg2dxf
+!vendor/libredwg/SOURCES.md

@@ -39,7 +39,7 @@ jobs:
         run: |
           python -m venv venv
           ./venv/bin/python -m pip install --quiet --upgrade pip
-          ./venv/bin/python -m pip install --quiet PySide6 numpy pytest pyinstaller
+          ./venv/bin/python -m pip install --quiet PySide6 numpy pytest pyinstaller 'ezdxf>=1.4.4'
           # openskp: UPSTREAM main — every IngeTrazo patch is merged there
           # (legacy corpus 186/186 PRs #194/#199, annotations write+read
           # PR #203). Pinned by SHA like build-windows.yml so both
@@ -104,3 +104,81 @@ jobs:
           gh release upload "${GITHUB_REF_NAME}" \
             dist/IngeTrazo-*-x86_64.AppImage \
             dist/IngeTrazo-*-linux-x86_64.tar.gz --clobber
+  snap:
+    name: Snap (x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python dependencies
+        run: |
+          python -m venv venv
+          ./venv/bin/python -m pip install --quiet --upgrade pip
+          ./venv/bin/python -m pip install --quiet PySide6 numpy pyinstaller 'ezdxf>=1.4.4'
+          ./venv/bin/python -m pip install --quiet "openskp @ git+https://github.com/iamahsanmehmood/openskp@f79e9b1871b2ee03ad2a77ac5f86536725d233de#subdirectory=packages/python"
+
+      - name: Build the PyInstaller bundle
+        run: |
+          ./venv/bin/python -m PyInstaller --noconfirm ingetrazo.spec
+          dist/ingetrazo/ingetrazo --check
+
+      - name: Stage the snap tree
+        run: |
+          VERSION=$(./venv/bin/python -c 'from core.version import __version__; print(__version__)')
+          mkdir -p build/snap-stage/snap/gui build/snap-stage/payload
+          sed "s/@VERSION@/$VERSION/" packaging/snap/snapcraft.yaml.in \
+            > build/snap-stage/snap/snapcraft.yaml
+          cp -a dist/ingetrazo/. build/snap-stage/payload/
+          cp resources/icons/ingetrazo_256.png build/snap-stage/snap/gui/ingetrazo.png
+          # Desktop entry: same as the tarball's, with the snap's icon path.
+          sed -e 's|^Icon=.*|Icon=${SNAP}/meta/gui/ingetrazo.png|' \
+              packaging/ingetrazo.desktop > build/snap-stage/snap/gui/ingetrazo.desktop
+
+      - name: Build the snap
+        id: snapbuild
+        uses: snapcore/action-build@v1
+        with:
+          path: build/snap-stage
+
+      # --check proves the confined bundle still finds its own data (the
+      # same gate the AppImage passes); a GUI smoke needs a session bus the
+      # runner lacks under confinement, so data integrity is the gate here.
+      - name: Smoke test the snap
+        run: |
+          sudo snap install --dangerous "${{ steps.snapbuild.outputs.snap }}"
+          snap run ingetrazo --check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IngeTrazo-snap-x86_64
+          path: ${{ steps.snapbuild.outputs.snap }}
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
+            || gh release create "${GITHUB_REF_NAME}" --title "IngeTrazo ${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" "${{ steps.snapbuild.outputs.snap }}" --clobber
+
+      # Publishes to the Snap Store ONLY when the repository carries the
+      # credential (snapcraft export-login → secret SNAPCRAFT_STORE_CREDENTIALS
+      # — and the name must be registered once: `snapcraft register ingetrazo`).
+      # Without it the job still succeeds with the .snap as a release asset.
+      - name: Publish to the Snap Store (if credentials exist)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          if [ -z "$SNAPCRAFT_STORE_CREDENTIALS" ]; then
+            echo "Sin SNAPCRAFT_STORE_CREDENTIALS — se omite la publicación."
+            exit 0
+          fi
+          sudo snap install snapcraft --classic
+          snapcraft upload "${{ steps.snapbuild.outputs.snap }}" --release=stable

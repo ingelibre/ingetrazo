@@ -65,6 +65,14 @@ for opt_src, opt_dst in [
     if (ROOT / opt_src).is_dir():
         datas.append((opt_src, opt_dst))
 
+# The DWG satellite (LibreDWG dwg2dxf, see vendor/libredwg/SOURCES.md):
+# Linux-only ELF, found by formats/dwg_bridge.py at vendor/libredwg/bin
+# inside the bundle. The Windows build skips it — DWG on Windows stays a
+# documented gap until a dwg2dxf.exe exists.
+import sys as _sys
+if _sys.platform.startswith("linux"):
+    datas.append(('vendor/libredwg/bin/dwg2dxf', 'vendor/libredwg/bin'))
+
 # ── Hidden imports ───────────────────────────────────────────────────────────
 hiddenimports = [
     # Qt submodules sometimes missed by static analysis.
@@ -74,6 +82,14 @@ hiddenimports = [
     # Lazily imported project modules (inside functions) — listed for safety.
     'core.text3d',
     'core.textlabel',
+]
+
+# ezdxf (DXF/DWG import) is imported INSIDE functions — without this the
+# packaged build ships with CAD import dead (the core.ai lesson again).
+# collect_submodules because ezdxf lazy-loads its own internals too.
+from PyInstaller.utils.hooks import collect_submodules
+hiddenimports += collect_submodules('ezdxf')
+hiddenimports += [
     # The bundled plugins import these at RUN time, so static analysis never
     # sees them and they were left out: the AI assistant died on load with
     # "cannot import name 'ai' from 'core'" in every packaged build.

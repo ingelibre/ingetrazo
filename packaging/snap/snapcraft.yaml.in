@@ -1,0 +1,67 @@
+# IngeTrazo snap — strict confinement, wrapping the PyInstaller bundle.
+#
+# The CI (release.yml, job "snap") stages this template with @VERSION@
+# substituted, drops the onedir bundle in ./payload and the desktop entry
+# in snap/gui/, then snapcore/action-build packs it. The bundle carries its
+# own Qt; the stage-packages below cover exactly what the bundle EXPECTS
+# from the host (libX11 and friends are excluded from the bundle since the
+# NVIDIA fix — inside a snap "the host" is core22 plus these packages) plus
+# GL dispatch and fonts, which a bare core22 lacks.
+name: ingetrazo
+base: core22
+version: "@VERSION@"
+title: IngeTrazo
+summary: Modelado 3D libre para arquitectura e ingeniería civil
+description: |
+  Modelador 3D estilo SketchUp para arquitectura, ingeniería civil e
+  impresión 3D, libre (GPL-3.0) y en español. Sombras con la posición real
+  del sol (estudio de asoleamiento), secciones, láminas para imprimir,
+  importación de SKP/DXF/DWG/DAE/OBJ/GLB, terreno georreferenciado con mapa
+  base, etiquetado BIM (IFC) y biblioteca de componentes y materiales.
+  Parte del ecosistema IngePresupuestos: terreno → trazo → BIM → presupuesto.
+license: GPL-3.0-or-later
+website: https://ingetrazo.com
+contact: https://github.com/ingelibre/ingetrazo/issues
+grade: stable
+confinement: strict
+
+apps:
+  ingetrazo:
+    command: opt/ingetrazo/ingetrazo
+    plugs:
+      - opengl
+      - x11
+      - wayland
+      - desktop
+      - desktop-legacy
+      - home
+      - network
+      - removable-media
+    environment:
+      # xcb (X11/XWayland) for the first snap iteration: stable everywhere.
+      # Native Wayland inside strict confinement is a later refinement.
+      QT_QPA_PLATFORM: xcb
+      FONTCONFIG_PATH: $SNAP/etc/fonts
+
+parts:
+  bundle:
+    plugin: dump
+    source: payload
+    override-build: |
+      mkdir -p "$CRAFT_PART_INSTALL/opt/ingetrazo"
+      cp -a "$CRAFT_PART_SRC/." "$CRAFT_PART_INSTALL/opt/ingetrazo/"
+    stage-packages:
+      - libgl1
+      - libegl1
+      - libopengl0
+      - libx11-6
+      - libx11-xcb1
+      - libxcb-glx0
+      - libxkbcommon-x11-0
+      - libxcb-cursor0
+      - libxcb-icccm4
+      - libxcb-keysyms1
+      - libxcb-shape0
+      - libfontconfig1
+      - fontconfig-config
+      - fonts-dejavu-core

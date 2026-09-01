@@ -4,6 +4,68 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.3.8] — 2026-08-31
+
+**La release del sol.** Un solo día de trabajo mano a mano: cada pieza se
+probó en vivo contra SketchUp antes de darse por buena.
+
+### Añadido
+- **Sombras con el sol de verdad.** No una luz de adorno: la posición solar
+  se calcula con las ecuaciones de la NOAA para la geolocalización del
+  modelo (o Arequipa si no tiene), por fecha y hora — un **estudio de
+  asoleamiento**, el entregable que SketchUp cobra. Panel de Sombras al
+  estilo SketchUp: fecha con slider del año por meses, hora acotada de
+  amanecer a atardecer (imposible dejar el sol bajo el horizonte sin darse
+  cuenta), oscuridad, zona horaria automática por longitud, y «Añadir
+  localización…» sobre el mapa. Las reglas finas también son las de
+  SketchUp: **el vidrio (opacidad <70 %) no proyecta**, los personajes 2D
+  proyectan su silueta orientada al sol (quieta al orbitar), la malla y las
+  hojas proyectan su trama, y el sombreado de caras sigue al sol. Orbitar y
+  hacer zoom reutilizan el mapa de sombras: el costo se paga al editar, no
+  al mirar. Las láminas del compositor salen con sombras.
+- **Import de CAD**: `.dxf` con ezdxf y `.dwg` vía el satélite LibreDWG
+  (incluido en los paquetes de Linux). Capas → grupos etiquetados, bloques →
+  componentes, la unidad se sugiere **midiendo el dibujo** (las cabeceras
+  CAD mienten), y las coordenadas UTM de topografía se recentran solas.
+  Doble clic en un `.dxf`/`.dwg` abre. En Windows, DWG queda para una
+  siguiente entrega (falta el satélite .exe); DXF sí va.
+- **Imágenes de referencia** (`Archivo ▸ Importar ▸ Imagen`): un plano
+  escaneado o una foto como fondo para calcar — da plano de trabajo y snap,
+  viaja dentro del `.igz`, y se puede bloquear para que no estorbe.
+- **Escalar como SketchUp**: el cajón amarillo con agarraderas por esquina
+  (uniforme), arista (2 ejes) y cara (1 eje), Ctrl desde el centro, Shift
+  uniforme, factor negativo para espejar, y el VCB acepta factor, `a;b` por
+  eje o medida absoluta con unidad.
+- **Ocultar/mostrar aristas** (Edición y clic derecho), con **Mayús+goma**
+  para ocultar de pasada, como en SketchUp.
+- **Editor de estilos**: panel con los estilos integrados y una biblioteca
+  personal («Guardar estilo…»), colores de cielo y suelo con **degradado
+  atmosférico**, y los estilos guardados disponibles por marco en las
+  láminas.
+- **Ventana ▸ Preferencias**: idioma, resto del modelo al editar, unidades
+  sugeridas de import, coordenadas geo/UTM, y el Asistente IA — más
+  **auto-guardado con recuperación** tras un cierre abrupto, **copia de
+  seguridad** del archivo anterior a cada guardado, invertir la rueda del
+  ratón y el suavizado MSAA configurable en vivo.
+- **Ctrl+0 — pantalla limpia** (como AutoCAD): solo el modelo, para
+  presentar; Ctrl+0 otra vez y el espacio de trabajo vuelve tal cual.
+- **Malla cocada** en la biblioteca de materiales (Metal): rombos a escala
+  real con transparencia — y su sombra proyecta el tejido.
+
+### Cambiado
+- **Estilos, Sombras y Estilo de cota ya no viven en la bandeja derecha**:
+  son desplegables del toolbar «Paneles» — se abren bajo el botón y se
+  pliegan al hacer clic fuera. La bandeja de Propiedades respira.
+- **La disposición de toolbars y paneles se recuerda** entre sesiones, y las
+  instalaciones nuevas arrancan con el orden de fábrica (Dibujo vertical a
+  la izquierda).
+- Las figuras de personas se sanearon por dentro (su tinta interior
+  translúcida perforaba la silueta con puntitos del color de los ejes).
+
+### Corregido
+- El caché de texturas GL ya no se fuga al abrir otro documento.
+- Un crash nativo ahora deja autopsia en `ingetrazo-crash.log`.
+
 ## [0.3.7.1] — 2026-08-28
 
 **La 0.3.7 revisada en inglés.** Marco la usó con la interfaz en ese idioma
