@@ -173,6 +173,9 @@ GL_FRAMEBUFFER = 0x8D40
 GL_READ_FRAMEBUFFER = 0x8CA8
 GL_DRAW_FRAMEBUFFER = 0x8CA9
 GL_NEAREST = 0x2600
+GL_TEXTURE_2D = 0x0DE1
+GL_TEXTURE0 = 0x84C0
+GL_TEXTURE1 = 0x84C1
 GL_MAX_TEXTURE_SIZE = 0x0D33
 
 
@@ -474,6 +477,7 @@ class Viewport(QOpenGLWidget):
         # single call (the shaded material colour rides per vertex).
         # Textured faces (pos+uv VBO) grouped by image path: [(path, start, count)].
         self._tex_faces_count = 0
+        self._tex_opaque_count = 0
         self._tex_runs: list = []
         self._back_vcol_run: tuple = (0, 0)
         self._back_tex_runs: list = []
@@ -639,6 +643,29 @@ class Viewport(QOpenGLWidget):
                           for i in range(4)]
         self._loc_clip_plane = self._program.uniformLocation("u_clip_plane")
         self._loc_clip_enable = self._program.uniformLocation("u_clip_enable")
+        # Sun shadows (core/sun.py): sampling uniforms on the main program,
+        # plus the tiny depth-only program the shadow map renders with.
+        self._loc_shadow_enable = self._program.uniformLocation(
+            "u_shadow_enable")
+        self._loc_shadow_map = self._program.uniformLocation("u_shadow_map")
+        self._loc_light_vp = self._program.uniformLocation("u_light_vp")
+        self._loc_shadow_dark = self._program.uniformLocation("u_shadow_dark")
+        self._loc_shadow_bias = self._program.uniformLocation("u_shadow_bias")
+        self._loc_sun_dir = self._program.uniformLocation("u_sun_dir")
+        self._loc_shadow_overlay = self._program.uniformLocation(
+            "u_shadow_overlay")
+        self._depth_program = self._compile_depth_program()
+        self._loc_d_mvp = self._depth_program.uniformLocation("u_mvp")
+        self._loc_d_clip_plane = self._depth_program.uniformLocation(
+            "u_clip_plane")
+        self._loc_d_clip_enable = self._depth_program.uniformLocation(
+            "u_clip_enable")
+        self._loc_d_use_tex = self._depth_program.uniformLocation(
+            "u_use_texture")
+        self._loc_d_tex = self._depth_program.uniformLocation("u_tex")
+        self._shadow_fbo = None
+        self._shadow_key = None
+        self._shadow_vp = None
 
         # Axes rebuilt per frame (dash spacing scales with zoom), so dynamic.
         self._axes_vao, self._axes_vbo = self._create_dynamic()
@@ -646,6 +673,8 @@ class Viewport(QOpenGLWidget):
 
         self._sky_vao, self._sky_vbo = self._create_dynamic()
         self._sky_grad_vao, self._sky_grad_vbo = self._create_dynamic_color()
+        self._ground_vao, self._ground_vbo = self._create_dynamic()
+        self._shadow_bb_vao, self._shadow_bb_vbo = self._create_dynamic_uv()
         self._edges_vao, self._edges_vbo = self._create_dynamic()
         self._selected_vao, self._selected_vbo = self._create_dynamic()
         self._sel_faces_vao, self._sel_faces_vbo = self._create_dynamic()
@@ -891,6 +920,42 @@ class Viewport(QOpenGLWidget):
         self._sync_edges()
         _fmark("sync")
 
+        # Sun shadow map — AFTER the sync, so the consolidated VBOs hold
+        # THIS frame's geometry; cached across frames by geometry+sun (it is
+        # camera-independent: orbit and zoom reuse it). The pass borrows the
+        # FBO/program bindings; this block restores them and binds the map
+        # on texture unit 1 for the geometry passes to sample.
+        self._frame_shadow = (self._ensure_shadow_map()
+                              if mode in ("textures", "shaded",
+                                          "hidden_line", "monochrome")
+                              else None)
+        if self._frame_shadow is not None:
+            self._scene_fbo.bind()
+            self._gl.glViewport(0, 0, w, h)
+            self._program.bind()
+            self._gl.glActiveTexture(GL_TEXTURE1)
+            self._gl.glBindTexture(GL_TEXTURE_2D,
+                                   self._frame_shadow.texture())
+            self._gl.glActiveTexture(GL_TEXTURE0)
+            self._program.setUniformValue(self._loc_shadow_map, 1)
+            self._program.setUniformValue(self._loc_light_vp,
+                                          self._shadow_vp)
+            sh = getattr(self.scene, "shadows", None)
+            self._program.setUniformValue1f(
+                self._loc_shadow_dark,
+                float(getattr(sh, "darkness", 0.55)))
+            # Small constant margin on the receiver; the heavy lifting is
+            # the slope-scaled bias the CASTER writes (depth.frag) — a
+            # constant big enough to silence grazing faces peeled every
+            # shadow off its base instead.
+            self._program.setUniformValue1f(self._loc_shadow_bias, 0.0006)
+            sun = getattr(self, "_frame_sun", None) or (0.0, 0.0, 1.0)
+            self._program.setUniformValue(
+                self._loc_sun_dir, QVector3D(sun[0], sun[1], sun[2]))
+        self._program.setUniformValue(self._loc_shadow_enable, 0)
+        self._program.setUniformValue(self._loc_shadow_overlay, 0)
+        _fmark("shadowmap")
+
         # Frustum culling (P1): the consolidated VBOs carry per-chunk draw
         # spans; only spans whose chunk AABB touches the frustum are
         # submitted. Conservative — a missing bbox always draws.
@@ -927,6 +992,9 @@ class Viewport(QOpenGLWidget):
         # Faces — drawn before edges, with polygon offset so coincident
         # boundary edges sit cleanly on top instead of z-fighting.
         self._set_section_clip(True)
+        if getattr(self, "_frame_shadow", None) is not None:
+            self._draw_shadow_ground(style)
+            self._program.setUniformValue(self._loc_shadow_enable, 1)
         if self._faces_count > 0 and mode != "wireframe":
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
@@ -1078,6 +1146,10 @@ class Viewport(QOpenGLWidget):
         # prototype's local VBOs with per-instance matrices — the
         # consolidated passes above excluded them in _sync_edges.
         self._draw_instanced_faces(mode, style)
+        # Shadows stop at the face passes: edges, overlays, previews and
+        # billboards stay unlit (v1 scope).
+        if getattr(self, "_frame_shadow", None) is not None:
+            self._program.setUniformValue(self._loc_shadow_enable, 0)
 
         # Back-side material overrides (faces painted DIFFERENTLY per side,
         # SketchUp two-sided paint): drawn with front-face culling so they
@@ -1391,6 +1463,19 @@ class Viewport(QOpenGLWidget):
         )
         if not (ok_v and ok_f and prog.link()):
             raise RuntimeError("shader compile/link failed:\n" + prog.log())
+        return prog
+
+    def _compile_depth_program(self) -> QOpenGLShaderProgram:
+        prog = QOpenGLShaderProgram(self)
+        ok_v = prog.addShaderFromSourceFile(
+            QOpenGLShader.Vertex, str(SHADER_DIR / "depth.vert")
+        )
+        ok_f = prog.addShaderFromSourceFile(
+            QOpenGLShader.Fragment, str(SHADER_DIR / "depth.frag")
+        )
+        if not (ok_v and ok_f and prog.link()):
+            raise RuntimeError(
+                "depth shader compile/link failed:\n" + prog.log())
         return prog
 
     def _upload_static(self, data: array):
@@ -2598,6 +2683,284 @@ class Viewport(QOpenGLWidget):
         self._gl.glEnable(GL_DEPTH_TEST)
         self._gl.glDepthMask(GL_TRUE)
 
+    # ---- Sun shadows (core/sun.py) ------------------------------------------
+    _SHADOW_MAP_SIZE = 2048
+    #: SketchUp's documented rule: materials under 70 % opacity cast no
+    #: shadow — the sun passes through glass.
+    _SHADOW_OPACITY_MIN = 0.7
+
+    def _sun_dir_now(self):
+        """Unit vector toward the sun for the scene's shadow settings —
+        ``None`` when there is nothing to cast (shadows off, kill switch
+        ``INGETRAZO_NO_SHADOWS``, a sheet plan style, night, or a date that
+        does not exist in a hand-edited file)."""
+        import os
+        if os.environ.get("INGETRAZO_NO_SHADOWS"):
+            return None
+        if self.plano_style is not None:
+            return None
+        sh = getattr(self.scene, "shadows", None)
+        if sh is None or not getattr(sh, "enabled", False):
+            return None
+        import datetime as _dt
+        from core import sun
+        datum = getattr(self.scene, "georef", None)
+        lat = getattr(datum, "lat", None)
+        lon = getattr(datum, "lon", None)
+        if lat is None or lon is None:
+            lat, lon = sun.DEFAULT_LAT, sun.DEFAULT_LON
+        try:
+            when = sh.when_utc(lon, year=_dt.date.today().year)
+        except ValueError:
+            return None
+        return sun.sun_direction(lat, lon, when)
+
+    @staticmethod
+    def _light_vp(d, lo, hi):
+        """The sun's orthographic view-projection fitted around the model —
+        and around the z=0 ground patch that receives. Ortho keeps the
+        packed depth linear."""
+        cx = (lo.x() + hi.x()) / 2.0
+        cy = (lo.y() + hi.y()) / 2.0
+        loz = min(lo.z(), 0.0)
+        cz = (loz + hi.z()) / 2.0
+        # Half-diagonal of the dominant extent (≤ 0.87×max side), with
+        # margin so rims never clip against the map's edge.
+        r = max(hi.x() - lo.x(), hi.y() - lo.y(), hi.z() - loz, 2.0) * 0.87
+        r *= 1.25
+        center = QVector3D(cx, cy, cz)
+        eye = center + QVector3D(d[0], d[1], d[2]) * (r * 2.0)
+        up = (QVector3D(0.0, 0.0, 1.0) if abs(d[2]) < 0.95
+              else QVector3D(0.0, 1.0, 0.0))
+        view = QMatrix4x4()
+        view.lookAt(eye, center, up)
+        proj = QMatrix4x4()
+        # Eye sits 2r from center; everything lives within r of it.
+        proj.ortho(-r, r, -r, r, r * 0.5, r * 3.5)
+        return proj * view
+
+    def _ensure_shadow_map(self):
+        """Build or reuse the packed-depth shadow map. Camera-independent:
+        keyed by geometry version + sun + cut + bounds, so orbit and zoom
+        REUSE it — only an edit, the clock or the section rebuilds."""
+        d = self._sun_dir_now()
+        self._frame_sun = d
+        if d is None:
+            self._shadow_vp = None
+            return None
+        lo, hi = self.scene.bounds()
+        if lo is None:
+            self._shadow_vp = None
+            return None
+        clip = getattr(self, "_clip_vec", None)
+        key = (self.scene.version, id(self.scene.mesh),
+               getattr(self, "_preview_epoch", 0),
+               tuple(round(v, 4) for v in d),
+               None if clip is None else (round(clip.x(), 4),
+                                          round(clip.y(), 4),
+                                          round(clip.z(), 4),
+                                          round(clip.w(), 4)),
+               round(lo.x(), 2), round(lo.y(), 2), round(lo.z(), 2),
+               round(hi.x(), 2), round(hi.y(), 2), round(hi.z(), 2))
+        if self._shadow_fbo is not None and self._shadow_key == key:
+            return self._shadow_fbo
+        if self._shadow_fbo is None:
+            fmt = QOpenGLFramebufferObjectFormat()
+            fmt.setAttachment(QOpenGLFramebufferObject.CombinedDepthStencil)
+            self._shadow_fbo = QOpenGLFramebufferObject(
+                self._SHADOW_MAP_SIZE, self._SHADOW_MAP_SIZE, fmt)
+        vp = self._light_vp(d, lo, hi)
+        self._render_shadow_map(vp)
+        self._shadow_key = key
+        self._shadow_vp = vp
+        return self._shadow_fbo
+
+    def _render_shadow_map(self, light_vp) -> None:
+        """Depth-from-the-sun pass: every caster — the consolidated face
+        VBOs plus ALL instanced components (no camera culling here: an
+        off-screen tree still throws its shadow into the frame) — drawn
+        with the depth program into the packed-depth FBO. The active
+        section cut applies, so severed geometry does not cast. The caller
+        restores the scene FBO/program bindings this pass borrows."""
+        size = self._SHADOW_MAP_SIZE
+        fbo = self._shadow_fbo
+        fbo.bind()
+        self._gl.glViewport(0, 0, size, size)
+        self._gl.glClearColor(1.0, 1.0, 1.0, 1.0)
+        self._gl.glClearDepthf(1.0)
+        self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        self._gl.glEnable(GL_DEPTH_TEST)
+        self._gl.glDepthFunc(GL_LEQUAL)
+        self._gl.glDepthMask(GL_TRUE)
+        self._gl.glDisable(GL_BLEND)
+        prog = self._depth_program
+        prog.bind()
+        prog.setUniformValue(self._loc_d_mvp, light_vp)
+        prog.setUniformValue(self._loc_d_use_tex, 0)
+        clip = getattr(self, "_clip_vec", None)
+        if clip is not None:
+            prog.setUniformValue(self._loc_d_clip_plane, clip)
+            prog.setUniformValue(self._loc_d_clip_enable, 1)
+            self._gl.glEnable(GL_CLIP_DISTANCE0)
+        else:
+            prog.setUniformValue(self._loc_d_clip_enable, 0)
+        # Identity on the instanced-matrix generic attributes for the
+        # non-instanced draws (same reset the main pass does per frame).
+        for i, row in enumerate(((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0),
+                                 (0.0, 0.0, 1.0, 0.0),
+                                 (0.0, 0.0, 0.0, 1.0))):
+            self._gl.glVertexAttrib4f(3 + i, *row)
+        if self._faces_count > 0 or self._tcol_runs:
+            self._faces_vao.bind()
+            if self._faces_count > 0:
+                self._gl.glDrawArrays(GL_TRIANGLES, 0, self._faces_count)
+            # SketchUp's translucency rule: under 70 % opacity a material
+            # casts NO shadow (glass lets the sun through); at or above it,
+            # it casts like a solid.
+            for a, _fc, start, count in self._tcol_runs:
+                if a >= self._SHADOW_OPACITY_MIN:
+                    self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+            self._faces_vao.release()
+        if self._tex_runs or self._ttex_runs:
+            # Textured faces cast with their ALPHA CUTOUT: a chain-link
+            # fence throws its weave, a leaf card its silhouette (texture
+            # unavailable = solid fallback). Translucent runs follow the
+            # 70 % rule above.
+            self._tex_faces_vao.bind()
+            prog.setUniformValue(self._loc_d_tex, 0)
+
+            def _cast_run(path, start, count):
+                tex = self._get_texture(path)
+                if tex is not None:
+                    prog.setUniformValue(self._loc_d_use_tex, 1)
+                    tex.bind(0)
+                    self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                    tex.release(0)
+                else:
+                    prog.setUniformValue(self._loc_d_use_tex, 0)
+                    self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+
+            for (path, _shade), start, count in self._tex_runs:
+                _cast_run(path, start, count)
+            for (path, _shade), a, _fc, start, count in self._ttex_runs:
+                if a >= self._SHADOW_OPACITY_MIN:
+                    _cast_run(path, start, count)
+            prog.setUniformValue(self._loc_d_use_tex, 0)
+            self._tex_faces_vao.release()
+        saved = getattr(self, "_frame_planes", None)
+        self._frame_planes = None      # gather WITHOUT camera culling
+        try:
+            by_proto = self._gather_instanced()
+        finally:
+            self._frame_planes = saved
+        extra = self.context().extraFunctions()
+        for mesh, groups in by_proto.values():
+            entry = self._ensure_proto_draw(mesh)
+            n = self._update_inst_matrices(entry, groups)
+            prog.bind()                # entry building binds the main program
+            if entry["vcol_count"]:
+                entry["vcol_vao"].bind()
+                extra.glDrawArraysInstanced(
+                    GL_TRIANGLES, 0, entry["vcol_count"], n)
+                entry["vcol_vao"].release()
+            if entry["tex_runs"]:
+                # Alpha-cutout casting for instances too — the hedge's
+                # leaves dapple instead of throwing solid slabs.
+                entry["tex_vao"].bind()
+                prog.setUniformValue(self._loc_d_tex, 0)
+                for (path, _shade), s0, cnt in entry["tex_runs"]:
+                    tex = self._get_texture(path)
+                    if tex is not None:
+                        prog.setUniformValue(self._loc_d_use_tex, 1)
+                        tex.bind(0)
+                        extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                        tex.release(0)
+                    else:
+                        prog.setUniformValue(self._loc_d_use_tex, 0)
+                        extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                prog.setUniformValue(self._loc_d_use_tex, 0)
+                entry["tex_vao"].release()
+        # Billboard people cast their SILHOUETTE, as a quad turned toward
+        # the sun — a camera-facing caster would swing its shadow while the
+        # camera orbits (SketchUp's face-me "shadows face sun"). Vector-art
+        # and mesh face-me stay non-casting (documented deferral).
+        sun = getattr(self, "_frame_sun", None)
+        bbs = [g for g in self._placements()
+               if getattr(g, "billboard", False) is True
+               and self.scene.entity_visible(g)]
+        if sun is not None and bbs:
+            face = QVector3D(sun[0], sun[1], 0.0)
+            data = array("f")
+            draws = []
+            uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+            for g in bbs:
+                quad = self._billboard_quad(g, face_dir=face)
+                if quad is None or not quad[1]:
+                    continue
+                corners, path = quad
+                start = len(data) // 5
+                for idx in (0, 1, 2, 0, 2, 3):
+                    c = corners[idx]
+                    u, v = uvs[idx]
+                    data.extend([c.x(), c.y(), c.z(), u, v])
+                draws.append((path, start))
+            if draws:
+                raw = data.tobytes()
+                self._shadow_bb_vbo.bind()
+                self._shadow_bb_vbo.allocate(raw, len(raw))
+                self._shadow_bb_vbo.release()
+                prog.bind()
+                prog.setUniformValue(self._loc_d_use_tex, 1)
+                prog.setUniformValue(self._loc_d_tex, 0)
+                self._shadow_bb_vao.bind()
+                for path, start in draws:
+                    tex = self._get_texture(path)
+                    if tex is None:
+                        continue
+                    tex.bind(0)
+                    self._gl.glDrawArrays(GL_TRIANGLES, start, 6)
+                    tex.release(0)
+                self._shadow_bb_vao.release()
+                prog.setUniformValue(self._loc_d_use_tex, 0)
+        if clip is not None:
+            self._gl.glDisable(GL_CLIP_DISTANCE0)
+        prog.release()
+        fbo.release()
+        self._gl.glEnable(GL_BLEND)
+
+    def _draw_shadow_ground(self, style) -> None:
+        """The on-ground shadow catcher: a world plane just under z=0 that
+        draws ONLY the shadow — translucent black where the sun is blocked,
+        fully transparent where it is not, so the plane itself has no
+        visible colour or edges (SketchUp's on-ground shadows). Skipped
+        over the map, terrain and photo mesh, which bring their own ground;
+        depth writes OFF so below-ground geometry still draws over it and a
+        real floor AT z=0 never z-fights."""
+        if (self._base_map_showing() or self._terrain_showing()
+                or self._photo_showing()):
+            return
+        lo, hi = self.scene.bounds()
+        if lo is None:
+            return
+        cx = (lo.x() + hi.x()) / 2.0
+        cy = (lo.y() + hi.y()) / 2.0
+        r = max(hi.x() - lo.x(), hi.y() - lo.y(), 20.0) * 1.5
+        z = -0.005
+        x0, x1, y0, y1 = cx - r, cx + r, cy - r, cy + r
+        data = array("f", [x0, y0, z, x1, y0, z, x1, y1, z,
+                           x0, y0, z, x1, y1, z, x0, y1, z])
+        self._ground_vbo.bind()
+        self._ground_vbo.allocate(data.tobytes(), len(data) * 4)
+        self._ground_vbo.release()
+        self._program.setUniformValue(self._loc_shadow_enable, 1)
+        self._program.setUniformValue(self._loc_shadow_overlay, 1)
+        self._gl.glDepthMask(GL_FALSE)
+        self._ground_vao.bind()
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, 6)
+        self._ground_vao.release()
+        self._gl.glDepthMask(GL_TRUE)
+        self._program.setUniformValue(self._loc_shadow_overlay, 0)
+
     def _render_tiles(self) -> None:
         if self._terrain_showing():
             return  # the 3D terrain replaces the flat map
@@ -3264,6 +3627,10 @@ class Viewport(QOpenGLWidget):
                 start += n
             self._tex_runs.append((key, run_start, start - run_start))
             self._tex_run_parts.append(run_parts)
+        # Where the OPAQUE textured block ends: the shadow depth pass draws
+        # up to here, then adds only the translucent runs SketchUp says cast
+        # (opacity ≥ 70 %) — glass must let the sun through.
+        self._tex_opaque_count = start
         self._ttex_runs = []
         for full in sorted(ttex_runs):
             key, a, fc = full
@@ -3370,11 +3737,11 @@ class Viewport(QOpenGLWidget):
                     QVector3D.dotProduct(p, v_axis) / sh,
                 ])
 
-    def _billboard_quad(self, group):
+    def _billboard_quad(self, group, face_dir=None):
         """The face-me quad of a billboard group, rotated around its vertical
-        anchor axis to face the camera NOW. Returns (corners[4], tex_path) or
-        ``None``. Shared by the render pass and picking so what you see is
-        what you click."""
+        anchor axis to face the camera NOW (or ``face_dir`` when given).
+        Returns (corners[4], tex_path) or ``None``. Shared by the render
+        pass, picking and the shadow casters."""
         verts = group.mesh.vertices
         if not verts:
             return None
@@ -3411,8 +3778,11 @@ class Viewport(QOpenGLWidget):
         # quad; the legacy textured-quad render skips texture-less groups.
         if w < 1e-9 or h < 1e-9:
             return None
-        d = self.camera.eye() - anchor
-        d.setZ(0.0)
+        # Facing: the camera by default; the shadow pass passes the SUN so a
+        # figure's cast silhouette holds still while the camera orbits
+        # (SketchUp's face-me "shadows face sun").
+        d = face_dir if face_dir is not None else self.camera.eye() - anchor
+        d = QVector3D(d.x(), d.y(), 0.0)
         if d.length() < 1e-6:
             d = QVector3D(1.0, 0.0, 0.0)
         d = d.normalized()

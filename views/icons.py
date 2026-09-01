@@ -736,6 +736,39 @@ def _comp_flecha(p, ink):
     p.drawLine(QPointF(38, 10), QPointF(35, 22))
 
 
+def _styles_icon(p, ink):
+    # Three fanned swatch cards — the material/style deck.
+    p.save()
+    for i, (dx, dy, fill) in enumerate(((0, 6, None), (5, 3, None),
+                                        (10, 0, _accent()))):
+        r = QRectF(10 + dx, 12 + dy, 18, 24)
+        p.setBrush(fill if fill is not None else Qt.NoBrush)
+        p.drawRoundedRect(r, 3, 3)
+    p.restore()
+
+
+def _shadows_icon(p, ink):
+    # A block with its cast shadow, sun rays at the corner.
+    p.save()
+    p.setBrush(QColor(ink.red(), ink.green(), ink.blue(), 90))
+    p.setPen(Qt.NoPen)
+    p.drawPolygon(QPolygonF([QPointF(16, 36), QPointF(34, 36),
+                             QPointF(42, 42), QPointF(24, 42)]))
+    p.restore()
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(16, 20, 16, 16))
+    _dot(p, 12, 12, 4.0)
+    p.save()
+    pen = QPen(_accent(), 2.4)
+    pen.setCapStyle(Qt.RoundCap)
+    p.setPen(pen)
+    for ang in (200, 245, 290, 335):
+        a = math.radians(ang)
+        p.drawLine(QPointF(12 + 6.5 * math.cos(a), 12 + 6.5 * math.sin(a)),
+                   QPointF(12 + 10.5 * math.cos(a), 12 + 10.5 * math.sin(a)))
+    p.restore()
+
+
 _DRAW = {
     "select": _select, "line": _line, "freehand": _freehand,
     "rectangle": _rectangle,
@@ -752,6 +785,7 @@ _DRAW = {
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
     "section": _section,
+    "styles": _styles_icon, "shadows": _shadows_icon,
     "section_planes": _section_planes, "section_cuts": _section_cuts,
     "section_fill": _section_fill,
     "zoom": _zoom, "zoom_window": _zoom_window,

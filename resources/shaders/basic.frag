@@ -24,11 +24,80 @@ uniform float u_shade;
 // 0 = untouched.
 uniform float u_fade;
 uniform vec3 u_fade_color;
+// Sun shadows: the light's view-projection, its packed-depth map (unit 1),
+// how dark a shadowed fragment goes, and the depth-compare bias. Enabled
+// only around the geometry passes — sky, overlays and previews stay unlit.
+uniform int u_shadow_enable;
+uniform sampler2D u_shadow_map;
+uniform mat4 u_light_vp;
+uniform float u_shadow_dark;
+uniform float u_shadow_bias;
+// Unit vector toward the sun — with shadows on, faces are shaded BY THE SUN
+// (SketchUp's "use sun for shading"): the per-fragment normal comes from
+// screen derivatives of the world position (exact on flat faces, no vertex
+// data needed), oriented toward the viewer so the VISIBLE side is judged.
+uniform vec3 u_sun_dir;
+// 1 while drawing the ground-shadow catcher: instead of a coloured surface
+// it outputs ONLY the shadow, as translucent black — where the sun reaches
+// it is fully transparent, so the plane has no visible shape or edges
+// (SketchUp's on-ground shadows are these same floating dark stains).
+uniform int u_shadow_overlay;
 
 in vec2 v_uv;
 in vec3 v_color;
+in vec3 v_world;
 
 out vec4 fragColor;
+
+// Fraction of light reaching this fragment (0..1): 3x3 PCF over the
+// packed-depth shadow map. Outside the map = fully lit.
+float shadow_light() {
+    vec4 lp = u_light_vp * vec4(v_world, 1.0);
+    vec3 uvz = lp.xyz / lp.w * 0.5 + 0.5;
+    if (uvz.x <= 0.0 || uvz.x >= 1.0 || uvz.y <= 0.0 || uvz.y >= 1.0
+            || uvz.z >= 1.0) {
+        return 1.0;
+    }
+    vec2 texel = 1.0 / vec2(textureSize(u_shadow_map, 0));
+    // Receiver-plane depth correction (Isidoro): each PCF tap compares the
+    // stored depth against the receiver PLANE evaluated AT the tap, not
+    // against the centre fragment. The plane's depth gradient in MAP UV
+    // space comes from the screen derivatives through the inverse Jacobian
+    // — both components, so diagonal taps on a surface lying oblique to
+    // the sun stay exact (a per-axis slope estimate under-covered them by
+    // up to 2× and striped grazing faces with moiré acne). The clamp keeps
+    // a degenerate 2×2 quad (silhouette pixels) from blowing the plane up.
+    vec3 ddx = dFdx(uvz);
+    vec3 ddy = dFdy(uvz);
+    float det = ddx.x * ddy.y - ddx.y * ddy.x;
+    vec2 grad = (abs(det) > 1e-12)
+        ? vec2(ddy.y * ddx.z - ddx.y * ddy.z,
+               ddx.x * ddy.z - ddy.x * ddx.z) / det
+        : vec2(0.0);
+    float glen = length(grad);
+    if (glen > 8.0) {
+        // Cap: a face seen edge-on by the sun has a near-infinite gradient;
+        // uncapped it inflates the margin and paints a wide false-lit band
+        // where such a face meets its roof. 8 covers every face that
+        // actually SHOWS its lighting (the truly parallel ones are dark by
+        // face shading anyway) while keeping the band under ~15 cm.
+        grad *= 8.0 / glen;
+        glen = 8.0;
+    }
+    // Margin: constant term + 1.5 texels of slope along the gradient
+    // (covers the within-texel offset of both receiver and caster raster).
+    float bias = u_shadow_bias + glen * texel.x * 1.5;
+    float lit = 0.0;
+    for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            vec2 off = vec2(dx, dy) * texel;
+            vec3 e = texture(u_shadow_map, uvz.xy + off).rgb;
+            float d = dot(e, vec3(1.0, 1.0 / 255.0, 1.0 / 65025.0));
+            lit += (uvz.z + dot(grad, off) - bias <= d) ? 1.0 : 0.0;
+        }
+    }
+    return lit / 9.0;
+}
 
 // 4x4 Bayer matrix, thresholds strictly inside (0, 1) so alpha 0 always
 // discards and alpha 1 always draws.
@@ -73,6 +142,25 @@ void main() {
         // path), where it is honest "you are looking at the inside" feedback.
         vec4 front = (u_use_vcolor == 1) ? vec4(v_color, u_opacity) : u_color;
         c = (gl_FrontFacing || u_use_vcolor == 1) ? front : u_back_color;
+    }
+    if (u_shadow_enable == 1) {
+        if (u_shadow_overlay == 1) {
+            // Ground catcher: the shadow and nothing else.
+            fragColor = vec4(0.0, 0.0, 0.0,
+                             (1.0 - u_shadow_dark)
+                             * (1.0 - shadow_light()));
+            return;
+        }
+        // Sun shading + cast shadows, composed the SketchUp way: the sun
+        // side of the model is bright, the far side sits at the flat shade
+        // tone, and the map only speaks where the face actually SEES the
+        // sun — a face turned away never samples it, which also kills every
+        // residual bias artifact along its roof line.
+        vec3 nrm = normalize(cross(dFdx(v_world), dFdy(v_world)));
+        float ndl = dot(nrm, u_sun_dir);
+        float lit = (ndl > 0.0) ? shadow_light() : 0.0;
+        c.rgb *= mix(u_shadow_dark, 1.0,
+                     clamp(ndl * 1.5, 0.0, 1.0) * lit);
     }
     fragColor = vec4(mix(c.rgb, u_fade_color, u_fade), c.a);
 }

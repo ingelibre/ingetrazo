@@ -35,6 +35,9 @@ datas = [
     ('resources/colors/*.json',    'resources/colors'),
     ('resources/textures/*.png',   'resources/textures'),
     ('resources/textures/library.json', 'resources/textures'),
+    # Factory window layout (Marco's toolbar arrangement, harvested
+    # 2026-08-31): fresh profiles restore it; user changes override it.
+    ('resources/ui/*.state',       'resources/ui'),
     # The library itself — a whole tree, and it was MISSING: the Materials
     # tray read library.json and then found no images, so every category
     # came up empty in the packaged build (the Flatpak copies all of

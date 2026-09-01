@@ -3004,6 +3004,12 @@
      "name": "metal_dark",
      "sw": 1.0,
      "sh": 1.0
+    },
+    {
+     "file": "metal/chain_link.png",
+     "name": "Chain-link fence",
+     "sw": 0.5,
+     "sh": 0.5
     }
    ]
   },

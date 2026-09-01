@@ -143,6 +143,23 @@ class MainWindow(QMainWindow):
         self._saved_version = self.viewport.scene.version
         self.viewport.sceneVersionChanged.connect(self._on_scene_version_changed)
 
+        # Toolbar/dock layout: the user's own arrangement survives sessions
+        # (saved on close); a fresh profile starts from the factory layout
+        # blob when one is shipped. Restored AFTER every toolbar and dock
+        # exists — saveState matches them by objectName.
+        st = QSettings()
+        state = st.value("ui/window_state")
+        if state is None:
+            from core.paths import app_root
+            factory = app_root() / "resources" / "ui" / "default_layout.state"
+            if factory.is_file():
+                state = factory.read_bytes()
+        if state:
+            self.restoreState(state)
+        geo = st.value("ui/window_geometry")
+        if geo:
+            self.restoreGeometry(geo)
+
         self._setup_autosave()
         # An untitled recovery slot on disk means the last session died with
         # unsaved work (a clean exit clears it) — offer it back, once the
@@ -241,6 +258,35 @@ class MainWindow(QMainWindow):
             lambda _v: self.bim_tray.on_scene_changed())
         self.viewport.sceneVersionChanged.connect(
             lambda _v: self.georef_tray.on_scene_changed())
+
+        # Styles, Shadows and Dimension style hang OFF THE TOOLBAR as
+        # dropdown panels (user: the lateral bar was drowning, and floating
+        # windows felt loose — "¿no hay forma de integrarlo en el
+        # toolbar?"). Click the button, the panel drops under it; click
+        # outside, it folds away.
+        from PySide6.QtWidgets import QToolButton, QWidgetAction
+        from views.tray import DimensionStylePanel, ShadowsPanel, StylesPanel
+        self.styles_panel = StylesPanel(self)
+        self.shadows_panel = ShadowsPanel(self)
+        self.dimstyle_panel = DimensionStylePanel(self)
+        panels_tb = self._new_toolbar(tr("Panels"), "panels_toolbar")
+        for panel, key, title in (
+                (self.styles_panel, "styles", tr("Styles")),
+                (self.shadows_panel, "shadows", tr("Shadows")),
+                (self.dimstyle_panel, "dimension", tr("Dimension style"))):
+            btn = QToolButton(panels_tb)
+            btn.setIcon(tool_icon(key))
+            btn.setToolTip(title)
+            btn.setPopupMode(QToolButton.InstantPopup)
+            btn.setStyleSheet(
+                "QToolButton::menu-indicator { image: none; }")
+            menu = QMenu(btn)
+            wa = QWidgetAction(menu)
+            wa.setDefaultWidget(panel)
+            menu.addAction(wa)
+            btn.setMenu(menu)
+            panels_tb.addWidget(btn)
+            self._icon_actions.append((btn, key))
 
         # Terrain profile dock (Track G, G4) — hidden until requested.
         from views.profile_panel import ProfileDock
@@ -602,6 +648,12 @@ class MainWindow(QMainWindow):
             rest_menu.addAction(act)
             self._rest_actions[key] = act
 
+        # Sun shadows (core/sun.py) — the checkbox mirrors the tray panel.
+        self._act_shadows = QAction(tr("Shadows"), self)
+        self._act_shadows.setCheckable(True)
+        self._act_shadows.toggled.connect(self._on_toggle_shadows)
+        camera_menu.addAction(self._act_shadows)
+
         # SketchUp's View ▸ Section Planes / Cuts / Fill — the same actions
         # as the Sections toolbar buttons (created in _build_toolbar).
         camera_menu.addSeparator()
@@ -665,6 +717,7 @@ class MainWindow(QMainWindow):
         toggle_profile = self.profile_dock.toggleViewAction()
         toggle_profile.setText(tr("Terrain profile"))
         window_menu.addAction(toggle_profile)
+
 
         window_menu.addSeparator()
         prefs_action = QAction(tr("Preferences…"), self)
@@ -1250,11 +1303,21 @@ class MainWindow(QMainWindow):
             act.blockSignals(True)
             act.setChecked(value)
             act.blockSignals(False)
-        # The tray's Styles panel mirrors the same state (guarded: the menu
-        # builds before the tray on startup).
-        tray = getattr(self, "tray", None)
-        if tray is not None and hasattr(tray, "styles"):
-            tray.styles.refresh()
+        # The Styles/Shadows docks mirror the same state (guarded: the menu
+        # builds before the docks on startup). Loads and scene recalls land
+        # here too.
+        sh = getattr(self.viewport.scene, "shadows", None)
+        act = getattr(self, "_act_shadows", None)
+        if act is not None and sh is not None:
+            act.blockSignals(True)
+            act.setChecked(sh.enabled)
+            act.blockSignals(False)
+        panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
+        panel = getattr(self, "shadows_panel", None)
+        if panel is not None:
+            panel.refresh()
 
     def _on_delete_guides(self) -> None:
         """Remove every construction guide (SketchUp's Edit ▸ Delete Guides)."""
@@ -1465,6 +1528,19 @@ class MainWindow(QMainWindow):
         self.viewport.update()
         self.statusBar().showMessage(
             tr("Unhid {n} edge(s).", n=len(edges)), 3000)
+
+    def _on_toggle_shadows(self, on: bool) -> None:
+        """Camera ▸ Shadows: flip the scene's sun on/off (the tray panel
+        holds the date/time/darkness detail)."""
+        sh = getattr(self.viewport.scene, "shadows", None)
+        if sh is None or sh.enabled == bool(on):
+            return
+        sh.enabled = bool(on)
+        self.viewport.scene.version += 1
+        panel = getattr(self, "shadows_panel", None)
+        if panel is not None:
+            panel.refresh()
+        self.viewport.update()
 
     def _on_reverse_faces(self) -> None:
         """SketchUp's Reverse Faces: flip the winding (and thus the front/back
@@ -3256,6 +3332,10 @@ class MainWindow(QMainWindow):
         # session's recovery slot no longer speaks for anyone.
         from core import autosave
         autosave.clear(self._current_path)
+        # The window arrangement (toolbars, docks, size) IS a preference.
+        st = QSettings()
+        st.setValue("ui/window_state", self.saveState())
+        st.setValue("ui/window_geometry", self.saveGeometry())
         # Free every GL texture while a GL context still exists — the survey
         # atlases (hundreds of MB), the tile and terrain textures, and the
         # general texture cache (faces, reference images). Letting Qt tear

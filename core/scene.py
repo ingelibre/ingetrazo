@@ -26,6 +26,11 @@ def _make_style():
     return Style()
 
 
+def _make_shadows():
+    from core.sun import ShadowSettings
+    return ShadowSettings()
+
+
 @dataclass
 class Scene:
     mesh: Mesh = field(default_factory=Mesh)
@@ -76,6 +81,9 @@ class Scene:
     # Active display style (SketchUp Styles): face mode, edges, background.
     # The viewport reads it every frame; scenes snapshot it (core/style.py).
     display_style: object = field(default_factory=lambda: _make_style())
+    # Sun shadows (core/sun.py): whether they draw, and the local date/time
+    # the sun stands at. Document data — the shadow study is a deliverable.
+    shadows: object = field(default_factory=lambda: _make_shadows())
     # Section planes (SketchUp sections, core/section.py). At most ONE is
     # ``active`` (the cut) in the model context; the two flags mirror
     # SketchUp's View ▸ Section Planes / Section Cuts toggles.
@@ -278,6 +286,7 @@ class Scene:
             self.back_face_color = None
             self.active_ifc = None
             self.display_style = _make_style()
+            self.shadows = _make_shadows()
             self.section_planes.clear()
             self.show_section_planes = True
             self.show_section_cuts = True

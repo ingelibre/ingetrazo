@@ -259,6 +259,7 @@ class ProfileDock(QDockWidget):
 
     def __init__(self, window) -> None:
         super().__init__(tr("Terrain profile"), window)
+        self.setObjectName("dock_profile")
         self._window = window
         self.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
 

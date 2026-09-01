@@ -8,8 +8,19 @@ Licensed under GPL-3.0-or-later. See LICENSE.
 """
 from __future__ import annotations
 
+import faulthandler
 import sys
 from pathlib import Path
+
+# Black box: a native crash (GL driver, Qt) kills the process without a
+# Python traceback — faulthandler leaves the Python stacks of every thread
+# in this file so the next "it just closed" has an autopsy. Project-local
+# beside ingetrazo-errors.log, same doctrine: the user can just send it.
+try:
+    _crash_log = open("ingetrazo-crash.log", "a", encoding="utf-8")
+    faulthandler.enable(file=_crash_log)
+except OSError:
+    faulthandler.enable()
 
 # Native Wayland is the default. Known cosmetic tradeoff (2026-07-12): the
 # compositor interleaves stale GL viewport frames under fast zoom bursts (a

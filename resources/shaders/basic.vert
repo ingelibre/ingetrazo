@@ -23,6 +23,9 @@ uniform int u_clip_enable;
 
 out vec2 v_uv;
 out vec3 v_color;
+// World position for the shadow lookup (every buffer is world-space or
+// carries its instance matrix, so this is exact for both).
+out vec3 v_world;
 
 void main() {
     v_uv = a_uv;
@@ -32,6 +35,7 @@ void main() {
     // already in world coordinates), so the section plane keeps working
     // unchanged for both.
     vec4 world = mat4(a_inst0, a_inst1, a_inst2, a_inst3) * vec4(a_pos, 1.0);
+    v_world = world.xyz;
     gl_ClipDistance[0] = (u_clip_enable == 1)
         ? dot(world, u_clip_plane)
         : 1.0;

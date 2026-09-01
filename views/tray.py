@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
     QComboBox,
+    QDateEdit,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSpinBox,
     QToolButton,
     QVBoxLayout,
@@ -1577,6 +1579,245 @@ class StylesPanel(QWidget):
         self._window._sync_style_menu()
 
 
+class ShadowsPanel(QWidget):
+    """SketchUp's Shadow Settings, driven by the REAL sun (core/sun.py):
+    on/off, the local date and hour the sun stands at, and how dark the
+    shade goes. Edits write ``scene.shadows`` (document data, saved in the
+    ``.igz``) and repaint — the viewport re-derives the sun position and
+    rebuilds its shadow map from the changed key, so dragging the time
+    slider sweeps the shadows live: the asoleamiento study. The site is
+    the model's geolocation; without one, Arequipa."""
+
+    def __init__(self, window) -> None:
+        super().__init__()
+        self._window = window
+        self._updating = False
+        grid = QGridLayout(self)
+        grid.setContentsMargins(8, 6, 8, 8)
+
+        self._enable = QCheckBox(tr("Show shadows"))
+        self._enable.toggled.connect(self._apply)
+        grid.addWidget(self._enable, 0, 0, 1, 2)
+
+        grid.addWidget(QLabel(tr("Date:")), 1, 0)
+        self._date = QDateEdit()
+        self._date.setDisplayFormat("dd/MM")
+        self._date.dateChanged.connect(self._on_date_edited)
+        grid.addWidget(self._date, 1, 1)
+
+        # SketchUp's month bar: a day-of-year slider with the month initials
+        # underneath — drag it and the asoleamiento sweeps the year.
+        self._doy = QSlider(Qt.Horizontal)
+        self._doy.setRange(1, 365)
+        self._doy.valueChanged.connect(self._on_doy_slid)
+        grid.addWidget(self._doy, 2, 0, 1, 2)
+        months = QHBoxLayout()
+        months.setSpacing(0)
+        for initial in tr("J F M A M J J A S O N D").split():
+            lbl = QLabel(initial)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("color:#5a6472; font-size: 10px;")
+            months.addWidget(lbl, 1)
+        grid.addLayout(months, 3, 0, 1, 2)
+
+        grid.addWidget(QLabel(tr("Time:")), 4, 0)
+        row = QHBoxLayout()
+        self._time = QSlider(Qt.Horizontal)
+        # Range follows DAYLIGHT for the date/zone/site (SketchUp: the
+        # slider runs sunrise → sunset, so the sun can never be dragged
+        # below the horizon and "shadows silently off" cannot happen).
+        self._time.setRange(0, 24 * 60 - 1)
+        self._time.setSingleStep(5)
+        self._time.valueChanged.connect(self._apply)
+        row.addWidget(self._time, 1)
+        self._time_lbl = QLabel("12:00")
+        row.addWidget(self._time_lbl)
+        grid.addLayout(row, 4, 1)
+
+        span = QHBoxLayout()
+        self._sunrise_lbl = QLabel("")
+        self._sunrise_lbl.setStyleSheet("color:#5a6472; font-size: 10px;")
+        span.addWidget(self._sunrise_lbl)
+        span.addStretch(1)
+        self._sunset_lbl = QLabel("")
+        self._sunset_lbl.setStyleSheet("color:#5a6472; font-size: 10px;")
+        span.addWidget(self._sunset_lbl)
+        grid.addLayout(span, 5, 1)
+
+        grid.addWidget(QLabel(tr("Darkness:")), 6, 0)
+        self._dark = QSlider(Qt.Horizontal)
+        self._dark.setRange(0, 80)              # 100 % black is never useful
+        self._dark.valueChanged.connect(self._apply)
+        grid.addWidget(self._dark, 6, 1)
+
+        grid.addWidget(QLabel(tr("Time zone:")), 7, 0)
+        self._tz = QComboBox()
+        self._tz.addItem(tr("Automatic (by longitude)"), None)
+        for off in range(-12, 15):
+            self._tz.addItem(f"UTC{off:+03d}:00", off)
+        self._tz.currentIndexChanged.connect(self._apply)
+        grid.addWidget(self._tz, 7, 1)
+
+        self._site = QLabel("")
+        self._site.setWordWrap(True)
+        self._site.setStyleSheet("color:#5a6472; font-size: 11px;")
+        grid.addWidget(self._site, 8, 0, 1, 2)
+
+        self._locate_btn = QPushButton(tr("Add location…"))
+        self._locate_btn.clicked.connect(self._on_add_location)
+        grid.addWidget(self._locate_btn, 9, 0, 1, 2)
+
+        self.refresh()
+
+    def _shadows(self):
+        return getattr(self._window.viewport.scene, "shadows", None)
+
+    @staticmethod
+    def _doy_of(month: int, day: int) -> int:
+        import datetime
+        try:
+            return datetime.date(2026, month, day).timetuple().tm_yday
+        except ValueError:
+            return 80                       # Mar 21, the default
+
+    @staticmethod
+    def _month_day_of(doy: int) -> tuple[int, int]:
+        import datetime
+        d = (datetime.date(2026, 1, 1)
+             + datetime.timedelta(days=max(1, min(365, doy)) - 1))
+        return d.month, d.day
+
+    def _site_latlon(self) -> tuple[float, float]:
+        from core.sun import DEFAULT_LAT, DEFAULT_LON
+        datum = getattr(self._window.viewport.scene, "georef", None)
+        if datum is not None:
+            return datum.lat, datum.lon
+        return DEFAULT_LAT, DEFAULT_LON
+
+    def _sync_daylight(self, sh, write_back: bool) -> None:
+        """Fit the time slider to the day's sunlight for the current date,
+        zone and site. With ``write_back`` the clamped slider value flows
+        into ``sh`` (an edit moved the window from under the hour);
+        without it only the range and labels move (a refresh must never
+        mutate the document). Caller holds ``_updating``."""
+        from core.sun import daylight_minutes
+        lat, lon = self._site_latlon()
+        try:
+            rng = daylight_minutes(lat, lon, sh.month, sh.day, sh.utc_offset)
+        except ValueError:
+            rng = None
+        if rng is None:                     # polar night: leave the full day
+            self._time.setRange(0, 24 * 60 - 1)
+            self._sunrise_lbl.setText("—")
+            self._sunset_lbl.setText("—")
+            return
+        lo, hi = rng
+        self._time.setRange(lo, hi)         # Qt clamps the value for us
+        self._sunrise_lbl.setText(f"{lo // 60:02d}:{lo % 60:02d}")
+        self._sunset_lbl.setText(f"{hi // 60:02d}:{hi % 60:02d}")
+        if write_back:
+            v = self._time.value()
+            if (sh.hour, sh.minute) != (v // 60, v % 60):
+                sh.hour, sh.minute = v // 60, v % 60
+            self._time_lbl.setText(f"{sh.hour:02d}:{sh.minute:02d}")
+
+    def refresh(self) -> None:
+        sh = self._shadows()
+        if sh is None:
+            return
+        from PySide6.QtCore import QDate
+        self._updating = True
+        try:
+            self._enable.setChecked(sh.enabled)
+            self._date.setDate(QDate(2026, sh.month, sh.day))
+            self._doy.setValue(self._doy_of(sh.month, sh.day))
+            self._sync_daylight(sh, write_back=False)
+            self._time.setValue(sh.hour * 60 + sh.minute)
+            self._time_lbl.setText(f"{sh.hour:02d}:{sh.minute:02d}")
+            self._dark.setValue(round((1.0 - sh.darkness) * 100))
+            idx = self._tz.findData(sh.utc_offset)
+            self._tz.setCurrentIndex(idx if idx >= 0 else 0)
+            datum = getattr(self._window.viewport.scene, "georef", None)
+            if datum is not None:
+                self._site.setText(tr(
+                    "Sun at the model's geolocation ({lat:.3f}, {lon:.3f}).",
+                    lat=datum.lat, lon=datum.lon))
+            else:
+                self._site.setText(tr(
+                    "No geolocation — using Arequipa. Add the real site for "
+                    "a true sun study."))
+        finally:
+            self._updating = False
+
+    def _on_date_edited(self, *_a) -> None:
+        if self._updating:
+            return
+        d = self._date.date()
+        self._updating = True
+        self._doy.setValue(self._doy_of(d.month(), d.day()))
+        self._updating = False
+        self._apply()
+
+    def _on_doy_slid(self, value: int) -> None:
+        if self._updating:
+            return
+        from PySide6.QtCore import QDate
+        month, day = self._month_day_of(value)
+        self._updating = True
+        self._date.setDate(QDate(2026, month, day))
+        self._updating = False
+        self._apply()
+
+    def _on_add_location(self) -> None:
+        """SketchUp's Add Location, scoped to the sun: pick the site on the
+        map and it becomes the model's geographic datum (which is also what
+        the Terrain workspace reads — one location, one truth)."""
+        from georef.tiles import DEFAULT_SOURCE_ID, PRESETS
+        from views.location_dialog import pick_location
+        datum = getattr(self._window.viewport.scene, "georef", None)
+        from core.sun import DEFAULT_LAT, DEFAULT_LON
+        lat0 = datum.lat if datum is not None else DEFAULT_LAT
+        lon0 = datum.lon if datum is not None else DEFAULT_LON
+        result = pick_location(PRESETS[DEFAULT_SOURCE_ID], lat0, lon0, self)
+        if result is None:
+            return
+        lat, lon, _w, _l = result
+        from georef.datum import SceneDatum
+        self._window.viewport.scene.georef = SceneDatum(lat, lon)
+        self._window.viewport.scene.version += 1
+        self.refresh()
+        self._window.viewport.update()
+
+    def _apply(self, *_a) -> None:
+        sh = self._shadows()
+        if sh is None or self._updating:
+            return
+        sh.enabled = self._enable.isChecked()
+        d = self._date.date()
+        sh.month, sh.day = d.month(), d.day()
+        v = self._time.value()
+        sh.hour, sh.minute = v // 60, v % 60
+        sh.darkness = 1.0 - self._dark.value() / 100.0
+        sh.utc_offset = self._tz.currentData()
+        self._time_lbl.setText(f"{sh.hour:02d}:{sh.minute:02d}")
+        # A date/zone/site change moves the daylight window; the slider
+        # follows it (and clamps the hour back into the sun, SketchUp-style).
+        self._updating = True
+        try:
+            self._sync_daylight(sh, write_back=True)
+        finally:
+            self._updating = False
+        act = getattr(self._window, "_act_shadows", None)
+        if act is not None:
+            act.blockSignals(True)
+            act.setChecked(sh.enabled)
+            act.blockSignals(False)
+        # Version bump: marks the document dirty (the sun stance is DATA)
+        # and the shadow-map key follows the settings on the next paint.
+        self._window.viewport.scene.version += 1
+        self._window.viewport.update()
+
+
 class EntityInfoPanel(QWidget):
     """Read-only facts about the current selection."""
 
@@ -2162,6 +2403,7 @@ class Tray(QDockWidget):
 
     def __init__(self, window) -> None:
         super().__init__(tr("Properties"), window)
+        self.setObjectName("tray_properties")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setFeatures(QDockWidget.DockWidgetMovable
                          | QDockWidget.DockWidgetFloatable)
@@ -2171,16 +2413,15 @@ class Tray(QDockWidget):
         self.components = ComponentsPanel(window)
         self.layers = LayersPanel(window)
         self.scenes = ScenesPanel(window)
-        self.styles = StylesPanel(window)
-        self.dim_style = DimensionStylePanel(window)
+        # Styles, Shadows and Dimension style are NOT here: they live in
+        # their own on-demand docks (toolbar toggles) — the always-open tray
+        # was drowning.
         self.setWidget(_scrolled([
             (tr("Entity info"), self.entity_info),
             (tr("Layers"), self.layers),
             (tr("Scenes"), self.scenes),
-            (tr("Styles"), self.styles),
             (tr("Materials"), self.materials),
             (tr("Components"), self.components),
-            (tr("Dimension style"), self.dim_style),
         ]))
 
     def on_scene_changed(self) -> None:
@@ -2207,6 +2448,7 @@ class BimTray(QDockWidget):
 
     def __init__(self, window) -> None:
         super().__init__(tr("BIM"), window)
+        self.setObjectName("tray_bim")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setFeatures(QDockWidget.DockWidgetMovable
                          | QDockWidget.DockWidgetFloatable)
@@ -2327,6 +2569,7 @@ class GeorefTray(QDockWidget):
 
     def __init__(self, window) -> None:
         super().__init__(tr("Terrain"), window)
+        self.setObjectName("tray_georef")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setFeatures(QDockWidget.DockWidgetMovable
                          | QDockWidget.DockWidgetFloatable)

@@ -302,6 +302,12 @@ def save_scene(scene, path: Path) -> dict:
         d = dstyle.to_dict()
         if d != Style().to_dict():   # default stays implicit (terse files)
             payload["display_style"] = d
+    shadows = getattr(scene, "shadows", None)
+    if shadows is not None:
+        from core.sun import ShadowSettings
+        d = shadows.to_dict()
+        if d != ShadowSettings().to_dict():
+            payload["shadows"] = d
     # Georeferencing datum (Track G) — optional block, written only when set so
     # ungeoreferenced documents stay terse and older readers ignore it.
     datum = getattr(scene, "georef", None)
@@ -534,10 +540,18 @@ def _load_into_inner(scene, path: Path) -> None:
     if isinstance(back, list) and len(back) == 3:
         scene.back_face_color = tuple(float(c) for c in back)
 
+    # Defaults stay implicit in the file (terse), so a document WITHOUT the
+    # block must reset the field — otherwise the previous document's look or
+    # sun leaks into the one being opened.
+    from core.style import Style
     dstyle = payload.get("display_style")
-    if isinstance(dstyle, dict):
-        from core.style import Style
-        scene.display_style = Style.from_dict(dstyle)
+    scene.display_style = (Style.from_dict(dstyle)
+                           if isinstance(dstyle, dict) else Style())
+
+    from core.sun import ShadowSettings
+    shadows = payload.get("shadows")
+    scene.shadows = (ShadowSettings.from_dict(shadows)
+                     if isinstance(shadows, dict) else ShadowSettings())
 
     raw_planes = payload.get("section_planes")
     if isinstance(raw_planes, list):
