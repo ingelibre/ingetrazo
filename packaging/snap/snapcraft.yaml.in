@@ -11,14 +11,38 @@ name: ingetrazo
 base: core22
 version: "@VERSION@"
 title: IngeTrazo
-summary: Modelado 3D libre para arquitectura e ingeniería civil
+summary: Alternativa libre a SketchUp — modelado 3D con .skp nativo
 description: |
-  Modelador 3D estilo SketchUp para arquitectura, ingeniería civil e
-  impresión 3D, libre (GPL-3.0) y en español. Sombras con la posición real
-  del sol (estudio de asoleamiento), secciones, láminas para imprimir,
-  importación de SKP/DXF/DWG/DAE/OBJ/GLB, terreno georreferenciado con mapa
-  base, etiquetado BIM (IFC) y biblioteca de componentes y materiales.
-  Parte del ecosistema IngePresupuestos: terreno → trazo → BIM → presupuesto.
+  IngeTrazo es una alternativa libre (GPL-3.0) a SketchUp para
+  arquitectura, ingeniería civil e impresión 3D, en español, que abre y
+  guarda archivos .skp DE FORMA NATIVA gracias a openskp — tus modelos y
+  los de tu equipo siguen viviendo en su formato, sin conversiones ni
+  peajes.
+
+  Lo que trae:
+
+  - Modelado estilo SketchUp: empujar/tirar, sígueme, grupos y componentes,
+    inferencias y medidas exactas por teclado.
+  - Sombras con la posición real del sol por geolocalización, fecha y hora:
+    estudios de asoleamiento como entregable de obra.
+  - Secciones con relleno, láminas listas para imprimir y estilos de
+    presentación.
+  - Importa y exporta SKP, DXF, DWG, DAE, OBJ, GLB y STL.
+  - Terreno georreferenciado con mapa base, curvas y perfiles.
+  - Etiquetado BIM (IFC) con metrados en vivo, rumbo al presupuesto.
+  - Biblioteca de componentes y materiales, incluida la malla cocada para
+    cercos.
+
+  Parte del ecosistema IngePresupuestos: terreno → trazo → BIM →
+  presupuesto.
+
+  IngeTrazo is a free, open-source SketchUp alternative with NATIVE .skp
+  reading and writing (powered by openskp): push/pull modeling, real-sun
+  shadow studies, sections, print sheets, DXF/DWG import and BIM (IFC)
+  tagging. Spanish-first UI, English available.
+
+  SketchUp is a trademark of Trimble Inc.; IngeTrazo is an independent
+  project, not affiliated with or endorsed by Trimble.
 license: GPL-3.0-or-later
 website: https://ingetrazo.com
 contact: https://github.com/ingelibre/ingetrazo/issues
