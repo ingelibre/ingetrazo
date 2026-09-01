@@ -114,6 +114,17 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Same GL/xcb set the AppImage job installs: PyInstaller only bundles
+      # the Qt xcb chain it can RESOLVE at build time, and --check needs
+      # libEGL on the runner (first snap flight failed on exactly this).
+      - name: System packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            file libegl1 libgl1 libxkbcommon-x11-0 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
+            libxcb-render-util0
+
       - name: Python dependencies
         run: |
           python -m venv venv
