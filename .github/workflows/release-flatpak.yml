@@ -109,3 +109,65 @@ jobs:
           gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
             || gh release create "${GITHUB_REF_NAME}" --title "IngeTrazo ${GITHUB_REF_NAME}" --generate-notes
           gh release upload "${GITHUB_REF_NAME}" dist/IngeTrazo-*.flatpak --clobber
+
+  # El paso que siempre fue manual y por el que tres releases seguidas no
+  # llegaron a los usuarios: el bundle publicado NO actualiza el repo de
+  # ingetrazo.com — hay que importarlo al repo ostree y redesplegar el
+  # sitio. Este job lo hace solo: espeja el repo VIVO por HTTP (archive-z2
+  # se puede espejar), importa el bundle recién subido al release, regenera
+  # el índice y despliega ingetrazo-web (repo público) con wrangler.
+  # Necesita el secret CLOUDFLARE_API_TOKEN (plantilla "Edit Cloudflare
+  # Workers" en dash.cloudflare.com); sin él, avisa y no rompe el release.
+  publish-repo:
+    name: Publish the Flatpak repo (ingetrazo.com)
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install flatpak and ostree
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends flatpak ostree
+
+      - name: Check out the website (public repo)
+        run: git clone --depth 1 https://github.com/ingelibre/ingetrazo-web.git web
+
+      - name: Mirror the LIVE repo, import the new bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd web
+          mkdir -p flatpak/repo
+          ostree init --mode=archive-z2 --repo=flatpak/repo
+          ostree remote add --repo=flatpak/repo --no-gpg-verify \
+            live https://ingetrazo.com/flatpak/repo
+          # Mirror = the existing history, bit for bit — every ref the live
+          # summary advertises; a brand-new/empty live repo just pulls
+          # nothing and the bundle import starts the history.
+          ostree pull --repo=flatpak/repo --mirror live \
+            || echo "::warning::mirror parcial o repo vivo vacío — se continúa con el bundle"
+          gh release download "${GITHUB_REF_NAME}" -R "${GITHUB_REPOSITORY}" \
+            -p "IngeTrazo-*-x86_64.flatpak" --dir /tmp/bundle
+          flatpak build-import-bundle flatpak/repo /tmp/bundle/IngeTrazo-*-x86_64.flatpak
+          flatpak build-update-repo flatpak/repo
+
+      - name: Deploy ingetrazo.com (if credentials exist)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::Sin CLOUDFLARE_API_TOKEN — el repo Flatpak NO se publicó; correr el manual o crear el secret."
+            exit 0
+          fi
+          cd web
+          npx --yes wrangler deploy
+
+      - name: Verify the live repo serves the new summary
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then exit 0; fi
+          sleep 10
+          curl -fsS https://ingetrazo.com/flatpak/repo/summary -o /tmp/remote.summary
+          cmp /tmp/remote.summary web/flatpak/repo/summary
+          echo "repo vivo == repo recién construido, bit a bit"
