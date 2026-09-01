@@ -719,6 +719,18 @@ class MainWindow(QMainWindow):
         window_menu.addAction(toggle_profile)
 
 
+        # AutoCAD's Ctrl+0 clean screen: nothing but the model, for
+        # presenting. Added to the WINDOW too, so the shortcut keeps
+        # working while the menu bar itself is hidden.
+        window_menu.addSeparator()
+        clean_action = QAction(tr("Clean screen"), self)
+        clean_action.setShortcut(QKeySequence("Ctrl+0"))
+        clean_action.setCheckable(True)
+        clean_action.toggled.connect(self._toggle_clean_screen)
+        self.addAction(clean_action)
+        window_menu.addAction(clean_action)
+        self._act_clean_screen = clean_action
+
         window_menu.addSeparator()
         prefs_action = QAction(tr("Preferences…"), self)
         prefs_action.triggered.connect(self._on_preferences)
@@ -750,6 +762,26 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda _checked, c=code: self._on_set_language(c))
             group.addAction(action)
             lang_menu.addAction(action)
+
+    def _toggle_clean_screen(self, on: bool) -> None:
+        """AutoCAD's Ctrl+0: fold away every toolbar, dock and bar so only
+        the model remains (presentations); Ctrl+0 again restores the
+        workspace exactly as it was."""
+        from PySide6.QtWidgets import QDockWidget
+        if on:
+            self._clean_screen_state = self.saveState()
+            for tb in self.findChildren(QToolBar):
+                tb.hide()
+            for dock in self.findChildren(QDockWidget):
+                dock.hide()
+            self.menuBar().hide()
+            self.statusBar().hide()
+        else:
+            state = getattr(self, "_clean_screen_state", None)
+            if state is not None:
+                self.restoreState(state)
+            self.menuBar().show()
+            self.statusBar().show()
 
     def _on_preferences(self) -> None:
         """Window ▸ Preferences: the scattered QSettings in one dialog."""
@@ -3333,8 +3365,15 @@ class MainWindow(QMainWindow):
         from core import autosave
         autosave.clear(self._current_path)
         # The window arrangement (toolbars, docks, size) IS a preference.
+        # Closing mid-presentation must remember the WORKSPACE, not the
+        # clean screen's everything-hidden state.
+        act = getattr(self, "_act_clean_screen", None)
+        clean_state = getattr(self, "_clean_screen_state", None)
         st = QSettings()
-        st.setValue("ui/window_state", self.saveState())
+        st.setValue("ui/window_state",
+                    clean_state if (act is not None and act.isChecked()
+                                    and clean_state is not None)
+                    else self.saveState())
         st.setValue("ui/window_geometry", self.saveGeometry())
         # Free every GL texture while a GL context still exists — the survey
         # atlases (hundreds of MB), the tile and terrain textures, and the
