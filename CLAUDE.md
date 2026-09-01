@@ -453,7 +453,23 @@ docs/     skp-backend.md · openskp-collaboration.md · halfedge-migration-plan.
 ## 🎯 Pendientes (por prioridad tentativa)
 
 0pre. **CAD / imágenes / Escala — flecos de la sesión 2026-08-31:**
-   - **Empaquetado DWG (lo primero que duele en release):** `vendor/libredwg/bin/dwg2dxf` está FUERA de git (copiado del build de IngeCAD, estático); hay que meterlo al manifest del Flatpak y al instalador de Windows, o la release tendrá DXF pero no DWG. Registrar también los MIME `.dxf`/`.dwg` en `install_desktop.sh` para que el doble clic funcione desde Nautilus.
+   - ✅ **Empaquetado DWG RESUELTO en la 0.3.8**: `dwg2dxf` está EN git
+     (`vendor/libredwg/bin/`, con `.gitignore` quirúrgico y `SOURCES.md` de
+     cumplimiento GPL — solo liga libc/libm, corre en cualquier distro) y el
+     `.spec` lo empaqueta en Linux → AppImage/tarball/Flatpak/snap lo llevan.
+     **Windows sigue sin DWG** (falta `dwg2dxf.exe`; documentado en el
+     CHANGELOG). De paso se cazó que **ezdxf faltaba en los workflows Y en
+     hiddenimports** (import lazy — la lección de core.ai otra vez): el
+     paquete habría salido con TODO el import CAD muerto. Queda: MIME
+     `.dxf`/`.dwg` en `install_desktop.sh`.
+   - **Snap Store (nuevo canal, 0.3.8)**: `packaging/snap/snapcraft.yaml.in`
+     + job `snap` en `release.yml` (PyInstaller onedir → dump, strict, xcb,
+     stage-packages para lo que el bundle espera del anfitrión). El job sube
+     el `.snap` al release SIEMPRE; publica a la store solo si existe el
+     secret `SNAPCRAFT_STORE_CREDENTIALS`. **Marco debe (una vez):**
+     `snapcraft register ingetrazo` + `snapcraft export-login` → secret en
+     GitHub. Decisión: Flathub NO (ya rechazó IngePresupuestos; tenemos repo
+     Flatpak propio); Snap sí por la vitrina de Ubuntu.
    - Import CAD diferidos (documentados en `formats/dxf_in.py`): sharing anidado de bloques (hoy los INSERT internos se explotan al proto), opción «aplanar a Z=0», contornos de HATCH como bordes.
    - Escala diferidos (documentados en `tools/scale.py`): cajón alineado a los ejes propios del componente (hoy ejes del mundo), y re-escalado global con Medir (Tape Measure).
    - Imágenes, siguiente natural (NO urgente): control de opacidad para atenuar el escaneo mientras se calca.
