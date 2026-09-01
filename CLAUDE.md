@@ -191,14 +191,55 @@ Estado del código MIRADO antes de estimar; el orden es la recomendación, no el
    (cajón alineado a ejes del componente; re-escalado global con Medir).
    Detalle en «Estado actual (2026-08-31)» arriba.
 
-**B. La grande, y la que más cambia cómo se percibe el producto**
-5. **Sombras.** Hoy no hay ninguna: el shader es `basic.vert/frag` y no existe
-   pase de profundidad desde la luz. Es un mapa de sombras + su pase + resolver
-   la interacción con los planos de sección y el compositor. **Pero aquí hay algo
-   que SketchUp cobra y nosotros ya tenemos medio hecho:** el modelo lleva datum
-   geográfico (lat/lon), así que la posición REAL del sol por fecha y hora es
-   alcanzable — eso es un **estudio de asoleamiento**, un entregable de obra, no
-   un adorno. Es la que yo haría después de las baratas.
+**B. La grande — ✅ SOMBRAS HECHAS 2026-08-31 (sesión entera de dogfooding con
+Marco, pieza por pieza contra capturas de SketchUp):**
+5. **Sombras con el sol real.** Lo que quedó construido y las lecciones:
+   - **`core/sun.py`**: posición solar NOAA (tests pinneados a astronomía:
+     equinoccio sale por el este; solsticio de junio en Arequipa, sol al
+     norte a ~50°). `ShadowSettings` es DATO de escena (viaja en `.igz`);
+     sitio = datum del modelo o Arequipa; zona = `round(lon/15)` u override.
+     `daylight_minutes` para acotar el slider de hora a amanecer→atardecer
+     (sin eso, una zona forzada dejaba el sol bajo el horizonte y "las
+     sombras no aparecen" — SketchUp acota igual).
+   - **Mapa de sombras** (`depth.vert/frag` + `_render_shadow_map`):
+     profundidad EMPAQUETADA en RGB de un FBO común (sin fontanería de
+     depth-texture), ortho ajustado a bounds+suelo, **independiente de la
+     cámara** (orbitar/zoom lo reutilizan; clave = versión+sol+corte+bounds).
+     Emisores: VBOs consolidados + instanciados SIN culling de cámara +
+     billboards como quads **orientados al sol** con recorte alfa (la sombra
+     del personaje no gira al orbitar) + **recortes con su trama** (la malla
+     cocada proyecta tejido; las hojas de setos motean). **Vidrio: regla
+     SketchUp — opacidad <70% NO proyecta** (ojo: `_tex_faces_count` incluye
+     los runs translúcidos; el pase usa `_tex_opaque_count` + runs ≥0.7).
+   - **Anti-acné, la saga completa** (tres intentos fallidos documentados en
+     commits): bias constante NO alcanza; slope-bias del emisor por
+     derivadas tampoco (clamp saturado en caras rasantes); la receta que SÍ:
+     **PCF con corrección por plano del receptor** (Isidoro) — gradiente
+     exacto por jacobiano inverso, cada tap compara contra el plano EN el
+     tap. El moiré venía de los taps diagonales con gradiente diagonal.
+   - **Sombreado por sol** («use sun for shading»): normal por fragmento con
+     `cross(dFdx,dFdy)` (¡sin datos de vértice!), cara contra-sol = tono
+     plano SIN consultar el mapa (mata todo artefacto residual), factor =
+     `mix(dark, 1, clamp(ndl*1.5)*PCF)`.
+   - **Suelo receptor = overlay**: el catcher en z=-0.005 pinta SOLO la
+     sombra (negro translúcido, alfa=(1-dark)*(1-lit)) — pintarlo con color
+     de suelo se veía como "un rectángulo oscuro en el piso" (Marco).
+   - **UI**: dock desplegable Sombras (barra SketchUp: check, fecha dd/mm +
+     slider del año con iniciales de meses, hora acotada a luz diurna con
+     amanecer/atardecer, oscuridad, zona horaria, «Añadir localización…» →
+     `pick_location` → datum del modelo). Cámara ▸ Sombras espejo.
+   - **Los marcos del compositor renderizan con sombras** (mismo paintGL) →
+     lámina de asoleamiento directa.
+   - Kill-switch `INGETRAZO_NO_SHADOWS=1`. Caja negra `faulthandler` →
+     `ingetrazo-crash.log` (un crash nativo en órbita quedó sin autopsia).
+   - **DIFERIDO**: terreno/mapa no reciben sombra; face-me de malla no
+     proyecta; calidad configurable (mapa 4096/PCF) como preferencia si se
+     pide; reflejos = otro proyecto (agua planar factible; especular del sol
+     barato ahora que hay normal por píxel). Previews arrastrados no mueven
+     su sombra hasta soltar.
+   - **PNGs de figuras saneados**: tinta interior con alfa a medias +
+     recorte duro = pinholes (el eje verde se colaba punteado por la cara de
+     Sumari); selladas a alfa pleno respetando huecos reales (codo-torso).
 
 **C. Para después, y por qué**
 6. **Oclusión ambiental (SSAO).** Ya renderizamos a FBO, así que la fontanería
