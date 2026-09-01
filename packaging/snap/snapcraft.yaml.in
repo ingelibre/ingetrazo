@@ -46,6 +46,8 @@ description: |
 license: GPL-3.0-or-later
 website: https://ingetrazo.com
 contact: https://github.com/ingelibre/ingetrazo/issues
+source-code: https://github.com/ingelibre/ingetrazo
+issues: https://github.com/ingelibre/ingetrazo/issues
 grade: stable
 confinement: strict
 
