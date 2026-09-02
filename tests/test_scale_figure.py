@@ -48,3 +48,36 @@ def test_billboard_group_position_offsets_anchor():
     assert abs((min(xs) + max(xs)) / 2 + 3.0) < 1e-9
     assert ys == [1.0] * 4
     assert (min(zs), max(zs)) == (0.0, 2.0)
+
+
+def test_faceme_follows_the_view_direction_in_parallel_projection():
+    """A parallel camera has no real eye: every face-me sprite faces the
+    VIEW direction, so a figure far from the orbit target no longer turns
+    away when zoomed in (Marco's front elevation, 2026-09-02). Perspective
+    keeps turning toward the eye, like SketchUp."""
+    import math
+    from PySide6.QtGui import QVector3D
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        fig = next(g for g in vp.scene.groups if getattr(g, "billboard", False))
+        cam = vp.camera
+        cam.set_view("front")
+        cam.target = QVector3D(3.0, 0.0, 1.0)     # figure 3.65 m off-target
+        cam.distance = 3.0
+
+        def turn_deg():
+            c0, c1 = vp._billboard_quad(fig)[0][:2]
+            r = (c1 - c0).normalized()
+            v = cam.eye() - cam.target
+            v = QVector3D(v.x(), v.y(), 0.0).normalized()
+            return math.degrees(math.asin(abs(QVector3D.dotProduct(r, v))))
+
+        cam.perspective = False
+        assert turn_deg() < 1e-6                  # square to the view
+        cam.perspective = True
+        assert turn_deg() > 30.0                  # turns toward the eye
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

@@ -3727,6 +3727,19 @@ class Viewport(QOpenGLWidget):
                     QVector3D.dotProduct(p, v_axis) / sh,
                 ])
 
+    def _faceme_dir(self, anchor: QVector3D) -> QVector3D:
+        """Direction a face-me sprite at ``anchor`` turns toward (not yet
+        flattened or normalised). Perspective: toward the eye, so figures
+        left and right of centre turn slightly, like SketchUp. Parallel: the
+        VIEW direction for every sprite — a parallel camera has no real eye,
+        and using the fictitious one made a figure far from the orbit target
+        turn 45° away when zoomed in (Marco: "Sumari no se ve bien en vista
+        frontal", 2026-09-02)."""
+        cam = self.camera
+        if cam.perspective:
+            return cam.eye() - anchor
+        return cam.eye() - cam.target
+
     def _billboard_quad(self, group, face_dir=None):
         """The face-me quad of a billboard group, rotated around its vertical
         anchor axis to face the camera NOW (or ``face_dir`` when given).
@@ -3771,7 +3784,7 @@ class Viewport(QOpenGLWidget):
         # Facing: the camera by default; the shadow pass passes the SUN so a
         # figure's cast silhouette holds still while the camera orbits
         # (SketchUp's face-me "shadows face sun").
-        d = face_dir if face_dir is not None else self.camera.eye() - anchor
+        d = face_dir if face_dir is not None else self._faceme_dir(anchor)
         d = QVector3D(d.x(), d.y(), 0.0)
         if d.length() < 1e-6:
             d = QVector3D(1.0, 0.0, 0.0)
@@ -3935,8 +3948,9 @@ class Viewport(QOpenGLWidget):
                 off = getattr(self, "_preview_offset", None)
                 if off is not None:
                     ox, oy, oz = off.x(), off.y(), off.z()
-        eye = self.camera.eye()
-        d = np.array([eye.x() - (anchor[0] + ox), eye.y() - (anchor[1] + oy)])
+        fd = self._faceme_dir(QVector3D(anchor[0] + ox, anchor[1] + oy,
+                                        anchor[2] + oz))
+        d = np.array([fd.x(), fd.y()])
         ln = float(np.hypot(d[0], d[1]))
         d = nh if ln < 1e-9 else d / ln
         cos = float(nh[0] * d[0] + nh[1] * d[1])
@@ -5209,6 +5223,8 @@ class Viewport(QOpenGLWidget):
         painter.setFont(font)
         fm = painter.fontMetrics()
         for lab in labels:
+            if not self.scene.entity_visible(lab):      # hidden layer
+                continue
             ink = (sel_ink if (lab in selection or lab is self._hover_entity)
                    else default_ink)
             pos = lab.position()
@@ -5248,6 +5264,8 @@ class Viewport(QOpenGLWidget):
         font.setPointSize(int(style.get("font_size", 9)))
         font.setBold(True)
         for dim in dims:
+            if not self.scene.entity_visible(dim):      # hidden layer
+                continue
             ink = (sel_ink if (dim in selection or dim is self._hover_entity)
                    else default_ink)
             ap, bp = dim.line_points()
@@ -6780,6 +6798,8 @@ class Viewport(QOpenGLWidget):
         best = None
         best_d = self.pick_threshold_px
         for dim in dims:
+            if not self.scene.entity_selectable(dim):   # hidden / locked
+                continue
             ap, bp = dim.line_points()
             for s, e in ((dim.a, ap), (dim.b, bp), (ap, bp)):
                 ps = self._world_to_pixel(s)
@@ -6812,6 +6832,8 @@ class Viewport(QOpenGLWidget):
         fm = QFontMetrics(font)
         best, best_d = None, self.pick_threshold_px * 2.0
         for lab in labels:
+            if not self.scene.entity_selectable(lab):   # hidden / locked
+                continue
             pp = self._world_to_pixel(lab.position())
             if pp is None:
                 continue

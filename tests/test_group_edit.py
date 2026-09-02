@@ -170,12 +170,16 @@ def test_billboard_group_round_trips_and_faces_camera(tmp_path):
         def eye(self):
             return self._eye
 
+    from views.viewport import Viewport
+
     class _VpB:
+        _faceme_dir = Viewport._faceme_dir     # perspective: toward the eye
+
         def __init__(self, scene, eye):
             self.scene = scene
             self.camera = _Cam(eye)
+            self.camera.perspective = True
 
-    from views.viewport import Viewport
     for eye, expect_normal in ((QVector3D(10, 0, 1), QVector3D(1, 0, 0)),
                                (QVector3D(0, -8, 1), QVector3D(0, -1, 0))):
         vp = _VpB(scene2, eye)

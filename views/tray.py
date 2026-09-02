@@ -50,6 +50,7 @@ from core.i18n import tr
 from core.mesh import Edge, Face
 from core.group import Group
 from core.dimension import Dimension
+from core.textlabel import TextLabel
 from georef.datum import SceneDatum
 from georef.geopath import GeoPath
 from georef.tiles import DEFAULT_SOURCE_ID, PRESETS, TileLayer, custom_source
@@ -2048,7 +2049,9 @@ class LayersPanel(QWidget):
         if ly is None:
             return
         for ent in list(scene.mesh.faces) + list(scene.mesh.edges) \
-                + list(scene.groups):
+                + list(scene.groups) \
+                + list(getattr(scene, "dimensions", []) or []) \
+                + list(getattr(scene, "text_labels", []) or []):
             if layer_of(ent) == name:
                 assign_layer(ent, DEFAULT_LAYER)
         scene.layers.remove(ly)
@@ -2063,8 +2066,10 @@ class LayersPanel(QWidget):
             return
         name = item.data(0, Qt.UserRole)
         moved = 0
+        # Annotations are tagged too (SketchUp): a "Anotaciones" layer a
+        # scene hides gives a clean plan without duplicating the model.
         for ent in scene.selection:
-            if isinstance(ent, (Face, Edge, Group)):
+            if isinstance(ent, (Face, Edge, Group, Dimension, TextLabel)):
                 assign_layer(ent, name)
                 moved += 1
         if moved:

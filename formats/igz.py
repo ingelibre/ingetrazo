@@ -274,7 +274,8 @@ def save_scene(scene, path: Path) -> dict:
         payload["dimensions"] = [
             {"a": [d.a.x(), d.a.y(), d.a.z()],
              "b": [d.b.x(), d.b.y(), d.b.z()],
-             "offset": [d.offset.x(), d.offset.y(), d.offset.z()]}
+             "offset": [d.offset.x(), d.offset.y(), d.offset.z()],
+             **({"layer": d.layer} if getattr(d, "layer", None) else {})}
             for d in dims
         ]
     mats = getattr(scene, "materials", None)
@@ -530,7 +531,7 @@ def _load_into_inner(scene, path: Path) -> None:
     for raw in payload.get("dimensions", []):
         scene.dimensions.append(Dimension(
             QVector3D(*raw["a"]), QVector3D(*raw["b"]),
-            QVector3D(*raw["offset"])))
+            QVector3D(*raw["offset"]), layer=raw.get("layer") or None))
 
     style = payload.get("dimension_style")
     if isinstance(style, dict):

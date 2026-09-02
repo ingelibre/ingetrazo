@@ -490,7 +490,11 @@ class SelectTool(Tool):
                 p = w2p(g.point)
                 if p is not None and _pt_in_rect(p, rect):
                     picked.append(g)
+        selectable = getattr(viewport.scene, "entity_selectable",
+                             lambda _e: True)
         for dim in getattr(viewport.scene, "dimensions", []):
+            if not selectable(dim):
+                continue
             ap, bp = dim.line_points()
             pa, pb = w2p(ap), w2p(bp)
             if pa is None or pb is None:
@@ -501,6 +505,8 @@ class SelectTool(Tool):
             elif _pt_in_rect(pa, rect) and _pt_in_rect(pb, rect):
                 picked.append(dim)
         for lab in getattr(viewport.scene, "text_labels", []):
+            if not selectable(lab):
+                continue
             pa, pp = w2p(lab.anchor), w2p(lab.position())
             if pp is None:
                 continue

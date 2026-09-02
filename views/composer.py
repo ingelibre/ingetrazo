@@ -2372,8 +2372,12 @@ class ComposerWindow(QMainWindow):
 
     def _with_frame_camera(self, frame: MarcoVista, fn):
         """Run ``fn()`` with the live camera pointed at *frame* (exact
-        scale), restoring camera, aspect, up and layer visibility after —
-        the composer never disturbs the viewport."""
+        scale), restoring camera, aspect, up, layer visibility, section
+        state and display style after — the composer never disturbs the
+        viewport. A frame bound to a scene applies that scene WHOLE (its
+        cut and style included, via SavedView.apply), so all of it must
+        come back: a sheet with a section scene used to leave the live
+        model cut and restyled (Marco, 2026-09-02)."""
         vp = self._window.viewport
         cam = vp.camera
         scene = vp.scene
@@ -2385,6 +2389,12 @@ class ComposerWindow(QMainWindow):
         keep = (cam.target, cam.distance, cam.yaw, cam.pitch, cam.fov_deg,
                 cam.perspective, cam.aspect, cam.up,
                 [(ly, ly.visible) for ly in scene.layers])
+        keep_section = (
+            scene.active_section() if hasattr(scene, "active_section")
+            else None,
+            getattr(scene, "show_section_planes", True),
+            getattr(scene, "show_section_cuts", True))
+        keep_style = getattr(scene, "display_style", None)
         try:
             apply_frame_camera(cam, frame, saved_view, scene)
             return fn()
@@ -2393,6 +2403,12 @@ class ComposerWindow(QMainWindow):
              cam.perspective, cam.aspect, cam.up) = keep[:8]
             for ly, visible in keep[8]:
                 ly.visible = visible
+            if hasattr(scene, "set_active_section"):
+                scene.set_active_section(keep_section[0])
+                scene.show_section_planes = keep_section[1]
+                scene.show_section_cuts = keep_section[2]
+            if hasattr(scene, "display_style"):
+                scene.display_style = keep_style
             vp.update()
 
     #: Above this many hard edges the EXACT hidden-line snap pass (minutes

@@ -595,3 +595,60 @@ class TestComposerFrameSnap:
             return (float(pts[i, 0]), float(pts[i, 1])) if d2[i] < thr * thr else None
         assert nearest(71, 26, 5) == (70.0, 25.0)
         assert nearest(100, 40, 5) is None      # mid-air, no snap
+
+
+def test_frame_render_restores_section_and_style_of_the_viewport():
+    """A frame bound to a scene applies that scene whole — cut and style
+    included — so the composer must hand ALL of it back afterwards. A sheet
+    with a section scene used to leave the live model cut and restyled
+    (Marco, 2026-09-02)."""
+    import os
+    from types import SimpleNamespace
+    from PySide6.QtGui import QVector3D
+    from PySide6.QtWidgets import QApplication
+    from core.camera import OrbitCamera
+    from core.saved_views import SavedView
+    from core.scene import Scene
+    from core.section import SectionPlane
+    from core.style import Style
+    import views.composer as composer_mod
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    if QApplication.instance() is None:
+        QApplication([])
+    scene = Scene()
+    scene.mesh.add_face([QVector3D(0, 0, 0), QVector3D(2, 0, 0),
+                         QVector3D(2, 2, 0), QVector3D(0, 2, 0)])
+    cut = SectionPlane(QVector3D(1, 0, 0), QVector3D(1, 0, 0), name="Corte A",
+                       symbol="A")
+    scene.section_planes.append(cut)
+    cam = OrbitCamera()
+    # The scene "Corte" remembers the cut active, planes hidden, X-ray.
+    scene.set_active_section(cut)
+    scene.show_section_planes = False
+    scene.display_style = Style(name="X-ray", face_mode="xray")
+    scene.saved_views.append(SavedView.capture("Corte", scene, cam))
+    # Live viewport: no cut, planes shown, default style.
+    scene.set_active_section(None)
+    scene.show_section_planes = True
+    live_style = Style(name="Default")
+    scene.display_style = live_style
+
+    owner = next(c for c in vars(composer_mod).values()
+                 if isinstance(c, type) and hasattr(c, "_with_frame_camera"))
+    fake = SimpleNamespace(_window=SimpleNamespace(viewport=SimpleNamespace(
+        camera=cam, scene=scene, update=lambda: None)))
+    frame = MarcoVista(view_key="scene:Corte", scale_n=100.0)
+    seen = {}
+
+    def fn():
+        seen["cut"] = scene.active_section()
+        seen["planes"] = scene.show_section_planes
+        seen["style"] = scene.display_style.face_mode
+        return "ok"
+
+    assert owner._with_frame_camera(fake, frame, fn) == "ok"
+    assert seen == {"cut": cut, "planes": False, "style": "xray"}  # during
+    assert scene.active_section() is None                          # after
+    assert scene.show_section_planes is True
+    assert scene.display_style is live_style

@@ -24,6 +24,10 @@ class Dimension:
     a: QVector3D
     b: QVector3D
     offset: QVector3D  # displacement from the a–b segment to the dimension line
+    #: Layer (SketchUp tag) the annotation lives on; ``None`` = default layer.
+    #: Scenes hide layers, so a plan scene can show a clean model and a
+    #: "Anotaciones" layer can carry the cotas and leader texts.
+    layer: str | None = None
 
     def value(self) -> float:
         """Measured length (metres)."""

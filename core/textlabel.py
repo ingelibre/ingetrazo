@@ -19,6 +19,8 @@ class TextLabel:
     anchor: QVector3D
     offset: QVector3D          # displacement from the anchor to the label
     text: str
+    #: Layer (SketchUp tag) the label lives on; ``None`` = default layer.
+    layer: str | None = None
 
     def position(self) -> QVector3D:
         """Where the label text floats (anchor + offset)."""
@@ -30,10 +32,12 @@ class TextLabel:
             "anchor": [self.anchor.x(), self.anchor.y(), self.anchor.z()],
             "offset": [self.offset.x(), self.offset.y(), self.offset.z()],
             "text": self.text,
+            **({"layer": self.layer} if self.layer else {}),
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "TextLabel":
         return cls(QVector3D(*data.get("anchor", [0, 0, 0])),
                    QVector3D(*data.get("offset", [0, 0, 0])),
-                   data.get("text", ""))
+                   data.get("text", ""),
+                   layer=data.get("layer") or None)

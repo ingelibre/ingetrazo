@@ -98,3 +98,157 @@ def test_edge_layer_survives_split_and_snapshot():
     assert all(layer_of(k) == "Instalaciones" for k in scene.mesh.edges)
     scene.mesh.restore_state(snap)
     assert all(layer_of(k) == "Instalaciones" for k in scene.mesh.edges)
+
+
+# ---- Annotations on layers (SketchUp tags) ----------------------------------
+
+def test_annotations_take_layers_like_sketchup(tmp_path):
+    """Cotas and leader texts are tagged like any entity: default layer when
+    born, reassignable, hidden with their layer (so a scene that hides an
+    "Anotaciones" layer shows a clean model — no need to duplicate the
+    fountain, Marco 2026-09-02), unselectable when locked, and the layer
+    survives the .igz round trip."""
+    from PySide6.QtGui import QVector3D
+    from core.camera import OrbitCamera
+    from core.dimension import Dimension
+    from core.saved_views import SavedView
+    from core.textlabel import TextLabel
+    from formats import igz as igz_format
+
+    scene = Scene()
+    dim = Dimension(QVector3D(0, 0, 0), QVector3D(2, 0, 0), QVector3D(0, -1, 0))
+    lab = TextLabel(QVector3D(1, 0, 0), QVector3D(0.5, 0.5, 1), "Pileta")
+    scene.dimensions.append(dim)
+    scene.text_labels.append(lab)
+    assert layer_of(dim) == DEFAULT_LAYER and layer_of(lab) == DEFAULT_LAYER
+
+    scene.layers.append(Layer("Anotaciones"))
+    assign_layer(dim, "Anotaciones")
+    assign_layer(lab, "Anotaciones")
+    assert (dim.layer, lab.layer) == ("Anotaciones", "Anotaciones")
+    assert scene.entity_visible(dim) and scene.entity_selectable(lab)
+
+    scene.layer("Anotaciones").visible = False
+    assert not scene.entity_visible(dim) and not scene.entity_visible(lab)
+    assert not scene.entity_selectable(dim)
+
+    scene.layer("Anotaciones").visible = True
+    scene.layer("Anotaciones").locked = True
+    assert scene.entity_visible(lab) and not scene.entity_selectable(lab)
+    scene.layer("Anotaciones").locked = False
+
+    # A scene that hides the layer hides the annotations on recall.
+    cam = OrbitCamera()
+    scene.layer("Anotaciones").visible = False
+    limpia = SavedView.capture("Planta limpia", scene, cam)
+    scene.layer("Anotaciones").visible = True
+    scene.saved_views.append(limpia)
+    limpia.apply(scene, cam)
+    assert not scene.entity_visible(dim)
+    scene.layer("Anotaciones").visible = True
+
+    # The tag travels in the document.
+    path = tmp_path / "anotaciones.igz"
+    igz_format.save_scene(scene, path)
+    fresh = Scene()
+    igz_format.load_into(fresh, path)
+    assert fresh.dimensions[0].layer == "Anotaciones"
+    assert fresh.text_labels[0].layer == "Anotaciones"
+    assert fresh.layer("Anotaciones") is not None
+    # Back to the default layer = no tag stored.
+    assign_layer(fresh.dimensions[0], DEFAULT_LAYER)
+    assert fresh.dimensions[0].layer is None
+
+
+def test_hidden_layer_hides_annotations_from_picks():
+    """The pick paths honour the layer: a leader text or a cota on a hidden
+    (or locked) layer is not under the cursor, exactly like a face."""
+    import os
+    from PySide6.QtGui import QFont, QFontMetrics, QVector3D
+    from PySide6.QtWidgets import QApplication
+    from core.dimension import Dimension
+    from core.textlabel import TextLabel
+    from views.viewport import Viewport
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    if QApplication.instance() is None:        # QFontMetrics needs an app
+        QApplication([])
+    scene = Scene()
+    lab = TextLabel(QVector3D(3, 0, 0), QVector3D(-2, 0, 0), "Pileta")
+    dim = Dimension(QVector3D(0, 0, 0), QVector3D(2, 0, 0), QVector3D(0, 0, 1))
+    scene.text_labels.append(lab)
+    scene.dimensions.append(dim)
+    scene.layers.append(Layer("Anotaciones"))
+    assign_layer(lab, "Anotaciones")
+    assign_layer(dim, "Anotaciones")
+    font = QFont()
+    font.setPointSize(9)
+    font.setBold(True)
+    w = QFontMetrics(font).horizontalAdvance("Pileta")
+    px = {3.0: (300.0, 100.0), 1.0: (100.0, 100.0),
+          0.0: (0.0, 200.0), 2.0: (200.0, 200.0)}
+
+    class _VP:
+        pick_threshold_px = 8.0
+        _text_block_x = staticmethod(Viewport._text_block_x)
+
+        def _world_to_pixel(self, p):
+            # dims: a=(0,0,0) b=(2,0,0) and their offsets (z=1) map to y=150
+            key = round(p.x(), 6)
+            x, y = px[key]
+            return (x, 150.0) if p.z() > 0.5 else (x, y)
+
+    vp = _VP()
+    vp.scene = scene
+    pick_lab = Viewport.pick_text_label.__get__(vp)
+    pick_dim = Viewport.pick_dimension.__get__(vp)
+    assert pick_lab(100 - 6 - w / 2, 96, rect_only=True) is lab
+    assert pick_dim(100, 150) is dim                     # on the dimension line
+
+    scene.layer("Anotaciones").visible = False
+    assert pick_lab(100 - 6 - w / 2, 96, rect_only=True) is None
+    assert pick_dim(100, 150) is None
+    scene.layer("Anotaciones").visible = True
+    scene.layer("Anotaciones").locked = True
+    assert pick_lab(100 - 6 - w / 2, 96, rect_only=True) is None
+    assert pick_dim(100, 150) is None
+
+
+def test_layers_tray_assigns_and_releases_annotations():
+    """Capas ▸ assign moves selected cotas/texts to the current layer, and
+    deleting that layer sends them back to the default one."""
+    import os
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QVector3D
+    from PySide6.QtWidgets import QApplication
+    from core.dimension import Dimension
+    from core.textlabel import TextLabel
+    from views.main_window import MainWindow
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    if QApplication.instance() is None:
+        QApplication([])
+    win = MainWindow()
+    try:
+        scene = win.viewport.scene
+        panel = win.tray.layers
+        dim = Dimension(QVector3D(0, 0, 0), QVector3D(2, 0, 0),
+                        QVector3D(0, -1, 0))
+        lab = TextLabel(QVector3D(1, 0, 0), QVector3D(0.5, 0.5, 1), "Pileta")
+        scene.dimensions.append(dim)
+        scene.text_labels.append(lab)
+        scene.layers.append(Layer("Anotaciones"))
+        panel.refresh()
+        tree = panel.tree
+        item = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+                    if tree.topLevelItem(i).data(0, Qt.UserRole) == "Anotaciones")
+        tree.setCurrentItem(item)
+        scene.select([dim, lab])
+        panel._on_assign()
+        assert layer_of(dim) == "Anotaciones" and layer_of(lab) == "Anotaciones"
+        panel._on_delete()
+        assert scene.layer("Anotaciones") is None
+        assert layer_of(dim) == DEFAULT_LAYER and layer_of(lab) == DEFAULT_LAYER
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
