@@ -37,7 +37,12 @@ class SavedView:
         self.style = dict(style) if style else None
         #: Section state (SketchUp scenes remember it): the ACTIVE plane's
         #: uid (or None = no cut) + the two visibility toggles. ``None``
-        #: entirely = an old view that never recorded sections.
+        #: entirely = a view loaded from a document older than sections,
+        #: which is left alone on recall. A view captured with NO planes in
+        #: the model still records {"active": None}: SketchUp's "Active
+        #: Section Planes" is saved per scene by default, so a plan or
+        #: elevation scene made BEFORE any cut switches the cut OFF when
+        #: recalled — every scene stands on its own (Marco, 2026-09-02).
         self.section = dict(section) if section else None
 
     # ---- Snapshot / recall ---------------------------------------------------
@@ -60,7 +65,7 @@ class SavedView:
                                                True),
                        "cuts_shown": getattr(scene, "show_section_cuts",
                                              True),
-                   } if getattr(scene, "section_planes", None) else None)
+                   })
 
     def recapture(self, scene, camera) -> None:
         """Update this view in place from the live state (keeps the name)."""

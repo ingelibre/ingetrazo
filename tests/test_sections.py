@@ -283,3 +283,50 @@ def test_rotate_grabs_a_section_plane_directly():
     # Rotating about the world Z axis keeps a Z normal: check the command ran.
     assert len(vp.history.undo_stack) == 1
     assert vp.history.undo()
+
+
+def test_scene_made_before_any_section_switches_the_cut_off(tmp_path):
+    """SketchUp saves "Active Section Planes" per scene by default: a plan
+    scene captured before any section plane exists recalls NO active cut, so
+    a section activated later never bleeds into it (Marco: "cada escena
+    debería ir separada", 2026-09-02). Views from documents older than
+    sections (no "section" entry at all) stay hands-off."""
+    from core.camera import OrbitCamera
+    from core.saved_views import SavedView
+    from formats import igz as igz_format
+
+    scene = Scene()
+    scene.mesh.add_edge(V(0, 0), V(1, 0))
+    cam = OrbitCamera()
+    planta = SavedView.capture("Planta", scene, cam)       # no planes yet
+    assert planta.section == {"active": None, "planes_shown": True,
+                              "cuts_shown": True}
+    scene.saved_views.append(planta)
+
+    cut = SectionPlane(V(5, 0, 0), V(1, 0, 0), name="Corte A", symbol="A")
+    scene.section_planes.append(cut)
+    scene.set_active_section(cut)
+    corte = SavedView.capture("Corte A", scene, cam)
+    scene.saved_views.append(corte)
+
+    planta.apply(scene, cam)
+    assert scene.active_section() is None
+    corte.apply(scene, cam)
+    assert scene.active_section() is cut
+
+    # The separation survives the document round trip.
+    path = tmp_path / "escenas.igz"
+    igz_format.save_scene(scene, path)
+    fresh = Scene()
+    igz_format.load_into(fresh, path)
+    assert fresh.active_section() is not None
+    fresh.saved_views[0].apply(fresh, cam)
+    assert fresh.active_section() is None
+
+    # A pre-sections view (no entry) still leaves the live cut alone.
+    legacy = SavedView.from_dict({"name": "Vieja", "target": [0, 0, 0],
+                                  "distance": 10.0, "yaw": 0.0, "pitch": 0.0})
+    assert legacy.section is None
+    fresh.set_active_section(fresh.section_planes[0])
+    legacy.apply(fresh, cam)
+    assert fresh.active_section() is not None
