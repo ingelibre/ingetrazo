@@ -199,6 +199,8 @@ def test_is_occluded_matches_geometry():
     vp = _VP()
     vp.scene = scene
     vp.camera = _Cam()
+    vp.plano_style = None
+    vp.style_override = None
     occluded = Viewport._is_occluded.__get__(vp)
 
     assert occluded(QVector3D(0, 5, 0)) is True       # behind the wall
@@ -210,6 +212,57 @@ def test_is_occluded_matches_geometry():
     scene.version += 1                                # cache must refresh
     assert occluded(QVector3D(0, 5, 0)) is True
     assert occluded(QVector3D(0, 1, 0)) is True       # behind wall 1 only
+
+
+def test_xray_and_wireframe_let_snaps_through_faces():
+    # SketchUp: in X-ray (or wireframe) nothing hides geometry, so the snap
+    # engine must not reject a point behind a face — that is how you
+    # dimension the floor of a pool through its water (Marco, 2026-09-02).
+    # Shaded/hidden-line styles keep the visible-only rule.
+    from PySide6.QtGui import QVector3D
+    from core.style import Style
+    from views.viewport import Viewport
+
+    scene = Scene()
+    scene.mesh.add_face([QVector3D(-2, 0, -2), QVector3D(2, 0, -2),
+                         QVector3D(2, 0, 2), QVector3D(-2, 0, 2)])  # wall y=0
+
+    class _Cam:
+        def eye(self):
+            return QVector3D(0.0, -10.0, 0.0)
+
+    class _VP:
+        def __getattr__(self, name):
+            import inspect
+            raw = inspect.getattr_static(Viewport, name, None)
+            if raw is None:
+                raise AttributeError(name)
+            bound = (raw.__get__(self) if inspect.isfunction(raw)
+                     else getattr(Viewport, name))
+            setattr(self, name, bound)
+            return bound
+
+    vp = _VP()
+    vp.scene = scene
+    vp.camera = _Cam()
+    vp.plano_style = None
+    vp.style_override = None
+    occluded = Viewport._is_occluded.__get__(vp)
+    behind = QVector3D(0, 5, 0)
+
+    assert occluded(behind) is True                        # default style
+    scene.display_style = Style(name="X-ray", face_mode="xray")
+    assert occluded(behind) is False
+    scene.display_style = Style(name="Wireframe", face_mode="wireframe")
+    assert occluded(behind) is False
+    scene.display_style = Style(name="Hidden line", face_mode="hidden_line")
+    assert occluded(behind) is True
+    # The composer's line-drawing override wins over the scene style.
+    scene.display_style = Style(name="Default")
+    vp.plano_style = "lineas"
+    assert occluded(behind) is False
+    vp.plano_style = "tecnico"
+    assert occluded(behind) is True
 
 
 def test_geometry_inside_a_group_occludes_too():
@@ -253,6 +306,8 @@ def test_geometry_inside_a_group_occludes_too():
     vp = _VP()
     vp.scene = scene
     vp.camera = _Cam()
+    vp.plano_style = None
+    vp.style_override = None
     occluded = Viewport._is_occluded.__get__(vp)
 
     assert occluded(QVector3D(0, 5, 0)) is True     # behind the grouped wall

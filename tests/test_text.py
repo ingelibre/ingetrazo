@@ -243,3 +243,43 @@ def test_label_igz_round_trip(tmp_path):
     assert (lab.position() - QVector3D(1, 2, 4)).length() < 1e-6
     scene2.clear()
     assert scene2.text_labels == []
+
+
+def test_text_block_sits_away_from_the_anchor():
+    """SketchUp: the leader ends at the NEAR edge of the text block, so the
+    block goes right when the anchor is on the left and LEFT when the
+    leader arrives from the right — never under the words."""
+    from views.viewport import Viewport
+    x = Viewport._text_block_x
+    assert x((100.0, 50.0), (20.0, 50.0), 80.0) == 106.0      # anchor left
+    assert x((100.0, 50.0), (300.0, 50.0), 80.0) == 14.0      # anchor right
+    assert x((100.0, 50.0), None, 80.0) == 106.0              # no anchor
+
+
+def test_pick_text_label_hits_the_drawn_block():
+    """The hit box follows the drawn block: with the anchor to the right the
+    words are LEFT of the leader end, and a click there (not to the right,
+    where the block used to be) picks the label."""
+    from PySide6.QtGui import QFont, QFontMetrics
+    from views.viewport import Viewport
+
+    scene = Scene()
+    lab = TextLabel(QVector3D(3, 0, 0), QVector3D(-2, 0, 0), "Pileta")
+    scene.text_labels.append(lab)
+    font = QFont()
+    font.setPointSize(9)
+    font.setBold(True)
+    w = QFontMetrics(font).horizontalAdvance("Pileta")
+
+    class _VP:
+        pick_threshold_px = 8.0
+        _text_block_x = staticmethod(Viewport._text_block_x)
+
+        def _world_to_pixel(self, p):
+            return {3.0: (300.0, 100.0), 1.0: (100.0, 100.0)}[round(p.x(), 6)]
+
+    vp = _VP()
+    vp.scene = scene
+    pick = Viewport.pick_text_label.__get__(vp)
+    assert pick(100 - 6 - w / 2, 96, rect_only=True) is lab    # inside block
+    assert pick(100 + 6 + w / 2, 96, rect_only=True) is None   # old side

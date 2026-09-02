@@ -818,17 +818,7 @@ class Viewport(QOpenGLWidget):
         # Effective display style (SketchUp Styles): the composer's
         # plano_style override maps onto the same face modes; otherwise the
         # scene's active style drives faces, edges and background.
-        from core.style import Style
-        if self.plano_style == "tecnico":
-            style = Style(name="tecnico", face_mode="hidden_line", sky=False,
-                          background=(1.0, 1.0, 1.0))
-        elif self.plano_style == "lineas":
-            style = Style(name="lineas", face_mode="wireframe", sky=False,
-                          background=(1.0, 1.0, 1.0))
-        elif self.style_override is not None:
-            style = self.style_override
-        else:
-            style = getattr(self.scene, "display_style", None) or Style()
+        style = self._effective_style()
         mode = style.face_mode
         self._frame_style = style
 
@@ -5187,6 +5177,20 @@ class Viewport(QOpenGLWidget):
         for i, ln in enumerate(lines):
             painter.drawText(QPointF(x, y + fm.ascent() + i * fm.height()), ln)
 
+    @staticmethod
+    def _text_block_x(p_pos, p_anchor, block_w: float) -> float:
+        """Left edge of a leader-text block whose leader ends at ``p_pos``.
+
+        The block sits on the side of the leader end AWAY from the anchor
+        (SketchUp): to the right when the anchor is left of the label, to the
+        LEFT when the leader arrives from the right — otherwise the leader
+        runs straight through the words (Marco's "Pileta de piedra basalto"
+        label, 2026-09-02). Shared by the paint pass and the text pick so
+        the hit box is the drawn box."""
+        if p_anchor is not None and p_pos[0] < p_anchor[0]:
+            return p_pos[0] - 6 - block_w
+        return p_pos[0] + 6
+
     def _draw_text_labels(self, painter: QPainter) -> None:
         """Draw every leader-text annotation: a leader line from the anchor
         (hidden where geometry occludes it, like dimensions) up to the label,
@@ -5219,8 +5223,10 @@ class Viewport(QOpenGLWidget):
                 painter.drawEllipse(QPointF(*p_anchor), 2.5, 2.5)
                 painter.setBrush(Qt.NoBrush)
             lines = lab.text.splitlines() or [""]
+            x = self._text_block_x(
+                p_pos, p_anchor, max(fm.horizontalAdvance(ln) for ln in lines))
             for i, line in enumerate(lines):
-                x, y = p_pos[0] + 6, p_pos[1] - 4 + i * fm.height()
+                y = p_pos[1] - 4 + i * fm.height()
                 painter.setPen(QPen(QColor(255, 255, 255, 230)))
                 painter.drawText(QPointF(x + 1, y + 1), line)
                 painter.setPen(QPen(ink))
@@ -6809,10 +6815,14 @@ class Viewport(QOpenGLWidget):
             pp = self._world_to_pixel(lab.position())
             if pp is None:
                 continue
-            # The text block: lines start at pp + (6, -4) with baselines one
-            # fm.height() apart (mirror of _draw_text_labels).
-            for i, line in enumerate(lab.text.splitlines() or [""]):
-                x0 = pp[0] + 6
+            pa = self._world_to_pixel(lab.anchor)
+            # The text block: lines start at _text_block_x(...), first
+            # baseline at pp.y - 4, one fm.height() apart (mirror of
+            # _draw_text_labels).
+            lines = lab.text.splitlines() or [""]
+            x0 = self._text_block_x(
+                pp, pa, max(fm.horizontalAdvance(ln) for ln in lines))
+            for i, line in enumerate(lines):
                 base = pp[1] - 4 + i * fm.height()
                 if (x0 - 3 <= screen_x <= x0 + fm.horizontalAdvance(line) + 3
                         and base - fm.ascent() - 3 <= screen_y
@@ -6820,7 +6830,6 @@ class Viewport(QOpenGLWidget):
                     return lab
             if rect_only:
                 continue
-            pa = self._world_to_pixel(lab.anchor)
             d = math.hypot(pp[0] - screen_x, pp[1] - screen_y)
             if pa is not None:
                 d = min(d, _point_to_segment_distance_2d(
@@ -7150,6 +7159,23 @@ class Viewport(QOpenGLWidget):
                 return vertex
         return None
 
+    def _effective_style(self):
+        """The display style this frame draws with (SketchUp Styles): the
+        composer's ``plano_style`` override maps onto the same face modes,
+        then a ``style_override``, else the scene's active style. Shared by
+        the paint pass and the snap engine so what the eye sees and what
+        the cursor may grab never disagree."""
+        from core.style import Style
+        if self.plano_style == "tecnico":
+            return Style(name="tecnico", face_mode="hidden_line", sky=False,
+                         background=(1.0, 1.0, 1.0))
+        if self.plano_style == "lineas":
+            return Style(name="lineas", face_mode="wireframe", sky=False,
+                         background=(1.0, 1.0, 1.0))
+        if self.style_override is not None:
+            return self.style_override
+        return getattr(self.scene, "display_style", None) or Style()
+
     def _is_occluded(self, world: QVector3D) -> bool:
         """Whether geometry sits between the camera and ``world`` — i.e. the
         point is hidden from the current view. Used to keep snaps from firing
@@ -7169,7 +7195,13 @@ class Viewport(QOpenGLWidget):
         hidden layer must not hide anything. A small epsilon on the far end
         keeps a point lying ON a face — an edge on that face's boundary —
         from being reported as occluded by its own face.
+
+        X-ray and wireframe show everything, so nothing hides a snap there
+        (SketchUp: switch to X-ray to dimension the floor of a pool through
+        its water). Hidden-line and shaded keep the visible-only rule.
         """
+        if self._effective_style().face_mode in ("xray", "wireframe"):
+            return False
         idx = self._pick_index()
         if getattr(idx, "tri_v0", None) is None:
             return False
