@@ -63,14 +63,16 @@ def _supported(fn, *names) -> set:
     """Which of ``names`` the installed OpenSKP's ``fn`` actually accepts.
 
     The applied size and the opacity gate are OUR additions to the writer
-    (fork branch ``texture-applied-size``, not upstream yet). Passing them
-    blind raised ``TypeError: add_material() got an unexpected keyword
-    argument 'opacity'`` against the pinned upstream — CI red and, worse,
-    every .skp save broken in a build made from it. The rest of this module
-    already guards its OpenSKP joins the same way; these two slipped
-    through.  Older library: the file is written without them (a texture
-    claims one inch per tile, glass exports opaque) instead of not written
-    at all."""
+    (upstream PR #252; the size kwargs are ``applied_width``/``applied_height``
+    there, matching upstream's own ``applied_height``, while the pre-PR fork
+    spelled them ``width``/``height`` — the caller probes for both
+    generations). Passing them blind raised ``TypeError: add_material() got
+    an unexpected keyword argument 'opacity'`` against the pinned upstream —
+    CI red and, worse, every .skp save broken in a build made from it. The
+    rest of this module already guards its OpenSKP joins the same way; these
+    two slipped through.  Older library: the file is written without them (a
+    texture claims one inch per tile, glass exports opaque) instead of not
+    written at all."""
     import inspect
     try:
         params = inspect.signature(fn).parameters
@@ -93,6 +95,7 @@ def _collect_materials(faces_by_key, builder):
 
     names = export_names(faces_by_key)
     tex_ok = _supported(builder.add_texture_material,
+                        "applied_width", "applied_height",
                         "width", "height", "opacity")
     col_ok = _supported(builder.add_material, "opacity")
     for key, info in faces_by_key.items():
@@ -106,9 +109,12 @@ def _collect_materials(faces_by_key, builder):
                 # inch however large it was. Marco's lawn (3.26 x 8.82 m)
                 # repeated 128 times and lost its aspect; only the surfaces
                 # whose tile was already inch-sized came out right.
+                w_kw, h_kw = (("applied_width", "applied_height")
+                              if "applied_width" in tex_ok
+                              else ("width", "height"))
                 extra = {k: v for k, v in
-                         (("width", info.get("sw_in")),
-                          ("height", info.get("sh_in")),
+                         ((w_kw, info.get("sw_in")),
+                          (h_kw, info.get("sh_in")),
                           ("opacity", info.get("opacity")))
                          if k in tex_ok}
                 handle = builder.add_texture_material(
