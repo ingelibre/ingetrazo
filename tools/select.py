@@ -304,6 +304,30 @@ class SelectTool(Tool):
                     EditTextLabelCommand(entity, text.strip()))
             viewport.update()
             return
+        if isinstance(entity, Dimension):
+            # SketchUp: double-clicking the dimension text edits it; "<>"
+            # stands for the measured value, and an empty text (or a bare
+            # "<>") goes back to the automatic value.
+            from PySide6.QtWidgets import QInputDialog
+            from core.i18n import tr
+            from core.history import EditDimensionTextCommand
+            fmt = getattr(viewport, "_format_dim_value", None)
+            style = getattr(viewport.scene, "dimension_style", {}) or {}
+            measured = (fmt(entity.value(), style) if fmt is not None
+                        else entity.label())
+            current = entity.text if entity.text else measured
+            text, ok = QInputDialog.getText(
+                viewport.window(), tr("Dimension"),
+                tr("Dimension text (<> = measured value):"), text=current)
+            if ok:
+                new = text.strip()
+                if new in ("", "<>", measured):
+                    new = None
+                if new != entity.text:
+                    viewport.history.execute(
+                        EditDimensionTextCommand(entity, new))
+            viewport.update()
+            return
         if not isinstance(entity, (Face, Edge)):
             self.on_click(ctx)
             return

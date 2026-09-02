@@ -95,6 +95,22 @@ class MarcoVista:
     uid: str = ""
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    #: In-place view edits (LayOut: double-click the viewport, then pan /
+    #: orbit / zoom). ``None`` = whatever the view or scene provides.
+    cam_target: Optional[list] = None      # world point the camera centres on
+    cam_yaw: Optional[float] = None        # radians, overrides the view's
+    cam_pitch: Optional[float] = None
+    #: Draw the model's own dimensions and leader texts in the frame
+    #: (LayOut shows SketchUp's). Opt-in per frame; their layers decide
+    #: per scene which ones.
+    annotations: bool = False
+    annot_text_mm: float = 2.8             # their text height on paper
+    #: Printed border of the frame. Off by default: on screen the canvas
+    #: still shows a light guide, on paper the view sits borderless (the
+    #: sheet's own border is a Composicion setting).
+    border: bool = False
+    border_mm: float = 0.3
+    border_color: str = "#282e36"
 
     def model_height_m(self) -> float:
         return model_height_for_frame(self.h_mm, self.scale_n)
@@ -118,6 +134,8 @@ class TextoItem:
     family: str = "Sans Serif"
     color: str = "#1e242c"
     align: str = "left"          # left | center | right
+    bg_color: str = ""           # "" = no background; else a fill behind the block
+    bg_opacity: float = 1.0      # 0..1 of the background fill
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
 
@@ -279,6 +297,66 @@ class FormaItem:
     fill_color: str = "#e2e8ee"  # fill colour (when fill is on)
 
 
+@dataclass(eq=False)
+class CotaAngularItem:
+    """A sheet angular dimension (LayOut's Angular Dimension tool): a vertex
+    on the page, two rays to the measured points, and an arc of
+    ``radius_mm`` between them carrying the angle label."""
+
+    x_mm: float = 0.0            # vertex, page mm
+    y_mm: float = 0.0
+    ax_mm: float = 30.0          # first ray point, relative to the vertex
+    ay_mm: float = 0.0
+    bx_mm: float = 0.0           # second ray point, relative to the vertex
+    by_mm: float = -30.0
+    radius_mm: float = 15.0      # the arc's radius
+    offset_mm: float = 0.8       # label gap outside the arc
+    text: str = ""               # "" = automatic angle; <> = the value
+    text_mm: float = 2.8
+    decimals: int = 1
+    ends: str = "arrow"          # arrow | tick | none
+    stroke_mm: float = 0.25
+    color: str = "#1e242c"
+    text_color: str = ""         # "" = the line colour
+    text_bg: str = ""            # "" = no background behind the label
+    text_bg_opacity: float = 1.0
+    uid: str = ""
+    z: float = 0.0
+    locked: bool = False
+
+    def angles(self) -> tuple[float, float]:
+        """``(start, sweep)`` in radians, page coordinates (y down): the
+        arc runs from the first ray to the second the SHORT way round."""
+        a0 = math.atan2(self.ay_mm, self.ax_mm)
+        a1 = math.atan2(self.by_mm, self.bx_mm)
+        sweep = a1 - a0
+        while sweep > math.pi:
+            sweep -= 2 * math.pi
+        while sweep <= -math.pi:
+            sweep += 2 * math.pi
+        return a0, sweep
+
+    def angle_deg(self) -> float:
+        return abs(math.degrees(self.angles()[1]))
+
+    def auto_label(self) -> str:
+        n = max(0, min(int(self.decimals), 4))
+        return f"{self.angle_deg():.{n}f}°"
+
+    def label(self) -> str:
+        if self.text:
+            return self.text.replace("<>", self.auto_label())
+        return self.auto_label()
+
+    @property
+    def w_mm(self) -> float:
+        return max(abs(self.ax_mm), abs(self.bx_mm), self.radius_mm, 2.0)
+
+    @property
+    def h_mm(self) -> float:
+        return max(abs(self.ay_mm), abs(self.by_mm), self.radius_mm, 2.0)
+
+
 @dataclass
 class CotaItem:
     """A sheet dimension between two measured points; the label is the REAL
@@ -302,11 +380,22 @@ class CotaItem:
     ends: str = "tick"           # tick | arrow | none
     stroke_mm: float = 0.25
     color: str = "#1e242c"
+    #: Label style (LayOut's dimension text options): where the label sits
+    #: relative to the dimension line, whether it follows the line or stays
+    #: horizontal, and its own colour ("" = the line colour).
+    text_pos: str = "above"      # above | centered | below
+    text_align: str = "aligned"  # aligned | horizontal
+    text_color: str = ""
+    text_bg: str = ""            # "" = no background behind the label
+    text_bg_opacity: float = 1.0
     #: Model anchoring: when both points snapped to geometry of one frame,
     #: the cota remembers WHICH frame (its uid) and the two 3D points in
     #: model metres; the composer reprojects it whenever the frame or the
-    #: model changes, and the label is the exact 3D distance. "" / None =
-    #: a free paper dimension (the pre-anchor behaviour).
+    #: model changes. The label is the distance PROJECTED on the frame's
+    #: view plane (LayOut): on an elevation the fountain's top and the
+    #: slab's front edge read 2.40 m tall, not the 3.87 m diagonal between
+    #: two points 3 m apart in depth (Marco, 2026-09-02). "" / None = a
+    #: free paper dimension (the pre-anchor behaviour).
     anchor_uid: str = ""
     a_world: Optional[list] = None
     b_world: Optional[list] = None
@@ -333,19 +422,23 @@ class CotaItem:
         return (-self.dy_mm / length, self.dx_mm / length)
 
     def real_distance_m(self) -> float:
-        if self.anchored:
-            ax, ay, az = self.a_world
-            bx, by, bz = self.b_world
-            return math.sqrt((bx - ax) ** 2 + (by - ay) ** 2
-                             + (bz - az) ** 2)
+        """Paper length at the cota's scale — for an anchored cota that is
+        the distance projected on its frame's view plane, since the
+        composer reprojects its endpoints from the model."""
         return math.hypot(self.dx_mm, self.dy_mm) * self.scale_n / 1000.0
 
-    def label(self) -> str:
-        if self.text:
-            return self.text
+    def auto_label(self) -> str:
+        """The measured value, formatted."""
         d = self.real_distance_m()
         n = max(0, min(int(self.decimals), 6))
         return f"{d:.{n}f} m" if d < 1000 else f"{d / 1000:.3f} km"
+
+    def label(self) -> str:
+        """Custom text when set — with ``<>`` standing for the measured
+        value (LayOut / SketchUp) — else the measurement itself."""
+        if self.text:
+            return self.text.replace("<>", self.auto_label())
+        return self.auto_label()
 
 
 @dataclass
@@ -364,7 +457,15 @@ class Composicion:
     leyendas: list = field(default_factory=list)
     shapes: list = field(default_factory=list)
     cotas: list = field(default_factory=list)
+    cotas_ang: list = field(default_factory=list)
     cajetin: Optional[Cajetin] = None
+    #: Sheet border drawn on the margin rectangle: width, colour, rounded
+    #: corners and line type (single | double | dashed).
+    border: bool = False
+    border_mm: float = 0.5
+    border_color: str = "#1e242c"
+    border_radius_mm: float = 0.0
+    border_style: str = "single"
 
     def page_size_mm(self) -> tuple[float, float]:
         w, h = PAPER_SIZES_MM[self.paper]
@@ -388,7 +489,8 @@ class Composicion:
     def all_items(self) -> list:
         out = (list(self.frames) + list(self.texts) + list(self.images)
                + list(self.scalebars) + list(self.nortes)
-               + list(self.leyendas) + list(self.shapes) + list(self.cotas))
+               + list(self.leyendas) + list(self.shapes) + list(self.cotas)
+               + list(self.cotas_ang))
         if self.cajetin is not None:
             out.append(self.cajetin)
         return out
@@ -399,6 +501,11 @@ class Composicion:
         d = {"name": self.name, "paper": self.paper,
              "landscape": self.landscape, "margin_mm": self.margin_mm,
              "frames": [asdict(f) for f in self.frames]}
+        if self.border:
+            d["border"] = {"on": True, "mm": self.border_mm,
+                           "color": self.border_color,
+                           "radius_mm": self.border_radius_mm,
+                           "style": self.border_style}
         if self.texts:
             d["texts"] = [asdict(t) for t in self.texts]
         if self.images:
@@ -406,7 +513,8 @@ class Composicion:
         if self.scalebars:
             d["scalebars"] = [asdict(sb) for sb in self.scalebars]
         for key, lst in (("nortes", self.nortes), ("leyendas", self.leyendas),
-                         ("shapes", self.shapes), ("cotas", self.cotas)):
+                         ("shapes", self.shapes), ("cotas", self.cotas),
+                         ("cotas_ang", self.cotas_ang)):
             if lst:
                 d[key] = [asdict(it) for it in lst]
         if self.cajetin is not None:
@@ -419,6 +527,13 @@ class Composicion:
                 paper=d.get("paper", "A4"),
                 landscape=bool(d.get("landscape", True)),
                 margin_mm=float(d.get("margin_mm", 10.0)))
+        b = d.get("border")
+        if isinstance(b, dict) and b.get("on"):
+            c.border = True
+            c.border_mm = float(b.get("mm", 0.5))
+            c.border_color = str(b.get("color", "#1e242c"))
+            c.border_radius_mm = float(b.get("radius_mm", 0.0))
+            c.border_style = str(b.get("style", "single"))
         c.frames = [MarcoVista(**f) for f in d.get("frames", [])]
         c.texts = [TextoItem(**t) for t in d.get("texts", [])]
         c.images = [ImagenItem(**i) for i in d.get("images", [])]
@@ -426,6 +541,7 @@ class Composicion:
         c.nortes = [FlechaNorte(**n) for n in d.get("nortes", [])]
         c.leyendas = [Leyenda(**le) for le in d.get("leyendas", [])]
         c.shapes = [FormaItem(**f) for f in d.get("shapes", [])]
+        c.cotas_ang = [CotaAngularItem(**a) for a in d.get("cotas_ang", [])]
         c.cotas = [CotaItem(**ct) for ct in d.get("cotas", [])]
         if "cajetin" in d:
             c.cajetin = Cajetin(**d["cajetin"])
@@ -473,6 +589,8 @@ class AddItemCommand(ComposerCommand):
             return self.comp.shapes
         if isinstance(self.item, CotaItem):
             return self.comp.cotas
+        if isinstance(self.item, CotaAngularItem):
+            return self.comp.cotas_ang
         return None
 
     def do(self) -> None:
@@ -513,6 +631,8 @@ class RemoveItemCommand(ComposerCommand):
             return self.comp.shapes
         if isinstance(self.item, CotaItem):
             return self.comp.cotas
+        if isinstance(self.item, CotaAngularItem):
+            return self.comp.cotas_ang
         return None
 
     def do(self) -> None:
@@ -642,6 +762,25 @@ def apply_frame_camera(camera, frame: MarcoVista,
             lo, hi = scene.bounds()
             if lo is not None:
                 camera.target = (lo + hi) * 0.5
+    # Per-frame view edits (LayOut: double-click the viewport, then pan /
+    # orbit / zoom) override whatever the view or the scene set.
+    if frame.cam_yaw is not None:
+        camera.yaw = float(frame.cam_yaw)
+    if frame.cam_pitch is not None:
+        camera.pitch = float(frame.cam_pitch)
+        if abs(frame.cam_pitch) < math.radians(89.5):
+            try:                            # orbited off a plan: Z is up again
+                from PySide6.QtGui import QVector3D
+                camera.up = QVector3D(0.0, 0.0, 1.0)
+            except ImportError:
+                camera.up = (0.0, 0.0, 1.0)
+    if frame.cam_target is not None:
+        x, y, z = (float(v) for v in frame.cam_target)
+        try:
+            from PySide6.QtGui import QVector3D
+            camera.target = QVector3D(x, y, z)
+        except ImportError:
+            camera.target = (x, y, z)
     camera.perspective = False
     camera.distance = ortho_distance_for_height(
         frame.model_height_m(), camera.fov_deg)

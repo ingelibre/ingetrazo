@@ -729,7 +729,8 @@ class Viewport(QOpenGLWidget):
         self._fbo_size = size
 
     def render_image(self, width_px: int, height_px: Optional[int] = None,
-                     overlays: bool = True) -> Optional["QImage"]:
+                     overlays: bool = True,
+                     annotations_only: bool = False) -> Optional["QImage"]:
         """Render the current view at ``width_px`` wide (height follows the
         viewport's aspect) and return it as a ``QImage`` — the hi-res 2D
         export. Reuses the exact ``paintGL`` pipeline against a temporary
@@ -777,11 +778,15 @@ class Viewport(QOpenGLWidget):
             # (_world_to_pixel); the scale maps it onto the hi-res image,
             # thickening lines and text proportionally.
             painter.scale(width_px / lw, height_px / lh)
-            self._draw_guides(painter)
-            self._draw_section_planes(painter)
-            self._draw_geo_surfaces(painter)
-            self._draw_geo_paths(painter)
-            self._draw_geo_points(painter)
+            if not annotations_only:
+                # A sheet frame wants the model's annotations (LayOut shows
+                # SketchUp's dimensions and texts) but never the guides or
+                # the section-plane frames.
+                self._draw_guides(painter)
+                self._draw_section_planes(painter)
+                self._draw_geo_surfaces(painter)
+                self._draw_geo_paths(painter)
+                self._draw_geo_points(painter)
             self._draw_dimensions(painter)
             self._draw_text_labels(painter)
             painter.end()
@@ -5296,7 +5301,8 @@ class Viewport(QOpenGLWidget):
             mid_world = dim.midpoint()
             mid = self._world_to_pixel(mid_world)
             if mid is not None and not self._is_occluded(mid_world):
-                text = self._format_dim_value(dim.value(), style)
+                text = dim.display_text(
+                    self._format_dim_value(dim.value(), style))
                 painter.setFont(font)
                 painter.setPen(QPen(QColor(255, 255, 255, 230)))
                 painter.drawText(QPointF(mid[0] + 5, mid[1] - 4), text)
@@ -7180,6 +7186,87 @@ class Viewport(QOpenGLWidget):
             if not self._is_occluded(vertex):
                 return vertex
         return None
+
+    def hlr_geometry(self):
+        """World-space geometry for the hidden-line pass (core.hlr) as
+        arrays, straight from the caches the viewport already keeps: the
+        pick index's triangles, every placement chunk's hard edges and soft
+        edges with their two face normals, plus the loose mesh's edges.
+        ``collect_geometry``'s per-face Python walk took 5 s on the fountain
+        (106k triangles) — and the composer paid it on every "Update view"
+        and on every frame added; this is tens of milliseconds.
+
+        Returns ``(tris (T,3,3), hard (E,2,3), soft (S,2,3), soft_n
+        (S,2,3))``; ``soft_n[:, 1]`` is NaN where a soft edge bounds an
+        open surface (no second face)."""
+        import numpy as np
+        scene = self.scene
+        idx = self._pick_index()
+        if getattr(idx, "tri_v0", None) is not None and len(idx.tri_v0):
+            keep = idx.ent_vis[idx.tri_ent]
+            v0 = idx.tri_v0[keep]
+            tris = np.stack([v0, v0 + idx.tri_e1[keep],
+                             v0 + idx.tri_e2[keep]], axis=1)
+            tris = tris.astype(np.float64)
+        else:
+            tris = np.empty((0, 3, 3))
+        hard_parts: list = []
+        if getattr(idx, "gedge_a", None) is not None and len(idx.gedge_a):
+            gvis = np.array([scene.entity_visible(g)
+                             and not getattr(g, "billboard", False)
+                             for g in idx.gedge_groups], dtype=bool)
+            m = (gvis[idx.gedge_gi] if len(gvis)
+                 else np.zeros(len(idx.gedge_a), dtype=bool))
+            hard_parts.append(np.stack([idx.gedge_a[m], idx.gedge_b[m]],
+                                       axis=1).astype(np.float64))
+        soft_parts: list = []
+        n_parts: list = []
+        nan3 = (float("nan"),) * 3
+        lh: list = []
+        ls: list = []
+        ln: list = []
+        for e in scene.loose_mesh.edges:
+            if getattr(e, "hidden", False) or not scene.entity_visible(e):
+                continue
+            p0 = (e.v0.position.x(), e.v0.position.y(), e.v0.position.z())
+            p1 = (e.v1.position.x(), e.v1.position.y(), e.v1.position.z())
+            if getattr(e, "soft", False):
+                fs = [f for f in e.faces if scene.entity_visible(f)]
+                if not fs:
+                    continue
+                na = fs[0].normal()
+                nb = fs[1].normal() if len(fs) > 1 else None
+                ls.append((p0, p1))
+                ln.append(((na.x(), na.y(), na.z()),
+                           nan3 if nb is None else (nb.x(), nb.y(), nb.z())))
+            else:
+                lh.append((p0, p1))
+        if lh:
+            hard_parts.append(np.asarray(lh, dtype=np.float64))
+        if ls:
+            soft_parts.append(np.asarray(ls, dtype=np.float64))
+            n_parts.append(np.asarray(ln, dtype=np.float64))
+        for g in self._placements():
+            if (getattr(g, "billboard", False)
+                    or not scene.entity_visible(g)):
+                continue
+            ch = self._group_chunk(g)
+            sp = ch.get("soft_pts")
+            if sp is None or not len(sp):
+                continue
+            soft_parts.append(
+                np.asarray(sp, dtype=np.float64).reshape(-1, 2, 3))
+            n1 = np.where(np.asarray(ch["soft_single"])[:, None], np.nan,
+                          np.asarray(ch["soft_n1"], dtype=np.float64))
+            n_parts.append(np.stack(
+                [np.asarray(ch["soft_n0"], dtype=np.float64), n1], axis=1))
+        hard = (np.concatenate(hard_parts) if hard_parts
+                else np.empty((0, 2, 3)))
+        soft = (np.concatenate(soft_parts) if soft_parts
+                else np.empty((0, 2, 3)))
+        soft_n = (np.concatenate(n_parts) if n_parts
+                  else np.empty((0, 2, 3)))
+        return tris, hard, soft, soft_n
 
     def _effective_style(self):
         """The display style this frame draws with (SketchUp Styles): the

@@ -71,6 +71,10 @@ class Scene:
     saved_views: list = field(default_factory=list)
     # Sheet compositions (core.composition.Composicion) — the print layouts.
     compositions: list = field(default_factory=list)
+    # Scales (1:N) typed by the user in the composer beyond the common
+    # presets — kept with the document so every frame of the file offers
+    # them again (Marco, 2026-09-02).
+    custom_scales: list = field(default_factory=list)
     # Display style for dimension annotations (edited from the Tray).
     dimension_style: dict = field(default_factory=lambda: {
         "decimals": 2, "units": "m", "font_size": 9, "color": [45, 55, 75]})
@@ -277,6 +281,7 @@ class Scene:
             self.image_planes.clear()
             self.saved_views.clear()
             self.compositions.clear()
+            self.custom_scales.clear()
             self.selection.clear()
             from core.layers import DEFAULT_LAYER, Layer
             self.layers = [Layer(DEFAULT_LAYER)]

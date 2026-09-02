@@ -899,6 +899,24 @@ class EditTextLabelCommand(Command):
         scene.version += 1
 
 
+class EditDimensionTextCommand(Command):
+    """Change a dimension's custom text (``None`` = back to the measured
+    value) — SketchUp's double-click on the dimension text."""
+
+    def __init__(self, dim, text) -> None:
+        self.dim = dim
+        self._new = text or None
+        self._old = getattr(dim, "text", None)
+
+    def do(self, scene) -> None:
+        self.dim.text = self._new
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.dim.text = self._old
+        scene.version += 1
+
+
 class DeleteTextLabelsCommand(Command):
     """Remove a set of text labels from ``scene.text_labels``."""
 

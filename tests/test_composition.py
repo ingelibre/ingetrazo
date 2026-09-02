@@ -487,6 +487,17 @@ class TestC5Items:
         ct.text = "VER DETALLE"
         assert ct.label() == "VER DETALLE"
 
+    def test_anchored_cota_measures_the_projected_distance(self):
+        # Elevation at 1:40: the fountain's top (on the axis) and the slab's
+        # front edge (3 m closer to the viewer) are 60 paper mm apart
+        # vertically. LayOut reads the height, 2.40 m — not the 3.87 m
+        # diagonal through the depth the drawing cannot show.
+        ct = CotaItem(dx_mm=-0.6, dy_mm=60.0, scale_n=40.0,
+                      anchor_uid="f1", a_world=[0.02, 0.03, 2.4],
+                      b_world=[0.0, -3.0, 0.0])
+        assert ct.anchored
+        assert ct.label() == "2.40 m"
+
     def test_leyenda_height_follows_rows(self):
         le = Leyenda(rows=["A", "B", "C"])
         assert le.h_mm == pytest.approx(7.5 + 16.5)

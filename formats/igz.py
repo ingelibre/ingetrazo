@@ -275,7 +275,8 @@ def save_scene(scene, path: Path) -> dict:
             {"a": [d.a.x(), d.a.y(), d.a.z()],
              "b": [d.b.x(), d.b.y(), d.b.z()],
              "offset": [d.offset.x(), d.offset.y(), d.offset.z()],
-             **({"layer": d.layer} if getattr(d, "layer", None) else {})}
+             **({"layer": d.layer} if getattr(d, "layer", None) else {}),
+             **({"text": d.text} if getattr(d, "text", None) else {})}
             for d in dims
         ]
     mats = getattr(scene, "materials", None)
@@ -284,6 +285,9 @@ def save_scene(scene, path: Path) -> dict:
     style = getattr(scene, "dimension_style", None)
     if style:
         payload["dimension_style"] = dict(style)
+    scales = getattr(scene, "custom_scales", None)
+    if scales:
+        payload["custom_scales"] = [float(n) for n in scales]
     back = getattr(scene, "back_face_color", None)
     if back:
         payload["back_face_color"] = list(back)
@@ -531,11 +535,16 @@ def _load_into_inner(scene, path: Path) -> None:
     for raw in payload.get("dimensions", []):
         scene.dimensions.append(Dimension(
             QVector3D(*raw["a"]), QVector3D(*raw["b"]),
-            QVector3D(*raw["offset"]), layer=raw.get("layer") or None))
+            QVector3D(*raw["offset"]), layer=raw.get("layer") or None,
+            text=raw.get("text") or None))
 
     style = payload.get("dimension_style")
     if isinstance(style, dict):
         scene.dimension_style.update(style)
+    scales = payload.get("custom_scales")
+    if isinstance(scales, list):
+        scene.custom_scales = [float(n) for n in scales
+                               if isinstance(n, (int, float)) and n > 0]
 
     back = payload.get("back_face_color")
     if isinstance(back, list) and len(back) == 3:

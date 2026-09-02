@@ -28,6 +28,16 @@ class Dimension:
     #: Scenes hide layers, so a plan scene can show a clean model and a
     #: "Anotaciones" layer can carry the cotas and leader texts.
     layer: str | None = None
+    #: Custom text (SketchUp: double-click the value to edit it); ``None``
+    #: shows the measured value, and ``<>`` inside the text stands for it.
+    text: str | None = None
+
+    def display_text(self, measured: str) -> str:
+        """What the annotation shows: the custom text with ``<>`` swapped
+        for the formatted measurement, or the measurement itself."""
+        if self.text:
+            return self.text.replace("<>", measured)
+        return measured
 
     def value(self) -> float:
         """Measured length (metres)."""

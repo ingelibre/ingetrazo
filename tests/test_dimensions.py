@@ -365,3 +365,94 @@ def test_world_under_cursor_uses_cached_pick():
                                      QVector3D(0, 0, -1))
     ground = under(0, 0)
     assert abs(ground.z()) < 1e-6             # falls back to the ground plane
+
+
+# ---- Custom dimension text (SketchUp: double-click the value) ---------------
+
+def test_dimension_custom_text_and_placeholder():
+    from PySide6.QtGui import QVector3D
+    from core.dimension import Dimension
+    d = Dimension(QVector3D(0, 0, 0), QVector3D(2.4, 0, 0), QVector3D(0, 1, 0))
+    assert d.display_text("2.40 m") == "2.40 m"              # automatic
+    d.text = "H = <> (verificar)"
+    assert d.display_text("2.40 m") == "H = 2.40 m (verificar)"
+    d.text = "VARIABLE"
+    assert d.display_text("2.40 m") == "VARIABLE"
+
+
+def test_edit_dimension_text_command_undo_redo():
+    from PySide6.QtGui import QVector3D
+    from core.dimension import Dimension
+    from core.history import EditDimensionTextCommand, History
+    from core.scene import Scene
+    scene = Scene()
+    history = History(scene)
+    d = Dimension(QVector3D(0, 0, 0), QVector3D(2, 0, 0), QVector3D(0, 1, 0))
+    scene.dimensions.append(d)
+    history.execute(EditDimensionTextCommand(d, "Ø <>"))
+    assert d.text == "Ø <>"
+    history.undo()
+    assert d.text is None
+    history.redo()
+    assert d.text == "Ø <>"
+    history.execute(EditDimensionTextCommand(d, None))       # back to auto
+    assert d.text is None
+
+
+def test_select_double_click_edits_dimension_text(monkeypatch, tmp_path):
+    """Double-clicking a cota with Select opens the text dialog (SketchUp),
+    commits the new text as one undoable command, and a bare "<>" or the
+    measured value itself returns the cota to its automatic label. The text
+    survives the .igz round trip."""
+    from types import SimpleNamespace
+    from PySide6.QtGui import QVector3D
+    from PySide6.QtWidgets import QInputDialog
+    from core.dimension import Dimension
+    from core.history import History
+    from core.scene import Scene
+    from formats import igz as igz_format
+    from tools.select import SelectTool
+
+    scene = Scene()
+    history = History(scene)
+    d = Dimension(QVector3D(0, 0, 0), QVector3D(2.4, 0, 0), QVector3D(0, 1, 0))
+    scene.dimensions.append(d)
+    viewport = SimpleNamespace(
+        scene=scene, history=history,
+        pick_group=lambda x, y: None, pick_edge=lambda x, y: None,
+        pick_dimension=lambda x, y: d,
+        pick_text_label=lambda x, y, rect_only=False: None,
+        pick_geopath=lambda x, y: None, pick_face=lambda x, y: None,
+        pick_section_plane=lambda x, y: None, pick_guide=lambda x, y: None,
+        pick_image_plane=lambda x, y: None,
+        window=lambda: None, update=lambda: None)
+    ctx = SimpleNamespace(viewport=viewport,
+                          screen=SimpleNamespace(x=lambda: 0, y=lambda: 0),
+                          modifiers=0)
+    asked = {}
+
+    def fake_get_text(parent, title, label, text="", **kw):
+        asked["prefill"] = text
+        return asked["answer"], True
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(fake_get_text))
+    asked["answer"] = "H = <>"
+    SelectTool().on_double_click(ctx)
+    assert asked["prefill"] == "2.40 m"                      # shows the value
+    assert d.text == "H = <>"
+    assert d.display_text("2.40 m") == "H = 2.40 m"
+    history.undo()
+    assert d.text is None
+    history.redo()
+
+    asked["answer"] = "<>"                                   # back to automatic
+    SelectTool().on_double_click(ctx)
+    assert asked["prefill"] == "H = <>"
+    assert d.text is None
+
+    d.text = "VARIABLE"
+    path = tmp_path / "cota.igz"
+    igz_format.save_scene(scene, path)
+    fresh = Scene()
+    igz_format.load_into(fresh, path)
+    assert fresh.dimensions[0].text == "VARIABLE"

@@ -272,7 +272,20 @@ def visible_spans(a2, b2, az, bz, tv2, tvz, eps: float):
     return visible
 
 
-def hlr_view(scene, camera, return_world: bool = False):
+def _geometry_as_lists(tris, hard, soft, soft_n):
+    """Array geometry → the tuple lists ``clip_to_section`` walks."""
+    t = [tuple(map(tuple, tri)) for tri in np.asarray(tris).tolist()]
+    h = [(tuple(a), tuple(b)) for a, b in np.asarray(hard).tolist()]
+    s = []
+    for (p0, p1), (na, nb) in zip(np.asarray(soft).tolist(),
+                                  np.asarray(soft_n).tolist()):
+        open_edge = any(x != x for x in nb)            # NaN = no 2nd face
+        s.append((tuple(p0), tuple(p1), tuple(na),
+                  None if open_edge else tuple(nb)))
+    return t, h, s
+
+
+def hlr_view(scene, camera, return_world: bool = False, geometry=None):
     """Visible edge segments of *scene* under *camera* (parallel), as an
     (N, 4) array of (x0, y0, x1, y1) in CAMERA-PLANE coordinates (model
     units, origin at the camera axis). This is the drawing a drafter would
@@ -281,35 +294,62 @@ def hlr_view(scene, camera, return_world: bool = False):
 
     With ``return_world`` also return the same segments' endpoints in
     WORLD coordinates, (N, 2, 3) — the anchor data for dimensions that
-    follow the model. Both arrays share row order."""
-    tris, hard, soft = collect_geometry(scene)
+    follow the model. Both arrays share row order.
+
+    ``geometry`` — optional pre-collected arrays ``(tris, hard, soft,
+    soft_n)`` as ``Viewport.hlr_geometry()`` returns them (world space:
+    tris (T,3,3), hard (E,2,3), soft (S,2,3), soft_n (S,2,3) with NaN for
+    an open boundary's missing second normal). Skips the per-face Python
+    walk of :func:`collect_geometry` — 5 s on a 106k-triangle fountain —
+    and runs the silhouette rule vectorised."""
+    soft_n = None
+    if geometry is None:
+        tris, hard, soft = collect_geometry(scene)
+    else:
+        tris, hard, soft, soft_n = geometry
     # Active section cut (SketchUp): the composer's sheets honour it — the
     # whole reason sections exist here (plans and cross-cuts on paper).
     sp = (scene.active_section()
           if getattr(scene, "show_section_cuts", True)
           and hasattr(scene, "active_section") else None)
     if sp is not None:
+        if soft_n is not None:          # the clipper walks tuple lists
+            tris, hard, soft = _geometry_as_lists(tris, hard, soft, soft_n)
+            soft_n = None
         tris, hard, soft = clip_to_section(tris, hard, soft, sp)
     _e, _r, _u, fwd = camera_basis(camera)
 
-    # silhouette rule for soft edges
-    for p0, p1, na, nb in soft:
-        fa = float(np.dot(np.asarray(na), fwd))
-        if nb is None:
-            hard.append((p0, p1))       # open boundary: always a profile
-        else:
-            fb = float(np.dot(np.asarray(nb), fwd))
-            if (fa < 0.0) != (fb < 0.0):
-                hard.append((p0, p1))
-
-    if not hard:
-        empty = np.empty((0, 4))
-        return (empty, np.empty((0, 2, 3))) if return_world else empty
+    if soft_n is not None:
+        # silhouette rule, vectorised: a soft edge is a profile where its
+        # two faces face opposite ways, or where it bounds an open surface.
+        hard = np.asarray(hard, dtype=np.float64).reshape(-1, 2, 3)
+        if len(soft):
+            fa = np.asarray(soft_n)[:, 0, :] @ fwd
+            fb = np.asarray(soft_n)[:, 1, :] @ fwd
+            mask = np.isnan(fb) | ((fa < 0.0) != (fb < 0.0))
+            hard = np.concatenate(
+                [hard, np.asarray(soft, dtype=np.float64)[mask]])
+        if not len(hard):
+            empty = np.empty((0, 4))
+            return (empty, np.empty((0, 2, 3))) if return_world else empty
+    else:
+        # silhouette rule for soft edges
+        for p0, p1, na, nb in soft:
+            fa = float(np.dot(np.asarray(na), fwd))
+            if nb is None:
+                hard.append((p0, p1))   # open boundary: always a profile
+            else:
+                fb = float(np.dot(np.asarray(nb), fwd))
+                if (fa < 0.0) != (fb < 0.0):
+                    hard.append((p0, p1))
+        if not hard:
+            empty = np.empty((0, 4))
+            return (empty, np.empty((0, 2, 3))) if return_world else empty
     eye, right, up, fwd = camera_basis(camera)
     E = np.asarray(hard, dtype=np.float64)              # (E,2,3)
     A = _to_cam(E[:, 0, :], eye, right, up, fwd)
     B = _to_cam(E[:, 1, :], eye, right, up, fwd)
-    if tris:
+    if len(tris):
         T = np.asarray(tris, dtype=np.float64)          # (T,3,3)
         TC = _to_cam(T.reshape(-1, 3), eye, right, up, fwd).reshape(-1, 3, 3)
         tv2 = TC[:, :, :2]
