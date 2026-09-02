@@ -23,7 +23,7 @@ revierte entero; el guard de hermeticidad valida sus recetas).
 
 | Tool | Qué hace |
 |---|---|
-| `run_python` | Ejecuta Python sobre el documento vivo (scope: `scene`, `mesh`, `selection`, `groups`, `bim`, `QVector3D`…). Un undo por llamada; rollback total si falla. |
+| `run_python` | Ejecuta Python sobre el documento vivo (scope: `scene`, `mesh`, `selection`, `groups`, `bim`, `QVector3D`… y los constructores `revolve(perfil)` / `extrude(contorno, z0, z1)`: una línea → un grupo sólido, suave y orientado). Un undo por llamada; rollback total si falla. |
 | `query_model` | Conteos, nombres de grupos/componentes, materiales, capas, bounds. |
 | `screenshot` | Renderiza el viewport real — el agente mira e itera. |
 | `undo` / `redo` | La historia de siempre. |
@@ -52,3 +52,14 @@ asistente actúa por recetas de Python transaccionales — cada acción es un
 paso de undo, y con proveedores con visión recibe capturas del viewport
 para VER lo que construyó e iterar. El modelo es editable, y la clave se
 guarda en la configuración local.
+
+### Modelar desde una foto
+
+Con el botón **Foto…** adjuntas la imagen de un objeto (una fuente, un
+mueble, una fachada) y el asistente la interpreta y lo recrea por partes,
+cada una como grupo con nombre, comparando sus capturas contra la foto.
+Dale las medidas reales en el mensaje ("la taza mide 4 m de diámetro, el
+alto total 2,30") — una foto no trae dimensiones, y lo que el asistente
+estime del ojo lo declara como supuesto para que lo corrijas. La foto se
+reescala a 1280 px y viaja como JPEG solo en ese mensaje. Necesita un
+proveedor con visión (Anthropic, OpenAI, Gemini, OpenRouter).

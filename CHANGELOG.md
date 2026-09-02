@@ -4,6 +4,61 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [Sin publicar]
+
+### Añadido
+- **Asistente IA: modelar desde una foto.** Botón «Foto…» en el chat
+  (Ctrl+Shift+A): adjunta la foto de un objeto — una fuente, un mueble, una
+  fachada — y el modelo la interpreta y lo recrea por partes como grupos
+  editables, iterando contra capturas del viewport. La foto viaja
+  reescalada a 1280 px como JPEG (con su rotación EXIF aplicada) y solo en
+  el mensaje al que se adjunta. Las medidas las pones tú: una foto no las
+  trae, y el asistente declara como supuesto lo que estima de la imagen.
+  Requiere un proveedor con visión (Anthropic, OpenAI, Gemini, OpenRouter);
+  con otro, el chat lo avisa.
+- **Recetas IA con torno y prisma de fábrica.** Mirando sesiones reales,
+  cada modelo se inventaba su propia matemática de revolución por pieza —
+  40 líneas frágiles y facetadas cada vez. El scope de las recetas (chat y
+  puente MCP por igual) ahora trae `revolve(perfil, …)` (sólido de
+  revolución con tapas, festones opcionales por `scallop`, aristas suaves y
+  orientación correcta) y `extrude(contorno, z0, z1)`: una línea por pieza,
+  menos tokens y sólidos herméticos.
+
+### Corregido
+- **Asistente IA: una respuesta cortada por el límite de tokens ya no
+  termina el chat en silencio.** Cazado en vivo con gemini-2.5-flash: el
+  modelo se quedaba sin espacio a mitad del bloque ```python y el loop lo
+  leía como "no hay código, terminé" — nada se dibujaba y nada avisaba.
+  Ahora el asistente lo detecta, avisa en el chat y le pide al modelo un
+  bloque más corto y completo; además el presupuesto de respuesta subió de
+  4096 a 8192 tokens (16384 para Gemini: sus modelos 2.5 descuentan el
+  «pensamiento» oculto del mismo presupuesto). Y el chat **nunca termina en
+  silencio**: al agotarse el límite de pasos (ahora 12) lo dice y basta
+  escribir «continúa» para retomar donde quedó.
+- **Asistente IA: mucho menos consumo de cuota.** Cada turno reenvía la
+  conversación entera, y con ella viajaban TODAS las capturas del viewport
+  viejas — a la ronda 10, nueve imágenes muertas por petición. Ahora viaja
+  la foto de referencia del usuario y solo la captura más reciente. Además
+  la visión se detecta por modelo, no solo por proveedor: los Llama 4 de
+  Groq (gratis) y los llava/qwen-vl de Ollama ya reciben foto y capturas.
+- **Asistente IA: un modelo sin visión ya no revienta con la foto.** Groq
+  rechaza con HTTP 400 el formato con imágenes en modelos de texto, y como
+  la foto quedaba en la conversación, todos los reintentos fallaban igual.
+  Ahora a un modelo sin visión no se le envía imagen alguna (la foto queda
+  guardada y vuelve a viajar al cambiar a un modelo con visión), y el aviso
+  del chat lo dice claro.
+- **El costo por turno ya casi no crece con la sesión**: el código de las
+  recetas viejas se reenvía como «[receta ya ejecutada — código omitido]»
+  (su efecto ya está en el documento; la prosa y los resultados se
+  conservan, y los 2 bloques más recientes viajan enteros). Además el
+  prompt le enseña al modelo que el scope persiste entre bloques — no
+  necesita redefinir sus funciones en cada receta.
+- **Más dieta de tokens**: los bloques `<thought>` que algunos modelos
+  (Gemma) filtran a su texto se limpian antes de guardar la conversación,
+  el stdout de una receta se recorta a ~1500 caracteres en el feedback, y
+  la captura del viewport solo se toma cuando el modelo CAMBIÓ (tras un
+  error o una inspección, la anterior sigue siendo exacta).
+
 ## [0.3.8] — 2026-08-31
 
 **La release del sol.** Un solo día de trabajo mano a mano: cada pieza se

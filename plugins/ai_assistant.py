@@ -22,11 +22,12 @@ import base64
 import threading
 
 from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt, Signal
-from PySide6.QtGui import QFontDatabase, QPalette
+from PySide6.QtGui import QFontDatabase, QImageReader, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -39,7 +40,17 @@ from core import ai
 from core.i18n import tr
 from tools.base import Tool
 
-MAX_ROUNDS = 8
+MAX_ROUNDS = 12
+
+#: Reply budget per turn. 4096 was not enough for chatty coders (gemini
+#: 2.5 flash got cut mid-```python and the loop ended with nothing drawn);
+#: every provider we speak accepts 8192 output tokens.
+MAX_TOKENS = 8192
+
+#: Gemini 2.5 models bill their hidden "thinking" against the SAME
+#: max_tokens — flash kept getting cut even at 8192 (seen live modeling a
+#: fountain). Both 2.5 flash and pro accept 16384.
+TOKENS_BY_PROVIDER = {"gemini": 16384}
 
 SYSTEM_PROMPT = """Eres el asistente de modelado de IngeTrazo, un modelador \
 3D libre estilo SketchUp (Z-up, unidades en METROS). Conversas en español, \
@@ -53,16 +64,32 @@ pedido esté terminado, responde SIN bloque de código con un resumen corto.
 En el scope del bloque tienes: scene, mesh, selection, groups, layers, \
 viewport, QVector3D, Mesh, Group, Edge, Face, bim.
 Recetario:
-- Cara: f = mesh.add_face([QVector3D(x,y,z), ...])  (lazo antihorario visto \
-desde afuera; los sólidos se construyen cara a cara, cerrados)
-- Color: f.attrs["color"] = (r, g, b, 1.0)  (0..1)
+- TORNO (prefiérelo para toda pieza redonda): g = revolve([(radio,z), ...], \
+name="Columna", color=(r,g,b,1.0), segments=32, scallop=None, closed=False) \
+— perfil de abajo a arriba; abierto se tapa solo; closed=True si el perfil \
+es una sección cerrada (p.ej. la pared de una taza); scallop=(profundidad, \
+lóbulos) talla festones/gallones en el borde. Crea el grupo y lo agrega.
+- PRISMA: g = extrude([(x,y), ...], z0, z1, name="Base", color=...) — \
+contorno en planta extruido; crea el grupo y lo agrega.
+- Cara suelta: f = mesh.add_face([QVector3D(x,y,z), ...])  (lazo \
+antihorario visto desde afuera); f.attrs["color"] = (r, g, b, 1.0)  (0..1)
 - Arista: mesh.add_edge(QVector3D(...), QVector3D(...))
-- Grupo: m = Mesh(); m.add_face([...]); g = Group(m, name="..."); \
+- Grupo manual: m = Mesh(); m.add_face([...]); g = Group(m, name="..."); \
 groups.append(g)
 - Cámara: viewport.camera.target/distance/yaw/pitch; viewport.update()
-- print(...) para reportar datos.
+- print(...) para reportar datos (breve: el resultado viaja cada turno).
 Cada bloque es UN paso de undo y se revierte ENTERO si lanza una excepción. \
-Construye por pasos pequeños y verifica con las capturas."""
+Construye por pasos pequeños y verifica con las capturas.
+El scope PERSISTE entre bloques: variables y funciones ya definidas siguen \
+disponibles — no las redefinas. El código de tus recetas viejas se resume \
+como "[receta ya ejecutada]"; su efecto sigue en el modelo.
+
+Si el usuario adjunta una FOTO de un objeto (una fuente, un mueble, una \
+fachada): identifica sus partes y proporciones y recréalo por partes, cada \
+una como grupo con nombre. Una foto NO trae medidas: usa las que el usuario \
+dé y declara como supuesto toda dimensión que estimes de la imagen. Para \
+piezas torneadas (platos, columnas, jarrones) usa revolve(). Compara tus \
+capturas contra la foto e itera hasta que la silueta calce."""
 
 
 class AsistenteDialog(QDialog):
@@ -75,6 +102,7 @@ class AsistenteDialog(QDialog):
         self._convo: list[dict] = []
         self._busy = False
         self._round = 0
+        self._foto: tuple[str, str, str] | None = None  # (b64, mime, name)
         self._reply.connect(self._on_reply, Qt.QueuedConnection)
 
         self.setWindowTitle(tr("AI Assistant") + " — IngeTrazo")
@@ -141,7 +169,24 @@ class AsistenteDialog(QDialog):
             QFontDatabase.systemFont(QFontDatabase.FixedFont))
         layout.addWidget(self._chat, 1)
 
+        chip_row = QHBoxLayout()
+        self._foto_chip = QLabel("")
+        chip_row.addWidget(self._foto_chip)
+        self._foto_quitar = QPushButton("✕")
+        self._foto_quitar.setFixedWidth(28)
+        self._foto_quitar.setToolTip(tr("Remove the photo"))
+        self._foto_quitar.clicked.connect(self._clear_foto)
+        chip_row.addWidget(self._foto_quitar)
+        chip_row.addStretch()
+        layout.addLayout(chip_row)
+
         row3 = QHBoxLayout()
+        self._adjuntar = QPushButton(tr("Photo…"))
+        self._adjuntar.setToolTip(tr(
+            "Attach a photo — the model recreates what it shows "
+            "(give it the real measurements)"))
+        self._adjuntar.clicked.connect(self._on_foto)
+        row3.addWidget(self._adjuntar)
         self._input = QLineEdit()
         self._input.setPlaceholderText(
             tr("e.g. draw a 6×4 m house with a gable roof"))
@@ -151,6 +196,7 @@ class AsistenteDialog(QDialog):
         self._send.clicked.connect(self._on_send)
         row3.addWidget(self._send)
         layout.addLayout(row3)
+        self._clear_foto()
 
     def _chat_colors(self) -> dict:
         """Text colors that read on the CURRENT theme — hardcoded
@@ -289,6 +335,60 @@ class AsistenteDialog(QDialog):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    # ---- Photo attachment ---------------------------------------------------
+    #: Longest edge a photo is scaled down to before upload. Enough detail
+    #: to read shapes; the convo is resent EVERY turn, so size compounds.
+    FOTO_MAX_EDGE = 1280
+
+    def _on_foto(self) -> None:
+        path, _f = QFileDialog.getOpenFileName(
+            self, tr("Attach a photo"), "",
+            tr("Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)"
+               ";;All files (*)"))
+        if path:
+            self._attach_photo(path)
+
+    def _attach_photo(self, path: str) -> None:
+        encoded = self._encode_photo(path)
+        if encoded is None:
+            self._append(tr("Could not read the image."), "err")
+            return
+        name = path.rsplit("/", 1)[-1]
+        self._foto = (*encoded, name)
+        self._foto_chip.setText("📷 " + name)
+        self._foto_chip.setVisible(True)
+        self._foto_quitar.setVisible(True)
+        self._append(tr(
+            "Photo attached: {name} — it goes with your next message. "
+            "Include the real measurements: a photo has none.", name=name),
+            "muted")
+
+    def _encode_photo(self, path: str) -> tuple[str, str] | None:
+        """(base64, mime) of the photo, EXIF-rotated and scaled down to
+        FOTO_MAX_EDGE, re-encoded as JPEG (a photo as PNG is ~10× the
+        bytes, and the payload rides on every later turn)."""
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)      # phone photos carry EXIF rotation
+        image = reader.read()
+        if image.isNull():
+            return None
+        if max(image.width(), image.height()) > self.FOTO_MAX_EDGE:
+            if image.width() >= image.height():
+                image = image.scaledToWidth(
+                    self.FOTO_MAX_EDGE, Qt.SmoothTransformation)
+            else:
+                image = image.scaledToHeight(
+                    self.FOTO_MAX_EDGE, Qt.SmoothTransformation)
+        buf = QBuffer()
+        buf.open(QIODevice.WriteOnly)
+        image.save(buf, "JPEG", 85)
+        return base64.b64encode(bytes(buf.data())).decode(), "image/jpeg"
+
+    def _clear_foto(self) -> None:
+        self._foto = None
+        self._foto_chip.setVisible(False)
+        self._foto_quitar.setVisible(False)
+
     # ---- Chat loop ----------------------------------------------------------
     def _on_send(self) -> None:
         if self._busy:
@@ -299,7 +399,21 @@ class AsistenteDialog(QDialog):
         self._input.clear()
         self._save_settings()
         self._append(f"Tú: {prompt}", "user")
-        self._convo.append({"role": "user", "text": prompt})
+        message: dict = {"role": "user", "text": prompt}
+        if self._foto is not None:
+            b64, mime, name = self._foto
+            message["image_b64"] = b64
+            message["image_mime"] = mime
+            self._append(f"[📷 {name}]", "user")
+            provider, model = self._config()[:2]
+            if not ai.supports_vision(provider, model):
+                self._append(tr(
+                    "Heads-up: {model} has no vision, so the photo will "
+                    "NOT be sent — it is kept, and flows again when you "
+                    "switch to a vision model (Anthropic, OpenAI, Gemini, "
+                    "OpenRouter).", model=model), "muted")
+            self._clear_foto()
+        self._convo.append(message)
         self._round = 0
         self._next_turn()
 
@@ -308,12 +422,15 @@ class AsistenteDialog(QDialog):
         self._send.setEnabled(False)
         self._append(tr("thinking…"), "muted")
         provider, model, key, ollama = self._config()
-        convo = list(self._convo)
+        convo = ai.compact_messages(ai.slim_messages(
+            self._convo, vision=ai.supports_vision(provider, model)))
+
+        budget = TOKENS_BY_PROVIDER.get(provider, MAX_TOKENS)
 
         def worker() -> None:
             try:
                 text = ai.chat(provider, model, key, SYSTEM_PROMPT, convo,
-                               ollama_url=ollama)
+                               ollama_url=ollama, max_tokens=budget)
                 self._reply.emit({"ok": True, "text": text})
             except Exception as exc:  # noqa: BLE001 — shown in the chat
                 self._reply.emit({"ok": False, "error": str(exc)})
@@ -354,18 +471,50 @@ class AsistenteDialog(QDialog):
             self._append(tr("Error: {err}", err=msg.get("error")), "err")
             self._finish()
             return
-        text = msg["text"]
+        text = ai.strip_thoughts(msg["text"])
         self._convo.append({"role": "assistant", "text": text})
         self._append(f"IA: {text}", "ai")
         code = ai.extract_code(text)
-        if code is None or self._round >= MAX_ROUNDS:
+        if code is None and ai.truncated_code(text):
+            # Cut by max_tokens mid-recipe: half a block must neither run
+            # nor end the loop silently — ask for a smaller, complete one.
+            if self._round < MAX_ROUNDS:
+                self._round += 1
+                self._append(tr("The reply was cut off mid-code — asking "
+                                "for a shorter, complete block."), "muted")
+                self._convo.append({"role": "user", "text":
+                    "Tu respuesta se cortó a mitad del bloque ```python "
+                    "(límite de tokens). NO continúes donde quedaste: "
+                    "reenvía UN bloque completo y más corto, avanzando "
+                    "solo la primera parte del trabajo; el resto irá en "
+                    "turnos siguientes."})
+                self._next_turn()
+                return
+            self._append(tr('The reply was cut off and the step limit is '
+                            'used up — type "continue" to keep going.'),
+                         "err")
+            self._finish()
+            return
+        if code is not None and self._round >= MAX_ROUNDS:
+            # A recipe arrived but the budget for ONE request is spent:
+            # never swallow it silently — the convo survives, so any new
+            # message (e.g. "continúa") picks up exactly here.
+            self._append(tr('Step limit reached for one request '
+                            '({n}) — type "continue" to keep going.',
+                            n=MAX_ROUNDS), "muted")
+            self._finish()
+            return
+        if code is None:
             self._finish()
             return
         self._round += 1
         result = ai.run_transactional(self._viewport, code, self._scope)
         summary = []
         if result["stdout"]:
-            summary.append(result["stdout"].rstrip())
+            out = result["stdout"].rstrip()
+            if len(out) > 1500:      # a print-happy recipe rides EVERY turn
+                out = out[:700] + "\n… (recortado) …\n" + out[-700:]
+            summary.append(out)
         if result["error"]:
             summary.append("ERROR (todo revertido): " + str(result["error"]))
             if result["stderr"]:
@@ -373,9 +522,13 @@ class AsistenteDialog(QDialog):
         summary.append(f"(cambió el modelo: {result['changed']})")
         feedback = "Resultado de la ejecución:\n" + "\n".join(summary)
         self._append(feedback, "muted")
-        provider = self._config()[0]
+        provider, model = self._config()[:2]
         shot = None
-        if self._shots.isChecked() and provider in ai.VISION:
+        # Only shoot when the model CHANGED: after an error or an
+        # inspect-only block the previous screenshot is still accurate
+        # (slim_messages keeps the latest one in the convo).
+        if (self._shots.isChecked() and result["changed"]
+                and ai.supports_vision(provider, model)):
             shot = self._screenshot_b64()
         self._convo.append({"role": "user", "text": feedback,
                             **({"image_png_b64": shot} if shot else {})})

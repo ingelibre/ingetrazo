@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import sys
 import traceback
 import urllib.error
@@ -49,7 +50,90 @@ def build_scope(viewport, scope: dict | None = None) -> dict:
         groups=viewport.scene.groups, layers=viewport.scene.layers, bim=bim,
         QVector3D=QVector3D, Mesh=Mesh, Group=Group, Vertex=Vertex,
         Edge=Edge, Face=Face)
+    scope.update(_recipe_helpers(viewport.scene))
     return scope
+
+
+def _recipe_helpers(scene) -> dict:
+    """One-line geometry builders for AI recipes. Watching real sessions,
+    every model hand-rolled its own ring-of-quads lathe per piece — 40
+    error-prone lines and a token bill each time, with faceted results
+    (no soft edges, wrong winding). These build correct solids instead."""
+    from PySide6.QtGui import QVector3D
+    from core.group import Group
+    from core.mesh import Mesh
+    from core.orient import orient_outward
+
+    def _soften(mesh, deg=42.0):
+        cos_t = math.cos(math.radians(deg))
+        for e in mesh.edges:
+            if len(e.faces) == 2 and QVector3D.dotProduct(
+                    e.faces[0].normal(), e.faces[1].normal()) > cos_t:
+                e.soft = True
+
+    def _finish(mesh, color, name):
+        if color is not None:
+            for f in mesh.faces:
+                f.attrs["color"] = tuple(color)
+        orient_outward(mesh)
+        _soften(mesh)
+        group = Group(mesh, name=name)
+        scene.groups.append(group)
+        return group
+
+    def revolve(profile, segments=32, scallop=None, closed=False,
+                name=None, color=None):
+        """Solid of revolution around Z from an (radius, z) profile,
+        bottom to top. Open profiles get end caps; ``closed=True`` treats
+        the profile as a closed cross-section ring (e.g. a basin wall).
+        ``scallop=(depth, lobes)`` carves festones INTO the radius, scaled
+        by r/r_max so rims wave and centers stay put."""
+        amp, lobes = scallop or (0.0, 0)
+        rmax = max(r for r, _z in profile) or 1.0
+        rows = []
+        for r, z in profile:
+            ring = []
+            for i in range(segments):
+                th = 2.0 * math.pi * i / segments
+                rr = r
+                if lobes:
+                    rr += (amp * 0.5 * (math.cos(lobes * th) - 1.0)
+                           * (r / rmax))
+                ring.append(QVector3D(rr * math.cos(th),
+                                      rr * math.sin(th), z))
+            rows.append(ring)
+        mesh = Mesh()
+        m = len(rows)
+        for j in range(m if closed else m - 1):
+            a, b = rows[j], rows[(j + 1) % m]
+            for i in range(segments):
+                i2 = (i + 1) % segments
+                quad = [a[i], a[i2], b[i2], b[i]]
+                if ((quad[0] - quad[3]).length() < 1e-6
+                        and (quad[1] - quad[2]).length() < 1e-6):
+                    continue
+                mesh.add_face(quad)
+        if not closed:
+            if profile[0][0] > 1e-6:
+                mesh.add_face(list(reversed(rows[0])))
+            if profile[-1][0] > 1e-6:
+                mesh.add_face(rows[-1])
+        return _finish(mesh, color, name)
+
+    def extrude(outline, z0, z1, name=None, color=None):
+        """Solid prism: an (x, y) outline swept from z0 up to z1."""
+        lo = [QVector3D(x, y, z0) for x, y in outline]
+        hi = [QVector3D(x, y, z1) for x, y in outline]
+        mesh = Mesh()
+        n = len(lo)
+        for i in range(n):
+            j = (i + 1) % n
+            mesh.add_face([lo[i], lo[j], hi[j], hi[i]])
+        mesh.add_face(list(reversed(lo)))
+        mesh.add_face(hi)
+        return _finish(mesh, color, name)
+
+    return {"revolve": revolve, "extrude": extrude}
 
 
 def run_transactional(viewport, code: str, scope: dict) -> dict:
@@ -133,6 +217,49 @@ DEFAULT_MODELS = {
 #: Providers whose default models take viewport screenshots.
 VISION = {"anthropic", "openai", "gemini", "openrouter"}
 
+#: Model-name tags that mark a vision-capable model on providers whose
+#: DEFAULT model is text-only: Groq serves Llama 4 Scout/Maverick
+#: (multimodal) on its free tier, Ollama runs llava/qwen-vl locally.
+_VISION_TAGS = ("llama-4", "scout", "maverick", "llava", "vision",
+                "-vl", "vl-", "gemma3", "gemma-3", "pixtral")
+
+
+def supports_vision(provider: str, model: str) -> bool:
+    """Whether this provider+model pair can look at images."""
+    if provider in VISION:
+        return True
+    m = (model or "").lower()
+    return any(t in m for t in _VISION_TAGS)
+
+
+_IMAGE_KEYS = ("image_b64", "image_mime", "image_png_b64")
+
+
+def slim_messages(messages: list, vision: bool = True) -> list:
+    """Request-time diet for a convo that is resent WHOLE every turn: keep
+    every user photo (``image_b64`` — the reference being modeled) but only
+    the LATEST viewport screenshot (``image_png_b64``). Older screenshots
+    are stale views of a model that has changed, and k rounds would
+    otherwise ship k-1 dead images per request — the free-tier killer.
+
+    ``vision=False`` strips EVERY image instead: a text-only model must
+    never receive image content — Groq answers HTTP 400 ("content must be
+    a string") and, since the convo keeps the photo, every retry fails the
+    same way (seen live). The photo stays stored, so switching to a vision
+    model brings it back. Returns copies; the stored convo is untouched."""
+    if not vision:
+        return [{k: v for k, v in m.items() if k not in _IMAGE_KEYS}
+                for m in messages]
+    last_shot = -1
+    for i, m in enumerate(messages):
+        if m.get("image_png_b64"):
+            last_shot = i
+    return [
+        ({k: v for k, v in m.items() if k != "image_png_b64"}
+         if m.get("image_png_b64") and i != last_shot else m)
+        for i, m in enumerate(messages)
+    ]
+
 
 def detect_provider(api_key: str) -> str:
     """The IngePresupuestos rule: the key's prefix names the provider."""
@@ -151,6 +278,16 @@ def detect_provider(api_key: str) -> str:
     return "anthropic"
 
 
+def _message_image(m: dict) -> tuple[str | None, str]:
+    """(base64, mime) of a message's image. ``image_b64``+``image_mime`` is
+    the generic form (user photos ride as JPEG — a re-encoded PNG would be
+    ~10× the payload PER TURN, since the whole convo is resent every turn);
+    ``image_png_b64`` stays as the screenshot shorthand."""
+    if m.get("image_b64"):
+        return m["image_b64"], m.get("image_mime", "image/png")
+    return m.get("image_png_b64"), "image/png"
+
+
 def build_request(provider: str, model: str, api_key: str,
                   system: str, messages: list,
                   ollama_url: str = "http://localhost:11434",
@@ -158,17 +295,19 @@ def build_request(provider: str, model: str, api_key: str,
     """(url, headers, payload-bytes) for one chat turn.
 
     ``messages``: [{"role": "user"/"assistant", "text": str,
-    "image_png_b64": optional}] — images ride only on user turns.
+    "image_png_b64" / "image_b64"+"image_mime": optional}] — images ride
+    only on user turns.
     """
     if provider == "anthropic":
         content_msgs = []
         for m in messages:
             blocks = [{"type": "text", "text": m["text"]}]
-            if m.get("image_png_b64"):
+            img, mime = _message_image(m)
+            if img:
                 blocks.insert(0, {
                     "type": "image",
-                    "source": {"type": "base64", "media_type": "image/png",
-                               "data": m["image_png_b64"]}})
+                    "source": {"type": "base64", "media_type": mime,
+                               "data": img}})
             content_msgs.append({"role": m["role"], "content": blocks})
         payload = {"model": model, "max_tokens": max_tokens,
                    "system": system, "messages": content_msgs}
@@ -183,10 +322,11 @@ def build_request(provider: str, model: str, api_key: str,
             else _OPENAI_BASES[provider])
     oai_msgs = [{"role": "system", "content": system}]
     for m in messages:
-        if m.get("image_png_b64"):
+        img, mime = _message_image(m)
+        if img:
             oai_msgs.append({"role": m["role"], "content": [
                 {"type": "image_url", "image_url": {
-                    "url": "data:image/png;base64," + m["image_png_b64"]}},
+                    "url": f"data:{mime};base64," + img}},
                 {"type": "text", "text": m["text"]},
             ]})
         else:
@@ -233,11 +373,11 @@ def _urlopen(url: str, headers: dict, payload: bytes | None = None,
 
 def chat(provider: str, model: str, api_key: str, system: str,
          messages: list, ollama_url: str = "http://localhost:11434",
-         timeout: float = 180.0) -> str:
+         timeout: float = 180.0, max_tokens: int = 4096) -> str:
     """One blocking chat turn. Raises with a readable message on failure —
     callers run this in a worker thread, never on the UI thread."""
     url, headers, payload = build_request(
-        provider, model, api_key, system, messages, ollama_url)
+        provider, model, api_key, system, messages, ollama_url, max_tokens)
     return parse_reply(provider, _urlopen(url, headers, payload, timeout))
 
 
@@ -316,3 +456,70 @@ def extract_code(text: str) -> str | None:
         return None
     code = text[start:end].strip("\n")
     return code or None
+
+
+#: What an executed recipe's code collapses to in old turns. Spanish on
+#: purpose: it is read by the model inside a Spanish conversation.
+CODE_STUB = "[receta ya ejecutada — código omitido]"
+
+
+def compact_messages(messages: list, keep_last: int = 2) -> list:
+    """The other half of the convo diet: every turn resends every PAST
+    recipe verbatim (~500 tokens each), but an executed recipe's effect is
+    already in the document — its code is dead weight. Replace the fenced
+    block of all but the last ``keep_last`` assistant turns with CODE_STUB,
+    keeping the prose (intent) and the feedback turns (results, errors).
+    Recent turns stay whole so the model can still build on its own code.
+    Returns copies; the stored convo is untouched."""
+    coded = [i for i, m in enumerate(messages)
+             if m.get("role") == "assistant" and extract_code(m["text"])]
+    stub = set(coded[:-keep_last] if keep_last else coded)
+    out = []
+    for i, m in enumerate(messages):
+        if i in stub:
+            text = m["text"]
+            marker = "```python"
+            start = text.find(marker)
+            if start < 0:
+                marker = "```py"
+                start = text.find(marker)
+            end = text.find("```", start + len(marker))
+            tail = text[end + 3:] if end >= 0 else ""
+            m = {**m, "text": (text[:start] + CODE_STUB + tail).strip()}
+        out.append(m)
+    return out
+
+
+_THOUGHT_TAGS = ("thought", "thinking", "think")
+
+
+def strip_thoughts(text: str) -> str:
+    """Remove the <thought>/<thinking>/<think> blocks some models leak
+    into their visible text (Gemma, live). They are internal monologue:
+    resending them with the convo every turn is pure token burn. Handles
+    an unclosed opener (drop to the end) and a stray closer whose opener
+    fell in an earlier chunk (drop the prefix)."""
+    for tag in _THOUGHT_TAGS:
+        open_t, close_t = f"<{tag}>", f"</{tag}>"
+        while True:
+            s = text.find(open_t)
+            if s < 0:
+                break
+            e = text.find(close_t, s)
+            text = text[:s] + (text[e + len(close_t):] if e >= 0 else "")
+        e = text.find(close_t)
+        if e >= 0 and open_t not in text[:e]:
+            text = text[e + len(close_t):]
+    return text.strip()
+
+
+def truncated_code(text: str) -> bool:
+    """True when a reply opens a ```python fence and never closes it — the
+    signature of a reply cut by max_tokens. Callers must NOT treat such a
+    reply as "no code, we're done": half a recipe was on its way (seen live
+    with gemini-2.5-flash: the loop ended silently, nothing drawn)."""
+    for marker in ("```python", "```py"):
+        start = text.find(marker)
+        if start >= 0:
+            return text.find("```", start + len(marker)) < 0
+    return False
