@@ -5542,9 +5542,10 @@ class Viewport(QOpenGLWidget):
             # reference model) — use that face's plane so a new polygon
             # drawn "inside" it lands on the face instead of the ground.
             if cursor is not None and tool is not None:
-                face, _grp = self.pick_face_any(cursor[0], cursor[1])
+                face, grp = self.pick_face_any(cursor[0], cursor[1])
                 if face is not None:
-                    return face.centroid(), face.normal()
+                    from core.snap import face_plane_world
+                    return face_plane_world(face, getattr(grp, "xform", None))
                 # No geometry under the cursor, but maybe a reference image:
                 # its plane becomes the drawing plane, which is the whole
                 # point of importing a scan — you trace ON it, at its own
@@ -5567,6 +5568,49 @@ class Viewport(QOpenGLWidget):
                 return plane
             return QVector3D(0.0, 0.0, 0.0), QVector3D(0.0, 0.0, 1.0)
 
+        base = self._start_point_plane(tool, start)
+        if cursor is not None and self.axis_lock is None:
+            # SketchUp's On Face for the SECOND point (Move's target, the
+            # tape's far end, a line's end): the cursor over another face
+            # lands ON that face. The axis inference still wins — a line
+            # drawn straight up over a slab keeps rising instead of dropping
+            # onto it — and the geometry being moved never offers its own
+            # (already vacated) faces.
+            fp = self._hover_face_plane(cursor)
+            if fp is not None:
+                cand = self._ray_hit_plane(cursor, base)
+                angle = (getattr(tool, "magnetic_axis_deg", None)
+                         or self.inference_angle_deg)
+                from core.snap import _detect_axis_alignment
+                if cand is None or _detect_axis_alignment(
+                        start, cand, angle) is None:
+                    return fp
+        return base
+
+    def _hover_face_plane(self, cursor):
+        """World plane of an unselected face under the cursor, or None."""
+        face, grp = self.pick_face_any(cursor[0], cursor[1])
+        if face is None:
+            return None
+        sel = self.scene.selection
+        if (grp is not None and grp in sel) or (grp is None and face in sel):
+            return None
+        from core.snap import face_plane_world
+        return face_plane_world(face, getattr(grp, "xform", None))
+
+    def _ray_hit_plane(self, cursor, plane):
+        origin, direction = self._pixel_to_ray(cursor[0], cursor[1])
+        if origin is None or direction is None:
+            return None
+        point, normal = plane
+        denom = QVector3D.dotProduct(normal, direction)
+        if abs(denom) < 1e-6:
+            return None
+        t = QVector3D.dotProduct(normal, point - origin) / denom
+        return None if t < 0 else origin + direction * t
+
+    def _start_point_plane(self, tool, start):
+        """The camera-aware plane through the active start point."""
         forward = (self.camera.target - self.camera.eye())
         if forward.length() < 1e-9:
             return start, QVector3D(0.0, 0.0, 1.0)
@@ -7378,25 +7422,40 @@ class Viewport(QOpenGLWidget):
         """Front-most face under the cursor across the loose mesh **and** every
         group: returns ``(face, group_or_None)``. Same coplanar tiebreak as
         :meth:`pick_face` (the smallest of the overlapping faces wins). Lets
-        Push/Pull act on a group's face directly — no "enter the group" step."""
-        origin, direction = self._pixel_to_ray(screen_x, screen_y)
-        if origin is None or direction is None:
-            return None, None
-        import numpy as np
+        Push/Pull act on a group's face directly — no "enter the group" step.
+
+        Memoised per cursor position and view: a hover asks up to three
+        times (work plane, acquisition, on-face flag) for the same answer."""
         idx = self._pick_index()
-        if not idx.entities:
-            return None, None
-        face_t = self._hover_face_t(idx, origin, direction)
-        if face_t is None:
-            return None, None
-        best_t = face_t.min()
-        if not np.isfinite(best_t):
-            return None, None
-        eps = max(1e-4, best_t * 1e-4)
-        cand = np.where(face_t <= best_t + eps)[0]
-        if len(cand) == 1:
-            return idx.entities[int(cand[0])]
-        return idx.entities[int(cand[np.argmin(idx.ent_area[cand])])]
+        try:
+            cam = self.camera
+            key = (round(screen_x, 2), round(screen_y, 2), id(idx),
+                   cam.yaw, cam.pitch, cam.distance, cam.perspective,
+                   cam.target.x(), cam.target.y(), cam.target.z(),
+                   self.width(), self.height())
+        except AttributeError:            # a bare stand-in (tests): no memo
+            key = None
+        cached = getattr(self, "_face_any_memo", None)
+        if key is not None and cached is not None and cached[0] == key:
+            return cached[1]
+        result = (None, None)
+        origin, direction = self._pixel_to_ray(screen_x, screen_y)
+        if origin is not None and direction is not None and idx.entities:
+            import numpy as np
+            face_t = self._hover_face_t(idx, origin, direction)
+            if face_t is not None:
+                best_t = face_t.min()
+                if np.isfinite(best_t):
+                    eps = max(1e-4, best_t * 1e-4)
+                    cand = np.where(face_t <= best_t + eps)[0]
+                    if len(cand) == 1:
+                        result = idx.entities[int(cand[0])]
+                    else:
+                        result = idx.entities[
+                            int(cand[np.argmin(idx.ent_area[cand])])]
+        if key is not None:
+            self._face_any_memo = (key, result)
+        return result
 
     def pick_group(self, screen_x: float, screen_y: float):
         """The group whose geometry the cursor hits (front-most face, or nearest
@@ -7999,7 +8058,9 @@ class Viewport(QOpenGLWidget):
                 self._acquired_point = corner
             face, _g = self.pick_face_any(ev.position().x(), ev.position().y())
             if face is not None:
-                self._acquired_face_normal = face.normal()
+                from core.snap import face_plane_world
+                self._acquired_face_normal = face_plane_world(
+                    face, getattr(_g, "xform", None))[1]
 
         if self.active_tool is None:
             return
