@@ -181,10 +181,19 @@ jobs:
           # deploy dies ("Headers.set: ... is an invalid header value" —
           # the v0.3.9 first flight). Trim it, and say so without echoing it.
           RAW_LEN=${#CLOUDFLARE_API_TOKEN}
-          CLOUDFLARE_API_TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '[:space:]')"
+          CLOUDFLARE_API_TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" \
+            | sed -E 's/^[[:space:]"'"'"']+//; s/[[:space:]"'"'"']+$//; s/^[Bb]earer[[:space:]]+//' \
+            | tr -d '[:space:]')"
           export CLOUDFLARE_API_TOKEN
           if [ "$RAW_LEN" != "${#CLOUDFLARE_API_TOKEN}" ]; then
-            echo "::warning::CLOUDFLARE_API_TOKEN traía espacios o saltos de línea (recortados); recrear el secret limpio."
+            echo "::warning::CLOUDFLARE_API_TOKEN traía espacios, comillas o 'Bearer' (recortados); recrear el secret limpio."
+          fi
+          # A Cloudflare API TOKEN is 40 chars of [A-Za-z0-9_-]. Anything else
+          # (the 37-hex Global API Key, an OAuth token, a pasted URL) is
+          # refused by the API as "Invalid format for Authorization header".
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] \
+             && ! printf '%s' "$CLOUDFLARE_API_TOKEN" | grep -Eq '^[A-Za-z0-9_-]{40}$'; then
+            echo "::warning::CLOUDFLARE_API_TOKEN no tiene forma de API Token (40 caracteres, letras/números/_/-): largo ${#CLOUDFLARE_API_TOKEN}. Crear uno en Cloudflare ▸ My Profile ▸ API Tokens ▸ plantilla 'Edit Cloudflare Workers' y pegarlo tal cual."
           fi
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::warning::Sin CLOUDFLARE_API_TOKEN — el repo Flatpak NO se publicó; correr el manual o crear el secret."
@@ -197,7 +206,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          CLOUDFLARE_API_TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '[:space:]')"
+          CLOUDFLARE_API_TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" \
+            | sed -E 's/^[[:space:]"'"'"']+//; s/[[:space:]"'"'"']+$//; s/^[Bb]earer[[:space:]]+//' \
+            | tr -d '[:space:]')"
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then exit 0; fi
           sleep 10
           curl -fsS https://ingetrazo.com/flatpak/repo/summary -o /tmp/remote.summary
