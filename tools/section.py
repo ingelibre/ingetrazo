@@ -38,9 +38,11 @@ class SectionPlaneTool(Tool):
         self._normal = QVector3D(0, 0, 1)
         self._axis_pick: str | None = None      # arrow-key orientation lock
         self._shift_normal: QVector3D | None = None
+        self._viewport = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
+        self._viewport = viewport
         self.hover_point = None
         self._axis_pick = None
         self._shift_normal = None
@@ -65,6 +67,7 @@ class SectionPlaneTool(Tool):
         return True
 
     def on_hover(self, ctx: ToolContext) -> None:
+        self._viewport = ctx.viewport
         self.hover_point = ctx.world
         shift = bool(ctx.modifiers & Qt.ShiftModifier)
         if not shift:
@@ -79,8 +82,8 @@ class SectionPlaneTool(Tool):
                 face, _grp = pick(ctx.screen.x(), ctx.screen.y())
             if face is not None:
                 self._normal = face.normal().normalized()
-            else:
-                self._normal = QVector3D(0, 0, 1)   # ground: horizontal cut
+            else:                                   # ground: horizontal cut
+                self._normal = self._toward_camera(QVector3D(0, 0, 1))
         ctx.viewport.update()
 
     def on_click(self, ctx: ToolContext) -> None:
@@ -123,5 +126,21 @@ class SectionPlaneTool(Tool):
         if self._shift_normal is not None:
             return self._shift_normal
         if self._axis_pick is not None:
-            return QVector3D(_AXES[self._axis_pick])
+            return self._toward_camera(QVector3D(_AXES[self._axis_pick]))
         return self._normal
+
+    def _toward_camera(self, n: QVector3D) -> QVector3D:
+        """The cut hides the normal's side, and a freshly placed plane hides
+        the side the CAMERA is on (SketchUp: the plane faces you; what lies
+        beyond stays until you move the plane into it). A face normal
+        already points at the viewer; an axis lock or the ground default
+        must be turned the same way — a fixed +Y with the camera south of
+        the model hid the whole model in one click."""
+        cam = getattr(self._viewport, "camera", None)
+        eye_fn = getattr(cam, "eye", None)
+        if eye_fn is None or self.hover_point is None:
+            return n
+        eye = eye_fn()
+        if QVector3D.dotProduct(n, eye - self.hover_point) < 0:
+            return -n
+        return n

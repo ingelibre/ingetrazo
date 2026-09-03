@@ -330,3 +330,43 @@ def test_scene_made_before_any_section_switches_the_cut_off(tmp_path):
     fresh.set_active_section(fresh.section_planes[0])
     legacy.apply(fresh, cam)
     assert fresh.active_section() is not None
+
+
+def test_axis_locked_and_ground_planes_hide_the_camera_side():
+    """A placed plane hides the side the camera is on (SketchUp: the plane
+    faces you), so an axis lock must point its normal at the eye. A fixed
+    +Y with the camera south of the model hid the whole model in one
+    click (Marco, 2026-09-03: 'se ocultó todo')."""
+    class _Cam:
+        def __init__(self, eye):
+            self._eye = eye
+
+        def eye(self):
+            return QVector3D(*self._eye)
+
+    scene = Scene()
+    vp = _Vp(scene)
+    t = SectionPlaneTool()
+    t.on_activate(vp)
+    vp.camera = _Cam((0.0, -30.0, 10.0))        # looking north, from above
+    t.on_hover(_ctx(vp, 0, -5, 0))               # beside the model, on the ground
+    assert t.on_key(vp, Qt.Key_Left, Qt.NoModifier) is True    # green = Y
+    n = t._current_normal()
+    assert abs(n.y() + 1.0) < 1e-9                # toward the camera (south)
+    t.on_click(_ctx(vp, 0, -5, 0))
+    sp = scene.section_planes[-1]
+    assert sp.side(QVector3D(0.0, -30.0, 10.0)) > 0     # the eye's side is hidden
+    assert sp.side(QVector3D(0.0, 0.0, 1.0)) < 0        # the model stays
+    # camera north of the spot: the same lock now points north
+    vp.camera = _Cam((0.0, 30.0, 10.0))
+    t.on_hover(_ctx(vp, 0, -5, 0))
+    assert abs(t._current_normal().y() - 1.0) < 1e-9
+    # the ground default faces the camera too: from below it points down
+    assert t.on_key(vp, Qt.Key_Down, Qt.NoModifier) is True
+    vp.camera = _Cam((0.0, 0.0, -10.0))
+    t.on_hover(_ctx(vp, 0, -5, 0))
+    assert abs(t._current_normal().z() + 1.0) < 1e-9
+    # no camera at all (older stubs / headless): the raw axis is kept
+    vp.camera = None
+    assert t.on_key(vp, Qt.Key_Up, Qt.NoModifier) is True
+    assert abs(t._current_normal().z() - 1.0) < 1e-9
