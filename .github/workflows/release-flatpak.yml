@@ -13,6 +13,15 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:        # so the pipeline can be exercised without a tag
+    inputs:
+      tag:
+        description: >-
+          Publicar el repo Flatpak con el bundle de esta release YA existente
+          (p. ej. v0.3.9): no compila nada ni crea releases. Vacío = solo
+          compila el bundle de prueba, sin publicar.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write           # to upload the asset to the release
@@ -20,6 +29,8 @@ permissions:
 jobs:
   bundle:
     name: Flatpak bundle (x86_64)
+    # A manual run that names an existing tag only publishes: no rebuild.
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -121,8 +132,16 @@ jobs:
   publish-repo:
     name: Publish the Flatpak repo (ingetrazo.com)
     needs: bundle
-    if: startsWith(github.ref, 'refs/tags/v')
+    # On a tag, after the bundle is on the release; by hand, for the tag
+    # given (the bundle job is skipped then — hence the result check).
+    if: >-
+      ${{ !cancelled()
+          && (needs.bundle.result == 'success' || needs.bundle.result == 'skipped')
+          && (startsWith(github.ref, 'refs/tags/v')
+              || (github.event_name == 'workflow_dispatch' && inputs.tag != '')) }}
     runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - name: Install flatpak and ostree
         run: |
@@ -146,7 +165,9 @@ jobs:
           # nothing and the bundle import starts the history.
           ostree pull --repo=flatpak/repo --mirror live \
             || echo "::warning::mirror parcial o repo vivo vacío — se continúa con el bundle"
-          gh release download "${GITHUB_REF_NAME}" -R "${GITHUB_REPOSITORY}" \
+          gh release view "$TAG" -R "${GITHUB_REPOSITORY}" >/dev/null \
+            || { echo "::error::No existe la release $TAG"; exit 1; }
+          gh release download "$TAG" -R "${GITHUB_REPOSITORY}" \
             -p "IngeTrazo-*-x86_64.flatpak" --dir /tmp/bundle
           flatpak build-import-bundle flatpak/repo /tmp/bundle/IngeTrazo-*-x86_64.flatpak
           flatpak build-update-repo flatpak/repo
