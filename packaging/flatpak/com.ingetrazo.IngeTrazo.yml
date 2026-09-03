@@ -72,8 +72,23 @@ modules:
       - install -Dm644 packaging/flatpak/${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
       - install -Dm644 resources/icons/ingetrazo_256.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
       - install -Dm644 packaging/flatpak/${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
-      # 4. MIME types (.igz / .skp / .dae) so double-click opens IngeTrazo.
-      - install -Dm644 resources/mime/ingetrazo.xml ${FLATPAK_DEST}/share/mime/packages/${FLATPAK_ID}.xml
+      # 4. MIME types (.igz / .skp / .dae) so double-click opens IngeTrazo —
+      #    with the branded document icons. Flatpak only exports icons whose
+      #    file name starts with the app id, so a plain
+      #    "application-x-ingetrazo" never left the sandbox and the file
+      #    manager painted the generic white sheet on every .igz/.skp. The
+      #    icons go in under the id prefix and the XML points at those names.
+      - |
+        mkdir -p "${FLATPAK_DEST}/share/mime/packages"
+        sed -e 's|<icon name="\([^"]*\)"/>|<icon name="'"${FLATPAK_ID}"'.\1"/>|' \
+          resources/mime/ingetrazo.xml > "${FLATPAK_DEST}/share/mime/packages/${FLATPAK_ID}.xml"
+        grep -q "${FLATPAK_ID}.application-x-ingetrazo" "${FLATPAK_DEST}/share/mime/packages/${FLATPAK_ID}.xml"
+        for d in resources/icons/hicolor/*/mimetypes; do
+          size=$(basename "$(dirname "$d")")
+          for f in "$d"/*.png; do
+            install -Dm644 "$f" "${FLATPAK_DEST}/share/icons/hicolor/${size}/mimetypes/${FLATPAK_ID}.$(basename "$f")"
+          done
+        done
       # 5. Trim PySide6 to the Qt modules IngeTrazo imports (QtCore, QtGui,
       #    QtWidgets, QtOpenGL(+Widgets), QtNetwork — tiles/DEM). The full
       #    wheel installs 771 MB, 195 of them a WebEngine no line of this
