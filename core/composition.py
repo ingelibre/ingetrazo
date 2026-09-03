@@ -33,6 +33,9 @@ COMMON_SCALES = (50, 100, 200, 250, 500, 1000, 2000)
 #: Print resolution for the raster fill of a view frame.
 RENDER_DPI = 300
 
+#: Points → millimetres (text sizes on paper).
+PT_TO_MM = 25.4 / 72.0
+
 
 def mm_to_px(mm: float, dpi: int = RENDER_DPI) -> int:
     """Paper millimetres → device pixels at ``dpi`` (rounded)."""
@@ -111,6 +114,20 @@ class MarcoVista:
     border: bool = False
     border_mm: float = 0.3
     border_color: str = "#282e36"
+    #: Scale label of the frame ("ESC. 1:40"): follows the scale, sits
+    #: under or inside the frame; ``{n}`` in the text is the scale number.
+    show_scale: bool = False
+    scale_text: str = "ESC. 1:{n}"
+    scale_pos: str = "under-right"   # under-left | under-right |
+                                     # inside-bl | inside-br
+    scale_mm: float = 3.0
+
+    def scale_label(self) -> str:
+        n = f"{self.scale_n:g}"
+        try:
+            return (self.scale_text or "ESC. 1:{n}").replace("{n}", n)
+        except Exception:  # noqa: BLE001 — a broken template still labels
+            return f"1:{n}"
 
     def model_height_m(self) -> float:
         return model_height_for_frame(self.h_mm, self.scale_n)
@@ -298,6 +315,42 @@ class FormaItem:
 
 
 @dataclass(eq=False)
+class EtiquetaItem:
+    """A label with a leader (LayOut's Label, SketchUp's leader text): a
+    text block on the page and a leader line to the point it names, with
+    an arrow head there. The point may anchor to model geometry of a
+    frame and then follows the model like a cota."""
+
+    x_mm: float = 0.0            # text block, page mm
+    y_mm: float = 0.0
+    w_mm: float = 50.0
+    ax_mm: float = -20.0         # the pointed-at spot, relative to the block
+    ay_mm: float = 15.0
+    text: str = "Texto"
+    size_pt: float = 11.0
+    bold: bool = False
+    color: str = "#1e242c"
+    bg_color: str = ""
+    bg_opacity: float = 1.0
+    arrow: bool = True
+    stroke_mm: float = 0.25
+    anchor_uid: str = ""         # frame whose geometry the point sits on
+    a_world: Optional[list] = None
+    uid: str = ""
+    z: float = 0.0
+    locked: bool = False
+
+    @property
+    def anchored(self) -> bool:
+        return bool(self.anchor_uid and self.a_world)
+
+    @property
+    def h_mm(self) -> float:
+        size_mm = self.size_pt * PT_TO_MM
+        return max(6.0, size_mm * 1.4 * (self.text.count("\n") + 1))
+
+
+@dataclass(eq=False)
 class CotaAngularItem:
     """A sheet angular dimension (LayOut's Angular Dimension tool): a vertex
     on the page, two rays to the measured points, and an arc of
@@ -458,6 +511,7 @@ class Composicion:
     shapes: list = field(default_factory=list)
     cotas: list = field(default_factory=list)
     cotas_ang: list = field(default_factory=list)
+    etiquetas: list = field(default_factory=list)
     cajetin: Optional[Cajetin] = None
     #: Sheet border drawn on the margin rectangle: width, colour, rounded
     #: corners and line type (single | double | dashed).
@@ -490,7 +544,7 @@ class Composicion:
         out = (list(self.frames) + list(self.texts) + list(self.images)
                + list(self.scalebars) + list(self.nortes)
                + list(self.leyendas) + list(self.shapes) + list(self.cotas)
-               + list(self.cotas_ang))
+               + list(self.cotas_ang) + list(self.etiquetas))
         if self.cajetin is not None:
             out.append(self.cajetin)
         return out
@@ -514,7 +568,8 @@ class Composicion:
             d["scalebars"] = [asdict(sb) for sb in self.scalebars]
         for key, lst in (("nortes", self.nortes), ("leyendas", self.leyendas),
                          ("shapes", self.shapes), ("cotas", self.cotas),
-                         ("cotas_ang", self.cotas_ang)):
+                         ("cotas_ang", self.cotas_ang),
+                         ("etiquetas", self.etiquetas)):
             if lst:
                 d[key] = [asdict(it) for it in lst]
         if self.cajetin is not None:
@@ -542,6 +597,7 @@ class Composicion:
         c.leyendas = [Leyenda(**le) for le in d.get("leyendas", [])]
         c.shapes = [FormaItem(**f) for f in d.get("shapes", [])]
         c.cotas_ang = [CotaAngularItem(**a) for a in d.get("cotas_ang", [])]
+        c.etiquetas = [EtiquetaItem(**e) for e in d.get("etiquetas", [])]
         c.cotas = [CotaItem(**ct) for ct in d.get("cotas", [])]
         if "cajetin" in d:
             c.cajetin = Cajetin(**d["cajetin"])
@@ -555,6 +611,70 @@ class Composicion:
 # overhead here. Same Command invariant, its own light stacks — the QGIS
 # shape again (one undo stack per layout).
 
+# ---- Dynamic fields ({proyecto}, {escala}, {fecha}…) ----------------------
+#: What the sheet being drawn knows about itself; set by the composer
+#: before painting a sheet (canvas or print), read by ``expand_fields``.
+_FIELD_CTX: dict = {}
+
+
+def set_field_context(comp=None, scene=None, path=None, index=None,
+                      total=None) -> None:
+    _FIELD_CTX.clear()
+    _FIELD_CTX.update(comp=comp, scene=scene, path=path, index=index,
+                      total=total)
+
+
+def field_values() -> dict:
+    """The values behind every ``{campo}`` a text or title block may use."""
+    import datetime
+    from pathlib import Path
+    comp = _FIELD_CTX.get("comp")
+    path = _FIELD_CTX.get("path")
+    caj = getattr(comp, "cajetin", None) if comp is not None else None
+    frames = list(getattr(comp, "frames", []) or []) if comp is not None else []
+    main = max(frames, key=lambda f: f.w_mm * f.h_mm) if frames else None
+    scene_name = ""
+    for f in ([main] if main is not None else []) + frames:
+        if f is not None and f.view_key.startswith("scene:"):
+            scene_name = f.view_key[6:]          # the main frame's, else any
+            break
+    idx, total = _FIELD_CTX.get("index"), _FIELD_CTX.get("total")
+    return {
+        "proyecto": (getattr(caj, "proyecto", "") or "") if caj else "",
+        "autor": (getattr(caj, "autor", "") or "") if caj else "",
+        "lamina": ((getattr(caj, "lamina", "") or "") if caj else "")
+                  or (comp.name if comp is not None else ""),
+        "nombre": comp.name if comp is not None else "",
+        "escala": f"1:{main.scale_n:g}" if main is not None else "",
+        "escena": scene_name,
+        "fecha": datetime.date.today().strftime("%d/%m/%Y"),
+        "archivo": Path(str(path)).stem if path else "",
+        "hoja": str(idx + 1) if idx is not None else "",
+        "total": str(total) if total else "",
+    }
+
+
+_FIELD_RE = None
+
+
+def expand_fields(text) -> str:
+    """Replace ``{proyecto}``, ``{lamina}``, ``{escala}``, ``{escena}``,
+    ``{fecha}``, ``{archivo}``, ``{autor}``, ``{nombre}``, ``{hoja}`` and
+    ``{total}`` with the sheet's live values (QGIS-style dynamic text).
+    Unknown fields — the scale label's ``{n}`` included — stay as typed."""
+    global _FIELD_RE
+    if not text or "{" not in text:
+        return text or ""
+    import re
+    if _FIELD_RE is None:
+        _FIELD_RE = re.compile(r"\{([A-Za-z_]+)\}")
+    vals = field_values()
+
+    def rep(m):
+        return vals.get(m.group(1).lower(), m.group(0))
+    return _FIELD_RE.sub(rep, text)
+
+
 class ComposerCommand:
     """Reversible operation against a Composicion."""
 
@@ -563,6 +683,21 @@ class ComposerCommand:
 
     def undo(self) -> None:  # pragma: no cover - interface
         raise NotImplementedError
+
+
+class CompoundCommand(ComposerCommand):
+    """Several commands as ONE undo step (align, distribute, duplicate)."""
+
+    def __init__(self, commands) -> None:
+        self.commands = list(commands)
+
+    def do(self) -> None:
+        for c in self.commands:
+            c.do()
+
+    def undo(self) -> None:
+        for c in reversed(self.commands):
+            c.undo()
 
 
 class AddItemCommand(ComposerCommand):
@@ -591,6 +726,8 @@ class AddItemCommand(ComposerCommand):
             return self.comp.cotas
         if isinstance(self.item, CotaAngularItem):
             return self.comp.cotas_ang
+        if isinstance(self.item, EtiquetaItem):
+            return self.comp.etiquetas
         return None
 
     def do(self) -> None:
@@ -633,6 +770,8 @@ class RemoveItemCommand(ComposerCommand):
             return self.comp.cotas
         if isinstance(self.item, CotaAngularItem):
             return self.comp.cotas_ang
+        if isinstance(self.item, EtiquetaItem):
+            return self.comp.etiquetas
         return None
 
     def do(self) -> None:

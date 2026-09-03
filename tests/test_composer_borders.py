@@ -144,3 +144,37 @@ def test_sheet_border_stays_above_a_frame_that_reaches_the_margin(monkeypatch):
         comp.close()
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_frame_scale_label_follows_the_scale_and_its_position():
+    from views.composer import paint_frame_mm
+    frame = MarcoVista(w_mm=80.0, h_mm=40.0, style="sombreado", scale_n=40.0,
+                       show_scale=True)
+    assert frame.scale_label() == "ESC. 1:40"
+    frame.scale_text = "Escala {n}"
+    frame.scale_n = 75.0
+    assert frame.scale_label() == "Escala 75"
+    fill = QImage(4, 4, QImage.Format_RGB32)
+    fill.fill(0xFF3366AA)
+    for pos, probe in (("under-right", (70.0, 43.0)), ("under-left", (5.0, 43.0)),
+                       ("inside-br", (74.0, 37.0)), ("inside-bl", (6.0, 37.0))):
+        frame.scale_pos = pos
+        img = QImage(240, 140, QImage.Format_ARGB32)
+        img.fill(0xFFFFFFFF)
+        p = QPainter(img)
+        p.scale(2, 2)
+        p.translate(10, 10)
+        paint_frame_mm(p, frame, fill)
+        p.end()
+        x, y = probe
+        window = [_rgb(img, int((10 + x) * 2) + dx, int((10 + y) * 2) + dy)
+                  for dx in range(-8, 9, 2) for dy in range(-6, 7, 2)]
+        # something dark (ink) or white (the inside box) sits where the
+        # label goes — never only the frame's blue fill / bare page
+        assert any(px not in (0x3366AA, 0xFFFFFF) for px in window) or (
+            pos.startswith("inside") and 0xFFFFFF in window), pos
+    c = Composicion()
+    c.frames.append(frame)
+    back = Composicion.from_dict(c.to_dict()).frames[0]
+    assert (back.show_scale, back.scale_text, back.scale_pos) == (
+        True, "Escala {n}", "inside-bl")

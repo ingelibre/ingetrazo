@@ -736,6 +736,16 @@ def _comp_flecha(p, ink):
     p.drawLine(QPointF(38, 10), QPointF(35, 22))
 
 
+def _comp_etiqueta(p, ink):
+    # A label: two text lines in a box, with a leader arrow to a point.
+    p.drawRect(QRectF(20, 8, 22, 16))
+    p.drawLine(QPointF(24, 14), QPointF(38, 14))
+    p.drawLine(QPointF(24, 19), QPointF(34, 19))
+    p.drawLine(QPointF(20, 24), QPointF(9, 38))
+    p.drawLine(QPointF(9, 38), QPointF(12, 30))
+    p.drawLine(QPointF(9, 38), QPointF(17, 35))
+
+
 def _styles_icon(p, ink):
     # Three fanned swatch cards — the material/style deck.
     p.save()
@@ -776,6 +786,7 @@ _DRAW = {
     "comp_vista": _comp_vista, "comp_norte": _comp_norte,
     "comp_leyenda": _comp_leyenda, "comp_escala": _comp_escala,
     "comp_cajetin": _comp_cajetin, "comp_flecha": _comp_flecha,
+    "comp_etiqueta": _comp_etiqueta,
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
     "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset,
