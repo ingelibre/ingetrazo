@@ -27,7 +27,56 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 
 ---
 
-## 📦 Estado actual (2026-08-31) — imágenes de referencia, Escala SketchUp, import CAD
+## 📦 Estado actual (2026-09-03) — el compositor cierra para release: diseños de cajetín, portapapeles, formato
+
+Dos sesiones sobre las láminas reales de Marco (pileta de Yanque) — commits
+`1807992`, `d02c58d`, `98ab06b` y el de cajetines. Marco: "pude hacer mis
+láminas con composiciones a la perfección"; casi listos para release.
+
+- **Cajetín con diseños y plantillas** (`Cajetin.LOOK_FIELDS`,
+  `CAJETIN_DESIGNS` en `core/composition.py`): esquinas cuadradas /
+  redondeadas / achaflanadas (`corner`, `radius_mm`), disposición cuadrícula
+  / banda de cabecera / minimalista (`layout`), doble borde, relleno de
+  rótulos o banda y colores de rótulo/texto/línea, ancho de la columna de
+  rótulos (0 = automático = el histórico min(28 mm, 30 %)). Siete presets en
+  el combo Diseño (un preset cambia el ASPECTO, nunca las filas ni el
+  tamaño); `design_key()` reconoce cuál está aplicado. **Plantillas de
+  cajetín del usuario**: JSON en `AppDataLocation/cajetines/`
+  (`template_dict()` = filas + tamaño + aspecto, sin posición), botón
+  Plantillas… (guardar, aplicar, predeterminada para cajetines nuevos vía
+  QSettings `composer/default_cajetin`, eliminar, abrir carpeta); los
+  cajetines nuevos nacen de la predeterminada, siempre anclados abajo a la
+  derecha con su propio tamaño. Copiar/pegar estilo también entre
+  cajetines. El pintor recorta rellenos y líneas a la forma
+  (`setClipPath`). Tests: `tests/test_composer_cajetin_designs.py`.
+- **Portapapeles de lámina** (Ctrl+C/X/V en la vista del lienzo, no
+  QShortcut: el editor in situ y los campos conservan sus teclas):
+  `ComposerWindow._clipboard` a nivel de clase → viaja entre láminas;
+  pegar = +5 mm en la misma lámina (y sigue avanzando), mismo sitio en
+  otra; marcos con uid nuevo, textos ligados y cotas ancladas siguen al
+  marco pegado, anclas a marcos no copiados se sueltan (como Duplicar).
+- **Negrita/cursiva/subrayado** en bloques de texto y etiquetas con guía.
+  Bug de fondo cazado: `_on_text_props` solo mandaba texto/tamaño/negrita →
+  Cursiva, fuente y alineación de los bloques de texto NUNCA se aplicaban.
+- **Etiqueta de escala móvil** (texto ligado al marco, `{escala}` lee ESE
+  marco) sustituye a la fija; los documentos viejos migran al cargar
+  (`_migrate_fixed_scale_labels`) — la fija no tenía ya control en el panel.
+- **Agrupar / desagrupar / bloquear** ítems de lámina (Ctrl+G, Ctrl+Mayús+G,
+  Ctrl+L), arrastre de la selección = un paso de undo.
+- Páginas del panel de propiedades compactas arriba (QScrollArea + stretch);
+  antes el QFormLayout repartía las filas por todo el alto.
+- **Sección**: la normal de un eje bloqueado con flechas (o del suelo) mira a
+  la cámara (`SectionPlaneTool._toward_camera`): con +Y fijo y la cámara al
+  sur, un plano delante del modelo lo ocultaba ENTERO en un clic.
+- `_rebuild_canvas` suelta el marco en edición de vista (su FrameItem muere
+  con el lienzo; el siguiente doble clic tocaba C++ borrado).
+- Modelo de la pileta (por el puente IA): centro nuevo según foto (pedestal
+  octogonal con relieves, soga, fuste estriado, dos platos de borde
+  ondulado) y vereda 0,50 con nariz boleada; receta reutilizable `rev()` con
+  ondulación vertical y giro de lóbulos en el scratchpad — candidata a
+  entrar en `core/ai.py` (`revolve` solo festona en radio).
+
+## 📦 Estado anterior (2026-08-31) — imágenes de referencia, Escala SketchUp, import CAD
 
 Sesión larga de tres frentes (commits `aa43a2e`, `75e455d`, `4f4aec9`,
 `c73cc84`, `76889df`); todo verificado contra archivos municipales reales.

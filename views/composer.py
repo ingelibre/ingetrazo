@@ -722,13 +722,46 @@ def paint_image_mm(painter: QPainter, item: ImagenItem,
         painter.drawLine(r.topRight(), r.bottomLeft())
 
 
+def _outline_path(w: float, h: float, corner: str, r: float):
+    """The title block's outline: square, rounded or chamfered corners."""
+    from PySide6.QtGui import QPainterPath
+    r = max(0.0, min(float(r or 0.0), w / 2.0, h / 2.0))
+    path = QPainterPath()
+    if corner == "rounded" and r > 0:
+        path.addRoundedRect(QRectF(0, 0, w, h), r, r)
+    elif corner == "chamfer" and r > 0:
+        pts = [(r, 0), (w - r, 0), (w, r), (w, h - r), (w - r, h), (r, h),
+               (0, h - r), (0, r)]
+        path.moveTo(QPointF(*pts[0]))
+        for p in pts[1:]:
+            path.lineTo(QPointF(*p))
+        path.closeSubpath()
+    else:
+        path.addRect(QRectF(0, 0, w, h))
+    return path
+
+
+def cajetin_outline(c: Cajetin):
+    return _outline_path(c.w_mm, c.h_mm, getattr(c, "corner", "square"),
+                         getattr(c, "radius_mm", 0.0))
+
+
 def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
+    """The title block in its design: the outline shape (square / rounded /
+    chamfered, optionally doubled), then the rows as a labelled grid, a
+    header band over a grid, or a line-free minimal layout."""
     import math as _math
-    r = QRectF(0, 0, c.w_mm, c.h_mm)
-    painter.fillRect(r, QColor(255, 255, 255))
-    heavy = QPen(QColor(30, 36, 44))
+    w, h = c.w_mm, c.h_mm
+    outline = cajetin_outline(c)
+    corner = getattr(c, "corner", "square") or "square"
+    layout = getattr(c, "layout", "grid") or "grid"
+    fill = getattr(c, "fill_color", "") or ""
+    line_color = QColor(getattr(c, "line_color", "") or "#1e242c")
+    label_color = QColor(getattr(c, "label_color", "") or "#5a626c")
+    text_color = QColor(getattr(c, "text_color", "") or "#1e242c")
+    heavy = QPen(line_color)
     heavy.setWidthF(c.border_mm)
-    light = QPen(QColor(30, 36, 44))
+    light = QPen(line_color)
     light.setWidthF(c.line_mm)
     campos = c.campos or [[label, getattr(c, attr)]
                           for label, attr in Cajetin.FIELDS]
@@ -741,21 +774,70 @@ def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
             v = expand_fields("{escala}")
         expanded.append([label, v])
     campos = expanded
-    cols = max(1, min(int(c.columns), len(campos)))
-    per = _math.ceil(len(campos) / cols)
-    col_w = c.w_mm / cols
-    row_h = c.h_mm / per
-    painter.setPen(light)
+
+    painter.save()
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QBrush(QColor(255, 255, 255)))
+    painter.drawPath(outline)
+    painter.setClipPath(outline)          # fills and lines stay in shape
+
+    band, rest = (None, campos)
+    if layout == "banded" and len(campos) > 1:
+        band, rest = campos[0], campos[1:]
+    band_h = 0.0
+    if band is not None:
+        band_h = h * 1.5 / (len(rest) + 1.5)
+        if fill:
+            painter.fillRect(QRectF(0, 0, w, band_h), QColor(fill))
+        painter.setPen(light)
+        painter.drawLine(QPointF(0, band_h), QPointF(w, band_h))
+        lrect = QRectF(1.5, 0.4, w - 3.0, band_h * 0.32)
+        _draw_text_mm(painter, lrect, str(band[0]), max(1.4, band_h * 0.2),
+                      bold=True, align=Qt.AlignLeft | Qt.AlignTop,
+                      color=label_color)
+        vrect = QRectF(1.5, band_h * 0.3, w - 3.0, band_h * 0.68)
+        vsize = _fit_text_size_mm(str(band[1]), vrect, band_h * 0.4,
+                                  bold=True)
+        _draw_text_mm(painter, vrect, str(band[1]), vsize, bold=True,
+                      align=Qt.AlignHCenter | Qt.AlignVCenter,
+                      color=text_color)
+    y_top = band_h
+    body_h = h - band_h
+    cols = max(1, min(int(c.columns), max(1, len(rest))))
+    per = max(1, _math.ceil(len(rest) / cols))
+    col_w = w / cols
+    row_h = body_h / per
+    label_mm = float(getattr(c, "label_mm", 0.0) or 0.0)
     for k in range(cols):
         x0 = k * col_w
-        chunk = campos[k * per:(k + 1) * per]
-        label_w = min(28.0, col_w * 0.3)
+        chunk = rest[k * per:(k + 1) * per]
+        if layout == "minimal":
+            # no lines at all: a small label over its value, per cell
+            for j, (label, value) in enumerate(chunk):
+                y = y_top + j * row_h
+                lrect = QRectF(x0 + 1.5, y + 0.4, col_w - 3.0, row_h * 0.36)
+                _draw_text_mm(painter, lrect, str(label),
+                              max(1.4, row_h * 0.24), bold=True,
+                              align=Qt.AlignLeft | Qt.AlignTop,
+                              color=label_color)
+                vrect = QRectF(x0 + 1.5, y + row_h * 0.36, col_w - 3.0,
+                               row_h * 0.62)
+                vsize = _fit_text_size_mm(str(value), vrect, row_h * 0.42)
+                _draw_text_mm(painter, vrect, str(value), vsize,
+                              align=Qt.AlignLeft | Qt.AlignVCenter,
+                              color=text_color)
+            continue
+        label_w = (min(col_w * 0.6, label_mm) if label_mm > 0
+                   else min(28.0, col_w * 0.3))
+        if fill:
+            painter.fillRect(QRectF(x0, y_top, label_w, body_h), QColor(fill))
+        painter.setPen(light)
         if k:
-            painter.drawLine(QPointF(x0, 0), QPointF(x0, c.h_mm))
-        painter.drawLine(QPointF(x0 + label_w, 0),
-                         QPointF(x0 + label_w, c.h_mm))
+            painter.drawLine(QPointF(x0, y_top), QPointF(x0, h))
+        painter.drawLine(QPointF(x0 + label_w, y_top),
+                         QPointF(x0 + label_w, h))
         for j, (label, value) in enumerate(chunk):
-            y = j * row_h
+            y = y_top + j * row_h
             if j:
                 painter.drawLine(QPointF(x0, y), QPointF(x0 + col_w, y))
             # Long content wraps to more lines inside its cell and only
@@ -765,15 +847,26 @@ def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
                                       bold=True)
             _draw_text_mm(painter, lrect, str(label), lsize, bold=True,
                           align=Qt.AlignLeft | Qt.AlignVCenter,
-                          color=QColor(90, 98, 108))
+                          color=label_color)
             vrect = QRectF(x0 + label_w + 1.5, y + 0.5,
                            col_w - label_w - 3, row_h - 1.0)
             vsize = _fit_text_size_mm(str(value), vrect, row_h * 0.52)
             _draw_text_mm(painter, vrect, str(value), vsize,
-                          align=Qt.AlignLeft | Qt.AlignVCenter)
+                          align=Qt.AlignLeft | Qt.AlignVCenter,
+                          color=text_color)
+    painter.restore()
     painter.setPen(heavy)
     painter.setBrush(Qt.NoBrush)
-    painter.drawRect(r)
+    painter.drawPath(outline)
+    if getattr(c, "double_border", False):
+        inset = 1.2
+        inner = _outline_path(w - 2 * inset, h - 2 * inset, corner,
+                              float(getattr(c, "radius_mm", 0.0) or 0.0) - inset)
+        painter.save()
+        painter.translate(inset, inset)
+        painter.setPen(light)
+        painter.drawPath(inner)
+        painter.restore()
 
 
 # ── Canvas items ────────────────────────────────────────────────────────────
@@ -2914,6 +3007,24 @@ class ComposerWindow(QMainWindow):
     def _page_cajetin(self) -> QWidget:
         w = QWidget()
         form = QFormLayout(w)
+        # -- design: the built-in looks, then the user's saved title blocks
+        design_row = QWidget()
+        dh = QHBoxLayout(design_row)
+        dh.setContentsMargins(0, 0, 0, 0)
+        self.caj_design = QComboBox()
+        self.caj_design.setToolTip(tr(
+            "A built-in look, or one of your saved title blocks (rows, "
+            "size and look). The rows stay yours when you pick a look."))
+        self.caj_design.currentIndexChanged.connect(self._on_cajetin_design)
+        dh.addWidget(self.caj_design, 1)
+        tpl_btn = QPushButton(tr("Templates…"))
+        tpl_btn.setToolTip(tr(
+            "Save this title block as a template, apply one, or make one "
+            "the default for new title blocks."))
+        tpl_btn.clicked.connect(self._on_cajetin_templates_menu)
+        dh.addWidget(tpl_btn)
+        form.addRow(tr("Design"), design_row)
+        self._reload_cajetin_designs()
         self.caj_table = QTableWidget(0, 2)
         self.caj_table.setHorizontalHeaderLabels([tr("Field"), tr("Value")])
         self.caj_table.horizontalHeader().setStretchLastSection(True)
@@ -2947,6 +3058,31 @@ class ComposerWindow(QMainWindow):
         self.caj_columns.setDecimals(0)
         self.caj_columns.valueChanged.connect(self._on_cajetin_props)
         form.addRow(tr("Columns"), self.caj_columns)
+        self.caj_label_mm = QDoubleSpinBox()
+        self.caj_label_mm.setRange(0.0, 150.0)
+        self.caj_label_mm.setSingleStep(1.0)
+        self.caj_label_mm.setSuffix(" mm")
+        self.caj_label_mm.setSpecialValueText(tr("automatic"))
+        self.caj_label_mm.valueChanged.connect(self._on_cajetin_props)
+        form.addRow(tr("Label column"), self.caj_label_mm)
+        self.caj_layout = QComboBox()
+        for label, key in ((tr("Grid"), "grid"), (tr("Header band"), "banded"),
+                           (tr("Minimal"), "minimal")):
+            self.caj_layout.addItem(label, key)
+        self.caj_layout.currentIndexChanged.connect(self._on_cajetin_props)
+        form.addRow(tr("Layout"), self.caj_layout)
+        self.caj_corner = QComboBox()
+        for label, key in ((tr("Square"), "square"), (tr("Rounded"), "rounded"),
+                           (tr("Chamfered"), "chamfer")):
+            self.caj_corner.addItem(label, key)
+        self.caj_corner.currentIndexChanged.connect(self._on_cajetin_props)
+        form.addRow(tr("Corners"), self.caj_corner)
+        self.caj_radius = QDoubleSpinBox()
+        self.caj_radius.setRange(0.5, 25.0)
+        self.caj_radius.setSingleStep(0.5)
+        self.caj_radius.setSuffix(" mm")
+        self.caj_radius.valueChanged.connect(self._on_cajetin_props)
+        form.addRow(tr("Corner radius"), self.caj_radius)
         self.caj_border = QDoubleSpinBox()
         self.caj_border.setRange(0.1, 2.5)
         self.caj_border.setSingleStep(0.05)
@@ -2959,7 +3095,47 @@ class ComposerWindow(QMainWindow):
         self.caj_line.setSuffix(" mm")
         self.caj_line.valueChanged.connect(self._on_cajetin_props)
         form.addRow(tr("Inner lines"), self.caj_line)
+        self.caj_double = QCheckBox(tr("Double border"))
+        self.caj_double.toggled.connect(self._on_cajetin_props)
+        form.addRow("", self.caj_double)
+        self.caj_fill_check = QCheckBox(tr("Fill (labels / band)"))
+        self.caj_fill_check.toggled.connect(self._on_cajetin_fill_toggled)
+        form.addRow("", self.caj_fill_check)
+        self.caj_fill_btn = QPushButton()
+        self.caj_fill_btn.setFixedHeight(22)
+        self.caj_fill_btn.clicked.connect(
+            lambda: self._pick_item_bg("fill_color", self.caj_fill_check,
+                                       self.caj_fill_btn))
+        form.addRow(tr("Fill colour"), self.caj_fill_btn)
+        self.caj_color_btns = {}
+        for attr, label in (("label_color", tr("Label colour")),
+                            ("text_color", tr("Text colour")),
+                            ("line_color", tr("Line colour"))):
+            btn = QPushButton()
+            btn.setFixedHeight(22)
+            btn.clicked.connect(
+                lambda _c=False, a=attr, b=btn: self._pick_item_color(a, b))
+            form.addRow(label, btn)
+            self.caj_color_btns[attr] = btn
         return w
+
+    def _reload_cajetin_designs(self) -> None:
+        """The design combo: "(custom)", the built-in looks, then the
+        user's saved title blocks."""
+        from core.composition import CAJETIN_DESIGNS
+        combo = self.caj_design
+        was = self._updating
+        self._updating = True
+        combo.clear()
+        combo.addItem(tr("(custom)"), "")
+        for key, label, _fields in CAJETIN_DESIGNS:
+            combo.addItem(tr(label), key)
+        names = self.cajetin_template_names()
+        if names:
+            combo.insertSeparator(combo.count())
+            for n in names:
+                combo.addItem(n, "tpl:" + n)
+        self._updating = was
 
     def _page_scalebar(self) -> QWidget:
         w = QWidget()
@@ -3195,6 +3371,27 @@ class ComposerWindow(QMainWindow):
                 self.caj_columns.setValue(c.columns)
                 self.caj_border.setValue(c.border_mm)
                 self.caj_line.setValue(c.line_mm)
+                self.caj_label_mm.setValue(
+                    float(getattr(c, "label_mm", 0.0) or 0.0))
+                self.caj_layout.setCurrentIndex(max(0, self.caj_layout.findData(
+                    getattr(c, "layout", "grid") or "grid")))
+                self.caj_corner.setCurrentIndex(max(0, self.caj_corner.findData(
+                    getattr(c, "corner", "square") or "square")))
+                self.caj_radius.setValue(
+                    float(getattr(c, "radius_mm", 3.0) or 3.0))
+                self.caj_double.setChecked(
+                    bool(getattr(c, "double_border", False)))
+                fill = getattr(c, "fill_color", "") or ""
+                self.caj_fill_check.setChecked(bool(fill))
+                self.caj_fill_btn.setStyleSheet(
+                    f"background: {fill};" if fill else "")
+                for attr, btn in self.caj_color_btns.items():
+                    btn.setStyleSheet(
+                        f"background: {getattr(c, attr, '') or '#1e242c'};")
+                self._reload_cajetin_designs()
+                key = c.design_key() if hasattr(c, "design_key") else ""
+                self.caj_design.setCurrentIndex(
+                    max(0, self.caj_design.findData(key)) if key else 0)
                 self.props.setCurrentIndex(4)
             elif isinstance(item, ScaleBarItem):
                 self.sb_scale.setCurrentText(f"1:{item.model.scale_n:g}")
@@ -3876,6 +4073,7 @@ class ComposerWindow(QMainWindow):
                           "text_bg_opacity"),
         EtiquetaItem: ("size_pt", "bold", "italic", "underline", "color",
                        "bg_color", "bg_opacity", "arrow", "stroke_mm"),
+        Cajetin: Cajetin.LOOK_FIELDS,
     }
 
     def _style_fields_for(self, model):
@@ -4445,6 +4643,14 @@ class ComposerWindow(QMainWindow):
         if self.comp.cajetin is not None:
             return
         c = self.comp.default_cajetin()
+        default = self.default_cajetin_template_name()
+        tpl = self.load_cajetin_template(default) if default else None
+        if tpl:
+            for k, v in tpl.items():
+                setattr(c, k, v)
+            pw, ph = self.comp.page_size_mm()      # keep it docked
+            m = self.comp.margin_mm
+            c.x_mm, c.y_mm = pw - m - c.w_mm, ph - m - c.h_mm
         c.set_field("FECHA", datetime.date.today().strftime("%d/%m/%Y"))
         if self.comp.frames:
             f = self.comp.frames[0]
@@ -4669,7 +4875,187 @@ class ComposerWindow(QMainWindow):
             "h_mm": self.caj_h.value(),
             "columns": int(self.caj_columns.value()),
             "border_mm": self.caj_border.value(),
-            "line_mm": self.caj_line.value()})
+            "line_mm": self.caj_line.value(),
+            "label_mm": self.caj_label_mm.value(),
+            "layout": self.caj_layout.currentData() or "grid",
+            "corner": self.caj_corner.currentData() or "square",
+            "radius_mm": self.caj_radius.value(),
+            "double_border": self.caj_double.isChecked()})
+        self._sync_cajetin_design_combo(item.model)
+
+    def _sync_cajetin_design_combo(self, c) -> None:
+        was = self._updating
+        self._updating = True
+        key = c.design_key() if hasattr(c, "design_key") else ""
+        self.caj_design.setCurrentIndex(
+            max(0, self.caj_design.findData(key)) if key else 0)
+        self._updating = was
+
+    def _on_cajetin_fill_toggled(self, on: bool) -> None:
+        item = self._selected_item()
+        if self._updating or not isinstance(item, CajetinItem):
+            return
+        last = getattr(self, "_last_cajetin_fill", "#e9ecf0")
+        item.prepareGeometryChange()
+        self._panel_edit(item, {"fill_color": last if on else ""})
+        self.caj_fill_btn.setStyleSheet(f"background: {last};" if on else "")
+        self._sync_cajetin_design_combo(item.model)
+
+    def _on_cajetin_design(self, *_a) -> None:
+        """A built-in look keeps the rows and the size; a saved title block
+        brings its rows, size and look."""
+        from core.composition import CAJETIN_DESIGN_BASE, CAJETIN_DESIGNS
+        item = self._selected_item()
+        if self._updating or not isinstance(item, CajetinItem):
+            return
+        data = self.caj_design.currentData()
+        if not data:
+            return
+        if str(data).startswith("tpl:"):
+            self.apply_cajetin_template(item, str(data)[4:])
+            return
+        fields = next((dict(CAJETIN_DESIGN_BASE, **f)
+                       for k, _l, f in CAJETIN_DESIGNS if k == data), None)
+        if fields is None:
+            return
+        item.prepareGeometryChange()
+        self._panel_edit(item, fields)
+        self.on_selection_changed()
+
+    # ---- Title-block templates (the user's own designs) ----------------------
+    @staticmethod
+    def cajetin_templates_dir():
+        from pathlib import Path
+        from PySide6.QtCore import QStandardPaths
+        base = (QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
+                or str(Path.home() / ".ingetrazo"))
+        d = Path(base) / "cajetines"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def cajetin_template_names(self) -> list:
+        try:
+            return sorted(p.stem for p in self.cajetin_templates_dir().glob("*.json"))
+        except OSError:
+            return []
+
+    def save_cajetin_template(self, name: str, cajetin):
+        """Write a title block (rows, size, look — not its place) as a
+        reusable template."""
+        import json
+        name = (name or "").strip()
+        if not name:
+            return None
+        safe = "".join(ch if ch not in '/\\:*?"<>|' else "_" for ch in name)
+        path = self.cajetin_templates_dir() / f"{safe}.json"
+        d = cajetin.template_dict()
+        d["name"] = name
+        path.write_text(json.dumps(d, ensure_ascii=False, indent=1),
+                        encoding="utf-8")
+        return path
+
+    def load_cajetin_template(self, name: str):
+        """The template's fields, restricted to what a Cajetin has."""
+        import json
+        from dataclasses import fields as _fields
+        path = self.cajetin_templates_dir() / f"{name}.json"
+        if not path.is_file():
+            return None
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        allowed = {f.name for f in _fields(Cajetin)} - {
+            "x_mm", "y_mm", "z", "locked", "group_id"}
+        d = {k: v for k, v in raw.items() if k in allowed}
+        if "campos" in d:
+            d["campos"] = [[str(r[0]), str(r[1])] for r in d["campos"]
+                           if isinstance(r, (list, tuple)) and len(r) >= 2]
+        return d or None
+
+    def apply_cajetin_template(self, item, name: str) -> bool:
+        d = self.load_cajetin_template(name)
+        if d is None or not isinstance(item, CajetinItem):
+            return False
+        item.prepareGeometryChange()
+        self._panel_edit(item, d)
+        self.on_selection_changed()
+        return True
+
+    @staticmethod
+    def default_cajetin_template_name():
+        from PySide6.QtCore import QSettings
+        name = str(QSettings().value("composer/default_cajetin", "") or "")
+        return name or None
+
+    @staticmethod
+    def set_default_cajetin_template(name) -> None:
+        from PySide6.QtCore import QSettings
+        QSettings().setValue("composer/default_cajetin", name or "")
+
+    def _on_cajetin_templates_menu(self) -> None:
+        from PySide6.QtWidgets import QInputDialog, QMenu
+        from PySide6.QtGui import QCursor, QDesktopServices
+        from PySide6.QtCore import QUrl
+        item = self._selected_item()
+        have = isinstance(item, CajetinItem)
+        menu = QMenu(self)
+        save = menu.addAction(tr("Save this title block as a template…"))
+        save.setEnabled(have)
+        names = self.cajetin_template_names()
+        apply_menu = menu.addMenu(tr("Apply template"))
+        apply_acts = {apply_menu.addAction(n): n for n in names}
+        apply_menu.setEnabled(bool(names) and have)
+        def_menu = menu.addMenu(tr("Default for new title blocks"))
+        current = self.default_cajetin_template_name()
+        none_act = def_menu.addAction(tr("(none — the classic block)"))
+        none_act.setCheckable(True)
+        none_act.setChecked(not current)
+        def_acts = {}
+        for n in names:
+            a = def_menu.addAction(n)
+            a.setCheckable(True)
+            a.setChecked(n == current)
+            def_acts[a] = n
+        del_menu = menu.addMenu(tr("Delete template"))
+        del_acts = {del_menu.addAction(n): n for n in names}
+        del_menu.setEnabled(bool(names))
+        menu.addSeparator()
+        folder = menu.addAction(tr("Open the title blocks folder"))
+        chosen = menu.exec(QCursor.pos())
+        if chosen is None:
+            return
+        if chosen is save:
+            name, ok = QInputDialog.getText(
+                self, tr("Save template"), tr("Template name:"),
+                text=tr("My title block"))
+            if ok and name.strip():
+                self.save_cajetin_template(name, item.model)
+                self._reload_cajetin_designs()
+                self._sync_cajetin_design_combo(item.model)
+                self.statusBar().showMessage(tr(
+                    "Title block template saved: {name}",
+                    name=name.strip()), 4000)
+        elif chosen in apply_acts:
+            self.apply_cajetin_template(item, apply_acts[chosen])
+        elif chosen is none_act:
+            self.set_default_cajetin_template(None)
+        elif chosen in def_acts:
+            self.set_default_cajetin_template(def_acts[chosen])
+        elif chosen in del_acts:
+            try:
+                (self.cajetin_templates_dir()
+                 / f"{del_acts[chosen]}.json").unlink()
+            except OSError:
+                pass
+            if self.default_cajetin_template_name() == del_acts[chosen]:
+                self.set_default_cajetin_template(None)
+            self._reload_cajetin_designs()
+            if have:
+                self._sync_cajetin_design_combo(item.model)
+        elif chosen is folder:
+            QDesktopServices.openUrl(
+                QUrl.fromLocalFile(str(self.cajetin_templates_dir())))
 
     def _on_cajetin_add_row(self) -> None:
         item = self._selected_item()

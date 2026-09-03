@@ -205,6 +205,22 @@ class Cajetin:
     columns: int = 1
     border_mm: float = 0.5       # outer border line width
     line_mm: float = 0.2         # inner grid line width
+    #: The look (see ``CAJETIN_DESIGNS`` for the presets the panel offers):
+    corner: str = "square"       # square | rounded | chamfer
+    radius_mm: float = 3.0       # for rounded / chamfered corners
+    layout: str = "grid"         # grid | banded | minimal
+    double_border: bool = False  # a light second outline inside the heavy one
+    fill_color: str = ""         # label column / header band fill ("" = none)
+    label_color: str = "#5a626c"
+    text_color: str = "#1e242c"
+    line_color: str = "#1e242c"
+    label_mm: float = 0.0        # label sub-column width; 0 = automatic
+
+    #: Look-only fields — what a design preset sets and copy/paste style
+    #: carries; never the rows, the size or the place on the page.
+    LOOK_FIELDS = ("corner", "radius_mm", "layout", "double_border",
+                   "fill_color", "label_color", "text_color", "line_color",
+                   "label_mm", "border_mm", "line_mm")
 
     #: (label, field-name) legacy rows — the pre-editable schema, kept to
     #: migrate old documents into ``campos``.
@@ -225,6 +241,62 @@ class Cajetin:
                 row[1] = value
                 return
         self.campos.append([label, value])
+
+    def look(self) -> dict:
+        return {k: getattr(self, k) for k in self.LOOK_FIELDS}
+
+    def design_key(self) -> str:
+        """The preset this look matches, or "" when it is the user's own."""
+        mine = self.look()
+        for key, _label, fields in CAJETIN_DESIGNS:
+            base = dict(CAJETIN_DESIGN_BASE)
+            base.update(fields)
+            if all(_same(mine[k], v) for k, v in base.items()):
+                return key
+        return ""
+
+    def template_dict(self) -> dict:
+        """What a saved title-block template carries: rows, size and look
+        — not where it sits on the page."""
+        from dataclasses import asdict
+        d = asdict(self)
+        for k in ("x_mm", "y_mm", "z", "locked", "group_id",
+                  "proyecto", "autor", "fecha", "escala", "lamina"):
+            d.pop(k, None)
+        return d
+
+
+def _same(a, b) -> bool:
+    if isinstance(a, float) or isinstance(b, float):
+        try:
+            return abs(float(a) - float(b)) < 1e-6
+        except (TypeError, ValueError):
+            return False
+    return a == b
+
+
+#: The look every design starts from; a preset overrides some of it.
+CAJETIN_DESIGN_BASE = {
+    "corner": "square", "radius_mm": 3.0, "layout": "grid",
+    "double_border": False, "fill_color": "", "label_color": "#5a626c",
+    "text_color": "#1e242c", "line_color": "#1e242c", "label_mm": 0.0,
+    "border_mm": 0.5, "line_mm": 0.2,
+}
+
+#: Built-in title-block designs: (key, label for tr(), look overrides).
+CAJETIN_DESIGNS = (
+    ("classic", "Classic", {}),
+    ("rounded", "Rounded corners", {"corner": "rounded", "radius_mm": 3.0}),
+    ("chamfer", "Chamfered corners", {"corner": "chamfer", "radius_mm": 2.5}),
+    ("shaded", "Shaded labels", {"fill_color": "#e9ecf0"}),
+    ("banded", "Header band", {"layout": "banded", "fill_color": "#dfe4ea",
+                               "label_color": "#40474f"}),
+    ("minimal", "Minimal", {"layout": "minimal", "corner": "rounded",
+                            "radius_mm": 2.0, "line_mm": 0.15,
+                            "label_color": "#7a828c"}),
+    ("double", "Double border", {"double_border": True, "border_mm": 0.7,
+                                 "corner": "chamfer", "radius_mm": 3.0}),
+)
 
 
 @dataclass
