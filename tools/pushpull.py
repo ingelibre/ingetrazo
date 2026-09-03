@@ -47,6 +47,7 @@ from core.history import (
     AddEdgeCommand,
     AddFaceCommand,
     DeleteFaceCommand,
+    MakeUniqueCommand,
     PruneOrphanEdgesCommand,
     SnapshotMutation,
     run_stitch,
@@ -337,14 +338,10 @@ class PushPullTool(Tool):
                 return
             self.base_face = face
             if getattr(self._hover_group, "xform", None) is not None:
-                # Component instance: its prototype mesh is shared with
-                # siblings — a push here would edit them all with world/local
-                # coords mixed. Enter the group first (double-click), which
-                # makes the copy unique.
-                viewport.flash_status(tr(
-                    "Instance: double-click to enter the group first "
-                    "(makes this copy unique)"))
-                return
+                face = self._unique_for_push(viewport, self._hover_group, face)
+                if face is None:
+                    return
+                self.base_face = face
             self.extrusion = 0.0
             self.dragging = True
             self._group = self._hover_group
@@ -392,10 +389,9 @@ class PushPullTool(Tool):
             if face is None:
                 return
             if getattr(grp, "xform", None) is not None:
-                viewport.flash_status(tr(
-                    "Instance: double-click to enter the group first "
-                    "(makes this copy unique)"))
-                return
+                face = self._unique_for_push(viewport, grp, face)
+                if face is None:
+                    return
             self.base_face = face
             self.dragging = True
             self._group = grp
@@ -555,6 +551,30 @@ class PushPullTool(Tool):
                      and self.extrusion < 0.0)
         viewport.set_suppressed_faces({self.base_face} if recessing else set())
         viewport.update()
+
+    def _unique_for_push(self, viewport, group, face):
+        """A push on a component instance edits THIS copy only: make it
+        unique first (its own world-space mesh, one undo step), then find
+        the pushed face again in that mesh. The prototype mesh is shared
+        with the siblings and holds local coordinates, so pushing it in
+        place would move every copy with world and local coords mixed.
+        Same rule as entering the instance to edit it."""
+        xf = getattr(group, "xform", None)
+        want = sorted(tuple(round(c, 5) for c in (
+            (xf.map(v) if xf is not None else v).toTuple()))
+            for v in face.vertices)
+        viewport.history.execute(MakeUniqueCommand(group))
+        for f in group.mesh.faces:
+            got = sorted(tuple(round(c, 5) for c in v.toTuple())
+                         for v in f.vertices)
+            if got == want:
+                viewport.flash_status(tr(
+                    "Component made unique to push it — the other copies "
+                    "keep their shape"), 4000)
+                return f
+        viewport.history.undo()
+        viewport.history.redo_stack.clear()
+        return None
 
     def _target_scene(self, scene):
         """The scene the machinery edits: the real one, or a facade over the

@@ -242,6 +242,7 @@
  "Component file missing: {p}": "Falta el archivo del componente: {p}",
  "Component instances": "Instancias de componente",
  "Component library": "Biblioteca de componentes",
+ "Component made unique to push it — the other copies keep their shape": "Componente hecho único para empujarlo — las otras copias conservan su forma",
  "Component name:": "Nombre del componente:",
  "Component placed — Move (M) adjusts it": "Componente colocado — Mover (M) lo ajusta",
  "Components": "Componentes",
