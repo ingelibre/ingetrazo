@@ -98,6 +98,7 @@ class MarcoVista:
     uid: str = ""
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
     #: In-place view edits (LayOut: double-click the viewport, then pan /
     #: orbit / zoom). ``None`` = whatever the view or scene provides.
     cam_target: Optional[list] = None      # world point the camera centres on
@@ -148,13 +149,19 @@ class TextoItem:
     size_pt: float = 14.0
     bold: bool = False
     italic: bool = False
+    underline: bool = False
     family: str = "Sans Serif"
     color: str = "#1e242c"
     align: str = "left"          # left | center | right
     bg_color: str = ""           # "" = no background; else a fill behind the block
     bg_opacity: float = 1.0      # 0..1 of the background fill
+    #: Bound to a frame (its uid): {escala} / {escena} read THAT frame, and
+    #: the block moves along when the frame moves (a movable scale label).
+    frame_uid: str = ""
+    follow: bool = True
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
 
 
 @dataclass
@@ -169,6 +176,7 @@ class ImagenItem:
     path: str = ""
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
 
 
 @dataclass
@@ -187,6 +195,7 @@ class Cajetin:
     lamina: str = "L-01"
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
     #: The EDITABLE rows: [label, value] pairs, in drawing order. Filled
     #: from the legacy fixed attributes on load when absent (old docs);
     #: all edits and painting go through this list.
@@ -229,6 +238,7 @@ class BarraEscala:
     segments: int = 4
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
 
     def segment_m(self) -> float:
         """A round model length per segment so the whole bar prints close
@@ -265,6 +275,7 @@ class FlechaNorte:
     angle_deg: float = 0.0
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
 
     @property
     def w_mm(self) -> float:
@@ -287,6 +298,7 @@ class Leyenda:
     rows: list = field(default_factory=list)
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
 
     @property
     def h_mm(self) -> float:
@@ -308,6 +320,7 @@ class FormaItem:
     invert: bool = False
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
     radius_mm: float = 0.0       # rect: corner rounding radius
     sides: int = 6               # poligono: number of sides (3..24)
     color: str = "#1e242c"       # stroke colour
@@ -329,6 +342,8 @@ class EtiquetaItem:
     text: str = "Texto"
     size_pt: float = 11.0
     bold: bool = False
+    italic: bool = False
+    underline: bool = False
     color: str = "#1e242c"
     bg_color: str = ""
     bg_opacity: float = 1.0
@@ -339,6 +354,7 @@ class EtiquetaItem:
     uid: str = ""
     z: float = 0.0
     locked: bool = False
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
 
     @property
     def anchored(self) -> bool:
@@ -376,6 +392,7 @@ class CotaAngularItem:
     uid: str = ""
     z: float = 0.0
     locked: bool = False
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
 
     def angles(self) -> tuple[float, float]:
         """``(start, sweep)`` in radians, page coordinates (y down): the
@@ -454,6 +471,7 @@ class CotaItem:
     b_world: Optional[list] = None
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
 
     @property
     def anchored(self) -> bool:
@@ -601,7 +619,48 @@ class Composicion:
         c.cotas = [CotaItem(**ct) for ct in d.get("cotas", [])]
         if "cajetin" in d:
             c.cajetin = Cajetin(**d["cajetin"])
+        _migrate_fixed_scale_labels(c)
         return c
+
+
+def _migrate_fixed_scale_labels(c: "Composicion") -> None:
+    """Sheets from before the movable scale label carried it as a FRAME flag
+    (``show_scale`` + ``scale_text``/``scale_pos``/``scale_mm``), painted by
+    the frame itself. The panel no longer exposes those, so a loaded sheet
+    turns each one into a text block bound to its frame — same place, same
+    size — that the user can move, restyle or delete like any other text."""
+    import uuid
+    zs = [getattr(it, "z", 0.0) for it in c.all_items()]
+    z = (max(zs) + 1.0) if zs else 0.0
+    for f in c.frames:
+        if not getattr(f, "show_scale", False):
+            continue
+        f.show_scale = False
+        if not f.uid:
+            f.uid = uuid.uuid4().hex
+        template = f.scale_text or "ESC. 1:{n}"
+        text = template.replace("1:{n}", "{escala}").replace("{n}", "{escala}")
+        size_mm = max(1.5, float(f.scale_mm or 3.0))
+        size_pt = size_mm / PT_TO_MM
+        pos = f.scale_pos or "under-right"
+        w = 40.0
+        h = size_mm * 1.4
+        bg = ""
+        if pos == "under-left":
+            x, y, align = f.x_mm, f.y_mm + f.h_mm + 1.0, "left"
+        elif pos == "inside-bl":
+            x, y, align = f.x_mm + 1.0, f.y_mm + f.h_mm - h - 1.0, "left"
+            bg = "#ffffff"
+        elif pos == "inside-br":
+            x, y, align = f.x_mm + f.w_mm - w - 1.0, f.y_mm + f.h_mm - h - 1.0, "right"
+            bg = "#ffffff"
+        else:  # under-right
+            x, y, align = f.x_mm + f.w_mm - w, f.y_mm + f.h_mm + 1.0, "right"
+        c.texts.append(TextoItem(
+            x_mm=x, y_mm=y, w_mm=w, text=text, size_pt=size_pt, bold=True,
+            align=align, bg_color=bg, bg_opacity=0.86 if bg else 1.0,
+            frame_uid=f.uid, follow=True, z=z))
+        z += 1.0
 
 
 # ── Composer-scoped undo ────────────────────────────────────────────────────
@@ -624,8 +683,10 @@ def set_field_context(comp=None, scene=None, path=None, index=None,
                       total=total)
 
 
-def field_values() -> dict:
-    """The values behind every ``{campo}`` a text or title block may use."""
+def field_values(frame_uid: str = "") -> dict:
+    """The values behind every ``{campo}`` a text or title block may use.
+    ``frame_uid`` makes {escala}/{escena} read that frame instead of the
+    sheet's main one (a text bound to a frame)."""
     import datetime
     from pathlib import Path
     comp = _FIELD_CTX.get("comp")
@@ -633,6 +694,10 @@ def field_values() -> dict:
     caj = getattr(comp, "cajetin", None) if comp is not None else None
     frames = list(getattr(comp, "frames", []) or []) if comp is not None else []
     main = max(frames, key=lambda f: f.w_mm * f.h_mm) if frames else None
+    if frame_uid:
+        bound = next((f for f in frames if f.uid == frame_uid), None)
+        if bound is not None:
+            main = bound
     scene_name = ""
     for f in ([main] if main is not None else []) + frames:
         if f is not None and f.view_key.startswith("scene:"):
@@ -657,7 +722,7 @@ def field_values() -> dict:
 _FIELD_RE = None
 
 
-def expand_fields(text) -> str:
+def expand_fields(text, frame_uid: str = "") -> str:
     """Replace ``{proyecto}``, ``{lamina}``, ``{escala}``, ``{escena}``,
     ``{fecha}``, ``{archivo}``, ``{autor}``, ``{nombre}``, ``{hoja}`` and
     ``{total}`` with the sheet's live values (QGIS-style dynamic text).
@@ -668,7 +733,7 @@ def expand_fields(text) -> str:
     import re
     if _FIELD_RE is None:
         _FIELD_RE = re.compile(r"\{([A-Za-z_]+)\}")
-    vals = field_values()
+    vals = field_values(frame_uid)
 
     def rep(m):
         return vals.get(m.group(1).lower(), m.group(0))

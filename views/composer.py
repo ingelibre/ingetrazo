@@ -56,7 +56,8 @@ _STD_VIEWS = (
 def _draw_text_mm(painter: QPainter, rect: QRectF, text: str, size_mm: float,
                   bold: bool = False, align=Qt.AlignLeft | Qt.AlignTop,
                   color: QColor = QColor(30, 36, 44),
-                  italic: bool = False, family: str = "Sans Serif") -> None:
+                  italic: bool = False, family: str = "Sans Serif",
+                  underline: bool = False) -> None:
     """Draw *text* inside *rect* (mm units) at ``size_mm`` tall. Fonts don't
     take fractional-mm sizes, so set a large pixel size and scale the
     painter down — crisp at any output DPI."""
@@ -67,6 +68,7 @@ def _draw_text_mm(painter: QPainter, rect: QRectF, text: str, size_mm: float,
     font.setPixelSize(100)
     font.setBold(bold)
     font.setItalic(italic)
+    font.setUnderline(underline)
     painter.setFont(font)
     painter.setPen(color)
     s = size_mm / 100.0 * 0.75   # pixelSize≈cap height/0.75 — visual match
@@ -556,7 +558,9 @@ def paint_etiqueta_mm(painter: QPainter, et: EtiquetaItem) -> None:
                                 h + 2 * TEXT_BG_PAD_MM))
         painter.restore()
     _draw_text_mm(painter, QRectF(0, 0, et.w_mm, h + size_mm), text, size_mm,
-                  et.bold, align=Qt.AlignLeft | Qt.AlignTop, color=color)
+                  et.bold, align=Qt.AlignLeft | Qt.AlignTop, color=color,
+                  italic=getattr(et, "italic", False),
+                  underline=getattr(et, "underline", False))
 
 
 def paint_cota_angular_mm(painter: QPainter, ca: CotaAngularItem) -> None:
@@ -681,7 +685,7 @@ def paint_sheet_border_mm(painter: QPainter, comp) -> None:
 
 def paint_text_mm(painter: QPainter, item: TextoItem) -> None:
     size_mm = item.size_pt * PT_TO_MM
-    text = expand_fields(item.text)
+    text = expand_fields(item.text, getattr(item, "frame_uid", "") or "")
     bg = getattr(item, "bg_color", "") or ""
     if bg:
         lines = item.text.count("\n") + 1
@@ -699,7 +703,8 @@ def paint_text_mm(painter: QPainter, item: TextoItem) -> None:
              "right": Qt.AlignRight}.get(item.align, Qt.AlignLeft)
     _draw_text_mm(painter, rect, text, size_mm, item.bold,
                   align=align | Qt.AlignTop, color=QColor(item.color),
-                  italic=item.italic, family=item.family)
+                  italic=item.italic, family=item.family,
+                  underline=getattr(item, "underline", False))
 
 
 def paint_image_mm(painter: QPainter, item: ImagenItem,
@@ -789,6 +794,7 @@ class InlineTextEditor(QGraphicsTextItem):
         font.setPixelSize(100)                # like _draw_text_mm…
         font.setBold(bool(getattr(m, "bold", False)))
         font.setItalic(bool(getattr(m, "italic", False)))
+        font.setUnderline(bool(getattr(m, "underline", False)))
         self.setFont(font)
         self.setDefaultTextColor(QColor(getattr(m, "color", "#1e242c")))
         s = size_mm / 100.0 * 0.75            # …scaled like _draw_text_mm
@@ -893,6 +899,13 @@ class _SheetItem(QGraphicsItem):
         down = menu.addAction(tr("Lower"))
         back = menu.addAction(tr("Send to back"))
         menu.addSeparator()
+        grp = menu.addAction(tr("Group (Ctrl+G)"))
+        ungrp = menu.addAction(tr("Ungroup (Ctrl+Shift+G)"))
+        ungrp.setEnabled(bool(getattr(self.model, "group_id", "")))
+        cp = menu.addAction(tr("Copy (Ctrl+C)"))
+        cut = menu.addAction(tr("Cut (Ctrl+X)"))
+        paste = menu.addAction(tr("Paste (Ctrl+V)"))
+        paste.setEnabled(bool(getattr(self.composer, "_clipboard", None)))
         dup = menu.addAction(tr("Duplicate (Ctrl+D)"))
         copy_style = menu.addAction(tr("Copy style"))
         paste_style = menu.addAction(tr("Paste style"))
@@ -909,9 +922,28 @@ class _SheetItem(QGraphicsItem):
         chosen = menu.exec(event.screenPos())
         if chosen is None:
             return
+        if chosen is grp:
+            self.setSelected(True)
+            self.composer.group_selected()
+            return
+        if chosen is ungrp:
+            self.setSelected(True)
+            self.composer.ungroup_selected()
+            return
         if chosen is dup:
             self.setSelected(True)
             self.composer.duplicate_selected()
+            return
+        if chosen is cp:
+            self.setSelected(True)
+            self.composer.copy_selected()
+            return
+        if chosen is cut:
+            self.setSelected(True)
+            self.composer.cut_selected()
+            return
+        if chosen is paste:
+            self.composer.paste_clipboard()
             return
         if chosen is copy_style:
             self.composer.copy_style(self)
@@ -966,6 +998,9 @@ class _SheetItem(QGraphicsItem):
                 and abs(pos.y() - h) <= _HANDLE_MM)
 
     def mousePressEvent(self, event) -> None:
+        note = getattr(self.composer, "note_drag_start", None)
+        if note is not None:
+            note()
         self._press_state = {
             k: getattr(self.model, k)
             for k in ("x_mm", "y_mm", "w_mm", "h_mm")
@@ -1025,6 +1060,10 @@ class _SheetItem(QGraphicsItem):
             self.model.x_mm = self.pos().x()
             self.model.y_mm = self.pos().y()
         if change == QGraphicsItem.ItemSelectedHasChanged:
+            if value and getattr(self.model, "group_id", ""):
+                sync = getattr(self.composer, "sync_group_selection", None)
+                if sync is not None:
+                    sync(self)
             self.composer.on_selection_changed()
         return super().itemChange(change, value)
 
@@ -1183,6 +1222,9 @@ class EtiquetaCanvasItem(_SheetItem):
         super(_SheetItem, self).hoverMoveEvent(event)
 
     def mousePressEvent(self, event) -> None:
+        note = getattr(self.composer, "note_drag_start", None)
+        if note is not None:
+            note()
         self._press_state = {k: getattr(self.model, k)
                              for k in ("x_mm", "y_mm", "ax_mm", "ay_mm")}
         self._anchor_drag = (not getattr(self.model, "locked", False)
@@ -1304,6 +1346,9 @@ class CotaAngularCanvasItem(_SheetItem):
         super(_SheetItem, self).hoverMoveEvent(event)
 
     def mousePressEvent(self, event) -> None:
+        note = getattr(self.composer, "note_drag_start", None)
+        if note is not None:
+            note()
         self._press_state = {k: getattr(self.model, k)
                              for k in ("x_mm", "y_mm", "radius_mm")}
         self._radius_drag = (not getattr(self.model, "locked", False)
@@ -1447,6 +1492,9 @@ class CotaCanvasItem(_SheetItem):
         super(_SheetItem, self).mouseMoveEvent(event)
 
     def mousePressEvent(self, event) -> None:
+        note = getattr(self.composer, "note_drag_start", None)
+        if note is not None:
+            note()
         self._press_state = {k: getattr(self.model, k)
                              for k in ("x_mm", "y_mm", "dx_mm", "dy_mm",
                                        "sep_mm", "anchor_uid", "a_world",
@@ -1861,6 +1909,17 @@ class ComposerCanvasView(QGraphicsView):
         self._clear_snap_marker()
 
     def keyPressEvent(self, event) -> None:
+        scene = self.scene()
+        editing = scene is not None and isinstance(scene.focusItem(),
+                                                   InlineTextEditor)
+        if not editing:
+            for seq, slot in ((QKeySequence.Copy, "copy_selected"),
+                              (QKeySequence.Cut, "cut_selected"),
+                              (QKeySequence.Paste, "paste_clipboard")):
+                if event.matches(seq) and hasattr(self.composer, slot):
+                    getattr(self.composer, slot)()
+                    event.accept()
+                    return
         if (event.key() in (Qt.Key_Escape, Qt.Key_Return, Qt.Key_Enter)
                 and getattr(self.composer, "view_edit_item", None)
                 is not None):
@@ -1988,6 +2047,10 @@ class ComposerWindow(QMainWindow):
         QShortcut(QKeySequence.Redo, self, activated=self._on_redo)
         QShortcut(QKeySequence.Delete, self, activated=self._on_delete_item)
         QShortcut(QKeySequence("Ctrl+D"), self, activated=self.duplicate_selected)
+        QShortcut(QKeySequence("Ctrl+G"), self, activated=self.group_selected)
+        QShortcut(QKeySequence("Ctrl+Shift+G"), self,
+                  activated=self.ungroup_selected)
+        QShortcut(QKeySequence("Ctrl+L"), self, activated=self.lock_selected)
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self.copy_style)
         QShortcut(QKeySequence("Ctrl+Shift+V"), self, activated=self.paste_style)
 
@@ -2330,18 +2393,35 @@ class ComposerWindow(QMainWindow):
 
         # -- tab Propiedades: per-type pages
         self.props = QStackedWidget()
-        self.props.addWidget(self._page_none())      # 0: nothing selected
-        self.props.addWidget(self._page_frame())     # 1
-        self.props.addWidget(self._page_text())      # 2
-        self.props.addWidget(self._page_image())     # 3
-        self.props.addWidget(self._page_cajetin())   # 4
-        self.props.addWidget(self._page_scalebar())  # 5
-        self.props.addWidget(self._page_norte())     # 6
-        self.props.addWidget(self._page_leyenda())   # 7
-        self.props.addWidget(self._page_forma())     # 8
-        self.props.addWidget(self._page_cota())      # 9
-        self.props.addWidget(self._page_cota_ang())  # 10
-        self.props.addWidget(self._page_etiqueta())  # 11
+
+        def _top_aligned(page: QWidget) -> QWidget:
+            # A form given the whole tab spreads its rows over the height;
+            # keep them together at the top and scroll when they don't fit.
+            from PySide6.QtWidgets import QScrollArea
+            outer = QWidget()
+            lay = QVBoxLayout(outer)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.addWidget(page)
+            lay.addStretch(1)
+            scroll = QScrollArea()
+            scroll.setFrameShape(QScrollArea.NoFrame)
+            scroll.setWidgetResizable(True)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setWidget(outer)
+            return scroll
+
+        self.props.addWidget(_top_aligned(self._page_none()))      # 0: nothing selected
+        self.props.addWidget(_top_aligned(self._page_frame()))     # 1
+        self.props.addWidget(_top_aligned(self._page_text()))      # 2
+        self.props.addWidget(_top_aligned(self._page_image()))     # 3
+        self.props.addWidget(_top_aligned(self._page_cajetin()))   # 4
+        self.props.addWidget(_top_aligned(self._page_scalebar()))  # 5
+        self.props.addWidget(_top_aligned(self._page_norte()))     # 6
+        self.props.addWidget(_top_aligned(self._page_leyenda()))   # 7
+        self.props.addWidget(_top_aligned(self._page_forma()))     # 8
+        self.props.addWidget(_top_aligned(self._page_cota()))      # 9
+        self.props.addWidget(_top_aligned(self._page_cota_ang()))  # 10
+        self.props.addWidget(_top_aligned(self._page_etiqueta()))  # 11
         self._tabs.addTab(self.props, tr("Item properties"))
 
         refresh_btn = QPushButton(tr("Update all views"))
@@ -2454,31 +2534,13 @@ class ComposerWindow(QMainWindow):
             lambda: self._pick_item_color("border_color",
                                           self.frame_border_btn))
         form.addRow(tr("Border colour"), self.frame_border_btn)
-        self.scale_label_check = QCheckBox(tr("Scale label"))
-        self.scale_label_check.setToolTip(tr(
-            "A label that follows the frame's scale; {n} in the text is "
-            "the scale number."))
-        self.scale_label_check.toggled.connect(self._on_frame_props)
-        form.addRow("", self.scale_label_check)
-        self.scale_label_text = QLineEdit()
-        self.scale_label_text.setPlaceholderText("ESC. 1:{n}")
-        self.scale_label_text.editingFinished.connect(self._on_frame_props)
-        form.addRow(tr("Label text"), self.scale_label_text)
-        self.scale_label_pos = QComboBox()
-        for label, key in ((tr("Under, right"), "under-right"),
-                           (tr("Under, left"), "under-left"),
-                           (tr("Inside, bottom right"), "inside-br"),
-                           (tr("Inside, bottom left"), "inside-bl")):
-            self.scale_label_pos.addItem(label, key)
-        self.scale_label_pos.currentIndexChanged.connect(self._on_frame_props)
-        form.addRow(tr("Label position"), self.scale_label_pos)
-        self.scale_label_mm = QDoubleSpinBox()
-        self.scale_label_mm.setRange(1.5, 12.0)
-        self.scale_label_mm.setSingleStep(0.5)
-        self.scale_label_mm.setSuffix(" mm")
-        self.scale_label_mm.setValue(3.0)
-        self.scale_label_mm.valueChanged.connect(self._on_frame_props)
-        form.addRow(tr("Label height"), self.scale_label_mm)
+        scale_btn = QPushButton(tr("Add a scale label"))
+        scale_btn.setToolTip(tr(
+            "A text block bound to this frame: it reads the frame's scale "
+            "({escala}), moves with the frame, and you can drag it anywhere "
+            "and double-click to edit it."))
+        scale_btn.clicked.connect(self._on_add_scale_label)
+        form.addRow(scale_btn)
         self.grid_spin = QDoubleSpinBox()
         self.grid_spin.setRange(0.0, 1000.0)
         self.grid_spin.setSuffix(" m")
@@ -2515,7 +2577,7 @@ class ComposerWindow(QMainWindow):
         self.text_edit.textChanged.connect(self._on_text_props)
         form.addRow(tr("Text"), self.text_edit)
         self.text_family = QFontComboBox()
-        self.text_family.currentFontChanged.connect(self._on_text_props)
+        self.text_family.currentFontChanged.connect(self._on_text_family)
         form.addRow(tr("Font"), self.text_family)
         self.text_size = QDoubleSpinBox()
         self.text_size.setRange(4.0, 96.0)
@@ -2529,12 +2591,15 @@ class ComposerWindow(QMainWindow):
         self.text_italic = QCheckBox(tr("Italic"))
         self.text_italic.toggled.connect(self._on_text_props)
         style_row.addWidget(self.text_italic)
+        self.text_underline = QCheckBox(tr("Underline"))
+        self.text_underline.toggled.connect(self._on_text_props)
+        style_row.addWidget(self.text_underline)
         form.addRow("", style_row)
         self.text_align = QComboBox()
         for label, key in ((tr("Left"), "left"), (tr("Center"), "center"),
                            (tr("Right"), "right")):
             self.text_align.addItem(label, key)
-        self.text_align.currentIndexChanged.connect(self._on_text_props)
+        self.text_align.currentIndexChanged.connect(self._on_text_align)
         form.addRow(tr("Alignment"), self.text_align)
         self.text_color_btn = QPushButton()
         self.text_color_btn.setFixedHeight(22)
@@ -2732,9 +2797,17 @@ class ComposerWindow(QMainWindow):
         self.et_size.setValue(11.0)
         self.et_size.valueChanged.connect(self._on_etiqueta_props)
         form.addRow(tr("Size"), self.et_size)
+        et_style = QHBoxLayout()
         self.et_bold = QCheckBox(tr("Bold"))
         self.et_bold.toggled.connect(self._on_etiqueta_props)
-        form.addRow("", self.et_bold)
+        et_style.addWidget(self.et_bold)
+        self.et_italic = QCheckBox(tr("Italic"))
+        self.et_italic.toggled.connect(self._on_etiqueta_props)
+        et_style.addWidget(self.et_italic)
+        self.et_underline = QCheckBox(tr("Underline"))
+        self.et_underline.toggled.connect(self._on_etiqueta_props)
+        et_style.addWidget(self.et_underline)
+        form.addRow("", et_style)
         self.et_arrow = QCheckBox(tr("Arrow head"))
         self.et_arrow.setChecked(True)
         self.et_arrow.toggled.connect(self._on_etiqueta_props)
@@ -2985,6 +3058,11 @@ class ComposerWindow(QMainWindow):
         # placement first or the next mouse move touches dead C++ objects.
         if hasattr(self, "_view"):
             self._view.cancel_placement()
+        # Likewise the frame whose view is being edited in place: its item
+        # dies with the canvas, and ending the edit afterwards (the next
+        # double-click does) would touch a deleted C++ object.
+        self._view_edit = None
+        self._view_drag = None
         self._reproject_anchored_cotas()
         self._set_field_context(self.comp)
         self.canvas.clear()
@@ -3075,15 +3153,6 @@ class ComposerWindow(QMainWindow):
                     float(getattr(f, "border_mm", 0.3) or 0.3))
                 self.frame_border_btn.setStyleSheet(
                     f"background: {getattr(f, 'border_color', '#282e36')};")
-                self.scale_label_check.setChecked(
-                    bool(getattr(f, "show_scale", False)))
-                self.scale_label_text.setText(
-                    getattr(f, "scale_text", "ESC. 1:{n}") or "ESC. 1:{n}")
-                sidx = self.scale_label_pos.findData(
-                    getattr(f, "scale_pos", "under-right") or "under-right")
-                self.scale_label_pos.setCurrentIndex(max(sidx, 0))
-                self.scale_label_mm.setValue(
-                    float(getattr(f, "scale_mm", 3.0) or 3.0))
                 self.grid_spin.setValue(f.grid_m)
                 self.props.setCurrentIndex(1)
             elif isinstance(item, TextItem):
@@ -3093,6 +3162,8 @@ class ComposerWindow(QMainWindow):
                 self.text_size.setValue(t.size_pt)
                 self.text_bold.setChecked(t.bold)
                 self.text_italic.setChecked(t.italic)
+                self.text_underline.setChecked(
+                    bool(getattr(t, "underline", False)))
                 from PySide6.QtGui import QFont as _QF
                 self.text_family.setCurrentFont(_QF(t.family))
                 aidx = self.text_align.findData(t.align)
@@ -3191,6 +3262,9 @@ class ComposerWindow(QMainWindow):
                     self.et_text.setPlainText(m.text)
                 self.et_size.setValue(m.size_pt)
                 self.et_bold.setChecked(m.bold)
+                self.et_italic.setChecked(bool(getattr(m, "italic", False)))
+                self.et_underline.setChecked(
+                    bool(getattr(m, "underline", False)))
                 self.et_arrow.setChecked(m.arrow)
                 self.et_stroke.setValue(m.stroke_mm)
                 self.et_color_btn.setStyleSheet(f"background: {m.color};")
@@ -3248,8 +3322,80 @@ class ComposerWindow(QMainWindow):
         return out
 
     # ---- item mutations (all through the composer history) -------------------
+    def _follow_commands(self, model, after: dict, before: dict) -> list:
+        """Texts bound to a moved frame move by the same delta (one undo
+        step with the frame): the movable scale label stays put relative
+        to its view."""
+        if not isinstance(model, MarcoVista) or not model.uid:
+            return []
+        dx = float(after.get("x_mm", before.get("x_mm", 0.0))) - float(
+            before.get("x_mm", after.get("x_mm", 0.0)))
+        dy = float(after.get("y_mm", before.get("y_mm", 0.0))) - float(
+            before.get("y_mm", after.get("y_mm", 0.0)))
+        if abs(dx) < 1e-9 and abs(dy) < 1e-9:
+            return []
+        return [EditItemCommand(t, {"x_mm": t.x_mm + dx, "y_mm": t.y_mm + dy})
+                for t in self.comp.texts
+                if getattr(t, "frame_uid", "") == model.uid
+                and getattr(t, "follow", True)]
+
+    def note_drag_start(self) -> None:
+        """Called when any item is pressed: remember where every selected
+        item was, so a drag that moved the whole selection (a group) can
+        be undone as one step."""
+        self._drag_snapshot = {
+            id(it.model): (float(it.model.x_mm), float(it.model.y_mm))
+            for it in self.canvas.selectedItems() if isinstance(it, _SheetItem)}
+
+    def _group_drag_commands(self, model) -> list:
+        snap = getattr(self, "_drag_snapshot", None) or {}
+        cmds = []
+        for it in self.canvas.selectedItems():
+            if not isinstance(it, _SheetItem) or it.model is model:
+                continue
+            was = snap.get(id(it.model))
+            if was is None:
+                continue
+            m = it.model
+            if abs(m.x_mm - was[0]) > 1e-9 or abs(m.y_mm - was[1]) > 1e-9:
+                cmds.append(EditItemCommand(
+                    m, {"x_mm": m.x_mm, "y_mm": m.y_mm},
+                    before={"x_mm": was[0], "y_mm": was[1]}))
+        return cmds
+
     def push_geometry_edit(self, model, after: dict, before: dict) -> None:
+        extra = self._follow_commands(model, after, before)
+        extra += self._group_drag_commands(model)
+        self._drag_snapshot = {}
+        if extra:
+            self.history.execute(CompoundCommand(
+                [EditItemCommand(model, after, before)] + extra))
+            self._rebuild_canvas()
+            for it in self.canvas.items():
+                if isinstance(it, _SheetItem) and it.model is model:
+                    it.setSelected(True)
+            return
         self.history.execute(EditItemCommand(model, after, before))
+
+    def add_scale_label(self, frame) -> TextoItem:
+        """A movable scale label for *frame*: a bound text block under its
+        bottom-right corner, "ESC. {escala}", bold."""
+        import uuid
+        if not frame.uid:
+            frame.uid = uuid.uuid4().hex
+        item = TextoItem(x_mm=frame.x_mm + frame.w_mm - 40.0,
+                         y_mm=frame.y_mm + frame.h_mm + 1.5, w_mm=40.0,
+                         text="ESC. {escala}", size_pt=10.0, bold=True,
+                         align="right", frame_uid=frame.uid, follow=True)
+        item.z = self._next_z()
+        self._pending_sel = item
+        self.history.execute(AddItemCommand(self.comp, item))
+        return item
+
+    def _on_add_scale_label(self) -> None:
+        it = self._selected_item()
+        if isinstance(it, FrameItem):
+            self.add_scale_label(it.model)
 
     def on_item_geometry(self, item: _SheetItem, final: bool = False) -> None:
         if isinstance(item, FrameItem) and final:
@@ -3467,6 +3613,86 @@ class ComposerWindow(QMainWindow):
             pos += (w if k == 0 else h) + gap
         self._apply_moves(moves)
 
+    def sync_group_selection(self, item) -> None:
+        """Selecting one member of a group selects the whole group."""
+        if getattr(self, "_syncing_sel", False):
+            return
+        gid = getattr(item.model, "group_id", "")
+        if not gid:
+            return
+        self._syncing_sel = True
+        try:
+            for it in self.canvas.items():
+                if (isinstance(it, _SheetItem)
+                        and getattr(it.model, "group_id", "") == gid
+                        and not it.isSelected()):
+                    it.setSelected(True)
+        finally:
+            self._syncing_sel = False
+
+    def _reselect(self, models) -> None:
+        keep = list(models)
+        for it in self.canvas.items():
+            if isinstance(it, _SheetItem) and any(it.model is k for k in keep):
+                it.setSelected(True)
+
+    def group_selected(self) -> None:
+        """Ctrl+G: the selected items become one group (the title block
+        stays on its own)."""
+        import uuid
+        items = [it for it in self.canvas.selectedItems()
+                 if isinstance(it, _SheetItem)
+                 and not isinstance(it.model, Cajetin)]
+        if len(items) < 2:
+            self.statusBar().showMessage(
+                tr("Select two or more items to group them."), 3000)
+            return
+        gid = uuid.uuid4().hex
+        cmds = [EditItemCommand(it.model, {"group_id": gid}) for it in items]
+        self.history.execute(CompoundCommand(cmds), notify=False)
+        self._mark_dirty()
+        self._rebuild_canvas()
+        self._reselect([it.model for it in items])
+        self.statusBar().showMessage(
+            tr("{n} items grouped.", n=len(items)), 3000)
+
+    def ungroup_selected(self) -> None:
+        """Ctrl+Shift+G: dissolve every group touched by the selection."""
+        gids = {getattr(it.model, "group_id", "")
+                for it in self.canvas.selectedItems()
+                if isinstance(it, _SheetItem)}
+        gids.discard("")
+        if not gids:
+            return
+        members = [m for m in self.comp.all_items()
+                   if getattr(m, "group_id", "") in gids]
+        cmds = [EditItemCommand(m, {"group_id": ""}) for m in members]
+        self.history.execute(CompoundCommand(cmds), notify=False)
+        self._mark_dirty()
+        self._rebuild_canvas()
+        self._reselect(members)
+        self.statusBar().showMessage(tr("Ungrouped."), 3000)
+
+    def lock_selected(self) -> None:
+        """Ctrl+L: lock the selection; if every selected item is already
+        locked, unlock them instead."""
+        items = [it for it in self.canvas.selectedItems()
+                 if isinstance(it, _SheetItem)]
+        if not items:
+            return
+        lock = not all(getattr(it.model, "locked", False) for it in items)
+        cmds = [EditItemCommand(it.model, {"locked": lock}) for it in items
+                if getattr(it.model, "locked", False) != lock]
+        if not cmds:
+            return
+        self.history.execute(CompoundCommand(cmds), notify=False)
+        self._mark_dirty()
+        self._rebuild_canvas()
+        self._reselect([it.model for it in items])
+        self.statusBar().showMessage(
+            tr("{n} item(s) locked.", n=len(cmds)) if lock
+            else tr("{n} item(s) unlocked.", n=len(cmds)), 3000)
+
     def duplicate_selected(self) -> None:
         """Ctrl+D: copies 5 mm down-right, on top, selected afterwards."""
         import copy
@@ -3477,11 +3703,15 @@ class ComposerWindow(QMainWindow):
         if not items:
             return
         cmds, copies = [], []
+        new_gids: dict = {}
         for it in items:
             m = copy.deepcopy(it.model)
             m.x_mm += 5.0
             m.y_mm += 5.0
             m.locked = False
+            old_gid = getattr(m, "group_id", "")
+            if old_gid:
+                m.group_id = new_gids.setdefault(old_gid, uuid.uuid4().hex)
             if hasattr(m, "uid"):
                 m.uid = uuid.uuid4().hex if isinstance(m, MarcoVista) else ""
             if hasattr(m, "anchor_uid"):
@@ -3497,6 +3727,109 @@ class ComposerWindow(QMainWindow):
                 it.setSelected(True)
         self.statusBar().showMessage(
             tr("{n} item(s) duplicated.", n=len(copies)), 3000)
+
+
+    # ---- Clipboard (Ctrl+C / Ctrl+X / Ctrl+V) --------------------------------
+    #: The sheet clipboard: deep copies of the models, shared by every sheet
+    #: and composer window so items travel between láminas. A copied text
+    #: block or label also lands on the system clipboard as plain text.
+    _clipboard: list = []
+    _clipboard_from = None
+
+    def _copyable(self) -> list:
+        return [it.model for it in self.canvas.selectedItems()
+                if isinstance(it, _SheetItem)
+                and not isinstance(it.model, Cajetin)]
+
+    def copy_selected(self) -> None:
+        """Ctrl+C: the selected items go to the sheet clipboard."""
+        import copy
+        models = self._copyable()
+        if not models:
+            return
+        ComposerWindow._clipboard = [copy.deepcopy(m) for m in models]
+        ComposerWindow._clipboard_from = self.comp
+        texts = [m.text for m in models
+                 if isinstance(m, (TextoItem, EtiquetaItem)) and m.text]
+        if texts:
+            from PySide6.QtWidgets import QApplication
+            QApplication.clipboard().setText("\n".join(texts))
+        self.statusBar().showMessage(
+            tr("{n} item(s) copied.", n=len(models)), 3000)
+
+    def cut_selected(self) -> None:
+        """Ctrl+X: copy, then remove — one undo step."""
+        models = self._copyable()
+        if not models:
+            return
+        self.copy_selected()
+        self.history.execute(CompoundCommand(
+            [RemoveItemCommand(self.comp, m) for m in models]))
+
+    def paste_clipboard(self) -> None:
+        """Ctrl+V: the clipboard's items land on this sheet — 5 mm down-right
+        of the originals on the same sheet, at the same place on another —
+        on top and selected, one undo step; pasting again steps further.
+        Frames get a new uid; a text bound to a copied frame, and a cota or
+        label anchored to one, follow the pasted frame. Anchors to frames
+        that were not copied are dropped (like Duplicate: the copy would
+        otherwise snap back onto the original); a text's binding to a
+        frame that is on this sheet is kept."""
+        import copy
+        import uuid
+        src = ComposerWindow._clipboard
+        if not src:
+            return
+        same = ComposerWindow._clipboard_from is self.comp
+        step = 5.0 if same else 0.0
+        here = {f.uid for f in self.comp.frames if f.uid}
+        uid_map: dict = {}
+        new_gids: dict = {}
+        pasted = []
+        z = self._next_z()
+        for m0 in src:
+            m = copy.deepcopy(m0)
+            m.x_mm += step
+            m.y_mm += step
+            m.locked = False
+            gid = getattr(m, "group_id", "")
+            if gid:
+                m.group_id = new_gids.setdefault(gid, uuid.uuid4().hex)
+            if isinstance(m, MarcoVista):
+                new_uid = uuid.uuid4().hex
+                if m.uid:
+                    uid_map[m.uid] = new_uid
+                m.uid = new_uid
+            elif hasattr(m, "uid"):
+                m.uid = ""
+            m.z = z
+            z += 1.0
+            pasted.append(m)
+        for m in pasted:
+            ref = getattr(m, "frame_uid", "")
+            if ref in uid_map:                  # its frame was copied too
+                m.frame_uid = uid_map[ref]
+            elif ref and ref not in here:
+                m.frame_uid = ""
+            ref = getattr(m, "anchor_uid", "")
+            if ref:
+                m.anchor_uid = uid_map.get(ref, "")
+                if not m.anchor_uid:
+                    m.a_world = None
+                    if hasattr(m, "b_world"):
+                        m.b_world = None
+        self.history.execute(CompoundCommand(
+            [AddItemCommand(self.comp, m) for m in pasted]), notify=False)
+        self._mark_dirty()
+        self._rebuild_canvas()
+        for it in self.canvas.items():
+            if isinstance(it, _SheetItem) and any(it.model is p for p in pasted):
+                it.setSelected(True)
+        for m0, m in zip(src, pasted):      # the next paste steps on from here
+            m0.x_mm, m0.y_mm = m.x_mm, m.y_mm
+        ComposerWindow._clipboard_from = self.comp
+        self.statusBar().showMessage(
+            tr("{n} item(s) pasted.", n=len(pasted)), 3000)
 
     def _build_arrange_toolbar(self) -> None:
         from PySide6.QtGui import QAction
@@ -3516,7 +3849,10 @@ class ComposerWindow(QMainWindow):
                  lambda: self.distribute_selected("x")),
                 ("⇕", tr("Distribute vertically"),
                  lambda: self.distribute_selected("y")),
-                ("⧉", tr("Duplicate (Ctrl+D)"), self.duplicate_selected)):
+                ("⧉", tr("Duplicate (Ctrl+D)"), self.duplicate_selected),
+                ("⊞", tr("Group (Ctrl+G)"), self.group_selected),
+                ("⊟", tr("Ungroup (Ctrl+Shift+G)"), self.ungroup_selected),
+                ("🔒", tr("Lock / unlock (Ctrl+L)"), self.lock_selected)):
             act = QAction(text, self)
             act.setToolTip(tip)
             act.triggered.connect(lambda _c, s=slot: s())
@@ -3529,18 +3865,17 @@ class ComposerWindow(QMainWindow):
         CotaItem: ("text_mm", "decimals", "ends", "stroke_mm", "color",
                    "offset_mm", "text_pos", "text_align", "text_color",
                    "text_bg", "text_bg_opacity"),
-        TextoItem: ("size_pt", "bold", "italic", "family", "color", "align",
-                    "bg_color", "bg_opacity"),
+        TextoItem: ("size_pt", "bold", "italic", "underline", "family",
+                    "color", "align", "bg_color", "bg_opacity"),
         FormaItem: ("stroke_mm", "color", "fill", "fill_color", "radius_mm"),
         MarcoVista: ("style", "scale_n", "show_title", "annotations",
                      "annot_text_mm", "grid_m", "border", "border_mm",
-                     "border_color", "show_scale", "scale_text", "scale_pos",
-                     "scale_mm"),
+                     "border_color"),
         CotaAngularItem: ("text_mm", "decimals", "ends", "stroke_mm",
                           "color", "offset_mm", "text_color", "text_bg",
                           "text_bg_opacity"),
-        EtiquetaItem: ("size_pt", "bold", "color", "bg_color", "bg_opacity",
-                       "arrow", "stroke_mm"),
+        EtiquetaItem: ("size_pt", "bold", "italic", "underline", "color",
+                       "bg_color", "bg_opacity", "arrow", "stroke_mm"),
     }
 
     def _style_fields_for(self, model):
@@ -3661,7 +3996,9 @@ class ComposerWindow(QMainWindow):
             return
         self._view_edit = None
         self._view_drag = None
-        item.update()
+        import shiboken6
+        if shiboken6.isValid(item):
+            item.update()
         self.statusBar().clearMessage()
 
     def _item_for(self, model):
@@ -4057,10 +4394,15 @@ class ComposerWindow(QMainWindow):
         if isinstance(focus, (QLineEdit, QPlainTextEdit, QAbstractSpinBox)) \
                 or isinstance(focus, QComboBox):
             return                      # Delete belongs to the text field
-        item = self._selected_item()
-        if item is None:
+        items = [it for it in self.canvas.selectedItems()
+                 if isinstance(it, _SheetItem)]
+        if not items:
             return
-        self.history.execute(RemoveItemCommand(self.comp, item.model))
+        if len(items) == 1:
+            self.history.execute(RemoveItemCommand(self.comp, items[0].model))
+            return
+        self.history.execute(CompoundCommand(
+            [RemoveItemCommand(self.comp, it.model) for it in items]))
 
     # ---- add items -----------------------------------------------------------
     def _on_add_frame(self) -> None:
@@ -4262,15 +4604,12 @@ class ComposerWindow(QMainWindow):
             "annotations": self.annot_check.isChecked(),
             "annot_text_mm": self.annot_mm_spin.value(),
             "border": self.frame_border_check.isChecked(),
-            "border_mm": self.frame_border_mm.value(),
-            "show_scale": self.scale_label_check.isChecked(),
-            "scale_text": self.scale_label_text.text() or "ESC. 1:{n}",
-            "scale_pos": self.scale_label_pos.currentData() or "under-right",
-            "scale_mm": self.scale_label_mm.value()})
+            "border_mm": self.frame_border_mm.value()})
         self.render_cache.pop(id(item.model), None)
         self.hlr_cache.pop(id(item.model), None)
         self.snap_cache.pop(id(item.model), None)
         self.annot_cache.pop(id(item.model), None)
+        self.canvas.update()                 # bound scale labels re-read {escala}
 
     def _on_text_props(self, *_a) -> None:
         item = self._selected_item()
@@ -4279,7 +4618,25 @@ class ComposerWindow(QMainWindow):
         self._panel_edit(item, {
             "text": self.text_edit.toPlainText(),
             "size_pt": self.text_size.value(),
-            "bold": self.text_bold.isChecked()})
+            "bold": self.text_bold.isChecked(),
+            "italic": self.text_italic.isChecked(),
+            "underline": self.text_underline.isChecked()})
+
+    def _on_text_family(self, font) -> None:
+        # Its own step: the combo settles on the nearest installed family
+        # while syncing, so folding it into _on_text_props would rewrite
+        # the stored family on every unrelated edit.
+        item = self._selected_item()
+        if self._updating or not isinstance(item, TextItem):
+            return
+        self._panel_edit(item, {"family": font.family()})
+
+    def _on_text_align(self, *_a) -> None:
+        item = self._selected_item()
+        if self._updating or not isinstance(item, TextItem):
+            return
+        self._panel_edit(item, {"align": self.text_align.currentData()
+                                or "left"})
 
     def _on_pick_image(self) -> None:
         item = self._selected_item()
@@ -4441,6 +4798,8 @@ class ComposerWindow(QMainWindow):
             "text": self.et_text.toPlainText(),
             "size_pt": self.et_size.value(),
             "bold": self.et_bold.isChecked(),
+            "italic": self.et_italic.isChecked(),
+            "underline": self.et_underline.isChecked(),
             "arrow": self.et_arrow.isChecked(),
             "stroke_mm": self.et_stroke.value()})
 

@@ -149,3 +149,41 @@ def test_view_edits_travel_in_the_document(tmp_path):
     g = back.frames[-1]
     assert list(g.cam_target) == [1.0, 2.0, 3.0]
     assert g.cam_yaw == 0.1 and g.cam_pitch is None and g.scale_n == 75.0
+
+
+def test_view_edit_survives_a_canvas_rebuild(monkeypatch):
+    """Editing a frame's view, then anything that rebuilds the canvas
+    (paste, duplicate, undo…), then double-clicking another frame: the
+    old edit item is dead C++ — ending it must not touch it (Marco,
+    2026-09-03: three 'Internal C++ object (FrameItem) already deleted')."""
+    from core.composition import AddItemCommand, MarcoVista
+    from views.composer import ComposerWindow
+    from views.main_window import MainWindow
+    monkeypatch.setattr(ComposerWindow, "render_frame", lambda self, f: None)
+    win = MainWindow()
+    comp = ComposerWindow(win)
+    try:
+        a = MarcoVista(x_mm=10.0, y_mm=10.0, w_mm=60.0, h_mm=40.0, uid="a")
+        b = MarcoVista(x_mm=90.0, y_mm=10.0, w_mm=60.0, h_mm=40.0, uid="b")
+        comp.history.execute(AddItemCommand(comp.comp, a))
+        comp.history.execute(AddItemCommand(comp.comp, b))
+        comp._rebuild_canvas()
+        comp.begin_view_edit(comp._item_for(a))
+        assert comp.view_edit_item is not None
+        comp._rebuild_canvas()                      # kills every item
+        assert comp.view_edit_item is None
+        comp.begin_view_edit(comp._item_for(b))     # used to raise here
+        assert comp.view_edit_item is comp._item_for(b)
+        comp.end_view_edit()
+        assert comp.view_edit_item is None
+        # a dead item reaching end_view_edit directly is tolerated too
+        dead = comp._item_for(a)
+        comp.begin_view_edit(dead)
+        comp._rebuild_canvas()
+        comp._view_edit = dead
+        comp.end_view_edit()
+        assert comp.view_edit_item is None
+    finally:
+        comp.close()
+        win._saved_version = win.viewport.scene.version
+        win.close()
