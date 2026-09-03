@@ -909,6 +909,13 @@ class MainWindow(QMainWindow):
         open_action.triggered.connect(self._on_open)
         actions.append(open_action)
 
+        recover_action = QAction(tr("Recover a discarded auto-save…"), self)
+        recover_action.setToolTip(tr(
+            "Auto-saved copies retired when a session was closed without "
+            "saving — the last ones are kept here for a second chance."))
+        recover_action.triggered.connect(self._on_recover_discarded)
+        actions.append(recover_action)
+
         save_action = QAction(tr("Save"), self)
         save_action.setShortcut(QKeySequence.Save)
         save_action.triggered.connect(self._on_save)
@@ -1852,6 +1859,32 @@ class MainWindow(QMainWindow):
         self._sync_style_menu()
         self._sync_section_menu()
         self._update_title()
+
+    def _on_recover_discarded(self) -> None:
+        """Open one of the retired auto-save copies as a NEW, unsaved
+        document: Save then asks where to put it, never over the file the
+        copy came from."""
+        from core import autosave
+        folder = autosave.discarded_dir()
+        if not any(folder.glob("*.igz")):
+            QMessageBox.information(
+                self, tr("Recover a discarded auto-save…"),
+                tr("No discarded auto-saved copies yet."))
+            return
+        chosen, _ = QFileDialog.getOpenFileName(
+            self, tr("Recover a discarded auto-save…"), str(folder),
+            tr("IngeTrazo auto-saves (*.igz)"))
+        if not chosen:
+            return
+        if not self._confirm_discard(tr("Open another drawing?")):
+            return
+        if not self.open_path(Path(chosen)):
+            return
+        self._current_path = None                 # a recovered, unsaved copy
+        self._saved_version = -1
+        self._update_title()
+        self.statusBar().showMessage(tr(
+            "Recovered copy loaded — use Save As to keep it."), 6000)
 
     def _on_open(self) -> None:
         self.viewport.end_group_edit()

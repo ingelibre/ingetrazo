@@ -68,3 +68,30 @@ def test_write_pending_clear_round_trip():
     autosave.clear(doc)
     assert autosave.pending(doc) is None
     autosave.clear(doc)                     # clearing twice is a no-op
+
+
+def test_clear_retires_the_slot_instead_of_deleting_it(slot_dir, monkeypatch):
+    """"Quit without saving" answered by mistake must not erase the only
+    copy of a session: the slot moves to descartados/ and the newest
+    KEEP_DISCARDED stay there."""
+    scene = _scene_with_square()
+    doc = Path("/tmp/proyecto/banca.igz")
+    slot = autosave.write(scene, doc)
+    assert autosave.pending(doc) == slot
+    data = slot.read_bytes()
+    autosave.clear(doc)
+    assert autosave.pending(doc) is None                 # clean goodbye
+    kept = list(autosave.discarded_dir().glob("*.igz"))
+    assert len(kept) == 1 and kept[0].read_bytes() == data
+    assert kept[0].name.startswith("banca-")
+    # pruning: only the newest KEEP_DISCARDED survive
+    monkeypatch.setattr(autosave, "KEEP_DISCARDED", 3)
+    import os, time
+    for i in range(5):
+        autosave.write(scene, doc)
+        autosave.clear(doc)
+        for j, f in enumerate(sorted(autosave.discarded_dir().glob("*.igz"))):
+            os.utime(f, (time.time() - 100 + j, time.time() - 100 + j))
+    assert len(list(autosave.discarded_dir().glob("*.igz"))) <= 3
+    # clearing a document without a slot is a no-op
+    autosave.clear(Path("/tmp/proyecto/otro.igz"))

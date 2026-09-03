@@ -53,6 +53,41 @@ def pending(path: Path | None) -> Path | None:
     return slot if slot.is_file() else None
 
 
+#: How many retired slots to keep in ``autosave_dir()/descartados``.
+KEEP_DISCARDED = 20
+
+
+def discarded_dir() -> Path:
+    d = autosave_dir() / "descartados"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def clear(path: Path | None) -> None:
-    """Remove the document's slot (clean save / clean close / discarded)."""
-    slot_for(path).unlink(missing_ok=True)
+    """Retire the document's slot (clean save / clean close / discarded).
+
+    The slot is MOVED into ``descartados/`` with a timestamp, never deleted:
+    "Quit without saving" answered by mistake used to erase the only copy
+    of a whole afternoon (Marco, 2026-09-03 — five hours of a bench model
+    gone at the close dialog). The invariant that drives recovery stays —
+    no slot in the live folder means a clean goodbye — while the retired
+    copy waits in the folder Archivo ▸ Recover a discarded auto-save… opens.
+    Only the newest :data:`KEEP_DISCARDED` are kept."""
+    import datetime
+    slot = slot_for(path)
+    if not slot.is_file():
+        return
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = discarded_dir() / f"{slot.stem}-{stamp}.igz"
+    try:
+        slot.replace(target)
+    except OSError:
+        slot.unlink(missing_ok=True)
+        return
+    kept = sorted(discarded_dir().glob("*.igz"),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in kept[KEEP_DISCARDED:]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
