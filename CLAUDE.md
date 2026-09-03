@@ -27,7 +27,9 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 
 ---
 
-## 📦 Estado actual (2026-09-03) — el compositor cierra para release: diseños de cajetín, portapapeles, formato
+## 📦 Estado actual (2026-09-03) — v0.3.9 released: la release de las láminas (compositor a la altura de LayOut, Sígueme a la de SketchUp)
+
+**v0.3.9 released 2026-09-03** (tag `v0.3.9`; Marco: «pude hacer mis láminas con composiciones a la perfección»). Sígueme ganó el arrastre manual con vista previa en vivo y Alt = perímetro de una cara (`tools/followme.py`, `core/sweep.py`: `sweep_rings`/`sweep_preview_faces`/`manual_path_*`/`orient_closed_path`), según la doc oficial y la tarjeta de referencia. Pendiente manual de Marco: adjuntar `skp2dae.exe` al release y poner ingetrazo en PUBLIC en la Snap Store.
 
 Dos sesiones sobre las láminas reales de Marco (pileta de Yanque) — commits
 `1807992`, `d02c58d`, `98ab06b` y el de cajetines. Marco: "pude hacer mis

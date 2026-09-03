@@ -6,7 +6,65 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+_Nada todavía._
+
+## [0.3.9] — 2026-09-03
+
+**La release de las láminas.** Dos días de dogfooding sobre las láminas
+reales de la pileta de Yanque: el compositor se puso a la altura de LayOut,
+y Sígueme a la de SketchUp.
+
 ### Añadido
+- **Sígueme como en SketchUp: arrastra y ve la extrusión.** Haz clic en el
+  perfil y mueve el cursor por el camino tocando sus aristas: el camino se
+  resalta en rojo y la extrusión se previsualiza en vivo, ingletes
+  incluidos; clic (o soltar un arrastre real) al llegar al final, `Esc`
+  para empezar de nuevo. Saltarte tramos de un arco no importa (se siguen
+  las aristas conectadas entre medio), retroceder por el camino lo acorta,
+  y con **Alt** sobre una cara el camino es su perímetro. Los flujos de
+  camino preseleccionado (aristas o una cara) siguen igual. Todo según la
+  página oficial «Extruding with Follow Me» y la tarjeta de referencia.
+- **Cajetín con diseños y plantillas.** Siete diseños (Clásico, Esquinas
+  redondeadas, Esquinas achaflanadas, Rótulos sombreados, Banda de
+  cabecera, Minimalista, Doble borde) y los controles para armar el tuyo:
+  forma y radio de las esquinas, disposición, doble borde, relleno de
+  rótulos o banda, colores de rótulo, texto y línea, ancho de la columna
+  de rótulos. Elegir un diseño cambia solo el aspecto: tus filas y el
+  tamaño se conservan. Y tus propios cajetines se guardan como
+  **plantillas** (Plantillas… ▸ guardar, aplicar, predeterminada para
+  cajetines nuevos, eliminar, abrir carpeta); copiar/pegar estilo funciona
+  también entre cajetines de distintas láminas.
+- **Copiar, cortar y pegar ítems de lámina** (Ctrl+C / Ctrl+X / Ctrl+V),
+  también entre láminas: en la misma lámina el pegado baja 5 mm en
+  diagonal (y sigue avanzando en cada pegado), en otra cae en el mismo
+  sitio; las vistas del modelo pegadas son marcos nuevos y los textos y
+  cotas ligados a ellas los siguen.
+- **Negrita, cursiva y subrayado** en bloques de texto y etiquetas con
+  guía, desde el panel y en el editor in situ.
+- **Etiqueta de escala móvil**: un bloque de texto ligado al marco
+  («ESC. {escala}») que lee la escala de ESE marco, se mueve con él y se
+  edita in situ. Sustituye a la etiqueta fija; las láminas antiguas la
+  convierten solas al abrirse.
+- **Agrupar, desagrupar y bloquear** ítems de lámina (Ctrl+G,
+  Ctrl+Mayús+G, Ctrl+L): seleccionar un miembro selecciona el grupo y
+  arrastrar la selección es un solo paso de deshacer.
+- **La sesión LayOut del compositor.** Auto-render de los marcos cuando el
+  modelo cambia; edición de la vista dentro del marco (doble clic: pan,
+  órbita, zoom, Encuadrar modelo); escalas personalizadas del documento;
+  texto editable en cotas (doble clic, `<>` = medida) y estilo de texto de
+  cota (posición, alineación, color, fondo con opacidad); cota angular;
+  pincel de formato y copiar/pegar estilo; fondo de color en textos; vista
+  previa de impresión; bordes de marco y de lámina (simple, doble,
+  discontinuo, esquinas redondeadas); anotaciones del modelo en los marcos
+  como superposición de papel; plantillas de lámina; campos dinámicos
+  ({proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo}…);
+  organizar (alinear, distribuir, duplicar); etiquetas con línea guía; y
+  edición in situ de textos y etiquetas con doble clic.
+- **Anotaciones con capa** en el modelo (cotas y textos guía), estilo
+  SketchUp: una capa «Anotaciones» oculta en una escena da el modelo
+  limpio para la lámina.
+- Las páginas de Propiedades del ítem mantienen sus filas juntas arriba y
+  se desplazan si no caben.
 - **Asistente IA: modelar desde una foto.** Botón «Foto…» en el chat
   (Ctrl+Shift+A): adjunta la foto de un objeto — una fuente, un mueble, una
   fachada — y el modelo la interpreta y lo recrea por partes como grupos
@@ -25,6 +83,41 @@ follow [SemVer](https://semver.org).
   menos tokens y sólidos herméticos.
 
 ### Corregido
+- **Plano de sección con un eje bloqueado (flechas) que escondía todo el
+  modelo.** La normal era fija (+X/+Y/+Z): con la cámara al sur, un plano
+  en Y delante de la fuente ocultaba la fuente entera de un clic. Ahora el
+  plano colocado con un eje bloqueado (o sobre el suelo) mira a la cámara y
+  oculta TU lado, como SketchUp: lo que hay detrás queda hasta que lo metes
+  con Mover.
+- **Cursiva, fuente y alineación de los bloques de texto no se aplicaban**
+  desde el panel (las casillas estaban; el cambio nunca llegaba al ítem).
+- **La etiqueta de escala fija de láminas antiguas no se podía quitar**
+  (su control había desaparecido del panel): ahora se convierte en un
+  texto normal al abrir el documento.
+- **Doble clic en un marco tras pegar, duplicar o deshacer** fallaba con
+  «objeto FrameItem ya eliminado»: la edición de vista anterior apuntaba a
+  un ítem destruido con el lienzo.
+- **Sígueme en un camino cerrado con el perfil en una esquina**: el barrido
+  arrancaba por el tramo equivocado y el primer anillo colapsaba; además el
+  perfil dejaba sus aristas sueltas. Ahora recorre el camino en el sentido
+  perpendicular al perfil y consume el perfil, como SketchUp.
+- **Rayos X y alámbrico dejan imantar a través de las caras** (antes el
+  agua de una pileta tapaba los puntos de detrás para la Cota).
+- **El texto guía ya no cruza sus palabras** cuando la etiqueta queda a la
+  izquierda del anclaje.
+- **Las escenas creadas antes del primer plano de sección** no recordaban
+  «sin corte» y se contaminaban con el corte activo al recuperarlas.
+- **Figura de escala (face-me) girada en proyección paralela**: ahora mira
+  la dirección de vista, no un ojo ficticio.
+- **El compositor no devolvía el corte ni el estilo** al modelo tras dibujar
+  un marco (los cambiaba al aplicar la escena y no los restauraba).
+- **Marcos raster «en blanco» y manchas en el agua**: el aviso «Actualiza
+  la vista» se colaba en marcos que sí tenían imagen, y la lectura del FBO
+  llegaba premultiplicada; ambos corregidos.
+- **Cota de lámina anclada** que medía la distancia 3D entre sus puntos:
+  ahora mide la distancia proyectada en el plano de la vista, como LayOut.
+- **Export .skp**: el escritor entiende las dos generaciones de argumentos
+  de tamaño aplicado (texturas) de openskp.
 - **Asistente IA: una respuesta cortada por el límite de tokens ya no
   termina el chat en silencio.** Cazado en vivo con gemini-2.5-flash: el
   modelo se quedaba sin espacio a mitad del bloque ```python y el loop lo
