@@ -7,6 +7,13 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Añadido
+- **Laptops con dos gráficas (Intel + NVIDIA/AMD): IngeTrazo pide la GPU
+  dedicada.** Windows arranca los programas nuevos con la integrada y el visor
+  se arrastra mientras la RTX no hace nada. El instalador y la propia app
+  escriben la misma preferencia que Configuración ▸ Sistema ▸ Pantalla ▸
+  Gráficos («Alto rendimiento») para `ingetrazo.exe`, solo si el usuario no
+  había elegido nada; se aplica desde el siguiente arranque y se puede
+  cambiar ahí mismo.
 - **Quién dibuja el visor.** Al arrancar, la app anota la tarjeta gráfica y
   el controlador que le dieron el contexto OpenGL en `ingetrazo-gl.txt`
   (carpeta de registros) y lo muestra en Ayuda ▸ Acerca de. Si el visor está

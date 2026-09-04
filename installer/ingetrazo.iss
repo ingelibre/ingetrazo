@@ -87,6 +87,15 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; \
     Tasks: desktopicon
 
 [Registry]
+; ── Hybrid laptops (Intel + NVIDIA/AMD): run on the discrete GPU ─────────────
+; This is the value Settings ▸ System ▸ Display ▸ Graphics writes when the user
+; picks "High performance" for a program; without it Windows starts IngeTrazo
+; on the integrated chip and the viewport crawls. Only written when the user
+; has not chosen anything yet (the app repeats the check at start-up).
+Root: HKCU; Subkey: "Software\Microsoft\DirectX\UserGpuPreferences"; \
+    ValueType: string; ValueName: "{app}\{#MyAppExeName}"; \
+    ValueData: "GpuPreference=2;"; Flags: createvalueifdoesntexist uninsdeletevalue
+
 ; ── .igz — IngeTrazo's own format: full association + branded document icon ──
 ; Double-click opens the document in IngeTrazo and Explorer shows the .igz icon.
 Root: HKA; Subkey: "Software\Classes\.igz"; ValueType: string; \

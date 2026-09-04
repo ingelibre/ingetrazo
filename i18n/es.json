@@ -1390,5 +1390,6 @@
  "−": "−",
  "− Row": "− Fila",
  "⚠ {name} (load error)": "⚠ {name} (error al cargar)",
- "IngeTrazo is drawing with the software renderer ({renderer}): the viewport will be slow. Update the graphics driver, or assign IngeTrazo to the high-performance GPU in Windows graphics settings.": "IngeTrazo está dibujando con el renderizador por software ({renderer}): el visor irá lento. Actualiza el controlador de la tarjeta gráfica o asigna IngeTrazo a la GPU de alto rendimiento en la configuración de gráficos de Windows."
+ "IngeTrazo is drawing with the software renderer ({renderer}): the viewport will be slow. Update the graphics driver, or assign IngeTrazo to the high-performance GPU in Windows graphics settings.": "IngeTrazo está dibujando con el renderizador por software ({renderer}): el visor irá lento. Actualiza el controlador de la tarjeta gráfica o asigna IngeTrazo a la GPU de alto rendimiento en la configuración de gráficos de Windows.",
+ "IngeTrazo asked Windows for the high-performance GPU; it applies the next time you open the program.": "IngeTrazo le pidió a Windows la GPU de alto rendimiento; se aplica la próxima vez que abras el programa."
 }

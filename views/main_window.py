@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QSettings, QEvent
+from PySide6.QtCore import Qt, QSettings, QEvent, QCoreApplication
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QVector3D
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -892,6 +892,12 @@ class MainWindow(QMainWindow):
                 "the viewport will be slow. Update the graphics driver, or "
                 "assign IngeTrazo to the high-performance GPU in Windows "
                 "graphics settings.", renderer=info.get("renderer", "")), 30000)
+        elif QCoreApplication.instance().property("gpu_pref") == "set":
+            # First run on Windows: the preference was just written, and
+            # Windows applies it to the next process, not this one.
+            self.statusBar().showMessage(tr(
+                "IngeTrazo asked Windows for the high-performance GPU; it "
+                "applies the next time you open the program."), 20000)
 
     def _on_about(self) -> None:
         from core.glinfo import describe
