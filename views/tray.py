@@ -1299,7 +1299,7 @@ class DimensionStylePanel(QWidget):
 
         grid.addWidget(QLabel(tr("Unit:")), 1, 0)
         self._units = QComboBox()
-        self._units.addItems(["m", "cm", "mm"])
+        self._units.addItems(["m", "cm", "mm", "in", "ft", "ft-in"])
         self._units.setCurrentText(style.get("units", "m"))
         self._units.currentTextChanged.connect(self._apply)
         grid.addWidget(self._units, 1, 1)

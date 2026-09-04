@@ -355,6 +355,59 @@ def _point_to_segment_distance_2d(p, a, b) -> float:
 
 # ---- Viewport --------------------------------------------------------------
 
+_IMPERIAL_UNITS = {"in": 0.0254, '"': 0.0254, "ft": 0.3048, "'": 0.3048}
+_METRIC_UNITS = {"": 1.0, "m": 1.0, "cm": 0.01, "mm": 0.001}
+
+
+def _parse_number(tok: str):
+    """``2``, ``2.5``, ``.5``, ``3/4`` (a fraction) → float, else None."""
+    m = re.fullmatch(r"(\d+\.?\d*|\.\d+)(?:/(\d+\.?\d*))?", tok)
+    if m is None:
+        return None
+    v = float(m.group(1))
+    if m.group(2):
+        d = float(m.group(2))
+        if d == 0:
+            return None
+        v /= d
+    return v
+
+
+def _parse_length_field(field: str):
+    """One typed length in metres: metric or imperial, SketchUp's forms.
+
+    ``2`` (metres) · ``30cm`` · ``1500mm`` · ``2"`` / ``2in`` · ``1'`` /
+    ``1ft`` · ``1'6"`` · ``3/4"`` · ``1'3/4"``. A leading minus is kept.
+    Returns None when the field is not a length."""
+    f = field.strip().lower()
+    sign = 1.0
+    if f.startswith("-"):
+        sign, f = -1.0, f[1:]
+    if not f:
+        return None
+    # feet-and-inches: <feet>'<inches>" (inches optional, may be a fraction)
+    m = re.fullmatch(r"([^'\"]+)'([^'\"]*)\"?", f)
+    if m is not None and m.group(2):
+        feet = _parse_number(m.group(1))
+        inches = _parse_number(m.group(2))
+        if feet is None or inches is None:
+            return None
+        return sign * (feet * 0.3048 + inches * 0.0254)
+    m = re.fullmatch(r"(.+?)(mm|cm|m|in|ft|\"|')?", f)
+    if m is None:
+        return None
+    num = _parse_number(m.group(1))
+    if num is None:
+        return None
+    unit = m.group(2) or ""
+    scale = _METRIC_UNITS.get(unit)
+    if scale is None:
+        scale = _IMPERIAL_UNITS.get(unit)
+    if scale is None:
+        return None
+    return sign * num * scale
+
+
 class Viewport(QOpenGLWidget):
     """OpenGL viewport with orbital camera, grid, XYZ axes, tools and snapping."""
 
@@ -5311,9 +5364,25 @@ class Viewport(QOpenGLWidget):
 
     @staticmethod
     def _format_dim_value(metres: float, style: dict) -> str:
-        """Format a length (metres) per the dimension style: unit + precision."""
+        """Format a length (metres) per the dimension style: unit + precision.
+        Imperial units read the way the trade writes them: ``2.00"``,
+        ``1'6"`` for feet-and-inches."""
         units = style.get("units", "m")
         decimals = int(style.get("decimals", 2))
+        if units == "in":
+            return f"{metres / 0.0254:.{decimals}f}\""
+        if units == "ft":
+            return f"{metres / 0.3048:.{decimals}f}'"
+        if units == "ft-in":
+            total_in = metres / 0.0254
+            sign = "-" if total_in < 0 else ""
+            total_in = abs(total_in)
+            feet = int(total_in // 12)
+            inches = total_in - feet * 12
+            if round(inches, decimals) >= 12:
+                feet += 1
+                inches = 0.0
+            return f"{sign}{feet}'{inches:.{decimals}f}\""
         factor = {"m": 1.0, "cm": 100.0, "mm": 1000.0}.get(units, 1.0)
         return f"{metres * factor:.{decimals}f} {units}"
 
@@ -8506,7 +8575,7 @@ class Viewport(QOpenGLWidget):
                 # unit's presence is re-detected here and tagged, the same
                 # pattern as the arc's "2r" radius suffix.
                 import re as _re
-                if _re.search(r"\d\s*(mm|cm|m)\b",
+                if _re.search(r"[\d\"']\s*(mm|cm|m|in|ft)\b|\d\s*[\"']",
                               self._value_buffer.lower()):
                     value = ("abs_len", value)
             self.active_tool.on_value(self, value)
@@ -8519,8 +8588,9 @@ class Viewport(QOpenGLWidget):
             self._set_value_buffer(self._value_buffer[:-1])
             return True
 
-        if text and (text.isdigit() or text in (".", ",", ";", " ", "-", ":")
-                     or text.lower() in ("m", "c", "r")):
+        if text and (text.isdigit()
+                     or text in (".", ",", ";", " ", "-", ":", "\"", "'", "/")
+                     or text.lower() in ("m", "c", "r", "i", "n", "f", "t")):
             # A field separator (space / ;) with an empty buffer isn't VCB
             # input — let it fall through so Space can act as the Select
             # shortcut (SketchUp-style). It only separates fields mid-number.
@@ -8529,9 +8599,13 @@ class Viewport(QOpenGLWidget):
             # A unit letter with an empty buffer is a tool shortcut (M = Move,
             # C = Circle, R = Rectangle), not VCB input — only buffer it
             # after a digit. "r" is SketchUp's radius suffix for arcs (2r).
-            if (text.lower() in ("m", "c", "r")
+            if (text.lower() in ("m", "c", "r", "i", "n", "f", "t")
                     and not self._current_token_tail()):
                 return False
+            # Imperial marks and the fraction bar belong after a digit too:
+            # 2", 1'6", 3/4" (bare they are nothing a tool wants).
+            if text in ("\"", "'", "/") and not self._current_token_tail():
+                return True
             # Minus only opens a token (a sign, not an operator).
             if text == "-" and self._current_token_tail():
                 return True
@@ -8555,8 +8629,11 @@ class Viewport(QOpenGLWidget):
         """Return a float, a 2-tuple ``(w, h)`` (rectangle dimensions), a
         3-tuple ``(dx, dy, dz)`` (delta), or ``None`` on parse error. Each tool's
         ``on_value`` accepts the arity it understands and ignores the rest.
-        Fields may carry a unit suffix (``m``/``cm``/``mm``); bare numbers are
-        metres, and a leading minus is kept (direction tools flip on it)."""
+        Fields may carry a unit suffix — ``m``/``cm``/``mm``, and imperial
+        ``in`` or ``"``, ``ft`` or ``'``, feet-and-inches ``1'6"``, fractions
+        ``3/4"`` (SketchUp's forms, so a 2×4 is typed ``2";4"`` while the
+        span stays ``3.2``). Bare numbers are metres, and a leading minus is
+        kept (direction tools flip on it)."""
         normalized = buffer.replace(",", ".").replace(";", " ")
         stripped = normalized.strip()
         if stripped.lower().endswith("r") and ":" not in stripped:
@@ -8575,13 +8652,12 @@ class Viewport(QOpenGLWidget):
             if run <= 0:
                 return None
             return ("ratio", math.degrees(math.atan2(rise, run)))
-        scale = {"": 1.0, "m": 1.0, "cm": 0.01, "mm": 0.001}
         nums = []
         for p in normalized.split():
-            m = re.fullmatch(r"(-?(?:\d+\.?\d*|\.\d+))(mm|cm|m)?", p.lower())
-            if m is None:
+            v = _parse_length_field(p)
+            if v is None:
                 return None
-            nums.append(float(m.group(1)) * scale[m.group(2) or ""])
+            nums.append(v)
         if len(nums) == 1:
             return nums[0]
         if len(nums) in (2, 3):
