@@ -23,6 +23,7 @@ files.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from pathlib import Path
 
 from PySide6.QtGui import QVector3D
@@ -85,16 +86,41 @@ def clear_texture_cache() -> int:
     return count
 
 
+_DIGEST_PREFIX = re.compile(r"^(?:[0-9a-f]{16}-)+")
+NAME_LIMIT = 64     # characters kept of an image name inside the cache
+
+
+def texture_file_name(name: str) -> str:
+    """Filesystem-safe base name for an image called ``name``: characters
+    outside the safe set dropped, any content-hash prefix the name already
+    carried (from a cached file or an archive member) stripped, and the whole
+    clipped to :data:`NAME_LIMIT`. Stripping is what keeps a document from
+    stacking ``<hash>-<hash>-…-sumari.png`` one level deeper on every save —
+    0.3.10 did exactly that until the cache path outgrew Windows' 260-character
+    limit and the file refused to open; clipping keeps any name inside it."""
+    safe = "".join(c for c in Path(name).name
+                   if c.isalnum() or c in " ._-").strip(" .")
+    safe = _DIGEST_PREFIX.sub("", safe).strip(" .")
+    if len(safe) > NAME_LIMIT:
+        stem, dot, ext = safe.rpartition(".")
+        if dot and 0 < len(ext) <= 5 and ext.isalnum():
+            safe = stem[:NAME_LIMIT - len(ext) - 1].rstrip(" .") + "." + ext
+        else:
+            safe = safe[:NAME_LIMIT].rstrip(" .")
+    return safe or "texture.png"
+
+
 def cache_image(data: bytes, name: str, subdir: str) -> Path:
     """Store ``data`` in the texture cache under ``subdir`` and return its
     path. **Content-addressed**: the file name carries a hash of the bytes, so
     the same image shared by several documents is written (and uploaded to the
-    GPU) once, and a rewrite of the same file is a no-op."""
+    GPU) once, and a rewrite of the same file is a no-op. ``name`` goes through
+    :func:`texture_file_name`, so feeding a cached file's own name back in
+    lands on the same file instead of a longer one."""
     import hashlib
     digest = hashlib.sha1(data).hexdigest()[:16]
-    safe = "".join(c for c in Path(name).name
-                   if c.isalnum() or c in " ._-").strip(" .")
-    out = texture_cache_root() / subdir / f"{digest}-{safe or 'texture.png'}"
+    safe = texture_file_name(name)
+    out = texture_cache_root() / subdir / f"{digest}-{safe}"
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         if not out.exists() or out.stat().st_size != len(data):
@@ -102,7 +128,7 @@ def cache_image(data: bytes, name: str, subdir: str) -> Path:
         return out
     except OSError:
         import tempfile
-        tmp = Path(tempfile.mkdtemp(prefix="ingetrazo-tex-")) / (safe or "t.png")
+        tmp = Path(tempfile.mkdtemp(prefix="ingetrazo-tex-")) / safe
         tmp.write_bytes(data)
         return tmp
 

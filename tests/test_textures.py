@@ -560,3 +560,86 @@ def test_the_smoothing_group_never_reaches_the_model(tmp_path):
     scene = Scene()
     obj_format.load_obj(scene, _obj_with_smoothing(tmp_path, "s 1"))
     assert not any(SMOOTH_KEY in (f.attrs or {}) for f in scene.mesh.faces)
+
+
+def _archive_members(doc):
+    import zipfile
+    with zipfile.ZipFile(doc) as zf:
+        return [n for n in zf.namelist() if n.startswith("textures/")]
+
+
+def test_resaving_a_document_never_stacks_hash_prefixes(tmp_path, monkeypatch):
+    # Gonzalo's 0.3.10 crash on Windows: every save wrapped the member in one
+    # more content hash (textures/<hash>-<hash>-…-sumari.png) until the cache
+    # path outgrew MAX_PATH and the document refused to open.
+    import hashlib
+
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "cache"))
+    scene = Scene()
+    hist = History(scene)
+    src = tmp_path / "sumari.png"
+    _textured_cube(scene, hist, src)
+    digest = hashlib.sha1(src.read_bytes()).hexdigest()[:16]
+
+    doc = tmp_path / "v1.igz"
+    igz.save_scene(scene, doc)
+    assert _archive_members(doc) == [f"textures/{digest}-sumari.png"]
+    for i in range(2, 6):
+        loaded = Scene()
+        igz.load_into(loaded, doc)
+        tex = next(f.attrs["texture"] for f in loaded.mesh.faces
+                   if f.attrs.get("texture"))
+        assert Path(tex["path"]).name == f"{digest}-sumari.png"
+        doc = tmp_path / f"v{i}.igz"
+        igz.save_scene(loaded, doc)
+        assert _archive_members(doc) == [f"textures/{digest}-sumari.png"]
+
+
+def test_a_document_bloated_by_old_saves_opens_and_heals(tmp_path, monkeypatch):
+    # A file 0.3.10 saved nineteen times: the member name is 330+ characters.
+    # It must still open (short cache name) and re-save with a clean member.
+    import hashlib
+    import json
+    import zipfile
+
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "cache"))
+    scene = Scene()
+    hist = History(scene)
+    src = tmp_path / "sumari.png"
+    _textured_cube(scene, hist, src)
+    digest = hashlib.sha1(src.read_bytes()).hexdigest()[:16]
+    clean = tmp_path / "clean.igz"
+    igz.save_scene(scene, clean)
+    good = f"textures/{digest}-sumari.png"
+    bloated = "textures/" + "fd36615edd9d43dc-" * 19 + "sumari.png"
+    old = tmp_path / "old.igz"
+    with zipfile.ZipFile(clean) as zin, zipfile.ZipFile(old, "w") as zout:
+        for name in zin.namelist():
+            data = zin.read(name)
+            if name == "document.json":
+                data = data.decode().replace(good, bloated).encode()
+            zout.writestr(bloated if name == good else name, data)
+    assert _archive_members(old) == [bloated]
+
+    loaded = Scene()
+    igz.load_into(loaded, old)
+    tex = next(f.attrs["texture"] for f in loaded.mesh.faces
+               if f.attrs.get("texture"))
+    assert Path(tex["path"]).name == f"{digest}-sumari.png"
+    assert Path(tex["path"]).read_bytes() == src.read_bytes()
+    healed = tmp_path / "healed.igz"
+    igz.save_scene(loaded, healed)
+    assert _archive_members(healed) == [good]
+
+
+def test_cache_names_stay_short_and_keep_their_extension(tmp_path, monkeypatch):
+    from core.texture import NAME_LIMIT, cache_image, texture_file_name
+
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "cache"))
+    long_name = "x" * 200 + ".jpeg"
+    short = texture_file_name(long_name)
+    assert len(short) <= NAME_LIMIT and short.endswith(".jpeg")
+    assert texture_file_name("0123456789abcdef-" * 3 + "piso.png") == "piso.png"
+    assert texture_file_name("???") == "texture.png"
+    out = cache_image(b"img", long_name, "embedded")
+    assert out.name.endswith(short) and out.read_bytes() == b"img"

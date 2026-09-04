@@ -6,7 +6,16 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
-_Nada todavía._
+### Corregido
+- **Un `.igz` con texturas dejaba de abrir en Windows tras varios guardados.**
+  Cada guardado envolvía el nombre de la imagen en un prefijo de hash más
+  (`textures/<hash>-<hash>-…-sumari.png`): al cabo de unos veinte guardados la
+  ruta en la caché superaba el límite de 260 caracteres de Windows y el archivo
+  fallaba con «[Errno 2] No such file or directory». Ahora el nombre se limpia
+  de prefijos al guardar y al abrir, se recorta a 64 caracteres, los archivos
+  ya hinchados se abren y quedan sanos al volver a guardarlos, y una caché en
+  la que no se puede escribir deja la cara sin imagen en vez de impedir la
+  apertura.
 
 ## [0.3.10] — 2026-09-04
 

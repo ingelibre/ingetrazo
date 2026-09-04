@@ -100,6 +100,7 @@ def _pack_textures(payload) -> tuple[dict, int]:
     their ``"path"``, so a document whose cache was wiped saves no worse than
     before instead of losing the reference outright."""
     import hashlib
+    from core.texture import texture_file_name
 
     blobs: dict = {}
     resolved: dict = {}          # source path → member name ("" = unreadable)
@@ -117,9 +118,10 @@ def _pack_textures(payload) -> tuple[dict, int]:
                 missing += 1
                 continue
             digest = hashlib.sha1(data).hexdigest()[:16]
-            safe = "".join(c for c in Path(src).name
-                           if c.isalnum() or c in " ._-").strip(" .")
-            member = f"{_TEX_PREFIX}{digest}-{safe or 'texture.png'}"
+            # ``src`` is usually a cached file already named ``<hash>-<name>``:
+            # texture_file_name drops that prefix, so the member is always
+            # ``<hash>-<name>`` and never grows with the number of saves.
+            member = f"{_TEX_PREFIX}{digest}-{texture_file_name(Path(src).name)}"
             resolved[src] = member
             blobs[member] = data
         if member:
@@ -147,13 +149,18 @@ def _unpack_textures(payload, archive) -> None:
                 data = archive.read(member)
             except KeyError:
                 continue
-            # Drop the member's hash prefix — cache_image re-derives it from
-            # the bytes, and the same image must land on the same cached file
-            # whether it arrived in a document or straight from a .skp.
-            name = member.rsplit("/", 1)[-1].split("-", 1)[-1]
-            out = str(cache_image(data, name, "embedded"))
+            # cache_image drops the member's hash prefix(es) and re-derives
+            # one from the bytes, so the same image lands on the same cached
+            # file whether it arrived in a document (even one whose member
+            # name was bloated by 0.3.10's stacking) or straight from a .skp.
+            name = member.rsplit("/", 1)[-1]
+            try:
+                out = str(cache_image(data, name, "embedded"))
+            except OSError:
+                out = ""            # unwritable cache: the face loses its image
             unpacked[member] = out
-        tex["path"] = out
+        if out:
+            tex["path"] = out
 
 
 def _face_json(f) -> dict:
