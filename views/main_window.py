@@ -133,6 +133,7 @@ class MainWindow(QMainWindow):
     # ---- Layout -------------------------------------------------------------
     def _setup_ui(self) -> None:
         self.viewport = Viewport(self)
+        self.viewport.glReady.connect(self._on_gl_ready)
         self.setCentralWidget(self.viewport)
 
         self._build_toolbar()
@@ -882,12 +883,26 @@ class MainWindow(QMainWindow):
         telling the truth about which drawing tool is current."""
         self._tools[key].on_activate(self.viewport)
 
+    def _on_gl_ready(self, info: dict) -> None:
+        """A viewport drawn on the CPU is the usual reason a Windows machine
+        reports IngeTrazo as unusably slow; say so where the user looks."""
+        if info.get("software"):
+            self.statusBar().showMessage(tr(
+                "IngeTrazo is drawing with the software renderer ({renderer}): "
+                "the viewport will be slow. Update the graphics driver, or "
+                "assign IngeTrazo to the high-performance GPU in Windows "
+                "graphics settings.", renderer=info.get("renderer", "")), 30000)
+
     def _on_about(self) -> None:
+        from core.glinfo import describe
+        gl_line = describe(getattr(self.viewport, "gl_info", {}))
+        gl_html = f"<p><small>OpenGL: {gl_line}</small></p>" if gl_line else ""
         QMessageBox.about(
             self,
             tr("About IngeTrazo"),
             "<h3>IngeTrazo</h3>"
             f"<p>{tr('Version')} {__version__}</p>"
+            f"{gl_html}"
             f"<p>{tr('Free 3D modeler for architecture, civil engineering and 3D printing.')}</p>"
             f"<p>{tr('Created by')} <b>Marco Sumari Tellez</b><br>"
             f"{tr('Civil Engineer — Arequipa, Peru')}</p>"

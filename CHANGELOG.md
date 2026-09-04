@@ -6,6 +6,15 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Añadido
+- **Quién dibuja el visor.** Al arrancar, la app anota la tarjeta gráfica y
+  el controlador que le dieron el contexto OpenGL en `ingetrazo-gl.txt`
+  (carpeta de registros) y lo muestra en Ayuda ▸ Acerca de. Si el visor está
+  dibujándose por software (`opengl32sw.dll` de Qt en Windows, `llvmpipe` en
+  Linux), la barra de estado lo avisa: es la causa habitual de un
+  «rendimiento pésimo» y la solución está en el controlador de la GPU, no en
+  IngeTrazo.
+
 ### Corregido
 - **Un `.igz` con texturas dejaba de abrir en Windows tras varios guardados.**
   Cada guardado envolvía el nombre de la imagen en un prefijo de hash más

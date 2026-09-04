@@ -442,6 +442,7 @@ class Viewport(QOpenGLWidget):
     sceneVersionChanged = Signal(int)
     # Live measurement for the VCB box (e.g. "5.00 m", "3.00 × 2.00 m").
     measurementChanged = Signal(str)
+    glReady = Signal(dict)          # vendor/renderer/version once the context is up
     # A base-map tile finished downloading (Track G) — lets the 3D terrain
     # rebuild its mosaic as imagery arrives.
     tilesChanged = Signal()
@@ -689,6 +690,14 @@ class Viewport(QOpenGLWidget):
     def initializeGL(self) -> None:
         self._gl = QOpenGLFunctions(self.context())
         self._gl.initializeOpenGLFunctions()
+        # Who is drawing: the GPU driver or a software rasteriser. Recorded
+        # for Help ▸ About, written to the log folder, and announced to the
+        # main window so a CPU-drawn viewport says so before anyone wonders
+        # why orbiting crawls (a Windows box without a working driver).
+        from core.glinfo import read_gl_info, write_gl_report
+        self.gl_info = read_gl_info(self._gl)
+        write_gl_report(self.gl_info)
+        self.glReady.emit(self.gl_info)
         # GL cleanup has exactly one legal moment: the context's own farewell.
         # (initializeGL re-runs if the context is ever recreated; each context
         # gets its own connection, which is precisely what we want.)
