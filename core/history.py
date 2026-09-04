@@ -98,9 +98,15 @@ class History:
     a duplicated edge behind, with the traceback swallowed by the Qt event
     loop). Same fail-safe doctrine as the BIM push guard, one level up."""
 
-    #: Where failed-command tracebacks are appended (project-local, so the
-    #: user can just send the file when reporting a bug).
+    #: Where failed-command tracebacks are appended: the user's log folder
+    #: (core.paths.user_log_dir — writable even when the app is installed
+    #: under Program Files), so the user can just send the file.
     error_log = "ingetrazo-errors.log"
+
+    @staticmethod
+    def default_error_log() -> str:
+        from core.paths import user_log_dir
+        return str(user_log_dir() / "ingetrazo-errors.log")
 
     def __init__(self, scene) -> None:
         self.scene = scene
@@ -144,9 +150,16 @@ class History:
         text = (f"[{datetime.datetime.now().isoformat(timespec='seconds')}] "
                 f"command {type(cmd).__name__} failed and was rolled back:\n"
                 f"{''.join(traceback.format_exception(exc))}\n")
-        print(text, file=sys.stderr)
+        if sys.stderr is not None:
+            print(text, file=sys.stderr)
+        path = self.error_log
+        if path == History.error_log:            # the default: user log dir
+            try:
+                path = self.default_error_log()
+            except Exception:  # noqa: BLE001 — logging never breaks a command
+                path = self.error_log
         try:
-            with open(self.error_log, "a", encoding="utf-8") as fh:
+            with open(path, "a", encoding="utf-8") as fh:
                 fh.write(text)
         except OSError:
             pass

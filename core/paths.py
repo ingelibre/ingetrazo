@@ -27,3 +27,47 @@ def app_root() -> Path:
 def is_frozen() -> bool:
     """True in a PyInstaller bundle. For messages that differ when packaged."""
     return getattr(sys, "frozen", False) is True
+
+
+def user_log_dir() -> Path:
+    """A writable folder for the black-box logs (crash / failed commands).
+
+    Never the install folder: on Windows the installer lands in Program
+    Files, read-only for users, and a relative ``open("…log", "a")`` at
+    startup raised PermissionError — whose fallback touched ``sys.stderr``,
+    None in a windowed build, so v0.3.8/v0.3.9 died before showing a window
+    ("sys.stderr is None"). Windows: ``%LOCALAPPDATA%\\IngeTrazo``; macOS:
+    ``~/Library/Logs/IngeTrazo``; elsewhere ``$XDG_STATE_HOME/ingetrazo`` or
+    ``~/.local/state/ingetrazo``; the temp dir as the last resort."""
+    import os
+    import tempfile
+    home = Path.home()
+    if sys.platform.startswith("win"):
+        base = os.environ.get("LOCALAPPDATA") or str(home / "AppData" / "Local")
+        candidates = [Path(base) / "IngeTrazo"]
+    elif sys.platform == "darwin":
+        candidates = [home / "Library" / "Logs" / "IngeTrazo"]
+    else:
+        state = os.environ.get("XDG_STATE_HOME") or str(home / ".local" / "state")
+        candidates = [Path(state) / "ingetrazo"]
+    candidates.append(Path(tempfile.gettempdir()) / "ingetrazo")
+    for d in candidates:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            probe = d / ".write-test"
+            probe.write_text("", encoding="utf-8")
+            probe.unlink()
+            return d
+        except OSError:
+            continue
+    return Path(tempfile.gettempdir())
+
+
+def open_crash_log(name: str = "ingetrazo-crash.log"):
+    """An append handle for the faulthandler black box, or None when no
+    location is writable at all — callers must then leave faulthandler on
+    its default only if ``sys.stderr`` exists."""
+    try:
+        return open(user_log_dir() / name, "a", encoding="utf-8")
+    except OSError:
+        return None

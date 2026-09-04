@@ -6,7 +6,15 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
-_Nada todavía._
+### Corregido
+- **Windows: el instalador de 0.3.8 y 0.3.9 no arrancaba** si se instalaba en
+  Archivos de programa: al iniciar, la app intentaba crear su registro de
+  fallos (`ingetrazo-crash.log`) en la carpeta de instalación, de solo
+  lectura, y el respaldo usaba la consola, que un .exe sin consola no tiene
+  («sys.stderr is None»). Los registros de fallos viven ahora en la carpeta
+  de datos del usuario (`%LOCALAPPDATA%\IngeTrazo` en Windows,
+  `~/.local/state/ingetrazo` en Linux) y el arranque nunca depende de que
+  exista una consola.
 
 ## [0.3.9] — 2026-09-03
 

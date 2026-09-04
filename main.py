@@ -14,12 +14,16 @@ from pathlib import Path
 
 # Black box: a native crash (GL driver, Qt) kills the process without a
 # Python traceback — faulthandler leaves the Python stacks of every thread
-# in this file so the next "it just closed" has an autopsy. Project-local
-# beside ingetrazo-errors.log, same doctrine: the user can just send it.
-try:
-    _crash_log = open("ingetrazo-crash.log", "a", encoding="utf-8")
+# in this file so the next "it just closed" has an autopsy. It lives in the
+# user's log folder (core.paths.user_log_dir), beside ingetrazo-errors.log:
+# the install folder is read-only under Program Files, and a windowed .exe
+# has no sys.stderr to fall back on (the v0.3.8/v0.3.9 Windows startup
+# crash: "sys.stderr is None").
+from core.paths import open_crash_log
+_crash_log = open_crash_log()
+if _crash_log is not None:
     faulthandler.enable(file=_crash_log)
-except OSError:
+elif sys.stderr is not None:
     faulthandler.enable()
 
 # Native Wayland is the default. Known cosmetic tradeoff (2026-07-12): the
