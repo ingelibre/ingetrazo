@@ -6,6 +6,30 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Añadido
+- **Componentes: editas uno, cambian todos.** Entrar en una copia de un
+  componente (doble clic) edita su definición compartida: al salir, el
+  cambio llega a todas las copias, y toda la sesión se deshace en un solo
+  paso. Empujar/Tirar sobre una copia desde fuera también edita la
+  definición. Para cambiar una sola copia, antes: clic derecho ▸ Hacer
+  único. Mirar dentro y salir sin tocar nada no cambia nada.
+- **Medidas en pulgadas y pies junto a metros**, como SketchUp: `2"`, `2in`,
+  `1'`, `1ft`, `1'6"`, `3/4"`, `1 1/2"` (o `1-1/2"`), mezclables por campo
+  (`1 1/2";3 1/2"` es una tabla de 2×4; `3,2;1'6";10cm` un
+  desplazamiento). Los números sin sufijo siguen siendo metros.
+- **Cotas en pulgadas o pies**, en el estilo de cotas del modelo y en cada
+  cota de lámina: `in`, `ft`, `ft-in`, y las fraccionarias `in-frac`
+  (`1 1/2"`) y `ft-in-frac` (`1'6 1/2"`); Decimales fija el denominador
+  (0 enteras, 1 cuartos, 2 dieciseisavos, 3 treintaidosavos, 4
+  sesentaicuatroavos).
+- **Copia de seguridad del autoguardado descartado.** Cerrar sin guardar ya
+  no borra la copia automática: se retira a una carpeta de descartados
+  (se conservan las 20 últimas) y Archivo ▸ Recuperar una copia
+  auto-guardada descartada… la abre como documento nuevo.
+- **Publicar el repositorio Flatpak a mano** desde Actions ▸ release-flatpak
+  ▸ Run workflow con el tag de una release existente, sin compilar ni crear
+  releases nuevas.
+
 ### Cambiado
 - **openskp 1.2.0** (upstream `6e3e568`, 4 de septiembre): trae nuestro
   aporte de tamaño aplicado y opacidad de materiales al escribir .skp, los
@@ -15,6 +39,27 @@ follow [SemVer](https://semver.org).
   por archivo y un 5 % más rápido en conjunto.
 
 ### Corregido
+- **El zoom «se trababa» cerca del modelo**: con la distancia de órbita en
+  su mínimo (2 cm), acercar no hacía nada y alejar retrocedía milímetros
+  por muesca hasta un Zoom extensión. Ahora alejar retrocede al menos un
+  1 % del tamaño del modelo por muesca y acercar sigue deslizando la vista
+  hacia el punto del cursor.
+- **Una línea dibujada sobre la cara de un grupo no se podía seleccionar**:
+  el clic siempre tomaba el grupo. Como en SketchUp, la línea visible gana
+  al objeto que tiene detrás; una línea escondida detrás del bloque deja
+  el clic al bloque.
+- **Mover, medir y acotar hacia la cara de otro objeto**: el punto cae ahora
+  sobre esa cara (inferencia «en cara» para el segundo punto, salvo que la
+  dirección coincida con un eje), y las caras de las instancias de
+  componente dan su plano real, no el del prototipo en el origen.
+- **Empujar/Tirar sobre una instancia de componente** dejaba de funcionar
+  (solo un aviso en inglés): ahora empuja y el cambio llega a las copias.
+- **Sumari, la figura de escala, con un pie en el aire en alzado**: la
+  ilustración tenía un pie dibujado 7 cm más alto; los dos pies apoyan
+  ahora en la línea de tierra.
+- **Flatpak: los archivos .igz, .skp y .dae mostraban una hoja genérica** en
+  el gestor de archivos; los iconos de documento se exportan ahora con el
+  prefijo del identificador de la app, como exige Flatpak.
 - **Windows: el instalador de 0.3.8 y 0.3.9 no arrancaba** si se instalaba en
   Archivos de programa: al iniciar, la app intentaba crear su registro de
   fallos (`ingetrazo-crash.log`) en la carpeta de instalación, de solo
