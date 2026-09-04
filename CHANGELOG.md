@@ -37,8 +37,10 @@ follow [SemVer](https://semver.org).
   SketchUp rechazaba el archivo entero (SUResult 12). Ahora cada textura se
   copia a una carpeta temporal con su nombre corto antes de entregarla al
   escritor, la ruta de tu máquina ya no viaja dentro del `.skp`, y una
-  imagen ilegible o que no sea PNG/JPEG pasa a color sin tocar el escritor.
-  Validado con el conversor oficial del SDK de SketchUp.
+  imagen ilegible pasa a color sin tocar el escritor. Las texturas BMP, TIFF
+  o GIF (las que traen los modelos importados de SketchUp) se reconvierten a
+  PNG en vez de perderse. Validado con el conversor oficial del SDK de
+  SketchUp.
 - **Un `.igz` con texturas dejaba de abrir en Windows tras varios guardados.**
   Cada guardado envolvía el nombre de la imagen en un prefijo de hash más
   (`textures/<hash>-<hash>-…-sumari.png`): al cabo de unos veinte guardados la

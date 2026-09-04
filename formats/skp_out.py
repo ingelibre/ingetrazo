@@ -104,10 +104,24 @@ def _stage_texture(src: Path, stage_dir: Path | None, taken: set) -> Path | None
         data = src.read_bytes()
     except OSError:
         return None
-    if not (data.startswith(b"\x89PNG\r\n\x1a\n") or data[:3] == b"\xff\xd8\xff"):
-        return None
     from core.texture import texture_file_name
     base = texture_file_name(src.name)
+    if not (data.startswith(b"\x89PNG\r\n\x1a\n") or data[:3] == b"\xff\xd8\xff"):
+        # BMP / TIFF / GIF — what imported SketchUp models often carry (a
+        # bridge's soda logos, a slaughterhouse's bronze). openskp embeds
+        # only PNG and JPEG, so re-encode through Qt instead of dropping
+        # the image; what Qt cannot read either becomes a colour.
+        from PySide6.QtGui import QImage
+        from PySide6.QtCore import QBuffer, QIODevice
+        img = QImage(str(src))
+        if img.isNull():
+            return None
+        buf = QBuffer()
+        buf.open(QIODevice.WriteOnly)
+        if not img.save(buf, "PNG"):
+            return None
+        data = bytes(buf.data())
+        base = base.rpartition(".")[0] + ".png" if "." in base else base + ".png"
     name = base
     n = 1
     while name in taken:

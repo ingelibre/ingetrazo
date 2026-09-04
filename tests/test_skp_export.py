@@ -471,3 +471,23 @@ def test_a_texture_that_cannot_be_embedded_becomes_a_colour_before_the_writer_ru
     skp_out_format.save_skp(scene, path)
     model = _parse_skp(path)
     assert model.materials and all(m.texture is None for m in model.materials)
+
+
+def test_a_bmp_texture_from_an_imported_model_is_re_encoded_not_dropped(tmp_path):
+    """openskp embeds PNG and JPEG only; a bridge imported from SketchUp
+    carries its logos as BMP. They must reach the .skp as textures."""
+    bmp = tmp_path / "coca-cola_logo5.bmp"
+    img = QImage(6, 6, QImage.Format_RGB32)
+    img.fill(0xFFCC0000)
+    assert img.save(str(bmp), "BMP")
+    scene = Scene()
+    hist = History(scene)
+    loop = [V(0, 0), V(4, 0), V(4, 4), V(0, 4)]
+    F._draw_rect(scene, hist, [QVector3D(p) for p in loop], [])
+    scene.mesh.faces[0].attrs["texture"] = {"path": str(bmp), "sw": 1.0, "sh": 1.0}
+    path = tmp_path / "bmp.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    textured = [m for m in model.materials if m.texture is not None]
+    assert len(textured) == 1
+    assert "coca-cola_logo5.png".encode("utf-16-le") in path.read_bytes()
