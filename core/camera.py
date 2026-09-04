@@ -108,15 +108,31 @@ class OrbitCamera:
         self.distance = max(MIN_DISTANCE,
                             min(self.distance * factor, MAX_DISTANCE))
 
-    def zoom_to(self, steps: float, focus: QVector3D) -> None:
+    def zoom_to(self, steps: float, focus: QVector3D,
+                min_step: float = 0.0) -> None:
         """Zoom keeping the world point ``focus`` (under the cursor) fixed on
         screen, SketchUp-style. The whole frame scales toward ``focus``, so both
-        the distance and the target move by the same (clamped) factor."""
+        the distance and the target move by the same factor.
+
+        Two escapes from the "stuck" close-up (the orbit distance pinned at
+        MIN_DISTANCE, 2 cm): zooming IN keeps sliding the target toward the
+        focus even when the distance cannot shrink any more, and zooming OUT
+        retreats the eye by at least ``min_step`` (the viewport passes ~1 %
+        of the model's size) — at 2 cm a plain 10 % step was 2 mm per
+        notch, dozens of notches to see anything, so users reached for Zoom
+        Extents instead."""
+        factor = 0.9 ** steps
         new_distance = max(MIN_DISTANCE,
-                           min(self.distance * (0.9 ** steps), MAX_DISTANCE))
-        factor = new_distance / self.distance if self.distance > 1e-9 else 1.0
+                           min(self.distance * factor, MAX_DISTANCE))
+        eye_before = self.eye()
         self.target = focus + (self.target - focus) * factor
         self.distance = new_distance
+        if steps < 0 and min_step > 0.0:
+            moved = (self.eye() - eye_before).length()
+            if moved < min_step:
+                back = self.eye() - self.target
+                if back.length() > 1e-9:
+                    self.target += back.normalized() * (min_step - moved)
 
     def set_aspect(self, w: int, h: int) -> None:
         self.aspect = max(w, 1) / max(h, 1)

@@ -8334,7 +8334,13 @@ class Viewport(QOpenGLWidget):
             if focus is None:
                 focus = self._world_under_cursor(pos.x(), pos.y())
         if focus is not None:
-            self.camera.zoom_to(steps, focus)
+            # A perceptible retreat even from a 2 cm close-up: ~1 % of the
+            # model's size per notch when the frame scaling alone would move
+            # the eye less than that (the "zoom is stuck" report).
+            lo, hi = self.scene.bounds()
+            diag = (hi - lo).length() if lo is not None else 0.0
+            self.camera.zoom_to(steps, focus,
+                                min_step=max(0.05, 0.01 * diag))
         else:
             self.camera.zoom(steps)
         self._zoom_focus = (pose(), pos.x(), pos.y(),
@@ -8353,7 +8359,8 @@ class Viewport(QOpenGLWidget):
         if ev.type() == QEvent.ShortcutOverride and self._value_buffer:
             t = ev.text().lower()
             if t and (t.isdigit() or t in (".", ",", ";", " ", "-", ":",
-                                           "m", "c", "r")):
+                                           "\"", "'", "/", "m", "c", "r",
+                                           "i", "n", "f", "t")):
                 ev.accept()
                 return True
         return super().event(ev)
