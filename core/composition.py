@@ -519,6 +519,7 @@ class CotaItem:
     text: str = ""               # "" = automatic distance label
     text_mm: float = 2.8         # label height on paper
     decimals: int = 2
+    units: str = "m"            # m | cm | mm | in | ft | ft-in | in-frac | ft-in-frac
     ends: str = "tick"           # tick | arrow | none
     stroke_mm: float = 0.25
     color: str = "#1e242c"
@@ -571,10 +572,15 @@ class CotaItem:
         return math.hypot(self.dx_mm, self.dy_mm) * self.scale_n / 1000.0
 
     def auto_label(self) -> str:
-        """The measured value, formatted."""
+        """The measured value, formatted in the cota's units (metres by
+        default; inches, feet, feet-and-inches, fractional inches too)."""
+        from core.units import format_length
         d = self.real_distance_m()
         n = max(0, min(int(self.decimals), 6))
-        return f"{d:.{n}f} m" if d < 1000 else f"{d / 1000:.3f} km"
+        units = getattr(self, "units", "m") or "m"
+        if units == "m" and d >= 1000:
+            return f"{d / 1000:.3f} km"
+        return format_length(d, units, n)
 
     def label(self) -> str:
         """Custom text when set — with ``<>`` standing for the measured

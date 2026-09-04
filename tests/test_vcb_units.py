@@ -82,3 +82,48 @@ def test_dimension_labels_can_read_in_inches_and_feet():
     assert fmt(FT + 6 * IN, {"units": "ft-in", "decimals": 1}) == "1'6.0\""
     assert fmt(2 * FT, {"units": "ft", "decimals": 2}) == "2.00'"
     assert fmt(1.5, {"units": "m", "decimals": 2}) == "1.50 m"
+
+
+def test_mixed_numbers_the_way_sketchup_writes_them():
+    parse = Viewport._parse_value_buffer
+    assert abs(parse('1 1/2"') - 1.5 * IN) < 1e-9          # space form
+    assert abs(parse('1-1/2"') - 1.5 * IN) < 1e-9          # hyphen form
+    assert abs(parse("2 3/4in") - 2.75 * IN) < 1e-9
+    assert abs(parse('-1 1/2"') + 1.5 * IN) < 1e-9
+    w, h = parse('1 1/2";3 1/2"')                          # a real 2×4
+    assert abs(w - 1.5 * IN) < 1e-9 and abs(h - 3.5 * IN) < 1e-9
+    assert abs(parse("1'6 1/2\"") - (FT + 6.5 * IN)) < 1e-9
+    assert abs(parse("1'6-1/2\"") - (FT + 6.5 * IN)) < 1e-9
+    dx, dy = parse("2 1/2\";3")                            # then metres
+    assert abs(dx - 2.5 * IN) < 1e-9 and abs(dy - 3.0) < 1e-9
+    assert parse("1 2") == (1.0, 2.0)                      # two plain fields
+    assert _parse_length_field("1-2") is None
+
+
+def test_fractional_inches_read_like_a_carpenter_writes_them():
+    from core.units import format_length
+    assert format_length(1.5 * IN, "in-frac", 2) == '1 1/2"'
+    assert format_length(0.75 * IN, "in-frac", 2) == '3/4"'
+    assert format_length(6 * IN, "in-frac", 2) == '6"'
+    assert format_length(FT + 6.5 * IN, "ft-in-frac", 2) == "1'6 1/2\""
+    assert format_length(2 * FT, "ft-in-frac", 2) == "2'0\""
+    assert format_length(11.99 * IN, "ft-in-frac", 0) == "1'0\""   # rounds up
+    assert format_length(1.03 * IN, "in-frac", 1) == '1"'          # 1/4 grid
+    assert format_length(1.03 * IN, "in-frac", 4) == '1 1/32"'     # 1/64 grid
+    assert format_length(-1.5 * IN, "in-frac", 2) == '-1 1/2"'
+    assert format_length(1.5, "m", 2) == "1.50 m"
+    assert format_length(1.5, "mm", 0) == "1500 mm"
+
+
+def test_sheet_cotas_take_units():
+    from core.composition import CotaItem, Composicion
+    c = CotaItem(x_mm=10.0, y_mm=10.0, dx_mm=38.1, scale_n=1.0, units="in-frac",
+                 decimals=2)                                    # 38.1 mm = 1.5"
+    assert c.auto_label() == '1 1/2"'
+    c.units = "ft-in"
+    assert c.auto_label() == "0'1.50\""
+    c.units = "m"
+    assert c.auto_label() == "0.04 m"
+    back = Composicion.from_dict({"cotas": [{"x_mm": 1.0, "y_mm": 2.0,
+                                             "dx_mm": 10.0, "decimals": 1}]})
+    assert back.cotas[0].units == "m"                          # old documents

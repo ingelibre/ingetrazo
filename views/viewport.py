@@ -360,17 +360,43 @@ _METRIC_UNITS = {"": 1.0, "m": 1.0, "cm": 0.01, "mm": 0.001}
 
 
 def _parse_number(tok: str):
-    """``2``, ``2.5``, ``.5``, ``3/4`` (a fraction) → float, else None."""
-    m = re.fullmatch(r"(\d+\.?\d*|\.\d+)(?:/(\d+\.?\d*))?", tok)
+    """``2``, ``2.5``, ``.5``, ``3/4`` (a fraction), ``1-1/2`` (a mixed
+    number, the hyphen form) → float, else None."""
+    m = re.fullmatch(r"(?:(\d+)-)?(\d+\.?\d*|\.\d+)(?:/(\d+\.?\d*))?", tok)
     if m is None:
         return None
-    v = float(m.group(1))
-    if m.group(2):
-        d = float(m.group(2))
+    v = float(m.group(2))
+    if m.group(3):
+        d = float(m.group(3))
         if d == 0:
             return None
         v /= d
+    elif m.group(1):
+        return None                      # "1-2" without a fraction: not ours
+    if m.group(1):
+        v += float(m.group(1))
     return v
+
+
+def _merge_mixed_numbers(fields: list) -> list:
+    """SketchUp's ``1 1/2"``: a whole number followed by a fraction field is
+    ONE mixed number, not two fields — joined with the hyphen form."""
+    out = []
+    i = 0
+    while i < len(fields):
+        f = fields[i]
+        nxt = fields[i + 1] if i + 1 < len(fields) else None
+        if (nxt is not None
+                and re.fullmatch(r"-?\d+(?:'\d*)?", f)
+                and re.fullmatch(r"\d+/\d+(?:mm|cm|m|in|ft|\"|')?", nxt.lower())):
+            # 1 1/2" → 1-1/2"; 1'6 1/2" → 1'6-1/2"; 1' 1/2" → 1'1/2"
+            joint = "" if f.endswith("'") else "-"
+            out.append(f"{f}{joint}{nxt}")
+            i += 2
+            continue
+        out.append(f)
+        i += 1
+    return out
 
 
 def _parse_length_field(field: str):
@@ -388,6 +414,7 @@ def _parse_length_field(field: str):
     # feet-and-inches: <feet>'<inches>" (inches optional, may be a fraction)
     m = re.fullmatch(r"([^'\"]+)'([^'\"]*)\"?", f)
     if m is not None and m.group(2):
+        # 1'6 1/2" arrives from the buffer merge as 1'6-1/2"
         feet = _parse_number(m.group(1))
         inches = _parse_number(m.group(2))
         if feet is None or inches is None:
@@ -5364,27 +5391,11 @@ class Viewport(QOpenGLWidget):
 
     @staticmethod
     def _format_dim_value(metres: float, style: dict) -> str:
-        """Format a length (metres) per the dimension style: unit + precision.
-        Imperial units read the way the trade writes them: ``2.00"``,
-        ``1'6"`` for feet-and-inches."""
-        units = style.get("units", "m")
-        decimals = int(style.get("decimals", 2))
-        if units == "in":
-            return f"{metres / 0.0254:.{decimals}f}\""
-        if units == "ft":
-            return f"{metres / 0.3048:.{decimals}f}'"
-        if units == "ft-in":
-            total_in = metres / 0.0254
-            sign = "-" if total_in < 0 else ""
-            total_in = abs(total_in)
-            feet = int(total_in // 12)
-            inches = total_in - feet * 12
-            if round(inches, decimals) >= 12:
-                feet += 1
-                inches = 0.0
-            return f"{sign}{feet}'{inches:.{decimals}f}\""
-        factor = {"m": 1.0, "cm": 100.0, "mm": 1000.0}.get(units, 1.0)
-        return f"{metres * factor:.{decimals}f} {units}"
+        """Format a length (metres) per the dimension style: unit + precision
+        (see :mod:`core.units` — metric, decimal or fractional imperial)."""
+        from core.units import format_length
+        return format_length(metres, style.get("units", "m"),
+                             int(style.get("decimals", 2)))
 
     def _draw_occluded_segment(self, painter: QPainter, p3a: QVector3D,
                                p3b: QVector3D, samples: int = 16) -> None:
@@ -8653,7 +8664,7 @@ class Viewport(QOpenGLWidget):
                 return None
             return ("ratio", math.degrees(math.atan2(rise, run)))
         nums = []
-        for p in normalized.split():
+        for p in _merge_mixed_numbers(normalized.split()):
             v = _parse_length_field(p)
             if v is None:
                 return None

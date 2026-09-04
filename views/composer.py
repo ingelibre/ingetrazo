@@ -2822,6 +2822,16 @@ class ComposerWindow(QMainWindow):
         self.cota_decimals.setDecimals(0)
         self.cota_decimals.valueChanged.connect(self._on_cota_props)
         form.addRow(tr("Decimals"), self.cota_decimals)
+        self.cota_units = QComboBox()
+        from core.units import UNIT_CHOICES
+        self.cota_units.addItems(list(UNIT_CHOICES))
+        self.cota_units.setToolTip(tr(
+            "How the measurement reads: metres, centimetres, millimetres, "
+            "decimal inches or feet, feet-and-inches, or fractional inches "
+            "(1 1/2\"). For fractions, Decimals picks the finest denominator: "
+            "0 = whole inches, 1 = 1/4, 2 = 1/16, 3 = 1/32, 4 = 1/64."))
+        self.cota_units.currentTextChanged.connect(self._on_cota_props)
+        form.addRow(tr("Units"), self.cota_units)
         self.cota_ends = QComboBox()
         for label, key in ((tr("Oblique ticks"), "tick"),
                            (tr("Arrows"), "arrow"),
@@ -3431,6 +3441,8 @@ class ComposerWindow(QMainWindow):
                 self.cota_sep.setValue(item.model.sep_mm)
                 self.cota_text_mm.setValue(item.model.text_mm)
                 self.cota_decimals.setValue(item.model.decimals)
+                self.cota_units.setCurrentText(
+                    getattr(item.model, "units", "m") or "m")
                 eidx = self.cota_ends.findData(item.model.ends)
                 self.cota_ends.setCurrentIndex(max(eidx, 0))
                 self.cota_stroke.setValue(item.model.stroke_mm)
@@ -4059,7 +4071,7 @@ class ComposerWindow(QMainWindow):
     # ---- Copy / paste style (LayOut's Edit ▸ Copy Style / Paste Style) -------
     #: The look of each item kind — never its geometry or content.
     STYLE_FIELDS = {
-        CotaItem: ("text_mm", "decimals", "ends", "stroke_mm", "color",
+        CotaItem: ("text_mm", "decimals", "units", "ends", "stroke_mm", "color",
                    "offset_mm", "text_pos", "text_align", "text_color",
                    "text_bg", "text_bg_opacity"),
         TextoItem: ("size_pt", "bold", "italic", "underline", "family",
@@ -5167,6 +5179,7 @@ class ComposerWindow(QMainWindow):
             "sep_mm": self.cota_sep.value(),
             "text_mm": self.cota_text_mm.value(),
             "decimals": int(self.cota_decimals.value()),
+            "units": self.cota_units.currentText() or "m",
             "ends": self.cota_ends.currentData() or "tick",
             "stroke_mm": self.cota_stroke.value(),
             "text_pos": self.cota_text_pos.currentData() or "above",
@@ -5289,7 +5302,7 @@ class ComposerWindow(QMainWindow):
     #: draws new dimensions with the current style settings).
     _COTA_STYLE_FIELDS = ("text_mm", "decimals", "ends", "stroke_mm",
                           "color", "offset_mm", "text_pos", "text_align",
-                          "text_color", "text_bg", "text_bg_opacity")
+                          "text_color", "text_bg", "text_bg_opacity", "units")
 
     def _remember_cota_style(self, model) -> None:
         self._last_cota_style = {k: getattr(model, k)
