@@ -6,6 +6,16 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+_Nada todavía._
+
+## [0.3.10] — 2026-09-04
+
+**Release urgente.** La 0.3.9 salió con dos fallos serios que este release
+cierra: el instalador de Windows no arrancaba instalado en Archivos de
+programa, y cualquier modelo con una figura «face-me» de malla (la Susan de
+SketchUp) dejaba el visor en blanco. Además entra todo lo trabajado desde
+entonces sobre las láminas y el modelado de Marco.
+
 ### Añadido
 - **Componentes: editas uno, cambian todos.** Entrar en una copia de un
   componente (doble clic) edita su definición compartida: al salir, el

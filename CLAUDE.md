@@ -27,7 +27,11 @@ Modelador 3D estilo SketchUp para arquitectura/ingeniería civil e impresión 3D
 
 ---
 
-## 📦 Estado actual (2026-09-03) — v0.3.9 released: la release de las láminas (compositor a la altura de LayOut, Sígueme a la de SketchUp)
+## 📦 Estado actual (2026-09-04) — v0.3.10 released: release urgente (Windows no arrancaba, visor en blanco con face-me de malla) + componentes compartidos, pulgadas, openskp 1.2.0
+
+**v0.3.10 released 2026-09-04** (tag `v0.3.10`). Cierra dos regresiones de la 0.3.9: el .exe de Windows moría al arrancar bajo Archivos de programa (`f166e04`, logs en `core.paths.user_log_dir()`) y `_faceme_base` daba un ancla 2D → IndexError en paintGL con figuras face-me de malla (`05a2725`). Trae además: editar una instancia edita la definición compartida (`aaf5c3a`), pulgadas/pies/fracciones en la VCB y en cotas (`82eae5b`, `c721767`), autoguardado descartado recuperable (`eac0b06`), zoom sin trabarse en el mínimo (`40612ed`), línea suelta sobre grupo seleccionable (`6bcb592`), inferencia en caras de instancias (`cd01b1a`), push sobre instancias (`c937557`), iconos de documento en Flatpak (`7e86f29`), Sumari con los pies alineados (`1e5fe32`), openskp 1.2.0 pineado tras barrido de corpus 189 sin regresiones (`2b53bc8`). Pendiente manual de Marco: `skp2dae.exe`, snap en PUBLIC, secret `CLOUDFLARE_API_TOKEN` (138 chars, no es un API token).
+
+## 📦 Estado anterior (2026-09-03) — v0.3.9 released: la release de las láminas (compositor a la altura de LayOut, Sígueme a la de SketchUp)
 
 **v0.3.9 released 2026-09-03** (tag `v0.3.9`; Marco: «pude hacer mis láminas con composiciones a la perfección»). Sígueme ganó el arrastre manual con vista previa en vivo y Alt = perímetro de una cara (`tools/followme.py`, `core/sweep.py`: `sweep_rings`/`sweep_preview_faces`/`manual_path_*`/`orient_closed_path`), según la doc oficial y la tarjeta de referencia. Pendiente manual de Marco: adjuntar `skp2dae.exe` al release y poner ingetrazo en PUBLIC en la Snap Store.
 
