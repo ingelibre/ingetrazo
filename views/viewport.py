@@ -3994,8 +3994,14 @@ class Viewport(QOpenGLWidget):
         if n0 is not None and verts and (by_tex or by_color):
             xs = [v.position.x() for v in verts]
             ys = [v.position.y() for v in verts]
+            zs = [v.position.z() for v in verts]
+            # The anchor is the figure's FEET (x, y, min z), like the simple
+            # quad's: _draw_faceme_mesh aims the face-me from it in 3D. A 2-D
+            # anchor here raised IndexError inside paintGL and left the whole
+            # viewport blank for any model carrying a mesh face-me (Susan in
+            # plaza Yanque(2).skp — v0.3.9 shipped with it).
             anchor = np.array([(min(xs) + max(xs)) / 2,
-                               (min(ys) + max(ys)) / 2])
+                               (min(ys) + max(ys)) / 2, min(zs)])
             nh = np.array([n0.x(), n0.y()])
             ln = float(np.hypot(nh[0], nh[1]))
             if ln > 1e-9:
@@ -4019,6 +4025,8 @@ class Viewport(QOpenGLWidget):
             return
         arrays, colors, anchor, nh = base
         import numpy as np
+        if len(anchor) < 3:                      # an older cached entry
+            anchor = np.array([anchor[0], anchor[1], 0.0])
         # Preview transform (Move/Rotate drag): the figure follows the
         # cursor through THIS pass, camera-facing with its baked UVs —
         # see _billboard_quad for the simple-quad twin.

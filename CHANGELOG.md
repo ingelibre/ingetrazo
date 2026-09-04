@@ -39,6 +39,10 @@ follow [SemVer](https://semver.org).
   por archivo y un 5 % más rápido en conjunto.
 
 ### Corregido
+- **La 0.3.9 dejaba el visor en blanco** con cualquier modelo que trajera una
+  figura «face-me» de malla (la Susan de SketchUp y similares, importadas
+  del .skp): al dibujarla faltaba una coordenada del ancla y el pintado
+  fallaba en cada frame. Se veían las etiquetas y los ejes, nada más.
 - **El zoom «se trababa» cerca del modelo**: con la distancia de órbita en
   su mínimo (2 cm), acercar no hacía nada y alejar retrocedía milímetros
   por muesca hasta un Zoom extensión. Ahora alejar retrocede al menos un
