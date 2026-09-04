@@ -6891,6 +6891,22 @@ class Viewport(QOpenGLWidget):
         self._hover_hits_cache = (key, face_t)
         return face_t
 
+    def edge_point_under_cursor(self, edge, screen_x: float, screen_y: float):
+        """The world point of ``edge`` nearest the cursor (closest point of
+        its screen-space segment, mapped back along the edge), or None when
+        the edge does not project."""
+        pa = self._world_to_pixel(edge.a)
+        pb = self._world_to_pixel(edge.b)
+        if pa is None or pb is None:
+            return None
+        dx, dy = pb[0] - pa[0], pb[1] - pa[1]
+        l2 = dx * dx + dy * dy
+        if l2 < 1e-12:
+            return QVector3D(edge.a)
+        t = ((screen_x - pa[0]) * dx + (screen_y - pa[1]) * dy) / l2
+        t = max(0.0, min(1.0, t))
+        return edge.a + (edge.b - edge.a) * t
+
     def pick_edge(self, screen_x: float, screen_y: float):
         """Return the edge closest to ``(screen_x, screen_y)`` within threshold."""
         import numpy as np

@@ -213,9 +213,20 @@ class SelectTool(Tool):
             if label is not None:
                 return label
         group = viewport.pick_group(screen_x, screen_y)
+        edge = viewport.pick_edge(screen_x, screen_y)
+        if group is not None and edge is not None:
+            # A loose line drawn ON a group's face (or crossing in front of
+            # it) is the deliberate target — SketchUp picks the thin edge
+            # before the object behind it. Only a VISIBLE edge wins: one
+            # hidden behind the group's faces leaves the group as the pick.
+            point = getattr(viewport, "edge_point_under_cursor", None)
+            occluded = getattr(viewport, "_is_occluded", None)
+            if point is not None and occluded is not None:
+                p = point(edge, screen_x, screen_y)
+                if p is not None and not occluded(p):
+                    return edge
         if group is not None:
             return group
-        edge = viewport.pick_edge(screen_x, screen_y)
         if edge is not None:
             return edge
         dim = viewport.pick_dimension(screen_x, screen_y)
