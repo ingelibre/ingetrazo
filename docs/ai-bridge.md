@@ -11,11 +11,38 @@ revierte entero; el guard de hermeticidad valida sus recetas).
 1. En IngeTrazo: **Extensiones ▸ Puente IA (MCP)** — arranca un servidor
    local (solo 127.0.0.1, puerto 4763; `INGETRAZO_AI_PORT` lo cambia).
    El mismo menú lo detiene.
-2. Registra el servidor MCP en Claude Code:
+2. Al encenderlo, IngeTrazo abre una ventana con las líneas exactas para
+   tu sistema (botón **Copiar**). No hace falta tener Python instalado: el
+   paquete lleva el servidor MCP.
 
-       claude mcp add ingetrazo -- python3 /ruta/a/app/scripts/ingetrazo_mcp.py
+   | Instalación | Comando del servidor MCP |
+   |---|---|
+   | Windows (instalador o zip) | `C:\Program Files\IngeTrazo\ingetrazo-mcp.exe` |
+   | Linux AppImage / tarball / Flatpak / snap | `<ejecutable de IngeTrazo> --mcp` |
+   | Desde el repositorio | `python3 /ruta/a/app/scripts/ingetrazo_mcp.py` |
 
-   (En Claude Desktop: agrega el mismo comando en la config de MCP.)
+   **Claude Code** (en una terminal):
+
+       claude mcp add ingetrazo -- "C:\Program Files\IngeTrazo\ingetrazo-mcp.exe"
+
+   **Claude Desktop**: pega esto en su archivo de configuración
+   (`%APPDATA%\Claude\claude_desktop_config.json` en Windows,
+   `~/.config/Claude/claude_desktop_config.json` en Linux) y reinicia
+   Claude Desktop:
+
+       {
+         "mcpServers": {
+           "ingetrazo": {
+             "command": "C:\\Program Files\\IngeTrazo\\ingetrazo-mcp.exe",
+             "args": []
+           }
+         }
+       }
+
+   Si Claude no responde: comprueba que IngeTrazo sigue abierto con el
+   puente encendido (Extensiones ▸ Puente IA (MCP) muestra «listening»),
+   que la ruta del comando existe, y en Claude Desktop que el servidor
+   aparece en Configuración ▸ Desarrollador ▸ MCP sin error.
 3. Pídele cosas: *"dibuja una casita de 6×4 m con techo a dos aguas,
    agrúpala y píntala de ladrillo; muéstrame cómo quedó"*.
 

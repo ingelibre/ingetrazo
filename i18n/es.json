@@ -37,7 +37,6 @@
  "AI Assistant": "Asistente IA",
  "AI Bridge (MCP)": "Puente IA (MCP)",
  "AI bridge could not start: {err}": "El puente IA no pudo iniciar: {err}",
- "AI bridge listening on 127.0.0.1:{port} — connect Claude with scripts/ingetrazo_mcp.py": "Puente IA escuchando en 127.0.0.1:{port} — conectá Claude con scripts/ingetrazo_mcp.py",
  "AI bridge stopped": "Puente IA detenido",
  "ANNOTATIONS": "ANOTACIONES",
  "API help": "Ayuda de API",
@@ -1391,5 +1390,11 @@
  "− Row": "− Fila",
  "⚠ {name} (load error)": "⚠ {name} (error al cargar)",
  "IngeTrazo is drawing with the software renderer ({renderer}): the viewport will be slow. Update the graphics driver, or assign IngeTrazo to the high-performance GPU in Windows graphics settings.": "IngeTrazo está dibujando con el renderizador por software ({renderer}): el visor irá lento. Actualiza el controlador de la tarjeta gráfica o asigna IngeTrazo a la GPU de alto rendimiento en la configuración de gráficos de Windows.",
- "IngeTrazo asked Windows for the high-performance GPU; it applies the next time you open the program.": "IngeTrazo le pidió a Windows la GPU de alto rendimiento; se aplica la próxima vez que abras el programa."
+ "IngeTrazo asked Windows for the high-performance GPU; it applies the next time you open the program.": "IngeTrazo le pidió a Windows la GPU de alto rendimiento; se aplica la próxima vez que abras el programa.",
+ "The AI bridge is listening on 127.0.0.1:{port}. Connect a Claude client:": "El puente IA está escuchando en 127.0.0.1:{port}. Conecta un cliente de Claude:",
+ "Claude Code (in a terminal):": "Claude Code (en una terminal):",
+ "Claude Desktop: add this to {path} and restart Claude Desktop:": "Claude Desktop: agrega esto en {path} y reinicia Claude Desktop:",
+ "Keep IngeTrazo open with the bridge on; the tools answer only while it runs.": "Mantén IngeTrazo abierto con el puente encendido; las herramientas solo responden mientras corre.",
+ "AI bridge listening on 127.0.0.1:{port}": "Puente IA escuchando en 127.0.0.1:{port}",
+ "AI bridge (MCP): connect Claude": "Puente IA (MCP): conectar Claude"
 }

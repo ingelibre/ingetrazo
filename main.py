@@ -176,9 +176,31 @@ def _self_check() -> int:
     return 0
 
 
+def _run_mcp_server() -> int:
+    """``ingetrazo --mcp``: the stdio MCP server, from the packaged app —
+    no Python install needed on the user's machine. The script is shipped
+    as data and run by path so the checkout and the package share one file.
+    A windowed Windows exe has no console, but a client that spawns us with
+    pipes hands valid handles and Python wires them up; when it did not,
+    there is nobody to talk to and we say so."""
+    from core.paths import app_root
+    script = app_root() / "scripts" / "ingetrazo_mcp.py"
+    if sys.stdin is None or sys.stdout is None:
+        try:
+            sys.stdin = open(0, "r", encoding="utf-8")
+            sys.stdout = open(1, "w", encoding="utf-8")
+        except OSError:
+            return 2
+    import runpy
+    runpy.run_path(str(script), run_name="__main__")
+    return 0
+
+
 def main() -> int:
     if "--check" in sys.argv[1:]:
         return _self_check()
+    if "--mcp" in sys.argv[1:]:
+        return _run_mcp_server()
     # Hang autopsy (Linux): `kill -USR1 <pid>` dumps every thread's Python
     # stack to stderr, so a frozen main loop names its exact line without a
     # debugger or elevated ptrace. No-op where SIGUSR1 doesn't exist.

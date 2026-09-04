@@ -55,6 +55,9 @@ datas = [
     ('i18n/*.json',                'i18n'),
     # Bundled plugins (Extensions menu) — discovered by file path at runtime.
     ('plugins/*.py',               'plugins'),
+    # The MCP server (stdlib-only): `ingetrazo --mcp` runs it by path, and
+    # the console build below makes it a program of its own on Windows.
+    ('scripts/ingetrazo_mcp.py',   'scripts'),
 ]
 
 # Optional trees (present today, tolerated if pruned later).
@@ -110,7 +113,6 @@ hiddenimports += [
     'openskp.legacy',
     'openskp.vff',
     'openskp.parser',
-    'openskp.geometry',
     'openskp.transforms',
     'openskp.materials',
     'openskp.metadata',
@@ -194,11 +196,44 @@ exe = EXE(
     icon=icon,
 )
 
+# ── ingetrazo-mcp: a CONSOLE program for Claude Desktop / Claude Code ───────
+# MCP clients talk over stdin/stdout; a windowed exe may have no std handles
+# to give them, so Windows gets a console build of the stdlib-only server
+# sharing this bundle's _internal/. Spawned with pipes it opens no window.
+mcp_a = Analysis(
+    ['scripts/ingetrazo_mcp.py'],
+    pathex=[str(ROOT)],
+    binaries=[],
+    datas=[],
+    hiddenimports=[],
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=excludes,
+    noarchive=False,
+)
+mcp_pyz = PYZ(mcp_a.pure)
+mcp_exe = EXE(
+    mcp_pyz,
+    mcp_a.scripts,
+    [],
+    exclude_binaries=True,
+    name='ingetrazo-mcp',
+    debug=False,
+    strip=False,
+    upx=False,
+    console=True,
+    icon=icon,
+)
+
 coll = COLLECT(
     exe,
+    mcp_exe,
     a.binaries,
     a.zipfiles,
     a.datas,
+    mcp_a.binaries,
+    mcp_a.zipfiles,
+    mcp_a.datas,
     strip=False,
     upx=False,
     upx_exclude=[],

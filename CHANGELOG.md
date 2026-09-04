@@ -7,6 +7,12 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Añadido
+- **Puente IA (MCP) utilizable desde Windows y desde los paquetes.** El
+  paquete no llevaba el servidor MCP y la guía mandaba `python3`, que en
+  Windows no existe: Claude Desktop nunca llegaba a IngeTrazo. Ahora el
+  instalador incluye `ingetrazo-mcp.exe`, el ejecutable acepta `--mcp` en
+  Linux, y al encender el puente se abre una ventana con las líneas exactas
+  para Claude Code y Claude Desktop en ese sistema, con botón Copiar.
 - **Laptops con dos gráficas (Intel + NVIDIA/AMD): IngeTrazo pide la GPU
   dedicada.** Windows arranca los programas nuevos con la integrada y el visor
   se arrastra mientras la RTX no hace nada. El instalador y la propia app

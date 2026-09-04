@@ -126,3 +126,32 @@ def test_mcp_server_protocol_and_bridge_down_message(monkeypatch):
     result = call["result"]
     assert result["isError"] is True
     assert "AI bridge" in result["content"][0]["text"]
+
+
+def test_the_packaged_app_tells_windows_users_the_exe_to_run():
+    import json
+    from plugins.ai_bridge import connect_instructions, mcp_command, desktop_config_path
+
+    cmd = mcp_command("win32", frozen=True,
+                      executable=r"C:\Program Files\IngeTrazo\ingetrazo.exe")
+    assert cmd == [r"C:\Program Files\IngeTrazo\ingetrazo-mcp.exe"]
+    assert mcp_command("linux", frozen=True, executable="/opt/it/ingetrazo") == \
+        ["/opt/it/ingetrazo", "--mcp"]
+    assert mcp_command("linux", frozen=False, root=Path("/src/app")) == \
+        ["python3", "/src/app/scripts/ingetrazo_mcp.py"]
+    assert mcp_command("win32", frozen=False, root=Path(r"C:\src\app"))[0] == "python"
+    assert desktop_config_path("win32").endswith("claude_desktop_config.json")
+
+    text = connect_instructions(4763, "win32", frozen=True,
+                                executable=r"C:\Program Files\IngeTrazo\ingetrazo.exe")
+    assert 'claude mcp add ingetrazo -- "C:\\Program Files\\IngeTrazo\\ingetrazo-mcp.exe"' in text
+    snippet = text[text.index("{"):text.rindex("}") + 1]
+    assert json.loads(snippet)["mcpServers"]["ingetrazo"]["command"].endswith("ingetrazo-mcp.exe")
+
+
+def test_the_mcp_script_ships_with_the_app_and_the_flag_finds_it():
+    from core.paths import app_root
+    assert (app_root() / "scripts" / "ingetrazo_mcp.py").is_file()
+    spec = (app_root() / "ingetrazo.spec").read_text()
+    assert "('scripts/ingetrazo_mcp.py',   'scripts')" in spec
+    assert "name='ingetrazo-mcp'" in spec and "console=True" in spec

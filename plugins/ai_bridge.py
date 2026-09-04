@@ -207,6 +207,57 @@ class _Bridge(QObject):
         return {"ok": bool(ok)}
 
 
+def mcp_command(platform: str | None = None, frozen: bool | None = None,
+                executable: str | None = None, root: Path | None = None) -> list[str]:
+    """The command an MCP client must run to reach this IngeTrazo — the
+    packaged app carries the server, so nobody needs Python installed:
+    ``ingetrazo-mcp.exe`` beside the app on Windows, ``<ingetrazo> --mcp``
+    for the Linux/macOS packages, and the script itself from a checkout."""
+    from pathlib import PurePosixPath, PureWindowsPath
+    platform = platform or sys.platform
+    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    executable = executable or sys.executable
+    windows = platform.startswith("win")
+    PathOf = PureWindowsPath if windows else PurePosixPath   # host-agnostic
+    if frozen:
+        exe = PathOf(executable)
+        if windows:
+            return [str(exe.with_name("ingetrazo-mcp.exe"))]
+        return [str(exe), "--mcp"]
+    root = PathOf(str(root or Path(__file__).resolve().parents[1]))
+    python = "python" if windows else "python3"
+    return [python, str(root / "scripts" / "ingetrazo_mcp.py")]
+
+
+def desktop_config_path(platform: str | None = None) -> str:
+    """Where Claude Desktop reads its MCP servers on this platform."""
+    platform = platform or sys.platform
+    if platform.startswith("win"):
+        return r"%APPDATA%\\Claude\\claude_desktop_config.json"
+    if platform == "darwin":
+        return "~/Library/Application Support/Claude/claude_desktop_config.json"
+    return "~/.config/Claude/claude_desktop_config.json"
+
+
+def connect_instructions(port: int, platform: str | None = None, **kw) -> str:
+    """Copy-and-paste text for the two Claude clients, for the dialog the
+    Extensions entry shows once the bridge is up."""
+    cmd = mcp_command(platform, **kw)
+    quoted = " ".join(f'"{c}"' if " " in c else c for c in cmd)
+    config = {"mcpServers": {"ingetrazo": {"command": cmd[0], "args": cmd[1:]}}}
+    return (
+        tr("The AI bridge is listening on 127.0.0.1:{port}. Connect a Claude client:",
+           port=port)
+        + "\n\n"
+        + tr("Claude Code (in a terminal):") + "\n"
+        + f"    claude mcp add ingetrazo -- {quoted}\n\n"
+        + tr("Claude Desktop: add this to {path} and restart Claude Desktop:",
+             path=desktop_config_path(platform)) + "\n"
+        + json.dumps(config, indent=2) + "\n\n"
+        + tr("Keep IngeTrazo open with the bridge on; the tools answer only while it runs.")
+    )
+
+
 class AIBridgeTool(Tool):
     """Extensions-menu entry: toggle the localhost bridge on/off."""
     name = "AI Bridge (MCP)"
@@ -229,8 +280,31 @@ class AIBridgeTool(Tool):
                 "AI bridge could not start: {err}", err=str(exc)))
             return
         viewport.flash_status(tr(
-            "AI bridge listening on 127.0.0.1:{port} — connect Claude with "
-            "scripts/ingetrazo_mcp.py", port=port), 8000)
+            "AI bridge listening on 127.0.0.1:{port}", port=port), 8000)
+        self._show_instructions(window, port)
+
+    @staticmethod
+    def _show_instructions(window, port: int) -> None:
+        """A non-modal window with the exact lines to paste — the user who
+        reached this menu is rarely the one who knows them by heart."""
+        from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QPlainTextEdit,
+                                       QVBoxLayout, QApplication)
+        text = connect_instructions(port)
+        dlg = QDialog(window)
+        dlg.setWindowTitle(tr("AI bridge (MCP): connect Claude"))
+        dlg.setAttribute(Qt.WA_DeleteOnClose, True)
+        layout = QVBoxLayout(dlg)
+        box = QPlainTextEdit(text)
+        box.setReadOnly(True)
+        box.setMinimumSize(640, 360)
+        layout.addWidget(box)
+        buttons = QDialogButtonBox()
+        copy = buttons.addButton(tr("Copy"), QDialogButtonBox.ActionRole)
+        copy.clicked.connect(lambda: QApplication.clipboard().setText(text))
+        buttons.addButton(QDialogButtonBox.Close)
+        buttons.rejected.connect(dlg.close)
+        layout.addWidget(buttons)
+        dlg.show()
 
     def on_deactivate(self, viewport) -> None:
         pass
