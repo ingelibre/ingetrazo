@@ -6,6 +6,14 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Cambiado
+- **openskp 1.2.0** (upstream `6e3e568`, 4 de septiembre): trae nuestro
+  aporte de tamaño aplicado y opacidad de materiales al escribir .skp, los
+  diccionarios de atributos de grupos, entidades de imagen, y un arreglo de
+  memoria y de triangulación para archivos grandes. Validado contra el
+  corpus real de 189 .skp: los mismos 178 abren, geometría idéntica archivo
+  por archivo y un 5 % más rápido en conjunto.
+
 ### Corregido
 - **Windows: el instalador de 0.3.8 y 0.3.9 no arrancaba** si se instalaba en
   Archivos de programa: al iniciar, la app intentaba crear su registro de

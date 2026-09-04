@@ -13,7 +13,7 @@ numpy>=1.26        # DEM heightfield decode + sampling (georef Track G, G2)
 # plus the legacy-format writer behind File → Export → SketchUp). Our fork's
 # feat-write-annotations = upstream main + dimension/leader-text write+read
 # (upstream PR #203); return to @main when that PR merges.
-openskp @ git+https://github.com/iamahsanmehmood/openskp@main#subdirectory=packages/python
+openskp @ git+https://github.com/iamahsanmehmood/openskp@6e3e56878341c7be140726917e732ad5511d3d5d#subdirectory=packages/python
 # DXF import (D1; DWG arrives via the LibreDWG dwg2dxf satellite in D3).
 # Pure Python, MIT — the same parser IngeCAD reads its documents with, so
 # the two projects share one set of format scars.

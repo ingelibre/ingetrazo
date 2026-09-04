@@ -45,7 +45,7 @@ jobs:
           # PR #203). Pinned by SHA like build-windows.yml so both
           # installers ship the same reader/writer; advance the SHA when
           # upstream lands something we need.
-          ./venv/bin/python -m pip install --quiet "openskp @ git+https://github.com/iamahsanmehmood/openskp@f79e9b1871b2ee03ad2a77ac5f86536725d233de#subdirectory=packages/python"
+          ./venv/bin/python -m pip install --quiet "openskp @ git+https://github.com/iamahsanmehmood/openskp@6e3e56878341c7be140726917e732ad5511d3d5d#subdirectory=packages/python"
           ./venv/bin/python -c "import openskp, openskp.legacy; print('openskp OK')"
 
       - name: Tests
@@ -130,7 +130,7 @@ jobs:
           python -m venv venv
           ./venv/bin/python -m pip install --quiet --upgrade pip
           ./venv/bin/python -m pip install --quiet PySide6 numpy pyinstaller 'ezdxf>=1.4.4'
-          ./venv/bin/python -m pip install --quiet "openskp @ git+https://github.com/iamahsanmehmood/openskp@f79e9b1871b2ee03ad2a77ac5f86536725d233de#subdirectory=packages/python"
+          ./venv/bin/python -m pip install --quiet "openskp @ git+https://github.com/iamahsanmehmood/openskp@6e3e56878341c7be140726917e732ad5511d3d5d#subdirectory=packages/python"
 
       - name: Build the PyInstaller bundle
         run: |
