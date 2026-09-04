@@ -83,7 +83,44 @@ def _supported(fn, *names) -> set:
     return {n for n in names if n in params}
 
 
-def _collect_materials(faces_by_key, builder):
+def _stage_texture(src: Path, stage_dir: Path | None, taken: set) -> Path | None:
+    """The image as the writer must see it: readable, PNG or JPEG, and at a
+    SHORT path. openskp stores ``image_path`` verbatim in the .skp and its
+    string writer refuses 255+ characters — AFTER the image bytes and the
+    applied size are already in its buffer. So a long path never "fell
+    back to a colour": the material was left half-written, the colour
+    record landed on top, and SketchUp refused the whole file (0.3.10's
+    Flatpak: a texture cached under a stacked-hash name of 250 characters
+    spilled into the temp fallback and the path passed 255). Staging into
+    ``stage_dir`` under the image's plain name keeps the stored string short
+    and keeps the user's home path out of the document; without a stage
+    dir (direct callers) the source path is used when it is short enough.
+    Returns None when the file cannot be embedded, and the caller writes a
+    solid colour WITHOUT having touched the writer."""
+    src = Path(src)
+    if stage_dir is None:                   # direct callers: no staging
+        return src if len(str(src)) < 200 else None
+    try:
+        data = src.read_bytes()
+    except OSError:
+        return None
+    if not (data.startswith(b"\x89PNG\r\n\x1a\n") or data[:3] == b"\xff\xd8\xff"):
+        return None
+    from core.texture import texture_file_name
+    base = texture_file_name(src.name)
+    name = base
+    n = 1
+    while name in taken:
+        n += 1
+        stem, dot, ext = base.rpartition(".")
+        name = f"{stem}-{n}.{ext}" if dot else f"{base}-{n}"
+    taken.add(name)
+    out = stage_dir / name
+    out.write_bytes(data)
+    return out
+
+
+def _collect_materials(faces_by_key, builder, stage_dir: Path | None = None):
     """Register all materials on the builder BEFORE any geometry.
 
     Returns ``mat_handles``: ``key → material_slot``. Unpainted faces never
@@ -98,31 +135,35 @@ def _collect_materials(faces_by_key, builder):
                         "applied_width", "applied_height",
                         "width", "height", "opacity")
     col_ok = _supported(builder.add_material, "opacity")
+    staged_names: set[str] = set()
     for key, info in faces_by_key.items():
         if info.get("map"):
-            src = info["src"]
-            try:
-                # The applied size, in inches: how much model space one tile
-                # covers. For a texture applied without positioning this IS
-                # the mapping — SketchUp writes no per-face record for those
-                # — so leaving it out made every texture claim to span one
-                # inch however large it was. Marco's lawn (3.26 x 8.82 m)
-                # repeated 128 times and lost its aspect; only the surfaces
-                # whose tile was already inch-sized came out right.
-                w_kw, h_kw = (("applied_width", "applied_height")
-                              if "applied_width" in tex_ok
-                              else ("width", "height"))
-                extra = {k: v for k, v in
-                         ((w_kw, info.get("sw_in")),
-                          (h_kw, info.get("sh_in")),
-                          ("opacity", info.get("opacity")))
-                         if k in tex_ok}
-                handle = builder.add_texture_material(
-                    names[key], str(src), **extra)
-            except Exception:  # noqa: BLE001 — fallback to solid
+            staged = _stage_texture(info["src"], stage_dir, staged_names)
+            if staged is None:
+                # Unreadable, or not PNG/JPEG: a solid colour, decided HERE
+                # — never by catching the writer's exception, see
+                # _stage_texture.
                 col = info.get("color", (1.0, 1.0, 1.0))
-                handle = builder.add_material(names[key], _color_to_rgba(col))
-            mat_handles[key] = handle
+                mat_handles[key] = builder.add_material(
+                    names[key], _color_to_rgba(col))
+                continue
+            # The applied size, in inches: how much model space one tile
+            # covers. For a texture applied without positioning this IS
+            # the mapping — SketchUp writes no per-face record for those
+            # — so leaving it out made every texture claim to span one
+            # inch however large it was. Marco's lawn (3.26 x 8.82 m)
+            # repeated 128 times and lost its aspect; only the surfaces
+            # whose tile was already inch-sized came out right.
+            w_kw, h_kw = (("applied_width", "applied_height")
+                          if "applied_width" in tex_ok
+                          else ("width", "height"))
+            extra = {k: v for k, v in
+                     ((w_kw, info.get("sw_in")),
+                      (h_kw, info.get("sh_in")),
+                      ("opacity", info.get("opacity")))
+                     if k in tex_ok}
+            mat_handles[key] = builder.add_texture_material(
+                names[key], str(staged), **extra)
         else:
             extra = ({"opacity": info.get("opacity")} if "opacity" in col_ok
                      else {})
@@ -391,6 +432,12 @@ def save_skp(scene, path) -> None:
     except ImportError as exc:
         raise RuntimeError("OpenSKP is required for SKP export") from exc
 
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="ingetrazo-skp-") as stage:
+        _write_skp(scene, path, openskp, SkpWriteError, Path(stage))
+
+
+def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
     builder = openskp.create()
     loose_faces, classic, defs, roots = _split_containers(scene)
 
@@ -406,7 +453,7 @@ def save_skp(scene, path) -> None:
             materials_info[key]["mat"] = face.attrs["mat"]
 
     # Register materials (must be before layers and geometry).
-    mat_handles = _collect_materials(materials_info, builder)
+    mat_handles = _collect_materials(materials_info, builder, stage_dir)
 
     # Register layers (must be after materials, before geometry).
     layer_handles = _collect_layers(scene, builder)

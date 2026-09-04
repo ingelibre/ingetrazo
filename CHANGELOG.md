@@ -29,6 +29,16 @@ follow [SemVer](https://semver.org).
   IngeTrazo.
 
 ### Corregido
+- **El `.skp` exportado por la 0.3.10 no abría en SketchUp cuando una
+  textura venía de la caché con nombre apilado.** Mismo origen que el fallo
+  de Windows: el nombre de 250 caracteres caía en la carpeta temporal, la
+  ruta superaba el límite de 255 del escritor de openskp y este fallaba con
+  la imagen ya escrita a medias; el «respaldo a color» se escribía encima y
+  SketchUp rechazaba el archivo entero (SUResult 12). Ahora cada textura se
+  copia a una carpeta temporal con su nombre corto antes de entregarla al
+  escritor, la ruta de tu máquina ya no viaja dentro del `.skp`, y una
+  imagen ilegible o que no sea PNG/JPEG pasa a color sin tocar el escritor.
+  Validado con el conversor oficial del SDK de SketchUp.
 - **Un `.igz` con texturas dejaba de abrir en Windows tras varios guardados.**
   Cada guardado envolvía el nombre de la imagen en un prefijo de hash más
   (`textures/<hash>-<hash>-…-sumari.png`): al cabo de unos veinte guardados la

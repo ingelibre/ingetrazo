@@ -427,3 +427,47 @@ def test_export_uses_the_new_writer_arguments_when_they_exist():
     _collect_materials(faces_by_key, _NewBuilder())
     assert seen["color_opacity"] == 0.5
     assert seen["tex"] == (39.37, 78.74, 0.6)
+
+
+def test_a_texture_at_a_very_long_path_exports_a_file_that_still_opens(tmp_path):
+    """0.3.10's Flatpak: a texture cached under a stacked-hash name spilled
+    into the temp fallback, the path passed openskp's 255-character string
+    limit AFTER the image was in the buffer, the colour fallback landed on
+    top, and SketchUp (and openskp itself) refused the file."""
+    deep = tmp_path / ("x" * 120)
+    deep.mkdir()
+    png = _make_png(deep / ("b307e18de460e81b-" * 12 + "water_calm.png"))
+    assert len(str(png)) > 255
+    scene = Scene()
+    hist = History(scene)
+    loop = [V(0, 0), V(4, 0), V(4, 4), V(0, 4)]
+    F._draw_rect(scene, hist, [QVector3D(p) for p in loop], [])
+    face = scene.mesh.faces[0]
+    face.attrs["texture"] = {"path": str(png), "sw": 2.0, "sh": 2.0}
+    face.attrs["opacity"] = 0.75
+    path = tmp_path / "long.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)                    # 0.3.10 could not parse its own file
+    textured = [m for m in model.materials if m.texture is not None]
+    assert len(textured) == 1
+    raw = path.read_bytes()
+    assert "water_calm.png".encode("utf-16-le") in raw
+    assert str(tmp_path).encode("utf-16-le") not in raw     # no machine path leaks
+
+
+def test_a_texture_that_cannot_be_embedded_becomes_a_colour_before_the_writer_runs(tmp_path):
+    scene = Scene()
+    hist = History(scene)
+    loop = [V(0, 0), V(4, 0), V(4, 4), V(0, 4)]
+    F._draw_rect(scene, hist, [QVector3D(p) for p in loop], [])
+    bmp = tmp_path / "odd.bmp"
+    bmp.write_bytes(b"BM" + bytes(64))
+    scene.mesh.faces[0].attrs["texture"] = {"path": str(bmp), "sw": 1.0, "sh": 1.0}
+    loop2 = [V(10, 0), V(14, 0), V(14, 4), V(10, 4)]
+    F._draw_rect(scene, hist, [QVector3D(p) for p in loop2], [])
+    scene.mesh.faces[-1].attrs["texture"] = {"path": str(tmp_path / "missing.png"),
+                                             "sw": 1.0, "sh": 1.0}
+    path = tmp_path / "fallback.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    assert model.materials and all(m.texture is None for m in model.materials)
