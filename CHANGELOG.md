@@ -6,6 +6,17 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+_Nada todavía._
+
+## [0.3.11] — 2026-09-04
+
+**Release de Windows y de intercambio.** Todo lo que salió al probar la
+0.3.10 en la máquina de un amigo de Marco: un `.igz` con texturas que no
+abría, un `.skp` exportado que SketchUp rechazaba, el visor arrastrándose
+en una laptop con dos gráficas, y un puente MCP que no podía conectarse
+porque el paquete no llevaba el servidor. Cinco de los seis arreglos tienen
+la misma raíz: el nombre de la textura en caché crecía en cada guardado.
+
 ### Añadido
 - **Puente IA (MCP) utilizable desde Windows y desde los paquetes.** El
   paquete no llevaba el servidor MCP y la guía mandaba `python3`, que en
