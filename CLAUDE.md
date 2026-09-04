@@ -72,6 +72,17 @@ láminas con composiciones a la perfección"; casi listos para release.
   sur, un plano delante del modelo lo ocultaba ENTERO en un clic.
 - `_rebuild_canvas` suelta el marco en edición de vista (su FrameItem muere
   con el lienzo; el siguiente doble clic tocaba C++ borrado).
+- **Componentes: editar uno, cambian todos (2026-09-04).** Entrar a una
+  instancia (`Scene.begin_group_edit`) ya NO la hace única: edita una copia
+  en mundo (`transformed_mesh`) y al salir `share_back` la devuelve a la
+  definición compartida en coordenadas locales (inversa del xform) → todas
+  las copias cambian. En el visor la sesión entera se pliega en UN
+  `ReshareInstanceCommand` (absorbe los comandos internos; undo = definición
+  como estaba, instancia compartida). Mirar sin editar deja todo igual sin
+  entrada de undo. Push/Pull sobre una instancia desde fuera = sesión corta
+  (entra, empuja, sale). «Hacer único» sigue siendo el camino para editar
+  UNA copia. Grupos con `children` anidados: siguen materializando (sin
+  share-back todavía).
 - Modelo de la pileta (por el puente IA): centro nuevo según foto (pedestal
   octogonal con relieves, soga, fuste estriado, dos platos de borde
   ondulado) y vereda 0,50 con nariz boleada; receta reutilizable `rev()` con

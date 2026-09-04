@@ -79,6 +79,8 @@ class Group:
     def materialize(self) -> None:
         """Bake this instance into its OWN world-space mesh (SketchUp 'make
         unique'): sibling instances keep the shared prototype untouched.
+        Editing into an instance no longer does this — the session edits a
+        world copy and shares it back on leaving (Scene.begin_group_edit).
 
         Nested placements are baked in too and then dropped — ``world_mesh``
         already folded them, so keeping them would draw and export the

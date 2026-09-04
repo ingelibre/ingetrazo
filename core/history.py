@@ -2434,6 +2434,35 @@ class MakeGroupCommand(Command):
         scene.version += 1
 
 
+class ReshareInstanceCommand(Command):
+    """Leaving a component instance edited in place: the session's edits go
+    into the shared definition, so every copy shows them (SketchUp).
+
+    The commands run inside the session are absorbed into this one — the
+    whole edit undoes as one step, back to the definition as it was, with
+    the instance shared again. Redo replays it from the edited copy."""
+
+    def __init__(self, group, proto, xform, edited, inner=()) -> None:
+        self.group = group
+        self.proto = proto
+        self.xform = xform
+        self.edited = edited
+        self.inner = list(inner)
+        self._before = None
+
+    def do(self, scene) -> None:
+        if self._before is None:
+            self._before = self.proto.capture_state()
+        scene.share_back(self.group, self.proto, self.xform, self.edited)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.proto.restore_state(self._before)
+        self.group.mesh = self.proto
+        self.group.xform = self.xform
+        scene.version += 1
+
+
 class MakeUniqueCommand(Command):
     """SketchUp's Make Unique: bake a component instance into its OWN mesh
     so edits stop touching the siblings' shared definition."""

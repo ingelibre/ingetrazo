@@ -117,6 +117,10 @@ class Scene:
     # ``_loose_mesh`` keeps the real loose mesh for render and restore.
     edit_group: object | None = None
     _loose_mesh: object | None = None
+    #: While a component INSTANCE is open for editing: ``(group, proto,
+    #: xform, state0)`` — the shared definition it left, its placement, and
+    #: the temp mesh's snapshot at entry (to tell an edit from a look).
+    _edit_share: object | None = None
 
     # ---- Geometry views (read-only over the *loose* mesh) -------------------
     # Tools, edits and topology operate on this (the loose geometry); groups are
@@ -170,16 +174,29 @@ class Scene:
     def begin_group_edit(self, group) -> None:
         """Enter a group: tools and commands now edit ITS mesh (SketchUp's
         double-click-into-group). Nested groups are not supported yet.
-        Entering a component INSTANCE first makes it unique (materialize) —
-        its prototype mesh is shared with siblings and holds local coords."""
+        Entering a component INSTANCE edits a world copy of its shared
+        definition; leaving shares the edit back to every copy."""
         if self.edit_group is not None:
             self.end_group_edit()
-        if (getattr(group, "xform", None) is not None
-                or getattr(group, "children", None)):
-            # Nested placements bake in too: inside the group you edit real
-            # geometry, so its internal sharing has to become real faces
-            # first (SketchUp does the same when you edit into a component).
+        self._edit_share = None
+        if getattr(group, "children", None):
+            # Nested placements bake in: inside the group you edit real
+            # geometry, so its internal sharing becomes real faces first
+            # (this copy goes unique — sharing back a nested component is
+            # not supported yet).
             group.materialize()
+        elif getattr(group, "xform", None) is not None:
+            # A component instance: the tools work in world coordinates, so
+            # the session edits a world-space COPY of the definition. On
+            # leaving, the copy goes back into the shared prototype (local
+            # coordinates) and every sibling shows the edit — SketchUp's
+            # component editing. Make Unique first to edit one copy only.
+            from core.group import transformed_mesh
+            proto, xform = group.mesh, group.xform
+            group.mesh = transformed_mesh(proto, xform)
+            group.xform = None
+            self._edit_share = (group, proto, xform,
+                                group.mesh.capture_state())
         self._loose_mesh = self.mesh
         self.mesh = group.mesh
         self.edit_group = group
@@ -190,11 +207,46 @@ class Scene:
         """Leave the group-edit context, restoring the loose mesh."""
         if self.edit_group is None:
             return
+        share = self.take_edit_share()
+        if share is not None:
+            # Headless callers (tests, the AI bridge): share back directly.
+            # The viewport takes the share first and wraps it in a command.
+            group, proto, xform, state0 = share
+            if group.mesh.capture_state() == state0:
+                self.restore_sharing(group, proto, xform)
+            else:
+                self.share_back(group, proto, xform, group.mesh)
         self.mesh = self._loose_mesh
         self._loose_mesh = None
         self.edit_group = None
         self.selection.clear()
         self.version += 1
+
+    def take_edit_share(self):
+        """The pending instance share-back ``(group, proto, xform, state0)``
+        — handed over ONCE, so whoever ends the edit decides how (the
+        viewport wraps it in an undoable command)."""
+        share = self._edit_share
+        self._edit_share = None
+        return share
+
+    @staticmethod
+    def restore_sharing(group, proto, xform) -> None:
+        """The instance left untouched: back on the shared definition."""
+        group.mesh = proto
+        group.xform = xform
+
+    @staticmethod
+    def share_back(group, proto, xform, edited) -> None:
+        """Write the edited world-space mesh into the shared prototype (local
+        coordinates) and put the instance back on it: every sibling shows
+        the edit."""
+        from core.group import transformed_mesh
+        inverse, ok = xform.inverted()
+        local = transformed_mesh(edited, inverse if ok else xform)
+        proto.restore_state(local.capture_state())
+        group.mesh = proto
+        group.xform = xform
 
     @property
     def loose_mesh(self):

@@ -7810,23 +7810,57 @@ class Viewport(QOpenGLWidget):
 
     # ---- Group-edit context (Groups v2) --------------------------------------
     def begin_group_edit(self, group) -> None:
-        """Enter a group for editing (SketchUp double-click-into-group)."""
+        """Enter a group for editing (SketchUp double-click-into-group). A
+        component instance opens on a world copy of its definition; the
+        session's commands are remembered so leaving can fold them into ONE
+        undoable share-back."""
+        was_instance = (getattr(group, "xform", None) is not None
+                        and not getattr(group, "children", None))
         self.scene.begin_group_edit(group)
+        self._edit_undo_mark = len(self.history.undo_stack)
         self._hover_entity = None
         self._edges_version = -1     # the rest may fade out or leave the VBOs
-        self.flash_status(tr(
-            "Editing group '{name}' — Esc or click outside to leave",
-            name=group.name), 4000)
+        share = getattr(self.scene, "_edit_share", None)
+        if was_instance and share is not None:
+            copies = sum(1 for g in self.scene.groups if g.mesh is share[1]) + 1
+            self.flash_status(tr(
+                "Editing component '{name}' — the change reaches its {n} "
+                "copies when you leave (Esc); Make Unique first to edit "
+                "one copy only", name=group.name, n=copies), 6000)
+        else:
+            self.flash_status(tr(
+                "Editing group '{name}' — Esc or click outside to leave",
+                name=group.name), 4000)
         self.update()
 
     def end_group_edit(self) -> None:
         if self.scene.edit_group is None:
             return
+        share = self.scene.take_edit_share()
         self.scene.end_group_edit()
         self._hover_entity = None
         self._edges_version = -1     # the rest comes back
+        if share is not None:
+            group, proto, xform, state0 = share
+            edited = group.mesh
+            if edited.capture_state() == state0:
+                self.scene.restore_sharing(group, proto, xform)
+                self.flash_status(tr("Left the group"), 2000)
+            else:
+                from core.history import ReshareInstanceCommand
+                mark = getattr(self, "_edit_undo_mark",
+                               len(self.history.undo_stack))
+                inner = self.history.undo_stack[mark:]
+                del self.history.undo_stack[mark:]
+                self.history.execute(ReshareInstanceCommand(
+                    group, proto, xform, edited, inner))
+                copies = sum(1 for g in self.scene.groups if g.mesh is proto)
+                self.flash_status(tr(
+                    "Component '{name}' updated on its {n} copies",
+                    name=group.name, n=copies), 4000)
+        else:
+            self.flash_status(tr("Left the group"), 2000)
         self.update()
-        self.flash_status(tr("Left the group"), 2000)
 
     # ---- Rest-of-model context while editing a group -------------------------
     @property
