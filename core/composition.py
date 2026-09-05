@@ -501,6 +501,66 @@ class EtiquetaItem:
 
 
 @dataclass(eq=False)
+class NivelItem:
+    """A level mark (cota de nivel): the elevation of a point of the model
+    written as «N.P.T. +0.15» beside the symbol — an open triangle on its
+    apex for sections and elevations, a quartered circle for plans — with
+    the level line running from it. Anchored to a frame's geometry it reads
+    the point's Z (minus the project datum) and follows the model like a
+    cota; free, it shows the typed level."""
+
+    x_mm: float = 0.0            # the symbol's apex on the page
+    y_mm: float = 0.0
+    ax_mm: float = 0.0           # the model point, relative to the apex
+    ay_mm: float = 0.0           # (a thin leader joins them when apart)
+    symbol: str = "triangle"     # triangle | circle
+    text: str = "N.P.T. {z}"     # {z} = the signed level
+    z_m: float = 0.0             # the level when free (metres)
+    datum_m: float = 0.0         # the project's ±0.00, in model metres
+    decimals: int = 2
+    size_mm: float = 2.5         # text height
+    line_mm: float = 14.0        # the level line from the apex
+    mirror: bool = False         # line and text to the LEFT of the symbol
+    stroke_mm: float = 0.25
+    color: str = "#1e242c"
+    anchor_uid: str = ""         # frame whose geometry the point sits on
+    a_world: Optional[list] = None
+    uid: str = ""
+    z: float = 0.0
+    locked: bool = False
+    group_id: str = ""           # sheet group (Ctrl+G); "" = ungrouped
+
+    @property
+    def anchored(self) -> bool:
+        return bool(self.anchor_uid and self.a_world)
+
+    def level_m(self) -> float:
+        """The level shown: the anchored point's Z or the typed one, less
+        the datum."""
+        z = (float(self.a_world[2]) if self.anchored and len(self.a_world) > 2
+             else float(self.z_m))
+        return z - float(self.datum_m)
+
+    def value_text(self) -> str:
+        """«+0.15», «-0.30», «±0.00» (zero at the shown precision)."""
+        d = max(0, int(self.decimals))
+        v = self.level_m()
+        if round(v, d) == 0:
+            return "±" + f"{0.0:.{d}f}"
+        return f"{v:+.{d}f}"
+
+    def label(self) -> str:
+        text = self.text or "{z}"
+        if "{z}" not in text:
+            text = text.rstrip() + " {z}"
+        return text.replace("{z}", self.value_text())
+
+    @property
+    def symbol_mm(self) -> float:
+        return max(1.5, self.size_mm * 1.2)
+
+
+@dataclass(eq=False)
 class CotaAngularItem:
     """A sheet angular dimension (LayOut's Angular Dimension tool): a vertex
     on the page, two rays to the measured points, and an arc of
@@ -671,6 +731,7 @@ class Composicion:
     cotas_ang: list = field(default_factory=list)
     etiquetas: list = field(default_factory=list)
     perfiles: list = field(default_factory=list)
+    niveles: list = field(default_factory=list)
     cajetin: Optional[Cajetin] = None
     #: Sheet border drawn on the margin rectangle: width, colour, rounded
     #: corners and line type (single | double | dashed).
@@ -704,7 +765,7 @@ class Composicion:
                + list(self.scalebars) + list(self.nortes)
                + list(self.leyendas) + list(self.shapes) + list(self.cotas)
                + list(self.cotas_ang) + list(self.etiquetas)
-               + list(self.perfiles))
+               + list(self.perfiles) + list(self.niveles))
         if self.cajetin is not None:
             out.append(self.cajetin)
         return out
@@ -730,7 +791,8 @@ class Composicion:
                          ("shapes", self.shapes), ("cotas", self.cotas),
                          ("cotas_ang", self.cotas_ang),
                          ("etiquetas", self.etiquetas),
-                         ("perfiles", self.perfiles)):
+                         ("perfiles", self.perfiles),
+                         ("niveles", self.niveles)):
             if lst:
                 d[key] = [asdict(it) for it in lst]
         if self.cajetin is not None:
@@ -760,6 +822,7 @@ class Composicion:
         c.cotas_ang = [CotaAngularItem(**a) for a in d.get("cotas_ang", [])]
         c.etiquetas = [EtiquetaItem(**e) for e in d.get("etiquetas", [])]
         c.perfiles = [PerfilTerreno(**pf) for pf in d.get("perfiles", [])]
+        c.niveles = [NivelItem(**nv) for nv in d.get("niveles", [])]
         c.cotas = [CotaItem(**ct) for ct in d.get("cotas", [])]
         if "cajetin" in d:
             c.cajetin = Cajetin(**d["cajetin"])
@@ -939,6 +1002,8 @@ class AddItemCommand(ComposerCommand):
             return self.comp.etiquetas
         if isinstance(self.item, PerfilTerreno):
             return self.comp.perfiles
+        if isinstance(self.item, NivelItem):
+            return self.comp.niveles
         return None
 
     def do(self) -> None:
@@ -985,6 +1050,8 @@ class RemoveItemCommand(ComposerCommand):
             return self.comp.etiquetas
         if isinstance(self.item, PerfilTerreno):
             return self.comp.perfiles
+        if isinstance(self.item, NivelItem):
+            return self.comp.niveles
         return None
 
     def do(self) -> None:

@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
 from core.composition import (COMMON_SCALES, PAPER_SIZES_MM, RENDER_DPI,
                               AddItemCommand, BarraEscala, Cajetin,
                               ComposerHistory, Composicion, CompoundCommand, CotaAngularItem, CotaItem,
-                              EditItemCommand, EtiquetaItem, expand_fields, set_field_context, FlechaNorte, FormaItem,
+                              EditItemCommand, EtiquetaItem, expand_fields, set_field_context, FlechaNorte, FormaItem, NivelItem,
                               ImagenItem, Leyenda, MarcoVista,
                               PerfilTerreno, RemoveItemCommand, TextoItem,
                               apply_frame_camera, snap_mm)
@@ -1009,6 +1009,77 @@ def paint_etiqueta_mm(painter: QPainter, et: EtiquetaItem) -> None:
                   underline=getattr(et, "underline", False))
 
 
+def nivel_bounds_mm(nv: NivelItem) -> QRectF:
+    """The mark's ink box in item space (the apex at the origin)."""
+    s = nv.symbol_mm
+    sign = -1.0 if nv.mirror else 1.0
+    text_h = nv.size_mm * 1.4
+    x0 = min(-s / 2.0, sign * (nv.line_mm + 0.5), nv.ax_mm, 0.0)
+    x1 = max(s / 2.0, sign * (nv.line_mm + 0.5), nv.ax_mm, 0.0)
+    if nv.symbol == "circle":
+        y0 = min(-s / 2.0 - text_h, nv.ay_mm)
+        y1 = max(s / 2.0, nv.ay_mm)
+    else:
+        y0 = min(-s - text_h, nv.ay_mm)
+        y1 = max(0.5, nv.ay_mm)
+    return QRectF(x0 - 0.5, y0 - 0.5, x1 - x0 + 1.0, y1 - y0 + 1.0)
+
+
+def paint_nivel_mm(painter: QPainter, nv: NivelItem) -> None:
+    """Level mark: the symbol on its point, the level line from it and the
+    value above the line («N.P.T. +0.15»); a hair-thin leader from the
+    model point when the mark was slid away from it."""
+    import math as _math
+    from PySide6.QtGui import QBrush, QPainterPath, QPolygonF
+    color = QColor(nv.color)
+    pen = QPen(color)
+    pen.setWidthF(nv.stroke_mm)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    s = nv.symbol_mm
+    sign = -1.0 if nv.mirror else 1.0
+    if _math.hypot(nv.ax_mm, nv.ay_mm) > 0.3:
+        thin = QPen(color)
+        thin.setWidthF(max(0.1, nv.stroke_mm * 0.5))
+        painter.setPen(thin)
+        painter.drawLine(QPointF(nv.ax_mm, nv.ay_mm), QPointF(0.0, 0.0))
+        painter.setPen(pen)
+    if nv.symbol == "circle":
+        # the plan symbol: a circle with two opposite quadrants filled
+        r = s / 2.0
+        painter.drawEllipse(QPointF(0.0, 0.0), r, r)
+        path = QPainterPath()
+        for start in (0.0, 180.0):
+            path.moveTo(0.0, 0.0)
+            path.arcTo(QRectF(-r, -r, 2 * r, 2 * r), start, 90.0)
+            path.closeSubpath()
+        painter.fillPath(path, QBrush(color))
+        line_y = -r
+        text_x = sign * (r + 0.6)
+    else:
+        # the section symbol: an open triangle standing on its apex
+        half = s / 2.0
+        hgt = s * 0.866
+        painter.drawPolygon(QPolygonF([QPointF(0.0, 0.0),
+                                       QPointF(-half, -hgt),
+                                       QPointF(half, -hgt)]))
+        line_y = -hgt
+        text_x = sign * (half + 0.6)
+    painter.drawLine(QPointF(0.0, line_y), QPointF(sign * nv.line_mm, line_y))
+    text_h = nv.size_mm * 1.4
+    if nv.mirror:
+        rect = QRectF(-nv.line_mm, line_y - text_h,
+                      nv.line_mm - (abs(text_x)), text_h)
+        align = Qt.AlignRight | Qt.AlignBottom
+    else:
+        rect = QRectF(text_x, line_y - text_h, nv.line_mm - text_x, text_h)
+        align = Qt.AlignLeft | Qt.AlignBottom
+    _draw_text_mm(painter, rect, nv.label(), nv.size_mm, bold=False,
+                  align=align, color=color)
+
+
 def paint_cota_angular_mm(painter: QPainter, ca: CotaAngularItem) -> None:
     """Angular dimension: two rays from the vertex to the measured points
     (extended to the arc when shorter), the arc at ``radius_mm`` with
@@ -1834,6 +1905,78 @@ class EtiquetaCanvasItem(_SheetItem):
         self._paint_selection(painter)
 
 
+class NivelCanvasItem(_SheetItem):
+    """A level mark on the canvas: drag slides the mark while the model
+    point stays put (a thin leader appears); re-anchoring is a new click
+    with the tool. Not an EtiquetaCanvasItem on purpose — the label's
+    panel and text editor must never see it."""
+
+    RESIZABLE = False
+
+    def size_mm(self):
+        r = nivel_bounds_mm(self.model)
+        return (r.width(), r.height())
+
+    def boundingRect(self) -> QRectF:
+        return nivel_bounds_mm(self.model).adjusted(-2.0, -2.0, 2.0, 2.0)
+
+    def shape(self):
+        from PySide6.QtGui import QPainterPath
+        path = QPainterPath()
+        path.addRect(nivel_bounds_mm(self.model))
+        return path
+
+    def _on_resize_handle(self, pos: QPointF) -> bool:
+        return False
+
+    def mousePressEvent(self, event) -> None:
+        note = getattr(self.composer, "note_drag_start", None)
+        if note is not None:
+            note()
+        self._press_state = {k: getattr(self.model, k)
+                             for k in ("x_mm", "y_mm", "ax_mm", "ay_mm")}
+        QGraphicsItem.mousePressEvent(self, event)
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemPositionHasChanged and \
+                getattr(self, "_press_state", None) is not None:
+            # the mark slid: the model point stays where it was
+            dx = self.pos().x() - self._press_state["x_mm"]
+            dy = self.pos().y() - self._press_state["y_mm"]
+            self.model.ax_mm = self._press_state["ax_mm"] - dx
+            self.model.ay_mm = self._press_state["ay_mm"] - dy
+            self.prepareGeometryChange()
+        return super().itemChange(change, value)
+
+    def mouseReleaseEvent(self, event) -> None:
+        QGraphicsItem.mouseReleaseEvent(self, event)
+        if self._press_state is None:
+            return
+        current = {k: getattr(self.model, k) for k in self._press_state}
+        if current != self._press_state:
+            self.composer.push_geometry_edit(self.model, current,
+                                             self._press_state)
+        self._press_state = None
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        event.accept()
+
+    def _paint_selection(self, painter: QPainter) -> None:
+        if not self.isSelected():
+            return
+        anchored = QColor(41, 158, 92)
+        free = QColor(58, 110, 165)
+        pen = QPen(anchored if self.model.anchored else free, 0.35,
+                   Qt.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(nivel_bounds_mm(self.model))
+
+    def paint(self, painter, option, widget=None) -> None:
+        paint_nivel_mm(painter, self.model)
+        self._paint_selection(painter)
+
+
 class CotaAngularCanvasItem(_SheetItem):
     """An angular dimension on the canvas: the vertex is the item's
     position; dragging near the arc's middle changes its radius."""
@@ -2124,7 +2267,8 @@ class ComposerCanvasView(QGraphicsView):
     #: Frames, text blocks, images etc. place freely — computing the snap
     #: set for them froze the composer on photogrammetry-scale models.
     _GEOM_SNAP_TOOLS = frozenset(
-        ("cota", "linea", "flecha", "rect", "elipse", "poligono"))
+        ("cota", "linea", "flecha", "rect", "elipse", "poligono",
+         "etiqueta", "nivel"))
 
     def _snapped(self, pos):
         """Snap *pos* (scene mm) to the nearest frame geometry point when a
@@ -2443,7 +2587,7 @@ class ComposerCanvasView(QGraphicsView):
         self._clear_snap_marker()
         hit_a = self._hit_a
         self._hit_a = None
-        if self.composer.tool_mode == "etiqueta":
+        if self.composer.tool_mode in ("etiqueta", "nivel"):
             self.composer.place_tool(start.x(), start.y(), end.x(), end.y(),
                                      hit_a=hit_a)
         else:
@@ -2627,6 +2771,9 @@ class ComposerWindow(QMainWindow):
         ("etiqueta", "comp_etiqueta",
          "Add a label with a leader (click the point, then where the text "
          "goes)", True),
+        ("nivel", "comp_nivel",
+         "Add a level mark (click a point of a model view: it reads its "
+         "height)", False),
         ("imagen", "image", "Add an image", False),
         ("cajetin", "comp_cajetin", "Add the title block", False),
         ("escala", "comp_escala", "Add a graphic scale bar", False),
@@ -2714,6 +2861,20 @@ class ComposerWindow(QMainWindow):
                     frame.uid = uuid.uuid4().hex
                 item.anchor_uid = frame.uid
                 item.a_world = list(hit_a[2])
+        elif mode == "nivel":
+            style = dict(getattr(self, "_last_nivel_style", None) or {})
+            item = NivelItem(x_mm=x0, y_mm=y0, **style)
+            if hit_a is not None and hit_a[3] is not None:
+                frame = hit_a[3]
+                if not frame.uid:
+                    import uuid
+                    frame.uid = uuid.uuid4().hex
+                item.anchor_uid = frame.uid
+                item.a_world = [float(v) for v in hit_a[2]]
+                item.x_mm, item.y_mm = float(hit_a[0]), float(hit_a[1])
+                # a plan (looking down) wants the plan symbol
+                if frame.view_key == "std:top":
+                    item.symbol = "circle"
         elif mode == "cajetin":
             if self.comp.cajetin is None:
                 self._on_add_cajetin()
@@ -2986,6 +3147,7 @@ class ComposerWindow(QMainWindow):
         self.props.addWidget(_top_aligned(self._page_cota_ang()))  # 10
         self.props.addWidget(_top_aligned(self._page_etiqueta()))  # 11
         self.props.addWidget(_top_aligned(self._page_perfil()))    # 12
+        self.props.addWidget(_top_aligned(self._page_nivel()))     # 13
         self._tabs.addTab(self.props, tr("Item properties"))
 
         refresh_btn = QPushButton(tr("Update all views"))
@@ -3481,6 +3643,71 @@ class ComposerWindow(QMainWindow):
         form.addRow(tr("Background opacity"), self.cota_bg_opacity)
         return w
 
+    def _page_nivel(self) -> QWidget:
+        w = QWidget()
+        form = QFormLayout(w)
+        self.nv_text = QLineEdit()
+        self.nv_text.setToolTip(tr(
+            "{z} is the level; a text without it gets the level appended."))
+        self.nv_text.textChanged.connect(self._on_nivel_props)
+        form.addRow(tr("Text"), self.nv_text)
+        self.nv_symbol = QComboBox()
+        self.nv_symbol.addItem(tr("Triangle (section, elevation)"), "triangle")
+        self.nv_symbol.addItem(tr("Quartered circle (plan)"), "circle")
+        self.nv_symbol.currentIndexChanged.connect(self._on_nivel_props)
+        form.addRow(tr("Symbol"), self.nv_symbol)
+        self.nv_state = QLabel("")
+        form.addRow("", self.nv_state)
+        self.nv_z = QDoubleSpinBox()
+        self.nv_z.setRange(-100000.0, 100000.0)
+        self.nv_z.setDecimals(3)
+        self.nv_z.setSuffix(" m")
+        self.nv_z.setToolTip(tr(
+            "The level of a free mark. An anchored mark reads the model "
+            "point's height instead."))
+        self.nv_z.valueChanged.connect(self._on_nivel_props)
+        form.addRow(tr("Level"), self.nv_z)
+        self.nv_datum = QDoubleSpinBox()
+        self.nv_datum.setRange(-100000.0, 100000.0)
+        self.nv_datum.setDecimals(3)
+        self.nv_datum.setSuffix(" m")
+        self.nv_datum.setToolTip(tr(
+            "The model height that reads ±0.00 (the finished floor of the "
+            "ground level, say)."))
+        self.nv_datum.valueChanged.connect(self._on_nivel_props)
+        form.addRow(tr("Datum"), self.nv_datum)
+        self.nv_decimals = QDoubleSpinBox()
+        self.nv_decimals.setRange(0, 4)
+        self.nv_decimals.setDecimals(0)
+        self.nv_decimals.valueChanged.connect(self._on_nivel_props)
+        form.addRow(tr("Decimals"), self.nv_decimals)
+        self.nv_size = QDoubleSpinBox()
+        self.nv_size.setRange(1.0, 12.0)
+        self.nv_size.setSingleStep(0.25)
+        self.nv_size.setSuffix(" mm")
+        self.nv_size.valueChanged.connect(self._on_nivel_props)
+        form.addRow(tr("Text height"), self.nv_size)
+        self.nv_line = QDoubleSpinBox()
+        self.nv_line.setRange(2.0, 200.0)
+        self.nv_line.setSuffix(" mm")
+        self.nv_line.valueChanged.connect(self._on_nivel_props)
+        form.addRow(tr("Level line"), self.nv_line)
+        self.nv_mirror = QCheckBox(tr("Line and text to the left"))
+        self.nv_mirror.toggled.connect(self._on_nivel_props)
+        form.addRow("", self.nv_mirror)
+        self.nv_stroke = QDoubleSpinBox()
+        self.nv_stroke.setRange(0.1, 1.5)
+        self.nv_stroke.setSingleStep(0.05)
+        self.nv_stroke.setSuffix(" mm")
+        self.nv_stroke.valueChanged.connect(self._on_nivel_props)
+        form.addRow(tr("Line width"), self.nv_stroke)
+        self.nv_color_btn = QPushButton()
+        self.nv_color_btn.setFixedHeight(22)
+        self.nv_color_btn.clicked.connect(
+            lambda: self._pick_item_color("color", self.nv_color_btn))
+        form.addRow(tr("Colour"), self.nv_color_btn)
+        return w
+
     def _page_etiqueta(self) -> QWidget:
         w = QWidget()
         form = QFormLayout(w)
@@ -3964,6 +4191,8 @@ class ComposerWindow(QMainWindow):
             self.canvas.addItem(EtiquetaCanvasItem(self, et))
         for pf in getattr(self.comp, "perfiles", []) or []:
             self.canvas.addItem(PerfilItem(self, pf))
+        for nv in getattr(self.comp, "niveles", []) or []:
+            self.canvas.addItem(NivelCanvasItem(self, nv))
         if self.comp.cajetin is not None:
             self.canvas.addItem(CajetinItem(self, self.comp.cajetin))
         if keep:
@@ -4198,6 +4427,26 @@ class ComposerWindow(QMainWindow):
                     f"background: {m.bg_color};" if m.bg_color else "")
                 self.et_bg_opacity.setValue(100.0 * float(m.bg_opacity))
                 self.props.setCurrentIndex(11)
+            elif isinstance(item, NivelCanvasItem):
+                m = item.model
+                if self.nv_text.text() != m.text:
+                    self.nv_text.setText(m.text)
+                sidx = self.nv_symbol.findData(m.symbol or "triangle")
+                self.nv_symbol.setCurrentIndex(max(sidx, 0))
+                self.nv_state.setText(
+                    tr("Anchored to the model: reads its height")
+                    if m.anchored else tr("Free mark: type the level"))
+                self.nv_z.setEnabled(not m.anchored)
+                self.nv_z.setValue(float(m.a_world[2]) if m.anchored
+                                   else float(m.z_m))
+                self.nv_datum.setValue(float(m.datum_m))
+                self.nv_decimals.setValue(int(m.decimals))
+                self.nv_size.setValue(float(m.size_mm))
+                self.nv_line.setValue(float(m.line_mm))
+                self.nv_mirror.setChecked(bool(m.mirror))
+                self.nv_stroke.setValue(float(m.stroke_mm))
+                self.nv_color_btn.setStyleSheet(f"background: {m.color};")
+                self.props.setCurrentIndex(13)
             elif isinstance(item, PerfilItem):
                 m = item.model
                 self._reload_perfil_paths()
@@ -4831,6 +5080,8 @@ class ComposerWindow(QMainWindow):
                           "text_bg_opacity"),
         EtiquetaItem: ("size_pt", "bold", "italic", "underline", "color",
                        "bg_color", "bg_opacity", "arrow", "stroke_mm"),
+        NivelItem: ("symbol", "text", "decimals", "size_mm", "line_mm",
+                    "stroke_mm", "color", "datum_m"),
         Cajetin: Cajetin.LOOK_FIELDS,
     }
 
@@ -6080,6 +6331,29 @@ class ComposerWindow(QMainWindow):
                            else (item.model.text_color or item.model.color))})
         self._remember_cota_style(item.model)
 
+    def _on_nivel_props(self, *_a) -> None:
+        item = self._selected_item()
+        if self._updating or not isinstance(item, NivelCanvasItem):
+            return
+        item.prepareGeometryChange()
+        changes = {
+            "text": self.nv_text.text(),
+            "symbol": self.nv_symbol.currentData() or "triangle",
+            "datum_m": float(self.nv_datum.value()),
+            "decimals": int(self.nv_decimals.value()),
+            "size_mm": float(self.nv_size.value()),
+            "line_mm": float(self.nv_line.value()),
+            "mirror": self.nv_mirror.isChecked(),
+            "stroke_mm": float(self.nv_stroke.value())}
+        if not item.model.anchored:
+            changes["z_m"] = float(self.nv_z.value())
+        self._panel_edit(item, changes)
+        # the next mark inherits the look (LayOut remembers the last style)
+        self._last_nivel_style = {k: changes[k] for k in
+                                  ("text", "symbol", "datum_m", "decimals",
+                                   "size_mm", "line_mm", "mirror",
+                                   "stroke_mm")}
+
     def _on_etiqueta_props(self, *_a) -> None:
         item = self._selected_item()
         if self._updating or not isinstance(item, EtiquetaCanvasItem):
@@ -6218,6 +6492,8 @@ class ComposerWindow(QMainWindow):
             return tr("Label") + ": " + first
         if isinstance(model, CotaAngularItem):
             return tr("Angle") + " " + model.label()
+        if isinstance(model, NivelItem):
+            return tr("Level") + " " + model.label()
         if isinstance(model, MarcoVista):
             return frame_title_text(model)
         if isinstance(model, TextoItem):
@@ -6714,6 +6990,31 @@ class ComposerWindow(QMainWindow):
                 et.ax_mm, et.ay_mm = px - et.x_mm, py - et.y_mm
             except Exception:  # noqa: BLE001
                 pass
+        # Level marks: the point follows the model (and so does the height
+        # it reads); the mark keeps its slide from the point.
+        for nv in getattr(self.comp, "niveles", []) or []:
+            if not nv.anchored:
+                continue
+            frame = frames.get(nv.anchor_uid)
+            if frame is None:
+                continue
+            try:
+                _pts, wpts = self.frame_snap_points(frame)
+                tol = min(2.5 * frame.scale_n / 1000.0, 0.5)
+                (px, py), = self._frame_world_to_page(frame, [nv.a_world])
+                inside = (frame.x_mm - 0.5 <= px <= frame.x_mm + frame.w_mm + 0.5
+                          and frame.y_mm - 0.5 <= py
+                          <= frame.y_mm + frame.h_mm + 0.5)
+                if inside and len(wpts):
+                    w = np.asarray(nv.a_world, dtype=np.float64)
+                    d2 = ((wpts - w) ** 2).sum(axis=1)
+                    i = int(np.argmin(d2))
+                    if d2[i] <= tol * tol:
+                        nv.a_world = [float(v) for v in wpts[i]]
+                (px, py), = self._frame_world_to_page(frame, [nv.a_world])
+                nv.x_mm, nv.y_mm = px - nv.ax_mm, py - nv.ay_mm
+            except Exception:  # noqa: BLE001
+                pass
 
     def nearest_snap_point(self, x_mm: float, y_mm: float, thr_mm: float):
         """Nearest frame snap point to (x_mm, y_mm) within *thr_mm*, or
@@ -7002,6 +7303,8 @@ class ComposerWindow(QMainWindow):
                 paint_cota_angular_mm(painter, m)
             elif isinstance(m, EtiquetaItem):
                 paint_etiqueta_mm(painter, m)
+            elif isinstance(m, NivelItem):
+                paint_nivel_mm(painter, m)
             elif isinstance(m, Cajetin):
                 paint_cajetin_mm(painter, m)
 

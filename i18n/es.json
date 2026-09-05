@@ -1452,5 +1452,17 @@
  "Below the frame": "Debajo del marco",
  "Above the frame": "Encima del marco",
  "Title position": "Posición del rótulo",
- "Title text height": "Alto del texto del rótulo"
+ "Title text height": "Alto del texto del rótulo",
+ "Add a level mark (click a point of a model view: it reads its height)": "Añadir una cota de nivel (clic en un punto de una vista del modelo: lee su altura)",
+ "{z} is the level; a text without it gets the level appended.": "{z} es el nivel; a un texto sin él se le añade al final.",
+ "Triangle (section, elevation)": "Triángulo (sección, elevación)",
+ "Quartered circle (plan)": "Círculo en cuadrantes (planta)",
+ "The level of a free mark. An anchored mark reads the model point's height instead.": "El nivel de una cota libre. Una cota anclada lee la altura del punto del modelo.",
+ "Level": "Nivel",
+ "The model height that reads ±0.00 (the finished floor of the ground level, say).": "La altura del modelo que se lee como ±0.00 (el piso terminado de la planta baja, por ejemplo).",
+ "Datum": "Nivel de referencia",
+ "Level line": "Línea de nivel",
+ "Line and text to the left": "Línea y texto a la izquierda",
+ "Anchored to the model: reads its height": "Anclada al modelo: lee su altura",
+ "Free mark: type the level": "Cota libre: escribe el nivel"
 }

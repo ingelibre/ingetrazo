@@ -755,6 +755,16 @@ def _comp_etiqueta(p, ink):
     p.drawLine(QPointF(9, 38), QPointF(17, 35))
 
 
+def _comp_nivel(p, ink):
+    # A level mark: open triangle on its apex, the level line, «+0.00».
+    p.drawPolygon(QPolygonF([QPointF(14, 30), QPointF(8, 20), QPointF(20, 20)]))
+    p.drawLine(QPointF(14, 20), QPointF(42, 20))
+    p.drawLine(QPointF(24, 13), QPointF(30, 13))
+    p.drawLine(QPointF(27, 10), QPointF(27, 16))
+    p.drawLine(QPointF(33, 10), QPointF(40, 10))
+    p.drawLine(QPointF(33, 16), QPointF(40, 16))
+
+
 def _styles_icon(p, ink):
     # Three fanned swatch cards — the material/style deck.
     p.save()
@@ -796,6 +806,7 @@ _DRAW = {
     "comp_leyenda": _comp_leyenda, "comp_escala": _comp_escala,
     "comp_cajetin": _comp_cajetin, "comp_flecha": _comp_flecha,
     "comp_etiqueta": _comp_etiqueta, "comp_perfil": _comp_perfil,
+    "comp_nivel": _comp_nivel,
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
     "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset,

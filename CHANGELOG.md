@@ -30,6 +30,17 @@ follow [SemVer](https://semver.org).
   (debajo o encima) y alto del texto, y todo se edita en vivo desde el
   panel del marco sin recalcular la vista. Cambiar el título o el borde
   ya no deja en blanco un marco vectorial hasta el siguiente «Actualizar».
+- **Cotas de nivel.** Herramienta nueva en la barra del compositor: un
+  clic sobre un punto de una vista del modelo pone la marca de nivel
+  («N.P.T. +0.15») leyendo la altura de ese punto — triángulo sobre su
+  vértice en secciones y elevaciones, círculo en cuadrantes en plantas —
+  con la línea de nivel y el valor encima. Anclada al modelo, sigue al
+  punto si la geometría cambia y actualiza la altura; se puede deslizar
+  por la lámina (queda una guía fina hasta el punto). Nivel de referencia
+  (±0.00), decimales, texto con `{z}`, símbolo, tamaño, largo de la línea,
+  lado, grosor y color desde el panel; una cota libre muestra el nivel que
+  escribas. Copiar/pegar estilo y organizar la reconocen. Las etiquetas con
+  guía vuelven a anclarse al modelo (la herramienta no tenía snap).
 - **Perfil de terreno en láminas.** Un ítem nuevo del compositor (herramienta
   «Perfil» en la barra) dibuja la cota del terreno bajo un trazado contra la
   progresiva, como en un plano de carretera o canal: escala horizontal 1:N o
