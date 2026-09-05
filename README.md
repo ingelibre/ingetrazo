@@ -116,8 +116,11 @@ anything is missing.
   traced geo-paths with a live longitudinal profile, survey-point CSV import
   (total station / GPS), and photogrammetric mesh import (WebODM / ODM).
 - **Sheet composer** — scaled viewports of the model on paper sheets (each
-  in any display style), vector hidden-line rendering, model-anchored
-  dimensions, title block, PDF export.
+  in any display style), exact vector hidden-line rendering with three pen
+  weights and section poché, numbered view titles, section marks (where
+  «Corte A-A» was taken), model-anchored dimensions (chains with a stacked
+  total, level marks that read the point's height), detail callouts,
+  title block, vector PDF export, DXF with one layer per line class.
 - **Extensions** — a plugin system: drop a Python file in the plugins folder
   and its tools appear in the **Extensions** menu. Reference plugins ship
   with the app: **Model Info** (model statistics), a **Python Console**
@@ -131,10 +134,12 @@ anything is missing.
 - **Undo/redo** — every edit is a single atomic step (console scripts
   included).
 
+![Sheet composer: a real ornamental-fountain sheet — front view, 3D, plan and section at 1:40, with dimensions, labels, a reference photo and the title block](docs/images/laminas.jpeg)
+
 ## Planned
 
-Contour lines from terrain · professional 2D sheet output
-(LayOut-equivalent) · DWG/DXF (with [IngeCAD](https://ingecad.org)) ·
+Contour lines from terrain · reference axes, room labels and numbered
+legends on sheets · DWG/DXF (with [IngeCAD](https://ingecad.org)) ·
 IFC import · extension manager UI · Flathub packaging.
 
 ## Why IngeTrazo
