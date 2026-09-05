@@ -7,6 +7,8 @@
  "Vertical exaggeration": "Exageración vertical",
  "auto": "auto",
  "Chainage step": "Paso de progresivas",
+ "Chainage marks on traced paths": "Progresivas en los trazados",
+ "A tick and a 0+020 label every step along each traced path, measured as the profile does. Step «auto» is the one the profile picks, so plan and profile agree; type the same step in both to choose it.": "Una marca y un rótulo 0+020 a cada paso a lo largo de cada trazado, medido igual que el perfil. El paso «auto» es el que elige el perfil, así planta y perfil coinciden; escribe el mismo paso en los dos para elegirlo.",
  "Elevation step": "Paso de cotas",
  "Tint the ground": "Sombrear el terreno",
  "Longitudinal profile — <path>": "Perfil longitudinal — <trazado>",

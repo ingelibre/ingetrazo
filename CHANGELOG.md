@@ -20,7 +20,10 @@ follow [SemVer](https://semver.org).
   del marco de la lámina (ni en pantalla ni impreso): ahora se dibuja sobre
   el papel, en el cian del visor y con sus nodos, en todos los estilos y sin
   activar «Anotaciones del modelo», apoyado en el terreno igual que en el
-  visor.
+  visor. Y con **progresivas**: la casilla «Progresivas en los trazados» del
+  marco pone una marca y su rótulo 0+020 a cada paso; el paso «auto» es el
+  mismo que elige el perfil de terreno de ese trazado, así planta y perfil
+  coinciden, y en los dos se puede escribir el paso que se quiera.
 - **Las figuras «cara a la cámara» viajan al `.skp`.** Las personas 2D y los
   recortes (la figura Sumari, los bañistas) se quedaban fuera del archivo y
   desaparecían en SketchUp. Ahora salen como componentes en la convención de

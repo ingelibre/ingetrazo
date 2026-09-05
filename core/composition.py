@@ -109,6 +109,12 @@ class MarcoVista:
     #: per scene which ones.
     annotations: bool = False
     annot_text_mm: float = 2.8             # their text height on paper
+    #: Chainage marks along the traced georef paths in the frame: a tick
+    #: and a «0+020» label every ``km_step_m`` metres of horizontal length
+    #: — the profile's chainage, so plan and profile agree. 0 = the round
+    #: step the profile picks on its own for that path.
+    km_marks: bool = False
+    km_step_m: float = 0.0
     #: Printed border of the frame. Off by default: on screen the canvas
     #: still shows a light guide, on paper the view sits borderless (the
     #: sheet's own border is a Composicion setting).

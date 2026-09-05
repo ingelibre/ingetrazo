@@ -18,7 +18,7 @@ from typing import Optional
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import (QBrush, QColor, QFont, QImage, QKeySequence,
                            QPageLayout, QPageSize, QPainter, QPdfWriter,
-                           QPen, QShortcut, QTransform)
+                           QPen, QShortcut, QTransform, QVector3D)
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
                                QFileDialog, QFormLayout, QGraphicsItem,
                                QGraphicsTextItem,
@@ -340,6 +340,17 @@ def paint_scalebar_mm(painter: QPainter, sb: BarraEscala) -> None:
                   align=Qt.AlignHCenter | Qt.AlignTop)
 
 
+def chainage_step(length: float, step_m: float = 0.0) -> float:
+    """The chainage step in metres: the user's, or the round one that spans
+    *length* in about six marks. Shared by the profile's axis and the plan
+    view's marks, so a sheet's chainages agree by construction."""
+    from views.profile_panel import _nice_ticks
+    if step_m and step_m > 0:
+        return float(step_m)
+    ticks = _nice_ticks(0.0, length, 6)
+    return (ticks[1] - ticks[0]) if len(ticks) > 1 else (length or 1.0)
+
+
 def _chainage(s: float, step: float) -> str:
     """Civil chainage, ``1+250`` style; decimals only when the step needs them."""
     km, m = int(s // 1000), s % 1000
@@ -413,8 +424,7 @@ def paint_perfil_mm(painter: QPainter, m: PerfilTerreno, profile,
     plot_right = sx(length)
     plot_top = sy(topv)
     # grid + labels
-    h_ticks = _nice_ticks(0.0, length, 6)
-    step_h = float(m.grid_h_m) or (h_ticks[1] - h_ticks[0] if len(h_ticks) > 1 else length)
+    step_h = chainage_step(length, float(m.grid_h_m))
     light = QPen(QColor(200, 206, 214))
     light.setWidthF(0.12)
     s_val = 0.0
@@ -2789,6 +2799,21 @@ class ComposerWindow(QMainWindow):
         self.annot_mm_spin.setValue(2.8)
         self.annot_mm_spin.valueChanged.connect(self._on_frame_props)
         form.addRow(tr("Annotation text height"), self.annot_mm_spin)
+        self.km_check = QCheckBox(tr("Chainage marks on traced paths"))
+        self.km_check.setToolTip(tr(
+            "A tick and a 0+020 label every step along each traced path, "
+            "measured as the profile does. Step «auto» is the one the "
+            "profile picks, so plan and profile agree; type the same step "
+            "in both to choose it."))
+        self.km_check.toggled.connect(self._on_frame_props)
+        form.addRow("", self.km_check)
+        self.km_step_spin = QDoubleSpinBox()
+        self.km_step_spin.setRange(0.0, 100000.0)
+        self.km_step_spin.setDecimals(1)
+        self.km_step_spin.setSuffix(" m")
+        self.km_step_spin.setSpecialValueText(tr("auto"))
+        self.km_step_spin.valueChanged.connect(self._on_frame_props)
+        form.addRow(tr("Chainage step"), self.km_step_spin)
         self.frame_border_check = QCheckBox(tr("Printed border"))
         self.frame_border_check.setToolTip(tr(
             "Draw the frame's outline in print. Off, the canvas still shows "
@@ -3592,6 +3617,9 @@ class ComposerWindow(QMainWindow):
                 self.annot_check.setChecked(getattr(f, "annotations", False))
                 self.annot_mm_spin.setValue(
                     float(getattr(f, "annot_text_mm", 2.8) or 2.8))
+                self.km_check.setChecked(bool(getattr(f, "km_marks", False)))
+                self.km_step_spin.setValue(
+                    float(getattr(f, "km_step_m", 0.0) or 0.0))
                 self.frame_border_check.setChecked(
                     bool(getattr(f, "border", False)))
                 self.frame_border_mm.setValue(
@@ -4357,8 +4385,8 @@ class ComposerWindow(QMainWindow):
                     "color", "align", "bg_color", "bg_opacity"),
         FormaItem: ("stroke_mm", "color", "fill", "fill_color", "radius_mm"),
         MarcoVista: ("style", "scale_n", "show_title", "annotations",
-                     "annot_text_mm", "grid_m", "border", "border_mm",
-                     "border_color"),
+                     "annot_text_mm", "km_marks", "km_step_m", "grid_m",
+                     "border", "border_mm", "border_color"),
         CotaAngularItem: ("text_mm", "decimals", "ends", "stroke_mm",
                           "color", "offset_mm", "text_color", "text_bg",
                           "text_bg_opacity"),
@@ -4758,6 +4786,8 @@ class ComposerWindow(QMainWindow):
                 if path.closed and len(pts) > 2:
                     pts.append(pts[0])
                 out.append(("poly", pts))
+            if getattr(frame, "km_marks", False):
+                out.extend(self._chainage_marks(frame, scene, pt, drape))
             if not getattr(frame, "annotations", False):
                 return out
             size = float(getattr(frame, "annot_text_mm", 2.8) or 2.8)
@@ -4804,6 +4834,67 @@ class ComposerWindow(QMainWindow):
                                 line, size))
             return out
         return self._with_frame_camera(frame, run)
+
+    @staticmethod
+    def _chainage_marks(frame: MarcoVista, scene, pt, drape) -> list:
+        """Tick + «0+020» label at every chainage step along each traced
+        path, as ``("line", …)`` / ``("text", …)`` overlay tuples (paper
+        mm). Chainage is the horizontal length the profile plots, and the
+        step the same one the profile picks, so the plan's marks line up
+        with the profile's axis. Labels stand perpendicular to the path
+        (the civil convention: they never pile up on a short step)."""
+        import math
+        from georef.profile import point_at_station, polyline_length
+        out: list = []
+        size = float(getattr(frame, "annot_text_mm", 2.8) or 2.8)
+        tick = 0.9
+        for path in getattr(scene, "geo_paths", None) or []:
+            nodes = path.profile_points()
+            length = polyline_length(nodes)
+            if len(nodes) < 2 or length <= 1e-9:
+                continue
+            step = chainage_step(length, getattr(frame, "km_step_m", 0.0))
+            stations, s = [], 0.0
+            while s <= length + 1e-6:
+                stations.append(min(s, length))
+                s += step
+            # The end of the path too, unless a mark already (nearly) sits
+            # there.
+            if length - stations[-1] > 0.3 * step:
+                stations.append(length)
+            for s in stations:
+                x, y = point_at_station(nodes, s)
+                p = pt(drape(QVector3D(x, y, 0.0)))
+                # Local direction on paper from a point half a metre along
+                # (backwards at the very end).
+                if s + 0.5 <= length:
+                    xq, yq = point_at_station(nodes, s + 0.5)
+                    q = pt(drape(QVector3D(xq, yq, 0.0)))
+                    dx, dy = q[0] - p[0], q[1] - p[1]
+                else:
+                    xq, yq = point_at_station(nodes, max(s - 0.5, 0.0))
+                    q = pt(drape(QVector3D(xq, yq, 0.0)))
+                    dx, dy = p[0] - q[0], p[1] - q[1]
+                norm = math.hypot(dx, dy)
+                if norm < 1e-9:
+                    dx, dy = 1.0, 0.0
+                else:
+                    dx, dy = dx / norm, dy / norm
+                nx, ny = -dy, dx
+                out.append(("line", p[0] - nx * tick, p[1] - ny * tick,
+                            p[0] + nx * tick, p[1] + ny * tick))
+                # Always the same side of the path (the right of travel);
+                # the reading direction alone flips so the label is never
+                # upside down (vertical ones read bottom-up, as dimensions
+                # do). The text is centred on its anchor, so the side holds
+                # whichever way it reads.
+                deg = (math.degrees(math.atan2(ny, nx)) + 90.0) % 180.0 - 90.0
+                text = _chainage(s, step)
+                width = max(len(text) * size * 0.55, 1.0)
+                off = tick + 0.6 + width / 2
+                out.append(("text", p[0] + nx * off, p[1] + ny * off, deg,
+                            text, size))
+        return out
 
     def _on_zoom_extents_selected(self) -> None:
         item = self._selected_item()
@@ -5114,6 +5205,8 @@ class ComposerWindow(QMainWindow):
             "show_title": self.title_check.isChecked(),
             "annotations": self.annot_check.isChecked(),
             "annot_text_mm": self.annot_mm_spin.value(),
+            "km_marks": self.km_check.isChecked(),
+            "km_step_m": float(self.km_step_spin.value()),
             "border": self.frame_border_check.isChecked(),
             "border_mm": self.frame_border_mm.value()})
         self.render_cache.pop(id(item.model), None)

@@ -102,3 +102,38 @@ def test_the_path_is_painted_in_the_viewport_ink():
     # Off the line the paper is still white.
     off = img.pixelColor(int((x0 + x1) / 2 * scale), int((y0 + 15) * scale))
     assert off.red() == off.green() == off.blue() == 255
+
+
+def test_chainage_marks_follow_the_profile_step():
+    from core.composition import Composicion
+    from views.composer import chainage_step
+    road = GeoPath([V(0, 0), V(50, 0)])
+    composer, frame, _host = _composer([road])
+    assert frame.km_marks is False                    # opt-in, saved with the sheet
+    frame.km_marks, frame.km_step_m = True, 20.0
+    c = Composicion()
+    c.frames.append(frame)
+    back = Composicion.from_dict(c.to_dict()).frames[-1]
+    assert back.km_marks is True and back.km_step_m == 20.0
+    annots = composer.compute_annotations(frame)
+    (x0, y0), _end = _polys(annots)[0]
+    labels = [a for a in annots if a[0] == "text"]
+    ticks = [a for a in annots if a[0] == "line"]
+    # Every 20 m, plus the end of the path (10 m past the last mark).
+    assert [t[4] for t in labels] == ["0+000", "0+020", "0+040", "0+050"]
+    assert len(ticks) == 4
+    # The 0+020 mark sits 20 mm along the road (1:1000) and its label
+    # stands off the line, perpendicular to it.
+    x20, y20 = labels[1][1], labels[1][2]
+    assert x20 == pytest.approx(x0 + 20.0, abs=1e-6)
+    assert abs(y20 - y0) > 1.0
+    assert abs(labels[1][3]) == pytest.approx(90.0)
+    # The tick crosses the road at that station.
+    t = ticks[1]
+    assert (t[1] + t[3]) / 2 == pytest.approx(x0 + 20.0, abs=1e-6)
+    assert t[2] < y0 < t[4] or t[4] < y0 < t[2]
+    # «auto» = the round step the profile picks for the same path.
+    frame.km_step_m = 0.0
+    auto = [a[4] for a in composer.compute_annotations(frame) if a[0] == "text"]
+    assert chainage_step(50.0) == 10.0
+    assert auto == ["0+000", "0+010", "0+020", "0+030", "0+040", "0+050"]
