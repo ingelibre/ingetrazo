@@ -13,6 +13,12 @@ follow [SemVer](https://semver.org).
   activado y las de las plumas solo con el estilo vectorial, y en un panel
   estrecho una fila que no cabe baja el campo bajo su etiqueta en vez de
   recortar el texto. A 480 px se lee todo.
+- **La barra «Organizar» del compositor ya no aparece por defecto.** Sus
+  órdenes siguen a mano: alinear y distribuir en el menú contextual de los
+  ítems (submenú Organizar, con dos o más seleccionados), y agrupar,
+  desagrupar, bloquear y duplicar en sus atajos y en el mismo menú. Para
+  volver a verla, clic derecho sobre la barra de herramientas de la
+  izquierda y marcar «Organizar»; la elección se recuerda.
 
 ### Añadido
 - **Grosores por clase y poché en el estilo vectorial de las láminas.** La

@@ -1764,6 +1764,16 @@ class _SheetItem(QGraphicsItem):
         copy_style = menu.addAction(tr("Copy style"))
         paste_style = menu.addAction(tr("Paste style"))
         paste_style.setEnabled(self.composer.can_paste_style(self.model))
+        # Align / distribute against the other selected items (the Arrange
+        # toolbar's commands, which is hidden by default).
+        arrange = menu.addMenu(tr("Arrange"))
+        n_sel = len(self.composer._selected_sheet_items())
+        arrange_slots: dict = {}
+        for glyph, label, slot in self.composer._arrange_entries()[:8]:
+            act = arrange.addAction(f"{glyph}  {label}")
+            act.setEnabled(n_sel >= (3 if label.startswith(tr("Distribute"))
+                                     else 2))
+            arrange_slots[act] = slot
         edit_view = fit = None
         if hasattr(self.model, "view_key"):          # a model-view frame
             menu.addSeparator()
@@ -1775,6 +1785,10 @@ class _SheetItem(QGraphicsItem):
                               else tr("Lock"))
         chosen = menu.exec(event.screenPos())
         if chosen is None:
+            return
+        if chosen in arrange_slots:
+            self.setSelected(True)
+            arrange_slots[chosen]()
             return
         if chosen is grp:
             self.setSelected(True)
@@ -5746,33 +5760,50 @@ class ComposerWindow(QMainWindow):
         self.statusBar().showMessage(
             tr("{n} item(s) pasted.", n=len(pasted)), 3000)
 
+    def _arrange_entries(self) -> list:
+        """(glyph, label, slot) of the Arrange commands — the toolbar and
+        the items' right-click menu share them. Align needs two selected
+        items, distribute three; group / lock / duplicate have keys."""
+        return [
+            ("⇤", tr("Align left"), lambda: self.align_selected("left")),
+            ("⇥", tr("Align right"), lambda: self.align_selected("right")),
+            ("⤒", tr("Align top"), lambda: self.align_selected("top")),
+            ("⤓", tr("Align bottom"), lambda: self.align_selected("bottom")),
+            ("↔", tr("Center horizontally"),
+             lambda: self.align_selected("hcenter")),
+            ("↕", tr("Center vertically"),
+             lambda: self.align_selected("vcenter")),
+            ("⇔", tr("Distribute horizontally"),
+             lambda: self.distribute_selected("x")),
+            ("⇕", tr("Distribute vertically"),
+             lambda: self.distribute_selected("y")),
+            ("⧉", tr("Duplicate (Ctrl+D)"), self.duplicate_selected),
+            ("⊞", tr("Group (Ctrl+G)"), self.group_selected),
+            ("⊟", tr("Ungroup (Ctrl+Shift+G)"), self.ungroup_selected),
+            ("🔒", tr("Lock / unlock (Ctrl+L)"), self.lock_selected)]
+
     def _build_arrange_toolbar(self) -> None:
+        """The Arrange toolbar — hidden by default (Marco, 2026-09-05: «nunca
+        la he usado, ocupa espacio»): every command lives in the items'
+        right-click menu and on the keys; right-click the tools toolbar
+        to show it again, and the choice is remembered."""
+        from PySide6.QtCore import QSettings
         from PySide6.QtGui import QAction
         from PySide6.QtWidgets import QToolBar
         tb = QToolBar(tr("Arrange"), self)
         tb.setMovable(False)
-        for text, tip, slot in (
-                ("⇤", tr("Align left"), lambda: self.align_selected("left")),
-                ("⇥", tr("Align right"), lambda: self.align_selected("right")),
-                ("⤒", tr("Align top"), lambda: self.align_selected("top")),
-                ("⤓", tr("Align bottom"), lambda: self.align_selected("bottom")),
-                ("↔", tr("Center horizontally"),
-                 lambda: self.align_selected("hcenter")),
-                ("↕", tr("Center vertically"),
-                 lambda: self.align_selected("vcenter")),
-                ("⇔", tr("Distribute horizontally"),
-                 lambda: self.distribute_selected("x")),
-                ("⇕", tr("Distribute vertically"),
-                 lambda: self.distribute_selected("y")),
-                ("⧉", tr("Duplicate (Ctrl+D)"), self.duplicate_selected),
-                ("⊞", tr("Group (Ctrl+G)"), self.group_selected),
-                ("⊟", tr("Ungroup (Ctrl+Shift+G)"), self.ungroup_selected),
-                ("🔒", tr("Lock / unlock (Ctrl+L)"), self.lock_selected)):
+        for text, tip, slot in self._arrange_entries():
             act = QAction(text, self)
             act.setToolTip(tip)
             act.triggered.connect(lambda _c, s=slot: s())
             tb.addAction(act)
         self.addToolBar(Qt.TopToolBarArea, tb)
+        self._arrange_tb = tb
+        shown = str(QSettings().value("composer/arrange_toolbar", "0")) == "1"
+        tb.setVisible(shown)
+        tb.toggleViewAction().toggled.connect(
+            lambda on: QSettings().setValue("composer/arrange_toolbar",
+                                            "1" if on else "0"))
 
     # ---- Copy / paste style (LayOut's Edit ▸ Copy Style / Paste Style) -------
     #: The look of each item kind — never its geometry or content.

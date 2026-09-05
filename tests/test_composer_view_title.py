@@ -196,3 +196,19 @@ def test_optional_sections_hide_their_rows_when_they_do_not_apply():
     row, role = form.getWidgetPosition(composer.annot_check)
     assert role == QFormLayout.SpanningRole
     assert form.rowWrapPolicy() == QFormLayout.WrapLongRows
+
+
+def test_the_arrange_toolbar_hides_by_default_and_its_commands_stay_reachable():
+    """Marco, 2026-09-05: «la toolbar de Arrange nunca la he usado, ocupa
+    espacio» — hidden unless the user shows it (remembered), the same
+    commands in the items' right-click menu."""
+    from PySide6.QtCore import QSettings
+    QSettings().remove("composer/arrange_toolbar")
+    composer, _host = _composer()
+    assert composer._arrange_tb.isHidden()
+    assert len(composer._arrange_entries()) == 12
+    composer._arrange_tb.toggleViewAction().setChecked(True)
+    assert str(QSettings().value("composer/arrange_toolbar")) == "1"
+    again = ComposerWindow(_host)
+    assert not again._arrange_tb.isHidden()
+    QSettings().remove("composer/arrange_toolbar")
