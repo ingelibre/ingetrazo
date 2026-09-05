@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from PySide6.QtGui import QImage, QVector3D
+from PySide6.QtGui import QImage, QMatrix4x4, QVector3D
 
 from core.history import History, SetFaceColorCommand
 from core.group import Group
@@ -861,3 +861,45 @@ def test_a_copy_turned_about_the_vertical_shares_too(tmp_path):
         for v in defn.vertices.values():
             w = mat.map(QVector3D(v.x / _M_TO_IN, v.y / _M_TO_IN, v.z / _M_TO_IN))
             assert (round(w.x(), 3), round(w.y(), 3), round(w.z(), 3)) in originals
+
+
+
+# ---- The file SketchUp can save --------------------------------------------------
+
+def test_the_pid_counter_covers_every_entity_written(tmp_path):
+    """SketchUp could open our files but not SAVE them: the pinned writer
+    numbers every section's persistent IDs from 1 and grows the header's
+    counter by materials and layers only, so SketchUp renumbers duplicates
+    on load and then fails to serialize (Marco's pool in SketchUp Web,
+    2026-09-04: "Guardado fallido"). Whatever writer is installed, the
+    u32 counter at the writer's own offset must cover every record."""
+    import struct
+    from openskp.create import _PID_COUNTER_POS
+    from core.group import Group
+    from core.mesh import Mesh
+    scene = Scene()
+    for k in range(3):
+        m = Mesh()
+        _strip(m, 25, (0, 5 * k, 0), (0.2 * k, 0.5, 0.5))
+        g = Group(m, name=f"pieza {k}")
+        g.xform = QMatrix4x4()
+        g.xform.translate(QVector3D(0, 0, 2 * k))
+        scene.groups.append(g)
+    scene.groups.append(Group(_quad_mesh(), name="suelto"))
+    scene.version += 1
+    path = tmp_path / "pids.skp"
+    skp_out_format.save_skp(scene, path)
+    counter = struct.unpack_from("<I", path.read_bytes(), _PID_COUNTER_POS)[0]
+    model = _parse_skp(path)
+    records = sum(len(d.faces) + len(d.edges) + len(d.vertices)
+                  for d in model.definitions.values())
+    records += len(model.root.faces) + len(model.root.edges) + len(model.root.vertices)
+    records += sum(len(d.instances) for d in model.definitions.values()) + len(model.root.instances)
+    assert counter >= records
+
+
+def _quad_mesh():
+    from core.mesh import Mesh
+    m = Mesh()
+    m.add_face([V(50, 50), V(51, 50), V(51, 51), V(50, 51)])
+    return m

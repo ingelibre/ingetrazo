@@ -375,12 +375,13 @@ def _split_containers(scene):
 
     classic, roots = [], []
     classic_groups = []
+    figures_at_root = []
     for g in getattr(scene, "groups", []):
         if not visible(g):
             continue
         if getattr(g, "billboard", False):
             if g.mesh.faces:
-                roots.append((_register_figure(g), g))
+                figures_at_root.append(g)
             continue
         kids = _kids(g)
         figures = _figures(g)
@@ -390,6 +391,12 @@ def _split_containers(scene):
             classic_groups.append((g, kids, figures))
         else:
             roots.append((_register(g), g))
+    # Figures go in LAST: a 1-face definition written first, ahead of the
+    # big ones, was the file the pinned OpenSKP produced with duplicate
+    # persistent IDs that SketchUp could load but not save (see
+    # _fix_pid_counter); with the figure anywhere else the same model saved.
+    for g in figures_at_root:
+        roots.append((_register_figure(g), g))
     # Repeated geometry — inside a mesh or across the loose mesh and the
     # classic groups — becomes shared definitions placed by translation.
     sources = [("loose", mesh, loose_faces)] if mesh is not None else []
@@ -1194,6 +1201,41 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
     _emit_annotations(scene, builder)
 
     builder.save(str(Path(path)))
+    _fix_pid_counter(Path(path), builder)
+
+
+def _fix_pid_counter(path: Path, builder) -> None:
+    """Stopgap for the pinned OpenSKP: make the file's persistent-ID counter
+    cover every pid the writer handed out.
+
+    That writer numbers each section's pids from 1 again and grows the
+    header's counter by materials and layers only, so SketchUp — which
+    renumbers the duplicates it finds on load — could open our files but
+    not SAVE them (``SUModelSaveToFile`` → serialization error; "Guardado
+    fallido" in SketchUp Web, Marco 2026-09-04). A counter that covers the
+    biggest section rescues most models; the fork's writer runs one pid
+    sequence across sections (``_pid_start`` on the builder) and needs
+    nothing here. The field is a u32 at ``_PID_COUNTER_POS`` — measured:
+    2 000 000 round-trips through the SDK. Best effort: any surprise in
+    the writer's internals leaves the file as written."""
+    if hasattr(builder, "_pid_start"):
+        return                                   # a writer that numbers pids right
+    try:
+        import struct
+        from openskp.create import _PID_COUNTER_POS as pos
+        writers = [getattr(builder, name, None) for name in
+                   ("_material_writer", "_layer_writer", "_definition_writer",
+                    "_geometry_writer")]
+        used = sum(max(0, w.next_pid - 1) for w in writers if w is not None)
+        if used <= 0:
+            return
+        with open(path, "r+b") as fh:
+            fh.seek(pos)
+            current = struct.unpack("<I", fh.read(4))[0]
+            fh.seek(pos)
+            fh.write(struct.pack("<I", current + used))
+    except Exception:  # noqa: BLE001 — refactored writer: leave the file alone
+        return
 
 
 def _emit_annotations(scene, builder) -> None:

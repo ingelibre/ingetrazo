@@ -29,6 +29,17 @@ follow [SemVer](https://semver.org).
   27 MB con las mismas caras en los mismos sitios.
 
 ### Corregido
+- **SketchUp ya puede GUARDAR un `.skp` exportado.** Los archivos abrían bien
+  pero cualquier intento de guardarlos, en SketchUp Web o con el SDK, acababa
+  en «Guardado fallido». El escritor de openskp numeraba los identificadores
+  persistentes de cada sección desde 1 y dejaba corto el contador de la
+  cabecera, así que SketchUp encontraba duplicados al cargar, los renumeraba
+  y luego no podía serializar el modelo. Cazado con el SDK a partir de un caso
+  mínimo (una definición de 1 cara seguida de otra de 3). El escritor del fork
+  numera en una sola secuencia (arreglo propuesto a upstream); mientras tanto
+  IngeTrazo corrige el contador del archivo al guardar y escribe las figuras
+  al final, con lo que la pileta y la piscina se guardan.
+### Corregido
 - **Las texturas de un `.skp` exportado se ven en SketchUp donde IngeTrazo
   las dibujó.** Tres causas, cazadas con el conversor del SDK de SketchUp
   como oráculo. Dos están en el escritor de openskp y se compensan hasta
