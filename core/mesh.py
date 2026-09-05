@@ -188,18 +188,29 @@ class Face:
 
     # ---- Geometry (ported from legacy Face, over shared positions) ----------
     def _newell(self) -> QVector3D:
-        n = QVector3D(0.0, 0.0, 0.0)
+        """Newell's area-weighted normal, accumulated in DOUBLE precision.
+
+        Summing in ``QVector3D`` (float32) left a horizontal face — every
+        vertex at the same z — with a normal like ``(2.9e-6, 0, 1)``, and
+        small faces far from the origin up to ``(6e-4, 0, 1)``. Harmless for
+        shading, fatal for texture projection: SketchUp's basis is ``Z × n``,
+        which snaps to the world axes only for a vertical normal, so that
+        noise turned the projection 90° against the plane the .skp writer
+        computes in float64 from the same vertices (Marco's pool: every
+        horizontal countertop, floor and slab in SketchUp Web). Doubles make
+        a constant-z face exactly vertical, like the writer's own plane."""
         loop = self.loop
         count = len(loop)
+        nx = ny = nz = 0.0
         for i in range(count):
             curr = loop[i].position
             nxt = loop[(i + 1) % count].position
-            n = n + QVector3D(
-                (curr.y() - nxt.y()) * (curr.z() + nxt.z()),
-                (curr.z() - nxt.z()) * (curr.x() + nxt.x()),
-                (curr.x() - nxt.x()) * (curr.y() + nxt.y()),
-            )
-        return n
+            x0, y0, z0 = curr.x(), curr.y(), curr.z()
+            x1, y1, z1 = nxt.x(), nxt.y(), nxt.z()
+            nx += (y0 - y1) * (z0 + z1)
+            ny += (z0 - z1) * (x0 + x1)
+            nz += (x0 - x1) * (y0 + y1)
+        return QVector3D(nx, ny, nz)
 
     def normal(self) -> QVector3D:
         if len(self.loop) < 3:

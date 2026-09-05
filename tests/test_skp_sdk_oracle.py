@@ -92,7 +92,7 @@ def _sdk_uvs(dae: Path):
 def test_sketchup_shows_the_textures_where_the_viewport_drew_them(tmp_path, planar):
     png = _make_png(tmp_path / "tile.png")
     scene = Scene()
-    faces = _calibration_faces(scene, png, planar)
+    faces = _calibration_faces(scene, png, planar, sdk_extras=True)
     skp = tmp_path / "calibration.skp"
     dae = tmp_path / "calibration.dae"
     skp_out_format.save_skp(scene, skp)
@@ -101,5 +101,5 @@ def test_sketchup_shows_the_textures_where_the_viewport_drew_them(tmp_path, plan
                          capture_output=True, text=True, timeout=180)
     assert dae.exists(), run.stdout + run.stderr
     samples = _sdk_uvs(dae)
-    assert len(samples) == 11 * 6            # two triangles per square
+    assert len(samples) == len(faces) * 6    # two triangles per square
     _assert_uvs_match_the_viewport(faces, samples, tol=1e-3)

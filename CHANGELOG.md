@@ -29,6 +29,18 @@ follow [SemVer](https://semver.org).
   Ahora el reverso lleva el mismo material y la misma posición de textura
   que el frente, o el suyo propio cuando la cara venía pintada distinta por
   cada lado.
+- **Las caras horizontales ya no salen con la textura girada 90° en
+  SketchUp.** La base de proyección de SketchUp (Z × normal) es discontinua
+  justo en la vertical, y la normal de una cara horizontal calculada en
+  float32 traía un ruido de hasta 6e-4 que la mandaba a la base equivocada
+  (Marco: encimeras, pisos y losas de la piscina). Medido con el SDK:
+  SketchUp usa los ejes del mundo mientras la inclinación es menor que 1e-3.
+  Ahora la receta única usa esa misma tolerancia, la normal de cada cara se
+  acumula en doble precisión y el exportador expresa los pins contra el
+  plano que el propio escritor guarda en el archivo.
+  Y las caras que miran hacia abajo (el bajo de losas, bancas y encimeras)
+  salían 180° giradas: SketchUp les da la base (−X, +Y), no la (X, −Y) que
+  asumía el lector; medido igual y corregido en la misma receta.
 
 ## [0.3.11] — 2026-09-04
 

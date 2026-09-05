@@ -447,8 +447,15 @@ def _compensate_pins(pairs, pts_in, normal, quirks, applied):
     if "unscaled pins" in quirks:
         pairs = [(pt, (u * aw, v * ah)) for pt, (u, v) in pairs]
     if "first-edge basis" in quirks and len(pts_in) >= 2:
-        n = QVector3D(normal).normalized()
-        nt = (n.x(), n.y(), n.z())
+        # The normal SketchUp will read is the plane the WRITER computes
+        # from these very points, in float64 — not IngeTrazo's float32
+        # one. A horizontal face is exactly vertical there while the
+        # float32 normal carried (2.9e-6, 0, 1): the Z × n basis snaps to
+        # the world axes only at the vertical, so the two bases were 90°
+        # apart and every horizontal countertop in Marco's pool came out
+        # turned. (Face.normal accumulates in doubles since, but the
+        # writer's own plane is the one that ends up in the file.)
+        nt = _writer_normal(pts_in) or _tuple3(QVector3D(normal).normalized())
         ux, uy, uz = (pts_in[1][i] - pts_in[0][i] for i in range(3))
         lu = math.sqrt(ux * ux + uy * uy + uz * uz)
         if lu < 1e-12:
@@ -471,6 +478,32 @@ def _compensate_pins(pairs, pts_in, normal, quirks, applied):
                            px * u[2] + py * w[2]), uv))
         pairs = fixed
     return pairs
+
+
+def _tuple3(v) -> tuple:
+    return (v.x(), v.y(), v.z())
+
+
+def _writer_normal(pts_in) -> tuple | None:
+    """The unit plane normal the OpenSKP writer stores for ``pts_in`` —
+    its own Newell sum in float64 — so the pins are expressed against the
+    plane SketchUp will actually read. Falls back to the same sum done
+    here when the writer does not expose it."""
+    try:
+        from openskp.create import _plane_from_polygon
+        nx, ny, nz, _d = _plane_from_polygon(pts_in)
+        return (nx, ny, nz)
+    except Exception:  # noqa: BLE001 — refactored writer or degenerate face
+        n = len(pts_in)
+        nx = ny = nz = 0.0
+        for i in range(n):
+            x0, y0, z0 = pts_in[i]
+            x1, y1, z1 = pts_in[(i + 1) % n]
+            nx += (y0 - y1) * (z0 + z1)
+            ny += (z0 - z1) * (x0 + x1)
+            nz += (x0 - x1) * (y0 + y1)
+        ln = math.sqrt(nx * nx + ny * ny + nz * nz)
+        return (nx / ln, ny / ln, nz / ln) if ln > 1e-12 else None
 
 
 def _face_uv_pairs(face, points=None, quirks=frozenset(), applied=(1.0, 1.0),

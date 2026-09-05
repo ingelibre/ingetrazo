@@ -147,13 +147,20 @@ class Texture:
         return Texture(d["path"], float(d.get("sw", 1.0)), float(d.get("sh", 1.0)))
 
 
+#: |Z × n| below which SketchUp projects a face with the world axes (X, ±Y)
+#: instead of the cross product — measured with the SDK, see
+#: :func:`projection_basis`.
+SKETCHUP_VERTICAL_TOLERANCE = 1e-3
+
+
 def projection_basis(normal) -> tuple[tuple[float, float, float],
                                       tuple[float, float, float]]:
     """SketchUp's in-plane axes for a face normal ``(nx, ny, nz)`` — the
     basis its default texture projection AND its per-face texture matrices
     are expressed in: ``xr = normalize(Z × n)``, ``yr = n × xr``; for a
-    vertical normal ``xr = X`` and ``yr = ±Y`` by the sign of ``n·Z``. Plain
-    tuples: the ``.skp`` importer runs this per vertex over large models.
+    vertical normal ``(X, Y)`` looking up and ``(−X, Y)`` looking down.
+    Plain tuples: the ``.skp`` importer runs this per vertex over large
+    models.
 
     THE one recipe for the whole app. The renderer, the OBJ/glTF writers and
     the paste preview used to project with ``core.triangulate.plane_axes``
@@ -162,15 +169,31 @@ def projection_basis(normal) -> tuple[tuple[float, float, float],
     texture painted in IngeTrazo showed upside-down against what SketchUp
     draws for the very same file (measured through the SDK's own converter,
     2026-09-04). Calibrated against SketchUp ground truth for every
-    orientation, not just the axis-aligned ones."""
+    orientation, not just the axis-aligned ones.
+
+    ``Z × n`` is discontinuous at the vertical: for ``n = (ε, 0, 1)`` it
+    points along +Y however small ε is, for ``(0, ε, 1)`` along −X. Real
+    SketchUp resolves that with a tolerance, measured with the SDK on
+    faces tilted by ε from 1e-10 to 1e-2 (2026-09-04): the world axes
+    ``(X, ±Y)`` while ``|Z × n| < 1e-3`` (the sine of the tilt), the cross
+    product from 1.0001e-3 up. The same tolerance here keeps a horizontal
+    face whose normal carries float noise — up to 6e-4 on the small faces
+    of Marco's pool — projected the way SketchUp projects the plane it
+    reads back from the file; with the old 1e-9 every such face came out
+    turned 90°."""
     nx, ny, nz = float(normal[0]), float(normal[1]), float(normal[2])
     ln = (nx * nx + ny * ny + nz * nz) ** 0.5
     if ln > 1e-30:
         nx, ny, nz = nx / ln, ny / ln, nz / ln
-    if abs(nx) < 1e-9 and abs(ny) < 1e-9:
-        return (1.0, 0.0, 0.0), (0.0, 1.0 if nz > 0 else -1.0, 0.0)
     xx, xy = -ny, nx                      # Z × n
     lx = (xx * xx + xy * xy) ** 0.5
+    if lx < SKETCHUP_VERTICAL_TOLERANCE:
+        # Measured, not derived: a face looking DOWN gets (−X, +Y), the
+        # 180° turn of the upward (X, Y) — not the (X, −Y) mirror the
+        # reader assumed. Every underside of the pool (slabs, benches,
+        # countertops) came out upside-down until the SDK said so.
+        return ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)) if nz > 0 \
+            else ((-1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
     xx, xy = xx / lx, xy / lx
     return (xx, xy, 0.0), (-nz * xy, nz * xx, nx * xy - ny * xx)   # n × xr
 

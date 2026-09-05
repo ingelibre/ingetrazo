@@ -500,12 +500,19 @@ def test_a_bmp_texture_from_an_imported_model_is_re_encoded_not_dropped(tmp_path
 _TILE_M = 0.254            # a 10-inch tile: a scale slip shows up as ×10
 
 
-def _calibration_faces(scene, png, planar: bool):
+def _calibration_faces(scene, png, planar: bool, sdk_extras: bool = False):
     """Eleven textured squares covering the orientations that told the UV
     recipes apart: horizontal with the first edge along +X, +Y, −X and at
     30°; walls facing +Y, −Y, +X, −X (the +Y one drawn from a vertical AND
     from a horizontal first edge); a 45° slope. ``planar`` marks them the
-    way push/pull does (default projection, no per-face record)."""
+    way push/pull does (default projection, no per-face record).
+
+    ``sdk_extras`` adds the cases openskp's reader gets wrong today, so
+    only the SDK oracle asks for them: a square tilted by 1e-4 (inside
+    SketchUp's 1e-3 vertical tolerance, outside the reader's 1e-9), one
+    far from the origin (float32 vertex noise once turned its normal and
+    its texture with it), and three floors looking DOWN, whose basis
+    SketchUp turns 180° rather than mirroring."""
     import math
     c30, s30 = math.cos(math.radians(30)), math.sin(math.radians(30))
     c45 = math.sqrt(0.5)
@@ -526,6 +533,11 @@ def _calibration_faces(scene, png, planar: bool):
         sq(V(6, 6, 0), V(0, 0, 1), V(1, 0, 0), start=0),
         sq(V(6, 9, 0), V(0, 0, 1), V(1, 0, 0), start=1),
     ]
+    if sdk_extras:
+        loops.append(sq(V(15, 0, 0), V(1, 0, -1e-4), V(0, 1, 0), start=1))    # tilt 1e-4
+        loops.append(sq(V(1500, -240, 1.215), V(1, 0, 0), V(0, 1, 0), start=2))  # far away
+        for k in range(3):                                                    # looking down
+            loops.append(sq(V(3 * k, 12, 0), V(0, 1, 0), V(1, 0, 0), start=k))
     faces = []
     for pts in loops:
         f = scene.mesh.add_face(pts)

@@ -643,3 +643,27 @@ def test_cache_names_stay_short_and_keep_their_extension(tmp_path, monkeypatch):
     assert texture_file_name("???") == "texture.png"
     out = cache_image(b"img", long_name, "embedded")
     assert out.name.endswith(short) and out.read_bytes() == b"img"
+
+
+def test_projection_basis_snaps_to_the_world_axes_like_sketchup():
+    """SketchUp's ``Z × n`` basis is discontinuous at the vertical, and real
+    SketchUp resolves it with a tolerance: measured with the SDK on faces
+    tilted from 1e-10 to 1e-2 (2026-09-04), the world axes hold while the
+    sine of the tilt is below 1e-3 and the cross product takes over from
+    1.0001e-3. A horizontal face whose float32 normal carries noise (the
+    pool's small countertops: up to 6e-4) must project like the exact
+    plane SketchUp reads back, not turn 90° with the direction of the
+    noise."""
+    from core.texture import projection_basis
+    exact = projection_basis((0.0, 0.0, 1.0))
+    assert exact == ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
+    assert projection_basis((2.9e-6, 0.0, 1.0)) == exact           # float32 noise
+    assert projection_basis((0.0, 6e-4, 1.0)) == exact             # the pool's worst
+    assert projection_basis((9.99e-4, 0.0, 1.0)) == exact          # just under
+    xr, yr = projection_basis((2e-3, 0.0, 1.0))                    # a real tilt
+    assert abs(xr[0]) < 1e-9 and abs(xr[1] - 1.0) < 1e-9           # Z × n → +Y
+    # Looking down: (−X, +Y), the 180° turn of the upward basis — measured
+    # with the SDK on pinned and default-projected faces alike; the
+    # (X, −Y) mirror openskp's reader assumes turned every underside.
+    assert projection_basis((0.0, 0.0, -1.0)) == ((-1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
+    assert projection_basis((3e-4, 0.0, -1.0)) == ((-1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
