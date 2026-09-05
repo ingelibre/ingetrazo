@@ -3238,6 +3238,14 @@ class ComposerWindow(QMainWindow):
     # ---- canvas --------------------------------------------------------------
     def _rebuild_canvas(self) -> None:
         self._updating = True
+        # The selection lives on the items, and the items die with the
+        # canvas: every rebuild — the auto-render pass after a scale or size
+        # edit, a page change, a title-block field — dropped it, so each
+        # property change in the panel meant clicking the frame again for
+        # the next one (Marco, 2026-09-05). Remember the selected MODELS and
+        # pick their new items up below; a caller's _pending_sel still wins.
+        keep = [it.model for it in self.canvas.selectedItems()
+                if isinstance(it, _SheetItem)]
         # canvas.clear() below deletes EVERY item — including the snap
         # marker and rubber-band preview the canvas view may be holding
         # mid-placement (undo between the two clicks is routine). Drop the
@@ -3295,6 +3303,10 @@ class ComposerWindow(QMainWindow):
             self.canvas.addItem(EtiquetaCanvasItem(self, et))
         if self.comp.cajetin is not None:
             self.canvas.addItem(CajetinItem(self, self.comp.cajetin))
+        if keep:
+            for it in self.canvas.items():
+                if isinstance(it, _SheetItem) and any(it.model is m for m in keep):
+                    it.setSelected(True)
 
         self.paper_combo.setCurrentText(self.comp.paper)
         self.landscape_check.setChecked(self.comp.landscape)

@@ -34,6 +34,12 @@ follow [SemVer](https://semver.org).
   llevan las mismas caras, definiciones y texturas.
 
 ### Corregido
+- **Compositor: la selección sobrevive a cada cambio del panel.** Cambiar la
+  escala, el ancho o un campo del cajetín deseleccionaba el marco y había que
+  volver a clicarlo para el siguiente ajuste: el auto-render reconstruía el
+  lienzo y la selección vivía en los ítems que se destruían. Ahora la
+  reconstrucción recuerda qué modelos estaban seleccionados y los vuelve a
+  seleccionar.
 - **SketchUp ya puede GUARDAR un `.skp` exportado.** Los archivos abrían bien
   pero cualquier intento de guardarlos, en SketchUp Web o con el SDK, acababa
   en «Guardado fallido». El escritor de openskp numeraba los identificadores
