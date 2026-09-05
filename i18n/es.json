@@ -1419,5 +1419,17 @@
  "Claude Desktop: add this to {path} and restart Claude Desktop:": "Claude Desktop: agrega esto en {path} y reinicia Claude Desktop:",
  "Keep IngeTrazo open with the bridge on; the tools answer only while it runs.": "Mantén IngeTrazo abierto con el puente encendido; las herramientas solo responden mientras corre.",
  "AI bridge listening on 127.0.0.1:{port}": "Puente IA escuchando en 127.0.0.1:{port}",
- "AI bridge (MCP): connect Claude": "Puente IA (MCP): conectar Claude"
+ "AI bridge (MCP): connect Claude": "Puente IA (MCP): conectar Claude",
+ "Vector pens (mm)": "Plumas del vectorial (mm)",
+ "Lines where the section plane cuts through a solid.": "Las líneas donde el plano de sección corta un sólido.",
+ "Section cut": "Corte de sección",
+ "Silhouettes and outlines against the background — SketchUp's Profiles.": "Siluetas y contornos contra el fondo: los «perfiles» de SketchUp.",
+ "Every other edge, between two visible faces.": "Las demás aristas, entre dos caras visibles.",
+ "Draw profiles thicker": "Perfiles más gruesos",
+ "Off, every edge uses the Edges pen (recomputes the view).": "Apagado, todas las aristas usan la pluma de Aristas (recalcula la vista).",
+ "Solid": "Sólido",
+ "Hatched 45°": "Achurado a 45°",
+ "Fill where the section plane slices a solid (the poché). Only closed solids fill; an open surface stays white.": "Relleno donde el plano de sección corta un sólido (el poché). Solo se rellenan los sólidos cerrados; una superficie abierta queda en blanco.",
+ "Section fill": "Relleno de corte",
+ "Hatch spacing": "Paso del achurado"
 }

@@ -244,21 +244,111 @@ def _paint_annots_mm(painter: QPainter, frame: MarcoVista, annots) -> None:
     painter.restore()
 
 
+_VECTOR_INK = QColor(30, 36, 44)
+
+
+def vector_pens(frame: MarcoVista) -> dict:
+    """The three pens of the vector style, by line class (core.hlr KIND_*):
+    cut / profile / edge widths from the frame, in paper mm."""
+    from core.hlr import KIND_CUT, KIND_EDGE, KIND_PROFILE
+    widths = {
+        KIND_EDGE: float(getattr(frame, "pen_edge_mm", 0.18) or 0.18),
+        KIND_PROFILE: float(getattr(frame, "pen_profile_mm", 0.35) or 0.35),
+        KIND_CUT: float(getattr(frame, "pen_cut_mm", 0.5) or 0.5)}
+    pens = {}
+    for kind, w in widths.items():
+        pen = QPen(_VECTOR_INK)
+        pen.setWidthF(max(0.05, w))
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        pens[kind] = pen
+    return pens
+
+
+def _paint_hlr_lines_mm(painter: QPainter, frame: MarcoVista, hlr,
+                        kinds) -> None:
+    """Ink the hidden-line segments thin → profile → cut, so the heavy
+    lines always sit on top where they cross the light ones."""
+    import numpy as np
+    from PySide6.QtCore import QLineF
+    from core.hlr import KIND_CUT, KIND_EDGE, KIND_PROFILE
+    segs = np.asarray(hlr, dtype=float).reshape(-1, 4)
+    pens = vector_pens(frame)
+    if kinds is None or len(kinds) != len(segs):
+        groups = [(KIND_EDGE, segs)]
+    else:
+        k = np.asarray(kinds)
+        groups = [(kind, segs[k == kind])
+                  for kind in (KIND_EDGE, KIND_PROFILE, KIND_CUT)]
+    for kind, rows in groups:
+        if not len(rows):
+            continue
+        painter.setPen(pens[kind])
+        painter.drawLines([QLineF(float(x0), float(y0), float(x1), float(y1))
+                           for x0, y0, x1, y1 in rows])
+
+
+def _paint_cut_fills_mm(painter: QPainter, frame: MarcoVista, fills) -> None:
+    """The poché: fill the closed section-cut rings (even-odd, so a hollow
+    wall stays hollow) solid or with 45° hatching, under the lines."""
+    mode = getattr(frame, "cut_fill", "solid") or "solid"
+    if not fills or mode == "none":
+        return
+    from PySide6.QtCore import QLineF
+    from PySide6.QtGui import QPainterPath
+    path = QPainterPath()
+    path.setFillRule(Qt.OddEvenFill)
+    for ring in fills:
+        pts = [QPointF(float(x), float(y)) for x, y in ring]
+        if len(pts) < 3:
+            continue
+        path.moveTo(pts[0])
+        for q in pts[1:]:
+            path.lineTo(q)
+        path.closeSubpath()
+    if path.isEmpty():
+        return
+    color = QColor(getattr(frame, "cut_fill_color", "") or "#595e69")
+    painter.save()
+    if mode == "hatch":
+        painter.setClipPath(path, Qt.IntersectClip)
+        step = max(0.3, float(getattr(frame, "cut_hatch_mm", 1.5) or 1.5))
+        pen = QPen(color)
+        pen.setWidthF(max(0.05, float(getattr(frame, "pen_edge_mm", 0.18)
+                                      or 0.18)))
+        painter.setPen(pen)
+        br = path.boundingRect()
+        # lines x + y = c, phase-locked to the frame so a moved frame keeps
+        # its hatching
+        c = math.floor((br.left() + br.top()) / step) * step
+        c_end = br.right() + br.bottom()
+        lines = []
+        while c <= c_end:
+            xa = max(br.left(), c - br.bottom())
+            xb = min(br.right(), c - br.top())
+            if xb > xa:
+                lines.append(QLineF(xa, c - xa, xb, c - xb))
+            c += step
+        if lines:
+            painter.drawLines(lines)
+    else:
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(color))
+        painter.drawPath(path)
+    painter.restore()
+
+
 def paint_frame_mm(painter: QPainter, frame: MarcoVista,
                    image: Optional[QImage], hlr=None, annots=None,
-                   screen: bool = False) -> None:
+                   screen: bool = False, kinds=None, fills=None) -> None:
     r = QRectF(0, 0, frame.w_mm, frame.h_mm)
     if frame.style == "vectorial":
         painter.fillRect(r, QColor(255, 255, 255))
         if hlr is not None and len(hlr):
-            pen = QPen(QColor(30, 36, 44))
-            pen.setWidthF(0.22)          # a 0.2 mm technical pen
-            pen.setCapStyle(Qt.RoundCap)
-            painter.setPen(pen)
             painter.save()
             painter.setClipRect(r)
-            for x0, y0, x1, y1 in hlr:
-                painter.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+            _paint_cut_fills_mm(painter, frame, fills)
+            _paint_hlr_lines_mm(painter, frame, hlr, kinds)
             painter.restore()
         else:
             _draw_text_mm(painter, r.adjusted(2, 2, -2, -2),
@@ -1344,11 +1434,13 @@ class FrameItem(_SheetItem):
         return r
 
     def paint(self, painter, option, widget=None) -> None:
+        fid = id(self.model)
         paint_frame_mm(painter, self.model,
-                       self.composer.render_cache.get(id(self.model)),
-                       hlr=self.composer.hlr_cache.get(id(self.model)),
-                       annots=self.composer.annot_cache.get(id(self.model)),
-                       screen=True)
+                       self.composer.render_cache.get(fid),
+                       hlr=self.composer.hlr_cache.get(fid),
+                       annots=self.composer.annot_cache.get(fid),
+                       screen=True, kinds=self.composer.hlr_kinds.get(fid),
+                       fills=self.composer.hlr_fills.get(fid))
         if self.composer.is_stale(self.model):
             _paint_stale_badge(painter, self.model)
         if self.composer.view_edit_item is self:
@@ -2260,6 +2352,8 @@ class ComposerWindow(QMainWindow):
             vp.sceneVersionChanged.connect(self._on_model_version)
         self.render_cache: dict[int, QImage] = {}
         self.hlr_cache: dict[int, object] = {}
+        self.hlr_kinds: dict[int, object] = {}     # line class per segment
+        self.hlr_fills: dict[int, object] = {}     # section-cut rings, mm
         self.snap_cache: dict[int, object] = {}   # frame → page-mm snap pts
         self.annot_cache: dict[int, list] = {}    # frame → model annotations
         self._images: dict[str, QImage] = {}
@@ -2833,6 +2927,60 @@ class ComposerWindow(QMainWindow):
             lambda: self._pick_item_color("border_color",
                                           self.frame_border_btn))
         form.addRow(tr("Border colour"), self.frame_border_btn)
+        # Vector style: the three pen weights of a plan and the poché.
+        pens = QLabel(tr("Vector pens (mm)"))
+        pens.setStyleSheet("font-weight: bold; margin-top: 6px;")
+        form.addRow(pens)
+
+        def _pen_spin(default: float, tip: str) -> QDoubleSpinBox:
+            sp = QDoubleSpinBox()
+            sp.setRange(0.05, 2.0)
+            sp.setSingleStep(0.05)
+            sp.setDecimals(2)
+            sp.setSuffix(" mm")
+            sp.setValue(default)
+            sp.setToolTip(tip)
+            sp.valueChanged.connect(self._on_frame_pens)
+            return sp
+        self.pen_cut_spin = _pen_spin(0.5, tr(
+            "Lines where the section plane cuts through a solid."))
+        form.addRow(tr("Section cut"), self.pen_cut_spin)
+        self.pen_profile_spin = _pen_spin(0.35, tr(
+            "Silhouettes and outlines against the background — SketchUp's "
+            "Profiles."))
+        form.addRow(tr("Profiles"), self.pen_profile_spin)
+        self.pen_edge_spin = _pen_spin(0.18, tr(
+            "Every other edge, between two visible faces."))
+        form.addRow(tr("Edges"), self.pen_edge_spin)
+        self.profiles_check = QCheckBox(tr("Draw profiles thicker"))
+        self.profiles_check.setChecked(True)
+        self.profiles_check.setToolTip(tr(
+            "Off, every edge uses the Edges pen (recomputes the view)."))
+        self.profiles_check.toggled.connect(self._on_frame_pens)
+        form.addRow("", self.profiles_check)
+        self.cut_fill_combo = QComboBox()
+        self.cut_fill_combo.addItem(tr("Solid"), "solid")
+        self.cut_fill_combo.addItem(tr("Hatched 45°"), "hatch")
+        self.cut_fill_combo.addItem(tr("None"), "none")
+        self.cut_fill_combo.setToolTip(tr(
+            "Fill where the section plane slices a solid (the poché). Only "
+            "closed solids fill; an open surface stays white."))
+        self.cut_fill_combo.currentIndexChanged.connect(self._on_frame_pens)
+        form.addRow(tr("Section fill"), self.cut_fill_combo)
+        self.cut_fill_btn = QPushButton()
+        self.cut_fill_btn.setFixedHeight(22)
+        self.cut_fill_btn.clicked.connect(
+            lambda: self._pick_item_color("cut_fill_color",
+                                          self.cut_fill_btn))
+        form.addRow(tr("Fill colour"), self.cut_fill_btn)
+        self.cut_hatch_spin = QDoubleSpinBox()
+        self.cut_hatch_spin.setRange(0.3, 10.0)
+        self.cut_hatch_spin.setSingleStep(0.1)
+        self.cut_hatch_spin.setDecimals(1)
+        self.cut_hatch_spin.setSuffix(" mm")
+        self.cut_hatch_spin.setValue(1.5)
+        self.cut_hatch_spin.valueChanged.connect(self._on_frame_pens)
+        form.addRow(tr("Hatch spacing"), self.cut_hatch_spin)
         scale_btn = QPushButton(tr("Add a scale label"))
         scale_btn.setToolTip(tr(
             "A text block bound to this frame: it reads the frame's scale "
@@ -3626,6 +3774,23 @@ class ComposerWindow(QMainWindow):
                     float(getattr(f, "border_mm", 0.3) or 0.3))
                 self.frame_border_btn.setStyleSheet(
                     f"background: {getattr(f, 'border_color', '#282e36')};")
+                self.pen_cut_spin.setValue(
+                    float(getattr(f, "pen_cut_mm", 0.5) or 0.5))
+                self.pen_profile_spin.setValue(
+                    float(getattr(f, "pen_profile_mm", 0.35) or 0.35))
+                self.pen_edge_spin.setValue(
+                    float(getattr(f, "pen_edge_mm", 0.18) or 0.18))
+                self.profiles_check.setChecked(
+                    bool(getattr(f, "profiles", True)))
+                fidx = self.cut_fill_combo.findData(
+                    getattr(f, "cut_fill", "solid") or "solid")
+                self.cut_fill_combo.setCurrentIndex(max(fidx, 0))
+                self.cut_fill_btn.setStyleSheet(
+                    f"background: "
+                    f"{getattr(f, 'cut_fill_color', '') or '#595e69'};")
+                self.cut_hatch_spin.setValue(
+                    float(getattr(f, "cut_hatch_mm", 1.5) or 1.5))
+                self._sync_vector_widgets(f)
                 self.grid_spin.setValue(f.grid_m)
                 self.props.setCurrentIndex(1)
             elif isinstance(item, TextItem):
@@ -3911,12 +4076,17 @@ class ComposerWindow(QMainWindow):
         if isinstance(it, FrameItem):
             self.add_scale_label(it.model)
 
+    def _forget_frame(self, frame) -> None:
+        """Drop every cache of *frame*: render, lines and their classes,
+        fills, snap points, annotations."""
+        fid = id(frame)
+        for cache in (self.render_cache, self.hlr_cache, self.hlr_kinds,
+                      self.hlr_fills, self.snap_cache, self.annot_cache):
+            cache.pop(fid, None)
+
     def on_item_geometry(self, item: _SheetItem, final: bool = False) -> None:
         if isinstance(item, FrameItem) and final:
-            self.render_cache.pop(id(item.model), None)
-            self.hlr_cache.pop(id(item.model), None)
-            self.snap_cache.pop(id(item.model), None)
-            self.annot_cache.pop(id(item.model), None)
+            self._forget_frame(item.model)
             item.update()
         if isinstance(item, FrameItem) and not self._updating \
                 and item is self._selected_item():
@@ -4470,9 +4640,7 @@ class ComposerWindow(QMainWindow):
             self.history.execute(EditItemCommand(it.model, changes),
                                  notify=False)
             if isinstance(it.model, MarcoVista):
-                for cache in (self.render_cache, self.hlr_cache,
-                              self.snap_cache, self.annot_cache):
-                    cache.pop(id(it.model), None)
+                self._forget_frame(it.model)
             if isinstance(it.model, CotaItem):
                 self._remember_cota_style(it.model)
             n += 1
@@ -4625,10 +4793,7 @@ class ComposerWindow(QMainWindow):
         """Live feedback while dragging: raster frames re-render (a few
         hundredths of a second); vector frames wait for the release."""
         frame = item.model
-        self.render_cache.pop(id(frame), None)
-        self.hlr_cache.pop(id(frame), None)
-        self.snap_cache.pop(id(frame), None)
-        self.annot_cache.pop(id(frame), None)
+        self._forget_frame(frame)
         if final or frame.style != "vectorial":
             self.render_frame(frame)
         item.update()
@@ -5209,11 +5374,43 @@ class ComposerWindow(QMainWindow):
             "km_step_m": float(self.km_step_spin.value()),
             "border": self.frame_border_check.isChecked(),
             "border_mm": self.frame_border_mm.value()})
-        self.render_cache.pop(id(item.model), None)
-        self.hlr_cache.pop(id(item.model), None)
-        self.snap_cache.pop(id(item.model), None)
-        self.annot_cache.pop(id(item.model), None)
+        self._forget_frame(item.model)
+        self._sync_vector_widgets(item.model)
         self.canvas.update()                 # bound scale labels re-read {escala}
+
+    def _sync_vector_widgets(self, frame) -> None:
+        """The pen and poché controls only mean something to the vector
+        style; grey them out for the raster ones."""
+        on = frame.style == "vectorial"
+        for w in (self.pen_cut_spin, self.pen_profile_spin,
+                  self.pen_edge_spin, self.profiles_check,
+                  self.cut_fill_combo, self.cut_fill_btn,
+                  self.cut_hatch_spin):
+            w.setEnabled(on)
+
+    def _on_frame_pens(self, *_a) -> None:
+        """Pen widths and poché repaint from the cached drawing; only the
+        profiles toggle and switching the fill on/off recompute it (they
+        change what the hidden-line pass classifies and collects)."""
+        item = self._selected_item()
+        if self._updating or not isinstance(item, FrameItem):
+            return
+        m = item.model
+        changes = {
+            "pen_cut_mm": float(self.pen_cut_spin.value()),
+            "pen_profile_mm": float(self.pen_profile_spin.value()),
+            "pen_edge_mm": float(self.pen_edge_spin.value()),
+            "profiles": self.profiles_check.isChecked(),
+            "cut_fill": self.cut_fill_combo.currentData() or "solid",
+            "cut_hatch_mm": float(self.cut_hatch_spin.value())}
+        recompute = (changes["profiles"] != getattr(m, "profiles", True)
+                     or ((changes["cut_fill"] == "none")
+                         != (getattr(m, "cut_fill", "solid") == "none")))
+        self._panel_edit(item, changes)
+        if recompute and m.style == "vectorial":
+            self._forget_frame(m)
+            self.render_frame(m)
+        item.update()
 
     def _on_text_props(self, *_a) -> None:
         item = self._selected_item()
@@ -6236,12 +6433,16 @@ class ComposerWindow(QMainWindow):
         (frame-local), cached by frame identity."""
         import numpy as np
         from core.composition import model_height_for_frame
-        from core.hlr import hlr_view
+        from core.hlr import hlr_drawing
 
         def run():
             vp = self._window.viewport
-            segs = hlr_view(vp.scene, vp.camera,
-                            geometry=self._scene_geometry())
+            drawing = hlr_drawing(
+                vp.scene, vp.camera, geometry=self._scene_geometry(),
+                profiles=bool(getattr(frame, "profiles", True)),
+                fills=(getattr(frame, "cut_fill", "solid") or "solid")
+                != "none")
+            segs = drawing.segs
             model_h = model_height_for_frame(frame.h_mm, frame.scale_n)
             k = frame.h_mm / model_h                 # paper mm per metre
             half_h = model_h / 2.0
@@ -6254,8 +6455,16 @@ class ComposerWindow(QMainWindow):
                 out[:, 3] = (half_h - segs[:, 3]) * k
             else:
                 out = segs
+            fills = []
+            for ring in drawing.loops:
+                mm = np.empty_like(ring)
+                mm[:, 0] = (ring[:, 0] + half_w) * k
+                mm[:, 1] = (half_h - ring[:, 1]) * k
+                fills.append(mm)
             self._stale.discard(id(frame))
             self.hlr_cache[id(frame)] = out
+            self.hlr_kinds[id(frame)] = drawing.kinds
+            self.hlr_fills[id(frame)] = fills
             return out
 
         return self._with_frame_camera(frame, run)
@@ -6263,12 +6472,20 @@ class ComposerWindow(QMainWindow):
     def model_view_segments(self, frame: MarcoVista):
         """The frame's hidden-line view in MODEL units (metres, view
         plane) — what the DXF bridge to IngeCAD writes."""
-        from core.hlr import hlr_view
+        return self.model_view_drawing(frame).segs
+
+    def model_view_drawing(self, frame: MarcoVista):
+        """The frame's classified line drawing (core.hlr.HlrDrawing) in
+        MODEL units: segments + cut / profile / edge classes, no fills."""
+        from core.hlr import hlr_drawing
 
         def run():
             vp = self._window.viewport
-            return hlr_view(vp.scene, vp.camera,
-                            geometry=self._scene_geometry())
+            return hlr_drawing(vp.scene, vp.camera,
+                               geometry=self._scene_geometry(),
+                               profiles=bool(getattr(frame, "profiles",
+                                                     True)),
+                               fills=False)
 
         return self._with_frame_camera(frame, run)
 
@@ -6338,10 +6555,16 @@ class ComposerWindow(QMainWindow):
             self, tr("Export view as DXF…"), "vista.dxf", "DXF (*.dxf)")
         if not path:
             return
-        segs = self.model_view_segments(item.model)
-        from formats.dxf_out import save_dxf_lines
+        drawing = self.model_view_drawing(item.model)
+        from core.hlr import KIND_CUT, KIND_PROFILE
+        from formats.dxf_out import save_dxf_layers
         layer = frame_title_text(item.model).split(" — ")[0]
-        n = save_dxf_lines(path, segs, layer=layer)
+        k = drawing.kinds
+        # One layer per line class — IngeCAD's pen table does the weights.
+        n = save_dxf_layers(path, [
+            (layer, drawing.segs[(k != KIND_CUT) & (k != KIND_PROFILE)]),
+            (f"{layer}-PERFIL", drawing.segs[k == KIND_PROFILE]),
+            (f"{layer}-CORTE", drawing.segs[k == KIND_CUT])])
         self.statusBar().showMessage(
             tr("Exported {n} lines to {name}", n=n, name=path), 5000)
 
@@ -6447,7 +6670,9 @@ class ComposerWindow(QMainWindow):
             if isinstance(m, MarcoVista):
                 paint_frame_mm(painter, m, self.render_cache.get(id(m)),
                                hlr=self.hlr_cache.get(id(m)),
-                               annots=self.annot_cache.get(id(m)))
+                               annots=self.annot_cache.get(id(m)),
+                               kinds=self.hlr_kinds.get(id(m)),
+                               fills=self.hlr_fills.get(id(m)))
             elif isinstance(m, ImagenItem):
                 paint_image_mm(painter, m, self.image_cache(m.path))
             elif isinstance(m, TextoItem):

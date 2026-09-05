@@ -7,6 +7,18 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Añadido
+- **Grosores por clase y poché en el estilo vectorial de las láminas.** La
+  vista «Vector (líneas ocultas)» ya no dibuja todo con una sola pluma: el
+  paso de líneas ocultas clasifica cada trazo como corte de sección,
+  perfil (siluetas y contornos contra el fondo, los «perfiles» de SketchUp)
+  o arista entre dos caras, y cada clase sale con su pluma (0,50 / 0,35 /
+  0,18 mm por defecto, ajustables por marco en el panel). Donde el plano de
+  sección corta un sólido cerrado, el marco rellena el corte (sólido o
+  achurado a 45°, color y paso configurables); las superficies abiertas
+  quedan en blanco. Las cuerdas colineales del corte se fusionan en una
+  sola línea y las verticales vistas de canto ya no dejan puntos. La
+  exportación DXF de la vista reparte las clases en capas `VISTA`,
+  `VISTA-PERFIL` y `VISTA-CORTE` para la tabla de plumas de IngeCAD.
 - **Perfil de terreno en láminas.** Un ítem nuevo del compositor (herramienta
   «Perfil» en la barra) dibuja la cota del terreno bajo un trazado contra la
   progresiva, como en un plano de carretera o canal: escala horizontal 1:N o

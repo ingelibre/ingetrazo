@@ -121,6 +121,19 @@ class MarcoVista:
     border: bool = False
     border_mm: float = 0.3
     border_color: str = "#282e36"
+    #: Pens of the vector style, in paper mm — the three weights that make
+    #: a drawing read as a plan: the section cut, the profiles (SketchUp's:
+    #: silhouettes and outlines against the background) and the plain
+    #: edges between two faces. ``profiles`` off draws every edge thin.
+    pen_cut_mm: float = 0.5
+    pen_profile_mm: float = 0.35
+    pen_edge_mm: float = 0.18
+    profiles: bool = True
+    #: Poché of the vector style where the section plane slices a solid:
+    #: "solid" | "hatch" (45° lines every ``cut_hatch_mm``) | "none".
+    cut_fill: str = "solid"
+    cut_fill_color: str = "#595e69"
+    cut_hatch_mm: float = 1.5
     #: Scale label of the frame ("ESC. 1:40"): follows the scale, sits
     #: under or inside the frame; ``{n}`` in the text is the scale number.
     show_scale: bool = False
