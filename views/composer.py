@@ -388,6 +388,9 @@ def _paint_annots_mm(painter: QPainter, frame: MarcoVista, annots) -> None:
         if a[0] == "line":
             painter.setPen(QPen(halo, 0.7))
             painter.drawLine(QPointF(a[1], a[2]), QPointF(a[3], a[4]))
+        elif a[0] == "secmark":
+            painter.setPen(QPen(halo, 1.0))
+            painter.drawLine(QPointF(a[1], a[2]), QPointF(a[3], a[4]))
         elif a[0] == "poly":
             pts = [QPointF(x, y) for x, y in a[1]]
             painter.setPen(QPen(halo, 0.9, Qt.SolidLine, Qt.RoundCap,
@@ -409,6 +412,8 @@ def _paint_annots_mm(painter: QPainter, frame: MarcoVista, annots) -> None:
         elif a[0] == "line":
             painter.setPen(QPen(ink, 0.25))
             painter.drawLine(QPointF(a[1], a[2]), QPointF(a[3], a[4]))
+        elif a[0] == "secmark":
+            _paint_section_mark_mm(painter, a, ink, halo)
         elif a[0] == "text":
             _kind, x, y, deg, text, size = a
             box = QRectF(-60, -size * 1.3, 120, size * 1.3)
@@ -520,6 +525,53 @@ def _paint_cut_fills_mm(painter: QPainter, frame: MarcoVista, fills) -> None:
         painter.setBrush(QBrush(color))
         painter.drawPath(path)
     painter.restore()
+
+
+def _paint_section_mark_mm(painter: QPainter, a, ink: QColor,
+                           halo: QColor) -> None:
+    """A section mark: the cut line dash-dotted with a heavy stub at each
+    end, an arrow toward the side the section looks at, and the letter
+    in a bubble past the arrow — «A … A» across the plan."""
+    import math as _math
+    from PySide6.QtGui import QPolygonF
+    _kind, x0, y0, x1, y1, ax, ay, label, size = a
+    pen = QPen(ink, 0.35)
+    pen.setDashPattern([8.0, 2.0, 1.0, 2.0])         # dash-dot, in pen widths
+    pen.setCapStyle(Qt.FlatCap)
+    painter.setPen(pen)
+    painter.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+    dx, dy = x1 - x0, y1 - y0
+    ln = _math.hypot(dx, dy) or 1.0
+    ux, uy = dx / ln, dy / ln
+    stub = max(3.0, size * 1.2)
+    arrow = max(2.5, size * 1.0)
+    r = size * 0.95                                    # bubble radius
+    heavy = QPen(ink, 0.7)
+    heavy.setCapStyle(Qt.FlatCap)
+    for ex, ey, sx, sy in ((x0, y0, ux, uy), (x1, y1, -ux, -uy)):
+        # the stub: the last bit of the line, heavy
+        painter.setPen(heavy)
+        painter.drawLine(QPointF(ex, ey), QPointF(ex + sx * stub, ey + sy * stub))
+        # the arrow: a filled triangle sitting on the stub, pointing (ax, ay)
+        bx, by = ex + sx * stub * 0.5, ey + sy * stub * 0.5
+        tip = QPointF(bx + ax * arrow, by + ay * arrow)
+        wing = arrow * 0.45
+        painter.save()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(ink))
+        painter.drawPolygon(QPolygonF([
+            tip, QPointF(bx + ux * wing, by + uy * wing),
+            QPointF(bx - ux * wing, by - uy * wing)]))
+        painter.restore()
+        # the letter, in a bubble past the arrow
+        cx, cy = bx + ax * (arrow + 0.8 + r), by + ay * (arrow + 0.8 + r)
+        painter.setPen(QPen(ink, 0.35))
+        painter.setBrush(QBrush(QColor(255, 255, 255)))
+        painter.drawEllipse(QPointF(cx, cy), r, r)
+        painter.setBrush(Qt.NoBrush)
+        _draw_text_mm(painter, QRectF(cx - r, cy - r, 2 * r, 2 * r), label,
+                      size * 0.9, bold=True,
+                      align=Qt.AlignHCenter | Qt.AlignVCenter, color=ink)
 
 
 def paint_frame_mm(painter: QPainter, frame: MarcoVista,
@@ -3496,6 +3548,13 @@ class ComposerWindow(QMainWindow):
         self.annot_mm_spin.setValue(2.8)
         self.annot_mm_spin.valueChanged.connect(self._on_frame_props)
         form.addRow(tr("Annotation text height"), self.annot_mm_spin)
+        self.secmark_check = QCheckBox(tr("Section marks (A–A)"))
+        self.secmark_check.setToolTip(tr(
+            "Draw the model's section planes that cut across this view as "
+            "cut lines with arrows and letters — the plan tells where each "
+            "section was taken. Name the letter in the plane's symbol."))
+        self.secmark_check.toggled.connect(self._on_frame_props)
+        form.addRow("", self.secmark_check)
         self.km_check = QCheckBox(tr("Chainage marks on traced paths"))
         self.km_check.setToolTip(tr(
             "A tick and a 0+020 label every step along each traced path, "
@@ -4456,6 +4515,8 @@ class ComposerWindow(QMainWindow):
                 self.annot_check.setChecked(getattr(f, "annotations", False))
                 self.annot_mm_spin.setValue(
                     float(getattr(f, "annot_text_mm", 2.8) or 2.8))
+                self.secmark_check.setChecked(
+                    bool(getattr(f, "section_marks", False)))
                 self.km_check.setChecked(bool(getattr(f, "km_marks", False)))
                 self.km_step_spin.setValue(
                     float(getattr(f, "km_step_m", 0.0) or 0.0))
@@ -5267,7 +5328,7 @@ class ComposerWindow(QMainWindow):
         FormaItem: ("stroke_mm", "color", "fill", "fill_color", "radius_mm"),
         MarcoVista: ("style", "scale_n", "show_title", "annotations",
                      "annot_text_mm", "km_marks", "km_step_m", "grid_m",
-                     "border", "border_mm", "border_color",
+                     "section_marks", "border", "border_mm", "border_color",
                      "title_style", "title_scale", "title_align",
                      "title_pos", "title_mm",
                      "pen_cut_mm", "pen_profile_mm", "pen_edge_mm",
@@ -5671,6 +5732,8 @@ class ComposerWindow(QMainWindow):
                 out.append(("poly", pts))
             if getattr(frame, "km_marks", False):
                 out.extend(self._chainage_marks(frame, scene, pt, drape))
+            if getattr(frame, "section_marks", False):
+                out.extend(self._section_marks(frame, scene, pt, fwd))
             if not getattr(frame, "annotations", False):
                 return out
             size = float(getattr(frame, "annot_text_mm", 2.8) or 2.8)
@@ -5717,6 +5780,96 @@ class ComposerWindow(QMainWindow):
                                 line, size))
             return out
         return self._with_frame_camera(frame, run)
+
+    def _section_marks(self, frame: MarcoVista, scene, pt, fwd) -> list:
+        """One ``("secmark", x0, y0, x1, y1, ax, ay, label, size)`` per
+        section plane that cuts ACROSS the frame's view (a plane face-on
+        to the view has no trace and gets none): the plane's trace on
+        paper, clipped to the model's extent plus a margin, the paper
+        direction the section looks along (its arrows), the plane's
+        letter (its symbol, else A, B, C… by order) and the text size."""
+        import math
+        import numpy as np
+        out: list = []
+        planes = list(getattr(scene, "section_planes", None) or [])
+        if not planes:
+            return out
+        size = float(getattr(frame, "annot_text_mm", 2.8) or 2.8)
+        try:
+            tris = self._scene_geometry()[0]
+        except Exception:  # noqa: BLE001 — no geometry, no extent
+            tris = None
+        if tris is None or not len(tris):
+            return out
+        # the model's extent on paper (frame-local mm)
+        v = np.asarray(tris, dtype=float).reshape(-1, 3)
+        corners = [QVector3D(float(x), float(y), float(z))
+                   for x in (v[:, 0].min(), v[:, 0].max())
+                   for y in (v[:, 1].min(), v[:, 1].max())
+                   for z in (v[:, 2].min(), v[:, 2].max())]
+        pc = [pt(c) for c in corners]
+        # …limited to what the frame shows: a model spanning far past the
+        # frame (two fountains 22 m apart) must not run the mark off the
+        # sheet. The line ends stay 1 mm inside the frame.
+        inset = 1.0
+        fx0, fy0 = inset, inset
+        fx1, fy1 = frame.w_mm - inset, frame.h_mm - inset
+        bx0 = max(min(q[0] for q in pc), fx0)
+        bx1 = min(max(q[0] for q in pc), fx1)
+        by0 = max(min(q[1] for q in pc), fy0)
+        by1 = min(max(q[1] for q in pc), fy1)
+        if bx1 <= bx0 or by1 <= by0:
+            return out
+        margin = 6.0
+        for i, sp in enumerate(planes):
+            n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()],
+                         dtype=float)
+            if abs(float(np.dot(n, fwd))) > 0.999:
+                continue                       # face-on: no trace
+            d = np.cross(n, fwd)
+            d /= max(float(np.linalg.norm(d)), 1e-12)
+            o = sp.point
+            p0 = pt(o)
+            p1 = pt(QVector3D(o.x() + d[0], o.y() + d[1], o.z() + d[2]))
+            dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+            ln = math.hypot(dx, dy)
+            if ln < 1e-9:
+                continue
+            dx, dy = dx / ln, dy / ln
+            # clip the infinite trace to the extent box (Liang–Barsky)
+            t0, t1 = -1e9, 1e9
+            for pdir, q, lo, hi in ((dx, p0[0], bx0, bx1),
+                                    (dy, p0[1], by0, by1)):
+                if abs(pdir) < 1e-12:
+                    if q < lo or q > hi:
+                        t0, t1 = 1.0, 0.0
+                        break
+                    continue
+                ta, tb = (lo - q) / pdir, (hi - q) / pdir
+                t0, t1 = max(t0, min(ta, tb)), min(t1, max(ta, tb))
+            if t1 <= t0:
+                continue                       # misses the model on paper
+            # the margin past the model, as far as the frame allows
+            ta, tb = t0 - margin, t1 + margin
+            for pdir, q, lo, hi in ((dx, p0[0], fx0, fx1),
+                                    (dy, p0[1], fy0, fy1)):
+                if abs(pdir) < 1e-12:
+                    continue
+                u, w = sorted(((lo - q) / pdir, (hi - q) / pdir))
+                ta, tb = max(ta, u), min(tb, w)
+            a = (p0[0] + dx * ta, p0[1] + dy * ta)
+            b = (p0[0] + dx * tb, p0[1] + dy * tb)
+            # the section looks along −n: that way point the arrows
+            q = pt(QVector3D(o.x() - sp.normal.x(), o.y() - sp.normal.y(),
+                             o.z() - sp.normal.z()))
+            ax, ay = q[0] - p0[0], q[1] - p0[1]
+            la = math.hypot(ax, ay)
+            if la < 1e-9:
+                continue
+            label = (sp.symbol or "").strip() or chr(ord("A") + i % 26)
+            out.append(("secmark", a[0], a[1], b[0], b[1], ax / la, ay / la,
+                        label, size))
+        return out
 
     @staticmethod
     def _chainage_marks(frame: MarcoVista, scene, pt, drape) -> list:
@@ -6090,17 +6243,25 @@ class ComposerWindow(QMainWindow):
             "annot_text_mm": self.annot_mm_spin.value(),
             "km_marks": self.km_check.isChecked(),
             "km_step_m": float(self.km_step_spin.value()),
+            "section_marks": self.secmark_check.isChecked(),
             "border": self.frame_border_check.isChecked(),
             "border_mm": self.frame_border_mm.value()}
         m = item.model
         # The title and the border are paint-only: a vector frame keeps its
-        # drawing instead of going blank until the next Update.
+        # drawing instead of going blank until the next Update. The paper
+        # overlay's own switches only redo the overlay (cheap).
         paint_only = {"show_title", "border", "border_mm"}
-        redo = any(getattr(m, k) != v for k, v in changes.items()
-                   if k not in paint_only)
+        annot_only = {"annotations", "annot_text_mm", "km_marks",
+                      "km_step_m", "section_marks"}
+        changed = {k for k, v in changes.items() if getattr(m, k) != v}
         self._panel_edit(item, changes)
-        if redo:
+        if changed - paint_only - annot_only:
             self._forget_frame(m)
+        elif changed & annot_only:
+            try:
+                self.annot_cache[id(m)] = self.compute_annotations(m)
+            except Exception:  # noqa: BLE001 — a stub viewport in tests
+                self.annot_cache.pop(id(m), None)
         self._sync_vector_widgets(m)
         self._sync_title_widgets(m)
         self.canvas.update()                 # bound scale labels re-read {escala}

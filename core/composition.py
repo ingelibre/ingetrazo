@@ -124,6 +124,11 @@ class MarcoVista:
     #: per scene which ones.
     annotations: bool = False
     annot_text_mm: float = 2.8             # their text height on paper
+    #: Section marks: the trace of every section plane of the model that
+    #: cuts across this view, drawn as the cut line with arrows toward the
+    #: side the section looks at and the plane's letter in bubbles — the
+    #: plan says where «Corte A-A» was taken. Opt-in per frame.
+    section_marks: bool = False
     #: Chainage marks along the traced georef paths in the frame: a tick
     #: and a «0+020» label every ``km_step_m`` metres of horizontal length
     #: — the profile's chainage, so plan and profile agree. 0 = the round

@@ -50,6 +50,14 @@ follow [SemVer](https://semver.org).
   Cada tramo se ancla al modelo cuando sus dos puntos cayeron sobre la
   misma vista. El **estilo de cota por defecto** (la última editada) ahora
   se recuerda entre sesiones, no solo dentro de la lámina.
+- **Marcas de sección en las vistas.** Opción nueva del marco: dibuja la
+  traza de cada plano de sección del modelo que atraviesa esa vista como
+  línea de corte (raya-punto, con remates gruesos), flechas hacia el lado
+  que mira la sección y la letra del plano en burbujas a ambos extremos, así
+  la planta dice por dónde va el «Corte A-A». Un plano paralelo a la vista
+  no deja marca. La letra sale del símbolo del plano (o A, B, C… por orden).
+  Activar marcas, anotaciones o progresivas ya solo rehace la capa de papel
+  del marco, no la vista entera.
 - **Perfil de terreno en láminas.** Un ítem nuevo del compositor (herramienta
   «Perfil» en la barra) dibuja la cota del terreno bajo un trazado contra la
   progresiva, como en un plano de carretera o canal: escala horizontal 1:N o
