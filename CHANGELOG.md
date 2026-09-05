@@ -22,6 +22,13 @@ follow [SemVer](https://semver.org).
   respecto de lo que sale en el archivo. Ahora hay una sola receta
   (`core.texture.projection_basis`, la de SketchUp) para el visor, los
   exportadores OBJ/glTF/DAE, la vista previa de pegar y el importador.
+- **Un `.skp` exportado ya no muestra caras lavanda en SketchUp.** IngeTrazo
+  pinta las dos caras de una superficie y SketchUp solo la que nombra el
+  archivo, así que toda cara vista desde atrás (las bancas, el bajo del
+  techo, las hojas de la palmera) salía con el color de reverso por defecto.
+  Ahora el reverso lleva el mismo material y la misma posición de textura
+  que el frente, o el suyo propio cuando la cara venía pintada distinta por
+  cada lado.
 
 ## [0.3.11] — 2026-09-04
 

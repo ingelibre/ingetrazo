@@ -211,15 +211,15 @@ def _collect_layers(scene, builder):
     return layer_handles
 
 
-def _opacity_key(face) -> tuple:
+def _opacity_key(attrs) -> tuple:
     """Translucency is part of a material's identity: the same image painted
     at two opacities is two SketchUp materials, and merging them would make
     one of them wrong."""
-    op = face.attrs.get("opacity")
+    op = attrs.get("opacity")
     return () if op is None or float(op) >= 0.999 else (round(float(op), 3),)
 
 
-def _material_key(face):
+def _material_key_attrs(attrs):
     """Compute the material-grouping key for a face — same logic as
     ``formats.meshexport.collect_geometry`` and ``formats.obj``, except an
     unpainted face keys to ``None``: SketchUp has a first-class default
@@ -233,22 +233,27 @@ def _material_key(face):
     ``.skp`` instead of silently merging — merged names corrupt the
     per-material takeoff after a round-trip. Measured on a real model
     (toril 2017): 9 distinct names shared a recipe with another."""
-    mat = face.attrs.get("mat")
+    mat = attrs.get("mat")
     ident = (mat,) if mat else ()
-    tex = face.attrs.get("texture")
+    tex = attrs.get("texture")
     if tex is not None and tex.get("path"):
         src = Path(tex["path"])
-        return ("tex", src.name) + ident + _opacity_key(face)
-    col = face.attrs.get("color")
+        return ("tex", src.name) + ident + _opacity_key(attrs)
+    col = attrs.get("color")
     if not col:
         return None
-    return ("color", tuple(col)) + ident + _opacity_key(face)
+    return ("color", tuple(col)) + ident + _opacity_key(attrs)
 
 
-def _material_info(face, key):
+
+def _material_key(face):
+    """:func:`_material_key_attrs` of the face's own (front) paint."""
+    return _material_key_attrs(face.attrs or {})
+
+def _material_info_attrs(attrs):
     """Build the info dict for a material key — same shape as
     ``collect_geometry``'s ``materials[key]``."""
-    tex = face.attrs.get("texture")
+    tex = attrs.get("texture")
     if tex is not None and tex.get("path"):
         src = Path(tex["path"])
         info = {"color": (1.0, 1.0, 1.0), "map": src.name, "src": src}
@@ -258,18 +263,23 @@ def _material_info(face, key):
         if sh:
             info["sh_in"] = float(sh) * _M_TO_IN
     else:
-        info = {"color": tuple(face.attrs["color"]), "map": None}
-    op = face.attrs.get("opacity")
+        info = {"color": tuple(attrs["color"]), "map": None}
+    op = attrs.get("opacity")
     if op is not None and float(op) < 0.999:
         # Translucency lives on the MATERIAL in SketchUp, so it has to reach
         # the material record: a pool's water (0.6) exported as an opaque
         # slab without it.
         info["opacity"] = float(op)
-    mat_name = face.attrs.get("mat")
+    mat_name = attrs.get("mat")
     if mat_name:
         info["mat"] = mat_name
     return info
 
+
+
+def _material_info(face, key):
+    """:func:`_material_info_attrs` of the face's own (front) paint."""
+    return _material_info_attrs(face.attrs or {})
 
 def _split_containers(scene):
     """The scene's exportable geometry, structured: ``(loose_faces,
@@ -463,7 +473,8 @@ def _compensate_pins(pairs, pts_in, normal, quirks, applied):
     return pairs
 
 
-def _face_uv_pairs(face, points=None, quirks=frozenset(), applied=(1.0, 1.0)):
+def _face_uv_pairs(face, points=None, quirks=frozenset(), applied=(1.0, 1.0),
+                   tex=None):
     """Where the face's texture sits, as the three ``(point, (u, v))`` pairs
     OpenSKP fits its UV matrix through — or ``None`` for an untextured or
     degenerate face, which then takes SketchUp's default projection.
@@ -481,8 +492,11 @@ def _face_uv_pairs(face, points=None, quirks=frozenset(), applied=(1.0, 1.0)):
 
     ``quirks``/``applied`` (from :func:`_writer_uv_quirks` and
     ``_collect_materials``) route the pairs through :func:`_compensate_pins`
-    for a writer that would otherwise store them turned and unscaled."""
-    tex = face.attrs.get("texture")
+    for a writer that would otherwise store them turned and unscaled.
+    ``tex`` names the texture dict to pin (the back side's, when that is
+    painted differently); the face's own front texture by default."""
+    if tex is None:
+        tex = face.attrs.get("texture")
     if not tex or not tex.get("path"):
         return None
     if tex.get("planar"):
@@ -535,18 +549,46 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError,
     Pins go only with a material that was written TEXTURED (``applied``
     knows which): an image that fell back to a colour has nothing to
     position, and the fallback triangles get their own pins, fitted on the
-    triangle the writer sees."""
+    triangle the writer sees.
+
+    BOTH sides get painted. IngeTrazo draws a face's paint on both sides
+    (``attrs["back"]`` overrides the back when SketchUp painted it
+    differently), while SketchUp paints exactly the side the file names —
+    so a file that named only the front showed SketchUp's lavender default
+    on every face seen from behind: the benches, the underside of a roof,
+    the fronds of a palm whose leaves face the other way (Marco's pool in
+    SketchUp Web, 2026-09-04). The back gets the front's material and pins
+    unless ``attrs["back"]`` names its own."""
     key = _material_key(face)
     material = mat_handles.get(key)
     face_layer = face.attrs.get("layer")
     layer = layer_handles.get(face_layer) if face_layer else None
     soft = _is_soft_face(face)
     size = applied.get(key) if applied is not None else (1.0, 1.0)
+    ftex = face.attrs.get("texture")
+    back = face.attrs.get("back")
+    if isinstance(back, dict):
+        bkey = _material_key_attrs(back)
+        back_material = mat_handles.get(bkey)
+        bsize = applied.get(bkey) if applied is not None else (1.0, 1.0)
+        btex = back.get("texture")
+    else:
+        back_material, bsize, btex = material, size, ftex
+    both = _both_sides(sink)
 
-    def pins(points=None):
-        if size is None:
+    def pins(points, tex, sz):
+        if sz is None or not tex:
             return None
-        return _face_uv_pairs(face, points, quirks=quirks, applied=size)
+        return _face_uv_pairs(face, points, quirks=quirks, applied=sz, tex=tex)
+
+    def sides(points=None):
+        front_uv = pins(points, ftex, size)
+        if not both:
+            return {"front_uv": front_uv}
+        back_uv = front_uv if btex is ftex and bsize == size \
+            else pins(points, btex, bsize)
+        return {"front_uv": front_uv, "back_uv": back_uv,
+                "back_material": back_material}
 
     try:
         sink.add_face(
@@ -555,8 +597,8 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError,
             layer=layer,
             soft_edges=soft,
             smooth_edges=soft,
-            front_uv=pins(),
             holes=[_pts_inches(h) for h in face.holes],
+            **sides(),
         )
     except SkpWriteError:
         for tri in face.triangulate():
@@ -567,10 +609,26 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError,
                     layer=layer,
                     soft_edges=True,
                     smooth_edges=True,
-                    front_uv=pins(tri),
+                    **sides(tri),
                 )
             except SkpWriteError:
                 pass  # Degenerate triangle — skip silently.
+
+
+_BOTH_SIDES: dict = {}
+
+
+def _both_sides(sink) -> bool:
+    """Whether this writer's ``add_face`` takes ``back_material``/``back_uv``
+    (guarded like every other OpenSKP join; probed once per builder class,
+    not per face)."""
+    kind = type(sink)
+    ok = _BOTH_SIDES.get(kind)
+    if ok is None:
+        ok = _BOTH_SIDES[kind] = (
+            _supported(sink.add_face, "back_material", "back_uv")
+            == {"back_material", "back_uv"})
+    return ok
 
 
 def _instance_placement(xform):
@@ -606,13 +664,16 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
     # ---- Pass 1: collect material and layer info from all faces ----------
     materials_info: dict[tuple, dict] = {}
     for face in _iter_export_faces(loose_faces, classic, defs):
-        key = _material_key(face)
-        if key is None:  # unpainted — SketchUp's default material
-            continue
-        if key not in materials_info:
-            materials_info[key] = _material_info(face, key)
-        elif face.attrs.get("mat") and "mat" not in materials_info[key]:
-            materials_info[key]["mat"] = face.attrs["mat"]
+        for attrs in (face.attrs, face.attrs.get("back")):
+            if not isinstance(attrs, dict):
+                continue
+            key = _material_key_attrs(attrs)
+            if key is None:  # unpainted — SketchUp's default material
+                continue
+            if key not in materials_info:
+                materials_info[key] = _material_info_attrs(attrs)
+            elif attrs.get("mat") and "mat" not in materials_info[key]:
+                materials_info[key]["mat"] = attrs["mat"]
 
     # Register materials (must be before layers and geometry).
     applied: dict = {}

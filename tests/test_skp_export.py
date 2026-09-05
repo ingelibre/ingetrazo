@@ -618,3 +618,53 @@ def test_the_writer_probe_names_only_known_quirks(tmp_path):
     quirks = skp_out_format._writer_uv_quirks(openskp, tmp_path)
     assert quirks <= {"first-edge basis", "unscaled pins"}
     assert skp_out_format._writer_uv_quirks(openskp, tmp_path) is quirks
+
+
+# ---- Both sides painted -------------------------------------------------------
+
+def _root_faces_with_materials(model):
+    return [(f, model.materials_by_id.get(f.material_id),
+             model.materials_by_id.get(f.back_material_id))
+            for f in model.root.faces.values()]
+
+
+def test_a_face_painted_in_ingetrazo_is_painted_on_both_sides_in_sketchup(tmp_path):
+    """IngeTrazo draws a face's paint on both sides; SketchUp paints only
+    the side the file names. Naming only the front showed SketchUp's
+    lavender default on every face seen from behind (benches, a roof's
+    underside, palm fronds facing away) — so the back gets the same
+    material, and the same pins when the texture is positioned."""
+    png = _make_png(tmp_path / "tile.png")
+    scene = Scene()
+    colour = scene.mesh.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    colour.attrs["color"] = (1.0, 0.0, 0.0)
+    textured = scene.mesh.add_face([V(3, 0), V(4, 0), V(4, 1), V(3, 1)])
+    textured.attrs["texture"] = {"path": str(png), "sw": _TILE_M, "sh": _TILE_M}
+    scene.version += 1
+    path = tmp_path / "both.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    rows = _root_faces_with_materials(model)
+    assert len(rows) == 2
+    for face, front, back in rows:
+        assert front is not None and back is front
+        if front.texture is not None:
+            assert face.uv_transform is not None
+            assert face.uv_transform_back == pytest.approx(face.uv_transform)
+
+
+def test_a_two_sided_face_keeps_its_own_back_paint(tmp_path):
+    """``attrs["back"]`` — a face SketchUp painted differently on each side
+    — comes back as its own back material, not the front's."""
+    scene = Scene()
+    f = scene.mesh.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    f.attrs["color"] = (1.0, 0.0, 0.0)
+    f.attrs["back"] = {"color": (0.0, 0.0, 1.0)}
+    scene.version += 1
+    path = tmp_path / "two-sided.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    [(face, front, back)] = _root_faces_with_materials(model)
+    assert tuple(front.color)[:3] == (255, 0, 0)
+    assert tuple(back.color)[:3] == (0, 0, 255)
+    assert back is not front
