@@ -721,6 +721,7 @@ def test_face_me_figures_become_face_me_components(tmp_path):
     face = next(iter(sumari.faces.values()))
     assert model.materials_by_id[face.material_id].texture is not None
     assert face.uv_transform is not None                  # the picture once, pinned
+    assert all(e.hidden for e in sumari.edges.values())   # no black frame
 
     susan_def = by_name["Susan"]
     xs, ys, zs = zip(*corners(susan_def))

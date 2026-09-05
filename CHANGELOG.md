@@ -13,6 +13,11 @@ follow [SemVer](https://semver.org).
   SketchUp (pies en el origen, frente hacia −Y, colocados en su ancla) y, si
   el escritor de openskp lo admite, con el comportamiento «siempre mirar a la
   cámara»; con el escritor actual quedan de pie mirando a −Y.
+- **Las aristas ocultas viajan al `.skp`.** El exportador nunca marcaba una
+  arista como oculta, así que SketchUp dibujaba un marco negro alrededor de
+  cada figura recortada (y de las hojas importadas cuyo contorno es la
+  máscara de su textura). Una cara con todas sus aristas ocultas en
+  IngeTrazo sale con ellas ocultas.
 
 ### Corregido
 - **Las texturas de un `.skp` exportado se ven en SketchUp donde IngeTrazo

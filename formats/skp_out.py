@@ -63,6 +63,28 @@ def _is_soft_face(face):
     return False
 
 
+def _boundary_edges(face):
+    """The edges around ``face``'s outer loop, in loop order."""
+    loop = face.loop
+    n = len(loop)
+    out = []
+    for i in range(n):
+        a, b = loop[i], loop[(i + 1) % n]
+        out.append(next((e for e in a.edges if e.other(a) is b), None))
+    return out
+
+
+def _is_hidden_face(face):
+    """True when EVERY bounding edge of the face is hidden: the writer's
+    ``hidden_edges`` applies to all the edges a face creates, so only a
+    face whose outline is fully invisible in IngeTrazo asks for it — a
+    figure's cut-out quad, a leaf card whose outline is its texture mask.
+    Without it SketchUp drew a black rectangle around Sumari."""
+    edges = _boundary_edges(face)
+    return bool(edges) and all(e is not None and getattr(e, "hidden", False)
+                               for e in edges)
+
+
 def _supported(fn, *names) -> set:
     """Which of ``names`` the installed OpenSKP's ``fn`` actually accepts.
 
@@ -416,6 +438,9 @@ def _billboard_definition(g) -> dict:
             for k in ("layer", "opacity"):
                 if k in src:
                     face.attrs[k] = src[k]
+            for e in _boundary_edges(face):     # the outline is the PNG's mask
+                if e is not None:
+                    e.hidden = True
         return {"name": g.name or "Figura", "mesh": mesh, "children": [],
                 "billboard": True, "anchor": anchor}
     # A vector figure: turn its largest face's normal onto −Y.
@@ -437,6 +462,10 @@ def _billboard_definition(g) -> dict:
         holes = [[m.map(QVector3D(p)) for p in h] for h in f.holes]
         nf = mesh.add_face(pts, holes)
         nf.attrs = dict(f.attrs or {})
+        for old, new in zip(_boundary_edges(f), _boundary_edges(nf)):
+            if old is not None and new is not None:
+                new.soft = getattr(old, "soft", False)
+                new.hidden = getattr(old, "hidden", False)
     _remap_uvws(mesh, m)
     return {"name": g.name or "Figura", "mesh": mesh, "children": [],
             "billboard": True, "anchor": anchor}
@@ -703,6 +732,7 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError,
     face_layer = face.attrs.get("layer")
     layer = layer_handles.get(face_layer) if face_layer else None
     soft = _is_soft_face(face)
+    hidden = _is_hidden_face(face)
     size = applied.get(key) if applied is not None else (1.0, 1.0)
     ftex = face.attrs.get("texture")
     back = face.attrs.get("back")
@@ -736,6 +766,7 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError,
             layer=layer,
             soft_edges=soft,
             smooth_edges=soft,
+            hidden_edges=hidden,
             holes=[_pts_inches(h) for h in face.holes],
             **sides(),
         )
@@ -748,6 +779,7 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError,
                     layer=layer,
                     soft_edges=True,
                     smooth_edges=True,
+                    hidden_edges=hidden,
                     **sides(tri),
                 )
             except SkpWriteError:
