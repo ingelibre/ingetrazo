@@ -566,6 +566,37 @@ class NivelItem:
 
 
 @dataclass(eq=False)
+class LlamadaItem:
+    """A detail callout: a dashed box (or circle) around the part of a
+    view that another drawing enlarges, a leader, and the bubble that
+    names that drawing — «3» over «L-05». Bound to the frame it sits on,
+    it moves along with it."""
+
+    x_mm: float = 20.0           # the box on the page
+    y_mm: float = 20.0
+    w_mm: float = 30.0
+    h_mm: float = 20.0
+    shape: str = "rect"          # rect | circle
+    number: str = "1"            # the detail's number (bubble, upper half)
+    sheet: str = "{lamina}"      # the sheet it is drawn on (lower half)
+    bx_mm: float = 36.0          # bubble centre, relative to the box
+    by_mm: float = -6.0
+    size_mm: float = 3.0         # bubble text height
+    stroke_mm: float = 0.3
+    color: str = "#1e242c"
+    frame_uid: str = ""          # the frame it was drawn on
+    follow: bool = True          # …moves with it
+    uid: str = ""
+    z: float = 0.0
+    locked: bool = False
+    group_id: str = ""           # sheet group (Ctrl+G); "" = ungrouped
+
+    @property
+    def bubble_mm(self) -> float:
+        return max(3.0, self.size_mm * 2.4)
+
+
+@dataclass(eq=False)
 class CotaAngularItem:
     """A sheet angular dimension (LayOut's Angular Dimension tool): a vertex
     on the page, two rays to the measured points, and an arc of
@@ -737,6 +768,7 @@ class Composicion:
     etiquetas: list = field(default_factory=list)
     perfiles: list = field(default_factory=list)
     niveles: list = field(default_factory=list)
+    llamadas: list = field(default_factory=list)
     cajetin: Optional[Cajetin] = None
     #: Sheet border drawn on the margin rectangle: width, colour, rounded
     #: corners and line type (single | double | dashed).
@@ -770,7 +802,8 @@ class Composicion:
                + list(self.scalebars) + list(self.nortes)
                + list(self.leyendas) + list(self.shapes) + list(self.cotas)
                + list(self.cotas_ang) + list(self.etiquetas)
-               + list(self.perfiles) + list(self.niveles))
+               + list(self.perfiles) + list(self.niveles)
+               + list(self.llamadas))
         if self.cajetin is not None:
             out.append(self.cajetin)
         return out
@@ -797,7 +830,8 @@ class Composicion:
                          ("cotas_ang", self.cotas_ang),
                          ("etiquetas", self.etiquetas),
                          ("perfiles", self.perfiles),
-                         ("niveles", self.niveles)):
+                         ("niveles", self.niveles),
+                         ("llamadas", self.llamadas)):
             if lst:
                 d[key] = [asdict(it) for it in lst]
         if self.cajetin is not None:
@@ -828,6 +862,7 @@ class Composicion:
         c.etiquetas = [EtiquetaItem(**e) for e in d.get("etiquetas", [])]
         c.perfiles = [PerfilTerreno(**pf) for pf in d.get("perfiles", [])]
         c.niveles = [NivelItem(**nv) for nv in d.get("niveles", [])]
+        c.llamadas = [LlamadaItem(**ll) for ll in d.get("llamadas", [])]
         c.cotas = [CotaItem(**ct) for ct in d.get("cotas", [])]
         if "cajetin" in d:
             c.cajetin = Cajetin(**d["cajetin"])
@@ -1009,6 +1044,8 @@ class AddItemCommand(ComposerCommand):
             return self.comp.perfiles
         if isinstance(self.item, NivelItem):
             return self.comp.niveles
+        if isinstance(self.item, LlamadaItem):
+            return self.comp.llamadas
         return None
 
     def do(self) -> None:
@@ -1057,6 +1094,8 @@ class RemoveItemCommand(ComposerCommand):
             return self.comp.perfiles
         if isinstance(self.item, NivelItem):
             return self.comp.niveles
+        if isinstance(self.item, LlamadaItem):
+            return self.comp.llamadas
         return None
 
     def do(self) -> None:

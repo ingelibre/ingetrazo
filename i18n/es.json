@@ -1467,5 +1467,13 @@
  "Free mark: type the level": "Cota libre: escribe el nivel",
  "Chain dimensions: two points and the line's offset, then every click adds the next segment on the same line; click the last point or press Esc to end (the total is stacked above)": "Cotas en cadena: dos puntos y la separación de la línea; cada clic añade el siguiente tramo sobre la misma línea; clic en el último punto o Esc para terminar (la cota total se apila encima)",
  "Section marks (A–A)": "Marcas de sección (A–A)",
- "Draw the model's section planes that cut across this view as cut lines with arrows and letters — the plan tells where each section was taken. Name the letter in the plane's symbol.": "Dibuja los planos de sección del modelo que atraviesan esta vista como líneas de corte con flechas y letras: la planta dice por dónde se tomó cada sección. La letra se pone en el símbolo del plano."
+ "Draw the model's section planes that cut across this view as cut lines with arrows and letters — the plan tells where each section was taken. Name the letter in the plane's symbol.": "Dibuja los planos de sección del modelo que atraviesan esta vista como líneas de corte con flechas y letras: la planta dice por dónde se tomó cada sección. La letra se pone en el símbolo del plano.",
+ "Add a detail callout: box the part of a view another drawing enlarges (two clicks or drag); the bubble names the detail and its sheet": "Añadir una llamada de detalle: encuadra la parte de una vista que otro dibujo amplía (dos clics o arrastre); la burbuja nombra el detalle y su lámina",
+ "The detail's number (upper half of the bubble).": "El número del detalle (mitad superior de la burbuja).",
+ "Detail number": "Número del detalle",
+ "The sheet the detail is drawn on (lower half): «L-05», or {lamina} for this sheet's own name.": "La lámina donde está dibujado el detalle (mitad inferior): «L-05», o {lamina} para el nombre de esta misma lámina.",
+ "Detail sheet": "Lámina del detalle",
+ "Shape": "Forma",
+ "Moves with its frame": "Se mueve con su marco",
+ "Detail callout": "Llamada de detalle"
 }

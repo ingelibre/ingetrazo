@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
 from core.composition import (COMMON_SCALES, PAPER_SIZES_MM, RENDER_DPI,
                               AddItemCommand, BarraEscala, Cajetin,
                               ComposerHistory, Composicion, CompoundCommand, CotaAngularItem, CotaItem,
-                              EditItemCommand, EtiquetaItem, expand_fields, set_field_context, FlechaNorte, FormaItem, NivelItem,
+                              EditItemCommand, EtiquetaItem, expand_fields, set_field_context, FlechaNorte, FormaItem, LlamadaItem, NivelItem,
                               ImagenItem, Leyenda, MarcoVista,
                               PerfilTerreno, RemoveItemCommand, TextoItem,
                               apply_frame_camera, snap_mm)
@@ -1132,6 +1132,72 @@ def paint_nivel_mm(painter: QPainter, nv: NivelItem) -> None:
                   align=align, color=color)
 
 
+def llamada_bounds_mm(ll: LlamadaItem) -> QRectF:
+    """Box ∪ bubble, in item space (the box's top-left at the origin)."""
+    r = ll.bubble_mm / 2.0
+    x0 = min(0.0, ll.bx_mm - r)
+    y0 = min(0.0, ll.by_mm - r)
+    x1 = max(ll.w_mm, ll.bx_mm + r)
+    y1 = max(ll.h_mm, ll.by_mm + r)
+    return QRectF(x0 - 1.0, y0 - 1.0, x1 - x0 + 2.0, y1 - y0 + 2.0)
+
+
+def _llamada_leader(ll: LlamadaItem):
+    """Endpoints of the leader: the box outline's point nearest the bubble
+    and the bubble edge facing it (None when the bubble sits inside)."""
+    import math as _math
+    cx, cy = ll.bx_mm, ll.by_mm
+    if ll.shape == "circle":
+        ox, oy = ll.w_mm / 2.0, ll.h_mm / 2.0
+        rx, ry = ll.w_mm / 2.0, ll.h_mm / 2.0
+        dx, dy = cx - ox, cy - oy
+        # inside the ellipse: no leader
+        if rx > 1e-9 and ry > 1e-9 and (dx / rx) ** 2 + (dy / ry) ** 2 <= 1.0:
+            return None
+        ang = _math.atan2(dy / max(ry, 1e-9), dx / max(rx, 1e-9))
+        px, py = ox + rx * _math.cos(ang), oy + ry * _math.sin(ang)
+    else:
+        if 0.0 <= cx <= ll.w_mm and 0.0 <= cy <= ll.h_mm:
+            return None
+        px = min(max(cx, 0.0), ll.w_mm)
+        py = min(max(cy, 0.0), ll.h_mm)
+    dx, dy = cx - px, cy - py
+    ln = _math.hypot(dx, dy)
+    r = ll.bubble_mm / 2.0
+    if ln <= r + 0.3:
+        return None
+    return (px, py, cx - dx / ln * r, cy - dy / ln * r)
+
+
+def paint_llamada_mm(painter: QPainter, ll: LlamadaItem) -> None:
+    """Detail callout: the dashed box or circle, the leader, the bubble
+    («3» over «L-05»)."""
+    color = QColor(ll.color)
+    pen = QPen(color)
+    pen.setWidthF(ll.stroke_mm)
+    pen.setDashPattern([6.0, 3.0])
+    pen.setCapStyle(Qt.FlatCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    box = QRectF(0.0, 0.0, ll.w_mm, ll.h_mm)
+    if ll.shape == "circle":
+        painter.drawEllipse(box)
+    else:
+        painter.drawRoundedRect(box, 1.5, 1.5)
+    leader = _llamada_leader(ll)
+    solid = QPen(color)
+    solid.setWidthF(ll.stroke_mm)
+    painter.setPen(solid)
+    if leader is not None:
+        painter.drawLine(QPointF(leader[0], leader[1]),
+                         QPointF(leader[2], leader[3]))
+    from core.composition import expand_fields
+    number = expand_fields(ll.number or "", ll.frame_uid or "")
+    sheet = expand_fields(ll.sheet or "", ll.frame_uid or "")
+    _paint_title_bubble(painter, ll.bx_mm, ll.by_mm, ll.bubble_mm,
+                        number, sheet, color)
+
+
 def paint_cota_angular_mm(painter: QPainter, ca: CotaAngularItem) -> None:
     """Angular dimension: two rays from the vertex to the measured points
     (extended to the arc when shorter), the arc at ``radius_mm`` with
@@ -1954,6 +2020,89 @@ class EtiquetaCanvasItem(_SheetItem):
 
     def paint(self, painter, option, widget=None) -> None:
         paint_etiqueta_mm(painter, self.model)
+        self._paint_selection(painter)
+
+
+class LlamadaCanvasItem(_SheetItem):
+    """A detail callout on the canvas: move/resize the box like any item;
+    drag the bubble on its own (the leader follows)."""
+
+    def size_mm(self):
+        return (self.model.w_mm, self.model.h_mm)
+
+    def boundingRect(self) -> QRectF:
+        return llamada_bounds_mm(self.model).adjusted(-_HANDLE_MM, -_HANDLE_MM,
+                                                      _HANDLE_MM, _HANDLE_MM)
+
+    def shape(self):
+        from PySide6.QtGui import QPainterPath, QPainterPathStroker
+        m = self.model
+        outline = QPainterPath()
+        box = QRectF(0.0, 0.0, m.w_mm, m.h_mm)
+        if m.shape == "circle":
+            outline.addEllipse(box)
+        else:
+            outline.addRect(box)
+        stroker = QPainterPathStroker()
+        stroker.setWidth(2.0 * _HANDLE_MM)
+        path = stroker.createStroke(outline)
+        r = m.bubble_mm / 2.0 + _HANDLE_MM
+        path.addEllipse(QPointF(m.bx_mm, m.by_mm), r, r)
+        path.addRect(QRectF(m.w_mm - _HANDLE_MM, m.h_mm - _HANDLE_MM,
+                            2 * _HANDLE_MM, 2 * _HANDLE_MM))
+        return path
+
+    def _on_bubble(self, pos: QPointF) -> bool:
+        m = self.model
+        r = m.bubble_mm / 2.0 + _HANDLE_MM / 2.0
+        return (pos.x() - m.bx_mm) ** 2 + (pos.y() - m.by_mm) ** 2 <= r * r
+
+    def hoverMoveEvent(self, event) -> None:
+        if not getattr(self.model, "locked", False) and \
+                self._on_bubble(event.pos()):
+            self.setCursor(Qt.CrossCursor)
+            QGraphicsItem.hoverMoveEvent(self, event)
+            return
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        self._bubble_drag = (not getattr(self.model, "locked", False)
+                             and self._on_bubble(event.pos()))
+        if self._bubble_drag:
+            note = getattr(self.composer, "note_drag_start", None)
+            if note is not None:
+                note()
+            self._press_state = {k: getattr(self.model, k)
+                                 for k in ("bx_mm", "by_mm")}
+            event.accept()
+            self.setSelected(True)
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if getattr(self, "_bubble_drag", False):
+            self.prepareGeometryChange()
+            self.model.bx_mm = event.pos().x()
+            self.model.by_mm = event.pos().y()
+            self.update()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if getattr(self, "_bubble_drag", False):
+            self._bubble_drag = False
+            QGraphicsItem.mouseReleaseEvent(self, event)
+            if self._press_state is not None:
+                current = {k: getattr(self.model, k) for k in self._press_state}
+                if current != self._press_state:
+                    self.composer.push_geometry_edit(self.model, current,
+                                                     self._press_state)
+                self._press_state = None
+            return
+        super().mouseReleaseEvent(event)
+
+    def paint(self, painter, option, widget=None) -> None:
+        paint_llamada_mm(painter, self.model)
         self._paint_selection(painter)
 
 
@@ -2979,6 +3128,10 @@ class ComposerWindow(QMainWindow):
         ("nivel", "comp_nivel",
          "Add a level mark (click a point of a model view: it reads its "
          "height)", False),
+        ("llamada", "comp_llamada",
+         "Add a detail callout: box the part of a view another drawing "
+         "enlarges (two clicks or drag); the bubble names the detail and "
+         "its sheet", True),
         ("imagen", "image", "Add an image", False),
         ("cajetin", "comp_cajetin", "Add the title block", False),
         ("escala", "comp_escala", "Add a graphic scale bar", False),
@@ -3084,6 +3237,22 @@ class ComposerWindow(QMainWindow):
                 # a plan (looking down) wants the plan symbol
                 if frame.view_key == "std:top":
                     item.symbol = "circle"
+        elif mode == "llamada":
+            item = LlamadaItem(x_mm=x, y_mm=y, w_mm=max(w, 8.0),
+                               h_mm=max(h, 8.0),
+                               number=str(len(self.comp.llamadas) + 1))
+            item.bx_mm = item.w_mm + item.bubble_mm
+            item.by_mm = -item.bubble_mm * 0.9
+            cx, cy = x + item.w_mm / 2.0, y + item.h_mm / 2.0
+            # bound to the frame it was drawn on: it moves along
+            host = next((f for f in reversed(self.comp.frames)
+                         if f.x_mm <= cx <= f.x_mm + f.w_mm
+                         and f.y_mm <= cy <= f.y_mm + f.h_mm), None)
+            if host is not None:
+                if not host.uid:
+                    import uuid
+                    host.uid = uuid.uuid4().hex
+                item.frame_uid = host.uid
         elif mode == "cajetin":
             if self.comp.cajetin is None:
                 self._on_add_cajetin()
@@ -3398,6 +3567,7 @@ class ComposerWindow(QMainWindow):
         self.props.addWidget(_top_aligned(self._page_etiqueta()))  # 11
         self.props.addWidget(_top_aligned(self._page_perfil()))    # 12
         self.props.addWidget(_top_aligned(self._page_nivel()))     # 13
+        self.props.addWidget(_top_aligned(self._page_llamada()))   # 14
         self._tabs.addTab(self.props, tr("Item properties"))
 
         refresh_btn = QPushButton(tr("Update all views"))
@@ -3898,6 +4068,47 @@ class ComposerWindow(QMainWindow):
         form.addRow(tr("Background colour"), self.cota_bg_btn)
         self.cota_bg_opacity = self._opacity_spin("text_bg_opacity")
         form.addRow(tr("Background opacity"), self.cota_bg_opacity)
+        return w
+
+    def _page_llamada(self) -> QWidget:
+        w = QWidget()
+        form = QFormLayout(w)
+        self.ll_number = QLineEdit()
+        self.ll_number.setToolTip(tr("The detail's number (upper half of "
+                                     "the bubble)."))
+        self.ll_number.textChanged.connect(self._on_llamada_props)
+        form.addRow(tr("Detail number"), self.ll_number)
+        self.ll_sheet = QLineEdit()
+        self.ll_sheet.setToolTip(tr(
+            "The sheet the detail is drawn on (lower half): «L-05», or "
+            "{lamina} for this sheet's own name."))
+        self.ll_sheet.textChanged.connect(self._on_llamada_props)
+        form.addRow(tr("Detail sheet"), self.ll_sheet)
+        self.ll_shape = QComboBox()
+        self.ll_shape.addItem(tr("Rectangle"), "rect")
+        self.ll_shape.addItem(tr("Circle"), "circle")
+        self.ll_shape.currentIndexChanged.connect(self._on_llamada_props)
+        form.addRow(tr("Shape"), self.ll_shape)
+        self.ll_size = QDoubleSpinBox()
+        self.ll_size.setRange(1.5, 10.0)
+        self.ll_size.setSingleStep(0.25)
+        self.ll_size.setSuffix(" mm")
+        self.ll_size.valueChanged.connect(self._on_llamada_props)
+        form.addRow(tr("Text height"), self.ll_size)
+        self.ll_stroke = QDoubleSpinBox()
+        self.ll_stroke.setRange(0.1, 1.5)
+        self.ll_stroke.setSingleStep(0.05)
+        self.ll_stroke.setSuffix(" mm")
+        self.ll_stroke.valueChanged.connect(self._on_llamada_props)
+        form.addRow(tr("Line width"), self.ll_stroke)
+        self.ll_color_btn = QPushButton()
+        self.ll_color_btn.setFixedHeight(22)
+        self.ll_color_btn.clicked.connect(
+            lambda: self._pick_item_color("color", self.ll_color_btn))
+        form.addRow(tr("Colour"), self.ll_color_btn)
+        self.ll_follow = QCheckBox(tr("Moves with its frame"))
+        self.ll_follow.toggled.connect(self._on_llamada_props)
+        form.addRow("", self.ll_follow)
         return w
 
     def _page_nivel(self) -> QWidget:
@@ -4450,6 +4661,8 @@ class ComposerWindow(QMainWindow):
             self.canvas.addItem(PerfilItem(self, pf))
         for nv in getattr(self.comp, "niveles", []) or []:
             self.canvas.addItem(NivelCanvasItem(self, nv))
+        for ll in getattr(self.comp, "llamadas", []) or []:
+            self.canvas.addItem(LlamadaCanvasItem(self, ll))
         if self.comp.cajetin is not None:
             self.canvas.addItem(CajetinItem(self, self.comp.cajetin))
         if keep:
@@ -4686,6 +4899,20 @@ class ComposerWindow(QMainWindow):
                     f"background: {m.bg_color};" if m.bg_color else "")
                 self.et_bg_opacity.setValue(100.0 * float(m.bg_opacity))
                 self.props.setCurrentIndex(11)
+            elif isinstance(item, LlamadaCanvasItem):
+                m = item.model
+                if self.ll_number.text() != m.number:
+                    self.ll_number.setText(m.number)
+                if self.ll_sheet.text() != m.sheet:
+                    self.ll_sheet.setText(m.sheet)
+                sidx = self.ll_shape.findData(m.shape or "rect")
+                self.ll_shape.setCurrentIndex(max(sidx, 0))
+                self.ll_size.setValue(float(m.size_mm))
+                self.ll_stroke.setValue(float(m.stroke_mm))
+                self.ll_color_btn.setStyleSheet(f"background: {m.color};")
+                self.ll_follow.setChecked(bool(m.follow))
+                self.ll_follow.setEnabled(bool(m.frame_uid))
+                self.props.setCurrentIndex(14)
             elif isinstance(item, NivelCanvasItem):
                 m = item.model
                 if self.nv_text.text() != m.text:
@@ -4785,8 +5012,10 @@ class ComposerWindow(QMainWindow):
             before.get("y_mm", after.get("y_mm", 0.0)))
         if abs(dx) < 1e-9 and abs(dy) < 1e-9:
             return []
+        bound = list(self.comp.texts) + list(
+            getattr(self.comp, "llamadas", []) or [])
         return [EditItemCommand(t, {"x_mm": t.x_mm + dx, "y_mm": t.y_mm + dy})
-                for t in self.comp.texts
+                for t in bound
                 if getattr(t, "frame_uid", "") == model.uid
                 and getattr(t, "follow", True)]
 
@@ -5341,6 +5570,7 @@ class ComposerWindow(QMainWindow):
                        "bg_color", "bg_opacity", "arrow", "stroke_mm"),
         NivelItem: ("symbol", "text", "decimals", "size_mm", "line_mm",
                     "stroke_mm", "color", "datum_m"),
+        LlamadaItem: ("shape", "size_mm", "stroke_mm", "color"),
         Cajetin: Cajetin.LOOK_FIELDS,
     }
 
@@ -6690,6 +6920,19 @@ class ComposerWindow(QMainWindow):
                            else (item.model.text_color or item.model.color))})
         self._remember_cota_style(item.model)
 
+    def _on_llamada_props(self, *_a) -> None:
+        item = self._selected_item()
+        if self._updating or not isinstance(item, LlamadaCanvasItem):
+            return
+        item.prepareGeometryChange()
+        self._panel_edit(item, {
+            "number": self.ll_number.text(),
+            "sheet": self.ll_sheet.text(),
+            "shape": self.ll_shape.currentData() or "rect",
+            "size_mm": float(self.ll_size.value()),
+            "stroke_mm": float(self.ll_stroke.value()),
+            "follow": self.ll_follow.isChecked()})
+
     def _on_nivel_props(self, *_a) -> None:
         item = self._selected_item()
         if self._updating or not isinstance(item, NivelCanvasItem):
@@ -6875,6 +7118,8 @@ class ComposerWindow(QMainWindow):
             return tr("Angle") + " " + model.label()
         if isinstance(model, NivelItem):
             return tr("Level") + " " + model.label()
+        if isinstance(model, LlamadaItem):
+            return tr("Detail callout") + f" {model.number}/{model.sheet}"
         if isinstance(model, MarcoVista):
             return frame_title_text(model)
         if isinstance(model, TextoItem):
@@ -7686,6 +7931,8 @@ class ComposerWindow(QMainWindow):
                 paint_etiqueta_mm(painter, m)
             elif isinstance(m, NivelItem):
                 paint_nivel_mm(painter, m)
+            elif isinstance(m, LlamadaItem):
+                paint_llamada_mm(painter, m)
             elif isinstance(m, Cajetin):
                 paint_cajetin_mm(painter, m)
 

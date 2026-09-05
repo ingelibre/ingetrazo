@@ -58,6 +58,12 @@ follow [SemVer](https://semver.org).
   no deja marca. La letra sale del símbolo del plano (o A, B, C… por orden).
   Activar marcas, anotaciones o progresivas ya solo rehace la capa de papel
   del marco, no la vista entera.
+- **Llamadas de detalle.** Herramienta nueva: encuadra (rectángulo o
+  círculo a trazos) la parte de una vista que otro dibujo amplía y pone la
+  burbuja «3 / L-05» con una guía; la burbuja se arrastra aparte y el
+  encuadre se mueve y redimensiona como cualquier ítem. Dibujada sobre un
+  marco, queda ligada a él y se mueve con él. Número, lámina (admite
+  {lamina}), forma, tamaño, grosor y color desde el panel.
 - **Perfil de terreno en láminas.** Un ítem nuevo del compositor (herramienta
   «Perfil» en la barra) dibuja la cota del terreno bajo un trazado contra la
   progresiva, como en un plano de carretera o canal: escala horizontal 1:N o
