@@ -359,6 +359,34 @@ class FlechaNorte:
 
 
 @dataclass
+class PerfilTerreno:
+    """A longitudinal terrain profile on the sheet: the ground elevation
+    under a traced path (``Scene.geo_paths``) against chainage, the way a
+    road or canal plan shows it — a horizontal scale, a vertical
+    exaggeration, a grid and chainage labels. The elevations are sampled at
+    paint time from the survey or the DEM (``ComposerWindow.profile_for``);
+    the sheet stores only what to plot and how."""
+
+    x_mm: float = 20.0
+    y_mm: float = 20.0
+    w_mm: float = 180.0
+    h_mm: float = 70.0
+    path_index: int = 0          # which of Scene.geo_paths
+    scale_n: float = 0.0         # horizontal 1:N; 0 = fit the path to the width
+    exag: float = 0.0            # vertical exaggeration; 0 = fit the relief to the height
+    grid: bool = True
+    grid_h_m: float = 0.0        # chainage grid step (m); 0 = automatic
+    grid_v_m: float = 0.0        # elevation grid step (m); 0 = automatic
+    fill: bool = True            # tint the ground under the line
+    title: str = ""              # "" = "Longitudinal profile — <path>"
+    text_mm: float = 2.4
+    spacing_m: float = 0.0       # sampling step (m); 0 = automatic
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
+
+
+@dataclass
 class Leyenda:
     """A legend box: title + one row per model layer (snapshotted when
     added / refreshed, so the sheet stays stable if layers change)."""
@@ -608,6 +636,7 @@ class Composicion:
     cotas: list = field(default_factory=list)
     cotas_ang: list = field(default_factory=list)
     etiquetas: list = field(default_factory=list)
+    perfiles: list = field(default_factory=list)
     cajetin: Optional[Cajetin] = None
     #: Sheet border drawn on the margin rectangle: width, colour, rounded
     #: corners and line type (single | double | dashed).
@@ -640,7 +669,8 @@ class Composicion:
         out = (list(self.frames) + list(self.texts) + list(self.images)
                + list(self.scalebars) + list(self.nortes)
                + list(self.leyendas) + list(self.shapes) + list(self.cotas)
-               + list(self.cotas_ang) + list(self.etiquetas))
+               + list(self.cotas_ang) + list(self.etiquetas)
+               + list(self.perfiles))
         if self.cajetin is not None:
             out.append(self.cajetin)
         return out
@@ -665,7 +695,8 @@ class Composicion:
         for key, lst in (("nortes", self.nortes), ("leyendas", self.leyendas),
                          ("shapes", self.shapes), ("cotas", self.cotas),
                          ("cotas_ang", self.cotas_ang),
-                         ("etiquetas", self.etiquetas)):
+                         ("etiquetas", self.etiquetas),
+                         ("perfiles", self.perfiles)):
             if lst:
                 d[key] = [asdict(it) for it in lst]
         if self.cajetin is not None:
@@ -694,6 +725,7 @@ class Composicion:
         c.shapes = [FormaItem(**f) for f in d.get("shapes", [])]
         c.cotas_ang = [CotaAngularItem(**a) for a in d.get("cotas_ang", [])]
         c.etiquetas = [EtiquetaItem(**e) for e in d.get("etiquetas", [])]
+        c.perfiles = [PerfilTerreno(**pf) for pf in d.get("perfiles", [])]
         c.cotas = [CotaItem(**ct) for ct in d.get("cotas", [])]
         if "cajetin" in d:
             c.cajetin = Cajetin(**d["cajetin"])
@@ -871,6 +903,8 @@ class AddItemCommand(ComposerCommand):
             return self.comp.cotas_ang
         if isinstance(self.item, EtiquetaItem):
             return self.comp.etiquetas
+        if isinstance(self.item, PerfilTerreno):
+            return self.comp.perfiles
         return None
 
     def do(self) -> None:
@@ -915,6 +949,8 @@ class RemoveItemCommand(ComposerCommand):
             return self.comp.cotas_ang
         if isinstance(self.item, EtiquetaItem):
             return self.comp.etiquetas
+        if isinstance(self.item, PerfilTerreno):
+            return self.comp.perfiles
         return None
 
     def do(self) -> None:

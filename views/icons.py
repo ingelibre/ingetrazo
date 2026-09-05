@@ -724,6 +724,15 @@ def _comp_escala(p, ink):
     p.drawRect(33, 20, 9, 7)
 
 
+def _comp_perfil(p, ink):
+    # axes + a ground line: the longitudinal profile
+    p.drawLine(QPointF(8, 8), QPointF(8, 38))
+    p.drawLine(QPointF(8, 38), QPointF(42, 38))
+    poly = QPolygonF([QPointF(10, 30), QPointF(18, 22), QPointF(24, 26),
+                      QPointF(32, 14), QPointF(40, 20)])
+    p.drawPolyline(poly)
+
+
 def _comp_cajetin(p, ink):
     p.drawRect(6, 14, 36, 20)
     p.drawLine(QPointF(6, 24), QPointF(42, 24))
@@ -786,7 +795,7 @@ _DRAW = {
     "comp_vista": _comp_vista, "comp_norte": _comp_norte,
     "comp_leyenda": _comp_leyenda, "comp_escala": _comp_escala,
     "comp_cajetin": _comp_cajetin, "comp_flecha": _comp_flecha,
-    "comp_etiqueta": _comp_etiqueta,
+    "comp_etiqueta": _comp_etiqueta, "comp_perfil": _comp_perfil,
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
     "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset,

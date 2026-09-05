@@ -7,6 +7,14 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Añadido
+- **Perfil de terreno en láminas.** Un ítem nuevo del compositor (herramienta
+  «Perfil» en la barra) dibuja la cota del terreno bajo un trazado contra la
+  progresiva, como en un plano de carretera o canal: escala horizontal 1:N o
+  ajustada al ancho, exageración vertical o ajuste al alto, cuadrícula con
+  pasos de progresiva y de cota, sombreado del terreno, título y tamaño de
+  texto. Muestrea el levantamiento fotogramétrico si está visible y el DEM en
+  el resto, se recalcula si mueves el trazado, se guarda con la lámina y sale
+  en la impresión con el rótulo «Esc. H 1:N · V 1:M · exag. ×k».
 - **Las figuras «cara a la cámara» viajan al `.skp`.** Las personas 2D y los
   recortes (la figura Sumari, los bañistas) se quedaban fuera del archivo y
   desaparecían en SketchUp. Ahora salen como componentes en la convención de

@@ -12,6 +12,7 @@ the same code the PDF export uses, so screen and paper always agree.
 from __future__ import annotations
 
 import datetime
+import math
 from typing import Optional
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
@@ -32,7 +33,7 @@ from core.composition import (COMMON_SCALES, PAPER_SIZES_MM, RENDER_DPI,
                               ComposerHistory, Composicion, CompoundCommand, CotaAngularItem, CotaItem,
                               EditItemCommand, EtiquetaItem, expand_fields, set_field_context, FlechaNorte, FormaItem,
                               ImagenItem, Leyenda, MarcoVista,
-                              RemoveItemCommand, TextoItem,
+                              PerfilTerreno, RemoveItemCommand, TextoItem,
                               apply_frame_camera, snap_mm)
 from core.i18n import tr
 
@@ -314,6 +315,147 @@ def paint_scalebar_mm(painter: QPainter, sb: BarraEscala) -> None:
                   QRectF(0, bar_h + 4.6, sb.w_mm, 4),
                   tr("metres — scale 1:{n}", n=f"{sb.scale_n:g}"), 2.6,
                   align=Qt.AlignHCenter | Qt.AlignTop)
+
+
+def _chainage(s: float, step: float) -> str:
+    """Civil chainage, ``1+250`` style; decimals only when the step needs them."""
+    km, m = int(s // 1000), s % 1000
+    if step >= 1.0:
+        return f"{km}+{m:03.0f}"
+    return f"{km}+{m:06.2f}"
+
+
+def paint_perfil_mm(painter: QPainter, m: PerfilTerreno, profile,
+                    path_name: str = "", message=None) -> None:
+    """The longitudinal profile in paper mm: title and scale caption, the
+    grid with chainage and elevation labels, the ground line over its
+    tinted fill, the axes. Horizontal scale 1:N (or fit to the width) and a
+    vertical exaggeration (or fit to the height) — the pair every road and
+    canal plan states next to the profile."""
+    from views.profile_panel import _nice_ticks
+    w, h = float(m.w_mm), float(m.h_mm)
+    ink = QColor(30, 36, 44)
+    grey = QColor(90, 98, 110)
+    pen = QPen(ink)
+    pen.setWidthF(0.25)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    painter.drawRect(QRectF(0, 0, w, h))
+    t = max(1.0, float(m.text_mm))
+    title = m.title or tr("Longitudinal profile — {name}",
+                          name=path_name or tr("path"))
+    _draw_text_mm(painter, QRectF(2.0, 1.0, w - 4.0, t * 1.7), title,
+                  t * 1.15, bold=True)
+    if profile is None or not profile.samples or profile.max_elevation() is None:
+        _draw_text_mm(painter, QRectF(2.0, h / 2 - t, w - 4.0, t * 2.2),
+                      message or tr("Loading terrain…"), t,
+                      align=Qt.AlignCenter, color=grey)
+        return
+    left, right = 4.0 + t * 4.2, w - 3.0
+    top, bottom = t * 1.7 + 3.0 + t * 1.4, h - (t * 2.2 + 3.0)
+    pw, ph = right - left, bottom - top
+    if pw < 10.0 or ph < 8.0:
+        return
+    length = profile.length or 1.0
+    elo, ehi = profile.min_elevation(), profile.max_elevation()
+    if ehi - elo < 1.0:
+        elo, ehi = elo - 1.0, ehi + 1.0
+    v_ticks = _nice_ticks(elo, ehi, 4)
+    step_v = float(m.grid_v_m) or (v_ticks[1] - v_ticks[0] if len(v_ticks) > 1 else 1.0)
+    base = math.floor(elo / step_v) * step_v            # cota de comparación
+    topv = math.ceil(ehi / step_v) * step_v
+    if topv <= base:
+        topv = base + step_v
+    fitted_h = False
+    if m.scale_n > 0:
+        mm_per_m_h = 1000.0 / float(m.scale_n)
+        if length * mm_per_m_h > pw:                    # would not fit: fall back
+            mm_per_m_h, fitted_h = pw / length, True
+    else:
+        mm_per_m_h = pw / length
+    if m.exag > 0:
+        mm_per_m_v = mm_per_m_h * float(m.exag)
+        if (topv - base) * mm_per_m_v > ph:
+            mm_per_m_v = ph / (topv - base)
+    else:
+        mm_per_m_v = ph / (topv - base)
+    exag_eff = mm_per_m_v / mm_per_m_h if mm_per_m_h > 0 else 1.0
+
+    def sx(s):
+        return left + s * mm_per_m_h
+
+    def sy(e):
+        return bottom - (e - base) * mm_per_m_v
+
+    plot_right = sx(length)
+    plot_top = sy(topv)
+    # grid + labels
+    h_ticks = _nice_ticks(0.0, length, 6)
+    step_h = float(m.grid_h_m) or (h_ticks[1] - h_ticks[0] if len(h_ticks) > 1 else length)
+    light = QPen(QColor(200, 206, 214))
+    light.setWidthF(0.12)
+    s_val = 0.0
+    while s_val <= length + 1e-6:
+        x = sx(s_val)
+        if m.grid:
+            painter.setPen(light)
+            painter.drawLine(QPointF(x, plot_top), QPointF(x, bottom))
+        _draw_text_mm(painter, QRectF(x - 12.0, bottom + 0.8, 24.0, t * 1.4),
+                      _chainage(s_val, step_h), t,
+                      align=Qt.AlignHCenter | Qt.AlignTop, color=grey)
+        s_val += step_h
+    e_val = base
+    while e_val <= topv + 1e-6:
+        y = sy(e_val)
+        if m.grid:
+            painter.setPen(light)
+            painter.drawLine(QPointF(left, y), QPointF(plot_right, y))
+        _draw_text_mm(painter, QRectF(1.0, y - t * 0.7, left - 2.0, t * 1.4),
+                      f"{e_val:g}", t, align=Qt.AlignRight | Qt.AlignVCenter,
+                      color=grey)
+        e_val += step_v
+    # the ground: runs split where the DEM is still missing
+    runs, cur = [], []
+    for smp in profile.samples:
+        if smp.elevation is None:
+            if cur:
+                runs.append(cur)
+                cur = []
+        else:
+            cur.append(QPointF(sx(smp.station), sy(smp.elevation)))
+    if cur:
+        runs.append(cur)
+    from PySide6.QtGui import QPolygonF
+    for run in runs:
+        if len(run) < 2:
+            continue
+        if m.fill:
+            poly = QPolygonF(run + [QPointF(run[-1].x(), bottom),
+                                    QPointF(run[0].x(), bottom)])
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(QColor(120, 170, 110, 60)))
+            painter.drawPolygon(poly)
+            painter.setBrush(Qt.NoBrush)
+        line = QPen(QColor(60, 110, 50))
+        line.setWidthF(0.4)
+        painter.setPen(line)
+        painter.drawPolyline(QPolygonF(run))
+    # axes
+    axis = QPen(ink)
+    axis.setWidthF(0.3)
+    painter.setPen(axis)
+    painter.drawLine(QPointF(left, plot_top), QPointF(left, bottom))
+    painter.drawLine(QPointF(left, bottom), QPointF(plot_right, bottom))
+    # caption: the scales, as a plan states them
+    cap = tr("Scale H 1:{h} · V 1:{v} · vert. exag. ×{k}",
+             h=f"{1000.0 / mm_per_m_h:.0f}", v=f"{1000.0 / mm_per_m_v:.0f}",
+             k=f"{exag_eff:.1f}")
+    if fitted_h:
+        cap += "  " + tr("(fitted to the width)")
+    if message:
+        cap += "  " + message
+    _draw_text_mm(painter, QRectF(2.0, t * 1.7 + 1.6, w - 4.0, t * 1.4), cap,
+                  t * 0.9, color=grey)
 
 
 def paint_norte_mm(painter: QPainter, n: FlechaNorte) -> None:
@@ -1194,6 +1336,14 @@ class ScaleBarItem(_SheetItem):
 
     def paint(self, painter, option, widget=None) -> None:
         paint_scalebar_mm(painter, self.model)
+        self._paint_selection(painter)
+
+
+class PerfilItem(_SheetItem):
+    """A terrain-profile item: resizable like a frame, sampled on demand."""
+    def paint(self, painter, option, widget=None) -> None:
+        profile, name, message = self.composer.profile_for(self.model)
+        paint_perfil_mm(painter, self.model, profile, name, message)
         self._paint_selection(painter)
 
 
@@ -2169,6 +2319,8 @@ class ComposerWindow(QMainWindow):
         ("escala", "comp_escala", "Add a graphic scale bar", False),
         ("norte", "comp_norte", "Add a north arrow", False),
         ("leyenda", "comp_leyenda", "Add the layer legend", False),
+        ("perfil", "comp_perfil",
+         "Add a terrain profile along a traced path (two clicks or drag)", True),
         ("linea", "line", "Draw a line (two clicks or drag)", True),
         ("flecha", "comp_flecha", "Draw an arrow (two clicks or drag)", True),
         ("rect", "rectangle", "Draw a rectangle (two clicks or drag)", True),
@@ -2261,6 +2413,11 @@ class ComposerWindow(QMainWindow):
             item = Leyenda(x_mm=x0, y_mm=y0,
                            rows=[ly.name for ly in
                                  self._scene().layers if ly.visible])
+        elif mode == "perfil":
+            paths = getattr(self._scene(), "geo_paths", None) or []
+            item = PerfilTerreno(x_mm=x, y_mm=y, w_mm=max(w, 80.0),
+                                 h_mm=max(h, 40.0),
+                                 path_index=self._perfil_default_path(paths))
         elif mode in ("linea", "flecha", "rect", "elipse", "poligono"):
             kind = mode
             invert = (x1 < x0) != (y1 < y0)
@@ -2515,6 +2672,7 @@ class ComposerWindow(QMainWindow):
         self.props.addWidget(_top_aligned(self._page_cota()))      # 9
         self.props.addWidget(_top_aligned(self._page_cota_ang()))  # 10
         self.props.addWidget(_top_aligned(self._page_etiqueta()))  # 11
+        self.props.addWidget(_top_aligned(self._page_perfil()))    # 12
         self._tabs.addTab(self.props, tr("Item properties"))
 
         refresh_btn = QPushButton(tr("Update all views"))
@@ -3162,6 +3320,70 @@ class ComposerWindow(QMainWindow):
         form.addRow(tr("Segments"), self.sb_segments)
         return w
 
+    def _page_perfil(self) -> QWidget:
+        w = QWidget()
+        form = QFormLayout(w)
+        self.pf_path = QComboBox()
+        self.pf_path.currentIndexChanged.connect(self._on_perfil_props)
+        form.addRow(tr("Traced path"), self.pf_path)
+        self.pf_scale = QComboBox()
+        self.pf_scale.setEditable(True)
+        self.pf_scale.addItem(tr("Fit to width"), 0.0)
+        for n in COMMON_SCALES:
+            self.pf_scale.addItem(f"1:{n}", float(n))
+        self.pf_scale.currentTextChanged.connect(self._on_perfil_props)
+        form.addRow(tr("Horizontal scale"), self.pf_scale)
+        self.pf_exag = QDoubleSpinBox()
+        self.pf_exag.setRange(0.0, 100.0)
+        self.pf_exag.setDecimals(1)
+        self.pf_exag.setSingleStep(1.0)
+        self.pf_exag.setPrefix("×")
+        self.pf_exag.setSpecialValueText(tr("auto (fit the height)"))
+        self.pf_exag.valueChanged.connect(self._on_perfil_props)
+        form.addRow(tr("Vertical exaggeration"), self.pf_exag)
+        self.pf_grid = QCheckBox(tr("Grid"))
+        self.pf_grid.toggled.connect(self._on_perfil_props)
+        form.addRow("", self.pf_grid)
+        self.pf_grid_h = QDoubleSpinBox()
+        self.pf_grid_h.setRange(0.0, 100000.0)
+        self.pf_grid_h.setDecimals(1)
+        self.pf_grid_h.setSuffix(" m")
+        self.pf_grid_h.setSpecialValueText(tr("auto"))
+        self.pf_grid_h.valueChanged.connect(self._on_perfil_props)
+        form.addRow(tr("Chainage step"), self.pf_grid_h)
+        self.pf_grid_v = QDoubleSpinBox()
+        self.pf_grid_v.setRange(0.0, 10000.0)
+        self.pf_grid_v.setDecimals(1)
+        self.pf_grid_v.setSuffix(" m")
+        self.pf_grid_v.setSpecialValueText(tr("auto"))
+        self.pf_grid_v.valueChanged.connect(self._on_perfil_props)
+        form.addRow(tr("Elevation step"), self.pf_grid_v)
+        self.pf_fill = QCheckBox(tr("Tint the ground"))
+        self.pf_fill.toggled.connect(self._on_perfil_props)
+        form.addRow("", self.pf_fill)
+        self.pf_title = QLineEdit()
+        self.pf_title.setPlaceholderText(tr("Longitudinal profile — <path>"))
+        self.pf_title.textChanged.connect(self._on_perfil_props)
+        form.addRow(tr("Title"), self.pf_title)
+        self.pf_text = QDoubleSpinBox()
+        self.pf_text.setRange(1.0, 8.0)
+        self.pf_text.setDecimals(1)
+        self.pf_text.setSingleStep(0.2)
+        self.pf_text.setSuffix(" mm")
+        self.pf_text.valueChanged.connect(self._on_perfil_props)
+        form.addRow(tr("Text size"), self.pf_text)
+        self.pf_w = QDoubleSpinBox()
+        self.pf_w.setRange(20.0, 2000.0)
+        self.pf_w.setSuffix(" mm")
+        self.pf_w.valueChanged.connect(self._on_perfil_props)
+        form.addRow(tr("Width"), self.pf_w)
+        self.pf_h = QDoubleSpinBox()
+        self.pf_h.setRange(15.0, 2000.0)
+        self.pf_h.setSuffix(" mm")
+        self.pf_h.valueChanged.connect(self._on_perfil_props)
+        form.addRow(tr("Height"), self.pf_h)
+        return w
+
     # ---- composition manager -------------------------------------------------
     def _scene(self):
         return self._window.viewport.scene
@@ -3301,6 +3523,8 @@ class ComposerWindow(QMainWindow):
             self.canvas.addItem(CotaAngularCanvasItem(self, ca))
         for et in getattr(self.comp, "etiquetas", []) or []:
             self.canvas.addItem(EtiquetaCanvasItem(self, et))
+        for pf in getattr(self.comp, "perfiles", []) or []:
+            self.canvas.addItem(PerfilItem(self, pf))
         if self.comp.cajetin is not None:
             self.canvas.addItem(CajetinItem(self, self.comp.cajetin))
         if keep:
@@ -3494,6 +3718,24 @@ class ComposerWindow(QMainWindow):
                     f"background: {m.bg_color};" if m.bg_color else "")
                 self.et_bg_opacity.setValue(100.0 * float(m.bg_opacity))
                 self.props.setCurrentIndex(11)
+            elif isinstance(item, PerfilItem):
+                m = item.model
+                self._reload_perfil_paths()
+                self.pf_path.setCurrentIndex(
+                    max(0, self.pf_path.findData(int(m.path_index))))
+                self.pf_scale.setCurrentText(
+                    tr("Fit to width") if not m.scale_n else f"1:{m.scale_n:g}")
+                self.pf_exag.setValue(float(m.exag))
+                self.pf_grid.setChecked(bool(m.grid))
+                self.pf_grid_h.setValue(float(m.grid_h_m))
+                self.pf_grid_v.setValue(float(m.grid_v_m))
+                self.pf_fill.setChecked(bool(m.fill))
+                if self.pf_title.text() != m.title:
+                    self.pf_title.setText(m.title)
+                self.pf_text.setValue(float(m.text_mm))
+                self.pf_w.setValue(float(m.w_mm))
+                self.pf_h.setValue(float(m.h_mm))
+                self.props.setCurrentIndex(12)
             elif isinstance(item, CotaAngularCanvasItem):
                 m = item.model
                 self.cang_text.setText(m.text)
@@ -4543,6 +4785,7 @@ class ComposerWindow(QMainWindow):
             return
         self._last_model_version = version
         self._invalidate_geometry_caches()
+        self.__dict__.setdefault("_profile_cache", {}).clear()   # a path may have moved
         for comp in getattr(self._scene(), "compositions", []) or []:
             for f in comp.frames:
                 self._stale.add(id(f))
@@ -5351,6 +5594,8 @@ class ComposerWindow(QMainWindow):
             return tr("Scale bar") + f" 1:{model.scale_n:g}"
         if isinstance(model, FlechaNorte):
             return tr("North arrow")
+        if isinstance(model, PerfilTerreno):
+            return tr("Terrain profile") + (": " + model.title if model.title else "")
         if isinstance(model, Leyenda):
             return model.title or tr("Legend")
         if isinstance(model, FormaItem):
@@ -5422,6 +5667,132 @@ class ComposerWindow(QMainWindow):
         item.prepareGeometryChange()
         self._panel_edit(item, {"scale_n": n if n > 0 else item.model.scale_n,
                                 "segments": int(self.sb_segments.value())})
+
+    # ---- terrain profile items ------------------------------------------------
+    @staticmethod
+    def _perfil_default_path(paths) -> int:
+        """The path a new profile item starts on: the first open one (a road,
+        a canal), else the first."""
+        for i, p in enumerate(paths):
+            if not getattr(p, "closed", False) and len(getattr(p, "points", [])) >= 2:
+                return i
+        return 0
+
+    def _reload_perfil_paths(self) -> None:
+        was = self._updating
+        self._updating = True
+        try:
+            self.pf_path.clear()
+            paths = getattr(self._scene(), "geo_paths", None) or []
+            for i, p in enumerate(paths):
+                name = p.name or tr("Path {n}", n=i + 1)
+                self.pf_path.addItem(
+                    f"{name} — {p.length():.0f} m", i)
+            if not paths:
+                self.pf_path.addItem(tr("(no traced path yet)"), 0)
+        finally:
+            self._updating = was
+
+    def _on_perfil_props(self, *_a) -> None:
+        item = self._selected_item()
+        if self._updating or not isinstance(item, PerfilItem):
+            return
+        m = item.model
+        text = self.pf_scale.currentText().strip()
+        if ":" in text:
+            try:
+                n = float(text.split(":", 1)[1].replace(",", "."))
+            except ValueError:
+                n = m.scale_n
+        elif text == self.pf_scale.itemText(0) or not text:
+            n = 0.0
+        else:
+            try:
+                n = float(text.replace(",", "."))
+            except ValueError:
+                n = m.scale_n
+        data = self.pf_path.currentData()
+        item.prepareGeometryChange()
+        self._panel_edit(item, {
+            "path_index": int(data) if data is not None else int(m.path_index),
+            "scale_n": max(0.0, n),
+            "exag": float(self.pf_exag.value()),
+            "grid": self.pf_grid.isChecked(),
+            "grid_h_m": float(self.pf_grid_h.value()),
+            "grid_v_m": float(self.pf_grid_v.value()),
+            "fill": self.pf_fill.isChecked(),
+            "title": self.pf_title.text(),
+            "text_mm": float(self.pf_text.value()),
+            "w_mm": float(self.pf_w.value()),
+            "h_mm": float(self.pf_h.value())})
+        self.__dict__.setdefault("_profile_cache", {}).pop(id(m), None)
+        item.update()
+
+    def _profile_sampler(self, datum):
+        """The elevation sampler a profile item reads — the same choice the
+        profile dock makes: a visible photogrammetric survey beats the DEM
+        (the profile that decides where a canal sits comes off the flight
+        the engineer made), the DEM answers everywhere else. Rebuilt when
+        the datum or the survey changes; DEM tiles arriving later repaint."""
+        scene = self._scene()
+        cur = getattr(self, "_prof_sampler", None)
+        cur_datum = getattr(self, "_prof_datum", None)
+        cur_kind = getattr(self, "_prof_kind", None)
+        survey = getattr(scene, "photo_mesh", None)
+        if survey is not None and getattr(survey, "visible", False):
+            if (cur_kind == "survey" and cur_datum is datum
+                    and getattr(cur, "mesh", None) is survey):
+                return cur
+            from georef.photomesh import PhotoMeshSampler
+            self._prof_sampler = PhotoMeshSampler(survey, datum)
+            self._prof_datum, self._prof_kind = datum, "survey"
+            return self._prof_sampler
+        if cur_kind == "dem" and cur_datum is datum:
+            return cur
+        from georef.dem import DEMSampler
+        sampler = DEMSampler(datum, parent=self)
+        sampler.changed.connect(self._on_profile_terrain_changed)
+        self._prof_sampler, self._prof_datum, self._prof_kind = sampler, datum, "dem"
+        return sampler
+
+    def _on_profile_terrain_changed(self) -> None:
+        self.__dict__.setdefault("_profile_cache", {}).clear()
+        self.canvas.update()
+
+    def profile_for(self, m) -> tuple:
+        """``(profile, path_name, message)`` for a PerfilTerreno: the sampled
+        terrain under its path (cached until the path, the sampler or the
+        item's sampling changes), the path's display name, and what to show
+        instead when there is nothing to plot yet."""
+        scene = self._scene()
+        paths = getattr(scene, "geo_paths", None) or []
+        if not paths:
+            return None, "", tr("Trace a path with the Path tool (T) first.")
+        idx = int(m.path_index)
+        if idx < 0 or idx >= len(paths):
+            return None, "", tr("Path {n} no longer exists.", n=idx + 1)
+        path = paths[idx]
+        name = path.name or tr("Path {n}", n=idx + 1)
+        datum = getattr(scene, "georef", None)
+        if datum is None:
+            return None, name, tr("Set a base map location first (Tray ▸ Base map).")
+        pts = path.profile_points()
+        if len(pts) < 2:
+            return None, name, tr("The path needs two points.")
+        sampler = self._profile_sampler(datum)
+        key = (idx, tuple((round(p.x(), 3), round(p.y(), 3)) for p in pts),
+               float(m.spacing_m), id(sampler))
+        cache = self.__dict__.setdefault("_profile_cache", {})
+        hit = cache.get(id(m))
+        if hit is not None and hit[0] == key:
+            prof = hit[1]
+        else:
+            from georef.profile import sample_profile
+            prof = sample_profile(pts, sampler, spacing=m.spacing_m or None)
+            cache[id(m)] = (key, prof)
+        if not prof.samples or prof.max_elevation() is None:
+            return prof, name, tr("Loading terrain…")
+        return prof, name, (tr("(loading DEM…)") if not prof.complete else None)
 
     # ---- rendering -----------------------------------------------------------
     def image_cache(self, path: str) -> Optional[QImage]:
@@ -5955,6 +6326,8 @@ class ComposerWindow(QMainWindow):
                 paint_text_mm(painter, m)
             elif isinstance(m, BarraEscala):
                 paint_scalebar_mm(painter, m)
+            elif isinstance(m, PerfilTerreno):
+                paint_perfil_mm(painter, m, *self.profile_for(m))
             elif isinstance(m, FlechaNorte):
                 paint_norte_mm(painter, m)
             elif isinstance(m, Leyenda):
