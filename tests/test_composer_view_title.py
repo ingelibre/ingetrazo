@@ -168,3 +168,31 @@ def test_panel_edits_the_title_without_redoing_the_render():
     assert not composer.title_align_combo.isEnabled()  # meaningless for the bar
     assert item.boundingRect().left() < -5.0
     assert composer.hlr_cache.get(id(frame)) is before  # paint-only
+
+
+def test_optional_sections_hide_their_rows_when_they_do_not_apply():
+    """Marco, 2026-09-05: the panel at 480 px was cut and too long — the
+    title rows only show with the title on, the pen rows only for the
+    vector style, and the checkboxes span the whole width."""
+    composer, _host = _composer()
+    frame = composer.comp.frames[0]
+    frame.style = "sombreado"
+    item = next(it for it in composer.canvas.items()
+                if getattr(it, "model", None) is frame)
+    item.setSelected(True)
+    composer.on_selection_changed()
+    form = composer._frame_form
+    assert composer._title_rows and composer._pen_rows
+    assert not any(form.isRowVisible(r) for r in composer._title_rows)
+    assert not any(form.isRowVisible(r) for r in composer._pen_rows)
+    composer.title_check.setChecked(True)
+    assert all(form.isRowVisible(r) for r in composer._title_rows)
+    composer.style_combo.setCurrentIndex(composer.style_combo.findData("vectorial"))
+    assert all(form.isRowVisible(r) for r in composer._pen_rows)
+    composer.title_check.setChecked(False)
+    assert not any(form.isRowVisible(r) for r in composer._title_rows)
+    # a checkbox row spans both columns: no label widget beside it
+    from PySide6.QtWidgets import QFormLayout
+    row, role = form.getWidgetPosition(composer.annot_check)
+    assert role == QFormLayout.SpanningRole
+    assert form.rowWrapPolicy() == QFormLayout.WrapLongRows

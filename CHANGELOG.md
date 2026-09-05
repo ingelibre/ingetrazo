@@ -6,6 +6,14 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Cambiado
+- **Panel de propiedades del marco más compacto.** Las casillas ocupan todo
+  el ancho, las etiquetas largas se acortaron (la explicación queda en el
+  tooltip), las filas del rótulo de vista solo aparecen con el rótulo
+  activado y las de las plumas solo con el estilo vectorial, y en un panel
+  estrecho una fila que no cabe baja el campo bajo su etiqueta en vez de
+  recortar el texto. A 480 px se lee todo.
+
 ### Añadido
 - **Grosores por clase y poché en el estilo vectorial de las láminas.** La
   vista «Vector (líneas ocultas)» ya no dibuja todo con una sola pluma: el

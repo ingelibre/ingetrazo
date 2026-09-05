@@ -3541,6 +3541,14 @@ class ComposerWindow(QMainWindow):
             # A form given the whole tab spreads its rows over the height;
             # keep them together at the top and scroll when they don't fit.
             from PySide6.QtWidgets import QScrollArea
+            form = page.layout()
+            if isinstance(form, QFormLayout):
+                # A narrow panel drops the field under its label instead of
+                # clipping it (Marco, 2026-09-05: the panel at 480 px cut
+                # the texts of some rows).
+                form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+                form.setFieldGrowthPolicy(
+                    QFormLayout.AllNonFixedFieldsGrow)
             outer = QWidget()
             lay = QVBoxLayout(outer)
             lay.setContentsMargins(0, 0, 0, 0)
@@ -3605,6 +3613,18 @@ class ComposerWindow(QMainWindow):
     def _page_frame(self) -> QWidget:
         w = QWidget()
         form = QFormLayout(w)
+        # Rows of the two optional sections (view title, vector pens): they
+        # hide when the section does not apply, so the panel stays short.
+        self._frame_form = form
+        self._title_rows: list = []
+        self._pen_rows: list = []
+
+        def _row(rows, label, widget) -> None:
+            if label is None:
+                form.addRow(widget)             # spans both columns
+            else:
+                form.addRow(label, widget)
+            rows.append(form.rowCount() - 1)
         self.view_combo = QComboBox()
         self.view_combo.currentIndexChanged.connect(self._on_frame_props)
         form.addRow(tr("View"), self.view_combo)
@@ -3650,51 +3670,52 @@ class ComposerWindow(QMainWindow):
             "or a plain centred line. Fields like {escala}, {lamina} and "
             "{escena} expand."))
         self.title_check.toggled.connect(self._on_frame_props)
-        form.addRow("", self.title_check)
+        form.addRow(self.title_check)
         self.title_style_combo = QComboBox()
         self.title_style_combo.addItem(tr("Numbered, rule under"), "layout")
         self.title_style_combo.addItem(tr("Vertical bar"), "bar")
         self.title_style_combo.addItem(tr("Simple line"), "simple")
         self.title_style_combo.currentIndexChanged.connect(
             self._on_frame_title)
-        form.addRow(tr("Title style"), self.title_style_combo)
+        _row(self._title_rows, tr("Title style"), self.title_style_combo)
         self.title_text_edit = QLineEdit()
         self.title_text_edit.setPlaceholderText(tr("automatic: the view's name"))
         self.title_text_edit.textChanged.connect(self._on_frame_title)
-        form.addRow(tr("Title"), self.title_text_edit)
+        _row(self._title_rows, tr("Title"), self.title_text_edit)
         self.title_sub_edit = QLineEdit()
         self.title_sub_edit.setPlaceholderText(tr("none"))
         self.title_sub_edit.textChanged.connect(self._on_frame_title)
-        form.addRow(tr("Subtitle"), self.title_sub_edit)
+        _row(self._title_rows, tr("Subtitle"), self.title_sub_edit)
         self.title_number_edit = QLineEdit()
         self.title_number_edit.setPlaceholderText(tr("no bubble"))
         self.title_number_edit.setToolTip(tr(
             "The view's number in the bubble («1»)."))
         self.title_number_edit.textChanged.connect(self._on_frame_title)
-        form.addRow(tr("Number"), self.title_number_edit)
+        _row(self._title_rows, tr("Number"), self.title_number_edit)
         self.title_sheet_edit = QLineEdit()
         self.title_sheet_edit.setPlaceholderText(tr("none"))
         self.title_sheet_edit.setToolTip(tr(
             "The bubble's lower half: the sheet the view lives on "
             "(«A101», or {lamina} to read the title block)."))
         self.title_sheet_edit.textChanged.connect(self._on_frame_title)
-        form.addRow(tr("Sheet in the bubble"), self.title_sheet_edit)
-        self.title_scale_check = QCheckBox(tr("Append the scale (ESC. 1:N)"))
+        _row(self._title_rows, tr("Sheet in the bubble"), self.title_sheet_edit)
+        self.title_scale_check = QCheckBox(tr("Append the scale"))
+        self.title_scale_check.setToolTip(tr("«ESC. 1:N» after the title."))
         self.title_scale_check.setChecked(True)
         self.title_scale_check.toggled.connect(self._on_frame_title)
-        form.addRow("", self.title_scale_check)
+        _row(self._title_rows, None, self.title_scale_check)
         self.title_align_combo = QComboBox()
         self.title_align_combo.addItem(tr("Left"), "left")
         self.title_align_combo.addItem(tr("Centre"), "center")
         self.title_align_combo.addItem(tr("Right"), "right")
         self.title_align_combo.currentIndexChanged.connect(
             self._on_frame_title)
-        form.addRow(tr("Title alignment"), self.title_align_combo)
+        _row(self._title_rows, tr("Alignment"), self.title_align_combo)
         self.title_pos_combo = QComboBox()
         self.title_pos_combo.addItem(tr("Below the frame"), "below")
         self.title_pos_combo.addItem(tr("Above the frame"), "above")
         self.title_pos_combo.currentIndexChanged.connect(self._on_frame_title)
-        form.addRow(tr("Title position"), self.title_pos_combo)
+        _row(self._title_rows, tr("Position"), self.title_pos_combo)
         self.title_mm_spin = QDoubleSpinBox()
         self.title_mm_spin.setRange(1.5, 15.0)
         self.title_mm_spin.setSingleStep(0.5)
@@ -3702,37 +3723,36 @@ class ComposerWindow(QMainWindow):
         self.title_mm_spin.setSuffix(" mm")
         self.title_mm_spin.setValue(4.0)
         self.title_mm_spin.valueChanged.connect(self._on_frame_title)
-        form.addRow(tr("Title text height"), self.title_mm_spin)
-        self.annot_check = QCheckBox(tr(
-            "Model annotations (dimensions and leader texts)"))
+        _row(self._title_rows, tr("Title size"), self.title_mm_spin)
+        self.annot_check = QCheckBox(tr("Model annotations"))
         self.annot_check.setToolTip(tr(
             "Draw the model's own cotas and texts in this frame, like "
             "LayOut does with SketchUp's. Hide their layer in the scene "
             "to leave them out."))
         self.annot_check.toggled.connect(self._on_frame_props)
-        form.addRow("", self.annot_check)
+        form.addRow(self.annot_check)
         self.annot_mm_spin = QDoubleSpinBox()
         self.annot_mm_spin.setRange(1.0, 12.0)
         self.annot_mm_spin.setSingleStep(0.2)
         self.annot_mm_spin.setSuffix(" mm")
         self.annot_mm_spin.setValue(2.8)
         self.annot_mm_spin.valueChanged.connect(self._on_frame_props)
-        form.addRow(tr("Annotation text height"), self.annot_mm_spin)
+        form.addRow(tr("Annotation size"), self.annot_mm_spin)
         self.secmark_check = QCheckBox(tr("Section marks (A–A)"))
         self.secmark_check.setToolTip(tr(
             "Draw the model's section planes that cut across this view as "
             "cut lines with arrows and letters — the plan tells where each "
             "section was taken. Name the letter in the plane's symbol."))
         self.secmark_check.toggled.connect(self._on_frame_props)
-        form.addRow("", self.secmark_check)
-        self.km_check = QCheckBox(tr("Chainage marks on traced paths"))
+        form.addRow(self.secmark_check)
+        self.km_check = QCheckBox(tr("Chainage marks"))
         self.km_check.setToolTip(tr(
             "A tick and a 0+020 label every step along each traced path, "
             "measured as the profile does. Step «auto» is the one the "
             "profile picks, so plan and profile agree; type the same step "
             "in both to choose it."))
         self.km_check.toggled.connect(self._on_frame_props)
-        form.addRow("", self.km_check)
+        form.addRow(self.km_check)
         self.km_step_spin = QDoubleSpinBox()
         self.km_step_spin.setRange(0.0, 100000.0)
         self.km_step_spin.setDecimals(1)
@@ -3745,7 +3765,7 @@ class ComposerWindow(QMainWindow):
             "Draw the frame's outline in print. Off, the canvas still shows "
             "a light guide that never prints."))
         self.frame_border_check.toggled.connect(self._on_frame_props)
-        form.addRow("", self.frame_border_check)
+        form.addRow(self.frame_border_check)
         self.frame_border_mm = QDoubleSpinBox()
         self.frame_border_mm.setRange(0.1, 2.0)
         self.frame_border_mm.setSingleStep(0.05)
@@ -3762,7 +3782,7 @@ class ComposerWindow(QMainWindow):
         # Vector style: the three pen weights of a plan and the poché.
         pens = QLabel(tr("Vector pens (mm)"))
         pens.setStyleSheet("font-weight: bold; margin-top: 6px;")
-        form.addRow(pens)
+        _row(self._pen_rows, None, pens)
 
         def _pen_spin(default: float, tip: str) -> QDoubleSpinBox:
             sp = QDoubleSpinBox()
@@ -3776,20 +3796,20 @@ class ComposerWindow(QMainWindow):
             return sp
         self.pen_cut_spin = _pen_spin(0.5, tr(
             "Lines where the section plane cuts through a solid."))
-        form.addRow(tr("Section cut"), self.pen_cut_spin)
+        _row(self._pen_rows, tr("Section cut"), self.pen_cut_spin)
         self.pen_profile_spin = _pen_spin(0.35, tr(
             "Silhouettes and outlines against the background — SketchUp's "
             "Profiles."))
-        form.addRow(tr("Profiles"), self.pen_profile_spin)
+        _row(self._pen_rows, tr("Profiles"), self.pen_profile_spin)
         self.pen_edge_spin = _pen_spin(0.18, tr(
             "Every other edge, between two visible faces."))
-        form.addRow(tr("Edges"), self.pen_edge_spin)
+        _row(self._pen_rows, tr("Edges"), self.pen_edge_spin)
         self.profiles_check = QCheckBox(tr("Draw profiles thicker"))
         self.profiles_check.setChecked(True)
         self.profiles_check.setToolTip(tr(
             "Off, every edge uses the Edges pen (recomputes the view)."))
         self.profiles_check.toggled.connect(self._on_frame_pens)
-        form.addRow("", self.profiles_check)
+        _row(self._pen_rows, None, self.profiles_check)
         self.cut_fill_combo = QComboBox()
         self.cut_fill_combo.addItem(tr("Solid"), "solid")
         self.cut_fill_combo.addItem(tr("Hatched 45°"), "hatch")
@@ -3798,13 +3818,13 @@ class ComposerWindow(QMainWindow):
             "Fill where the section plane slices a solid (the poché). Only "
             "closed solids fill; an open surface stays white."))
         self.cut_fill_combo.currentIndexChanged.connect(self._on_frame_pens)
-        form.addRow(tr("Section fill"), self.cut_fill_combo)
+        _row(self._pen_rows, tr("Section fill"), self.cut_fill_combo)
         self.cut_fill_btn = QPushButton()
         self.cut_fill_btn.setFixedHeight(22)
         self.cut_fill_btn.clicked.connect(
             lambda: self._pick_item_color("cut_fill_color",
                                           self.cut_fill_btn))
-        form.addRow(tr("Fill colour"), self.cut_fill_btn)
+        _row(self._pen_rows, tr("Fill colour"), self.cut_fill_btn)
         self.cut_hatch_spin = QDoubleSpinBox()
         self.cut_hatch_spin.setRange(0.3, 10.0)
         self.cut_hatch_spin.setSingleStep(0.1)
@@ -3812,7 +3832,7 @@ class ComposerWindow(QMainWindow):
         self.cut_hatch_spin.setSuffix(" mm")
         self.cut_hatch_spin.setValue(1.5)
         self.cut_hatch_spin.valueChanged.connect(self._on_frame_pens)
-        form.addRow(tr("Hatch spacing"), self.cut_hatch_spin)
+        _row(self._pen_rows, tr("Hatch spacing"), self.cut_hatch_spin)
         scale_btn = QPushButton(tr("Add a scale label"))
         scale_btn.setToolTip(tr(
             "A text block bound to this frame: it reads the frame's scale "
@@ -6505,6 +6525,10 @@ class ComposerWindow(QMainWindow):
                   self.cut_fill_combo, self.cut_fill_btn,
                   self.cut_hatch_spin):
             w.setEnabled(on)
+        form = getattr(self, "_frame_form", None)
+        if form is not None:
+            for r in getattr(self, "_pen_rows", []):
+                form.setRowVisible(r, on)
 
     def _sync_title_widgets(self, frame) -> None:
         """Alignment and position mean nothing to the vertical bar."""
@@ -6517,6 +6541,10 @@ class ComposerWindow(QMainWindow):
             w.setEnabled(on)
         self.title_align_combo.setEnabled(on and not bar)
         self.title_pos_combo.setEnabled(on and not bar)
+        form = getattr(self, "_frame_form", None)
+        if form is not None:
+            for r in getattr(self, "_title_rows", []):
+                form.setRowVisible(r, on)
 
     def _on_frame_title(self, *_a) -> None:
         """The title is paint-only: no render or hidden-line pass to redo,

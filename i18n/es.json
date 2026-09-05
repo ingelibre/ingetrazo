@@ -1475,5 +1475,12 @@
  "Detail sheet": "Lámina del detalle",
  "Shape": "Forma",
  "Moves with its frame": "Se mueve con su marco",
- "Detail callout": "Llamada de detalle"
+ "Detail callout": "Llamada de detalle",
+ "Append the scale": "Añadir la escala",
+ "«ESC. 1:N» after the title.": "«ESC. 1:N» tras el título.",
+ "Position": "Posición",
+ "Title size": "Tamaño del rótulo",
+ "Model annotations": "Anotaciones del modelo",
+ "Annotation size": "Tamaño de anotaciones",
+ "Chainage marks": "Progresivas"
 }
