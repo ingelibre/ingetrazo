@@ -27,6 +27,11 @@ follow [SemVer](https://semver.org).
   punto y cara por cara (pintura y texturas), y las escribe como una
   definición colocada N veces, como hace SketchUp. La piscina baja de 70 a
   27 MB con las mismas caras en los mismos sitios.
+- **Solo viajan las capas en uso.** Al guardar en SketchUp Web, Purgar
+  tiraba 8 de las 10 capas de la piscina, todas vacías, y la capa por
+  defecto de IngeTrazo ya es la «Layer0» de SketchUp. El resto del ahorro
+  que da SketchUp al guardar es su formato comprimido: nuestros archivos
+  llevan las mismas caras, definiciones y texturas.
 
 ### Corregido
 - **SketchUp ya puede GUARDAR un `.skp` exportado.** Los archivos abrían bien

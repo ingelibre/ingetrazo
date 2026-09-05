@@ -224,15 +224,23 @@ def _collect_materials(faces_by_key, builder, stage_dir: Path | None = None,
     return mat_handles
 
 
-def _collect_layers(scene, builder):
-    """Register all visible layers on the builder AFTER materials.
+def _collect_layers(scene, builder, used=None):
+    """Register the scene's layers on the builder AFTER materials — only
+    the ones something exported sits on, when ``used`` (a set of names)
+    is given: SketchUp's own Purge on Marco's pool threw away 8 of our 10
+    layers, every one of them empty, and IngeTrazo's default "Layer 0" is
+    SketchUp's "Layer0" already (a face on it carries no layer).
 
     Returns ``layer_handles``: ``layer_name → layer_slot``."""
+    from core.layers import DEFAULT_LAYER
     layer_handles = {}
     for layer in getattr(scene, "layers", []):
         name = getattr(layer, "name", None)
-        if name and name not in layer_handles:
-            layer_handles[name] = builder.add_layer(name)
+        if not name or name in layer_handles or name == DEFAULT_LAYER:
+            continue
+        if used is not None and name not in used:
+            continue
+        layer_handles[name] = builder.add_layer(name)
     return layer_handles
 
 
@@ -1138,8 +1146,18 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
     # in the stage dir) to learn what it does to them.
     quirks = _writer_uv_quirks(openskp, stage_dir) if applied else frozenset()
 
-    # Register layers (must be after materials, before geometry).
-    layer_handles = _collect_layers(scene, builder)
+    # Register layers (must be after materials, before geometry) — the
+    # ones in use only.
+    used_layers = {f.attrs.get("layer") for f in
+                   _iter_export_faces(loose_faces, classic, defs)}
+    for g, entries, _faces in classic:
+        used_layers.add(getattr(g, "layer", None))
+        used_layers.update(getattr(c, "layer", None) for _i, c in entries)
+    for d in defs:
+        used_layers.update(getattr(c, "layer", None) for _i, c in d["children"])
+    used_layers.update(getattr(g, "layer", None) for _i, g in roots)
+    used_layers.discard(None)
+    layer_handles = _collect_layers(scene, builder, used_layers)
 
     # ---- Pass 2: emit geometry -------------------------------------------
     # Groups and component definitions must ALL be written before any

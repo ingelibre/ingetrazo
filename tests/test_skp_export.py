@@ -903,3 +903,23 @@ def _quad_mesh():
     m = Mesh()
     m.add_face([V(50, 50), V(51, 50), V(51, 51), V(50, 51)])
     return m
+
+
+
+def test_only_layers_in_use_are_written(tmp_path):
+    """SketchUp's Purge on the pool threw away 8 of our 10 layers — all
+    empty — and IngeTrazo's default "Layer 0" is SketchUp's own "Layer0":
+    an exported file carries the layers something sits on, nothing else."""
+    scene = Scene()
+    hist = History(scene)
+    F._draw_rect(scene, hist, [V(0, 0), V(4, 0), V(4, 4), V(0, 4)], [])
+    face = scene.mesh.faces[0]
+    scene.layers.append(Layer("Estructura"))
+    scene.layers.append(Layer("Vacía"))
+    scene.layers.append(Layer("Layer 0"))
+    assign_layer(face, "Estructura")
+    path = tmp_path / "layers.skp"
+    skp_out_format.save_skp(scene, path)
+    names = [ly.name for ly in _parse_skp(path).layers]
+    assert "Estructura" in names
+    assert "Vacía" not in names and "Layer 0" not in names
