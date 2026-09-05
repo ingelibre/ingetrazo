@@ -102,6 +102,7 @@ from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
 from core.snap import SnapResult, compute_snap
+from core.texture import face_uv_axes
 from core.triangulate import plane_axes
 from tools.base import Tool, ToolContext
 
@@ -3782,43 +3783,24 @@ class Viewport(QOpenGLWidget):
         """Triangulate ``face`` into ``by_texture[(path, shade)]`` as
         interleaved ``pos(3) + uv(2)`` floats — the quantised diffuse shade
         keys the draw run (the run sets ``u_shade``, so textures get the same
-        matte face shading as colour faces). UVs come from the face's fitted
-        world→UV affine map when present (``uvw`` — a DAE/OBJ import carrying
-        its own texture coordinates), else from the SketchUp-style planar
-        projection of each vertex's world position (so coplanar faces tile
-        seamlessly)."""
+        matte face shading as colour faces). UVs come from
+        ``core.texture.face_uv_axes`` — the face's fitted world→UV affine
+        map when present (``uvw`` — an import carrying its own texture
+        coordinates), else SketchUp's planar projection of each vertex's
+        world position. The SAME function the .skp exporter writes from, so
+        the viewport cannot drift from what SketchUp will show (it did: a
+        private copy of the projection here used a different basis)."""
         key = (tex["path"], self._shade_factor(self._normal_of(face)))
         buf = by_texture.get(key)
         if buf is None:
             buf = by_texture[key] = array("f")
-        uvw = tex.get("uvw")
-        if uvw:
-            gu = QVector3D(uvw[0], uvw[1], uvw[2])
-            gv = QVector3D(uvw[4], uvw[5], uvw[6])
-            for tri in self._tris_of(face):
-                for p in tri:
-                    buf.extend([
-                        p.x(), p.y(), p.z(),
-                        QVector3D.dotProduct(gu, p) + uvw[3],
-                        QVector3D.dotProduct(gv, p) + uvw[7],
-                    ])
-            return
-        n = face.normal().normalized()
-        u_axis, v_axis = plane_axes(n)
-        rot = float(tex.get("rot", 0.0))
-        if rot:
-            a = math.radians(rot)
-            cos_a, sin_a = math.cos(a), math.sin(a)
-            u_axis, v_axis = (u_axis * cos_a + v_axis * sin_a,
-                              v_axis * cos_a - u_axis * sin_a)
-        sw = tex.get("sw", 1.0) or 1.0
-        sh = tex.get("sh", 1.0) or 1.0
+        gu, cu, gv, cv = face_uv_axes(tex, face.normal())
         for tri in self._tris_of(face):
             for p in tri:
                 buf.extend([
                     p.x(), p.y(), p.z(),
-                    QVector3D.dotProduct(p, u_axis) / sw,
-                    QVector3D.dotProduct(p, v_axis) / sh,
+                    QVector3D.dotProduct(gu, p) + cu,
+                    QVector3D.dotProduct(gv, p) + cv,
                 ])
 
     def _faceme_dir(self, anchor: QVector3D) -> QVector3D:

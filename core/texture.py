@@ -6,10 +6,10 @@ A SketchUp material is a colour plus an optional texture image with a
 **real-world tile size** (the model-unit width/height one repeat of the image
 covers). The default mapping is a **planar projection**: a face's UVs come from
 its world position projected onto the face plane, divided by the tile size. The
-projection basis depends only on the face normal, so coplanar faces share it and
-the texture tiles **seamlessly** across a flat surface — exactly SketchUp's
-behaviour, and what makes an exported ``.obj``/``.mtl`` line up the same way in
-SketchUp or Blender.
+projection basis depends only on the face normal — SketchUp's own, see
+:func:`projection_basis` — so coplanar faces share it and the texture tiles
+**seamlessly** across a flat surface, and a face painted here shows the image
+where SketchUp will draw it for the same file.
 
 A textured face carries ``attrs["texture"] = {"path", "sw", "sh"}``. Colour and
 texture are independent (a face can have either or both).
@@ -147,21 +147,57 @@ class Texture:
         return Texture(d["path"], float(d.get("sw", 1.0)), float(d.get("sh", 1.0)))
 
 
-def planar_uv(normal: QVector3D, positions, sw: float, sh: float,
-              rot: float = 0.0):
-    """SketchUp-style planar-projected ``(u, v)`` for each world ``positions``
-    point: project onto the plane basis derived from ``normal`` (so coplanar
-    faces tile seamlessly), scaled by the tile size. ``rot`` turns the texture
-    in-plane by that many degrees (SketchUp's texture rotation). ``sw``/``sh``
-    ≤ 0 fall back to 1 to avoid a divide-by-zero."""
-    import math
+def projection_basis(normal) -> tuple[tuple[float, float, float],
+                                      tuple[float, float, float]]:
+    """SketchUp's in-plane axes for a face normal ``(nx, ny, nz)`` — the
+    basis its default texture projection AND its per-face texture matrices
+    are expressed in: ``xr = normalize(Z × n)``, ``yr = n × xr``; for a
+    vertical normal ``xr = X`` and ``yr = ±Y`` by the sign of ``n·Z``. Plain
+    tuples: the ``.skp`` importer runs this per vertex over large models.
 
-    u_axis, v_axis = plane_axes(normal.normalized())
+    THE one recipe for the whole app. The renderer, the OBJ/glTF writers and
+    the paste preview used to project with ``core.triangulate.plane_axes``
+    (world X projected onto the plane) while the ``.skp`` importer already
+    used this one: on a wall facing +Y or −X the two differ by 180°, so a
+    texture painted in IngeTrazo showed upside-down against what SketchUp
+    draws for the very same file (measured through the SDK's own converter,
+    2026-09-04). Calibrated against SketchUp ground truth for every
+    orientation, not just the axis-aligned ones."""
+    nx, ny, nz = float(normal[0]), float(normal[1]), float(normal[2])
+    ln = (nx * nx + ny * ny + nz * nz) ** 0.5
+    if ln > 1e-30:
+        nx, ny, nz = nx / ln, ny / ln, nz / ln
+    if abs(nx) < 1e-9 and abs(ny) < 1e-9:
+        return (1.0, 0.0, 0.0), (0.0, 1.0 if nz > 0 else -1.0, 0.0)
+    xx, xy = -ny, nx                      # Z × n
+    lx = (xx * xx + xy * xy) ** 0.5
+    xx, xy = xx / lx, xy / lx
+    return (xx, xy, 0.0), (-nz * xy, nz * xx, nx * xy - ny * xx)   # n × xr
+
+
+def projection_axes(normal, rot: float = 0.0) -> tuple[QVector3D, QVector3D]:
+    """:func:`projection_basis` as ``QVector3D`` axes, turned in-plane by
+    ``rot`` degrees (SketchUp's texture rotation)."""
+    n = QVector3D(normal)
+    xr, yr = projection_basis((n.x(), n.y(), n.z()))
+    u_axis, v_axis = QVector3D(*xr), QVector3D(*yr)
     if rot:
+        import math
         a = math.radians(rot)
         cos_a, sin_a = math.cos(a), math.sin(a)
         u_axis, v_axis = (u_axis * cos_a + v_axis * sin_a,
                           v_axis * cos_a - u_axis * sin_a)
+    return u_axis, v_axis
+
+
+def planar_uv(normal: QVector3D, positions, sw: float, sh: float,
+              rot: float = 0.0):
+    """SketchUp-style planar-projected ``(u, v)`` for each world ``positions``
+    point: project onto SketchUp's plane basis for ``normal`` (so coplanar
+    faces tile seamlessly), scaled by the tile size. ``rot`` turns the texture
+    in-plane by that many degrees (SketchUp's texture rotation). ``sw``/``sh``
+    ≤ 0 fall back to 1 to avoid a divide-by-zero."""
+    u_axis, v_axis = projection_axes(normal, rot)
     sw = sw if abs(sw) > 1e-9 else 1.0
     sh = sh if abs(sh) > 1e-9 else 1.0
     return [(QVector3D.dotProduct(p, u_axis) / sw,
@@ -275,22 +311,16 @@ def face_uv_axes(tex: dict, normal):
     gone and only its average colour left.
 
     Two sources, matching what the face carries: a fitted ``uvw`` (an import
-    that brought its own texture coordinates) or, failing that, the
-    SketchUp-style planar projection of world position, so coplanar faces
-    tile seamlessly."""
-    import math
-
+    that brought its own texture coordinates) or, failing that, SketchUp's
+    planar projection of world position (:func:`projection_axes`), so
+    coplanar faces tile seamlessly and a ``planar`` face — which the .skp
+    exporter writes with NO per-face record — lands in SketchUp exactly
+    where the viewport drew it."""
     uvw = tex.get("uvw")
     if uvw:
         return (QVector3D(uvw[0], uvw[1], uvw[2]), float(uvw[3]),
                 QVector3D(uvw[4], uvw[5], uvw[6]), float(uvw[7]))
-    u_axis, v_axis = plane_axes(QVector3D(normal).normalized())
-    rot = float(tex.get("rot", 0.0) or 0.0)
-    if rot:
-        a = math.radians(rot)
-        cos_a, sin_a = math.cos(a), math.sin(a)
-        u_axis, v_axis = (u_axis * cos_a + v_axis * sin_a,
-                          v_axis * cos_a - u_axis * sin_a)
+    u_axis, v_axis = projection_axes(normal, float(tex.get("rot", 0.0) or 0.0))
     sw = tex.get("sw", 1.0) or 1.0
     sh = tex.get("sh", 1.0) or 1.0
     return (u_axis / sw, 0.0, v_axis / sh, 0.0)

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from PySide6.QtGui import QImage, QVector3D
 
 from core.history import History, SetFaceColorCommand
@@ -491,3 +493,128 @@ def test_a_bmp_texture_from_an_imported_model_is_re_encoded_not_dropped(tmp_path
     textured = [m for m in model.materials if m.texture is not None]
     assert len(textured) == 1
     assert "coca-cola_logo5.png".encode("utf-16-le") in path.read_bytes()
+
+
+# ---- Texture placement: what SketchUp reads back is what the viewport drew --
+
+_TILE_M = 0.254            # a 10-inch tile: a scale slip shows up as ×10
+
+
+def _calibration_faces(scene, png, planar: bool):
+    """Eleven textured squares covering the orientations that told the UV
+    recipes apart: horizontal with the first edge along +X, +Y, −X and at
+    30°; walls facing +Y, −Y, +X, −X (the +Y one drawn from a vertical AND
+    from a horizontal first edge); a 45° slope. ``planar`` marks them the
+    way push/pull does (default projection, no per-face record)."""
+    import math
+    c30, s30 = math.cos(math.radians(30)), math.sin(math.radians(30))
+    c45 = math.sqrt(0.5)
+
+    def sq(o, ex, ey, start=0):
+        pts = [o, o + ex, o + ex + ey, o + ey]
+        return pts[start:] + pts[:start]
+    loops = [
+        sq(V(0, 0, 0), V(1, 0, 0), V(0, 1, 0)),
+        sq(V(0, 3, 0), V(1, 0, 0), V(0, 1, 0), start=1),
+        sq(V(0, 6, 0), V(1, 0, 0), V(0, 1, 0), start=2),
+        sq(V(3, 0, 0), V(c30, s30, 0), V(-s30, c30, 0)),
+        sq(V(6, 0, 0), V(0, 0, 1), V(1, 0, 0)),          # normal +Y
+        sq(V(6, 3, 0), V(1, 0, 0), V(0, 0, 1)),          # normal −Y
+        sq(V(9, 0, 0), V(0, 1, 0), V(0, 0, 1)),          # normal +X
+        sq(V(9, 3, 0), V(0, 0, 1), V(0, 1, 0)),          # normal −X
+        sq(V(12, 0, 0), V(1, 0, 0), V(0, c45, c45)),     # 45° slope
+        sq(V(6, 6, 0), V(0, 0, 1), V(1, 0, 0), start=0),
+        sq(V(6, 9, 0), V(0, 0, 1), V(1, 0, 0), start=1),
+    ]
+    faces = []
+    for pts in loops:
+        f = scene.mesh.add_face(pts)
+        tex = {"path": str(png), "sw": _TILE_M, "sh": _TILE_M}
+        if planar:
+            tex["planar"] = True
+        f.attrs["texture"] = tex
+        faces.append(f)
+    scene.version += 1
+    return faces
+
+
+def _reader_uvs(model, defn):
+    """Every ``(point_metres, (u, v))`` of the textured faces in ``defn`` as
+    openskp's parser — calibrated against real SketchUp files — reads them:
+    through the per-face matrix when there is one, the default projection
+    otherwise, both divided by the material's applied size."""
+    from openskp._face_groups import (compute_face_uv, face_uv_basis,
+                                      reconstruct_loop_vertices)
+    edges = {eid: (e.v1_id, e.v2_id) for eid, e in defn.edges.items()}
+    out = []
+    for face in defn.faces.values():
+        mat = model.materials_by_id.get(face.material_id)
+        if mat is None or mat.texture is None:
+            continue
+        xr, yr = face_uv_basis(face.normal)
+        for vid in reconstruct_loop_vertices(face.loops[0], edges):
+            v = defn.vertices[vid]
+            uv = compute_face_uv((v.x, v.y, v.z), xr, yr, face.uv_transform,
+                                 mat.texture.width, mat.texture.height)
+            out.append((V(v.x / _M_TO_IN, v.y / _M_TO_IN, v.z / _M_TO_IN),
+                        uv))
+    return out
+
+
+def _face_at(faces, p):
+    """The calibration face ``p`` (metres) lies on."""
+    for f in faces:
+        pts = list(f.vertices)
+        n = f.normal().normalized()
+        c = sum(pts, QVector3D()) / len(pts)
+        if abs(QVector3D.dotProduct(n, p - c)) < 1e-3 and (p - c).length() < 1.2:
+            return f
+    return None
+
+
+def _assert_uvs_match_the_viewport(faces, samples, tol=1e-4):
+    from core.texture import face_uv_axes
+    seen = set()
+    for p, (u, v) in samples:
+        f = _face_at(faces, p)
+        assert f is not None, p
+        seen.add(id(f))
+        gu, cu, gv, cv = face_uv_axes(f.attrs["texture"], f.normal())
+        assert abs(QVector3D.dotProduct(gu, p) + cu - u) < tol, (p, u, v)
+        assert abs(QVector3D.dotProduct(gv, p) + cv - v) < tol, (p, u, v)
+    assert len(seen) == len(faces)
+
+
+@pytest.mark.parametrize("planar", [False, True], ids=["pinned", "planar"])
+def test_textures_read_back_where_the_viewport_drew_them(tmp_path, planar):
+    """The UV openskp's calibrated reader computes for every vertex of the
+    exported file equals the UV the viewport draws (``face_uv_axes``) — on
+    all eleven orientations, pinned faces and default-projected alike.
+
+    Three defects hid here until the SDK's own converter was used as an
+    oracle (2026-09-04): the writer solved pins in a first-edge basis (each
+    face turned by its first edge's angle — a palm trunk shattered), the
+    writer did not scale pins by the applied size (a 2 m water tile 78×
+    too big: a flat blue slab), and the renderer's planar projection used a
+    basis 180° off SketchUp's on walls facing +Y and −X. The first two are
+    compensated per ``_writer_uv_quirks``; the third is one shared recipe
+    now (``core.texture.projection_basis``)."""
+    png = _make_png(tmp_path / "tile.png")
+    scene = Scene()
+    faces = _calibration_faces(scene, png, planar)
+    path = tmp_path / "calibration.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    samples = _reader_uvs(model, model.root)
+    assert len(samples) == 11 * 4
+    _assert_uvs_match_the_viewport(faces, samples)
+
+
+def test_the_writer_probe_names_only_known_quirks(tmp_path):
+    """Whatever the installed openskp does, the probe answers with a subset
+    of the two defects it knows how to compensate, and answers once."""
+    import openskp
+    skp_out_format._QUIRK_CACHE.clear()
+    quirks = skp_out_format._writer_uv_quirks(openskp, tmp_path)
+    assert quirks <= {"first-edge basis", "unscaled pins"}
+    assert skp_out_format._writer_uv_quirks(openskp, tmp_path) is quirks

@@ -27,11 +27,12 @@ targets — pre-2021, universally readable.
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from PySide6.QtGui import QVector3D
 
-from core.texture import face_uv_axes, uv_reference_points
+from core.texture import face_uv_axes, projection_basis, uv_reference_points
 
 # IngeTrazo stores geometry in metres; SketchUp works in inches.
 _M_TO_IN = 39.37007874
@@ -134,12 +135,19 @@ def _stage_texture(src: Path, stage_dir: Path | None, taken: set) -> Path | None
     return out
 
 
-def _collect_materials(faces_by_key, builder, stage_dir: Path | None = None):
+def _collect_materials(faces_by_key, builder, stage_dir: Path | None = None,
+                       applied: dict | None = None):
     """Register all materials on the builder BEFORE any geometry.
 
     Returns ``mat_handles``: ``key → material_slot``. Unpainted faces never
     reach here — their ``None`` key stays out of ``faces_by_key``, so they
     export with no material at all (SketchUp's default material).
+
+    ``applied``, when given, is filled with ``key → (width, height)``: the
+    applied size in inches the TEXTURED materials were actually written with
+    (1.0 where the writer took none) — the per-face pins have to be scaled
+    by exactly that, see :func:`_compensate_pins`. Keys written as a colour
+    stay out of it, which is how the geometry pass knows not to pin them.
     """
     mat_handles = {}
     from .meshexport import export_names
@@ -178,6 +186,9 @@ def _collect_materials(faces_by_key, builder, stage_dir: Path | None = None):
                      if k in tex_ok}
             mat_handles[key] = builder.add_texture_material(
                 names[key], str(staged), **extra)
+            if applied is not None:
+                applied[key] = (float(extra.get(w_kw) or 1.0),
+                                float(extra.get(h_kw) or 1.0))
         else:
             extra = ({"opacity": info.get("opacity")} if "opacity" in col_ok
                      else {})
@@ -337,7 +348,122 @@ def _iter_export_faces(loose_faces, classic, defs):
         yield from d["mesh"].faces
 
 
-def _face_uv_pairs(face, points=None):
+_QUIRK_CACHE: dict = {}
+
+
+def _writer_uv_quirks(openskp, stage_dir: Path) -> frozenset:
+    """Which of two UV-pinning defects the installed OpenSKP writer has —
+    probed by BEHAVIOUR, the way ``_supported`` probes by signature, so the
+    compensation in :func:`_compensate_pins` switches itself off the day
+    upstream ships the fix (the release installs upstream's openskp, not
+    the fork: see the ``_supported`` docstring for how that bit before).
+
+    * ``"first-edge basis"`` — ``add_face(front_uv=)`` solves its 3×3 in the
+      basis (first edge, n × first edge) while SketchUp reads it in
+      (Z × n, n × Z × n): every pinned face came out turned by the angle of
+      its first edge. A palm trunk of thousands of quads, each with its own
+      first edge, arrived in SketchUp shattered.
+    * ``"unscaled pins"`` — SketchUp keeps that matrix in INCHES of texture
+      space and divides by the material's applied size when it reads; the
+      writer stores the pins' tile-unit UVs as given. Marco's pool water
+      (2 m tile = 78.7 in) came out 78.7× too big: one flat blue slab.
+      openskp's own ``edit`` module dodges this by writing applied size 1.0
+      — not an option here, where ``planar`` faces of the same material
+      rely on the real size.
+
+    Both measured through the SDK's own converter (skp2dae, 2026-09-04,
+    identity on 11 orientations once compensated). The probe writes one
+    horizontal square whose first edge runs along +Y, material applied size
+    10 in, pinned to ``u = x/10, v = y/10``, and reads the stored matrix
+    back with openskp's parser (calibrated against real files): a correct
+    writer stores a diagonal with positive entries and unit scale; the
+    first-edge basis shows as a 90° turn, unscaled pins as scale 10. A
+    writer the probe cannot exercise is trusted as fixed."""
+    quirks = _QUIRK_CACHE.get(id(openskp))
+    if quirks is not None:
+        return quirks
+    found: set = set()
+    try:
+        from PySide6.QtGui import QImage
+        png = stage_dir / "uv-probe.png"
+        img = QImage(4, 4, QImage.Format_RGBA8888)
+        img.fill(0xFFFFFFFF)
+        img.save(str(png), "PNG")
+        b = openskp.create()
+        ok = _supported(b.add_texture_material,
+                        "applied_width", "applied_height", "width", "height")
+        size = {k: 10.0 for k in (("applied_width", "applied_height")
+                                  if "applied_width" in ok
+                                  else ("width", "height")) if k in ok}
+        mat = b.add_texture_material("uv-probe", str(png), **size)
+        b.add_face([(0.0, 0.0, 0.0), (0.0, 10.0, 0.0),
+                    (-10.0, 10.0, 0.0), (-10.0, 0.0, 0.0)],
+                   material=mat,
+                   front_uv=[((0.0, 0.0, 0.0), (0.0, 0.0)),
+                             ((10.0, 0.0, 0.0), (1.0, 0.0)),
+                             ((0.0, 10.0, 0.0), (0.0, 1.0))])
+        out = stage_dir / "uv-probe.skp"
+        b.save(str(out))
+        model = openskp.SkpFile.open(str(out)).parse()
+        face = next(iter(model.root.faces.values()))
+        m = face.uv_transform
+        if m is not None and len(m) == 9:
+            a0, b0, c0, d0 = m[0], m[1], m[3], m[4]
+            if a0 <= 0 or abs(b0) > 1e-6 * max(1.0, abs(a0)):
+                found.add("first-edge basis")
+            if abs(math.sqrt(abs(a0 * d0 - b0 * c0)) - 10.0) < 1e-3:
+                found.add("unscaled pins")
+    except Exception:  # noqa: BLE001 — a writer we can't probe: trust it
+        found = set()
+    quirks = frozenset(found)
+    _QUIRK_CACHE[id(openskp)] = quirks
+    return quirks
+
+
+def _compensate_pins(pairs, pts_in, normal, quirks, applied):
+    """Undo in advance what the installed writer will do wrong with the
+    pins (:func:`_writer_uv_quirks`), so the matrix that lands in the file
+    is the one SketchUp reads back correctly.
+
+    Scale: the UVs handed over in inches of texture space (× applied size),
+    which is what SketchUp divides by the applied size on read. Basis: in
+    place of the real point, one whose projection on the WRITER's basis
+    (U = first edge of the very point list it receives — the face, or the
+    triangle of the fallback — W = n × U) equals the real point's
+    projection on SketchUp's (Z × n, n × Z × n). The writer only ever dots
+    a pin's point with its two axes, never asks it to lie on the face, so
+    the fit it solves is exactly the one it should have solved."""
+    aw, ah = applied
+    if "unscaled pins" in quirks:
+        pairs = [(pt, (u * aw, v * ah)) for pt, (u, v) in pairs]
+    if "first-edge basis" in quirks and len(pts_in) >= 2:
+        n = QVector3D(normal).normalized()
+        nt = (n.x(), n.y(), n.z())
+        ux, uy, uz = (pts_in[1][i] - pts_in[0][i] for i in range(3))
+        lu = math.sqrt(ux * ux + uy * uy + uz * uz)
+        if lu < 1e-12:
+            return pairs                   # degenerate: the writer will balk
+        u = (ux / lu, uy / lu, uz / lu)
+        w = (nt[1] * u[2] - nt[2] * u[1],
+             nt[2] * u[0] - nt[0] * u[2],
+             nt[0] * u[1] - nt[1] * u[0])
+        lw = math.sqrt(sum(c * c for c in w))
+        if lw < 1e-12:
+            return pairs
+        w = (w[0] / lw, w[1] / lw, w[2] / lw)
+        xr, yr = projection_basis(nt)
+        fixed = []
+        for pt, uv in pairs:
+            px = pt[0] * xr[0] + pt[1] * xr[1] + pt[2] * xr[2]
+            py = pt[0] * yr[0] + pt[1] * yr[1] + pt[2] * yr[2]
+            fixed.append(((px * u[0] + py * w[0],
+                           px * u[1] + py * w[1],
+                           px * u[2] + py * w[2]), uv))
+        pairs = fixed
+    return pairs
+
+
+def _face_uv_pairs(face, points=None, quirks=frozenset(), applied=(1.0, 1.0)):
     """Where the face's texture sits, as the three ``(point, (u, v))`` pairs
     OpenSKP fits its UV matrix through — or ``None`` for an untextured or
     degenerate face, which then takes SketchUp's default projection.
@@ -351,7 +477,11 @@ def _face_uv_pairs(face, points=None):
 
     The points are handed over in INCHES, like the rest of the geometry, but
     the coordinates are read in metres — a pair only says "this point lands
-    on that texture coordinate", and the two spaces must not be mixed."""
+    on that texture coordinate", and the two spaces must not be mixed.
+
+    ``quirks``/``applied`` (from :func:`_writer_uv_quirks` and
+    ``_collect_materials``) route the pairs through :func:`_compensate_pins`
+    for a writer that would otherwise store them turned and unscaled."""
     tex = face.attrs.get("texture")
     if not tex or not tex.get("path"):
         return None
@@ -370,14 +500,20 @@ def _face_uv_pairs(face, points=None):
     if ref is None:
         return None
     gu, cu, gv, cv = face_uv_axes(tex, face.normal())
-    return [
+    pairs = [
         (pt, (QVector3D.dotProduct(gu, p) + cu,
               QVector3D.dotProduct(gv, p) + cv))
         for p, pt in zip(ref, _pts_inches(ref))
     ]
+    if not quirks:
+        return pairs
+    verts = points if points is not None else face.vertices
+    return _compensate_pins(pairs, _pts_inches(verts), face.normal(),
+                            quirks, applied)
 
 
-def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError):
+def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError,
+               quirks=frozenset(), applied=None):
     """Write one face (outer loop + holes) to ``sink`` — the root builder or
     an open group/component definition; all three expose the same
     ``add_face``.
@@ -394,12 +530,24 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError):
     than face span — an OpenSKP matter. Until then a rejected polygon falls
     back to triangulation: ``face.triangulate()`` is hole-aware, triangles
     are coplanar by definition, and the original corners are kept, so the
-    welding survives."""
-    material = mat_handles.get(_material_key(face))
+    welding survives.
+
+    Pins go only with a material that was written TEXTURED (``applied``
+    knows which): an image that fell back to a colour has nothing to
+    position, and the fallback triangles get their own pins, fitted on the
+    triangle the writer sees."""
+    key = _material_key(face)
+    material = mat_handles.get(key)
     face_layer = face.attrs.get("layer")
     layer = layer_handles.get(face_layer) if face_layer else None
     soft = _is_soft_face(face)
-    uv = _face_uv_pairs(face)
+    size = applied.get(key) if applied is not None else (1.0, 1.0)
+
+    def pins(points=None):
+        if size is None:
+            return None
+        return _face_uv_pairs(face, points, quirks=quirks, applied=size)
+
     try:
         sink.add_face(
             _pts_inches(face.vertices),
@@ -407,7 +555,7 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError):
             layer=layer,
             soft_edges=soft,
             smooth_edges=soft,
-            front_uv=uv,
+            front_uv=pins(),
             holes=[_pts_inches(h) for h in face.holes],
         )
     except SkpWriteError:
@@ -419,7 +567,7 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError):
                     layer=layer,
                     soft_edges=True,
                     smooth_edges=True,
-                    front_uv=_face_uv_pairs(face, tri),
+                    front_uv=pins(tri),
                 )
             except SkpWriteError:
                 pass  # Degenerate triangle — skip silently.
@@ -467,7 +615,12 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
             materials_info[key]["mat"] = face.attrs["mat"]
 
     # Register materials (must be before layers and geometry).
-    mat_handles = _collect_materials(materials_info, builder, stage_dir)
+    applied: dict = {}
+    mat_handles = _collect_materials(materials_info, builder, stage_dir,
+                                     applied)
+    # Textured faces get per-face pins; probe the writer once (a tiny .skp
+    # in the stage dir) to learn what it does to them.
+    quirks = _writer_uv_quirks(openskp, stage_dir) if applied else frozenset()
 
     # Register layers (must be after materials, before geometry).
     layer_handles = _collect_layers(scene, builder)
@@ -497,7 +650,8 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
     for d in defs:
         with builder.add_component_definition(d["name"]) as defn:
             for face in d["mesh"].faces:
-                _emit_face(defn, face, mat_handles, layer_handles, SkpWriteError)
+                _emit_face(defn, face, mat_handles, layer_handles,
+                           SkpWriteError, quirks, applied)
             _place_children(defn, d["children"])
         handles.append(defn)
 
@@ -505,11 +659,13 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
         with builder.add_group(
                 g.name, layer=layer_handles.get(getattr(g, "layer", None))) as grp:
             for face in g.mesh.faces:
-                _emit_face(grp, face, mat_handles, layer_handles, SkpWriteError)
+                _emit_face(grp, face, mat_handles, layer_handles,
+                           SkpWriteError, quirks, applied)
             _place_children(grp, kids)
 
     for face in loose_faces:
-        _emit_face(builder, face, mat_handles, layer_handles, SkpWriteError)
+        _emit_face(builder, face, mat_handles, layer_handles, SkpWriteError,
+                   quirks, applied)
 
     for di, g in roots:
         translation, matrix3x3 = _instance_placement(g.xform)

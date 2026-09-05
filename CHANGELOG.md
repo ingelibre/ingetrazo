@@ -6,7 +6,22 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
-_Nada todavía._
+### Corregido
+- **Las texturas de un `.skp` exportado se ven en SketchUp donde IngeTrazo
+  las dibujó.** Tres causas, cazadas con el conversor del SDK de SketchUp
+  como oráculo. Dos están en el escritor de openskp y se compensan hasta
+  que upstream las arregle (una sonda lo comprueba en cada exportación): la
+  matriz de cada cara pineada se escribía en la base «primera arista» y
+  SketchUp la lee en la base «Z × normal», así que cada cara salía girada el
+  ángulo de su primera arista (el tronco de la palmera, miles de caras, hecho
+  añicos); y los UV pineados no se multiplicaban por el tamaño aplicado del
+  material, que SketchUp divide al leer, así que una textura de 2 m salía 78
+  veces más grande (el agua de la pileta, un azul plano). La tercera era de
+  IngeTrazo: la proyección por defecto del visor usaba otra base que la de
+  SketchUp y en muros que miran a +Y o −X la textura se veía girada 180°
+  respecto de lo que sale en el archivo. Ahora hay una sola receta
+  (`core.texture.projection_basis`, la de SketchUp) para el visor, los
+  exportadores OBJ/glTF/DAE, la vista previa de pegar y el importador.
 
 ## [0.3.11] — 2026-09-04
 

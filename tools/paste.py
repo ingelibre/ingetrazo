@@ -9,13 +9,12 @@ draw), and a click stamps them into the scene ONCE and returns to Select
 """
 from __future__ import annotations
 
-import math
 
 from PySide6.QtGui import QVector3D
 
 from core.geometry import Face as PreviewFace
 from core.group import copy_group, translated_attrs
-from core.triangulate import plane_axes
+from core.texture import face_uv_axes
 
 
 def _preview_attrs(attrs, off, face):
@@ -30,16 +29,8 @@ def _preview_attrs(attrs, off, face):
         return None
     t = attrs.get("texture")
     if t and t.get("path") and not t.get("uvw"):
-        u, v = plane_axes(face.normal())
-        rot = float(t.get("rot", 0.0))
-        if rot:
-            a = math.radians(rot)
-            ca, sa = math.cos(a), math.sin(a)
-            u, v = (u * ca + v * sa, v * ca - u * sa)
-        sw = t.get("sw", 1.0) or 1.0
-        sh = t.get("sh", 1.0) or 1.0
-        uvw = [u.x() / sw, u.y() / sw, u.z() / sw, 0.0,
-               v.x() / sh, v.y() / sh, v.z() / sh, 0.0]
+        gu, cu, gv, cv = face_uv_axes(t, face.normal())   # the renderer's map
+        uvw = [gu.x(), gu.y(), gu.z(), cu, gv.x(), gv.y(), gv.z(), cv]
         attrs = {**attrs, "texture": {**t, "uvw": uvw}}
     return translated_attrs(attrs, off)
 from core.history import (AddEdgeCommand, AddFaceCommand, CompoundCommand,

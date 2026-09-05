@@ -33,12 +33,11 @@ refinement). Both joins are guarded, so PyPI 0.2.0 still imports (uncoloured).
 """
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
 
-from core.texture import fit_uv_affine
+from core.texture import fit_uv_affine, projection_basis
 
 _INCH = 0.0254          # SketchUp internal unit → metres
 _MAX_DEPTH = 32         # guard against pathological instance nesting
@@ -385,23 +384,11 @@ def _face_attrs(face, attr_map, inherited=None):
     return attr_map.get(mid) if mid is not None else None
 
 
-def _plane_basis(normal):
-    """SketchUp's canonical in-plane axes for a face normal — the basis its
-    per-face texture mapping is expressed in: ``xr = normalize(Z × n)``,
-    ``yr = n × xr``; for a vertical normal, ``xr = X`` and ``yr = ±Y``.
-    Returns two plain ``(x, y, z)`` tuples — the callers run per-vertex math
-    in float space (QVector3D per-point ops dominated large imports)."""
-    nx, ny, nz = float(normal[0]), float(normal[1]), float(normal[2])
-    ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if ln > 1e-30:
-        nx, ny, nz = nx / ln, ny / ln, nz / ln
-    if abs(nx) < 1e-9 and abs(ny) < 1e-9:
-        return (1.0, 0.0, 0.0), (0.0, 1.0 if nz > 0 else -1.0, 0.0)
-    # xr = normalize(Z × n); yr = n × xr.
-    xx, xy = -ny, nx
-    lx = math.sqrt(xx * xx + xy * xy)
-    xx, xy = xx / lx, xy / lx
-    return (xx, xy, 0.0), (-nz * xy, nz * xx, nx * xy - ny * xx)
+# SketchUp's canonical in-plane axes for a face normal — the basis its
+# per-face texture mapping is expressed in. Lives in core.texture now, as the
+# one recipe the renderer and every exporter share; this module was where it
+# was first calibrated (the controlled textura.skp) and keeps the short name.
+_plane_basis = projection_basis
 
 
 def _positioned_uvs(face, raw_ring, tex, matrix=None, projected=False):
