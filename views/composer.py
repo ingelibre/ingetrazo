@@ -3942,6 +3942,7 @@ class ComposerWindow(QMainWindow):
             copies.append(m)
         self.history.execute(CompoundCommand(cmds), notify=False)
         self._mark_dirty()
+        self.canvas.clearSelection()         # the copies become the selection
         self._rebuild_canvas()
         for it in self.canvas.items():
             if isinstance(it, _SheetItem) and any(it.model is c for c in copies):
@@ -4042,6 +4043,7 @@ class ComposerWindow(QMainWindow):
         self.history.execute(CompoundCommand(
             [AddItemCommand(self.comp, m) for m in pasted]), notify=False)
         self._mark_dirty()
+        self.canvas.clearSelection()         # what was pasted is the selection
         self._rebuild_canvas()
         for it in self.canvas.items():
             if isinstance(it, _SheetItem) and any(it.model is p for p in pasted):
