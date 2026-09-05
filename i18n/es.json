@@ -1464,5 +1464,6 @@
  "Level line": "Línea de nivel",
  "Line and text to the left": "Línea y texto a la izquierda",
  "Anchored to the model: reads its height": "Anclada al modelo: lee su altura",
- "Free mark: type the level": "Cota libre: escribe el nivel"
+ "Free mark: type the level": "Cota libre: escribe el nivel",
+ "Chain dimensions: two points and the line's offset, then every click adds the next segment on the same line; click the last point or press Esc to end (the total is stacked above)": "Cotas en cadena: dos puntos y la separación de la línea; cada clic añade el siguiente tramo sobre la misma línea; clic en el último punto o Esc para terminar (la cota total se apila encima)"
 }

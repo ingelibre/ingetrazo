@@ -41,6 +41,15 @@ follow [SemVer](https://semver.org).
   lado, grosor y color desde el panel; una cota libre muestra el nivel que
   escribas. Copiar/pegar estilo y organizar la reconocen. Las etiquetas con
   guía vuelven a anclarse al modelo (la herramienta no tenía snap).
+- **Cotas en cadena.** Herramienta nueva junto a la cota: dos puntos y la
+  separación de la línea, y cada clic siguiente añade el siguiente tramo
+  sobre la misma línea de cota (con un quiebre, el tramo nuevo se acomoda
+  para pasar por la línea de la cadena). Un clic sobre el último punto, Esc
+  o cambiar de herramienta terminan la cadena y apilan la **cota total**
+  una fila más afuera (con dos tramos o más; Ctrl+Z la quita si sobra).
+  Cada tramo se ancla al modelo cuando sus dos puntos cayeron sobre la
+  misma vista. El **estilo de cota por defecto** (la última editada) ahora
+  se recuerda entre sesiones, no solo dentro de la lámina.
 - **Perfil de terreno en láminas.** Un ítem nuevo del compositor (herramienta
   «Perfil» en la barra) dibuja la cota del terreno bajo un trazado contra la
   progresiva, como en un plano de carretera o canal: escala horizontal 1:N o

@@ -2255,6 +2255,9 @@ class ComposerCanvasView(QGraphicsView):
         self._snap_marker = None       # green dot over a frame vertex/edge
         self._last_hit = None          # richest snap hit of the last _snapped
         self._hit_a = None             # snap hits of the two measured points
+        self._chain_pts: list = []     # chain dimensions: (QPointF, hit) so far
+        self._chain_sep = None         # the chain's line offset once fixed
+        self._chain_cotas: list = []   # the cotas placed by this chain
         self._hit_b = None             # (world anchors for the cota)
         self._pan_last = None          # viewport px while panning the sheet
         self._ang_pts: list = []       # angular cota: vertex, A, B (page mm)
@@ -2267,8 +2270,8 @@ class ComposerCanvasView(QGraphicsView):
     #: Frames, text blocks, images etc. place freely — computing the snap
     #: set for them froze the composer on photogrammetry-scale models.
     _GEOM_SNAP_TOOLS = frozenset(
-        ("cota", "linea", "flecha", "rect", "elipse", "poligono",
-         "etiqueta", "nivel"))
+        ("cota", "cota_cadena", "linea", "flecha", "rect", "elipse",
+         "poligono", "etiqueta", "nivel"))
 
     def _snapped(self, pos):
         """Snap *pos* (scene mm) to the nearest frame geometry point when a
@@ -2349,6 +2352,11 @@ class ComposerCanvasView(QGraphicsView):
             self.composer.format_painter_click(hit)
             event.accept()
             return
+        if mode == "cota_cadena" and event.button() == Qt.LeftButton:
+            pos, _ = self._snapped(self.mapToScene(event.position().toPoint()))
+            self._chain_click(pos, self._last_hit)
+            event.accept()
+            return
         if mode == "cota_ang" and event.button() == Qt.LeftButton:
             pos, _ = self._snapped(self.mapToScene(event.position().toPoint()))
             if len(self._ang_pts) < 3:
@@ -2418,6 +2426,10 @@ class ComposerCanvasView(QGraphicsView):
             return
         pos, _ = self._snapped(raw)
         self.composer.update_cursor_label(pos.x(), pos.y())
+        if self._chain_pts:
+            self._update_chain_preview(pos)
+            event.accept()
+            return
         if self._ang_pts:
             self._update_angular_preview(pos)
             event.accept()
@@ -2517,6 +2529,142 @@ class ComposerCanvasView(QGraphicsView):
             path.arcTo(rect, -_math.degrees(a0), -_math.degrees(sweep))
         self._preview.setPath(path)
 
+    # ---- chain dimensions (points in a row on one dimension line) ---------
+
+    def _chain_click(self, pos, hit) -> None:
+        """One click of the chain tool: the first two points, then the
+        line's offset, then every further point adds a cota from the last
+        one on the SAME dimension line. A click on the last point (or Esc,
+        or switching tools) ends the chain and stacks the total."""
+        pts = self._chain_pts
+        thr = 4.0 / max(self.transform().m11(), 1e-6)
+        if pts and (abs(pos.x() - pts[-1][0].x())
+                    + abs(pos.y() - pts[-1][0].y())) < thr:
+            self.finish_chain()
+            return
+        if len(pts) < 2:
+            pts.append((QPointF(pos), hit))
+            self._update_chain_preview(pos)
+            return
+        if self._chain_sep is None:
+            a, b = pts[0][0], pts[1][0]
+            self._chain_sep = self._sep_between(a, b, pos)
+            self._chain_cotas.append(self.composer.place_chain_cota(
+                (a.x(), a.y()), (b.x(), b.y()), self._chain_sep,
+                self._pair_anchors(pts[0][1], pts[1][1])))
+            self._clear_snap_marker()
+            self._update_chain_preview(pos)
+            return
+        prev = pts[-1]
+        pts.append((QPointF(pos), hit))
+        sep = self._chain_sep_for(prev[0], pos)
+        self._chain_cotas.append(self.composer.place_chain_cota(
+            (prev[0].x(), prev[0].y()), (pos.x(), pos.y()), sep,
+            self._pair_anchors(prev[1], hit)))
+        self._update_chain_preview(pos)
+
+    @staticmethod
+    def _pair_anchors(hit_a, hit_b):
+        if (hit_a is not None and hit_b is not None
+                and hit_a[3] is hit_b[3]):
+            return (hit_a[3], hit_a[2], hit_b[2])
+        return None
+
+    @staticmethod
+    def _sep_between(a, b, pos) -> float:
+        """Signed ⟂ distance from segment a→b to *pos* (page mm)."""
+        import math as _math
+        dx, dy = b.x() - a.x(), b.y() - a.y()
+        length = _math.hypot(dx, dy)
+        if length < 1e-9:
+            return 0.0
+        nx, ny = -dy / length, dx / length
+        return (pos.x() - a.x()) * nx + (pos.y() - a.y()) * ny
+
+    def _chain_sep_for(self, a, b) -> float:
+        """The sep that puts cota a→b's line ON the chain's dimension line
+        (the first cota's, offset ``_chain_sep`` from its points). Equal
+        to the chain sep for collinear points; for a jog, the distance
+        from *a* to the chain line along the new cota's normal."""
+        import math as _math
+        p1, p2 = self._chain_pts[0][0], self._chain_pts[1][0]
+        d12x, d12y = p2.x() - p1.x(), p2.y() - p1.y()
+        l12 = _math.hypot(d12x, d12y)
+        dx, dy = b.x() - a.x(), b.y() - a.y()
+        length = _math.hypot(dx, dy)
+        sep = float(self._chain_sep or 0.0)
+        if l12 < 1e-9 or length < 1e-9:
+            return sep
+        n12x, n12y = -d12y / l12, d12x / l12
+        qx, qy = p1.x() + n12x * sep, p1.y() + n12y * sep   # on the chain line
+        nx, ny = -dy / length, dx / length
+        den = nx * d12y - ny * d12x                         # n × d12
+        if abs(den) < 1e-9:
+            return sep
+        return ((qx - a.x()) * d12y - (qy - a.y()) * d12x) / den
+
+    def _update_chain_preview(self, pos) -> None:
+        """Rubber band of the chain: the points so far joined, the cursor
+        segment, and once the offset is fixed the chain's dimension line."""
+        from PySide6.QtGui import QPainterPath
+        from PySide6.QtWidgets import QGraphicsPathItem
+        if self._preview is None or not isinstance(
+                self._preview, QGraphicsPathItem):
+            if self._preview is not None:
+                self.scene().removeItem(self._preview)
+            pen = QPen(QColor(58, 110, 165), 0.3, Qt.DashLine)
+            self._preview = QGraphicsPathItem()
+            self._preview.setPen(pen)
+            self._preview.setZValue(100000)
+            self.scene().addItem(self._preview)
+        pts = [p for p, _h in self._chain_pts]
+        path = QPainterPath()
+        if not pts:
+            self._preview.setPath(path)
+            return
+        if self._chain_sep is None:
+            path.moveTo(pts[0])
+            for q in pts[1:]:
+                path.lineTo(q)
+            if len(pts) < 2:
+                path.lineTo(pos)
+            else:
+                # the offset phase: the would-be dimension line at the cursor
+                a, b = pts[0], pts[1]
+                sep = self._sep_between(a, b, pos)
+                dx, dy = b.x() - a.x(), b.y() - a.y()
+                length = max(1e-9, (dx * dx + dy * dy) ** 0.5)
+                nx, ny = -dy / length, dx / length
+                path.moveTo(a.x() + nx * sep, a.y() + ny * sep)
+                path.lineTo(b.x() + nx * sep, b.y() + ny * sep)
+        else:
+            last = pts[-1]
+            sep = self._chain_sep_for(last, pos)
+            dx, dy = pos.x() - last.x(), pos.y() - last.y()
+            length = (dx * dx + dy * dy) ** 0.5
+            if length > 1e-9:
+                nx, ny = -dy / length, dx / length
+                path.moveTo(last.x() + nx * sep, last.y() + ny * sep)
+                path.lineTo(pos.x() + nx * sep, pos.y() + ny * sep)
+                path.moveTo(pos)
+                path.lineTo(pos.x() + nx * sep, pos.y() + ny * sep)
+        self._preview.setPath(path)
+
+    def finish_chain(self) -> None:
+        """End the chain: stack the total over two or more segments, clear
+        the state; the tool stays armed for the next chain."""
+        pts, cotas, sep = self._chain_pts, self._chain_cotas, self._chain_sep
+        self._chain_pts, self._chain_cotas, self._chain_sep = [], [], None
+        if self._preview is not None:
+            self.scene().removeItem(self._preview)
+            self._preview = None
+        self._clear_snap_marker()
+        if len(cotas) >= 2 and sep is not None:
+            first, last = pts[0], pts[-1]
+            self.composer.place_chain_total(
+                (first[0].x(), first[0].y()), (last[0].x(), last[0].y()),
+                sep, cotas, self._pair_anchors(first[1], last[1]))
+
     def _finish_cota(self, pos) -> None:
         start, second = self._drag_start, self._second_pt
         sep = self._cota_sep(pos)
@@ -2594,7 +2742,10 @@ class ComposerCanvasView(QGraphicsView):
             self.composer.place_tool(start.x(), start.y(), end.x(), end.y())
 
     def cancel_placement(self) -> None:
-        """Drop an in-progress two-point placement (Esc / tool switch)."""
+        """Drop an in-progress two-point placement (Esc / tool switch); a
+        chain in progress is FINISHED, not dropped — its cotas are placed."""
+        if self._chain_pts or self._chain_cotas:
+            self.finish_chain()
         self._drag_start = None
         self._second_pt = None
         self._ang_pts = []
@@ -2625,7 +2776,8 @@ class ComposerCanvasView(QGraphicsView):
             event.accept()
             return
         if event.key() == Qt.Key_Escape and (
-                self._drag_start is not None or self._ang_pts):
+                self._drag_start is not None or self._ang_pts
+                or self._chain_pts):
             self.cancel_placement()
             event.accept()
             return
@@ -2665,6 +2817,7 @@ class ComposerWindow(QMainWindow):
         # window is visible, the raster ones re-render by themselves after a
         # short quiet period. Vector frames (seconds each) wait for Update.
         from PySide6.QtCore import QSettings
+        self._load_default_cota_style()
         self._auto_render = str(QSettings().value(
             "composer/auto_render", "1")) != "0"
         self._stale: set = set()
@@ -2787,6 +2940,10 @@ class ComposerWindow(QMainWindow):
         ("elipse", "circle", "Draw an ellipse (two clicks or drag)", True),
         ("poligono", "polygon", "Draw a polygon (two clicks or drag)", True),
         ("cota", "dimension", "Draw a dimension (two points + separation)", True),
+        ("cota_cadena", "dimension_chain",
+         "Chain dimensions: two points and the line's offset, then every "
+         "click adds the next segment on the same line; click the last "
+         "point or press Esc to end (the total is stacked above)", False),
         ("cota_ang", "protractor",
          "Draw an angular dimension (vertex, two points, then the arc)", False),
     )
@@ -2904,26 +3061,67 @@ class ComposerWindow(QMainWindow):
                 item = FormaItem(kind=kind, x_mm=x, y_mm=y,
                                  w_mm=max(w, 2.0), h_mm=max(h, 2.0))
         elif mode == "cota":
-            n = self.comp.frames[0].scale_n if self.comp.frames else 100.0
-            style = dict(getattr(self, "_last_cota_style", None) or {})
-            style.setdefault("offset_mm", 0.8)
-            item = CotaItem(x_mm=x0, y_mm=y0, dx_mm=x1 - x0, dy_mm=y1 - y0,
-                            scale_n=n, sep_mm=sep_mm, **style)
-            if anchors is not None:
-                frame, a_world, b_world = anchors
-                if not frame.uid:
-                    import uuid
-                    frame.uid = uuid.uuid4().hex
-                item.anchor_uid = frame.uid
-                item.a_world = list(a_world)
-                item.b_world = list(b_world)
-                item.scale_n = frame.scale_n
+            item = self._new_cota((x0, y0), (x1, y1), sep_mm, anchors)
         if item is not None:
             item.z = self._next_z()         # new items land on top (QGIS)
             self._pending_sel = item
             self.history.execute(AddItemCommand(self.comp, item))
         self.tool_mode = "select"
         self._tool_actions["select"].setChecked(True)
+
+    def _new_cota(self, a, b, sep_mm: float, anchors=None) -> CotaItem:
+        """A cota from page point *a* to *b* in the sheet's remembered
+        style, anchored when both points snapped to one frame."""
+        n = self.comp.frames[0].scale_n if self.comp.frames else 100.0
+        style = dict(getattr(self, "_last_cota_style", None) or {})
+        style.setdefault("offset_mm", 0.8)
+        item = CotaItem(x_mm=a[0], y_mm=a[1], dx_mm=b[0] - a[0],
+                        dy_mm=b[1] - a[1], scale_n=n, sep_mm=sep_mm, **style)
+        if anchors is not None:
+            frame, a_world, b_world = anchors
+            if not frame.uid:
+                import uuid
+                frame.uid = uuid.uuid4().hex
+            item.anchor_uid = frame.uid
+            item.a_world = list(a_world)
+            item.b_world = list(b_world)
+            item.scale_n = frame.scale_n
+        return item
+
+    def place_chain_cota(self, a, b, sep_mm: float, anchors=None) -> CotaItem:
+        """One segment of a chain: placed through the history like any
+        item, but the tool stays armed for the next point."""
+        item = self._new_cota(a, b, sep_mm, anchors)
+        item.z = self._next_z()
+        self._pending_sel = item
+        self.history.execute(AddItemCommand(self.comp, item))
+        return item
+
+    def place_chain_total(self, a, b, sep_mm: float, segments,
+                          anchors=None) -> CotaItem:
+        """The chain's total, stacked one row beyond its dimension line
+        (a text height plus clearances, on the side the chain sits)."""
+        import math as _math
+        text_mm = max((float(getattr(c, "text_mm", 2.8)) for c in segments),
+                      default=2.8)
+        step = text_mm * 2.0 + 2.5
+        sep = sep_mm + (step if sep_mm >= 0 else -step)
+        # the total runs along the chain line: its own normal is a→b's, so
+        # measure the stack from the chain line, not from a→b
+        p1 = segments[0]
+        nx, ny = p1.normal()
+        chain_line = (p1.x_mm + nx * p1.sep_mm, p1.y_mm + ny * p1.sep_mm)
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = _math.hypot(dx, dy)
+        if length > 1e-9:
+            tnx, tny = -dy / length, dx / length
+            on_line = (chain_line[0] - a[0]) * tnx + (chain_line[1] - a[1]) * tny
+            sep = on_line + (step if sep_mm >= 0 else -step)
+        item = self._new_cota(a, b, sep, anchors)
+        item.z = self._next_z()
+        self._pending_sel = item
+        self.history.execute(AddItemCommand(self.comp, item))
+        return item
 
     def place_angular(self, vertex, a, b, radius_mm: float) -> None:
         """The angular tool's four clicks landed: vertex, a point on each
@@ -6471,9 +6669,31 @@ class ComposerWindow(QMainWindow):
                           "text_color", "text_bg", "text_bg_opacity", "units")
 
     def _remember_cota_style(self, model) -> None:
+        """The last edited cota's look becomes the sheet's default for new
+        cotas — and the app's, across sessions (QSettings)."""
+        import json
+        from PySide6.QtCore import QSettings
         self._last_cota_style = {k: getattr(model, k)
                                  for k in self._COTA_STYLE_FIELDS
                                  if hasattr(model, k)}
+        try:
+            QSettings().setValue("composer/default_cota_style",
+                                 json.dumps(self._last_cota_style))
+        except Exception:  # noqa: BLE001 — a style that won't serialise
+            pass
+
+    def _load_default_cota_style(self) -> None:
+        import json
+        from PySide6.QtCore import QSettings
+        raw = QSettings().value("composer/default_cota_style", "")
+        try:
+            style = json.loads(str(raw or "")) if raw else {}
+        except Exception:  # noqa: BLE001
+            style = {}
+        probe = CotaItem()
+        self._last_cota_style = {
+            k: v for k, v in dict(style).items()
+            if k in self._COTA_STYLE_FIELDS and hasattr(probe, k)}
 
     def _on_pick_cota_color(self) -> None:
         from PySide6.QtWidgets import QColorDialog

@@ -425,6 +425,16 @@ def _dimension(p, ink):
     p.drawLine(QPointF(36, 24), QPointF(36, 36))
 
 
+def _dimension_chain(p, ink):
+    # Two dimension segments sharing one line, the total stacked above.
+    p.drawLine(QPointF(8, 32), QPointF(40, 32))
+    for x in (8, 24, 40):
+        p.drawLine(QPointF(x, 27), QPointF(x, 37))
+    p.drawLine(QPointF(8, 18), QPointF(40, 18))
+    p.drawLine(QPointF(8, 14), QPointF(8, 22))
+    p.drawLine(QPointF(40, 14), QPointF(40, 22))
+
+
 def _geopath(p, ink):
     pen = p.pen()
     pen.setStyle(Qt.DashLine)
@@ -811,7 +821,7 @@ _DRAW = {
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
     "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset,
     "move": _move, "paint": _paint, "eyedropper": _eyedropper,
-    "dimension": _dimension,
+    "dimension": _dimension, "dimension_chain": _dimension_chain,
     "geopath": _geopath, "orbit": _orbit, "pan": _pan,
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
