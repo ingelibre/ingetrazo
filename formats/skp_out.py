@@ -14,10 +14,9 @@ Structure survives too: a classic group (mesh in world coordinates, no
 — sibling groups sharing one prototype mesh — become ONE component definition
 placed by N instances (``add_component_definition`` + ``add_instance``), so
 the shared geometry is stored once and stays editable as a component on the
-SketchUp side. Loose mesh faces stay root-level. Two deliberate exclusions,
-mirroring ``meshexport.world_faces``: hidden entities and face-me billboards
-(SketchUp-specific import artifacts) are not exported. IngeTrazo's group list
-is flat, so there is no nesting to preserve.
+SketchUp side. Loose mesh faces stay root-level. Hidden entities are not
+exported (mirroring ``meshexport.world_faces``); face-me figures become
+components in SketchUp's own face-me convention (``_billboard_definition``).
 
 Coordinates are in **inches** (SketchUp's native unit); the model's metre-based
 geometry is scaled by ``_M_TO_IN``, and instance placements carry their
@@ -33,6 +32,10 @@ from pathlib import Path
 from PySide6.QtGui import QVector3D
 
 from core.texture import face_uv_axes, projection_basis, uv_reference_points
+
+# SketchUp's face-me convention: a component that "always faces the camera"
+# turns about its own Z so that its LOCAL −Y axis points at the eye.
+_FACEME_FRONT = (0.0, -1.0)
 
 # IngeTrazo stores geometry in metres; SketchUp works in inches.
 _M_TO_IN = 39.37007874
@@ -297,8 +300,9 @@ def _split_containers(scene):
     landing in the file 48 times over — which is the difference between the
     14 MB SketchUp writes for that model and the 80 MB we used to.
 
-    Mirrors ``meshexport.world_faces``'s rules: hidden entities and face-me
-    billboards are skipped, and loose faces come from ``scene.loose_mesh``
+    Mirrors ``meshexport.world_faces``'s rules: hidden entities are skipped
+    (face-me figures become definitions of their own, see
+    ``_billboard_definition``), and loose faces come from ``scene.loose_mesh``
     so a group being edited is not double-counted (its mesh is already in
     ``scene.groups``)."""
     visible = getattr(scene, "entity_visible", None) or (lambda e: True)
@@ -313,6 +317,19 @@ def _split_containers(scene):
         return [c for c in (getattr(g, "children", None) or ())
                 if visible(c) and not getattr(c, "billboard", False)
                 and (c.mesh.faces or getattr(c, "children", None))]
+
+    def _figures(g):
+        return [c for c in (getattr(g, "children", None) or ())
+                if visible(c) and getattr(c, "billboard", False)
+                and c.mesh.faces]
+
+    def _register_figure(c):
+        key = ("figure", id(c))
+        idx = index_of.get(key)
+        if idx is None:
+            idx = index_of[key] = len(defs)
+            defs.append(_billboard_definition(c))
+        return idx
 
     def _key(g):
         return (id(g.mesh),
@@ -329,22 +346,111 @@ def _split_containers(scene):
         if idx is not None:
             return idx
         children = [(_register(c), c) for c in _kids(g)]
+        children += [(_register_figure(c), c) for c in _figures(g)]
         idx = index_of[key] = len(defs)
         defs.append({"name": g.name, "mesh": g.mesh, "children": children})
         return idx
 
     classic, roots = [], []
     for g in getattr(scene, "groups", []):
-        if not visible(g) or getattr(g, "billboard", False):
+        if not visible(g):
+            continue
+        if getattr(g, "billboard", False):
+            if g.mesh.faces:
+                roots.append((_register_figure(g), g))
             continue
         kids = _kids(g)
-        if not g.mesh.faces and not kids:
+        figures = _figures(g)
+        if not g.mesh.faces and not kids and not figures:
             continue
         if getattr(g, "xform", None) is None:
-            classic.append((g, [(_register(c), c) for c in kids]))
+            classic.append((g, [(_register(c), c) for c in kids]
+                            + [(_register_figure(c), c) for c in figures]))
         else:
             roots.append((_register(g), g))
     return loose_faces, classic, defs, roots
+
+
+def _billboard_definition(g) -> dict:
+    """A face-me group as a SketchUp component definition: its geometry in
+    the component's LOCAL frame, feet at the origin, front along −Y — the
+    axis SketchUp turns toward the camera when the definition carries the
+    always-faces-camera behaviour (the same turn the viewport does around
+    the figure's anchor). The anchor becomes the instance's placement.
+
+    Figures were simply left out of the file before, so every 2D person
+    and cut-out tree vanished in SketchUp (Marco's pool: the man on the
+    deck, the swimmers). Two kinds, mirroring the viewport's two passes:
+    a textured quad (``billboard is True``: a PNG cut-out) is rebuilt as
+    the canonical upright quad the viewport draws, whatever yaw its stored
+    quad has; a vector figure (``"mesh"``: SketchUp's 2D people, real
+    outlines) keeps its faces, turned so the largest one's normal points
+    along −Y. A writer without the behaviour flag still gets the figure —
+    standing still, facing −Y — instead of nothing."""
+    import math
+    from core.mesh import Mesh
+    from core.group import _remap_uvws
+    from PySide6.QtGui import QMatrix4x4
+
+    verts = g.mesh.vertices
+    xs = [v.position.x() for v in verts]
+    ys = [v.position.y() for v in verts]
+    zs = [v.position.z() for v in verts]
+    anchor = QVector3D((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, min(zs))
+    mesh = Mesh()
+    faces = list(g.mesh.faces)
+    tex = next((f.attrs.get("texture") for f in faces
+                if f.attrs.get("texture", {}).get("path")), None)
+    if g.billboard is True and tex is not None:
+        w = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+        h = max(zs) - min(zs)
+        if w > 1e-9 and h > 1e-9:
+            quad = [QVector3D(-w / 2, 0, 0), QVector3D(w / 2, 0, 0),
+                    QVector3D(w / 2, 0, h), QVector3D(-w / 2, 0, h)]
+            face = mesh.add_face(quad)
+            # u across the quad, v up it: the whole picture once.
+            face.attrs = {"texture": {"path": tex["path"], "sw": w, "sh": h,
+                                      "uvw": [1.0 / w, 0.0, 0.0, 0.5,
+                                              0.0, 0.0, 1.0 / h, 0.0]}}
+            src = faces[0].attrs or {}
+            for k in ("layer", "opacity"):
+                if k in src:
+                    face.attrs[k] = src[k]
+        return {"name": g.name or "Figura", "mesh": mesh, "children": [],
+                "billboard": True, "anchor": anchor}
+    # A vector figure: turn its largest face's normal onto −Y.
+    best, n0 = -1.0, None
+    for f in faces:
+        a = f.area() if hasattr(f, "area") else 0.0
+        if n0 is None or a > best:
+            n0, best = f.normal(), a
+    nh = QVector3D(n0.x(), n0.y(), 0.0) if n0 is not None else QVector3D()
+    m = QMatrix4x4()
+    if nh.length() > 1e-9:
+        nh.normalize()
+        turn = math.degrees(math.atan2(_FACEME_FRONT[1], _FACEME_FRONT[0])
+                            - math.atan2(nh.y(), nh.x()))
+        m.rotate(turn, 0.0, 0.0, 1.0)
+    m.translate(-anchor)
+    for f in faces:
+        pts = [m.map(QVector3D(p)) for p in f.vertices]
+        holes = [[m.map(QVector3D(p)) for p in h] for h in f.holes]
+        nf = mesh.add_face(pts, holes)
+        nf.attrs = dict(f.attrs or {})
+    _remap_uvws(mesh, m)
+    return {"name": g.name or "Figura", "mesh": mesh, "children": [],
+            "billboard": True, "anchor": anchor}
+
+
+def _placement(entry, group):
+    """OpenSKP's ``(translation, matrix3x3)`` for placing ``group``: a
+    figure sits at its anchor with no turn (SketchUp turns it), anything
+    else by its own transform."""
+    if entry.get("billboard"):
+        a = entry["anchor"]
+        return ((a.x() * _M_TO_IN, a.y() * _M_TO_IN, a.z() * _M_TO_IN),
+                (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0))
+    return _instance_placement(group.xform)
 
 
 def _iter_export_faces(loose_faces, classic, defs):
@@ -724,11 +830,14 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
     # root-level face or instance — OpenSKP splices definitions in after
     # materials and layers, so their slot numbering locks once root
     # geometry starts.
+    faceme_ok = "always_faces_camera" in _supported(
+        builder.add_component_definition, "always_faces_camera")
+
     def _place_children(container, children):
         """Write a container's nested placements — the component's own
         internal sharing, kept instead of flattened."""
         for ci, c in children:
-            translation, matrix3x3 = _instance_placement(c.xform)
+            translation, matrix3x3 = _placement(defs[ci], c)
             container.add_instance(
                 handles[ci],
                 name=c.name,
@@ -742,7 +851,9 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
     # which is the only order this format accepts.
     handles: list = []
     for d in defs:
-        with builder.add_component_definition(d["name"]) as defn:
+        flags = ({"always_faces_camera": True}
+                 if d.get("billboard") and faceme_ok else {})
+        with builder.add_component_definition(d["name"], **flags) as defn:
             for face in d["mesh"].faces:
                 _emit_face(defn, face, mat_handles, layer_handles,
                            SkpWriteError, quirks, applied)
@@ -762,7 +873,7 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
                    quirks, applied)
 
     for di, g in roots:
-        translation, matrix3x3 = _instance_placement(g.xform)
+        translation, matrix3x3 = _placement(defs[di], g)
         builder.add_instance(
             handles[di],
             name=g.name,

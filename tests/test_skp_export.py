@@ -680,3 +680,64 @@ def test_a_two_sided_face_keeps_its_own_back_paint(tmp_path):
     assert tuple(front.color)[:3] == (255, 0, 0)
     assert tuple(back.color)[:3] == (0, 0, 255)
     assert back is not front
+
+
+# ---- Face-me figures ----------------------------------------------------------
+
+def test_face_me_figures_become_face_me_components(tmp_path):
+    """A textured cut-out (Sumari) and a vector figure (a 2D person) leave
+    as component definitions in SketchUp's face-me convention — feet at the
+    local origin, front along −Y, the axis SketchUp turns toward the camera
+    — placed at their anchors. They used to be skipped altogether: every
+    person on the pool deck vanished in SketchUp."""
+    from core.group import Group, make_billboard_group
+    from core.mesh import Mesh
+    png = _make_png(tmp_path / "figure.png")
+    scene = Scene()
+    scene.groups.append(make_billboard_group(str(png), 1.65, "Sumari",
+                                             aspect=0.4, position=V(3, 4, 0)))
+    m = Mesh()
+    f = m.add_face([V(10, 0, 0), V(10, 0.5, 0), V(10, 0.5, 1.8), V(10, 0, 1.8)])
+    f.attrs["color"] = (0.2, 0.4, 0.8)               # a vector figure facing +X
+    susan = Group(m, name="Susan")
+    susan.billboard = "mesh"
+    scene.groups.append(susan)
+    scene.version += 1
+    path = tmp_path / "figures.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    by_name = {d.name: d for d in model.definitions.values()}
+    assert {"Sumari", "Susan"} <= set(by_name)
+
+    def corners(defn):
+        return [(round(v.x / _M_TO_IN, 3), round(v.y / _M_TO_IN, 3),
+                 round(v.z / _M_TO_IN, 3)) for v in defn.vertices.values()]
+
+    sumari = by_name["Sumari"]
+    assert len(sumari.faces) == 1
+    xs, ys, zs = zip(*corners(sumari))
+    assert min(xs) == -0.33 and max(xs) == 0.33          # 1.65 × 0.4 wide, centred
+    assert set(ys) == {0.0} and min(zs) == 0.0 and max(zs) == 1.65
+    face = next(iter(sumari.faces.values()))
+    assert model.materials_by_id[face.material_id].texture is not None
+    assert face.uv_transform is not None                  # the picture once, pinned
+
+    susan_def = by_name["Susan"]
+    xs, ys, zs = zip(*corners(susan_def))
+    assert min(xs) == -0.25 and max(xs) == 0.25          # turned from +X onto −Y
+    assert set(ys) == {0.0} and max(zs) == 1.8
+    normal = next(iter(susan_def.faces.values())).normal
+    assert normal[1] == pytest.approx(-1.0)
+
+    placed = {}
+    for inst in model.root.instances:
+        d = model.definitions[inst.ref_idx]
+        placed[d.name] = tuple(round(c / _M_TO_IN, 3) for c in inst.matrix[9:12])
+    assert placed["Sumari"] == (3.0, 4.0, 0.0)            # its feet
+    assert placed["Susan"] == (10.0, 0.25, 0.0)
+
+    import openskp
+    b = openskp.create()
+    if "always_faces_camera" in skp_out_format._supported(
+            b.add_component_definition, "always_faces_camera"):
+        assert sumari.always_faces_camera and susan_def.always_faces_camera

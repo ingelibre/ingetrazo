@@ -6,6 +6,14 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Añadido
+- **Las figuras «cara a la cámara» viajan al `.skp`.** Las personas 2D y los
+  recortes (la figura Sumari, los bañistas) se quedaban fuera del archivo y
+  desaparecían en SketchUp. Ahora salen como componentes en la convención de
+  SketchUp (pies en el origen, frente hacia −Y, colocados en su ancla) y, si
+  el escritor de openskp lo admite, con el comportamiento «siempre mirar a la
+  cámara»; con el escritor actual quedan de pie mirando a −Y.
+
 ### Corregido
 - **Las texturas de un `.skp` exportado se ven en SketchUp donde IngeTrazo
   las dibujó.** Tres causas, cazadas con el conversor del SDK de SketchUp
