@@ -72,6 +72,12 @@ follow [SemVer](https://semver.org).
   encuadre se mueve y redimensiona como cualquier ítem. Dibujada sobre un
   marco, queda ligada a él y se mueve con él. Número, lámina (admite
   {lamina}), forma, tamaño, grosor y color desde el panel.
+- **Imágenes con opacidad, recorte y borde desvanecido.** El panel de la
+  imagen tiene ahora opacidad, forma del recorte (rectángulo, esquinas
+  redondeadas, elipse o círculo), borde desvanecido en milímetros, ajuste
+  (estirar, cubrir recortando o contener) y contorno opcional. Una foto en
+  círculo con el borde fundido al papel, como en las láminas de
+  presentación. Copiar/pegar estilo también entre imágenes.
 - **Perfil de terreno en láminas.** Un ítem nuevo del compositor (herramienta
   «Perfil» en la barra) dibuja la cota del terreno bajo un trazado contra la
   progresiva, como en un plano de carretera o canal: escala horizontal 1:N o

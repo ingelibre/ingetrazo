@@ -1482,5 +1482,18 @@
  "Title size": "Tamaño del rótulo",
  "Model annotations": "Anotaciones del modelo",
  "Annotation size": "Tamaño de anotaciones",
- "Chainage marks": "Progresivas"
+ "Chainage marks": "Progresivas",
+ "Opacity": "Opacidad",
+ "Ellipse / circle": "Elipse / círculo",
+ "The cut-out. Make the box square for a circle; pick «Cover» below so the photo is cropped, not squashed.": "El recorte. Haz cuadrada la caja para un círculo; elige «Cubrir» abajo para que la foto se recorte en vez de deformarse.",
+ "hard edge": "borde duro",
+ "Fade the edge into the paper over this width.": "Desvanece el borde hacia el papel en este ancho.",
+ "Feathered edge": "Borde desvanecido",
+ "Stretch to the box": "Estirar a la caja",
+ "Cover (crop to fill)": "Cubrir (recorta para llenar)",
+ "Contain (fit inside)": "Contener (cabe entera)",
+ "Fit": "Ajuste",
+ "Outline": "Contorno",
+ "Outline width": "Grosor del contorno",
+ "Outline colour": "Color del contorno"
 }

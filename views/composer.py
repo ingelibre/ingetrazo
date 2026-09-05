@@ -1342,11 +1342,137 @@ def paint_text_mm(painter: QPainter, item: TextoItem) -> None:
                   underline=getattr(item, "underline", False))
 
 
+#: Composited images (shape, feather, opacity, fit applied), keyed by the
+#: source's cacheKey and the presentation fields — a drag repaints the
+#: canvas many times a second, and the mask is NumPy work per pixel.
+_IMG_COMPOSITE_CACHE: dict = {}
+_IMG_COMPOSITE_MAX = 24
+_IMG_COMPOSITE_PX = 2048           # longest side of a composite
+
+
+def _shape_alpha(W: int, H: int, shape: str, radius_px: float,
+                 feather_px: float):
+    """Per-pixel alpha (H, W) of the cut-out: 1 inside, 0 outside, with a
+    smooth fade ``feather_px`` wide inward from the outline (or a 1 px
+    anti-aliased edge when there is no feather)."""
+    import numpy as np
+    ys, xs = np.mgrid[0:H, 0:W].astype(np.float64)
+    xs += 0.5
+    ys += 0.5
+    if shape == "ellipse":
+        a, b = W / 2.0, H / 2.0
+        dx, dy = xs - a, ys - b
+        nd = np.sqrt((dx / a) ** 2 + (dy / b) ** 2)      # 1 on the outline
+        ang = np.arctan2(dy, dx)
+        r_dir = 1.0 / np.sqrt((np.cos(ang) / a) ** 2 + (np.sin(ang) / b) ** 2)
+        dist = (1.0 - nd) * r_dir                          # px inside (+)
+    else:
+        r = max(0.0, min(radius_px if shape == "rounded" else 0.0,
+                         W / 2.0, H / 2.0))
+        qx = np.abs(xs - W / 2.0) - (W / 2.0 - r)
+        qy = np.abs(ys - H / 2.0) - (H / 2.0 - r)
+        outside = np.sqrt(np.maximum(qx, 0.0) ** 2 + np.maximum(qy, 0.0) ** 2)
+        inside = np.minimum(np.maximum(qx, qy), 0.0)
+        dist = -(outside + inside - r)
+    if feather_px <= 0.5:
+        return np.clip(dist + 0.5, 0.0, 1.0)
+    t = np.clip(dist / feather_px, 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)                          # smoothstep
+
+
+def composited_image(image: QImage, item: ImagenItem) -> QImage:
+    """*image* as the sheet shows it: cropped or letterboxed per ``fit`` to
+    the box's aspect, cut to ``shape`` with a ``feather_mm`` fade, at
+    ``opacity``. Plain rect / no feather / opaque = the image itself."""
+    shape = getattr(item, "shape", "rect") or "rect"
+    feather = float(getattr(item, "feather_mm", 0.0) or 0.0)
+    opacity = float(getattr(item, "opacity", 1.0))
+    fit = getattr(item, "fit", "stretch") or "stretch"
+    plain = (shape == "rect" and feather <= 0.0 and opacity >= 1.0
+             and fit == "stretch")
+    if plain or image is None or image.isNull() or item.w_mm <= 0 \
+            or item.h_mm <= 0:
+        return image
+    key = (image.cacheKey(), shape, round(float(item.radius_mm), 3),
+           round(feather, 3), fit, round(opacity, 3),
+           round(item.w_mm / item.h_mm, 4), round(item.w_mm, 2))
+    hit = _IMG_COMPOSITE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    import numpy as np
+    aspect = item.w_mm / item.h_mm
+    sw, sh = float(image.width()), float(image.height())
+    src = QRectF(0.0, 0.0, sw, sh)
+    if fit == "cover":
+        if sw / sh > aspect:
+            cw = sh * aspect
+            src = QRectF((sw - cw) / 2.0, 0.0, cw, sh)
+        else:
+            ch = sw / aspect
+            src = QRectF(0.0, (sh - ch) / 2.0, sw, ch)
+        W, H = src.width(), src.height()
+    elif fit == "contain":
+        W, H = (sw, sw / aspect) if sw / sh > aspect else (sh * aspect, sh)
+    else:
+        W, H = sw, sw / aspect
+    m = min(1.0, _IMG_COMPOSITE_PX / max(W, H, 1.0))
+    W, H = max(1, int(round(W * m))), max(1, int(round(H * m)))
+    out = QImage(W, H, QImage.Format_ARGB32)
+    out.fill(Qt.transparent)
+    p = QPainter(out)
+    p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+    if fit == "contain":
+        k = min(W / sw, H / sh)
+        dw, dh = sw * k, sh * k
+        dest = QRectF((W - dw) / 2.0, (H - dh) / 2.0, dw, dh)
+    else:
+        dest = QRectF(0.0, 0.0, float(W), float(H))
+    p.drawImage(dest, image, src)
+    p.end()
+    px_per_mm = W / item.w_mm
+    alpha = _shape_alpha(W, H, shape,
+                         float(item.radius_mm) * px_per_mm,
+                         feather * px_per_mm) * max(0.0, min(1.0, opacity))
+    buf = np.frombuffer(out.bits(), np.uint8).reshape(H, W, 4)
+    buf[:, :, 3] = np.clip(buf[:, :, 3].astype(np.float64) * alpha, 0,
+                           255).astype(np.uint8)
+    if len(_IMG_COMPOSITE_CACHE) >= _IMG_COMPOSITE_MAX:
+        _IMG_COMPOSITE_CACHE.pop(next(iter(_IMG_COMPOSITE_CACHE)))
+    _IMG_COMPOSITE_CACHE[key] = out
+    return out
+
+
+def image_outline_path(item: ImagenItem):
+    """The cut-out's outline in item mm — the border, the selection."""
+    from PySide6.QtGui import QPainterPath
+    shape = getattr(item, "shape", "rect") or "rect"
+    r = QRectF(0, 0, item.w_mm, item.h_mm)
+    path = QPainterPath()
+    if shape == "ellipse":
+        path.addEllipse(r)
+    elif shape == "rounded":
+        rad = max(0.0, min(float(getattr(item, "radius_mm", 0.0) or 0.0),
+                           item.w_mm / 2.0, item.h_mm / 2.0))
+        path.addRoundedRect(r, rad, rad)
+    else:
+        path.addRect(r)
+    return path
+
+
 def paint_image_mm(painter: QPainter, item: ImagenItem,
                    image: Optional[QImage]) -> None:
     r = QRectF(0, 0, item.w_mm, item.h_mm)
     if image is not None and not image.isNull():
-        painter.drawImage(r, image)
+        painter.save()
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.drawImage(r, composited_image(image, item))
+        painter.restore()
+        if getattr(item, "border", False):
+            pen = QPen(QColor(getattr(item, "border_color", "#282e36")))
+            pen.setWidthF(max(0.1, float(getattr(item, "border_mm", 0.3))))
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(image_outline_path(item))
     else:
         painter.fillRect(r, QColor(240, 240, 242))
         pen = QPen(QColor(170, 176, 184))
@@ -4324,7 +4450,69 @@ class ComposerWindow(QMainWindow):
         btn = QPushButton(tr("Choose image…"))
         btn.clicked.connect(self._on_pick_image)
         form.addRow(btn)
+        self.img_opacity = self._opacity_spin("opacity")
+        form.addRow(tr("Opacity"), self.img_opacity)
+        self.img_shape = QComboBox()
+        self.img_shape.addItem(tr("Rectangle"), "rect")
+        self.img_shape.addItem(tr("Rounded corners"), "rounded")
+        self.img_shape.addItem(tr("Ellipse / circle"), "ellipse")
+        self.img_shape.setToolTip(tr(
+            "The cut-out. Make the box square for a circle; pick «Cover» "
+            "below so the photo is cropped, not squashed."))
+        self.img_shape.currentIndexChanged.connect(self._on_image_props)
+        form.addRow(tr("Shape"), self.img_shape)
+        self.img_radius = QDoubleSpinBox()
+        self.img_radius.setRange(0.5, 100.0)
+        self.img_radius.setSingleStep(0.5)
+        self.img_radius.setSuffix(" mm")
+        self.img_radius.setValue(4.0)
+        self.img_radius.valueChanged.connect(self._on_image_props)
+        form.addRow(tr("Corner radius"), self.img_radius)
+        self.img_feather = QDoubleSpinBox()
+        self.img_feather.setRange(0.0, 50.0)
+        self.img_feather.setSingleStep(0.5)
+        self.img_feather.setSuffix(" mm")
+        self.img_feather.setSpecialValueText(tr("hard edge"))
+        self.img_feather.setToolTip(tr(
+            "Fade the edge into the paper over this width."))
+        self.img_feather.valueChanged.connect(self._on_image_props)
+        form.addRow(tr("Feathered edge"), self.img_feather)
+        self.img_fit = QComboBox()
+        self.img_fit.addItem(tr("Stretch to the box"), "stretch")
+        self.img_fit.addItem(tr("Cover (crop to fill)"), "cover")
+        self.img_fit.addItem(tr("Contain (fit inside)"), "contain")
+        self.img_fit.currentIndexChanged.connect(self._on_image_props)
+        form.addRow(tr("Fit"), self.img_fit)
+        self.img_border = QCheckBox(tr("Outline"))
+        self.img_border.toggled.connect(self._on_image_props)
+        form.addRow(self.img_border)
+        self.img_border_mm = QDoubleSpinBox()
+        self.img_border_mm.setRange(0.1, 2.0)
+        self.img_border_mm.setSingleStep(0.05)
+        self.img_border_mm.setSuffix(" mm")
+        self.img_border_mm.setValue(0.3)
+        self.img_border_mm.valueChanged.connect(self._on_image_props)
+        form.addRow(tr("Outline width"), self.img_border_mm)
+        self.img_border_btn = QPushButton()
+        self.img_border_btn.setFixedHeight(22)
+        self.img_border_btn.clicked.connect(
+            lambda: self._pick_item_color("border_color", self.img_border_btn))
+        form.addRow(tr("Outline colour"), self.img_border_btn)
         return w
+
+    def _on_image_props(self, *_a) -> None:
+        item = self._selected_item()
+        if self._updating or not isinstance(item, ImageItem):
+            return
+        item.prepareGeometryChange()
+        self._panel_edit(item, {
+            "shape": self.img_shape.currentData() or "rect",
+            "radius_mm": float(self.img_radius.value()),
+            "feather_mm": float(self.img_feather.value()),
+            "fit": self.img_fit.currentData() or "stretch",
+            "border": self.img_border.isChecked(),
+            "border_mm": float(self.img_border_mm.value())})
+        self.img_radius.setEnabled(item.model.shape == "rounded")
 
     def _page_cajetin(self) -> QWidget:
         w = QWidget()
@@ -4801,7 +4989,27 @@ class ComposerWindow(QMainWindow):
                     100.0 * float(getattr(t, "bg_opacity", 1.0)))
                 self.props.setCurrentIndex(2)
             elif isinstance(item, ImageItem):
-                self.img_label.setText(item.model.path or "—")
+                m = item.model
+                self.img_label.setText(m.path or "—")
+                self.img_opacity.setValue(
+                    100.0 * float(getattr(m, "opacity", 1.0)))
+                sidx = self.img_shape.findData(getattr(m, "shape", "rect")
+                                               or "rect")
+                self.img_shape.setCurrentIndex(max(sidx, 0))
+                self.img_radius.setValue(
+                    float(getattr(m, "radius_mm", 4.0) or 4.0))
+                self.img_radius.setEnabled(
+                    getattr(m, "shape", "rect") == "rounded")
+                self.img_feather.setValue(
+                    float(getattr(m, "feather_mm", 0.0) or 0.0))
+                fidx = self.img_fit.findData(getattr(m, "fit", "stretch")
+                                             or "stretch")
+                self.img_fit.setCurrentIndex(max(fidx, 0))
+                self.img_border.setChecked(bool(getattr(m, "border", False)))
+                self.img_border_mm.setValue(
+                    float(getattr(m, "border_mm", 0.3) or 0.3))
+                self.img_border_btn.setStyleSheet(
+                    f"background: {getattr(m, 'border_color', '#282e36')};")
                 self.props.setCurrentIndex(3)
             elif isinstance(item, CajetinItem):
                 c = item.model
@@ -5575,6 +5783,8 @@ class ComposerWindow(QMainWindow):
         TextoItem: ("size_pt", "bold", "italic", "underline", "family",
                     "color", "align", "bg_color", "bg_opacity"),
         FormaItem: ("stroke_mm", "color", "fill", "fill_color", "radius_mm"),
+        ImagenItem: ("opacity", "shape", "radius_mm", "feather_mm", "fit",
+                     "border", "border_mm", "border_color"),
         MarcoVista: ("style", "scale_n", "show_title", "annotations",
                      "annot_text_mm", "km_marks", "km_step_m", "grid_m",
                      "section_marks", "border", "border_mm", "border_color",

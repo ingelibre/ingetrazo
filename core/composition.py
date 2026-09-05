@@ -213,6 +213,19 @@ class ImagenItem:
     w_mm: float = 60.0
     h_mm: float = 40.0
     path: str = ""
+    #: Presentation (Marco, 2026-09-05: «poder poner transparencia… mostrar
+    #: en círculo o algo así con bordes que se desvanezcan»): overall
+    #: opacity, the cut-out shape, its corner radius, a feathered edge
+    #: (mm of fade inward from the outline) and how the picture fills the
+    #: box — stretched, cropped to cover it, or letterboxed inside it.
+    opacity: float = 1.0
+    shape: str = "rect"          # rect | rounded | ellipse
+    radius_mm: float = 4.0       # rounded corners
+    feather_mm: float = 0.0      # 0 = a hard edge
+    fit: str = "stretch"         # stretch | cover | contain
+    border: bool = False
+    border_mm: float = 0.3
+    border_color: str = "#282e36"
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
     group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
