@@ -742,3 +742,122 @@ def test_face_me_figures_become_face_me_components(tmp_path):
     if "always_faces_camera" in skp_out_format._supported(
             b.add_component_definition, "always_faces_camera"):
         assert sumari.always_faces_camera and susan_def.always_faces_camera
+
+
+# ---- Repeated geometry shares a definition ------------------------------------
+
+def _strip(mesh, n, origin, colour):
+    """``n`` unit quads in a row sharing edges — one connected piece."""
+    ox, oy, oz = origin
+    faces = []
+    for i in range(n):
+        f = mesh.add_face([V(ox + i, oy, oz), V(ox + i + 1, oy, oz),
+                           V(ox + i + 1, oy + 1, oz), V(ox + i, oy + 1, oz)])
+        f.attrs["color"] = colour
+        faces.append(f)
+    return faces
+
+
+def test_translated_copies_inside_one_mesh_share_a_definition(tmp_path):
+    """Three translated copies of a 20-face strip fused in one group, plus a
+    different 21-face strip: the copy is written ONCE as a definition placed
+    three times (at each copy's corner) and the odd strip stays as faces.
+    An older IngeTrazo saved models with their components exploded — the
+    pool's 24 hedges became one 230 400-face group — and the file was 70 MB
+    for what SketchUp keeps in a fraction."""
+    from core.group import Group
+    from core.mesh import Mesh
+    m = Mesh()
+    red = (1.0, 0.0, 0.0)
+    for y in (0, 5, 10):
+        _strip(m, 20, (0, y, 0), red)
+    _strip(m, 21, (0, 20, 0), red)
+    scene = Scene()
+    scene.groups.append(Group(m, name="tiras"))
+    scene.version += 1
+    path = tmp_path / "repeats.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    by_faces = {len(d.faces): d for d in model.definitions.values()}
+    assert 20 in by_faces and 21 in by_faces
+    strip, group = by_faces[20], by_faces[21]
+    placed = sorted(tuple(round(c / _M_TO_IN, 3) for c in i.matrix[9:12])
+                    for i in group.instances if i.ref_idx == strip.id)
+    # a piece's origin: its XY centroid at its lowest z
+    assert placed == [(10.0, 0.5, 0.0), (10.0, 5.5, 0.0), (10.0, 10.5, 0.0)]
+    total = sum(len(d.faces) for d in model.definitions.values()) + len(model.root.faces)
+    assert total == 41                                   # 20 once + 21, not 81
+
+
+def test_a_copy_painted_differently_is_not_shared(tmp_path):
+    """Sharing needs the same paint face for face: two red strips share,
+    the blue one is written as it is."""
+    from core.group import Group
+    from core.mesh import Mesh
+    m = Mesh()
+    _strip(m, 20, (0, 0, 0), (1.0, 0.0, 0.0))
+    _strip(m, 20, (0, 5, 0), (1.0, 0.0, 0.0))
+    _strip(m, 20, (0, 10, 0), (0.0, 0.0, 1.0))
+    scene = Scene()
+    scene.groups.append(Group(m, name="tiras"))
+    scene.version += 1
+    path = tmp_path / "repeats-paint.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    sizes = sorted(len(d.faces) for d in model.definitions.values())
+    assert sizes == [20, 20]            # the red proto, and the group with the blue strip
+    group = next(d for d in model.definitions.values() if d.instances)
+    assert len(group.instances) == 2
+    blue = model.materials_by_id[next(iter(group.faces.values())).material_id]
+    assert tuple(blue.color)[:3] == (0, 0, 255)
+
+
+def test_a_copy_turned_about_the_vertical_shares_too(tmp_path):
+    """The pool's hedges are 7200 leaves, each the same few leaves turned at
+    random about Z — no two translated alike. A copy turned about the
+    vertical matches the prototype after the turn, point for point, and is
+    placed with that rotation; a mirrored one is not."""
+    from core.group import Group
+    from core.mesh import Mesh
+    import math
+    m = Mesh()
+    red = (1.0, 0.0, 0.0)
+    _strip(m, 20, (0, 0, 0), red)                       # along +X
+    c, s_ = math.cos(math.radians(37)), math.sin(math.radians(37))
+    for i in range(20):                                  # the same strip, turned 37° and moved
+        pts = [(i, 0), (i + 1, 0), (i + 1, 1), (i, 1)]
+        f = m.add_face([V(30 + c * x - s_ * y, 40 + s_ * x + c * y, 2) for x, y in pts])
+        f.attrs["color"] = red
+    # An L: the strip plus an arm at one end — asymmetric, so its mirror is
+    # NOT a turn of it. Three of them: two turned copies and a mirrored one.
+    def ell(place):
+        for i in range(18):
+            f = m.add_face([V(*place(i, 0)), V(*place(i + 1, 0)), V(*place(i + 1, 1)), V(*place(i, 1))])
+            f.attrs["color"] = red
+        for j in range(1, 4):
+            f = m.add_face([V(*place(0, j)), V(*place(1, j)), V(*place(1, j + 1)), V(*place(0, j + 1))])
+            f.attrs["color"] = red
+    ell(lambda x, y: (x, 100 + y, 0))
+    ell(lambda x, y: (60 + c * x - s_ * y, 100 + s_ * x + c * y, 0))
+    ell(lambda x, y: (-x, 140 + y, 0))                   # mirrored in X
+    scene = Scene()
+    scene.groups.append(Group(m, name="tiras"))
+    scene.version += 1
+    path = tmp_path / "turned.skp"
+    skp_out_format.save_skp(scene, path)
+    model = _parse_skp(path)
+    total = sum(len(d.faces) for d in model.definitions.values()) + len(model.root.faces)
+    assert total == 20 + 21 + 21                         # strip once, L once, mirrored L as faces
+    group = next(d for d in model.definitions.values() if d.instances)
+    assert len(group.instances) == 4                     # 2 strips + 2 Ls
+    # Each placement, read the way the importer reads it, lands the shared
+    # definition's corners exactly on the copy's original corners.
+    from formats.skp_openskp import _matrix
+    originals = {(round(v.position.x(), 3), round(v.position.y(), 3),
+                  round(v.position.z(), 3)) for v in m.vertices}
+    for inst in group.instances:
+        defn = model.definitions[inst.ref_idx]
+        mat = _matrix(inst.matrix)                       # translation in metres
+        for v in defn.vertices.values():
+            w = mat.map(QVector3D(v.x / _M_TO_IN, v.y / _M_TO_IN, v.z / _M_TO_IN))
+            assert (round(w.x(), 3), round(w.y(), 3), round(w.z(), 3)) in originals

@@ -18,6 +18,15 @@ follow [SemVer](https://semver.org).
   cada figura recortada (y de las hojas importadas cuyo contorno es la
   máscara de su textura). Una cara con todas sus aristas ocultas en
   IngeTrazo sale con ellas ocultas.
+- **La geometría repetida se escribe una sola vez.** Un modelo guardado por
+  una IngeTrazo anterior tenía los componentes explotados: la piscina llevaba
+  24 setos de 9600 caras fusionados en un solo grupo y tres bancas idénticas
+  como tres grupos, y el `.skp` pesaba 70 MB. Ahora el exportador reconoce las
+  piezas que son copias de otra, trasladadas o giradas sobre el eje
+  vertical, dentro de una malla o entre grupos; las verifica punto por
+  punto y cara por cara (pintura y texturas), y las escribe como una
+  definición colocada N veces, como hace SketchUp. La piscina baja de 70 a
+  27 MB con las mismas caras en los mismos sitios.
 
 ### Corregido
 - **Las texturas de un `.skp` exportado se ven en SketchUp donde IngeTrazo

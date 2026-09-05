@@ -374,6 +374,7 @@ def _split_containers(scene):
         return idx
 
     classic, roots = [], []
+    classic_groups = []
     for g in getattr(scene, "groups", []):
         if not visible(g):
             continue
@@ -386,10 +387,30 @@ def _split_containers(scene):
         if not g.mesh.faces and not kids and not figures:
             continue
         if getattr(g, "xform", None) is None:
-            classic.append((g, [(_register(c), c) for c in kids]
-                            + [(_register_figure(c), c) for c in figures]))
+            classic_groups.append((g, kids, figures))
         else:
             roots.append((_register(g), g))
+    # Repeated geometry — inside a mesh or across the loose mesh and the
+    # classic groups — becomes shared definitions placed by translation.
+    sources = [("loose", mesh, loose_faces)] if mesh is not None else []
+    sources += [(id(g), g.mesh, None) for g, _k, _f in classic_groups]
+    protos, per_owner = _share_repeats(sources)
+    proto_idx = []
+    for k, (pmesh, n_faces) in enumerate(protos):
+        proto_idx.append(len(defs))
+        defs.append({"name": f"Repetido {k + 1} ({n_faces} caras)",
+                     "mesh": pmesh, "children": []})
+    if mesh is not None:
+        copies, loose_faces = per_owner["loose"]
+        for j, (pi, xf) in enumerate(copies):
+            roots.append((proto_idx[pi], _Copy(xf, f"Repetido {pi + 1}.{j + 1}")))
+    for g, kids, figures in classic_groups:
+        copies, faces = per_owner[id(g)]
+        entries = ([(_register(c), c) for c in kids]
+                   + [(_register_figure(c), c) for c in figures]
+                   + [(proto_idx[pi], _Copy(xf, f"Repetido {pi + 1}.{j + 1}"))
+                      for j, (pi, xf) in enumerate(copies)])
+        classic.append((g, entries, faces))
     return loose_faces, classic, defs, roots
 
 
@@ -482,13 +503,269 @@ def _placement(entry, group):
     return _instance_placement(group.xform)
 
 
+class _Copy:
+    """A placement synthesised for a copy of a shared piece (see
+    :func:`_share_repeats`): what ``_placement`` needs of a group."""
+    __slots__ = ("xform", "name", "layer", "billboard")
+
+    def __init__(self, xform, name):
+        self.xform = xform
+        self.name = name
+        self.layer = None
+        self.billboard = False
+
+
+#: A piece has to carry at least this many faces before sharing it pays:
+#: an instance costs ~150 bytes, a face with its edges ~240.
+_MIN_PIECE_FACES = 20
+_MATCH_TOL = 2e-3       # metres: two copies agree when every point does
+
+
+def _shift_uvw(uvw, t):
+    """A world→UV map moved with its geometry by ``t``: the gradients stay,
+    the offsets absorb the move (``u = g·(p − t) + c``)."""
+    return [uvw[0], uvw[1], uvw[2],
+            uvw[3] - (uvw[0] * t.x() + uvw[1] * t.y() + uvw[2] * t.z()),
+            uvw[4], uvw[5], uvw[6],
+            uvw[7] - (uvw[4] * t.x() + uvw[5] * t.y() + uvw[6] * t.z())]
+
+
+def _local_mesh(faces, origin):
+    """``faces`` rebuilt in a mesh of their own with ``origin`` at (0, 0, 0):
+    paint, back paint, edge flags and world-anchored texture maps carried
+    along."""
+    from core.mesh import Mesh
+    mesh = Mesh()
+    for f in faces:
+        nf = mesh.add_face([QVector3D(p) - origin for p in f.vertices],
+                           [[QVector3D(p) - origin for p in h] for h in f.holes])
+        attrs = dict(f.attrs or {})
+        tex = attrs.get("texture")
+        if tex and tex.get("uvw"):
+            attrs["texture"] = {**tex, "uvw": _shift_uvw(tex["uvw"], origin)}
+        back = attrs.get("back")
+        btex = back.get("texture") if isinstance(back, dict) else None
+        if btex and btex.get("uvw"):
+            attrs["back"] = {**back, "texture": {**btex, "uvw": _shift_uvw(btex["uvw"], origin)}}
+        nf.attrs = attrs
+        for old, new in zip(_boundary_edges(f), _boundary_edges(nf)):
+            if old is not None and new is not None:
+                new.soft = getattr(old, "soft", False)
+                new.hidden = getattr(old, "hidden", False)
+    return mesh
+
+
+class _Piece:
+    """A connected piece of a mesh and what matching needs of it: its
+    origin (XY centroid, lowest z), its points about that origin, and a
+    fingerprint that ignores where it sits and how it is turned about Z."""
+    __slots__ = ("owner", "faces", "verts", "origin", "pts", "key")
+
+    def __init__(self, owner, faces, verts):
+        self.owner, self.faces, self.verts = owner, faces, verts
+        n = float(len(verts))
+        cx = sum(v.position.x() for v in verts) / n
+        cy = sum(v.position.y() for v in verts) / n
+        z0 = min(v.position.z() for v in verts)
+        self.origin = QVector3D(cx, cy, z0)
+        self.pts = [(v.position.x() - cx, v.position.y() - cy,
+                     v.position.z() - z0) for v in verts]
+        radial = sorted(round(math.hypot(x, y), 2) for x, y, _z in self.pts)
+        heights = sorted(round(z, 2) for _x, _y, z in self.pts)
+        self.key = (len(faces), len(verts), tuple(radial), tuple(heights))
+
+
+def _pieces(owner, mesh, faces=None):
+    """The connected pieces of ``mesh`` (faces joined through shared
+    vertices). ``faces`` restricts the walk (the loose mesh's VISIBLE
+    faces)."""
+    parent: dict = {}
+
+    def find(v):
+        root = v
+        while parent.get(root, root) is not root:
+            root = parent[root]
+        while parent.get(v, v) is not root:
+            nxt = parent[v]
+            parent[v] = root
+            v = nxt
+        return root
+
+    for e in mesh.edges:
+        ra, rb = find(e.v0), find(e.v1)
+        if ra is not rb:
+            parent[ra] = rb
+    by_root: dict = {}
+    for f in (mesh.faces if faces is None else faces):
+        if not f.loop:
+            continue
+        by_root.setdefault(find(f.loop[0]), []).append(f)
+    out = []
+    for fs in by_root.values():
+        verts = set()
+        for f in fs:
+            verts.update(f.loop)
+            for h in f.hole_loops:
+                verts.update(h)
+        out.append(_Piece(owner, fs, verts))
+    return out
+
+
+def _sorted_pts(pts):
+    return sorted(pts, key=lambda p: (round(p[0], 3), round(p[1], 3), round(p[2], 3)))
+
+
+def _same_points(a, b):
+    if len(a) != len(b):
+        return False
+    for pa, pb in zip(a, b):
+        if (abs(pa[0] - pb[0]) > _MATCH_TOL or abs(pa[1] - pb[1]) > _MATCH_TOL
+                or abs(pa[2] - pb[2]) > _MATCH_TOL):
+            return False
+    return True
+
+
+def _turn_onto(proto, cand):
+    """The angle (degrees) that turns ``cand`` about its vertical axis onto
+    ``proto`` — verified point for point — or ``None``. The farthest point
+    from the axis fixes the angle up to the ties among equally far points,
+    each of which is tried."""
+    ref = _sorted_pts(proto.pts)
+    r_max = max(math.hypot(x, y) for x, y, _z in proto.pts)
+    if r_max < 1e-6:
+        return 0.0 if _same_points(ref, _sorted_pts(cand.pts)) else None
+    px, py, _ = max(proto.pts, key=lambda p: math.hypot(p[0], p[1]))
+    a_ref = math.atan2(py, px)
+    tried = set()
+    for qx, qy, _ in cand.pts:
+        if abs(math.hypot(qx, qy) - r_max) > _MATCH_TOL:
+            continue
+        ang = a_ref - math.atan2(qy, qx)
+        k = round(ang, 4)
+        if k in tried:
+            continue
+        tried.add(k)
+        c, s_ = math.cos(ang), math.sin(ang)
+        turned = [(c * x - s_ * y, s_ * x + c * y, z) for x, y, z in cand.pts]
+        if _same_points(ref, _sorted_pts(turned)):
+            return math.degrees(ang)
+    return None
+
+
+def _same_paint(fa, fb, to_a):
+    """Whether two corresponding faces of two copies look the same: same
+    materials both sides and, for a texture, the same picture at the same
+    place on the piece (a default-projected texture is anchored to the
+    WORLD, so two copies of a wall may show different slices of it).
+    ``to_a`` maps ``fb``'s world onto ``fa``'s."""
+    if _material_key(fa) != _material_key(fb):
+        return False
+    ba, bb = fa.attrs.get("back"), fb.attrs.get("back")
+    if isinstance(ba, dict) != isinstance(bb, dict):
+        return False
+    if isinstance(ba, dict) and _material_key_attrs(ba) != _material_key_attrs(bb):
+        return False
+    pa = sorted(fa.vertices, key=lambda p: (round(p.x(), 3), round(p.y(), 3), round(p.z(), 3)))
+    pb = sorted(((to_a.map(q), q) for q in fb.vertices),
+                key=lambda pq: (round(pq[0].x(), 3), round(pq[0].y(), 3), round(pq[0].z(), 3)))
+    for ta, tb in ((fa.attrs.get("texture"), fb.attrs.get("texture")),
+                   ((ba or {}).get("texture") if isinstance(ba, dict) else None,
+                    (bb or {}).get("texture") if isinstance(bb, dict) else None)):
+        if not (ta and ta.get("path")):
+            continue
+        gu_a, cu_a, gv_a, cv_a = face_uv_axes(ta, fa.normal())
+        gu_b, cu_b, gv_b, cv_b = face_uv_axes(tb, fb.normal())
+        for p, (_pm, q) in zip(pa[:3], pb[:3]):
+            if abs(QVector3D.dotProduct(gu_a, p) + cu_a
+                   - QVector3D.dotProduct(gu_b, q) - cu_b) > 1e-3:
+                return False
+            if abs(QVector3D.dotProduct(gv_a, p) + cv_a
+                   - QVector3D.dotProduct(gv_b, q) - cv_b) > 1e-3:
+                return False
+    return True
+
+
+def _face_order(faces, to_frame):
+    def key(f):
+        c = to_frame.map(f.centroid())
+        return (round(c.x(), 3), round(c.y(), 3), round(c.z(), 3), len(f.loop))
+    return sorted(faces, key=key)
+
+
+def _share_repeats(sources):
+    """Copies of one piece — inside a mesh, or across meshes; moved, and
+    turned about the vertical — written ONCE and placed. ``sources`` is
+    ``[(owner, mesh, faces)]`` (``faces`` None for the whole mesh); returns
+    ``(protos, per_owner)``: ``protos[i] = (local_mesh, n_faces)`` and
+    ``per_owner[owner] = (copies, remaining_faces)`` with ``copies`` a list
+    of ``(proto_index, xform)`` — the placement, local metres → owner metres.
+
+    A model saved by an older IngeTrazo has its components exploded: Marco's
+    pool carries 24 hedges — 7200 leaves — fused into ONE group of 230 400
+    faces, three identical benches as three groups. SketchUp keeps such
+    things as one definition placed N times, and so does this writer for
+    groups that share a mesh object — but not for geometry that merely
+    LOOKS the same. Now it does: the connected pieces of every mesh get a
+    fingerprint that ignores position and turn about Z (face and vertex
+    counts, the sorted distances from the axis and heights), candidates are
+    turned onto the prototype and compared point for point, then paint face
+    for face (materials, both sides, texture placement). Only exact copies
+    share; a mirrored or rescaled copy is written as it is."""
+    from PySide6.QtGui import QMatrix4x4
+    pool = []
+    for owner, mesh, only in sources:
+        pool.extend(_pieces(owner, mesh, only))
+    per_owner = {owner: ([], []) for owner, _m, _o in sources}
+    classes: dict = {}
+    for piece in pool:
+        classes.setdefault(piece.key, []).append(piece)
+    protos = []
+    for key, members in classes.items():
+        if len(members) < 2 or key[0] < _MIN_PIECE_FACES:
+            for piece in members:
+                per_owner[piece.owner][1].extend(piece.faces)
+            continue
+        pending = list(members)
+        while pending:
+            proto = pending.pop(0)
+            matched, rest = [(proto, 0.0)], []
+            for cand in pending:
+                ang = _turn_onto(proto, cand)
+                if ang is None:
+                    rest.append(cand)
+                    continue
+                to_proto = QMatrix4x4()
+                to_proto.translate(proto.origin)
+                to_proto.rotate(ang, 0.0, 0.0, 1.0)
+                to_proto.translate(-cand.origin)
+                ident = QMatrix4x4()
+                if all(_same_paint(fa, fb, to_proto) for fa, fb
+                       in zip(_face_order(proto.faces, ident),
+                              _face_order(cand.faces, to_proto))):
+                    matched.append((cand, ang))
+                else:
+                    rest.append(cand)
+            pending = rest
+            if len(matched) < 2:
+                per_owner[proto.owner][1].extend(proto.faces)
+                continue
+            idx = len(protos)
+            protos.append((_local_mesh(proto.faces, proto.origin), len(proto.faces)))
+            for piece, ang in matched:
+                xf = QMatrix4x4()
+                xf.translate(piece.origin)
+                xf.rotate(-ang, 0.0, 0.0, 1.0)
+                per_owner[piece.owner][0].append((idx, xf))
+    return protos, per_owner
+
+
 def _iter_export_faces(loose_faces, classic, defs):
     """Every face the geometry pass will emit, prototype meshes ONCE — the
     material pass must cover exactly this set, no more (a prototype's attrs
     are shared by its instances, so visiting it per-instance is redundant)."""
     yield from loose_faces
-    for g, _ in classic:
-        yield from g.mesh.faces
+    for _g, _kids, faces in classic:
+        yield from faces
     for d in defs:
         yield from d["mesh"].faces
 
@@ -892,10 +1169,10 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
             _place_children(defn, d["children"])
         handles.append(defn)
 
-    for g, kids in classic:
+    for g, kids, faces in classic:
         with builder.add_group(
                 g.name, layer=layer_handles.get(getattr(g, "layer", None))) as grp:
-            for face in g.mesh.faces:
+            for face in faces:
                 _emit_face(grp, face, mat_handles, layer_handles,
                            SkpWriteError, quirks, applied)
             _place_children(grp, kids)
