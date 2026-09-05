@@ -853,6 +853,9 @@ class Composicion:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Composicion":
+        """Rebuild a sheet from its .igz record. Keys this version does not
+        know (a sheet saved by a newer IngeTrazo) are dropped, not fatal:
+        the model must open whatever the sheets carry."""
         c = cls(name=d.get("name", "Lámina 1"),
                 paper=d.get("paper", "A4"),
                 landscape=bool(d.get("landscape", True)),
@@ -864,23 +867,39 @@ class Composicion:
             c.border_color = str(b.get("color", "#1e242c"))
             c.border_radius_mm = float(b.get("radius_mm", 0.0))
             c.border_style = str(b.get("style", "single"))
-        c.frames = [MarcoVista(**f) for f in d.get("frames", [])]
-        c.texts = [TextoItem(**t) for t in d.get("texts", [])]
-        c.images = [ImagenItem(**i) for i in d.get("images", [])]
-        c.scalebars = [BarraEscala(**sb) for sb in d.get("scalebars", [])]
-        c.nortes = [FlechaNorte(**n) for n in d.get("nortes", [])]
-        c.leyendas = [Leyenda(**le) for le in d.get("leyendas", [])]
-        c.shapes = [FormaItem(**f) for f in d.get("shapes", [])]
-        c.cotas_ang = [CotaAngularItem(**a) for a in d.get("cotas_ang", [])]
-        c.etiquetas = [EtiquetaItem(**e) for e in d.get("etiquetas", [])]
-        c.perfiles = [PerfilTerreno(**pf) for pf in d.get("perfiles", [])]
-        c.niveles = [NivelItem(**nv) for nv in d.get("niveles", [])]
-        c.llamadas = [LlamadaItem(**ll) for ll in d.get("llamadas", [])]
-        c.cotas = [CotaItem(**ct) for ct in d.get("cotas", [])]
-        if "cajetin" in d:
-            c.cajetin = Cajetin(**d["cajetin"])
+        c.frames = _items(MarcoVista, d.get("frames"))
+        c.texts = _items(TextoItem, d.get("texts"))
+        c.images = _items(ImagenItem, d.get("images"))
+        c.scalebars = _items(BarraEscala, d.get("scalebars"))
+        c.nortes = _items(FlechaNorte, d.get("nortes"))
+        c.leyendas = _items(Leyenda, d.get("leyendas"))
+        c.shapes = _items(FormaItem, d.get("shapes"))
+        c.cotas_ang = _items(CotaAngularItem, d.get("cotas_ang"))
+        c.etiquetas = _items(EtiquetaItem, d.get("etiquetas"))
+        c.perfiles = _items(PerfilTerreno, d.get("perfiles"))
+        c.niveles = _items(NivelItem, d.get("niveles"))
+        c.llamadas = _items(LlamadaItem, d.get("llamadas"))
+        c.cotas = _items(CotaItem, d.get("cotas"))
+        if isinstance(d.get("cajetin"), dict):
+            c.cajetin = _build(Cajetin, d["cajetin"])
         _migrate_fixed_scale_labels(c)
         return c
+
+
+def _build(kind, raw):
+    """``kind(**raw)`` keeping only the fields *kind* declares — a record
+    from a newer version loads with its extra keys ignored."""
+    from dataclasses import fields
+    known = {f.name for f in fields(kind)}
+    return kind(**{k: v for k, v in raw.items() if k in known})
+
+
+def _items(kind, raw_list) -> list:
+    """The items of one kind from their records; anything that is not a
+    record (a corrupt entry) is skipped."""
+    if not isinstance(raw_list, list):
+        return []
+    return [_build(kind, r) for r in raw_list if isinstance(r, dict)]
 
 
 def _migrate_fixed_scale_labels(c: "Composicion") -> None:

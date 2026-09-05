@@ -7,6 +7,11 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Cambiado
+- **Un `.igz` de una versión más nueva ya abre.** Las láminas guardadas con
+  campos que esta versión no conoce cargan ignorando esos campos, una
+  ficha corrupta dentro de una lámina se salta, y una lámina que no se
+  puede reconstruir se omite con un aviso en el log en vez de impedir
+  abrir el modelo entero.
 - **Panel de propiedades del marco más compacto.** Las casillas ocupan todo
   el ancho, las etiquetas largas se acortaron (la explicación queda en el
   tooltip), las filas del rótulo de vista solo aparecen con el rótulo

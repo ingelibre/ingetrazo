@@ -507,8 +507,16 @@ def _load_into_inner(scene, path: Path) -> None:
     scene.saved_views = [SavedView.from_dict(r)
                          for r in payload.get("saved_views", [])]
     from core.composition import Composicion
-    scene.compositions = [Composicion.from_dict(r)
-                          for r in payload.get("compositions", [])]
+    scene.compositions = []
+    for r in payload.get("compositions", []):
+        # A sheet this version cannot rebuild must not take the model down
+        # with it: keep the others, log the one that failed.
+        try:
+            scene.compositions.append(Composicion.from_dict(r))
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning(
+                "sheet %r skipped: %s", r.get("name", "?"), exc)
     proto_meshes: list = []
     for raw in payload.get("protos", []):
         m = Mesh()
