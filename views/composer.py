@@ -103,16 +103,200 @@ def _fit_text_size_mm(text: str, rect: QRectF, base_size_mm: float,
     return 1.0
 
 
-def frame_title_text(frame: MarcoVista) -> str:
-    """The automatic title: view name — scale («Planta — 1:100»)."""
+def frame_view_name(frame: MarcoVista) -> str:
+    """The view's own name: the scene's, the standard view's, or «View»."""
     key = frame.view_key
     if key.startswith("scene:"):
-        name = key[6:]
-    elif key.startswith("std:"):
-        name = {k: tr(lbl) for lbl, k in _STD_VIEWS}.get(key[4:], key[4:])
+        return key[6:]
+    if key.startswith("std:"):
+        return {k: tr(lbl) for lbl, k in _STD_VIEWS}.get(key[4:], key[4:])
+    return tr("View")
+
+
+def frame_title_text(frame: MarcoVista) -> str:
+    """The automatic title: view name — scale («Planta — 1:100»)."""
+    return f"{frame_view_name(frame)} — 1:{frame.scale_n:g}"
+
+
+def view_title_texts(frame: MarcoVista) -> dict:
+    """The strings of the frame's title, fields expanded: ``title``
+    (the typed text or the view's name), ``subtitle``, ``scale``
+    («ESC. 1:N» or ""), ``number`` and ``sheet`` (the bubble). ``{escala}``
+    always reads THIS frame's scale, bound uid or not."""
+    from core.composition import expand_fields
+    uid = getattr(frame, "uid", "") or ""
+    n = f"{frame.scale_n:g}"
+
+    def ex(text) -> str:
+        text = (text or "").replace("{escala}", f"1:{n}")
+        return expand_fields(text, uid) if text else ""
+    return {
+        "title": ex(getattr(frame, "title_text", "")) or frame_view_name(frame),
+        "subtitle": ex(getattr(frame, "title_subtitle", "")),
+        "scale": (f"ESC. 1:{n}" if getattr(frame, "title_scale", True)
+                  else ""),
+        "number": ex(getattr(frame, "title_number", "")),
+        "sheet": ex(getattr(frame, "title_sheet", "")),
+    }
+
+
+def _text_width_mm(text: str, size_mm: float, bold: bool = False) -> float:
+    """Advance width of *text* as :func:`_draw_text_mm` would draw it."""
+    if not text:
+        return 0.0
+    from PySide6.QtGui import QFontMetricsF
+    font = QFont("Sans Serif")
+    font.setPixelSize(100)
+    font.setBold(bold)
+    return QFontMetricsF(font).horizontalAdvance(text) * (size_mm / 100.0 * 0.75)
+
+
+def view_title_extent(frame: MarcoVista) -> tuple:
+    """Paper the title adds around the frame, as (left, top, bottom) mm —
+    the canvas item's bounding box and the print both grow by it."""
+    if not getattr(frame, "show_title", False):
+        return (0.0, 0.0, 0.0)
+    size = max(1.5, float(getattr(frame, "title_mm", 4.0) or 4.0))
+    style = getattr(frame, "title_style", "layout") or "layout"
+    t = view_title_texts(frame)
+    if style == "bar":
+        w = 2.0 + size * 1.5
+        if t["subtitle"]:
+            w += size * 1.1
+        if t["scale"]:
+            w += size * 1.1
+        return (w + 1.0, 0.0, 0.0)
+    if style == "simple":
+        h = 1.2 + size * 1.6 + (size * 1.0 if t["subtitle"] else 0.0)
     else:
-        name = tr("View")
-    return f"{name} — 1:{frame.scale_n:g}"
+        bubble = size * 2.4 if t["number"] else 0.0
+        h = (1.2 + max(bubble, size * 1.5) + 0.6
+             + (size * 1.0 + 0.6 if t["subtitle"] else 0.0))
+    if (getattr(frame, "title_pos", "below") or "below") == "above":
+        return (0.0, h, 0.0)
+    return (0.0, 0.0, h)
+
+
+def _paint_title_bubble(painter: QPainter, cx: float, cy: float, d: float,
+                        number: str, sheet: str, ink: QColor) -> None:
+    """LayOut's view bubble: a circle with the number, split by a rule
+    with the sheet reference underneath when there is one."""
+    pen = QPen(ink)
+    pen.setWidthF(0.35)
+    painter.setPen(pen)
+    painter.setBrush(QBrush(QColor(255, 255, 255)))
+    painter.drawEllipse(QPointF(cx, cy), d / 2.0, d / 2.0)
+    painter.setBrush(Qt.NoBrush)
+    if sheet:
+        painter.drawLine(QPointF(cx - d / 2.0, cy), QPointF(cx + d / 2.0, cy))
+        _draw_text_mm(painter, QRectF(cx - d / 2.0, cy - d / 2.0, d, d / 2.0),
+                      number, d * 0.34, bold=True,
+                      align=Qt.AlignHCenter | Qt.AlignVCenter, color=ink)
+        _draw_text_mm(painter, QRectF(cx - d / 2.0, cy, d, d / 2.0),
+                      sheet, d * 0.26, align=Qt.AlignHCenter | Qt.AlignVCenter,
+                      color=ink)
+    else:
+        _draw_text_mm(painter, QRectF(cx - d / 2.0, cy - d / 2.0, d, d),
+                      number, d * 0.42, bold=True,
+                      align=Qt.AlignHCenter | Qt.AlignVCenter, color=ink)
+
+
+def _paint_view_title_mm(painter: QPainter, frame: MarcoVista) -> None:
+    """The frame's title in its style (see MarcoVista.title_style)."""
+    ink = QColor(30, 36, 44)
+    size = max(1.5, float(getattr(frame, "title_mm", 4.0) or 4.0))
+    style = getattr(frame, "title_style", "layout") or "layout"
+    align = getattr(frame, "title_align", "left") or "left"
+    t = view_title_texts(frame)
+    w, h = frame.w_mm, frame.h_mm
+    left, top, bottom = view_title_extent(frame)
+    if style == "bar":
+        strip_w = left - 1.0
+        strip = QRectF(-left, 0.0, strip_w, h)
+        pen = QPen(ink)
+        pen.setWidthF(0.25)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(strip)
+        painter.save()
+        # Turn the strip: local x runs UP the page, local y toward the frame.
+        painter.translate(strip.left(), strip.bottom())
+        painter.rotate(-90.0)
+        y0 = 0.0
+        x0 = 0.0
+        if t["number"]:
+            d = min(strip_w, size * 2.4) * 0.9
+            painter.save()
+            painter.rotate(90.0)          # the bubble reads upright
+            _paint_title_bubble(painter, strip_w / 2.0, -(d / 2.0 + 1.0), d,
+                                t["number"], t["sheet"], ink)
+            painter.restore()
+            x0 = d + 2.0
+        pad = 1.0
+        cols = [(t["title"], size, True, size * 1.5)]
+        if t["subtitle"]:
+            cols.append((t["subtitle"], size * 0.75, False, size * 1.1))
+        if t["scale"]:
+            cols.append((t["scale"], size * 0.75, False, size * 1.1))
+        y = y0 + pad
+        for text, sz, bold, col_h in cols:
+            _draw_text_mm(painter, QRectF(x0 + 1.0, y, h - x0 - 2.0, col_h),
+                          text, sz, bold=bold,
+                          align=Qt.AlignLeft | Qt.AlignVCenter, color=ink)
+            y += col_h
+        painter.restore()
+        return
+    above = (getattr(frame, "title_pos", "below") or "below") == "above"
+    block_h = top if above else bottom
+    by = -block_h if above else h + 1.2
+    if style == "simple":
+        text = t["title"] + (f" — {t['scale'][5:]}" if t["scale"] else "")
+        qa = {"left": Qt.AlignLeft, "right": Qt.AlignRight}.get(
+            align, Qt.AlignHCenter)
+        _draw_text_mm(painter, QRectF(0, by, w, size * 1.6), text, size,
+                      bold=True, align=qa | Qt.AlignTop, color=ink)
+        if t["subtitle"]:
+            _draw_text_mm(painter, QRectF(0, by + size * 1.6, w, size * 1.0),
+                          t["subtitle"], size * 0.7, align=qa | Qt.AlignTop,
+                          color=ink)
+        return
+    # "layout": bubble + title + scale over a rule, subtitle under it
+    d = size * 2.4 if t["number"] else 0.0
+    gap = size * 0.5
+    title_w = _text_width_mm(t["title"], size, bold=True)
+    scale_w = _text_width_mm(t["scale"], size * 0.8)
+    text_w = title_w + (gap + scale_w if t["scale"] else 0.0)
+    total = (d + gap if d else 0.0) + text_w
+    if align == "right":
+        x_b = max(0.0, w - total)
+    elif align == "center":
+        x_b = max(0.0, (w - total) / 2.0)
+    else:
+        x_b = 0.0
+    x_text = x_b + (d + gap if d else 0.0)
+    line_h = max(d, size * 1.5)
+    rule_y = by + line_h
+    if d:
+        _paint_title_bubble(painter, x_b + d / 2.0, rule_y - d / 2.0, d,
+                            t["number"], t["sheet"], ink)
+    _draw_text_mm(painter, QRectF(x_text, rule_y - size * 1.5, w, size * 1.5),
+                  t["title"], size, bold=True,
+                  align=Qt.AlignLeft | Qt.AlignBottom, color=ink)
+    if t["scale"]:
+        _draw_text_mm(painter,
+                      QRectF(x_text + title_w + gap, rule_y - size * 1.5,
+                             w, size * 1.5 - size * 0.08),
+                      t["scale"], size * 0.8,
+                      align=Qt.AlignLeft | Qt.AlignBottom, color=ink)
+    pen = QPen(ink)
+    pen.setWidthF(0.35)
+    painter.setPen(pen)
+    x_rule = x_b + d if (align == "left" and d) else 0.0
+    painter.drawLine(QPointF(x_rule, rule_y + 0.2), QPointF(w, rule_y + 0.2))
+    if t["subtitle"]:
+        _draw_text_mm(painter, QRectF(x_text, rule_y + 0.6, w, size * 1.0),
+                      t["subtitle"], size * 0.7,
+                      align=Qt.AlignLeft | Qt.AlignTop, color=ink)
 
 
 def _paint_scale_label_mm(painter: QPainter, frame: MarcoVista) -> None:
@@ -397,10 +581,7 @@ def paint_frame_mm(painter: QPainter, frame: MarcoVista,
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(r)
     if frame.show_title:
-        _draw_text_mm(painter,
-                      QRectF(0, frame.h_mm + 1.2, frame.w_mm, 8.0),
-                      frame_title_text(frame), 4.2, bold=True,
-                      align=Qt.AlignHCenter | Qt.AlignTop)
+        _paint_view_title_mm(painter, frame)
     if getattr(frame, "show_scale", False):
         _paint_scale_label_mm(painter, frame)
 
@@ -1429,8 +1610,13 @@ class _SheetItem(QGraphicsItem):
 class FrameItem(_SheetItem):
     def boundingRect(self) -> QRectF:
         r = super().boundingRect()
-        if self.model.show_title:
-            r.setHeight(r.height() + 9.0)
+        left, top, bottom = view_title_extent(self.model)
+        if left:
+            r.setLeft(r.left() - left)
+        if top:
+            r.setTop(r.top() - top)
+        if bottom:
+            r.setBottom(r.bottom() + bottom)
         return r
 
     def paint(self, painter, option, widget=None) -> None:
@@ -2875,9 +3061,66 @@ class ComposerWindow(QMainWindow):
             tr("Vector (hidden lines removed)"), "vectorial")
         self.style_combo.currentIndexChanged.connect(self._on_frame_props)
         form.addRow(tr("Style"), self.style_combo)
-        self.title_check = QCheckBox(tr("Title under the frame"))
+        self.title_check = QCheckBox(tr("View title"))
+        self.title_check.setToolTip(tr(
+            "The label of the view: a numbered bubble, the title and the "
+            "scale over a rule (LayOut), a vertical bar beside the frame, "
+            "or a plain centred line. Fields like {escala}, {lamina} and "
+            "{escena} expand."))
         self.title_check.toggled.connect(self._on_frame_props)
         form.addRow("", self.title_check)
+        self.title_style_combo = QComboBox()
+        self.title_style_combo.addItem(tr("Numbered, rule under"), "layout")
+        self.title_style_combo.addItem(tr("Vertical bar"), "bar")
+        self.title_style_combo.addItem(tr("Simple line"), "simple")
+        self.title_style_combo.currentIndexChanged.connect(
+            self._on_frame_title)
+        form.addRow(tr("Title style"), self.title_style_combo)
+        self.title_text_edit = QLineEdit()
+        self.title_text_edit.setPlaceholderText(tr("automatic: the view's name"))
+        self.title_text_edit.textChanged.connect(self._on_frame_title)
+        form.addRow(tr("Title"), self.title_text_edit)
+        self.title_sub_edit = QLineEdit()
+        self.title_sub_edit.setPlaceholderText(tr("none"))
+        self.title_sub_edit.textChanged.connect(self._on_frame_title)
+        form.addRow(tr("Subtitle"), self.title_sub_edit)
+        self.title_number_edit = QLineEdit()
+        self.title_number_edit.setPlaceholderText(tr("no bubble"))
+        self.title_number_edit.setToolTip(tr(
+            "The view's number in the bubble («1»)."))
+        self.title_number_edit.textChanged.connect(self._on_frame_title)
+        form.addRow(tr("Number"), self.title_number_edit)
+        self.title_sheet_edit = QLineEdit()
+        self.title_sheet_edit.setPlaceholderText(tr("none"))
+        self.title_sheet_edit.setToolTip(tr(
+            "The bubble's lower half: the sheet the view lives on "
+            "(«A101», or {lamina} to read the title block)."))
+        self.title_sheet_edit.textChanged.connect(self._on_frame_title)
+        form.addRow(tr("Sheet in the bubble"), self.title_sheet_edit)
+        self.title_scale_check = QCheckBox(tr("Append the scale (ESC. 1:N)"))
+        self.title_scale_check.setChecked(True)
+        self.title_scale_check.toggled.connect(self._on_frame_title)
+        form.addRow("", self.title_scale_check)
+        self.title_align_combo = QComboBox()
+        self.title_align_combo.addItem(tr("Left"), "left")
+        self.title_align_combo.addItem(tr("Centre"), "center")
+        self.title_align_combo.addItem(tr("Right"), "right")
+        self.title_align_combo.currentIndexChanged.connect(
+            self._on_frame_title)
+        form.addRow(tr("Title alignment"), self.title_align_combo)
+        self.title_pos_combo = QComboBox()
+        self.title_pos_combo.addItem(tr("Below the frame"), "below")
+        self.title_pos_combo.addItem(tr("Above the frame"), "above")
+        self.title_pos_combo.currentIndexChanged.connect(self._on_frame_title)
+        form.addRow(tr("Title position"), self.title_pos_combo)
+        self.title_mm_spin = QDoubleSpinBox()
+        self.title_mm_spin.setRange(1.5, 15.0)
+        self.title_mm_spin.setSingleStep(0.5)
+        self.title_mm_spin.setDecimals(1)
+        self.title_mm_spin.setSuffix(" mm")
+        self.title_mm_spin.setValue(4.0)
+        self.title_mm_spin.valueChanged.connect(self._on_frame_title)
+        form.addRow(tr("Title text height"), self.title_mm_spin)
         self.annot_check = QCheckBox(tr(
             "Model annotations (dimensions and leader texts)"))
         self.annot_check.setToolTip(tr(
@@ -3762,6 +4005,27 @@ class ComposerWindow(QMainWindow):
                 sidx = self.style_combo.findData(skey)
                 self.style_combo.setCurrentIndex(max(sidx, 0))
                 self.title_check.setChecked(f.show_title)
+                tidx = self.title_style_combo.findData(
+                    getattr(f, "title_style", "layout") or "layout")
+                self.title_style_combo.setCurrentIndex(max(tidx, 0))
+                self.title_text_edit.setText(getattr(f, "title_text", "") or "")
+                self.title_sub_edit.setText(
+                    getattr(f, "title_subtitle", "") or "")
+                self.title_number_edit.setText(
+                    getattr(f, "title_number", "") or "")
+                self.title_sheet_edit.setText(
+                    getattr(f, "title_sheet", "") or "")
+                self.title_scale_check.setChecked(
+                    bool(getattr(f, "title_scale", True)))
+                aidx = self.title_align_combo.findData(
+                    getattr(f, "title_align", "left") or "left")
+                self.title_align_combo.setCurrentIndex(max(aidx, 0))
+                pidx = self.title_pos_combo.findData(
+                    getattr(f, "title_pos", "below") or "below")
+                self.title_pos_combo.setCurrentIndex(max(pidx, 0))
+                self.title_mm_spin.setValue(
+                    float(getattr(f, "title_mm", 4.0) or 4.0))
+                self._sync_title_widgets(f)
                 self.annot_check.setChecked(getattr(f, "annotations", False))
                 self.annot_mm_spin.setValue(
                     float(getattr(f, "annot_text_mm", 2.8) or 2.8))
@@ -4556,7 +4820,12 @@ class ComposerWindow(QMainWindow):
         FormaItem: ("stroke_mm", "color", "fill", "fill_color", "radius_mm"),
         MarcoVista: ("style", "scale_n", "show_title", "annotations",
                      "annot_text_mm", "km_marks", "km_step_m", "grid_m",
-                     "border", "border_mm", "border_color"),
+                     "border", "border_mm", "border_color",
+                     "title_style", "title_scale", "title_align",
+                     "title_pos", "title_mm",
+                     "pen_cut_mm", "pen_profile_mm", "pen_edge_mm",
+                     "profiles", "cut_fill", "cut_fill_color",
+                     "cut_hatch_mm"),
         CotaAngularItem: ("text_mm", "decimals", "ends", "stroke_mm",
                           "color", "offset_mm", "text_color", "text_bg",
                           "text_bg_opacity"),
@@ -5361,7 +5630,7 @@ class ComposerWindow(QMainWindow):
         item = self._selected_item()
         if self._updating or not isinstance(item, FrameItem):
             return
-        self._panel_edit(item, {
+        changes = {
             "view_key": self.view_combo.currentData() or "__current__",
             "scale_n": self._current_scale_n(),
             "w_mm": self.fw_spin.value(),
@@ -5373,9 +5642,18 @@ class ComposerWindow(QMainWindow):
             "km_marks": self.km_check.isChecked(),
             "km_step_m": float(self.km_step_spin.value()),
             "border": self.frame_border_check.isChecked(),
-            "border_mm": self.frame_border_mm.value()})
-        self._forget_frame(item.model)
-        self._sync_vector_widgets(item.model)
+            "border_mm": self.frame_border_mm.value()}
+        m = item.model
+        # The title and the border are paint-only: a vector frame keeps its
+        # drawing instead of going blank until the next Update.
+        paint_only = {"show_title", "border", "border_mm"}
+        redo = any(getattr(m, k) != v for k, v in changes.items()
+                   if k not in paint_only)
+        self._panel_edit(item, changes)
+        if redo:
+            self._forget_frame(m)
+        self._sync_vector_widgets(m)
+        self._sync_title_widgets(m)
         self.canvas.update()                 # bound scale labels re-read {escala}
 
     def _sync_vector_widgets(self, frame) -> None:
@@ -5387,6 +5665,37 @@ class ComposerWindow(QMainWindow):
                   self.cut_fill_combo, self.cut_fill_btn,
                   self.cut_hatch_spin):
             w.setEnabled(on)
+
+    def _sync_title_widgets(self, frame) -> None:
+        """Alignment and position mean nothing to the vertical bar."""
+        on = bool(getattr(frame, "show_title", False))
+        bar = (getattr(frame, "title_style", "layout") or "layout") == "bar"
+        for w in (self.title_style_combo, self.title_text_edit,
+                  self.title_sub_edit, self.title_number_edit,
+                  self.title_sheet_edit, self.title_scale_check,
+                  self.title_mm_spin):
+            w.setEnabled(on)
+        self.title_align_combo.setEnabled(on and not bar)
+        self.title_pos_combo.setEnabled(on and not bar)
+
+    def _on_frame_title(self, *_a) -> None:
+        """The title is paint-only: no render or hidden-line pass to redo,
+        just the item's box (the title may grow it) and a repaint."""
+        item = self._selected_item()
+        if self._updating or not isinstance(item, FrameItem):
+            return
+        self._panel_edit(item, {
+            "title_style": self.title_style_combo.currentData() or "layout",
+            "title_text": self.title_text_edit.text(),
+            "title_subtitle": self.title_sub_edit.text(),
+            "title_number": self.title_number_edit.text(),
+            "title_sheet": self.title_sheet_edit.text(),
+            "title_scale": self.title_scale_check.isChecked(),
+            "title_align": self.title_align_combo.currentData() or "left",
+            "title_pos": self.title_pos_combo.currentData() or "below",
+            "title_mm": float(self.title_mm_spin.value())})
+        self._sync_title_widgets(item.model)
+        item.update()
 
     def _on_frame_pens(self, *_a) -> None:
         """Pen widths and poché repaint from the cached drawing; only the

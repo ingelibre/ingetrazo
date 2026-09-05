@@ -88,8 +88,23 @@ class MarcoVista:
     #: "lineas" (kept for old documents; the UI maps them onto the
     #: Hidden line / Wireframe presets).
     style: str = "sombreado"
-    #: Draw the automatic title under the frame («Planta — 1:100»).
+    #: Draw the view title under the frame («Planta — 1:100»).
     show_title: bool = False
+    #: How the title reads. "layout": LayOut's label — numbered bubble +
+    #: title + «ESC. 1:N» over a rule; "bar": a vertical strip at the
+    #: frame's left with title / subtitle / scale turned 90° (the habit of
+    #: Brazilian offices' plans); "simple": the historic centred line.
+    #: ``title_text`` empty = the view's name; fields ({escala}, {lamina},
+    #: {escena}…) expand in every text.
+    title_style: str = "layout"
+    title_text: str = ""
+    title_subtitle: str = ""
+    title_number: str = ""            # the bubble's number; "" = no bubble
+    title_sheet: str = ""             # the bubble's lower half («A101», {lamina})
+    title_scale: bool = True          # append «ESC. 1:N»
+    title_align: str = "left"         # left | center | right
+    title_pos: str = "below"          # below | above (not for the bar)
+    title_mm: float = 4.0             # text height on paper
     #: Coordinate-grid spacing over the view, in model METRES (0 = off) —
     #: QGIS's graticule, the civil habit of gridded plans.
     grid_m: float = 0.0

@@ -19,6 +19,17 @@ follow [SemVer](https://semver.org).
   sola línea y las verticales vistas de canto ya no dejan puntos. La
   exportación DXF de la vista reparte las clases en capas `VISTA`,
   `VISTA-PERFIL` y `VISTA-CORTE` para la tabla de plumas de IngeCAD.
+- **Rótulo de vista profesional.** El título del marco (antes una línea
+  centrada «Planta — 1:100») tiene ahora tres estilos: el de LayOut
+  (burbuja numerada con la lámina debajo, título en negrita, «ESC. 1:N» y
+  una línea de base hasta el borde del marco, con subtítulo opcional),
+  la barra vertical de los planos brasileños (franja a la izquierda del
+  marco con título, subtítulo y escala girados 90° y la burbuja al pie) y
+  la línea simple de siempre. Título, subtítulo, número y lámina admiten
+  campos ({escala}, {lamina}, {escena}…), se elige alineación, posición
+  (debajo o encima) y alto del texto, y todo se edita en vivo desde el
+  panel del marco sin recalcular la vista. Cambiar el título o el borde
+  ya no deja en blanco un marco vectorial hasta el siguiente «Actualizar».
 - **Perfil de terreno en láminas.** Un ítem nuevo del compositor (herramienta
   «Perfil» en la barra) dibuja la cota del terreno bajo un trazado contra la
   progresiva, como en un plano de carretera o canal: escala horizontal 1:N o
