@@ -15,6 +15,12 @@ follow [SemVer](https://semver.org).
   texto. Muestrea el levantamiento fotogramétrico si está visible y el DEM en
   el resto, se recalcula si mueves el trazado, se guarda con la lámina y sale
   en la impresión con el rótulo «Esc. H 1:N · V 1:M · exag. ×k».
+- **Los trazados se ven en las vistas de modelo de las láminas.** El eje o
+  el lote trazado con la herramienta Ruta salía en el visor pero no dentro
+  del marco de la lámina (ni en pantalla ni impreso): ahora se dibuja sobre
+  el papel, en el cian del visor y con sus nodos, en todos los estilos y sin
+  activar «Anotaciones del modelo», apoyado en el terreno igual que en el
+  visor.
 - **Las figuras «cara a la cámara» viajan al `.skp`.** Las personas 2D y los
   recortes (la figura Sumari, los bañistas) se quedaban fuera del archivo y
   desaparecían en SketchUp. Ahora salen como componentes en la convención de

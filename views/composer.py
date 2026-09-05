@@ -184,9 +184,15 @@ def _paint_view_edit_border(painter: QPainter, frame: MarcoVista) -> None:
     painter.drawText(r, Qt.AlignCenter, text)
 
 
+#: Traced georef paths on paper: the viewport's cyan, so the sheet reads
+#: like the model (Marco, 2026-09-05: "no se ve la línea del path").
+_GEO_PATH_INK = QColor(0, 150, 170)
+
+
 def _paint_annots_mm(painter: QPainter, frame: MarcoVista, annots) -> None:
-    """Model dimensions and leader texts projected into the frame (mm):
-    ``("line", x0, y0, x1, y1)`` and ``("text", x, y, deg, text, size)``."""
+    """Model dimensions, leader texts and traced paths projected into the
+    frame (mm): ``("line", x0, y0, x1, y1)``,
+    ``("text", x, y, deg, text, size)`` and ``("poly", [(x, y), …])``."""
     r = QRectF(0, 0, frame.w_mm, frame.h_mm)
     painter.save()
     painter.setClipRect(r)
@@ -198,8 +204,25 @@ def _paint_annots_mm(painter: QPainter, frame: MarcoVista, annots) -> None:
         if a[0] == "line":
             painter.setPen(QPen(halo, 0.7))
             painter.drawLine(QPointF(a[1], a[2]), QPointF(a[3], a[4]))
+        elif a[0] == "poly":
+            pts = [QPointF(x, y) for x, y in a[1]]
+            painter.setPen(QPen(halo, 0.9, Qt.SolidLine, Qt.RoundCap,
+                                Qt.RoundJoin))
+            painter.drawPolyline(pts)
     for a in annots:
-        if a[0] == "line":
+        if a[0] == "poly":
+            pts = [QPointF(x, y) for x, y in a[1]]
+            painter.setPen(QPen(_GEO_PATH_INK, 0.4, Qt.SolidLine,
+                                Qt.RoundCap, Qt.RoundJoin))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPolyline(pts)
+            # Node marks, as the viewport draws them — small on paper.
+            painter.setBrush(_GEO_PATH_INK)
+            painter.setPen(QPen(halo, 0.15))
+            for q in pts:
+                painter.drawEllipse(q, 0.45, 0.45)
+            painter.setBrush(Qt.NoBrush)
+        elif a[0] == "line":
             painter.setPen(QPen(ink, 0.25))
             painter.drawLine(QPointF(a[1], a[2]), QPointF(a[3], a[4]))
         elif a[0] == "text":
@@ -4701,9 +4724,12 @@ class ComposerWindow(QMainWindow):
         self.on_selection_changed()          # the Label box follows
 
     def compute_annotations(self, frame: MarcoVista) -> list:
-        """The model's dimensions and leader texts projected into *frame*
-        (frame-local mm) for the vector style — the raster styles bake
-        them into the image. Hidden layers of the frame's scene apply."""
+        """The model's paper overlay for *frame* (frame-local mm), every
+        style alike — the GL render comes back without overlays and the
+        vector pass only knows edges. Traced georef paths ALWAYS (they are
+        the design, drawn on the ground as the viewport drapes them);
+        dimensions and leader texts when the frame opts in. Hidden layers
+        of the frame's scene apply."""
         import math
         import numpy as np
         from core.composition import model_height_for_frame
@@ -4724,6 +4750,16 @@ class ComposerWindow(QMainWindow):
                 return ((c[0] + half_w) * k, (half_h - c[1]) * k)
 
             out: list = []
+            drape = getattr(vp, "drape", None) or (lambda p: p)
+            for path in getattr(scene, "geo_paths", None) or []:
+                pts = [pt(drape(p)) for p in path.points]
+                if len(pts) < 2:
+                    continue
+                if path.closed and len(pts) > 2:
+                    pts.append(pts[0])
+                out.append(("poly", pts))
+            if not getattr(frame, "annotations", False):
+                return out
             size = float(getattr(frame, "annot_text_mm", 2.8) or 2.8)
             style = getattr(scene, "dimension_style", {}) or {}
             fmt = getattr(vp, "_format_dim_value", None)
@@ -6147,12 +6183,11 @@ class ComposerWindow(QMainWindow):
         """Fill *frame*: a GL render for the raster styles, the exact
         hidden-line pass for the vector style. Cached by frame identity;
         the live viewport state always comes back untouched."""
-        # The model's annotations are a paper overlay for EVERY style: text
-        # at a paper height with a halo, never baked into the render pixels
-        # (where a 9 pt screen font came out unreadably small).
-        self.annot_cache[id(frame)] = (
-            self.compute_annotations(frame)
-            if getattr(frame, "annotations", False) else [])
+        # The model's annotations (and traced paths) are a paper overlay for
+        # EVERY style: text at a paper height with a halo, never baked into
+        # the render pixels (where a 9 pt screen font came out unreadably
+        # small).
+        self.annot_cache[id(frame)] = self.compute_annotations(frame)
         if frame.style == "vectorial":
             self.compute_hlr(frame)
             return None
