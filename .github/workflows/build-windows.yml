@@ -39,7 +39,7 @@ jobs:
           # textos guía PR #203). Pineado por SHA para builds
           # reproducibles; avanzar el SHA cuando upstream traiga algo
           # que necesitemos.
-          pip install "openskp @ git+https://github.com/iamahsanmehmood/openskp@6e3e56878341c7be140726917e732ad5511d3d5d#subdirectory=packages/python"
+          pip install "openskp @ git+https://github.com/tuxiasumari/openskp@73ba410f1579dce96f7d82f29c62533c53de0612#subdirectory=packages/python"
           python -c "import openskp, openskp.legacy; print('openskp OK:', openskp.__name__)" 
 
       - name: Compilar con PyInstaller

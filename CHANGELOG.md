@@ -6,6 +6,18 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+## [0.3.12] — 2026-09-05
+
+**La release de las láminas profesionales y del `.skp` que SketchUp
+guarda.** Una sesión entera sobre la lámina real de la pileta de Yanque:
+el estilo vectorial dibuja con tres plumas y rellena los cortes, el marco
+lleva rótulo numerado, la planta marca por dónde va cada sección, y llegan
+las cotas de nivel, las cotas en cadena, las llamadas de detalle y las
+fotos en círculo con borde desvanecido. Por debajo, el exportador `.skp`
+que SketchUp abre, muestra con las texturas en su sitio y **guarda** — con
+openskp fijado al fork `tuxiasumari/openskp@73ba410` mientras upstream
+revisa el PR #266 que lo lleva todo.
+
 ### Cambiado
 - **Un `.igz` de una versión más nueva ya abre.** Las láminas guardadas con
   campos que esta versión no conoce cargan ignorando esos campos, una
