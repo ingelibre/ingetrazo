@@ -187,3 +187,37 @@ def test_view_edit_survives_a_canvas_rebuild(monkeypatch):
         comp.close()
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_the_view_edit_survives_each_zoom_and_pan_commit(monkeypatch):
+    """Every wheel notch and every drag commits (one undo step, canvas
+    rebuilt); the edit mode must carry over to the frame's new item, or the
+    second scroll needs another double-click (Marco, 2026-09-07)."""
+    win, comp, item = _composer_with_model(monkeypatch)
+    try:
+        frame = item.model
+        comp.begin_view_edit(item)
+        assert comp.view_edit_item is item
+        cx = frame.x_mm + frame.w_mm / 2
+        cy = frame.y_mm + frame.h_mm / 2
+        comp.zoom_view_gesture(comp.view_edit_item, 1.1, (cx, cy))
+        assert comp.view_edit_item is not None          # still editing…
+        assert comp.view_edit_item.model is frame       # …the same frame
+        assert comp.view_edit_item.isSelected()
+        comp.zoom_view_gesture(comp.view_edit_item, 1.1, (cx, cy))
+        assert comp.view_edit_item is not None          # and a second time
+        s1 = frame.scale_n
+        # a pan gesture commits the same way
+        from PySide6.QtCore import QPointF
+        it = comp.view_edit_item
+        comp.start_view_drag(it, QPointF(cx, cy), QPointF(100, 100), mode="pan")
+        comp.move_view_drag(QPointF(cx + 5, cy), QPointF(110, 100))
+        comp.finish_view_drag()
+        assert comp.view_edit_item is not None and comp.view_edit_item.model is frame
+        assert frame.scale_n == s1
+        comp.end_view_edit()
+        assert comp.view_edit_item is None
+    finally:
+        comp.close()
+        win._saved_version = win.viewport.scene.version
+        win.close()

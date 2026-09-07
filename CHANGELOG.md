@@ -7,6 +7,17 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Añadido
+- **Pestañas Modelo | Lámina 1 | Lámina 2… en la barra de estado** (Marco,
+  2026-09-07: «como lo tiene AutoCAD», «en la misma fila donde está el
+  cuadro de las medidas»). Pasar del modelo a una lámina era ir a Archivo ▸
+  Compositor de láminas y elegirla; ahora es un clic en el extremo
+  izquierdo de la barra de estado, en las dos ventanas: en el modelo, la pestaña de una
+  lámina abre el compositor en esa lámina; en el compositor, «Modelo»
+  vuelve al modelo y las demás cambian de lámina. Las dos franjas siguen
+  al documento (láminas nuevas, renombradas o borradas) y cada una marca
+  lo que muestra su ventana. Los mensajes de estado ya no las esconden (la
+  barra los muestra en su propio rótulo y, pasado el aviso, vuelve la ayuda
+  fija).
 - **Girar una vista en la lámina.** El marco del compositor tiene ahora
   «Giro de la vista» en el panel: el DIBUJO gira dentro del marco, en
   sentido horario y con el mismo ángulo que se le pone a la flecha de
@@ -19,7 +30,60 @@ follow [SemVer](https://semver.org).
   dibujo alrededor del centro del marco, con imantación cada 15°, y toda
   la maniobra es un solo paso de deshacer. El giro viaja en el `.igz`.
 
+### Corregido
+- **La selección ya no se imprime.** Si al renderizar un marco había algo
+  seleccionado en el modelo, sus indicadores salían en la lámina y en el
+  PDF: el recuadro naranja alrededor de Sumari (Marco, 2026-09-07,
+  captura), el tinte de las caras y las aristas resaltadas. Los renders de
+  exportación (marcos del compositor e imagen en alta resolución) ya no
+  dibujan ningún indicador de selección.
+- **Doble clic sobre un texto de lámina tras un deshacer ya no falla.** El
+  editor de texto in situ moría con el lienzo al reconstruirse (undo,
+  pegar, soltar un marco) y el compositor seguía apuntándolo: el siguiente
+  doble clic tocaba un objeto borrado («Internal C++ object already
+  deleted», repetido en el log de Marco, 2026-09-07). La reconstrucción
+  suelta el editor y cerrarlo comprueba que siga vivo.
+- **Se acabaron las congeladas de un segundo al editar la lámina.** El
+  visor informa la versión del modelo al pintar; dos ediciones de lámina
+  seguidas entre dos pintadas dejaban la primera pareciendo un cambio del
+  modelo: todos los marcos pasaban a desactualizados, se tiraban los
+  puntos de imantación y el paso exacto de líneas ocultas se rehacía por
+  marco (~1 s cada uno en la lámina del poste). Ahora el compositor
+  reconoce TODAS las versiones que produjo él mismo (Marco, 2026-09-07:
+  «cierto lag cuando arrastro un leader»).
+- **Soltar un ítem arrastrado ya no reconstruye la lámina entera.** Al
+  soltar una etiqueta, una cota o un texto se rehacían los 39 ítems y se
+  repintaba todo en frío (~80 ms de tirón por suelta); ahora la suelta es
+  solo su paso de deshacer. Un marco sí reconstruye: las cotas ancladas y
+  los textos ligados tienen que seguirlo.
+- **La lámina se puede desplazar aunque quepa entera en la ventana.** El
+  lienzo solo dejaba hacer *pan* (rueda, botón central) cuando la hoja era
+  más grande que la ventana (Marco, 2026-09-07). Ahora el área desplazable
+  es la hoja más el tamaño de la ventana por cada lado, a cualquier zoom,
+  como en cualquier CAD; una franja de 20 mm de la hoja queda siempre a la
+  vista para no perderla. Las barras de desplazamiento quedan fijas.
+- **Editar la vista de un marco ya no se corta al primer gesto.** Tras el
+  doble clic sobre un marco, cada muesca de la rueda o cada arrastre
+  confirmaba el paso y reconstruía el lienzo, y la reconstrucción soltaba
+  el modo de edición: para el segundo zoom había que volver a hacer doble
+  clic (Marco, 2026-09-07). Ahora la edición pasa al ítem nuevo del marco
+  y se sigue orbitando, encuadrando y haciendo zoom hasta Enter, Esc o un
+  clic fuera.
+
 ### Cambiado
+- **Los diálogos de archivo abren en la última carpeta que elegiste.**
+  Abrir, guardar, importar y exportar (PDF, DXF, imagen, IFC, OBJ…)
+  arrancaban en la carpeta donde está instalado el programa (Marco,
+  2026-09-07). Ahora los 28 diálogos comparten una memoria: empiezan en la
+  última carpeta usada en cualquiera de ellos; si no hay ninguna, en la
+  carpeta del documento abierto, y si tampoco, en Documentos.
+- **Un ítem bloqueado de la lámina ya no se selecciona desde el lienzo.**
+  Ni con clic ni con caja: el clic va a lo que está encima (cotas, textos)
+  o a la hoja, y un marco de vista bloqueado deja de mezclarse con las
+  cotas que se editan sobre él (Marco, 2026-09-07). La única puerta a un
+  ítem bloqueado es la lista **Items** del panel: desde ahí se selecciona,
+  se edita en el panel y se desbloquea (Ctrl+L o menú). Al pasar la
+  selección a otra cosa, la puerta se vuelve a cerrar.
 - **Arrastrar en el compositor va 10× más fluido.** Cada movimiento del
   ratón volvía a dibujar los marcos afectados escalando su render de
   300 dpi (Marco, 2026-09-07: «siento algo de lag en composiciones cuando

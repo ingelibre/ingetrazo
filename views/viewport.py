@@ -1348,13 +1348,18 @@ class Viewport(QOpenGLWidget):
         # to the shaded looks only.
         if self.plano_style is None and mode in ("textures", "shaded", "xray"):
             self._draw_billboards()
-            self._draw_billboard_outlines()
+            if self._export_size is None:
+                # Selection cues never reach an export: the orange box
+                # around a selected Sumari came out on the printed sheet
+                # (Marco, 2026-09-07).
+                self._draw_billboard_outlines()
 
         # Face highlights (selection + hover) — translucent overlays drawn on
         # top of the cream faces. Same polygon offset as the faces so they sit
         # at matching depth (LEQUAL lets this later draw win); depth-write OFF
         # so the overlay tints without blocking the edges drawn afterwards.
-        if self._sel_faces_count > 0 or self._hover_entity is not None:
+        if (self._sel_faces_count > 0 or self._hover_entity is not None) \
+                and self._export_size is None:      # no selection cues in exports
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
             self._gl.glDepthMask(GL_FALSE)
@@ -1446,8 +1451,8 @@ class Viewport(QOpenGLWidget):
                 self._silhouette_vao.release()
         _fmark("edges")
 
-        # Selected edges (drawn on top, highlighted)
-        if self._selected_count > 0:
+        # Selected edges (drawn on top, highlighted) — never in an export
+        if self._selected_count > 0 and self._export_size is None:
             self._set_color(0.95, 0.45, 0.16, 1.0)
             self._selected_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, self._selected_count)

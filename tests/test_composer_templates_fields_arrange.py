@@ -217,7 +217,9 @@ def test_group_ungroup_lock_and_group_drags(monkeypatch, tmp_path):
         assert a.locked and b.locked and not c.locked
         its = items()
         comp.canvas.clearSelection()
-        its["a"].setSelected(True)
+        # a locked item is out of the canvas's reach: the Items list is the
+        # door (force_select is what the list pick does)
+        its["a"].force_select()
         comp.lock_selected()
         assert not a.locked and not b.locked
         # ungroup, and delete removes every selected item in one step

@@ -432,7 +432,13 @@ class TestArrangeAndLock:
         it = next(i for i in composer.canvas.items()
                   if getattr(i, "model", None) is rect)
         assert not (it.flags() & QGraphicsItem.ItemIsMovable)
-        assert it.flags() & QGraphicsItem.ItemIsSelectable
+        # locked = out of the mouse's reach on the canvas (2026-09-07); the
+        # panel's Items list is the door, through force_select
+        from PySide6.QtCore import Qt as _Qt
+        assert not (it.flags() & QGraphicsItem.ItemIsSelectable)
+        assert it.acceptedMouseButtons() == _Qt.NoButton
+        it.force_select()
+        assert it.isSelected()
         composer.toggle_lock(self._handle(rect))
         assert not rect.locked
 

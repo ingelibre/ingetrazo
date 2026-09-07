@@ -1820,18 +1820,34 @@ class _SheetItem(QGraphicsItem):
         self.model = model
         self.setPos(model.x_mm, model.y_mm)
         self.setZValue(getattr(model, "z", 0.0))
-        # A locked item stays visible and selectable (to unlock it) but
-        # cannot be dragged or resized — QGIS's composer habit.
-        self.setFlag(QGraphicsItem.ItemIsMovable,
-                     not getattr(model, "locked", False))
-        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        # A locked item stays visible but is out of the mouse's way: not
+        # selectable on the canvas (a click or a box over it goes to the
+        # cotas and texts drawn on top, or to the page) and never dragged or
+        # resized. It is picked from the Items list of the panel — that is
+        # the one way to reach it and unlock it (Marco, 2026-09-07: «cuando
+        # bloqueo un model view ya no debería poder seleccionarse ese cuadro,
+        # la única forma sería en Items… para que no se mezcle con las cotas
+        # y demás»). force_select() opens the flag for that list pick;
+        # itemChange closes it again when the selection moves on.
+        locked = getattr(model, "locked", False)
+        self.setFlag(QGraphicsItem.ItemIsMovable, not locked)
+        self.setFlag(QGraphicsItem.ItemIsSelectable, not locked)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
-        self.setAcceptHoverEvents(True)
+        self.setAcceptHoverEvents(not locked)
+        if locked:
+            self.setAcceptedMouseButtons(Qt.NoButton)
         # Painted once, then blitted while it is dragged; the zoom decides
         # whether it still fits (_sync_item_caches).
         self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         self._press_state: Optional[dict] = None
         self._resizing = False
+
+    def force_select(self) -> None:
+        """Select this item from the panel's Items list — the only door for
+        a locked item, whose canvas flag is closed."""
+        if getattr(self.model, "locked", False):
+            self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        self.setSelected(True)
 
     # -- hover: advertise the resize handle with the right cursor -------------
     def hoverMoveEvent(self, event) -> None:
@@ -2035,6 +2051,9 @@ class _SheetItem(QGraphicsItem):
                 sync = getattr(self.composer, "sync_group_selection", None)
                 if sync is not None:
                     sync(self)
+            if not value and getattr(self.model, "locked", False):
+                # the list pick is over: back out of the mouse's reach
+                self.setFlag(QGraphicsItem.ItemIsSelectable, False)
             self.composer.on_selection_changed()
         return super().itemChange(change, value)
 
@@ -2689,6 +2708,10 @@ class ComposerCanvasView(QGraphicsView):
 
     def __init__(self, canvas, composer) -> None:
         super().__init__(canvas)
+        # Always-on scroll bars: the page pans at every zoom (update_pan_range),
+        # and a bar that came and went would resize the viewport under it.
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.composer = composer
         self.setMouseTracking(True)
         self._drag_start = None
@@ -2753,6 +2776,45 @@ class ComposerCanvasView(QGraphicsView):
         if self._snap_marker is not None:
             self.scene().removeItem(self._snap_marker)
             self._snap_marker = None
+
+    #: Strip of the page that always stays in view when panning to the limit.
+    _KEEP_MM = 20.0
+
+    def update_pan_range(self) -> None:
+        """Let the page be panned anywhere, as in any CAD / LayOut: the
+        scrollable area is the page grown by the viewport on every side, so
+        the wheel and the middle button pan even when the whole sheet fits
+        the window (Marco, 2026-09-07: «cuando hago pan con la rueda no
+        hace, solo cuando la hoja es muy grande»). A 20 mm strip of the page
+        always stays in view, so it cannot be lost off-screen."""
+        comp = getattr(self.composer, "comp", None)
+        if comp is None or not hasattr(comp, "page_size_mm"):
+            return                                   # stub composers (tests)
+        if getattr(self, "_pan_range_busy", False):
+            return
+        # Reentrancy guard: setSceneRect can move the scroll bars, which
+        # resizes the viewport, which lands back here — with as-needed scroll
+        # bars that oscillated until the stack blew (a segfault in
+        # fitInView). The bars are also pinned always-on in __init__ so the
+        # viewport's size never depends on the range we are computing.
+        self._pan_range_busy = True
+        try:
+            pw, ph = comp.page_size_mm()
+            scale = max(self.transform().m11(), 1e-6)
+            ex = max(self.viewport().width() / scale - self._KEEP_MM, 0.0)
+            ey = max(self.viewport().height() / scale - self._KEEP_MM, 0.0)
+            rect = QRectF(-ex, -ey, pw + 2 * ex, ph + 2 * ey)
+            if rect == self.sceneRect():
+                return
+            centre = self.mapToScene(self.viewport().rect().center())
+            self.setSceneRect(rect)
+            self.centerOn(centre)                    # the view does not jump
+        finally:
+            self._pan_range_busy = False
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.update_pan_range()
 
     def wheelEvent(self, event) -> None:
         edit = getattr(self.composer, "view_edit_item", None)
@@ -3330,6 +3392,13 @@ class ComposerWindow(QMainWindow):
         self._splitter = split
         self.setCentralWidget(split)
 
+        # The same Model | sheets strip as the main window, in the status
+        # bar's left end, marking the sheet that is open here.
+        from views.sheet_tabs import SheetStatusBar
+        bar = SheetStatusBar(self, on_model=self._show_model,
+                             on_sheet=self.show_sheet)
+        self.setStatusBar(bar)
+        self._sheet_tabs = bar.tabs
         self._pos_label = QLabel("")
         self.statusBar().addPermanentWidget(self._pos_label)
         # QGIS-style zoom combo: fit modes + presets, editable percentage.
@@ -3345,6 +3414,7 @@ class ComposerWindow(QMainWindow):
         self._zoom_combo.lineEdit().returnPressed.connect(
             self._on_zoom_typed)
         self.statusBar().addPermanentWidget(self._zoom_combo)
+        self._refresh_sheet_tabs()
         self.update_zoom_label()
 
         QShortcut(QKeySequence.Undo, self, activated=self._on_undo)
@@ -3393,13 +3463,6 @@ class ComposerWindow(QMainWindow):
         ("flecha", "comp_flecha", "Draw an arrow (two clicks or drag)", True),
         ("rect", "rectangle", "Draw a rectangle (two clicks or drag)", True),
         ("elipse", "circle", "Draw an ellipse (two clicks or drag)", True),
-        # The same Model | sheets strip as the main window, in the status
-        # bar's left end, marking the sheet that is open here.
-        from views.sheet_tabs import SheetStatusBar
-        bar = SheetStatusBar(self, on_model=self._show_model,
-                             on_sheet=self.show_sheet)
-        self.setStatusBar(bar)
-        self._sheet_tabs = bar.tabs
         ("poligono", "polygon", "Draw a polygon (two clicks or drag)", True),
         ("cota", "dimension", "Draw a dimension (two points + separation)", True),
         ("cota_cadena", "dimension_chain",
@@ -3415,7 +3478,6 @@ class ComposerWindow(QMainWindow):
         from PySide6.QtWidgets import QToolBar
         from views.icons import tool_icon
         tb = QToolBar(tr("Composer tools"), self)
-        self._refresh_sheet_tabs()
         tb.setOrientation(Qt.Vertical)
         tb.setMovable(False)
         group = QActionGroup(self)
@@ -3679,6 +3741,9 @@ class ComposerWindow(QMainWindow):
 
     def update_zoom_label(self) -> None:
         self._sync_item_caches()      # the zoom decides which caches still fit
+        view = getattr(self, "_view", None)
+        if view is not None and hasattr(view, "update_pan_range"):
+            view.update_pan_range()   # the zoom decides how far the page pans
         if not hasattr(self, "_zoom_combo") or not hasattr(self, "_view"):
             return
         self._zoom_combo.blockSignals(True)
@@ -4886,6 +4951,7 @@ class ComposerWindow(QMainWindow):
             self._scene().compositions.index(self.comp)
             if self.comp in self._scene().compositions else 0)
         self._updating = False
+        self._refresh_sheet_tabs()      # added / renamed / deleted sheets
 
     def _on_comp_switched(self, idx: int) -> None:
         QTimer.singleShot(0, self._auto_render_stale)
@@ -4896,6 +4962,41 @@ class ComposerWindow(QMainWindow):
             self.comp = comps[idx]
             self.history = ComposerHistory(on_change=self._on_history_change)
             self._rebuild_canvas()
+            self._refresh_sheet_tabs()
+
+    # ---- Model / sheet tabs (the strip at the bottom) -----------------------
+    def _refresh_sheet_tabs(self) -> None:
+        """Both strips follow the document: this one marks the open sheet,
+        the main window's marks «Model»."""
+        tabs = getattr(self, "_sheet_tabs", None)
+        if tabs is None:
+            return
+        comps = self._scene().compositions
+        cur = comps.index(self.comp) if self.comp in comps else 0
+        tabs.refresh([c.name for c in comps], cur)
+        sync = getattr(self._window, "_refresh_sheet_tabs", None)
+        if sync is not None:
+            sync()
+
+    def show_sheet(self, index: int) -> None:
+        """Bring this window up on sheet ``index`` (a tab click, from
+        either window)."""
+        comps = self._scene().compositions
+        if 0 <= index < len(comps) and comps[index] is not self.comp:
+            self.comp_combo.setCurrentIndex(index)     # → _on_comp_switched
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._refresh_sheet_tabs()
+
+    def _show_model(self) -> None:
+        """The «Model» tab: back to the model window; this strip keeps
+        marking the sheet it shows."""
+        win = self._window
+        win.show()
+        win.raise_()
+        win.activateWindow()
+        self._refresh_sheet_tabs()
 
     def _on_comp_rename(self) -> None:
         if self._updating:
@@ -4952,7 +5053,6 @@ class ComposerWindow(QMainWindow):
         # The selection lives on the items, and the items die with the
         # canvas: every rebuild — the auto-render pass after a scale or size
         # edit, a page change, a title-block field — dropped it, so each
-        self._refresh_sheet_tabs()      # added / renamed / deleted sheets
         # property change in the panel meant clicking the frame again for
         # the next one (Marco, 2026-09-05). Remember the selected MODELS and
         # pick their new items up below; a caller's _pending_sel still wins.
@@ -4963,52 +5063,24 @@ class ComposerWindow(QMainWindow):
         # mid-placement (undo between the two clicks is routine). Drop the
         # placement first or the next mouse move touches dead C++ objects.
         if hasattr(self, "_view"):
-            self._refresh_sheet_tabs()
-
-    # ---- Model / sheet tabs (the strip at the bottom) -----------------------
-    def _refresh_sheet_tabs(self) -> None:
-        """Both strips follow the document: this one marks the open sheet,
-        the main window's marks «Model»."""
-        tabs = getattr(self, "_sheet_tabs", None)
-        if tabs is None:
-            return
-        comps = self._scene().compositions
-        cur = comps.index(self.comp) if self.comp in comps else 0
-        tabs.refresh([c.name for c in comps], cur)
-        sync = getattr(self._window, "_refresh_sheet_tabs", None)
-        if sync is not None:
-            sync()
-
-    def show_sheet(self, index: int) -> None:
-        """Bring this window up on sheet ``index`` (a tab click, from
-        either window)."""
-        comps = self._scene().compositions
-        if 0 <= index < len(comps) and comps[index] is not self.comp:
-            self.comp_combo.setCurrentIndex(index)     # → _on_comp_switched
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        self._refresh_sheet_tabs()
-
-    def _show_model(self) -> None:
-        """The «Model» tab: back to the model window; this strip keeps
-        marking the sheet it shows."""
-        win = self._window
-        win.show()
-        win.raise_()
-        win.activateWindow()
-        self._refresh_sheet_tabs()
             self._view.cancel_placement()
         # Likewise the frame whose view is being edited in place: its item
         # dies with the canvas, and ending the edit afterwards (the next
         # double-click does) would touch a deleted C++ object.
         self._view_edit = None
         self._view_drag = None
+        # …and the in-place text editor, for the same reason: its item dies
+        # with the canvas, and end_inline_edit on the dead wrapper raised
+        # «Internal C++ object (InlineTextEditor) already deleted» at the
+        # next double-click on a text (Marco's log, 2026-09-07).
+        self._inline_editor = None
         self._reproject_anchored_cotas()
         self._set_field_context(self.comp)
         self.canvas.clear()
         pw, ph = self.comp.page_size_mm()
         self.canvas.setSceneRect(-20, -20, pw + 40, ph + 40)
+        if hasattr(self, "_view"):
+            self._view.update_pan_range()            # the paper may have changed
         shadow = self.canvas.addRect(2.0, 2.0, pw, ph, QPen(Qt.NoPen),
                                      QBrush(QColor(0, 0, 0, 70)))
         shadow.setZValue(-100003)
@@ -5059,7 +5131,7 @@ class ComposerWindow(QMainWindow):
         if keep:
             for it in self.canvas.items():
                 if isinstance(it, _SheetItem) and any(it.model is m for m in keep):
-                    it.setSelected(True)
+                    it.force_select()
 
         self.paper_combo.setCurrentText(self.comp.paper)
         self.landscape_check.setChecked(self.comp.landscape)
@@ -5458,18 +5530,27 @@ class ComposerWindow(QMainWindow):
         return cmds
 
     def push_geometry_edit(self, model, after: dict, before: dict) -> None:
+        """The undo step of a finished drag / resize. The dragged item
+        already shows its model, so the canvas is rebuilt only when
+        something ELSE must follow: texts bound to a moved frame, cotas
+        anchored to it, a group dragged along, or a cota that re-snaps to
+        its anchor. Dropping a label or a level used to rebuild every item
+        and repaint the whole sheet cold — an 80 ms hitch at every drop on
+        a full sheet (Marco, 2026-09-07: «cierto lag cuando arrastro un
+        leader»); now it is the undo entry and a dirty mark."""
         extra = self._follow_commands(model, after, before)
         extra += self._group_drag_commands(model)
         self._drag_snapshot = {}
-        if extra:
-            self.history.execute(CompoundCommand(
-                [EditItemCommand(model, after, before)] + extra))
+        cmd = (CompoundCommand([EditItemCommand(model, after, before)] + extra)
+               if extra else EditItemCommand(model, after, before))
+        self.history.execute(cmd, notify=False)
+        self._mark_dirty()
+        if (extra or isinstance(model, MarcoVista)
+                or getattr(model, "anchored", False)):
             self._rebuild_canvas()
             for it in self.canvas.items():
                 if isinstance(it, _SheetItem) and it.model is model:
-                    it.setSelected(True)
-            return
-        self.history.execute(EditItemCommand(model, after, before))
+                    it.force_select()
 
     def add_scale_label(self, frame) -> TextoItem:
         """A movable scale label for *frame*: a bound text block under its
@@ -5685,7 +5766,7 @@ class ComposerWindow(QMainWindow):
         self._rebuild_canvas()
         for it in self.canvas.items():
             if isinstance(it, _SheetItem) and any(it.model is k for k in keep):
-                it.setSelected(True)
+                it.force_select()
 
     def align_selected(self, mode: str) -> None:
         """left | right | top | bottom | hcenter | vcenter, against the
@@ -5753,7 +5834,7 @@ class ComposerWindow(QMainWindow):
                 if (isinstance(it, _SheetItem)
                         and getattr(it.model, "group_id", "") == gid
                         and not it.isSelected()):
-                    it.setSelected(True)
+                    it.force_select()
         finally:
             self._syncing_sel = False
 
@@ -5761,7 +5842,7 @@ class ComposerWindow(QMainWindow):
         keep = list(models)
         for it in self.canvas.items():
             if isinstance(it, _SheetItem) and any(it.model is k for k in keep):
-                it.setSelected(True)
+                it.force_select()
 
     def group_selected(self) -> None:
         """Ctrl+G: the selected items become one group (the title block
@@ -5852,7 +5933,7 @@ class ComposerWindow(QMainWindow):
         self._rebuild_canvas()
         for it in self.canvas.items():
             if isinstance(it, _SheetItem) and any(it.model is c for c in copies):
-                it.setSelected(True)
+                it.force_select()
         self.statusBar().showMessage(
             tr("{n} item(s) duplicated.", n=len(copies)), 3000)
 
@@ -5953,7 +6034,7 @@ class ComposerWindow(QMainWindow):
         self._rebuild_canvas()
         for it in self.canvas.items():
             if isinstance(it, _SheetItem) and any(it.model is p for p in pasted):
-                it.setSelected(True)
+                it.force_select()
         for m0, m in zip(src, pasted):      # the next paste steps on from here
             m0.x_mm, m0.y_mm = m.x_mm, m.y_mm
         ComposerWindow._clipboard_from = self.comp
@@ -6120,7 +6201,7 @@ class ComposerWindow(QMainWindow):
             for it in self.canvas.items():
                 if isinstance(it, _SheetItem) and any(
                         it.model is t.model for t in targets):
-                    it.setSelected(True)
+                    it.force_select()
             self.on_selection_changed()
         self.statusBar().showMessage(
             tr("Style pasted on {n} item(s).", n=n), 3000)
@@ -6139,7 +6220,7 @@ class ComposerWindow(QMainWindow):
         if self._view_edit is not None and self._view_edit is not item:
             self.end_view_edit()
         self._view_edit = item
-        item.setSelected(True)
+        item.force_select()
         item.update()
         self.statusBar().showMessage(tr(
             "Editing the view: drag = pan, Shift+drag = turn, middle button "
@@ -6301,11 +6382,18 @@ class ComposerWindow(QMainWindow):
             self._mark_dirty()
         self._after_view_edit(item, final=True)
         self.on_selection_changed()          # the scale combo follows
+        # The rebuild kills the item (and drops _view_edit with it): remember
+        # first whether the view was being edited, then pick the frame's NEW
+        # item back up — otherwise every wheel notch or drag ended the edit
+        # and the next one needed another double-click (Marco, 2026-09-07:
+        # «solo en el primer scroll, después tengo que hacer doble clic»).
+        editing = self._view_edit is not None
         self._rebuild_canvas()               # anchored cotas reproject
-        if self._view_edit is not None:
+        if editing:
             self._view_edit = self._item_for(frame)
             if self._view_edit is not None:
-                self._view_edit.setSelected(True)
+                self._view_edit.force_select()
+                self._view_edit.update()
 
     def start_view_drag(self, item, pos_mm, pos_px, orbit: bool = False,
                         mode: str | None = None) -> None:
@@ -6394,6 +6482,12 @@ class ComposerWindow(QMainWindow):
             return
         if editor is current:
             self._inline_editor = None
+        try:
+            from shiboken6 import isValid
+        except ImportError:                       # pragma: no cover
+            isValid = None
+        if isValid is not None and not isValid(editor):
+            return                                # the canvas took it already
         item = editor.item
         if editor.scene() is not None:
             editor.scene().removeItem(editor)
@@ -6678,7 +6772,8 @@ class ComposerWindow(QMainWindow):
     def _on_model_version(self, version) -> None:
         """The viewport painted a new scene version: unless it is one of our
         own sheet edits, every frame is now stale."""
-        if version == self._sheet_version:
+        if (version == self._sheet_version
+                or version in self.__dict__.get("_sheet_versions", ())):
             self._last_model_version = version
             return
         if version == self._last_model_version:
@@ -6737,7 +6832,7 @@ class ComposerWindow(QMainWindow):
         if getattr(self, "_pending_sel", None) is not None:
             for it in self.canvas.items():
                 if isinstance(it, _SheetItem) and it.model is self._pending_sel:
-                    it.setSelected(True)
+                    it.force_select()
                     break
         self._pending_sel = None
 
@@ -6745,6 +6840,16 @@ class ComposerWindow(QMainWindow):
         scene = self._scene()
         scene.version += 1
         self._sheet_version = scene.version      # ours: not a model change
+        # Every version WE produced, not just the last: the viewport reports
+        # versions as it paints, and two sheet edits between two paints left
+        # the first one looking like a model change — every frame went
+        # stale, the snap sets were dropped and the exact hidden-line pass
+        # ran again for each frame (~1 s per frame on the pole sheet): the
+        # random freeze Marco felt while dragging labels (2026-09-07).
+        own = self.__dict__.setdefault("_sheet_versions", set())
+        own.add(scene.version)
+        if len(own) > 256:
+            own.difference_update(sorted(own)[:128])
         if hasattr(self._window, "set_dirty"):
             self._window.set_dirty()
 
@@ -7717,7 +7822,7 @@ class ComposerWindow(QMainWindow):
                 self._updating = True
                 self.canvas.clearSelection()
                 self._updating = False
-                it.setSelected(True)
+                it.force_select()
                 break
 
     def _on_scalebar_props(self, *_a) -> None:
