@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.i18n import tr
+from views.filedialogs import file_dialogs
 from georef.photomesh import PhotoMeshSampler
 from georef.profile import (
     point_at_station,
@@ -395,7 +396,7 @@ class ProfileDock(QDockWidget):
     def _export_csv(self) -> None:
         if self._geopath is None or self._sampler is None:
             return
-        path, _ = QFileDialog.getSaveFileName(
+        path, _ = file_dialogs.getSaveFileName(
             self, tr("Export profile CSV"), "profile.csv", "CSV (*.csv)")
         if not path:
             return
@@ -408,7 +409,7 @@ class ProfileDock(QDockWidget):
                 datum_alt=float(getattr(datum, "alt", 0.0) or 0.0)))
 
     def _export_png(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
+        path, _ = file_dialogs.getSaveFileName(
             self, tr("Export profile image"), "profile.png", "PNG (*.png)")
         if path:
             self.view.grab().save(path)

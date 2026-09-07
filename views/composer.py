@@ -36,6 +36,7 @@ from core.composition import (COMMON_SCALES, PAPER_SIZES_MM, RENDER_DPI,
                               PerfilTerreno, RemoveItemCommand, TextoItem,
                               apply_frame_camera, snap_mm)
 from core.i18n import tr
+from views.filedialogs import file_dialogs
 
 PT_TO_MM = 25.4 / 72.0
 _HANDLE_MM = 3.0          # corner resize handle, in paper mm
@@ -6787,7 +6788,7 @@ class ComposerWindow(QMainWindow):
         self.history.execute(AddItemCommand(self.comp, t))
 
     def _on_add_image(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
+        path, _ = file_dialogs.getOpenFileName(
             self, tr("Choose image…"), "",
             tr("Images (*.png *.jpg *.jpeg)"))
         if not path:
@@ -7121,7 +7122,7 @@ class ComposerWindow(QMainWindow):
         item = self._selected_item()
         if not isinstance(item, ImageItem):
             return
-        path, _ = QFileDialog.getOpenFileName(
+        path, _ = file_dialogs.getOpenFileName(
             self, tr("Choose image…"), "",
             tr("Images (*.png *.jpg *.jpeg)"))
         if not path:
@@ -8304,7 +8305,7 @@ class ComposerWindow(QMainWindow):
         self._rebuild_canvas()
 
     def _on_export_all(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
+        path, _ = file_dialogs.getSaveFileName(
             self, tr("Export all sheets (PDF)…"), "laminas.pdf",
             "PDF (*.pdf)")
         if not path:
@@ -8316,7 +8317,7 @@ class ComposerWindow(QMainWindow):
         item = self._selected_item()
         if not isinstance(item, FrameItem):
             return
-        path, _ = QFileDialog.getSaveFileName(
+        path, _ = file_dialogs.getSaveFileName(
             self, tr("Export view as DXF…"), "vista.dxf", "DXF (*.dxf)")
         if not path:
             return
@@ -8336,7 +8337,7 @@ class ComposerWindow(QMainWindow):
     # ---- export --------------------------------------------------------------
     def _on_export_pdf(self) -> None:
         self.refresh_all_frames()
-        path, _ = QFileDialog.getSaveFileName(
+        path, _ = file_dialogs.getSaveFileName(
             self, tr("Export PDF…"), "lamina.pdf", "PDF (*.pdf)")
         if not path:
             return

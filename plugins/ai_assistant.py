@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 
 from core import ai
 from core.i18n import tr
+from views.filedialogs import file_dialogs
 from tools.base import Tool
 
 MAX_ROUNDS = 12
@@ -341,7 +342,7 @@ class AsistenteDialog(QDialog):
     FOTO_MAX_EDGE = 1280
 
     def _on_foto(self) -> None:
-        path, _f = QFileDialog.getOpenFileName(
+        path, _f = file_dialogs.getOpenFileName(
             self, tr("Attach a photo"), "",
             tr("Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)"
                ";;All files (*)"))

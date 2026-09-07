@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.i18n import tr
+from views.filedialogs import file_dialogs
 from core.mesh import Edge, Face
 from core.group import Group
 from core.dimension import Dimension
@@ -1257,7 +1258,7 @@ class MaterialsPanel(QWidget):
                 name=name.strip() if ok and name.strip() else None)
 
     def _add_texture(self) -> None:
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Choose texture"), str(_TEX_DIR),
             tr("Images (*.png *.jpg *.jpeg *.bmp);;All (*)"))
         if not path_str:
@@ -2356,7 +2357,7 @@ class BimPanel(QWidget):
     def _on_export_csv(self) -> None:
         from PySide6.QtWidgets import QFileDialog
         from core.bim import quantities_csv
-        path, _ = QFileDialog.getSaveFileName(
+        path, _ = file_dialogs.getSaveFileName(
             self, tr("Export quantities CSV"), "metrado.csv",
             tr("CSV (*.csv);;All files (*)"))
         if not path:
@@ -2500,7 +2501,7 @@ class SurveyPointsPanel(QWidget):
         from core.history import AddGeoPointsCommand
         from georef.points import (datum_for_rows, parse_points_csv,
                                    points_from_rows)
-        path, _ = QFileDialog.getOpenFileName(
+        path, _ = file_dialogs.getOpenFileName(
             self, tr("Import survey points CSV"), "",
             tr("CSV (*.csv *.txt);;All files (*)"))
         if not path:

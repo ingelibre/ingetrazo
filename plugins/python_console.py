@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
 
 from core.history import SnapshotImport
 from core.i18n import tr
+from views.filedialogs import file_dialogs
 from tools.base import Tool
 
 
@@ -277,7 +278,7 @@ class PythonConsoleDialog(QDialog):
         self._run_code(code, "<console>")
 
     def _on_run_script_file(self) -> None:
-        path, _f = QFileDialog.getOpenFileName(
+        path, _f = file_dialogs.getOpenFileName(
             self, tr("Run Python script"), "",
             tr("Python files (*.py);;All files (*)"))
         if not path:

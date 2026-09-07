@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.i18n import available_languages, current_language, set_language, tr
+from views.filedialogs import file_dialogs
 from core.version import __version__
 from core.group import Group
 from core.history import (
@@ -1924,7 +1925,7 @@ class MainWindow(QMainWindow):
                 self, tr("Recover a discarded auto-save…"),
                 tr("No discarded auto-saved copies yet."))
             return
-        chosen, _ = QFileDialog.getOpenFileName(
+        chosen, _ = file_dialogs.getOpenFileName(
             self, tr("Recover a discarded auto-save…"), str(folder),
             tr("IngeTrazo auto-saves (*.igz)"))
         if not chosen:
@@ -1944,7 +1945,7 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard(
                 tr("Discard current drawing and open another?")):
             return
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self,
             tr("Open IngeTrazo document"),
             "",
@@ -2041,7 +2042,7 @@ class MainWindow(QMainWindow):
         default_name = (
             self._current_path.name if self._current_path is not None else "untitled.igz"
         )
-        path_str, _ = QFileDialog.getSaveFileName(
+        path_str, _ = file_dialogs.getSaveFileName(
             self,
             tr("Save IngeTrazo document"),
             default_name,
@@ -2151,7 +2152,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QInputDialog
         from core.group import make_billboard_group
         self.viewport.end_group_edit()
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Face-me image"), "",
             tr("Images (*.png *.webp);;All files (*)"))
         if not path_str:
@@ -2454,7 +2455,7 @@ class MainWindow(QMainWindow):
         cb(1.0, "Done")
 
     def _on_import_dae(self) -> None:
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Import DAE"), "",
             tr("COLLADA (*.dae);;All files (*)"))
         if not path_str:
@@ -2462,7 +2463,7 @@ class MainWindow(QMainWindow):
         self._import_dae_path(Path(path_str))
 
     def _on_import_glb(self) -> None:
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Import glTF/GLB"), "",
             tr("glTF binary (*.glb *.gltf);;All files (*)"))
         if not path_str:
@@ -2749,7 +2750,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _on_import_skp(self) -> None:
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Import SKP"), "",
             tr("SketchUp (*.skp);;All files (*)"))
         if not path_str:
@@ -2821,7 +2822,7 @@ class MainWindow(QMainWindow):
         return OBJ_UNITS[key]
 
     def _on_import_obj(self) -> None:
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Import OBJ"), "", tr("Wavefront OBJ (*.obj);;All files (*)"))
         if not path_str:
             return
@@ -2854,7 +2855,7 @@ class MainWindow(QMainWindow):
         same content-addressed store the .skp importer fills, which also means
         importing the same scan twice costs one copy.
         """
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Import image"), "",
             tr("Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp);;"
                "All files (*)"))
@@ -2934,7 +2935,7 @@ class MainWindow(QMainWindow):
         self._activate_tool("select")
 
     def _on_import_dwg(self) -> None:
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Import DWG"), "",
             tr("AutoCAD DWG (*.dwg);;All files (*)"))
         if path_str:
@@ -2970,7 +2971,7 @@ class MainWindow(QMainWindow):
         return ok
 
     def _on_import_dxf(self) -> None:
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Import DXF"), "",
             tr("AutoCAD DXF (*.dxf);;All files (*)"))
         if path_str:
@@ -3066,7 +3067,7 @@ class MainWindow(QMainWindow):
         from georef.datum import SceneDatum, utm_inverse
         from georef.photomesh import find_anchor, load_odm_obj
 
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Import photogrammetric mesh"), "",
             tr("ODM textured model (*.obj);;All files (*)"))
         if not path_str:
@@ -3258,7 +3259,7 @@ class MainWindow(QMainWindow):
         from georef.geopath import GeoPath
         from core.history import AddGeoPathCommand, CompoundCommand
 
-        path_str, _ = QFileDialog.getOpenFileName(
+        path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Import georef"), "",
             tr("Georef (*.kml *.kmz *.geojson *.json);;All files (*)"))
         if not path_str:
@@ -3319,7 +3320,7 @@ class MainWindow(QMainWindow):
                 tr("Nothing to export: tag geometry in the BIM panel first "
                    "(only tagged objects go to IFC)."))
             return
-        path_str, _ = QFileDialog.getSaveFileName(
+        path_str, _ = file_dialogs.getSaveFileName(
             self, tr("Export IFC"), "model.ifc",
             tr("IFC4 (*.ifc);;All files (*)"))
         if not path_str:
@@ -3368,7 +3369,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QInputDialog
         base = (self._current_path.stem if self._current_path is not None
                 else "untitled")
-        path_str, _ = QFileDialog.getSaveFileName(
+        path_str, _ = file_dialogs.getSaveFileName(
             self, tr("Export Image"), f"{base}.png",
             tr("PNG image (*.png);;JPEG image (*.jpg)"))
         if not path_str:
@@ -3393,7 +3394,7 @@ class MainWindow(QMainWindow):
     def _export(self, label: str, suffix: str, file_filter, writer) -> None:
         base = (self._current_path.stem if self._current_path is not None
                 else "untitled")
-        path_str, _ = QFileDialog.getSaveFileName(
+        path_str, _ = file_dialogs.getSaveFileName(
             self, tr("Export {label}", label=label), f"{base}.{suffix}", file_filter)
         if not path_str:
             return
