@@ -1026,8 +1026,8 @@ class MainWindow(QMainWindow):
         bar = SheetStatusBar(self, on_model=self._show_model,
                              on_sheet=self._show_sheet)
         self.setStatusBar(bar)
-        bar.showMessage(tr(
         self._sheet_tabs = bar.tabs
+        bar.showMessage(tr(
             "Orbit (O) / Pan (H) buttons: left-drag to move the view  ·  "
             "MMB-drag: orbit  ·  Shift+MMB-drag: pan  ·  Wheel / 2-finger: zoom  ·  "
             "P: persp/parallel  ·  →←↑: lock X/Y/Z  ·  ↓: par/perp to ref  ·  "
@@ -1036,8 +1036,8 @@ class MainWindow(QMainWindow):
         ))
         self._tool_label = QLabel(tr("Tool: none"))
         bar.addPermanentWidget(self._tool_label)
-
         self._refresh_sheet_tabs()
+
         # Live UTM readout, the way a CAD shows coordinates. Local scene metres
         # are meaningless to anyone outside the file; easting/northing is what
         # goes on a plan, into a GPS, and into a report. Only shown once the
@@ -1703,7 +1703,6 @@ class MainWindow(QMainWindow):
         self._composer.raise_()
         self._composer.activateWindow()
 
-    def _on_standard_view(self, key: str) -> None:
     # ---- Model / sheet tabs (the strip at the bottom) -----------------------
     def _refresh_sheet_tabs(self) -> None:
         """This window shows the model, so its strip always marks «Model»;
@@ -1727,6 +1726,7 @@ class MainWindow(QMainWindow):
         self._composer.show_sheet(index)
         self._refresh_sheet_tabs()
 
+    def _on_standard_view(self, key: str) -> None:
         self.viewport.camera.set_view(key)
         self.viewport.update()
 
@@ -3441,8 +3441,8 @@ class MainWindow(QMainWindow):
             name = tr("Untitled")
         marker = " *" if self._is_dirty() else ""
         self.setWindowTitle(f"IngeTrazo — {name}{marker}")
-
         self._refresh_sheet_tabs()      # a new / opened document: its sheets
+
     # ---- Window lifecycle ---------------------------------------------------
     def closeEvent(self, event) -> None:
         if not self._confirm_discard(tr("Quit IngeTrazo?")):
