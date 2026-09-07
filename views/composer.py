@@ -103,6 +103,81 @@ def _fit_text_size_mm(text: str, rect: QRectF, base_size_mm: float,
     return 1.0
 
 
+def _text_height_mm(text: str, width_mm: float, size_mm: float,
+                    bold: bool = False, family: str = "Sans Serif") -> float:
+    """Height that *text*, word-wrapped at ``size_mm``, needs in a column
+    ``width_mm`` wide (mm). The twin of :func:`_fit_text_size_mm`: that one
+    answers «how big may it be here», this one «how much room does it want»."""
+    from PySide6.QtGui import QFontMetricsF
+    if not text:
+        return 0.0
+    font = QFont(family or "Sans Serif")
+    font.setPixelSize(100)
+    font.setBold(bold)
+    fm = QFontMetricsF(font)
+    s = size_mm / 100.0 * 0.75
+    box = QRectF(0, 0, max(width_mm, 0.5) / s, 1e6)
+    need = fm.boundingRect(box, int(Qt.AlignLeft | Qt.TextWordWrap), text)
+    return float(need.height()) * s
+
+
+#: How far a title-block row may stray from an equal share to fit what it
+#: holds — three times as tall for a long project name, and never under 60 %
+#: for the rows that only carry a date. Past that the text shrinks, as it
+#: always did.
+CAJETIN_ROW_GROW = 3.0
+CAJETIN_ROW_SHRINK = 0.6
+
+
+def cajetin_row_heights(rows, cols: int, per: int, body_h: float,
+                        col_w: float, label_w: float,
+                        layout: str = "grid") -> list:
+    """Height of every row of the title block's grid, in mm.
+
+    Equal shares while everything fits — which is every ordinary title
+    block. A row whose value needs more room takes it instead of shrinking
+    its type: a project name of six lines used to drop to a size that made
+    every other row look oversized beside it (Marco, 2026-09-07: «no se ve
+    bien porque la fuente disminuye y lo demás se hace más grande»). The
+    room is paid for by the rows that never used theirs, so the block keeps
+    the height the user gave it, and the values come out at about one size.
+    Rows are measured index by index ACROSS the columns, so the horizontal
+    lines of a multi-column block still line up."""
+    base = body_h / max(per, 1)
+    if per <= 1 or base <= 0:
+        return [body_h] * max(per, 1)
+    minimal = layout == "minimal"
+    inner = max((col_w - 3.0) if minimal else (col_w - label_w - 3.0), 1.0)
+    frac = 0.62 if minimal else 1.0          # of the row the value may use
+    nominal = base * (0.42 if minimal else 0.52)     # the size it wants
+    lab_w = max(label_w - 2.0, 1.0)
+    lab_nominal = base * (0.24 if minimal else 0.38)
+    weights = []
+    for j in range(per):
+        want = 0.0
+        for k in range(cols):
+            idx = k * per + j
+            if idx >= len(rows):
+                continue
+            label, value = rows[idx][0], rows[idx][1]
+            # An empty field still asks for one line: a title block waiting
+            # to be filled in must read as a regular grid, and the row has
+            # to hold what the user types next.
+            want = max(want,
+                       _text_height_mm(str(value or "") or "M", inner,
+                                       nominal) / frac + 1.0)
+            if not minimal:
+                want = max(want, _text_height_mm(
+                    str(label or ""), lab_w, lab_nominal, bold=True) + 1.0)
+        # A row asks for what it holds — no more, so the rows carrying a
+        # date or a sheet number hand their slack to the one that needs it,
+        # and no less than the floor, so nothing collapses to a hairline.
+        weights.append(min(max(want / base, CAJETIN_ROW_SHRINK),
+                           CAJETIN_ROW_GROW))
+    total = sum(weights)
+    return [body_h * w / total for w in weights]
+
+
 def frame_view_name(frame: MarcoVista) -> str:
     """The view's own name: the scene's, the standard view's, or «View»."""
     key = frame.view_key
@@ -1567,29 +1642,38 @@ def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
     cols = max(1, min(int(c.columns), max(1, len(rest))))
     per = max(1, _math.ceil(len(rest) / cols))
     col_w = w / cols
-    row_h = body_h / per
     label_mm = float(getattr(c, "label_mm", 0.0) or 0.0)
+    label_w = (min(col_w * 0.6, label_mm) if label_mm > 0
+               else min(28.0, col_w * 0.3))
+    # Rows share the block's height, except where a value needs more of it
+    # (see cajetin_row_heights): the row grows and the type stays readable.
+    row_hs = cajetin_row_heights(rest, cols, per, body_h, col_w, label_w,
+                                 layout)
+    # The nominal type size of the block: what an EQUAL row would use. Every
+    # value aims for it, so a grown row does not come out bigger than its
+    # neighbours either — the whole point is one size across the block.
+    base_h = body_h / per
     for k in range(cols):
         x0 = k * col_w
         chunk = rest[k * per:(k + 1) * per]
         if layout == "minimal":
             # no lines at all: a small label over its value, per cell
+            y = y_top
             for j, (label, value) in enumerate(chunk):
-                y = y_top + j * row_h
+                row_h = row_hs[j]
                 lrect = QRectF(x0 + 1.5, y + 0.4, col_w - 3.0, row_h * 0.36)
                 _draw_text_mm(painter, lrect, str(label),
-                              max(1.4, row_h * 0.24), bold=True,
+                              max(1.4, base_h * 0.24), bold=True,
                               align=Qt.AlignLeft | Qt.AlignTop,
                               color=label_color)
                 vrect = QRectF(x0 + 1.5, y + row_h * 0.36, col_w - 3.0,
                                row_h * 0.62)
-                vsize = _fit_text_size_mm(str(value), vrect, row_h * 0.42)
+                vsize = _fit_text_size_mm(str(value), vrect, base_h * 0.42)
                 _draw_text_mm(painter, vrect, str(value), vsize,
                               align=Qt.AlignLeft | Qt.AlignVCenter,
                               color=text_color)
+                y += row_h
             continue
-        label_w = (min(col_w * 0.6, label_mm) if label_mm > 0
-                   else min(28.0, col_w * 0.3))
         if fill:
             painter.fillRect(QRectF(x0, y_top, label_w, body_h), QColor(fill))
         painter.setPen(light)
@@ -1597,24 +1681,27 @@ def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
             painter.drawLine(QPointF(x0, y_top), QPointF(x0, h))
         painter.drawLine(QPointF(x0 + label_w, y_top),
                          QPointF(x0 + label_w, h))
+        y = y_top
         for j, (label, value) in enumerate(chunk):
-            y = y_top + j * row_h
+            row_h = row_hs[j]
             if j:
                 painter.drawLine(QPointF(x0, y), QPointF(x0 + col_w, y))
             # Long content wraps to more lines inside its cell and only
-            # shrinks when even wrapped it does not fit.
+            # shrinks when even wrapped — and even in the taller row it
+            # earned — it does not fit.
             lrect = QRectF(x0 + 1.2, y + 0.5, label_w - 2, row_h - 1.0)
-            lsize = _fit_text_size_mm(str(label), lrect, row_h * 0.38,
+            lsize = _fit_text_size_mm(str(label), lrect, base_h * 0.38,
                                       bold=True)
             _draw_text_mm(painter, lrect, str(label), lsize, bold=True,
                           align=Qt.AlignLeft | Qt.AlignVCenter,
                           color=label_color)
             vrect = QRectF(x0 + label_w + 1.5, y + 0.5,
                            col_w - label_w - 3, row_h - 1.0)
-            vsize = _fit_text_size_mm(str(value), vrect, row_h * 0.52)
+            vsize = _fit_text_size_mm(str(value), vrect, base_h * 0.52)
             _draw_text_mm(painter, vrect, str(value), vsize,
                           align=Qt.AlignLeft | Qt.AlignVCenter,
                           color=text_color)
+            y += row_h
     painter.restore()
     painter.setPen(heavy)
     painter.setBrush(Qt.NoBrush)
@@ -1709,6 +1796,17 @@ class _SheetBorderCanvasItem(QGraphicsItem):
         paint_sheet_border_mm(painter, self.comp)
 
 
+#: A device-coordinate cache turns dragging an item into a blit instead of
+#: redrawing it — and a view frame redraws by scaling its 300-dpi render,
+#: which is what made the drag feel heavy (Marco, 2026-09-07: «siento algo
+#: de lag en composiciones cuando arrastro un objeto»). Measured on his
+#: Yanque sheet, 4 frames at 47 %: 20.6 → 8.3 ms per step. The cache costs
+#: one pixmap per item at SCREEN resolution, so an item that would need
+#: more than this many pixels (a frame zoomed right in) paints directly
+#: instead — see ComposerWindow._sync_item_caches.
+_ITEM_CACHE_MAX_PX = 4_000_000
+
+
 class _SheetItem(QGraphicsItem):
     """A sheet item on the canvas: movable, snappable, corner-resizable.
     Wraps one dataclass (``model`` with x_mm/y_mm and usually w_mm/h_mm)."""
@@ -1728,6 +1826,9 @@ class _SheetItem(QGraphicsItem):
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.setAcceptHoverEvents(True)
+        # Painted once, then blitted while it is dragged; the zoom decides
+        # whether it still fits (_sync_item_caches).
+        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         self._press_state: Optional[dict] = None
         self._resizing = False
 
@@ -1777,7 +1878,8 @@ class _SheetItem(QGraphicsItem):
         edit_view = fit = None
         if hasattr(self.model, "view_key"):          # a model-view frame
             menu.addSeparator()
-            edit_view = menu.addAction(tr("Edit view (pan / orbit / zoom)"))
+            edit_view = menu.addAction(
+                tr("Edit view (pan / turn / orbit / zoom)"))
             fit = menu.addAction(tr("Frame the model"))
         menu.addSeparator()
         lock = menu.addAction(tr("Unlock")
@@ -2678,10 +2780,17 @@ class ComposerCanvasView(QGraphicsView):
             pos = self.mapToScene(event.position().toPoint())
             inside = edit.sceneBoundingRect().contains(pos)
             if inside and event.button() in (Qt.LeftButton, Qt.MiddleButton):
-                orbit = (event.button() == Qt.MiddleButton
-                         or bool(event.modifiers() & Qt.ControlModifier))
+                mods = event.modifiers()
+                if event.button() == Qt.LeftButton and mods & Qt.ShiftModifier:
+                    mode = "rotate"          # Shift+drag turns the drawing
+                elif (event.button() == Qt.MiddleButton
+                        or mods & Qt.ControlModifier):
+                    mode = "orbit"
+                else:
+                    mode = "pan"
                 self.composer.start_view_drag(
-                    edit, pos, event.position().toPoint(), orbit)
+                    edit, pos, event.position().toPoint(),
+                    mode == "orbit", mode=mode)
                 event.accept()
                 return
             if not inside and event.button() == Qt.LeftButton:
@@ -3560,6 +3669,7 @@ class ComposerWindow(QMainWindow):
             self.update_zoom_label()
 
     def update_zoom_label(self) -> None:
+        self._sync_item_caches()      # the zoom decides which caches still fit
         if not hasattr(self, "_zoom_combo") or not hasattr(self, "_view"):
             return
         self._zoom_combo.blockSignals(True)
@@ -3777,6 +3887,19 @@ class ComposerWindow(QMainWindow):
         self.scale_combo.lineEdit().editingFinished.connect(
             self._on_scale_committed)
         form.addRow(tr("Scale"), self.scale_combo)
+        self.rot_spin = QDoubleSpinBox()
+        self.rot_spin.setRange(-360.0, 360.0)
+        self.rot_spin.setDecimals(1)
+        self.rot_spin.setSingleStep(15.0)
+        self.rot_spin.setWrapping(True)
+        self.rot_spin.setSuffix("°")
+        self.rot_spin.setToolTip(tr(
+            "Turn the drawing inside the frame, clockwise — the same angle "
+            "the north arrow needs. The frame, its title and everything else "
+            "on the sheet stay put; the model is not touched. In view edit "
+            "(double-click the frame) Shift+drag turns it by hand."))
+        self.rot_spin.valueChanged.connect(self._on_frame_rotation)
+        form.addRow(tr("View rotation"), self.rot_spin)
         self.fw_spin = QDoubleSpinBox()
         self.fw_spin.setRange(10.0, 2000.0)
         self.fw_spin.setSuffix(" mm")
@@ -3993,7 +4116,8 @@ class ComposerWindow(QMainWindow):
         fit_btn.setToolTip(tr(
             "Centre the whole model in the frame at the largest common "
             "scale that fits (LayOut's Zoom Extents). Double-click the "
-            "frame to pan, orbit and zoom the view by hand."))
+            "frame to pan, orbit, zoom and (with Shift) turn the view by "
+            "hand."))
         fit_btn.clicked.connect(self._on_zoom_extents_selected)
         form.addRow(fit_btn)
         dxf_btn = QPushButton(tr("Export view as DXF…"))
@@ -4897,6 +5021,7 @@ class ComposerWindow(QMainWindow):
         if hasattr(self, "border_check"):
             self._sync_border_panel()
         self._refresh_items_list()
+        self._sync_item_caches()      # fresh items, current zoom
         self._updating = False
         self.on_selection_changed()
 
@@ -4919,6 +5044,8 @@ class ComposerWindow(QMainWindow):
                 idx = self.view_combo.findData(f.view_key)
                 self.view_combo.setCurrentIndex(max(idx, 0))
                 self.scale_combo.setCurrentText(f"1:{f.scale_n:g}")
+                self.rot_spin.setValue(
+                    float(getattr(f, "rot_deg", 0.0) or 0.0))
                 self.fw_spin.setValue(f.w_mm)
                 self.fh_spin.setValue(f.h_mm)
                 skey = {"tecnico": "style:Hidden line",
@@ -5453,6 +5580,34 @@ class ComposerWindow(QMainWindow):
                 str(self.templates_dir())))
 
     # ---- Arrange: align / distribute / duplicate (QGIS's Align toolbar) -----
+    def _sync_item_caches(self) -> None:
+        """Keep each item's paint cache in step with the zoom: cached while
+        its pixmap stays screen-sized, straight painting when zooming in
+        would blow the budget."""
+        view = getattr(self, "_view", None)
+        if view is None:
+            return
+        scale = view.transform().m11()
+        for it in self.canvas.items():
+            if not isinstance(it, _SheetItem):
+                continue
+            r = it.boundingRect()
+            fits = (r.width() * scale) * (r.height() * scale) <= _ITEM_CACHE_MAX_PX
+            want = (QGraphicsItem.DeviceCoordinateCache if fits
+                    else QGraphicsItem.NoCache)
+            if it.cacheMode() != want:
+                it.setCacheMode(want)
+
+    def refresh_items(self) -> None:
+        """Repaint every sheet item. What a plain ``canvas.update()`` did
+        before the items kept paint caches: a cached item has to be told
+        that WHAT it draws changed (a field, a stale badge, a sampled
+        profile), not just the region it sits in."""
+        for it in self.canvas.items():
+            if isinstance(it, _SheetItem):
+                it.update()
+        self.canvas.update()
+
     def _selected_sheet_items(self) -> list:
         return [it for it in self.canvas.selectedItems()
                 if isinstance(it, _SheetItem)
@@ -5816,7 +5971,7 @@ class ComposerWindow(QMainWindow):
         FormaItem: ("stroke_mm", "color", "fill", "fill_color", "radius_mm"),
         ImagenItem: ("opacity", "shape", "radius_mm", "feather_mm", "fit",
                      "border", "border_mm", "border_color"),
-        MarcoVista: ("style", "scale_n", "show_title", "annotations",
+        MarcoVista: ("style", "scale_n", "rot_deg", "show_title", "annotations",
                      "annot_text_mm", "km_marks", "km_step_m", "grid_m",
                      "section_marks", "border", "border_mm", "border_color",
                      "title_style", "title_scale", "title_align",
@@ -5942,8 +6097,8 @@ class ComposerWindow(QMainWindow):
         item.setSelected(True)
         item.update()
         self.statusBar().showMessage(tr(
-            "Editing the view: drag = pan, middle button or Ctrl+drag = "
-            "orbit, wheel = zoom, Enter/Esc = done."), 8000)
+            "Editing the view: drag = pan, Shift+drag = turn, middle button "
+            "or Ctrl+drag = orbit, wheel = zoom, Enter/Esc = done."), 8000)
 
     def end_view_edit(self) -> None:
         item = self._view_edit
@@ -5986,6 +6141,7 @@ class ComposerWindow(QMainWindow):
         return {"cam_target": (None if frame.cam_target is None
                                else list(frame.cam_target)),
                 "cam_yaw": frame.cam_yaw, "cam_pitch": frame.cam_pitch,
+                "rot_deg": float(getattr(frame, "rot_deg", 0.0) or 0.0),
                 "scale_n": frame.scale_n}
 
     def pan_view(self, item, dx_mm: float, dy_mm: float) -> None:
@@ -6006,6 +6162,28 @@ class ComposerWindow(QMainWindow):
         frame.cam_yaw = float(yaw + dyaw)
         frame.cam_pitch = float(max(-math.radians(89.0),
                                     min(math.radians(89.0), pitch + dpitch)))
+        self._after_view_edit(item)
+
+    #: While turning a view by hand, an angle this close to a multiple of
+    #: 15° snaps onto it — the protractor's magnetism, so a plan lands on a
+    #: round turn instead of 43.7°.
+    _ROT_SNAP_DEG = 15.0
+    _ROT_MAGNET_DEG = 2.0
+
+    def set_view_rotation(self, item, deg: float, snap: bool = False) -> None:
+        """Turn the drawing inside the frame to ``deg`` degrees clockwise
+        (the paper does not move). ``snap`` pulls near-round angles onto the
+        15° marks, as the hand gesture wants."""
+        frame = item.model
+        deg = ((float(deg) + 180.0) % 360.0) - 180.0     # keep it readable
+        if snap:
+            near = round(deg / self._ROT_SNAP_DEG) * self._ROT_SNAP_DEG
+            if abs(deg - near) <= self._ROT_MAGNET_DEG:
+                deg = near
+        deg = round(deg, 3)
+        if deg == float(getattr(frame, "rot_deg", 0.0) or 0.0):
+            return
+        frame.rot_deg = deg
         self._after_view_edit(item)
 
     def zoom_view(self, item, factor: float, at_mm=None) -> None:
@@ -6084,11 +6262,30 @@ class ComposerWindow(QMainWindow):
             if self._view_edit is not None:
                 self._view_edit.setSelected(True)
 
-    def start_view_drag(self, item, pos_mm, pos_px, orbit: bool) -> None:
-        self._view_drag = {"item": item, "orbit": orbit,
+    def start_view_drag(self, item, pos_mm, pos_px, orbit: bool = False,
+                        mode: str | None = None) -> None:
+        """Begin a view gesture: ``"pan"`` (left drag), ``"orbit"`` (Ctrl or
+        the middle button) or ``"rotate"`` (Shift — turn the drawing on the
+        paper). ``orbit`` is the older two-state spelling."""
+        mode = mode or ("orbit" if orbit else "pan")
+        frame = item.model
+        self._view_drag = {"item": item, "orbit": mode == "orbit",
+                           "mode": mode,
                            "last_mm": (pos_mm.x(), pos_mm.y()),
                            "last_px": (pos_px.x(), pos_px.y()),
-                           "before": self._view_state(item.model)}
+                           "rot0": float(getattr(frame, "rot_deg", 0.0) or 0.0),
+                           "ang0": self._page_angle(frame, pos_mm),
+                           "before": self._view_state(frame)}
+
+    @staticmethod
+    def _page_angle(frame, pos_mm) -> float:
+        """Degrees of the page point around the frame's centre. Page y grows
+        downward, so a growing angle IS clockwise on paper — the same sign
+        ``rot_deg`` uses."""
+        import math
+        return math.degrees(math.atan2(
+            pos_mm.y() - (frame.y_mm + frame.h_mm / 2.0),
+            pos_mm.x() - (frame.x_mm + frame.w_mm / 2.0)))
 
     def view_drag_active(self) -> bool:
         return self._view_drag is not None
@@ -6098,7 +6295,11 @@ class ComposerWindow(QMainWindow):
         if d is None:
             return
         item = d["item"]
-        if d["orbit"]:
+        if d.get("mode") == "rotate":
+            frame = item.model
+            swept = self._page_angle(frame, pos_mm) - d["ang0"]
+            self.set_view_rotation(item, d["rot0"] + swept, snap=True)
+        elif d["orbit"]:
             dx = pos_px.x() - d["last_px"][0]
             dy = pos_px.y() - d["last_px"][1]
             self.orbit_view(item, -dx * 0.01, -dy * 0.01)   # like the viewport
@@ -6443,7 +6644,7 @@ class ComposerWindow(QMainWindow):
         for comp in getattr(self._scene(), "compositions", []) or []:
             for f in comp.frames:
                 self._stale.add(id(f))
-        self.canvas.update()
+        self.refresh_items()          # the stale badges are painted BY the items
         if self._auto_render and self.isVisible():
             self._auto_timer.start()
 
@@ -6755,7 +6956,22 @@ class ComposerWindow(QMainWindow):
                 self.annot_cache.pop(id(m), None)
         self._sync_vector_widgets(m)
         self._sync_title_widgets(m)
-        self.canvas.update()                 # bound scale labels re-read {escala}
+        self.refresh_items()                 # bound scale labels re-read {escala}
+
+    def _on_frame_rotation(self, *_a) -> None:
+        """The view's turn, from the panel: apply it and refill the frame
+        right away (turning a plan is done by eye, and a raster frame that
+        blanked until the next Update would make it guesswork). A vector
+        frame keeps the Update rule — its exact pass costs seconds."""
+        item = self._selected_item()
+        if self._updating or not isinstance(item, FrameItem):
+            return
+        deg = round(float(self.rot_spin.value()), 3)
+        if deg == round(float(getattr(item.model, "rot_deg", 0.0) or 0.0), 3):
+            return
+        self._panel_edit(item, {"rot_deg": deg})
+        self._after_view_edit(item)
+        self._rebuild_canvas()               # anchored cotas turn along
 
     def _sync_vector_widgets(self, frame) -> None:
         """The pen and poché controls only mean something to the vector
@@ -7563,7 +7779,7 @@ class ComposerWindow(QMainWindow):
 
     def _on_profile_terrain_changed(self) -> None:
         self.__dict__.setdefault("_profile_cache", {}).clear()
-        self.canvas.update()
+        self.refresh_items()          # the profiles redraw with new samples
 
     def profile_for(self, m) -> tuple:
         """``(profile, path_name, message)`` for a PerfilTerreno: the sampled

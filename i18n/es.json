@@ -1304,9 +1304,9 @@
  "Draw the model's own cotas and texts in this frame, like LayOut does with SketchUp's. Hide their layer in the scene to leave them out.": "Dibuja en este marco las cotas y textos del propio modelo, como hace LayOut con los de SketchUp. Oculta su capa en la escena para dejarlos fuera.",
  "Pan the sheet (or drag with the middle button anywhere)": "Desplazar la lámina (o arrastrar con el botón central en cualquier sitio)",
  "Frame the model": "Encuadrar modelo",
- "Centre the whole model in the frame at the largest common scale that fits (LayOut's Zoom Extents). Double-click the frame to pan, orbit and zoom the view by hand.": "Centra todo el modelo en el marco a la mayor escala común que quepa (el Zoom Extents de LayOut). Doble clic en el marco para encuadrar, orbitar y hacer zoom a mano.",
- "Edit view (pan / orbit / zoom)": "Editar vista (encuadre / órbita / zoom)",
- "Editing the view: drag = pan, middle button or Ctrl+drag = orbit, wheel = zoom, Enter/Esc = done.": "Editando la vista: arrastrar = encuadre, botón central o Ctrl+arrastrar = órbita, rueda = zoom, Enter/Esc = listo.",
+ "Centre the whole model in the frame at the largest common scale that fits (LayOut's Zoom Extents). Double-click the frame to pan, orbit, zoom and (with Shift) turn the view by hand.": "Centra todo el modelo en el marco a la mayor escala común que quepa (el Zoom Extents de LayOut). Doble clic en el marco para encuadrar, orbitar, hacer zoom y —con Mayús— girar la vista a mano.",
+ "Edit view (pan / turn / orbit / zoom)": "Editar vista (encuadre / giro / órbita / zoom)",
+ "Editing the view: drag = pan, Shift+drag = turn, middle button or Ctrl+drag = orbit, wheel = zoom, Enter/Esc = done.": "Editando la vista: arrastrar = encuadre, Mayús+arrastrar = giro, botón central o Ctrl+arrastrar = órbita, rueda = zoom, Enter/Esc = listo.",
  "Editing view": "Editando vista",
  "Value": "Valor",
  "Vector (hidden lines removed)": "Vectorial (líneas ocultas eliminadas)",
@@ -1495,5 +1495,7 @@
  "Fit": "Ajuste",
  "Outline": "Contorno",
  "Outline width": "Grosor del contorno",
- "Outline colour": "Color del contorno"
+ "Outline colour": "Color del contorno",
+ "View rotation": "Giro de la vista",
+ "Turn the drawing inside the frame, clockwise — the same angle the north arrow needs. The frame, its title and everything else on the sheet stay put; the model is not touched. In view edit (double-click the frame) Shift+drag turns it by hand.": "Gira el dibujo dentro del marco, en sentido horario — el mismo ángulo que necesita la flecha de norte. El marco, su rótulo y todo lo demás de la lámina se quedan donde están; el modelo no se toca. En edición de vista (doble clic en el marco) Mayús+arrastrar lo gira a mano."
 }

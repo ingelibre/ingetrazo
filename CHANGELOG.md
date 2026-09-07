@@ -6,6 +6,53 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Añadido
+- **Girar una vista en la lámina.** El marco del compositor tiene ahora
+  «Giro de la vista» en el panel: el DIBUJO gira dentro del marco, en
+  sentido horario y con el mismo ángulo que se le pone a la flecha de
+  norte, mientras el marco, su rótulo y todo lo demás de la lámina se
+  quedan donde están. El modelo no se toca: es un giro de la cámara del
+  marco, así que gira con él todo lo que sale de ella — el render, el
+  paso vectorial de líneas ocultas, los puntos de imantación, las cotas
+  ancladas, las marcas de sección y el DXF exportado. También a mano: en
+  edición de vista (doble clic en el marco) **Mayús+arrastrar** gira el
+  dibujo alrededor del centro del marco, con imantación cada 15°, y toda
+  la maniobra es un solo paso de deshacer. El giro viaja en el `.igz`.
+
+### Cambiado
+- **Arrastrar en el compositor va 10× más fluido.** Cada movimiento del
+  ratón volvía a dibujar los marcos afectados escalando su render de
+  300 dpi (Marco, 2026-09-07: «siento algo de lag en composiciones cuando
+  arrastro un objeto»). Ahora cada ítem de la lámina conserva su dibujo en
+  una caché a resolución de pantalla y arrastrarlo es copiar píxeles: en
+  la lámina real de la pileta (A3, cuatro marcos, 47 %) un movimiento
+  pasó de 11,2 ms a 1,1 ms, medido con eventos de ratón reales. Lo que se
+  dibuja es idéntico (comparado píxel a píxel). La caché se suelta sola
+  para un ítem que, muy ampliado, necesitaría más de 4 Mpx, y vuelve al
+  alejar. Impresión y PDF no pasan por ella.
+- **El cajetín reparte su alto según lo que lleva cada fila.** Un nombre de
+  proyecto largo se encogía dentro de su fila hasta quedar en letra
+  diminuta al lado de una fecha y una lámina dibujadas al doble de tamaño
+  (Marco, 2026-09-07: «no se ve bien porque la fuente disminuye y lo demás
+  se hace más grande»). Ahora la fila **crece** —hasta 3× su parte igual— y
+  lo pagan las filas que nunca usaban la suya, así que el cajetín conserva
+  el alto que le diste y **todos los valores salen prácticamente del mismo
+  tamaño**. En la lámina real de Yanque el nombre del proyecto pasa de 3,8 a
+  4,9 mm, igual que el resto. Un cajetín cuyos textos ya cabían no cambia en
+  nada (filas iguales), un campo vacío sigue pidiendo su línea completa, y
+  en un cajetín demasiado chico la letra vuelve a encoger como antes. Las
+  filas se miden columna por columna, así que en un cajetín de varias
+  columnas las líneas horizontales siguen alineadas.
+- **Mayús+clic ahora quita de la selección** (regla de SketchUp, pedido de
+  Marco: «debería haber una opción para deseleccionar ciertas líneas o
+  planos»). Con la herramienta Seleccionar, **Mayús+clic alterna** lo que
+  toca — una arista o cara ya seleccionada sale de la selección, una que
+  no lo estaba entra —, **Ctrl+clic añade** siempre y **Mayús+Ctrl+clic
+  quita** siempre. La caja de selección lee los mismos modificadores, y un
+  clic con modificador en el vacío ya no borra la selección que estabas
+  armando (antes Mayús solo sumaba y no había forma de descartar algo sin
+  empezar de cero).
+
 ## [0.3.12] — 2026-09-05
 
 **La release de las láminas profesionales y del `.skp` que SketchUp

@@ -119,6 +119,13 @@ class MarcoVista:
     cam_target: Optional[list] = None      # world point the camera centres on
     cam_yaw: Optional[float] = None        # radians, overrides the view's
     cam_pitch: Optional[float] = None
+    #: Turn of the DRAWING inside the frame, in degrees CLOCKWISE on paper
+    #: (the north arrow's and QPainter's convention) — the frame, its title
+    #: and the sheet stay put while the model spins, so a plan sits straight
+    #: on the sheet without touching the model. It is a roll of the frame's
+    #: camera, so every derived thing (the render, the vector pass, snap
+    #: points, anchored cotas, section marks, the DXF) turns with it.
+    rot_deg: float = 0.0
     #: Draw the model's own dimensions and leader texts in the frame
     #: (LayOut shows SketchUp's). Opt-in per frame; their layers decide
     #: per scene which ones.
@@ -1228,6 +1235,49 @@ def snap_mm(value: float, targets, threshold: float = 2.0) -> float:
     return value if best is None else best
 
 
+def _xyz(v) -> tuple:
+    """``(x, y, z)`` from a QVector3D or from a plain 3-tuple (the headless
+    cameras of the tests use tuples)."""
+    if hasattr(v, "x"):
+        return (v.x(), v.y(), v.z())
+    x, y, z = v
+    return (float(x), float(y), float(z))
+
+
+def roll_camera(camera, deg: float) -> None:
+    """Spin ``camera`` about its own line of sight so the drawing turns
+    ``deg`` degrees CLOCKWISE on paper (a plan rotated 30° here wants the
+    north arrow at 30° too — same number, same direction).
+
+    Only the up vector moves: ``camera_basis`` (and Qt's ``lookAt``) derive
+    right and screen-up from it, so the whole view — GL render, hidden-line
+    pass, snap points, projected annotations — turns as one."""
+    if not deg:
+        return
+    th = math.radians(float(deg))
+    cp, sp = math.cos(camera.pitch), math.sin(camera.pitch)
+    cy, sy = math.cos(camera.yaw), math.sin(camera.yaw)
+    f = (-cp * cy, -cp * sy, -sp)          # eye → target, as the camera builds it
+    u0 = _xyz(camera.up)
+    r = (f[1] * u0[2] - f[2] * u0[1],      # right = f × up
+         f[2] * u0[0] - f[0] * u0[2],
+         f[0] * u0[1] - f[1] * u0[0])
+    rn = math.sqrt(sum(c * c for c in r))
+    if rn < 1e-9:                          # up along the sight line: no roll
+        return
+    r = tuple(c / rn for c in r)
+    u = (r[1] * f[2] - r[2] * f[1],        # screen-up = right × forward
+         r[2] * f[0] - r[0] * f[2],
+         r[0] * f[1] - r[1] * f[0])
+    c, s_ = math.cos(th), math.sin(th)
+    up = tuple(u[i] * c - r[i] * s_ for i in range(3))
+    try:
+        from PySide6.QtGui import QVector3D
+        camera.up = QVector3D(*up)
+    except ImportError:                    # headless tests use plain tuples
+        camera.up = up
+
+
 def apply_frame_camera(camera, frame: MarcoVista,
                        saved_view=None, scene=None) -> None:
     """Point ``camera`` (an OrbitCamera) at the frame's view, parallel, at
@@ -1276,6 +1326,8 @@ def apply_frame_camera(camera, frame: MarcoVista,
             camera.target = QVector3D(x, y, z)
         except ImportError:
             camera.target = (x, y, z)
+    # Last, over whatever up vector the view left: the frame's own turn.
+    roll_camera(camera, float(getattr(frame, "rot_deg", 0.0) or 0.0))
     camera.perspective = False
     camera.distance = ortho_distance_for_height(
         frame.model_height_m(), camera.fov_deg)
