@@ -293,10 +293,27 @@ class Scene:
         self.version += 1
         return edge
 
-    def select(self, edges: Iterable, additive: bool = False) -> None:
-        if not additive:
+    def select(self, edges: Iterable, additive: bool = False,
+               mode: str | None = None) -> None:
+        """Put *edges* (any entities) into the selection the way *mode*
+        says — SketchUp's click modifiers: ``"replace"`` (a plain click),
+        ``"add"`` (Ctrl), ``"toggle"`` (Shift: what is in goes out, what is
+        out comes in) and ``"remove"`` (Shift+Ctrl). ``additive=True`` is
+        the old spelling of ``"add"`` and still works; an explicit *mode*
+        wins over it."""
+        mode = mode or ("add" if additive else "replace")
+        if mode == "replace":
             self.selection.clear()
-        self.selection.update(edges)
+        if mode == "toggle":
+            for ent in edges:
+                if ent in self.selection:
+                    self.selection.discard(ent)
+                else:
+                    self.selection.add(ent)
+        elif mode == "remove":
+            self.selection.difference_update(edges)
+        else:
+            self.selection.update(edges)
         self.version += 1
 
     def clear_selection(self) -> None:

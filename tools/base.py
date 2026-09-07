@@ -86,11 +86,16 @@ class Tool(ABC):
         a plain click so unaware tools keep their rhythm."""
         self.on_click(ctx)
 
-    def on_box_select(self, viewport, rect, crossing: bool, additive: bool) -> None:
+    def on_box_select(self, viewport, rect, crossing: bool,
+                      additive: bool = False, mode: str | None = None) -> None:
         """Rubber-band box released. ``rect`` is ``(x0, y0, x1, y1)`` in screen
         pixels (normalized so x0<=x1, y0<=y1). ``crossing`` is True for a
         right-to-left drag (select anything the box touches) and False for a
-        left-to-right drag (select only what's fully enclosed). Only tools with
+        left-to-right drag (select only what's fully enclosed). ``mode`` is how
+        the catch joins the selection — "replace" / "add" / "toggle" /
+        "remove", from the keyboard modifiers (see
+        ``tools.select.selection_mode``); ``additive`` is the older two-state
+        spelling, kept for tools that only know it. Only tools with
         ``box_select = True`` receive this."""
 
     def on_cancel(self, viewport) -> None:

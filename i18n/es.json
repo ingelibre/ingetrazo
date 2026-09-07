@@ -1022,7 +1022,7 @@
  "Segments": "Segmentos",
  "Select": "Seleccionar",
  "Select (Space / S)": "Seleccionar (Espacio / S)",
- "Select (Space)": "Seleccionar (Espacio)",
+ "Select (Space) — Shift+click adds or takes away, Ctrl+click adds, Shift+Ctrl+click takes away. Same with the box.": "Seleccionar (Espacio) — Mayús+clic añade o quita, Ctrl+clic añade, Mayús+Ctrl+clic quita. Igual con la caja de selección.",
  "Select (or click) the geometry to rotate first": "Seleccioná (o clickeá) primero la geometría a rotar",
  "Select (or click) the geometry to scale first": "Seleccioná (o clickeá) primero la geometría a escalar",
  "Select / move items": "Seleccionar / mover elementos",

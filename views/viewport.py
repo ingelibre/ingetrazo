@@ -105,6 +105,7 @@ from core.snap import SnapResult, compute_snap
 from core.texture import face_uv_axes
 from core.triangulate import plane_axes
 from tools.base import Tool, ToolContext
+from tools.select import selection_mode
 
 
 class _HoverEvent:
@@ -8252,7 +8253,11 @@ class Viewport(QOpenGLWidget):
                 return
             dx = end.x() - start.x()
             dy = end.y() - start.y()
-            additive = bool(ev.modifiers() & Qt.ShiftModifier)
+            # The box reads the same modifiers as a click (SketchUp): Shift
+            # toggles what it catches — the way you rub a wall out of a big
+            # catch — Ctrl adds and Shift+Ctrl removes.
+            mode = selection_mode(ev.modifiers())
+            additive = mode != "replace"
             if math.hypot(dx, dy) < self.BOX_DRAG_THRESHOLD_PX:
                 # A click: pick the single entity under the cursor.
                 ctx = self._build_ctx(ev)
@@ -8264,7 +8269,7 @@ class Viewport(QOpenGLWidget):
                     max(start.x(), end.x()), max(start.y(), end.y()),
                 )
                 crossing = dx < 0  # right-to-left drag = crossing selection
-                tool.on_box_select(self, rect, crossing, additive)
+                tool.on_box_select(self, rect, crossing, additive, mode=mode)
             self.update()
 
     def _world_under_cursor(self, x: float, y: float) -> Optional[QVector3D]:

@@ -408,7 +408,9 @@ class MainWindow(QMainWindow):
         # belongs to Scale, matching SketchUp).
         select_action = self._tool_actions["select"]
         select_action.setShortcuts([QKeySequence(Qt.Key_Space)])
-        select_action.setToolTip(tr("Select (Space)"))
+        select_action.setToolTip(tr(
+            "Select (Space) — Shift+click adds or takes away, Ctrl+click "
+            "adds, Shift+Ctrl+click takes away. Same with the box."))
 
         # View toolbar: camera nav (Orbit / Pan / Zoom / Zoom Window) + Zoom
         # Extents + iso view.

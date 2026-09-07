@@ -6,7 +6,11 @@ Behavior:
 - Left click on / near an edge: select that edge. Click on a face interior
   (when no edge is closer): select the face. Edges win ties because they sit
   on top of faces, matching SketchUp.
-- Shift-click adds to the current selection; plain click replaces it.
+- Modifiers, SketchUp's own: Shift-click TOGGLES what it picks (click an
+  already-selected line or face to drop it out of the selection — the way you
+  carve a wall out of a box selection), Ctrl-click adds, Shift+Ctrl-click
+  removes, and a plain click replaces the whole selection. The rubber-band box
+  reads the same modifiers.
 - Left click on empty space: clear the selection.
 - Hover highlights whatever the click would pick, so the user sees the target
   before committing.
@@ -37,6 +41,19 @@ from core.history import (
 from georef.geopath import GeoPath
 from tools.base import Tool, ToolContext
 
+
+
+def selection_mode(modifiers) -> str:
+    """How a click (or a rubber-band box) joins the current selection, from
+    the keyboard modifiers — SketchUp's rules: Shift toggles, Ctrl adds,
+    Shift+Ctrl removes, nothing replaces."""
+    shift = bool(modifiers & Qt.ShiftModifier)
+    ctrl = bool(modifiers & Qt.ControlModifier)
+    if shift and ctrl:
+        return "remove"
+    if ctrl:
+        return "add"
+    return "toggle" if shift else "replace"
 
 
 def _seg_rect_mask(ax, ay, bx, by, ok, rect, crossing):
@@ -263,17 +280,17 @@ class SelectTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
-        additive = bool(ctx.modifiers & Qt.ShiftModifier)
+        mode = selection_mode(ctx.modifiers)
         if entity is None:
-            if viewport.scene.edit_group is not None and not additive \
+            if viewport.scene.edit_group is not None and mode == "replace" \
                     and not viewport.scene.selection:
                 viewport.end_group_edit()       # click outside leaves the group
                 return
-            if not additive:
+            if mode == "replace":
                 viewport.scene.clear_selection()
         else:
             picked = self._expand(viewport, entity)
-            viewport.scene.select(picked, additive=additive)
+            viewport.scene.select(picked, mode=mode)
         viewport.update()
 
     @staticmethod
@@ -358,8 +375,7 @@ class SelectTool(Tool):
             for e in list(picked):
                 if isinstance(e, Edge):
                     picked.extend(e.faces)
-        additive = bool(ctx.modifiers & Qt.ShiftModifier)
-        viewport.scene.select(picked, additive=additive)
+        viewport.scene.select(picked, mode=selection_mode(ctx.modifiers))
         viewport.update()
 
     def on_triple_click(self, ctx: ToolContext) -> None:
@@ -398,15 +414,16 @@ class SelectTool(Tool):
                 if w not in seen_v:
                     seen_v.add(w)
                     stack.append(w)
-        additive = bool(ctx.modifiers & Qt.ShiftModifier)
-        viewport.scene.select(list(edges) + list(faces), additive=additive)
+        viewport.scene.select(list(edges) + list(faces),
+                              mode=selection_mode(ctx.modifiers))
         viewport.update()
 
     def on_hover(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         viewport.set_hover(self._pick(viewport, ctx.screen.x(), ctx.screen.y()))
 
-    def on_box_select(self, viewport, rect, crossing: bool, additive: bool) -> None:
+    def on_box_select(self, viewport, rect, crossing: bool,
+                      additive: bool = False, mode: str | None = None) -> None:
         w2p = viewport._world_to_pixel
         picked = []
         fast = _box_loose_fast(viewport, rect, crossing)
@@ -552,7 +569,7 @@ class SelectTool(Tool):
             elif _pt_in_rect(pp, rect) and (
                     pa is None or _pt_in_rect(pa, rect)):
                 picked.append(lab)
-        viewport.scene.select(picked, additive=additive)
+        viewport.scene.select(picked, additive=additive, mode=mode)
         viewport.update()
 
     def on_key(self, viewport, key: int, modifiers: Qt.KeyboardModifiers) -> bool:
