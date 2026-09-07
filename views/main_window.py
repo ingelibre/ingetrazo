@@ -1018,9 +1018,15 @@ class MainWindow(QMainWindow):
         return sep
 
     def _build_statusbar(self) -> None:
-        bar = QStatusBar(self)
+        # The status bar carries the Model | Sheet 1 | … strip at its left,
+        # on the same row as the measurements box (AutoCAD's Model / Layout
+        # tabs): one click from the model to any sheet.
+        from views.sheet_tabs import SheetStatusBar
+        bar = SheetStatusBar(self, on_model=self._show_model,
+                             on_sheet=self._show_sheet)
         self.setStatusBar(bar)
         bar.showMessage(tr(
+        self._sheet_tabs = bar.tabs
             "Orbit (O) / Pan (H) buttons: left-drag to move the view  ·  "
             "MMB-drag: orbit  ·  Shift+MMB-drag: pan  ·  Wheel / 2-finger: zoom  ·  "
             "P: persp/parallel  ·  →←↑: lock X/Y/Z  ·  ↓: par/perp to ref  ·  "
@@ -1030,6 +1036,7 @@ class MainWindow(QMainWindow):
         self._tool_label = QLabel(tr("Tool: none"))
         bar.addPermanentWidget(self._tool_label)
 
+        self._refresh_sheet_tabs()
         # Live UTM readout, the way a CAD shows coordinates. Local scene metres
         # are meaningless to anyone outside the file; easting/northing is what
         # goes on a plan, into a GPS, and into a report. Only shown once the
@@ -1696,6 +1703,29 @@ class MainWindow(QMainWindow):
         self._composer.activateWindow()
 
     def _on_standard_view(self, key: str) -> None:
+    # ---- Model / sheet tabs (the strip at the bottom) -----------------------
+    def _refresh_sheet_tabs(self) -> None:
+        """This window shows the model, so its strip always marks «Model»;
+        the sheet names come from the document."""
+        tabs = getattr(self, "_sheet_tabs", None)
+        if tabs is None:
+            return
+        comps = getattr(self.viewport.scene, "compositions", None) or []
+        tabs.refresh([c.name for c in comps], None)
+
+    def _show_model(self) -> None:
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._refresh_sheet_tabs()
+
+    def _show_sheet(self, index: int) -> None:
+        """A sheet tab: the composer opens on that sheet. This window keeps
+        showing the model, so its own strip snaps back to «Model»."""
+        self._on_open_composer()
+        self._composer.show_sheet(index)
+        self._refresh_sheet_tabs()
+
         self.viewport.camera.set_view(key)
         self.viewport.update()
 
@@ -3411,6 +3441,7 @@ class MainWindow(QMainWindow):
         marker = " *" if self._is_dirty() else ""
         self.setWindowTitle(f"IngeTrazo — {name}{marker}")
 
+        self._refresh_sheet_tabs()      # a new / opened document: its sheets
     # ---- Window lifecycle ---------------------------------------------------
     def closeEvent(self, event) -> None:
         if not self._confirm_discard(tr("Quit IngeTrazo?")):

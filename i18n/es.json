@@ -1497,5 +1497,9 @@
  "Outline width": "Grosor del contorno",
  "Outline colour": "Color del contorno",
  "View rotation": "Giro de la vista",
- "Turn the drawing inside the frame, clockwise — the same angle the north arrow needs. The frame, its title and everything else on the sheet stay put; the model is not touched. In view edit (double-click the frame) Shift+drag turns it by hand.": "Gira el dibujo dentro del marco, en sentido horario — el mismo ángulo que necesita la flecha de norte. El marco, su rótulo y todo lo demás de la lámina se quedan donde están; el modelo no se toca. En edición de vista (doble clic en el marco) Mayús+arrastrar lo gira a mano."
+ "Turn the drawing inside the frame, clockwise — the same angle the north arrow needs. The frame, its title and everything else on the sheet stay put; the model is not touched. In view edit (double-click the frame) Shift+drag turns it by hand.": "Gira el dibujo dentro del marco, en sentido horario — el mismo ángulo que necesita la flecha de norte. El marco, su rótulo y todo lo demás de la lámina se quedan donde están; el modelo no se toca. En edición de vista (doble clic en el marco) Mayús+arrastrar lo gira a mano.",
+ "Model": "Modelo",
+ "Sheet": "Lámina",
+ "Model and sheets": "Modelo y láminas",
+ "Switch between the model and each sheet — AutoCAD's Model / Layout tabs.": "Cambiar entre el modelo y cada lámina — las pestañas Modelo / Presentación de AutoCAD."
 }

@@ -3392,6 +3392,13 @@ class ComposerWindow(QMainWindow):
         ("flecha", "comp_flecha", "Draw an arrow (two clicks or drag)", True),
         ("rect", "rectangle", "Draw a rectangle (two clicks or drag)", True),
         ("elipse", "circle", "Draw an ellipse (two clicks or drag)", True),
+        # The same Model | sheets strip as the main window, in the status
+        # bar's left end, marking the sheet that is open here.
+        from views.sheet_tabs import SheetStatusBar
+        bar = SheetStatusBar(self, on_model=self._show_model,
+                             on_sheet=self.show_sheet)
+        self.setStatusBar(bar)
+        self._sheet_tabs = bar.tabs
         ("poligono", "polygon", "Draw a polygon (two clicks or drag)", True),
         ("cota", "dimension", "Draw a dimension (two points + separation)", True),
         ("cota_cadena", "dimension_chain",
@@ -3407,6 +3414,7 @@ class ComposerWindow(QMainWindow):
         from PySide6.QtWidgets import QToolBar
         from views.icons import tool_icon
         tb = QToolBar(tr("Composer tools"), self)
+        self._refresh_sheet_tabs()
         tb.setOrientation(Qt.Vertical)
         tb.setMovable(False)
         group = QActionGroup(self)
@@ -4943,6 +4951,7 @@ class ComposerWindow(QMainWindow):
         # The selection lives on the items, and the items die with the
         # canvas: every rebuild — the auto-render pass after a scale or size
         # edit, a page change, a title-block field — dropped it, so each
+        self._refresh_sheet_tabs()      # added / renamed / deleted sheets
         # property change in the panel meant clicking the frame again for
         # the next one (Marco, 2026-09-05). Remember the selected MODELS and
         # pick their new items up below; a caller's _pending_sel still wins.
@@ -4953,6 +4962,41 @@ class ComposerWindow(QMainWindow):
         # mid-placement (undo between the two clicks is routine). Drop the
         # placement first or the next mouse move touches dead C++ objects.
         if hasattr(self, "_view"):
+            self._refresh_sheet_tabs()
+
+    # ---- Model / sheet tabs (the strip at the bottom) -----------------------
+    def _refresh_sheet_tabs(self) -> None:
+        """Both strips follow the document: this one marks the open sheet,
+        the main window's marks «Model»."""
+        tabs = getattr(self, "_sheet_tabs", None)
+        if tabs is None:
+            return
+        comps = self._scene().compositions
+        cur = comps.index(self.comp) if self.comp in comps else 0
+        tabs.refresh([c.name for c in comps], cur)
+        sync = getattr(self._window, "_refresh_sheet_tabs", None)
+        if sync is not None:
+            sync()
+
+    def show_sheet(self, index: int) -> None:
+        """Bring this window up on sheet ``index`` (a tab click, from
+        either window)."""
+        comps = self._scene().compositions
+        if 0 <= index < len(comps) and comps[index] is not self.comp:
+            self.comp_combo.setCurrentIndex(index)     # → _on_comp_switched
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._refresh_sheet_tabs()
+
+    def _show_model(self) -> None:
+        """The «Model» tab: back to the model window; this strip keeps
+        marking the sheet it shows."""
+        win = self._window
+        win.show()
+        win.raise_()
+        win.activateWindow()
+        self._refresh_sheet_tabs()
             self._view.cancel_placement()
         # Likewise the frame whose view is being edited in place: its item
         # dies with the canvas, and ending the edit afterwards (the next
