@@ -6,6 +6,19 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+## [0.3.13] — 2026-09-07
+
+**La release del día de dogfooding del compositor.** Marco dibujó dos
+láminas reales del poste solar y fue pidiendo lo que faltaba, una cosa a
+la vez: pestañas Modelo | Lámina en la barra de estado como AutoCAD,
+girar la vista dentro de su marco, un cajetín que reparte el alto según
+lo que lleva cada fila, arrastrar 10× más fluido, diálogos que abren en
+la última carpeta y Mayús+clic que quita de la selección — más los bugs
+que salieron modelando: la selección impresa en el PDF, la ventana que
+no maximizaba, la edición de vista que se cortaba al primer gesto, el
+pan con la hoja entera a la vista y los ítems bloqueados que se colaban
+en la selección.
+
 ### Añadido
 - **Pestañas Modelo | Lámina 1 | Lámina 2… en la barra de estado** (Marco,
   2026-09-07: «como lo tiene AutoCAD», «en la misma fila donde está el
@@ -31,6 +44,12 @@ follow [SemVer](https://semver.org).
   la maniobra es un solo paso de deshacer. El giro viaja en el `.igz`.
 
 ### Corregido
+- **La ventana del modelo vuelve a maximizarse.** La ayuda fija de la
+  barra de estado es una línea larga y, como rótulo permanente, pedía
+  todo su ancho como mínimo: en una pantalla más chica la ventana no
+  podía encogerse ni maximizarse (Marco, 2026-09-07: «no puedo
+  maximizar la ventana»). El rótulo ya no pide ancho mínimo y recorta
+  con puntos suspensivos.
 - **La selección ya no se imprime.** Si al renderizar un marco había algo
   seleccionado en el modelo, sus indicadores salían en la lámina y en el
   PDF: el recuadro naranja alrededor de Sumari (Marco, 2026-09-07,
