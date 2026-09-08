@@ -2208,7 +2208,24 @@ class SnapshotImport(Command):
             dims_before = list(scene.dimensions)
             texts_before = list(scene.text_labels)
             self.before = m.capture_state()
-            self.mutate(scene)
+            try:
+                self.mutate(scene)
+            except BaseException:
+                # History.execute restores the mesh, but a loader or AI
+                # recipe that fails halfway has already appended groups
+                # (extrude/revolve land one per call), layers, views,
+                # dimensions or labels — leave none of them behind.
+                scene.groups[:] = [g for g in scene.groups
+                                   if g in groups_before]
+                scene.layers[:] = [ly for ly in scene.layers
+                                   if ly in layers_before]
+                scene.saved_views[:] = [v for v in scene.saved_views
+                                        if v in views_before]
+                scene.dimensions[:] = [d for d in scene.dimensions
+                                       if d in dims_before]
+                scene.text_labels[:] = [t for t in scene.text_labels
+                                        if t in texts_before]
+                raise
             self.after = m.capture_state()
             self.added_groups = [g for g in scene.groups
                                  if g not in groups_before]

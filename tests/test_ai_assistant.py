@@ -171,6 +171,34 @@ def test_recipe_helpers_build_correct_solids():
         win.close()
 
 
+def test_failed_recipe_leaves_no_orphan_groups():
+    # A recipe that dies AFTER extrude/revolve appended groups must roll
+    # back whole: History.execute only restored the mesh, so the groups
+    # survived with no undo entry (45 orphan pieces in a live session).
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        scene = vp.scene
+        n_groups = len(scene.groups)
+        n_layers = len(scene.layers)
+        depth = len(vp.history.undo_stack)
+        scope: dict = {"__name__": "__ai__"}
+        r = ai.run_transactional(vp, (
+            "extrude([(0, 0), (1, 0), (1, 1), (0, 1)], 0.0, 0.5, name='Caja')\n"
+            "from core.layers import Layer\n"
+            "scene.layers.append(Layer('Huérfana'))\n"
+            "raise ValueError('boom')"), scope)
+        assert r["error"] is not None and not r["changed"]
+        assert "ValueError: boom" in r["stderr"]
+        assert len(scene.groups) == n_groups
+        assert len(scene.layers) == n_layers
+        assert len(vp.history.undo_stack) == depth
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def test_supports_vision_by_provider_or_model():
     assert ai.supports_vision("anthropic", "claude-sonnet-5")
     assert ai.supports_vision("gemini", "gemini-2.5-flash")
