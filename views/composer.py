@@ -3005,7 +3005,7 @@ class ComposerCanvasView(QGraphicsView):
                 it.setSelected(False)
             else:
                 it.setSelected(True)
-        self.composer.on_selection_changed()
+        self._selection_changed()
         return found
 
     def _finish_band(self, scene_pos, modifiers) -> None:
@@ -3021,9 +3021,14 @@ class ComposerCanvasView(QGraphicsView):
             from tools.select import selection_mode
             if selection_mode(modifiers) == "replace":
                 self.scene().clearSelection()
-                self.composer.on_selection_changed()
+                self._selection_changed()
             return
         self.box_select(rect, crossing, modifiers)
+
+    def _selection_changed(self) -> None:
+        notify = getattr(self.composer, "on_selection_changed", None)
+        if notify is not None:
+            notify()
 
     def mouseMoveEvent(self, event) -> None:
         if self._pan_last is not None:
