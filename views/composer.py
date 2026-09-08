@@ -2920,7 +2920,7 @@ class ComposerCanvasView(QGraphicsView):
             self._press_vp = event.position().toPoint()
             event.accept()
             return
-        super().mousePressEvent(event)
+        self._scene_dispatch(super().mousePressEvent, event)
 
     def mouseMoveEvent(self, event) -> None:
         if self._pan_last is not None:
@@ -3235,7 +3235,24 @@ class ComposerCanvasView(QGraphicsView):
                 self._finish_placement(end)
             event.accept()
             return
-        super().mouseReleaseEvent(event)
+        self._scene_dispatch(super().mouseReleaseEvent, event)
+
+    def _scene_dispatch(self, handler, event) -> None:
+        """Hand an event to the scene, and survive a canvas item that has
+        lost its Python half (Marco's 0.3.13 log: «pure virtual method
+        'QGraphicsItem.boundingRect' not implemented» from the scene's
+        release dispatch, and the process died right after). The scene
+        cannot go on with such an item; rebuilding the canvas from the
+        models replaces every item, from the event loop."""
+        try:
+            handler(event)
+        except NotImplementedError as exc:
+            import logging
+            logging.getLogger(__name__).error(
+                "canvas item without its Python object during %s: %s — "
+                "rebuilding the sheet", type(event).__name__, exc)
+            event.accept()
+            QTimer.singleShot(0, self.composer._rebuild_canvas)
 
     def _finish_placement(self, end) -> None:
         start = self._drag_start
@@ -3396,7 +3413,8 @@ class ComposerWindow(QMainWindow):
         # bar's left end, marking the sheet that is open here.
         from views.sheet_tabs import SheetStatusBar
         bar = SheetStatusBar(self, on_model=self._show_model,
-                             on_sheet=self.show_sheet)
+                             on_sheet=self.show_sheet,
+                             on_new=self._new_sheet_tab)
         self.setStatusBar(bar)
         self._sheet_tabs = bar.tabs
         self._pos_label = QLabel("")
@@ -4984,19 +5002,55 @@ class ComposerWindow(QMainWindow):
         comps = self._scene().compositions
         if 0 <= index < len(comps) and comps[index] is not self.comp:
             self.comp_combo.setCurrentIndex(index)     # → _on_comp_switched
+        self._handover_seq = getattr(self, "_handover_seq", 0) + 1   # cancel a pending step-aside
         self.show()
         self.raise_()
         self.activateWindow()
         self._refresh_sheet_tabs()
 
+    def _new_sheet_tab(self) -> None:
+        """The «+» tab: a new sheet, shown here."""
+        self._on_comp_add()
+        self._handover_seq = getattr(self, "_handover_seq", 0) + 1
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._refresh_sheet_tabs()
+
+    #: How long the window manager gets to honour the hand-over before the
+    #: composer steps aside on its own.
+    _HANDOVER_MS = 400
+
     def _show_model(self) -> None:
         """The «Model» tab: back to the model window; this strip keeps
-        marking the sheet it shows."""
+        marking the sheet it shows.
+
+        Under Wayland a window cannot raise another one: ``raise_()`` is
+        a no-op and ``activateWindow()`` only works when the compositor
+        grants an activation token — GNOME does not always (Marco, 0.3.13
+        Flatpak: «quiero cambiar con los botones de abajo, no cambia»).
+        So if the model window has not become active shortly after, this
+        window steps out of the way by hiding; a sheet tab in the model
+        window brings it back exactly as it was."""
         win = self._window
         win.show()
         win.raise_()
         win.activateWindow()
         self._refresh_sheet_tabs()
+        self._handover_seq = getattr(self, "_handover_seq", 0) + 1
+        seq = self._handover_seq
+        QTimer.singleShot(self._HANDOVER_MS,
+                          lambda: self._check_handover(seq))
+
+    def _check_handover(self, seq: int) -> None:
+        win = self._window
+        # A sheet tab pressed meanwhile brought this window back on purpose.
+        if seq != getattr(self, "_handover_seq", 0):
+            return
+        if not self.isVisible() or not win.isVisible():
+            return
+        if self.isActiveWindow() and not win.isActiveWindow():
+            self.hide()
 
     def _on_comp_rename(self) -> None:
         if self._updating:
@@ -5547,10 +5601,20 @@ class ComposerWindow(QMainWindow):
         self._mark_dirty()
         if (extra or isinstance(model, MarcoVista)
                 or getattr(model, "anchored", False)):
-            self._rebuild_canvas()
-            for it in self.canvas.items():
-                if isinstance(it, _SheetItem) and it.model is model:
-                    it.force_select()
+            # From the event loop, never here: this runs inside the dropped
+            # item's mouseReleaseEvent, and _rebuild_canvas clears the
+            # canvas — deleting the very item Qt is still delivering the
+            # release to (a crash waiting for the right timing).
+            QTimer.singleShot(0, lambda: self._rebuild_after_drop(model))
+
+    def _rebuild_after_drop(self, model) -> None:
+        from shiboken6 import isValid
+        if not isValid(self) or not isValid(self.canvas):
+            return                                # the window closed meanwhile
+        self._rebuild_canvas()
+        for it in self.canvas.items():
+            if isinstance(it, _SheetItem) and it.model is model:
+                it.force_select()
 
     def add_scale_label(self, frame) -> TextoItem:
         """A movable scale label for *frame*: a bound text block under its
@@ -6491,6 +6555,12 @@ class ComposerWindow(QMainWindow):
         item = editor.item
         if editor.scene() is not None:
             editor.scene().removeItem(editor)
+        # This runs from the editor's own focusOutEvent: once removed from
+        # the scene the editor belongs to Python, and dropping the last
+        # reference here would delete the C++ item while Qt is still inside
+        # its event. Hold it until the event loop comes round.
+        self._retired_editor = editor
+        QTimer.singleShot(0, lambda: setattr(self, "_retired_editor", None))
         if text is not None and text != item.model.text:
             item.prepareGeometryChange()
             self.history.execute(EditItemCommand(item.model, {"text": text}),

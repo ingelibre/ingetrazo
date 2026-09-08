@@ -150,3 +150,110 @@ def test_the_standing_hint_never_widens_the_window(monkeypatch):
         assert bar.currentMessage().startswith("Orbit") # full text kept
     finally:
         _close(win)
+
+
+def test_the_plus_tab_opens_the_composer_on_a_new_sheet(monkeypatch):
+    """A fresh document has no sheets, and a strip that only said «Model»
+    gave no way into the composer (Marco, 0.3.13 Flatpak: «no aparece
+    compositor de láminas abajo»). «+» is AutoCAD's new-layout tab."""
+    win = _window(monkeypatch)
+    try:
+        tabs = win._sheet_tabs
+        assert tabs.names() == ["Model"]
+        assert tabs.plus_index() == 1
+        assert tabs.tabText(tabs.plus_index()) == "+"
+        tabs.click(tabs.plus_index())
+        comp = win._composer
+        assert comp.isVisible()
+        assert len(win.viewport.scene.compositions) == 1      # the first sheet, once
+        assert comp._sheet_tabs.current() == 0
+        assert win._sheet_tabs.names() == ["Model", comp.comp.name]
+        comp._sheet_tabs.click(comp._sheet_tabs.plus_index())  # «+» in the composer
+        assert len(win.viewport.scene.compositions) == 2
+        assert comp._sheet_tabs.current() == 1
+        win._sheet_tabs.click(win._sheet_tabs.plus_index())    # «+» in the model window
+        assert len(win.viewport.scene.compositions) == 3
+        assert comp.comp is win.viewport.scene.compositions[2]
+        assert win._sheet_tabs.current() is None
+    finally:
+        _close(win)
+
+
+def test_a_mouse_click_hands_over_after_the_press_and_the_strips_end_right(monkeypatch):
+    """QTabBar makes the pressed tab current AFTER the clicked signal; a
+    hand-over run inside the signal left the composer's strip marking
+    «Model» and the model window's marking the sheet — and rebuilt the
+    strip under a press in progress."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    win = _window(monkeypatch)
+    try:
+        win.show()
+        win._sheet_tabs.click(1)                          # first sheet, composer up
+        comp = win._composer
+        ct = comp._sheet_tabs
+        QTest.mouseClick(ct, Qt.LeftButton, Qt.NoModifier, ct.tabRect(0).center())
+        _app.processEvents()
+        assert ct.current() == 0                          # still marks its sheet
+        assert win._sheet_tabs.current() is None
+        mt = win._sheet_tabs
+        QTest.mouseClick(mt, Qt.LeftButton, Qt.NoModifier, mt.tabRect(1).center())
+        _app.processEvents()
+        assert mt.current() is None                       # the model window shows the model
+        assert ct.current() == 0
+        comp._on_comp_add()
+        QTest.mouseClick(ct, Qt.LeftButton, Qt.NoModifier, ct.tabRect(1).center())
+        _app.processEvents()
+        assert comp.comp is win.viewport.scene.compositions[0]
+        assert ct.current() == 0
+    finally:
+        _close(win)
+
+
+def test_a_hint_or_a_hand_over_does_not_rebuild_the_tabs(monkeypatch):
+    win = _window(monkeypatch)
+    try:
+        tabs = win._sheet_tabs
+        seen = []
+        orig = tabs.removeTab
+        monkeypatch.setattr(tabs, "removeTab", lambda i: (seen.append(i), orig(i)))
+        tabs.refresh([], None)                            # same names: untouched
+        win.statusBar().showMessage("hint", 10)
+        assert seen == []
+        from core.composition import Composicion
+        win.viewport.scene.compositions.append(Composicion(name="Planta"))
+        win._update_title()
+        assert seen                                       # a new sheet does rebuild
+    finally:
+        _close(win)
+
+
+def test_the_composer_steps_aside_only_if_the_model_never_became_active(monkeypatch):
+    """Wayland may refuse the hand-over; then the composer hides after a
+    grace period — unless a sheet tab brought it back meanwhile."""
+    win = _window(monkeypatch)
+    try:
+        win.show()
+        win._sheet_tabs.click(1)
+        comp = win._composer
+        monkeypatch.setattr(comp, "_HANDOVER_MS", 30)
+        # Simulate a compositor that never activates the model window.
+        monkeypatch.setattr(type(win), "isActiveWindow", lambda self: False)
+        monkeypatch.setattr(type(comp), "isActiveWindow", lambda self: True)
+        comp._sheet_tabs.click(0)                        # «Model»
+        import time
+        t0 = time.monotonic()
+        while comp.isVisible() and time.monotonic() - t0 < 2:
+            _app.processEvents()
+        assert not comp.isVisible()                      # stepped aside
+        win._sheet_tabs.click(1)                         # …and comes back
+        assert comp.isVisible()
+        # A sheet tab pressed within the grace period cancels the step-aside.
+        comp._sheet_tabs.click(0)
+        win._sheet_tabs.click(1)
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 0.2:
+            _app.processEvents()
+        assert comp.isVisible()
+    finally:
+        _close(win)

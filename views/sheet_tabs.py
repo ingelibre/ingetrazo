@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""The Model | Sheet 1 | Sheet 2 … strip in the status bar of a window.
+"""The Model | Sheet 1 | Sheet 2 … | + strip in the status bar of a window.
 
 AutoCAD's Model / Layout tabs, for the same reason: going from the model to
 a sheet and back is the most frequent trip of a plan-drawing session, and it
@@ -16,10 +16,20 @@ hint; ``SheetStatusBar`` keeps the tabs and its own message label as
 permanent widgets and routes ``showMessage`` into that label instead, so
 the row never reflows.
 
+The strip ends in a «+» tab, AutoCAD's «new layout»: a fresh document has
+no sheets, and a strip that only said «Model» gave no way into the
+composer at all (Marco, 0.3.13 Flatpak: «no aparece compositor de láminas
+abajo»). «+» opens the composer on a new sheet.
+
 Both windows carry one: the main window's always marks «Model» (that is
 what it displays), the composer's marks its open sheet. Clicking a tab
 hands over to the other window; the owner re-syncs its strip afterwards so
-a window never claims to show something it does not.
+a window never claims to show something it does not. The hand-over runs
+AFTER the click, from the event loop: QTabBar still works on the tab it
+pressed when the clicked signal returns (it makes it current), so a strip
+rebuilt inside the signal ended up marking the pressed tab instead of what
+its window shows, and tearing tabs down under a press in progress is the
+kind of thing that segfaults.
 """
 from __future__ import annotations
 
@@ -31,11 +41,11 @@ from core.i18n import tr
 
 
 class SheetTabs(QTabBar):
-    """The tab strip. ``on_model()`` and ``on_sheet(index)`` are the owner's
-    callbacks; ``refresh`` rebuilds the strip from the sheet names and marks
-    the current tab (``None`` = the model)."""
+    """The tab strip. ``on_model()``, ``on_sheet(index)`` and ``on_new()``
+    are the owner's callbacks; ``refresh`` rebuilds the strip from the
+    sheet names and marks the current tab (``None`` = the model)."""
 
-    def __init__(self, parent, on_model, on_sheet) -> None:
+    def __init__(self, parent, on_model, on_sheet, on_new=None) -> None:
         super().__init__(parent)
         self.setObjectName("sheet_tabs")
         self.setDocumentMode(True)
@@ -48,6 +58,9 @@ class SheetTabs(QTabBar):
             "Model / Layout tabs."))
         self._on_model = on_model
         self._on_sheet = on_sheet
+        self._on_new = on_new
+        self._names: list = []
+        self._labels: list = []
         # tabBarClicked, not currentChanged: clicking the tab that is
         # already current must still hand over (the composer's «Model»
         # tab is never current there, but the main window's is).
@@ -56,41 +69,66 @@ class SheetTabs(QTabBar):
         self.refresh([], None)
 
     # ---- state ----------------------------------------------------------------
+    def _wanted(self, names) -> list:
+        labels = [tr("Model")] + [str(n) or tr("Sheet") for n in names]
+        if self._on_new is not None:
+            labels.append("+")
+        return labels
+
     def refresh(self, names, current) -> None:
-        """Rebuild the strip: «Model» then one tab per sheet name; ``current``
-        is the sheet index to mark, or ``None`` for the model."""
+        """Rebuild the strip: «Model» then one tab per sheet name (then «+»);
+        ``current`` is the sheet index to mark, or ``None`` for the model.
+        The tabs are only torn down when the names changed — a hint or a
+        hand-over must not rebuild the widget under the mouse."""
+        labels = self._wanted(names)
         self._updating = True
         try:
-            while self.count():
-                self.removeTab(0)
-            self.addTab(tr("Model"))
-            for name in names:
-                self.addTab(str(name) or tr("Sheet"))
+            if labels != self._labels:
+                while self.count():
+                    self.removeTab(0)
+                for i, label in enumerate(labels):
+                    self.addTab(label)
+                    if self._on_new is not None and i == len(labels) - 1:
+                        self.setTabToolTip(i, tr("New sheet"))
+                self._labels = labels
+            self._names = [str(n) for n in names]
             idx = 0 if current is None else int(current) + 1
-            self.setCurrentIndex(max(0, min(idx, self.count() - 1)))
+            self.setCurrentIndex(max(0, min(idx, len(names))))
         finally:
             self._updating = False
 
     def names(self) -> list:
-        return [self.tabText(i) for i in range(self.count())]
+        """«Model» and the sheet names — never the «+» tab."""
+        return self._labels[:1 + len(self._names)]
 
     def current(self):
         """``None`` for the model, else the sheet index."""
         i = self.currentIndex()
-        return None if i <= 0 else i - 1
+        return None if i <= 0 or i > len(self._names) else i - 1
+
+    def plus_index(self):
+        """The index of the «+» tab, or ``None`` without one."""
+        return len(self._names) + 1 if self._on_new is not None else None
 
     # ---- clicks ---------------------------------------------------------------
     def _clicked(self, index: int) -> None:
         if self._updating or index < 0:
             return
+        # Let QTabBar finish its press first (see the module docstring).
+        QTimer.singleShot(0, lambda: self._dispatch(index))
+
+    def _dispatch(self, index: int) -> None:
         if index == 0:
             self._on_model()
-        else:
+        elif index == self.plus_index():
+            self._on_new()
+        elif index <= len(self._names):
             self._on_sheet(index - 1)
 
     def click(self, index: int) -> None:
-        """Programmatic click (tests): the same path as the mouse."""
-        self._clicked(index)
+        """Programmatic click (tests): the same hand-over as the mouse,
+        run right away."""
+        self._dispatch(index)
 
 
 class _ElidedLabel(QLabel):
@@ -133,9 +171,9 @@ class SheetStatusBar(QStatusBar):
     message replaces it for a while and then the standing text comes back
     — a plain QStatusBar leaves the bar empty after a timed message."""
 
-    def __init__(self, parent, on_model, on_sheet) -> None:
+    def __init__(self, parent, on_model, on_sheet, on_new=None) -> None:
         super().__init__(parent)
-        self.tabs = SheetTabs(self, on_model, on_sheet)
+        self.tabs = SheetTabs(self, on_model, on_sheet, on_new)
         self._msg = _ElidedLabel(self)
         self._base = ""
         self._timer = QTimer(self)

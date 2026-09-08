@@ -69,6 +69,10 @@ def test_dropping_a_frame_still_rebuilds_for_what_follows_it(monkeypatch):
         frame = comp.comp.frames[0]
         comp.push_geometry_edit(frame, {"x_mm": frame.x_mm + 5.0, "y_mm": frame.y_mm},
                                 {"x_mm": frame.x_mm, "y_mm": frame.y_mm})
+        # The rebuild is deferred to the event loop: it must not clear the
+        # canvas from inside the dropped item's own mouseReleaseEvent.
+        assert set(_items(comp)) == set(before_items)     # not yet
+        _app.processEvents()
         assert set(_items(comp)) != set(before_items)     # rebuilt
         it = next(i for i in _items(comp).values() if isinstance(i, FrameItem))
         assert it.isSelected()                             # and picked back up

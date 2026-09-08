@@ -6,6 +6,38 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Añadido
+- **Pestaña «+» al final de la franja Modelo | Láminas.** Un documento
+  nuevo no tiene láminas y la franja solo decía «Modelo», sin ninguna
+  puerta al compositor (Marco, 0.3.13 en Flatpak: «no aparece compositor
+  de láminas abajo»). Como en AutoCAD, «+» abre el compositor en una
+  lámina nueva (en un documento sin láminas, en la primera), desde las dos
+  ventanas.
+
+### Corregido
+- **Cambiar de ventana con las pestañas de abajo en Wayland.** En Wayland
+  una ventana no puede traer otra al frente: «Modelo» desde el compositor
+  parecía no hacer nada cuando GNOME no concedía la activación (Marco:
+  «quiero cambiar con los botones de abajo, no cambia»). Si el modelo no
+  se activa en 0,4 s, el compositor se aparta (se oculta) y la pestaña de
+  la lámina en la ventana del modelo lo trae de vuelta tal como estaba.
+- **Las franjas ya no marcan la pestaña equivocada tras un clic.** QTabBar
+  hace actual la pestaña pulsada DESPUÉS de avisar del clic, así que el
+  cambio de ventana hecho dentro del aviso dejaba al compositor marcando
+  «Modelo» y a la ventana del modelo marcando la lámina; además rehacía
+  las pestañas debajo de una pulsación en curso. Ahora el cambio corre
+  desde el bucle de eventos y las pestañas solo se rehacen cuando cambian
+  los nombres.
+- **Soltar un marco ya no reconstruye la lámina dentro de su propio evento
+  de ratón.** La reconstrucción borra todos los ítems del lienzo — incluido
+  el que Qt todavía está atendiendo en ese instante. Lo mismo con el editor
+  de texto in situ, que se retiraba desde su propio foco perdido. Ambos
+  esperan ahora al bucle de eventos. Y si un ítem del lienzo pierde su
+  parte Python (el «pure virtual method 'QGraphicsItem.boundingRect' not
+  implemented» del registro de Marco, tras el cual la 0.3.13 se cerró), el
+  lienzo se reconstruye desde los modelos en vez de dejar que Qt siga con
+  él.
+
 ## [0.3.13] — 2026-09-07
 
 **La release del día de dogfooding del compositor.** Marco dibujó dos

@@ -1024,7 +1024,8 @@ class MainWindow(QMainWindow):
         # tabs): one click from the model to any sheet.
         from views.sheet_tabs import SheetStatusBar
         bar = SheetStatusBar(self, on_model=self._show_model,
-                             on_sheet=self._show_sheet)
+                             on_sheet=self._show_sheet,
+                             on_new=self._show_new_sheet)
         self.setStatusBar(bar)
         self._sheet_tabs = bar.tabs
         bar.showMessage(tr(
@@ -1724,6 +1725,17 @@ class MainWindow(QMainWindow):
         showing the model, so its own strip snaps back to «Model»."""
         self._on_open_composer()
         self._composer.show_sheet(index)
+        self._refresh_sheet_tabs()
+
+    def _show_new_sheet(self) -> None:
+        """The «+» tab: the composer on a NEW sheet. A document without
+        sheets gets its first one just by opening the composer."""
+        comps = getattr(self.viewport.scene, "compositions", None) or []
+        had = len(comps)
+        self._on_open_composer()
+        if len(self.viewport.scene.compositions) == had:
+            self._composer._on_comp_add()
+        self._composer.show_sheet(len(self.viewport.scene.compositions) - 1)
         self._refresh_sheet_tabs()
 
     def _on_standard_view(self, key: str) -> None:
