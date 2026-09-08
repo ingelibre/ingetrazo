@@ -23,6 +23,12 @@ follow [SemVer](https://semver.org).
   quita, como en el modelo; los ítems bloqueados no entran; un clic en
   la hoja vacía sigue vaciando la selección.
 
+- **Ejemplos.** Cuatro documentos reales de la plaza de Yanque en la
+  carpeta `examples/` del repositorio y en cada release
+  (`IngeTrazo-ejemplos.zip`): la pileta, la banca con pérgola y la
+  luminaria solar con su lámina A3 y el PDF resultante, y el arco de
+  bienvenida con todo su acero. Licencia CC BY 4.0.
+
 ### Cambiado
 - **Un marco de vista nuevo nace con el estilo «Arquitectónico»** — fondo
   blanco, sin cielo, con aristas y perfiles: el aspecto de una lámina de

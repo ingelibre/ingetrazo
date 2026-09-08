@@ -60,6 +60,12 @@ Python, Qt and the pure-Python `.skp` reader travel inside; nothing else to
 install. `--check` prints what the install found and exits non-zero if
 anything is missing.
 
+Something to open right away: [`examples/`](examples/) holds four real
+documents from the Yanque plaza project — the fountain, the bench with its
+pergola and the solar lamp post with their A3 sheets and PDFs, and the
+welcome arch with all its rebar (also attached to every release as
+`IngeTrazo-ejemplos.zip`).
+
 ## What works today
 
 - **SketchUp-style viewport** — Z-up orbit camera, grid, colored axes,

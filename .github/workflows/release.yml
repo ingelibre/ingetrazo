@@ -104,6 +104,10 @@ jobs:
           gh release upload "${GITHUB_REF_NAME}" \
             dist/IngeTrazo-*-x86_64.AppImage \
             dist/IngeTrazo-*-linux-x86_64.tar.gz --clobber
+          # The example documents, under a name without the version so the
+          # website can point at .../releases/latest/download/ for good.
+          (cd examples && zip -q -r ../IngeTrazo-ejemplos.zip .)
+          gh release upload "${GITHUB_REF_NAME}" IngeTrazo-ejemplos.zip --clobber
   snap:
     name: Snap (x86_64)
     runs-on: ubuntu-22.04
