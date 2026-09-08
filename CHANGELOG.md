@@ -19,6 +19,15 @@ follow [SemVer](https://semver.org).
   apriete Esc o haga clic en el icono del cursor»).
 
 ### Añadido
+- **Las flechas fijan el plano de dibujo del círculo, polígono,
+  rectángulo y arcos**, como en SketchUp: antes del primer clic, → fija
+  el plano normal a X (YZ), ← el normal a Y (XZ), ↑ el normal a Z (XY);
+  la misma flecha otra vez lo libera y Esc también. Una etiqueta arriba a
+  la izquierda, del color del eje, lo indica. La figura gasta el
+  bloqueo, y tras el primer clic las flechas vuelven a ser el bloqueo de
+  eje de siempre (Marco, 2026-09-08: «quiero dibujar un círculo en el
+  plano ZX… en SketchUp me restringe a qué plano quiero dibujar apretando
+  las teclas de desplazamiento»).
 - **Shift fija en horizontal o vertical el segundo punto de una cota** (y
   de una línea, flecha, línea de terreno o el siguiente punto de una cota
   en cadena): el Orto de AutoCAD, el bloqueo de eje de SketchUp. Gana el

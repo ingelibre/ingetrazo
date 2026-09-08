@@ -21,7 +21,7 @@ from PySide6.QtGui import QVector3D
 from core.edits import build_add_edges
 from core.history import RebuildPlanarFacesCommand, TagCurveCommand
 from core.triangulate import plane_axes
-from tools.base import Tool, ToolContext
+from tools.base import PlaneLock, Tool, ToolContext
 
 _SEGMENTS = 16  # polyline segments approximating the arc
 
@@ -100,7 +100,7 @@ def commit_arc(viewport, pts: list[QVector3D], close_to=None) -> None:
     viewport.history.execute(cmd)
 
 
-class ArcTool(Tool):
+class ArcTool(PlaneLock, Tool):
     name = "Arc"
     shortcut = "A"
     vcb_label = "Bulge"
@@ -123,6 +123,8 @@ class ArcTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         if self.start_point is None:
             self.start_point = ctx.world
+            if self.work_plane is None:
+                self.work_plane = self.locked_work_plane(ctx.world)
             return
         if self.end_point is None:
             if (ctx.world - self.start_point).length() < 1e-6:
@@ -235,13 +237,18 @@ class ArcTool(Tool):
         self._reset()
         viewport.update()
 
+
+    def on_key(self, viewport, key: int, modifiers) -> bool:
+        return self.plane_lock_key(viewport, key)
+
     def _reset(self) -> None:
         self.start_point = None
         self.end_point = None
         self.work_plane = None
+        self.plane_lock = None
 
 
-class ThreePointArcTool(Tool):
+class ThreePointArcTool(PlaneLock, Tool):
     """3-point arc: the arc passes through all three clicked points.
 
     Click start, click a second point the arc runs through, then move and click
@@ -266,6 +273,8 @@ class ThreePointArcTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         if self.start_point is None:
             self.start_point = ctx.world
+            if self.work_plane is None:
+                self.work_plane = self.locked_work_plane(ctx.world)
             return
         if self.mid_point is None:
             if (ctx.world - self.start_point).length() < 1e-6:
@@ -315,13 +324,18 @@ class ThreePointArcTool(Tool):
         self._reset()
         viewport.update()
 
+
+    def on_key(self, viewport, key: int, modifiers) -> bool:
+        return self.plane_lock_key(viewport, key)
+
     def _reset(self) -> None:
         self.start_point = None
         self.mid_point = None
         self.work_plane = None
+        self.plane_lock = None
 
 
-class CenterArcTool(Tool):
+class CenterArcTool(PlaneLock, Tool):
     """Compass arc (SketchUp's protractor 'Arc'): centre → start point (the
     radius and 0° arm) → sweep angle. The polyline samples at the same 15°
     pitch as the 24-side circle, so a centre arc drawn concentric with a
@@ -351,6 +365,8 @@ class CenterArcTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         if self.start_point is None:
             self.start_point = ctx.world
+            if self.work_plane is None:
+                self.work_plane = self.locked_work_plane(ctx.world)
             return
         if self.arm_point is None:
             if (ctx.world - self.start_point).length() < 1e-6:
@@ -446,10 +462,15 @@ class CenterArcTool(Tool):
         self._reset()
         viewport.update()
 
+
+    def on_key(self, viewport, key: int, modifiers) -> bool:
+        return self.plane_lock_key(viewport, key)
+
     def _reset(self) -> None:
         self.start_point = None
         self.arm_point = None
         self.work_plane = None
+        self.plane_lock = None
 
 
 class PieTool(CenterArcTool):

@@ -23,6 +23,55 @@ from PySide6.QtGui import QVector3D
 from core.snap import SnapResult
 
 
+#: Arrow keys → the axis a locked drawing plane is NORMAL to (SketchUp:
+#: Right = red, Left = green, Up = blue), and the plane's everyday name.
+PLANE_LOCK_KEYS = {int(Qt.Key_Right): "x", int(Qt.Key_Left): "y",
+                   int(Qt.Key_Up): "z"}
+PLANE_LOCK_AXES = {"x": QVector3D(1.0, 0.0, 0.0),
+                   "y": QVector3D(0.0, 1.0, 0.0),
+                   "z": QVector3D(0.0, 0.0, 1.0)}
+PLANE_LOCK_NAMES = {"x": "YZ", "y": "XZ", "z": "XY"}
+
+
+class PlaneLock:
+    """Arrow keys BEFORE the first click lock a planar tool (circle,
+    polygon, rectangle, the arcs) to a drawing plane: Right = the plane
+    normal to X (YZ), Left = normal to Y (XZ), Up = normal to Z (XY); the
+    same key again frees it. SketchUp's plane lock (Marco, 2026-09-08:
+    «quiero dibujar un círculo en el plano ZX… en SketchUp me restringe
+    a qué plano quiero dibujar apretando las teclas de desplazamiento»).
+    Once the first point is down the arrows are the viewport's linear
+    axis lock again, as always. The lock is spent by the shape (or Esc),
+    like SketchUp's."""
+
+    plane_lock: str | None = None
+
+    def plane_lock_key(self, viewport, key: int) -> bool:
+        if getattr(self, "start_point", None) is not None:
+            return False
+        axis = PLANE_LOCK_KEYS.get(int(key))
+        if axis is None:
+            return False
+        self.plane_lock = None if self.plane_lock == axis else axis
+        flash = getattr(viewport, "flash_status", None)
+        if flash is not None:
+            from core.i18n import tr
+            flash(tr("Drawing plane locked: {plane}",
+                     plane=PLANE_LOCK_NAMES[self.plane_lock])
+                  if self.plane_lock else tr("Drawing plane free"))
+        update = getattr(viewport, "update", None)
+        if update is not None:
+            update()
+        return True
+
+    def locked_work_plane(self, point: QVector3D):
+        """``(point, normal)`` of the locked plane through *point*, or
+        ``None`` without a lock."""
+        if self.plane_lock is None:
+            return None
+        return QVector3D(point), PLANE_LOCK_AXES[self.plane_lock]
+
+
 @dataclass
 class ToolContext:
     """Bundle of data a tool needs to react to a viewport event."""

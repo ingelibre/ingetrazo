@@ -19,7 +19,7 @@ from PySide6.QtGui import QVector3D
 
 from core.edits import build_add_edges
 from core.history import AddFaceCommand
-from tools.base import Tool, ToolContext
+from tools.base import PlaneLock, Tool, ToolContext
 
 
 def _plane_axes(normal: QVector3D) -> tuple[QVector3D, QVector3D]:
@@ -43,7 +43,7 @@ def _plane_axes(normal: QVector3D) -> tuple[QVector3D, QVector3D]:
     return u, v
 
 
-class RectangleTool(Tool):
+class RectangleTool(PlaneLock, Tool):
     name = "Rectangle"
     shortcut = "R"
     vcb_label = "Dimensions"
@@ -73,6 +73,8 @@ class RectangleTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         if self.start_point is None:
             self.start_point = ctx.world
+            if self.work_plane is None:
+                self.work_plane = self.locked_work_plane(ctx.world)
             return
         far, _ = self._square_corner(self.start_point, ctx.world)
         self._commit_rect(ctx.viewport, self._corners(self.start_point, far))
@@ -195,7 +197,12 @@ class RectangleTool(Tool):
         self._reset()
         viewport.update()
 
+
+    def on_key(self, viewport, key: int, modifiers) -> bool:
+        return self.plane_lock_key(viewport, key)
+
     def _reset(self) -> None:
         self.start_point = None
         self.chain_first_point = None
         self.work_plane = None
+        self.plane_lock = None

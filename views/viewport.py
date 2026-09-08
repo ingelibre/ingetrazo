@@ -4489,6 +4489,8 @@ class Viewport(QOpenGLWidget):
             self._draw_reference_label(painter)
         elif self.axis_lock is not None:
             self._draw_axis_lock_label(painter)
+        elif getattr(self.active_tool, "plane_lock", None) is not None:
+            self._draw_plane_lock_label(painter)
         else:
             self._draw_inference_label(painter)
 
@@ -5514,6 +5516,21 @@ class Viewport(QOpenGLWidget):
         painter.setPen(QPen(label[1]))
         painter.drawText(QPointF(14, 24), f"{label[0]} axis locked")
 
+    def _draw_plane_lock_label(self, painter: QPainter) -> None:
+        """The arrow-key plane lock of a planar tool, in the colour of the
+        axis the plane is normal to."""
+        from tools.base import PLANE_LOCK_NAMES
+        axis = self.active_tool.plane_lock
+        color = {"x": QColor(220, 56, 69), "y": QColor(40, 158, 92),
+                 "z": QColor(51, 102, 199)}[axis]
+        font = QFont()
+        font.setPointSize(11)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(QPen(color))
+        painter.drawText(QPointF(14, 24), tr(
+            "Drawing plane locked: {plane}", plane=PLANE_LOCK_NAMES[axis]))
+
     def _draw_inference_label(self, painter: QPainter) -> None:
         """Show 'On Red Axis' style label when soft inference is active."""
         snap = self.last_snap
@@ -5613,8 +5630,10 @@ class Viewport(QOpenGLWidget):
             # rise in Z. Vertical captured planes (walls) already allow it.
             start = (getattr(tool, "start_point", None)
                      if tool is not None else None)
-            if start is not None and abs(
-                    captured[1].normalized().z()) > 0.94:
+            if (start is not None and abs(captured[1].normalized().z()) > 0.94
+                    and getattr(tool, "plane_lock", None) is None):
+                # (an arrow-key plane lock is exactly what the user asked
+                # for: it never yields)
                 vertical = self._near_horizon_vertical(start)
                 if vertical is not None:
                     return vertical
@@ -8047,6 +8066,7 @@ class Viewport(QOpenGLWidget):
                 and now_start is not None
                 and face_at_click is not None
                 and hasattr(self.active_tool, "work_plane")
+                and self.active_tool.work_plane is None   # a plane lock wins
             ):
                 self.active_tool.work_plane = (
                     face_at_click.centroid(),

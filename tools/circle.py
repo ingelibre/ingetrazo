@@ -50,10 +50,10 @@ def busy_plane(scene, new_points):
     return None
 from core.i18n import tr
 from core.triangulate import plane_axes
-from tools.base import Tool, ToolContext
+from tools.base import PlaneLock, Tool, ToolContext
 
 
-class _RadialTool(Tool):
+class _RadialTool(PlaneLock, Tool):
     """Shared centre+radius regular-polygon tool. Subclasses set ``sides``."""
 
     sides: int = 24
@@ -83,6 +83,8 @@ class _RadialTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         if self.start_point is None:
             self.start_point = ctx.world
+            if self.work_plane is None:
+                self.work_plane = self.locked_work_plane(ctx.world)
             return
         pts = self._points(self.start_point, ctx.world)
         if pts:
@@ -185,9 +187,14 @@ class _RadialTool(Tool):
         self._reset()
         viewport.update()
 
+
+    def on_key(self, viewport, key: int, modifiers) -> bool:
+        return self.plane_lock_key(viewport, key)
+
     def _reset(self) -> None:
         self.start_point = None
         self.work_plane = None
+        self.plane_lock = None
 
 
 class CircleTool(_RadialTool):
