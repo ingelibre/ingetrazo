@@ -708,3 +708,82 @@ class TestCotaModel:
         assert ct.sep_mm == 0.0                              # line on the points
         assert ct.ends == "tick"
         assert ct.text_mm == pytest.approx(2.8)
+
+
+class TestGroundLine:
+    """The ground line of an elevation (Marco, 2026-09-08, the Yanque arch:
+    «de esta línea para abajo es el terreno»): a line with earth ticks, a
+    hatched band or a filled band hanging UNDER it."""
+
+    def test_ground_fields_round_trip_and_default_to_ticks(self):
+        comp = Composicion()
+        comp.shapes = [FormaItem(kind="terreno", ground="hatch", tick_mm=4.0,
+                                 tick_step_mm=2.0, band_mm=9.0)]
+        again = Composicion.from_dict(comp.to_dict())
+        f = again.shapes[0]
+        assert (f.ground, f.tick_mm, f.tick_step_mm, f.band_mm) == \
+            ("hatch", 4.0, 2.0, 9.0)
+        # an old .igz without the fields: the classic ticks
+        old = FormaItem(**{"kind": "terreno", "w_mm": 50.0, "h_mm": 0.0})
+        assert old.ground == "ticks"
+
+    def test_tool_places_a_heavier_line_and_remembers_the_look(self):
+        from PySide6.QtWidgets import QWidget
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        composer.tool_mode = "terreno"
+        composer.place_tool(30.0, 100.0, 90.0, 100.0)
+        f = composer.comp.shapes[0]
+        assert f.kind == "terreno" and f.h_mm == 0.0 and f.stroke_mm == 0.5
+        # pick it, switch to a hatched band from the panel → the next one
+        # starts hatched too
+        composer._rebuild_canvas()                 # the deferred rebuild
+        item = next(i for i in composer.canvas.items()
+                    if getattr(i, "model", None) is f)
+        item.setSelected(True)
+        composer.on_selection_changed()
+        composer.forma_ground.setCurrentIndex(
+            composer.forma_ground.findData("hatch"))
+        assert f.ground == "hatch"
+        composer.tool_mode = "terreno"
+        composer.place_tool(30.0, 120.0, 90.0, 120.0)
+        assert composer.comp.shapes[1].ground == "hatch"
+        self._host = host
+
+    def test_the_ground_hangs_under_the_line_whichever_way_it_slopes(self):
+        from PySide6.QtGui import QImage, QPainter
+        from views.composer import paint_forma_mm
+
+        def ink_below_and_above(f):
+            img = QImage(200, 120, QImage.Format_RGB32)
+            img.fill(0xFFFFFFFF)
+            p = QPainter(img)
+            p.scale(2.0, 2.0)                       # 2 px per mm
+            p.translate(10, 30)
+            paint_forma_mm(p, f)
+            p.end()
+            # a horizontal line at y=30 mm → row 60 px; count dark pixels
+            # in the bands just under and just over it
+            def dark(rows):
+                return sum(1 for y in rows for x in range(20, 180)
+                           if (img.pixel(x, y) & 0xFF) < 200)
+            return dark(range(62, 76)), dark(range(40, 57))
+
+        for mode in ("ticks", "hatch", "band"):
+            f = FormaItem(kind="terreno", w_mm=80.0, h_mm=0.0, ground=mode,
+                          tick_mm=6.0, fill_color="#806040")   # earth band
+            below, above = ink_below_and_above(f)
+            assert below > 0 and above == 0, mode
+        # a sloping line drawn right-to-left (invert) still buries the
+        # side of positive y: nothing above its highest point
+        f = FormaItem(kind="terreno", w_mm=80.0, h_mm=10.0, invert=True)
+        img = QImage(240, 160, QImage.Format_RGB32)
+        img.fill(0xFFFFFFFF)
+        p = QPainter(img)
+        p.scale(2.0, 2.0)
+        p.translate(10, 30)
+        paint_forma_mm(p, f)
+        p.end()
+        assert not any((img.pixel(x, y) & 0xFF) < 200
+                       for y in range(0, 56) for x in range(0, 240))

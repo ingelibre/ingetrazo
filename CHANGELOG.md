@@ -6,6 +6,17 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Añadido
+- **Línea de terreno en el compositor.** Una forma nueva junto a la línea
+  y la flecha: el suelo de una elevación con lo que cuelga por debajo
+  según la convención de dibujo — pelos de tierra a 45°, banda rayada o
+  banda rellena translúcida (largo, separación, alto y color en el
+  panel). Se traza con dos clics o arrastrando, se imanta a la geometría
+  de los marcos, admite pendiente y el terreno queda siempre del lado de
+  abajo (Marco, 2026-09-08, el arco de Yanque: «la idea es decir mira de
+  esta línea para abajo es el terreno»). La siguiente línea de terreno
+  de la lámina nace con el último aspecto elegido.
+
 ### Corregido
 - **«Modelo» desde el compositor no cambiaba de ventana en Windows.** El
   compositor es una ventana hija de la principal y Win32 mantiene siempre

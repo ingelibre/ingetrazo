@@ -968,6 +968,8 @@ def paint_forma_mm(painter: QPainter, f: FormaItem) -> None:
     else:
         a = QPointF(0, f.h_mm if f.invert else 0)
         b = QPointF(f.w_mm, 0 if f.invert else f.h_mm)
+        if f.kind == "terreno":
+            _paint_ground_mm(painter, f, a, b)
         painter.drawLine(a, b)
         if f.kind == "flecha":
             import math as _math
@@ -978,6 +980,82 @@ def paint_forma_mm(painter: QPainter, f: FormaItem) -> None:
                 painter.drawLine(b, QPointF(
                     b.x() + L * _math.cos(ang + da),
                     b.y() + L * _math.sin(ang + da)))
+
+
+def _paint_ground_mm(painter: QPainter, f: FormaItem, a: QPointF,
+                     b: QPointF) -> None:
+    """What hangs UNDER a ground line (the line itself is drawn by the
+    caller, on top): 45° ticks, a hatched band or a filled band. «Under»
+    is the side of positive page y, whichever way the line slopes, so a
+    grade drawn right-to-left still buries the right side."""
+    import math as _math
+    from PySide6.QtGui import QPolygonF
+    dx, dy = b.x() - a.x(), b.y() - a.y()
+    length = _math.hypot(dx, dy)
+    if length < 1e-6:
+        return
+    ux, uy = dx / length, dy / length
+    nx, ny = -uy, ux                     # a normal; flip it to point DOWN
+    if ny < 0:
+        nx, ny = -nx, -ny
+    step = max(0.5, float(f.tick_step_mm))
+    tick = max(0.2, float(f.tick_mm))
+    depth = max(0.5, float(f.band_mm))
+    mode = f.ground or "ticks"
+    if mode == "band":
+        col = QColor(f.fill_color)
+        col.setAlphaF(0.6)
+        painter.save()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(col))
+        painter.drawPolygon(QPolygonF([
+            a, b, QPointF(b.x() + nx * depth, b.y() + ny * depth),
+            QPointF(a.x() + nx * depth, a.y() + ny * depth)]))
+        painter.restore()
+        return
+    # 45° strokes: from the line, down and BACK along it (the classic
+    # earth ticks lean against the direction of travel). A hatch band is
+    # the same strokes, longer, clipped to the band and closed underneath.
+    pen = QPen(QColor(f.color))
+    pen.setWidthF(max(0.1, f.stroke_mm * 0.6))
+    pen.setCapStyle(Qt.RoundCap)
+    painter.save()
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    if mode == "hatch":
+        band = QPolygonF([
+            a, b, QPointF(b.x() + nx * depth, b.y() + ny * depth),
+            QPointF(a.x() + nx * depth, a.y() + ny * depth)])
+        painter.setClipRect(painter.clipBoundingRect()
+                            if painter.hasClipping() else
+                            QRectF(-1e6, -1e6, 2e6, 2e6))
+        from PySide6.QtGui import QPainterPath
+        path = QPainterPath()
+        path.addPolygon(band)
+        painter.setClipPath(path, Qt.IntersectClip)
+        reach = depth * _math.sqrt(2.0)      # a 45° stroke spanning the band
+        t = -depth
+        while t < length + depth:
+            x0, y0 = a.x() + ux * t, a.y() + uy * t
+            painter.drawLine(QPointF(x0, y0), QPointF(
+                x0 + (nx - ux) * reach / _math.sqrt(2.0),
+                y0 + (ny - uy) * reach / _math.sqrt(2.0)))
+            t += step
+        painter.restore()
+        painter.save()
+        painter.setPen(pen)
+        painter.drawLine(QPointF(a.x() + nx * depth, a.y() + ny * depth),
+                         QPointF(b.x() + nx * depth, b.y() + ny * depth))
+        painter.restore()
+        return
+    t = step / 2.0
+    k = tick / _math.sqrt(2.0)
+    while t <= length:
+        x0, y0 = a.x() + ux * t, a.y() + uy * t
+        painter.drawLine(QPointF(x0, y0),
+                         QPointF(x0 + (nx - ux) * k, y0 + (ny - uy) * k))
+        t += step
+    painter.restore()
 
 
 def paint_cota_mm(painter: QPainter, ct: CotaItem) -> None:
@@ -2177,6 +2255,17 @@ class LeyendaItem(_SheetItem):
 
 
 class FormaCanvasItem(_SheetItem):
+    def boundingRect(self) -> QRectF:
+        r = super().boundingRect()
+        m = self.model
+        if m.kind == "terreno":
+            # the ground hangs under the line, outside the item's box
+            below = max(m.tick_mm, m.band_mm) + 1.0
+            r.setBottom(r.bottom() + below)
+            r.setLeft(r.left() - below)
+            r.setRight(r.right() + below)
+        return r
+
     def paint(self, painter, option, widget=None) -> None:
         paint_forma_mm(painter, self.model)
         self._paint_selection(painter)
@@ -2741,8 +2830,8 @@ class ComposerCanvasView(QGraphicsView):
     #: Frames, text blocks, images etc. place freely — computing the snap
     #: set for them froze the composer on photogrammetry-scale models.
     _GEOM_SNAP_TOOLS = frozenset(
-        ("cota", "cota_cadena", "linea", "flecha", "rect", "elipse",
-         "poligono", "etiqueta", "nivel"))
+        ("cota", "cota_cadena", "linea", "flecha", "terreno", "rect",
+         "elipse", "poligono", "etiqueta", "nivel"))
 
     def _snapped(self, pos):
         """Snap *pos* (scene mm) to the nearest frame geometry point when a
@@ -3599,6 +3688,10 @@ class ComposerWindow(QMainWindow):
          "Add a terrain profile along a traced path (two clicks or drag)", True),
         ("linea", "line", "Draw a line (two clicks or drag)", True),
         ("flecha", "comp_flecha", "Draw an arrow (two clicks or drag)", True),
+        ("terreno", "comp_terreno",
+         "Draw a ground line: the terrain of an elevation, with earth "
+         "ticks, a hatched band or a filled band under it (two clicks or "
+         "drag)", True),
         ("rect", "rectangle", "Draw a rectangle (two clicks or drag)", True),
         ("elipse", "circle", "Draw an ellipse (two clicks or drag)", True),
         ("poligono", "polygon", "Draw a polygon (two clicks or drag)", True),
@@ -3729,14 +3822,22 @@ class ComposerWindow(QMainWindow):
             item = PerfilTerreno(x_mm=x, y_mm=y, w_mm=max(w, 80.0),
                                  h_mm=max(h, 40.0),
                                  path_index=self._perfil_default_path(paths))
-        elif mode in ("linea", "flecha", "rect", "elipse", "poligono"):
+        elif mode in ("linea", "flecha", "terreno", "rect", "elipse",
+                      "poligono"):
             kind = mode
             invert = (x1 < x0) != (y1 < y0)
-            if kind in ("linea", "flecha"):
+            if kind in ("linea", "flecha", "terreno"):
                 # a line's box legitimately degenerates to zero in one
                 # axis — clamping tilted every snapped horizontal by 2 mm
                 item = FormaItem(kind=kind, x_mm=x, y_mm=y,
                                  w_mm=w, h_mm=h, invert=invert)
+                if kind == "terreno":
+                    # a ground line reads as ground: a heavier pen and the
+                    # sheet's remembered look
+                    item.stroke_mm = 0.5
+                    for k, v in (getattr(self, "_last_ground_style", None)
+                                 or {}).items():
+                        setattr(item, k, v)
             else:
                 item = FormaItem(kind=kind, x_mm=x, y_mm=y,
                                  w_mm=max(w, 2.0), h_mm=max(h, 2.0))
@@ -4457,6 +4558,36 @@ class ComposerWindow(QMainWindow):
         self.forma_invert = QCheckBox(tr("Flip diagonal"))
         self.forma_invert.toggled.connect(self._on_forma_props)
         form.addRow("", self.forma_invert)
+        # ground line
+        self.forma_ground = QComboBox()
+        for label, key in ((tr("Earth ticks"), "ticks"),
+                           (tr("Hatched band"), "hatch"),
+                           (tr("Filled band"), "band")):
+            self.forma_ground.addItem(label, key)
+        self.forma_ground.setToolTip(tr(
+            "What hangs under the ground line: the classic 45° earth "
+            "ticks, a 45° hatched band, or a translucent band in the fill "
+            "colour."))
+        self.forma_ground.currentIndexChanged.connect(self._on_forma_props)
+        form.addRow(tr("Ground"), self.forma_ground)
+        self.forma_tick = QDoubleSpinBox()
+        self.forma_tick.setRange(0.5, 20.0)
+        self.forma_tick.setSingleStep(0.5)
+        self.forma_tick.setSuffix(" mm")
+        self.forma_tick.valueChanged.connect(self._on_forma_props)
+        form.addRow(tr("Tick length"), self.forma_tick)
+        self.forma_tick_step = QDoubleSpinBox()
+        self.forma_tick_step.setRange(0.5, 30.0)
+        self.forma_tick_step.setSingleStep(0.5)
+        self.forma_tick_step.setSuffix(" mm")
+        self.forma_tick_step.valueChanged.connect(self._on_forma_props)
+        form.addRow(tr("Tick spacing"), self.forma_tick_step)
+        self.forma_band = QDoubleSpinBox()
+        self.forma_band.setRange(1.0, 100.0)
+        self.forma_band.setSingleStep(1.0)
+        self.forma_band.setSuffix(" mm")
+        self.forma_band.valueChanged.connect(self._on_forma_props)
+        form.addRow(tr("Band depth"), self.forma_band)
         return w
 
     def _forma_row_visible(self, widget, visible: bool) -> None:
@@ -5518,6 +5649,7 @@ class ComposerWindow(QMainWindow):
             elif isinstance(item, FormaCanvasItem):
                 fm = item.model
                 fillable = fm.kind in ("rect", "elipse", "poligono")
+                ground = fm.kind == "terreno"
                 self.forma_stroke.setValue(fm.stroke_mm)
                 self.forma_fill.setChecked(fm.fill)
                 self.forma_invert.setChecked(fm.invert)
@@ -5528,13 +5660,28 @@ class ComposerWindow(QMainWindow):
                 self.forma_fill_btn.setStyleSheet(
                     f"background: {fm.fill_color};")
                 self.forma_invert.setVisible(
-                    fm.kind in ("linea", "flecha"))
+                    fm.kind in ("linea", "flecha", "terreno"))
                 self.forma_fill.setVisible(fillable)
                 self._forma_row_visible(self.forma_radius,
                                         fm.kind == "rect")
                 self._forma_row_visible(self.forma_sides,
                                         fm.kind == "poligono")
-                self._forma_row_visible(self.forma_fill_btn, fillable)
+                gi = self.forma_ground.findData(fm.ground or "ticks")
+                self.forma_ground.setCurrentIndex(max(0, gi))
+                self.forma_tick.setValue(fm.tick_mm)
+                self.forma_tick_step.setValue(fm.tick_step_mm)
+                self.forma_band.setValue(fm.band_mm)
+                self._forma_row_visible(self.forma_ground, ground)
+                self._forma_row_visible(self.forma_tick,
+                                        ground and fm.ground == "ticks")
+                self._forma_row_visible(self.forma_tick_step,
+                                        ground and fm.ground != "band")
+                self._forma_row_visible(self.forma_band,
+                                        ground and fm.ground != "ticks")
+                # the fill colour is the band's colour
+                self._forma_row_visible(
+                    self.forma_fill_btn,
+                    fillable or (ground and fm.ground == "band"))
                 self.props.setCurrentIndex(8)
             elif isinstance(item, CotaCanvasItem):
                 self.cota_scale.setCurrentText(f"1:{item.model.scale_n:g}")
@@ -7737,11 +7884,26 @@ class ComposerWindow(QMainWindow):
         if self._updating or not isinstance(item, FormaCanvasItem):
             return
         item.prepareGeometryChange()
-        self._panel_edit(item, {"stroke_mm": self.forma_stroke.value(),
-                                "fill": self.forma_fill.isChecked(),
-                                "invert": self.forma_invert.isChecked(),
-                                "radius_mm": self.forma_radius.value(),
-                                "sides": int(self.forma_sides.value())})
+        changes = {"stroke_mm": self.forma_stroke.value(),
+                   "fill": self.forma_fill.isChecked(),
+                   "invert": self.forma_invert.isChecked(),
+                   "radius_mm": self.forma_radius.value(),
+                   "sides": int(self.forma_sides.value())}
+        if item.model.kind == "terreno":
+            changes.update({
+                "ground": self.forma_ground.currentData() or "ticks",
+                "tick_mm": self.forma_tick.value(),
+                "tick_step_mm": self.forma_tick_step.value(),
+                "band_mm": self.forma_band.value()})
+            # the next ground line of this sheet starts with this look
+            self._last_ground_style = {
+                k: changes[k] for k in ("ground", "tick_mm",
+                                        "tick_step_mm", "band_mm")}
+            self._last_ground_style["stroke_mm"] = changes["stroke_mm"]
+        mode_before = item.model.ground
+        self._panel_edit(item, changes)
+        if item.model.kind == "terreno" and item.model.ground != mode_before:
+            self.on_selection_changed()   # rows come and go with the mode
 
     def _on_cota_props(self, *_a) -> None:
         item = self._selected_item()
@@ -7987,6 +8149,7 @@ class ComposerWindow(QMainWindow):
             return model.title or tr("Legend")
         if isinstance(model, FormaItem):
             return {"linea": tr("Line"), "flecha": tr("Arrow"),
+                    "terreno": tr("Ground line"),
                     "rect": tr("Rectangle"), "elipse": tr("Ellipse"),
                     "poligono": tr("Polygon")}.get(model.kind, model.kind)
         if isinstance(model, CotaItem):

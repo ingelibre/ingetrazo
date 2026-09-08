@@ -755,6 +755,13 @@ def _comp_flecha(p, ink):
     p.drawLine(QPointF(38, 10), QPointF(35, 22))
 
 
+def _comp_terreno(p, ink):
+    # A ground line with the earth ticks hanging under it.
+    p.drawLine(QPointF(6, 24), QPointF(42, 24))
+    for x in (10, 17, 24, 31, 38):
+        p.drawLine(QPointF(x, 24), QPointF(x - 5, 31))
+
+
 def _comp_etiqueta(p, ink):
     # A label: two text lines in a box, with a leader arrow to a point.
     p.drawRect(QRectF(20, 8, 22, 16))
@@ -828,6 +835,7 @@ _DRAW = {
     "comp_vista": _comp_vista, "comp_norte": _comp_norte,
     "comp_leyenda": _comp_leyenda, "comp_escala": _comp_escala,
     "comp_cajetin": _comp_cajetin, "comp_flecha": _comp_flecha,
+    "comp_terreno": _comp_terreno,
     "comp_etiqueta": _comp_etiqueta, "comp_perfil": _comp_perfil,
     "comp_nivel": _comp_nivel, "comp_llamada": _comp_llamada,
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,

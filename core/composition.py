@@ -478,7 +478,7 @@ class FormaItem:
     """A drawing shape: line, arrow, rectangle or ellipse. Lines/arrows run
     corner to corner of the box (``invert`` flips which diagonal)."""
 
-    kind: str = "rect"           # linea | flecha | rect | elipse | poligono
+    kind: str = "rect"           # linea | flecha | rect | elipse | poligono | terreno
     x_mm: float = 20.0
     y_mm: float = 20.0
     w_mm: float = 40.0
@@ -493,6 +493,16 @@ class FormaItem:
     sides: int = 6               # poligono: number of sides (3..24)
     color: str = "#1e242c"       # stroke colour
     fill_color: str = "#e2e8ee"  # fill colour (when fill is on)
+    # terreno — the ground line of an elevation, drawn like ``linea`` with
+    # the drafting convention under it (Marco, 2026-09-08, the Yanque arch:
+    # «de esta línea para abajo es el terreno»): ``ticks`` = short 45°
+    # strokes hanging from the line, ``hatch`` = a hatched band, ``band``
+    # = a filled translucent band. ``invert`` picks the diagonal, like a
+    # line; the ground is always UNDER the line (positive page y).
+    ground: str = "ticks"        # ticks | hatch | band
+    tick_mm: float = 2.5         # stroke length (ticks / hatch band depth)
+    tick_step_mm: float = 3.0    # spacing along the line
+    band_mm: float = 6.0         # band depth (hatch / band)
 
 
 @dataclass(eq=False)
