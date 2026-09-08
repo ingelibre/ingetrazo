@@ -1,7 +1,7 @@
 # Ejemplos
 
 Cuatro documentos reales, dibujados con IngeTrazo para la remodelación de la
-plaza de Yanque (Caylloma, Arequipa, 2026) por Marco Sumari Tellez. Ábrelos
+plaza de Yanque, distrito de Chichas (Arequipa, 2026) por Marco Sumari Tellez. Ábrelos
 con **Archivo ▸ Abrir** (o doble clic si tienes IngeTrazo instalado); tres
 de ellos traen su lámina A3 lista en **Archivo ▸ Compositor de láminas** y,
 al lado, el PDF que sale de ahí para que compares.
