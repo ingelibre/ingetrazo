@@ -97,6 +97,10 @@ class MarcoVista:
     #: "lineas" (kept for old documents; the UI maps them onto the
     #: Hidden line / Wireframe presets).
     style: str = "sombreado"
+    #: Paper background: render on white with no sky, whatever the style
+    #: says (Marco, 2026-09-08, the rebar in X-ray: «no me gusta que tenga
+    #: el fondo gris del model»). Off = the style's own background.
+    paper_bg: bool = False
     #: Draw the view title under the frame («Planta — 1:100»).
     show_title: bool = False
     #: How the title reads. "layout": LayOut's label — numbered bubble +

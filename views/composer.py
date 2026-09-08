@@ -4240,6 +4240,14 @@ class ComposerWindow(QMainWindow):
             tr("Vector (hidden lines removed)"), "vectorial")
         self.style_combo.currentIndexChanged.connect(self._on_frame_props)
         form.addRow(tr("Style"), self.style_combo)
+        self.paper_bg_check = QCheckBox(tr("Paper background"))
+        self.paper_bg_check.setToolTip(tr(
+            "Render on white with no sky or ground, whatever the style's "
+            "own background is — the paper shows through. Off, the frame "
+            "keeps the style's background (grey and sky for Default and "
+            "X-ray)."))
+        self.paper_bg_check.toggled.connect(self._on_frame_props)
+        form.addRow("", self.paper_bg_check)
         self.title_check = QCheckBox(tr("View title"))
         self.title_check.setToolTip(tr(
             "The label of the view: a numbered bubble, the title and the "
@@ -5498,6 +5506,8 @@ class ComposerWindow(QMainWindow):
                         "lineas": "style:Wireframe"}.get(f.style, f.style)
                 sidx = self.style_combo.findData(skey)
                 self.style_combo.setCurrentIndex(max(sidx, 0))
+                self.paper_bg_check.setChecked(
+                    bool(getattr(f, "paper_bg", False)))
                 self.title_check.setChecked(f.show_title)
                 tidx = self.title_style_combo.findData(
                     getattr(f, "title_style", "layout") or "layout")
@@ -7442,6 +7452,7 @@ class ComposerWindow(QMainWindow):
             "w_mm": self.fw_spin.value(),
             "h_mm": self.fh_spin.value(),
             "style": self.style_combo.currentData() or "sombreado",
+            "paper_bg": self.paper_bg_check.isChecked(),
             "show_title": self.title_check.isChecked(),
             "annotations": self.annot_check.isChecked(),
             "annot_text_mm": self.annot_mm_spin.value(),
@@ -8760,6 +8771,12 @@ class ComposerWindow(QMainWindow):
                         and frame.style.startswith("style:")):
                     from core.style import style_by_name
                     vp.style_override = style_by_name(frame.style[6:])
+                if getattr(frame, "paper_bg", False) and vp.plano_style is None:
+                    # the paper is the background: white, no sky/ground
+                    from dataclasses import replace
+                    vp.style_override = replace(
+                        vp._effective_style(), background=(1.0, 1.0, 1.0),
+                        sky=False)
                 w_px, h_px = frame.render_px(RENDER_DPI)
                 return vp.render_image(w_px, h_px, overlays=False)
             finally:

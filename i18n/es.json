@@ -1506,5 +1506,7 @@
  "What hangs under the ground line: the classic 45° earth ticks, a 45° hatched band, or a translucent band in the fill colour.": "Lo que cuelga bajo la línea de terreno: los clásicos pelos de tierra a 45°, una banda rayada a 45° o una banda translúcida del color de relleno.",
  "Tick length": "Largo de los pelos",
  "Tick spacing": "Separación",
- "Band depth": "Alto de la banda"
+ "Band depth": "Alto de la banda",
+ "Paper background": "Fondo del papel",
+ "Render on white with no sky or ground, whatever the style's own background is — the paper shows through. Off, the frame keeps the style's background (grey and sky for Default and X-ray).": "Renderiza sobre blanco, sin cielo ni suelo, sea cual sea el fondo del estilo: se ve el papel. Desactivado, el marco conserva el fondo del estilo (gris con cielo en Predeterminado y Rayos X)."
 }

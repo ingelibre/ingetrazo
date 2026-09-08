@@ -7,6 +7,12 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Añadido
+- **«Fondo del papel» en los marcos de vista.** Una casilla bajo el estilo
+  del marco: renderiza sobre blanco y sin cielo ni suelo, sea cual sea el
+  fondo del estilo elegido. Antes un marco en Rayos X (o Predeterminado)
+  traía el gris y el cielo del modelo a la lámina (Marco, 2026-09-08, el
+  acero del arco en Rayos X: «no me gusta que tenga el fondo gris del
+  model»). Desactivada, el marco conserva el fondo del estilo.
 - **Línea de terreno en el compositor.** Una forma nueva junto a la línea
   y la flecha: el suelo de una elevación con lo que cuelga por debajo
   según la convención de dibujo — pelos de tierra a 45°, banda rayada o
