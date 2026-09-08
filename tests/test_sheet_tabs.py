@@ -257,3 +257,36 @@ def test_the_composer_steps_aside_only_if_the_model_never_became_active(monkeypa
         assert comp.isVisible()
     finally:
         _close(win)
+
+
+def test_under_windows_the_composer_steps_aside_at_once_when_it_covers_the_model(monkeypatch):
+    """Win32 keeps an owned window above its owner: the model window gets
+    activated but stays covered, so no activation check can help — the
+    composer hides right away when the frames overlap, and stays when they
+    do not (two monitors)."""
+    win = _window(monkeypatch)
+    try:
+        win.show()
+        win._sheet_tabs.click(1)
+        comp = win._composer
+        monkeypatch.setattr(type(comp), "_owner_stays_below",
+                            staticmethod(lambda: True))
+        # The model window DID become active — Windows does that — yet the
+        # composer covers it.
+        monkeypatch.setattr(type(win), "isActiveWindow", lambda self: True)
+        monkeypatch.setattr(type(comp), "isActiveWindow", lambda self: False)
+        monkeypatch.setattr(type(comp), "_covers", lambda self, other: True)
+        comp._sheet_tabs.click(0)                        # «Model»
+        assert not comp.isVisible()                      # no grace period
+        win._sheet_tabs.click(1)                         # …and comes back
+        assert comp.isVisible()
+        # Side by side (another monitor): nothing to uncover, it stays.
+        monkeypatch.setattr(type(comp), "_covers", lambda self, other: False)
+        comp._sheet_tabs.click(0)
+        import time
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 0.5:
+            _app.processEvents()
+        assert comp.isVisible()
+    finally:
+        _close(win)

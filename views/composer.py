@@ -5152,7 +5152,16 @@ class ComposerWindow(QMainWindow):
         Flatpak: «quiero cambiar con los botones de abajo, no cambia»).
         So if the model window has not become active shortly after, this
         window steps out of the way by hiding; a sheet tab in the model
-        window brings it back exactly as it was."""
+        window brings it back exactly as it was.
+
+        Under Windows the opposite happens and the outcome is the same:
+        this window is OWNED by the model window (it is its Qt parent),
+        and Win32 keeps an owned window above its owner for good — the
+        model window does become active, but stays covered by this one
+        (Marco, 0.3.14 Windows: «cuando quería cambiar al modelo con los
+        botones de abajo no podía»). No activation check can tell, so
+        there this window steps aside at once whenever it overlaps the
+        model window."""
         win = self._window
         win.show()
         win.raise_()
@@ -5160,8 +5169,22 @@ class ComposerWindow(QMainWindow):
         self._refresh_sheet_tabs()
         self._handover_seq = getattr(self, "_handover_seq", 0) + 1
         seq = self._handover_seq
+        if self._owner_stays_below() and self._covers(win):
+            self.hide()
+            return
         QTimer.singleShot(self._HANDOVER_MS,
                           lambda: self._check_handover(seq))
+
+    @staticmethod
+    def _owner_stays_below() -> bool:
+        """Whether the platform keeps an owned window above its owner, so
+        raising the model window can never uncover it."""
+        import sys
+        return sys.platform.startswith("win")
+
+    def _covers(self, other) -> bool:
+        """Whether this window's frame overlaps ``other``'s on screen."""
+        return self.frameGeometry().intersects(other.frameGeometry())
 
     def _check_handover(self, seq: int) -> None:
         win = self._window

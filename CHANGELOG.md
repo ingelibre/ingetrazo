@@ -6,6 +6,15 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Corregido
+- **«Modelo» desde el compositor no cambiaba de ventana en Windows.** El
+  compositor es una ventana hija de la principal y Win32 mantiene siempre
+  una ventana hija por encima de su dueña: la principal se activaba, pero
+  seguía tapada (Marco, 0.3.14 en Windows: «cuando quería cambiar al
+  modelo con los botones de abajo no podía»). Ahí el compositor se aparta
+  al instante cuando tapa a la principal; en dos monitores, lado a lado,
+  se queda.
+
 ## [0.3.14] — 2026-09-07
 
 **La release de la primera tarde con la 0.3.13.** Marco la instaló desde
