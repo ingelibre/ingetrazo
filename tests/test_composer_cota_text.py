@@ -131,3 +131,56 @@ def test_beside_puts_a_horizontal_label_whole_to_one_side_of_a_vertical_cota():
     ct2, img2 = render("aside_below")
     ox2 = cota_aside_frame(ct2)[0]
     assert ox2 == -ox                                        # the other side
+
+
+def test_text_along_puts_the_label_outside_an_end_and_the_drag_moves_only_it():
+    """Marco, 2026-09-08: «me refería al lado de la cota, ya sea derecho o
+    izquierdo; es más, en SketchUp LayOut se puede mover el texto de la
+    cota». The label goes outside the start / end of the line, or wherever
+    the mouse drags it; the line never moves; the fields persist."""
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtWidgets import QGraphicsScene, QGraphicsSceneMouseEvent
+    from core.composition import Composicion, CotaItem
+    from views.composer import (CotaCanvasItem, cota_label_anchor,
+                                cota_label_is_automatic)
+
+    class _Comp:
+        def note_drag_start(self):
+            pass
+
+        def on_selection_changed(self):
+            pass
+
+    base = dict(dx_mm=40.0, dy_mm=0.0, sep_mm=-6.0, scale_n=50.0,
+                text_mm=3.0, text_align="horizontal")
+    mid = cota_label_anchor(CotaItem(**base))
+    assert mid == (20.0, -6.0)
+    end = cota_label_anchor(CotaItem(text_along="end", **base))
+    start = cota_label_anchor(CotaItem(text_along="start", **base))
+    assert end[1] == -6.0 and start[1] == -6.0            # on the line's level
+    assert end[0] > 40.0 + 2.0 and start[0] < 0.0 - 2.0   # beyond the points
+    # the hit strip follows: a click at the label past the end reaches it
+    scene = QGraphicsScene()
+    item = CotaCanvasItem(_Comp(), CotaItem(text_along="end", **base))
+    scene.addItem(item)
+    assert item.shape().contains(QPointF(end[0], end[1] - 2.5))
+    assert not item.shape().contains(QPointF(20.0, -10.5))   # past the line grip
+    # dragging the label moves the text alone
+    press = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMousePress)
+    press.setPos(QPointF(end[0], end[1] - 2.5))
+    press.setButton(Qt.LeftButton)
+    item.mousePressEvent(press)
+    assert item._text_dragging
+    move = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMouseMove)
+    move.setPos(QPointF(end[0] + 5.0, end[1] - 2.5 + 7.0))
+    item.mouseMoveEvent(move)
+    m = item.model
+    assert (m.text_dx_mm, m.text_dy_mm) == (5.0, 7.0)
+    assert (m.dx_mm, m.dy_mm, m.sep_mm) == (40.0, 0.0, -6.0)   # line untouched
+    assert not cota_label_is_automatic(m)
+    assert cota_label_anchor(m) == (end[0] + 5.0, end[1] + 7.0)
+    # …and persists
+    comp = Composicion()
+    comp.cotas = [m]
+    again = Composicion.from_dict(comp.to_dict()).cotas[0]
+    assert (again.text_along, again.text_dx_mm, again.text_dy_mm) == ("end", 5.0, 7.0)

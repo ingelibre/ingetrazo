@@ -17,12 +17,18 @@ follow [SemVer](https://semver.org).
   probarlo en todas: «tal vez eso solo para lo que es acotar»).
 
 ### Añadido
-- **Texto de la cota «al costado de la línea»** (y «al otro costado»),
-  además de encima, centrado y debajo: la etiqueta se aparta de la línea
-  la separación de texto y queda entera a un lado, sin cruzarla; en una
-  cota vertical con texto horizontal cae a su izquierda o derecha y la
-  línea sigue entera (Marco, 2026-09-08: «sería bueno que la posición de
-  texto en acotar también haya una opción para ponerla a un costado»).
+- **El texto de la cota se mueve como en LayOut.** Se arrastra con el
+  ratón agarrándolo por las letras y se queda donde lo dejes; la línea
+  de cota no se mueve (arrastrar la línea sigue moviendo la cota entera).
+  En el panel, «A lo largo de la línea» lo pone sobre el centro, fuera
+  del inicio o fuera del final (el texto al lado de la cota, a izquierda
+  o derecha), y «Devolver el texto a su sitio» deshace el arrastre. Un
+  texto centrado solo abre la línea cuando está en su sitio automático
+  (Marco, 2026-09-08: «me refería al lado de la cota, ya sea derecho o
+  izquierdo; es más, en SketchUp LayOut se puede mover el texto de la
+  cota»). Además, «Posición del texto» gana «al costado de la línea» y
+  «al otro costado»: la etiqueta entera a un lado de la línea sin
+  cruzarla, útil en cotas verticales con texto horizontal.
 - **Las flechas fijan el plano de dibujo del círculo, polígono,
   rectángulo y arcos**, como en SketchUp: antes del primer clic, → fija
   el plano normal a X (YZ), ← el normal a Y (XZ), ↑ el normal a Z (XY);

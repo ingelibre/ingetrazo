@@ -728,6 +728,14 @@ class CotaItem:
     #: relative to the dimension line, whether it follows the line or stays
     #: horizontal, and its own colour ("" = the line colour).
     text_pos: str = "above"      # above | centered | below | aside | aside_below
+    # Along the line: the label over the middle, or OUTSIDE the start /
+    # end of the dimension line (AutoCAD's outside placement; Marco,
+    # 2026-09-08: «al lado de la cota, ya sea derecho o izquierdo»).
+    text_along: str = "middle"   # middle | start | end
+    # LayOut: the text box is dragged freely by the mouse — this is that
+    # drag, page mm from the automatic spot (0, 0 = automatic).
+    text_dx_mm: float = 0.0
+    text_dy_mm: float = 0.0
     text_align: str = "aligned"  # aligned | horizontal
     text_color: str = ""
     text_bg: str = ""            # "" = no background behind the label

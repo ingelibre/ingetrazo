@@ -1058,6 +1058,48 @@ def _paint_ground_mm(painter: QPainter, f: FormaItem, a: QPointF,
     painter.restore()
 
 
+def cota_label_anchor(ct: CotaItem) -> tuple:
+    """The label's reference point in item space: the dimension line's
+    midpoint, moved outside its start or end when ``text_along`` says so,
+    plus the free drag (``text_dx_mm``/``text_dy_mm``) — LayOut lets the
+    text box be dragged anywhere, and the line stays put."""
+    import math as _math
+    nx, ny = ct.normal()
+    s = ct.sep_mm
+    mx, my = ct.dx_mm / 2 + nx * s, ct.dy_mm / 2 + ny * s
+    along = getattr(ct, "text_along", "middle") or "middle"
+    if along in ("start", "end"):
+        length = _math.hypot(ct.dx_mm, ct.dy_mm)
+        if length > 1e-9:
+            ux, uy = ct.dx_mm / length, ct.dy_mm / length
+            deg = _math.degrees(_math.atan2(ct.dy_mm, ct.dx_mm))
+            if deg > 90 or deg < -90:
+                deg += 180
+            horizontal = (getattr(ct, "text_align", "aligned")
+                          or "aligned") == "horizontal"
+            label = ct.label()
+            tw = len(label) * ct.text_mm * 0.62 + 2.0
+            th = ct.text_mm * 1.3 + 0.8
+            d = _math.radians(deg)
+            # the label box's shadow along the line
+            extent = (tw * abs(_math.cos(d)) + th * abs(_math.sin(d))
+                      if horizontal else tw)
+            shift = length / 2 + extent / 2 + 1.0
+            if along == "start":
+                shift = -shift
+            mx, my = mx + ux * shift, my + uy * shift
+    return (mx + float(getattr(ct, "text_dx_mm", 0.0) or 0.0),
+            my + float(getattr(ct, "text_dy_mm", 0.0) or 0.0))
+
+
+def cota_label_is_automatic(ct: CotaItem) -> bool:
+    """Whether the label sits where the line's middle puts it — only then
+    may a centered label open the line around itself."""
+    return ((getattr(ct, "text_along", "middle") or "middle") == "middle"
+            and abs(float(getattr(ct, "text_dx_mm", 0.0) or 0.0)) < 1e-9
+            and abs(float(getattr(ct, "text_dy_mm", 0.0) or 0.0)) < 1e-9)
+
+
 def cota_aside_frame(ct: CotaItem) -> tuple:
     """Where a «beside the line» label sits: ``(ox, oy, deg, tw, th)`` —
     the label box's centre relative to the dimension line's midpoint
@@ -1117,7 +1159,7 @@ def paint_cota_mm(painter: QPainter, ct: CotaItem) -> None:
     mid = QPointF((a2.x() + b2.x()) / 2, (a2.y() + b2.y()) / 2)
     text_pos = getattr(ct, "text_pos", "above") or "above"
     length = _math.hypot(ct.dx_mm, ct.dy_mm)
-    if text_pos == "centered":
+    if text_pos == "centered" and cota_label_is_automatic(ct):
         # The label sits ON the line, which opens around it (LayOut's
         # "centered" text position). The opening is the label box's
         # shadow ALONG the line: a horizontal label on a vertical cota
@@ -1165,14 +1207,15 @@ def paint_cota_mm(painter: QPainter, ct: CotaItem) -> None:
                         pt.y() + tick * _math.sin(ang + _math.radians(45))))
     painter.save()
     tcol = QColor(ct.text_color) if getattr(ct, "text_color", "") else color
+    lx, ly = cota_label_anchor(ct)          # outside an end / dragged
     if text_pos in ("aside", "aside_below"):
         ox, oy, deg, _tw, th = cota_aside_frame(ct)
-        painter.translate(mid.x() + ox, mid.y() + oy)
+        painter.translate(lx + ox, ly + oy)
         painter.rotate(deg)
         rect = QRectF(-40, -th / 2, 80, th)
         align = Qt.AlignHCenter | Qt.AlignVCenter
     else:
-        painter.translate(mid)
+        painter.translate(lx, ly)
         deg = _math.degrees(ang)
         if deg > 90 or deg < -90:
             deg += 180                      # keep the label readable
@@ -2726,10 +2769,13 @@ class CotaCanvasItem(_SheetItem):
     def size_mm(self):
         return self.model.w_mm, self.model.h_mm
 
+    _text_dragging = False
+
     def hoverMoveEvent(self, event) -> None:
         if not getattr(self.model, "locked", False) and (
                 self._on_sep_handle(event.pos())
-                or self._on_resize_handle(event.pos())):
+                or self._on_resize_handle(event.pos())
+                or self._label_path().contains(event.pos())):
             self.setCursor(Qt.SizeAllCursor)
         else:
             self.unsetCursor()
@@ -2745,7 +2791,7 @@ class CotaCanvasItem(_SheetItem):
         with a few mm of slack — not the bounding box, which for a long
         oblique cota covers half the sheet and steals every click meant for
         the small cotas inside it (Marco, 2026-09-02)."""
-        from PySide6.QtGui import QPainterPath, QPainterPathStroker, QTransform
+        from PySide6.QtGui import QPainterPath, QPainterPathStroker
         m = self.model
         nx, ny = m.normal()
         s = m.sep_mm
@@ -2759,20 +2805,30 @@ class CotaCanvasItem(_SheetItem):
         stroker = QPainterPathStroker()
         stroker.setWidth(2.0 * _HANDLE_MM)
         path = stroker.createStroke(lines)
-        # The label strip above the dimension line, rotated with it.
+        path.addPath(self._label_path())
+        return path
+
+    def _label_path(self):
+        """The label's strip in item space — what a press must hit to drag
+        the TEXT alone (LayOut: «click and drag it by its selection box»),
+        as opposed to the lines, which drag the whole cota."""
+        from PySide6.QtGui import QPainterPath, QTransform
         import math as _math
+        m = self.model
         length = _math.hypot(m.dx_mm, m.dy_mm)
         w = min(80.0, length + 2 * m.text_mm)
         strip = QPainterPath()
         pos = getattr(m, "text_pos", "above") or "above"
-        mid = QPointF((a2.x() + b2.x()) / 2, (a2.y() + b2.y()) / 2)
+        lx, ly = cota_label_anchor(m)
         if pos in ("aside", "aside_below"):
             ox, oy, deg, tw, th = cota_aside_frame(m)
             strip.addRect(QRectF(-tw / 2 - 1.0, -th / 2 - 1.0,
                                  tw + 2.0, th + 2.0))
-            t = QTransform().translate(mid.x() + ox, mid.y() + oy).rotate(deg)
-            path.addPath(t.map(strip))
-            return path
+            t = QTransform().translate(lx + ox, ly + oy).rotate(deg)
+            return t.map(strip)
+        if (getattr(m, "text_along", "middle") or "middle") != "middle":
+            # outside an end the strip is the label itself, not the line
+            w = len(m.label()) * m.text_mm * 0.62 + 2.0
         if pos == "below":
             strip.addRect(QRectF(-w / 2, -1.0, w,
                                  m.offset_mm + m.text_mm * 1.3 + 2.0))
@@ -2787,16 +2843,22 @@ class CotaCanvasItem(_SheetItem):
             deg += 180
         if (getattr(m, "text_align", "aligned") or "aligned") == "horizontal":
             deg = 0.0
-        t = QTransform().translate(mid.x(), mid.y()).rotate(deg)
-        path.addPath(t.map(strip))
-        return path
+        t = QTransform().translate(lx, ly).rotate(deg)
+        return t.map(strip)
 
     def boundingRect(self) -> QRectF:
+        import math as _math
         m = self.model
         nx, ny = m.normal()
         pad = m.offset_mm + m.text_mm + 4
         if (getattr(m, "text_pos", "") or "") in ("aside", "aside_below"):
             pad += cota_aside_frame(m)[3]        # the label box stands off
+        if not cota_label_is_automatic(m):
+            # the label may sit outside an end or wherever it was dragged
+            lx, ly = cota_label_anchor(m)
+            mx, my = self._line_mid()
+            pad += _math.hypot(lx - mx, ly - my) + \
+                len(m.label()) * m.text_mm * 0.62 + 2.0
         xs = (0.0, m.dx_mm, nx * m.sep_mm, m.dx_mm + nx * m.sep_mm)
         ys = (0.0, m.dy_mm, ny * m.sep_mm, m.dy_mm + ny * m.sep_mm)
         return QRectF(min(xs) - pad, min(ys) - pad,
@@ -2813,6 +2875,15 @@ class CotaCanvasItem(_SheetItem):
                 and abs(pos.y() - my) <= _HANDLE_MM)
 
     def mouseMoveEvent(self, event) -> None:
+        if self._text_dragging:
+            # LayOut: the text box goes where the mouse takes it; the
+            # dimension line stays.
+            p0, dx0, dy0 = self._text_drag_origin
+            self.prepareGeometryChange()
+            self.model.text_dx_mm = dx0 + (event.pos().x() - p0.x())
+            self.model.text_dy_mm = dy0 + (event.pos().y() - p0.y())
+            self.update()
+            return
         if self._sep_dragging:
             nx, ny = self.model.normal()
             self.prepareGeometryChange()
@@ -2831,16 +2902,25 @@ class CotaCanvasItem(_SheetItem):
         note = getattr(self.composer, "note_drag_start", None)
         if note is not None:
             note()
-        self._press_state = {k: getattr(self.model, k)
+        self._press_state = {k: getattr(self.model, k, 0.0)
                              for k in ("x_mm", "y_mm", "dx_mm", "dy_mm",
                                        "sep_mm", "anchor_uid", "a_world",
-                                       "b_world")}
+                                       "b_world", "text_dx_mm",
+                                       "text_dy_mm")}
         locked = getattr(self.model, "locked", False)
         self._sep_dragging = (not locked
                               and self._on_sep_handle(event.pos()))
         self._resizing = (not locked and not self._sep_dragging
                           and self._on_resize_handle(event.pos()))
-        if self._sep_dragging or self._resizing:
+        self._text_dragging = (not locked and not self._sep_dragging
+                               and not self._resizing
+                               and self._label_path().contains(event.pos()))
+        if self._text_dragging:
+            self._text_drag_origin = (
+                QPointF(event.pos()),
+                float(getattr(self.model, "text_dx_mm", 0.0) or 0.0),
+                float(getattr(self.model, "text_dy_mm", 0.0) or 0.0))
+        if self._sep_dragging or self._resizing or self._text_dragging:
             event.accept()
             self.setSelected(True)
             return
@@ -2848,6 +2928,7 @@ class CotaCanvasItem(_SheetItem):
 
     def mouseReleaseEvent(self, event) -> None:
         self._sep_dragging = False
+        self._text_dragging = False
         # Moving the cota or one of its measured points BY HAND means the
         # user wants it off the geometry: break the model anchor (the next
         # reprojection would otherwise snap it right back). Undoable — the
@@ -4850,6 +4931,23 @@ class ComposerWindow(QMainWindow):
             self.cota_text_pos.addItem(label, key)
         self.cota_text_pos.currentIndexChanged.connect(self._on_cota_props)
         form.addRow(tr("Text position"), self.cota_text_pos)
+        self.cota_text_along = QComboBox()
+        for label, key in ((tr("Over the middle"), "middle"),
+                           (tr("Outside the start"), "start"),
+                           (tr("Outside the end"), "end")):
+            self.cota_text_along.addItem(label, key)
+        self.cota_text_along.setToolTip(tr(
+            "Where the label sits along the dimension line: over its "
+            "middle, or beyond its first or its second point (the text "
+            "beside the dimension, left or right)."))
+        self.cota_text_along.currentIndexChanged.connect(self._on_cota_props)
+        form.addRow(tr("Along the line"), self.cota_text_along)
+        self.cota_text_reset = QPushButton(tr("Put the text back"))
+        self.cota_text_reset.setToolTip(tr(
+            "The label can be dragged anywhere with the mouse (LayOut): "
+            "grab it by its text. This returns it to its automatic spot."))
+        self.cota_text_reset.clicked.connect(self._on_cota_text_reset)
+        form.addRow("", self.cota_text_reset)
         self.cota_text_align = QComboBox()
         for label, key in ((tr("Aligned to the line"), "aligned"),
                            (tr("Horizontal"), "horizontal")):
@@ -5881,6 +5979,11 @@ class ComposerWindow(QMainWindow):
                 pidx = self.cota_text_pos.findData(
                     getattr(item.model, "text_pos", "above") or "above")
                 self.cota_text_pos.setCurrentIndex(max(pidx, 0))
+                lidx = self.cota_text_along.findData(
+                    getattr(item.model, "text_along", "middle") or "middle")
+                self.cota_text_along.setCurrentIndex(max(lidx, 0))
+                self.cota_text_reset.setEnabled(
+                    not cota_label_is_automatic(item.model))
                 aidx = self.cota_text_align.findData(
                     getattr(item.model, "text_align", "aligned") or "aligned")
                 self.cota_text_align.setCurrentIndex(max(aidx, 0))
@@ -6627,8 +6730,8 @@ class ComposerWindow(QMainWindow):
     #: The look of each item kind — never its geometry or content.
     STYLE_FIELDS = {
         CotaItem: ("text_mm", "decimals", "units", "ends", "stroke_mm", "color",
-                   "offset_mm", "text_pos", "text_align", "text_color",
-                   "text_bg", "text_bg_opacity"),
+                   "offset_mm", "text_pos", "text_along", "text_align",
+                   "text_color", "text_bg", "text_bg_opacity"),
         TextoItem: ("size_pt", "bold", "italic", "underline", "family",
                     "color", "align", "bg_color", "bg_opacity"),
         FormaItem: ("stroke_mm", "color", "fill", "fill_color", "radius_mm"),
@@ -8110,10 +8213,28 @@ class ComposerWindow(QMainWindow):
             "ends": self.cota_ends.currentData() or "tick",
             "stroke_mm": self.cota_stroke.value(),
             "text_pos": self.cota_text_pos.currentData() or "above",
+            "text_along": self.cota_text_along.currentData() or "middle",
             "text_align": self.cota_text_align.currentData() or "aligned",
             "text_color": ("" if self.cota_text_same.isChecked()
                            else (item.model.text_color or item.model.color))})
         self._remember_cota_style(item.model)
+        self.cota_text_reset.setEnabled(
+            not cota_label_is_automatic(item.model))
+
+    def _on_cota_text_reset(self) -> None:
+        """Back to the automatic label spot after a mouse drag."""
+        item = self._selected_item()
+        if not isinstance(item, CotaCanvasItem):
+            return
+        item.prepareGeometryChange()
+        self._panel_edit(item, {"text_dx_mm": 0.0, "text_dy_mm": 0.0,
+                                "text_along": "middle"})
+        self._updating = True
+        try:
+            self.cota_text_along.setCurrentIndex(0)
+        finally:
+            self._updating = False
+        self.cota_text_reset.setEnabled(False)
 
     def _on_llamada_props(self, *_a) -> None:
         item = self._selected_item()
@@ -8264,8 +8385,9 @@ class ComposerWindow(QMainWindow):
     #: Style fields a new cota inherits from the last one edited (LayOut
     #: draws new dimensions with the current style settings).
     _COTA_STYLE_FIELDS = ("text_mm", "decimals", "ends", "stroke_mm",
-                          "color", "offset_mm", "text_pos", "text_align",
-                          "text_color", "text_bg", "text_bg_opacity", "units")
+                          "color", "offset_mm", "text_pos", "text_along",
+                          "text_align", "text_color", "text_bg",
+                          "text_bg_opacity", "units")
 
     def _remember_cota_style(self, model) -> None:
         """The last edited cota's look becomes the sheet's default for new
