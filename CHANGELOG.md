@@ -14,6 +14,14 @@ follow [SemVer](https://semver.org).
   lámina nueva (en un documento sin láminas, en la primera), desde las dos
   ventanas.
 
+### Cambiado
+- **Un marco de vista nuevo nace con el estilo «Arquitectónico»** — fondo
+  blanco, sin cielo, con aristas y perfiles: el aspecto de una lámina de
+  planos (Marco, 2026-09-07: «que el model view, cuando se abre por
+  defecto el compositor, sea el estilo de arquitectura»). Vale para la
+  lámina inicial, para el marco que se dibuja con la herramienta Vista y
+  para «Añadir marco»; los marcos ya guardados conservan su estilo.
+
 ### Corregido
 - **Cambiar de ventana con las pestañas de abajo en Wayland.** En Wayland
   una ventana no puede traer otra al frente: «Modelo» desde el compositor

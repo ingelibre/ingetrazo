@@ -66,6 +66,15 @@ def ortho_distance_for_height(model_h_m: float, fov_deg: float) -> float:
     return half / t
 
 
+#: The style a NEW model view is born with: the Architectural preset —
+#: white background, no sky, edges and profiles, the look of a plan sheet
+#: (Marco, 2026-09-07: «el model view, cuando se abre por defecto el
+#: compositor, que sea el estilo de arquitectura»). A frame's style stays
+#: whatever the document saved; this only decides the starting point of a
+#: frame the user has not styled yet.
+NEW_FRAME_STYLE = "style:Architectural"
+
+
 @dataclass
 class MarcoVista:
     """A model-view frame on the page.
@@ -806,7 +815,8 @@ class Composicion:
         """A frame filling the page inside the margins (the C1 starter)."""
         pw, ph = self.page_size_mm()
         m = self.margin_mm
-        return MarcoVista(x_mm=m, y_mm=m, w_mm=pw - 2 * m, h_mm=ph - 2 * m)
+        return MarcoVista(x_mm=m, y_mm=m, w_mm=pw - 2 * m, h_mm=ph - 2 * m,
+                          style=NEW_FRAME_STYLE)
 
     def default_cajetin(self) -> Cajetin:
         """A title block sized to the page, docked to the bottom-right

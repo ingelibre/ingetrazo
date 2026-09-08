@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
                                QStackedWidget, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
-from core.composition import (COMMON_SCALES, PAPER_SIZES_MM, RENDER_DPI,
+from core.composition import (COMMON_SCALES, NEW_FRAME_STYLE, PAPER_SIZES_MM, RENDER_DPI,
                               AddItemCommand, BarraEscala, Cajetin,
                               ComposerHistory, Composicion, CompoundCommand, CotaAngularItem, CotaItem,
                               EditItemCommand, EtiquetaItem, expand_fields, set_field_context, FlechaNorte, FormaItem, LlamadaItem, NivelItem,
@@ -3547,7 +3547,8 @@ class ComposerWindow(QMainWindow):
         item = None
         if mode == "vista":
             item = MarcoVista(x_mm=x, y_mm=y,
-                              w_mm=max(w, 60.0), h_mm=max(h, 50.0))
+                              w_mm=max(w, 60.0), h_mm=max(h, 50.0),
+                              style=NEW_FRAME_STYLE)
         elif mode == "texto":
             item = TextoItem(x_mm=x0, y_mm=y0, text=tr("Text"))
         elif mode == "etiqueta":
@@ -6951,7 +6952,8 @@ class ComposerWindow(QMainWindow):
         pw, ph = self.comp.page_size_mm()
         f = MarcoVista(x_mm=self.comp.margin_mm + 5 * len(self.comp.frames),
                        y_mm=self.comp.margin_mm + 5 * len(self.comp.frames),
-                       w_mm=min(120.0, pw / 2), h_mm=min(90.0, ph / 2))
+                       w_mm=min(120.0, pw / 2), h_mm=min(90.0, ph / 2),
+                       style=NEW_FRAME_STYLE)
         f.z = self._next_z()
         self.history.execute(AddItemCommand(self.comp, f))
 

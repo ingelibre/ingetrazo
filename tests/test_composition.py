@@ -52,6 +52,7 @@ class TestComposicion:
         assert f.x_mm == f.y_mm == 10.0
         assert f.w_mm == pw - 20.0
         assert f.h_mm == ph - 20.0
+        assert f.style == "style:Architectural"     # a plan sheet's look, from the start
 
     def test_frame_render_px_follows_dpi(self):
         f = MarcoVista(w_mm=254.0, h_mm=127.0)
