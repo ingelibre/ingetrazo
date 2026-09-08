@@ -64,7 +64,7 @@ def test_label_tool_places_anchored_and_follows_the_frame(monkeypatch):
         assert (et.x_mm, et.y_mm) == (90.0, 30.0)
         assert (et.ax_mm, et.ay_mm) == (-40.0, 30.0)
         assert et.anchored and et.anchor_uid == frame.uid and et.a_world == [1, 2, 0.5]
-        assert comp.tool_mode == "etiqueta"               # stays armed
+        assert comp.tool_mode == "select"                 # only cotas stay armed
         assert comp._item_label(et).startswith("Label")   # "Etiqueta" in es
         # The frame moves 10 mm right: the pointed-at spot follows the model
         # (page point shifts), the text block stays where it was.

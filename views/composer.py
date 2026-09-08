@@ -3838,16 +3838,15 @@ class ComposerWindow(QMainWindow):
             self._set_tool_mode("select")
             self._tool_actions["select"].setChecked(True)
 
-    #: Tools that stay armed after placing, for the next one — SketchUp /
-    #: LayOut / AutoCAD keep a drawing command running until Esc or the
-    #: Select tool (Marco, 2026-09-08: «acoto una medida bien, pero quiero
-    #: seguir acotando… me gustaría que siga activo ese comando a no ser
-    #: que apriete Esc o haga clic en el icono del cursor»). The one-of-a-
-    #: kind items (a view, the title block, the scale bar, the north, the
-    #: legend, an image, a profile) still hand back to Select.
-    STICKY_TOOLS = frozenset((
-        "cota", "cota_ang", "linea", "flecha", "terreno", "rect", "elipse",
-        "poligono", "texto", "etiqueta", "nivel", "llamada"))
+    #: Tools that stay armed after placing, for the next one: ONLY the
+    #: dimensions — AutoCAD keeps a dimension command running until Esc or
+    #: the Select tool (Marco, 2026-09-08: «acoto una medida bien, pero
+    #: quiero seguir acotando… que siga activo ese comando a no ser que
+    #: apriete Esc o haga clic en el icono del cursor»). Every other tool
+    #: hands back to Select after one item — the same afternoon, having
+    #: tried it on all of them: «creo que fue mala idea repetir el
+    #: comando, tal vez eso solo para lo que es acotar».
+    STICKY_TOOLS = frozenset(("cota", "cota_ang"))
 
     def _after_place(self) -> None:
         """The tool just placed something: keep it armed if it is one of

@@ -877,7 +877,7 @@ class TestStickyTools:
         self._host = host
         return composer
 
-    def test_cota_and_line_stay_armed_the_scale_bar_does_not(self):
+    def test_cotas_stay_armed_every_other_tool_does_not(self):
         composer = self._composer()
         composer._tool_actions["cota"].trigger()
         composer.place_tool(10.0, 10.0, 60.0, 10.0, sep_mm=5.0)
@@ -885,10 +885,15 @@ class TestStickyTools:
         assert len(composer.comp.cotas) == 2
         assert composer.tool_mode == "cota"
         assert composer._tool_actions["cota"].isChecked()
-        composer._tool_actions["escala"].trigger()
-        composer.place_tool(10.0, 50.0, 10.0, 50.0)
+        # a line hands back to Select after one (Marco tried the sticky
+        # version on every tool: «tal vez eso solo para lo que es acotar»)
+        composer._tool_actions["linea"].trigger()
+        composer.place_tool(10.0, 50.0, 60.0, 50.0)
         assert composer.tool_mode == "select"
         assert composer._tool_actions["select"].isChecked()
+        composer._tool_actions["escala"].trigger()
+        composer.place_tool(10.0, 70.0, 10.0, 70.0)
+        assert composer.tool_mode == "select"
 
     def test_esc_cancels_the_placement_first_then_leaves_the_tool(self):
         from PySide6.QtGui import QKeyEvent
