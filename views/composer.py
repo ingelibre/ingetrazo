@@ -7737,6 +7737,14 @@ class ComposerWindow(QMainWindow):
             "border": self.frame_border_check.isChecked(),
             "border_mm": self.frame_border_mm.value()}
         m = item.model
+        if changes["view_key"] != m.view_key:
+            # A new source is a new camera: the in-place view edits (orbit,
+            # pan, zoom inside the frame) belonged to the old one and would
+            # override the scene just picked, so the picture never changed
+            # (Marco, 2026-09-08: «la escena 1 como que no me actualiza la
+            # vista»).
+            changes.update({"cam_target": None, "cam_yaw": None,
+                            "cam_pitch": None})
         # The title and the border are paint-only: a vector frame keeps its
         # drawing instead of going blank until the next Update. The paper
         # overlay's own switches only redo the overlay (cheap).

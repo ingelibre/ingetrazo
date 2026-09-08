@@ -221,3 +221,36 @@ def test_the_view_edit_survives_each_zoom_and_pan_commit(monkeypatch):
         comp.close()
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_picking_another_view_source_drops_the_frame_camera_edits(monkeypatch):
+    """Marco, 2026-09-08: «la escena 1 como que no me actualiza la vista» —
+    a frame orbited in place keeps cam_yaw/cam_pitch/cam_target, and those
+    override whatever scene is picked next, so the picture never changed.
+    Picking a new source now starts from that source's own camera."""
+    from PySide6.QtWidgets import QWidget
+    from core.saved_views import SavedView
+    from tests.test_composer_canvas import _FakeViewport
+    from views.composer import ComposerWindow, FrameItem
+    host = QWidget()
+    host.viewport = _FakeViewport()
+    monkeypatch.setattr(ComposerWindow, "render_frame", lambda self, f: None)
+    composer = ComposerWindow(host)
+    frame = composer.comp.frames[0]
+    frame.view_key = "std:front"
+    frame.cam_yaw, frame.cam_pitch, frame.cam_target = -1.4, 0.5, [2.0, 0.2, 2.0]
+    sv = SavedView(name="Escena 1")
+    host.viewport.scene.saved_views.append(sv)
+    composer._rebuild_canvas()
+    item = next(i for i in composer.canvas.items()
+                if isinstance(i, FrameItem) and i.model is frame)
+    item.setSelected(True)
+    composer.on_selection_changed()
+    composer.view_combo.setCurrentIndex(
+        composer.view_combo.findData("scene:Escena 1"))
+    assert frame.view_key == "scene:Escena 1"
+    assert (frame.cam_yaw, frame.cam_pitch, frame.cam_target) == (None, None, None)
+    # an unrelated edit (the width) keeps a manual camera
+    frame.cam_yaw = 0.3
+    composer.fw_spin.setValue(frame.w_mm + 10.0)
+    assert frame.cam_yaw == 0.3

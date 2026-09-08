@@ -64,6 +64,12 @@ follow [SemVer](https://semver.org).
   de la lámina nace con el último aspecto elegido.
 
 ### Corregido
+- **Cambiar la escena de un marco no cambiaba la imagen.** Los ajustes
+  de cámara hechos dentro del marco (orbitar, encuadrar o hacer zoom
+  tras el doble clic) mandaban sobre la escena recién elegida, así que
+  el marco seguía mostrando lo de antes (Marco, 2026-09-08: «la escena 1
+  como que no me actualiza la vista»). Elegir otro origen de vista
+  descarta esa cámara manual y parte de la cámara de la escena.
 - **La guía de una etiqueta salía del borde del bloque, no del texto.**
   Un bloque de 50 mm alrededor de dos palabras cortas arrancaba su guía
   en el centro inferior del bloque, 15 mm más allá de las palabras, y
