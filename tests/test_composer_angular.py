@@ -102,7 +102,7 @@ def test_four_clicks_place_an_angular_cota_and_escape_cancels(monkeypatch):
         assert (ca.bx_mm, ca.by_mm) == (0.0, -40.0)
         assert ca.radius_mm == pytest.approx(20.0)
         assert ca.label() == "90.0°"
-        assert comp.tool_mode == "select" and view._ang_pts == []
+        assert comp.tool_mode == "cota_ang" and view._ang_pts == []   # stays armed
         comp._rebuild_canvas()
         assert any(isinstance(it, CotaAngularCanvasItem)
                    for it in comp.canvas.items())

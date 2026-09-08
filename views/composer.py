@@ -3585,8 +3585,10 @@ class ComposerCanvasView(QGraphicsView):
             event.accept()
             return
         if (event.key() == Qt.Key_Escape
-                and self.composer.tool_mode == "estilo"
+                and self.composer.tool_mode != "select"
                 and hasattr(self.composer, "_set_tool_mode")):
+            # Esc with nothing in progress leaves the tool (a second Esc
+            # after cancelling a placement); the format painter too.
             self.composer._set_tool_mode("select")
             actions = getattr(self.composer, "_tool_actions", {})
             if "select" in actions:
@@ -3811,6 +3813,25 @@ class ComposerWindow(QMainWindow):
             self._set_tool_mode("select")
             self._tool_actions["select"].setChecked(True)
 
+    #: Tools that stay armed after placing, for the next one — SketchUp /
+    #: LayOut / AutoCAD keep a drawing command running until Esc or the
+    #: Select tool (Marco, 2026-09-08: «acoto una medida bien, pero quiero
+    #: seguir acotando… me gustaría que siga activo ese comando a no ser
+    #: que apriete Esc o haga clic en el icono del cursor»). The one-of-a-
+    #: kind items (a view, the title block, the scale bar, the north, the
+    #: legend, an image, a profile) still hand back to Select.
+    STICKY_TOOLS = frozenset((
+        "cota", "cota_ang", "linea", "flecha", "terreno", "rect", "elipse",
+        "poligono", "texto", "etiqueta", "nivel", "llamada"))
+
+    def _after_place(self) -> None:
+        """The tool just placed something: keep it armed if it is one of
+        the repeatable ones, else back to Select."""
+        if self.tool_mode in self.STICKY_TOOLS:
+            return
+        self.tool_mode = "select"
+        self._tool_actions["select"].setChecked(True)
+
     def place_tool(self, x0: float, y0: float, x1: float, y1: float,
                    sep_mm: float = 0.0, anchors=None, hit_a=None) -> None:
         """A click (or drag) landed on the page with a placement tool
@@ -3912,8 +3933,7 @@ class ComposerWindow(QMainWindow):
             item.z = self._next_z()         # new items land on top (QGIS)
             self._pending_sel = item
             self.history.execute(AddItemCommand(self.comp, item))
-        self.tool_mode = "select"
-        self._tool_actions["select"].setChecked(True)
+        self._after_place()
 
     def _new_cota(self, a, b, sep_mm: float, anchors=None) -> CotaItem:
         """A cota from page point *a* to *b* in the sheet's remembered
@@ -3987,8 +4007,7 @@ class ComposerWindow(QMainWindow):
         item.z = self._next_z()
         self._pending_sel = item
         self.history.execute(AddItemCommand(self.comp, item))
-        self.tool_mode = "select"
-        self._tool_actions["select"].setChecked(True)
+        self._after_place()
 
     def update_cursor_label(self, x: float, y: float) -> None:
         self._pos_label.setText(f"x: {x:.1f} mm  y: {y:.1f} mm")

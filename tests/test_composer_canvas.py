@@ -861,3 +861,44 @@ class TestShiftOrtho:
         view.keyReleaseEvent(QKeyEvent(QEvent.KeyRelease, Qt.Key_Shift,
                                        Qt.NoModifier))
         assert view._preview.rect().height() > 5             # free again
+
+
+class TestStickyTools:
+    """A drawing tool stays armed after placing (Marco, 2026-09-08: «quiero
+    seguir acotando… que siga activo ese comando a no ser que apriete Esc
+    o haga clic en el icono del cursor»); the one-of-a-kind items hand
+    back to Select; Esc leaves the tool once nothing is in progress."""
+
+    def _composer(self):
+        from PySide6.QtWidgets import QWidget
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        self._host = host
+        return composer
+
+    def test_cota_and_line_stay_armed_the_scale_bar_does_not(self):
+        composer = self._composer()
+        composer._tool_actions["cota"].trigger()
+        composer.place_tool(10.0, 10.0, 60.0, 10.0, sep_mm=5.0)
+        composer.place_tool(10.0, 30.0, 60.0, 30.0, sep_mm=5.0)
+        assert len(composer.comp.cotas) == 2
+        assert composer.tool_mode == "cota"
+        assert composer._tool_actions["cota"].isChecked()
+        composer._tool_actions["escala"].trigger()
+        composer.place_tool(10.0, 50.0, 10.0, 50.0)
+        assert composer.tool_mode == "select"
+        assert composer._tool_actions["select"].isChecked()
+
+    def test_esc_cancels_the_placement_first_then_leaves_the_tool(self):
+        from PySide6.QtGui import QKeyEvent
+        composer = self._composer()
+        composer._tool_actions["cota"].trigger()
+        view = composer._view
+        view._drag_start = QPointF(10.0, 10.0)                # first click
+        esc = QKeyEvent(QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
+        view.keyPressEvent(esc)
+        assert view._drag_start is None and composer.tool_mode == "cota"
+        view.keyPressEvent(esc)
+        assert composer.tool_mode == "select"
+        assert composer._tool_actions["select"].isChecked()

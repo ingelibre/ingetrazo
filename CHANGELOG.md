@@ -6,6 +6,18 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Cambiado
+- **Las herramientas de dibujo del compositor se quedan activas** tras
+  colocar: cota, cota angular, línea, flecha, línea de terreno,
+  rectángulo, elipse, polígono, texto, etiqueta, nivel y llamada siguen
+  armadas para la siguiente, como en SketchUp, LayOut y AutoCAD. Esc
+  cancela primero lo que esté a medias y, con nada en curso, deja la
+  herramienta; el icono del cursor también. Los ítems únicos (vista,
+  cajetín, escala gráfica, norte, leyenda, imagen, perfil) siguen
+  devolviendo a Seleccionar (Marco, 2026-09-08: «acoto una medida bien,
+  pero quiero seguir acotando… que siga activo ese comando a no ser que
+  apriete Esc o haga clic en el icono del cursor»).
+
 ### Añadido
 - **Shift fija en horizontal o vertical el segundo punto de una cota** (y
   de una línea, flecha, línea de terreno o el siguiente punto de una cota

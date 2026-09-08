@@ -73,9 +73,8 @@ def test_the_tool_anchors_the_mark_to_the_clicked_model_point():
     assert (nv.x_mm, nv.y_mm) == pytest.approx((px, py))
     assert nv.symbol == "triangle"          # an elevation: the triangle
     # a free click away from any geometry: a free mark at the click
-    # (placing hands the tool back to Select, like every placement)
-    assert composer.tool_mode == "select"
-    composer.tool_mode = "nivel"
+    # (the tool stays armed for the next mark)
+    assert composer.tool_mode == "nivel"
     composer.place_tool(10.0, 10.0, 10.0, 10.0, hit_a=None)
     free = composer.comp.niveles[1]
     assert not free.anchored and (free.x_mm, free.y_mm) == (10.0, 10.0)
