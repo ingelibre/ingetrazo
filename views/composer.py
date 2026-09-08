@@ -2728,6 +2728,10 @@ class ComposerCanvasView(QGraphicsView):
         self._hit_b = None             # (world anchors for the cota)
         self._pan_last = None          # viewport px while panning the sheet
         self._ang_pts: list = []       # angular cota: vertex, A, B (page mm)
+        self._band_start = None        # box selection: scene mm of the press
+        self._band_vp = None           #   …and its viewport px (click vs box)
+        self._band_item = None         #   the rubber band drawn while dragging
+        self._band_mods = Qt.NoModifier
         # Tools that define a segment/rectangle take EITHER a drag or two
         # clicks (click the first vertex, move, click the second) — the
         # click-click habit of the model's dimension tool must work here too.
@@ -2920,7 +2924,106 @@ class ComposerCanvasView(QGraphicsView):
             self._press_vp = event.position().toPoint()
             event.accept()
             return
+        if (mode == "select" and event.button() == Qt.LeftButton
+                and not self._item_under(event.position().toPoint())):
+            # Box selection (Marco, 2026-09-07: «falta seleccionar varios
+            # objetos con el mouse haciendo un cuadro»): a press on the
+            # empty sheet starts a rubber band; the release picks the items
+            # it encloses (dragged left→right) or touches (right→left),
+            # SketchUp's window / crossing rule, with the same modifiers as
+            # the model's Select tool. A tiny box is a plain click.
+            self._band_start = self.mapToScene(event.position().toPoint())
+            self._band_vp = event.position().toPoint()
+            self._band_mods = event.modifiers()
+            event.accept()
+            return
         self._scene_dispatch(super().mousePressEvent, event)
+
+    def _item_under(self, vp_pos) -> bool:
+        """Is there something under the cursor that takes a left press —
+        a sheet item, or the in-place text editor? The page rectangles
+        and locked items (no mouse buttons) do not count."""
+        take = (QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemIsMovable
+                | QGraphicsItem.ItemIsFocusable)
+        for it in self.items(vp_pos):
+            if (it.acceptedMouseButtons() & Qt.LeftButton) and (it.flags() & take):
+                return True
+        return False
+
+    # ---- box selection --------------------------------------------------------
+    _BAND_CLICK_PX = 4
+
+    def _band_rect(self, scene_pos) -> QRectF:
+        a, b = self._band_start, scene_pos
+        return QRectF(min(a.x(), b.x()), min(a.y(), b.y()),
+                      abs(b.x() - a.x()), abs(b.y() - a.y()))
+
+    def _band_crossing(self, scene_pos) -> bool:
+        """Dragged right→left = crossing (anything touched); left→right =
+        window (only what is enclosed)."""
+        return scene_pos.x() < self._band_start.x()
+
+    def _update_band(self, scene_pos) -> None:
+        crossing = self._band_crossing(scene_pos)
+        if self._band_item is None:
+            self._band_item = self.scene().addRect(QRectF())
+            self._band_item.setZValue(100002)
+        pen = QPen(QColor(41, 158, 92) if crossing else QColor(41, 128, 214), 0)
+        pen.setCosmetic(True)
+        pen.setStyle(Qt.DashLine if crossing else Qt.SolidLine)
+        self._band_item.setPen(pen)
+        self._band_item.setBrush(QBrush(QColor(41, 158, 92, 40) if crossing
+                                        else QColor(41, 128, 214, 40)))
+        self._band_item.setRect(self._band_rect(scene_pos))
+
+    def _drop_band(self) -> None:
+        if self._band_item is not None:
+            if self._band_item.scene() is not None:
+                self.scene().removeItem(self._band_item)
+            self._band_item = None
+        self._band_start = None
+        self._band_vp = None
+
+    def box_select(self, rect: QRectF, crossing: bool, modifiers) -> list:
+        """Select the sheet items in ``rect`` (page mm): enclosed ones in
+        window mode, touched ones in crossing mode; locked items never.
+        Returns the items the box found."""
+        from tools.select import selection_mode
+        how = selection_mode(modifiers)
+        mode = (Qt.IntersectsItemBoundingRect if crossing
+                else Qt.ContainsItemBoundingRect)
+        found = [it for it in self.scene().items(rect, mode)
+                 if isinstance(it, _SheetItem)
+                 and it.flags() & QGraphicsItem.ItemIsSelectable
+                 and not getattr(it.model, "locked", False)]
+        if how == "replace":
+            self.scene().clearSelection()
+        for it in found:
+            if how == "toggle":
+                it.setSelected(not it.isSelected())
+            elif how == "remove":
+                it.setSelected(False)
+            else:
+                it.setSelected(True)
+        self.composer.on_selection_changed()
+        return found
+
+    def _finish_band(self, scene_pos, modifiers) -> None:
+        start_vp = self._band_vp
+        rect = self._band_rect(scene_pos)
+        crossing = self._band_crossing(scene_pos)
+        self._drop_band()
+        vp = self.mapFromScene(scene_pos)
+        if (start_vp is None
+                or (vp - start_vp).manhattanLength() < self._BAND_CLICK_PX):
+            # A click on the empty sheet: plain click empties the
+            # selection; with a modifier it leaves it alone (SketchUp).
+            from tools.select import selection_mode
+            if selection_mode(modifiers) == "replace":
+                self.scene().clearSelection()
+                self.composer.on_selection_changed()
+            return
+        self.box_select(rect, crossing, modifiers)
 
     def mouseMoveEvent(self, event) -> None:
         if self._pan_last is not None:
@@ -2933,6 +3036,12 @@ class ComposerCanvasView(QGraphicsView):
             event.accept()
             return
         raw = self.mapToScene(event.position().toPoint())
+        if self._band_start is not None:
+            if (event.position().toPoint() - self._band_vp).manhattanLength() \
+                    >= self._BAND_CLICK_PX:
+                self._update_band(raw)
+            event.accept()
+            return
         if getattr(self.composer, "view_drag_active", lambda: False)():
             self.composer.move_view_drag(raw, event.position().toPoint())
             event.accept()
@@ -3208,6 +3317,11 @@ class ComposerCanvasView(QGraphicsView):
                            else Qt.ArrowCursor)
             event.accept()
             return
+        if self._band_start is not None and event.button() == Qt.LeftButton:
+            self._finish_band(self.mapToScene(event.position().toPoint()),
+                              event.modifiers())
+            event.accept()
+            return
         if getattr(self.composer, "view_drag_active", lambda: False)():
             self.composer.finish_view_drag()
             event.accept()
@@ -3286,6 +3400,7 @@ class ComposerCanvasView(QGraphicsView):
             self.scene().removeItem(self._preview)
             self._preview = None
         self._clear_snap_marker()
+        self._drop_band()
 
     def keyPressEvent(self, event) -> None:
         scene = self.scene()

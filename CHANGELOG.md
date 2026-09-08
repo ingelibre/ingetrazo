@@ -14,6 +14,15 @@ follow [SemVer](https://semver.org).
   lámina nueva (en un documento sin láminas, en la primera), desde las dos
   ventanas.
 
+- **Selección por cuadro en el compositor** (Marco, 2026-09-07: «falta
+  seleccionar varios objetos con el mouse haciendo un cuadro»). Con la
+  herramienta Seleccionar, arrastrar desde la hoja vacía dibuja un cuadro:
+  de izquierda a derecha (azul, continuo) selecciona lo que queda
+  encerrado; de derecha a izquierda (verde, a trazos) lo que toca — la
+  regla de SketchUp y AutoCAD. Mayús alterna, Ctrl añade, Mayús+Ctrl
+  quita, como en el modelo; los ítems bloqueados no entran; un clic en
+  la hoja vacía sigue vaciando la selección.
+
 ### Cambiado
 - **Un marco de vista nuevo nace con el estilo «Arquitectónico»** — fondo
   blanco, sin cielo, con aristas y perfiles: el aspecto de una lámina de
