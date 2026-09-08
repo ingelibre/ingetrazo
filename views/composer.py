@@ -1171,26 +1171,44 @@ def _label_block_h(et: EtiquetaItem) -> float:
     return et.h_mm
 
 
+def etiqueta_ink_w_mm(et: EtiquetaItem) -> float:
+    """The width the label's text actually inks, capped at the block: the
+    leader starts at the TEXT, not at the far edge of a block much wider
+    than its two words (Marco, 2026-09-08: «¿por qué no me sale la línea
+    hasta el texto?» — a 50 mm block around «farola ornamental»)."""
+    text = expand_fields(et.text)
+    size_mm = et.size_pt * PT_TO_MM
+    widest = max((_text_width_mm(line, size_mm, et.bold)
+                  for line in text.split("\n")), default=0.0)
+    return max(2.0, min(float(et.w_mm), widest + 0.5))
+
+
+def etiqueta_leader_start(et: EtiquetaItem) -> tuple:
+    """Where the leader leaves the text: the midpoint of the text box's
+    edge that faces the pointed-at spot."""
+    ax, ay = et.ax_mm, et.ay_mm
+    tw, h = etiqueta_ink_w_mm(et), _label_block_h(et)
+    cx, cy = tw / 2, h / 2
+    if ax < 0:
+        return -0.8, cy
+    if ax > tw:
+        return tw + 0.8, cy
+    if ay < 0:
+        return cx, -0.8
+    return cx, h + 0.8
+
+
 def paint_etiqueta_mm(painter: QPainter, et: EtiquetaItem) -> None:
     """Label with a leader: the text block at the origin, a line from the
-    block's nearest edge midpoint to the pointed-at spot, arrow head there."""
+    text's nearest edge midpoint to the pointed-at spot, arrow head there."""
     import math as _math
     from PySide6.QtGui import QBrush, QPolygonF
     text = expand_fields(et.text)
     size_mm = et.size_pt * PT_TO_MM
     h = _label_block_h(et)
     color = QColor(et.color)
-    # leader: from the block edge closest to the anchor
     ax, ay = et.ax_mm, et.ay_mm
-    cx, cy = et.w_mm / 2, h / 2
-    if ax < 0:
-        sx, sy = -0.8, cy
-    elif ax > et.w_mm:
-        sx, sy = et.w_mm + 0.8, cy
-    elif ay < 0:
-        sx, sy = cx, -0.8
-    else:
-        sx, sy = cx, h + 0.8
+    sx, sy = etiqueta_leader_start(et)
     pen = QPen(color)
     pen.setWidthF(et.stroke_mm)
     pen.setCapStyle(Qt.RoundCap)
@@ -2318,7 +2336,7 @@ class EtiquetaCanvasItem(_SheetItem):
         path = QPainterPath()
         path.addRect(QRectF(-1, -1, m.w_mm + 2, m.h_mm + 2))
         line = QPainterPath()
-        line.moveTo(m.w_mm / 2, m.h_mm / 2)
+        line.moveTo(*etiqueta_leader_start(m))
         line.lineTo(m.ax_mm, m.ay_mm)
         stroker = QPainterPathStroker()
         stroker.setWidth(2.0 * _HANDLE_MM)

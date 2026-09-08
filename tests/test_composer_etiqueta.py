@@ -129,3 +129,35 @@ def test_double_click_edits_text_blocks_and_labels(monkeypatch):
         assert "etiqueta" in [m for m, *_ in type(comp).TOOLS]
     finally:
         _close(win, comp)
+
+
+def test_the_leader_leaves_the_text_not_the_far_edge_of_a_wide_block():
+    """Marco, 2026-09-08: «¿por qué no me sale la línea hasta el texto?» —
+    a 50 mm block around two short words started its leader at the block's
+    bottom middle, 15 mm past the words. It starts at the text now."""
+    from PySide6.QtGui import QImage, QPainter
+    from core.composition import EtiquetaItem
+    from views.composer import (etiqueta_ink_w_mm, etiqueta_leader_start,
+                                paint_etiqueta_mm)
+    et = EtiquetaItem(text="ab", w_mm=50.0, ax_mm=40.0, ay_mm=5.0,
+                      size_pt=11.0, arrow=False, bg_color="")
+    tw = etiqueta_ink_w_mm(et)
+    assert 3.0 < tw < 12.0                             # the two letters
+    sx, sy = etiqueta_leader_start(et)
+    assert abs(sx - (tw + 0.8)) < 1e-9                 # right edge of the text
+    assert abs(sy - et.h_mm / 2) < 1e-9
+    img = QImage(600, 200, QImage.Format_RGB32)
+    img.fill(0xFFFFFFFF)
+    p = QPainter(img)
+    p.scale(8.0, 8.0)
+    p.translate(5.0, 5.0)
+    paint_etiqueta_mm(p, et)
+    p.end()
+    # midway between the text and the point the leader is a hair above
+    # y = 5 mm; the old block-bottom start would have put it ~4 mm lower
+    mx = (sx + 40.0) / 2
+    my = sy + (5.0 - sy) * (mx - sx) / (40.0 - sx)
+    px, py = round((5.0 + mx) * 8), round((5.0 + my) * 8)
+    assert any((img.pixel(px, y) & 0xFF) < 160 for y in range(py - 3, py + 4))
+    assert not any((img.pixel(px, y) & 0xFF) < 160
+                   for y in range(py + 20, py + 45))

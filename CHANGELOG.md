@@ -52,6 +52,12 @@ follow [SemVer](https://semver.org).
   de la lámina nace con el último aspecto elegido.
 
 ### Corregido
+- **La guía de una etiqueta salía del borde del bloque, no del texto.**
+  Un bloque de 50 mm alrededor de dos palabras cortas arrancaba su guía
+  en el centro inferior del bloque, 15 mm más allá de las palabras, y
+  parecía que no había línea (Marco, 2026-09-08: «¿por qué no me sale la
+  línea hasta el texto?»). La guía sale ahora del borde del texto real
+  que mira al punto señalado; la zona de clic de la guía va igual.
 - **El nivel (N.P.T.) se rompía al subir el tamaño del texto.** Con 3,5 mm
   «N.P.T. +0.20» ya no cabía en la línea de nivel de 14 mm, se partía en
   dos renglones y perdía el de arriba (Marco, 2026-09-08: «cuando
