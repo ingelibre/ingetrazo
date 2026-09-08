@@ -1091,10 +1091,19 @@ def paint_cota_mm(painter: QPainter, ct: CotaItem) -> None:
     length = _math.hypot(ct.dx_mm, ct.dy_mm)
     if text_pos == "centered":
         # The label sits ON the line, which opens around it (LayOut's
-        # "centered" text position).
-        half = len(label) * ct.text_mm * 0.3 + 1.0
+        # "centered" text position). The opening is the label box's
+        # shadow ALONG the line: a horizontal label on a vertical cota
+        # only covers its own height there — measuring its width opened
+        # the whole line (Marco, 2026-09-08: «en 0.80 no se ve la línea
+        # de acotación y en la 0.50 sí»).
+        ux, uy = _math.cos(ang), _math.sin(ang)
+        tw = len(label) * ct.text_mm * 0.62 + 2.0
+        th = ct.text_mm * 1.3 + 0.8
+        horizontal = (getattr(ct, "text_align", "aligned")
+                      or "aligned") == "horizontal"
+        extent = abs(tw * ux) + abs(th * uy) if horizontal else tw
+        half = extent / 2 + 0.5
         if 2 * half < length - 2.0:
-            ux, uy = _math.cos(ang), _math.sin(ang)
             painter.drawLine(a2, QPointF(mid.x() - ux * half,
                                          mid.y() - uy * half))
             painter.drawLine(QPointF(mid.x() + ux * half,

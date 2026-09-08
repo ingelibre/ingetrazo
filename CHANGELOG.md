@@ -45,6 +45,13 @@ follow [SemVer](https://semver.org).
   de la lámina nace con el último aspecto elegido.
 
 ### Corregido
+- **Una cota vertical con el texto centrado y horizontal perdía su línea
+  de cota.** La abertura de la línea alrededor del texto se medía con el
+  ANCHO del texto aunque el texto fuera horizontal sobre una línea
+  vertical, donde solo tapa su alto: una cota de 16 mm se quedaba sin
+  línea y una de 10 mm la conservaba (Marco, 2026-09-08: «en 0.80 no se
+  ve la línea de acotación y en la 0.50 sí»). Ahora la abertura es la
+  sombra de la caja del texto sobre la línea.
 - **«Modelo» desde el compositor no cambiaba de ventana en Windows.** El
   compositor es una ventana hija de la principal y Win32 mantiene siempre
   una ventana hija por encima de su dueña: la principal se activaba, pero
