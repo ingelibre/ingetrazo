@@ -6,6 +6,16 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+## [0.3.14] — 2026-09-07
+
+**La release de la primera tarde con la 0.3.13.** Marco la instaló desde
+el Flatpak, en Wayland, y en una hora salieron tres cosas que el
+desarrollo en X11 no había mostrado: la franja de pestañas sin puerta al
+compositor en un documento nuevo, «Modelo» que no cambiaba de ventana y
+un cierre en seco en el lienzo. Con ellas van la selección por cuadro del
+compositor, el estilo Arquitectónico para los marcos nuevos y, por primera
+vez, ejemplos reales para abrir: cuatro documentos de la plaza de Yanque.
+
 ### Añadido
 - **Pestaña «+» al final de la franja Modelo | Láminas.** Un documento
   nuevo no tiene láminas y la franja solo decía «Modelo», sin ninguna
