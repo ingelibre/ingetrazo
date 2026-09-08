@@ -17,6 +17,12 @@ follow [SemVer](https://semver.org).
   probarlo en todas: «tal vez eso solo para lo que es acotar»).
 
 ### Añadido
+- **Texto de la cota «al costado de la línea»** (y «al otro costado»),
+  además de encima, centrado y debajo: la etiqueta se aparta de la línea
+  la separación de texto y queda entera a un lado, sin cruzarla; en una
+  cota vertical con texto horizontal cae a su izquierda o derecha y la
+  línea sigue entera (Marco, 2026-09-08: «sería bueno que la posición de
+  texto en acotar también haya una opción para ponerla a un costado»).
 - **Las flechas fijan el plano de dibujo del círculo, polígono,
   rectángulo y arcos**, como en SketchUp: antes del primer clic, → fija
   el plano normal a X (YZ), ← el normal a Y (XZ), ↑ el normal a Z (XY);

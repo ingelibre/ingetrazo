@@ -87,3 +87,47 @@ def test_centered_horizontal_label_on_a_vertical_cota_opens_only_its_height():
     assert ink(112 + 4 * 8)              # 4 mm from the upper end: line
     # just outside the glyphs (±1.5 mm) but inside the opening (±2.85 mm)
     assert not ink(176 + 18) and not ink(176 - 18)
+
+
+def test_beside_puts_a_horizontal_label_whole_to_one_side_of_a_vertical_cota():
+    """Marco, 2026-09-08: «sería bueno que la posición de texto en acotar
+    también haya una opción para ponerla a un costado» — the label stands
+    clear of the line on one side (or the other), and the line stays whole."""
+    from PySide6.QtGui import QImage, QPainter
+    from core.composition import CotaItem
+    from views.composer import cota_aside_frame, paint_cota_mm
+
+    def render(pos):
+        ct = CotaItem(x_mm=0.0, y_mm=0.0, dx_mm=0.0, dy_mm=-16.0, sep_mm=-9.0,
+                      scale_n=50.0, text_pos=pos, text_align="horizontal",
+                      text_mm=3.0, stroke_mm=0.25, ends="tick", text_bg="")
+        img = QImage(480, 400, QImage.Format_RGB32)
+        img.fill(0xFFFFFFFF)
+        p = QPainter(img)
+        p.scale(8.0, 8.0)
+        p.translate(30.0, 30.0)
+        paint_cota_mm(p, ct)
+        p.end()
+        return ct, img
+
+    def ink(img, x0, x1, y0, y1):
+        return any((img.pixel(x, y) & 0xFF) < 160
+                   for y in range(y0, y1) for x in range(x0, x1))
+
+    line_px = (30 - 9) * 8                      # the dimension line's column
+    mid_row = (30 - 8) * 8
+    ct, img = render("aside")
+    ox, oy, deg, tw, th = cota_aside_frame(ct)
+    assert deg == 0.0 and abs(oy) < 1e-9
+    assert abs(abs(ox) - (ct.offset_mm + tw / 2)) < 1e-9   # clear of the line
+    side = 1 if ox > 0 else -1
+    # the line is whole at the label's height
+    assert ink(img, line_px - 2, line_px + 3, mid_row - 2, mid_row + 3)
+    # the label inks on its side only, past the offset
+    lo, hi = sorted((line_px + side * 10, line_px + side * int(tw * 8)))
+    assert ink(img, lo, hi, mid_row - 12, mid_row + 12)
+    lo2, hi2 = sorted((line_px - side * 10, line_px - side * int(tw * 8)))
+    assert not ink(img, lo2, hi2, mid_row - 12, mid_row + 12)
+    ct2, img2 = render("aside_below")
+    ox2 = cota_aside_frame(ct2)[0]
+    assert ox2 == -ox                                        # the other side

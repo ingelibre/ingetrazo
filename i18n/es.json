@@ -1510,5 +1510,7 @@
  "Draw a dimension (two points + separation; Shift locks the second point horizontal or vertical)": "Dibujar cota (dos puntos + separación; Shift fija el segundo punto en horizontal o vertical)",
  "Chain dimensions: two points and the line's offset, then every click adds the next segment on the same line; click the last point or press Esc to end (the total is stacked above). Shift locks the next point horizontal or vertical": "Cotas en cadena: dos puntos y la separación de la línea; cada clic añade el siguiente tramo sobre la misma línea; clic en el último punto o Esc para terminar (la cota total se apila encima). Shift fija el siguiente punto en horizontal o vertical",
  "Drawing plane locked: {plane}": "Plano de dibujo fijado: {plane}",
- "Drawing plane free": "Plano de dibujo libre"
+ "Drawing plane free": "Plano de dibujo libre",
+ "Beside the line": "Al costado de la línea",
+ "Beside, the other side": "Al otro costado"
 }

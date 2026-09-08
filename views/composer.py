@@ -1058,6 +1058,34 @@ def _paint_ground_mm(painter: QPainter, f: FormaItem, a: QPointF,
     painter.restore()
 
 
+def cota_aside_frame(ct: CotaItem) -> tuple:
+    """Where a «beside the line» label sits: ``(ox, oy, deg, tw, th)`` —
+    the label box's centre relative to the dimension line's midpoint
+    (page mm), the text's rotation, and the box size. The box stands
+    clear of the line by ``offset_mm`` on the line's «above» side
+    (``aside``) or the other one (``aside_below``); a horizontal label on
+    a vertical cota therefore lands to its left or right, whole, instead
+    of straddling it (Marco, 2026-09-08: «sería bueno que la posición de
+    texto en acotar también haya una opción para ponerla a un costado»)."""
+    import math as _math
+    ang = _math.atan2(ct.dy_mm, ct.dx_mm)
+    deg = _math.degrees(ang)
+    if deg > 90 or deg < -90:
+        deg += 180
+    horizontal = (getattr(ct, "text_align", "aligned")
+                  or "aligned") == "horizontal"
+    label = ct.label()
+    tw = len(label) * ct.text_mm * 0.62 + 2.0
+    th = ct.text_mm * 1.3 + 0.8
+    d = _math.radians(deg)
+    ux, uy = _math.sin(d), -_math.cos(d)          # the «above» side
+    if (getattr(ct, "text_pos", "") or "") == "aside_below":
+        ux, uy = -ux, -uy
+    half = (tw / 2 * abs(ux) + th / 2 * abs(uy)) if horizontal else th / 2
+    dist = ct.offset_mm + half
+    return ux * dist, uy * dist, (0.0 if horizontal else deg), tw, th
+
+
 def paint_cota_mm(painter: QPainter, ct: CotaItem) -> None:
     """Architect-style dimension: the line runs ``sep_mm`` off the measured
     points along their normal (LayOut-style), tied back with extension
@@ -1136,23 +1164,30 @@ def paint_cota_mm(painter: QPainter, ct: CotaItem) -> None:
                 QPointF(pt.x() + tick * _math.cos(ang + _math.radians(45)),
                         pt.y() + tick * _math.sin(ang + _math.radians(45))))
     painter.save()
-    painter.translate(mid)
-    deg = _math.degrees(ang)
-    if deg > 90 or deg < -90:
-        deg += 180                      # keep the label readable
-    if (getattr(ct, "text_align", "aligned") or "aligned") == "horizontal":
-        deg = 0.0
-    painter.rotate(deg)
     tcol = QColor(ct.text_color) if getattr(ct, "text_color", "") else color
-    if text_pos == "below":
-        rect = QRectF(-40, ct.offset_mm, 80, ct.text_mm * 1.3)
-        align = Qt.AlignHCenter | Qt.AlignTop
-    elif text_pos == "centered":
-        rect = QRectF(-40, -ct.text_mm * 0.65, 80, ct.text_mm * 1.3)
+    if text_pos in ("aside", "aside_below"):
+        ox, oy, deg, _tw, th = cota_aside_frame(ct)
+        painter.translate(mid.x() + ox, mid.y() + oy)
+        painter.rotate(deg)
+        rect = QRectF(-40, -th / 2, 80, th)
         align = Qt.AlignHCenter | Qt.AlignVCenter
     else:
-        rect = QRectF(-40, -ct.offset_mm - ct.text_mm, 80, ct.text_mm * 1.3)
-        align = Qt.AlignHCenter | Qt.AlignTop
+        painter.translate(mid)
+        deg = _math.degrees(ang)
+        if deg > 90 or deg < -90:
+            deg += 180                      # keep the label readable
+        if (getattr(ct, "text_align", "aligned") or "aligned") == "horizontal":
+            deg = 0.0
+        painter.rotate(deg)
+        if text_pos == "below":
+            rect = QRectF(-40, ct.offset_mm, 80, ct.text_mm * 1.3)
+            align = Qt.AlignHCenter | Qt.AlignTop
+        elif text_pos == "centered":
+            rect = QRectF(-40, -ct.text_mm * 0.65, 80, ct.text_mm * 1.3)
+            align = Qt.AlignHCenter | Qt.AlignVCenter
+        else:
+            rect = QRectF(-40, -ct.offset_mm - ct.text_mm, 80, ct.text_mm * 1.3)
+            align = Qt.AlignHCenter | Qt.AlignTop
     bg = getattr(ct, "text_bg", "") or ""
     if bg and label:
         tw = len(label) * ct.text_mm * 0.62 + 2.0
@@ -2730,6 +2765,14 @@ class CotaCanvasItem(_SheetItem):
         w = min(80.0, length + 2 * m.text_mm)
         strip = QPainterPath()
         pos = getattr(m, "text_pos", "above") or "above"
+        mid = QPointF((a2.x() + b2.x()) / 2, (a2.y() + b2.y()) / 2)
+        if pos in ("aside", "aside_below"):
+            ox, oy, deg, tw, th = cota_aside_frame(m)
+            strip.addRect(QRectF(-tw / 2 - 1.0, -th / 2 - 1.0,
+                                 tw + 2.0, th + 2.0))
+            t = QTransform().translate(mid.x() + ox, mid.y() + oy).rotate(deg)
+            path.addPath(t.map(strip))
+            return path
         if pos == "below":
             strip.addRect(QRectF(-w / 2, -1.0, w,
                                  m.offset_mm + m.text_mm * 1.3 + 2.0))
@@ -2744,7 +2787,6 @@ class CotaCanvasItem(_SheetItem):
             deg += 180
         if (getattr(m, "text_align", "aligned") or "aligned") == "horizontal":
             deg = 0.0
-        mid = QPointF((a2.x() + b2.x()) / 2, (a2.y() + b2.y()) / 2)
         t = QTransform().translate(mid.x(), mid.y()).rotate(deg)
         path.addPath(t.map(strip))
         return path
@@ -2753,6 +2795,8 @@ class CotaCanvasItem(_SheetItem):
         m = self.model
         nx, ny = m.normal()
         pad = m.offset_mm + m.text_mm + 4
+        if (getattr(m, "text_pos", "") or "") in ("aside", "aside_below"):
+            pad += cota_aside_frame(m)[3]        # the label box stands off
         xs = (0.0, m.dx_mm, nx * m.sep_mm, m.dx_mm + nx * m.sep_mm)
         ys = (0.0, m.dy_mm, ny * m.sep_mm, m.dy_mm + ny * m.sep_mm)
         return QRectF(min(xs) - pad, min(ys) - pad,
@@ -4800,7 +4844,9 @@ class ComposerWindow(QMainWindow):
         self.cota_text_pos = QComboBox()
         for label, key in ((tr("Above the line"), "above"),
                            (tr("Centered on the line"), "centered"),
-                           (tr("Below the line"), "below")):
+                           (tr("Below the line"), "below"),
+                           (tr("Beside the line"), "aside"),
+                           (tr("Beside, the other side"), "aside_below")):
             self.cota_text_pos.addItem(label, key)
         self.cota_text_pos.currentIndexChanged.connect(self._on_cota_props)
         form.addRow(tr("Text position"), self.cota_text_pos)

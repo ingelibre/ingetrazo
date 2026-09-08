@@ -727,7 +727,7 @@ class CotaItem:
     #: Label style (LayOut's dimension text options): where the label sits
     #: relative to the dimension line, whether it follows the line or stays
     #: horizontal, and its own colour ("" = the line colour).
-    text_pos: str = "above"      # above | centered | below
+    text_pos: str = "above"      # above | centered | below | aside | aside_below
     text_align: str = "aligned"  # aligned | horizontal
     text_color: str = ""
     text_bg: str = ""            # "" = no background behind the label
