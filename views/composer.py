@@ -2813,6 +2813,7 @@ class ComposerCanvasView(QGraphicsView):
         self._hit_a = None             # snap hits of the two measured points
         self._chain_pts: list = []     # chain dimensions: (QPointF, hit) so far
         self._chain_sep = None         # the chain's line offset once fixed
+        self._last_raw = None          # last cursor position (scene mm)
         self._chain_cotas: list = []   # the cotas placed by this chain
         self._hit_b = None             # (world anchors for the cota)
         self._pan_last = None          # viewport px while panning the sheet
@@ -2832,6 +2833,45 @@ class ComposerCanvasView(QGraphicsView):
     _GEOM_SNAP_TOOLS = frozenset(
         ("cota", "cota_cadena", "linea", "flecha", "terreno", "rect",
          "elipse", "poligono", "etiqueta", "nivel"))
+
+    #: Tools whose second point Shift locks to the horizontal or the
+    #: vertical through the first (Marco, 2026-09-08: «cuando acote para
+    #: sacar una distancia me gustaría que apretando Shift me restrinja de
+    #: forma ortogonal» — AutoCAD's Ortho, SketchUp's axis lock).
+    _ORTHO_TOOLS = frozenset(("cota", "cota_cadena", "linea", "flecha",
+                              "terreno"))
+
+    def _ortho_anchor(self):
+        """The fixed point the cursor is measured from while a segment is
+        being drawn, or ``None`` when Shift has nothing to lock to (no
+        first point yet, or the cursor is placing a dimension line's
+        offset — locking that would fight the separation)."""
+        mode = self.composer.tool_mode
+        if mode not in self._ORTHO_TOOLS:
+            return None
+        if mode == "cota_cadena":
+            pts = self._chain_pts
+            if not pts or (len(pts) == 2 and self._chain_sep is None):
+                return None
+            return pts[-1][0]
+        if self._drag_start is not None and self._second_pt is None:
+            return self._drag_start
+        return None
+
+    def _constrain(self, pos, mods):
+        """*pos* locked to the horizontal or the vertical through the
+        anchor (whichever the cursor is closer to) while Shift is held;
+        untouched otherwise. Snapping runs first, so a snapped point still
+        lands on the locked axis."""
+        if not (mods & Qt.ShiftModifier):
+            return pos
+        a = self._ortho_anchor()
+        if a is None:
+            return pos
+        dx, dy = pos.x() - a.x(), pos.y() - a.y()
+        if abs(dx) >= abs(dy):
+            return QPointF(pos.x(), a.y())
+        return QPointF(a.x(), pos.y())
 
     def _snapped(self, pos):
         """Snap *pos* (scene mm) to the nearest frame geometry point when a
@@ -2960,6 +3000,7 @@ class ComposerCanvasView(QGraphicsView):
             return
         if mode == "cota_cadena" and event.button() == Qt.LeftButton:
             pos, _ = self._snapped(self.mapToScene(event.position().toPoint()))
+            pos = self._constrain(pos, event.modifiers())
             self._chain_click(pos, self._last_hit)
             event.accept()
             return
@@ -2986,6 +3027,7 @@ class ComposerCanvasView(QGraphicsView):
             return
         if mode != "select" and event.button() == Qt.LeftButton:
             pos, _ = self._snapped(self.mapToScene(event.position().toPoint()))
+            pos = self._constrain(pos, event.modifiers())
             if self._second_pt is not None:
                 # Third click of a dimension: fixes the line separation.
                 self._finish_cota(pos)
@@ -3140,20 +3182,28 @@ class ComposerCanvasView(QGraphicsView):
             self.composer.move_view_drag(raw, event.position().toPoint())
             event.accept()
             return
+        self._last_raw = QPointF(raw)
+        if self._track(raw, event.modifiers()):
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def _track(self, raw, mods) -> bool:
+        """Follow the cursor at *raw* (scene mm) with the armed tool's
+        rubber band; True when a tool consumed it. Replayed when Shift
+        goes down or up so the lock shows without moving the mouse."""
         pos, _ = self._snapped(raw)
+        pos = self._constrain(pos, mods)
         self.composer.update_cursor_label(pos.x(), pos.y())
         if self._chain_pts:
             self._update_chain_preview(pos)
-            event.accept()
-            return
+            return True
         if self._ang_pts:
             self._update_angular_preview(pos)
-            event.accept()
-            return
+            return True
         if self._second_pt is not None:
             self._update_sep_preview(pos)
-            event.accept()
-            return
+            return True
         if self._drag_start is not None:
             if self._preview is None:
                 pen = QPen(QColor(58, 110, 165), 0.3, Qt.DashLine)
@@ -3161,9 +3211,8 @@ class ComposerCanvasView(QGraphicsView):
                 self._preview.setZValue(100000)
             r = QRectF(self._drag_start, pos).normalized()
             self._preview.setRect(r)
-            event.accept()
-            return
-        super().mouseMoveEvent(event)
+            return True
+        return False
 
     # ---- dimension sep phase (points fixed, placing the line) ---------------
 
@@ -3437,6 +3486,7 @@ class ComposerCanvasView(QGraphicsView):
                 event.accept()
                 return
             end, _ = self._snapped(self.mapToScene(event.position().toPoint()))
+            end = self._constrain(end, event.modifiers())
             if self.composer.tool_mode == "cota":
                 self._enter_sep_phase(end)
             else:
@@ -3496,7 +3546,21 @@ class ComposerCanvasView(QGraphicsView):
         self._clear_snap_marker()
         self._drop_band()
 
+    def _shift_changed(self, down: bool) -> None:
+        """Shift went down or up while a segment is being drawn: redraw
+        the rubber band locked (or freed) where the cursor already is."""
+        if self._last_raw is not None and self._ortho_anchor() is not None:
+            self._track(self._last_raw,
+                        Qt.ShiftModifier if down else Qt.NoModifier)
+
+    def keyReleaseEvent(self, event) -> None:
+        if event.key() == Qt.Key_Shift and not event.isAutoRepeat():
+            self._shift_changed(False)
+        super().keyReleaseEvent(event)
+
     def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Shift and not event.isAutoRepeat():
+            self._shift_changed(True)
         scene = self.scene()
         editing = scene is not None and isinstance(scene.focusItem(),
                                                    InlineTextEditor)
@@ -3686,20 +3750,21 @@ class ComposerWindow(QMainWindow):
         ("leyenda", "comp_leyenda", "Add the layer legend", False),
         ("perfil", "comp_perfil",
          "Add a terrain profile along a traced path (two clicks or drag)", True),
-        ("linea", "line", "Draw a line (two clicks or drag)", True),
-        ("flecha", "comp_flecha", "Draw an arrow (two clicks or drag)", True),
+        ("linea", "line", "Draw a line (two clicks or drag; Shift locks it horizontal or vertical)", True),
+        ("flecha", "comp_flecha", "Draw an arrow (two clicks or drag; Shift locks it horizontal or vertical)", True),
         ("terreno", "comp_terreno",
          "Draw a ground line: the terrain of an elevation, with earth "
          "ticks, a hatched band or a filled band under it (two clicks or "
-         "drag)", True),
+         "drag; Shift locks it horizontal or vertical)", True),
         ("rect", "rectangle", "Draw a rectangle (two clicks or drag)", True),
         ("elipse", "circle", "Draw an ellipse (two clicks or drag)", True),
         ("poligono", "polygon", "Draw a polygon (two clicks or drag)", True),
-        ("cota", "dimension", "Draw a dimension (two points + separation)", True),
+        ("cota", "dimension", "Draw a dimension (two points + separation; Shift locks the second point horizontal or vertical)", True),
         ("cota_cadena", "dimension_chain",
          "Chain dimensions: two points and the line's offset, then every "
          "click adds the next segment on the same line; click the last "
-         "point or press Esc to end (the total is stacked above)", False),
+         "point or press Esc to end (the total is stacked above). Shift "
+         "locks the next point horizontal or vertical", False),
         ("cota_ang", "protractor",
          "Draw an angular dimension (vertex, two points, then the arc)", False),
     )

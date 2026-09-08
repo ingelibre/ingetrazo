@@ -7,6 +7,15 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Añadido
+- **Shift fija en horizontal o vertical el segundo punto de una cota** (y
+  de una línea, flecha, línea de terreno o el siguiente punto de una cota
+  en cadena): el Orto de AutoCAD, el bloqueo de eje de SketchUp. Gana el
+  eje más cercano al cursor; el imán a la geometría sigue actuando y el
+  punto cae sobre el eje fijado; al pulsar o soltar Shift la goma elástica
+  se actualiza sin mover el ratón. El tercer clic de la cota (la
+  separación) nunca se bloquea (Marco, 2026-09-08: «cuando acote para
+  sacar una distancia me gustaría que apretando Shift me restrinja de
+  forma ortogonal»).
 - **«Fondo del papel» en los marcos de vista.** Una casilla bajo el estilo
   del marco: renderiza sobre blanco y sin cielo ni suelo, sea cual sea el
   fondo del estilo elegido. Antes un marco en Rayos X (o Predeterminado)

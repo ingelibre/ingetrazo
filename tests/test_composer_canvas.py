@@ -63,9 +63,9 @@ def _view(mode="linea"):
 
 
 def _mouse(view, etype, px, py, button=Qt.LeftButton,
-           buttons=Qt.NoButton):
+           buttons=Qt.NoButton, mods=Qt.NoModifier):
     pos = QPointF(px, py)
-    ev = QMouseEvent(etype, pos, pos, button, buttons, Qt.NoModifier)
+    ev = QMouseEvent(etype, pos, pos, button, buttons, mods)
     if etype == QEvent.MouseButtonPress:
         view.mousePressEvent(ev)
     elif etype == QEvent.MouseMove:
@@ -787,3 +787,77 @@ class TestGroundLine:
         p.end()
         assert not any((img.pixel(x, y) & 0xFF) < 200
                        for y in range(0, 56) for x in range(0, 240))
+
+
+class TestShiftOrtho:
+    """Shift locks the second point of a segment to the horizontal or the
+    vertical through the first (Marco, 2026-09-08: «cuando acote para
+    sacar una distancia me gustaría que apretando Shift me restrinja de
+    forma ortogonal»)."""
+
+    def test_a_cota_drawn_with_shift_comes_out_horizontal(self):
+        view, comp = _view("cota")
+        _click(view, 50, 100)                                # first point
+        _mouse(view, QEvent.MouseMove, 150, 112, mods=Qt.ShiftModifier)
+        _mouse(view, QEvent.MouseButtonPress, 150, 112, mods=Qt.ShiftModifier)
+        _mouse(view, QEvent.MouseButtonRelease, 150, 112, mods=Qt.ShiftModifier)
+        ax, ay = _scene_xy(view, 50, 100)
+        assert view._second_pt is not None
+        assert abs(view._second_pt.y() - ay) < 1e-6           # locked flat
+        assert view._second_pt.x() > ax + 50
+        _click(view, 150, 130)                               # the offset
+        x0, y0, x1, y1, _sep = comp.placed[0]
+        assert abs(y1 - y0) < 1e-6 and x1 > x0
+
+    def test_the_closer_axis_wins_and_no_shift_stays_free(self):
+        view, comp = _view("linea")
+        _click(view, 50, 50)
+        _mouse(view, QEvent.MouseButtonPress, 58, 150, mods=Qt.ShiftModifier)
+        x0, y0, x1, y1, _sep = comp.placed[0]
+        assert abs(x1 - x0) < 1e-6 and y1 > y0               # vertical
+        view, comp = _view("linea")
+        _click(view, 50, 50)
+        _mouse(view, QEvent.MouseButtonPress, 58, 150)
+        x0, y0, x1, y1, _sep = comp.placed[0]
+        assert abs(x1 - x0) > 5                              # free
+
+    def test_a_drag_with_shift_locks_too_and_the_offset_click_does_not(self):
+        view, comp = _view("cota")
+        _mouse(view, QEvent.MouseButtonPress, 50, 100)
+        _mouse(view, QEvent.MouseMove, 150, 108, buttons=Qt.LeftButton,
+               mods=Qt.ShiftModifier)
+        _mouse(view, QEvent.MouseButtonRelease, 150, 108,
+               mods=Qt.ShiftModifier)
+        ax, ay = _scene_xy(view, 50, 100)
+        assert abs(view._second_pt.y() - ay) < 1e-6
+        # the third click (the dimension line's offset) is never locked:
+        # Shift there must not pull the separation to zero
+        _mouse(view, QEvent.MouseButtonPress, 150, 130, mods=Qt.ShiftModifier)
+        assert comp.placed and abs(comp.placed[0][4]) > 5
+
+    def test_chain_next_point_locks_after_the_offset_is_fixed(self):
+        from unittest import mock
+        view, comp = _view("cota_cadena")
+        comp.place_chain_cota = mock.Mock(return_value=object())
+        _click(view, 50, 100)
+        _click(view, 120, 100)
+        _click(view, 120, 120)                               # the offset
+        _mouse(view, QEvent.MouseButtonPress, 200, 109, mods=Qt.ShiftModifier)
+        _mouse(view, QEvent.MouseButtonRelease, 200, 109, mods=Qt.ShiftModifier)
+        args = comp.place_chain_cota.call_args_list[-1][0]
+        (px, py), (qx, qy) = args[0], args[1]
+        assert abs(qy - py) < 1e-6 and qx > px
+
+    def test_pressing_shift_replays_the_rubber_band_where_the_cursor_is(self):
+        from PySide6.QtGui import QKeyEvent
+        view, comp = _view("linea")
+        _click(view, 50, 50)
+        _mouse(view, QEvent.MouseMove, 150, 62)
+        free = view._preview.rect()
+        assert free.height() > 5
+        view.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Shift,
+                                     Qt.ShiftModifier))
+        assert view._preview.rect().height() < 1e-6          # locked flat
+        view.keyReleaseEvent(QKeyEvent(QEvent.KeyRelease, Qt.Key_Shift,
+                                       Qt.NoModifier))
+        assert view._preview.rect().height() > 5             # free again
