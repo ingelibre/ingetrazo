@@ -196,3 +196,35 @@ def test_painting_puts_the_line_and_text_on_the_chosen_side():
     nv.ax_mm, nv.ay_mm = -10.0, 6.0                  # slid off the point: leader
     img, ox, oy, k = _paint(nv)
     assert _dark(img, ox - 10 * k, oy, ox, oy + 6 * k) > 0
+
+
+def test_a_big_label_stretches_the_level_line_instead_of_wrapping():
+    """Marco, 2026-09-08: «cuando aumento el tamaño de la letra de NPT se
+    distorsiona» — at 3.5 mm «N.P.T. +0.20» no longer fit the 14 mm line,
+    wrapped onto two lines and lost its top one. The line (and the item's
+    box) now grow with the label; the text stays on one line."""
+    from PySide6.QtGui import QImage, QPainter
+    from core.composition import NivelItem
+    from views.composer import nivel_bounds_mm, nivel_line_mm, paint_nivel_mm
+    small = NivelItem(size_mm=2.5, line_mm=14.0, z_m=0.2)
+    big = NivelItem(size_mm=3.5, line_mm=14.0, z_m=0.2)
+    assert nivel_line_mm(small) >= 14.0
+    assert nivel_line_mm(big) > nivel_line_mm(small)
+    assert nivel_bounds_mm(big).width() > nivel_bounds_mm(small).width()
+    # rendered: every inked row above the level line lies within one text
+    # height of it (no second line stacked higher)
+    img = QImage(600, 300, QImage.Format_RGB32)
+    img.fill(0xFFFFFFFF)
+    p = QPainter(img)
+    p.scale(8.0, 8.0)
+    p.translate(5.0, 30.0)                          # apex at (40, 240) px
+    paint_nivel_mm(p, big)
+    p.end()
+    rows = [y for y in range(0, 240)
+            if any((img.pixel(x, y) & 0xFF) < 160 for x in range(0, 600))]
+    line_row = 240 - round(big.symbol_mm * 0.866 * 8)
+    assert rows and min(rows) >= line_row - round(big.size_mm * 1.4 * 8) - 2
+    # the line reaches past the text
+    ink_x = max(x for y in range(0, 240) for x in range(0, 600)
+                if (img.pixel(x, y) & 0xFF) < 160)
+    assert ink_x >= 40 + round((nivel_line_mm(big) - 1.0) * 8)

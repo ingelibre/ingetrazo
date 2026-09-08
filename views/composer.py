@@ -1224,13 +1224,29 @@ def paint_etiqueta_mm(painter: QPainter, et: EtiquetaItem) -> None:
                   underline=getattr(et, "underline", False))
 
 
+def nivel_text_x_mm(nv: NivelItem) -> float:
+    """Where the label starts along the level line: past the symbol."""
+    s = nv.symbol_mm
+    return (s / 2.0 if nv.symbol == "circle" else s / 2.0) + 0.6
+
+
+def nivel_line_mm(nv: NivelItem) -> float:
+    """The level line's drawn length: the set length, or longer when the
+    label needs it — a bigger text (or a long prefix) must never wrap onto
+    a second line and lose its top half (Marco, 2026-09-08: «cuando
+    aumento el tamaño de la letra de NPT se distorsiona»)."""
+    need = nivel_text_x_mm(nv) + _text_width_mm(nv.label(), nv.size_mm) + 1.0
+    return max(float(nv.line_mm), need)
+
+
 def nivel_bounds_mm(nv: NivelItem) -> QRectF:
     """The mark's ink box in item space (the apex at the origin)."""
     s = nv.symbol_mm
     sign = -1.0 if nv.mirror else 1.0
     text_h = nv.size_mm * 1.4
-    x0 = min(-s / 2.0, sign * (nv.line_mm + 0.5), nv.ax_mm, 0.0)
-    x1 = max(s / 2.0, sign * (nv.line_mm + 0.5), nv.ax_mm, 0.0)
+    line = nivel_line_mm(nv)
+    x0 = min(-s / 2.0, sign * (line + 0.5), nv.ax_mm, 0.0)
+    x1 = max(s / 2.0, sign * (line + 0.5), nv.ax_mm, 0.0)
     if nv.symbol == "circle":
         y0 = min(-s / 2.0 - text_h, nv.ay_mm)
         y1 = max(s / 2.0, nv.ay_mm)
@@ -1282,14 +1298,14 @@ def paint_nivel_mm(painter: QPainter, nv: NivelItem) -> None:
                                        QPointF(half, -hgt)]))
         line_y = -hgt
         text_x = sign * (half + 0.6)
-    painter.drawLine(QPointF(0.0, line_y), QPointF(sign * nv.line_mm, line_y))
+    line = nivel_line_mm(nv)                 # grows with the label
+    painter.drawLine(QPointF(0.0, line_y), QPointF(sign * line, line_y))
     text_h = nv.size_mm * 1.4
     if nv.mirror:
-        rect = QRectF(-nv.line_mm, line_y - text_h,
-                      nv.line_mm - (abs(text_x)), text_h)
+        rect = QRectF(-line, line_y - text_h, line - abs(text_x), text_h)
         align = Qt.AlignRight | Qt.AlignBottom
     else:
-        rect = QRectF(text_x, line_y - text_h, nv.line_mm - text_x, text_h)
+        rect = QRectF(text_x, line_y - text_h, line - text_x, text_h)
         align = Qt.AlignLeft | Qt.AlignBottom
     _draw_text_mm(painter, rect, nv.label(), nv.size_mm, bold=False,
                   align=align, color=color)

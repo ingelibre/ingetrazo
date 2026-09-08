@@ -54,6 +54,12 @@ follow [SemVer](https://semver.org).
   de la lámina nace con el último aspecto elegido.
 
 ### Corregido
+- **El nivel (N.P.T.) se rompía al subir el tamaño del texto.** Con 3,5 mm
+  «N.P.T. +0.20» ya no cabía en la línea de nivel de 14 mm, se partía en
+  dos renglones y perdía el de arriba (Marco, 2026-09-08: «cuando
+  aumento el tamaño de la letra de NPT se distorsiona»). La línea de
+  nivel y la caja del ítem crecen ahora con el texto, que va siempre en
+  un renglón.
 - **Una cota vertical con el texto centrado y horizontal perdía su línea
   de cota.** La abertura de la línea alrededor del texto se medía con el
   ANCHO del texto aunque el texto fuera horizontal sobre una línea
