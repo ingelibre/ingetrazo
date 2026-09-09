@@ -17,6 +17,13 @@ follow [SemVer](https://semver.org).
   probarlo en todas: «tal vez eso solo para lo que es acotar»).
 
 ### Añadido
+- **Las flechas mueven la selección en el compositor**, como en el
+  diseñador de impresión de QGIS: 1 mm por pulsación, 10 mm con Shift,
+  0,1 mm con Alt. Un solo paso de deshacer por pulsación para toda la
+  selección; los ítems bloqueados no se mueven; una cota anclada al
+  modelo se desancla al moverla, igual que al arrastrarla (Marco,
+  2026-09-08: «una vez seleccionado debería mover con las teclas de
+  desplazamiento, así como lo hace QGIS»).
 - **El texto de la cota se mueve como en LayOut.** Se arrastra con el
   ratón agarrándolo por las letras y se queda donde lo dejes; la línea
   de cota no se mueve (arrastrar la línea sigue moviendo la cota entera).

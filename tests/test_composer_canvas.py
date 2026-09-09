@@ -907,3 +907,63 @@ class TestStickyTools:
         view.keyPressEvent(esc)
         assert composer.tool_mode == "select"
         assert composer._tool_actions["select"].isChecked()
+
+
+class TestArrowNudge:
+    """Arrow keys move the selection by 1 mm (Shift: 10 mm), one undo step
+    (Marco, 2026-09-08: «una vez seleccionado debería mover con las teclas
+    de desplazamiento, así como lo hace QGIS»)."""
+
+    def _composer(self):
+        from PySide6.QtWidgets import QWidget
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        self._host = host
+        return composer
+
+    def test_arrows_nudge_the_selected_items_and_undo_as_one_step(self):
+        from PySide6.QtGui import QKeyEvent
+        composer = self._composer()
+        a = FormaItem(kind="rect", x_mm=10.0, y_mm=10.0)
+        b = FormaItem(kind="rect", x_mm=50.0, y_mm=10.0)
+        locked = FormaItem(kind="rect", x_mm=90.0, y_mm=10.0, locked=True)
+        composer.comp.shapes = [a, b, locked]
+        composer._rebuild_canvas()
+        for it in composer.canvas.items():
+            if getattr(it, "model", None) in (a, b):
+                it.setSelected(True)
+            if getattr(it, "model", None) is locked:
+                it.force_select()
+        view = composer._view
+        key = lambda k, m=Qt.NoModifier: view.keyPressEvent(
+            QKeyEvent(QEvent.KeyPress, k, m))
+        key(Qt.Key_Right)
+        assert (a.x_mm, b.x_mm) == (11.0, 51.0)
+        key(Qt.Key_Down, Qt.ShiftModifier)
+        assert (a.y_mm, b.y_mm) == (20.0, 20.0)
+        assert (locked.x_mm, locked.y_mm) == (90.0, 10.0)   # never
+        # the canvas items slid along without a rebuild
+        pos = {id(it.model): it.pos() for it in composer.canvas.items()
+               if getattr(it, "model", None) in (a, b)}
+        assert pos[id(a)] == QPointF(11.0, 20.0)
+        assert composer.history.undo() and (a.y_mm, b.y_mm) == (10.0, 10.0)
+        assert composer.history.undo() and (a.x_mm, b.x_mm) == (10.0, 50.0)
+
+    def test_arrows_do_nothing_without_a_selection_or_mid_placement(self):
+        from PySide6.QtGui import QKeyEvent
+        composer = self._composer()
+        a = FormaItem(kind="rect", x_mm=10.0, y_mm=10.0)
+        composer.comp.shapes = [a]
+        composer._rebuild_canvas()
+        view = composer._view
+        view.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Right, Qt.NoModifier))
+        assert a.x_mm == 10.0
+        next(it for it in composer.canvas.items()
+             if getattr(it, "model", None) is a).setSelected(True)
+        view._drag_start = QPointF(1.0, 1.0)          # a line half drawn
+        view.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Right, Qt.NoModifier))
+        assert a.x_mm == 10.0
+        view._drag_start = None
+        view.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Left, Qt.AltModifier))
+        assert abs(a.x_mm - 9.9) < 1e-9

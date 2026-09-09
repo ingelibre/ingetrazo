@@ -2230,8 +2230,13 @@ class _SheetItem(QGraphicsItem):
         if was_resizing:
             self.composer.on_item_geometry(self, final=True)
 
+    #: True while nudge_selected moves this item by a fixed step: the
+    #: magnetic snap of a drag must not swallow a 1 mm arrow-key move.
+    _nudging = False
+
     def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemPositionChange and self.scene():
+        if (change == QGraphicsItem.ItemPositionChange and self.scene()
+                and not self._nudging):
             w, h = self.size_mm()
             x = snap_mm(value.x(), self.composer.snap_targets_x(exclude=self),
                         _SNAP_MM)
@@ -3763,6 +3768,20 @@ class ComposerCanvasView(QGraphicsView):
                 actions["select"].setChecked(True)
             event.accept()
             return
+        arrows = {Qt.Key_Left: (-1.0, 0.0), Qt.Key_Right: (1.0, 0.0),
+                  Qt.Key_Up: (0.0, -1.0), Qt.Key_Down: (0.0, 1.0)}
+        if (event.key() in arrows and not editing
+                and self._drag_start is None and not self._ang_pts
+                and not self._chain_pts
+                and hasattr(self.composer, "nudge_selected")):
+            # QGIS: arrows nudge the selection 1 mm, Shift 10 mm, Alt 0.1.
+            mods = event.modifiers()
+            step = (10.0 if mods & Qt.ShiftModifier
+                    else 0.1 if mods & Qt.AltModifier else 1.0)
+            ux, uy = arrows[event.key()]
+            if self.composer.nudge_selected(ux * step, uy * step):
+                event.accept()
+                return
         if event.key() == Qt.Key_Escape and self.scene() is not None:
             # LayOut / SketchUp: Esc drops the selection.
             self.scene().clearSelection()
@@ -6384,6 +6403,53 @@ class ComposerWindow(QMainWindow):
         w, h = it.size_mm()
         m = it.model
         return (float(m.x_mm), float(m.y_mm), float(w), float(h))
+
+    def nudge_selected(self, dx_mm: float, dy_mm: float) -> bool:
+        """Arrow keys move the selection by a fixed step (QGIS's layout:
+        1 mm, 10 mm with Shift; Marco, 2026-09-08: «una vez seleccionado
+        debería mover con las teclas de desplazamiento, así como lo hace
+        QGIS»). One undo step for the whole selection; the items slide in
+        place (no canvas rebuild) unless something must follow them — a
+        text bound to a moved frame — or a cota leaves its model anchor
+        by hand, exactly as a mouse drag would. Returns False with nothing
+        movable selected."""
+        items = self._selected_sheet_items()
+        if not items or (abs(dx_mm) < 1e-9 and abs(dy_mm) < 1e-9):
+            return False
+        cmds, follow = [], []
+        for it in items:
+            m = it.model
+            before = {"x_mm": float(m.x_mm), "y_mm": float(m.y_mm)}
+            after = {"x_mm": before["x_mm"] + dx_mm,
+                     "y_mm": before["y_mm"] + dy_mm}
+            if getattr(m, "anchored", False) and hasattr(m, "a_world"):
+                # moved by hand: off the geometry, like a drag
+                before.update(anchor_uid=m.anchor_uid, a_world=m.a_world,
+                              b_world=m.b_world)
+                after.update(anchor_uid="", a_world=None, b_world=None)
+                follow.append(m)
+            cmds.append(EditItemCommand(m, after, before))
+            follow += self._follow_commands(m, after, before)
+        cmd = CompoundCommand(cmds + [c for c in follow
+                                      if isinstance(c, EditItemCommand)])
+        self.history.execute(cmd, notify=False)
+        self._mark_dirty()
+        if follow:
+            keep = [it.model for it in items]
+            self._rebuild_canvas()
+            for it in self.canvas.items():
+                if isinstance(it, _SheetItem) and any(it.model is k for k in keep):
+                    it.force_select()
+            return True
+        for it in items:
+            it._nudging = True
+            try:
+                it.setPos(it.model.x_mm, it.model.y_mm)
+            finally:
+                it._nudging = False
+            it.update()
+        self.on_selection_changed()          # the panel's x/y follow
+        return True
 
     def _apply_moves(self, moves: list) -> None:
         """``moves`` = [(item, new_x, new_y)] → one undo step, rebuilt canvas,
