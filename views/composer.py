@@ -2112,8 +2112,14 @@ class RulerWidget(_QWidget):
         if not self._alive():
             return
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor(236, 238, 241))
-        ink = QColor(80, 88, 96)
+        # The theme's own colours: dark rulers on the dark theme (Marco,
+        # 2026-09-08: «no combina blanco con el tema oscuro»).
+        from PySide6.QtGui import QPalette
+        pal = self.palette()
+        bg = pal.color(QPalette.Window)
+        ink = pal.color(QPalette.WindowText)
+        ink.setAlphaF(0.75)
+        p.fillRect(self.rect(), bg)
         p.setPen(QPen(ink, 1.0))
         s = max(self.view.transform().m11(), 1e-9)
         step = next((L for L in (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000)
@@ -2154,7 +2160,8 @@ class RulerWidget(_QWidget):
                 p.drawLine(QPointF(px, 0), QPointF(px, T))
             else:
                 p.drawLine(QPointF(0, px), QPointF(T, px))
-        p.setPen(QPen(QColor(190, 196, 202), 1.0))
+        edge = pal.color(QPalette.Mid)
+        p.setPen(QPen(edge, 1.0))
         if self.horizontal:
             p.drawLine(QPointF(0, T - 0.5), QPointF(self.width(), T - 0.5))
         else:
