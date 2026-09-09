@@ -80,6 +80,9 @@ follow [SemVer](https://semver.org).
   de la lámina nace con el último aspecto elegido.
 
 ### Corregido
+- **El punto verde del imán crecía con el zoom** en el compositor: medía
+  1,6 mm de papel, y al acercarse a una esquina para acotar se hacía
+  enorme (Marco, 2026-09-08). Ahora mide siempre lo mismo en pantalla.
 - **Cambiar la escena de un marco no cambiaba la imagen.** Los ajustes
   de cámara hechos dentro del marco (orbitar, encuadrar o hacer zoom
   tras el doble clic) mandaban sobre la escena recién elegida, así que

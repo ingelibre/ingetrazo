@@ -3081,14 +3081,19 @@ class ComposerCanvasView(QGraphicsView):
         self._show_snap_marker(hit[0], hit[1])
         return QPointF(hit[0], hit[1]), True
 
+    #: The snap dot's radius ON SCREEN — it must not grow with the zoom
+    #: (Marco, 2026-09-08: «cuando me pongo en una esquina del dibujo el
+    #: círculo verde es enorme, cuando estaba lejos estaba bien»).
+    _SNAP_DOT_PX = 4.5
+
     def _show_snap_marker(self, x, y):
         from PySide6.QtGui import QBrush
         if self._snap_marker is None:
+            pen = QPen(QColor(255, 255, 255), 0.0)   # cosmetic: 1 px always
             self._snap_marker = self.scene().addEllipse(
-                QRectF(), QPen(QColor(255, 255, 255), 0.3),
-                QBrush(QColor(41, 158, 92)))     # elementary Lime/green
+                QRectF(), pen, QBrush(QColor(41, 158, 92)))  # Lime/green
             self._snap_marker.setZValue(100001)
-        r = 1.6
+        r = self._SNAP_DOT_PX / max(self.transform().m11(), 1e-6)
         self._snap_marker.setRect(QRectF(x - r, y - r, 2 * r, 2 * r))
 
     def _clear_snap_marker(self):

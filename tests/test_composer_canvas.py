@@ -1022,3 +1022,17 @@ class TestSelectBeneath:
         _mouse(view, QEvent.MouseButtonPress, alone.x(), alone.y(), mods=Qt.AltModifier)
         _mouse(view, QEvent.MouseButtonRelease, alone.x(), alone.y(), mods=Qt.AltModifier)
         assert selected() == [top]
+
+
+def test_the_snap_dot_keeps_its_screen_size_at_any_zoom():
+    """Marco, 2026-09-08: «cuando me pongo en una esquina del dibujo el
+    círculo verde es enorme» — the dot was 1.6 mm of paper, so zooming in
+    blew it up. It is a fixed number of pixels now."""
+    view, comp = _view("cota")
+    view._show_snap_marker(10.0, 10.0)
+    far = view._snap_marker.rect().width()
+    view.scale(4.0, 4.0)
+    view._show_snap_marker(10.0, 10.0)
+    near = view._snap_marker.rect().width()
+    assert abs(far / near - 4.0) < 1e-6              # 4× zoom → ¼ the paper size
+    assert abs(near * view.transform().m11() - 2 * view._SNAP_DOT_PX) < 1e-6
