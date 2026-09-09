@@ -6,6 +6,21 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+## [0.3.15] — 2026-09-08
+
+**La release de la tarde entera de láminas con la obra real.** Marco
+montó la lámina del arco de Yanque de principio a fin y cada tropiezo
+salió al momento: el compositor gana reglas y guías como en QGIS, mover
+la selección con las flechas, seleccionar lo que está debajo, el texto
+de la cota que se arrastra como en LayOut, la línea de terreno, el fondo
+del papel en los marcos, cotas que siguen activas, Shift ortogonal, una
+barra de lámina con iconos, exportar a PNG/JPG, guardar desde el
+compositor y el menú de las pestañas de lámina. El modelo gana el
+bloqueo del plano de dibujo con las flechas. Y se corrigen la cota que
+perdía su línea, el nivel que se partía al crecer, la guía de etiqueta
+que no llegaba al texto, el punto verde gigante, la escena que no
+actualizaba el marco y el cambio a Modelo que había que pulsar dos veces.
+
 ### Cambiado
 - **«Modelo» desde el compositor ya no adivina.** El traspaso de ventana
   esperaba 400 ms a ver si el escritorio activaba la ventana del modelo
