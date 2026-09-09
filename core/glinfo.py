@@ -71,12 +71,18 @@ def write_gl_report(info: dict, path: Path | None = None) -> Path | None:
         path = user_log_dir() / "ingetrazo-gl.txt"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            f"vendor   : {info.get('vendor', '')}\n"
-            f"renderer : {info.get('renderer', '')}\n"
-            f"version  : {info.get('version', '')}\n"
-            f"software : {'yes' if info.get('software') else 'no'}\n",
-            encoding="utf-8")
+        text = (f"vendor   : {info.get('vendor', '')}\n"
+                f"renderer : {info.get('renderer', '')}\n"
+                f"version  : {info.get('version', '')}\n"
+                f"software : {'yes' if info.get('software') else 'no'}\n")
+        # Which Qt platform ended up drawing, and whether core.gl_fallback
+        # had to step in to get here. The 2026-09-09 NVIDIA-on-Wayland
+        # report is exactly the case where these two lines are the answer.
+        for key, label in (("platform", "platform "),
+                           ("fallback", "fallback ")):
+            if info.get(key):
+                text += f"{label}: {info[key]}\n"
+        path.write_text(text, encoding="utf-8")
         return path
     except OSError:
         return None

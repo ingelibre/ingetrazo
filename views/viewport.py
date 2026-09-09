@@ -266,6 +266,18 @@ def _load_invert_wheel() -> bool:
     return str(QSettings().value("nav/invert_wheel", "0")) != "0"
 
 
+def _load_invert_orbit_y() -> bool:
+    """Preferences ▸ orbit with the vertical axis reversed.
+
+    Off by default: `OrbitCamera.orbit` grabs the model in both axes, the
+    way SketchUp does. This is for the hands that learned the other feel —
+    including the ones that learned it from IngeTrazo before 0.3.16, when
+    the vertical axis was inverted by mistake.
+    """
+    from PySide6.QtCore import QSettings
+    return str(QSettings().value("nav/invert_orbit_y", "0")) != "0"
+
+
 def _load_msaa() -> int:
     """Scene-FBO multisample count (Preferences ▸ General). 4 is the
     historical hardcoded value; the FBO still falls back to 0 on drivers
@@ -479,11 +491,17 @@ class Viewport(QOpenGLWidget):
         # main.py is best-effort; many platforms ignore it for QOpenGLWidget
         # and hand us a 0-bit depth context. Forcing the format here is the
         # only reliable way.
-        fmt = QSurfaceFormat()
+        #
+        # Start from the default format rather than from nothing, though:
+        # core.gl_fallback may have just dropped the stencil buffer to get a
+        # context AT ALL on this driver, and building a fresh format here
+        # would ask for it right back and undo the recovery. Depth and
+        # samples we still state outright — those two are ours to decide.
+        fmt = QSurfaceFormat(QSurfaceFormat.defaultFormat())
         fmt.setVersion(3, 3)
         fmt.setProfile(QSurfaceFormat.CoreProfile)
         fmt.setDepthBufferSize(24)
-        fmt.setStencilBufferSize(8)
+        fmt.setSamples(0)
         # NO samples on the widget surface: the scene renders into our own
         # multisampled FBO (_ensure_scene_fbo) and the blit resolves it. A
         # multisampled widget FBO adds a second resolve that interleaves stale
@@ -582,6 +600,7 @@ class Viewport(QOpenGLWidget):
         # hidden group never reaches the VBOs. See `edit_rest_mode`.
         self._edit_rest_mode = _load_edit_rest_mode()
         self._invert_wheel = _load_invert_wheel()
+        self._invert_orbit_y = _load_invert_orbit_y()
         self._msaa = _load_msaa()
 
         # Hover highlight (Select tool). Not version-tracked — it changes with
@@ -698,6 +717,12 @@ class Viewport(QOpenGLWidget):
         # why orbiting crawls (a Windows box without a working driver).
         from core.glinfo import read_gl_info, write_gl_report
         self.gl_info = read_gl_info(self._gl)
+        from PySide6.QtCore import QCoreApplication
+        from PySide6.QtGui import QGuiApplication
+        self.gl_info["platform"] = QGuiApplication.platformName()
+        _app = QCoreApplication.instance()
+        if _app is not None:
+            self.gl_info["fallback"] = _app.property("gl_fallback") or ""
         write_gl_report(self.gl_info)
         self.glReady.emit(self.gl_info)
         # GL cleanup has exactly one legal moment: the context's own farewell.
@@ -8117,7 +8142,8 @@ class Viewport(QOpenGLWidget):
             elif self._pan_mode:
                 self.camera.pan(dx, dy, self.height())
             else:
-                self.camera.orbit(dx, dy, self.height())
+                self.camera.orbit(
+                    dx, -dy if self._invert_orbit_y else dy, self.height())
             self.update()
             return
 

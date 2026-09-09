@@ -67,6 +67,7 @@ def test_ok_writes_the_settings(settings_file):
     dlg._autosave_min.setValue(10)
     dlg._backup.setChecked(False)
     dlg._invert.setChecked(True)
+    dlg._invert_orbit.setChecked(True)
     dlg._msaa.setCurrentIndex(dlg._msaa.findData(8))
     dlg.accept()
     st = _fresh(settings_file)
@@ -79,9 +80,11 @@ def test_ok_writes_the_settings(settings_file):
     assert int(st.value("general/autosave_min")) == 10
     assert st.value("general/backup") == "0"
     assert st.value("nav/invert_wheel") == "1"
+    assert st.value("nav/invert_orbit_y") == "1"
     assert int(st.value("display/msaa")) == 8
     # The live pieces reach the viewport immediately.
     assert win.viewport._invert_wheel is True
+    assert win.viewport._invert_orbit_y is True
     assert win.viewport._msaa == 8
     assert win.viewport._fbo_size is None   # next paint rebuilds the FBO
 

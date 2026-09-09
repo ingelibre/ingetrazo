@@ -86,11 +86,22 @@ cp "$APPDIR/usr/share/applications/ingetrazo.desktop" "$APPDIR/ingetrazo.desktop
 
 # AppRun: keep the launcher tiny and let Qt find its own plugins, which the
 # PyInstaller bundle already lays out next to the binary.
+mkdir -p "$APPDIR/usr/lib/gio/modules"
 cat > "$APPDIR/AppRun" <<'SH'
 #!/bin/sh
 HERE=$(dirname "$(readlink -f "$0")")
-# Wayland first, X11 as the fallback, unless the user forces one.
+# Wayland first, X11 as the fallback, unless the user forces one. Note this
+# list only covers a platform PLUGIN that fails to load; a driver that
+# loads Wayland fine and then cannot make a GL context is caught in-app by
+# core.gl_fallback, which re-execs us with QT_QPA_PLATFORM=xcb.
 [ -z "$QT_QPA_PLATFORM" ] && export QT_QPA_PLATFORM="wayland;xcb"
+# The bundle carries its own libglib, and the host's GIO modules are built
+# against a different one: they fail to load with `undefined symbol` and
+# print two alarming lines before the app has even started (reported
+# 2026-09-09 on Ubuntu 24.04). Point GIO at a directory of ours — empty on
+# purpose — so it stops scanning the host's. What that gives up is gvfs,
+# which was already failing to load here for the very same reason.
+export GIO_MODULE_DIR="$HERE/usr/lib/gio/modules"
 exec "$HERE/usr/bin/ingetrazo" "$@"
 SH
 chmod +x "$APPDIR/AppRun"

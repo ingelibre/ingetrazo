@@ -75,11 +75,28 @@ class OrbitCamera:
 
     # ---- Navigation ---------------------------------------------------------
     def orbit(self, dx_pixels: float, dy_pixels: float, viewport_h: int) -> None:
+        """Turn the model under the cursor, SketchUp/Blender style.
+
+        Both axes GRAB THE MODEL: drag right and the model swings right,
+        drag down and it tips down — you come up over it and see its top.
+        Same gesture as :meth:`pan`, and that is the check that matters,
+        because until 2026-09-09 the vertical axis disagreed with it:
+        ``pitch`` went the other way, so dragging down moved the CAMERA
+        down and the model appeared to slide up while the horizontal axis
+        kept grabbing. Two users reported it the same day (GitHub #7 and
+        an e-mail), neither able to say which of the two axes was wrong —
+        which is exactly what a single inverted axis feels like from the
+        outside.
+
+        Callers that let the user ask for the old feel negate ``dy_pixels``
+        (Preferences ▸ Invert vertical orbit); the convention itself lives
+        here.
+        """
         scale = math.pi / max(viewport_h, 1)
         self.yaw -= dx_pixels * scale
         # Clamp to just shy of poles to avoid the up-vector singularity.
         self.pitch = max(
-            min(self.pitch - dy_pixels * scale, math.radians(89.0)),
+            min(self.pitch + dy_pixels * scale, math.radians(89.0)),
             math.radians(-89.0),
         )
 

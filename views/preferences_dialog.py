@@ -105,6 +105,11 @@ class PreferencesDialog(QDialog):
                                 != "0")
         form.addRow("", self._invert)
 
+        self._invert_orbit = QCheckBox(tr("Invert vertical orbit"))
+        self._invert_orbit.setChecked(str(st.value("nav/invert_orbit_y", "0"))
+                                      != "0")
+        form.addRow("", self._invert_orbit)
+
         self._msaa = QComboBox()
         for n in (0, 2, 4, 8):
             self._msaa.addItem(tr("Off") if n == 0 else f"{n}x", n)
@@ -219,6 +224,10 @@ class PreferencesDialog(QDialog):
         st.setValue("nav/invert_wheel",
                     "1" if self._invert.isChecked() else "0")
         self._window.viewport._invert_wheel = self._invert.isChecked()
+
+        st.setValue("nav/invert_orbit_y",
+                    "1" if self._invert_orbit.isChecked() else "0")
+        self._window.viewport._invert_orbit_y = self._invert_orbit.isChecked()
 
         msaa = self._msaa.currentData()
         st.setValue("display/msaa", msaa)

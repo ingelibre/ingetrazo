@@ -7575,8 +7575,10 @@ class ComposerWindow(QMainWindow):
         paper). ``orbit`` is the older two-state spelling."""
         mode = mode or ("orbit" if orbit else "pan")
         frame = item.model
+        from views.viewport import _load_invert_orbit_y
         self._view_drag = {"item": item, "orbit": mode == "orbit",
                            "mode": mode,
+                           "invert_y": _load_invert_orbit_y(),
                            "last_mm": (pos_mm.x(), pos_mm.y()),
                            "last_px": (pos_px.x(), pos_px.y()),
                            "rot0": float(getattr(frame, "rot_deg", 0.0) or 0.0),
@@ -7608,7 +7610,12 @@ class ComposerWindow(QMainWindow):
         elif d["orbit"]:
             dx = pos_px.x() - d["last_px"][0]
             dy = pos_px.y() - d["last_px"][1]
-            self.orbit_view(item, -dx * 0.01, -dy * 0.01)   # like the viewport
+            # Like the viewport, preference included: yaw runs against dx
+            # (OrbitCamera.orbit subtracts it), pitch WITH dy — both axes
+            # grab the model. See core/camera.py::orbit.
+            if d.get("invert_y"):
+                dy = -dy
+            self.orbit_view(item, -dx * 0.01, dy * 0.01)
         else:
             self.pan_view(item, pos_mm.x() - d["last_mm"][0],
                           pos_mm.y() - d["last_mm"][1])

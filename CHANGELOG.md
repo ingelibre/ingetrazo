@@ -6,6 +6,29 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Corregido
+- **Al orbitar, el eje vertical estaba invertido.** Arrastrar hacia abajo
+  bajaba la cámara en vez de asomarte por encima del modelo, al revés que
+  SketchUp, Blender o FreeCAD — y al revés que el propio encuadre de
+  IngeTrazo, que sí agarra el modelo en los dos ejes. Lo reportaron dos
+  usuarios el mismo día (issue #7 y un correo), ninguno capaz de decir
+  cuál de los dos ejes era el malo, que es exactamente lo que se siente
+  cuando hay uno solo invertido. Quien prefiera el gesto de antes lo
+  tiene en **Preferencias ▸ Invertir el eje vertical al orbitar**.
+- **La aplicación no abría con driver NVIDIA sobre Wayland.** El EGL de
+  esas máquinas no sirve el contexto OpenGL 3.3 que pide el visor
+  (`Failed to create context: 3009`, es decir `EGL_BAD_MATCH`), y como
+  ese formato es el de por defecto se llevaba por delante hasta el
+  dibujado de las ventanas de Qt: no era un visor roto, era una app que
+  no arrancaba. El mismo driver lo sirve sin problema por X11, así que
+  ahora IngeTrazo lo comprueba al arrancar y, si hace falta, pide un
+  formato más modesto o se reinicia sola bajo X11. El Flatpak pasa a
+  pedir `--socket=x11` para que ese reinicio tenga a dónde ir.
+- **Avisos de librerías al arrancar el AppImage.** Los módulos GIO del
+  sistema chocaban con la glib que va dentro del paquete y escupían dos
+  `undefined symbol` antes de que la app existiera siquiera. El AppImage
+  ya no los carga.
+
 ## [0.3.15] — 2026-09-08
 
 **La release de la tarde entera de láminas con la obra real.** Marco

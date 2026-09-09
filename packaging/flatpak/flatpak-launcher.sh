@@ -1,9 +1,12 @@
 #!/bin/sh
 # IngeTrazo's launcher inside the Flatpak sandbox.
 #
-# Qt is left to auto-detect the platform: under Wayland the sandbox gets
-# WAYLAND_DISPLAY but no DISPLAY, so forcing xcb would fail to connect
-# (learned in IngePresupuestos/IngeCAD, same launcher shape).
+# Qt is left to auto-detect the platform, and core.gl_fallback re-execs us
+# under xcb if this driver's EGL cannot serve the viewport's context. That
+# escape needs a DISPLAY to exist, which is why the manifest asks for
+# --socket=x11 rather than --socket=fallback-x11: the "fallback" form hands
+# over nothing while Wayland is up. Do NOT force xcb from here — native
+# Wayland is the better session when it works, which is nearly always.
 #
 # pip installed the dependencies under /app's prefix; the runtime's python
 # does not look there on its own, whatever its version happens to be.

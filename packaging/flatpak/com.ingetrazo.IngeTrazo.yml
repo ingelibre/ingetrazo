@@ -9,10 +9,15 @@ sdk: org.freedesktop.Sdk
 command: ingetrazo
 
 finish-args:
-  # GUI — native Wayland when present, X11 as fallback. Never force xcb:
-  # the sandbox gets no DISPLAY under Wayland.
+  # GUI — native Wayland when present, X11 when it is not... and X11 also
+  # when Wayland IS present, which is why this is --socket=x11 and not
+  # --socket=fallback-x11: "fallback" hands over nothing while a Wayland
+  # socket exists, and then core.gl_fallback has no X11 to escape to on a
+  # driver whose EGL cannot give us a desktop-GL context (the NVIDIA
+  # report of 2026-09-09). Costs the usual X11 sandbox hole; buys an app
+  # that opens on those machines instead of showing nothing.
   - --socket=wayland
-  - --socket=fallback-x11
+  - --socket=x11
   - --share=ipc
   - --device=dri                 # the OpenGL viewport IS the application
   # The user's models live anywhere (~/Descargas, pCloud mounts, USB).
