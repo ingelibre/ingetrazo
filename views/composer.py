@@ -3929,6 +3929,18 @@ class ComposerWindow(QMainWindow):
                              on_new=self._new_sheet_tab)
         self.setStatusBar(bar)
         self._sheet_tabs = bar.tabs
+        # Auto-render lives on the status row, right of the Model | sheet
+        # tabs and before the cursor position (Marco, 2026-09-08: «abajo en
+        # la fila donde están los botones del modelo y lámina, a la
+        # derecha, antes de las x y y»).
+        self.auto_check = QCheckBox(tr("Auto-render"))
+        self.auto_check.setToolTip(tr(
+            "Re-render the views by themselves when the model changes "
+            "(LayOut's Auto). Vector views keep their badge and wait for "
+            "Update."))
+        self.auto_check.setChecked(self._auto_render)
+        self.auto_check.toggled.connect(self._set_auto_render)
+        self.statusBar().addPermanentWidget(self.auto_check)
         self._pos_label = QLabel("")
         self.statusBar().addPermanentWidget(self._pos_label)
         # QGIS-style zoom combo: fit modes + presets, editable percentage.
@@ -4511,14 +4523,6 @@ class ComposerWindow(QMainWindow):
         self.refresh_action = act("refresh", tr("Update views"), tr(
             "Re-render every view of this sheet from the model."),
             self.refresh_all_frames)
-        self.auto_check = QCheckBox(tr("Auto-render"))
-        self.auto_check.setToolTip(tr(
-            "Re-render the views by themselves when the model changes "
-            "(LayOut's Auto). Vector views keep their badge and wait for "
-            "Update."))
-        self.auto_check.setChecked(self._auto_render)
-        self.auto_check.toggled.connect(self._set_auto_render)
-        tb.addWidget(self.auto_check)
         tb.addSeparator()
         self.export_pdf_action = act("export_pdf", tr("Export PDF…"), tr(
             "This sheet as a PDF at its exact paper size."), self._on_export_pdf)

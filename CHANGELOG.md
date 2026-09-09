@@ -38,10 +38,12 @@ follow [SemVer](https://semver.org).
   su sitio, con deshacer (Marco, 2026-09-08: «quiero copiar el cajetín
   que hice o algún objeto de la lámina 1 y pegarla a la lámina 2»). El
   resto de ítems ya se copiaban entre láminas.
-- **Barra de lámina bajo el título del compositor, con iconos:** Guardar, Actualizar
-  vistas, Renderizado automático, Exportar PDF, Exportar imagen y Vista
-  previa de impresión, que salen del panel lateral (Marco, 2026-09-08:
-  «para no sobrecargar la barra lateral derecha»).
+- **Barra de lámina bajo el título del compositor, con iconos:** Guardar,
+  Actualizar vistas, Exportar PDF, Exportar imagen y Vista previa de
+  impresión, que salen del panel lateral (Marco, 2026-09-08: «para no
+  sobrecargar la barra lateral derecha»). La casilla «Renderizado
+  automático» va en la fila de estado, a la derecha de las pestañas
+  Modelo | Láminas y antes de la posición del cursor.
 - **Ctrl+Alt+clic selecciona el ítem que está debajo** en el compositor,
   y vuelve a pulsar para seguir bajando por la pila y volver arriba (el
   «seleccionar por detrás» de Inkscape e Illustrator); el menú del botón

@@ -252,4 +252,4 @@ def test_export_image_writes_the_sheet_at_paper_size_times_dpi(tmp_path):
         assert (px & 0xFF) < 0x60                                 # the dark rect
     # the sheet toolbar carries the document commands, the panel does not
     assert composer.export_image_action.text()
-    assert composer.auto_check.parentWidget() is not None
+    assert composer.auto_check.parentWidget() is composer.statusBar()   # the status row
