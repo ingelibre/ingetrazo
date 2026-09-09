@@ -45,6 +45,26 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.16" date="2026-09-09">
+      <description>
+        <p>Starts on machines whose graphics driver refuses the OpenGL
+        context the viewport asks for — an NVIDIA card under Wayland would
+        not open the application at all, and now it asks for less, or comes
+        back under X11, by itself. Orbiting no longer has its vertical axis
+        inverted: dragging down tips you up over the model, as it does
+        everywhere else. And a group made of nothing but lines and arcs
+        offers its snap points again and can be selected by clicking one of
+        its lines.</p>
+        <p xml:lang="es">Arranca en equipos cuyo driver gráfico rechaza el
+        contexto OpenGL que pide el visor — con una tarjeta NVIDIA sobre
+        Wayland la aplicación no abría siquiera, y ahora pide menos, o
+        vuelve bajo X11, ella sola. El orbitar deja de tener el eje vertical
+        invertido: arrastrar hacia abajo te asoma por encima del modelo,
+        como en todas partes. Y un grupo hecho solo de líneas y arcos vuelve
+        a ofrecer sus referencias y a poder seleccionarse pinchando una de
+        sus líneas.</p>
+      </description>
+    </release>
     <release version="0.3.7.1" date="2026-08-28">
       <description>
         <p>The component library now speaks the language the interface is

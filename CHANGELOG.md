@@ -6,6 +6,16 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+## [0.3.16] — 2026-09-09
+
+**La release de los dos primeros probadores de fuera.** El mismo día
+llegaron un youtuber que probó las dos apps por correo y `@pacaeiro` con
+dos issues en GitHub, y entre los dos destaparon tres cosas que ninguna
+prueba local podía cazar: en un equipo con NVIDIA sobre Wayland la
+aplicación **no abría en absoluto**, el eje vertical del orbitar estaba
+invertido desde siempre, y un grupo hecho solo de líneas y arcos no daba
+ni una referencia ni se dejaba seleccionar.
+
 ### Corregido
 - **Un grupo hecho solo de líneas y arcos no daba ni una referencia, y
   costaba seleccionarlo pinchando sus líneas** (issue #8). Los grupos sin
