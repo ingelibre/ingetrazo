@@ -222,3 +222,34 @@ def test_legacy_fixed_scale_labels_load_as_bound_texts():
     # Round trip: an already-migrated sheet loads unchanged.
     again = Composicion.from_dict(loaded.to_dict())
     assert len(again.texts) == 4
+
+
+def test_export_image_writes_the_sheet_at_paper_size_times_dpi(tmp_path):
+    """Marco, 2026-09-08: «sería bueno poder guardar o exportar la lámina
+    en jpg o png» — the page at its paper size × dpi, white, with the
+    sheet's items on it; PNG and JPG both."""
+    from PySide6.QtGui import QImage
+    from PySide6.QtWidgets import QWidget
+    from core.composition import FormaItem
+    from tests.test_composer_canvas import _FakeViewport
+    from views.composer import ComposerWindow
+    host = QWidget()
+    host.viewport = _FakeViewport()
+    composer = ComposerWindow(host)
+    composer.comp.frames = []
+    composer.comp.shapes = [FormaItem(kind="rect", x_mm=20.0, y_mm=20.0,
+                                      w_mm=100.0, h_mm=60.0, fill=True,
+                                      fill_color="#202020")]
+    pw, ph = composer.comp.page_size_mm()
+    for name in ("lamina.png", "lamina.jpg"):
+        path = tmp_path / name
+        composer.export_image(str(path), dpi=100)
+        img = QImage(str(path))
+        assert (img.width(), img.height()) == (round(pw / 25.4 * 100),
+                                               round(ph / 25.4 * 100))
+        assert (img.pixel(5, 5) & 0xFFFFFF) == 0xFFFFFF          # paper
+        px = img.pixel(round(70 / 25.4 * 100), round(50 / 25.4 * 100))
+        assert (px & 0xFF) < 0x60                                 # the dark rect
+    # the sheet toolbar carries the document commands, the panel does not
+    assert composer.export_image_action.text()
+    assert composer.auto_check.parentWidget() is not None

@@ -1521,7 +1521,11 @@
  "The label can be dragged anywhere with the mouse (LayOut): grab it by its text. This returns it to its automatic spot.": "El texto se puede arrastrar a cualquier sitio con el ratón (LayOut): agárralo por las letras. Esto lo devuelve a su posición automática.",
  "Select / move items (Ctrl+Alt+click, or the right-click menu, picks the item underneath)": "Seleccionar / mover ítems (Ctrl+Alt+clic, o el menú del botón derecho, elige el ítem que está debajo)",
  "Select the item underneath": "Seleccionar el ítem de debajo",
- "Save (Ctrl+S)": "Guardar (Ctrl+S)",
- "Save the document — the model and every sheet — to its .igz. Auto-save (Preferences) keeps a recovery copy too.": "Guarda el documento, el modelo y todas las láminas, en su .igz. El autoguardado (Preferencias) mantiene además una copia de recuperación.",
- "Saved.": "Guardado."
+ "Saved.": "Guardado.",
+ "Save the document — the model and every sheet — to its .igz (Ctrl+S). Auto-save (Preferences) keeps a recovery copy too.": "Guarda el documento, el modelo y todas las láminas, en su .igz (Ctrl+S). El autoguardado (Preferencias) mantiene además una copia de recuperación.",
+ "Update views": "Actualizar vistas",
+ "Re-render every view of this sheet from the model.": "Vuelve a renderizar todas las vistas de esta lámina desde el modelo.",
+ "This sheet as a PDF at its exact paper size.": "Esta lámina como PDF a su tamaño de papel exacto.",
+ "This sheet as a PNG or JPG at the resolution you choose.": "Esta lámina como PNG o JPG a la resolución que elijas.",
+ "Resolution (dpi):": "Resolución (ppp):"
 }

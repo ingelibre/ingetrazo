@@ -3901,6 +3901,7 @@ class ComposerWindow(QMainWindow):
         view.setBackgroundBrush(QColor(70, 76, 84))
         self._view = view
         self._build_tools_toolbar()
+        self._build_sheet_toolbar()
         self._build_arrange_toolbar()
 
         panel = self._build_panel()
@@ -4480,15 +4481,35 @@ class ComposerWindow(QMainWindow):
         self.props.addWidget(_top_aligned(self._page_llamada()))   # 14
         self._tabs.addTab(self.props, tr("Item properties"))
 
-        save_btn = QPushButton(tr("Save (Ctrl+S)"))
-        save_btn.setToolTip(tr(
-            "Save the document — the model and every sheet — to its .igz. "
-            "Auto-save (Preferences) keeps a recovery copy too."))
-        save_btn.clicked.connect(self.save_document)
-        outer.addWidget(save_btn)
-        refresh_btn = QPushButton(tr("Update all views"))
-        refresh_btn.clicked.connect(self.refresh_all_frames)
-        outer.addWidget(refresh_btn)
+        # Save / update / export live on the sheet toolbar at the top
+        # (Marco, 2026-09-08: «para no sobrecargar la barra lateral derecha»).
+        return panel
+
+    def _build_sheet_toolbar(self) -> None:
+        """The document commands of a sheet, on one row under the title
+        bar: save, update the views, auto-render, export to PDF or to an
+        image, print preview."""
+        from PySide6.QtGui import QAction
+        from PySide6.QtWidgets import QToolBar
+        tb = QToolBar(tr("Sheet"), self)
+        tb.setObjectName("sheet_toolbar")
+        tb.setMovable(False)
+        tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
+
+        def act(text, tip, slot):
+            a = QAction(text, self)
+            a.setToolTip(tip)
+            a.triggered.connect(lambda _c: slot())
+            tb.addAction(a)
+            return a
+        self.save_action = act(tr("Save"), tr(
+            "Save the document — the model and every sheet — to its .igz "
+            "(Ctrl+S). Auto-save (Preferences) keeps a recovery copy too."),
+            self.save_document)
+        tb.addSeparator()
+        self.refresh_action = act(tr("Update views"), tr(
+            "Re-render every view of this sheet from the model."),
+            self.refresh_all_frames)
         self.auto_check = QCheckBox(tr("Auto-render"))
         self.auto_check.setToolTip(tr(
             "Re-render the views by themselves when the model changes "
@@ -4496,16 +4517,18 @@ class ComposerWindow(QMainWindow):
             "Update."))
         self.auto_check.setChecked(self._auto_render)
         self.auto_check.toggled.connect(self._set_auto_render)
-        outer.addWidget(self.auto_check)
-        export_btn = QPushButton(tr("Export PDF…"))
-        export_btn.clicked.connect(self._on_export_pdf)
-        outer.addWidget(export_btn)
-        preview_btn = QPushButton(tr("Print preview…"))
-        preview_btn.setToolTip(tr(
-            "See the sheet exactly as it prints, and print it from there."))
-        preview_btn.clicked.connect(self._on_print_preview)
-        outer.addWidget(preview_btn)
-        return panel
+        tb.addWidget(self.auto_check)
+        tb.addSeparator()
+        self.export_pdf_action = act(tr("Export PDF…"), tr(
+            "This sheet as a PDF at its exact paper size."), self._on_export_pdf)
+        self.export_image_action = act(tr("Export image…"), tr(
+            "This sheet as a PNG or JPG at the resolution you choose."),
+            self._on_export_image)
+        self.preview_action = act(tr("Print preview…"), tr(
+            "See the sheet exactly as it prints, and print it from there."),
+            self._on_print_preview)
+        self.addToolBar(Qt.TopToolBarArea, tb)
+        self._sheet_tb = tb
 
     def _page_none(self) -> QWidget:
         w = QWidget()
@@ -9252,6 +9275,59 @@ class ComposerWindow(QMainWindow):
             return
         self.export_pdf(path)
         self.statusBar().showMessage(tr("Exported {name}", name=path), 4000)
+
+    #: Default resolution of an image export, dots per inch.
+    IMAGE_EXPORT_DPI = 200
+
+    def _on_export_image(self) -> None:
+        """The sheet as a PNG or JPG (Marco, 2026-09-08: «sería bueno poder
+        guardar o exportar la lámina en jpg o png»): pick the file, then
+        the resolution; the page comes out at its paper size × dpi."""
+        from PySide6.QtCore import QSettings
+        from PySide6.QtWidgets import QInputDialog
+        self.refresh_all_frames()
+        path, chosen = file_dialogs.getSaveFileName(
+            self, tr("Export image…"), "lamina.png",
+            "PNG (*.png);;JPEG (*.jpg *.jpeg)")
+        if not path:
+            return
+        if not path.lower().endswith((".png", ".jpg", ".jpeg")):
+            path += ".jpg" if "JPEG" in (chosen or "") else ".png"
+        st = QSettings()
+        dpi, ok = QInputDialog.getInt(
+            self, tr("Export image…"), tr("Resolution (dpi):"),
+            int(st.value("composer/image_dpi", self.IMAGE_EXPORT_DPI)),
+            50, 1200, 10)
+        if not ok:
+            return
+        st.setValue("composer/image_dpi", int(dpi))
+        self.export_image(path, dpi)
+        self.statusBar().showMessage(tr("Exported {name}", name=path), 4000)
+
+    def export_image(self, path: str, dpi: float = IMAGE_EXPORT_DPI) -> None:
+        """Write the current sheet to ``path`` as a raster image: white
+        paper, ``dpi`` dots per inch, the same painter as the PDF."""
+        from PySide6.QtGui import QImage
+        pw, ph = self.comp.page_size_mm()
+        scale = float(dpi) / 25.4
+        w_px = max(1, int(round(pw * scale)))
+        h_px = max(1, int(round(ph * scale)))
+        img = QImage(w_px, h_px, QImage.Format_RGB32)
+        img.fill(Qt.white)
+        img.setDotsPerMeterX(int(round(dpi / 0.0254)))
+        img.setDotsPerMeterY(int(round(dpi / 0.0254)))
+        painter = QPainter(img)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setRenderHint(QPainter.TextAntialiasing, True)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+            painter.scale(scale, scale)
+            self._paint_sheet(painter, self.comp)
+        finally:
+            painter.end()
+        quality = 92 if path.lower().endswith((".jpg", ".jpeg")) else -1
+        if not img.save(path, None, quality):
+            raise OSError(f"could not write {path}")
 
     def _printer_for_sheet(self):
         from PySide6.QtGui import QPageLayout, QPageSize

@@ -29,6 +29,14 @@ follow [SemVer](https://semver.org).
   probarlo en todas: «tal vez eso solo para lo que es acotar»).
 
 ### Añadido
+- **Exportar la lámina como imagen** (PNG o JPG) desde el compositor, a
+  la resolución que elijas (se recuerda la última), con el mismo pintor
+  que el PDF (Marco, 2026-09-08: «sería bueno poder guardar o exportar
+  la lámina en jpg o png»).
+- **Barra de lámina bajo el título del compositor:** Guardar, Actualizar
+  vistas, Renderizado automático, Exportar PDF, Exportar imagen y Vista
+  previa de impresión, que salen del panel lateral (Marco, 2026-09-08:
+  «para no sobrecargar la barra lateral derecha»).
 - **Ctrl+Alt+clic selecciona el ítem que está debajo** en el compositor,
   y vuelve a pulsar para seguir bajando por la pila y volver arriba (el
   «seleccionar por detrás» de Inkscape e Illustrator); el menú del botón
