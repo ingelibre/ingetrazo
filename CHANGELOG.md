@@ -33,7 +33,12 @@ follow [SemVer](https://semver.org).
   la resolución que elijas (se recuerda la última), con el mismo pintor
   que el PDF (Marco, 2026-09-08: «sería bueno poder guardar o exportar
   la lámina en jpg o png»).
-- **Barra de lámina bajo el título del compositor:** Guardar, Actualizar
+- **El cajetín se copia y se pega entre láminas** (Ctrl+C en la lámina 1,
+  Ctrl+V en la 2): como cada lámina tiene un cajetín, el pegado ocupa
+  su sitio, con deshacer (Marco, 2026-09-08: «quiero copiar el cajetín
+  que hice o algún objeto de la lámina 1 y pegarla a la lámina 2»). El
+  resto de ítems ya se copiaban entre láminas.
+- **Barra de lámina bajo el título del compositor, con iconos:** Guardar, Actualizar
   vistas, Renderizado automático, Exportar PDF, Exportar imagen y Vista
   previa de impresión, que salen del panel lateral (Marco, 2026-09-08:
   «para no sobrecargar la barra lateral derecha»).

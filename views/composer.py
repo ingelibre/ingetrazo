@@ -4491,23 +4491,24 @@ class ComposerWindow(QMainWindow):
         image, print preview."""
         from PySide6.QtGui import QAction
         from PySide6.QtWidgets import QToolBar
+        from views.icons import tool_icon
         tb = QToolBar(tr("Sheet"), self)
         tb.setObjectName("sheet_toolbar")
         tb.setMovable(False)
-        tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        tb.setToolButtonStyle(Qt.ToolButtonIconOnly)   # icons, like the tools
 
-        def act(text, tip, slot):
-            a = QAction(text, self)
+        def act(icon, text, tip, slot):
+            a = QAction(tool_icon(icon), text, self)
             a.setToolTip(tip)
             a.triggered.connect(lambda _c: slot())
             tb.addAction(a)
             return a
-        self.save_action = act(tr("Save"), tr(
+        self.save_action = act("save", tr("Save"), tr(
             "Save the document — the model and every sheet — to its .igz "
             "(Ctrl+S). Auto-save (Preferences) keeps a recovery copy too."),
             self.save_document)
         tb.addSeparator()
-        self.refresh_action = act(tr("Update views"), tr(
+        self.refresh_action = act("refresh", tr("Update views"), tr(
             "Re-render every view of this sheet from the model."),
             self.refresh_all_frames)
         self.auto_check = QCheckBox(tr("Auto-render"))
@@ -4519,12 +4520,12 @@ class ComposerWindow(QMainWindow):
         self.auto_check.toggled.connect(self._set_auto_render)
         tb.addWidget(self.auto_check)
         tb.addSeparator()
-        self.export_pdf_action = act(tr("Export PDF…"), tr(
+        self.export_pdf_action = act("export_pdf", tr("Export PDF…"), tr(
             "This sheet as a PDF at its exact paper size."), self._on_export_pdf)
-        self.export_image_action = act(tr("Export image…"), tr(
+        self.export_image_action = act("image", tr("Export image…"), tr(
             "This sheet as a PNG or JPG at the resolution you choose."),
             self._on_export_image)
-        self.preview_action = act(tr("Print preview…"), tr(
+        self.preview_action = act("print_preview", tr("Print preview…"), tr(
             "See the sheet exactly as it prints, and print it from there."),
             self._on_print_preview)
         self.addToolBar(Qt.TopToolBarArea, tb)
@@ -6716,9 +6717,12 @@ class ComposerWindow(QMainWindow):
     _clipboard_from = None
 
     def _copyable(self) -> list:
+        # The title block too: pasting it on another sheet is the quickest
+        # way to carry a finished one over (Marco, 2026-09-08: «quiero
+        # copiar el cajetín que hice… y pegarlo a la lámina 2»). A sheet
+        # holds one, so pasting REPLACES that sheet's (undoable).
         return [it.model for it in self.canvas.selectedItems()
-                if isinstance(it, _SheetItem)
-                and not isinstance(it.model, Cajetin)]
+                if isinstance(it, _SheetItem)]
 
     def copy_selected(self) -> None:
         """Ctrl+C: the selected items go to the sheet clipboard."""
@@ -6768,8 +6772,13 @@ class ComposerWindow(QMainWindow):
         z = self._next_z()
         for m0 in src:
             m = copy.deepcopy(m0)
-            m.x_mm += step
-            m.y_mm += step
+            if isinstance(m, Cajetin):
+                # one per sheet: it takes the place of this sheet's, where
+                # the original sits (never stepped off its corner)
+                m.x_mm, m.y_mm = m0.x_mm, m0.y_mm
+            else:
+                m.x_mm += step
+                m.y_mm += step
             m.locked = False
             gid = getattr(m, "group_id", "")
             if gid:
@@ -6806,7 +6815,8 @@ class ComposerWindow(QMainWindow):
             if isinstance(it, _SheetItem) and any(it.model is p for p in pasted):
                 it.force_select()
         for m0, m in zip(src, pasted):      # the next paste steps on from here
-            m0.x_mm, m0.y_mm = m.x_mm, m.y_mm
+            if not isinstance(m, Cajetin):
+                m0.x_mm, m0.y_mm = m.x_mm, m.y_mm
         ComposerWindow._clipboard_from = self.comp
         self.statusBar().showMessage(
             tr("{n} item(s) pasted.", n=len(pasted)), 3000)

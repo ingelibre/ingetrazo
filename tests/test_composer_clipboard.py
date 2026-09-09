@@ -144,3 +144,36 @@ def test_property_pages_keep_their_rows_at_the_top(monkeypatch):
         assert comp.text_bold.isAncestorOf(comp.text_bold) or page.isAncestorOf(comp.text_bold)
     finally:
         _close(win, comp)
+
+
+def test_the_title_block_copies_to_another_sheet_and_replaces_its_own():
+    """Marco, 2026-09-08: «quiero copiar el cajetín que hice o algún objeto
+    de la lámina 1 y pegarla a la lámina 2». A sheet holds one title
+    block, so the paste takes its place — undoable."""
+    from PySide6.QtWidgets import QWidget
+    from core.composition import Cajetin, Composicion
+    from tests.test_composer_canvas import _FakeViewport
+    from views.composer import CajetinItem, ComposerWindow
+    host = QWidget()
+    host.viewport = _FakeViewport()
+    composer = ComposerWindow(host)
+    scene = host.viewport.scene
+    first = composer.comp
+    first.cajetin = Cajetin(x_mm=100.0, y_mm=150.0, w_mm=180.0, h_mm=33.0)
+    first.cajetin.set_field("PROYECTO", "Plaza Yanque")
+    second = Composicion(name="Lámina 2")
+    scene.compositions.append(second)
+    composer._rebuild_canvas()
+    item = next(i for i in composer.canvas.items() if isinstance(i, CajetinItem))
+    item.setSelected(True)
+    composer.copy_selected()
+    assert ComposerWindow._clipboard and isinstance(ComposerWindow._clipboard[0], Cajetin)
+    composer._reload_comp_combo()
+    composer._on_comp_switched(scene.compositions.index(second))
+    assert composer.comp is second and second.cajetin is None
+    composer.paste_clipboard()
+    assert second.cajetin is not None and second.cajetin is not first.cajetin
+    assert dict(second.cajetin.campos)["PROYECTO"] == "Plaza Yanque"
+    assert (second.cajetin.x_mm, second.cajetin.y_mm) == (100.0, 150.0)
+    assert composer.history.undo() and second.cajetin is None
+    assert dict(first.cajetin.campos)["PROYECTO"] == "Plaza Yanque"   # untouched

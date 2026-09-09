@@ -762,6 +762,47 @@ def _comp_terreno(p, ink):
         p.drawLine(QPointF(x, 24), QPointF(x - 5, 31))
 
 
+def _save(p, ink):
+    # The floppy that never dies: a square with a label slot and a shutter.
+    p.drawRect(QRectF(9, 9, 30, 30))
+    p.drawRect(QRectF(16, 9, 16, 9))              # the shutter, top
+    p.drawRect(QRectF(15, 25, 18, 14))            # the label, bottom
+    p.drawLine(QPointF(27, 11), QPointF(27, 16))
+
+
+def _refresh(p, ink):
+    # Two arrows chasing each other round a circle — update the views.
+    p.setBrush(Qt.NoBrush)
+    r = QRectF(11, 11, 26, 26)
+    p.drawArc(r, 30 * 16, 120 * 16)
+    p.drawArc(r, 210 * 16, 120 * 16)
+    p.setBrush(ink)
+    p.drawPolygon(QPolygonF([QPointF(36, 8), QPointF(39, 18), QPointF(29, 16)]))
+    p.drawPolygon(QPolygonF([QPointF(12, 40), QPointF(9, 30), QPointF(19, 32)]))
+
+
+def _export_pdf(p, ink):
+    # A page with a folded corner and an arrow leaving it — export.
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(28, 8), QPointF(10, 8), QPointF(10, 40),
+                              QPointF(34, 40), QPointF(34, 14), QPointF(28, 8),
+                              QPointF(28, 14), QPointF(34, 14)]))
+    p.drawLine(QPointF(17, 22), QPointF(27, 22))
+    p.drawLine(QPointF(17, 28), QPointF(27, 28))
+    p.drawLine(QPointF(30, 33), QPointF(42, 33))   # the arrow out
+    p.drawLine(QPointF(38, 29), QPointF(42, 33))
+    p.drawLine(QPointF(38, 37), QPointF(42, 33))
+
+
+def _print_preview(p, ink):
+    # A page under a magnifier — see it as it prints.
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(9, 7, 22, 30))
+    p.drawLine(QPointF(14, 15), QPointF(26, 15))
+    p.drawLine(QPointF(14, 21), QPointF(26, 21))
+    _magnifier(p, ink, 30, 30, 7)
+
+
 def _comp_etiqueta(p, ink):
     # A label: two text lines in a box, with a leader arrow to a point.
     p.drawRect(QRectF(20, 8, 22, 16))
@@ -836,6 +877,8 @@ _DRAW = {
     "comp_leyenda": _comp_leyenda, "comp_escala": _comp_escala,
     "comp_cajetin": _comp_cajetin, "comp_flecha": _comp_flecha,
     "comp_terreno": _comp_terreno,
+    "save": _save, "refresh": _refresh, "export_pdf": _export_pdf,
+    "print_preview": _print_preview,
     "comp_etiqueta": _comp_etiqueta, "comp_perfil": _comp_perfil,
     "comp_nivel": _comp_nivel, "comp_llamada": _comp_llamada,
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
