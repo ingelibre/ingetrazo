@@ -1527,5 +1527,7 @@
  "Re-render every view of this sheet from the model.": "Vuelve a renderizar todas las vistas de esta lámina desde el modelo.",
  "This sheet as a PDF at its exact paper size.": "Esta lámina como PDF a su tamaño de papel exacto.",
  "This sheet as a PNG or JPG at the resolution you choose.": "Esta lámina como PNG o JPG a la resolución que elijas.",
- "Resolution (dpi):": "Resolución (ppp):"
+ "Resolution (dpi):": "Resolución (ppp):",
+ "Millimetres of paper. Drag off the ruler to pull a guide onto the page; items snap to guides. Drag a guide back here (or press Delete) to remove it.": "Milímetros de papel. Arrastra desde la regla para sacar una guía a la página; los ítems se imantan a las guías. Arrastra una guía de vuelta aquí (o pulsa Supr) para quitarla.",
+ "Clear all guides": "Quitar todas las guías"
 }

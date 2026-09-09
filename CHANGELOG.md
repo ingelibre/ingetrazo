@@ -29,6 +29,15 @@ follow [SemVer](https://semver.org).
   probarlo en todas: «tal vez eso solo para lo que es acotar»).
 
 ### Añadido
+- **Reglas y guías en el compositor, como en QGIS.** Una regla en
+  milímetros arriba y otra a la izquierda del lienzo, que siguen el zoom
+  y el desplazamiento y marcan la posición del cursor. Arrastrando desde
+  una regla sale una guía (línea azul discontinua) a la página; los
+  ítems se imantan a las guías al moverlos o redimensionarlos; una guía
+  se desliza por su eje, se quita arrastrándola de vuelta a la regla o
+  con Supr, y el botón derecho sobre la regla las quita todas. Se
+  guardan con la lámina (Marco, 2026-09-08: «en QGIS muestran como unas
+  guías… sería bueno implementar eso en composición»).
 - **Exportar la lámina como imagen** (PNG o JPG) desde el compositor, a
   la resolución que elijas (se recuerda la última), con el mismo pintor
   que el PDF (Marco, 2026-09-08: «sería bueno poder guardar o exportar

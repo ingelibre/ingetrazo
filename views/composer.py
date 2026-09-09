@@ -15,7 +15,7 @@ import datetime
 import math
 from typing import Optional
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import (QBrush, QColor, QFont, QImage, QKeySequence,
                            QPageLayout, QPageSize, QPainter, QPdfWriter,
                            QPen, QShortcut, QTransform, QVector3D)
@@ -36,6 +36,7 @@ from core.composition import (COMMON_SCALES, NEW_FRAME_STYLE, PAPER_SIZES_MM, RE
                               PerfilTerreno, RemoveItemCommand, TextoItem,
                               apply_frame_camera, snap_mm)
 from core.i18n import tr
+from PySide6.QtWidgets import QGraphicsLineItem, QGridLayout, QWidget as _QWidget  # noqa: E402
 from views.filedialogs import file_dialogs
 
 PT_TO_MM = 25.4 / 72.0
@@ -1980,6 +1981,240 @@ class InlineTextEditor(QGraphicsTextItem):
         self.composer.end_inline_edit(self, text if commit else None)
 
 
+class GuideItem(QGraphicsLineItem):
+    """A QGIS guide: a dashed line across the page at one x (``axis``
+    ``"v"``) or one y (``"h"``), dragged off a ruler. It slides along its
+    own axis only; dropping it back on the ruler removes it, Delete too.
+    Items snap to it while dragging or resizing. Never printed."""
+
+    def __init__(self, composer, axis: str, mm: float, page_w: float,
+                 page_h: float, preview: bool = False) -> None:
+        super().__init__()
+        self.composer = composer
+        self.axis = axis
+        self.mm = float(mm)
+        self.preview = preview
+        if axis == "v":
+            self.setLine(0.0, -20.0, 0.0, page_h + 20.0)
+        else:
+            self.setLine(-20.0, 0.0, page_w + 20.0, 0.0)
+        pen = QPen(QColor(0, 150, 200, 200), 0.0, Qt.DashLine)   # cosmetic
+        pen.setDashPattern([6.0, 4.0])
+        self.setPen(pen)
+        self.setZValue(99999)
+        if not preview:
+            self.setFlag(QGraphicsItem.ItemIsMovable, True)
+            self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+            self.setAcceptHoverEvents(True)
+            self.setCursor(Qt.SizeHorCursor if axis == "v"
+                           else Qt.SizeVerCursor)
+        self.setPos(self.mm if axis == "v" else 0.0,
+                    self.mm if axis == "h" else 0.0)
+
+    def shape(self):
+        """A grip a couple of mm wide — a hairline is impossible to catch."""
+        from PySide6.QtGui import QPainterPath, QPainterPathStroker
+        path = QPainterPath()
+        path.moveTo(self.line().p1())
+        path.lineTo(self.line().p2())
+        stroker = QPainterPathStroker()
+        stroker.setWidth(2.5)
+        return stroker.createStroke(path)
+
+    def boundingRect(self) -> QRectF:
+        return self.shape().controlPointRect()
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemPositionChange:
+            # along its own axis only
+            return (QPointF(value.x(), 0.0) if self.axis == "v"
+                    else QPointF(0.0, value.y()))
+        return super().itemChange(change, value)
+
+    def mousePressEvent(self, event) -> None:
+        self._press_mm = self.mm
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        new_mm = self.pos().x() if self.axis == "v" else self.pos().y()
+        view = self.scene().views()[0] if self.scene() and self.scene().views() else None
+        on_ruler = False
+        if view is not None:
+            vp = view.viewport()
+            on_ruler = not vp.rect().contains(
+                vp.mapFromGlobal(event.screenPos()))
+        if on_ruler:
+            self.composer.remove_guide(self.axis, self._press_mm)
+        elif abs(new_mm - self._press_mm) > 1e-9:
+            self.composer.move_guide(self.axis, self._press_mm, new_mm)
+
+
+class RulerWidget(_QWidget):
+    """QGIS's ruler: millimetres along the top (``horizontal``) or the
+    left of the canvas, following the view's zoom and pan, with the
+    cursor's position marked. Press and drag off it to pull a new guide
+    onto the page; right-click to clear the guides."""
+
+    THICK = 22
+
+    def __init__(self, composer, view, horizontal: bool, parent=None) -> None:
+        super().__init__(parent)
+        self.composer = composer
+        self.view = view
+        self.horizontal = horizontal
+        self._cursor_mm = None
+        self._drag_preview = None
+        self.setMouseTracking(False)
+        self.setToolTip(tr(
+            "Millimetres of paper. Drag off the ruler to pull a guide onto "
+            "the page; items snap to guides. Drag a guide back here (or "
+            "press Delete) to remove it."))
+        if horizontal:
+            self.setFixedHeight(self.THICK)
+        else:
+            self.setFixedWidth(self.THICK)
+
+    def _alive(self) -> bool:
+        """The view can be half-destroyed when the window closes and the
+        layout repaints the rulers one last time — never touch it then."""
+        from shiboken6 import isValid
+        return isValid(self) and isValid(self.view) and isValid(self.view.viewport())
+
+    # ---- geometry -------------------------------------------------------------
+    def _offset_px(self) -> float:
+        """Where the view's viewport starts along this ruler, in ruler px."""
+        vp = self.view.viewport()
+        g = vp.mapToGlobal(QPoint(0, 0))
+        here = self.mapFromGlobal(g)
+        return float(here.x() if self.horizontal else here.y())
+
+    def mm_to_px(self, mm: float) -> float:
+        origin = self.view.mapFromScene(QPointF(0.0, 0.0))
+        s = self.view.transform().m11()
+        base = origin.x() if self.horizontal else origin.y()
+        return self._offset_px() + base + mm * s
+
+    def px_to_mm(self, px: float) -> float:
+        origin = self.view.mapFromScene(QPointF(0.0, 0.0))
+        s = max(self.view.transform().m11(), 1e-9)
+        base = origin.x() if self.horizontal else origin.y()
+        return (px - self._offset_px() - base) / s
+
+    def set_cursor_mm(self, mm) -> None:
+        self._cursor_mm = mm
+        self.update()
+
+    # ---- painting -------------------------------------------------------------
+    def paintEvent(self, event) -> None:
+        from PySide6.QtGui import QFontMetrics
+        if not self._alive():
+            return
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(236, 238, 241))
+        ink = QColor(80, 88, 96)
+        p.setPen(QPen(ink, 1.0))
+        s = max(self.view.transform().m11(), 1e-9)
+        step = next((L for L in (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000)
+                     if L * s >= 42.0), 1000)
+        minor = step / 5.0 if step >= 5 else step
+        font = QFont()
+        font.setPointSize(7)
+        p.setFont(font)
+        fm = QFontMetrics(font)
+        length = self.width() if self.horizontal else self.height()
+        lo = self.px_to_mm(0.0)
+        hi = self.px_to_mm(float(length))
+        import math as _math
+        k0 = int(_math.floor(min(lo, hi) / minor)) - 1
+        k1 = int(_math.ceil(max(lo, hi) / minor)) + 1
+        T = self.THICK
+        for k in range(k0, k1 + 1):
+            mm = k * minor
+            px = self.mm_to_px(mm)
+            major = abs(mm / step - round(mm / step)) < 1e-6
+            tick = T * (0.55 if major else 0.25)
+            if self.horizontal:
+                p.drawLine(QPointF(px, T), QPointF(px, T - tick))
+                if major:
+                    p.drawText(QPointF(px + 2, T - tick - 1), f"{mm:g}")
+            else:
+                p.drawLine(QPointF(T, px), QPointF(T - tick, px))
+                if major:
+                    p.save()
+                    p.translate(T - tick - 2, px - 2)
+                    p.rotate(-90)
+                    p.drawText(QPointF(0, 0), f"{mm:g}")
+                    p.restore()
+        if self._cursor_mm is not None:
+            px = self.mm_to_px(self._cursor_mm)
+            p.setPen(QPen(QColor(0, 150, 200), 1.0))
+            if self.horizontal:
+                p.drawLine(QPointF(px, 0), QPointF(px, T))
+            else:
+                p.drawLine(QPointF(0, px), QPointF(T, px))
+        p.setPen(QPen(QColor(190, 196, 202), 1.0))
+        if self.horizontal:
+            p.drawLine(QPointF(0, T - 0.5), QPointF(self.width(), T - 0.5))
+        else:
+            p.drawLine(QPointF(T - 0.5, 0), QPointF(T - 0.5, self.height()))
+        p.end()
+
+    # ---- pulling a guide off the ruler ---------------------------------------
+    def _mm_at_global(self, gpos) -> float:
+        vp = self.view.viewport()
+        local = vp.mapFromGlobal(gpos)
+        scene = self.view.mapToScene(local)
+        return scene.x() if self.horizontal else scene.y()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self._pulling = True
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if not getattr(self, "_pulling", False):
+            return
+        gpos = event.globalPosition().toPoint()
+        mm = self._mm_at_global(gpos)
+        axis = "v" if self.horizontal else "h"
+        if self._drag_preview is None:
+            pw, ph = self.composer.comp.page_size_mm()
+            self._drag_preview = GuideItem(self.composer, axis, mm, pw, ph,
+                                           preview=True)
+            self.composer.canvas.addItem(self._drag_preview)
+        self._drag_preview.setPos(mm if axis == "v" else 0.0,
+                                  mm if axis == "h" else 0.0)
+        event.accept()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if not getattr(self, "_pulling", False):
+            super().mouseReleaseEvent(event)
+            return
+        self._pulling = False
+        gpos = event.globalPosition().toPoint()
+        if self._drag_preview is not None:
+            self.composer.canvas.removeItem(self._drag_preview)
+            self._drag_preview = None
+        vp = self.view.viewport()
+        if vp.rect().contains(vp.mapFromGlobal(gpos)):
+            self.composer.add_guide("v" if self.horizontal else "h",
+                                    self._mm_at_global(gpos))
+        event.accept()
+
+    def contextMenuEvent(self, event) -> None:
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        clear = menu.addAction(tr("Clear all guides"))
+        comp = self.composer.comp
+        clear.setEnabled(bool(comp.guides_v or comp.guides_h))
+        if menu.exec(event.globalPos()) is clear:
+            self.composer.clear_guides()
+
+
 class _SheetBorderCanvasItem(QGraphicsItem):
     """The sheet border on the canvas — the same painter the print uses."""
 
@@ -3908,7 +4143,7 @@ class ComposerWindow(QMainWindow):
         from PySide6.QtCore import QSettings
         from PySide6.QtWidgets import QSplitter
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(view)
+        split.addWidget(self._build_canvas_area(view))
         split.addWidget(panel)
         split.setStretchFactor(0, 1)      # the canvas absorbs resizes
         split.setStretchFactor(1, 0)
@@ -4278,6 +4513,11 @@ class ComposerWindow(QMainWindow):
 
     def update_cursor_label(self, x: float, y: float) -> None:
         self._pos_label.setText(f"x: {x:.1f} mm  y: {y:.1f} mm")
+        rh, rv = getattr(self, "ruler_h", None), getattr(self, "ruler_v", None)
+        if rh is not None:
+            rh.set_cursor_mm(x)
+        if rv is not None:
+            rv.set_cursor_mm(y)
 
     # ---- zoom (QGIS-style combo) ---------------------------------------------
     def _px_per_mm(self) -> float:
@@ -4342,6 +4582,8 @@ class ComposerWindow(QMainWindow):
         self._zoom_combo.blockSignals(False)
 
     # ---- panel ---------------------------------------------------------------
+        self._refresh_rulers()
+
     def _build_panel(self) -> QWidget:
         from PySide6.QtWidgets import QListWidget, QTabWidget
         panel = QWidget()
@@ -4496,6 +4738,79 @@ class ComposerWindow(QMainWindow):
         # Save / update / export live on the sheet toolbar at the top
         # (Marco, 2026-09-08: «para no sobrecargar la barra lateral derecha»).
         return panel
+
+    def _build_canvas_area(self, view) -> _QWidget:
+        """The view with a ruler on top and one on the left (QGIS): the
+        rulers follow every pan and zoom of the view."""
+        area = _QWidget()
+        grid = QGridLayout(area)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(0)
+        corner = _QWidget()
+        corner.setFixedSize(RulerWidget.THICK, RulerWidget.THICK)
+        corner.setAutoFillBackground(True)
+        self.ruler_h = RulerWidget(self, view, horizontal=True)
+        self.ruler_v = RulerWidget(self, view, horizontal=False)
+        grid.addWidget(corner, 0, 0)
+        grid.addWidget(self.ruler_h, 0, 1)
+        grid.addWidget(self.ruler_v, 1, 0)
+        grid.addWidget(view, 1, 1)
+        for bar in (view.horizontalScrollBar(), view.verticalScrollBar()):
+            bar.valueChanged.connect(lambda *_a: self._refresh_rulers())
+        return area
+
+    def _refresh_rulers(self) -> None:
+        from shiboken6 import isValid
+        for r in (getattr(self, "ruler_h", None), getattr(self, "ruler_v", None)):
+            if r is not None and isValid(r) and r._alive():
+                r.update()
+
+    # ---- guides (QGIS) ---------------------------------------------------------
+    def _set_guides(self, axis: str, values: list) -> None:
+        """One undo step on the sheet's guide list, then the guide items
+        are redrawn (the rest of the canvas stays put)."""
+        key = "guides_v" if axis == "v" else "guides_h"
+        values = sorted(round(float(v), 3) for v in values)
+        if values == list(getattr(self.comp, key)):
+            return
+        self.history.execute(EditItemCommand(self.comp, {key: values}),
+                             notify=False)
+        self._mark_dirty()
+        self._add_guide_items()
+
+    def add_guide(self, axis: str, mm: float) -> None:
+        key = "guides_v" if axis == "v" else "guides_h"
+        self._set_guides(axis, list(getattr(self.comp, key)) + [mm])
+
+    def remove_guide(self, axis: str, mm: float) -> None:
+        key = "guides_v" if axis == "v" else "guides_h"
+        keep = [v for v in getattr(self.comp, key) if abs(v - mm) > 1e-6]
+        self._set_guides(axis, keep)
+
+    def move_guide(self, axis: str, old_mm: float, new_mm: float) -> None:
+        key = "guides_v" if axis == "v" else "guides_h"
+        vals = [v for v in getattr(self.comp, key) if abs(v - old_mm) > 1e-6]
+        self._set_guides(axis, vals + [new_mm])
+
+    def clear_guides(self) -> None:
+        cmds = [EditItemCommand(self.comp, {k: []})
+                for k in ("guides_v", "guides_h") if getattr(self.comp, k)]
+        if not cmds:
+            return
+        self.history.execute(CompoundCommand(cmds), notify=False)
+        self._mark_dirty()
+        self._add_guide_items()
+
+    def _add_guide_items(self) -> None:
+        """(Re)create the guide lines from the sheet's lists."""
+        for it in list(self.canvas.items()):
+            if isinstance(it, GuideItem) and not it.preview:
+                self.canvas.removeItem(it)
+        pw, ph = self.comp.page_size_mm()
+        for x in self.comp.guides_v:
+            self.canvas.addItem(GuideItem(self, "v", x, pw, ph))
+        for y in self.comp.guides_h:
+            self.canvas.addItem(GuideItem(self, "h", y, pw, ph))
 
     def _build_sheet_toolbar(self) -> None:
         """The document commands of a sheet, on one row under the title
@@ -5783,6 +6098,7 @@ class ComposerWindow(QMainWindow):
                                    QPen(QColor(120, 128, 136), 0.3),
                                    QBrush(QColor(255, 255, 255)))
         page.setZValue(-100002)
+        self._add_guide_items()
         m = self.comp.margin_mm
         margin = self.canvas.addRect(m, m, pw - 2 * m, ph - 2 * m,
                                      QPen(QColor(190, 196, 202), 0.2,
@@ -6186,7 +6502,7 @@ class ComposerWindow(QMainWindow):
     def snap_targets_x(self, exclude=None) -> list[float]:
         pw, _ = self.comp.page_size_mm()
         m = self.comp.margin_mm
-        out = [0.0, m, pw / 2, pw - m, pw]
+        out = [0.0, m, pw / 2, pw - m, pw] + list(self.comp.guides_v)
         for it in self.canvas.items():
             if isinstance(it, _SheetItem) and it is not exclude:
                 w, _h = it.size_mm()
@@ -6196,7 +6512,7 @@ class ComposerWindow(QMainWindow):
     def snap_targets_y(self, exclude=None) -> list[float]:
         _, ph = self.comp.page_size_mm()
         m = self.comp.margin_mm
-        out = [0.0, m, ph / 2, ph - m, ph]
+        out = [0.0, m, ph / 2, ph - m, ph] + list(self.comp.guides_h)
         for it in self.canvas.items():
             if isinstance(it, _SheetItem) and it is not exclude:
                 _w, h = it.size_mm()
@@ -7656,6 +7972,10 @@ class ComposerWindow(QMainWindow):
         if isinstance(focus, (QLineEdit, QPlainTextEdit, QAbstractSpinBox)) \
                 or isinstance(focus, QComboBox):
             return                      # Delete belongs to the text field
+        guides = [it for it in self.canvas.selectedItems()
+                  if isinstance(it, GuideItem)]
+        for g in guides:
+            self.remove_guide(g.axis, g.mm)
         items = [it for it in self.canvas.selectedItems()
                  if isinstance(it, _SheetItem)]
         if not items:

@@ -828,6 +828,12 @@ class Composicion:
     border_color: str = "#1e242c"
     border_radius_mm: float = 0.0
     border_style: str = "single"
+    # QGIS's guides: vertical guides at these x (mm) and horizontal ones at
+    # these y, dragged off the rulers; items snap to them (Marco,
+    # 2026-09-08: «en QGIS muestran como unas guías… sería bueno
+    # implementar eso en composición»).
+    guides_v: list = field(default_factory=list)
+    guides_h: list = field(default_factory=list)
 
     def page_size_mm(self) -> tuple[float, float]:
         w, h = PAPER_SIZES_MM[self.paper]
@@ -888,6 +894,9 @@ class Composicion:
                 d[key] = [asdict(it) for it in lst]
         if self.cajetin is not None:
             d["cajetin"] = asdict(self.cajetin)
+        if self.guides_v or self.guides_h:
+            d["guides"] = {"v": [float(x) for x in self.guides_v],
+                           "h": [float(y) for y in self.guides_h]}
         return d
 
     @classmethod
@@ -921,6 +930,10 @@ class Composicion:
         c.cotas = _items(CotaItem, d.get("cotas"))
         if isinstance(d.get("cajetin"), dict):
             c.cajetin = _build(Cajetin, d["cajetin"])
+        g = d.get("guides")
+        if isinstance(g, dict):
+            c.guides_v = [float(x) for x in (g.get("v") or [])]
+            c.guides_h = [float(y) for y in (g.get("h") or [])]
         _migrate_fixed_scale_labels(c)
         return c
 
