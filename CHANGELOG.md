@@ -7,6 +7,18 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Cambiado
+- **«Modelo» desde el compositor ya no adivina.** El traspaso de ventana
+  esperaba 400 ms a ver si el escritorio activaba la ventana del modelo
+  y a veces se quedaba a medias (Marco, 2026-09-08: «a veces no hace
+  efecto, como que tengo que hacer doble clic»). Ahora, si el compositor
+  tapa a la ventana del modelo, se aparta al instante en cualquier
+  escritorio; lado a lado, en dos monitores, se queda. Una pestaña de
+  lámina lo trae de vuelta tal como estaba.
+- **Guardar desde el compositor.** Ctrl+S y Ctrl+Mayús+S funcionan en la
+  ventana del compositor y hay un botón «Guardar» en el panel; guardan
+  el documento entero, modelo y láminas. El autoguardado de Preferencias
+  ya cubría las láminas (Marco, 2026-09-08: «me gustaría que haya
+  autoguardado o el icono de guardar en composiciones»).
 - **Las cotas del compositor se quedan activas** tras colocar una: cota y
   cota angular siguen armadas para la siguiente, como el comando de
   acotar de AutoCAD. Esc cancela primero lo que esté a medias y, con nada

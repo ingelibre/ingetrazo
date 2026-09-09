@@ -228,65 +228,40 @@ def test_a_hint_or_a_hand_over_does_not_rebuild_the_tabs(monkeypatch):
         _close(win)
 
 
-def test_the_composer_steps_aside_only_if_the_model_never_became_active(monkeypatch):
-    """Wayland may refuse the hand-over; then the composer hides after a
-    grace period — unless a sheet tab brought it back meanwhile."""
+def test_model_tab_steps_the_composer_aside_when_it_overlaps_the_model_window(monkeypatch):
+    """The hand-over never guesses (Wayland may refuse to raise, Windows
+    keeps an owned window on top): overlapping, the composer hides at
+    once; side by side it stays; a sheet tab brings it back as it was."""
     win = _window(monkeypatch)
     try:
         win.show()
         win._sheet_tabs.click(1)
         comp = win._composer
-        monkeypatch.setattr(comp, "_HANDOVER_MS", 30)
-        # Simulate a compositor that never activates the model window.
-        monkeypatch.setattr(type(win), "isActiveWindow", lambda self: False)
-        monkeypatch.setattr(type(comp), "isActiveWindow", lambda self: True)
+        monkeypatch.setattr(type(comp), "_covers", lambda self, other: True)
         comp._sheet_tabs.click(0)                        # «Model»
-        import time
-        t0 = time.monotonic()
-        while comp.isVisible() and time.monotonic() - t0 < 2:
-            _app.processEvents()
-        assert not comp.isVisible()                      # stepped aside
+        assert not comp.isVisible()                      # stepped aside at once
         win._sheet_tabs.click(1)                         # …and comes back
         assert comp.isVisible()
-        # A sheet tab pressed within the grace period cancels the step-aside.
-        comp._sheet_tabs.click(0)
-        win._sheet_tabs.click(1)
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < 0.2:
-            _app.processEvents()
+        monkeypatch.setattr(type(comp), "_covers", lambda self, other: False)
+        comp._sheet_tabs.click(0)                        # two monitors: stays
         assert comp.isVisible()
     finally:
         _close(win)
 
 
-def test_under_windows_the_composer_steps_aside_at_once_when_it_covers_the_model(monkeypatch):
-    """Win32 keeps an owned window above its owner: the model window gets
-    activated but stays covered, so no activation check can help — the
-    composer hides right away when the frames overlap, and stays when they
-    do not (two monitors)."""
+def test_ctrl_s_in_the_composer_saves_the_whole_document(monkeypatch):
+    """The sheets are part of the document, but the model window's Save
+    shortcut never reached the composer (Marco, 2026-09-08)."""
     win = _window(monkeypatch)
     try:
         win.show()
         win._sheet_tabs.click(1)
         comp = win._composer
-        monkeypatch.setattr(type(comp), "_owner_stays_below",
-                            staticmethod(lambda: True))
-        # The model window DID become active — Windows does that — yet the
-        # composer covers it.
-        monkeypatch.setattr(type(win), "isActiveWindow", lambda self: True)
-        monkeypatch.setattr(type(comp), "isActiveWindow", lambda self: False)
-        monkeypatch.setattr(type(comp), "_covers", lambda self, other: True)
-        comp._sheet_tabs.click(0)                        # «Model»
-        assert not comp.isVisible()                      # no grace period
-        win._sheet_tabs.click(1)                         # …and comes back
-        assert comp.isVisible()
-        # Side by side (another monitor): nothing to uncover, it stays.
-        monkeypatch.setattr(type(comp), "_covers", lambda self, other: False)
-        comp._sheet_tabs.click(0)
-        import time
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < 0.5:
-            _app.processEvents()
-        assert comp.isVisible()
+        calls = []
+        monkeypatch.setattr(win, "_on_save", lambda: calls.append("save"))
+        monkeypatch.setattr(win, "_on_save_as", lambda: calls.append("save_as"))
+        comp.save_document()
+        comp.save_document_as()
+        assert calls == ["save", "save_as"]
     finally:
         _close(win)

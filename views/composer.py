@@ -3956,8 +3956,26 @@ class ComposerWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+L"), self, activated=self.lock_selected)
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self.copy_style)
         QShortcut(QKeySequence("Ctrl+Shift+V"), self, activated=self.paste_style)
+        # The document's Save lives on the model window's menu, whose
+        # shortcuts do not reach this window; the sheets are part of the
+        # same document (Marco, 2026-09-08: «me gustaría que haya
+        # autoguardado o el icono de guardar en composiciones»).
+        QShortcut(QKeySequence.Save, self, activated=self.save_document)
+        QShortcut(QKeySequence.SaveAs, self, activated=self.save_document_as)
 
         self._rebuild_canvas()
+
+    def save_document(self) -> None:
+        """Ctrl+S here saves the whole document — model and sheets."""
+        slot = getattr(self._window, "_on_save", None)
+        if slot is not None:
+            slot()
+            self.statusBar().showMessage(tr("Saved."), 2000)
+
+    def save_document_as(self) -> None:
+        slot = getattr(self._window, "_on_save_as", None)
+        if slot is not None:
+            slot()
 
     # ---- left tools toolbar (QGIS-style) -------------------------------------
     #: mode → (icon key, tooltip, drag?) — drag tools take a press-release
@@ -4462,6 +4480,12 @@ class ComposerWindow(QMainWindow):
         self.props.addWidget(_top_aligned(self._page_llamada()))   # 14
         self._tabs.addTab(self.props, tr("Item properties"))
 
+        save_btn = QPushButton(tr("Save (Ctrl+S)"))
+        save_btn.setToolTip(tr(
+            "Save the document — the model and every sheet — to its .igz. "
+            "Auto-save (Preferences) keeps a recovery copy too."))
+        save_btn.clicked.connect(self.save_document)
+        outer.addWidget(save_btn)
         refresh_btn = QPushButton(tr("Update all views"))
         refresh_btn.clicked.connect(self.refresh_all_frames)
         outer.addWidget(refresh_btn)
@@ -5601,7 +5625,6 @@ class ComposerWindow(QMainWindow):
         comps = self._scene().compositions
         if 0 <= index < len(comps) and comps[index] is not self.comp:
             self.comp_combo.setCurrentIndex(index)     # → _on_comp_switched
-        self._handover_seq = getattr(self, "_handover_seq", 0) + 1   # cancel a pending step-aside
         self.show()
         self.raise_()
         self.activateWindow()
@@ -5610,69 +5633,37 @@ class ComposerWindow(QMainWindow):
     def _new_sheet_tab(self) -> None:
         """The «+» tab: a new sheet, shown here."""
         self._on_comp_add()
-        self._handover_seq = getattr(self, "_handover_seq", 0) + 1
         self.show()
         self.raise_()
         self.activateWindow()
         self._refresh_sheet_tabs()
 
-    #: How long the window manager gets to honour the hand-over before the
-    #: composer steps aside on its own.
-    _HANDOVER_MS = 400
-
     def _show_model(self) -> None:
         """The «Model» tab: back to the model window; this strip keeps
         marking the sheet it shows.
 
-        Under Wayland a window cannot raise another one: ``raise_()`` is
-        a no-op and ``activateWindow()`` only works when the compositor
-        grants an activation token — GNOME does not always (Marco, 0.3.13
-        Flatpak: «quiero cambiar con los botones de abajo, no cambia»).
-        So if the model window has not become active shortly after, this
-        window steps out of the way by hiding; a sheet tab in the model
-        window brings it back exactly as it was.
-
-        Under Windows the opposite happens and the outcome is the same:
-        this window is OWNED by the model window (it is its Qt parent),
-        and Win32 keeps an owned window above its owner for good — the
-        model window does become active, but stays covered by this one
-        (Marco, 0.3.14 Windows: «cuando quería cambiar al modelo con los
-        botones de abajo no podía»). No activation check can tell, so
-        there this window steps aside at once whenever it overlaps the
-        model window."""
+        Raising another window is not something a window can count on:
+        under Wayland ``raise_()`` is a no-op and ``activateWindow()``
+        needs a token GNOME does not always grant (Marco, 0.3.13 Flatpak:
+        «quiero cambiar con los botones de abajo, no cambia»; and later,
+        with a grace-period guess in place, «a veces no hace efecto, como
+        que tengo que hacer doble clic»); under Windows an owned window
+        always stays above its owner. So the hand-over does not guess: if
+        this window overlaps the model window it steps aside by hiding,
+        at once, on every platform — a sheet tab in the model window
+        brings it back exactly as it was. Side by side (two monitors)
+        both stay."""
         win = self._window
         win.show()
         win.raise_()
         win.activateWindow()
         self._refresh_sheet_tabs()
-        self._handover_seq = getattr(self, "_handover_seq", 0) + 1
-        seq = self._handover_seq
-        if self._owner_stays_below() and self._covers(win):
+        if self._covers(win):
             self.hide()
-            return
-        QTimer.singleShot(self._HANDOVER_MS,
-                          lambda: self._check_handover(seq))
-
-    @staticmethod
-    def _owner_stays_below() -> bool:
-        """Whether the platform keeps an owned window above its owner, so
-        raising the model window can never uncover it."""
-        import sys
-        return sys.platform.startswith("win")
 
     def _covers(self, other) -> bool:
         """Whether this window's frame overlaps ``other``'s on screen."""
         return self.frameGeometry().intersects(other.frameGeometry())
-
-    def _check_handover(self, seq: int) -> None:
-        win = self._window
-        # A sheet tab pressed meanwhile brought this window back on purpose.
-        if seq != getattr(self, "_handover_seq", 0):
-            return
-        if not self.isVisible() or not win.isVisible():
-            return
-        if self.isActiveWindow() and not win.isActiveWindow():
-            self.hide()
 
     def _on_comp_rename(self) -> None:
         if self._updating:
