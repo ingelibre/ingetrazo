@@ -127,18 +127,20 @@ jobs:
   # sitio. Este job lo hace solo: espeja el repo VIVO por HTTP (archive-z2
   # se puede espejar), importa el bundle recién subido al release, regenera
   # el índice y despliega ingetrazo-web (repo público) con wrangler.
-  # Necesita el secret CLOUDFLARE_API_TOKEN (plantilla "Edit Cloudflare
-  # Workers" en dash.cloudflare.com); sin él, avisa y no rompe el release.
+  # El repositorio Flatpak de ingetrazo.com SE PUBLICA A MANO en cada
+  # release (Marco, 2026-09-08: «mejor subirlo a mano siempre, creo que
+  # cada vez falla el Cloudflare» — el deploy con CLOUDFLARE_API_TOKEN
+  # falló en las 0.3.13, 0.3.14 y 0.3.15). Receta en web/CLAUDE.md:
+  # gh release download + build-import-bundle + build-update-repo +
+  # wrangler deploy. Este job queda solo para lanzarlo A MANO
+  # (workflow_dispatch con la etiqueta), nunca en un tag.
   publish-repo:
     name: Publish the Flatpak repo (ingetrazo.com)
     needs: bundle
-    # On a tag, after the bundle is on the release; by hand, for the tag
-    # given (the bundle job is skipped then — hence the result check).
     if: >-
       ${{ !cancelled()
-          && (needs.bundle.result == 'success' || needs.bundle.result == 'skipped')
-          && (startsWith(github.ref, 'refs/tags/v')
-              || (github.event_name == 'workflow_dispatch' && inputs.tag != '')) }}
+          && needs.bundle.result == 'skipped'
+          && github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
     runs-on: ubuntu-24.04
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
