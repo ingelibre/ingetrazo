@@ -17,9 +17,11 @@ follow [SemVer](https://semver.org).
   probarlo en todas: «tal vez eso solo para lo que es acotar»).
 
 ### Añadido
-- **Alt+clic selecciona el ítem que está debajo** en el compositor, y
-  vuelve a pulsar para seguir bajando por la pila y volver arriba (el
-  «seleccionar por detrás» de Inkscape e Illustrator). El texto de escala
+- **Ctrl+Alt+clic selecciona el ítem que está debajo** en el compositor,
+  y vuelve a pulsar para seguir bajando por la pila y volver arriba (el
+  «seleccionar por detrás» de Inkscape e Illustrator); el menú del botón
+  derecho ofrece «Seleccionar el ítem de debajo» donde hay ítems
+  apilados, para escritorios como GNOME que se quedan el Alt. El texto de escala
   de un marco quedaba entero bajo un título más alto y no había forma de
   pincharlo con el ratón (Marco, 2026-09-08: «no puedo seleccionar ese
   objeto porque "detalle de letra y escultura" está casi encima de "esc.

@@ -2098,11 +2098,24 @@ class _SheetItem(QGraphicsItem):
                 tr("Edit view (pan / turn / orbit / zoom)"))
             fit = menu.addAction(tr("Frame the model"))
         menu.addSeparator()
+        # The keyboard-free way to reach an item hidden under this one:
+        # Alt+click does it too, but GNOME keeps Alt for itself (Marco,
+        # 2026-09-08: «no funciona alt clic en mi escritorio ubuntu»).
+        beneath = None
+        view = self.scene().views()[0] if self.scene() and self.scene().views() else None
+        stacked = (view is not None and hasattr(view, "_select_beneath")
+                   and view._stack_at(view.mapFromScene(event.scenePos())))
+        if stacked and len(stacked) > 1:
+            beneath = menu.addAction(tr("Select the item underneath"))
         lock = menu.addAction(tr("Unlock")
                               if getattr(self.model, "locked", False)
                               else tr("Lock"))
         chosen = menu.exec(event.screenPos())
         if chosen is None:
+            return
+        if chosen is beneath:
+            self.setSelected(True)
+            view._select_beneath(view.mapFromScene(event.scenePos()))
             return
         if chosen in arrange_slots:
             self.setSelected(True)
@@ -3256,9 +3269,7 @@ class ComposerCanvasView(QGraphicsView):
         the mouse at all (Marco, 2026-09-08: «no puedo seleccionar ese
         objeto porque "detalle de letra y escultura" está casi encima de
         "esc. 1:25"»). False when fewer than two items are stacked."""
-        stack = [it for it in self.items(vp_pos)      # topmost first
-                 if isinstance(it, _SheetItem)
-                 and it.flags() & QGraphicsItem.ItemIsSelectable]
+        stack = self._stack_at(vp_pos)
         if len(stack) < 2:
             return False
         picked = next((i for i, it in enumerate(stack) if it.isSelected()), -1)
@@ -3269,6 +3280,12 @@ class ComposerCanvasView(QGraphicsView):
         if notify is not None:
             notify()
         return True
+
+    def _stack_at(self, vp_pos) -> list:
+        """The selectable sheet items under a viewport point, topmost first."""
+        return [it for it in self.items(vp_pos)
+                if isinstance(it, _SheetItem)
+                and it.flags() & QGraphicsItem.ItemIsSelectable]
 
     def _item_under(self, vp_pos) -> bool:
         """Is there something under the cursor that takes a left press —
@@ -3942,7 +3959,7 @@ class ComposerWindow(QMainWindow):
     #: extent, click tools place at the click point.
     TOOLS = (
         ("select", "select",
-         "Select / move items (Alt+click picks the item underneath)", False),
+         "Select / move items (Ctrl+Alt+click, or the right-click menu, picks the item underneath)", False),
         ("pan", "pan", "Pan the sheet (or drag with the middle button "
                        "anywhere)", False),
         ("estilo", "eyedropper",

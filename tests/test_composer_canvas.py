@@ -1003,6 +1003,20 @@ class TestSelectBeneath:
         _mouse(view, QEvent.MouseButtonPress, vp.x(), vp.y(), mods=Qt.AltModifier)
         _mouse(view, QEvent.MouseButtonRelease, vp.x(), vp.y(), mods=Qt.AltModifier)
         assert selected() == [top]                             # …and round again
+        # Ctrl+Alt+click (Alt alone is GNOME's) works the same
+        _mouse(view, QEvent.MouseButtonPress, vp.x(), vp.y(),
+               mods=Qt.AltModifier | Qt.ControlModifier)
+        _mouse(view, QEvent.MouseButtonRelease, vp.x(), vp.y(),
+               mods=Qt.AltModifier | Qt.ControlModifier)
+        assert selected() == [low]
+        # and the context menu offers it only where items are stacked
+        assert len(view._stack_at(vp)) == 2
+        assert len(view._stack_at(view.mapFromScene(QPointF(12.0, 12.0)))) == 1
+        _mouse(view, QEvent.MouseButtonPress, vp.x(), vp.y(),
+               mods=Qt.AltModifier | Qt.ControlModifier)
+        _mouse(view, QEvent.MouseButtonRelease, vp.x(), vp.y(),
+               mods=Qt.AltModifier | Qt.ControlModifier)
+        assert selected() == [top]
         # nothing stacked: Alt+click is a plain click
         alone = view.mapFromScene(QPointF(12.0, 12.0))         # only the top
         _mouse(view, QEvent.MouseButtonPress, alone.x(), alone.y(), mods=Qt.AltModifier)

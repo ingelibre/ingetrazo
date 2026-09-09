@@ -1519,5 +1519,6 @@
  "Along the line": "A lo largo de la línea",
  "Put the text back": "Devolver el texto a su sitio",
  "The label can be dragged anywhere with the mouse (LayOut): grab it by its text. This returns it to its automatic spot.": "El texto se puede arrastrar a cualquier sitio con el ratón (LayOut): agárralo por las letras. Esto lo devuelve a su posición automática.",
- "Select / move items (Alt+click picks the item underneath)": "Seleccionar / mover ítems (Alt+clic elige el ítem que está debajo)"
+ "Select / move items (Ctrl+Alt+click, or the right-click menu, picks the item underneath)": "Seleccionar / mover ítems (Ctrl+Alt+clic, o el menú del botón derecho, elige el ítem que está debajo)",
+ "Select the item underneath": "Seleccionar el ítem de debajo"
 }
