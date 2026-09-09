@@ -29,6 +29,11 @@ follow [SemVer](https://semver.org).
   probarlo en todas: «tal vez eso solo para lo que es acotar»).
 
 ### Añadido
+- **Menú del botón derecho en las pestañas de lámina** de las dos
+  ventanas: cambiar nombre, duplicar (la copia queda justo después),
+  eliminar (con confirmación; un documento conserva al menos una lámina)
+  y nueva lámina (Marco, 2026-09-08: «desde los botones de lámina de
+  abajo con el menú del mouse»).
 - **Reglas y guías en el compositor, como en QGIS.** Una regla en
   milímetros arriba y otra a la izquierda del lienzo, que siguen el zoom
   y el desplazamiento y marcan la posición del cursor. Arrastrando desde

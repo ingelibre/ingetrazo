@@ -4168,7 +4168,9 @@ class ComposerWindow(QMainWindow):
         from views.sheet_tabs import SheetStatusBar
         bar = SheetStatusBar(self, on_model=self._show_model,
                              on_sheet=self.show_sheet,
-                             on_new=self._new_sheet_tab)
+                             on_new=self._new_sheet_tab,
+                             on_menu=lambda i, pos: self.sheet_tab_menu(
+                                 i, pos, self))
         self.setStatusBar(bar)
         self._sheet_tabs = bar.tabs
         # Auto-render lives on the status row, right of the Model | sheet
@@ -6041,28 +6043,92 @@ class ComposerWindow(QMainWindow):
 
     def _on_comp_dup(self) -> None:
         comps = self._scene().compositions
-        dup = Composicion.from_dict(self.comp.to_dict())
-        dup.name = self.comp.name + tr(" (copy)")
-        comps.append(dup)
-        self.comp = dup
-        self._mark_dirty()
-        self._reload_comp_combo()
-        self._rebuild_canvas()
+        self.duplicate_sheet(comps.index(self.comp), show=True)
 
     def _on_comp_del(self) -> None:
         comps = self._scene().compositions
-        if len(comps) <= 1:
+        self.delete_sheet(comps.index(self.comp), self)
+
+    # ---- sheet management, shared with the Model | sheets strips -------------
+    def rename_sheet(self, index: int, name: str) -> None:
+        comps = self._scene().compositions
+        name = (name or "").strip()
+        if not (0 <= index < len(comps)) or not name or comps[index].name == name:
             return
-        if QMessageBox.question(
-                self, tr("Delete sheet"),
-                tr("Delete '{name}'?", name=self.comp.name)) \
-                != QMessageBox.Yes:
-            return
-        comps.remove(self.comp)
-        self.comp = comps[0]
+        comps[index].name = name
         self._mark_dirty()
         self._reload_comp_combo()
-        self._rebuild_canvas()
+
+    def duplicate_sheet(self, index: int, show: bool = False) -> None:
+        """A copy of sheet *index*, right after it; ``show`` opens it here."""
+        comps = self._scene().compositions
+        if not (0 <= index < len(comps)):
+            return
+        src = comps[index]
+        dup = Composicion.from_dict(src.to_dict())
+        dup.name = src.name + tr(" (copy)")
+        comps.insert(index + 1, dup)
+        if show:
+            self.comp = dup
+        self._mark_dirty()
+        self._reload_comp_combo()
+        if show:
+            self._rebuild_canvas()
+
+    def delete_sheet(self, index: int, parent=None) -> bool:
+        """Delete sheet *index* after asking; a document keeps at least
+        one sheet. If this window showed it, the neighbour takes over."""
+        comps = self._scene().compositions
+        if not (0 <= index < len(comps)):
+            return False
+        if len(comps) <= 1:
+            QMessageBox.information(
+                parent or self, tr("Delete sheet"),
+                tr("A document keeps at least one sheet."))
+            return False
+        victim = comps[index]
+        if QMessageBox.question(
+                parent or self, tr("Delete sheet"),
+                tr("Delete '{name}'?", name=victim.name)) \
+                != QMessageBox.Yes:
+            return False
+        comps.remove(victim)
+        if self.comp is victim:
+            self.comp = comps[min(index, len(comps) - 1)]
+            self.history = ComposerHistory(on_change=self._on_history_change)
+            self._mark_dirty()
+            self._reload_comp_combo()
+            self._rebuild_canvas()
+        else:
+            self._mark_dirty()
+            self._reload_comp_combo()
+        return True
+
+    def sheet_tab_menu(self, index: int, global_pos, parent) -> None:
+        """The right-click menu of a sheet tab (either window's strip)."""
+        from PySide6.QtWidgets import QInputDialog, QMenu
+        comps = self._scene().compositions
+        if not (0 <= index < len(comps)):
+            return
+        sheet = comps[index]
+        menu = QMenu(parent)
+        rename = menu.addAction(tr("Rename sheet…"))
+        dup = menu.addAction(tr("Duplicate sheet"))
+        delete = menu.addAction(tr("Delete sheet"))
+        menu.addSeparator()
+        new = menu.addAction(tr("New sheet"))
+        chosen = menu.exec(global_pos)
+        if chosen is rename:
+            name, ok = QInputDialog.getText(parent, tr("Rename sheet…"),
+                                            tr("Sheet name:"), text=sheet.name)
+            if ok:
+                self.rename_sheet(index, name)
+        elif chosen is dup:
+            self.duplicate_sheet(index, show=self.isVisible())
+        elif chosen is delete:
+            self.delete_sheet(index, parent)
+        elif chosen is new:
+            self._on_comp_add()
 
     # ---- canvas --------------------------------------------------------------
     def _rebuild_canvas(self) -> None:

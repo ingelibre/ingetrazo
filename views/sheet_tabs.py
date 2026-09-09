@@ -45,9 +45,14 @@ class SheetTabs(QTabBar):
     are the owner's callbacks; ``refresh`` rebuilds the strip from the
     sheet names and marks the current tab (``None`` = the model)."""
 
-    def __init__(self, parent, on_model, on_sheet, on_new=None) -> None:
+    def __init__(self, parent, on_model, on_sheet, on_new=None,
+                 on_menu=None) -> None:
         super().__init__(parent)
         self.setObjectName("sheet_tabs")
+        # Right-click on a sheet tab: the owner's menu — rename, duplicate,
+        # delete (Marco, 2026-09-08: «desde los botones de lámina de abajo
+        # con el menú del mouse»). Gets (sheet index, global pos).
+        self._on_menu = on_menu
         self.setDocumentMode(True)
         self.setExpanding(False)
         self.setDrawBase(False)
@@ -130,6 +135,14 @@ class SheetTabs(QTabBar):
         run right away."""
         self._dispatch(index)
 
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        i = self.tabAt(event.pos())
+        if self._on_menu is not None and 1 <= i <= len(self._names):
+            self._on_menu(i - 1, event.globalPos())
+            event.accept()
+            return
+        super().contextMenuEvent(event)
+
 
 class _ElidedLabel(QLabel):
     """A label that never asks for room: a plain QLabel's minimum width is
@@ -171,9 +184,10 @@ class SheetStatusBar(QStatusBar):
     message replaces it for a while and then the standing text comes back
     — a plain QStatusBar leaves the bar empty after a timed message."""
 
-    def __init__(self, parent, on_model, on_sheet, on_new=None) -> None:
+    def __init__(self, parent, on_model, on_sheet, on_new=None,
+                 on_menu=None) -> None:
         super().__init__(parent)
-        self.tabs = SheetTabs(self, on_model, on_sheet, on_new)
+        self.tabs = SheetTabs(self, on_model, on_sheet, on_new, on_menu)
         self._msg = _ElidedLabel(self)
         self._base = ""
         self._timer = QTimer(self)

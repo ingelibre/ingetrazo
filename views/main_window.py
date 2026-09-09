@@ -1025,7 +1025,8 @@ class MainWindow(QMainWindow):
         from views.sheet_tabs import SheetStatusBar
         bar = SheetStatusBar(self, on_model=self._show_model,
                              on_sheet=self._show_sheet,
-                             on_new=self._show_new_sheet)
+                             on_new=self._show_new_sheet,
+                             on_menu=self._sheet_tab_menu)
         self.setStatusBar(bar)
         self._sheet_tabs = bar.tabs
         bar.showMessage(tr(
@@ -1695,11 +1696,21 @@ class MainWindow(QMainWindow):
         self.viewport.camera.fit_to(bounds[0], bounds[1])
         self.viewport.update()
 
-    def _on_open_composer(self) -> None:
-        """Open (or raise) the sheet composer — see docs/composer-plan.md."""
+    def _ensure_composer(self):
+        """The composer window, created but not shown — the sheet strip's
+        menu manages sheets through it without opening it."""
         if getattr(self, "_composer", None) is None:
             from views.composer import ComposerWindow
             self._composer = ComposerWindow(self)
+        return self._composer
+
+    def _sheet_tab_menu(self, index: int, global_pos) -> None:
+        self._ensure_composer().sheet_tab_menu(index, global_pos, self)
+        self._refresh_sheet_tabs()
+
+    def _on_open_composer(self) -> None:
+        """Open (or raise) the sheet composer — see docs/composer-plan.md."""
+        self._ensure_composer()
         self._composer.show()
         self._composer.raise_()
         self._composer.activateWindow()

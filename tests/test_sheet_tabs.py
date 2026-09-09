@@ -265,3 +265,54 @@ def test_ctrl_s_in_the_composer_saves_the_whole_document(monkeypatch):
         assert calls == ["save", "save_as"]
     finally:
         _close(win)
+
+
+def test_sheet_tab_menu_renames_duplicates_and_deletes(monkeypatch):
+    """Right-click on a sheet tab, in either window (Marco, 2026-09-08:
+    «desde los botones de lámina de abajo con el menú del mouse las
+    opciones de copiar, duplicar, eliminar lámina o cambiar nombre»)."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QContextMenuEvent
+    from PySide6.QtWidgets import QMessageBox
+    from core.composition import Composicion, TextoItem
+    win = _window(monkeypatch)
+    try:
+        scene = win.viewport.scene
+        planta = Composicion(name="Planta")
+        planta.texts.append(TextoItem(text="hola"))
+        scene.compositions.append(planta)
+        scene.compositions.append(Composicion(name="Cortes"))
+        win._update_title()
+        # the strip hands the sheet index and a position to the owner
+        seen = []
+        tabs = win._sheet_tabs
+        monkeypatch.setattr(tabs, "_on_menu", lambda i, pos: seen.append(i))
+        rect = tabs.tabRect(2)                            # «Cortes»
+        tabs.contextMenuEvent(QContextMenuEvent(
+            QContextMenuEvent.Mouse, rect.center(), tabs.mapToGlobal(rect.center())))
+        assert seen == [1]
+        # the operations, through the composer (created, never shown)
+        comp = win._ensure_composer()
+        assert not comp.isVisible()
+        comp.rename_sheet(0, "Planta general")
+        assert scene.compositions[0].name == "Planta general"
+        assert tabs.names() == ["Model", "Planta general", "Cortes"]
+        comp.duplicate_sheet(0)
+        assert [c.name for c in scene.compositions] == [
+            "Planta general", "Planta general (copy)", "Cortes"]
+        assert scene.compositions[1].texts[0].text == "hola"
+        assert scene.compositions[1] is not scene.compositions[0]
+        monkeypatch.setattr(QMessageBox, "question",
+                            staticmethod(lambda *a, **k: QMessageBox.Yes))
+        told = []
+        monkeypatch.setattr(QMessageBox, "information",
+                            staticmethod(lambda *a, **k: told.append(a[2])))
+        assert comp.delete_sheet(1, win)
+        assert [c.name for c in scene.compositions] == ["Planta general", "Cortes"]
+        assert tabs.names() == ["Model", "Planta general", "Cortes"]
+        # the last sheet stays
+        comp.delete_sheet(0, win)
+        assert not comp.delete_sheet(0, win)             # refused, told why
+        assert len(scene.compositions) == 1 and told
+    finally:
+        _close(win)
