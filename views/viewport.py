@@ -6723,8 +6723,13 @@ class Viewport(QOpenGLWidget):
                 if not (gvis or gsel):
                     continue
                 chunk = self._group_chunk(g)
-                if not chunk["faces"]:
-                    continue
+                if not (chunk["faces"] or chunk["edges"]):
+                    continue          # nothing in it to pick or snap to
+                # Note the `or edges`: a group of nothing but lines and arcs
+                # has no faces, and skipping it here dropped it out of the
+                # index ENTIRELY — so inference found none of its edges and
+                # the edge fallback below, written for "a lines-only group",
+                # read an empty array and never found it either (GitHub #8).
                 sig.append((id(g), id(chunk), chunk["rev"], gvis, gsel))
                 chunks.append((g, chunk, gvis, gsel))
             blk = getattr(self, "_pick_block", None)

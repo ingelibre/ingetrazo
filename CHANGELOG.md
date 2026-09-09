@@ -7,6 +7,14 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Corregido
+- **Un grupo hecho solo de líneas y arcos no daba ni una referencia, y
+  costaba seleccionarlo pinchando sus líneas** (issue #8). Los grupos sin
+  ninguna cara se caían enteros del índice de selección, así que las
+  inferencias no veían sus aristas y el clic sobre una línea no encontraba
+  nada — el propio camino de rescate para «un grupo de solo líneas» ya
+  estaba escrito, pero leía una lista vacía. Cualquier grupo con al menos
+  una cara nunca se vio afectado, que es por lo que había pasado
+  desapercibido.
 - **Al orbitar, el eje vertical estaba invertido.** Arrastrar hacia abajo
   bajaba la cámara en vez de asomarte por encima del modelo, al revés que
   SketchUp, Blender o FreeCAD — y al revés que el propio encuadre de
