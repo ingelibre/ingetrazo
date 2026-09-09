@@ -27,7 +27,7 @@ elif not isinstance(_inst, QApplication):
 
 from core.composition import (Cajetin, Composicion, CotaItem,   # noqa: E402
                               FormaItem, MarcoVista)
-from views.composer import ComposerCanvasView, ComposerWindow   # noqa: E402
+from views.composer import ComposerCanvasView, ComposerWindow, _SheetItem   # noqa: E402
 
 
 class _StubComposer:
@@ -967,3 +967,44 @@ class TestArrowNudge:
         view._drag_start = None
         view.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Left, Qt.AltModifier))
         assert abs(a.x_mm - 9.9) < 1e-9
+
+
+class TestSelectBeneath:
+    """Alt+click selects the item under the one on top, cycling (Marco,
+    2026-09-08: the frame's «ESC. 1:25» label sat wholly under the taller
+    «DETALLE DE LETRA Y ESCULTURA» text and could not be picked)."""
+
+    def test_alt_click_cycles_down_the_stack_and_back(self):
+        from PySide6.QtWidgets import QWidget
+        host = QWidget()
+        host.viewport = _FakeViewport()
+        composer = ComposerWindow(host)
+        self._host = host
+        low = FormaItem(kind="rect", x_mm=20.0, y_mm=20.0, w_mm=40.0, h_mm=20.0, z=1.0)
+        top = FormaItem(kind="rect", x_mm=10.0, y_mm=10.0, w_mm=60.0, h_mm=40.0, z=2.0)
+        composer.comp.shapes = [low, top]
+        composer.comp.frames = []                 # nothing else stacked there
+        composer._rebuild_canvas()
+        view = composer._view
+        view.resize(600, 500)
+        view.show()
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        vp = view.mapFromScene(QPointF(30.0, 25.0))          # inside both
+        def selected():
+            return [it.model for it in composer.canvas.selectedItems()
+                    if isinstance(it, _SheetItem)]
+        _mouse(view, QEvent.MouseButtonPress, vp.x(), vp.y())
+        _mouse(view, QEvent.MouseButtonRelease, vp.x(), vp.y())
+        assert selected() == [top]                             # plain click: the top
+        _mouse(view, QEvent.MouseButtonPress, vp.x(), vp.y(), mods=Qt.AltModifier)
+        _mouse(view, QEvent.MouseButtonRelease, vp.x(), vp.y(), mods=Qt.AltModifier)
+        assert selected() == [low]                             # Alt: the one beneath
+        _mouse(view, QEvent.MouseButtonPress, vp.x(), vp.y(), mods=Qt.AltModifier)
+        _mouse(view, QEvent.MouseButtonRelease, vp.x(), vp.y(), mods=Qt.AltModifier)
+        assert selected() == [top]                             # …and round again
+        # nothing stacked: Alt+click is a plain click
+        alone = view.mapFromScene(QPointF(12.0, 12.0))         # only the top
+        _mouse(view, QEvent.MouseButtonPress, alone.x(), alone.y(), mods=Qt.AltModifier)
+        _mouse(view, QEvent.MouseButtonRelease, alone.x(), alone.y(), mods=Qt.AltModifier)
+        assert selected() == [top]

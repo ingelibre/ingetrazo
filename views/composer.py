@@ -3229,6 +3229,11 @@ class ComposerCanvasView(QGraphicsView):
             event.accept()
             return
         if (mode == "select" and event.button() == Qt.LeftButton
+                and event.modifiers() & Qt.AltModifier
+                and self._select_beneath(event.position().toPoint())):
+            event.accept()
+            return
+        if (mode == "select" and event.button() == Qt.LeftButton
                 and not self._item_under(event.position().toPoint())):
             # Box selection (Marco, 2026-09-07: «falta seleccionar varios
             # objetos con el mouse haciendo un cuadro»): a press on the
@@ -3242,6 +3247,28 @@ class ComposerCanvasView(QGraphicsView):
             event.accept()
             return
         self._scene_dispatch(super().mousePressEvent, event)
+
+    def _select_beneath(self, vp_pos) -> bool:
+        """Alt+click: select the item UNDER the one on top (Inkscape /
+        Illustrator's select-behind), cycling down through everything
+        stacked at that spot and back to the top. A frame's scale label
+        sat wholly under a taller title text and could not be picked with
+        the mouse at all (Marco, 2026-09-08: «no puedo seleccionar ese
+        objeto porque "detalle de letra y escultura" está casi encima de
+        "esc. 1:25"»). False when fewer than two items are stacked."""
+        stack = [it for it in self.items(vp_pos)      # topmost first
+                 if isinstance(it, _SheetItem)
+                 and it.flags() & QGraphicsItem.ItemIsSelectable]
+        if len(stack) < 2:
+            return False
+        picked = next((i for i, it in enumerate(stack) if it.isSelected()), -1)
+        target = stack[(picked + 1) % len(stack)]
+        self.scene().clearSelection()
+        target.setSelected(True)
+        notify = getattr(self.composer, "on_selection_changed", None)
+        if notify is not None:
+            notify()
+        return True
 
     def _item_under(self, vp_pos) -> bool:
         """Is there something under the cursor that takes a left press —
@@ -3914,7 +3941,8 @@ class ComposerWindow(QMainWindow):
     #: mode → (icon key, tooltip, drag?) — drag tools take a press-release
     #: extent, click tools place at the click point.
     TOOLS = (
-        ("select", "select", "Select / move items", False),
+        ("select", "select",
+         "Select / move items (Alt+click picks the item underneath)", False),
         ("pan", "pan", "Pan the sheet (or drag with the middle button "
                        "anywhere)", False),
         ("estilo", "eyedropper",

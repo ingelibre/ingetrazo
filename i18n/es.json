@@ -1022,7 +1022,6 @@
  "Select (Space) — Shift+click adds or takes away, Ctrl+click adds, Shift+Ctrl+click takes away. Same with the box.": "Seleccionar (Espacio) — Mayús+clic añade o quita, Ctrl+clic añade, Mayús+Ctrl+clic quita. Igual con la caja de selección.",
  "Select (or click) the geometry to rotate first": "Seleccioná (o clickeá) primero la geometría a rotar",
  "Select (or click) the geometry to scale first": "Seleccioná (o clickeá) primero la geometría a escalar",
- "Select / move items": "Seleccionar / mover elementos",
  "Select All": "Seleccionar todo",
  "Select a path to convert to geometry.": "Seleccioná una ruta para convertir en geometría.",
  "Select a polyline and click “Profile”.": "Seleccioná una polilínea y hacé clic en «Perfil».",
@@ -1519,5 +1518,6 @@
  "Where the label sits along the dimension line: over its middle, or beyond its first or its second point (the text beside the dimension, left or right).": "Dónde va el texto a lo largo de la línea de cota: sobre su centro, o más allá de su primer o segundo punto (el texto al lado de la cota, a izquierda o derecha).",
  "Along the line": "A lo largo de la línea",
  "Put the text back": "Devolver el texto a su sitio",
- "The label can be dragged anywhere with the mouse (LayOut): grab it by its text. This returns it to its automatic spot.": "El texto se puede arrastrar a cualquier sitio con el ratón (LayOut): agárralo por las letras. Esto lo devuelve a su posición automática."
+ "The label can be dragged anywhere with the mouse (LayOut): grab it by its text. This returns it to its automatic spot.": "El texto se puede arrastrar a cualquier sitio con el ratón (LayOut): agárralo por las letras. Esto lo devuelve a su posición automática.",
+ "Select / move items (Alt+click picks the item underneath)": "Seleccionar / mover ítems (Alt+clic elige el ítem que está debajo)"
 }

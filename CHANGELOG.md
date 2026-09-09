@@ -17,6 +17,13 @@ follow [SemVer](https://semver.org).
   probarlo en todas: «tal vez eso solo para lo que es acotar»).
 
 ### Añadido
+- **Alt+clic selecciona el ítem que está debajo** en el compositor, y
+  vuelve a pulsar para seguir bajando por la pila y volver arriba (el
+  «seleccionar por detrás» de Inkscape e Illustrator). El texto de escala
+  de un marco quedaba entero bajo un título más alto y no había forma de
+  pincharlo con el ratón (Marco, 2026-09-08: «no puedo seleccionar ese
+  objeto porque "detalle de letra y escultura" está casi encima de "esc.
+  1:25"»).
 - **Las flechas mueven la selección en el compositor**, como en el
   diseñador de impresión de QGIS: 1 mm por pulsación, 10 mm con Shift,
   0,1 mm con Alt. Un solo paso de deshacer por pulsación para toda la
