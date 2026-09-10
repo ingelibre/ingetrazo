@@ -1557,5 +1557,9 @@
  "Tint": "Teñir",
  "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Desplazar: mueve el tono de cada píxel hacia el color, conservando la variación de la textura. Teñir: sustituye tono y saturación y conserva solo la luminosidad.",
  "Tint the texture": "Teñir la textura",
- "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Cambia tamaño, giro o tinte de la textura activa; con caras texturizadas seleccionadas, las vuelve a estampar (deshacible)"
+ "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Cambia tamaño, giro o tinte de la textura activa; con caras texturizadas seleccionadas, las vuelve a estampar (deshacible)",
+ "inward": "hacia dentro",
+ "outward": "hacia fuera",
+ "{d:.3g} m closes this face — it takes no offset {side}": "{d:.3g} m cierra esta cara — no admite equidistancia {side}",
+ "{d:.3g} m closes this face — {side} it takes at most {max:.3g} m": "{d:.3g} m cierra esta cara — {side} admite {max:.3g} m como máximo"
 }

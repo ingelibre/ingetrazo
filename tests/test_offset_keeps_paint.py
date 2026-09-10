@@ -104,3 +104,54 @@ def test_undo_puts_the_painted_face_back():
     vp.history.undo()
     assert len(scene.mesh.faces) == 1
     assert scene.mesh.faces[0].attrs.get("color") == (0.5, 0.5, 0.5)
+
+
+# ---- A refusal must say why -------------------------------------------------
+#
+# Marco, 2026-09-10: "quiero hacer equidistancia en esa cara pero no hace".
+# The tool was right to refuse — his paved slab has a 4.6 cm side, so a 10 cm
+# inward offset inverts it, and his 20 cm kerbs close exactly at 10 cm. What
+# was wrong is that `if off is None: return` said nothing at all.
+
+class _LoudVP(_VP):
+    def __init__(self, scene):
+        super().__init__(scene)
+        self.said = []
+
+    def flash_status(self, text, msec=2500):
+        self.said.append(text)
+
+
+def _kerb(scene, width=0.2):
+    """A 2.4 m x `width` strip: 10 cm inward closes a 20 cm one exactly."""
+    return scene.mesh.add_face([V(0, 0), V(2.4, 0), V(2.4, width), V(0, width)])
+
+
+def test_an_impossible_offset_says_so_instead_of_going_silent():
+    scene = Scene()
+    face = _kerb(scene)
+    vp = _LoudVP(scene)
+    _offset(vp, face, 0.10)
+    assert len(scene.mesh.faces) == 1, "nothing should have been built"
+    assert vp.said, "the tool refused without a word"
+
+
+def test_the_message_names_the_room_that_is_left():
+    from core.topology import max_offset_distance
+    scene = Scene()
+    face = _kerb(scene, width=0.5)
+    room = max_offset_distance([QVector3D(v) for v in face.vertices],
+                               face.normal(), 1.0)
+    assert 0.2 < room < 0.26, room          # half of 0.5, minus the tolerance
+    vp = _LoudVP(scene)
+    _offset(vp, face, 0.40)
+    assert vp.said and "0.2" in vp.said[0], vp.said
+
+
+def test_a_feasible_offset_stays_quiet_and_builds():
+    scene = Scene()
+    face = _kerb(scene, width=1.0)
+    vp = _LoudVP(scene)
+    _offset(vp, face, 0.10)
+    assert len(scene.mesh.faces) == 2
+    assert not vp.said

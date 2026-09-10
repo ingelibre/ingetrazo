@@ -20,8 +20,9 @@ from core.history import (
     DeleteFaceCommand,
     SnapshotCompound,
 )
+from core.i18n import tr
 from core.mesh import Face
-from core.topology import offset_loop
+from core.topology import max_offset_distance, offset_loop
 from tools.base import Tool, ToolContext
 
 
@@ -152,6 +153,24 @@ class OffsetTool(Tool):
     def _commit(self, viewport) -> None:
         off = offset_loop(self._loop, self._normal, self.distance)
         if off is None:
+            # Refusing is right — the offset closes or inverts the face — but
+            # refusing in SILENCE is what reads as "the tool doesn't work".
+            # Say the limit: a 20 cm kerb takes at most 10 cm inward, and a
+            # slab whose narrowest side is 4.6 cm gives up long before that.
+            sign = -1.0 if self.distance < 0 else 1.0
+            room = max_offset_distance(self._loop, self._normal, sign)
+            inward = sign > 0
+            if room <= 1e-4:
+                viewport.flash_status(tr(
+                    "{d:.3g} m closes this face — it takes no offset "
+                    "{side}", d=abs(self.distance),
+                    side=tr("inward") if inward else tr("outward")), 5000)
+            else:
+                viewport.flash_status(tr(
+                    "{d:.3g} m closes this face — {side} it takes at most "
+                    "{max:.3g} m", d=abs(self.distance),
+                    side=tr("inward") if inward else tr("outward"),
+                    max=room), 5000)
             self._reset()
             viewport.update()
             return

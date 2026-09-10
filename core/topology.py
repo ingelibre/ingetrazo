@@ -949,6 +949,31 @@ def offset_loop(
     return new_loop
 
 
+def max_offset_distance(loop: list[QVector3D], normal: QVector3D,
+                       sign: float = 1.0, limit: float = 10.0) -> float:
+    """The largest offset in the direction of ``sign`` that :func:`offset_loop`
+    still accepts, in metres (0.0 when even a hair collapses the loop).
+
+    Exists so the tool can say WHY it refused. A 20 cm kerb cannot take a
+    10 cm inward offset — 0.20 - 2 x 0.10 is exactly zero — and a paved slab
+    whose narrowest side is 4.6 cm inverts long before 10 cm. Refusing is
+    right; refusing in silence is what reads as "the tool doesn't work"
+    (Marco, 2026-09-10). Bisection: offset_loop is cheap and this only runs
+    on the failure path.
+    """
+    step = abs(limit)
+    if offset_loop(loop, normal, sign * 1e-4) is None:
+        return 0.0
+    lo, hi = 1e-4, step
+    for _ in range(40):
+        mid = (lo + hi) / 2.0
+        if offset_loop(loop, normal, sign * mid) is None:
+            hi = mid
+        else:
+            lo = mid
+    return lo
+
+
 # ---- Heal overlapping coplanar faces (spurious mother) ---------------------
 
 def _loop_inside_loop(inner: list[QVector3D], outer: list[QVector3D],
