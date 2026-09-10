@@ -968,7 +968,37 @@ def _loop_inside_loop(inner: list[QVector3D], outer: list[QVector3D],
     cx = sum(p.x() for p in inner) / len(inner)
     cy = sum(p.y() for p in inner) / len(inner)
     cz = sum(p.z() for p in inner) / len(inner)
-    return _point_inside_2d(proj(QVector3D(cx, cy, cz)), poly)
+    if _point_inside_2d(proj(QVector3D(cx, cy, cz)), poly):
+        return True
+    # The average of the vertices is NOT the centroid, and for a CONCAVE loop
+    # it can land outside the loop itself — so a "no" from it means nothing.
+    # An offset's inner face coincides exactly with the ring's hole; when its
+    # boundary was concave, this said "not inside the hole", the heal pass
+    # stopped seeing a legitimate ring and deleted it as a redundant mother
+    # (Plaza Yanque, 2026-09-10: Offset 0.10 kept only the inner face).
+    # Retry with a point that really is inside.
+    point = _interior_point(inner, normal)
+    if point is None:
+        return False
+    return _point_inside_2d(proj(point), poly)
+
+
+def _interior_point(loop: list[QVector3D], normal: QVector3D):
+    """A point genuinely inside ``loop``: the centroid of its biggest
+    triangle. ``None`` when the loop does not triangulate (degenerate)."""
+    from core.triangulate import triangulate
+    try:
+        tris = triangulate(list(loop), [], normal)
+    except Exception:                      # noqa: BLE001 — geometry, not flow
+        return None
+    best = None
+    best_area = 0.0
+    for a, b, c in tris:
+        area = QVector3D.crossProduct(b - a, c - a).lengthSquared()
+        if area > best_area:
+            best_area = area
+            best = (a + b + c) / 3.0
+    return best
 
 
 def _point_inside_2d(pt, poly) -> bool:
