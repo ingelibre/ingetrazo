@@ -235,3 +235,59 @@ def test_el_rectangulo_tumbado_no_cambia():
     assert len(scene.mesh.faces) == 1
     assert vp.history.last_error is None
     assert all(abs(v.z()) < 1e-9 for v in scene.mesh.faces[0].vertices)
+
+
+# ---- el bloqueo de eje manda sobre el snap ---------------------------------
+
+class _VPLock(_VP):
+    def __init__(self, scene=None, axis_lock=None):
+        super().__init__(scene=scene)
+        self.axis_lock = axis_lock
+
+
+def _con_base(scene, lock=None, a=V(7.2, 21.4), b=V(16.2, 21.4)):
+    from core.history import History
+    vp = _VPLock(scene=scene, axis_lock=lock)
+    vp.history = History(scene)
+    tool = RotatedRectangleTool()
+    tool.on_click(_ctx(vp, a))
+    tool.on_click(_ctx(vp, b))
+    return tool, vp
+
+
+def test_el_snap_no_puede_tumbar_un_rectangulo_con_el_eje_bloqueado():
+    """El caso reportado, con sus coordenadas: la vista previa decía 90° y
+    el clic llegaba pegado a una arista del suelo, a 0,60 m de la base. Salía
+    un rectángulo tumbado en vez del vertical que se estaba viendo."""
+    from core.scene import Scene
+    scene = Scene()
+    tool, vp = _con_base(scene, lock="z")
+    tool.on_hover(_ctx(vp, V(16.2, 21.4, 1.05)))       # el ratón, arriba
+    tool.on_click(_ctx(vp, V(16.2, 22.0, 0.0)))        # el snap, al suelo
+    assert len(scene.mesh.faces) == 1
+    face = scene.mesh.faces[0]
+    assert sorted({round(v.z(), 3) for v in face.vertices}) == [0.0, 1.05]
+    assert {round(v.y(), 3) for v in face.vertices} == {21.4}
+
+
+def test_sin_bloqueo_el_clic_sigue_mandando():
+    """Sin eje bloqueado no hay nada que respetar: el punto del clic decide,
+    aunque se aparte de lo que mostraba la vista previa."""
+    from core.scene import Scene
+    scene = Scene()
+    tool, vp = _con_base(scene)
+    tool.on_hover(_ctx(vp, V(16.2, 21.4, 1.05)))
+    tool.on_click(_ctx(vp, V(16.2, 22.0, 0.0)))
+    face = scene.mesh.faces[0]
+    assert sorted({round(v.z(), 3) for v in face.vertices}) == [0.0]
+
+
+def test_el_eje_bloqueado_fija_la_direccion_del_ancho():
+    from core.scene import Scene
+    tool, vp = _con_base(Scene(), lock="z")
+    d = tool.locked_dir(vp)
+    assert d is not None
+    assert abs(d.z() - 1.0) < 1e-9, "con Z bloqueado el ancho sube"
+    tool2, vp2 = _con_base(Scene(), lock="x")
+    # La base va por X, así que un bloqueo en X no deja dirección: se ignora.
+    assert tool2.locked_dir(vp2) is None

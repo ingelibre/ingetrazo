@@ -46,6 +46,8 @@ class RotatedRectangleTool(PlaneLock, Tool):
         #: (de pie). Es el tercer paso de SketchUp: su transportador gira
         #: sobre la arista base y el cuadro pide «Anchura, Ángulo».
         self.angle: float = 0.0
+        #: Dirección impuesta por el bloqueo de eje, cacheada en el hover.
+        self._locked: QVector3D | None = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -78,7 +80,17 @@ class RotatedRectangleTool(PlaneLock, Tool):
                     "you want to draw on"), 5000)
                 ctx.viewport.update()
             return
-        width, self.angle = self._width_and_angle(ctx.world)
+        locked = self.locked_dir(ctx.viewport)
+        width, self.angle = self._width_and_angle(ctx.world, locked)
+        if locked is not None and width < self._MIN_WIDTH \
+                and self.hover_point is not None:
+            # Con un eje bloqueado, el motor de snap todavía puede entregar en
+            # el CLIC un punto fuera de ese eje (pegado a una arista del
+            # suelo), y entonces el ancho proyectado se va a cero: la vista
+            # previa prometía 90° y salía un rectángulo tumbado de 0,60 m
+            # (Marco, 2026-09-10). Lo que el usuario aceptó al hacer clic es
+            # lo que estaba viendo, así que vale el punto del hover.
+            width, self.angle = self._width_and_angle(self.hover_point, locked)
         if width < self._MIN_WIDTH:
             # Sin ancho no hay rectángulo: las dos esquinas nuevas caen sobre
             # las viejas y el plan muere con «degenerate edge», revertido y
@@ -93,6 +105,8 @@ class RotatedRectangleTool(PlaneLock, Tool):
 
     def on_hover(self, ctx: ToolContext) -> None:
         self.hover_point = ctx.world
+        # Cacheado para la vista previa y el rótulo, que no reciben viewport.
+        self._locked = self.locked_dir(ctx.viewport)
         ctx.viewport.update()
 
     def on_value(self, viewport, value) -> bool:
@@ -133,7 +147,7 @@ class RotatedRectangleTool(PlaneLock, Tool):
             return []
         if self.base_point is None:
             return [(self.start_point, self.hover_point)]   # drawing the base
-        width, angle = self._width_and_angle(self.hover_point)
+        width, angle = self._width_and_angle(self.hover_point, self._locked)
         c = self._corners(width, angle)
         if not c:
             return [(self.start_point, self.base_point)]
@@ -146,7 +160,7 @@ class RotatedRectangleTool(PlaneLock, Tool):
             length = (self.hover_point - self.start_point).length()
             mid = (self.start_point + self.hover_point) * 0.5
             return (f"{length:.2f} m", mid)
-        w, angle = self._width_and_angle(self.hover_point)
+        w, angle = self._width_and_angle(self.hover_point, self._locked)
         length = (self.base_point - self.start_point).length()
         c = self._corners(w, angle)
         mid = (self.start_point + c[2]) * 0.5 if c else self.base_point
@@ -208,7 +222,8 @@ class RotatedRectangleTool(PlaneLock, Tool):
     #: every 15° would fight fine control on the rest.
     _ANGLE_SNAP = 3.0
 
-    def _width_and_angle(self, cursor: QVector3D) -> tuple[float, float]:
+    def _width_and_angle(self, cursor: QVector3D,
+                         forced: QVector3D | None = None) -> tuple[float, float]:
         """``(width, angle)`` the cursor asks for, measured around the base
         edge. The component along the edge is dropped — only how far from it
         the cursor sits, and in which direction around it."""
@@ -219,6 +234,11 @@ class RotatedRectangleTool(PlaneLock, Tool):
         edge = (self.base_point - self.start_point).normalized()
         d = cursor - self.base_point
         d = d - edge * QVector3D.dotProduct(d, edge)     # off-edge part only
+        if forced is not None:
+            # Proyectada sobre la dirección bloqueada: el signo sobrevive
+            # (la parte negativa sale como el ángulo opuesto) y el snap deja
+            # de poder sacar el ancho de su eje.
+            d = forced * QVector3D.dotProduct(d, forced)
         width = d.length()
         if width < 1e-9:
             return 0.0, self.angle
@@ -230,6 +250,29 @@ class RotatedRectangleTool(PlaneLock, Tool):
                 angle = target
                 break
         return width, angle
+
+    _AXES = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
+
+    def locked_dir(self, viewport) -> QVector3D | None:
+        """La dirección que el bloqueo de eje del viewport impone al ancho, o
+        ``None`` si no hay bloqueo (o si el eje ES la arista base).
+
+        Hace falta porque el motor de snap manda sobre el bloqueo: con el eje
+        Z bloqueado y el cursor cerca de una arista del suelo, el clic se
+        pegaba a esa arista y el ángulo caía a 0 — la vista previa decía 90°
+        y salía un rectángulo tumbado de 0,60 m (Marco, 2026-09-10). Si el
+        usuario bloqueó un eje, el ancho va por ahí y no se discute.
+        """
+        lock = getattr(viewport, "axis_lock", None)
+        if not lock or lock not in self._AXES or self.base_point is None:
+            return None
+        edge = self.base_point - self.start_point
+        if edge.length() < 1e-9:
+            return None
+        edge = edge.normalized()
+        axis = QVector3D(*self._AXES[lock])
+        d = axis - edge * QVector3D.dotProduct(axis, edge)
+        return d.normalized() if d.length() > 1e-6 else None
 
     def _width_for(self, cursor: QVector3D) -> float:
         """Signed width in the angle-0 direction — kept for the callers that
@@ -260,3 +303,4 @@ class RotatedRectangleTool(PlaneLock, Tool):
         self.work_plane = None
         self.plane_lock = None
         self.angle = 0.0
+        self._locked = None
