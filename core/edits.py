@@ -250,6 +250,12 @@ def _append_face_plane_rebuild(scene, commands, points) -> None:
     for f in scene.mesh.faces:
         origin = f.vertices[0]
         normal = f.normal()
+        # A degenerate normal is a WILDCARD here: dot(anything, zero) is 0,
+        # so such a face would claim every line drawn anywhere in the mesh
+        # and hand its "plane" to the rebuild below. Face.normal() no longer
+        # produces one, but nothing downstream should depend on that.
+        if normal.lengthSquared() < 0.5:
+            continue
         if all(abs(QVector3D.dotProduct(p - origin, normal)) < tol
                for p in points):
             # Reference-scale guard: rebuilding a plane that carries hundreds

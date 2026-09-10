@@ -2973,7 +2973,12 @@ class RebuildPlaneFacesCommand(Command):
 
     def __init__(self, origin: QVector3D, normal: QVector3D) -> None:
         self.origin = QVector3D(origin)
-        self.normal = QVector3D(normal).normalized()
+        # Normalised by hand: QVector3D.normalized() nulls anything shorter
+        # than 1e-5, and a zero normal here means "rebuild the plane of
+        # everything", which empties the mesh. See core/mesh.py Face.normal.
+        n = QVector3D(normal)
+        length = n.length()
+        self.normal = n / length if length > 1e-9 else QVector3D()
         self.snapshot: Optional[dict] = None
         self.rebuilt = 0
 
@@ -2985,6 +2990,11 @@ class RebuildPlaneFacesCommand(Command):
         from core.triangulate import triangulate
 
         self.snapshot = scene.mesh.capture_state()
+        if self.normal.lengthSquared() < 0.5:
+            # No plane, nothing to rebuild. _on_plane would otherwise say
+            # yes to EVERY point and the arrangement would run over the
+            # whole mesh — which is how a 3 mm² sliver erased 447 faces.
+            return
         mesh = scene.mesh
         plane_edges = [e for e in mesh.edges
                        if self._on_plane(e.a) and self._on_plane(e.b)]

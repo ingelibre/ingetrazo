@@ -216,9 +216,20 @@ class Face:
         if len(self.loop) < 3:
             return QVector3D(0.0, 0.0, 1.0)
         n = self._newell()
-        if n.length() < 1e-9:
+        length = n.length()
+        if length < 1e-9:
             return QVector3D(0.0, 0.0, 1.0)
-        return n.normalized()
+        # Divided by hand, NOT QVector3D.normalized(): Qt returns a NULL
+        # vector for anything shorter than 1e-5 (its float qFuzzyIsNull) —
+        # four orders of magnitude above the guard right above this line. So
+        # a sliver whose Newell normal fell in [1e-9, 1e-5] got (0, 0, 0)
+        # instead of the (0, 0, 1) this function promises, and a zero normal
+        # is a WILDCARD: ``dot(anything, zero) == 0`` passes every plane
+        # test. One 3 mm² sliver imported from SketchUp made every line
+        # drawn anywhere in its group rebuild "its" plane, wiping all 447
+        # faces (Plaza Yanque, 2026-09-10). Dividing keeps the real
+        # direction, which is also strictly more informative.
+        return n / length
 
     def area(self) -> float:
         if len(self.loop) < 3:
