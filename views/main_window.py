@@ -1593,6 +1593,11 @@ class MainWindow(QMainWindow):
         if has_mesh:
             menu.addAction(tr("Make Group"), self._on_make_group)
             menu.addAction(tr("Make Component…"), self._on_make_component)
+        if any(isinstance(e, Face) for e in sel):
+            # SketchUp puts Reverse Faces in the face's own right-click menu,
+            # which is where anyone looks for it. It lived only in the Edit
+            # menu and Marco could not find it (2026-09-10).
+            menu.addAction(tr("Reverse Faces"), self._on_reverse_faces)
         if any(isinstance(e, Edge) for e in sel):
             menu.addAction(tr("Hide Edges"), self._on_hide_edges)
         if has_group:
