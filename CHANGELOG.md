@@ -6,6 +6,33 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+**La sesión de la Plaza Yanque.** Un día entero modelando una obra de verdad
+en IngeTrazo y cazando lo que fuera saliendo. Casi todo lo de abajo lo
+reportó Marco mientras dibujaba, con captura o con el modelo vivo delante.
+
+### Añadido
+- **Purgar capas y materiales sin usar**, con su botón en cada bandeja y
+  deshacible. Nació de un import de SketchUp del que se borró casi todo: las
+  capas del dibujo grande seguían ahí cuando ya no quedaba ni una cara suya.
+  Las capas vuelven a su posición original al deshacer, no al final de la
+  lista.
+- **Tinte de textura**: cambiarle el color a un material texturizado, como el
+  colorize de SketchUp. Tono y saturación del color elegido sobre la
+  luminosidad de la imagen; el original se guarda al lado, así que se puede
+  cambiar el tinte cuantas veces se quiera o quitarlo. Viaja dentro del
+  `.igz`.
+- **El tercer paso del rectángulo rotado es anchura Y ÁNGULO**, como el
+  transportador de SketchUp: con la base tumbada, escribir `3;90` levanta el
+  rectángulo de pie. Era la única forma de dibujar un rectángulo
+  perpendicular y no estaba.
+- **Equidistancia hacia adentro de verdad.** Al meterse hacia adentro de una
+  forma cóncava hay segmentos que se cruzan y desaparecen; el trazado ingenuo
+  los conservaba y salía un nudo. Ahora la forma se reconstruye con el motor
+  de arreglo planar: lo que colapsa se elimina, y si la figura se parte en
+  dos —una U estrecha— salen las dos piezas.
+- **Invertir caras en el menú del botón derecho.** Estaba solo en el menú
+  Edición, que no es donde se busca: SketchUp la pone sobre la propia cara.
+
 ### Corregido
 - **Tres teclas no hacían nada: `H`, `O` y `F2`.** Lo reportó `@pacaeiro`
   (PR #11): el Transportador y Desplazar compartían la `H`. Cuando dos
@@ -23,6 +50,45 @@ follow [SemVer](https://semver.org).
   si dos comparten atajo: la misma regla que el cargador de extensiones ya
   le aplicaba a los plugins, que nadie había aplicado a las teclas propias
   entre sí.
+- **El rectángulo rotado dibujaba siempre en el suelo.** `work_plane` estaba
+  declarado, se reseteaba y se leía… y no se asignaba nunca, así que sobre un
+  muro la anchura salía disparada en horizontal, y con la arista base
+  vertical la herramienta no hacía nada en absoluto, sin decir palabra. Ahora
+  el plano sale del bloqueo de las flechas o de la cara del primer clic, como
+  en el rectángulo normal y los arcos. Detrás vinieron tres más de la misma
+  herramienta, cada una encontrada dibujando: con un eje bloqueado el snap
+  podía tumbar el rectángulo; el ángulo que enseñaba la vista previa se
+  perdía al escribir la anchura en el cuadro (y salía tumbado); y el lado
+  escrito iba al contrario del cursor.
+- **Una astilla podía borrar 447 caras.** `QVector3D.normalized()` devuelve el
+  VECTOR NULO por debajo de 1e-5, y una normal cero pasa cualquier prueba de
+  plano: una cara de 3 × 1 mm se convertía en comodín y se llevaba por
+  delante todo lo que tocaba. `Face.normal()` divide a mano.
+- **«Pongo crear grupo y no crea».** Con la selección vacía, o con un grupo
+  dentro, se volvía en silencio. Ahora cada camino RESPONDE, y cuando hay
+  grupos seleccionados ofrece las salidas que sí existen —fusionar,
+  desagrupar y agrupar, o agrupar solo lo suelto— en vez de callarse.
+- **Un grupo se volvía líneas al dibujar dentro.** El chunk de un grupo se
+  reutilizaba tras un cambio de materiales, así que una arista nueva en una
+  esquina dejaba el modelo entero sin caras hasta deshacer. Y la equidistancia
+  perdía la pintura de la cara: las dos mitades nuevas heredan sus atributos.
+- **El punto del cursor se iba al horizonte.** Con el plano del suelo capturado
+  y la cámara casi a ras, el rayo roza el plano y la intersección se dispara:
+  medido, 85 m a media pantalla y 405 m veinte píxeles más arriba, hasta los
+  1757 m que vio Marco en una plaza de 100. Un rayo que corta el plano por
+  debajo de 6° ya no vale, y si hay una cara bajo el cursor manda la cara —
+  que es lo que se está señalando.
+- **Una arista oculta revivía al agrupar.** Una arista lleva cuatro cosas
+  además de sus extremos (soft, curve, layer, hidden) y tres comandos —crear
+  grupo, deshacer grupo y reconstruir caras— solo se llevaban las dos
+  primeras. La lista vive ahora en un solo sitio y los comandos preguntan en
+  vez de recordar, así que la próxima bandera no se puede olvidar.
+- **La perpendicular no estaba en el plano inclinado.** La inferencia
+  «perpendicular a la arista» giraba 90° en XY y devolvía siempre una
+  dirección horizontal, que en una rampa no está sobre la rampa: cruzar la
+  pendiente de una arista a la de enfrente quedaba enganchado a un bloqueo
+  magenta imposible de satisfacer. Ahora es `cross(normal, arista)`, que en el
+  suelo da exactamente lo mismo que antes.
 
 ### Cambiado
 - **`P` es Empujar/Tirar, como en SketchUp** (pedido de Marco). Era `U`, y
@@ -31,6 +97,9 @@ follow [SemVer](https://semver.org).
   atajo del MISMO comando, para no romper un año de memoria muscular. La
   proyección pasa a `Mayús+P`, la misma regla que el Transportador y el
   Arco por centro: la que cede se queda con `Mayús`+su tecla.
+- La CI guarda los artefactos de release **7 días** en vez de 90. La cuenta
+  iba por el 90 % de su cuota de almacenamiento con los binarios de cada
+  build.
 
 ## [0.3.16] — 2026-09-09
 
