@@ -133,42 +133,15 @@ def _texture_dir(skp_path) -> Path:
         return Path(tempfile.mkdtemp(prefix="ingetrazo-skp-tex-"))
 
 
-def _rgb_to_hls(rgb):
-    """Vectorized colorsys.rgb_to_hls over an (..., 3) float array in 0..1."""
-    import numpy as np
-    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
-    maxc = rgb.max(axis=-1)
-    minc = rgb.min(axis=-1)
-    lum = (maxc + minc) / 2.0
-    delta = maxc - minc
-    nz = delta > 1e-12
-    denom = np.where(lum <= 0.5, maxc + minc, 2.0 - maxc - minc)
-    sat = np.where(nz & (denom > 1e-12), delta / np.where(denom > 1e-12, denom, 1.0), 0.0)
-    safe = np.where(nz, delta, 1.0)
-    rc = (maxc - r) / safe
-    gc = (maxc - g) / safe
-    bc = (maxc - b) / safe
-    hue = np.where(maxc == r, bc - gc,
-                   np.where(maxc == g, 2.0 + rc - bc, 4.0 + gc - rc))
-    hue = np.where(nz, (hue / 6.0) % 1.0, 0.0)
-    return hue, lum, sat
 
 
-def _hls_to_rgb(hue, lum, sat):
-    """Vectorized colorsys.hls_to_rgb; returns an (..., 3) float array."""
-    import numpy as np
-    m2 = np.where(lum <= 0.5, lum * (1.0 + sat), lum + sat - lum * sat)
-    m1 = 2.0 * lum - m2
 
-    def channel(h):
-        h = h % 1.0
-        return np.where(h < 1.0 / 6.0, m1 + (m2 - m1) * h * 6.0,
-               np.where(h < 0.5, m2,
-               np.where(h < 2.0 / 3.0, m1 + (m2 - m1) * (2.0 / 3.0 - h) * 6.0,
-                        m1)))
 
-    return np.stack([channel(hue + 1.0 / 3.0), channel(hue),
-                     channel(hue - 1.0 / 3.0)], axis=-1)
+# The colourize maths moved to core.texture (the material editor needs it
+# too); these names stay as the importer's local spelling.
+from core.texture import colorize_image as _colorize_image  # noqa: E402
+from core.texture import hls_to_rgb as _hls_to_rgb  # noqa: E402,F401
+from core.texture import rgb_to_hls as _rgb_to_hls  # noqa: E402,F401
 
 
 def _needs_tint(data, declared_rgb) -> bool:
@@ -200,53 +173,6 @@ def _needs_tint(data, declared_rgb) -> bool:
     return d > 24.0
 
 
-def _colorize_image(data, target_rgb, ctype):
-    """Re-tint a shared texture the way SketchUp renders a colourized
-    material copy ("[Name]1", ``type="2"``).
-
-    ``ctype`` 0 ("shift") moves every pixel's hue/lightness/saturation by
-    the delta between the image average and the material colour; ``1``
-    ("tint") replaces hue/saturation outright, keeping the per-pixel
-    lightness variation. Alpha is preserved (the chain-link cutout must
-    survive). Returns PNG bytes, or ``data`` unchanged on any failure."""
-    try:
-        import numpy as np
-        from PySide6.QtCore import QBuffer
-        from PySide6.QtGui import QImage
-        img = QImage.fromData(data)
-        if img.isNull():
-            return data
-        img = img.convertToFormat(QImage.Format.Format_RGBA8888)
-        w, h = img.width(), img.height()
-        buf = np.frombuffer(img.constBits(), dtype=np.uint8,
-                            count=h * img.bytesPerLine())
-        px = buf.reshape(h, img.bytesPerLine())[:, : w * 4].reshape(h, w, 4)
-        rgb = px[..., :3].astype(np.float64) / 255.0
-        alpha = px[..., 3]
-        vis = alpha > 0
-        avg = rgb[vis].mean(axis=0) if vis.any() else rgb.mean(axis=(0, 1))
-        h0, l0, s0 = _rgb_to_hls(avg.reshape(1, 3))
-        ht, lt, st = _rgb_to_hls(
-            np.array([[c / 255.0 for c in target_rgb[:3]]]))
-        hue, lum, sat = _rgb_to_hls(rgb)
-        if ctype == 1:
-            hue = np.full_like(hue, float(ht[0]))
-            sat = np.full_like(sat, float(st[0]))
-        else:
-            hue = (hue + (float(ht[0]) - float(h0[0]))) % 1.0
-            sat = np.clip(sat + (float(st[0]) - float(s0[0])), 0.0, 1.0)
-        lum = np.clip(lum + (float(lt[0]) - float(l0[0])), 0.0, 1.0)
-        out = np.clip(_hls_to_rgb(hue, lum, sat) * 255.0 + 0.5,
-                      0, 255).astype(np.uint8)
-        result = np.dstack([out, alpha])
-        tinted = QImage(result.tobytes(), w, h, w * 4,
-                        QImage.Format.Format_RGBA8888)
-        qbuf = QBuffer()
-        qbuf.open(QBuffer.OpenModeFlag.WriteOnly)
-        tinted.save(qbuf, "PNG")
-        return bytes(qbuf.data())
-    except Exception:
-        return data
 
 
 def _tile_size(width, height):

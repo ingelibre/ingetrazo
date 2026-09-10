@@ -880,7 +880,14 @@ class MaterialsPanel(QWidget):
             "QToolButton:hover { background: palette(midlight); }")
         row.insertWidget(2, self._edit_toggle)
         self._edit_body = QWidget()
-        edit_row = QHBoxLayout(self._edit_body)
+        # Two rows, not one: tile size + rotation above, colour below. A
+        # single row with W/H/Rot/Colour/mode/Apply runs past the panel's
+        # 480 px and the labels start eliding.
+        edit_col = QVBoxLayout(self._edit_body)
+        edit_col.setContentsMargins(0, 0, 0, 0)
+        edit_col.setSpacing(3)
+        edit_row = QHBoxLayout()
+        edit_col.addLayout(edit_row)
         edit_row.setContentsMargins(0, 0, 0, 0)
         edit_row.addWidget(QLabel(tr("W")))
         self._sw_box = QDoubleSpinBox()
@@ -903,12 +910,45 @@ class MaterialsPanel(QWidget):
         self._rot_box.setSingleStep(15.0)
         self._rot_box.setSuffix("°")
         edit_row.addWidget(self._rot_box)
+        edit_row.addStretch(1)
+
+        # SketchUp's colourized material: a textured material also carries a
+        # COLOUR, and the image is re-tinted toward it. Two genuinely
+        # different pictures — Shift keeps the stone's veining and moves it
+        # in tone, Tint greyscales first and keeps only the lightness.
+        from PySide6.QtWidgets import QComboBox
+        tint_row = QHBoxLayout()
+        edit_col.addLayout(tint_row)
+        tint_row.setContentsMargins(0, 0, 0, 0)
+        #: The tint currently in the fields: RGB floats 0-1, or None.
+        self._tint = None
+        tint_row.addWidget(QLabel(tr("Color")))
+        self._tint_btn = QPushButton()
+        self._tint_btn.setFixedWidth(44)
+        self._tint_btn.setToolTip(tr("Tint the texture toward a colour"))
+        self._tint_btn.clicked.connect(self._on_pick_tint)
+        tint_row.addWidget(self._tint_btn)
+        self._tint_clear = QToolButton()
+        self._tint_clear.setText("×")
+        self._tint_clear.setToolTip(tr("Remove the colour (back to the "
+                                       "original image)"))
+        self._tint_clear.clicked.connect(self._on_clear_tint)
+        tint_row.addWidget(self._tint_clear)
+        self._tint_mode = QComboBox()
+        self._tint_mode.addItem(tr("Shift"), 0)
+        self._tint_mode.addItem(tr("Tint"), 1)
+        self._tint_mode.setToolTip(tr(
+            "Shift: move every pixel's hue toward the colour, keeping the "
+            "texture's variation. Tint: replace hue and saturation, keeping "
+            "only the lightness."))
+        tint_row.addWidget(self._tint_mode)
+        tint_row.addStretch(1)
         apply_btn = QPushButton(tr("Apply"))
         apply_btn.setToolTip(tr(
-            "Resize/rotate the active texture; with textured faces selected, "
-            "re-stamps them (undoable)"))
+            "Resize/rotate/tint the active texture; with textured faces "
+            "selected, re-stamps them (undoable)"))
         apply_btn.clicked.connect(self._on_apply_texture_edit)
-        edit_row.addWidget(apply_btn)
+        tint_row.addWidget(apply_btn)
         self._edit_body.setVisible(False)
 
         def _toggle_edit(on):
@@ -1225,10 +1265,65 @@ class MaterialsPanel(QWidget):
             self._sw_box.setValue(float(tex.get("sw", 1.0)))
             self._sh_box.setValue(float(tex.get("sh", 1.0)))
             self._rot_box.setValue(float(tex.get("rot", 0.0)))
+            # The tint has to load too: otherwise opening the panel and
+            # pressing Apply to nudge the tile size would silently strip a
+            # colour the user set earlier.
+            tint = tex.get("tint")
+            self._tint = tuple(tint) if tint else None
+            mode = int(tex.get("tint_mode", 0) or 0)
+            self._tint_mode.setCurrentIndex(1 if mode == 1 else 0)
         else:
             self._sw_box.setValue(self._tile_size)
             self._sh_box.setValue(self._tile_size)
             self._rot_box.setValue(0.0)
+            self._tint = None
+        self._refresh_tint_swatch()
+
+    def _refresh_tint_swatch(self) -> None:
+        """The colour button wears the tint (or reads "—" when there is
+        none), so the panel says at a glance whether this texture carries
+        one."""
+        if getattr(self, "_tint_btn", None) is None:
+            return
+        if self._tint is None:
+            self._tint_btn.setText("—")
+            self._tint_btn.setStyleSheet("")
+            self._tint_clear.setEnabled(False)
+            self._tint_mode.setEnabled(False)
+            return
+        r, g, b = (int(round(c * 255)) for c in self._tint[:3])
+        self._tint_btn.setText("")
+        self._tint_btn.setStyleSheet(
+            f"background: rgb({r},{g},{b}); border: 1px solid #555;")
+        self._tint_clear.setEnabled(True)
+        self._tint_mode.setEnabled(True)
+
+    def _on_pick_tint(self) -> None:
+        base = self._tint or (0.7, 0.7, 0.7)
+        chosen = QColorDialog.getColor(
+            QColor.fromRgbF(*base[:3]), self, tr("Tint the texture"))
+        if not chosen.isValid():
+            return
+        self._tint = (chosen.redF(), chosen.greenF(), chosen.blueF())
+        if not self._tint_mode.isEnabled():
+            self._tint_mode.setEnabled(True)
+        self._refresh_tint_swatch()
+
+    def _on_clear_tint(self) -> None:
+        self._tint = None
+        self._refresh_tint_swatch()
+
+    def _retinted(self, tex: dict) -> dict:
+        """*tex* with the panel's colour applied (or removed).
+
+        Always re-tints from the entry's untinted ``base``, never from the
+        last result, so sliding through colours cannot degrade the image."""
+        from core.texture import tinted_texture, untinted_texture
+        if self._tint is None:
+            return untinted_texture(tex)
+        mode = self._tint_mode.currentData()
+        return tinted_texture(tex, self._tint,
+                              int(mode if mode is not None else 0))
 
     def _on_apply_texture_edit(self) -> None:
         """Push the W/H/Rot fields onto the active texture and onto any
@@ -1238,17 +1333,18 @@ class MaterialsPanel(QWidget):
         sh = self._sh_box.value()
         rot = self._rot_box.value() % 360.0
         if PaintTool.current_texture:
-            PaintTool.current_texture = {
-                **PaintTool.current_texture, "sw": sw, "sh": sh, "rot": rot}
+            PaintTool.current_texture = self._retinted({
+                **PaintTool.current_texture, "sw": sw, "sh": sh, "rot": rot})
         scene = self._window.viewport.scene
         targets = [f for f in scene.selection
                    if isinstance(f, Face) and f.attrs.get("texture")]
         if targets:
-            # Each face keeps its own image; only size/rotation change.
+            # Each face keeps its own image; size/rotation and the tint change.
             from core.history import CompoundCommand
             cmds = []
             for f in targets:
-                tex = {**f.attrs["texture"], "sw": sw, "sh": sh, "rot": rot}
+                tex = self._retinted({**f.attrs["texture"], "sw": sw,
+                                      "sh": sh, "rot": rot})
                 cmds.append(SetFaceTextureCommand([f], tex))
             cmd = cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
             self._window.viewport.history.execute(cmd)

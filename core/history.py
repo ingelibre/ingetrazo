@@ -782,8 +782,22 @@ class RestampMaterialCommand(Command):
     _KEYS = ("color", "texture", "opacity")
 
     def _targets(self, scene):
-        meshes = [scene.loose_mesh] + [g.mesh for g in scene.groups]
+        # Nested placements included: walking scene.groups as a flat list
+        # left every face INSIDE a component wearing the old recipe, so
+        # "change the concrete everywhere" changed it almost nowhere in an
+        # imported model. Sibling instances share one prototype mesh, hence
+        # the identity dedupe.
+        from core.group import iter_placements
+        seen: set = set()
+        meshes = [scene.loose_mesh]
+        for g in scene.groups:
+            for pg, _m in iter_placements(g):
+                if id(pg.mesh) not in seen:
+                    seen.add(id(pg.mesh))
+                    meshes.append(pg.mesh)
         for mesh in meshes:
+            if mesh is None:
+                continue
             for f in mesh.faces:
                 if f.attrs.get("mat") == self._name:
                     yield f

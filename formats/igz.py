@@ -105,10 +105,8 @@ def _pack_textures(payload) -> tuple[dict, int]:
     blobs: dict = {}
     resolved: dict = {}          # source path → member name ("" = unreadable)
     missing = 0
-    for tex in _texture_entries(payload):
-        src = tex.get("path")
-        if not src:
-            continue
+    def _member_for(src):
+        nonlocal missing
         member = resolved.get(src)
         if member is None:
             try:
@@ -116,7 +114,7 @@ def _pack_textures(payload) -> tuple[dict, int]:
             except OSError:
                 resolved[src] = ""
                 missing += 1
-                continue
+                return ""
             digest = hashlib.sha1(data).hexdigest()[:16]
             # ``src`` is usually a cached file already named ``<hash>-<name>``:
             # texture_file_name drops that prefix, so the member is always
@@ -124,9 +122,26 @@ def _pack_textures(payload) -> tuple[dict, int]:
             member = f"{_TEX_PREFIX}{digest}-{texture_file_name(Path(src).name)}"
             resolved[src] = member
             blobs[member] = data
-        if member:
-            tex.pop("path", None)
-            tex["embed"] = member
+        return member
+
+    for tex in _texture_entries(payload):
+        src = tex.get("path")
+        if src:
+            member = _member_for(src)
+            if member:
+                tex.pop("path", None)
+                tex["embed"] = member
+        # A colourized entry also carries its UNTINTED source: without it a
+        # document opened on another machine could only re-tint the tinted
+        # image, and "remove colour" would have nothing to go back to. The
+        # blobs map is content-addressed, so a base shared with another
+        # material (or with an untinted face) costs nothing extra.
+        base = tex.get("base")
+        if base:
+            member = _member_for(base)
+            if member:
+                tex.pop("base", None)
+                tex["base_embed"] = member
     return blobs, missing
 
 
@@ -139,26 +154,37 @@ def _unpack_textures(payload, archive) -> None:
     from core.texture import cache_image
 
     unpacked: dict = {}
-    for tex in _texture_entries(payload):
-        member = tex.pop("embed", None)
-        if not member or tex.get("path"):
-            continue
+
+    def _restore(member):
+        """The cached file for an archive member, or None. cache_image drops
+        the member's hash prefix(es) and re-derives one from the bytes, so the
+        same image lands on the same cached file whether it arrived in a
+        document (even one whose member name was bloated by 0.3.10's
+        stacking) or straight from a .skp."""
         out = unpacked.get(member)
         if out is None:
             try:
                 data = archive.read(member)
             except KeyError:
-                continue
-            # cache_image drops the member's hash prefix(es) and re-derives
-            # one from the bytes, so the same image lands on the same cached
-            # file whether it arrived in a document (even one whose member
-            # name was bloated by 0.3.10's stacking) or straight from a .skp.
+                return None
             name = member.rsplit("/", 1)[-1]
             try:
                 out = str(cache_image(data, name, "embedded"))
             except OSError:
-                out = ""            # unwritable cache: the face loses its image
+                out = ""        # unwritable cache: the face loses its image
             unpacked[member] = out
+        return out or None
+
+    for tex in _texture_entries(payload):
+        base_member = tex.pop("base_embed", None)
+        if base_member and not tex.get("base"):
+            restored = _restore(base_member)
+            if restored:
+                tex["base"] = restored
+        member = tex.pop("embed", None)
+        if not member or tex.get("path"):
+            continue
+        out = _restore(member)
         if out:
             tex["path"] = out
 
