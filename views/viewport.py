@@ -5621,6 +5621,10 @@ class Viewport(QOpenGLWidget):
         if origin is None or direction is None:
             return None
         plane_point, plane_normal = self._current_work_plane(cursor=(x, y))
+        # The snap engine needs the plane too — "perpendicular to this edge"
+        # only means something within a plane. Stashed instead of asked for
+        # again: this runs on every mouse move, and the answer can cost a pick.
+        self._last_work_plane = (plane_point, plane_normal)
         hit = self._ray_plane(origin, direction, plane_point, plane_normal)
         if hit is not None:
             return hit
@@ -5645,6 +5649,11 @@ class Viewport(QOpenGLWidget):
     #: architectural view — nothing on screen comes anywhere near it, so this
     #: only fires where the plane really is unreadable.
     GRAZING_PLANE_DEG = 6.0
+
+    def _work_plane_normal(self) -> Optional[QVector3D]:
+        """The normal of the plane the last pixel→world used, or ``None``."""
+        plane = getattr(self, "_last_work_plane", None)
+        return plane[1] if plane is not None else None
 
     def _ray_plane(self, origin: QVector3D, direction: QVector3D,
                    plane_point: QVector3D, plane_normal: QVector3D
@@ -8647,6 +8656,7 @@ class Viewport(QOpenGLWidget):
             shift_lock_dir=self._shift_lock[0] if self._shift_lock else None,
             shift_lock_color=self._shift_lock[1] if self._shift_lock else None,
             linear_mode=self.linear_inference_mode,
+            work_plane_normal=self._work_plane_normal(),
         )
         self.last_snap = snap
         ctx = ToolContext(
@@ -8900,6 +8910,7 @@ class Viewport(QOpenGLWidget):
             shift_lock_dir=self._shift_lock[0] if self._shift_lock else None,
             shift_lock_color=self._shift_lock[1] if self._shift_lock else None,
             linear_mode=self.linear_inference_mode,
+            work_plane_normal=self._work_plane_normal(),
         )
         return ToolContext(
             viewport=self,

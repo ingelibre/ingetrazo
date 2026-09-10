@@ -169,22 +169,32 @@ def _detect_axis_alignment(
     return None
 
 
-def _direction_from_edge(edge, mode: str) -> Optional[QVector3D]:
-    """Return a unit-length direction in the work plane for ``mode``.
+def _direction_from_edge(edge, mode: str,
+                        plane_normal: Optional[QVector3D] = None
+                        ) -> Optional[QVector3D]:
+    """Return a unit-length direction for ``mode``.
 
     ``parallel``      → the edge's own direction.
-    ``perpendicular`` → the edge's direction rotated 90° in the XY plane.
+    ``perpendicular`` → square to the edge, IN THE PLANE BEING DRAWN ON.
 
-    For perpendicular we ignore the edge's Z component, so the lock stays
-    on the ground plane (Z=0), which matches the user expectation in
-    architecture / civil flows.
+    The plane matters. Perpendicular used to be a flat 90° turn in XY,
+    which is right on the ground and wrong everywhere else: on a ramp it
+    locks the line to a horizontal direction that does not lie on the ramp,
+    so drawing from one edge of the slope across to the other was pulled
+    off the face by a magenta lock that could not be satisfied (Marco,
+    2026-09-10). ``cross(plane_normal, edge)`` is the same thing on a
+    horizontal plane — cross((0,0,1), (dx,dy,dz)) is (-dy, dx, 0), the old
+    formula exactly — and the right thing on a tilted or vertical one.
     """
     direction = edge.b - edge.a
     if direction.length() < 1e-6:
         return None
     if mode == "perpendicular":
-        # 90° rotation in XY plane.
-        direction = QVector3D(-direction.y(), direction.x(), 0.0)
+        normal = plane_normal if plane_normal is not None else QVector3D(0, 0, 1)
+        perp = QVector3D.crossProduct(normal, direction)
+        if perp.length() < 1e-9:
+            return None          # the edge stands square to the plane
+        return perp / perp.length()
     return direction.normalized()
 
 
@@ -480,6 +490,7 @@ def compute_snap(
     shift_lock_dir=None,
     shift_lock_color=None,
     linear_mode: str = "all",
+    work_plane_normal: Optional[QVector3D] = None,
 ) -> SnapResult:
     # Linear-inference toggle (SketchUp's Alt): "all" = every inference, "off" =
     # point snaps only, "parallel_perp" = keep only parallel/perpendicular. The
@@ -567,7 +578,8 @@ def compute_snap(
         and start_point is not None
         and project_onto_line is not None
     ):
-        direction = _direction_from_edge(reference_edge, reference_mode)
+        direction = _direction_from_edge(reference_edge, reference_mode,
+                                         work_plane_normal)
         if direction is not None:
             locked = project_onto_line(start_point, direction)
             return SnapResult(locked, "reference", COLOR_REFERENCE)
@@ -637,7 +649,8 @@ def compute_snap(
             for edge in scene.edges:
                 if not _point_on_segment_world(start_point, edge.a, edge.b):
                     continue
-                perp = _direction_from_edge(edge, "perpendicular")
+                perp = _direction_from_edge(edge, "perpendicular",
+                                            work_plane_normal)
                 if perp is None:
                     continue
                 if abs(QVector3D.dotProduct(draw_u, perp)) < cos_tol:
