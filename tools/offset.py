@@ -22,6 +22,7 @@ from core.history import (
 )
 from core.i18n import tr
 from core.mesh import Face
+from core.offset import offset_regions
 from core.topology import max_offset_distance, offset_loop
 from tools.base import Tool, ToolContext
 
@@ -151,56 +152,64 @@ class OffsetTool(Tool):
         return origin + direction * t
 
     def _commit(self, viewport) -> None:
-        off = offset_loop(self._loop, self._normal, self.distance)
-        if off is None:
-            # Refusing is right — the offset closes or inverts the face — but
-            # refusing in SILENCE is what reads as "the tool doesn't work".
-            # Say the limit: a 20 cm kerb takes at most 10 cm inward, and a
-            # slab whose narrowest side is 4.6 cm gives up long before that.
-            sign = -1.0 if self.distance < 0 else 1.0
-            room = max_offset_distance(self._loop, self._normal, sign)
-            inward = sign > 0
-            if room <= 1e-4:
-                viewport.flash_status(tr(
-                    "{d:.3g} m closes this face — it takes no offset "
-                    "{side}", d=abs(self.distance),
-                    side=tr("inward") if inward else tr("outward")), 5000)
-            else:
-                viewport.flash_status(tr(
-                    "{d:.3g} m closes this face — {side} it takes at most "
-                    "{max:.3g} m", d=abs(self.distance),
-                    side=tr("inward") if inward else tr("outward"),
-                    max=room), 5000)
-            self._reset()
-            viewport.update()
+        regions = offset_regions(self._loop, self._normal, self.distance)
+        if not regions:
+            # Safety net: the exact slide-and-intersect path still runs when
+            # the arrangement finds nothing, so a bug here can only lose the
+            # new cases, never the ones that already worked.
+            fallback = offset_loop(self._loop, self._normal, self.distance)
+            if fallback is not None:
+                regions = [(fallback, [])]
+        if not regions:
+            self._refuse(viewport)
             return
-        # Inward: the original boundary is the outer ring, the offset is the hole
-        # and the inner face. Outward: swapped.
-        if self.distance > 0:
-            outer, inner = self._loop, off
-        else:
-            outer, inner = off, self._loop
-        # The paint travels to BOTH halves (SketchUp): offsetting a flagstone
-        # slab must not leave two blank faces where the texture was — which
-        # reads as a new white face laid over the drawing. Captured before the
-        # delete runs, and copied per face so they stop sharing one dict.
+        # Inward: the original boundary is the outer ring and each surviving
+        # region is a hole in it — plural, because a shape pinched at the
+        # waist really does come apart (a dumbbell with a 60 cm neck splits
+        # in two at 40 cm). Outward: the biggest region is the ring and the
+        # original is its single hole.
         attrs = dict(getattr(self.base_face, "attrs", None) or {})
-        commands = [
-            DeleteFaceCommand(self.base_face),
-            AddFaceCommand(list(outer), auto=False, holes=[list(inner)],
-                           attrs=dict(attrs)),                       # ring
-            AddFaceCommand(list(inner), auto=False,
-                           attrs=dict(attrs)),                       # inner
-        ]
-        # The offset loop mirrors the source boundary segment-by-segment: where
-        # the source edge is part of a curve (circle/arc), the offset segment is
-        # too — tag each run with a fresh id so the offset of a circle selects
-        # as one contour (SketchUp), not 24 loose segments.
-        commands.extend(self._curve_tags(viewport.scene.mesh, off))
+        if self.distance > 0:
+            outer = self._loop
+            inners = [loop for loop, _holes in regions]
+        else:
+            outer = max((loop for loop, _holes in regions),
+                        key=lambda lp: _loop_extent(lp))
+            inners = [self._loop]
+        commands = [DeleteFaceCommand(self.base_face),
+                    AddFaceCommand(list(outer), auto=False,
+                                   holes=[list(lp) for lp in inners],
+                                   attrs=dict(attrs))]
+        for loop in inners:
+            commands.append(AddFaceCommand(list(loop), auto=False,
+                                           attrs=dict(attrs)))
+        # Curve ids only when the offset kept the source's shape one-to-one:
+        # with the boundary re-arranged there is no run to mirror.
+        if len(regions) == 1 and len(regions[0][0]) == len(self._loop):
+            commands.extend(self._curve_tags(viewport.scene.mesh,
+                                             list(regions[0][0])))
         # Snapshot undo: Delete/Add compose fine forward, but the hole edges
         # the ring creates don't reverse cleanly command-by-command (they
         # leaked on undo). One snapshot reverses exactly.
         viewport.history.execute(SnapshotCompound(commands))
+        self._reset()
+        viewport.update()
+
+    def _refuse(self, viewport) -> None:
+        """Nothing survives the offset — say the limit instead of going quiet.
+        A 20 cm kerb takes no 10 cm inward offset: 0.20 - 2 x 0.10 is zero."""
+        sign = -1.0 if self.distance < 0 else 1.0
+        room = max_offset_distance(self._loop, self._normal, sign)
+        side = tr("inward") if sign > 0 else tr("outward")
+        if room <= 1e-4:
+            viewport.flash_status(tr(
+                "{d:.3g} m closes this face — it takes no offset {side}",
+                d=abs(self.distance), side=side), 5000)
+        else:
+            viewport.flash_status(tr(
+                "{d:.3g} m closes this face — {side} it takes at most "
+                "{max:.3g} m", d=abs(self.distance), side=side, max=room),
+                5000)
         self._reset()
         viewport.update()
 
@@ -238,3 +247,13 @@ class OffsetTool(Tool):
         self._normal = None
         self._ref_point = None
         self._ref_inward = None
+
+
+def _loop_extent(loop) -> float:
+    """A cheap size for picking the biggest region: the bounding box's
+    diagonal. Area would need the plane; this only has to rank."""
+    xs = [p.x() for p in loop]
+    ys = [p.y() for p in loop]
+    zs = [p.z() for p in loop]
+    return ((max(xs) - min(xs)) ** 2 + (max(ys) - min(ys)) ** 2
+            + (max(zs) - min(zs)) ** 2)
