@@ -5621,10 +5621,44 @@ class Viewport(QOpenGLWidget):
         if origin is None or direction is None:
             return None
         plane_point, plane_normal = self._current_work_plane(cursor=(x, y))
-        denom = QVector3D.dotProduct(plane_normal, direction)
-        if abs(denom) < 1e-6:
+        hit = self._ray_plane(origin, direction, plane_point, plane_normal)
+        if hit is not None:
+            return hit
+        # The ray only grazes the work plane here, so the intersection is
+        # junk: it runs off toward the horizon and a single pixel is worth
+        # hundreds of metres (measured with the ground plane captured and the
+        # camera 16 deg below the horizon: 85 m at mid screen, 405 m twenty
+        # pixels higher, and Marco got 1757.25 m on a 100 m plaza while the
+        # status bar said "On face"). If a real face IS under the cursor,
+        # believe the face — that is what the cursor is pointing at, and what
+        # the inference is already promising.
+        face, group = self.pick_face_any(x, y)
+        if face is not None:
+            from core.snap import face_plane_world
+            fpoint, fnormal = face_plane_world(face, getattr(group, "xform", None))
+            if fnormal is not None:
+                return self._ray_plane(origin, direction, fpoint, fnormal)
+        return None
+
+    #: A ray meeting the work plane below this angle gives a point nobody
+    #: asked for. Measured: at 25 deg of camera pitch — an ordinary
+    #: architectural view — nothing on screen comes anywhere near it, so this
+    #: only fires where the plane really is unreadable.
+    GRAZING_PLANE_DEG = 6.0
+
+    def _ray_plane(self, origin: QVector3D, direction: QVector3D,
+                   plane_point: QVector3D, plane_normal: QVector3D
+                   ) -> Optional[QVector3D]:
+        """Ray/plane hit, or ``None`` when it is behind the camera or the ray
+        merely grazes the plane."""
+        length = plane_normal.length()
+        if length < 1e-9:
             return None
-        t = QVector3D.dotProduct(plane_normal, plane_point - origin) / denom
+        normal = plane_normal / length
+        denom = QVector3D.dotProduct(normal, direction)
+        if abs(denom) < math.sin(math.radians(self.GRAZING_PLANE_DEG)):
+            return None
+        t = QVector3D.dotProduct(normal, plane_point - origin) / denom
         if t < 0:
             return None
         return origin + direction * t
