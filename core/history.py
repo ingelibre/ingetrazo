@@ -820,6 +820,63 @@ class RestampMaterialCommand(Command):
         scene.version += 1
 
 
+class PurgeUnusedCommand(Command):
+    """SketchUp's "Purge Unused", for layers and/or materials.
+
+    Layers are labels, not owners (core.layers), so emptying one cannot
+    delete it — an explicit sweep is the only honest way to clear what an
+    import left behind. What goes is decided ONCE, on the first ``do``:
+    redo must remove exactly what the original run removed, not re-survey a
+    model the user has since drawn on.
+
+    Layers come back at their original indices so the panel order survives
+    a round trip, and materials return to the registry with their recipe
+    intact — the faces never changed, since a purged material is by
+    definition one no face wears.
+    """
+
+    def __init__(self, layers: bool = True, materials: bool = True) -> None:
+        self._do_layers = bool(layers)
+        self._do_materials = bool(materials)
+        #: (index, Layer) and (name, Material), captured on the first do.
+        self._layers: Optional[list] = None
+        self._materials: Optional[list] = None
+
+    def _survey(self, scene) -> None:
+        from core.purge import unused_layers, unused_materials
+        current = list(getattr(scene, "layers", None) or ())
+        self._layers = ([(current.index(ly), ly)
+                         for ly in unused_layers(scene)]
+                        if self._do_layers else [])
+        self._materials = ([(n, scene.materials[n])
+                            for n in unused_materials(scene)]
+                           if self._do_materials else [])
+
+    def counts(self, scene) -> tuple[int, int]:
+        """What a run would remove — for the confirmation the panel shows."""
+        if self._layers is None:
+            self._survey(scene)
+        return len(self._layers or []), len(self._materials or [])
+
+    def do(self, scene) -> None:
+        if self._layers is None:
+            self._survey(scene)
+        for _index, ly in self._layers or []:
+            if ly in scene.layers:
+                scene.layers.remove(ly)
+        for name, _material in self._materials or []:
+            scene.materials.pop(name, None)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for index, ly in sorted(self._layers or [], key=lambda p: p[0]):
+            if ly not in scene.layers:
+                scene.layers.insert(min(index, len(scene.layers)), ly)
+        for name, material in self._materials or []:
+            scene.materials[name] = material
+        scene.version += 1
+
+
 class AddDimensionCommand(Command):
     """Add a static dimension annotation to ``scene.dimensions``."""
 

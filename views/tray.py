@@ -936,8 +936,12 @@ class MaterialsPanel(QWidget):
         add_color.clicked.connect(self._add_color)
         add_tex = QPushButton(tr("+ Texture…"))
         add_tex.clicked.connect(self._add_texture)
+        purge = QPushButton(tr("Purge"))
+        purge.setToolTip(tr("Delete every material no face wears"))
+        purge.clicked.connect(self._on_purge)
         btns.addWidget(add_color)
         btns.addWidget(add_tex)
+        btns.addWidget(purge)
         root.addLayout(btns)
         root.addStretch(1)
 
@@ -1083,6 +1087,33 @@ class MaterialsPanel(QWidget):
         loose = sorted(_TEX_DIR.glob("*.png"))
         if loose:
             section(tr("Other"), lambda g, ps=loose: fill_loose(g, ps))
+
+    def _on_purge(self) -> None:
+        """Sweep the registry materials no face wears.
+
+        These are invisible here — the swatches above are built from painted
+        faces, not from the registry — so an import's leftovers only ever
+        show up as weight in the saved ``.igz``."""
+        from PySide6.QtWidgets import QMessageBox
+        from core.history import PurgeUnusedCommand
+        scene = self._window.viewport.scene
+        cmd = PurgeUnusedCommand(layers=False, materials=True)
+        _, n_mats = cmd.counts(scene)
+        if not n_mats:
+            QMessageBox.information(
+                self, tr("Purge"), tr("Every material is in use."))
+            return
+        names = [n for n, _m in (cmd._materials or [])]
+        preview = ", ".join(names[:12]) + ("…" if len(names) > 12 else "")
+        if QMessageBox.question(
+                self, tr("Purge"),
+                tr("Delete {n} materials no face wears?", n=n_mats)
+                + f"\n\n{preview}") != QMessageBox.Yes:
+            return
+        self._window.viewport.history.execute(cmd)
+        self.refresh_in_model()
+        self._window.statusBar().showMessage(
+            tr("{n} unused materials purged", n=n_mats), 3000)
 
     def refresh_in_model(self) -> None:
         """Rebuild the 'En el modelo' swatches from the materials in use."""
@@ -1956,11 +1987,16 @@ class LayersPanel(QWidget):
         del_btn = QPushButton(tr("−"))
         del_btn.setToolTip(tr("Delete layer (its entities go to the default)"))
         del_btn.clicked.connect(self._on_delete)
+        purge_btn = QPushButton(tr("Purge"))
+        purge_btn.setToolTip(tr("Delete every layer no entity carries "
+                                "(a layer a scene hides is kept)"))
+        purge_btn.clicked.connect(self._on_purge)
         assign_btn = QPushButton(tr("Assign selection"))
         assign_btn.setToolTip(tr("Move the selected entities to this layer"))
         assign_btn.clicked.connect(self._on_assign)
         row.addWidget(add_btn)
         row.addWidget(del_btn)
+        row.addWidget(purge_btn)
         row.addStretch(1)
         row.addWidget(assign_btn)
         lay.addLayout(row)
@@ -2050,15 +2086,51 @@ class LayersPanel(QWidget):
         ly = scene.layer(name)
         if ly is None:
             return
-        for ent in list(scene.mesh.faces) + list(scene.mesh.edges) \
-                + list(scene.groups) \
+        # Every mesh in the document, nested placements included — walking
+        # scene.groups as a flat list left the faces INSIDE a group tagged
+        # with a layer that no longer existed.
+        from core.purge import iter_groups, iter_meshes
+        for mesh in iter_meshes(scene):
+            for ent in list(mesh.faces) + list(mesh.edges):
+                if layer_of(ent) == name:
+                    assign_layer(ent, DEFAULT_LAYER)
+        for ent in list(iter_groups(scene.groups)) \
                 + list(getattr(scene, "dimensions", []) or []) \
-                + list(getattr(scene, "text_labels", []) or []):
+                + list(getattr(scene, "text_labels", []) or []) \
+                + list(getattr(scene, "image_planes", []) or []) \
+                + list(getattr(scene, "section_planes", []) or []):
             if layer_of(ent) == name:
                 assign_layer(ent, DEFAULT_LAYER)
         scene.layers.remove(ly)
         self.refresh()
         self._touch()
+
+    def _on_purge(self) -> None:
+        """SketchUp's "Purge Unused" for tags: sweep the layers nothing
+        carries. One undoable step, and it says what it did — a silent
+        sweep of a panel the user did not look at is how a deliberate
+        empty layer disappears without anyone noticing."""
+        from PySide6.QtWidgets import QMessageBox
+        from core.history import PurgeUnusedCommand
+        scene = self._scene()
+        cmd = PurgeUnusedCommand(layers=True, materials=False)
+        n_layers, _ = cmd.counts(scene)
+        if not n_layers:
+            QMessageBox.information(
+                self, tr("Purge"), tr("Every layer is in use."))
+            return
+        names = [ly.name for _i, ly in (cmd._layers or [])]
+        preview = ", ".join(names[:12]) + ("…" if len(names) > 12 else "")
+        if QMessageBox.question(
+                self, tr("Purge"),
+                tr("Delete {n} layers no entity carries?", n=n_layers)
+                + f"\n\n{preview}") != QMessageBox.Yes:
+            return
+        self._window.viewport.history.execute(cmd)
+        self.refresh()
+        self._window.viewport.update()
+        self._window.statusBar().showMessage(
+            tr("{n} unused layers purged", n=n_layers), 3000)
 
     def _on_assign(self) -> None:
         from core.layers import assign_layer
