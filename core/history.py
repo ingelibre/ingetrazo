@@ -587,9 +587,24 @@ class DeleteFaceCommand(Command):
 
 def _dirty_group_chunks(scene) -> None:
     """Attr edits bypass the mesh mutation primitives — flag every group
-    mesh so the viewport's cached chunks re-validate their materials."""
+    mesh so the viewport's cached chunks re-validate their materials.
+
+    Two flags, because they answer different questions. ``_chunk_dirty`` is
+    "something touched this mesh"; ``_attrs_dirty`` is "a MATERIAL changed",
+    and only the second can be told apart from a move. The viewport's
+    translation fast path reuses a cached chunk's texture buckets after
+    checking geometry alone, so without this a repaint that happened in the
+    same breath as a drag stayed invisible outside the group — the flagstone
+    corner of Plaza Yanque kept its neighbour's grey (Marco, 2026-09-10).
+
+    Nested placements are flagged too: their meshes render as part of the
+    parent, and walking scene.groups as a flat list never reached them.
+    """
+    from core.group import iter_placements
     for g in getattr(scene, "groups", []):
-        g.mesh._chunk_dirty = True
+        for pg, _m in iter_placements(g):
+            pg.mesh._chunk_dirty = True
+            pg.mesh._attrs_dirty = True
 
 
 class FlipFacesCommand(Command):

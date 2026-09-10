@@ -161,10 +161,17 @@ class OffsetTool(Tool):
             outer, inner = self._loop, off
         else:
             outer, inner = off, self._loop
+        # The paint travels to BOTH halves (SketchUp): offsetting a flagstone
+        # slab must not leave two blank faces where the texture was — which
+        # reads as a new white face laid over the drawing. Captured before the
+        # delete runs, and copied per face so they stop sharing one dict.
+        attrs = dict(getattr(self.base_face, "attrs", None) or {})
         commands = [
             DeleteFaceCommand(self.base_face),
-            AddFaceCommand(list(outer), auto=False, holes=[list(inner)]),  # ring
-            AddFaceCommand(list(inner), auto=False),                        # inner
+            AddFaceCommand(list(outer), auto=False, holes=[list(inner)],
+                           attrs=dict(attrs)),                       # ring
+            AddFaceCommand(list(inner), auto=False,
+                           attrs=dict(attrs)),                       # inner
         ]
         # The offset loop mirrors the source boundary segment-by-segment: where
         # the source edge is part of a curve (circle/arc), the offset segment is

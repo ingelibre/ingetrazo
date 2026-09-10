@@ -6203,12 +6203,16 @@ class Viewport(QOpenGLWidget):
         if entry is not None:
             if entry.get("vkey") == vkey:
                 return entry
-            d = self._translation_probe(entry, mesh)
-            if d is not None:
-                self._shift_chunk(entry, d, mesh)
-                entry["vkey"] = vkey
-                entry["rev"] += 1
-                return entry
+            # The probe judges GEOMETRY only, and _shift_chunk reuses the
+            # cached texture buckets as they are — so a repaint must not be
+            # allowed to ride along inside a translation.
+            if not getattr(mesh, "_attrs_dirty", False):
+                d = self._translation_probe(entry, mesh)
+                if d is not None:
+                    self._shift_chunk(entry, d, mesh)
+                    entry["vkey"] = vkey
+                    entry["rev"] += 1
+                    return entry
             # Clean fast path: no mutation primitive touched this mesh since
             # the last validation (O(1) dirty flag) and the samples agree —
             # skip the 100 ms fingerprint walk that used to run on EVERY
@@ -6235,6 +6239,7 @@ class Viewport(QOpenGLWidget):
                 entry["fp_approx"] = False
                 entry["vkey"] = vkey
                 mesh._chunk_dirty = False
+                mesh._attrs_dirty = False
                 return entry
         _c0 = _time_mod.perf_counter() if _PERF else 0.0
         # P4: before the expensive rebuild, try the on-disk chunk cache —
@@ -6247,6 +6252,7 @@ class Viewport(QOpenGLWidget):
         if disk is not None:
             cache[id(group)] = disk
             mesh._chunk_dirty = False
+            mesh._attrs_dirty = False
             if _PERF:
                 _plog("chunk_from_disk",
                       (_time_mod.perf_counter() - _c0) * 1000.0,
@@ -6447,6 +6453,7 @@ class Viewport(QOpenGLWidget):
             _plog("chunk_rebuild", (_time_mod.perf_counter() - _c0) * 1000.0,
                   extra=f"faces={len(faces)}")
         mesh._chunk_dirty = False
+        mesh._attrs_dirty = False
         cache[id(group)] = entry
         _store = getattr(self, "_chunk_cache_store", None)   # stub VPs in tests
         if callable(_store):
