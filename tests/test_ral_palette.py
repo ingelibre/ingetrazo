@@ -94,6 +94,15 @@ def test_the_ral_name_follows_the_language():
         set_language(was)
 
 
+def _section_body(header):
+    """The collapsible body a tray section header shows: the widget right
+    after it in the parent layout (views/tray.py builds them as a pair)."""
+    layout = header.parentWidget().layout()
+    i = next(k for k in range(layout.count())
+             if layout.itemAt(k).widget() is header)
+    return layout.itemAt(i + 1).widget()
+
+
 def test_every_colour_in_the_tray_has_a_name():
     # The eight unnamed starter swatches are gone: beside 213 colours that
     # each carry a reference a painter can buy, a nameless square is only
@@ -107,11 +116,15 @@ def test_every_colour_in_the_tray_has_a_name():
                       if b.isCheckable()
                       and b.text().strip().startswith(tr("Colors")))
         header.setChecked(True)
-        swatches = [b for b in panel.findChildren(QToolButton)
+        # Scoped to the section's own body, not the whole panel: the panel
+        # holds unrelated tool buttons too (the tint's "remove colour"), and
+        # sweeping them up made this read as a nameless swatch.
+        body = _section_body(header)
+        swatches = [b for b in body.findChildren(QToolButton)
                     if not b.isCheckable() and b.toolTip()
                     and not b.toolTip().startswith("RAL")]
         assert swatches == [], [b.toolTip() for b in swatches[:5]]
-        assert len([b for b in panel.findChildren(QToolButton)
+        assert len([b for b in body.findChildren(QToolButton)
                     if not b.isCheckable()
                     and b.toolTip().startswith("RAL")]) == 213
     finally:

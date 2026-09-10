@@ -7,6 +7,11 @@ to loose faces and edges, so selecting a group plus loose geometry and
 grouping produced a group of the loose part with the group silently left out —
 the wrong result dressed as success. Marco's flow is exactly that: group some
 planks, place them in a bench, group again.
+
+Make Group now ANSWERS instead of whispering into the status bar: it asks,
+offering the two results that are actually reachable. Cancelling is the
+refusal these tests are about, so they drive the dialog that way — see
+tests/test_make_group_selection.py for the paths that accept.
 """
 from __future__ import annotations
 
@@ -21,7 +26,31 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 if QApplication.instance() is None:
     QApplication(sys.argv[:1])
 
+import pytest  # noqa: E402
+from PySide6.QtWidgets import QMessageBox  # noqa: E402
+
 from core.history import AddFaceCommand, MakeGroupCommand  # noqa: E402
+
+
+@pytest.fixture
+def cancels(monkeypatch):
+    """Answer Make Group's dialog with Cancel, and report whether it
+    was actually shown — a silent refusal would pass these asserts too,
+    and silence is the bug they exist to prevent."""
+    shown = {"count": 0, "labels": []}
+
+    def fake_exec(self):
+        shown["count"] += 1
+        shown["labels"] = [b.text() for b in self.buttons()]
+        shown["button"] = next(
+            b for b in self.buttons()
+            if self.buttonRole(b) == QMessageBox.ButtonRole.RejectRole)
+        return 0
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    monkeypatch.setattr(QMessageBox, "clickedButton",
+                        lambda self: shown.get("button"))
+    return shown
 
 
 def V(x, y, z=0.0):
@@ -40,13 +69,14 @@ def _win_with_a_group_and_loose_geometry():
     return win, scene
 
 
-def test_grouping_a_group_with_loose_geometry_refuses():
+def test_grouping_a_group_with_loose_geometry_refuses(cancels):
     win, scene = _win_with_a_group_and_loose_geometry()
     try:
         before = len(scene.groups)
         scene.selection.clear()
         scene.selection.update(set(scene.mesh.faces) | set(scene.groups))
         win._on_make_group()
+        assert cancels["count"] == 1, "it refused without saying so"
         # Nothing half-made: the loose face was NOT swept into a new group.
         assert len(scene.groups) == before
         assert scene.mesh.faces
