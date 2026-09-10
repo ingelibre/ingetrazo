@@ -85,12 +85,14 @@ jobs:
           name: IngeTrazo-AppImage-x86_64
           path: dist/IngeTrazo-*-x86_64.AppImage
           if-no-files-found: error
+          retention-days: 7
 
       - uses: actions/upload-artifact@v4
         with:
           name: IngeTrazo-tarball-x86_64
           path: dist/IngeTrazo-*-linux-x86_64.tar.gz
           if-no-files-found: error
+          retention-days: 7
 
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -172,6 +174,7 @@ jobs:
           name: IngeTrazo-snap-x86_64
           path: ${{ steps.snapbuild.outputs.snap }}
           if-no-files-found: error
+          retention-days: 7
 
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/v')
