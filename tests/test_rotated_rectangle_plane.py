@@ -317,3 +317,34 @@ def test_el_hover_no_pisa_el_angulo_con_ancho_cero():
     assert abs(tool.angle - 90.0) < 1e-6
     tool.on_hover(_ctx(vp, V(12.0, 21.4, 0.0)))      # encima de la base
     assert abs(tool.angle - 90.0) < 1e-6, "se perdió el ángulo"
+
+
+def test_escribir_el_ancho_lo_pone_del_lado_del_cursor():
+    """«Mi cursor está en el lado derecho, le digo 9 m para ese lado y lo hace
+    para el otro» (Marco, 2026-09-10).
+
+    Desde que el hover guarda el ángulo, el ángulo YA lleva el lado dentro:
+    180° es el lado opuesto a `_perp`. Multiplicar encima por un signo sacado
+    de `_width_for` lo devolvía al lado contrario — dos negaciones.
+    """
+    from core.scene import Scene
+    for lado, esperado in ((-3.0, [-2.0, 0.0]), (3.0, [0.0, 2.0])):
+        scene = Scene()
+        tool, vp = _tool_con_base(scene)
+        tool.on_hover(_ctx(vp, V(4.5, lado, 0.0)))
+        assert tool.on_value(vp, 2.0) is True
+        ys = sorted({round(v.y(), 3) for v in scene.mesh.faces[0].vertices})
+        assert ys == esperado, f"cursor en y={lado} salió en {ys}"
+
+
+def test_escribir_el_ancho_hacia_abajo_no_sube_el_rectangulo():
+    """Lo mismo de pie: con el cursor por debajo de la arista el ángulo vale
+    -90°, y el rectángulo tiene que bajar."""
+    from core.scene import Scene
+    scene = Scene()
+    tool, vp = _tool_con_base(scene)
+    tool.on_hover(_ctx(vp, V(4.5, 0.0, -2.5)))
+    assert abs(tool.angle + 90.0) < 1e-6
+    assert tool.on_value(vp, 1.0) is True
+    zs = sorted({round(v.z(), 3) for v in scene.mesh.faces[0].vertices})
+    assert zs == [-1.0, 0.0], f"salió en {zs}"

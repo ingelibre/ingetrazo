@@ -136,9 +136,12 @@ class RotatedRectangleTool(PlaneLock, Tool):
         else:
             if value == 0.0:
                 return False
-            # Keep the side the cursor is on; override the magnitude.
-            sign = -1.0 if self._width_for(self.hover_point) < 0 else 1.0
-            corners = self._corners(sign * value)
+            # El LADO ya viaja dentro del ángulo que guarda el hover: 180° es
+            # el lado opuesto a `_perp`, -90° es hacia abajo. Sacar además un
+            # signo de la componente sobre `_perp` era negar dos veces, y el
+            # rectángulo salía al lado contrario del cursor («le digo que
+            # para ese lado 9 m y lo hace para el otro», Marco 2026-09-10).
+            corners = self._corners(float(value))
         if corners:
             self._commit(viewport, corners)
         return True
@@ -282,12 +285,6 @@ class RotatedRectangleTool(PlaneLock, Tool):
         axis = QVector3D(*self._AXES[lock])
         d = axis - edge * QVector3D.dotProduct(axis, edge)
         return d.normalized() if d.length() > 1e-6 else None
-
-    def _width_for(self, cursor: QVector3D) -> float:
-        """Signed width in the angle-0 direction — kept for the callers that
-        only care which side of the base edge the cursor is on."""
-        perp = self._perp()
-        return QVector3D.dotProduct(cursor - self.base_point, perp)
 
     def _corners(self, width: float, angle: float | None = None) -> list[QVector3D]:
         direction = self._width_dir(angle)
