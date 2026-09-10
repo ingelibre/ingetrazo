@@ -54,7 +54,8 @@ def _plog(tag: str, ms: float, extra: str = "", floor: float = 100.0) -> None:
 from PySide6.QtGui import QVector3D
 
 from core.group import Group
-from core.mesh import PAINT_KEYS, Edge, Face, Mesh, Vertex
+from core.mesh import (PAINT_KEYS, Edge, Face, Mesh, Vertex, edge_flags,
+                       edge_is_plain, stamp_edge_flags)
 from core.topology import (
     _key,
     _loop_edges,
@@ -2459,17 +2460,19 @@ class MakeGroupCommand(Command):
             for f in faces
         ]
         self._edge_ends = [(QVector3D(e.a), QVector3D(e.b)) for e in edges]
-        # Soft/curve flags must travel into the group's fresh mesh: without
-        # them, grouping a smooth cylinder suddenly shows every facet seam
-        # (soft edges hidden in the loose mesh, visible in the group) and its
-        # rims stop selecting as whole curves.
+        # Edge flags must travel into the group's fresh mesh: without them,
+        # grouping a smooth cylinder suddenly shows every facet seam (soft
+        # edges hidden in the loose mesh, visible in the group), its rims stop
+        # selecting as whole curves, and a HIDDEN edge comes back from the
+        # dead — «oculté una arista, agrupo el dibujo y la arista vuelve a
+        # aparecer» (Marco, 2026-09-10). They travel as one tuple now, so the
+        # next flag added to an edge cannot be forgotten here.
         self._flagged: list = []
 
         def note(e):
-            if e is not None and (getattr(e, "soft", False)
-                                  or getattr(e, "curve", None) is not None):
+            if e is not None and not edge_is_plain(e):
                 self._flagged.append(
-                    (QVector3D(e.a), QVector3D(e.b), e.soft, e.curve))
+                    (QVector3D(e.a), QVector3D(e.b), edge_flags(e)))
 
         for f in faces:
             for lp in (f.loop, *f.hole_loops):
@@ -2509,12 +2512,12 @@ class MakeGroupCommand(Command):
                 gf.attrs.update(attrs)
         for a, b in self._edge_ends:
             gmesh.add_edge(L(a), L(b))
-        for a, b, soft, curve in self._flagged:
+        for a, b, flags in self._flagged:
             va, vb = gmesh.vertex_at(L(a)), gmesh.vertex_at(L(b))
             e = (gmesh.find_edge(va, vb)
                  if va is not None and vb is not None else None)
             if e is not None:
-                e.soft, e.curve = soft, curve
+                stamp_edge_flags(e, flags)
         self.group = Group(gmesh, name=self._name)
         if self._component:
             from PySide6.QtGui import QMatrix4x4
@@ -2767,20 +2770,19 @@ class ExplodeGroupCommand(Command):
                 v0, v1 = m.vertex_at(W(e.a)), m.vertex_at(W(e.b))
                 if v0 is None or v1 is None or m.find_edge(v0, v1) is None:
                     m.add_edge(W(e.a), W(e.b))
-        # Soft/curve flags travel back out of the group (the mirror of
-        # MakeGroupCommand): an exploded cylinder must stay smooth and its
-        # rims keep selecting as whole curves.
+        # Edge flags travel back out of the group (the mirror of
+        # MakeGroupCommand): an exploded cylinder must stay smooth, its rims
+        # keep selecting as whole curves, and a hidden edge stay hidden.
         for pg, xf in places:
             W = _W(xf)
             for e in pg.mesh.edges:
-                if not (getattr(e, "soft", False)
-                        or getattr(e, "curve", None) is not None):
+                if edge_is_plain(e):
                     continue
                 v0, v1 = m.vertex_at(W(e.a)), m.vertex_at(W(e.b))
                 k = (m.find_edge(v0, v1)
                      if v0 is not None and v1 is not None else None)
                 if k is not None:
-                    k.soft, k.curve = e.soft, e.curve
+                    stamp_edge_flags(k, edge_flags(e))
         m.resplit_curves()
         scene.groups.remove(self.group)
         scene.selection.discard(self.group)
@@ -2915,8 +2917,8 @@ class RebuildPlanarFacesCommand(Command):
         # Remember flagged edges and face attrs so the rebuild preserves them:
         # output edges are sub-segments of input ones (re-stamp by lie-on), and
         # output faces inherit attrs from the old face containing their interior.
-        flagged = [(QVector3D(e.a), QVector3D(e.b), e.soft, e.curve)
-                   for e in mesh.edges if e.soft or e.curve is not None]
+        flagged = [(QVector3D(e.a), QVector3D(e.b), edge_flags(e))
+                   for e in mesh.edges if not edge_is_plain(e)]
         old_attrs = [([tuple(t) for t in f.triangulate()], dict(f.attrs))
                      for f in mesh.faces if f.attrs]
         edges, faces = planar_rebuild(segments, origin, normal)
@@ -2925,9 +2927,9 @@ class RebuildPlanarFacesCommand(Command):
         mesh.clear()
         for a, b in edges:
             e = mesh.add_edge(a, b)
-            for (fa, fb, soft, curve) in flagged:
+            for (fa, fb, flags) in flagged:
                 if _point_on_seg_incl(e.a, fa, fb) and _point_on_seg_incl(e.b, fa, fb):
-                    e.soft, e.curve = soft, curve
+                    stamp_edge_flags(e, flags)
                     break
         for outer, holes in faces:
             f = mesh.add_face(outer, holes or None)
