@@ -6,6 +6,8 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+## [0.3.17] — 2026-09-10
+
 **La sesión de la Plaza Yanque.** Un día entero modelando una obra de verdad
 en IngeTrazo y cazando lo que fuera saliendo. Casi todo lo de abajo lo
 reportó Marco mientras dibujaba, con captura o con el modelo vivo delante.

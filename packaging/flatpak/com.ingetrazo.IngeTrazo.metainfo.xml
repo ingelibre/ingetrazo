@@ -45,6 +45,27 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.17" date="2026-09-10">
+      <description>
+        <p>A whole day modelling a real job, and everything it turned up.
+        The rotated rectangle draws in a plane at last — including standing
+        square to it, by typing width and angle like SketchUp's protractor —
+        offset finally works inwards on concave shapes, unused tags and
+        materials can be purged in one click, a textured material can be
+        tinted a colour, and Reverse Faces is where you look for it: the
+        right-click menu. Keyboard: P is Push/Pull as in SketchUp, and three
+        keys that quietly did nothing — H, O and F2 — work again.</p>
+        <p xml:lang="es">Un día entero modelando una obra de verdad, y todo
+        lo que salió de ahí. El rectángulo rotado por fin dibuja en un plano
+        —incluso de pie, escribiendo anchura y ángulo como el transportador
+        de SketchUp—, la equidistancia ya funciona hacia adentro en formas
+        cóncavas, las capas y los materiales sin usar se purgan de un clic,
+        un material texturizado se puede teñir de un color, e Invertir caras
+        está donde se busca: en el menú del botón derecho. Teclado: P es
+        Empujar/Tirar como en SketchUp, y tres teclas que no hacían nada sin
+        decirlo —H, O y F2— vuelven a funcionar.</p>
+      </description>
+    </release>
     <release version="0.3.16" date="2026-09-09">
       <description>
         <p>Starts on machines whose graphics driver refuses the OpenGL
