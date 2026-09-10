@@ -29,15 +29,23 @@ from tools.base import PlaneLock, Tool, ToolContext
 
 
 class RotatedRectangleTool(PlaneLock, Tool):
+    #: Debajo de esto el ancho no hace rectángulo: las esquinas se funden.
+    _MIN_WIDTH = 1e-6
+
     name = "Rotated Rect"
     shortcut = "K"
-    vcb_label = "Width"
+    vcb_label = "Width; angle"
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None   # first corner (drives plane)
         self.base_point: QVector3D | None = None     # second corner
         self.hover_point: QVector3D | None = None
         self.work_plane: tuple[QVector3D, QVector3D] | None = None
+        #: Giro del ANCHO alrededor de la arista base, en grados. 0 = en el
+        #: plano de trabajo (el rectángulo tumbado), 90 = perpendicular a él
+        #: (de pie). Es el tercer paso de SketchUp: su transportador gira
+        #: sobre la arista base y el cuadro pide «Anchura, Ángulo».
+        self.angle: float = 0.0
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -70,7 +78,16 @@ class RotatedRectangleTool(PlaneLock, Tool):
                     "you want to draw on"), 5000)
                 ctx.viewport.update()
             return
-        corners = self._corners(self._width_for(ctx.world))
+        width, self.angle = self._width_and_angle(ctx.world)
+        if width < self._MIN_WIDTH:
+            # Sin ancho no hay rectángulo: las dos esquinas nuevas caen sobre
+            # las viejas y el plan muere con «degenerate edge», revertido y
+            # sin explicación. Decirlo y seguir esperando el clic bueno.
+            ctx.viewport.flash_status(tr(
+                "The width is zero — move away from the base edge, or type "
+                "the width (and the angle after a comma)"), 4000)
+            return
+        corners = self._corners(width)
         if corners:
             self._commit(ctx.viewport, corners)
 
@@ -79,13 +96,26 @@ class RotatedRectangleTool(PlaneLock, Tool):
         ctx.viewport.update()
 
     def on_value(self, viewport, value) -> bool:
+        """``3`` = 3 m wide keeping the current angle; ``3;90`` = 3 m wide
+        standing perpendicular to the base plane — SketchUp's «Anchura,
+        Ángulo», which is the only way to raise a rectangle whose base edge
+        lies flat."""
         if self.base_point is None or self.hover_point is None:
             return False
-        if isinstance(value, tuple) or value == 0.0:
-            return False
-        # Keep the side the cursor is on; override the magnitude.
-        sign = -1.0 if self._width_for(self.hover_point) < 0 else 1.0
-        corners = self._corners(sign * value)
+        if isinstance(value, tuple):
+            if len(value) != 2:
+                return False
+            width, angle = value
+            if width <= 0.0:
+                return False
+            self.angle = float(angle)
+            corners = self._corners(float(width))
+        else:
+            if value == 0.0:
+                return False
+            # Keep the side the cursor is on; override the magnitude.
+            sign = -1.0 if self._width_for(self.hover_point) < 0 else 1.0
+            corners = self._corners(sign * value)
         if corners:
             self._commit(viewport, corners)
         return True
@@ -103,7 +133,8 @@ class RotatedRectangleTool(PlaneLock, Tool):
             return []
         if self.base_point is None:
             return [(self.start_point, self.hover_point)]   # drawing the base
-        c = self._corners(self._width_for(self.hover_point))
+        width, angle = self._width_and_angle(self.hover_point)
+        c = self._corners(width, angle)
         if not c:
             return [(self.start_point, self.base_point)]
         return [(c[i], c[(i + 1) % 4]) for i in range(4)]
@@ -115,11 +146,14 @@ class RotatedRectangleTool(PlaneLock, Tool):
             length = (self.hover_point - self.start_point).length()
             mid = (self.start_point + self.hover_point) * 0.5
             return (f"{length:.2f} m", mid)
-        w = self._width_for(self.hover_point)
+        w, angle = self._width_and_angle(self.hover_point)
         length = (self.base_point - self.start_point).length()
-        c = self._corners(w)
+        c = self._corners(w, angle)
         mid = (self.start_point + c[2]) * 0.5 if c else self.base_point
-        return (f"{length:.2f} × {abs(w):.2f} m", mid)
+        texto = f"{length:.2f} × {abs(w):.2f} m"
+        if abs(angle) > 0.05:
+            texto += f"   {angle:.0f}°"
+        return (texto, mid)
 
     # ---- Internals ----------------------------------------------------------
     def _capture_plane(self, ctx: ToolContext):
@@ -142,24 +176,72 @@ class RotatedRectangleTool(PlaneLock, Tool):
             return None
         return QVector3D(ctx.world), QVector3D(normal)
 
+    def _normal(self) -> QVector3D:
+        return (self.work_plane[1].normalized() if self.work_plane is not None
+                else QVector3D(0.0, 0.0, 1.0))
+
     def _perp(self) -> QVector3D:
-        """In-plane unit vector perpendicular to the base edge."""
-        normal = (self.work_plane[1] if self.work_plane is not None
-                  else QVector3D(0.0, 0.0, 1.0))
+        """In-plane unit vector perpendicular to the base edge (angle 0)."""
         e = (self.base_point - self.start_point)
         if e.length() < 1e-9:
             return QVector3D(0.0, 0.0, 0.0)
-        return QVector3D.crossProduct(normal.normalized(), e.normalized()).normalized()
+        return QVector3D.crossProduct(self._normal(),
+                                      e.normalized()).normalized()
+
+    def _width_dir(self, angle: float | None = None) -> QVector3D:
+        """The width's direction for ``angle`` degrees around the base edge.
+
+        Both ``_perp`` and the plane normal are perpendicular to the edge, so
+        spinning between them sweeps every direction the width can take — and
+        90° lands on the normal, which is the perpendicular rectangle
+        SketchUp draws with its protractor.
+        """
+        import math
+        perp = self._perp()
+        if perp.length() < 1e-6:
+            return QVector3D(0.0, 0.0, 0.0)
+        a = math.radians(self.angle if angle is None else angle)
+        return (perp * math.cos(a) + self._normal() * math.sin(a)).normalized()
+
+    #: Degrees within which the angle sticks to flat / perpendicular. Only
+    #: those two: they are the ones a drawing actually needs, and snapping
+    #: every 15° would fight fine control on the rest.
+    _ANGLE_SNAP = 3.0
+
+    def _width_and_angle(self, cursor: QVector3D) -> tuple[float, float]:
+        """``(width, angle)`` the cursor asks for, measured around the base
+        edge. The component along the edge is dropped — only how far from it
+        the cursor sits, and in which direction around it."""
+        import math
+        perp = self._perp()
+        if perp.length() < 1e-6:
+            return 0.0, 0.0
+        edge = (self.base_point - self.start_point).normalized()
+        d = cursor - self.base_point
+        d = d - edge * QVector3D.dotProduct(d, edge)     # off-edge part only
+        width = d.length()
+        if width < 1e-9:
+            return 0.0, self.angle
+        angle = math.degrees(math.atan2(
+            QVector3D.dotProduct(d, self._normal()),
+            QVector3D.dotProduct(d, perp)))
+        for target in (-180.0, -90.0, 0.0, 90.0, 180.0):
+            if abs(angle - target) <= self._ANGLE_SNAP:
+                angle = target
+                break
+        return width, angle
 
     def _width_for(self, cursor: QVector3D) -> float:
+        """Signed width in the angle-0 direction — kept for the callers that
+        only care which side of the base edge the cursor is on."""
         perp = self._perp()
         return QVector3D.dotProduct(cursor - self.base_point, perp)
 
-    def _corners(self, width: float) -> list[QVector3D]:
-        perp = self._perp()
-        if perp.length() < 1e-6:
+    def _corners(self, width: float, angle: float | None = None) -> list[QVector3D]:
+        direction = self._width_dir(angle)
+        if direction.length() < 1e-6:
             return []
-        off = perp * width
+        off = direction * width
         return [self.start_point, self.base_point,
                 self.base_point + off, self.start_point + off]
 
@@ -177,3 +259,4 @@ class RotatedRectangleTool(PlaneLock, Tool):
         self.base_point = None
         self.work_plane = None
         self.plane_lock = None
+        self.angle = 0.0

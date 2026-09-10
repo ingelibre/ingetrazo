@@ -1562,5 +1562,7 @@
  "outward": "hacia fuera",
  "{d:.3g} m closes this face — it takes no offset {side}": "{d:.3g} m cierra esta cara — no admite equidistancia {side}",
  "{d:.3g} m closes this face — {side} it takes at most {max:.3g} m": "{d:.3g} m cierra esta cara — {side} admite {max:.3g} m como máximo",
- "That edge is perpendicular to the drawing plane — lock another one with the arrow keys, or start on the face you want to draw on": "Esa arista es perpendicular al plano de dibujo — bloquea otro con las flechas, o empieza sobre la cara en la que quieras dibujar"
+ "That edge is perpendicular to the drawing plane — lock another one with the arrow keys, or start on the face you want to draw on": "Esa arista es perpendicular al plano de dibujo — bloquea otro con las flechas, o empieza sobre la cara en la que quieras dibujar",
+ "The width is zero — move away from the base edge, or type the width (and the angle after a comma)": "El ancho es cero — aléjate de la arista base, o escribe el ancho (y el ángulo después de un punto y coma)",
+ "Width; angle": "Ancho; ángulo"
 }

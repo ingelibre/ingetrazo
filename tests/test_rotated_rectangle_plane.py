@@ -32,9 +32,11 @@ def V(x, y, z=0.0):
 class _VP:
     """Just enough viewport: a face under the cursor, and a loud status bar."""
 
-    def __init__(self, face=None):
+    def __init__(self, face=None, scene=None):
         self.face = face
         self.said = []
+        self.scene = scene
+        self.history = None
 
     def pick_face_any(self, x, y):
         return (self.face, None)
@@ -135,3 +137,101 @@ def test_an_arrow_lock_beats_the_face_under_the_cursor():
     tool.on_click(_ctx(vp, V(0, 0, 0)))
     _point, normal = tool.work_plane
     assert abs(abs(normal.normalized().z()) - 1.0) < 1e-6
+
+
+# ---- el tercer paso es ancho Y ÁNGULO (el transportador de SketchUp) -------
+#
+# «Quiero dibujar un rectángulo que esté perpendicular así como en SketchUp»
+# (Marco, 2026-09-10, con la captura de SketchUp for Web al lado: «Anchura,
+# Ángulo: 3.79 m, 90.0»). El transportador de SketchUp gira sobre la ARISTA
+# BASE, así que con la base tumbada el ancho se levanta hasta ponerse de pie.
+# Capturar el plano en el primer clic —lo que ya se arregló— no da eso.
+
+def _tool_con_base(scene, a=V(0, 0), b=V(9, 0)):
+    from core.history import History
+    vp = _VP(scene=scene)
+    vp.history = History(scene)
+    tool = RotatedRectangleTool()
+    tool.on_click(_ctx(vp, a))
+    tool.on_click(_ctx(vp, b))
+    return tool, vp
+
+
+def test_escribir_ancho_y_angulo_levanta_el_rectangulo():
+    from core.scene import Scene
+    scene = Scene()
+    tool, vp = _tool_con_base(scene)
+    tool.hover_point = V(9, 1)
+    assert tool.on_value(vp, (3.0, 90.0)) is True
+    assert len(scene.mesh.faces) == 1
+    face = scene.mesh.faces[0]
+    assert sorted({round(v.z(), 3) for v in face.vertices}) == [0.0, 3.0]
+    # Una cara de pie tiene la normal horizontal.
+    assert abs(face.normal().z()) < 1e-6
+
+
+def test_un_solo_numero_mantiene_el_angulo_actual():
+    from core.scene import Scene
+    scene = Scene()
+    tool, vp = _tool_con_base(scene)
+    tool.hover_point = V(9, 1)
+    tool.angle = 90.0
+    assert tool.on_value(vp, 2.0) is True
+    assert sorted({round(v.z(), 3) for v in scene.mesh.faces[0].vertices}) == [0.0, 2.0]
+
+
+def test_el_cursor_fuera_del_plano_da_el_angulo_solo():
+    from core.scene import Scene
+    tool, _vp = _tool_con_base(Scene())
+    ancho, angulo = tool._width_and_angle(V(9, 0, 2.5))
+    assert abs(ancho - 2.5) < 1e-6
+    assert abs(angulo - 90.0) < 1e-6
+    ancho, angulo = tool._width_and_angle(V(9, 1.5, 0))
+    assert abs(ancho - 1.5) < 1e-6
+    assert abs(angulo) < 1e-6, "en el plano el ángulo es 0"
+
+
+def test_el_angulo_se_pega_a_plano_y_perpendicular():
+    from core.scene import Scene
+    tool, _vp = _tool_con_base(Scene())
+    import math
+    # 88.5° está dentro del imán de 3°: debe caer en 90 clavado.
+    casi = V(9, 1.5 * math.cos(math.radians(88.5)),
+             1.5 * math.sin(math.radians(88.5)))
+    assert abs(tool._width_and_angle(casi)[1] - 90.0) < 1e-9
+    # 60° no se toca.
+    lejos = V(9, 1.5 * math.cos(math.radians(60)),
+              1.5 * math.sin(math.radians(60)))
+    assert abs(tool._width_and_angle(lejos)[1] - 60.0) < 0.01
+
+
+def test_ancho_cero_avisa_en_vez_de_reventar():
+    """Un clic sobre la propia arista base fundía las esquinas y el plan
+    moría con «degenerate edge», revertido y sin explicación."""
+    from core.history import History
+    from core.scene import Scene
+    scene = Scene()
+    vp = _VP(scene=scene)
+    vp.history = History(scene)
+    tool = RotatedRectangleTool()
+    tool.on_click(_ctx(vp, V(0, 0)))
+    tool.on_click(_ctx(vp, V(9, 0)))
+    tool.on_click(_ctx(vp, V(4, 0)))          # encima de la base
+    assert scene.mesh.faces == []
+    assert vp.history.last_error is None, "no debe llegar a lanzar"
+    assert vp.said, "y debe decir por qué"
+
+
+def test_el_rectangulo_tumbado_no_cambia():
+    from core.history import History
+    from core.scene import Scene
+    scene = Scene()
+    vp = _VP(scene=scene)
+    vp.history = History(scene)
+    tool = RotatedRectangleTool()
+    tool.on_click(_ctx(vp, V(0, 0)))
+    tool.on_click(_ctx(vp, V(9, 0)))
+    tool.on_click(_ctx(vp, V(9, 1.13)))
+    assert len(scene.mesh.faces) == 1
+    assert vp.history.last_error is None
+    assert all(abs(v.z()) < 1e-9 for v in scene.mesh.faces[0].vertices)
