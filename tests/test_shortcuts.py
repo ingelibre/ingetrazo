@@ -130,13 +130,15 @@ TARJETA_SKETCHUP = {
     "R": "Rectangle", "C": "Circle", "A": "Arc", "M": "Move",
     "Q": "Rotate", "S": "Scale", "F": "Offset", "T": "Tape Measure",
     "O": "Orbit", "H": "Pan", "Z": "Zoom", "Shift+Z": "Zoom Extents",
-    "G": "Make Component…",
+    "G": "Make Component…", "P": "Push / Pull",
 }
 # Divergencias a propósito, para que nadie las "arregle" sin decidirlo:
-#   P  = Perspectiva/paralela (SketchUp: Empujar/Tirar; el nuestro va en U)
-#   K  = Rectángulo rotado    (SketchUp: aristas traseras; el rotado no
-#                              tiene tecla allá)
-#   F2 = Zoom a extensión     (segundo atajo nuestro, además de Shift+Z)
+#   U       = Empujar/Tirar   (segundo atajo del MISMO comando: la tecla que
+#                              IngeTrazo usó hasta el 2026-09-10)
+#   Mayús+P = Perspectiva/paralela (SketchUp no le da tecla ninguna)
+#   K       = Rectángulo rotado    (SketchUp: aristas traseras; el rotado no
+#                                   tiene tecla allá)
+#   F2      = Zoom a extensión     (segundo atajo, además de Shift+Z)
 #   D J W X Y = Cota, Arco 3 puntos, Sígueme, Texto, Ruta — sin tecla allá.
 
 
@@ -154,3 +156,20 @@ def test_el_arco_de_A_es_el_de_comba_como_en_sketchup(ventana):
     from tools.arc import ArcTool
     assert ArcTool.shortcut == "A"
     assert ArcTool.vcb_label == "Bulge"
+
+
+def test_la_p_es_empujar_tirar_y_la_u_sigue_valiendo(ventana):
+    """«P como SketchUp» (Marco, 2026-09-10). La U no se tira: es el mismo
+    comando con dos atajos, que es lo legal — dos ACCIONES con un atajo es
+    lo que Qt mata."""
+    _calentar(ventana)
+    assert _pulsar(ventana, Qt.Key_P) == ["Push / Pull"]
+    assert _pulsar(ventana, Qt.Key_U) == ["Push / Pull"]
+    atajos = _todos_los_atajos(ventana)
+    assert atajos["P"] == ["Push / Pull"] and atajos["U"] == ["Push / Pull"]
+
+
+def test_la_perspectiva_se_mudo_a_mayus_p(ventana):
+    _calentar(ventana)
+    assert _pulsar(ventana, Qt.Key_P, Qt.ShiftModifier) == [
+        "Toggle Perspective / Parallel"]

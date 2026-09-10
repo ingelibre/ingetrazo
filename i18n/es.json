@@ -807,7 +807,7 @@
  "Orange napkin": "Mantel anaranjado",
  "Orange pattern": "Patrón naranja",
  "Orbit": "Orbitar",
- "Orbit (O) / Pan (H) buttons: left-drag to move the view  ·  MMB-drag: orbit  ·  Shift+MMB-drag: pan  ·  Wheel / 2-finger: zoom  ·  P: persp/parallel  ·  →←↑: lock X/Y/Z  ·  ↓: par/perp to ref  ·  Shift: lock inference  ·  Type N + Enter: exact length  ·  Rectangle: type W;H + Enter  ·  Type X;Y;Z + Enter: 3D delta": "Botones Orbitar (O) / Desplazar (H): arrastrá con clic izq. para mover la vista  ·  Arrastre con botón central: orbitar  ·  Shift+central: desplazar  ·  Rueda / 2 dedos: zoom  ·  P: persp/paralela  ·  →←↑: fijar X/Y/Z  ·  ↓: par/perp a ref  ·  Shift: fijar inferencia  ·  Escribí N + Enter: longitud exacta  ·  Rectángulo: escribí W;H + Enter  ·  Escribí X;Y;Z + Enter: delta 3D",
+ "Orbit (O) / Pan (H) buttons: left-drag to move the view  ·  MMB-drag: orbit  ·  Shift+MMB-drag: pan  ·  Wheel / 2-finger: zoom  ·  Shift+P: persp/parallel  ·  →←↑: lock X/Y/Z  ·  ↓: par/perp to ref  ·  Shift: lock inference  ·  Type N + Enter: exact length  ·  Rectangle: type W;H + Enter  ·  Type X;Y;Z + Enter: 3D delta": "Botones Orbitar (O) / Desplazar (H): arrastrá con clic izq. para mover la vista  ·  Arrastre con botón central: orbitar  ·  Shift+central: desplazar  ·  Rueda / 2 dedos: zoom  ·  Mayús+P: persp/paralela  ·  →←↑: fijar X/Y/Z  ·  ↓: par/perp a ref  ·  Shift: fijar inferencia  ·  Escribí N + Enter: longitud exacta  ·  Rectángulo: escribí W;H + Enter  ·  Escribí X;Y;Z + Enter: delta 3D",
  "Orbit (O) — left-drag to rotate the view": "Orbitar (O) — arrastrar con clic izq. para rotar la vista",
  "Oriental carpet": "Alfombra oriental",
  "Origin": "Origen",

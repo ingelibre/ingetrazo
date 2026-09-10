@@ -24,6 +24,14 @@ follow [SemVer](https://semver.org).
   le aplicaba a los plugins, que nadie había aplicado a las teclas propias
   entre sí.
 
+### Cambiado
+- **`P` es Empujar/Tirar, como en SketchUp** (pedido de Marco). Era `U`, y
+  la `P` estaba gastada en alternar perspectiva/paralela — que en SketchUp
+  no tiene tecla ninguna. La `U` no se tira: sigue valiendo como segundo
+  atajo del MISMO comando, para no romper un año de memoria muscular. La
+  proyección pasa a `Mayús+P`, la misma regla que el Transportador y el
+  Arco por centro: la que cede se queda con `Mayús`+su tecla.
+
 ## [0.3.16] — 2026-09-09
 
 **La release de los dos primeros probadores de fuera.** El mismo día

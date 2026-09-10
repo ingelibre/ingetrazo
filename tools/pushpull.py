@@ -203,7 +203,12 @@ def _paint_of(face) -> dict:
 
 class PushPullTool(Tool):
     name = "Push / Pull"
-    shortcut = "U"
+    #: P is SketchUp's key for this tool (Marco, 2026-09-10: «p como
+    #: sketchup»). U, the one IngeTrazo used until today, stays as a second
+    #: shortcut on this same action — a decade of muscle memory is worth a
+    #: line of code, and it costs nothing: P is what the card says.
+    shortcut = "P"
+    shortcut_alt = "U"
     uses_snap = False  # picks a face to extrude; no snap markers
     vcb_label = "Distance"
     # Preview lines in the normal edge colour, not the loose orange rubber band,

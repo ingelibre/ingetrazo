@@ -87,6 +87,11 @@ class Tool(ABC):
     name: str = "Unnamed"
     icon: str | None = None
     shortcut: str | None = None
+    #: A second key for the same tool, when a key changes hands and the old
+    #: one is worth keeping. Push/Pull answers to SketchUp's P and to the U
+    #: it had here for a year. It is the SAME action with two shortcuts —
+    #: never a second action, which is what Qt kills (tests/test_shortcuts.py).
+    shortcut_alt: str | None = None
     # Drawing tools snap to geometry and show the snap markers/tooltips
     # (Endpoint, On Edge, On Face, ...). Tools that only pick existing
     # geometry (Select, Push/Pull) set this False: no snap engine, no markers.

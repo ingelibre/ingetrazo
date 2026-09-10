@@ -322,7 +322,11 @@ class MainWindow(QMainWindow):
         self._icon_actions.append((action, key))
         action.setCheckable(True)
         if tool.shortcut:
-            action.setShortcut(QKeySequence(tool.shortcut))
+            seqs = [QKeySequence(tool.shortcut)]
+            alt = getattr(tool, "shortcut_alt", None)
+            if alt:
+                seqs.append(QKeySequence(alt))
+            action.setShortcuts(seqs)
             action.setToolTip(f"{name}  ({tool.shortcut})")
         else:
             action.setToolTip(name)
@@ -604,7 +608,11 @@ class MainWindow(QMainWindow):
         camera_menu.addSeparator()
 
         action_proj = QAction(tr("Toggle Perspective / Parallel"), self)
-        action_proj.setShortcut(QKeySequence("P"))
+        # P went back to Push/Pull, which is what SketchUp's card says; the
+        # projection toggle has no key there at all, so it takes Shift+P —
+        # the same "the tool that yields keeps Shift+key" rule as the
+        # Protractor and the centre arc.
+        action_proj.setShortcut(QKeySequence("Shift+P"))
         action_proj.triggered.connect(self.viewport.toggle_projection)
         camera_menu.addAction(action_proj)
 
@@ -1035,7 +1043,7 @@ class MainWindow(QMainWindow):
         bar.showMessage(tr(
             "Orbit (O) / Pan (H) buttons: left-drag to move the view  ·  "
             "MMB-drag: orbit  ·  Shift+MMB-drag: pan  ·  Wheel / 2-finger: zoom  ·  "
-            "P: persp/parallel  ·  →←↑: lock X/Y/Z  ·  ↓: par/perp to ref  ·  "
+            "Shift+P: persp/parallel  ·  →←↑: lock X/Y/Z  ·  ↓: par/perp to ref  ·  "
             "Shift: lock inference  ·  Type N + Enter: exact length  ·  "
             "Rectangle: type W;H + Enter  ·  Type X;Y;Z + Enter: 3D delta"
         ))
