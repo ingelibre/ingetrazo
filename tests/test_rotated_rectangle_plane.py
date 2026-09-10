@@ -291,3 +291,29 @@ def test_el_eje_bloqueado_fija_la_direccion_del_ancho():
     tool2, vp2 = _con_base(Scene(), lock="x")
     # La base va por X, así que un bloqueo en X no deja dirección: se ignora.
     assert tool2.locked_dir(vp2) is None
+
+
+def test_escribir_solo_el_ancho_respeta_el_angulo_que_se_esta_viendo():
+    """El caso de la traza en vivo: base tumbada, eje Z bloqueado, el ratón
+    arriba mostrando 90°, y el ancho escrito en el cuadro. Como `on_value` no
+    pasa por `on_click`, el ángulo se quedaba en 0 y salía tumbado — con la
+    vista previa prometiendo lo contrario."""
+    from core.scene import Scene
+    scene = Scene()
+    tool, vp = _con_base(scene, lock="z", a=V(7.2, 21.4), b=V(16.2, 21.404))
+    tool.on_hover(_ctx(vp, V(7.2, 21.4, 2.017)))
+    assert abs(tool.angle - 90.0) < 1e-6, "el hover debe recordar el ángulo"
+    assert tool.on_value(vp, 0.6) is True
+    face = scene.mesh.faces[0]
+    assert sorted({round(v.z(), 3) for v in face.vertices}) == [0.0, 0.6]
+
+
+def test_el_hover_no_pisa_el_angulo_con_ancho_cero():
+    """Pasar el ratón por la propia arista base no debe borrar el ángulo:
+    ahí no hay dirección que medir."""
+    from core.scene import Scene
+    tool, vp = _con_base(Scene(), lock="z")
+    tool.on_hover(_ctx(vp, V(16.2, 21.4, 1.5)))
+    assert abs(tool.angle - 90.0) < 1e-6
+    tool.on_hover(_ctx(vp, V(12.0, 21.4, 0.0)))      # encima de la base
+    assert abs(tool.angle - 90.0) < 1e-6, "se perdió el ángulo"

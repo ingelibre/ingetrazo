@@ -107,6 +107,15 @@ class RotatedRectangleTool(PlaneLock, Tool):
         self.hover_point = ctx.world
         # Cacheado para la vista previa y el rótulo, que no reciben viewport.
         self._locked = self.locked_dir(ctx.viewport)
+        if self.base_point is not None:
+            # El ángulo que se está ENSEÑANDO queda guardado. Antes solo lo
+            # guardaba el tercer clic, así que escribir el ancho en el cuadro
+            # —que no pasa por on_click— construía el rectángulo con el
+            # ángulo viejo, es decir 0: la vista previa mostraba 90° y salía
+            # tumbado (Marco, 2026-09-10, visto en la traza en vivo).
+            _w, angulo = self._width_and_angle(ctx.world, self._locked)
+            if _w > self._MIN_WIDTH:
+                self.angle = angulo
         ctx.viewport.update()
 
     def on_value(self, viewport, value) -> bool:
