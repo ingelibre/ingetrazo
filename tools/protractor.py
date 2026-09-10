@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""Protractor tool (H) and the shared SketchUp protractor mechanics.
+"""Protractor tool (Shift+H) and the shared SketchUp protractor mechanics.
 
 :class:`ProtractorBase` holds everything SketchUp's protractor cursor does —
 Rotate (Q) shows the same instrument, so both tools share it:
@@ -224,7 +224,7 @@ class ProtractorBase(Tool):
 
 class ProtractorTool(ProtractorBase):
     name = "Protractor"
-    shortcut = "H"
+    shortcut = "Shift+H"
     vcb_label = "Angle"
     accepts_angle_ratio = True  # VCB "3:12" (rise:run) arrives as degrees
 
