@@ -342,7 +342,10 @@ class CenterArcTool(PlaneLock, Tool):
     circle lands on the exact same lattice and welds cleanly."""
 
     name = "Center Arc"
-    shortcut = "O"
+    #: Shift+O, not O: in SketchUp plain O is Orbit and the centre arc has no
+    #: default key at all. Sharing O made Qt call the shortcut ambiguous and
+    #: fire NEITHER — see tests/test_shortcuts.py.
+    shortcut = "Shift+O"
     vcb_label = "Angle"
 
     _PITCH_DEG = 15.0

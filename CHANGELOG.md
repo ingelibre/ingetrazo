@@ -6,6 +6,24 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Corregido
+- **Tres teclas no hacían nada: `H`, `O` y `F2`.** Lo reportó `@pacaeiro`
+  (PR #11): el Transportador y Desplazar compartían la `H`. Cuando dos
+  acciones de la misma ventana piden el mismo atajo, Qt no elige una — lo
+  marca ambiguo y **no dispara ninguna**, así que la tecla queda muerta
+  para las dos. Al medirlo aparecieron dos más del mismo molde: `O` la
+  peleaban el Arco por centro y Orbitar, y `F2` estaba registrada dos
+  veces, una por el botón de la barra y otra por la entrada del menú
+  Cámara. Ahora las teclas de cámara son las de SketchUp — Orbitar `O`,
+  Desplazar `H`, Zoom `Z` y **Zoom a extensión `Mayús+Z`**, que allá es la
+  suya y aquí faltaba (`F2` sigue valiendo). Las dos herramientas que
+  cedieron su tecla —que en SketchUp no tienen ninguna asignada de
+  fábrica— quedan en `Mayús+H` el Transportador y `Mayús+O` el Arco por
+  centro. Y un test nuevo recorre todas las acciones de la ventana y falla
+  si dos comparten atajo: la misma regla que el cargador de extensiones ya
+  le aplicaba a los plugins, que nadie había aplicado a las teclas propias
+  entre sí.
+
 ## [0.3.16] — 2026-09-09
 
 **La release de los dos primeros probadores de fuera.** El mismo día

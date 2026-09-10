@@ -436,12 +436,18 @@ class MainWindow(QMainWindow):
             self._nav_actions[key] = action
             self._icon_actions.append((action, key))
         view_tb.addSeparator()
+        # ONE action for Zoom Extents, shared with the Camera menu below.
+        # It used to be built twice — same key on two QActions is a Qt
+        # ambiguity, and an ambiguous shortcut fires NEITHER, so F2 did
+        # nothing at all. Shift+Z is SketchUp's own key for it; F2 stays as
+        # an alternate because it is the one that was documented here.
         act_ze = QAction(tool_icon("zoom_extents"), tr("Zoom Extents"), self)
         self._icon_actions.append((act_ze, "zoom_extents"))
-        act_ze.setShortcut(QKeySequence("F2"))
-        act_ze.setToolTip(f"{tr('Zoom Extents')}  (F2)")
+        act_ze.setShortcuts([QKeySequence("Shift+Z"), QKeySequence("F2")])
+        act_ze.setToolTip(f"{tr('Zoom Extents')}  (Shift+Z)")
         act_ze.triggered.connect(self._on_zoom_extents)
         view_tb.addAction(act_ze)
+        self._act_zoom_extents = act_ze
 
         # Standard-views toolbar: one-shot camera orientations, icon-only.
         views_tb = self._new_toolbar(tr("Standard Views"), "views")
@@ -593,10 +599,7 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda _checked, k=key: self._on_standard_view(k))
             standard_menu.addAction(action)
 
-        action_zoom_extents = QAction(tr("Zoom Extents"), self)
-        action_zoom_extents.setShortcut(QKeySequence("F2"))
-        action_zoom_extents.triggered.connect(self._on_zoom_extents)
-        camera_menu.addAction(action_zoom_extents)
+        camera_menu.addAction(self._act_zoom_extents)   # la MISMA del botón
 
         camera_menu.addSeparator()
 
