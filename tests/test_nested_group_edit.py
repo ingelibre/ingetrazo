@@ -249,3 +249,111 @@ def test_el_nieto_se_selecciona_solo_en_su_nivel():
     assert dueño_de_la_banca() == "Jardinera"
     scene.begin_group_edit(h1)
     assert dueño_de_la_banca() == "Banca"
+
+
+def test_las_instancias_tambien_se_atenuan():
+    """«Hago doble clic y lo demás no se atenúa» (Marco, 2026-09-11).
+
+    El camino instanciado de la GPU es OTRA llamada de dibujo: el corte de
+    atenuado que llevan los búferes por trozos no le dice nada. Mientras
+    estabas dentro de un grupo, toda colocación instanciada seguía
+    dibujándose a plena luz — y agrupar la plaza convirtió a sus hijos en
+    justo eso.
+    """
+    from views.viewport import Viewport, EDIT_REST_FADE
+    scene, padre, h1, h2 = _plaza()
+    suelto = Group(_cuadrado(Mesh(), 20.0), name="Otro")
+    scene.groups.append(suelto)
+    vp = _visor(scene)
+    vp._edit_rest_mode = "fade"
+    _VP._instanced_batches = Viewport._instanced_batches
+
+    assert vp._instanced_batches([h1, suelto]) == [([h1, suelto], 0.0)], (
+        "en la raíz no se atenúa nada")
+
+    scene.begin_group_edit(padre)
+    hijos = [g for g in vp._placements() if getattr(g, "context", None) is padre]
+    lotes = vp._instanced_batches(hijos + [suelto])
+    assert lotes[0] == ([suelto], EDIT_REST_FADE), "lo de fuera, atenuado"
+    assert lotes[1] == (hijos, 0.0), "lo de dentro, a plena luz"
+
+    vp._edit_rest_mode = "hide"
+    lotes = vp._instanced_batches(hijos + [suelto])
+    assert lotes == [(hijos, 0.0)], "en modo ocultar, lo de fuera ni se dibuja"
+
+
+def test_entrar_a_un_grupo_ANIDADO_no_lo_atenua_a_el():
+    """La captura de Marco del 2026-09-11: entró a un grupo que vivía dentro
+    de otro y salió lavado él, con el resto del modelo a plena luz.
+
+    Dos agujeros, el mismo origen: el código buscaba al grupo editado POR
+    IDENTIDAD en la lista de dibujo, y ahí lo que hay es una proxy suya. Así
+    que la proxy se marcaba como decorado —se atenuaba el sujeto— y el corte
+    del atenuado no se ponía nunca, con lo que no se atenuaba nada más.
+    """
+    scene, padre, h1, h2 = _plaza()
+    suelto = Group(_cuadrado(Mesh(), 20.0), name="Otro")
+    scene.groups.append(suelto)
+    vp = _visor(scene)
+
+    scene.begin_group_edit(h1)          # DIRECTO al hijo, sin pasar por el padre
+    assert scene.edit_group is h1
+    assert h1 not in scene.groups, "vive dentro de la plaza"
+
+    proxy = next(g for g in vp._placements() if g.name == "Jardinera")
+    assert not vp._draws_in_edit_context(proxy), (
+        "el grupo que se está editando no puede atenuarse a sí mismo")
+    assert vp._draws_in_edit_context(suelto), "y lo de fuera sí"
+    hermano = next(g for g in vp._placements() if g.name == "Pavimento")
+    assert vp._draws_in_edit_context(hermano)
+    assert proxy not in vp._context_placements(), (
+        "no se selecciona el grupo en el que estás")
+
+
+def test_el_aviso_dice_en_que_nivel_estas():
+    """Sin esto, anidar se lee como un programa roto: haces clic fuera, el
+    programa sube UN nivel a un padre que también es contenedor, todo sigue
+    atenuado y parece que no pasó nada (Marco, 2026-09-11)."""
+    from views.viewport import Viewport
+    scene, padre, h1, _h2 = _plaza()
+    nieto = Group(_cuadrado(Mesh(), 6.0), name="Banca")
+    h1.adopt([nieto])
+    vp = _visor(scene)
+    _VP.edit_path_text = Viewport.edit_path_text
+
+    assert vp.edit_path_text() == ""
+    scene.begin_group_edit(padre)
+    assert vp.edit_path_text() == "Plaza"
+    scene.begin_group_edit(h1)
+    assert vp.edit_path_text() == "Plaza ▸ Jardinera"
+    scene.begin_group_edit(nieto)
+    assert vp.edit_path_text() == "Plaza ▸ Jardinera ▸ Banca"
+    scene.end_one_group_edit()
+    assert vp.edit_path_text() == "Plaza ▸ Jardinera"
+
+
+def test_el_corte_del_atenuado_se_apunta_aunque_el_sujeto_dibuje_por_otra_via():
+    """El sujeto puede dibujarse por el camino INSTANCIADO, que no pasa por
+    el búfer de trozos. Si la frontera solo se apuntaba para los que sí caen
+    en ese búfer, entrar a un grupo instanciado dejaba el corte sin poner —
+    y sin corte no se atenúa nada (Marco, 2026-09-11, segundo nivel)."""
+    import inspect
+    from views.viewport import Viewport
+    fuente = inspect.getsource(Viewport._sync_edges)
+    i_corte = fuente.index("self._edit_split_f = gface_start")
+    i_salto = fuente.index("or self._instanced_eligible(g)):", i_corte - 2000)
+    assert i_corte < i_salto, (
+        "el corte de caras debe apuntarse ANTES del continue que salta "
+        "las colocaciones instanciadas")
+
+
+def test_las_caras_texturadas_saben_quien_es_el_sujeto():
+    """El pase texturado decide el atenuado con su propia bandera. Comparaba
+    por identidad contra scene.edit_group, así que con un grupo anidado —que
+    en la lista de dibujo es una proxy— marcaba TODAS las caras texturadas
+    como decorado: la plaza entera salía lavada, el grupo editado incluido."""
+    import inspect
+    from views.viewport import Viewport
+    fuente = inspect.getsource(Viewport._sync_edges)
+    assert "subj = not self._draws_in_edit_context(g)" in fuente
+    assert "subj = g is self.scene.edit_group" not in fuente

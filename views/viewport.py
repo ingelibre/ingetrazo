@@ -1813,7 +1813,13 @@ class Viewport(QOpenGLWidget):
                 # children are tagged.
                 proxy.layer = forced or child.layer or node.layer
                 proxy.billboard = child.billboard
-                if ctx is not None and node is ctx:
+                if child is ctx:
+                    # The group being edited, reached as a nested placement:
+                    # it is the SUBJECT, not surroundings. Comparing by
+                    # identity against `scene.edit_group` misses here, because
+                    # what the draw list holds is this proxy.
+                    proxy.owner, proxy.context = child, ctx
+                elif ctx is not None and node is ctx:
                     proxy.owner, proxy.context = child, ctx
                 elif dentro is not None:
                     proxy.owner, proxy.context = dentro, ctx
@@ -1996,6 +2002,28 @@ class Viewport(QOpenGLWidget):
             entry["mat_sig"] = sig
         return len(groups)
 
+    def _instanced_batches(self, groups):
+        """``[(placements, fade)]`` for one prototype, split by the edit
+        context.
+
+        The instanced path is a SEPARATE draw call, so the fade split the
+        chunk buffers carry means nothing to it: while you were inside a
+        group, every instanced placement kept drawing at full strength and
+        the rest of the model did not dim at all («hago doble clic y lo demás
+        no se atenúa», Marco, 2026-09-11 — his plaza had just become a
+        container, which made its children instanced). Hiding works the same
+        way: `hide` drops the surroundings instead of washing them.
+        """
+        if self.scene.edit_group is None:
+            return [(groups, 0.0)]
+        fuera = [g for g in groups if self._draws_in_edit_context(g)]
+        dentro = [g for g in groups if not self._draws_in_edit_context(g)]
+        if self._edit_rest_mode == "hide":
+            return [(dentro, 0.0)]
+        if self._edit_rest_mode != "fade":
+            return [(groups, 0.0)]
+        return [(fuera, EDIT_REST_FADE), (dentro, 0.0)]
+
     def _draw_instanced_faces(self, mode, style) -> None:
         by_proto = self._gather_instanced()
         if not by_proto or mode == "wireframe":
@@ -2008,63 +2036,68 @@ class Viewport(QOpenGLWidget):
             self._gl.glDepthMask(GL_FALSE)
         for mesh, groups in by_proto.values():
             entry = self._ensure_proto_draw(mesh)
-            n = self._update_inst_matrices(entry, groups)
-            if entry["vcol_count"]:
-                if mode in ("hidden_line", "monochrome"):
-                    self._program.setUniformValue(self._loc_use_vcolor, 0)
-                    fr = style.front_color
-                    self._set_color(fr[0], fr[1], fr[2], 1.0)
-                    if mode == "hidden_line":
-                        self._program.setUniformValue(
-                            self._loc_back_color,
-                            QVector4D(fr[0], fr[1], fr[2], 1.0))
+            for lote, fade in self._instanced_batches(groups):
+                if not lote:
+                    continue
+                n = self._update_inst_matrices(entry, lote)
+                self._program.setUniformValue1f(self._loc_fade, fade)
+                if entry["vcol_count"]:
+                    if mode in ("hidden_line", "monochrome"):
+                        self._program.setUniformValue(self._loc_use_vcolor, 0)
+                        fr = style.front_color
+                        self._set_color(fr[0], fr[1], fr[2], 1.0)
+                        if mode == "hidden_line":
+                            self._program.setUniformValue(
+                                self._loc_back_color,
+                                QVector4D(fr[0], fr[1], fr[2], 1.0))
+                        else:
+                            self._set_back_face_color()
                     else:
+                        self._program.setUniformValue(self._loc_use_vcolor, 1)
                         self._set_back_face_color()
-                else:
-                    self._program.setUniformValue(self._loc_use_vcolor, 1)
-                    self._set_back_face_color()
-                entry["vcol_vao"].bind()
-                extra.glDrawArraysInstanced(
-                    GL_TRIANGLES, 0, entry["vcol_count"], n)
-                entry["vcol_vao"].release()
-                self._program.setUniformValue(self._loc_use_vcolor, 0)
-            if entry["tex_runs"]:
-                if mode in ("hidden_line", "monochrome"):
-                    fr = style.front_color
-                    self._set_color(fr[0], fr[1], fr[2], 1.0)
-                    entry["tex_vao"].bind()
-                    for _tk, s0, cnt in entry["tex_runs"]:
-                        extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
-                    entry["tex_vao"].release()
-                elif mode == "shaded":
-                    entry["tex_vao"].bind()
-                    for (path, shade), s0, cnt in entry["tex_runs"]:
-                        r, g, b = self._texture_avg_color(path)
-                        self._program.setUniformValue1f(
-                            self._loc_shade, float(shade))
-                        self._set_color(r, g, b, 1.0)
-                        extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
-                    entry["tex_vao"].release()
-                    self._program.setUniformValue1f(self._loc_shade, 1.0)
-                else:            # textures / xray
-                    self._program.setUniformValue(self._loc_use_tex, 1)
-                    entry["tex_vao"].bind()
-                    for (path, shade), s0, cnt in entry["tex_runs"]:
-                        tex = self._get_texture(path)
-                        if tex is None:
-                            continue
-                        self._program.setUniformValue1f(
-                            self._loc_shade, float(shade))
-                        self._program.setUniformValue(
-                            self._loc_hard_cutout,
-                            1 if getattr(tex, "_cutout", False) else 0)
-                        tex.bind(0)
-                        extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
-                        tex.release(0)
-                    entry["tex_vao"].release()
-                    self._program.setUniformValue(self._loc_hard_cutout, 0)
-                    self._program.setUniformValue1f(self._loc_shade, 1.0)
-                    self._program.setUniformValue(self._loc_use_tex, 0)
+                    entry["vcol_vao"].bind()
+                    extra.glDrawArraysInstanced(
+                        GL_TRIANGLES, 0, entry["vcol_count"], n)
+                    entry["vcol_vao"].release()
+                    self._program.setUniformValue(self._loc_use_vcolor, 0)
+                if entry["tex_runs"]:
+                    if mode in ("hidden_line", "monochrome"):
+                        fr = style.front_color
+                        self._set_color(fr[0], fr[1], fr[2], 1.0)
+                        entry["tex_vao"].bind()
+                        for _tk, s0, cnt in entry["tex_runs"]:
+                            extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                        entry["tex_vao"].release()
+                    elif mode == "shaded":
+                        entry["tex_vao"].bind()
+                        for (path, shade), s0, cnt in entry["tex_runs"]:
+                            r, g, b = self._texture_avg_color(path)
+                            self._program.setUniformValue1f(
+                                self._loc_shade, float(shade))
+                            self._set_color(r, g, b, 1.0)
+                            extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                        entry["tex_vao"].release()
+                        self._program.setUniformValue1f(self._loc_shade, 1.0)
+                    else:            # textures / xray
+                        self._program.setUniformValue(self._loc_use_tex, 1)
+                        entry["tex_vao"].bind()
+                        for (path, shade), s0, cnt in entry["tex_runs"]:
+                            tex = self._get_texture(path)
+                            if tex is None:
+                                continue
+                            self._program.setUniformValue1f(
+                                self._loc_shade, float(shade))
+                            self._program.setUniformValue(
+                                self._loc_hard_cutout,
+                                1 if getattr(tex, "_cutout", False) else 0)
+                            tex.bind(0)
+                            extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                            tex.release(0)
+                        entry["tex_vao"].release()
+                        self._program.setUniformValue(self._loc_hard_cutout, 0)
+                        self._program.setUniformValue1f(self._loc_shade, 1.0)
+                        self._program.setUniformValue(self._loc_use_tex, 0)
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
         if mode == "xray":
             self._program.setUniformValue1f(self._loc_opacity, 1.0)
             self._gl.glDepthMask(GL_TRUE)
@@ -2099,10 +2132,16 @@ class Viewport(QOpenGLWidget):
             entry = self._ensure_proto_draw(mesh)
             if not entry["edge_count"]:
                 continue
-            n = self._update_inst_matrices(entry, groups)
-            entry["edges_vao"].bind()
-            extra.glDrawArraysInstanced(GL_LINES, 0, entry["edge_count"], n)
-            entry["edges_vao"].release()
+            for lote, fade in self._instanced_batches(groups):
+                if not lote:
+                    continue
+                n = self._update_inst_matrices(entry, lote)
+                self._program.setUniformValue1f(self._loc_fade, fade)
+                entry["edges_vao"].bind()
+                extra.glDrawArraysInstanced(GL_LINES, 0,
+                                            entry["edge_count"], n)
+                entry["edges_vao"].release()
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
 
     def _draw_image_planes(self) -> None:
         """Reference images, as textured quads under the model.
@@ -3483,11 +3522,17 @@ class Viewport(QOpenGLWidget):
             draw_groups = [g for g in placements
                            if self._draws_in_edit_context(g)] + draw_groups
         for g in draw_groups:
+            if (self._edit_split_e is None
+                    and self.scene.edit_group is not None
+                    and not self._draws_in_edit_context(g)):
+                # Where the surroundings end and the subject begins. This
+                # used to key on `g is scene.edit_group`, which never matched
+                # when the group being edited was a nested placement (the
+                # list holds its proxy) — and with no split, NOTHING faded.
+                self._edit_split_e = estart
             if (self.scene.entity_visible(g) and id(g) not in pv
                     and not getattr(g, "billboard", False)
                     and not self._instanced_eligible(g)):
-                if g is self.scene.edit_group:
-                    self._edit_split_e = estart
                 ch = self._group_chunk(g)
                 edge_parts.append(ch["edges"])
                 n = len(ch["edges"]) // 12
@@ -3648,13 +3693,20 @@ class Viewport(QOpenGLWidget):
         subject_bucketed = False
         pv_faces = getattr(self, "_preview_groups", None) or ()
         for g in draw_groups:         # context first, edited group last
+            if (self._edit_split_f is None
+                    and self.scene.edit_group is not None
+                    and not self._draws_in_edit_context(g)):
+                # BEFORE the skips, on purpose. The subject may well draw by
+                # another path — an instanced placement does — and if the
+                # boundary is only recorded for chunks that land in THIS
+                # buffer, entering such a group left the split unset and
+                # nothing faded at all (Marco, 2026-09-11, second level).
+                self._edit_split_f = gface_start   # made absolute below
             if (not self.scene.entity_visible(g)
                     or getattr(g, "billboard", False)
                     or id(g) in pv_faces
                     or self._instanced_eligible(g)):
                 continue
-            if g is self.scene.edit_group:
-                self._edit_split_f = gface_start   # made absolute below
             if suppressed_faces and any(f in suppressed_faces
                                         for f in g.mesh.faces):
                 # Bucketed into the SUBJECT block at the tail, not the loose
@@ -3671,7 +3723,14 @@ class Viewport(QOpenGLWidget):
             group_face_spans.append((chunk.get("bbox"), gface_start,
                                      len(chunk["vcol"]) // 24))
             gface_start += len(chunk["vcol"]) // 24
-            subj = g is self.scene.edit_group
+            # The SUBJECT of the edit, for the textured pass — which draws
+            # in its own runs and decides the fade with this flag, not with
+            # the positional split. Comparing by identity against
+            # `scene.edit_group` misses a nested group, because the draw list
+            # holds a proxy of it: Marco's whole plaza came out washed, the
+            # group he was editing included, because every textured face was
+            # marked as surroundings (2026-09-11).
+            subj = not self._draws_in_edit_context(g)
             for path, raw in chunk["by_texture"].items():
                 group_texture.setdefault(path, []).append(
                     (raw, chunk.get("bbox"), subj))
@@ -4707,8 +4766,13 @@ class Viewport(QOpenGLWidget):
         """Dashed bounding box around the group being edited — the visual cue
         that you are INSIDE it (SketchUp draws the same box)."""
         group = self.scene.edit_group
-        if group is None or not group.mesh.vertices:
+        if group is None:
             return
+        if not group.mesh.vertices and not getattr(group, "children", None):
+            return          # nothing to wrap
+        # A CONTAINER's own mesh is usually empty — its geometry is in its
+        # children — so testing that mesh alone left you inside a group with
+        # no box at all, the one cue that tells you where you are.
         # In the group's OWN axes, like the selection cue: on a rotated
         # object a world-aligned box reads as skewed and wraps mostly air.
         from core.group import oriented_box_corners
@@ -7982,9 +8046,22 @@ class Viewport(QOpenGLWidget):
                 "one copy only", name=group.name, n=copies), 6000)
         else:
             self.flash_status(tr(
-                "Editing group '{name}' — Esc or click outside to leave",
-                name=group.name), 4000)
+                "Editing {path} — Esc or click outside goes up one level",
+                path=self.edit_path_text()), 5000)
         self.update()
+
+    def edit_path_text(self) -> str:
+        """Where you are, as a path: ``Plaza ▸ Jardinera ▸ Banca``.
+
+        Nesting without this reads as a broken program: you click outside,
+        the program correctly steps up ONE level into a parent that is also
+        a container, everything is still faded, and nothing seems to have
+        happened («hago clic en ese grupo que me sale atenuado y sigue así»,
+        Marco, 2026-09-11 — he was two levels deep and had no way to know).
+        """
+        pila = getattr(self.scene, "_edit_stack", None) or ()
+        nombres = [n["group"].name for n in pila]
+        return " ▸ ".join(nombres) if nombres else ""
 
     def end_one_group_edit(self) -> None:
         """Step out ONE level — SketchUp's Esc, which leaves you inside the
@@ -8024,6 +8101,12 @@ class Viewport(QOpenGLWidget):
                 self.flash_status(tr(
                     "Component '{name}' updated on its {n} copies",
                     name=group.name, n=copies), 4000)
+        elif self.scene.edit_group is not None:
+            # Stepping up into another container: say so, or it reads as a
+            # click that did nothing (everything around is still faded).
+            self.flash_status(tr(
+                "Up one level — now in {path}",
+                path=self.edit_path_text()), 4000)
         else:
             self.flash_status(tr("Left the group"), 2000)
         self.update()
@@ -8063,7 +8146,9 @@ class Viewport(QOpenGLWidget):
         todo = self._placements()
         if ctx is None:
             return todo
-        return [g for g in todo if getattr(g, "context", None) is ctx]
+        return [g for g in todo
+                if getattr(g, "context", None) is ctx
+                and getattr(g, "owner", None) is not ctx]
 
     def _owner_of(self, group):
         """The object a click on ``group`` must select: a nested placement
