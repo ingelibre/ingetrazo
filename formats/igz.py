@@ -281,6 +281,11 @@ def save_scene(scene, path: Path) -> dict:
                          "xform": [float(x) for x in xf.data()]}
             else:
                 entry = _mesh_json(g.mesh)
+            # The name — never written until 2026-09-11, so every reopened
+            # document renumbered its groups and a "Pérgola" came back as
+            # "Group 7". Older readers ignore the key.
+            if getattr(g, "name", None):
+                entry["name"] = g.name
             if getattr(g, "layer", None) is not None:
                 entry["layer"] = g.layer
             if getattr(g, "ifc", None):
@@ -553,16 +558,21 @@ def _load_into_inner(scene, path: Path) -> None:
         m = Mesh()
         _load_mesh(m, raw)
         proto_meshes.append(m)
+    names: list = []
+
     def _group_from(raw, depth=0):
+        name = raw.get("name") or None
+        if name:
+            names.append(name)
         if raw.get("xform") is not None and "proto" in raw:
             from PySide6.QtGui import QMatrix4x4
-            group = Group(proto_meshes[int(raw["proto"])])
+            group = Group(proto_meshes[int(raw["proto"])], name=name)
             vals = [float(x) for x in raw["xform"]]
             # data() is column-major; the constructor takes row-major.
             rm = [vals[col * 4 + row] for row in range(4) for col in range(4)]
             group.xform = QMatrix4x4(*rm)
         else:
-            group = Group()
+            group = Group(name=name)
             _load_mesh(group.mesh, raw)
         if raw.get("layer"):
             group.layer = raw["layer"]
@@ -577,6 +587,9 @@ def _load_into_inner(scene, path: Path) -> None:
 
     for raw in payload.get("groups", []):
         scene.groups.append(_group_from(raw))
+    if names:
+        from core.group import reserve_group_names
+        reserve_group_names(names)   # new groups never reuse a stored "Group N"
 
     for raw in payload.get("dimensions", []):
         scene.dimensions.append(Dimension(

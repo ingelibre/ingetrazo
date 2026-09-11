@@ -20,6 +20,18 @@ follow [SemVer](https://semver.org).
   en 17 577 caras de una sola pieza, perdiendo de paso los nueve chunks
   independientes y el instanciado. El modelo de datos ya sostenía el árbol
   desde agosto; lo que faltaba era la edición por niveles, y es esto.
+- **Importar otro documento .igz como componente.** Archivo ▸ Importar ▸
+  «Documento IngeTrazo como componente (.igz)…»: el archivo entero llega
+  como UN componente que se coloca con un clic, como el Import de un .skp
+  en SketchUp — la pérgola, el arco y la luminaria dibujados en sus propios
+  archivos entran en la plaza con sus grupos (anidados, como estaban), sus
+  materiales y sus capas. Se sostiene por su origen, así que las zapatas
+  dibujadas bajo el suelo quedan bajo el suelo. Los muñecos de escala del
+  archivo se quedan fuera. Un material cuyo nombre ya usa OTRA receta entra
+  como «nombre (2)».
+- **El .igz conserva los nombres de los grupos.** Nunca los escribía: cada
+  documento reabierto renumeraba sus grupos y una «Pérgola» volvía como
+  «Group 7» (pendiente conocido). Los nuevos no repiten un número guardado.
 - **Dentro de un grupo, el resto del modelo sigue siendo referencia.** Mover
   una jardinera anidada hasta la esquina del pavimento de afuera no daba el
   punto verde: el índice de picking solo conocía el grupo abierto. Ahora

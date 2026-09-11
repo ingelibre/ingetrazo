@@ -967,6 +967,8 @@ class MainWindow(QMainWindow):
         # goes out — the flat list had import/export items scattered.
         import_menu = QMenu(tr("Import"), self)
         for label, handler in (
+            (tr("IngeTrazo document as component (.igz)…"),
+             self._on_import_igz),
             (tr("SketchUp (.skp)…"), self._on_import_skp),
             (tr("COLLADA (.dae)…"), self._on_import_dae),
             (tr("glTF/GLB (.glb)…"), self._on_import_glb),
@@ -2391,14 +2393,16 @@ class MainWindow(QMainWindow):
         self._start_place(Group(mesh, name=text[:24]),
                           align_to_face=True)
 
-    def _start_place(self, group, align_to_face: bool = False) -> None:
+    def _start_place(self, group, align_to_face: bool = False,
+                     anchor=None) -> None:
         """Hand a freshly built component to the placement tool: it follows
         the cursor (settling on the ground plane by default) and a click
         drops it — instead of dumping it at the origin. ``align_to_face``
-        (3D text) re-orients the group onto the face under the cursor."""
+        (3D text) re-orients the group onto the face under the cursor;
+        ``anchor`` is the point the cursor holds (default: base centre)."""
         from tools.place_group import PlaceGroupTool
         self.viewport.set_active_tool(PlaceGroupTool(
-            group, align_to_face=align_to_face))
+            group, align_to_face=align_to_face, anchor=anchor))
         for action in self._tool_actions.values():
             action.setChecked(False)
         self._tool_label.setText(
@@ -2881,6 +2885,47 @@ class MainWindow(QMainWindow):
         key = keys[labels.index(label)]
         QSettings().setValue("import/obj_unit", key)
         return OBJ_UNITS[key]
+
+    def _on_import_igz(self) -> None:
+        """Bring another IngeTrazo document in as ONE component, placed
+        with a click — SketchUp's Import of a .skp. Furniture drawn in its
+        own file (a pergola, an arch, a lamp post) lands in the plaza with
+        its groups, materials and layers intact (see :mod:`core.insert`)."""
+        from core.insert import import_document_as_component
+        from core.scene import Scene as _Scene
+        from formats import igz as _igz
+        start = (str(self._current_path.parent)
+                 if self._current_path is not None else "")
+        path_str, _ = file_dialogs.getOpenFileName(
+            self, tr("Import IngeTrazo document"), start, IGZ_FILE_FILTER)
+        if not path_str:
+            return
+        path = Path(path_str)
+        if (self._current_path is not None
+                and path.resolve() == self._current_path.resolve()):
+            QMessageBox.warning(
+                self, tr("Import IngeTrazo document"),
+                tr("That is the document you are editing."))
+            return
+        self.viewport.end_group_edit()
+        temp = _Scene()
+        try:
+            _igz.load_into(temp, path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(
+                self, tr("Import IngeTrazo document failed"), str(exc))
+            return
+        comp = import_document_as_component(self.viewport.scene, temp,
+                                            path.stem)
+        if comp is None:
+            QMessageBox.warning(
+                self, tr("Import IngeTrazo document"),
+                tr("“{name}” has no geometry.", name=path.name))
+            return
+        # The file's origin is the handle (SketchUp's component axes): the
+        # arch's footings, drawn below z=0, go below grade in the plaza too.
+        from PySide6.QtGui import QVector3D
+        self._start_place(comp, anchor=QVector3D(0.0, 0.0, 0.0))
 
     def _on_import_obj(self) -> None:
         path_str, _ = file_dialogs.getOpenFileName(

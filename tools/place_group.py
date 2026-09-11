@@ -27,9 +27,21 @@ class PlaceGroupTool(Tool):
     wireframe_color = (0.13, 0.17, 0.23, 1.0)
     wireframe_depth_tested = False      # the pending component floats on top
 
-    def __init__(self, group, align_to_face: bool = False) -> None:
+    def __init__(self, group, align_to_face: bool = False,
+                 anchor: QVector3D | None = None) -> None:
         self._group = group
-        self._anchor = self._base_center(group)
+        # A component INSTANCE (a matrix, children or both — an imported
+        # document arrives as one) is placed by composing its matrix; its
+        # prototype mesh, shared with every copy, never moves. A classic
+        # group is placed by moving its vertices, as always.
+        self._instance = getattr(group, "xform", None) is not None
+        # What the cursor holds: the centre of the base by default (a
+        # starter settles on the ground), or a point the caller names — an
+        # imported document hangs from its own origin, like SketchUp's
+        # component axes, so the footings its author drew below grade stay
+        # below grade instead of being lifted onto the ground.
+        self._anchor = (QVector3D(anchor) if anchor is not None
+                        else self._base_center(group))
         self._offset = QVector3D(0.0, 0.0, 0.0)
         # SketchUp's 3D-text glue: when enabled, hovering a FACE re-orients
         # the group so its front (-Y) points along the face normal — a sign
@@ -37,24 +49,31 @@ class PlaceGroupTool(Tool):
         self._align = align_to_face
         self._face_normal: QVector3D | None = None
         # Local preview segments, relative to the anchor (computed once).
-        self._segments = [
+        # A container's own mesh is usually empty and its children can be
+        # anything: the box of the whole placement is the honest preview.
+        self._segments = ([] if getattr(group, "children", None) else [
             (QVector3D(e.a) - self._anchor, QVector3D(e.b) - self._anchor)
             for e in group.mesh.edges[:_MAX_PREVIEW_EDGES]
-        ]
+        ])
         if not self._segments:
             self._segments = self._bbox_segments(group)
 
+    @staticmethod
+    def _world_points(group):
+        """Every vertex of the group AND its nested placements, in world
+        space — what a container's extent is made of."""
+        from core.group import placement_points
+        return placement_points(group)
+
     def _bbox_segments(self, group):
-        """Wireframe box fallback for meshes without edges (e.g. billboards)."""
-        xs, ys, zs = [], [], []
-        for f in group.mesh.faces:
-            for v in f.loop:
-                p = v.position
-                xs.append(p.x()), ys.append(p.y()), zs.append(p.z())
-        if not xs:
+        """Wireframe box fallback: meshes without edges (billboards) and
+        containers (their geometry lives in the children)."""
+        pts = self._world_points(group)
+        if not len(pts):
             return []
-        a = QVector3D(min(xs), min(ys), min(zs)) - self._anchor
-        b = QVector3D(max(xs), max(ys), max(zs)) - self._anchor
+        lo, hi = pts.min(axis=0), pts.max(axis=0)
+        a = QVector3D(float(lo[0]), float(lo[1]), float(lo[2])) - self._anchor
+        b = QVector3D(float(hi[0]), float(hi[1]), float(hi[2])) - self._anchor
         c = [QVector3D(x, y, z)
              for z in (a.z(), b.z()) for y in (a.y(), b.y())
              for x in (a.x(), b.x())]
@@ -62,17 +81,15 @@ class PlaceGroupTool(Tool):
                (6, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
         return [(c[i], c[j]) for i, j in idx]
 
-    @staticmethod
-    def _base_center(group) -> QVector3D:
-        xs, ys, zs = [], [], []
-        for v in group.mesh.vertices:
-            p = v.position
-            xs.append(p.x()), ys.append(p.y()), zs.append(p.z())
-        if not xs:
+    @classmethod
+    def _base_center(cls, group) -> QVector3D:
+        pts = cls._world_points(group)
+        if not len(pts):
             return QVector3D(0.0, 0.0, 0.0)
-        return QVector3D((min(xs) + max(xs)) / 2.0,
-                         (min(ys) + max(ys)) / 2.0,
-                         min(zs))
+        lo, hi = pts.min(axis=0), pts.max(axis=0)
+        return QVector3D(float(lo[0] + hi[0]) / 2.0,
+                         float(lo[1] + hi[1]) / 2.0,
+                         float(lo[2]))
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -141,20 +158,25 @@ class PlaceGroupTool(Tool):
             return
         self._update_alignment(ctx)
         shift = ctx.world - self._rotate(self._anchor)
-        # Re-pose the group's isolated mesh BEFORE it enters the scene
-        # (registry-safe per-vertex move; undo of the insert removes the
-        # whole group, so no separate move step lands in history).
-        for v in list(self._group.mesh.vertices):
-            target = self._rotate(v.position) + shift
-            delta = target - v.position
-            if delta.length() > 1e-9:
-                self._group.mesh.move_vertex(v, delta)
-        # A texture that came with its own coordinates is anchored to world
-        # position, so the map has to travel with the geometry — otherwise
-        # the image stays where the component was built and the piece
-        # arrives wearing whatever happens to fall on it.
-        from core.group import _remap_uvws
-        _remap_uvws(self._group.mesh, self._pose_matrix(shift))
+        if self._instance:
+            # The pose composes into the matrix: the prototype (and every
+            # nested placement under it) stays put in its own frame.
+            self._group.xform = self._pose_matrix(shift) * self._group.xform
+        else:
+            # Re-pose the group's isolated mesh BEFORE it enters the scene
+            # (registry-safe per-vertex move; undo of the insert removes
+            # the whole group, so no separate move step lands in history).
+            for v in list(self._group.mesh.vertices):
+                target = self._rotate(v.position) + shift
+                delta = target - v.position
+                if delta.length() > 1e-9:
+                    self._group.mesh.move_vertex(v, delta)
+            # A texture that came with its own coordinates is anchored to
+            # world position, so the map has to travel with the geometry —
+            # otherwise the image stays where the component was built and
+            # the piece arrives wearing whatever happens to fall on it.
+            from core.group import _remap_uvws
+            _remap_uvws(self._group.mesh, self._pose_matrix(shift))
         group = self._group
         self._group = None
         ctx.viewport.history.execute(InsertGroupCommand(group))

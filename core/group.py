@@ -19,6 +19,21 @@ from core.mesh import Mesh
 _counter = itertools.count(1)
 
 
+def reserve_group_names(names) -> None:
+    """Move the automatic "Group N" counter past every N in ``names`` — a
+    document that comes back with its names must not hand a new group a
+    name it already uses."""
+    global _counter
+    import re
+    top = 0
+    for n in names:
+        m = re.match(r"^Group (\d+)$", n or "")
+        if m:
+            top = max(top, int(m.group(1)))
+    nxt = next(_counter)
+    _counter = itertools.count(max(nxt, top + 1))
+
+
 class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
                  "children", "owner", "context")
