@@ -6,6 +6,21 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Añadido
+- **Grupos anidados, como en SketchUp.** Un grupo puede contener grupos, y
+  se entra a ellos por niveles: doble clic para bajar, Esc o clic afuera
+  para subir uno, con la ruta a la vista en la barra de estado («Editando
+  Plaza ▸ Jardinera ▸ Banca»). Dentro de un grupo, un clic selecciona a su
+  HIJO —no al contenedor entero— y no se puede agarrar el resto del modelo.
+  «Crear grupo» ya no se niega cuando hay grupos en la selección: los adopta,
+  y la parte suelta pasa a ser la malla del contenedor, como SketchUp.
+
+  Hasta ahora entrar a un contenedor lo **horneaba**: sus hijos se fundían
+  en una sola malla. Marco lo vivió con su plaza — nueve grupos convertidos
+  en 17 577 caras de una sola pieza, perdiendo de paso los nueve chunks
+  independientes y el instanciado. El modelo de datos ya sostenía el árbol
+  desde agosto; lo que faltaba era la edición por niveles, y es esto.
+
 ### Cambiado
 - **Empujar/Tirar ya no atraviesa un grupo cerrado.** Un dibujo agrupado se
   dejaba empujar sin abrirlo, y si era un componente la herramienta abría a
