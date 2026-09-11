@@ -774,7 +774,7 @@
  "Off": "Apagado",
  "Office": "Oficina",
  "Offset": "Equidistancia",
- "Offset limited to {value} m": "Equidistancia limitada a {value} m",
+ "Push limited to {value} m — deeper would leave the solid": "Empuje limitado a {value} m: más adentro se saldría del sólido",
  "Old bricks": "Suelo de ladrillos desgastados",
  "Old brown wooden floor": "Parquet inglés marrón envejecido",
  "Old gray bricks": "Ladrillos viejos grises",

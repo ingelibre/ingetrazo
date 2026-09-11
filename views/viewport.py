@@ -4272,8 +4272,9 @@ class Viewport(QOpenGLWidget):
         self.update()
 
     def flash_status(self, text: str, msec: int = 2500) -> None:
-        """Briefly show ``text`` in the main window's status bar (e.g. Push/Pull's
-        "Offset limited to X m"). No-op if there is no status bar yet."""
+        """Briefly show ``text`` in the main window's status bar (e.g. Push/Pull
+        saying how far the solid lets it go). No-op if there is no status bar
+        yet."""
         window = self.window()
         bar = window.statusBar() if window is not None else None
         if bar is not None:

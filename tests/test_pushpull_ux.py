@@ -233,7 +233,7 @@ def test_parse_value_buffer_units_and_sign():
     assert parse("2x") is None
 
 
-# ---- clamp: "Offset limited to ..." -------------------------------------------
+# ---- clamp: el aviso del límite -------------------------------------------
 
 def _locked_tool(scene, face, dist):
     """Build the tool exactly as a real drag-lock click would, then set the
@@ -480,7 +480,11 @@ def test_clamp_flashes_status_message():
     vp = _StubViewport(scene)
     tool._clamp_extrusion(vp)
     assert tool.extrusion == -3.0
-    assert vp.last_status == "Offset limited to 3.00 m"
+    # El aviso nombra el EMPUJE y dice por qué se frenó. Decía
+    # "Offset limited to", que en español salía como «Equidistancia
+    # limitada a…» —el nombre de otra herramienta— en mitad de un push.
+    assert vp.last_status == (
+        "Push limited to 3.00 m — deeper would leave the solid")
 
 
 # ---- BIM-grade refusal guard --------------------------------------------------

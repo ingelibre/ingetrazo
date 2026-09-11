@@ -18,6 +18,13 @@ follow [SemVer](https://semver.org).
   empujar adentro. Es la regla de SketchUp, dicha por su propia guía de
   solución de problemas. Dentro del grupo no cambia nada, incluido que
   editar una copia de un componente sigue llegando a todas.
+- **El aviso del límite del empuje dice qué se frenó y por qué.** Decía
+  «Equidistancia limitada a 0.02 m» en mitad de un push — el nombre de otra
+  herramienta (la `F`) y ninguna razón. Ahora: «Empuje limitado a 0,02 m:
+  más adentro se saldría del sólido». Un límite correcto que se lee como un
+  fallo es un fallo aparte, y este se llevó por delante un rato de trabajo
+  de Marco intentando cortar una losa donde solo había 2 cm de material
+  bajo una esquina de su figura.
 
 ## [0.3.17] — 2026-09-10
 

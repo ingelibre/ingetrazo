@@ -773,8 +773,16 @@ class PushPullTool(Tool):
         if self._limit_in is not None and self.extrusion < -self._limit_in:
             self.extrusion = -self._limit_in
             if viewport is not None:
+                # SketchUp calls this "Offset limited to", where *offset* is
+                # the push distance — but here Offset is another tool (F), and
+                # in Spanish the message named it: «Equidistancia limitada a
+                # 0.02 m» in the middle of a push, with no reason given. A
+                # correct limit that reads as a broken tool is a bug of its own
+                # (Marco, 2026-09-10: «quiero hacer push para abajo y no me
+                # deja»; the limit was 2 cm of material under one corner).
                 viewport.flash_status(
-                    tr("Offset limited to {value} m", value=f"{self._limit_in:.2f}"))
+                    tr("Push limited to {value} m — deeper would leave the "
+                       "solid", value=f"{self._limit_in:.2f}"), 5000)
 
     def _infer_reference_distance(self, ctx: ToolContext):
         """Distance making the moved face level with the model geometry under the
