@@ -357,3 +357,24 @@ def test_las_caras_texturadas_saben_quien_es_el_sujeto():
     fuente = inspect.getsource(Viewport._sync_edges)
     assert "subj = not self._draws_in_edit_context(g)" in fuente
     assert "subj = g is self.scene.edit_group" not in fuente
+
+
+def test_construir_el_dibujo_de_un_prototipo_deja_el_programa_puesto():
+    """Borrar una cara dentro de un grupo anidado: «por un segundo el grupo
+    desaparece, pensé que se había eliminado» (Marco, 2026-09-11). El hijo de
+    un contenedor se dibuja por el camino INSTANCIADO, y cada cambio de su
+    malla rehace la entrada GL del prototipo A MITAD DEL CUADRO. Esa
+    construcción hacía `self._program.release()` al terminar, y todo lo que
+    se dibujaba después en ese cuadro salía sin shader: el grupo editado, sus
+    vecinos instanciados, los ejes y el muñeco. El cuadro siguiente ya estaba
+    bien, pero para entonces Marco había pulsado Ctrl+Z.
+
+    Reproducido en vivo con captura por el puente; no hay contexto GL en la
+    suite, así que se fija sobre el texto del método."""
+    import inspect
+    from views.viewport import Viewport
+    fuente = inspect.getsource(Viewport._ensure_proto_draw)
+    assert "self._program.bind()" in fuente
+    assert "self._program.release()" not in fuente, (
+        "la entrada del prototipo se construye a mitad del cuadro: soltar el "
+        "programa deja sin shader todo lo que se dibuja después")

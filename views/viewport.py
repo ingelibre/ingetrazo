@@ -1979,7 +1979,16 @@ class Viewport(QOpenGLWidget):
         tex_vbo.release()
         wire_matrix()
         tex_vao.release()
-        self._program.release()
+        # The main program stays BOUND. This is built mid-frame, from a pass
+        # that is drawing with it, and releasing it here left every draw
+        # call after this point without a shader: the first frame after a
+        # prototype changed showed nothing from here on — the edited group,
+        # its instanced neighbours, the axes, the figure. Inside a nested
+        # group every edit changes a prototype, so every edit blanked the
+        # group for a frame («por un segundo el grupo desaparece, pensé que
+        # se había eliminado», Marco, 2026-09-11). With shadows on it never
+        # showed: the shadow pass builds the entry first and rebinds its own
+        # depth program afterwards.
         entry = {"key": key, "mat_sig": None, "mat_vbo": mat_vbo,
                  "vcol_vao": vcol_vao, "vcol_vbo": vcol_vbo,
                  "vcol_count": len(vcol_raw) // 24,
