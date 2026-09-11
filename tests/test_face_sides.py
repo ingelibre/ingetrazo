@@ -269,3 +269,39 @@ def test_la_huella_del_trozo_ve_el_reves_la_opacidad_y_el_mapa():
     assert fp_op != fp_back
     f.attrs["texture"]["uvw"] = [1, 0, 0, 0, 0, 1, 0, 0]
     assert Viewport._mesh_fingerprint(m) != fp_op
+
+
+def test_los_trozos_se_distinguen_por_numero_de_construccion_no_por_id():
+    """Una cara pintada dentro de un componente volvía sin pintar un nivel
+    arriba: el trozo reconstruido del prototipo podía caer en la misma
+    dirección de memoria que el viejo (mismo ``id``, misma ``rev`` 0), y la
+    instancia y la entrada GL derivadas del viejo se daban por vigentes.
+    Cada construcción lleva ahora su número."""
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import Group
+    from core.mesh import Mesh
+    from tests.test_pick_index import _VP, _bind
+    scene = Scene()
+    proto = Mesh()
+    f = _quad(proto)
+    inst = Group(proto, name="Arco")
+    inst.xform = QMatrix4x4()
+    scene.groups.append(inst)
+    vp = _bind(_VP(scene))
+    from views.viewport import Viewport
+    for name in ("_proto_base_chunk", "_normal_of", "_tris_of", "_area_of",
+                 "_newell_of"):
+        setattr(vp, name, getattr(Viewport, name).__get__(vp))
+    base0 = vp._proto_base_chunk(proto)
+    chunk0 = vp._group_chunk(inst)
+    assert chunk0["ikey"][0] == base0["uid"]
+    f.attrs["texture"] = {"path": "sillar.jpg", "sw": 0.4, "sh": 0.4}
+    proto._chunk_dirty = True
+    proto._attrs_dirty = True
+    scene.version += 1
+    base1 = vp._proto_base_chunk(proto)
+    assert base1["uid"] != base0["uid"], "otra construcción, otro número"
+    chunk1 = vp._group_chunk(inst)
+    assert chunk1["ikey"][0] == base1["uid"]
+    assert any(k[0] == "sillar.jpg" for k in chunk1["by_texture"]), (
+        "la instancia sigue al prototipo repintado")

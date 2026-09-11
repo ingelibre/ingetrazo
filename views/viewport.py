@@ -36,6 +36,7 @@ Tool input (when a tool is active):
 from __future__ import annotations
 
 import copy
+import itertools
 import math
 import os
 import re
@@ -218,6 +219,16 @@ def _ray_aabb(o, d, lo, hi) -> bool:
         if tmin > tmax:
             return False
     return True
+
+
+#: Every chunk entry built (or loaded from disk) takes the next number.
+#: Keys that told entries apart by ``id(entry)`` could not: the dict a
+#: rebuild replaces is freed at once, and the new one may land at the same
+#: address — same id, same rev 0 — so the instance arrays and the GL draw
+#: entry derived from the OLD chunk were served as if nothing had changed
+#: (a face painted inside a component came back unpainted one level up,
+#: Marco, 2026-09-11).
+_chunk_uid = itertools.count(1)
 
 
 def _cache_ver(vp):
@@ -1949,7 +1960,7 @@ class Viewport(QOpenGLWidget):
         if cache is None:
             cache = self._proto_draw = {}
         base = self._proto_base_chunk(mesh)
-        key = (id(base), base.get("rev"))
+        key = (base["uid"], base.get("rev"))
         entry = cache.get(id(mesh))
         if entry is not None and entry["key"] == key:
             return entry
@@ -6336,14 +6347,14 @@ class Viewport(QOpenGLWidget):
             w = wrappers[id(mesh)] = SimpleNamespace(mesh=mesh, xform=None)
         base = self._group_chunk(w)
         xf = group.xform
-        key = (id(base), tuple(xf.data()))
+        key = (base["uid"], tuple(xf.data()))
         cache = getattr(self, "_inst_chunks", None)
         if cache is None:
             cache = self._inst_chunks = {}
         cur = cache.get(id(group))
         if cur is not None and cur["ikey"] == key:
             return cur
-        if cur is not None and cur["ikey"][0] == id(base):
+        if cur is not None and cur["ikey"][0] == base["uid"]:
             old, new = cur["ikey"][1], key[1]
             # QMatrix4x4.data() is column-major: translation at 12/13/14.
             lin = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15)
@@ -6389,6 +6400,7 @@ class Viewport(QOpenGLWidget):
             sp = s6.astype(np.float32)
         entry = {
             "ikey": key,
+            "uid": next(_chunk_uid),
             "rev": (cur["rev"] + 1) if cur is not None else 0,
             "nv": base["nv"], "ne": base["ne"], "nf": base["nf"],
             "edges": tp32(base["edges"], 3),
@@ -6726,7 +6738,7 @@ class Viewport(QOpenGLWidget):
         idxs = sorted({k * max(nv - 1, 0) // 31 for k in range(32)}) if nv else []
         samples = [(i, (verts[i].position.x(), verts[i].position.y(),
                         verts[i].position.z())) for i in idxs]
-        entry = {"fp": fp, "vkey": vkey, "rev": 0,
+        entry = {"fp": fp, "vkey": vkey, "rev": 0, "uid": next(_chunk_uid),
                  "nv": nv, "ne": len(mesh.edges), "nf": len(mesh.faces),
                  "samples": samples, "coordsum": coordsum, "bbox": bbox,
                  # Lazily filled by ``_group_obb``: the box in the group's own
@@ -6833,7 +6845,7 @@ class Viewport(QOpenGLWidget):
             if stored.get("nf") != len(mesh.faces) or "dback" not in stored:
                 return None          # a cache predating the back-side tint
             entry = dict(stored)
-            entry.update(fp=fp, vkey=vkey, rev=0,
+            entry.update(fp=fp, vkey=vkey, rev=0, uid=next(_chunk_uid),
                          faces=list(mesh.faces))
             path.touch()                     # LRU freshness
             return entry
@@ -7072,7 +7084,7 @@ class Viewport(QOpenGLWidget):
                 # index ENTIRELY — so inference found none of its edges and
                 # the edge fallback below, written for "a lines-only group",
                 # read an empty array and never found it either (GitHub #8).
-                sig.append((id(g), id(chunk), chunk["rev"], gvis, gsel,
+                sig.append((id(g), chunk["uid"], chunk["rev"], gvis, gsel,
                             gsnap))
                 chunks.append((g, chunk, gvis, gsel, gsnap))
             blk = getattr(self, "_pick_block", None)
