@@ -55,6 +55,13 @@ follow [SemVer](https://semver.org).
   pintarlo, se pinta desde atrás.
 
 ### Arreglado
+- **Dentro de un contenedor: borrar, caja de selección y Seleccionar todo
+  alcanzan a sus hijos.** Suprimir un hijo buscaba el grupo en la lista
+  raíz, no lo encontraba y el comando se anulaba en silencio; la caja se
+  saltaba todos los grupos dentro de un contexto; Seleccionar todo tomaba
+  los grupos de la raíz. Marco lo vivió con una pileta dentro de un
+  componente importado: «quiero seleccionar toda esa pileta, no
+  selecciona; quiero eliminar, tampoco puedo».
 - **Un cuadro en blanco al editar dentro de un grupo anidado.** Borrar una
   cara (o cualquier cambio) dentro de un hijo de un contenedor dejaba el
   cuadro siguiente sin el grupo, sin sus vecinos, sin ejes y sin muñeco

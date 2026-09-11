@@ -466,3 +466,60 @@ def test_con_el_resto_oculto_no_hay_a_que_snapear():
     assert not any((e.a - esquina).length() < 1e-6
                    or (e.b - esquina).length() < 1e-6
                    for e in vp._nearby_group_edges(px, py))
+
+
+# ---- dentro de un contenedor: seleccionar con caja, borrar, todo -----------
+
+def test_borrar_un_hijo_del_contenedor_abierto_y_deshacer():
+    """«Quiero eliminar, tampoco puedo» (Marco, 2026-09-11, una pileta
+    dentro de un componente importado): DeleteGroupCommand buscaba el grupo
+    en scene.groups, no estaba, y el comando se anulaba entero."""
+    from core.history import DeleteGroupCommand, History
+    scene, padre, h1, h2 = _plaza()
+    hist = History(scene)
+    scene.begin_group_edit(padre)
+    scene.selection.add(h1)
+    hist.execute(DeleteGroupCommand(h1))
+    assert hist.last_error is None
+    assert padre.children == [h2] and h1 not in scene.selection
+    assert hist.undo()
+    assert padre.children == [h1, h2], "vuelve a su sitio en la lista del padre"
+    # y en la raíz sigue igual que siempre
+    scene.end_group_edit()
+    hist.execute(DeleteGroupCommand(padre))
+    assert scene.groups == [] and hist.undo() and scene.groups == [padre]
+
+
+def test_la_caja_de_seleccion_dentro_del_contenedor_toma_a_sus_hijos():
+    """«Quiero seleccionar toda esa pileta, no selecciona»: la caja se
+    saltaba TODOS los grupos dentro de un contexto. Dentro de un grupo lo
+    seleccionable son sus hijos (y su geometría suelta), nunca el resto."""
+    from tools.select import SelectTool
+
+    class _VP:
+        def __init__(self, scene):
+            self.scene = scene
+
+        def _world_to_pixel(self, v):
+            return (v.x(), v.y())
+
+        def update(self):
+            pass
+
+    scene, padre, h1, h2 = _plaza()
+    fuera = Group(_cuadrado(Mesh(), 20.0), name="Fuera")
+    scene.groups.append(fuera)
+    vp = _VP(scene)
+    scene.begin_group_edit(padre)
+    # caja ventana que encierra a la jardinera (0..1) y al de fuera no
+    SelectTool().on_box_select(vp, (-0.5, -0.5, 1.5, 1.5), crossing=False,
+                               additive=False)
+    assert set(scene.selection) == {h1}
+    # caja cruzada que toca a los dos hijos y también al de fuera
+    SelectTool().on_box_select(vp, (0.5, 0.5, 25.0, 0.7), crossing=True,
+                               additive=False)
+    assert set(scene.selection) == {h1, h2}, "el resto del modelo no entra"
+    scene.end_group_edit()
+    SelectTool().on_box_select(vp, (0.5, 0.5, 25.0, 0.7), crossing=True,
+                               additive=False)
+    assert set(scene.selection) == {padre, fuera}, "en la raíz, lo de siempre"

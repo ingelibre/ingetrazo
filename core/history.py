@@ -2927,22 +2927,48 @@ class MoveGroupCommand(Command):
         self._shift(scene, -self.delta)
 
 
+def group_owner_list(scene, group):
+    """The list ``group`` lives in: ``scene.groups`` at the root, or the
+    ``children`` of the container that owns it, however deep. ``None`` when
+    the group is not in the scene at all."""
+    if group in scene.groups:
+        return scene.groups
+    from core.group import iter_placements
+    for top in scene.groups:
+        for pg, _m in iter_placements(top):
+            kids = getattr(pg, "children", None)
+            if kids and group in kids:
+                return kids
+    return None
+
+
 class DeleteGroupCommand(Command):
     """Remove a whole group (and its geometry) from the scene; undo restores it
-    at its original position in the list."""
+    at its original position in the list.
+
+    The list may be a container's ``children``: inside a component, Delete
+    on one of its parts used to look for it in ``scene.groups`` and fail —
+    rolled back, nothing on screen, «quiero eliminar, tampoco puedo»
+    (Marco, 2026-09-11, a fountain inside an imported component)."""
 
     def __init__(self, group: Group) -> None:
         self.group = group
         self.index: Optional[int] = None
+        self._owner: Optional[list] = None
 
     def do(self, scene) -> None:
-        self.index = scene.groups.index(self.group)
-        scene.groups.remove(self.group)
+        owner = group_owner_list(scene, self.group)
+        if owner is None:
+            raise ValueError("group is not in the scene")
+        self._owner = owner
+        self.index = owner.index(self.group)
+        owner.remove(self.group)
         scene.selection.discard(self.group)
         scene.version += 1
 
     def undo(self, scene) -> None:
-        scene.groups.insert(self.index, self.group)
+        owner = self._owner if self._owner is not None else scene.groups
+        owner.insert(min(self.index or 0, len(owner)), self.group)
         scene.version += 1
 
 

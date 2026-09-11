@@ -1939,7 +1939,11 @@ class MainWindow(QMainWindow):
         sel.clear()
         sel.update(self.viewport.scene.edges)
         sel.update(self.viewport.scene.faces)
-        sel.update(self.viewport.scene.groups)
+        ctx = self.viewport.scene.edit_group
+        # Inside a group, "everything" is what the group holds: its loose
+        # geometry (above) and its children — never the model around it.
+        sel.update(self.viewport.scene.groups if ctx is None
+                   else (getattr(ctx, "children", None) or []))
         sel.update(getattr(self.viewport.scene, "dimensions", []))
         self.viewport.update()
         self.statusBar().showMessage(

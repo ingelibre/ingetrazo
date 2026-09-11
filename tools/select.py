@@ -464,10 +464,17 @@ class SelectTool(Tool):
         # Groups and component instances (the "box select skips groups"
         # report). Window mode: every vertex inside. Crossing mode: any vertex
         # inside, else any wireframe edge touching the box. Early exits keep
-        # the common reject cheap; inside a group-edit context the box works
-        # on the open group's internals only (SketchUp), so skip.
-        if viewport.scene.edit_group is None:
-            for group in getattr(viewport.scene, "groups", []):
+        # the common reject cheap. Inside a group the box works on what the
+        # open group holds (SketchUp): its loose geometry above, and its
+        # CHILDREN here — the parts of an imported fountain are groups, and
+        # a box that skipped them could never take the whole fountain
+        # («quiero seleccionar toda esa pileta, no selecciona», Marco,
+        # 2026-09-11).
+        ctx = viewport.scene.edit_group
+        candidates = (getattr(viewport.scene, "groups", []) if ctx is None
+                      else (getattr(ctx, "children", None) or []))
+        if candidates:
+            for group in candidates:
                 if not viewport.scene.entity_selectable(group):
                     continue
                 verdict = _box_group_fast(viewport, group, rect, crossing)
