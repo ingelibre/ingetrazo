@@ -6099,11 +6099,22 @@ class Viewport(QOpenGLWidget):
             if f.attrs:
                 c = f.attrs.get("color")
                 t = f.attrs.get("texture")
+                # Everything the chunk bakes, or a repaint that changes
+                # only that term serves the stale chunk: the back side, the
+                # translucency and a positioned map were missing here, so
+                # painting the BACK of a face inside a group changed
+                # nothing on screen (Marco, 2026-09-11, the first thing he
+                # tried with two-sided paint). The disk digest already
+                # walked all of them.
+                back = f.attrs.get("back")
                 a ^= hash((i,
                            None if c is None else tuple(c),
                            None if not t else (t.get("path"), t.get("sw"),
-                                               t.get("sh"), t.get("rot", 0)),
-                           f.attrs.get("layer")))
+                                               t.get("sh"), t.get("rot", 0),
+                                               tuple(t.get("uvw") or ())),
+                           f.attrs.get("layer"),
+                           f.attrs.get("opacity"),
+                           repr(back) if back else None))
         soft = 0
         hid = 0
         for i, e in enumerate(mesh.edges):

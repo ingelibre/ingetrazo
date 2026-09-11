@@ -247,3 +247,25 @@ def test_el_trozo_lleva_los_triangulos_del_reves_por_defecto():
     xs = sorted({int(t[:, 0].min()) for t in tris})
     assert xs == [0, 6], "solo la pintada por delante y la sin pintar"
     assert len(tris) == 4                      # dos triángulos por cara
+
+
+def test_la_huella_del_trozo_ve_el_reves_la_opacidad_y_el_mapa():
+    """Lo primero que probó Marco: pintar el REVÉS de una cara dentro de un
+    grupo, y no cambiaba nada en pantalla. La huella de sesión del trozo
+    solo miraba color, textura y capa, así que el trozo viejo se daba por
+    bueno. El reverso, la translucidez y un mapa posicionado también son
+    lo que el trozo hornea."""
+    from core.mesh import Mesh
+    from views.viewport import Viewport
+    m = Mesh()
+    f = _quad(m)
+    f.attrs["texture"] = {"path": "muro.png", "sw": 1, "sh": 1}
+    fp0 = Viewport._mesh_fingerprint(m)
+    f.attrs["back"] = {"texture": {"path": "piedra.jpg", "sw": 1, "sh": 1}}
+    fp_back = Viewport._mesh_fingerprint(m)
+    assert fp_back != fp0
+    f.attrs["opacity"] = 0.4
+    fp_op = Viewport._mesh_fingerprint(m)
+    assert fp_op != fp_back
+    f.attrs["texture"]["uvw"] = [1, 0, 0, 0, 0, 1, 0, 0]
+    assert Viewport._mesh_fingerprint(m) != fp_op
