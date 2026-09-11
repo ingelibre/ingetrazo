@@ -6466,6 +6466,12 @@ class Viewport(QOpenGLWidget):
             return a.tobytes()
 
         entry["edges"] = shift(entry["edges"], 3)
+        if entry.get("dback"):
+            # The back-tint triangles ride along too — left behind, they
+            # drew a white ghost of the arch where it stood before the
+            # move (Marco, 2026-09-11, «roté el componente, moví y quedó
+            # eso fantasma»).
+            entry["dback"] = shift(entry["dback"], 3)
         entry["vcol"] = shift(entry["vcol"], 6)
         entry["by_texture"] = {p: shift(raw, 5)
                                for p, raw in entry["by_texture"].items()}

@@ -305,3 +305,39 @@ def test_los_trozos_se_distinguen_por_numero_de_construccion_no_por_id():
     assert chunk1["ikey"][0] == base1["uid"]
     assert any(k[0] == "sillar.jpg" for k in chunk1["by_texture"]), (
         "la instancia sigue al prototipo repintado")
+
+
+def test_el_tinte_del_reves_viaja_con_la_instancia_al_moverla():
+    """«Roté el componente, moví y quedó eso fantasma» (Marco, 2026-09-11,
+    con captura): un arco blanco en el sitio de antes. El atajo de
+    traslación de una instancia desplazaba todos los arrays del trozo menos
+    el nuevo ``dback``, y el pase del tinte seguía dibujando los reversos
+    donde el arco estaba."""
+    import numpy as np
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import Group
+    from core.mesh import Mesh
+    from tests.test_pick_index import _VP, _bind
+    from views.viewport import Viewport
+    scene = Scene()
+    proto = Mesh()
+    f = _quad(proto)
+    f.attrs["color"] = [1, 0, 0]                 # reverso por defecto → dback
+    inst = Group(proto, name="Arco")
+    inst.xform = QMatrix4x4()
+    scene.groups.append(inst)
+    vp = _bind(_VP(scene))
+    for name in ("_proto_base_chunk", "_normal_of", "_tris_of", "_area_of",
+                 "_newell_of"):
+        setattr(vp, name, getattr(Viewport, name).__get__(vp))
+    ch0 = vp._group_chunk(inst)
+    d0 = np.frombuffer(ch0["dback"], np.float32).reshape(-1, 3)
+    assert len(d0) == 6 and abs(float(d0[:, 0].min())) < 1e-6
+    m = QMatrix4x4()
+    m.translate(10.0, 0.0, 0.0)
+    inst.xform = m * inst.xform                  # una traslación pura: el atajo
+    scene.version += 1
+    ch1 = vp._group_chunk(inst)
+    assert ch1 is ch0, "la traslación pura reutiliza la entrada desplazada"
+    d1 = np.frombuffer(ch1["dback"], np.float32).reshape(-1, 3)
+    assert abs(float(d1[:, 0].min()) - 10.0) < 1e-4, "el tinte se movió con el arco"
