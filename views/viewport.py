@@ -101,7 +101,7 @@ from core.group import Group, copy_group, world_mesh
 from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
-from core.snap import SnapResult, compute_snap
+from core.snap import SnapResult, _AXIS_VECTORS, compute_snap
 from core.texture import face_uv_axes
 from core.triangulate import plane_axes
 from tools.base import Tool, ToolContext
@@ -8857,7 +8857,14 @@ class Viewport(QOpenGLWidget):
         start = getattr(tool, "start_point", None) if tool is not None else None
         if snap is None or start is None or snap.kind not in self._SHIFT_LOCKABLE:
             return
-        d = snap.point - start
+
+        # Lock to the exact inferred axis, preserving its direction.
+        if snap.axis in _AXIS_VECTORS:
+            d = QVector3D(_AXIS_VECTORS[snap.axis])
+            if QVector3D.dotProduct(snap.point - start, d) < 0.0:
+                d = -d
+        else:
+            d = snap.point - start
         if d.length() > 1e-6:
             self._shift_lock = (d.normalized(), snap.color)
 
