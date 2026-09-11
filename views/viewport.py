@@ -6797,7 +6797,9 @@ class Viewport(QOpenGLWidget):
         earcut per face (~1–2 s per move against an imported 17k-triangle
         building — the app read as frozen); batched over this index a pick
         is a couple of milliseconds."""
-        key = (_cache_ver(self), id(self.scene.mesh))
+        oculto = getattr(self, "_rest_is_hidden", None)
+        oculto = bool(oculto()) if callable(oculto) else False
+        key = (_cache_ver(self), id(self.scene.mesh), oculto)
         cached = getattr(self, "_pick_index_cache", None)
         if cached is not None and cached[0] == key:
             return cached[1]
@@ -6853,26 +6855,46 @@ class Viewport(QOpenGLWidget):
         # Per-chunk triangle spans (P3): a hover/zoom ray prefilters chunks
         # by AABB and runs Möller-Trumbore only on the spans it crosses.
         tri_spans: list = [(None, 0, len(tris))] if tris else []
-        # What the current context lets you touch: the whole scene at the
+        # What the current context lets you TOUCH: the whole scene at the
         # root, the children of the group you are inside otherwise. This
         # used to be `if scene.edit_group is None`, which took EVERY group
         # out of the index while you were inside one — so a group's children
         # were drawn and could not be clicked, and «todo está combinado»
         # (Marco, 2026-09-11).
         del_contexto = self._context_placements()
-        if del_contexto:
+        tocables = {id(g) for g in del_contexto}
+        # What the snap engine may LAND ON is the whole model. Inside a
+        # group SketchUp still infers against the rest — faded, but every
+        # corner and edge of it is a reference. Holding only the context
+        # here meant no green dot on the pavement while moving a nested
+        # group onto it («me debería salir un punto verde de la referencia»,
+        # Marco, 2026-09-11). So the index carries every placement and the
+        # context decides SELECTABILITY, not membership: the rest occludes
+        # and snaps, and cannot be picked. What the open group itself owns is
+        # already here as the loose part. «Hide» is the exception — what is
+        # not drawn is not there.
+        ctx = scene.edit_group
+        if ctx is None or oculto:
+            candidatos = del_contexto
+        else:
+            candidatos = [g for g in self._placements()
+                          if g is not ctx and self._owner_of(g) is not ctx]
+        if candidatos:
             # The group block is cached across versions (keyed by each
             # chunk's identity + rev + flags): re-deriving per-face masks and
             # re-offsetting 300k triangle rows per scene change cost ~130 ms
             # per stroke/drag frame beside a big import.
             sig = []
             chunks = []
-            for g in del_contexto:
+            for g in candidatos:
                 if getattr(g, "billboard", False):
                     continue          # per-frame quad; picked separately
                 gvis = scene.entity_visible(g)
-                gsel = scene.entity_selectable(g)
-                if not (gvis or gsel):
+                # The layer says whether it can be snapped to; the context
+                # says whether it can be picked.
+                gsnap = scene.entity_selectable(g)
+                gsel = gsnap and id(g) in tocables
+                if not (gvis or gsnap):
                     continue
                 chunk = self._group_chunk(g)
                 if not (chunk["faces"] or chunk["edges"]):
@@ -6882,8 +6904,9 @@ class Viewport(QOpenGLWidget):
                 # index ENTIRELY — so inference found none of its edges and
                 # the edge fallback below, written for "a lines-only group",
                 # read an empty array and never found it either (GitHub #8).
-                sig.append((id(g), id(chunk), chunk["rev"], gvis, gsel))
-                chunks.append((g, chunk, gvis, gsel))
+                sig.append((id(g), id(chunk), chunk["rev"], gvis, gsel,
+                            gsnap))
+                chunks.append((g, chunk, gvis, gsel, gsnap))
             blk = getattr(self, "_pick_block", None)
             frozen = getattr(self, "_frozen_cache_version", None) is not None
             if blk is None or (blk[0] != tuple(sig) and not frozen):
@@ -6896,8 +6919,9 @@ class Viewport(QOpenGLWidget):
                 # empty space / lines-only group) walked every group edge in
                 # Python (~300 ms per mouse move against a 300k-edge import).
                 b_gea, b_geb, b_ggi = [], [], []
+                b_gsel: list = []     # per edge: may pick_group land on it
                 b_ggroups: list = []
-                for g, chunk, gvis, gsel in chunks:
+                for g, chunk, gvis, gsel, gsnap in chunks:
                     n = len(chunk["faces"])
                     off = len(b_entities)
                     owner = self._owner_of(g)
@@ -6913,13 +6937,14 @@ class Viewport(QOpenGLWidget):
                         b_spans.append((chunk.get("bbox"), b_tri_off,
                                         len(chunk["v0"])))
                         b_tri_off += len(chunk["v0"])
-                    if gsel and chunk["edges"]:
+                    if gsnap and chunk["edges"]:
                         ge = np.frombuffer(chunk["edges"], dtype=np.float32)
                         ge = ge.reshape(-1, 2, 3).astype(np.float64)
                         b_gea.append(ge[:, 0])
                         b_geb.append(ge[:, 1])
                         b_ggi.append(np.full(len(ge), len(b_ggroups),
                                              dtype=np.int64))
+                        b_gsel.append(np.full(len(ge), gsel, dtype=bool))
                         b_ggroups.append(owner)
                 blk = (tuple(sig), {
                     "entities": b_entities,
@@ -6936,6 +6961,7 @@ class Viewport(QOpenGLWidget):
                     "gedge_a": np.concatenate(b_gea) if b_gea else None,
                     "gedge_b": np.concatenate(b_geb) if b_gea else None,
                     "gedge_gi": np.concatenate(b_ggi) if b_gea else None,
+                    "gedge_sel": np.concatenate(b_gsel) if b_gea else None,
                     "gedge_groups": b_ggroups,
                     "spans": b_spans,
                 })
@@ -6957,14 +6983,15 @@ class Viewport(QOpenGLWidget):
                     tri_spans += [(bb, len(tris) + s, n)
                                   for bb, s, n in block.get("spans", ())]
 
-        gedge_a = gedge_b = gedge_gi = None
+        gedge_a = gedge_b = gedge_gi = gedge_sel = None
         gedge_groups: list = []
-        if del_contexto:
+        if candidatos:
             block = self._pick_block[1] if getattr(self, "_pick_block", None) \
                 else {}
             gedge_a = block.get("gedge_a")
             gedge_b = block.get("gedge_b")
             gedge_gi = block.get("gedge_gi")
+            gedge_sel = block.get("gedge_sel")
             gedge_groups = block.get("gedge_groups", [])
 
         edges: list = []
@@ -6995,6 +7022,7 @@ class Viewport(QOpenGLWidget):
             gedge_a=gedge_a,
             gedge_b=gedge_b,
             gedge_gi=gedge_gi,
+            gedge_sel=gedge_sel,
             gedge_groups=gedge_groups,
             tri_spans=None,
         )
@@ -7257,8 +7285,11 @@ class Viewport(QOpenGLWidget):
         if idx.gedge_a is None or not len(idx.gedge_a):
             return None
         M = self._np_mvp()
+        # The rest-of-model mode changes WHICH edges the index holds
+        # (hidden surroundings leave it), so it keys the projection too.
         key = (self.scene.version, id(self.scene.mesh), M.tobytes(),
-               self.width(), self.height())
+               self.width(), self.height(),
+               getattr(self, "_edit_rest_mode", None))
         cached = getattr(self, "_gedge_px_cache", None)
         if cached is not None and cached[0] == key:
             return cached[1]
@@ -7726,8 +7757,9 @@ class Viewport(QOpenGLWidget):
         :meth:`pick_face` (the smallest of the overlapping faces wins). The
         group half is what lets a tool tell "this face is inside a container"
         — drawing takes its plane, Push/Pull refuses it until the group is
-        opened. While a group IS open the index holds only its mesh, so its
-        own faces come back with ``None``.
+        opened. While a group IS open its own faces are the loose part and
+        come back with ``None``; the model around it is in the index for
+        snapping and occlusion only, never as an answer here.
 
         Memoised per cursor position and view: a hover asks up to three
         times (work plane, acquisition, on-face flag) for the same answer."""
@@ -7811,10 +7843,15 @@ class Viewport(QOpenGLWidget):
                              + (screen_y - ay) * dy) / safe, 0.0, 1.0)
                 d = np.hypot(ax + t * dx - screen_x,
                              ay + t * dy - screen_y)
+                idx = self._pick_index()
+                # The index also carries the edges of the model OUTSIDE the
+                # open group (snap targets); those cannot be picked.
+                sel = getattr(idx, "gedge_sel", None)
+                if sel is not None:
+                    ok = ok & sel
                 d = np.where(ok, d, np.inf)
                 i = int(np.argmin(d))
                 if d[i] < best_d:
-                    idx = self._pick_index()
                     best_d = float(d[i])
                     best_g = idx.gedge_groups[int(idx.gedge_gi[i])]
         # Billboard outlines: clicking a figure exactly on its snapped feet

@@ -20,6 +20,22 @@ follow [SemVer](https://semver.org).
   en 17 577 caras de una sola pieza, perdiendo de paso los nueve chunks
   independientes y el instanciado. El modelo de datos ya sostenía el árbol
   desde agosto; lo que faltaba era la edición por niveles, y es esto.
+- **Dentro de un grupo, el resto del modelo sigue siendo referencia.** Mover
+  una jardinera anidada hasta la esquina del pavimento de afuera no daba el
+  punto verde: el índice de picking solo conocía el grupo abierto. Ahora
+  lleva el modelo entero — lo de afuera atenuado se puede snapear y tapa lo
+  que queda detrás, como en SketchUp, y sigue sin poderse seleccionar. Con
+  «Ocultar» el resto del modelo, lo que no se dibuja tampoco atrae al
+  cursor.
+
+### Arreglado
+- **Un cuadro en blanco al editar dentro de un grupo anidado.** Borrar una
+  cara (o cualquier cambio) dentro de un hijo de un contenedor dejaba el
+  cuadro siguiente sin el grupo, sin sus vecinos, sin ejes y sin muñeco
+  («por un segundo el grupo desaparece, pensé que se había eliminado»,
+  Marco). El hijo se dibuja instanciado, y construir su entrada de dibujo a
+  mitad del cuadro soltaba el programa de sombreado para todo lo que venía
+  después. Solo se veía con las sombras apagadas.
 
 ### Cambiado
 - **Empujar/Tirar ya no atraviesa un grupo cerrado.** Un dibujo agrupado se

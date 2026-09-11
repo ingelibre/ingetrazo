@@ -378,3 +378,91 @@ def test_construir_el_dibujo_de_un_prototipo_deja_el_programa_puesto():
     assert "self._program.release()" not in fuente, (
         "la entrada del prototipo se construye a mitad del cuadro: soltar el "
         "programa deja sin shader todo lo que se dibuja después")
+
+
+# ---- dentro de un grupo, el resto del modelo sigue siendo referencia ---------
+
+def _visor_con_picking(scene):
+    """El stub de test_pick_index, con la cámara de planta: lo justo para
+    que el índice de picking, el snap y pick_group corran sin GL."""
+    from core.camera import OrbitCamera
+    from tests.test_pick_index import _VP as _PickVP, _bind
+    vp = _bind(_PickVP(scene))
+    vp._placement_proxies = {}
+    from views.viewport import Viewport
+    for m in ("_draws_in_edit_context", "pick_group", "_pixel_to_ray",
+              "_world_to_pixel"):
+        setattr(vp, m, getattr(Viewport, m).__get__(vp))
+    vp.camera = OrbitCamera()
+    vp.camera.set_view("top")
+    vp.camera.fit_to(V(-1, -1, 0), V(9, 9, 0))
+    vp.snap_threshold_px = 9.0
+    vp._is_occluded = lambda world: False
+    return vp
+
+
+def _pixel(vp, p):
+    import numpy as np
+    px, py, ok = vp._project_px(np.array([[p.x(), p.y(), p.z()]]))
+    assert ok[0]
+    return float(px[0]), float(py[0])
+
+
+def _plaza_con_pavimento():
+    """Un contenedor con dos hijos, y un pavimento FUERA de él."""
+    scene, padre, h1, h2 = _plaza()
+    pavimento = Group(_cuadrado(Mesh(), 6.0, 2.0), name="Pavimento fuera")
+    scene.groups.append(pavimento)          # ocupa (6..8, 0..2)
+    return scene, padre, h1, h2, pavimento
+
+
+def test_dentro_de_un_grupo_se_snapea_al_resto_del_modelo():
+    """Mover una jardinera anidada hasta la esquina del pavimento: «me
+    debería salir un punto verde de la referencia, no me aparece» (Marco,
+    2026-09-11). SketchUp infiere contra el resto del modelo aunque esté
+    atenuado; el índice de picking solo tenía el contexto abierto."""
+    scene, padre, h1, _h2, pavimento = _plaza_con_pavimento()
+    vp = _visor_con_picking(scene)
+    scene.begin_group_edit(padre)
+    scene.selection.add(h1)
+    esquina = V(8.0, 2.0, 0.0)              # del pavimento, fuera de la plaza
+    px, py = _pixel(vp, esquina)
+    v = vp.pick_vertex(px, py)
+    assert v is not None and (v - esquina).length() < 1e-4, (
+        "la esquina del pavimento debe ser un 'from point' desde dentro")
+    cerca = vp._nearby_group_edges(px, py)
+    assert any((e.a - esquina).length() < 1e-6 or (e.b - esquina).length() < 1e-6
+               for e in cerca), "las aristas del resto deben llegar al motor de snap"
+
+
+def test_el_resto_del_modelo_no_se_puede_seleccionar_desde_dentro():
+    """Snapeable no es seleccionable: un clic sobre el pavimento desde dentro
+    de la plaza no lo selecciona (SketchUp: el resto está fuera de alcance)."""
+    scene, padre, h1, _h2, pavimento = _plaza_con_pavimento()
+    vp = _visor_con_picking(scene)
+    scene.begin_group_edit(padre)
+    centro = V(7.0, 1.0, 0.0)
+    px, py = _pixel(vp, centro)
+    assert vp.pick_group(px, py) is None
+    assert vp.pick_face_any(px, py) == (None, None)
+    # y su hijo sí, por la cara y por la arista de respaldo
+    px, py = _pixel(vp, V(0.5, 0.5, 0.0))
+    assert vp.pick_group(px, py) is h1
+    idx = vp._pick_index()
+    assert idx.gedge_sel is not None
+    assert not idx.gedge_sel.all(), "las aristas del resto van marcadas como no seleccionables"
+    assert idx.gedge_sel.any(), "las del contexto sí"
+
+
+def test_con_el_resto_oculto_no_hay_a_que_snapear():
+    """«Ocultar» el resto del modelo lo saca del dibujo — y del snap."""
+    scene, padre, _h1, _h2, _pav = _plaza_con_pavimento()
+    vp = _visor_con_picking(scene)
+    vp._rest_is_hidden = lambda: True
+    scene.begin_group_edit(padre)
+    esquina = V(8.0, 2.0, 0.0)
+    px, py = _pixel(vp, esquina)
+    assert vp.pick_vertex(px, py) is None
+    assert not any((e.a - esquina).length() < 1e-6
+                   or (e.b - esquina).length() < 1e-6
+                   for e in vp._nearby_group_edges(px, py))
