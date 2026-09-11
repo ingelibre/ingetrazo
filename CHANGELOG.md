@@ -26,9 +26,10 @@ follow [SemVer](https://semver.org).
   en SketchUp — la pérgola, el arco y la luminaria dibujados en sus propios
   archivos entran en la plaza con sus grupos (anidados, como estaban), sus
   materiales y sus capas. Se sostiene por su origen, así que las zapatas
-  dibujadas bajo el suelo quedan bajo el suelo. Los muñecos de escala del
-  archivo se quedan fuera. Un material cuyo nombre ya usa OTRA receta entra
-  como «nombre (2)».
+  dibujadas bajo el suelo quedan bajo el suelo. Los face-me del archivo
+  vienen con él (el torito sobre el arco); solo el muñeco de escala de la
+  app se queda fuera. Un material cuyo nombre ya usa OTRA receta entra como
+  «nombre (2)».
 - **El .igz conserva los nombres de los grupos.** Nunca los escribía: cada
   documento reabierto renumeraba sus grupos y una «Pérgola» volvía como
   «Group 7» (pendiente conocido). Los nuevos no repiten un número guardado.

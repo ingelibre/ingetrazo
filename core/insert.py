@@ -10,9 +10,10 @@ Marco, 2026-09-11).
 
 What the file holds becomes the component's tree, nothing gets baked: its
 loose geometry is the container's own mesh, its groups (with their own
-children and matrices) its children. A file that is exactly one group
-inserts as that group. Face-me figures are left behind — a scale figure in
-a furniture file is a reference, not furniture.
+children and matrices) its children — face-me sprites included (the torito
+on the arch came with the arch). Only the app's own scale figure is left
+behind: in a furniture file it is a reference, not furniture. A file that
+is exactly one group inserts as that group.
 
 Materials and layers cross over by name: a material whose name is taken
 by a DIFFERENT recipe registers under "name (2)" and the faces that wear
@@ -31,11 +32,28 @@ from core.materials import register
 _AUTO_NAME = re.compile(r"^Group \d+$")
 
 
+def is_scale_figure(group) -> bool:
+    """The app's own scale figure (Sumari), which every fresh document
+    starts with: a face-me whose image is the bundled ``sumari.png``.
+    Named "Sumari" by the app, but an older file carries no group names,
+    so the picture is what identifies it."""
+    if not getattr(group, "billboard", False):
+        return False
+    if (group.name or "") == "Sumari":
+        return True
+    for f in group.mesh.faces:
+        tex = (f.attrs or {}).get("texture") or {}
+        path = str(tex.get("path", "")).replace("\\", "/")
+        if path.rsplit("/", 1)[-1].endswith("sumari.png"):
+            return True
+    return False
+
+
 def component_from_scene(src, name: str):
     """The component a loaded document becomes, or ``None`` when the file
     holds no geometry at all. ``src`` is consumed: its meshes and groups
     move into the component (no copies)."""
-    groups = [g for g in src.groups if not getattr(g, "billboard", False)]
+    groups = [g for g in src.groups if not is_scale_figure(g)]
     mesh = src.mesh
     loose = bool(mesh.faces or mesh.edges)
     if not loose and not groups:

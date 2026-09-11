@@ -4055,12 +4055,36 @@ class Viewport(QOpenGLWidget):
             return cam.eye() - anchor
         return cam.eye() - cam.target
 
+    def _billboard_mesh(self, group):
+        """A billboard's mesh in WORLD space. A face-me placed INSIDE a
+        component — the torito on the arch, brought in with the arch —
+        keeps its prototype in the component's frame and reaches the draw
+        list as a proxy with a matrix; reading the raw mesh put the bull at
+        the file's origin, not on the cornice (Marco, 2026-09-11). Sprites
+        are a face or two, so the placed copy is cached per matrix."""
+        xf = getattr(group, "xform", None)
+        if xf is None:
+            return group.mesh
+        cache = getattr(self, "_billboard_world", None)
+        if cache is None:
+            cache = self._billboard_world = {}
+        key = (id(group.mesh), tuple(xf.data()), _cache_ver(self))
+        hit = cache.get(id(group))
+        if hit is not None and hit[0] == key:
+            return hit[1]
+        from core.group import transformed_mesh
+        placed = transformed_mesh(group.mesh, xf)
+        if len(cache) > 256:
+            cache.clear()
+        cache[id(group)] = (key, placed)
+        return placed
+
     def _billboard_quad(self, group, face_dir=None):
         """The face-me quad of a billboard group, rotated around its vertical
         anchor axis to face the camera NOW (or ``face_dir`` when given).
         Returns (corners[4], tex_path) or ``None``. Shared by the render
         pass, picking and the shadow casters."""
-        verts = group.mesh.vertices
+        verts = self._billboard_mesh(group).vertices
         if not verts:
             return None
         xs = [v.position.x() for v in verts]
@@ -4194,16 +4218,19 @@ class Viewport(QOpenGLWidget):
         cache = getattr(self, "_faceme_cache", None)
         if cache is None:
             cache = self._faceme_cache = {}
-        key = (self.scene.version, id(self.scene.mesh))
+        xf = getattr(g, "xform", None)
+        key = (self.scene.version, id(self.scene.mesh),
+               None if xf is None else tuple(xf.data()))
         cur = cache.get(id(g))
         if cur is not None and cur[0] == key:
             return cur[1]
         import numpy as np
+        mesh = self._billboard_mesh(g)       # world space, matrix applied
         by_tex: dict = {}
         by_color: dict = {}      # rgb tuple -> interleaved pos+uv (uv unused)
         n0 = None
         best_area = 0.0
-        for f in g.mesh.faces:
+        for f in mesh.faces:
             area = f.area() if hasattr(f, "area") else 0.0
             if n0 is None or area > best_area:
                 n0 = f.normal()
@@ -4219,7 +4246,7 @@ class Viewport(QOpenGLWidget):
             for t0, t1, t2 in self._tris_of(f):
                 for p in (t0, t1, t2):
                     buf.extend([p.x(), p.y(), p.z(), 0.0, 0.0])
-        verts = g.mesh.vertices
+        verts = mesh.vertices
         entry = None
         if n0 is not None and verts and (by_tex or by_color):
             xs = [v.position.x() for v in verts]

@@ -60,6 +60,29 @@ def test_un_documento_entero_es_un_contenedor_con_sus_grupos_de_hijos():
     assert techo.xform is not None and poste.xform is None, "cada hijo como era"
 
 
+def test_un_face_me_del_archivo_entra_y_solo_se_queda_fuera_el_muneco():
+    """«Importó el arco sin el torito que tenía encima» (Marco, 2026-09-11):
+    el importador dejaba fuera TODO face-me, y el torito de Pucará sobre la
+    cornisa es un face-me con su foto. Solo el muñeco de escala de la app
+    se queda fuera — por nombre, o por su imagen cuando el archivo es viejo
+    y no trae nombres."""
+    from core.insert import is_scale_figure
+    src = Scene()
+    arco = Group(_cuadrado(Mesh()), name="Arco")
+    toro = Group(Mesh(), name="Group 24")
+    toro.mesh.add_face([V(0, 0, 4.6), V(1.5, 0, 4.6), V(1.5, 0, 6.2), V(0, 0, 6.2)])
+    toro.mesh.faces[0].attrs["texture"] = {"path": "/x/c225-toro.png", "sw": 1, "sh": 1}
+    toro.billboard = "mesh"
+    viejo = Group(Mesh(), name="Group 1")             # el muñeco, sin nombre
+    viejo.mesh.add_face([V(0, 0), V(0.6, 0), V(0.6, 0, 1.72), V(0, 0, 1.72)])
+    viejo.mesh.faces[0].attrs["texture"] = {"path": "/x/928c-sumari.png", "sw": 1, "sh": 1}
+    viejo.billboard = True
+    src.groups += [arco, toro, viejo]
+    assert is_scale_figure(viejo) and not is_scale_figure(toro)
+    comp = component_from_scene(src, "arco yanque")
+    assert comp.children == [arco, toro]
+
+
 def test_un_documento_que_es_un_solo_grupo_entra_como_ese_grupo():
     src = Scene()
     arco = Group(_cuadrado(Mesh()))              # se llama "Group N"
@@ -213,3 +236,39 @@ def test_un_documento_importado_se_sostiene_por_su_origen():
     pts = placement_points(comp)
     assert abs(float(pts[:, 2].min()) - (-1.3)) < 1e-6, "la zapata sigue enterrada"
     assert abs(float(pts[:, 0].min()) - 10.0) < 1e-6
+
+
+def test_un_face_me_colocado_por_matriz_se_dibuja_donde_esta_colocado():
+    """El torito dentro del arco llega al dibujo como proxy con la matriz
+    del arco; leyendo la malla cruda salía en el origen del archivo."""
+    from PySide6.QtGui import QVector3D as Q
+    from views.viewport import Viewport
+
+    class _Cam:
+        perspective = False
+        target = Q(0, 0, 0)
+
+        def eye(self):
+            return Q(0, -10, 1)
+
+    class _VP:
+        _faceme_dir = Viewport._faceme_dir
+        _billboard_mesh = Viewport._billboard_mesh
+        camera = _Cam()
+
+        def __init__(self, scene):
+            self.scene = scene
+
+    scene = Scene()
+    toro = Group(Mesh(), name="Torito")
+    toro.mesh.add_face([V(0, 0, 4.6), V(1.5, 0, 4.6), V(1.5, 0, 6.2), V(0, 0, 6.2)])
+    toro.billboard = True
+    m = QMatrix4x4()
+    m.translate(5.9, -1.4, 0.0)
+    toro.xform = m
+    vp = _VP(scene)
+    corners, _tex = Viewport._billboard_quad(vp, toro)
+    xs = [c.x() for c in corners]
+    zs = [c.z() for c in corners]
+    assert abs((min(xs) + max(xs)) / 2 - (5.9 + 0.75)) < 1e-6, "el ancla lleva la matriz"
+    assert abs(min(zs) - 4.6) < 1e-6 and abs(max(zs) - 6.2) < 1e-6
