@@ -6,6 +6,19 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Cambiado
+- **Empujar/Tirar ya no atraviesa un grupo cerrado.** Un dibujo agrupado se
+  dejaba empujar sin abrirlo, y si era un componente la herramienta abría a
+  tus espaldas una sesión de edición y compartía el resultado a TODAS las
+  copias. Se escribió como «mejor que SketchUp» en junio; usándolo en obra
+  resultó ser lo contrario, porque el modelo cambia donde no apuntaste
+  (Marco, 2026-09-10). Ahora la cara de un grupo cerrado ni se sombrea al
+  pasar por encima —sombrearla es prometer un empuje que no va a ocurrir— y
+  el clic responde diciendo qué hacer: abrir el grupo con doble clic y
+  empujar adentro. Es la regla de SketchUp, dicha por su propia guía de
+  solución de problemas. Dentro del grupo no cambia nada, incluido que
+  editar una copia de un componente sigue llegando a todas.
+
 ## [0.3.17] — 2026-09-10
 
 **La sesión de la Plaza Yanque.** Un día entero modelando una obra de verdad

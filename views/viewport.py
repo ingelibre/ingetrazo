@@ -7621,8 +7621,11 @@ class Viewport(QOpenGLWidget):
     def pick_face_any(self, screen_x: float, screen_y: float):
         """Front-most face under the cursor across the loose mesh **and** every
         group: returns ``(face, group_or_None)``. Same coplanar tiebreak as
-        :meth:`pick_face` (the smallest of the overlapping faces wins). Lets
-        Push/Pull act on a group's face directly — no "enter the group" step.
+        :meth:`pick_face` (the smallest of the overlapping faces wins). The
+        group half is what lets a tool tell "this face is inside a container"
+        — drawing takes its plane, Push/Pull refuses it until the group is
+        opened. While a group IS open the index holds only its mesh, so its
+        own faces come back with ``None``.
 
         Memoised per cursor position and view: a hover asks up to three
         times (work plane, acquisition, on-face flag) for the same answer."""

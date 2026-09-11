@@ -240,8 +240,9 @@ class PushPullTool(Tool):
         # drag start; None = unbounded. SketchUp's "Offset limited to" clamp.
         self._limit_in: float | None = None
         # The Group whose face is being pushed (None = the loose mesh). The
-        # whole pipeline then runs on that group's isolated mesh directly — no
-        # "enter the group" step needed, unlike SketchUp.
+        # machinery can run on a group's isolated mesh, but the GESTURE no
+        # longer offers it: a face inside a group you have not opened is not
+        # pushable, as in SketchUp. See _refuse_closed_group.
         self._group = None
         self._hover_group = None
         # Whether the base face is embedded in a solid (its boundary edges are
@@ -303,8 +304,11 @@ class PushPullTool(Tool):
             self.hovered_face, self._hover_group = viewport.pick_face_any(
                 ctx.screen.x(), ctx.screen.y())
             # Shade the face that would be pushed, SketchUp-style, so the target
-            # is unmistakable before clicking.
-            viewport.set_hover(self.hovered_face)
+            # is unmistakable before clicking. A face inside a group that is not
+            # open gets NO shading: it is not going to be pushed, and promising
+            # it with a highlight is how the wrong thing gets modified.
+            viewport.set_hover(None if self._hover_group is not None
+                               else self.hovered_face)
             return
 
         if self.base_face is None or self._anchor is None:
@@ -340,15 +344,11 @@ class PushPullTool(Tool):
             face = self.hovered_face
             if face is None:
                 return
+            if self._hover_group is not None:
+                self._refuse_closed_group(viewport)
+                return
             self.base_face = face
-            if getattr(self._hover_group, "xform", None) is not None:
-                face = self._enter_instance_for_push(
-                    viewport, self._hover_group, face)
-                if face is None:
-                    return
-                self.base_face = face
-                self._hover_group = None      # inside the session: the
-            self.extrusion = 0.0              # scene's mesh IS the copy
+            self.extrusion = 0.0
             self.dragging = True
             self._group = self._hover_group
             target = self._target_scene(viewport.scene)
@@ -394,11 +394,9 @@ class PushPullTool(Tool):
             face, grp = viewport.pick_face_any(ctx.screen.x(), ctx.screen.y())
             if face is None:
                 return
-            if getattr(grp, "xform", None) is not None:
-                face = self._enter_instance_for_push(viewport, grp, face)
-                if face is None:
-                    return
-                grp = None
+            if grp is not None:
+                self._refuse_closed_group(viewport)
+                return
             self.base_face = face
             self.dragging = True
             self._group = grp
@@ -441,7 +439,6 @@ class PushPullTool(Tool):
         viewport.set_hover(None)
         viewport.set_suppressed_faces(set())
         self._reset()
-        self._leave_instance_if_entered(viewport)
         viewport.update()
 
     # ---- Visual preview -----------------------------------------------------
@@ -560,32 +557,24 @@ class PushPullTool(Tool):
         viewport.set_suppressed_faces({self.base_face} if recessing else set())
         viewport.update()
 
-    def _enter_instance_for_push(self, viewport, group, face):
-        """A push on a component instance edits the shared definition: the
-        push runs inside a short editing session of the instance (a world
-        copy of the definition) and, when it commits, the session is shared
-        back so every copy shows it — SketchUp's component semantics. The
-        prototype holds local coordinates, so pushing it in place would
-        move every copy with world and local coords mixed."""
-        xf = getattr(group, "xform", None)
-        want = sorted(tuple(round(c, 5) for c in (
-            (xf.map(v) if xf is not None else v).toTuple()))
-            for v in face.vertices)
-        viewport.begin_group_edit(group)
-        self._exit_after = True
-        for f in viewport.scene.mesh.faces:
-            got = sorted(tuple(round(c, 5) for c in v.toTuple())
-                         for v in f.vertices)
-            if got == want:
-                return f
-        self._exit_after = False
-        viewport.end_group_edit()
-        return None
+    def _refuse_closed_group(self, viewport) -> None:
+        """A face inside a group that has not been opened is not pushable.
 
-    def _leave_instance_if_entered(self, viewport) -> None:
-        if getattr(self, "_exit_after", False):
-            self._exit_after = False
-            viewport.end_group_edit()
+        The tool used to push it anyway — an instance even opened a short
+        editing session behind your back and shared the result to every copy
+        («better than SketchUp», 2026-06-10). In a real drawing that reads as
+        the model changing where you did not point: a group is a box, and you
+        open a box before reaching inside (Marco, 2026-09-10). SketchUp's own
+        troubleshooting page says it plainly — "the Push/Pull tool cannot
+        extrude objects that are a part of a Component or Group... double-click
+        the Group or Component to edit it".
+
+        Refusing has to SPEAK: a tool that does nothing without a word is the
+        one that reads as broken.
+        """
+        viewport.flash_status(tr(
+            "That face belongs to a group — double-click to open it first, "
+            "then push inside"), 4000)
 
     def _target_scene(self, scene):
         """The scene the machinery edits: the real one, or a facade over the
@@ -990,7 +979,6 @@ class PushPullTool(Tool):
         self._revert_preview(viewport)  # drop the live preview; redo it for real
         if self.base_face is None or abs(self.extrusion) < _MIN_EXTRUDE:
             self._reset()
-            self._leave_instance_if_entered(viewport)
             viewport.update()
             return
         # One snapshot wraps the edit *and* the watertight stitch: undo is exact,
@@ -1015,7 +1003,6 @@ class PushPullTool(Tool):
         else:
             PushPullTool.last_distance = self.extrusion  # double-click repeats it
         self._reset()
-        self._leave_instance_if_entered(viewport)
         viewport.update()
 
     #: How many halvings the commit tries when the guard refuses the distance

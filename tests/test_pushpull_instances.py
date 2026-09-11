@@ -1,9 +1,22 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""Push/Pull on a component instance edits the shared definition: the push
-runs inside a short editing session of that copy and, on commit, every
-copy shows it (SketchUp's component semantics). Marco, 2026-09-04: 'hice
-copias del componente, edito uno y los demás no cambian'."""
+"""Empujar una cara que está DENTRO de un grupo o componente.
+
+Dos reglas, y la segunda llegó después de usar la primera en obra:
+
+1. Dentro del componente, el push llega a todas las copias — son la misma
+   definición (Marco, 2026-09-04: «hice copias del componente, edito uno y
+   los demás no cambian»).
+2. **Desde fuera no se empuja.** La herramienta lo hacía —y en una instancia
+   abría a tus espaldas una sesión de edición y compartía el resultado a
+   todas las copias, cosa que se escribió como «mejor que SketchUp» el
+   2026-06-10—. Dibujando de verdad eso se lee como que el modelo cambia
+   donde no apuntaste (Marco, 2026-09-10: «cuando un dibujo esté agrupado y
+   haga push sin entrar al grupo con doble clic no debería hacer push»). Es
+   además lo que dice la propia guía de SketchUp: *the Push/Pull tool cannot
+   extrude objects that are a part of a Component or Group… double-click the
+   Group or Component to edit it*.
+"""
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, Qt
@@ -57,7 +70,9 @@ def _close(win):
     win.close()
 
 
-def test_push_on_an_instance_reaches_every_copy():
+# ---- 2. desde fuera, no ----------------------------------------------------
+
+def test_una_instancia_cerrada_no_se_empuja():
     win, vp = _window()
     try:
         scene = vp.scene
@@ -67,31 +82,21 @@ def test_push_on_an_instance_reaches_every_copy():
         pp.hovered_face = top
         pp._hover_group = b
         pp.on_click(_ctx(vp))
-        assert pp.dragging and pp._group is None
-        assert scene.edit_group is b and b.xform is None       # session open
-        assert pp.base_face in scene.mesh.faces
-        assert abs(pp.base_face.centroid().x() - 3.5) < 1e-6    # world copy
-        pp.extrusion = 2.0
-        pp._commit(vp)
-        assert scene.edit_group is None                         # session closed
-        assert b.mesh is proto and b.xform is not None           # shared again
-        assert a.mesh is proto
-        assert is_closed(proto) and abs(signed_volume(proto) - 3.0) < 1e-6
-        wa, wb = world_mesh(a), world_mesh(b)
-        assert abs(signed_volume(wa) - 3.0) < 1e-6 and abs(signed_volume(wb) - 3.0) < 1e-6
-        assert abs(max(v.position.x() for v in wb.vertices) - 4.0) < 1e-6
-        assert any("copies" in m or "copias" in m for m in [win.statusBar().currentMessage()])
-        # one undo step brings the definition back on both copies
-        assert vp.history.undo()
-        assert abs(signed_volume(proto) - 1.0) < 1e-6
-        assert b.mesh is proto and b.xform is not None
-        assert vp.history.redo()
-        assert abs(signed_volume(proto) - 3.0) < 1e-6
+        assert not pp.dragging, "arrancó un push dentro de un grupo cerrado"
+        assert scene.edit_group is None, "abrió una sesión a espaldas del usuario"
+        assert b.mesh is proto and b.xform is not None    # sigue compartida
+        assert abs(signed_volume(proto) - 1.0) < 1e-6     # y sin tocar
+        assert not vp.history.undo_stack
+        dicho = win.statusBar().currentMessage().lower()
+        assert "group" in dicho and "double-click" in dicho, (
+            "se negó sin decir por qué, que es lo que se lee como roto "
+            f"(dijo: {dicho!r})")
     finally:
         _close(win)
 
 
-def test_double_click_repeats_the_distance_on_another_instance():
+def test_el_doble_clic_tampoco():
+    """El doble clic repite la última distancia; sobre un grupo cerrado, no."""
     win, vp = _window()
     try:
         scene = vp.scene
@@ -105,28 +110,62 @@ def test_double_click_repeats_the_distance_on_another_instance():
         finally:
             PushPullTool.last_distance = None
             del vp.pick_face_any
-        assert scene.edit_group is None
-        assert is_closed(proto) and abs(signed_volume(proto) - 2.5) < 1e-6
-        assert a.mesh is proto and b.mesh is proto
+        assert not pp.dragging and scene.edit_group is None
+        assert abs(signed_volume(proto) - 1.0) < 1e-6
     finally:
         _close(win)
 
 
-def test_a_cancelled_push_leaves_the_instance_shared_and_untouched():
+def test_la_cara_de_un_grupo_cerrado_ni_se_sombrea():
+    """Sombrearla sería prometer un empuje que no va a ocurrir."""
     win, vp = _window()
     try:
         scene = vp.scene
-        proto, top, a, b = _instances(scene)
+        _proto, top, _a, b = _instances(scene)
         pp = PushPullTool()
         vp.active_tool = pp
-        pp.hovered_face = top
-        pp._hover_group = b
+        vp.pick_face_any = lambda x, y: (top, b)
+        try:
+            pp.on_hover(_ctx(vp))
+        finally:
+            del vp.pick_face_any
+        assert vp._hover_entity is None, "sombreó una cara que no se puede empujar"
+    finally:
+        _close(win)
+
+
+# ---- 1. dentro, sí, y llega a todas las copias -----------------------------
+
+def test_dentro_del_componente_el_push_llega_a_todas_las_copias():
+    win, vp = _window()
+    try:
+        scene = vp.scene
+        proto, _top, a, b = _instances(scene)
+        vp.begin_group_edit(b)                       # el doble clic del usuario
+        assert scene.edit_group is b and b.xform is None
+        cara = next(f for f in scene.mesh.faces
+                    if all(abs(v.z() - 1.0) < 1e-9 for v in f.vertices))
+        assert abs(cara.centroid().x() - 3.5) < 1e-6, "es la copia en el mundo"
+        pp = PushPullTool()
+        vp.active_tool = pp
+        pp.hovered_face = cara
+        pp._hover_group = None                       # dentro, la malla ES la copia
         pp.on_click(_ctx(vp))
-        assert scene.edit_group is b
-        pp.on_cancel(vp)
-        assert scene.edit_group is None
-        assert b.mesh is proto and b.xform is not None
+        assert pp.dragging
+        pp.extrusion = 2.0
+        pp._commit(vp)
+        vp.end_group_edit()                          # Esc
+
+        assert b.mesh is proto and b.xform is not None    # compartida otra vez
+        assert a.mesh is proto
+        assert is_closed(proto) and abs(signed_volume(proto) - 3.0) < 1e-6
+        wa, wb = world_mesh(a), world_mesh(b)
+        assert abs(signed_volume(wa) - 3.0) < 1e-6
+        assert abs(signed_volume(wb) - 3.0) < 1e-6
+        assert abs(max(v.position.x() for v in wb.vertices) - 4.0) < 1e-6
+        assert vp.history.undo()
         assert abs(signed_volume(proto) - 1.0) < 1e-6
-        assert not vp.history.undo_stack                        # nothing to undo
+        assert vp.history.redo()
+        assert abs(signed_volume(proto) - 3.0) < 1e-6
     finally:
         _close(win)
