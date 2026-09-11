@@ -21,7 +21,7 @@ _counter = itertools.count(1)
 
 class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
-                 "children", "owner")
+                 "children", "owner", "context")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -58,6 +58,11 @@ class Group:
         # nested children: the top-level object a click must select. A real
         # group in ``scene.groups`` always has ``owner is None``.
         self.owner = None
+        # The group-edit context this entry belongs to, while the viewport is
+        # INSIDE a group: its children and their subtrees carry it, so the
+        # draw passes know they are the subject and not the surroundings.
+        # ``None`` at the root and on anything outside the open context.
+        self.context = None
 
     def adopt(self, children) -> None:
         """Take ``children`` as nested placements, guaranteeing the invariant

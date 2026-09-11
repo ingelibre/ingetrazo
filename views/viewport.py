@@ -1743,7 +1743,9 @@ class Viewport(QOpenGLWidget):
         ``id(group)``) and re-transform every instance's arrays every frame.
         A scene with no nested placements returns ``scene.groups`` itself."""
         groups = self.scene.groups
-        if not any(getattr(g, "children", None) for g in groups):
+        ctx = self.scene.edit_group
+        anidado = ctx is not None and getattr(ctx, "children", None)
+        if not anidado and not any(getattr(g, "children", None) for g in groups):
             return groups                      # unchanged for flat scenes
         cache = getattr(self, "_placement_proxies", None)
         if cache is None:
@@ -1751,6 +1753,18 @@ class Viewport(QOpenGLWidget):
         out: list = []
         seen: set = set()
         for g in groups:
+            if g is ctx and anidado:
+                # INSIDE this group its children are the first-class objects:
+                # each subtree is expanded from the child, so `owner` points
+                # at the child and a click selects THAT, not the container —
+                # SketchUp's nested contexts.
+                out.append(g)
+                for child in ctx.children:
+                    desde = len(out)
+                    self._expand_placements(child, out, seen)
+                    for entrada in out[desde:]:
+                        entrada.context = ctx
+                continue
             self._expand_placements(g, out, seen)
         # Proxies are pinned while a preview is running: the movers' ids are
         # what the draw passes skip on, and dropping one mid-drag would make
@@ -1799,6 +1813,7 @@ class Viewport(QOpenGLWidget):
                 proxy.layer = forced or child.layer or node.layer
                 proxy.billboard = child.billboard
                 proxy.owner = group
+                proxy.context = None
                 proxy.xform = m
                 out.append(proxy)
                 if child.children:
@@ -6759,14 +6774,21 @@ class Viewport(QOpenGLWidget):
         # Per-chunk triangle spans (P3): a hover/zoom ray prefilters chunks
         # by AABB and runs Möller-Trumbore only on the spans it crosses.
         tri_spans: list = [(None, 0, len(tris))] if tris else []
-        if scene.edit_group is None:
+        # What the current context lets you touch: the whole scene at the
+        # root, the children of the group you are inside otherwise. This
+        # used to be `if scene.edit_group is None`, which took EVERY group
+        # out of the index while you were inside one — so a group's children
+        # were drawn and could not be clicked, and «todo está combinado»
+        # (Marco, 2026-09-11).
+        del_contexto = self._context_placements()
+        if del_contexto:
             # The group block is cached across versions (keyed by each
             # chunk's identity + rev + flags): re-deriving per-face masks and
             # re-offsetting 300k triangle rows per scene change cost ~130 ms
             # per stroke/drag frame beside a big import.
             sig = []
             chunks = []
-            for g in self._placements():
+            for g in del_contexto:
                 if getattr(g, "billboard", False):
                     continue          # per-frame quad; picked separately
                 gvis = scene.entity_visible(g)
@@ -6858,7 +6880,7 @@ class Viewport(QOpenGLWidget):
 
         gedge_a = gedge_b = gedge_gi = None
         gedge_groups: list = []
-        if scene.edit_group is None:
+        if del_contexto:
             block = self._pick_block[1] if getattr(self, "_pick_block", None) \
                 else {}
             gedge_a = block.get("gedge_a")
@@ -7664,8 +7686,9 @@ class Viewport(QOpenGLWidget):
     def pick_group(self, screen_x: float, screen_y: float):
         """The group whose geometry the cursor hits (front-most face, or nearest
         edge for a group that's only lines), or ``None``."""
-        if self.scene.edit_group is not None:
-            return None                     # inside a group: pick content
+        if (self.scene.edit_group is not None
+                and not getattr(self.scene.edit_group, "children", None)):
+            return None                     # inside a plain group: its content
         origin, direction = self._pixel_to_ray(screen_x, screen_y)
         if origin is not None and direction is not None:
             import numpy as np
@@ -7678,7 +7701,7 @@ class Viewport(QOpenGLWidget):
                     i = int(np.argmin(face_t))
                     if np.isfinite(face_t[i]):
                         best = (float(face_t[i]), idx.entities[i][1])
-            for g in self._placements():
+            for g in self._context_placements():
                 if not self.scene.entity_selectable(g):
                     continue                    # hidden or locked layer
                 if getattr(g, "billboard", False):
@@ -7957,11 +7980,24 @@ class Viewport(QOpenGLWidget):
                 name=group.name), 4000)
         self.update()
 
+    def end_one_group_edit(self) -> None:
+        """Step out ONE level — SketchUp's Esc, which leaves you inside the
+        parent when the group you were editing lived in another group."""
+        self._leave_group_edit(todos=False)
+
     def end_group_edit(self) -> None:
+        """Leave every open group, back to the model. What the menus and the
+        save/export paths call."""
+        self._leave_group_edit(todos=True)
+
+    def _leave_group_edit(self, todos: bool) -> None:
         if self.scene.edit_group is None:
             return
         share = self.scene.take_edit_share()
-        self.scene.end_group_edit()
+        if todos:
+            self.scene.end_group_edit()
+        else:
+            self.scene.end_one_group_edit()
         self._hover_entity = None
         self._edges_version = -1     # the rest comes back
         if share is not None:
@@ -8009,6 +8045,28 @@ class Viewport(QOpenGLWidget):
         return (self.scene.edit_group is not None
                 and self._edit_rest_mode == "hide")
 
+    def _context_placements(self):
+        """The placements the CURRENT context lets you touch.
+
+        At the root that is the whole scene. Inside a group it is its
+        children and their subtrees — never the model around it, which is
+        exactly why you cannot grab the rest of the drawing while you are
+        inside a group.
+        """
+        ctx = self.scene.edit_group
+        if ctx is None:
+            return self._placements()
+        hijos = getattr(ctx, "children", None)
+        if not hijos:
+            return []
+        out: list = []
+        for child in hijos:
+            desde = len(out)
+            self._expand_placements(child, out, None)
+            for entrada in out[desde:]:
+                entrada.context = ctx
+        return out
+
     def _owner_of(self, group):
         """The object a click on ``group`` must select: a nested placement
         proxy stands for the top-level group that owns it."""
@@ -8017,8 +8075,12 @@ class Viewport(QOpenGLWidget):
     def _draws_in_edit_context(self, group) -> bool:
         """Whether ``group`` is part of the surroundings of the group being
         edited (so it fades or hides), rather than the subject itself."""
-        return (self.scene.edit_group is not None
-                and self._owner_of(group) is not self.scene.edit_group)
+        ctx = self.scene.edit_group
+        if ctx is None:
+            return False
+        if group is ctx or getattr(group, "context", None) is ctx:
+            return False          # the container and what lives inside it
+        return self._owner_of(group) is not ctx
 
     def set_nav_mode(self, mode: Optional[str]) -> None:
         """Enter a SketchUp-style camera navigation mode ("orbit" / "pan").
@@ -8533,7 +8595,7 @@ class Viewport(QOpenGLWidget):
                 self.update()
                 return
             if self.scene.edit_group is not None:
-                self.end_group_edit()           # step out of the group
+                self.end_one_group_edit()       # step out ONE level
                 return
             if self.active_tool is not None:
                 self.active_tool.on_cancel(self)

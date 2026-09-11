@@ -284,7 +284,9 @@ class SelectTool(Tool):
         if entity is None:
             if viewport.scene.edit_group is not None and mode == "replace" \
                     and not viewport.scene.selection:
-                viewport.end_group_edit()       # click outside leaves the group
+                # Click outside: step out ONE level, so a click outside a
+                # nested group leaves you in its parent, not in the model.
+                viewport.end_one_group_edit()
                 return
             if mode == "replace":
                 viewport.scene.clear_selection()

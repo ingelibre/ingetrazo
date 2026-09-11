@@ -127,3 +127,76 @@ def test_un_grupo_normal_sigue_funcionando_igual():
     assert scene.mesh is g.mesh and scene.edit_group is g
     scene.end_group_edit()
     assert scene.mesh is suelta and scene.edit_group is None
+
+
+# ---- fase 2: dentro del grupo, sus hijos se pueden tocar -------------------
+
+class _VP:
+    """Lo justo del visor para las rutas de colocaciones y contexto."""
+
+    def __init__(self, scene):
+        self.scene = scene
+        self._placement_proxies = {}
+
+    _placements = None          # se enchufan las reales abajo
+
+
+def _visor(scene):
+    from views.viewport import Viewport
+    vp = _VP(scene)
+    for m in ("_placements", "_expand_placements", "_context_placements",
+              "_owner_of", "_draws_in_edit_context"):
+        setattr(_VP, m, getattr(Viewport, m))
+    return vp
+
+
+def test_dentro_del_grupo_los_hijos_son_lo_seleccionable():
+    """En la raíz, un clic en la jardinera selecciona la plaza entera. Dentro
+    de la plaza, ese mismo clic tiene que seleccionar LA JARDINERA."""
+    scene, padre, h1, h2 = _plaza()
+    vp = _visor(scene)
+    fuera = {id(vp._owner_of(g)) for g in vp._placements() if g is not padre}
+    assert fuera == {id(padre)}, "en la raíz todo apunta al contenedor"
+
+    scene.begin_group_edit(padre)
+    dentro = vp._context_placements()
+    assert {vp._owner_of(g).name for g in dentro} == {"Jardinera", "Pavimento"}
+    assert padre not in dentro, "el contenedor no se selecciona desde dentro"
+
+
+def test_el_contexto_no_deja_tocar_el_resto_del_modelo():
+    scene, padre, _h1, _h2 = _plaza()
+    suelto = Group(_cuadrado(Mesh(), 20.0), name="Otro edificio")
+    scene.groups.append(suelto)
+    vp = _visor(scene)
+    assert suelto in vp._context_placements()      # en la raíz, sí
+    scene.begin_group_edit(padre)
+    assert suelto not in vp._context_placements(), (
+        "desde dentro de un grupo no se puede agarrar lo de fuera")
+
+
+def test_los_hijos_no_se_atenúan_pero_el_resto_sí():
+    scene, padre, h1, _h2 = _plaza()
+    suelto = Group(_cuadrado(Mesh(), 20.0), name="Otro edificio")
+    scene.groups.append(suelto)
+    vp = _visor(scene)
+    scene.begin_group_edit(padre)
+    dentro = vp._context_placements()
+    assert not any(vp._draws_in_edit_context(g) for g in dentro), (
+        "los hijos del grupo abierto son el sujeto, no el decorado")
+    assert vp._draws_in_edit_context(suelto), "lo de fuera se atenúa"
+
+
+def test_dos_niveles_y_esc_sube_de_uno_en_uno():
+    scene, padre, h1, _h2 = _plaza()
+    nieto = Group(_cuadrado(Mesh(), 6.0), name="Banca")
+    h1.adopt([nieto])
+    vp = _visor(scene)
+    scene.begin_group_edit(padre)
+    scene.begin_group_edit(h1)
+    assert scene.edit_group is h1
+    assert {vp._owner_of(g).name for g in vp._context_placements()} == {"Banca"}
+    scene.end_one_group_edit()
+    assert scene.edit_group is padre
+    assert {vp._owner_of(g).name for g in vp._context_placements()} == {
+        "Jardinera", "Pavimento"}
