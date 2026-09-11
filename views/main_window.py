@@ -1556,8 +1556,13 @@ class MainWindow(QMainWindow):
             menu.addAction(tr("Convert Path to Geometry"), self._on_convert_geopath)
             menu.addAction(tr("Open / Close path"), self._on_toggle_path_closed)
             menu.addSeparator()
-        if has_mesh:
+        if has_mesh or has_group:
+            # Groups too, since 2026-09-11: a group can hold groups, so the
+            # entry has to be there when the selection is nothing but groups
+            # — which is exactly when you want it («seleccioné cuatro grupos
+            # y solo me sale crear componente y unir grupos», Marco).
             menu.addAction(tr("Make Group"), self._on_make_group)
+        if has_mesh:
             menu.addAction(tr("Make Component…"), self._on_make_component)
         if any(isinstance(e, Face) for e in sel):
             # SketchUp puts Reverse Faces in the face's own right-click menu,

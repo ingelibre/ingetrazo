@@ -170,3 +170,32 @@ def test_un_grupo_con_hijos_se_anida_sin_perderlos(win):
     assert abuelo.children == [padre]
     assert padre.children == [hijo], "el nieto sigue ahí"
     assert len(hijo.mesh.faces) == 1
+
+
+def test_el_menu_del_boton_derecho_ofrece_crear_grupo_con_solo_grupos(win, monkeypatch):
+    """«Seleccioné cuatro grupos y solo me sale crear componente y unir
+    grupos» (Marco, 2026-09-11). La entrada estaba condicionada a que
+    hubiera geometría suelta, porque agrupar grupos no existía."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QMenu
+    scene = win.viewport.scene
+    for i in range(4):
+        g = Group(Mesh(), name="G%d" % i)
+        _quad(g.mesh, 10.0 + 4 * i)
+        scene.groups.append(g)
+    scene.select(list(scene.groups))
+
+    class _Menu(QMenu):
+        abiertos: list = []
+
+        def exec(self, *a, **k):
+            _Menu.abiertos.append(self)
+            return None
+
+    import views.main_window as mw
+    _Menu.abiertos.clear()
+    monkeypatch.setattr(mw, "QMenu", _Menu)
+    win.show_viewport_context_menu(QPoint(0, 0))
+    textos = [a.text() for a in _Menu.abiertos[0].actions()]
+    assert "Make Group" in textos
+    assert "Merge Groups" in textos          # la de siempre sigue

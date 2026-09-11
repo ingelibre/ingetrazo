@@ -200,3 +200,52 @@ def test_dos_niveles_y_esc_sube_de_uno_en_uno():
     assert scene.edit_group is padre
     assert {vp._owner_of(g).name for g in vp._context_placements()} == {
         "Jardinera", "Pavimento"}
+
+
+def test_en_el_segundo_nivel_tambien_se_desvanece_lo_de_fuera():
+    """«Cuando hago doble clic en un grupo lo demás se desvanece, está bien
+    porque solo me interesa ese grupo; eso igual debe ser para grupos
+    anidados» (Marco, 2026-09-11).
+
+    En el primer nivel ya pasaba. En el segundo no: el marcado de contexto
+    solo se ponía sobre los hijos de un grupo de PRIMER nivel, así que al
+    entrar a un grupo dentro de otro se atenuaba justo lo que estabas
+    editando.
+    """
+    scene, padre, h1, h2 = _plaza()
+    nieto_a = Group(_cuadrado(Mesh(), 6.0), name="Banca")
+    nieto_b = Group(_cuadrado(Mesh(), 8.0), name="Farola")
+    h1.adopt([nieto_a, nieto_b])
+    vp = _visor(scene)
+
+    scene.begin_group_edit(padre)
+    scene.begin_group_edit(h1)                       # dos niveles adentro
+    assert scene.edit_group is h1
+    dentro = vp._context_placements()
+    assert {vp._owner_of(g).name for g in dentro} == {"Banca", "Farola"}
+    assert not any(vp._draws_in_edit_context(g) for g in dentro), (
+        "los nietos son el sujeto en el segundo nivel")
+    # y el hermano del grupo abierto, ese sí se atenúa
+    hermano = next(g for g in vp._placements()
+                   if getattr(g, "owner", None) is not None
+                   and g.name == "Pavimento")
+    assert vp._draws_in_edit_context(hermano)
+
+
+def test_el_nieto_se_selecciona_solo_en_su_nivel():
+    """Desde la raíz, un clic en la banca selecciona la plaza. Dentro de la
+    plaza, selecciona la jardinera. Dentro de la jardinera, la banca."""
+    scene, padre, h1, _h2 = _plaza()
+    nieto = Group(_cuadrado(Mesh(), 6.0), name="Banca")
+    h1.adopt([nieto])
+    vp = _visor(scene)
+
+    def dueño_de_la_banca():
+        entrada = next(g for g in vp._placements() if g.name == "Banca")
+        return vp._owner_of(entrada).name
+
+    assert dueño_de_la_banca() == "Plaza"
+    scene.begin_group_edit(padre)
+    assert dueño_de_la_banca() == "Jardinera"
+    scene.begin_group_edit(h1)
+    assert dueño_de_la_banca() == "Banca"

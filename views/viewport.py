@@ -1753,18 +1753,6 @@ class Viewport(QOpenGLWidget):
         out: list = []
         seen: set = set()
         for g in groups:
-            if g is ctx and anidado:
-                # INSIDE this group its children are the first-class objects:
-                # each subtree is expanded from the child, so `owner` points
-                # at the child and a click selects THAT, not the container —
-                # SketchUp's nested contexts.
-                out.append(g)
-                for child in ctx.children:
-                    desde = len(out)
-                    self._expand_placements(child, out, seen)
-                    for entrada in out[desde:]:
-                        entrada.context = ctx
-                continue
             self._expand_placements(g, out, seen)
         # Proxies are pinned while a preview is running: the movers' ids are
         # what the draw passes skip on, and dropping one mid-drag would make
@@ -1794,7 +1782,20 @@ class Viewport(QOpenGLWidget):
         vis, locked = self.scene._layer_state(group)
         forced = group.layer if (not vis or locked) else None
 
-        def walk(node, world):
+        ctx = self.scene.edit_group
+
+        def walk(node, world, dentro=None):
+            """``dentro`` = the first-level child of the open context this
+            subtree hangs from, or ``None`` outside it.
+
+            INSIDE a group its children are the first-class objects: `owner`
+            points at the child, so a click selects the bench and not the
+            plaza, and `context` marks them as the subject so the draw
+            passes do not fade the very thing being edited. It has to work
+            at ANY depth — entering a group inside a group is the whole
+            point (Marco, 2026-09-11: «eso igual debe ser para grupos
+            anidados»).
+            """
             for child in node.children:
                 m = (child.xform if world is None
                      else (world * child.xform if child.xform is not None
@@ -1812,12 +1813,17 @@ class Viewport(QOpenGLWidget):
                 # children are tagged.
                 proxy.layer = forced or child.layer or node.layer
                 proxy.billboard = child.billboard
-                proxy.owner = group
-                proxy.context = None
+                if ctx is not None and node is ctx:
+                    proxy.owner, proxy.context = child, ctx
+                elif dentro is not None:
+                    proxy.owner, proxy.context = dentro, ctx
+                else:
+                    proxy.owner, proxy.context = group, None
                 proxy.xform = m
                 out.append(proxy)
                 if child.children:
-                    walk(child, m)
+                    walk(child, m,
+                         child if (ctx is not None and node is ctx) else dentro)
 
         walk(group, getattr(group, "xform", None))
         return out
@@ -8054,18 +8060,10 @@ class Viewport(QOpenGLWidget):
         inside a group.
         """
         ctx = self.scene.edit_group
+        todo = self._placements()
         if ctx is None:
-            return self._placements()
-        hijos = getattr(ctx, "children", None)
-        if not hijos:
-            return []
-        out: list = []
-        for child in hijos:
-            desde = len(out)
-            self._expand_placements(child, out, None)
-            for entrada in out[desde:]:
-                entrada.context = ctx
-        return out
+            return todo
+        return [g for g in todo if getattr(g, "context", None) is ctx]
 
     def _owner_of(self, group):
         """The object a click on ``group`` must select: a nested placement
