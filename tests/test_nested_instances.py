@@ -150,15 +150,37 @@ def test_hidden_owner_hides_its_nested_placements():
     assert not any(scene.entity_visible(g) for g in out)
 
 
-def test_editing_into_a_nested_group_bakes_it():
-    """Inside a group you edit real geometry, so the internal sharing has to
-    become real faces first — SketchUp does the same."""
+def test_editing_into_a_nested_group_keeps_the_tree():
+    """Entering a container does NOT bake it.
+
+    This test used to assert the opposite — «inside a group you edit real
+    geometry, so the internal sharing has to become real faces first,
+    SketchUp does the same» — and that last clause was simply wrong:
+    SketchUp keeps the inner groups as groups and lets you enter them one by
+    one. Marco hit the real cost on 2026-09-11, when his plaza's nine groups
+    fused into one 17 577-face mesh on a double click.
+
+    What DOES happen on the way in is that the container's own matrix comes
+    down into its children, so the tools can work in world coordinates
+    without anything moving.
+    """
+    from PySide6.QtGui import QMatrix4x4
     scene = Scene()
-    top, _ = _tree()
+    top, proto = _tree()
     scene.groups.append(top)
+    antes = [p.toTuple() for g, m in iter_placements(top)
+             for v in g.mesh.vertices
+             for p in [m.map(v.position) if m is not None else v.position]]
     scene.begin_group_edit(top)
     assert scene.mesh is top.mesh
-    assert len(top.mesh.faces) == 4 and top.children == []
+    assert len(top.children) == 1, "el árbol se horneó al entrar"
+    assert top.children[0].name == "mid"
+    assert top.children[0].children[0].mesh is proto, "y sigue compartiendo malla"
+    assert top.xform == QMatrix4x4()
+    despues = [p.toTuple() for g, m in iter_placements(top)
+               for v in g.mesh.vertices
+               for p in [m.map(v.position) if m is not None else v.position]]
+    assert antes == despues, "la geometría se movió al entrar"
 
 
 def test_igz_round_trip_keeps_the_tree_and_writes_the_prototype_once(tmp_path):

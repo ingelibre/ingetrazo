@@ -115,8 +115,15 @@ class Scene:
     # Group-edit context (Groups v2): while set, ``mesh`` POINTS AT the edited
     # group's mesh so every tool/command works inside the group transparently;
     # ``_loose_mesh`` keeps the real loose mesh for render and restore.
+    # ``edit_group`` is the INNERMOST open group — it mirrors the top of
+    # ``_edit_stack``, so the thirty-odd readers that only care about "am I
+    # inside a group" keep working unchanged.
     edit_group: object | None = None
     _loose_mesh: object | None = None
+    #: The open contexts, outermost first — SketchUp's nested editing. Each
+    #: entry is ``{"group", "mesh", "share"}``: the group, the mesh ``scene.mesh``
+    #: pointed at before entering it, and its pending instance share-back.
+    _edit_stack: list = field(default_factory=list)
     #: While a component INSTANCE is open for editing: ``(group, proto,
     #: xform, state0)`` — the shared definition it left, its placement, and
     #: the temp mesh's snapshot at entry (to tell an edit from a look).
@@ -173,18 +180,32 @@ class Scene:
     # ---- Group-edit context (Groups v2) --------------------------------------
     def begin_group_edit(self, group) -> None:
         """Enter a group: tools and commands now edit ITS mesh (SketchUp's
-        double-click-into-group). Nested groups are not supported yet.
+        double-click-into-group).
+
+        Entering a CHILD of the group already open pushes a level instead of
+        starting over — that is the nesting. Anything else closes what is
+        open first.
+
+        A group that owns children used to be BAKED on the way in
+        (``materialize``): its nine nested groups became one mesh, and both
+        the structure and the per-group chunks were gone. «Es lo que no
+        quiero, que se fundan todos los grupos, porque además pierdo
+        rendimiento» (Marco, 2026-09-11). Now it enters as it is.
+
         Entering a component INSTANCE edits a world copy of its shared
         definition; leaving shares the edit back to every copy."""
-        if self.edit_group is not None:
+        anidando = (self.edit_group is not None
+                    and group in (getattr(self.edit_group, "children", None) or ()))
+        if self.edit_group is not None and not anidando:
             self.end_group_edit()
+        anterior = self.mesh
         self._edit_share = None
         if getattr(group, "children", None):
-            # Nested placements bake in: inside the group you edit real
-            # geometry, so its internal sharing becomes real faces first
-            # (this copy goes unique — sharing back a nested component is
-            # not supported yet).
-            group.materialize()
+            # A container: its children stay children. What CANNOT stay is a
+            # transform on it, because the tools work in world coordinates —
+            # so the matrix is pushed down into the children and into its own
+            # mesh, which leaves every world position exactly where it was.
+            self._bake_container_xform(group)
         elif getattr(group, "xform", None) is not None:
             # A component instance: the tools work in world coordinates, so
             # the session edits a world-space COPY of the definition. On
@@ -197,17 +218,61 @@ class Scene:
             group.xform = None
             self._edit_share = (group, proto, xform,
                                 group.mesh.capture_state())
-        self._loose_mesh = self.mesh
+        if not self._edit_stack:
+            self._loose_mesh = anterior
+        self._edit_stack.append(
+            {"group": group, "mesh": anterior, "share": self._edit_share})
         self.mesh = group.mesh
         self.edit_group = group
         self.selection.clear()
         self.version += 1
 
-    def end_group_edit(self) -> None:
-        """Leave the group-edit context, restoring the loose mesh."""
-        if self.edit_group is None:
+    @staticmethod
+    def _bake_container_xform(group) -> None:
+        """Push a container's own matrix down into its children and its mesh.
+
+        A group that owns placements is always an instance (``Group.adopt``),
+        so moving it composes into ``xform``. Inside it the tools speak world
+        coordinates, so the matrix has to come down one level: every child
+        matrix takes it on the left, the group's own geometry moves to world,
+        and the group is left at identity. Nothing moves in the world.
+
+        Its own geometry moves as a COPY, never in place: a container's mesh
+        can be the very prototype its children share (an imported component
+        tree is exactly that), and walking those vertices would drag every
+        placement with it.
+        """
+        from PySide6.QtGui import QMatrix4x4
+        xform = getattr(group, "xform", None)
+        if xform is None or xform == QMatrix4x4():
             return
-        share = self.take_edit_share()
+        for child in group.children:
+            child.xform = xform * (child.xform if child.xform is not None
+                                   else QMatrix4x4())
+        if group.mesh.vertices:
+            from core.group import transformed_mesh
+            group.mesh = transformed_mesh(group.mesh, xform)
+        group.xform = QMatrix4x4()
+
+    def end_one_group_edit(self) -> None:
+        """Leave the INNERMOST group only — SketchUp's Esc, which steps out
+        one level and leaves you inside the parent."""
+        self._leave_level()
+
+    def end_group_edit(self) -> None:
+        """Leave every open group-edit context, back to the loose mesh. The
+        contract the whole app relies on before saving, exporting or
+        switching documents: when this returns, nothing is open."""
+        while self._edit_stack:
+            self._leave_level()
+
+    def _leave_level(self) -> None:
+        if not self._edit_stack:
+            return
+        nivel = self._edit_stack.pop()
+        share = nivel["share"]
+        nivel["share"] = None
+        self._edit_share = None
         if share is not None:
             # Headless callers (tests, the AI bridge): share back directly.
             # The viewport takes the share first and wraps it in a command.
@@ -216,16 +281,27 @@ class Scene:
                 self.restore_sharing(group, proto, xform)
             else:
                 self.share_back(group, proto, xform, group.mesh)
-        self.mesh = self._loose_mesh
-        self._loose_mesh = None
-        self.edit_group = None
+        self.mesh = nivel["mesh"]
+        self.edit_group = (self._edit_stack[-1]["group"] if self._edit_stack
+                           else None)
+        if not self._edit_stack:
+            self._loose_mesh = None
         self.selection.clear()
         self.version += 1
 
     def take_edit_share(self):
         """The pending instance share-back ``(group, proto, xform, state0)``
-        — handed over ONCE, so whoever ends the edit decides how (the
-        viewport wraps it in an undoable command)."""
+        of the INNERMOST open group — handed over ONCE, so whoever ends the
+        edit decides how (the viewport wraps it in an undoable command).
+
+        It belongs to its level, not to the scene: taking it has to disarm
+        that level too, or leaving would share the same edit back twice.
+        """
+        if self._edit_stack:
+            share = self._edit_stack[-1]["share"]
+            self._edit_stack[-1]["share"] = None
+            self._edit_share = None
+            return share
         share = self._edit_share
         self._edit_share = None
         return share

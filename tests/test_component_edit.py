@@ -84,14 +84,24 @@ def test_reshare_command_undoes_the_whole_session_in_one_step():
     assert len(proto.faces) == 3 and len(world_mesh(a).faces) == 3
 
 
-def test_a_group_with_nested_placements_still_goes_unique():
+def test_a_group_with_nested_placements_keeps_them():
+    """Entering a container used to BAKE it: `materialize()` fused its nested
+    placements into one mesh and the group went unique. That is what Marco hit
+    with his plaza on 2026-09-11 — nine groups became a single 17 577-face
+    mesh, structure and per-group chunks gone. Now it enters as it is.
+
+    The instance share-back does NOT arm for a container: there is no shared
+    definition to write back to, and its matrix comes down into the children
+    on the way in (see tests/test_nested_group_edit.py)."""
     scene, proto, a, b = _two_instances()
     child = Group(Mesh(), name="child")
     _square(child.mesh, z=5.0)
     child.xform = QMatrix4x4()
     b.adopt([child])
     scene.begin_group_edit(b)
-    assert scene._edit_share is None and b.xform is None
+    assert scene._edit_share is None
+    assert b.children == [child], "los hijos se hornearon al entrar"
+    assert len(child.mesh.faces) == 1
     scene.end_group_edit()
-    assert b.mesh is not proto                          # unique, as before
-    assert a.mesh is proto and len(proto.faces) == 1
+    assert b.children == [child]
+    assert a.mesh is proto and len(proto.faces) == 1    # la hermana, intacta
