@@ -8197,7 +8197,7 @@ class Viewport(QOpenGLWidget):
         # everything copied, via NumPy — one pass over vertices instead of
         # four Python min() scans over every edge endpoint.
         import numpy as np
-        from core.group import np_affine
+        from core.group import placement_points
         lo = None
         pts = [p for loop, holes, _a in face_data for p in loop]
         pts += [p for _, holes, _a in face_data for h in holes for p in h]
@@ -8205,14 +8205,14 @@ class Viewport(QOpenGLWidget):
         if pts:
             lo = np.array([[p.x(), p.y(), p.z()] for p in pts]).min(axis=0)
         for g in group_data:
-            verts = g.mesh.vertices
-            if not verts:
+            # The whole placement, children included: a container's own
+            # mesh is usually empty, and reading only that found nothing to
+            # copy — Ctrl+C on an imported lamp post silently left the
+            # previous clipboard in place, and Ctrl+V pasted the pergola
+            # (Marco, 2026-09-11).
+            arr = placement_points(g)
+            if not len(arr):
                 continue
-            arr = np.array([[v.position.x(), v.position.y(), v.position.z()]
-                            for v in verts])
-            if g.xform is not None:
-                rot, trans = np_affine(g.xform)
-                arr = arr @ rot.T + trans
             gmin = arr.min(axis=0)
             lo = gmin if lo is None else np.minimum(lo, gmin)
         if lo is None:

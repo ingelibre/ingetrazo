@@ -346,3 +346,33 @@ def test_preview_faces_survive_viewport_memo_helpers():
     n = Viewport._normal_of(vp, face)
     assert round(abs(n.z()), 3) == 1.0
     assert Viewport._area_of(vp, face) == 4.0
+
+
+def test_copy_paste_container_whose_own_mesh_is_empty():
+    """«Seleccioné la luminaria, Ctrl+C, Ctrl+V, y en su lugar se pega la
+    pérgola que había copiado antes» (Marco, 2026-09-11). The reference
+    corner was read from each group's OWN mesh, and an imported component
+    is a container whose own mesh is empty — nothing to hold the set by,
+    so copy_selection returned False and the old clipboard stayed."""
+    from core.group import Group, placement_points
+    from core.mesh import Mesh
+    from PySide6.QtGui import QMatrix4x4
+    scene = Scene()
+    vp = _VP(scene, History(scene), {"faces": [], "edges": [],
+                                     "groups": [], "ref": V(99, 99, 0)})
+    m = Mesh()
+    m.add_face([V(3, 3), V(4, 3), V(4, 4), V(3, 4)])
+    poste = Group(m, name="Poste")
+    lamp = Group(Mesh(), name="Luminaria")
+    lamp.adopt([poste])
+    scene.groups.append(lamp)
+    scene.selection.add(lamp)
+    assert _copy(vp), "a container IS copyable"
+    assert vp.clipboard["ref"] == V(3, 3, 0), "held by the corner of its parts"
+    assert [g.name for g in vp.clipboard["groups"]] == ["Luminaria"]
+    _paste_at(vp, 10, 10)
+    pasted = next(k for k in scene.groups if k is not lamp)
+    assert pasted.name == "Luminaria" and len(pasted.children) == 1
+    pts = placement_points(pasted)
+    assert abs(float(pts[:, 0].min()) - 10.0) < 1e-6
+    assert abs(float(pts[:, 1].min()) - 10.0) < 1e-6
