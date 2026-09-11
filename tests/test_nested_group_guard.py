@@ -69,17 +69,25 @@ def _win_with_a_group_and_loose_geometry():
     return win, scene
 
 
-def test_grouping_a_group_with_loose_geometry_refuses(cancels):
+def test_grouping_a_group_with_loose_geometry_NESTS_it(cancels):
+    """Esto se negaba, y con razón mientras entrar a un contenedor lo
+    horneaba. Con la pila de contextos (2026-09-11) ya no: agrupar una cara
+    suelta junto a un grupo mete la cara en la malla del contenedor nuevo y
+    el grupo pasa a ser su hijo — lo que hace SketchUp."""
     win, scene = _win_with_a_group_and_loose_geometry()
     try:
-        before = len(scene.groups)
+        antes = list(scene.groups)
+        sueltas = len(scene.mesh.faces)
         scene.selection.clear()
         scene.selection.update(set(scene.mesh.faces) | set(scene.groups))
         win._on_make_group()
-        assert cancels["count"] == 1, "it refused without saying so"
-        # Nothing half-made: the loose face was NOT swept into a new group.
-        assert len(scene.groups) == before
-        assert scene.mesh.faces
+        assert cancels["count"] == 0, "ya no hay nada que preguntar"
+        nuevos = [g for g in scene.groups if g not in antes]
+        assert len(nuevos) == 1
+        padre = nuevos[0]
+        assert padre.children == antes, "el grupo viejo es ahora su hijo"
+        assert len(padre.mesh.faces) == 1        # la cara suelta
+        assert len(scene.mesh.faces) == sueltas - 1
     finally:
         win._saved_version = scene.version      # closeEvent asks otherwise
         win.close()

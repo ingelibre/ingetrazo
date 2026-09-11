@@ -1141,16 +1141,30 @@ class MainWindow(QMainWindow):
         the user as "I pressed Create group and it does not create" — which
         is exactly how this was reported."""
         if self.viewport.scene.edit_group is not None:
+            # Grouping INSIDE a group would have to land in that group's
+            # children, not at the root where MakeGroupCommand puts it.
             self.viewport.flash_status(tr(
-                "Leave the group first (Esc) — nested groups aren't "
-                "supported yet"))
+                "Leave the group first (Esc) — grouping inside a group is "
+                "not wired up yet"), 4000)
             return
         sel = self.viewport.scene.selection
         faces = [f for f in sel if isinstance(f, Face)]
         edges = [e for e in sel if isinstance(e, Edge)]
         groups = [g for g in sel if isinstance(g, Group)]
         if groups:
-            self._make_group_with_groups(faces, edges, groups)
+            # A group can hold groups now (2026-09-11): the container adopts
+            # them and the loose part of the selection becomes its own mesh,
+            # like SketchUp. What used to happen here was a dialog offering
+            # to merge or explode, because opening a container baked it.
+            from core.history import MakeNestedGroupCommand
+            self.viewport.history.execute(
+                MakeNestedGroupCommand(faces, edges, groups))
+            self.viewport.flash_status(tr(
+                "Grouped {n} group(s){extra} — double-click to go inside",
+                n=len(groups),
+                extra=(tr(" and the loose geometry") if (faces or edges)
+                       else "")), 4000)
+            self.viewport.update()
             return
         if not (faces or edges):
             self.viewport.flash_status(tr(
@@ -1158,65 +1172,6 @@ class MainWindow(QMainWindow):
             return
         self.viewport.history.execute(MakeGroupCommand(faces, edges))
         self.viewport.update()
-
-    def _make_group_with_groups(self, faces, edges, groups) -> None:
-        """The selection includes groups. Nesting is refused — entering a
-        parent that owns children materializes them (core/scene.py), so the
-        bench and the pergola you just nested would dissolve into loose faces
-        the moment you double-clicked in.
-
-        But refusing is not an answer on its own: offer the two results the
-        user actually wants, and let them pick."""
-        from PySide6.QtWidgets import QMessageBox
-        from core.group import world_mesh
-        from core.history import CompoundCommand, DeleteGroupCommand
-
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle(tr("Create group"))
-        box.setText(tr("The selection includes {n} group(s).", n=len(groups)))
-        box.setInformativeText(tr(
-            "A group can't hold another one yet: opening the parent would "
-            "dissolve them into loose faces. What would you like instead?"))
-        loose_btn = None
-        if faces or edges:
-            loose_btn = box.addButton(tr("Group only the loose geometry"),
-                                      QMessageBox.ButtonRole.AcceptRole)
-        flat_btn = box.addButton(tr("Explode and group it all"),
-                                 QMessageBox.ButtonRole.AcceptRole)
-        cancel = box.addButton(QMessageBox.StandardButton.Cancel)
-        box.setDefaultButton(cancel)
-        box.exec()
-        clicked = box.clickedButton()
-        if clicked is cancel or clicked is None:
-            return
-
-        if clicked is loose_btn:
-            self.viewport.history.execute(MakeGroupCommand(faces, edges))
-            self.viewport.update()
-            self.statusBar().showMessage(
-                tr("{n} group(s) left out", n=len(groups)), 4000)
-            return
-
-        # Explode and group it all: MakeGroupCommand builds its new mesh from
-        # CAPTURED POSITIONS, so the world geometry of each selected group can
-        # go straight in — no separate explode pass to sequence. Deleting the
-        # originals in the same CompoundCommand keeps it one undo step, and
-        # world_mesh flattens nested placements on the way, so nothing that
-        # was inside a component is lost.
-        all_faces = list(faces)
-        all_edges = list(edges)
-        for g in groups:
-            wm = world_mesh(g)
-            all_faces.extend(wm.faces)
-            all_edges.extend([e for e in wm.edges if not e.faces])
-        cmds = [MakeGroupCommand(all_faces, all_edges)]
-        cmds += [DeleteGroupCommand(g) for g in groups]
-        self.viewport.history.execute(CompoundCommand(cmds))
-        self.viewport.update()
-        self.statusBar().showMessage(
-            tr("{n} group(s) exploded into the new group", n=len(groups)),
-            4000)
 
     def _on_make_component(self) -> None:
         """SketchUp's Make Component (G): the selection becomes a shared

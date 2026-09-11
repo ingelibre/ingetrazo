@@ -91,20 +91,30 @@ def test_plain_loose_geometry_still_groups(win):
     assert len(scene.groups) == before + 1
 
 
-def test_cancel_changes_nothing(win, monkeypatch):
+def test_agrupar_un_grupo_lo_ANIDA(win):
+    """Lo que antes era un diálogo pidiendo perdón. Un grupo puede contener
+    grupos desde el 2026-09-11, así que agrupar hace lo que dice."""
     scene = win.viewport.scene
-    f = _quad(scene.mesh)
-    g = Group(Mesh(), name="Banca")
-    _quad(g.mesh, 10.0)
-    scene.groups.append(g)
-    scene.select([f, g])
-    before = len(scene.groups)
-    _answer(monkeypatch, None)
+    g1 = Group(Mesh(), name="Banca")
+    _quad(g1.mesh, 10.0)
+    g2 = Group(Mesh(), name="Pérgola")
+    _quad(g2.mesh, 14.0)
+    scene.groups += [g1, g2]
+    scene.select([g1, g2])
+    previos = list(scene.groups)
     win._on_make_group()
-    assert len(scene.groups) == before
+    assert g1 not in scene.groups and g2 not in scene.groups
+    nuevo = _new_groups(scene, previos)
+    assert len(nuevo) == 1
+    padre = nuevo[0]
+    assert padre.children == [g1, g2], "los grupos son HIJOS, no se fundieron"
+    assert len(g1.mesh.faces) == 1 and len(g2.mesh.faces) == 1
+    assert padre.xform is not None, "un contenedor es siempre instancia"
 
 
-def test_group_only_the_loose_part_leaves_the_group_alone(win, monkeypatch):
+def test_lo_suelto_de_la_selección_va_a_la_malla_del_contenedor(win):
+    """Como SketchUp: dentro del grupo nuevo encuentras las caras sueltas Y
+    el grupo, cada uno como lo que era."""
     scene = win.viewport.scene
     f = _quad(scene.mesh)
     g = Group(Mesh(), name="Banca")
@@ -112,51 +122,35 @@ def test_group_only_the_loose_part_leaves_the_group_alone(win, monkeypatch):
     scene.groups.append(g)
     scene.select([f, g])
     previos = list(scene.groups)
-    seen = _answer(monkeypatch, "loose")
+    sueltas_antes = len(scene.mesh.faces)
     win._on_make_group()
-    assert len(seen["labels"]) == 3          # loose / explode / cancel
-    assert g in scene.groups                 # untouched
     nuevo = _new_groups(scene, previos)
     assert len(nuevo) == 1
-    assert len(nuevo[0].mesh.faces) == 1
+    padre = nuevo[0]
+    assert padre.children == [g]
+    assert len(padre.mesh.faces) == 1, "la cara suelta es la malla del padre"
+    assert len(scene.mesh.faces) == sueltas_antes - 1
+    assert len(g.mesh.faces) == 1, "la banca sigue entera"
 
 
-def test_explode_and_group_it_all_absorbs_the_groups(win, monkeypatch):
-    scene = win.viewport.scene
-    f = _quad(scene.mesh)
-    g = Group(Mesh(), name="Banca")
-    _quad(g.mesh, 10.0)
-    _quad(g.mesh, 14.0)
-    scene.groups.append(g)
-    scene.select([f, g])
-    previos = list(scene.groups)
-    _answer(monkeypatch, "explode")
-    win._on_make_group()
-    assert g not in scene.groups, "the original group must be absorbed"
-    nuevo = _new_groups(scene, previos)
-    assert len(nuevo) == 1
-    assert len(nuevo[0].mesh.faces) == 3     # 1 loose + 2 from the group
-
-
-def test_explode_and_group_undoes_in_ONE_step(win, monkeypatch):
+def test_anidar_se_deshace_en_UN_paso(win):
     scene = win.viewport.scene
     f = _quad(scene.mesh)
     g = Group(Mesh(), name="Banca")
     _quad(g.mesh, 10.0)
     scene.groups.append(g)
     scene.select([f, g])
-    before = [x.name for x in scene.groups]
-    before_loose = len(scene.mesh.faces)
-    _answer(monkeypatch, "explode")
+    antes = [x.name for x in scene.groups]
+    sueltas = len(scene.mesh.faces)
     win._on_make_group()
-    win.viewport.history.undo()
-    assert [x.name for x in scene.groups] == before
-    assert len(scene.mesh.faces) == before_loose
+    assert win.viewport.history.undo() is True
+    assert [x.name for x in scene.groups] == antes
+    assert len(scene.mesh.faces) == sueltas
+    assert g.children == [], "y la banca no se queda adoptada"
 
 
-def test_a_group_with_NESTED_placements_keeps_its_insides(win, monkeypatch):
-    """world_mesh folds children in, so absorbing a component does not
-    quietly drop the geometry it placed inside itself."""
+def test_un_grupo_con_hijos_se_anida_sin_perderlos(win):
+    """Anidar un contenedor dentro de otro: el árbol crece, no se aplana."""
     from PySide6.QtGui import QMatrix4x4
     scene = win.viewport.scene
     hondo = Mesh()
@@ -169,8 +163,10 @@ def test_a_group_with_NESTED_placements_keeps_its_insides(win, monkeypatch):
     scene.groups.append(padre)
     scene.select([padre])
     previos = list(scene.groups)
-    _answer(monkeypatch, "explode")
     win._on_make_group()
     nuevo = _new_groups(scene, previos)
     assert len(nuevo) == 1
-    assert len(nuevo[0].mesh.faces) == 2, "the nested plank was lost"
+    abuelo = nuevo[0]
+    assert abuelo.children == [padre]
+    assert padre.children == [hijo], "el nieto sigue ahí"
+    assert len(hijo.mesh.faces) == 1

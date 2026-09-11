@@ -2654,6 +2654,67 @@ class InsertGroupCommand(Command):
         scene.version += 1
 
 
+class MakeNestedGroupCommand(Command):
+    """SketchUp's Make Group when the selection already holds groups.
+
+    Until 2026-09-11 this was refused: a container baked its children the
+    moment you opened it, so nesting would have dissolved the bench and the
+    pergola you just grouped. With the edit stack in place (Scene) that is
+    gone, and grouping groups is what it says.
+
+    The loose part of the selection, if any, becomes the container's OWN
+    mesh — the same thing SketchUp does: inside the new group you find the
+    loose faces AND the groups, each still a group. Reusing
+    :class:`MakeGroupCommand` for that half keeps one code path for taking
+    geometry off the loose mesh.
+    """
+
+    def __init__(self, faces: Iterable[Face], edges: Iterable[Edge],
+                 groups: Iterable[Group], name: str | None = None) -> None:
+        faces, edges, groups = list(faces), list(edges), list(groups)
+        self._inner = (MakeGroupCommand(faces, edges, name=name)
+                       if (faces or edges) else None)
+        self.groups = groups
+        self.name = name
+        self.container: Optional[Group] = None
+        self._indices: list = []
+        self._xform0 = None
+
+    def do(self, scene) -> None:
+        if self._inner is not None:
+            self._inner.do(scene)
+            self.container = self._inner.group
+        elif self.container is None:
+            self.container = Group(Mesh(), name=self.name)
+        if self.container not in scene.groups:
+            scene.groups.append(self.container)
+        self._xform0 = getattr(self.container, "xform", None)
+        self._indices = sorted(
+            ((scene.groups.index(g), g) for g in self.groups),
+            key=lambda pair: pair[0])
+        for _i, g in self._indices:
+            scene.groups.remove(g)
+            scene.selection.discard(g)
+        # In document order, not selection order: a selection is a set, and
+        # the children of a group are a list somebody will read.
+        self.container.adopt([g for _i, g in self._indices])
+        scene.selection.clear()
+        scene.selection.add(self.container)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.container.children = []
+        self.container.xform = self._xform0
+        for idx, g in self._indices:
+            scene.groups.insert(min(idx, len(scene.groups)), g)
+        if self._inner is not None:
+            self._inner.undo(scene)        # loose geometry back, group gone
+        elif self.container in scene.groups:
+            scene.groups.remove(self.container)
+        scene.selection.clear()
+        scene.version += 1
+
+
 class MergeGroupsCommand(Command):
     """Fuse several groups (component instances included) into ONE new
     group holding their combined world-space geometry — the fix-my-
