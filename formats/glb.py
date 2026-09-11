@@ -330,7 +330,9 @@ def build_mesh(batches, progress=None):
             color = ([float(c) for c in rgba[:3]] if rgba else None)
             base = {}
             if color is not None and color != [1.0, 1.0, 1.0]:
+                # A mesh format paints a triangle, not a side.
                 base["color"] = color
+                base["back"] = True
             if opacity is not None:
                 base["opacity"] = opacity
             attrs_list.extend([dict(base) if base else None] * len(tris))
@@ -343,7 +345,8 @@ def build_mesh(batches, progress=None):
             for i in range(len(tris)):
                 a = {"texture": {"path": tex_path,
                                  "uvw": [float(x) for x in uvw[i]],
-                                 "sw": float(sw[i]), "sh": float(sh[i])}} \
+                                 "sw": float(sw[i]), "sh": float(sh[i])},
+                     "back": True} \
                     if okm[i] else None
                 if a is not None and opacity is not None:
                     a["opacity"] = opacity

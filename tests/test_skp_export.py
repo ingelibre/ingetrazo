@@ -640,29 +640,46 @@ def _root_faces_with_materials(model):
             for f in model.root.faces.values()]
 
 
-def test_a_face_painted_in_ingetrazo_is_painted_on_both_sides_in_sketchup(tmp_path):
-    """IngeTrazo draws a face's paint on both sides; SketchUp paints only
-    the side the file names. Naming only the front showed SketchUp's
-    lavender default on every face seen from behind (benches, a roof's
-    underside, palm fronds facing away) — so the back gets the same
-    material, and the same pins when the texture is positioned."""
+def _face_min_x_m(model, face) -> float:
+    """The smallest X (metres) of a parsed root face's outer loop."""
+    from openskp._face_groups import reconstruct_loop_vertices
+    edges = {eid: (e.v1_id, e.v2_id) for eid, e in model.root.edges.items()}
+    return min(model.root.vertices[vid].x / _M_TO_IN
+               for vid in reconstruct_loop_vertices(face.loops[0], edges))
+
+
+def test_a_face_painted_on_the_front_stays_front_only_in_sketchup(tmp_path):
+    """Faces have sides (2026-09-11): a paint on the front is the front's,
+    and the back is SketchUp's default — the same thing IngeTrazo now
+    shows. A TWO-SIDED face (``back = True``) and a translucent front, which
+    reads from both sides here, get the same material and pins on both."""
     png = _make_png(tmp_path / "tile.png")
     scene = Scene()
     colour = scene.mesh.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
     colour.attrs["color"] = (1.0, 0.0, 0.0)
-    textured = scene.mesh.add_face([V(3, 0), V(4, 0), V(4, 1), V(3, 1)])
-    textured.attrs["texture"] = {"path": str(png), "sw": _TILE_M, "sh": _TILE_M}
+    two_sided = scene.mesh.add_face([V(3, 0), V(4, 0), V(4, 1), V(3, 1)])
+    two_sided.attrs["texture"] = {"path": str(png), "sw": _TILE_M,
+                                  "sh": _TILE_M}
+    two_sided.attrs["back"] = True
+    glass = scene.mesh.add_face([V(6, 0), V(7, 0), V(7, 1), V(6, 1)])
+    glass.attrs["color"] = (0.0, 0.0, 1.0)
+    glass.attrs["opacity"] = 0.4
     scene.version += 1
-    path = tmp_path / "both.skp"
+    path = tmp_path / "sides.skp"
     skp_out_format.save_skp(scene, path)
     model = _parse_skp(path)
     rows = _root_faces_with_materials(model)
-    assert len(rows) == 2
-    for face, front, back in rows:
-        assert front is not None and back is front
-        if front.texture is not None:
-            assert face.uv_transform is not None
-            assert face.uv_transform_back == pytest.approx(face.uv_transform)
+    assert len(rows) == 3
+    by_x = {round(_face_min_x_m(model, face)): (face, front, back)
+            for face, front, back in rows}
+    face, front, back = by_x[0]
+    assert front is not None and back is None, "the front paint stays front-only"
+    face, front, back = by_x[3]
+    assert front is not None and back is front
+    assert face.uv_transform is not None
+    assert face.uv_transform_back == pytest.approx(face.uv_transform)
+    face, front, back = by_x[6]
+    assert front is not None and back is front, "glass reads from both sides"
 
 
 def test_a_two_sided_face_keeps_its_own_back_paint(tmp_path):

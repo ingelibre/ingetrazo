@@ -224,6 +224,11 @@ def _face_json(f) -> dict:
         # finds, and it must never reach into the live scene's attrs.
         entry["back"] = {k: dict(v) if isinstance(v, dict) else v
                          for k, v in back.items()}
+    elif back is True:
+        # A two-sided face: the back mirrors the front (what the mesh
+        # formats describe, and what a SketchUp face painted the same on
+        # both sides becomes). Absent = the style's default back.
+        entry["back"] = True
     return entry
 
 
@@ -664,8 +669,11 @@ def _face_attrs_from_json(raw) -> dict | None:
         attrs["opacity"] = float(raw["opacity"])
     if raw.get("mat"):
         attrs["mat"] = raw["mat"]
-    if isinstance(raw.get("back"), dict):
-        attrs["back"] = dict(raw["back"])
+    back = raw.get("back")
+    if isinstance(back, dict):
+        attrs["back"] = dict(back)
+    elif back is True:
+        attrs["back"] = True
     return attrs or None
 
 

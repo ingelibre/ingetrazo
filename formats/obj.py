@@ -403,11 +403,13 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
                     # gradients the fit produced.
                     tex["sw"] = (1.0 / glu) if glu > 1e-9 else 1.0
                     tex["sh"] = (1.0 / glv) if glv > 1e-9 else 1.0
-            return {**base, "texture": tex}
+            # A mesh format paints a triangle, not a side: the material
+            # shows from both sides (``back = True``).
+            return {**base, "texture": tex, "back": True}
         color = mat.get("color")
         if color is not None and tuple(round(c, 4) for c in color) != \
                 tuple(round(c, 4) for c in _DEFAULT_COLOR):
-            return {**base, "color": list(color)}
+            return {**base, "color": list(color), "back": True}
         return base or None
 
     # Library-scale meshes are *reference* geometry: they land in their own

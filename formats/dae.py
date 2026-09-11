@@ -562,14 +562,17 @@ def _face_attrs(zpts, color, tex):
             import math as _math
             glu = _math.hypot(m[0], m[1], m[2])
             glv = _math.hypot(m[4], m[5], m[6])
+            # A mesh format paints a triangle, not a side: the material
+            # shows from both sides (``back = True``), as every COLLADA
+            # viewer draws it and as it drew here before faces had sides.
             return {"texture": {
                 "path": path, "uvw": m,
                 # Display/export tile size derived from the UV gradients.
                 "sw": (1.0 / glu) if glu > 1e-9 else 1.0,
                 "sh": (1.0 / glv) if glv > 1e-9 else 1.0,
-            }}
+            }, "back": True}
     if color is not None:
-        return {"color": [float(c) for c in color[:3]]}
+        return {"color": [float(c) for c in color[:3]], "back": True}
     return None
 
 

@@ -28,6 +28,20 @@ follow [SemVer](https://semver.org).
   «Ocultar» el resto del modelo, lo que no se dibuja tampoco atrae al
   cursor.
 
+- **Las caras tienen dos lados, y se pinta el que se clica.** Como en
+  SketchUp: el cubo pinta el lado bajo el cursor, y el otro conserva el
+  color de reverso del estilo (el azul grisáceo que delata una cara al
+  revés). Un material translúcido —cristal, agua, una malla raschel, una
+  hoja calada— se ve igual por los dos lados, también como en SketchUp.
+  Hasta ahora toda pintura aparecía por los dos lados («si a una cara le
+  aplico un color o textura también se aplica a su revés», Marco). El
+  cuentagotas toma el lado que muestreas; el `.igz` guarda el reverso
+  propio; el import `.skp` respeta lo que cada lado tiene pintado y el
+  export escribe lo mismo; los modelos OBJ/DAE/glTF, que no tienen lados,
+  llegan como caras de dos lados. Documentos anteriores: las caras
+  pintadas desde IngeTrazo muestran ahora el reverso por defecto — para
+  pintarlo, se pinta desde atrás.
+
 ### Arreglado
 - **Un cuadro en blanco al editar dentro de un grupo anidado.** Borrar una
   cara (o cualquier cambio) dentro de un hijo de un contenedor dejaba el

@@ -1628,6 +1628,45 @@ class SetFaceTextureCommand(Command):
         scene.version += 1
 
 
+class SetFaceBackCommand(Command):
+    """Paint the BACK side of a set of faces: ``attrs["back"]`` becomes the
+    given material dict (``color``/``texture``/``opacity``/``mat``, the same
+    keys the front uses), or the side goes back to the style's default with
+    ``None``. Per face, because a positioned texture keeps its ``uvw`` only
+    on the plane it was fitted for (see the Paint tool). Topology-free, so
+    the attrs swap inverts it — the old value may be ``True`` (a two-sided
+    face) and comes back as such."""
+
+    def __init__(self, faces, backs) -> None:
+        self._faces = list(faces)
+        # One dict per face, or None for all.
+        if backs is None or isinstance(backs, dict):
+            backs = [backs] * len(self._faces)
+        self._backs = [dict(b) if isinstance(b, dict) else None for b in backs]
+        self._old: Optional[list] = None
+
+    @staticmethod
+    def _put(f, value) -> None:
+        if value is None:
+            f.attrs.pop("back", None)
+        else:
+            f.attrs["back"] = dict(value) if isinstance(value, dict) else value
+
+    def do(self, scene) -> None:
+        if self._old is None:
+            self._old = [f.attrs.get("back") for f in self._faces]
+        for f, b in zip(self._faces, self._backs):
+            self._put(f, b)
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for f, old in zip(self._faces, self._old or []):
+            self._put(f, old)
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+
 def translate_points(scene, keys: set, delta: QVector3D) -> None:
     """Move every shared vertex whose position key is in ``keys`` by ``delta``.
 

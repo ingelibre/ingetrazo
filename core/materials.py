@@ -80,6 +80,37 @@ class Material:
         )
 
 
+def is_translucent(attrs) -> bool:
+    """Whether a face's FRONT material lets light through: a translucency
+    below 1, or a texture with real see-through pixels (glass, water, a
+    raschel mesh, foliage)."""
+    if not attrs:
+        return False
+    if float(attrs.get("opacity", 1.0)) < 0.999:
+        return True
+    tex = attrs.get("texture")
+    if tex and tex.get("path"):
+        from core.texture import image_has_cutout
+        return image_has_cutout(tex["path"])
+    return False
+
+
+def back_is_default(attrs) -> bool:
+    """Whether the BACK of a face shows the style's default back colour.
+
+    SketchUp paints exactly the side you click: the front of a wall takes
+    the brick, its back keeps the blue-grey default — unless the material
+    is translucent, when SketchUp paints both sides so glass, water and a
+    mesh read the same from either side («solo en el caso de una malla o
+    cristal o agua», Marco, 2026-09-11). ``attrs["back"]`` says when the
+    back has something of its own: ``True`` mirrors the front (a two-sided
+    face, what the mesh formats describe), a dict is its own material.
+    """
+    if attrs and attrs.get("back"):
+        return False
+    return not is_translucent(attrs)
+
+
 def register(materials: dict, mat: Material) -> str:
     """Add *mat* to the registry dict (name → Material), deduplicating.
 

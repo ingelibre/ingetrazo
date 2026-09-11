@@ -31,6 +31,7 @@ from pathlib import Path
 
 from PySide6.QtGui import QVector3D
 
+from core.materials import back_is_default
 from core.texture import face_uv_axes, projection_basis, uv_reference_points
 
 # SketchUp's face-me convention: a component that "always faces the camera"
@@ -676,8 +677,9 @@ def _same_paint(fa, fb, to_a):
     if _material_key(fa) != _material_key(fb):
         return False
     ba, bb = fa.attrs.get("back"), fb.attrs.get("back")
-    if isinstance(ba, dict) != isinstance(bb, dict):
-        return False
+    if isinstance(ba, dict) != isinstance(bb, dict) \
+            or (ba is True) != (bb is True):
+        return False           # a two-sided face is not a one-sided one
     if isinstance(ba, dict) and _material_key_attrs(ba) != _material_key_attrs(bb):
         return False
     pa = sorted(fa.vertices, key=lambda p: (round(p.x(), 3), round(p.y(), 3), round(p.z(), 3)))
@@ -1011,14 +1013,15 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError,
     position, and the fallback triangles get their own pins, fitted on the
     triangle the writer sees.
 
-    BOTH sides get painted. IngeTrazo draws a face's paint on both sides
-    (``attrs["back"]`` overrides the back when SketchUp painted it
-    differently), while SketchUp paints exactly the side the file names —
-    so a file that named only the front showed SketchUp's lavender default
-    on every face seen from behind: the benches, the underside of a roof,
-    the fronds of a palm whose leaves face the other way (Marco's pool in
-    SketchUp Web, 2026-09-04). The back gets the front's material and pins
-    unless ``attrs["back"]`` names its own."""
+    Each side gets what it wears here, and SketchUp shows the same:
+    ``attrs["back"]`` as a dict is the back's own material and pins,
+    ``True`` a two-sided face (the front's material and pins again), and an
+    absent back is SketchUp's default back — unless the front is
+    translucent, which reads on both sides here and so is painted on both
+    there (``core.materials.back_is_default``, the renderer's rule). Until
+    2026-09-11 every paint was drawn on both sides, and the writer had to
+    paint both to match (the lavender backs of Marco's pool in SketchUp
+    Web, 2026-09-04); now the two agree face by face."""
     key = _material_key(face)
     material = mat_handles.get(key)
     face_layer = face.attrs.get("layer")
@@ -1033,9 +1036,11 @@ def _emit_face(sink, face, mat_handles, layer_handles, SkpWriteError,
         back_material = mat_handles.get(bkey)
         bsize = applied.get(bkey) if applied is not None else (1.0, 1.0)
         btex = back.get("texture")
-    else:
+    elif back is True or not back_is_default(face.attrs):
         back_material, bsize, btex = material, size, ftex
-    both = _both_sides(sink)
+    else:
+        back_material, bsize, btex = None, None, None
+    both = _both_sides(sink) and back_material is not None
 
     def pins(points, tex, sz):
         if sz is None or not tex:

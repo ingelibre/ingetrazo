@@ -518,21 +518,25 @@ def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
                else getattr(face, "uv_projected", False)) \
         or getattr(face, "_projected", False)
     attrs = _bake_uvs(attrs, uv_mat, uv_proj)
-    # A face painted DIFFERENTLY on each side (SketchUp: front green wall,
-    # back roof tiles — possibly via instance inheritance on the unpainted
-    # side): carry the back side's material as attrs["back"]; the renderer
-    # shows it only from behind. Flipped faces already front their painted
-    # side, and same-material sides stay plain double-sided.
+    # SketchUp paints each side on its own. A back painted DIFFERENTLY
+    # (front green wall, back roof tiles — possibly via instance
+    # inheritance on the unpainted side) travels as its own material in
+    # attrs["back"]; a back painted the SAME as the front is a two-sided
+    # face (``back = True``); a back left unpainted is absent and shows the
+    # style's default back colour, exactly as SketchUp shows it. Flipped
+    # faces already front their painted side, so their back is the default.
     if not flipped:
         back_src = attr_map.get(getattr(face, "back_material_id", None))
         if back_src is None and inherited is not None:
             back_src = attr_map.get(inherited)
-        if back_src is not None and back_src is not front_src:
-            back = _bake_uvs(back_src,
-                             getattr(face, "uv_transform_back", None),
-                             getattr(face, "uv_projected_back", False))
+        if back_src is not None:
             base = dict(attrs) if attrs else {}
-            base["back"] = back
+            if back_src is front_src:
+                base["back"] = True
+            else:
+                base["back"] = _bake_uvs(
+                    back_src, getattr(face, "uv_transform_back", None),
+                    getattr(face, "uv_projected_back", False))
             attrs = base
     lay = getattr(face, "layer", "") or layer
     if lay:
@@ -540,29 +544,11 @@ def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
     return (outer, holes, attrs)
 
 
-def _image_has_cutout(path, cache={}) -> bool:
-    """Whether the image carries REAL transparency (some pixels see-through)
-    — the signature of a photo sprite (a person/animal/tree cutout PNG),
-    versus an opaque photo panel (a sign or mural). Mirrors the DAE import's
-    heuristic for face-me sprites."""
-    cached = cache.get(path)
-    if cached is not None:
-        return cached
-    from PySide6.QtCore import Qt
-    from PySide6.QtGui import QImage
-    img = QImage(path)
-    ok = False
-    if not img.isNull() and img.hasAlphaChannel():
-        small = img.scaled(32, 32, Qt.IgnoreAspectRatio, Qt.FastTransformation)
-        for yy in range(small.height()):
-            for xx in range(small.width()):
-                if small.pixelColor(xx, yy).alpha() < 32:
-                    ok = True
-                    break
-            if ok:
-                break
-    cache[path] = ok
-    return ok
+def _image_has_cutout(path) -> bool:
+    """See :func:`core.texture.image_has_cutout` — one test for the import,
+    the renderer's back-side rule and the exporter."""
+    from core.texture import image_has_cutout
+    return image_has_cutout(path)
 
 
 def _image_quad_faces(child, placed, attr_map, inherited):

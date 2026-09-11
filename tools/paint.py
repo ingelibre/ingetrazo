@@ -19,6 +19,15 @@ Behavior (SketchUp's Paint Bucket, ``B``):
   degenerates: on a wall perpendicular to the sampled floor the ``v`` axis
   lands along the wall's normal and the image smears into stripes.
 - Works on loose geometry and group faces alike (``pick_face_any``).
+- **Paints the side you click.** A face has a front and a back, and
+  SketchUp paints exactly the side under the cursor: the front of a wall
+  takes the brick, its back keeps the style's default blue-grey. IngeTrazo
+  used to show every paint on both sides («si a una cara le aplico un
+  color o textura también se aplica a su revés, lo cual no debería» —
+  Marco, 2026-09-11). The back's own material lives in ``attrs["back"]``
+  (``SetFaceBackCommand``); a translucent front — glass, water, a raschel
+  mesh, a leaf cutout — reads on both sides anyway, as in SketchUp, and
+  that rule lives in ``core.materials.back_is_default``.
 
 The current colour is class-level (shared across activations) and is set from
 the toolbar swatch (a ``QColorDialog``); the tool only applies it.
@@ -31,6 +40,7 @@ from core.i18n import tr
 from core.mesh import Face
 from core.history import (
     CompoundCommand,
+    SetFaceBackCommand,
     SetFaceColorCommand,
     SetFaceMaterialTagCommand,
     SetFaceOpacityCommand,
@@ -82,6 +92,24 @@ def _texture_commands(faces, tex, plane) -> list:
     return cmds
 
 
+def clicked_back_side(viewport, face, group, x: float, y: float) -> bool:
+    """Whether the cursor at ``(x, y)`` sees the BACK of ``face``: the
+    pick ray runs along the face's world normal instead of against it.
+    ``group`` is what ``pick_face_any`` returned beside the face (its
+    transform places the normal). A viewport without a ray (the stubs in
+    tests) reads as the front."""
+    from PySide6.QtGui import QVector3D
+    ray = getattr(viewport, "_pixel_to_ray", None)
+    if ray is None:
+        return False
+    origin, direction = ray(x, y)
+    if origin is None or direction is None:
+        return False
+    from core.snap import face_plane_world
+    _p, normal = face_plane_world(face, getattr(group, "xform", None))
+    return QVector3D.dotProduct(normal, direction) > 0.0
+
+
 class PaintTool(Tool):
     name = "Paint"
     shortcut = "B"
@@ -125,15 +153,27 @@ class PaintTool(Tool):
 
     def on_click(self, ctx: ToolContext) -> None:
         vp = ctx.viewport
-        face, _group = vp.pick_face_any(ctx.screen.x(), ctx.screen.y())
+        face, group = vp.pick_face_any(ctx.screen.x(), ctx.screen.y())
         if face is None:
             return
+        back_side = clicked_back_side(vp, face, group,
+                                      ctx.screen.x(), ctx.screen.y())
 
         if (ctx.modifiers & Qt.AltModifier) or PaintTool.sample_armed:
             # Eyedropper: adopt the face's material (texture if it has one, else
             # colour) as the current paint material — identity included, so
-            # sampling "Concreto visto" paints "Concreto visto".
-            tex = face.attrs.get("texture")
+            # sampling "Concreto visto" paints "Concreto visto". The side
+            # under the cursor is what gets sampled: a back painted on its
+            # own gives its own material, a two-sided face its front, a
+            # default back the default paint.
+            src = face.attrs
+            if back_side:
+                back = face.attrs.get("back")
+                if isinstance(back, dict):
+                    src = back
+                elif back is not True:
+                    src = {}
+            tex = src.get("texture")
             if tex is not None:
                 PaintTool.current_texture = dict(tex)
                 PaintTool.current_texture_plane = (
@@ -141,11 +181,11 @@ class PaintTool(Tool):
             else:
                 PaintTool.current_texture = None
                 PaintTool.current_texture_plane = None
-                sampled = face.attrs.get("color")
+                sampled = src.get("color")
                 PaintTool.current_color = (tuple(sampled) if sampled is not None
                                            else DEFAULT_FACE_COLOR)
-            PaintTool.current_opacity = face.attrs.get("opacity")
-            name = face.attrs.get("mat")
+            PaintTool.current_opacity = src.get("opacity")
+            name = src.get("mat")
             PaintTool.current_material = (
                 vp.scene.materials.get(name) if name else None)
             if PaintTool.sample_armed:
@@ -168,6 +208,18 @@ class PaintTool(Tool):
         faces = (sel_faces if face in sel_faces
                  else vp.scene.mesh.surface_of(face))
         mat = PaintTool.current_material
+        if back_side:
+            # The back gets its own material and nothing else changes:
+            # the front keeps what it had. The material still registers
+            # itself in the scene (an empty tag stamp does only that).
+            vp.history.execute(CompoundCommand([
+                SetFaceMaterialTagCommand(
+                    [], mat.name if mat is not None else None, mat),
+                SetFaceBackCommand(faces, [self._back_material_for(f)
+                                           for f in faces]),
+            ]))
+            vp.update()
+            return
         tag = SetFaceMaterialTagCommand(
             faces, mat.name if mat is not None else None, mat)
         opacity = SetFaceOpacityCommand(faces, PaintTool.current_opacity)
@@ -186,3 +238,24 @@ class PaintTool(Tool):
                 tag,
             ]))
         vp.update()
+
+    @classmethod
+    def _back_material_for(cls, face) -> dict:
+        """The current paint as a back-side material dict for ``face`` —
+        the same keys the front uses, with the eyedropper's plane rule for
+        a positioned texture (see ``_texture_commands``)."""
+        back: dict = {}
+        if cls.current_texture is not None:
+            tex = dict(cls.current_texture)
+            if tex.get("uvw") and (cls.current_texture_plane is None
+                                   or not _same_plane(
+                                       face, cls.current_texture_plane)):
+                tex.pop("uvw", None)
+            back["texture"] = tex
+        else:
+            back["color"] = list(cls.current_color)
+        if cls.current_opacity is not None:
+            back["opacity"] = float(cls.current_opacity)
+        if cls.current_material is not None:
+            back["mat"] = cls.current_material.name
+        return back

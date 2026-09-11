@@ -564,6 +564,13 @@ class Viewport(QOpenGLWidget):
 
         self._edges_vao = None
         self._edges_vbo = None
+        # Default-back tint: the triangles of every face whose back is
+        # unpainted, drawn once more with front culling in the style's back
+        # colour (see ``core.materials.back_is_default``).
+        self._dback_vao = None
+        self._dback_vbo = None
+        self._dback_count = 0
+        self._dback_spans: list = []
         self._edges_count = 0
         self._selected_vao = None
         self._selected_vbo = None
@@ -792,6 +799,7 @@ class Viewport(QOpenGLWidget):
         self._ground_vao, self._ground_vbo = self._create_dynamic()
         self._shadow_bb_vao, self._shadow_bb_vbo = self._create_dynamic_uv()
         self._edges_vao, self._edges_vbo = self._create_dynamic()
+        self._dback_vao, self._dback_vbo = self._create_dynamic()
         self._selected_vao, self._selected_vbo = self._create_dynamic()
         self._sel_faces_vao, self._sel_faces_vbo = self._create_dynamic()
         self._faces_vao, self._faces_vbo = self._create_dynamic_vcol()
@@ -1251,6 +1259,48 @@ class Viewport(QOpenGLWidget):
                 self._gl.glDepthMask(GL_TRUE)
             self._program.setUniformValue1f(self._loc_shade, 1.0)
             self._program.setUniformValue(self._loc_use_tex, 0)
+            self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
+        # The default back (SketchUp): a painted face shows its material on
+        # the side you painted and the style's blue-grey on the other, so
+        # the reverse of a wall reads as the reverse. Every face whose back
+        # is unpainted — and whose front is opaque; glass, water and a mesh
+        # read the same from both sides — is drawn once more here with
+        # FRONT culling in the back colour: only its rear fragments arrive,
+        # at the depth the face pass already wrote, and LEQUAL lets this
+        # later draw win. Plan styles have their own rule (monochrome tints
+        # every back, hidden-line none), X-ray keeps the blend clean.
+        if self._dback_count > 0 and mode in ("textures", "shaded"):
+            db_spans = getattr(self, "_dback_spans", None)
+            split_db = (getattr(self, "_edit_split_db", None)
+                        if fading else None)
+            if db_spans:
+                db_draw, _c = self._visible_spans(db_spans, planes, split_db)
+            else:
+                db_draw = [(0, self._dback_count)]
+            self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+            self._gl.glPolygonOffset(1.0, 1.0)
+            self._gl.glEnable(GL_CULL_FACE)
+            self._gl.glCullFace(GL_FRONT)
+            self._program.setUniformValue(self._loc_use_vcolor, 0)
+            self._program.setUniformValue(self._loc_use_tex, 0)
+            self._set_back_face_color()
+            self._dback_vao.bind()
+            if split_db is None:
+                for _vs, _vc in db_draw:
+                    self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
+            else:
+                self._program.setUniformValue1f(self._loc_fade,
+                                                EDIT_REST_FADE)
+                for _vs, _vc in db_draw:
+                    if _vs < split_db:
+                        self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
+                self._program.setUniformValue1f(self._loc_fade, 0.0)
+                for _vs, _vc in db_draw:
+                    if _vs >= split_db:
+                        self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
+            self._dback_vao.release()
+            self._gl.glDisable(GL_CULL_FACE)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
         # Instanced components (P2): eligible instances draw from their
@@ -1957,6 +2007,18 @@ class Viewport(QOpenGLWidget):
         edges_vbo.release()
         wire_matrix()
         edges_vao.release()
+        # default-back tint: pos(3), drawn with front culling
+        dback_raw = base.get("dback", b"")
+        dback_vbo = static_vbo(dback_raw)
+        dback_vao = QOpenGLVertexArrayObject(self)
+        dback_vao.create()
+        dback_vao.bind()
+        dback_vbo.bind()
+        self._program.enableAttributeArray(self._loc_pos)
+        self._program.setAttributeBuffer(self._loc_pos, GL_FLOAT, 0, 3, 12)
+        dback_vbo.release()
+        wire_matrix()
+        dback_vao.release()
         # textures: pos(3)+uv(2), one run per (path, shade)
         tex_parts = []
         tex_runs = []
@@ -1994,6 +2056,8 @@ class Viewport(QOpenGLWidget):
                  "vcol_count": len(vcol_raw) // 24,
                  "edges_vao": edges_vao, "edges_vbo": edges_vbo,
                  "edge_count": len(edges_raw) // 12,
+                 "dback_vao": dback_vao, "dback_vbo": dback_vbo,
+                 "dback_count": len(dback_raw) // 12,
                  "tex_vao": tex_vao, "tex_vbo": tex_vbo,
                  "tex_runs": tex_runs}
         cache[id(mesh)] = entry
@@ -2106,6 +2170,17 @@ class Viewport(QOpenGLWidget):
                         self._program.setUniformValue(self._loc_hard_cutout, 0)
                         self._program.setUniformValue1f(self._loc_shade, 1.0)
                         self._program.setUniformValue(self._loc_use_tex, 0)
+                if entry.get("dback_count") and mode in ("textures",
+                                                          "shaded"):
+                    # The default back, as the consolidated pass draws it.
+                    self._gl.glEnable(GL_CULL_FACE)
+                    self._gl.glCullFace(GL_FRONT)
+                    self._program.setUniformValue(self._loc_use_vcolor, 0)
+                    entry["dback_vao"].bind()
+                    extra.glDrawArraysInstanced(
+                        GL_TRIANGLES, 0, entry["dback_count"], n)
+                    entry["dback_vao"].release()
+                    self._gl.glDisable(GL_CULL_FACE)
         self._program.setUniformValue1f(self._loc_fade, 0.0)
         if mode == "xray":
             self._program.setUniformValue1f(self._loc_opacity, 1.0)
@@ -3620,7 +3695,12 @@ class Viewport(QOpenGLWidget):
         # writes through.
         subj_vcol = array("f")
         subj_by_texture: dict = {}
-        sink = {"vcol": vcol, "tex": by_texture}
+        # Default-back tint (pos-only triangles; see ``back_is_default``):
+        # the loose block, then one part per group chunk, subject last.
+        dback_loose = array("f")
+        subj_dback = array("f")
+        sink = {"vcol": vcol, "tex": by_texture, "dback": dback_loose}
+        from core.materials import back_is_default
         group_texture: dict = {}     # chunk byte-parts per image path
         face_parts: list = []        # interleaved vcol byte chunks
 
@@ -3656,6 +3736,12 @@ class Viewport(QOpenGLWidget):
             if face in suppressed_faces:
                 return
             fcull = bucket_back(face)
+            if back_is_default(face.attrs):
+                db = sink["dback"]
+                for t0, t1, t2 in self._tris_of(face):
+                    db.extend([t0.x(), t0.y(), t0.z(),
+                               t1.x(), t1.y(), t1.z(),
+                               t2.x(), t2.y(), t2.z()])
             tex = face.attrs.get("texture")
             op = float(face.attrs.get("opacity", 1.0))
             if tex is not None and tex.get("path"):
@@ -3699,6 +3785,10 @@ class Viewport(QOpenGLWidget):
                     bucket_face(face)
         group_face_spans: list = []   # (bbox, start-within-groups, count)
         gface_start = 0
+        dback_parts: list = []        # default-back tint, per group chunk
+        dback_spans: list = []        # (bbox, start-within-groups, count)
+        dback_start = 0
+        self._edit_split_db = None
         subject_bucketed = False
         pv_faces = getattr(self, "_preview_groups", None) or ()
         for g in draw_groups:         # context first, edited group last
@@ -3711,6 +3801,7 @@ class Viewport(QOpenGLWidget):
                 # buffer, entering such a group left the split unset and
                 # nothing faded at all (Marco, 2026-09-11, second level).
                 self._edit_split_f = gface_start   # made absolute below
+                self._edit_split_db = dback_start  # same rule, same moment
             if (not self.scene.entity_visible(g)
                     or getattr(g, "billboard", False)
                     or id(g) in pv_faces
@@ -3722,12 +3813,19 @@ class Viewport(QOpenGLWidget):
                 # head — see ``sink``. The chunk is unusable while a face of
                 # it is hidden.
                 sink["vcol"], sink["tex"] = subj_vcol, subj_by_texture
+                sink["dback"] = subj_dback
                 for face in g.mesh.faces:
                     bucket_face(face)   # push/pull preview suppresses faces
                 sink["vcol"], sink["tex"] = vcol, by_texture
+                sink["dback"] = dback_loose
                 subject_bucketed = True
                 continue
             chunk = self._group_chunk(g)
+            if chunk.get("dback"):
+                dback_parts.append(chunk["dback"])
+                dback_spans.append((chunk.get("bbox"), dback_start,
+                                    len(chunk["dback"]) // 12))
+                dback_start += len(chunk["dback"]) // 12
             face_parts.append(chunk["vcol"])
             group_face_spans.append((chunk.get("bbox"), gface_start,
                                      len(chunk["vcol"]) // 24))
@@ -3805,6 +3903,27 @@ class Viewport(QOpenGLWidget):
             self._back_tcol_runs.append((a, start, count))
             start += count
         self._upload_vbo(self._faces_vbo, "faces", all_face_parts, empty=48)
+
+        # Default-back tint buffer: loose head, group chunks, bucketed
+        # subject tail — the same shape as the faces buffer, so the fade
+        # split and the frustum spans read the same way.
+        db_loose_raw = dback_loose.tobytes()
+        db_loose_n = len(db_loose_raw) // 12
+        db_subj_raw = subj_dback.tobytes()
+        db_parts = [db_loose_raw] + dback_parts + [db_subj_raw]
+        self._dback_spans = ([(None, 0, db_loose_n)]
+                             + [(bb, db_loose_n + st, n)
+                                for bb, st, n in dback_spans])
+        if self._edit_split_db is not None:
+            self._edit_split_db += db_loose_n
+        if db_subj_raw:
+            db_subj_start = db_loose_n + dback_start
+            self._dback_spans.append((None, db_subj_start,
+                                      len(db_subj_raw) // 12))
+            if subject_bucketed and self.scene.edit_group is not None:
+                self._edit_split_db = db_subj_start
+        self._dback_count = self._upload_vbo(
+            self._dback_vbo, "dback", db_parts) // 12
 
         # Textured faces: one interleaved (pos+uv) VBO, a run per image path.
         tex_parts = []
@@ -6090,6 +6209,8 @@ class Viewport(QOpenGLWidget):
             return a.astype(np.float32).tobytes()
 
         entry["edges"] = flat3(entry["edges"])
+        if entry.get("dback"):
+            entry["dback"] = flat3(entry["dback"])
         vc = np.frombuffer(entry["vcol"], dtype=np.float32).reshape(-1, 6).copy()
         vc[:, :3] += dx
         entry["vcol"] = vc.astype(np.float32).tobytes()
@@ -6233,6 +6354,7 @@ class Viewport(QOpenGLWidget):
             "rev": (cur["rev"] + 1) if cur is not None else 0,
             "nv": base["nv"], "ne": base["ne"], "nf": base["nf"],
             "edges": tp32(base["edges"], 3),
+            "dback": tp32(base.get("dback", b""), 3),
             "vcol": tp32(base["vcol"], 6),
             "by_texture": {p: tp32(raw, 5)
                            for p, raw in base["by_texture"].items()},
@@ -6424,10 +6546,12 @@ class Viewport(QOpenGLWidget):
         back_tcol: dict = {}          # opacity -> [parts] (translucent back)
         back_ttex: dict = {}          # ((path, shade), op) -> [parts]
         fcull_vcol_parts: list = []   # front copies culled to the front side
+        dback = array("f")            # pos-only: faces whose back is default
         faces: list = []
         areas: list = []
         tris: list = []
         tri_ent: list = []
+        from core.materials import back_is_default
         for f in mesh.faces:
             i = len(faces)
             faces.append(f)
@@ -6492,6 +6616,11 @@ class Viewport(QOpenGLWidget):
                              [t1.x(), t1.y(), t1.z()],
                              [t2.x(), t2.y(), t2.z()]])
                 tri_ent.append(i)
+            if tri_list and back_is_default(f.attrs):
+                for t0, t1, t2 in tri_list:
+                    dback.extend([t0.x(), t0.y(), t0.z(),
+                                  t1.x(), t1.y(), t1.z(),
+                                  t2.x(), t2.y(), t2.z()])
 
         sprops: dict = {}
 
@@ -6577,6 +6706,7 @@ class Viewport(QOpenGLWidget):
                  "back_tcol": {k: b"".join(v) for k, v in back_tcol.items()},
                  "back_ttex": {k: b"".join(v) for k, v in back_ttex.items()},
                  "fvcol": b"".join(fcull_vcol_parts),
+                 "dback": dback.tobytes(),
                  "faces": faces,
                  "areas": np.asarray(areas, dtype=np.float64),
                  "v0": v0, "e1": e1, "e2": e2, "tri_ent": tri_ent_a,
@@ -6645,7 +6775,7 @@ class Viewport(QOpenGLWidget):
 
     _CHUNK_CACHE_FIELDS = (
         "edges", "vcol", "by_texture", "tcol", "ttex", "back_vcol",
-        "back_tex", "back_tcol", "back_ttex", "fvcol", "areas",
+        "back_tex", "back_tcol", "back_ttex", "fvcol", "dback", "areas",
         "v0", "e1", "e2", "tri_ent", "soft_pts", "soft_n0", "soft_c0",
         "soft_n1", "soft_c1", "soft_single", "bbox", "coordsum",
         "nv", "ne", "nf", "samples")
@@ -6662,8 +6792,8 @@ class Viewport(QOpenGLWidget):
                 return None
             with open(path, "rb") as fh:
                 stored = pickle.load(fh)     # our own cache dir only
-            if stored.get("nf") != len(mesh.faces):
-                return None
+            if stored.get("nf") != len(mesh.faces) or "dback" not in stored:
+                return None          # a cache predating the back-side tint
             entry = dict(stored)
             entry.update(fp=fp, vkey=vkey, rev=0,
                          faces=list(mesh.faces))

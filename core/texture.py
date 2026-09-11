@@ -90,6 +90,32 @@ _DIGEST_PREFIX = re.compile(r"^(?:[0-9a-f]{16}-)+")
 NAME_LIMIT = 64     # characters kept of an image name inside the cache
 
 
+def image_has_cutout(path, cache={}) -> bool:
+    """Whether the image carries REAL transparency (some pixels see-through)
+    — the signature of a photo sprite (a person, a tree, a raschel mesh)
+    versus an opaque photo panel (a sign or mural). What makes a textured
+    material *translucent* in SketchUp's sense. Cached per path; an
+    unreadable image reads as opaque."""
+    cached = cache.get(path)
+    if cached is not None:
+        return cached
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+    img = QImage(str(path))
+    ok = False
+    if not img.isNull() and img.hasAlphaChannel():
+        small = img.scaled(32, 32, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+        for yy in range(small.height()):
+            for xx in range(small.width()):
+                if small.pixelColor(xx, yy).alpha() < 32:
+                    ok = True
+                    break
+            if ok:
+                break
+    cache[path] = ok
+    return ok
+
+
 def texture_file_name(name: str) -> str:
     """Filesystem-safe base name for an image called ``name``: characters
     outside the safe set dropped, any content-hash prefix the name already

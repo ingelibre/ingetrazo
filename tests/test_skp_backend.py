@@ -359,7 +359,9 @@ def test_openskp_adapter_inherits_instance_material():
     payload = skp_openskp._adapt(model, "obra")
 
     attrs = _placed(payload)["faces"][0][2]
-    assert attrs == {"color": [1.0, 0.0, 0.0], "mat": "Wood"}
+    # Painting the component paints BOTH sides of its default faces (the
+    # back inherits too), so the face arrives two-sided.
+    assert attrs == {"color": [1.0, 0.0, 0.0], "mat": "Wood", "back": True}
 
 
 def test_openskp_adapter_face_material_beats_inherited():
