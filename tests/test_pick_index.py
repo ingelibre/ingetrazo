@@ -39,6 +39,7 @@ def _bind(vp):
     vp._translation_probe = Viewport._translation_probe
     vp._samples_match = Viewport._samples_match
     vp._shift_obb = Viewport._shift_obb            # staticmethod
+    vp._compute_obb = Viewport._compute_obb        # staticmethod
     for name in ("_pick_index", "_ray_hits", "_hover_face_t", "pick_face",
                  "pick_face_any", "pick_edge", "pick_vertex", "_project_px",
                  "_np_mvp", "_group_chunk", "_append_textured_face",

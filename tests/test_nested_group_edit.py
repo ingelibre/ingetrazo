@@ -523,3 +523,34 @@ def test_la_caja_de_seleccion_dentro_del_contenedor_toma_a_sus_hijos():
     SelectTool().on_box_select(vp, (0.5, 0.5, 25.0, 0.7), crossing=True,
                                additive=False)
     assert set(scene.selection) == {padre, fuera}, "en la raíz, lo de siempre"
+
+
+def test_la_caja_del_contenedor_sigue_a_sus_hijos():
+    """Al entrar a la pileta importada «el cuadro que enmarca a la pileta es
+    largo cuando la pileta no lo es, y está desfasado: en los ejes cuando la
+    pileta no lo está» (Marco, 2026-09-11). La caja de un contenedor sale de
+    sus hijos, pero se cacheaba en el trozo de su malla propia (vacía):
+    borrar un hijo no la encogía, y entrar —que baja la matriz a los hijos—
+    la deslizaba a los ejes."""
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import oriented_box_corners
+    from tests.test_pick_index import _VP, _bind
+    scene, padre, h1, h2 = _plaza()
+    m = QMatrix4x4()
+    m.translate(10.0, 0.0, 0.0)
+    padre.xform = m                              # la plaza, colocada lejos
+    vp = _bind(_VP(scene))
+    from views.viewport import Viewport
+    vp._compute_obb = Viewport._compute_obb          # staticmethod
+
+    def caja():
+        pts = oriented_box_corners(*vp._group_obb(padre))
+        xs = [p.x() for p in pts]
+        return round(min(xs), 6), round(max(xs), 6)
+
+    assert caja() == (10.0, 14.0)                # jardinera 0..1 y pavimento 3..4, +10
+    scene.begin_group_edit(padre)                # la matriz baja a los hijos
+    assert caja() == (10.0, 14.0), "entrar no mueve la caja: los hijos no se movieron"
+    padre.children.remove(h2)
+    scene.version += 1
+    assert caja() == (10.0, 11.0), "sin el pavimento, la caja encoge"

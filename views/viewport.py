@@ -7600,11 +7600,40 @@ class Viewport(QOpenGLWidget):
         """``(frame, lo, hi)`` of the group in its OWN axes, cached on its
         chunk. A world-aligned box on a rotated object reads as skewed and
         wraps far more air than object — and its corners, which are the
-        handles you grab, end up nowhere near the thing."""
+        handles you grab, end up nowhere near the thing.
+
+        A CONTAINER's box comes from its children, and its own chunk knows
+        nothing about them: cached there, the box outlived a deleted child
+        (the frame stayed long after one of two fountains was gone) and
+        followed the container's own matrix when entering pushed that
+        matrix down into the children — the box slid to the axes while
+        the fountain stayed put (Marco, 2026-09-11). So a container's box
+        is cached per scene version instead: it is recomputed on any
+        change, and ``placement_points`` makes that one matrix multiply
+        per placement."""
+        kids = getattr(group, "children", None)
+        if kids:
+            cache = getattr(self, "_container_obb", None)
+            if cache is None:
+                cache = self._container_obb = {}
+            key = _cache_ver(self)
+            hit = cache.get(id(group))
+            if hit is not None and hit[0] == key:
+                return hit[1]
+            obb = self._compute_obb(group)
+            if len(cache) > 256:            # ids of groups long gone
+                cache.clear()
+            cache[id(group)] = (key, obb)
+            return obb
         entry = self._group_chunk(group)
         obb = entry.get("obb")
         if obb is not None:
             return obb
+        obb = entry["obb"] = self._compute_obb(group)
+        return obb
+
+    @staticmethod
+    def _compute_obb(group):
         from core.group import (frame_from_points, oriented_bounds,
                                 placement_points)
         # The corners come from the POINTS — never from a merged copy of the
@@ -7623,9 +7652,7 @@ class Viewport(QOpenGLWidget):
         # Derived axes are meaningless on organic geometry — a hedge has no
         # dominant plane, and its "own" box came out 25% LARGER than the world
         # one. Keep the derived frame only when it earns its place.
-        obb = own if volume(own) < 0.9 * volume(world) else world
-        entry["obb"] = obb
-        return obb
+        return own if volume(own) < 0.9 * volume(world) else world
 
     def _selection_box_points(self) -> list:
         """The corners of a selected group's bounding box, as degenerate

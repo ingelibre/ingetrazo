@@ -62,6 +62,11 @@ follow [SemVer](https://semver.org).
   los grupos de la raíz. Marco lo vivió con una pileta dentro de un
   componente importado: «quiero seleccionar toda esa pileta, no
   selecciona; quiero eliminar, tampoco puedo».
+- **La caja punteada de un contenedor sigue a sus hijos.** Al entrar a un
+  componente importado el marco salía largo (seguía contando un hijo ya
+  borrado) y corrido hasta los ejes (seguía a la matriz del contenedor,
+  que al entrar baja a los hijos). La caja de un contenedor sale de sus
+  hijos y ahora se recalcula con cada cambio de la escena.
 - **Un cuadro en blanco al editar dentro de un grupo anidado.** Borrar una
   cara (o cualquier cambio) dentro de un hijo de un contenedor dejaba el
   cuadro siguiente sin el grupo, sin sus vecinos, sin ejes y sin muñeco

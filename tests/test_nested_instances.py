@@ -336,7 +336,7 @@ def test_the_selection_box_follows_a_moved_group():
                  "_newell_of", "_area_of", "_tris_of", "_normal_of"):
         setattr(vp, name, getattr(Viewport, name).__get__(vp))
     for name in ("_shift_obb", "_samples_match", "_translation_probe",
-                 "_mesh_fingerprint"):          # staticmethods
+                 "_mesh_fingerprint", "_compute_obb"):   # staticmethods
         setattr(vp, name, getattr(Viewport, name))
     vp.DEFAULT_FACE_COLOR = Viewport.DEFAULT_FACE_COLOR
     vp._LIGHT = Viewport._LIGHT
