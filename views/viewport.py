@@ -52,6 +52,10 @@ _PERF = bool(os.environ.get("INGETRAZO_PERF"))
 # Kill-switch for the instanced component pass (P2): set to 1 to draw
 # every instance through the consolidated VBOs like before.
 _NO_INSTANCING = os.environ.get("INGETRAZO_NO_INSTANCING", "") == "1"
+# Kill-switch for the default-back tint pass (faces have sides, 2026-09-11):
+# set to 1 to draw every paint on both sides like before — a diagnostic,
+# and the escape hatch should a driver misbehave with front culling.
+_NO_BACK_TINT = os.environ.get("INGETRAZO_NO_BACK_TINT", "") == "1"
 _perf_file = None
 
 
@@ -1299,7 +1303,8 @@ class Viewport(QOpenGLWidget):
         # at the depth the face pass already wrote, and LEQUAL lets this
         # later draw win. Plan styles have their own rule (monochrome tints
         # every back, hidden-line none), X-ray keeps the blend clean.
-        if self._dback_count > 0 and mode in ("textures", "shaded"):
+        if (self._dback_count > 0 and mode in ("textures", "shaded")
+                and not _NO_BACK_TINT):
             db_spans = getattr(self, "_dback_spans", None)
             split_db = (getattr(self, "_edit_split_db", None)
                         if fading else None)
@@ -2206,8 +2211,8 @@ class Viewport(QOpenGLWidget):
                         self._program.setUniformValue(self._loc_hard_cutout, 0)
                         self._program.setUniformValue1f(self._loc_shade, 1.0)
                         self._program.setUniformValue(self._loc_use_tex, 0)
-                if entry.get("dback_count") and mode in ("textures",
-                                                          "shaded"):
+                if (entry.get("dback_count") and not _NO_BACK_TINT
+                        and mode in ("textures", "shaded")):
                     # The default back, as the consolidated pass draws it.
                     self._gl.glEnable(GL_CULL_FACE)
                     self._gl.glCullFace(GL_FRONT)
@@ -6668,7 +6673,7 @@ class Viewport(QOpenGLWidget):
         back_tcol: dict = {}          # opacity -> [parts] (translucent back)
         back_ttex: dict = {}          # ((path, shade), op) -> [parts]
         fcull_vcol_parts: list = []   # front copies culled to the front side
-        dback = array("f")            # pos-only: faces whose back is default
+        dback_faces: list = []        # face index → its back is the default
         faces: list = []
         areas: list = []
         tris: list = []
@@ -6739,10 +6744,7 @@ class Viewport(QOpenGLWidget):
                              [t2.x(), t2.y(), t2.z()]])
                 tri_ent.append(i)
             if tri_list and back_is_default(f.attrs):
-                for t0, t1, t2 in tri_list:
-                    dback.extend([t0.x(), t0.y(), t0.z(),
-                                  t1.x(), t1.y(), t1.z(),
-                                  t2.x(), t2.y(), t2.z()])
+                dback_faces.append(i)
 
         sprops: dict = {}
 
@@ -6784,8 +6786,18 @@ class Viewport(QOpenGLWidget):
             t = np.asarray(tris, dtype=np.float64)
             v0, e1, e2 = t[:, 0], t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]
             tri_ent_a = np.asarray(tri_ent, dtype=np.int64)
+            # The default-back tint triangles, cut from the pick triangles
+            # already assembled instead of re-walked per face in Python
+            # (that walk cost the chunk build a fifth on the plaza).
+            if dback_faces:
+                keep = np.zeros(len(faces), dtype=bool)
+                keep[dback_faces] = True
+                dback_raw = t[keep[tri_ent_a]].astype(np.float32).tobytes()
+            else:
+                dback_raw = b""
         else:
             v0 = e1 = e2 = tri_ent_a = None
+            dback_raw = b""
         # World AABB of the chunk (frustum culling): triangle corners cover
         # every face; hard-edge endpoints cover edge-only content.
         blo = bhi = None
@@ -6828,7 +6840,7 @@ class Viewport(QOpenGLWidget):
                  "back_tcol": {k: b"".join(v) for k, v in back_tcol.items()},
                  "back_ttex": {k: b"".join(v) for k, v in back_ttex.items()},
                  "fvcol": b"".join(fcull_vcol_parts),
-                 "dback": dback.tobytes(),
+                 "dback": dback_raw,
                  "faces": faces,
                  "areas": np.asarray(areas, dtype=np.float64),
                  "v0": v0, "e1": e1, "e2": e2, "tri_ent": tri_ent_a,
