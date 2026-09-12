@@ -139,13 +139,15 @@ def _active_cut(scene):
 
 class _SnapEdge:
     """Lightweight edge stand-in fed to the snap engine for group geometry —
-    ``compute_snap`` only reads ``.a``/``.b`` (world endpoints)."""
+    ``compute_snap`` only reads ``.a``/``.b`` (world endpoints). ``center``
+    marks the degenerate one that carries a circle's centre."""
 
-    __slots__ = ("a", "b")
+    __slots__ = ("a", "b", "center")
 
-    def __init__(self, a, b) -> None:
+    def __init__(self, a, b, center: bool = False) -> None:
         self.a = a
         self.b = b
+        self.center = center
 
 
 # OpenGL constants — kept as literals so we don't depend on PyOpenGL.
@@ -494,6 +496,7 @@ class Viewport(QOpenGLWidget):
         "from_point": "From point",
         "through_point": "Through point",
         "perp_face": "Perpendicular to face",
+        "center": "Center",
     }
 
     def __init__(self, parent=None) -> None:
@@ -543,6 +546,13 @@ class Viewport(QOpenGLWidget):
         # active inference, held until Shift is released.
         self._shift_lock: Optional[tuple] = None
         self._hover_edge = None  # last edge under cursor (candidate for capture)
+        # SketchUp's Center inference: the centre of the last circle or arc
+        # the cursor visited (its edge, or a face it bounds), kept as a
+        # reference until another circle takes its place or the tool
+        # changes — «me marca un punto verde en el centro del círculo…
+        # esto me sirve para dibujar, acotar, mover» (Marco, 2026-09-11).
+        # ``(centre, radius, key)``.
+        self._center_ref = None
         # Edge/corner/face hovered while drawing, held as soft references
         # (SketchUp "from point" / "through point" / "perpendicular to face"
         # acquisition). Cleared when no segment is in progress.
@@ -4706,6 +4716,22 @@ class Viewport(QOpenGLWidget):
         # drawn here with a thick, reliable pen.
         self._draw_rubber_band_overlay(painter)
 
+        # The acquired circle centre (SketchUp's Center inference): a small
+        # green dot at the centre of the last circle or arc the cursor
+        # visited, so the reference is visible before you snap to it.
+        ref = getattr(self, "_center_ref", None)
+        snapped_on_it = (self.last_snap is not None
+                         and self.last_snap.kind == "center")
+        if ref is not None and self.active_tool is not None \
+                and not snapped_on_it:
+            pc = self._world_to_pixel(ref[0])
+            if pc is not None:
+                from core.snap import COLOR_ENDPOINT as _CE
+                painter.setPen(QPen(QColor(255, 255, 255, 230), 3.0))
+                painter.setBrush(QColor.fromRgbF(*_CE, 1.0))
+                painter.drawEllipse(QPointF(*pc), 4.0, 4.0)
+                painter.setPen(QPen(QColor.fromRgbF(*_CE, 1.0), 1.5))
+                painter.drawEllipse(QPointF(*pc), 4.0, 4.0)
         # Snap indicator
         if (
             self.active_tool is not None
@@ -4887,6 +4913,14 @@ class Viewport(QOpenGLWidget):
                 painter.setPen(pen)
                 painter.drawLine(QPointF(px - 8, py - 8), QPointF(px + 8, py + 8))
                 painter.drawLine(QPointF(px - 8, py + 8), QPointF(px + 8, py - 8))
+        elif snap.kind == "center":
+            # The centre of a circle: a filled dot, as SketchUp draws it.
+            painter.setPen(halo)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(QPointF(px, py), 6.5, 6.5)
+            painter.setPen(mark)
+            painter.setBrush(QColor.fromRgbF(r, g, b, 0.85))
+            painter.drawEllipse(QPointF(px, py), 6.5, 6.5)
         elif snap.kind in ("endpoint", "origin", "on_edge", "extension", "from_point"):
             rect = QRectF(px - 7, py - 7, 14, 14)
             painter.setPen(halo)
@@ -7631,6 +7665,10 @@ class Viewport(QOpenGLWidget):
         if px is not None:
             near += self._billboard_snap_edges()
         near += self._selection_box_points()
+        ref = getattr(self, "_center_ref", None)
+        if ref is not None:
+            near.append(_SnapEdge(QVector3D(ref[0]), QVector3D(ref[0]),
+                                  center=True))
         sp = _active_cut(self.scene)
         if sp is not None:
             # What the cut hides must not attract snaps (SketchUp): drop
@@ -7715,6 +7753,52 @@ class Viewport(QOpenGLWidget):
         # dominant plane, and its "own" box came out 25% LARGER than the world
         # one. Keep the derived frame only when it earns its place.
         return own if volume(own) < 0.9 * volume(world) else world
+
+    def _update_center_ref(self, x: float, y: float) -> None:
+        """Acquire the centre of the circle or arc under the cursor.
+
+        A loose curve edge gives its own curve; a face gives the curves on
+        its boundary — a cylinder's lid, a rounded corner, a circular hole
+        — placed through the group's matrix when the face is inside one.
+        With several on one face, the one whose points come closest to the
+        cursor wins. Nothing under the cursor keeps the last centre: you
+        hover the rim, then travel to the centre and snap to it."""
+        from core.snap import curve_centers_of_face, fit_circle
+        found = None
+        edge = self._hover_edge
+        cid = getattr(edge, "curve", None) if edge is not None else None
+        if cid is not None:
+            pts = {}
+            for e in self.scene.mesh.curve_edges(edge):
+                pts[id(e.v0)] = e.v0.position
+                pts[id(e.v1)] = e.v1.position
+            fit = fit_circle(list(pts.values())) if len(pts) >= 3 else None
+            if fit is not None:
+                found = (fit[0], fit[1], ("loose", cid))
+        if found is None:
+            face, group = self.pick_face_any(x, y)
+            if face is not None:
+                xf = getattr(group, "xform", None) if group is not None else None
+                centers = curve_centers_of_face(face, xf)
+                if len(centers) == 1:
+                    c, r, cid = centers[0]
+                    found = (c, r, (id(face), cid))
+                elif len(centers) > 1:
+                    # the curve nearest the cursor, by its centre's rim:
+                    # distance from the cursor pixel to the circle's own
+                    # projected centre, minus the projected radius
+                    best = None
+                    for c, r, cid in centers:
+                        pc = self._world_to_pixel(c)
+                        if pc is None:
+                            continue
+                        d = math.hypot(pc[0] - x, pc[1] - y)
+                        if best is None or d < best[0]:
+                            best = (d, c, r, cid)
+                    if best is not None:
+                        found = (best[1], best[2], (id(face), best[3]))
+        if found is not None:
+            self._center_ref = found
 
     def _selection_box_points(self) -> list:
         """The corners of a selected group's bounding box, as degenerate
@@ -8120,6 +8204,7 @@ class Viewport(QOpenGLWidget):
         self.active_tool = tool
         self._hover_entity = None  # stale highlight from the previous tool
         self.last_snap = None      # stale snap marker from the previous tool
+        self._center_ref = None
         self._acquired_edge = None  # drop any held parallel reference
         self._acquired_point = None
         self._acquired_face_normal = None
@@ -8699,6 +8784,7 @@ class Viewport(QOpenGLWidget):
             win.on_viewport_hover(ev.position().x(), ev.position().y())
         self._hover_edge = self.pick_edge(ev.position().x(), ev.position().y())
         _hmark("pickedge")
+        self._update_center_ref(ev.position().x(), ev.position().y())
 
         # While a segment is being drawn, hovering an edge acquires it as a soft
         # parallel reference; the acquisition is dropped once nothing is in

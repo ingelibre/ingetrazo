@@ -33,6 +33,14 @@ follow [SemVer](https://semver.org).
 - **El .igz conserva los nombres de los grupos.** Nunca los escribía: cada
   documento reabierto renumeraba sus grupos y una «Pérgola» volvía como
   «Group 7» (pendiente conocido). Los nuevos no repiten un número guardado.
+- **Inferencia «Centro», como en SketchUp.** Al pasar el cursor por la
+  cara de un círculo (la tapa de un cilindro, un pavimento con un arco en
+  el borde, un hueco circular) o por la arista de la curva, el centro
+  queda marcado con un punto verde y el cursor snapea a él («Centro») para
+  dibujar, acotar o mover. Vale para curvas dibujadas aquí y para las
+  importadas, que no traen id de curva: se leen por sus segmentos suaves o
+  por su forma. La referencia se queda hasta que otro círculo la sustituye
+  o cambias de herramienta.
 - **Dentro de un grupo, el resto del modelo sigue siendo referencia.** Mover
   una jardinera anidada hasta la esquina del pavimento de afuera no daba el
   punto verde: el índice de picking solo conocía el grupo abierto. Ahora
