@@ -45,6 +45,31 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.18" date="2026-09-12">
+      <description>
+        <p>Nested groups, the way SketchUp does them: a group can hold groups,
+        you step into them level by level, and inside one the rest of the
+        model stays a reference — its corners and edges still snap, and the
+        centre of any circle or arc lights up as a green point. Faces have
+        two sides now: paint lands on the side you click, the back keeps the
+        style's colour, and glass, water and mesh read the same from both.
+        Import another IngeTrazo document as one component, placed with a
+        click; the .igz keeps your group names. Plus the fixes a day of real
+        work turned up: deleting and box-selecting inside a component, a
+        mirrored component losing its paint, a ghost of a moved arch.</p>
+        <p xml:lang="es">Grupos anidados como los hace SketchUp: un grupo
+        puede contener grupos, se entra a ellos por niveles, y dentro de uno
+        el resto del modelo sigue siendo referencia — sus esquinas y aristas
+        snapean, y el centro de cualquier círculo o arco se enciende como un
+        punto verde. Las caras tienen dos lados: la pintura cae en el lado que
+        clicas, el reverso conserva el color del estilo, y cristal, agua y
+        malla se ven igual por los dos. Importa otro documento IngeTrazo como
+        un componente que se coloca con un clic; el .igz conserva los nombres
+        de los grupos. Y los arreglos que dejó un día de trabajo real: borrar
+        y seleccionar con caja dentro de un componente, un componente espejado
+        que perdía su pintura, el fantasma de un arco movido.</p>
+      </description>
+    </release>
     <release version="0.3.17" date="2026-09-10">
       <description>
         <p>A whole day modelling a real job, and everything it turned up.

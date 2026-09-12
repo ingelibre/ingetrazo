@@ -6,6 +6,15 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+## [0.3.18] — 2026-09-12
+
+**Mobiliario en la plaza.** La segunda sesión sobre la Plaza Yanque: los
+grupos anidados como los hace SketchUp, la pileta, el arco, la luminaria y
+el campesino traídos de sus propios archivos como componentes, y las caras
+con dos lados. Casi todo lo de abajo lo reportó Marco usándolo, con captura
+o con el modelo vivo delante; el rendimiento se midió antes de publicar
+(`scripts/bench_session.py`): +0,3 ms por cuadro, nada que se sienta.
+
 ### Añadido
 - **Grupos anidados, como en SketchUp.** Un grupo puede contener grupos, y
   se entra a ellos por niveles: doble clic para bajar, Esc o clic afuera
