@@ -485,6 +485,10 @@ class Viewport(QOpenGLWidget):
 
     # Tooltip text shown next to the snap marker, SketchUp-style. English source
     # strings; translated at draw time via ``tr`` (see i18n/es.json).
+    #: How close (px) the cursor must come to an acquired circle centre
+    #: for its green dot to show — beyond that the reference stays silent.
+    CENTER_HINT_PX = 40.0
+
     _SNAP_LABELS = {
         "endpoint": "Endpoint",
         "midpoint": "Midpoint",
@@ -4718,14 +4722,19 @@ class Viewport(QOpenGLWidget):
 
         # The acquired circle centre (SketchUp's Center inference): a small
         # green dot at the centre of the last circle or arc the cursor
-        # visited, so the reference is visible before you snap to it.
-        ref = getattr(self, "_center_ref", None)
+        # visited — shown only once the cursor comes NEAR it, not the whole
+        # time you are on the face («solo debería aparecer cuando me ponga
+        # cerca del medio del círculo», Marco, 2026-09-11).
+        ref = self._valid_center_ref()
         snapped_on_it = (self.last_snap is not None
                          and self.last_snap.kind == "center")
         if ref is not None and self.active_tool is not None \
-                and not snapped_on_it:
+                and not snapped_on_it and self._last_mouse_pos is not None:
             pc = self._world_to_pixel(ref[0])
-            if pc is not None:
+            near = (pc is not None and math.hypot(
+                pc[0] - self._last_mouse_pos.x(),
+                pc[1] - self._last_mouse_pos.y()) <= self.CENTER_HINT_PX)
+            if near:
                 from core.snap import COLOR_ENDPOINT as _CE
                 painter.setPen(QPen(QColor(255, 255, 255, 230), 3.0))
                 painter.setBrush(QColor.fromRgbF(*_CE, 1.0))
@@ -7665,7 +7674,8 @@ class Viewport(QOpenGLWidget):
         if px is not None:
             near += self._billboard_snap_edges()
         near += self._selection_box_points()
-        ref = getattr(self, "_center_ref", None)
+        valid = getattr(self, "_valid_center_ref", None)   # stub VPs in tests
+        ref = valid() if callable(valid) else None
         if ref is not None:
             near.append(_SnapEdge(QVector3D(ref[0]), QVector3D(ref[0]),
                                   center=True))
@@ -7763,42 +7773,83 @@ class Viewport(QOpenGLWidget):
         With several on one face, the one whose points come closest to the
         cursor wins. Nothing under the cursor keeps the last centre: you
         hover the rim, then travel to the centre and snap to it."""
-        from core.snap import curve_centers_of_face, fit_circle
         found = None
         edge = self._hover_edge
-        cid = getattr(edge, "curve", None) if edge is not None else None
-        if cid is not None:
-            pts = {}
-            for e in self.scene.mesh.curve_edges(edge):
-                pts[id(e.v0)] = e.v0.position
-                pts[id(e.v1)] = e.v1.position
-            fit = fit_circle(list(pts.values())) if len(pts) >= 3 else None
-            if fit is not None:
-                found = (fit[0], fit[1], ("loose", cid))
+        if getattr(edge, "curve", None) is not None:
+            found = self._center_of_edge(edge, self.scene.mesh)
         if found is None:
             face, group = self.pick_face_any(x, y)
             if face is not None:
-                xf = getattr(group, "xform", None) if group is not None else None
-                centers = curve_centers_of_face(face, xf)
-                if len(centers) == 1:
-                    c, r, cid = centers[0]
-                    found = (c, r, (id(face), cid))
-                elif len(centers) > 1:
-                    # the curve nearest the cursor, by its centre's rim:
-                    # distance from the cursor pixel to the circle's own
-                    # projected centre, minus the projected radius
-                    best = None
-                    for c, r, cid in centers:
-                        pc = self._world_to_pixel(c)
-                        if pc is None:
-                            continue
-                        d = math.hypot(pc[0] - x, pc[1] - y)
-                        if best is None or d < best[0]:
-                            best = (d, c, r, cid)
-                    if best is not None:
-                        found = (best[1], best[2], (id(face), best[3]))
+                mesh = group.mesh if group is not None else self.scene.mesh
+                found = self._center_of_face(face, group, mesh, x, y)
         if found is not None:
             self._center_ref = found
+        else:
+            self._valid_center_ref()
+
+    def _center_of_edge(self, edge, mesh):
+        from core.snap import fit_circle
+        pts = {}
+        for e in mesh.curve_edges(edge):
+            pts[id(e.v0)] = e.v0.position
+            pts[id(e.v1)] = e.v1.position
+        fit = fit_circle(list(pts.values())) if len(pts) >= 3 else None
+        if fit is None:
+            return None
+        return (fit[0], fit[1], ("edge", edge.curve), self.scene.version,
+                edge, mesh, None)
+
+    def _center_of_face(self, face, group, mesh, x, y):
+        from core.snap import curve_centers_of_face
+        xf = getattr(group, "xform", None) if group is not None else None
+        centers = curve_centers_of_face(face, xf)
+        if not centers:
+            return None
+        if len(centers) == 1:
+            c, r, key = centers[0]
+        else:
+            # Several arcs on one face (a rounded slab): the one whose
+            # centre projects nearest the cursor.
+            best = None
+            for c, r, key in centers:
+                pc = self._world_to_pixel(c)
+                if pc is None:
+                    continue
+                d = math.hypot(pc[0] - x, pc[1] - y)
+                if best is None or d < best[0]:
+                    best = (d, c, r, key)
+            if best is None:
+                return None
+            _d, c, r, key = best
+        return (c, r, (id(face), key), self.scene.version, face, mesh, group)
+
+    def _valid_center_ref(self):
+        """The acquired centre, re-checked against the scene: once the
+        circle is gone the dot goes with it — it lingered after the circle
+        was erased («elimino el círculo y el punto verde continúa allí»,
+        Marco, 2026-09-11) — and once it moved, the centre follows.
+        Costs nothing until the scene changes."""
+        ref = getattr(self, "_center_ref", None)
+        if ref is None:
+            return None
+        if ref[3] == self.scene.version:
+            return ref
+        src, mesh, group = ref[4], ref[5], ref[6]
+        fresh = None
+        if isinstance(src, Face):
+            if src in mesh.faces:
+                # the same arc of the face, wherever it is now
+                from core.snap import curve_centers_of_face
+                xf = getattr(group, "xform", None) if group is not None else None
+                same = [c for c in curve_centers_of_face(src, xf)
+                        if c[2] == ref[2][1]]
+                if same:
+                    fresh = (same[0][0], same[0][1], ref[2],
+                             self.scene.version, src, mesh, group)
+        elif src in mesh.edges:
+            fresh = self._center_of_edge(src, mesh)
+        self._center_ref = fresh
+        return fresh
 
     def _selection_box_points(self) -> list:
         """The corners of a selected group's bounding box, as degenerate

@@ -82,7 +82,8 @@ class _Visor:
         self.snap_threshold_px = 9.0
         self.active_tool = None
         from views.viewport import Viewport
-        for m in ("_update_center_ref", "_snap_scene", "_selection_box_points",
+        for m in ("_update_center_ref", "_center_of_edge", "_center_of_face",
+                  "_valid_center_ref", "_snap_scene", "_selection_box_points",
                   "_billboard_snap_edges", "_nearby_group_edges",
                   "_gedge_screen", "_pick_index", "_group_chunk",
                   "_placements", "_expand_placements", "_context_placements",
@@ -108,7 +109,7 @@ def test_pasar_por_la_cara_del_circulo_deja_el_centro_como_referencia_y_snapea()
     vp._pick = (f, None)
     vp._update_center_ref(30.0, 20.0)                     # el cursor sobre la cara
     assert vp._center_ref is not None
-    c, r, _ = vp._center_ref
+    c, r = vp._center_ref[0], vp._center_ref[1]
     assert (c - V(3, 2)).length() < 1e-6
     # el centro entra al motor de snap como pseudo-arista «center»
     ss = vp._snap_scene(30.0, 20.0)
@@ -132,8 +133,8 @@ def test_la_arista_de_la_curva_tambien_da_el_centro():
     vp = _Visor(scene)
     vp._hover_edge = next(e for e in scene.mesh.edges if e.curve is not None)
     vp._update_center_ref(0.0, 0.0)
-    c, r, key = vp._center_ref
-    assert (c - V(3, 2)).length() < 1e-6 and key[0] == "loose"
+    c, r, key = vp._center_ref[:3]
+    assert (c - V(3, 2)).length() < 1e-6 and key[0] == "edge"
 
 
 def test_un_circulo_importado_sin_id_de_curva_tambien_da_su_centro():
@@ -189,3 +190,29 @@ def test_un_triangulo_no_es_un_circulo_ni_un_trapecio_de_una_revolucion():
         if all((round(q.x(), 6), round(q.y(), 6)) in arc_pts for q in (e.a, e.b)):
             e.soft = True                                  # solo el arco
     assert len(curve_centers_of_face(f)) == 1
+
+
+def test_borrar_el_circulo_se_lleva_el_punto_verde_y_moverlo_lo_arrastra():
+    """«Elimino el círculo y el punto verde continúa allí por unos
+    segundos» (Marco, 2026-09-11): la referencia se revalida con cada
+    cambio de la escena — desaparece con el círculo, y sigue al círculo
+    si este se mueve."""
+    from core.history import EraseSelectionCommand, MoveVerticesCommand
+    scene = Scene()
+    pts = _circle_pts(3.0, 2.0, 1.5)
+    f = scene.mesh.add_face(pts)
+    scene.mesh.tag_curve(pts, closed=True)
+    vp = _Visor(scene)
+    vp._pick = (f, None)
+    vp._update_center_ref(30.0, 20.0)
+    assert vp._center_ref is not None
+    # mover el círculo entero: el centro lo sigue
+    for v in list(scene.mesh.vertices):
+        scene.mesh.move_vertex(v, V(10, 0, 0))
+    scene.version += 1
+    ref = vp._valid_center_ref()
+    assert ref is not None and (ref[0] - V(13, 2)).length() < 1e-6
+    # borrarlo: el punto se va
+    vp.history.execute(EraseSelectionCommand([], [f]))
+    assert vp._valid_center_ref() is None
+    assert vp._snap_scene(30.0, 20.0) is not None
