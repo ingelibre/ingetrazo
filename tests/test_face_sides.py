@@ -341,3 +341,40 @@ def test_el_tinte_del_reves_viaja_con_la_instancia_al_moverla():
     assert ch1 is ch0, "la traslación pura reutiliza la entrada desplazada"
     d1 = np.frombuffer(ch1["dback"], np.float32).reshape(-1, 3)
     assert abs(float(d1[:, 0].min()) - 10.0) < 1e-4, "el tinte se movió con el arco"
+
+
+def test_una_instancia_espejada_conserva_el_frente_de_sus_caras():
+    """«Hice mirror a un componente y sus texturas desaparecen» (Marco,
+    2026-09-11): un espejo da la vuelta al giro de cada triángulo, GL
+    llamaba reverso al lado pintado y el tinte del reverso lo tapaba. El
+    trozo de la instancia intercambia dos esquinas por triángulo, y una
+    instancia espejada no va por el camino instanciado (que dibuja los
+    triángulos del prototipo tal cual)."""
+    import numpy as np
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import Group
+    from core.mesh import Mesh
+    from tests.test_pick_index import _VP, _bind
+    from views.viewport import Viewport
+    scene = Scene()
+    proto = Mesh()
+    f = _quad(proto)                              # normal +Z, giro antihorario
+    f.attrs["color"] = [1, 0.8, 0]
+    inst = Group(proto, name="Luminaria")
+    m = QMatrix4x4()
+    m.scale(-1.0, 1.0, 1.0)                       # espejo en X
+    inst.xform = m
+    scene.groups.append(inst)
+    vp = _bind(_VP(scene))
+    for name in ("_proto_base_chunk", "_normal_of", "_tris_of", "_area_of",
+                 "_newell_of", "_instanced_eligible"):
+        setattr(vp, name, getattr(Viewport, name).__get__(vp))
+    assert vp._instanced_eligible(inst) is False
+    ch = vp._group_chunk(inst)
+    tris = np.frombuffer(ch["vcol"], np.float32).reshape(-1, 3, 6)[:, :, :3]
+    for t in tris:
+        n = np.cross(t[1] - t[0], t[2] - t[0])
+        assert n[2] > 0, "el giro sigue antihorario visto desde +Z: el frente es el frente"
+    db = np.frombuffer(ch["dback"], np.float32).reshape(-1, 3, 3)
+    for t in db:
+        assert np.cross(t[1] - t[0], t[2] - t[0])[2] > 0

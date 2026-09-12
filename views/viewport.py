@@ -1768,6 +1768,13 @@ class Viewport(QOpenGLWidget):
         if (_NO_INSTANCING or getattr(g, "xform", None) is None
                 or getattr(g, "billboard", False)):
             return False
+        if g.xform.determinant() < 0.0:
+            # A MIRRORED placement: the instanced draw runs the prototype's
+            # own triangles through the matrix, which turns them inside out
+            # for GL (front becomes back). The consolidated path draws the
+            # instance chunk, whose winding is put right — see
+            # ``_instance_chunk``. Mirrors are rare; the cost is nothing.
+            return False
         base = self._proto_base_chunk(g.mesh)
         # Translucent / back-side / glass content still rides the
         # consolidated passes (they need global draw ordering).
@@ -6374,12 +6381,22 @@ class Viewport(QOpenGLWidget):
         def tv(a):                       # direction vectors (no translation)
             return a @ L.T
 
-        def tp32(raw, stride, cols=3):
+        det = float(np.linalg.det(L))
+        mirrored = det < 0.0
+
+        def tp32(raw, stride, cols=3, tris=True):
             a = np.frombuffer(raw, np.float32).reshape(-1, stride).copy()
             a[:, :cols] = tp(a[:, :cols].astype(np.float64)).astype(np.float32)
+            if mirrored and tris and len(a) % 3 == 0:
+                # A mirror turns every triangle inside out: what wound
+                # counter-clockwise now winds clockwise, and GL would call
+                # the painted side the BACK — the flipped lamp post came
+                # out in the style's back colour, its yellow base and blue
+                # panels gone («hice mirror a un componente y sus texturas
+                # desaparecen», Marco, 2026-09-11). Swapping two corners of
+                # each triangle keeps the front the front, as SketchUp does.
+                a = a.reshape(-1, 3, stride)[:, [0, 2, 1], :].reshape(-1, stride)
             return a.tobytes()
-
-        det = float(np.linalg.det(L))
         try:
             n_mat = np.linalg.inv(L).T
         except np.linalg.LinAlgError:
@@ -6403,7 +6420,7 @@ class Viewport(QOpenGLWidget):
             "uid": next(_chunk_uid),
             "rev": (cur["rev"] + 1) if cur is not None else 0,
             "nv": base["nv"], "ne": base["ne"], "nf": base["nf"],
-            "edges": tp32(base["edges"], 3),
+            "edges": tp32(base["edges"], 3, tris=False),
             "dback": tp32(base.get("dback", b""), 3),
             "vcol": tp32(base["vcol"], 6),
             "by_texture": {p: tp32(raw, 5)
