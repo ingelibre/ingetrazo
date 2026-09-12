@@ -216,3 +216,33 @@ def test_borrar_el_circulo_se_lleva_el_punto_verde_y_moverlo_lo_arrastra():
     vp.history.execute(EraseSelectionCommand([], [f]))
     assert vp._valid_center_ref() is None
     assert vp._snap_scene(30.0, 20.0) is not None
+
+
+def test_un_circulo_diminuto_en_pantalla_no_ofrece_centro():
+    """«Estoy lejos, me puse cerca de la pileta con el mouse y aparece ese
+    círculo» (Marco, 2026-09-12). La distancia a la que asoma el punto es
+    una parte del tamaño del círculo en pantalla, con tope; y un círculo
+    de menos de 12 px no ofrece centro ni al punto ni al snap."""
+    from views.viewport import Viewport
+    scene = Scene()
+    pts = _circle_pts(3.0, 2.0, 1.5)
+    f = scene.mesh.add_face(pts)
+    scene.mesh.tag_curve(pts, closed=True)
+    vp = _Visor(scene)
+    vp._center_hint_px = Viewport._center_hint_px.__get__(vp)
+    vp.CENTER_HINT_PX, vp.CENTER_MIN_RADIUS_PX = 40.0, 12.0
+    vp._pick = (f, None)
+    vp._update_center_ref(30.0, 20.0)
+    ref = vp._center_ref
+    pc = vp._world_to_pixel(ref[0])
+    # a 10 px/m: radio 15 px → pista a la mitad, 7,5 px
+    assert abs(vp._center_hint_px(ref, pc) - 7.5) < 1e-6
+    assert any(getattr(e, "center", False) for e in vp._snap_scene(30.0, 20.0).edges)
+    # de lejos (1 px/m): radio 1,5 px → nada
+    vp._world_to_pixel = lambda v: (v.x(), v.y())
+    pc = vp._world_to_pixel(ref[0])
+    assert vp._center_hint_px(ref, pc) == 0.0
+    assert not any(getattr(e, "center", False) for e in vp._snap_scene(3.0, 2.0).edges)
+    # de cerca (100 px/m): radio 150 px → tope de 40
+    vp._world_to_pixel = lambda v: (v.x() * 100.0, v.y() * 100.0)
+    assert vp._center_hint_px(ref, vp._world_to_pixel(ref[0])) == 40.0

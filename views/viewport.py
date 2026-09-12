@@ -487,7 +487,11 @@ class Viewport(QOpenGLWidget):
     # strings; translated at draw time via ``tr`` (see i18n/es.json).
     #: How close (px) the cursor must come to an acquired circle centre
     #: for its green dot to show — beyond that the reference stays silent.
+    #: The real radius is a share of the circle's size on screen, capped
+    #: here (see ``_center_hint_px``).
     CENTER_HINT_PX = 40.0
+    #: A circle smaller than this on screen offers no centre at all.
+    CENTER_MIN_RADIUS_PX = 12.0
 
     _SNAP_LABELS = {
         "endpoint": "Endpoint",
@@ -4729,11 +4733,13 @@ class Viewport(QOpenGLWidget):
         snapped_on_it = (self.last_snap is not None
                          and self.last_snap.kind == "center")
         if ref is not None and self.active_tool is not None \
+                and self.active_tool.uses_snap \
                 and not snapped_on_it and self._last_mouse_pos is not None:
             pc = self._world_to_pixel(ref[0])
-            near = (pc is not None and math.hypot(
-                pc[0] - self._last_mouse_pos.x(),
-                pc[1] - self._last_mouse_pos.y()) <= self.CENTER_HINT_PX)
+            near = pc is not None and self._center_hint_px(ref, pc) > 0.0 \
+                and math.hypot(pc[0] - self._last_mouse_pos.x(),
+                               pc[1] - self._last_mouse_pos.y()) \
+                <= self._center_hint_px(ref, pc)
             if near:
                 from core.snap import COLOR_ENDPOINT as _CE
                 painter.setPen(QPen(QColor(255, 255, 255, 230), 3.0))
@@ -7677,8 +7683,12 @@ class Viewport(QOpenGLWidget):
         valid = getattr(self, "_valid_center_ref", None)   # stub VPs in tests
         ref = valid() if callable(valid) else None
         if ref is not None:
-            near.append(_SnapEdge(QVector3D(ref[0]), QVector3D(ref[0]),
-                                  center=True))
+            # No dot, no snap: a circle too small on screen keeps quiet.
+            pc = self._world_to_pixel(ref[0])
+            hint = getattr(self, "_center_hint_px", None)
+            if pc is not None and (hint is None or hint(ref, pc) > 0.0):
+                near.append(_SnapEdge(QVector3D(ref[0]), QVector3D(ref[0]),
+                                      center=True))
         sp = _active_cut(self.scene)
         if sp is not None:
             # What the cut hides must not attract snaps (SketchUp): drop
@@ -7822,6 +7832,23 @@ class Viewport(QOpenGLWidget):
                 return None
             _d, c, r, key = best
         return (c, r, (id(face), key), self.scene.version, face, mesh, group)
+
+    def _center_hint_px(self, ref, pc) -> float:
+        """How close (px) the cursor must come for the centre's dot to show:
+        a share of the circle's own size on screen, capped — so a fountain
+        seen from far, a few pixels across, does not light up whenever the
+        cursor wanders over it («estoy lejos y me puse cerca de la pileta y
+        aparece ese círculo», Marco, 2026-09-12). Zero when the circle is
+        too small on screen to mean anything."""
+        rim = self._world_to_pixel(ref[0] + QVector3D(ref[1], 0.0, 0.0))
+        rim2 = self._world_to_pixel(ref[0] + QVector3D(0.0, ref[1], 0.0))
+        r_px = 0.0
+        for q in (rim, rim2):
+            if q is not None:
+                r_px = max(r_px, math.hypot(q[0] - pc[0], q[1] - pc[1]))
+        if r_px < self.CENTER_MIN_RADIUS_PX:
+            return 0.0
+        return min(self.CENTER_HINT_PX, 0.5 * r_px)
 
     def _valid_center_ref(self):
         """The acquired centre, re-checked against the scene: once the
@@ -8835,7 +8862,10 @@ class Viewport(QOpenGLWidget):
             win.on_viewport_hover(ev.position().x(), ev.position().y())
         self._hover_edge = self.pick_edge(ev.position().x(), ev.position().y())
         _hmark("pickedge")
-        self._update_center_ref(ev.position().x(), ev.position().y())
+        if self.active_tool is not None and self.active_tool.uses_snap:
+            # Only the tools that snap can use a centre; Select and
+            # Push/Pull never pay for the fit.
+            self._update_center_ref(ev.position().x(), ev.position().y())
 
         # While a segment is being drawn, hovering an edge acquires it as a soft
         # parallel reference; the acquisition is dropped once nothing is in
