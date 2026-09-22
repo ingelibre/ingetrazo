@@ -3,6 +3,7 @@
 **A free, SketchUp-inspired 3D modeler for architecture, civil engineering, and 3D printing — built natively for Linux.**
 
 ![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
+![CI](https://github.com/ingelibre/ingetrazo/actions/workflows/ci.yml/badge.svg)
 ![Status: usable](https://img.shields.io/badge/status-usable%20·%200.3.x-brightgreen)
 ![Platform: Linux · Windows · macOS (from source)](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20(source)-informational)
 ![Made in Peru](https://img.shields.io/badge/made%20in-Peru%20%F0%9F%87%B5%F0%9F%87%AA-red)
