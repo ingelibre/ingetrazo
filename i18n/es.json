@@ -1,4 +1,12 @@
 {
+ "Metres (m)": "Metros (m)",
+ "Centimetres (cm)": "Centímetros (cm)",
+ "Millimetres (mm)": "Milímetros (mm)",
+ "Decimal inches (in)": "Pulgadas decimales (in)",
+ "Decimal feet (ft)": "Pies decimales (ft)",
+ "Feet and inches (1'6\")": "Pies y pulgadas (1'6\")",
+ "Fractional inches": "Pulgadas fraccionarias",
+ "Fractional feet and inches": "Pies y pulgadas fraccionarias",
  "Add a terrain profile along a traced path (two clicks or drag)": "Añadir un perfil de terreno a lo largo de un trazado (dos clics o arrastre)",
  "Traced path": "Trazado",
  "Fit to width": "Ajustar al ancho",
