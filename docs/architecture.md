@@ -23,11 +23,19 @@ ingetrazo/
 
 ## Rendering pipeline
 
-The 3D viewport uses **QOpenGLWidget** (PySide6) as the Qt-managed surface and **ModernGL** as the Python-friendly wrapper around OpenGL 3.3+. Shaders live in `resources/shaders/` and are loaded by the `styles/` modules.
+The 3D viewport uses **QOpenGLWidget** (PySide6) as the Qt-managed surface
+with direct OpenGL 3.3 Core calls (`QOpenGLShaderProgram`, `QOpenGLBuffer`,
+VAOs). Shaders live in `resources/shaders/` and are selected by the `styles/`
+modules (Default, Architectural, Shaded, Hidden Line, Monochrome, Wireframe,
+X-ray).
 
 ## Scene graph
 
-To be documented.
+The scene is a flat list of primitives (edges, faces, groups) managed by
+`core/scene.py`. Groups and components provide hierarchy; editing a group
+swaps the active mesh context. The topology layer (`core/topology.py`) keeps
+the shared-vertex mesh consistent, and the hermeticity guard in Push/Pull
+refuses to commit a broken solid.
 
 ## Plugin system
 
