@@ -295,3 +295,29 @@ def test_look_around_and_walk_keep_hearing_the_cursor_above_the_horizon():
     finally:
         win._saved_version = vp.scene.version
         win.close()
+
+
+def test_eye_height_readout_goes_to_the_box_and_the_overlay_skips_it():
+    """The three tools read the eye height with no world point to hang it
+    on — ``value_label`` gives ``(text, None)``. The Measurements box shows
+    the text; the floating label has nowhere to go and must say nothing
+    (it used to hand ``None`` to ``_world_to_pixel`` and kill every paint)."""
+    from PySide6.QtGui import QImage, QPainter
+    win = _window()
+    vp = win.viewport
+    try:
+        _room(vp)
+        for key in ("position_camera", "look_around", "walk"):
+            win._activate_tool(key)
+            text, anchor = vp.active_tool.value_label()
+            assert anchor is None
+            assert vp._measurement_text() == text
+            img = QImage(64, 64, QImage.Format_ARGB32)
+            painter = QPainter(img)
+            try:
+                vp._draw_length_label(painter)
+            finally:
+                painter.end()
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
