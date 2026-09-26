@@ -1231,10 +1231,10 @@ class PartsPanel(QWidget):
         row.addStretch(1)
         row.addWidget(self._copy_btn)
         lay.addLayout(row)
-        self._by_material = QCheckBox(tr("Count identical parts only when "
-                                         "the material matches too"))
+        self._by_material, by_material_row = _wrapping_check(
+            tr("Count identical parts only when the material matches too"))
         self._by_material.setChecked(True)
-        lay.addWidget(self._by_material)
+        lay.addWidget(by_material_row)
 
         # Exploded view (core/explode.py): the parts pulled apart from the
         # assembly's centre. Dragging previews live and lands as ONE undo
@@ -1411,7 +1411,7 @@ class PartsPanel(QWidget):
             self._explode_mode.blockSignals(False)
         self._reassemble_btn.setEnabled(bool(state))
         self._copy_btn.setEnabled(bool(kids))
-        self._by_material.setVisible(bool(kids))
+        self._by_material.parentWidget().setVisible(bool(kids))
         self._split_btn.setEnabled(cont is not None
                                    and not getattr(cont, "billboard", False))
         fit_rows(self.tree, max_rows=14)
@@ -1624,21 +1624,20 @@ class MaterialsPanel(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 6, 8, 8)
 
-        # Active material preview.
-        row = QHBoxLayout()
+        # Active material preview. A flow, so the Default swatch drops to a
+        # second line in a narrow tray instead of widening it.
+        row = FlowLayout(spacing=6)
         row.addWidget(QLabel(tr("Active:")))
         self._preview = QLabel()
         self._preview.setFixedSize(_SWATCH, _SWATCH)
         self._preview.setFrameShape(QFrame.Box)
         row.addWidget(self._preview)
-        row.addStretch(1)
         # SketchUp's «Default» swatch: paints the material OFF a side.
         default_btn = _swatch_button(
             _default_pixmap(),
             tr("Default material (no material) — paint with it to remove "
                "a face's or an object's material"))
         default_btn.clicked.connect(self._apply_default)
-        row.addWidget(default_btn)
         root.addLayout(row)
 
         # SketchUp's "edit material": tile width/height + rotation, tucked
@@ -1654,7 +1653,8 @@ class MaterialsPanel(QWidget):
         self._edit_toggle.setStyleSheet(
             "QToolButton { border: none; padding: 2px; }"
             "QToolButton:hover { background: palette(midlight); }")
-        row.insertWidget(2, self._edit_toggle)
+        row.addWidget(self._edit_toggle)
+        row.addWidget(default_btn)
         self._edit_body = QWidget()
         # Two rows, not one: tile size + rotation above, colour below. A
         # single row with W/H/Rot/Colour/mode/Apply runs past the panel's
@@ -1745,7 +1745,7 @@ class MaterialsPanel(QWidget):
         root.addWidget(self._heading(tr("Library")))
         self._fill_library_categories(root)
 
-        btns = QHBoxLayout()
+        btns = FlowLayout(spacing=4)         # wraps in a narrow tray
         add_color = QPushButton(tr("+ Color…"))
         add_color.clicked.connect(self._add_color)
         add_tex = QPushButton(tr("+ Texture…"))
@@ -3077,6 +3077,36 @@ class _ScrollAnchor(QObject):
         return False
 
 
+def _wrapping_check(text: str):
+    """A check box whose text wraps: ``(checkbox, row widget)``. A long
+    QCheckBox label is one line and sets the tray's minimum width; here the
+    label is a word-wrapping QLabel beside a text-less box, and clicking the
+    label toggles the box like a check box's own text would."""
+    row = QWidget()
+    box = QHBoxLayout(row)
+    box.setContentsMargins(0, 0, 0, 0)
+    check = QCheckBox()
+    label = QLabel(text)
+    label.setWordWrap(True)
+    label.mousePressEvent = lambda _e: check.isEnabled() and check.toggle()
+    box.addWidget(check, 0, Qt.AlignTop)
+    box.addWidget(label, 1)
+    return check, row
+
+
+#: Combo boxes in a tray ask for this many characters, not their longest
+#: item: «Esri World Imagery (satellite)» would otherwise set the width.
+_COMBO_MIN_CHARS = 8
+
+
+def _let_narrow(widget: QWidget) -> None:
+    """Keep a tray's combo boxes from sizing the dock area to their longest
+    item; the popup still shows every item in full."""
+    for combo in widget.findChildren(QComboBox):
+        combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(_COMBO_MIN_CHARS)
+
+
 def _scrolled(sections) -> QScrollArea:
     """A scroll area wrapping a vertical stack of collapsible sections."""
     inner = QWidget()
@@ -3090,6 +3120,7 @@ def _scrolled(sections) -> QScrollArea:
         section.installEventFilter(anchor)
         col.addWidget(section)
     col.addStretch(1)
+    _let_narrow(inner)
     scroll.setWidgetResizable(True)
     scroll.setWidget(inner)
     scroll.setMinimumWidth(240)
@@ -3136,10 +3167,12 @@ class LayersPanel(QWidget):
                                  "highlighted in the list (also: Entity "
                                  "info ▸ Layer, or right-click ▸ Layer)"))
         assign_btn.clicked.connect(self._on_assign)
+        # A flow, not a row: the four buttons wrap when the tray is narrow
+        # instead of setting the whole right-hand dock area's minimum width.
+        row = FlowLayout(spacing=4)
         row.addWidget(add_btn)
         row.addWidget(del_btn)
         row.addWidget(purge_btn)
-        row.addStretch(1)
         row.addWidget(assign_btn)
         lay.addLayout(row)
         self.refresh()
@@ -3342,9 +3375,9 @@ class ScenesPanel(QWidget):
         del_btn = QPushButton(tr("−"))
         del_btn.setToolTip(tr("Delete the selected scene"))
         del_btn.clicked.connect(self._on_delete)
+        row = FlowLayout(spacing=4)          # wraps in a narrow tray (see Layers)
         row.addWidget(add_btn)
         row.addWidget(upd_btn)
-        row.addStretch(1)
         row.addWidget(del_btn)
         lay.addLayout(row)
         self.refresh()
