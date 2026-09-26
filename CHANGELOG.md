@@ -14,6 +14,13 @@ follow [SemVer](https://semver.org).
   Preferencias ya ofrece el portugués, que solo estaba en el menú.
 
 ### Corregido
+- **Tirar hacia arriba contra una pared** (#94, @xyont): un área dibujada en
+  el peldaño de abajo de un escalón, pegada a la contrahuella, no se podía
+  tirar hacia arriba («rompería el sólido»), y bajarla sí. La franja donde el
+  lado nuevo queda pegado a la pared ahora desaparece, como en SketchUp. De
+  paso, los anillos concéntricos empujados a distintas alturas (el «ojo»),
+  que se rechazaban o dejaban una pared dentro del sólido, salen con el
+  volumen exacto.
 - **La esfera con Sígueme sale bien** (#125, #128): un círculo barrido
   alrededor de otro con el mismo centro daba una esfera achatada cuando el
   perfil no caía justo sobre un vértice del camino, y un perfil de círculo

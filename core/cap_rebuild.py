@@ -73,9 +73,15 @@ class RebuildCache:
     entry."""
 
     __slots__ = ("tris", "norm", "cent", "token", "_packed", "_comp",
-                 "_comp_token", "seed_faces", "_scope", "_scope_token")
+                 "_comp_token", "seed_faces", "_scope", "_scope_token",
+                 "dropped")
 
     def __init__(self) -> None:
+        #: Outlines (3D segment pairs) of the strips a rebuild found inside
+        #: the solid and dropped (issue #94): the planes beside them must be
+        #: looked at again when a seam is left there — see
+        #: :func:`edges_along` and ``tools.pushpull._seam_planes_along``.
+        self.dropped: list = []
         self.tris: dict = {}
         self.norm: dict = {}
         self.cent: dict = {}
@@ -500,6 +506,17 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
     fresh_cover_polys = _proj_polys(f for f in fresh_set if not f.interior)
     old_polys = _proj_polys(f for f in scope_faces
                             if f not in fresh_set or f.interior)
+    # An OUTWARD push whose side lands back to back on a boundary face — the
+    # riser a step's pulled-up square rises against: the old face and the
+    # fresh side cover the same spot with OPPOSITE windings, and material
+    # now reads on both sides because the push put it there. That strip is
+    # inside the solid; it goes, as in SketchUp. Kept as a «partition» it
+    # left the side standing inside the solid, three faces on its edges,
+    # and the guard refused the pull (issue #94, @xyont: «cannot pull up…
+    # push down working properly»). Only that exact pairing: any other old
+    # face covering a both-sides region keeps its partition role.
+    old_boundary_polys = _proj_polys(f for f in scope_faces
+                                     if f not in fresh_set and not f.interior)
 
     # Group boundary regions by which side holds the material — each group is
     # unioned separately because its faces wind the other way (outward points
@@ -540,6 +557,22 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
                 # side emptied (parity can be blind to a void still walled in
                 # by an untrimmed neighbouring plane).
                 solid_by_side[not decl.pop()].append((outer_xy, holes_xy))
+            elif (not removing and not keep_mode
+                    and any(_poly_covers(poly, ip_xy) and any(
+                        _poly_covers(fpoly, ip_xy) and fplus != plus
+                        for fpoly, fplus in fresh_polys)
+                        for poly, plus in old_boundary_polys)):
+                # The strip is inside the solid now, and so is its outline:
+                # the old crease along its rim (a riser's top edge) is the
+                # op's seam from here on, free to dissolve when the next
+                # round rebuilds the plane beside it (fuzz prism seed 80).
+                rim = [(to3d(loop[i]), to3d(loop[(i + 1) % len(loop)]))
+                       for loop in (outer_xy, *holes_xy)
+                       for i in range(len(loop))]
+                if op is not None:
+                    op.extend(rim)
+                if cache is not None:
+                    cache.dropped.extend(rim)
             elif (not removing or not decl) and (
                 any(_poly_covers(poly, ip_xy) for poly, _ in old_polys)
                 or (keep_mode and any(_poly_covers(poly, ip_xy)
@@ -779,6 +812,31 @@ def crack_planes(mesh) -> list:
         if key not in seen:
             seen[key] = (origin, n)
     return list(seen.values())
+
+
+def edges_along(mesh, segments) -> list:
+    """Every edge of ``mesh`` lying along one of ``segments`` — the outline
+    of a strip a rebuild dropped as inside the solid (issue #94). The plane
+    beside it was rebuilt BEFORE the strip went and kept that rim as a crease
+    between two faces that are now coplanar (fuzz prism seed 80); the caller
+    dissolves exactly those, and nothing else in the plane is recomputed —
+    a full re-rebuild there misread open sheets (the rings' membranes) as
+    material and capped a hole."""
+    if not segments:
+        return []
+
+    def on(p, a, b) -> bool:
+        ab = b - a
+        L2 = ab.lengthSquared()
+        if L2 < 1e-18:
+            return (p - a).length() < _ON_PLANE
+        t = QVector3D.dotProduct(p - a, ab) / L2
+        if t < -1e-9 or t > 1 + 1e-9:
+            return False
+        return (a + ab * t - p).length() < _ON_PLANE
+
+    return [e for e in mesh.edges
+            if any(on(e.a, a, b) and on(e.b, a, b) for a, b in segments)]
 
 
 def seam_planes(mesh, new_faces) -> list:

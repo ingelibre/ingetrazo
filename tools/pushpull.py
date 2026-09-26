@@ -59,6 +59,7 @@ from core.cap_rebuild import (
     RebuildCache,
     apply_rebuild,
     crack_planes,
+    edges_along,
     plane_key,
     prune_plane_debris,
     seam_planes,
@@ -201,6 +202,23 @@ def _paint_of(face) -> dict:
         paint["texture"] = {**{k: v for k, v in tex.items() if k != "uvw"},
                             "planar": True}
     return paint
+
+
+def _seam_planes_along(mesh, segments) -> list:
+    """``(origin, normal)`` of each plane where an edge along ``segments``
+    parts two coplanar faces facing the same way with the same paint."""
+    out = []
+    for e in edges_along(mesh, segments):
+        if len(e.faces) != 2:
+            continue
+        fa, fb = e.faces
+        if (fa.interior or fb.interior
+                or (fa.attrs or {}) != (fb.attrs or {})
+                or QVector3D.dotProduct(fa.normal().normalized(),
+                                        fb.normal().normalized()) < 0.9999):
+            continue
+        out.append((fa.centroid(), fa.normal()))
+    return out
 
 
 class PushPullTool(Tool):
@@ -1487,6 +1505,16 @@ class PushPullTool(Tool):
             for origin, plane_n in crack_planes(mesh):
                 planes.setdefault(plane_key(origin, plane_n)[0],
                                   (origin, plane_n))
+            # A strip the last round dropped as inside the solid (#94) leaves
+            # its rim as a crease in the plane beside it, rebuilt before the
+            # strip went: two faces now coplanar, same way, same paint (fuzz
+            # prism seed 80). Only a plane with such a seam is looked at again
+            # — re-rebuilding every plane along the rim misread the rings'
+            # open sheets as material and capped a hole.
+            for origin, plane_n in _seam_planes_along(mesh, cache.dropped):
+                planes.setdefault(plane_key(origin, plane_n)[0],
+                                  (origin, plane_n))
+            cache.dropped = []
             changed = False
             for key in sorted(planes):
                 origin, plane_n = planes[key]

@@ -1,17 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Concentric-rings push (the 'eye' model): three concentric circles on a slab,
-pushed ring by ring. Documents the known deep class — pushing a HOLED ring
-whose neighbours already sit at different levels either cracks (guard restores)
-or is digested back to the original by the per-plane rebuild — and pins the
-BIM-grade behaviour: the mesh stays watertight and untouched, and the user is
-TOLD (status message). The desired outcome (the ring actually moving) is the
-strict xfail, to flip when the region-identity rebuild lands."""
+pushed ring by ring. Each ring rises against the wall of the one around it —
+the new prism's side lands back to back on an existing wall, the shape of
+issue #94. That used to be the known deep class (the wall kept as an interior
+partition, then the next push refused); since #94 the wall goes and every push
+lands with the exact volume. The guard still refuses what would break the
+solid — see the tops-out test below."""
 from __future__ import annotations
 
 import math
 
-import pytest
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QVector3D
 
@@ -96,22 +95,41 @@ def _rings(scene):
     return ext
 
 
-def test_ring_push_refusal_is_failsafe_and_announced():
+def _volume(mesh):
+    v = 0.0
+    for f in mesh.faces:
+        for a, b, c in f.triangulate():
+            v += QVector3D.dotProduct(a, QVector3D.crossProduct(b, c)) / 6.0
+    return v
+
+
+def test_ring_pushes_between_levels_land_exactly():
+    """Each ring rises against the wall of the one around it — the side of
+    the new prism lands back to back on an existing wall, as in #94. Until
+    #94 the first push kept that wall as an interior partition (volume
+    391.9 instead of 406.4) and the second was refused outright; now the
+    wall between them goes and both land with the exact volume."""
     vp, sc = _setup()
     _push(vp, _rings(sc), 2.0)
+    v0 = _volume(sc.mesh)
     ring1 = [f for f in sc.mesh.faces if _at0(f)
              and abs(f.area() - 77.65) < 2 and f.hole_loops][0]
+    a1 = ring1.area() - 27.95                       # r5 minus its r3 hole
     _push(vp, ring1, 1.0)
     assert is_closed(sc.mesh)
-    faces_before = len(sc.mesh.faces)
+    assert abs(_volume(sc.mesh) - (v0 + a1 * 1.0)) < 2e-2
     ring2 = [f for f in sc.mesh.faces if _at0(f)
              and abs(f.area() - 27.95) < 2 and f.hole_loops][0]
+    a2 = ring2.area() - 6.99                        # r3 minus its r1.5 hole
+    v1 = _volume(sc.mesh)
     _push(vp, ring2, 0.5)
-    assert is_closed(sc.mesh)                       # never commits a crack
-    assert len(sc.mesh.faces) == faces_before       # untouched
-    ring2_z = {round(v.position.z(), 3) for v in ring2.loop}
-    assert ring2_z == {0.0}                         # really did not move
-    assert any("refused" in m.lower() for m in vp.messages)  # user is told
+    assert is_closed(sc.mesh)
+    assert abs(_volume(sc.mesh) - (v1 + a2 * 0.5)) < 2e-2
+    assert not any("refused" in m.lower() for m in vp.messages)
+    # No wall stays inside the solid: every edge of the rings' solid has
+    # two faces, bar the membranes still spanning the innermost hole.
+    from collections import Counter
+    assert Counter(len(e.faces) for e in sc.mesh.edges)[3] == 24
 
 
 def test_refused_push_tops_out_at_the_reachable_height():
@@ -189,20 +207,3 @@ def test_add_face_drops_nested_holes():
     for a, b, c in face.triangulate():
         cen = (a + b + c) / 3.0
         assert math.hypot(cen.x(), cen.y()) > 2.0 - 1e-6
-
-
-@pytest.mark.xfail(reason="holed-ring push between mixed neighbour levels "
-                          "needs the region-identity rebuild (A.3)",
-                   strict=True)
-def test_ring_push_between_levels_actually_moves():
-    vp, sc = _setup()
-    _push(vp, _rings(sc), 2.0)
-    ring1 = [f for f in sc.mesh.faces if _at0(f)
-             and abs(f.area() - 77.65) < 2 and f.hole_loops][0]
-    _push(vp, ring1, 1.0)
-    ring2 = [f for f in sc.mesh.faces if _at0(f)
-             and abs(f.area() - 27.95) < 2 and f.hole_loops][0]
-    _push(vp, ring2, 0.5)
-    ring2_z = {round(v.position.z(), 3) for v in ring2.loop}
-    assert ring2_z == {-0.5}                        # desired: it just works
-    assert is_closed(sc.mesh)

@@ -306,7 +306,14 @@ def _interior_probe(face) -> QVector3D:
     rule-set is hardened around it, and switching those probes destabilised
     seeds (prism 151, plan 179, cube 214) for no gain."""
     if not face.hole_loops:
-        return face.centroid()
+        c = face.centroid()
+        if _on_face(face, c):
+            return c
+        # A NON-CONVEX face (an L, a U) can have its vertex average off its
+        # own material — in the notch, where a step's pulled-up square now
+        # stands — and probing from there read a boundary wall and floor as
+        # interior partitions: a closed, correct solid whose volume came out
+        # 2.3 m³ short (issue #94). Only then the largest triangle.
     tris = face.triangulate()
     if not tris:
         return face.centroid()
@@ -315,6 +322,19 @@ def _interior_probe(face) -> QVector3D:
         key=lambda t: QVector3D.crossProduct(t[1] - t[0],
                                              t[2] - t[0]).lengthSquared())
     return (t0 + t1 + t2) / 3.0
+
+
+def _on_face(face, p: QVector3D) -> bool:
+    """Whether ``p`` (on the face's plane) lies inside its outer loop."""
+    from core.arrangement import _point_in_polygon, plane_basis
+    n = face.normal()
+    if n.length() < 1e-12:
+        return True
+    u, v = plane_basis(n.normalized())
+    loop = [((q - p).x() * u.x() + (q - p).y() * u.y() + (q - p).z() * u.z(),
+             (q - p).x() * v.x() + (q - p).y() * v.y() + (q - p).z() * v.z())
+            for q in face.vertices]
+    return _point_in_polygon((0.0, 0.0), loop)
 
 
 # ---- Public API ------------------------------------------------------------
