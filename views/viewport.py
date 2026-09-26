@@ -5592,18 +5592,8 @@ class Viewport(QOpenGLWidget):
         hook = getattr(self.active_tool, "draw_overlay", None)
         if callable(hook):
             hook(self, painter)
-        # Extensions' overlays (``ExtensionApp.add_overlay``): whatever the
-        # active tool, and never able to break the frame.
-        for fn in list(getattr(self, "_ext_overlays", ())):
-            painter.save()
-            try:
-                fn(self, painter)
-            except Exception:  # noqa: BLE001 — a plugin never breaks paint
-                import logging
-                logging.getLogger("ingetrazo.plugins").exception(
-                    "extension overlay failed")
-            finally:
-                painter.restore()
+        # Extensions' overlays (``ExtensionApp.add_overlay``).
+        self._draw_extension_overlays(painter)
 
         # Terrain-surface fills (draped / flat) under the georef paths — Track G.
         self._draw_geo_surfaces(painter)
@@ -7224,6 +7214,42 @@ class Viewport(QOpenGLWidget):
         if t0 > t1:
             return None
         return [(x0 + dx * t0, y0 + dy * t0), (x0 + dx * t1, y0 + dy * t1)]
+
+    def _draw_extension_overlays(self, painter: QPainter) -> None:
+        """Extensions' overlays (``ExtensionApp.add_overlay``): whatever the
+        active tool, and never able to break the frame. Each call is fenced
+        by save/restore, and one that raises is logged ONCE and dropped: a
+        paint handler failing on every frame would flood the log and leave
+        the view half drawn for good."""
+        for fn in list(getattr(self, "_ext_overlays", ())):
+            painter.save()
+            try:
+                fn(self, painter)
+            except Exception:  # noqa: BLE001 — a plugin never breaks paint
+                import logging
+                logging.getLogger("ingetrazo.plugins").exception(
+                    "extension overlay %r failed; removed", fn)
+                try:
+                    self._ext_overlays.remove(fn)
+                except ValueError:
+                    pass
+            finally:
+                painter.restore()
+
+    def world_to_pixel(self, world: QVector3D) -> Optional[tuple[float, float]]:
+        """Public API (extensions): world point (metres) → widget pixel
+        ``(x, y)`` in logical pixels, or ``None`` when the point is behind
+        the camera. The same projection the host's own overlays use."""
+        return self._world_to_pixel(world)
+
+    def world_to_pixels(self, pts):
+        """Public API (extensions): an ``(N, 3)`` float array of world points
+        (metres) → ``(px, py, in_front)`` NumPy arrays, vectorised — for
+        overlays with thousands of points, where a Python loop over
+        :meth:`world_to_pixel` would cost frames. Points with
+        ``in_front == False`` are behind the camera; skip them."""
+        import numpy as np
+        return self._project_px(np.asarray(pts, dtype=float).reshape(-1, 3))
 
     def _world_to_pixel(self, world: QVector3D) -> Optional[tuple[float, float]]:
         """World point → screen pixel (or None if behind the camera)."""
@@ -10262,6 +10288,36 @@ class Viewport(QOpenGLWidget):
         """Step out ONE level — SketchUp's Esc, which leaves you inside the
         parent when the group you were editing lived in another group."""
         self._leave_group_edit(todos=False)
+
+    def set_document(self, scene, history) -> tuple:
+        """Show another document: ``scene`` with its own undo ``history``
+        (for an extension's workspace, ``ExtensionApp.enter_workspace``).
+        Returns the ``(scene, history)`` pair it replaces, untouched, to be
+        handed back later — the parked document keeps its undo steps and its
+        selection.
+
+        A document boundary like New / Open: the id()-keyed chunk caches
+        are reset (:meth:`reset_document_caches`), and since the other
+        render caches remember the scene VERSION they were built for, not
+        which scene it was, the incoming scene is moved past every version
+        this viewport has shown before it is drawn."""
+        self.end_group_edit()
+        old = (self.scene, self.history)
+        self.reset_document_caches()
+        seen = max(getattr(self, "_versions_seen", 0), self.scene.version, scene.version)
+        scene.version = self._versions_seen = seen + 1
+        self.scene = scene
+        self.history = history
+        from core import units as _units
+        _units.bind_scene(scene)
+        self._edges_version = -1
+        self._hover_entity = None
+        self._hover_edge = None
+        self.last_snap = None
+        self.reference_edge = None
+        self.reference_mode = None
+        self.notify_scene_changed()
+        return old
 
     def end_group_edit(self) -> None:
         """Leave every open group, back to the model. What the menus and the

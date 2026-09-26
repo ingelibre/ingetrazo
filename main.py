@@ -88,8 +88,8 @@ def _open_document_in(window, doc: "Path") -> None:
     the window must be visible, not frozen pre-show). Shared by the initial
     launch and the single-instance second-launch handler."""
     ext = doc.suffix.lower()
-    if ext == ".igz":
-        window.open_path(doc)
+    if ext == ".igz" or ext in getattr(window, "file_openers", {}):
+        window.open_path(doc)       # an extension's own type goes to its opener
     elif ext == ".skp":
         from PySide6.QtCore import QTimer
 

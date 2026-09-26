@@ -167,6 +167,16 @@ class MainWindow(QMainWindow):
         # model is saved as .igz — opening a SketchUp file natively should
         # read as opening THAT file (user request).
         self._import_name: Optional[str] = None
+        #: An extension's workspace shown instead of the model, and the model
+        #: parked meanwhile; see :meth:`enter_workspace`.
+        self._workspace = None
+        self._parked: Optional[dict] = None
+        #: Tool keys a workspace allows (None = every tool).
+        self._tool_filter: Optional[set] = None
+        #: Suffix (".xyz") → callable(path) -> bool: documents an extension
+        #: opens itself (``ExtensionApp.add_file_opener``), from Open Recent,
+        #: the command line or a double-click.
+        self.file_openers: dict = {}
         self._saved_version: int = 0
 
         self._setup_ui()
@@ -369,6 +379,8 @@ class MainWindow(QMainWindow):
             gc.collect()
         if not self._is_dirty():
             return
+        if self._workspace is not None:
+            return                      # the model is parked; the workspace saves its own
         version = self.viewport.scene.version
         if version == getattr(self, "_autosaved_version", None):
             return
@@ -1072,7 +1084,13 @@ class MainWindow(QMainWindow):
         # away and comes back; the strip at the right edge stays.
         window_menu.addAction(self._act_sidebar)
 
-        window_menu.addSeparator()
+        # Extension panels (ExtensionApp.add_panel) list their toggles
+        # here, after this separator.
+        self._window_menu = window_menu
+        self._plugin_dock_sep = window_menu.addSeparator()
+        self._plugin_dock_sep.setVisible(False)
+
+        self._plugin_dock_anchor = window_menu.addSeparator()
         prefs_action = QAction(tr("Preferences…"), self)
         prefs_action.triggered.connect(self._on_preferences)
         window_menu.addAction(prefs_action)
@@ -1507,6 +1525,37 @@ class MainWindow(QMainWindow):
         from PySide6.QtGui import QDesktopServices
         QDesktopServices.openUrl(QUrl(self.PLUGIN_GUIDE_URL))
 
+    # ---- Extension panels (views.extension_api.ExtensionApp.add_panel) -------
+    def _register_extension_dock(self, dock) -> None:
+        """Give an extension's panel what the built-in trays get for free.
+
+        ``setup(app)`` may add a panel after ``restoreState`` laid the window
+        out, and an extension may add one later still (the first time its
+        tool runs), so here a panel gets:
+
+        - **its saved place.** ``restoreDockWidget`` puts it back where the
+          user left it last session (area, size, floating, tabbed) when the
+          window state knows its ``objectName`` — which is why that name
+          must be stable across versions;
+        - **a first place** when there is none: tabbed with the trays;
+        - **a Window-menu entry** (its ``toggleViewAction``), so a closed
+          panel always has a way back."""
+        if not self.restoreDockWidget(dock):
+            self.addDockWidget(Qt.RightDockWidgetArea, dock)
+            anchor = next((d for d in reversed(self._sidebar_docks())
+                           if d is not dock and d.objectName() != dock.objectName()), None)
+            if anchor is not None:
+                self.tabifyDockWidget(anchor, dock)
+        self._extension_docks.append(dock)
+        menu = getattr(self, "_window_menu", None)
+        if menu is not None:
+            self._plugin_dock_sep.setVisible(True)
+            menu.insertAction(self._plugin_dock_anchor, dock.toggleViewAction())
+
+    def extension_panels(self) -> dict:
+        """``objectName`` → dock for every panel an extension added."""
+        return {d.objectName(): d for d in self._extension_docks}
+
     def _activate_plugin_tool(self, key: str) -> None:
         """Run a plugin tool from the Extensions menu.
 
@@ -1829,6 +1878,10 @@ class MainWindow(QMainWindow):
 
     # ---- Tool routing -------------------------------------------------------
     def _activate_tool(self, key: str) -> None:
+        if self._tool_filter is not None and key not in self._tool_filter:
+            self.statusBar().showMessage(
+                tr("{name} is not available here.", name=tr(self._tools[key].name)), 3000)
+            return
         tool = self._tools[key]
         self.viewport.set_active_tool(tool)
         action = self._tool_actions.get(key)
@@ -3279,7 +3332,10 @@ class MainWindow(QMainWindow):
     def _apply_camera_home(self) -> None:
         """Look at what the document's author was looking at; a document
         from before the camera was saved keeps the view as it is."""
-        home = getattr(self.viewport.scene, "camera_home", None)
+        self._apply_camera_dict(getattr(self.viewport.scene, "camera_home", None))
+
+    def _apply_camera_dict(self, home) -> None:
+        """Put the camera where :meth:`_camera_dict` found it."""
         if not isinstance(home, dict):
             return
         cam = self.viewport.camera
@@ -3324,6 +3380,83 @@ class MainWindow(QMainWindow):
             return [sys.executable, flag]
         return [sys.executable, str(app_root() / "main.py"), flag]
 
+    # ---- Extension workspaces (ExtensionApp.enter_workspace) ----------------
+    def enter_workspace(self, workspace) -> bool:
+        """Show an extension's own document instead of the model — a CAM
+        job's drawing on its stock, say (docs/plugins.md, «Workspaces»).
+
+        The model is PARKED, not closed: its scene, undo history, camera,
+        file and saved state wait untouched until :meth:`leave_workspace`.
+        Meanwhile File ▸ New / Open / Save / Save As, the title, the
+        unsaved-changes prompts and quitting go to ``workspace``, the
+        model's autosave pauses, and only the tools in
+        ``workspace.allowed_tools`` (None = all) can be picked.
+
+        ``workspace`` provides ``scene``, ``history``, ``title()``,
+        ``is_dirty()``, ``save()``, ``save_as()`` and ``confirm_leave()``
+        (True when it may go: saved, discarded, or nothing to lose);
+        optionally ``new()``, ``open()``, ``allowed_tools``, ``camera``
+        (a :meth:`_camera_dict`) and ``left()``, called once it is gone.
+        Returns False when a workspace is already shown."""
+        if self._workspace is not None:
+            return False
+        self._activate_tool("select")
+        vp = self.viewport
+        vp.end_group_edit()
+        self._parked = {
+            "clean": not self._is_dirty(),
+            "path": self._current_path,
+            "import_name": self._import_name,
+            "camera": self._camera_dict(),
+        }
+        self._parked["scene"], self._parked["history"] = vp.set_document(
+            workspace.scene, workspace.history)
+        self._workspace = workspace
+        self.set_tool_filter(getattr(workspace, "allowed_tools", None))
+        self._apply_camera_dict(getattr(workspace, "camera", None))
+        if getattr(self, "_sheet_tabs", None) is not None:
+            self._sheet_tabs.setVisible(False)   # sheets belong to the model
+        self._update_title()
+        return True
+
+    def leave_workspace(self) -> bool:
+        """Back to the parked model; False when the workspace would not go
+        (its user cancelled the unsaved-changes prompt)."""
+        ws = self._workspace
+        if ws is None:
+            return True
+        if not ws.confirm_leave():
+            return False
+        self._activate_tool("select")
+        p = self._parked
+        if hasattr(ws, "camera"):
+            ws.camera = self._camera_dict()
+        self.viewport.set_document(p["scene"], p["history"])
+        self._workspace, self._parked = None, None
+        self.set_tool_filter(None)
+        self._current_path = p["path"]
+        self._import_name = p["import_name"]
+        # set_document moved the version on: a model that was saved stays so.
+        self._saved_version = self.viewport.scene.version if p["clean"] else -1
+        self._apply_camera_dict(p["camera"])
+        if getattr(self, "_sheet_tabs", None) is not None:
+            self._sheet_tabs.setVisible(True)
+        self._update_title()
+        if hasattr(ws, "left"):
+            ws.left()
+        return True
+
+    def workspace(self):
+        """The extension workspace shown instead of the model, or None."""
+        return self._workspace
+
+    def set_tool_filter(self, allowed) -> None:
+        """Only the tools keyed in ``allowed`` can be picked (toolbar,
+        menus, shortcuts); None allows every tool again."""
+        self._tool_filter = set(allowed) if allowed is not None else None
+        for key, action in self._tool_actions.items():
+            action.setEnabled(self._tool_filter is None or key in self._tool_filter)
+
     def _on_new_window(self) -> None:
         from PySide6.QtCore import QProcess
         cmd = self._new_window_command()
@@ -3332,6 +3465,9 @@ class MainWindow(QMainWindow):
                                 tr("Could not start another IngeTrazo window."))
 
     def _on_new(self) -> None:
+        if self._workspace is not None and hasattr(self._workspace, "new"):
+            self._workspace.new()
+            return
         self.viewport.end_group_edit()
         if not self._confirm_discard(tr("Discard current drawing?")):
             return
@@ -3439,6 +3575,9 @@ class MainWindow(QMainWindow):
         self.open_path(path)
 
     def _on_open(self) -> None:
+        if self._workspace is not None and hasattr(self._workspace, "open"):
+            self._workspace.open()
+            return
         self.viewport.end_group_edit()
         if not self._confirm_discard(
                 tr("Discard current drawing and open another?")):
@@ -3459,8 +3598,16 @@ class MainWindow(QMainWindow):
 
         ``.igz`` is our native format; ``.dae``/``.skp`` are the interchange
         formats we also register in the desktop entry, so double-clicking one
-        imports it rather than failing to parse it as an IngeTrazo document."""
+        imports it rather than failing to parse it as an IngeTrazo document.
+        An extension may claim a suffix of its own
+        (``ExtensionApp.add_file_opener``); anything else needs the model,
+        so a workspace in front of it is left first."""
         suffix = path.suffix.lower()
+        opener = self.file_openers.get(suffix)
+        if opener is not None:
+            return bool(opener(path))
+        if self._workspace is not None and not self.leave_workspace():
+            return False
         if suffix == ".dae":
             self._import_dae_path(path)
             return True
@@ -3556,6 +3703,10 @@ class MainWindow(QMainWindow):
         gc.collect()
 
     def _on_save(self) -> None:
+        if self._workspace is not None:
+            self._workspace.save()
+            self._update_title()
+            return
         self.viewport.end_group_edit()
         if self._current_path is None:
             self._on_save_as()
@@ -3563,6 +3714,10 @@ class MainWindow(QMainWindow):
         self._do_save(self._current_path)
 
     def _on_save_as(self) -> None:
+        if self._workspace is not None:
+            self._workspace.save_as()
+            self._update_title()
+            return
         self.viewport.end_group_edit()
         default_name = (
             self._current_path.name if self._current_path is not None else "untitled.igz"
@@ -5323,12 +5478,18 @@ class MainWindow(QMainWindow):
         return answer == QMessageBox.Discard
 
     def _is_dirty(self) -> bool:
+        if self._workspace is not None:
+            return bool(self._workspace.is_dirty())
         return self.viewport.scene.version != self._saved_version
 
     def _on_scene_version_changed(self, _version: int) -> None:
         self._update_title()
 
     def _update_title(self) -> None:
+        if self._workspace is not None:
+            marker = " *" if self._is_dirty() else ""
+            self.setWindowTitle(f"IngeTrazo — {self._workspace.title()}{marker}")
+            return
         if self._current_path is not None:
             name = self._current_path.name
         elif self._import_name:
@@ -5341,6 +5502,10 @@ class MainWindow(QMainWindow):
 
     # ---- Window lifecycle ---------------------------------------------------
     def closeEvent(self, event) -> None:
+        # A workspace first (its own unsaved job), then the model it parked.
+        if self._workspace is not None and not self.leave_workspace():
+            event.ignore()
+            return
         if not self._confirm_discard(tr("Quit IngeTrazo?")):
             event.ignore()
             return

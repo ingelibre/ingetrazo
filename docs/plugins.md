@@ -117,7 +117,7 @@ plugins; the details are in the AI plugins' comments).
 
 A plugin that needs more than a menu entry defines a module-level
 `setup(app)`. It is called once, when the main window is built, with an
-`ExtensionApp` (`views/extension_api.py`, `API_VERSION` 1). A plugin may
+`ExtensionApp` (`views/extension_api.py`, `API_VERSION` 2). A plugin may
 have tools, a `setup`, or both; if `setup` raises, the plugin shows as a
 load error and the application opens regardless.
 
@@ -132,11 +132,16 @@ def setup(app):
     app.set_document_data({"levels": [...]})
     app.on_document_changed(refresh)      # edits, undo, New, Open
 
-    # A tab in the side tray, beside Properties / BIM / Terrain.
+    # A tab in the side tray, beside Properties / BIM / Terrain. It goes
+    # back where the user left it and has a Window-menu entry; `name` tells
+    # apart several panels of one extension.
     app.add_panel("Levels", my_widget)
+    app.add_panel("Levels — help", help_widget, name="help")
 
-    # Drawn with a QPainter over every frame, whatever the active tool.
+    # Drawn with a QPainter over every frame, whatever the active tool;
+    # world points (metres) to pixels, thousands at a time:
     app.add_overlay(lambda viewport, painter: ...)
+    px, py, in_front = app.world_to_pixels(points_n_by_3)
 
     # Offered the snap engine's answer on every hover and click; return a
     # core.snap.SnapResult (its `label` is the ScreenTip) or None.
@@ -145,9 +150,41 @@ def setup(app):
 
 Rules the host enforces: a snap provider never overrides a named point
 (endpoint, midpoint, centre, intersection, on edge…) — the user aimed at
-it; an overlay or provider that raises is logged and skipped, never
-breaking the frame or the cursor; document data that is not JSON-safe is
-dropped on save rather than failing it.
+it; a provider that raises is logged and skipped, an overlay that raises
+is logged once and removed, never breaking the frame or the cursor; the
+painter state is saved and restored around every overlay; document data
+that is not JSON-safe is dropped on save rather than failing it.
+
+### A document type of its own, and workspaces (API 2)
+
+A bigger extension may have documents of its own — a CAM job, say, with
+its drawing on the stock and its operations:
+
+```python
+def setup(app):
+    def open_job(path):
+        job = load(path)                  # an object with a Scene + History
+        return app.enter_workspace(job)   # shown instead of the model
+
+    # Files ending in .xyz are this extension's: opened from Open Recent,
+    # the command line or a double-click, they go to open_job(path) (True
+    # when it opened). The file dialog stays IngeTrazo's own; offer an
+    # «Open…» in the extension's panel.
+    app.add_file_opener(".xyz", open_job)
+```
+
+`enter_workspace(workspace)` parks the model — its scene, undo history,
+camera, file and saved state wait untouched — and shows the workspace's
+`scene` with its `history`. Meanwhile New / Open / Save / Save As, the
+title, the unsaved-changes prompts and quitting go to the workspace, the
+model's autosave pauses, and only the tools in `workspace.allowed_tools`
+(`None` = all) can be picked. `leave_workspace()` brings the model back
+exactly as it was; opening an `.igz` does so first. The workspace object
+provides `scene`, `history`, `title()`, `is_dirty()`, `save()`,
+`save_as()` and `confirm_leave()` (True when it may go: saved, discarded,
+or nothing to lose); optionally `new()`, `open()`, `allowed_tools`,
+`camera` and `left()`, called once it is gone. Every swap is a document
+boundary for the viewport (`reset_document_caches()`), like New or Open.
 
 **Worked example:** `examples/extensions/niveles.py` — building levels
 (PB, PA…) kept in the document, a side panel to edit them, dashed guides in
