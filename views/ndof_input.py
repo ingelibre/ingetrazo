@@ -312,6 +312,8 @@ class RawInputBackend:
 
 _KEYS = (("enabled", True), ("sensitivity", 1.0), ("invert_pan", False),
          ("invert_zoom", False), ("invert_rotate", False),
+         ("invert_pan_x", False), ("invert_pan_y", False),
+         ("invert_tilt", False), ("invert_spin", False),
          ("lock_rotation", False))
 
 

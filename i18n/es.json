@@ -673,9 +673,7 @@
  "{n} entities selected": "{n} entidades seleccionadas",
  "Navigate with a 3D mouse (SpaceMouse)": "Navegar con un ratón 3D (SpaceMouse)",
  "Speed:": "Velocidad:",
- "Invert pan": "Invertir desplazamiento",
  "Invert zoom": "Invertir zoom",
- "Invert rotation": "Invertir giro",
  "Pan and zoom only (no rotation — for drawing in plan)": "Solo desplazar y zoom (sin girar: para dibujar en planta)",
  "Device driver found: {name}": "Controlador del dispositivo encontrado: {name}",
  "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows the 3Dconnexion driver is enough. macOS is not supported yet.": "No se encontró el controlador de un ratón 3D. En Linux instala y arranca «spacenavd»; en Windows basta el controlador de 3Dconnexion. macOS todavía no es compatible.",
@@ -2088,5 +2086,9 @@
  "Sheet elements": "Elementos de la lámina",
  "Item": "Elemento",
  "Double-click: the item's properties. F2 or right-click: rename it (an empty name goes back to the automatic one).": "Doble clic: las propiedades del elemento. F2 o clic derecho: renombrarlo (un nombre vacío vuelve al automático).",
- "Rename": "Renombrar"
+ "Rename": "Renombrar",
+ "Invert pan left / right": "Invertir desplazamiento izquierda / derecha",
+ "Invert pan up / down": "Invertir desplazamiento arriba / abajo",
+ "Invert orbit up / down (tilt)": "Invertir órbita arriba / abajo (inclinar)",
+ "Invert orbit around (spin)": "Invertir órbita alrededor (girar)"
 }

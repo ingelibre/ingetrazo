@@ -72,9 +72,16 @@ class NdofSettings:
     enabled: bool = True
     sensitivity: float = 1.0       # 0.25 … 4
     deadzone: float = 0.05         # a cap at rest never reads exactly zero
-    invert_pan: bool = False
+    invert_pan: bool = False       # both pan axes (the first settings)
     invert_zoom: bool = False
-    invert_rotate: bool = False
+    invert_rotate: bool = False    # both orbit axes (the first settings)
+    #: One box per axis (issue #108, a user with a SpaceMouse: «a checkbox
+    #: for each axis for panning and rotation»). Each flips on top of the
+    #: pair switch above, which older settings may still carry.
+    invert_pan_x: bool = False     # right / left
+    invert_pan_y: bool = False     # up / down
+    invert_tilt: bool = False      # orbit up / down (cap tipped)
+    invert_spin: bool = False      # orbit around (cap twisted)
     #: Only translations (pan + zoom) — for plan drawing, where an accidental
     #: twist that tips the view out of Top is the last thing wanted.
     lock_rotation: bool = False
@@ -109,12 +116,16 @@ def apply_ndof(camera, sample: NdofSample, dt: float, viewport_h: int,
     if not st.lock_rotation:
         tilt = shape(sample.tilt, st.deadzone)
         spin = shape(sample.spin, st.deadzone)
-    if st.invert_pan:
-        right, up = -right, -up
+    if st.invert_pan != st.invert_pan_x:
+        right = -right
+    if st.invert_pan != st.invert_pan_y:
+        up = -up
     if st.invert_zoom:
         forward = -forward
-    if st.invert_rotate:
-        tilt, spin = -tilt, -spin
+    if st.invert_rotate != st.invert_tilt:
+        tilt = -tilt
+    if st.invert_rotate != st.invert_spin:
+        spin = -spin
     moved = False
     if right or up:
         # camera.pan GRABS the model like a mouse drag: +dx carries it right,

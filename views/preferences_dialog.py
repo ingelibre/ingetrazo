@@ -198,15 +198,24 @@ class PreferencesDialog(QDialog):
         self._ndof_speed.setSuffix(" %")
         self._ndof_speed.setValue(int(round(nd.sensitivity * 100)))
         form.addRow(tr("Speed:"), self._ndof_speed)
-        self._ndof_inv_pan = QCheckBox(tr("Invert pan"))
-        self._ndof_inv_pan.setChecked(nd.invert_pan)
-        form.addRow("", self._ndof_inv_pan)
-        self._ndof_inv_zoom = QCheckBox(tr("Invert zoom"))
-        self._ndof_inv_zoom.setChecked(nd.invert_zoom)
-        form.addRow("", self._ndof_inv_zoom)
-        self._ndof_inv_rot = QCheckBox(tr("Invert rotation"))
-        self._ndof_inv_rot.setChecked(nd.invert_rotate)
-        form.addRow("", self._ndof_inv_rot)
+        # One box per movement (issue #108, a SpaceMouse user: «a
+        # checkbox for each axis»); each shows what that axis does now,
+        # the old pair switches included.
+        self._ndof_inv = {}
+        for key, label, on in (
+                ("pan_x", tr("Invert pan left / right"),
+                 nd.invert_pan != nd.invert_pan_x),
+                ("pan_y", tr("Invert pan up / down"),
+                 nd.invert_pan != nd.invert_pan_y),
+                ("zoom", tr("Invert zoom"), nd.invert_zoom),
+                ("tilt", tr("Invert orbit up / down (tilt)"),
+                 nd.invert_rotate != nd.invert_tilt),
+                ("spin", tr("Invert orbit around (spin)"),
+                 nd.invert_rotate != nd.invert_spin)):
+            box = QCheckBox(label)
+            box.setChecked(on)
+            form.addRow("", box)
+            self._ndof_inv[key] = box
         self._ndof_lock = QCheckBox(tr(
             "Pan and zoom only (no rotation — for drawing in plan)"))
         self._ndof_lock.setChecked(nd.lock_rotation)
@@ -386,11 +395,17 @@ class PreferencesDialog(QDialog):
 
         from core.ndof import NdofSettings
         from views.ndof_input import save_settings
+        inv = {k: b.isChecked() for k, b in self._ndof_inv.items()}
+        # Saved per axis; the old pair switches go back to off.
         nd = NdofSettings(enabled=self._ndof_on.isChecked(),
                           sensitivity=self._ndof_speed.value() / 100.0,
-                          invert_pan=self._ndof_inv_pan.isChecked(),
-                          invert_zoom=self._ndof_inv_zoom.isChecked(),
-                          invert_rotate=self._ndof_inv_rot.isChecked(),
+                          invert_pan=False,
+                          invert_zoom=inv["zoom"],
+                          invert_rotate=False,
+                          invert_pan_x=inv["pan_x"],
+                          invert_pan_y=inv["pan_y"],
+                          invert_tilt=inv["tilt"],
+                          invert_spin=inv["spin"],
                           lock_rotation=self._ndof_lock.isChecked())
         save_settings(nd)                # every window reads it live
 

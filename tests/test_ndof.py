@@ -113,6 +113,32 @@ def test_invert_flips_each_group():
     assert not _push(NdofSample(forward=1.0), enabled=False)[1]
 
 
+def test_each_axis_inverts_on_its_own():
+    """Issue #108 (a SpaceMouse user): one box per axis. Right flipped
+    alone leaves up alone; the old pair switch still flips both, and a
+    per-axis box on top of it flips that axis back."""
+    x0, y0 = _on_screen(_cam())
+
+    def moved(sample, **kw):
+        cam, _ = _push(sample, **kw)
+        x, y = _on_screen(cam)
+        return x - x0, y - y0
+
+    dx, dy = moved(NdofSample(right=1.0, up=1.0), invert_pan_x=True)
+    assert dx < 0 and dy > 0                   # left, still up
+    dx, dy = moved(NdofSample(right=1.0, up=1.0), invert_pan_y=True)
+    assert dx > 0 and dy < 0                   # right, now down
+    dx, dy = moved(NdofSample(right=1.0, up=1.0), invert_pan=True)
+    assert dx < 0 and dy < 0                   # the old pair: both
+    dx, dy = moved(NdofSample(right=1.0, up=1.0), invert_pan=True,
+                   invert_pan_x=True)
+    assert dx > 0 and dy < 0                   # the box flips x back
+    base = _push(NdofSample(spin=1.0))[0]
+    flipped = _push(NdofSample(spin=1.0), invert_spin=True)[0]
+    tilted = _push(NdofSample(spin=1.0), invert_tilt=True)[0]
+    assert flipped.yaw != base.yaw and tilted.yaw == pytest.approx(base.yaw)
+
+
 # ---- device frames -----------------------------------------------------------
 
 def test_spacenavd_frame():

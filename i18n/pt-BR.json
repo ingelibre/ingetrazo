@@ -633,9 +633,7 @@
  "{n} entities selected": "{n} entidades selecionadas",
  "Navigate with a 3D mouse (SpaceMouse)": "Navegar com um mouse 3D (SpaceMouse)",
  "Speed:": "Velocidade:",
- "Invert pan": "Inverter deslocamento",
  "Invert zoom": "Inverter zoom",
- "Invert rotation": "Inverter rotação",
  "Pan and zoom only (no rotation — for drawing in plan)": "Só deslocar e zoom (sem girar: para desenhar em planta)",
  "Device driver found: {name}": "Driver do dispositivo encontrado: {name}",
  "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows the 3Dconnexion driver is enough. macOS is not supported yet.": "Nenhum driver de mouse 3D encontrado. No Linux instale e inicie o «spacenavd»; no Windows basta o driver da 3Dconnexion. O macOS ainda não é compatível.",
@@ -1398,5 +1396,9 @@
  "Double-click: the item's properties. F2 or right-click: rename it (an empty name goes back to the automatic one).": "Clique duplo: as propriedades do elemento. F2 ou clique direito: renomeá-lo (um nome vazio volta ao automático).",
  "Rename": "Renomear",
  "Hide": "Ocultar",
- "Show": "Mostrar"
+ "Show": "Mostrar",
+ "Invert pan left / right": "Inverter deslocamento esquerda / direita",
+ "Invert pan up / down": "Inverter deslocamento cima / baixo",
+ "Invert orbit up / down (tilt)": "Inverter órbita cima / baixo (inclinar)",
+ "Invert orbit around (spin)": "Inverter órbita ao redor (girar)"
 }

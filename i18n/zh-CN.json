@@ -673,9 +673,7 @@
  "{n} entities selected": "已选择 {n} 个实体",
  "Navigate with a 3D mouse (SpaceMouse)": "使用 3D 鼠标 (SpaceMouse) 导航",
  "Speed:": "速度:",
- "Invert pan": "反转平移",
  "Invert zoom": "反转缩放",
- "Invert rotation": "反转旋转",
  "Pan and zoom only (no rotation — for drawing in plan)": "仅平移和缩放 (不旋转：用于平面绘图)",
  "Device driver found: {name}": "找到设备驱动程序：{name}",
  "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows the 3Dconnexion driver is enough. macOS is not supported yet.": "未找到 3D 鼠标驱动程序。在 Linux 上安装并启动 «spacenavd»；在 Windows 上 3Dconnexion 驱动程序即可。macOS 尚不支持。",
@@ -2088,5 +2086,9 @@
  "Sheet elements": "图纸元素",
  "Item": "元素",
  "Double-click: the item's properties. F2 or right-click: rename it (an empty name goes back to the automatic one).": "双击：打开元素属性。F2 或右键：重命名（名称留空则恢复自动名称）。",
- "Rename": "重命名"
+ "Rename": "重命名",
+ "Invert pan left / right": "反转左右平移",
+ "Invert pan up / down": "反转上下平移",
+ "Invert orbit up / down (tilt)": "反转上下环绕（倾斜）",
+ "Invert orbit around (spin)": "反转水平环绕（旋转）"
 }

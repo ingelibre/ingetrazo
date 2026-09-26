@@ -17,6 +17,10 @@ follow [SemVer](https://semver.org).
   unos 4 cm. Sumari sigue en la biblioteca de personas.
 
 ### Añadido
+- **Ratón 3D: invertir cada eje por separado** (#108, sugerencia de
+  @mnavarromugas, el primero que lo prueba con un SpaceMouse real):
+  desplazar izquierda/derecha y arriba/abajo, acercar, inclinar y girar,
+  cada uno con su casilla en Preferencias ▸ Ratón 3D.
 - **La lista de Elementos del compositor, como en QGIS** (#93, @pacaeiro):
   cada elemento con un ojo (mostrar/ocultar; oculto no se ve, no se toca y no
   se imprime) y un candado (bloquear/desbloquear); se puede renombrar (F2 o
