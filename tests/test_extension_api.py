@@ -218,3 +218,34 @@ def test_the_example_extensions_ship_but_install_only_on_request(tmp_path,
         assert not (user / "niveles.py").exists()
     finally:
         _close(win)
+
+
+def test_an_example_extension_can_be_a_package(tmp_path, monkeypatch):
+    """A bigger example extension (CAM, PR #132) is a folder with an
+    ``__init__.py``: it is listed from its package docstring, installed as
+    the whole folder (no ``__pycache__``) and removed as a whole."""
+    from PySide6.QtWidgets import QMessageBox
+    from core import extensions, paths
+    from views.main_window import MainWindow
+    root = tmp_path / "app"
+    pkg = root / "examples" / "extensions" / "demo"
+    (pkg / "engine").mkdir(parents=True)
+    (pkg / "__init__.py").write_text(
+        '"""Demo — a packaged example\n\nTwo files and a subfolder."""\n'
+        "def setup(app):\n    pass\n", encoding="utf-8")
+    (pkg / "engine" / "core.py").write_text("X = 1\n", encoding="utf-8")
+    (pkg / "__pycache__").mkdir()
+    (pkg / "__pycache__" / "junk.pyc").write_bytes(b"x")
+    monkeypatch.setattr(paths, "app_root", lambda: root)
+    user = tmp_path / "plugins"
+    monkeypatch.setattr(extensions, "user_plugins_dir", lambda: user)
+    monkeypatch.setattr(QMessageBox, "information",
+                        staticmethod(lambda *a, **k: None))
+    examples = MainWindow.example_extensions()
+    assert [(p.name, t, b) for p, t, b in examples] == [
+        ("demo", "Demo", "Two files and a subfolder.")]
+    MainWindow._toggle_example_extension(None, pkg, "Demo", True)
+    assert (user / "demo" / "engine" / "core.py").read_text() == "X = 1\n"
+    assert not (user / "demo" / "__pycache__").exists()
+    MainWindow._toggle_example_extension(None, pkg, "Demo", False)
+    assert not (user / "demo").exists()

@@ -1418,9 +1418,18 @@ class MainWindow(QMainWindow):
         from core.paths import app_root
         folder = app_root() / "examples" / "extensions"
         out = []
-        for path in sorted(folder.glob("*.py")) if folder.is_dir() else []:
+        # A single ``x.py`` or a package ``x/__init__.py`` — a bigger
+        # extension (CAM, PR #132) is a folder, and the loader takes both.
+        entries = sorted(folder.iterdir()) if folder.is_dir() else []
+        for path in entries:
+            if path.suffix == ".py" and path.is_file():
+                src = path
+            elif path.is_dir() and (path / "__init__.py").is_file():
+                src = path / "__init__.py"
+            else:
+                continue
             try:
-                doc = ast.get_docstring(ast.parse(path.read_text("utf-8"))) or ""
+                doc = ast.get_docstring(ast.parse(src.read_text("utf-8"))) or ""
             except (OSError, SyntaxError, ValueError):
                 doc = ""
             first, _, rest = doc.partition("\n")
@@ -1459,8 +1468,17 @@ class MainWindow(QMainWindow):
         try:
             if on:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(path, target)
+                if path.is_dir():
+                    shutil.rmtree(target, ignore_errors=True)
+                    shutil.copytree(path, target, ignore=shutil.ignore_patterns(
+                        "__pycache__", "*.pyc"))
+                else:
+                    shutil.copyfile(path, target)
                 msg = tr("«{name}» installed. Restart IngeTrazo to use it.",
+                         name=title)
+            elif target.is_dir():
+                shutil.rmtree(target)
+                msg = tr("«{name}» removed. Restart IngeTrazo to unload it.",
                          name=title)
             else:
                 target.unlink(missing_ok=True)

@@ -58,7 +58,8 @@ datas = [
     ('plugins/*.py',               'plugins'),
     # Example extensions: shipped but NOT loaded — Extensions ▸ Example
     # extensions copies one into the user's plugins folder on request.
-    ('examples/extensions/*.py',   'examples/extensions'),
+    # Whole folder: an example extension can be a package (CAM, PR #132).
+    ('examples/extensions',        'examples/extensions'),
     # The MCP server (stdlib-only): `ingetrazo --mcp` runs it by path, and
     # the console build below makes it a program of its own on Windows.
     ('scripts/ingetrazo_mcp.py',   'scripts'),
