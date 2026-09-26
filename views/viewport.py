@@ -7650,6 +7650,14 @@ class Viewport(QOpenGLWidget):
         msig = material_sig(paint)
         if entry is not None and entry.get("msig") != msig:
             entry = None
+        # The entry answers for ONE mesh object. Explode hands every lifted
+        # child a NEW mesh (moved by the container's matrix), and a copy's
+        # mesh built the same way has the same mutation serial and counts:
+        # the O(1) check below took the new mesh for the old one and drew
+        # the group where it stood before it was grouped and moved, while
+        # its selection box showed where it is (issue #134, @fafecm).
+        if entry is not None and entry.get("mesh") is not mesh:
+            entry = None
         if entry is not None:
             if entry.get("vkey") == vkey:
                 return entry
@@ -7729,6 +7737,7 @@ class Viewport(QOpenGLWidget):
         if disk is not None:
             cache[id(group)] = disk
             disk["msig"] = msig
+            disk["mesh"] = mesh
             disk["serial"] = getattr(mesh, "_mut_serial", None)
             mesh._chunk_dirty = False
             mesh._attrs_dirty = False
@@ -7955,6 +7964,7 @@ class Viewport(QOpenGLWidget):
                   extra=f"faces={len(faces)}")
         mesh._chunk_dirty = False
         mesh._attrs_dirty = False
+        entry["mesh"] = mesh
         cache[id(group)] = entry
         _store = getattr(self, "_chunk_cache_store", None)   # stub VPs in tests
         if callable(_store):

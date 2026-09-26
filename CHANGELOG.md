@@ -19,6 +19,10 @@ follow [SemVer](https://semver.org).
   Preferencias ya ofrece el portugués, que solo estaba en el menú.
 
 ### Corregido
+- **Al explotar un grupo, lo de dentro se dibuja donde está** (#134,
+  @fafecm): tras agrupar copias, mover el grupo y explotarlo, una copia se
+  dibujaba donde estaba antes de agrupar y mover (su recuadro de selección sí
+  estaba bien) hasta que algo la obligaba a redibujarse, como pintarla.
 - **Un rectángulo dibujado de lado a lado de una cara la parte**: con las
   cuatro esquinas sobre el borde (una franja en un peldaño, desde el borde
   hasta la contrahuella) la cara quedaba entera con el rectángulo encima, y
