@@ -17,6 +17,11 @@ follow [SemVer](https://semver.org).
   unos 4 cm. Sumari sigue en la biblioteca de personas.
 
 ### Añadido
+- **Panel del compositor reorganizado** (#93, @pacaeiro): la lista de
+  elementos y sus propiedades en una sola pestaña, «Elementos», con un
+  navegador de láminas arriba (|< < lámina > >|). Los elementos se pueden
+  renombrar (doble clic o F2; el nombre viaja en el .igz) y agrupar por tipo
+  en carpetas (vistas, cotas, anotaciones, gráficos, elementos de la lámina).
 - **Líneas ocultas a trazos en las láminas** (#81, @pacaeiro): una vista en
   estilo vectorial puede dibujar las aristas que quedan detrás de las caras,
   finas y a trazos, como en un plano técnico (casilla «Líneas ocultas» del

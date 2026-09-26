@@ -34,7 +34,7 @@ def _frame_item(composer):
 def test_a_page_edit_from_the_layout_tab_keeps_the_layout_tab():
     composer = _composer()
     _frame_item(composer).setSelected(True)       # a real click: jumps
-    assert composer._tabs.currentIndex() == 2
+    assert composer._tabs.currentIndex() == 1   # Items: list + properties
     composer._tabs.setCurrentIndex(0)             # back to Layout
     composer.border_radius.setValue(composer.border_radius.value() + 0.5)
     assert composer.comp.border_radius_mm == composer.border_radius.value()
@@ -48,4 +48,4 @@ def test_selecting_another_item_still_jumps_to_properties():
     composer._tabs.setCurrentIndex(0)
     composer.canvas.clearSelection()
     _frame_item(composer).setSelected(True)       # a fresh selection
-    assert composer._tabs.currentIndex() == 2
+    assert composer._tabs.currentIndex() == 1   # Items: list + properties

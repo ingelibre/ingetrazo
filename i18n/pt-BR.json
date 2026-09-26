@@ -1387,5 +1387,16 @@
  "Also use for new documents": "Usar também para documentos novos",
  "Automatic (X11 on KDE Plasma or with a fractional display scale)": "Automático (X11 no KDE Plasma ou com escala de tela fracionária)",
  "Hidden lines (dashed)": "Linhas ocultas (tracejadas)",
- "Edges behind the model's faces, thin and dashed — the standard of a technical drawing (recomputes the view).": "Arestas atrás das faces do modelo, finas e tracejadas — o padrão do desenho técnico (recalcula a vista)."
+ "Edges behind the model's faces, thin and dashed — the standard of a technical drawing (recomputes the view).": "Arestas atrás das faces do modelo, finas e tracejadas — o padrão do desenho técnico (recalcula a vista).",
+ "First sheet": "Primeira prancha",
+ "Previous sheet": "Prancha anterior",
+ "Go to a sheet": "Ir para uma prancha",
+ "Next sheet": "Próxima prancha",
+ "Last sheet": "Última prancha",
+ "Group by type": "Agrupar por tipo",
+ "Show the items in folders — views, annotations, dimensions, graphics — instead of one list in stacking order.": "Mostra os elementos em pastas — vistas, anotações, cotas, gráficos — em vez de uma única lista na ordem de empilhamento.",
+ "Double-click or F2 to rename an item; an empty name goes back to the automatic one.": "Clique duplo ou F2 para renomear um elemento; um nome vazio volta ao automático.",
+ "Views": "Vistas",
+ "Graphics": "Gráficos",
+ "Sheet elements": "Elementos da prancha"
 }

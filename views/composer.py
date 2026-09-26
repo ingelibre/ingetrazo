@@ -6019,16 +6019,60 @@ class ComposerWindow(QMainWindow):
         dis_lay.addStretch(1)
         self._tabs.addTab(dis, tr("Layout"))
 
-        # -- tab Elementos: the item list
-        from PySide6.QtWidgets import QListWidget
+        # -- tab Elementos: sheet navigator, item list and, below it, the
+        # properties of the selected item — one tab, so picking an item and
+        # changing it happen side by side (issue #93, @pacaeiro: «Select a
+        # Sheet, Pick an Item and change its properties below, all near»).
+        from PySide6.QtWidgets import (QAbstractItemView, QSplitter,
+                                       QTreeWidget)
         ele = QWidget()
         ele_lay = QVBoxLayout(ele)
-        self.items_list = QListWidget()
-        self.items_list.itemSelectionChanged.connect(self._on_list_select)
-        ele_lay.addWidget(self.items_list)
-        self._tabs.addTab(ele, tr("Items"))
+        ele_lay.setContentsMargins(0, 0, 0, 0)
+        nav = QHBoxLayout()
+        nav.setSpacing(2)
 
-        # -- tab Propiedades: per-type pages
+        def _nav_btn(text, tip, step):
+            b = QPushButton(text)
+            b.setFixedWidth(26)
+            b.setToolTip(tip)
+            b.clicked.connect(lambda _c=False, s=step: self._step_sheet(s))
+            return b
+
+        nav.addWidget(_nav_btn("|<", tr("First sheet"), "first"))
+        nav.addWidget(_nav_btn("<", tr("Previous sheet"), -1))
+        self.nav_combo = QComboBox()
+        self.nav_combo.setToolTip(tr("Go to a sheet"))
+        self.nav_combo.currentIndexChanged.connect(self._on_nav_combo)
+        nav.addWidget(self.nav_combo, 1)
+        nav.addWidget(_nav_btn(">", tr("Next sheet"), 1))
+        nav.addWidget(_nav_btn(">|", tr("Last sheet"), "last"))
+        ele_lay.addLayout(nav)
+        self.items_group_check = QCheckBox(tr("Group by type"))
+        self.items_group_check.setToolTip(tr(
+            "Show the items in folders — views, annotations, dimensions, "
+            "graphics — instead of one list in stacking order."))
+        from PySide6.QtCore import QSettings as _QS
+        self.items_group_check.setChecked(
+            str(_QS().value("composer/items_grouped", "0")) == "1")
+        self.items_group_check.toggled.connect(self._on_items_grouping)
+        self.items_list = QTreeWidget()
+        self.items_list.setHeaderHidden(True)
+        self.items_list.setRootIsDecorated(False)
+        self.items_list.setEditTriggers(
+            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
+            | QAbstractItemView.SelectedClicked)
+        self.items_list.setToolTip(tr(
+            "Double-click or F2 to rename an item; an empty name goes back "
+            "to the automatic one."))
+        self.items_list.itemSelectionChanged.connect(self._on_list_select)
+        self.items_list.itemChanged.connect(self._on_item_renamed)
+        top = QWidget()
+        top_lay = QVBoxLayout(top)
+        top_lay.setContentsMargins(0, 0, 0, 0)
+        top_lay.addWidget(self.items_group_check)
+        top_lay.addWidget(self.items_list, 1)
+
+        # per-type property pages, under the list
         self.props = QStackedWidget()
 
         def _top_aligned(page: QWidget) -> QWidget:
@@ -6071,7 +6115,16 @@ class ComposerWindow(QMainWindow):
         self.props.addWidget(_top_aligned(self._page_nivel()))     # 13
         self.props.addWidget(_top_aligned(self._page_llamada()))   # 14
         self.props.addWidget(_top_aligned(self._page_cota_rad()))  # 15
-        self._tabs.addTab(self.props, tr("Item properties"))
+        split = QSplitter(Qt.Vertical)
+        split.setChildrenCollapsible(False)
+        split.addWidget(top)
+        split.addWidget(self.props)
+        split.setStretchFactor(0, 1)             # the list: a quarter…
+        split.setStretchFactor(1, 3)             # …the properties the rest
+        split.setSizes([160, 480])
+        self._items_split = split
+        ele_lay.addWidget(split, 1)
+        self._tabs.addTab(ele, tr("Items"))
 
         # Save / update / export live on the sheet toolbar at the top
         # (Marco, 2026-09-08: «para no sobrecargar la barra lateral derecha»).
@@ -7477,6 +7530,7 @@ class ComposerWindow(QMainWindow):
     def _refresh_sheet_tabs(self) -> None:
         """Both strips follow the document: this one marks the open sheet,
         the main window's marks «Model»."""
+        self._refresh_sheet_nav()
         tabs = getattr(self, "_sheet_tabs", None)
         if tabs is None:
             return
@@ -8152,7 +8206,7 @@ class ComposerWindow(QMainWindow):
             else:
                 self.props.setCurrentIndex(0)
             if item is not None and fresh and hasattr(self, "_tabs"):
-                self._tabs.setCurrentIndex(2)     # jump to properties
+                self._tabs.setCurrentIndex(1)     # the Items tab: list + props
             self._sync_items_list(item)
         finally:
             self._updating = False
@@ -10898,43 +10952,100 @@ class ComposerWindow(QMainWindow):
             return tr("Title block")
         return type(model).__name__
 
+    #: Folders of the grouped Items list (issue #93), in this order.
+    _ITEM_CATEGORIES = (
+        ("views", "Views"), ("dimensions", "Dimensions"),
+        ("annotations", "Annotations"), ("graphics", "Graphics"),
+        ("sheet", "Sheet elements"))
+
+    @staticmethod
+    def _item_category(model) -> str:
+        if isinstance(model, MarcoVista):
+            return "views"
+        if isinstance(model, (CotaItem, CotaAngularItem, CotaRadialItem,
+                              NivelItem)):
+            return "dimensions"
+        if isinstance(model, (TextoItem, EtiquetaItem, LlamadaItem)):
+            return "annotations"
+        if isinstance(model, (FormaItem, ImagenItem)):
+            return "graphics"
+        return "sheet"            # title block, scale bar, north, legend…
+
+    def _list_text(self, model) -> str:
+        """What the Items list shows: the user's name, or the automatic
+        one."""
+        name = (getattr(model, "list_name", "") or "").strip()
+        label = name or self._item_label(model)
+        if getattr(model, "locked", False):
+            label = "🔒 " + label
+        return label
+
     def _refresh_items_list(self) -> None:
         from PySide6.QtCore import Qt as _Qt
-        from PySide6.QtWidgets import QListWidgetItem
-        self.items_list.blockSignals(True)
-        self.items_list.clear()
+        from PySide6.QtWidgets import QTreeWidgetItem
+        tree = self.items_list
+        tree.blockSignals(True)
+        tree.clear()
+        grouped = self.items_group_check.isChecked()
+        tree.setRootIsDecorated(grouped)
+        folders: dict = {}
+        if grouped:
+            for key, title in self._ITEM_CATEGORIES:
+                f = QTreeWidgetItem([tr(title)])
+                f.setFlags(_Qt.ItemIsEnabled)          # a folder: no select
+                f.setData(0, _Qt.UserRole, None)
+                folders[key] = f
         # top of the stack first — the reading order of a layers panel
         for model in sorted(self.comp.all_items(),
                             key=lambda m: getattr(m, "z", 0.0),
                             reverse=True):
-            label = self._item_label(model)
-            if getattr(model, "locked", False):
-                label = "🔒 " + label
-            row = QListWidgetItem(label)
-            row.setData(_Qt.UserRole, id(model))
-            self.items_list.addItem(row)
-        self.items_list.blockSignals(False)
+            row = QTreeWidgetItem([self._list_text(model)])
+            row.setData(0, _Qt.UserRole, id(model))
+            row.setFlags(_Qt.ItemIsEnabled | _Qt.ItemIsSelectable
+                         | _Qt.ItemIsEditable)
+            if grouped:
+                folders[self._item_category(model)].addChild(row)
+            else:
+                tree.addTopLevelItem(row)
+        if grouped:
+            for key, _t in self._ITEM_CATEGORIES:
+                f = folders[key]
+                if f.childCount():
+                    f.setText(0, f"{f.text(0)} ({f.childCount()})")
+                    tree.addTopLevelItem(f)
+                    f.setExpanded(True)
+        tree.blockSignals(False)
+
+    def _item_rows(self):
+        """Every item row of the list, folders or not."""
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        it = QTreeWidgetItemIterator(self.items_list)
+        while it.value() is not None:
+            row = it.value()
+            if row.data(0, Qt.UserRole) is not None:
+                yield row
+            it += 1
 
     def _sync_items_list(self, item) -> None:
-        from PySide6.QtCore import Qt as _Qt
         self.items_list.blockSignals(True)
         self.items_list.clearSelection()
         if item is not None:
             target = id(item.model)
-            for i in range(self.items_list.count()):
-                if self.items_list.item(i).data(_Qt.UserRole) == target:
-                    self.items_list.setCurrentRow(i)
+            for row in self._item_rows():
+                if row.data(0, Qt.UserRole) == target:
+                    self.items_list.setCurrentItem(row)
+                    self.items_list.scrollToItem(row)
                     break
         self.items_list.blockSignals(False)
 
     def _on_list_select(self) -> None:
-        from PySide6.QtCore import Qt as _Qt
         if self._updating:
             return
-        rows = self.items_list.selectedItems()
+        rows = [r for r in self.items_list.selectedItems()
+                if r.data(0, Qt.UserRole) is not None]
         if not rows:
             return
-        target = rows[0].data(_Qt.UserRole)
+        target = rows[0].data(0, Qt.UserRole)
         for it in self.canvas.items():
             if isinstance(it, _SheetItem) and id(it.model) == target:
                 self._updating = True
@@ -10942,6 +11053,61 @@ class ComposerWindow(QMainWindow):
                 self._updating = False
                 it.force_select()
                 break
+
+    def _on_item_renamed(self, row, _column=0) -> None:
+        """A name typed in the Items list (double-click or F2): stored on
+        the item, undoable; empty goes back to the automatic name."""
+        target = row.data(0, Qt.UserRole)
+        if target is None:
+            return
+        for it in self.canvas.items():
+            if isinstance(it, _SheetItem) and id(it.model) == target:
+                text = row.text(0).removeprefix("🔒 ").strip()
+                auto = self._item_label(it.model)
+                name = "" if text in ("", auto) else text
+                if name != (getattr(it.model, "list_name", "") or ""):
+                    # This item only — the panel's edits go to every
+                    # selected item of the kind, a name must not.
+                    self.history.execute(
+                        EditItemCommand(it.model, {"list_name": name}))
+                    self._mark_dirty()
+                break
+        # Show the resolved text (the automatic name, the lock) again.
+        QTimer.singleShot(0, self._refresh_items_list)
+
+    def _on_items_grouping(self, on: bool) -> None:
+        from PySide6.QtCore import QSettings
+        QSettings().setValue("composer/items_grouped", "1" if on else "0")
+        self._refresh_items_list()
+        self._sync_items_list(self._selected_item())
+
+    # ---- sheet navigator (Items tab, issue #93) --------------------------------
+    def _refresh_sheet_nav(self) -> None:
+        combo = getattr(self, "nav_combo", None)
+        if combo is None:
+            return
+        comps = self._scene().compositions
+        combo.blockSignals(True)
+        combo.clear()
+        for c in comps:
+            combo.addItem(c.name)
+        combo.setCurrentIndex(comps.index(self.comp)
+                              if self.comp in comps else 0)
+        combo.blockSignals(False)
+
+    def _on_nav_combo(self, idx: int) -> None:
+        if idx >= 0 and idx != self.comp_combo.currentIndex():
+            self.comp_combo.setCurrentIndex(idx)     # the one switch there is
+
+    def _step_sheet(self, step) -> None:
+        n = self.comp_combo.count()
+        if not n:
+            return
+        cur = self.comp_combo.currentIndex()
+        idx = (0 if step == "first" else n - 1 if step == "last"
+               else max(0, min(n - 1, cur + int(step))))
+        if idx != cur:
+            self.comp_combo.setCurrentIndex(idx)
 
     def _on_scalebar_props(self, *_a) -> None:
         item = self._selected_item()
