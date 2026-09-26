@@ -114,7 +114,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION=$(grep '__version__' core/version.py | cut -d'"' -f2)
+            VERSION=$(grep '^__version__' core/version.py | cut -d'"' -f2)
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"
