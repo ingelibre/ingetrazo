@@ -60,6 +60,7 @@ from core.mesh import (PAINT_KEYS, Edge, Face, Mesh, Vertex, edge_flags,
 from core.topology import (
     _key,
     _loop_edges,
+    carve_loop_by_chords,
     find_containing_face,
     fold_nonplanar_faces,
     heal_overlapping_faces,
@@ -549,7 +550,7 @@ class AddFaceCommand(Command):
         # (face_that_gained_a_hole, the vertex loop punched) for undo.
         self._punches: list[tuple[Face, list]] = []
         self._subdiv_mother: Optional[Face] = None
-        self._subdiv_remainder: Optional[Face] = None
+        self._subdiv_remainder: Optional[list] = None
 
     def do(self, scene) -> None:
         m = scene.mesh
@@ -592,24 +593,32 @@ class AddFaceCommand(Command):
                 if other is self.face:
                     continue
                 remainder = subtract_loop_from_face(other, self.face.vertices)
-                if remainder is None:
+                pieces = ([remainder] if remainder is not None
+                          else carve_loop_by_chords(other, self.face.vertices))
+                if not pieces:
                     continue
-                rem_holes: list[list[QVector3D]] = []
+                # Each hole of the mother goes to the piece that holds it; a
+                # hole straddling a cut leaves the mother alone.
+                piece_holes: list[list[list[QVector3D]]] = [[] for _ in pieces]
                 straddle = False
                 for hole in other.holes:
-                    if loop_inside_face(Face([Vertex(v) for v in remainder]), hole):
-                        rem_holes.append([QVector3D(v) for v in hole])
+                    for k, piece in enumerate(pieces):
+                        if loop_inside_face(Face([Vertex(v) for v in piece]), hole):
+                            piece_holes[k].append([QVector3D(v) for v in hole])
+                            break
                     else:
                         straddle = True
                         break
                 if straddle:
                     continue
                 m.remove_face(other)
-                rem_face = m.add_face(remainder, rem_holes)
-                rem_face.attrs = dict(other.attrs)  # carved mother continues
+                self._subdiv_remainder = []
+                for piece, holes in zip(pieces, piece_holes):
+                    rem_face = m.add_face(piece, holes or None)
+                    rem_face.attrs = dict(other.attrs)  # carved mother continues
+                    self._subdiv_remainder.append(rem_face)
                 _inherit_paint(self.face, other)    # ...and so does the cut-out
                 self._subdiv_mother = other
-                self._subdiv_remainder = rem_face
                 break
 
         scene.version += 1
@@ -617,8 +626,8 @@ class AddFaceCommand(Command):
     def undo(self, scene) -> None:
         m = scene.mesh
         if self._subdiv_mother is not None:
-            if self._subdiv_remainder is not None:
-                m.remove_face(self._subdiv_remainder)
+            for rem in self._subdiv_remainder or ():
+                m.remove_face(rem)
             m.relink_face(self._subdiv_mother)
             self._subdiv_mother = None
             self._subdiv_remainder = None

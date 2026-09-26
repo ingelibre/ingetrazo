@@ -14,6 +14,10 @@ follow [SemVer](https://semver.org).
   Preferencias ya ofrece el portugués, que solo estaba en el menú.
 
 ### Corregido
+- **Un rectángulo dibujado de lado a lado de una cara la parte**: con las
+  cuatro esquinas sobre el borde (una franja en un peldaño, desde el borde
+  hasta la contrahuella) la cara quedaba entera con el rectángulo encima, y
+  al tirar de él salía un sólido roto. Con líneas sí quedaba limpio.
 - **Las copias de un componente comparten los grupos de dentro** (#97): al
   copiar un componente hecho de varios grupos, editar un grupo dentro de una
   copia no cambiaba las otras. Ahora todo lo que hay dentro de un componente

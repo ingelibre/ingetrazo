@@ -871,6 +871,67 @@ def subtract_loop_from_face(
     return None  # neither half is the drawn loop → ambiguous, leave it alone
 
 
+def carve_loop_by_chords(
+    face: Face, loop: list[QVector3D]
+) -> Optional[list[list[QVector3D]]]:
+    """The pieces of ``face`` left around ``loop`` when EVERY corner of the
+    loop sits on the face's boundary — a band drawn across a face from one
+    side to the other (a rectangle across a stair tread, from its nosing to
+    the riser). ``find_subdividing_chain`` needs a corner inside the face,
+    so the Rectangle tool left the face whole with the band lying on top:
+    two overlapping faces, edges with one and three faces, and a Push/Pull
+    that built a broken solid (found testing #94). Lines drawn one by one
+    never hit it: each chord splits the face as it lands.
+
+    The loop's sides that cross the face (chords: midpoint strictly inside)
+    split it one by one; the piece that IS the loop is dropped (it stays a
+    face of its own). Returns the remaining outer loops, or ``None`` when
+    this is not that case."""
+    if len(face.vertices) < 3 or len(loop) < 3:
+        return None
+    if any(_locate_on_loop(face.vertices, v) is None for v in loop):
+        return None
+    proj, poly2 = _face_plane_proj(face)
+    chords = []
+    n = len(loop)
+    for i in range(n):
+        a, b = loop[i], loop[(i + 1) % n]
+        mid = (a + b) * 0.5
+        if _locate_on_loop(face.vertices, mid) is not None:
+            continue                          # runs along the boundary
+        if not _strictly_inside_2d(proj(mid), poly2):
+            return None                       # leaves the face
+        chords.append([QVector3D(a), QVector3D(b)])
+    if not chords:
+        return None
+
+    class _Piece:
+        __slots__ = ("vertices",)
+
+        def __init__(self, vertices):
+            self.vertices = vertices
+
+    pieces = [[QVector3D(v) for v in face.vertices]]
+    for chord in chords:
+        for idx, piece in enumerate(pieces):
+            mid = (chord[0] + chord[1]) * 0.5
+            p2 = [proj(v) for v in piece]
+            if not _strictly_inside_2d(proj(mid), p2):
+                continue
+            split = split_face_by_chain(_Piece(piece), chord)
+            if split is None:
+                return None
+            pieces[idx:idx + 1] = [list(split[0]), list(split[1])]
+            break
+        else:
+            return None
+    loop_keys = frozenset(_key(v) for v in loop)
+    rest = [p for p in pieces if frozenset(_key(v) for v in p) != loop_keys]
+    if len(rest) != len(pieces) - 1:
+        return None                           # the loop is not one of them
+    return rest
+
+
 # ---- Multiple-cycle detection ----------------------------------------------
 
 def _same_cycle(c1: list[QVector3D], c2: list[QVector3D]) -> bool:
