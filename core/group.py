@@ -561,13 +561,27 @@ def translated_attrs(attrs, delta) -> dict:
     return out
 
 
-def copy_group(group, delta=None):
+def copy_group(group, delta=None, _in_definition=False):
     """A pastable duplicate of ``group``, optionally translated by ``delta``.
 
     A component instance stays an instance: the duplicate SHARES the prototype
     mesh and only gets its own transform (SketchUp: copying an instance adds a
-    sibling, O(1)). A classic group gets a deep mesh copy."""
+    sibling, O(1)). A classic group gets a deep mesh copy.
+
+    Everything inside a COMPONENT belongs to its definition, so the groups
+    nested in it are shared too, at every depth (issue #97: editing a group
+    inside one copy left the other copies as they were). A classic child
+    becomes an identity placement first — same place in the world — so the
+    original and the copy hold the same mesh and an edit inside either
+    shares back to both."""
     from PySide6.QtGui import QMatrix4x4, QVector3D
+    share = _in_definition or (group.xform is not None
+                               and bool(getattr(group, "component", True)))
+    if share:
+        for child in group.children or ():
+            if child.xform is None:
+                child.xform = QMatrix4x4()
+                child.component = False     # it was a group, it stays one
     t = QMatrix4x4()
     if delta is not None:
         t.translate(QVector3D(delta))
@@ -595,7 +609,8 @@ def copy_group(group, delta=None):
     g.explode_offset = group.explode_offset
     # Nested placements ride along untranslated: ``delta`` already moved the
     # parent, and a child's transform is relative to it.
-    g.children = [copy_group(c) for c in (group.children or ())]
+    g.children = [copy_group(c, _in_definition=share)
+                  for c in (group.children or ())]
     return g
 
 

@@ -10181,11 +10181,15 @@ class Viewport(QOpenGLWidget):
         component instance opens on a world copy of its definition; the
         session's commands are remembered so leaving can fold them into ONE
         undoable share-back."""
+        parent = self.scene.edit_group
+        in_definition = (parent is not None
+                         and group in (getattr(parent, "children", None) or ())
+                         and bool(getattr(parent, "component", True)))
         if (getattr(group, "xform", None) is not None
                 and not getattr(group, "component", True)
                 and not getattr(group, "children", None)
-                and any(g is not group and g.mesh is group.mesh
-                        for g in self.scene.groups)):
+                and not in_definition
+                and self._mesh_shared_elsewhere(group)):
             # A copied GROUP shares its geometry with the other copies only
             # until it is edited: opening it makes it its own, one undo
             # step, instead of editing every copy like a component
@@ -10210,6 +10214,19 @@ class Viewport(QOpenGLWidget):
                 "Editing {path} — Esc or click outside goes up one level",
                 path=self.edit_path_text()), 5000)
         self.update()
+
+    def _mesh_shared_elsewhere(self, group) -> bool:
+        """Whether another placement — top level or nested at any depth —
+        draws ``group``'s mesh. A group exploded out of a component copy
+        shares its mesh with the group still inside the other copies
+        (issue #97), and the top-level scan alone did not see it."""
+        from core.group import iter_placements
+        mesh = group.mesh
+        for top in self.scene.groups:
+            for g, _m in iter_placements(top):
+                if g is not group and g.mesh is mesh:
+                    return True
+        return False
 
     def edit_path_text(self) -> str:
         """Where you are, as a path: ``Plaza ▸ Jardinera ▸ Banca``.
