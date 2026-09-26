@@ -3630,7 +3630,7 @@ class MainWindow(QMainWindow):
     def _insert_scale_figure(self) -> None:
         """Place the scale figure in a fresh document, SketchUp-style: OFF
         to the left of the origin, so the origin stays visible as the
-        drawing reference (user request — SketchUp does the same). 1.75 m
+        drawing reference (user request — SketchUp does the same). 1.70 m
         tall. A plain group — select and Delete removes it. Added outside
         the undo history and without dirtying the document."""
         # SketchUp's placement, measured by the user: 60-70 cm to the left
@@ -3639,7 +3639,7 @@ class MainWindow(QMainWindow):
         at = QVector3D(-0.65, -0.60, 0.0)
         # The engineer since 26-09 (Marco: «el personaje Sumari no me gusta
         # mucho, ¿ponemos el del ingeniero?»); Sumari stays in the library.
-        group = self._make_billboard_person("ingeniero.png", height=1.75,
+        group = self._make_billboard_person("ingeniero.png", height=1.70,
                                             name=tr("Engineer"), position=at)
         if group is None:
             group = self._make_billboard_person(position=at)

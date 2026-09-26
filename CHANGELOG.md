@@ -12,9 +12,9 @@ follow [SemVer](https://semver.org).
   General ▸ Servidor gráfico sigue permitiendo elegir Wayland.
 - **El instalador de Windows habla inglés, español y portugués** (#135,
   @xyont), según el idioma de Windows.
-- **La figura de escala de un documento nuevo es el Ingeniero** (1,75 m,
-  casco y chaleco), con los dos pies en el suelo: su pie izquierdo flotaba
-  unos 4 cm. Sumari sigue en la biblioteca de personas.
+- **La figura de escala de un documento nuevo es el Ingeniero** (1,70 m,
+  casco y chaleco), dibujado de nuevo de pie y con los dos pies en el
+  suelo. Sumari sigue en la biblioteca de personas.
 
 ### Añadido
 - **Atajos de teclado propios** (#138, @pacaeiro): Preferencias ▸ Atajos
