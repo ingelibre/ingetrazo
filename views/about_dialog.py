@@ -56,6 +56,9 @@ CONTRIBUTORS = [
     ("Sherod Taylor",
      "The First Person tool: walk the model like a game.",
      "https://github.com/sherodtaylor"),
+    ("liuandy",
+     "Simplified Chinese translation of the interface.",
+     "https://github.com/liujvnes"),
 ]
 
 #: Roll speed: pixels per tick, and the tick.

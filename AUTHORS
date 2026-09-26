@@ -28,6 +28,8 @@ Pedro Caeiro <pacaeiro2@sapo.pt>  (github.com/pacaeiro)
     Fillet 3D, Orient Faces, copy/paste between documents, and many more —
     and a pull request of his own for the composer (#116): a resized view
     keeps its drawing undistorted and renders again off the release.
+    Two more for 0.5.4: a moved view catches vertices where it is (#124)
+    and a centred rectangle's square cue is a real square (#126).
 
 Rafael García Rodríguez — "Rafael 3D" (youtube.com/@Rafa3D)
     Draftsman and 3D modelling reviewer.
@@ -80,6 +82,10 @@ José Castro Basso — FADU–UDELAR, Montevideo  (github.com/castrobasso)
 Sherod Taylor  (github.com/sherodtaylor)
     The First Person tool (pull request #86): walking the model like a
     game with W/A/S/D and mouse look, beside SketchUp's Walk.
+
+liuandy  (github.com/liujvnes)
+    Simplified Chinese translation of the interface (issue #123, some
+    2 080 strings): IngeTrazo's fourth language.
 
 ---
 

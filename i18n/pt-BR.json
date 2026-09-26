@@ -1410,5 +1410,6 @@
  "Pick an action, click the box and press the keys. Changes apply at once and are remembered.": "Escolha uma ação, clique na caixa e pressione as teclas. As mudanças valem na hora e são lembradas.",
  "Restore all defaults": "Restaurar todos",
  "«{keys}» is already used by: {names}. Give it to «{action}» instead?": "«{keys}» já é usado por: {names}. Passar para «{action}»?",
- "Put every action back on its factory shortcut?": "Voltar todas as ações aos atalhos padrão?"
+ "Put every action back on its factory shortcut?": "Voltar todas as ações aos atalhos padrão?",
+ "Simplified Chinese translation of the interface.": "Tradução da interface para o chinês simplificado."
 }
