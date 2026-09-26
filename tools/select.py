@@ -565,37 +565,64 @@ class SelectTool(Tool):
 
     def on_key(self, viewport, key: int, modifiers: Qt.KeyboardModifiers) -> bool:
         if key in (Qt.Key_Delete, Qt.Key_Backspace):
-            selection = viewport.scene.selection
-            if selection:
-                edges = [e for e in selection if isinstance(e, Edge)]
-                faces = [f for f in selection if isinstance(f, Face)]
-                groups = [g for g in selection if isinstance(g, Group)]
-                dims = [d for d in selection if isinstance(d, Dimension)]
-                labels = [t for t in selection if isinstance(t, TextLabel)]
-                paths = [p for p in selection if isinstance(p, GeoPath)]
-                guides = [g for g in selection if isinstance(g, Guide)]
-                splanes = [p for p in selection
-                           if isinstance(p, SectionPlane)]
-                commands = []
-                if edges or faces:
-                    # Erasing an edge between two coplanar faces merges them back
-                    # into one (SketchUp); any other erased edge takes its faces.
-                    commands.append(EraseSelectionCommand(edges, faces))
-                commands.extend(DeleteGroupCommand(g) for g in groups)
-                if guides:
-                    commands.append(DeleteGuidesCommand(guides))
-                if splanes:
-                    commands.append(DeleteSectionPlanesCommand(splanes))
-                if dims:
-                    commands.append(DeleteDimensionsCommand(dims))
-                if labels:
-                    commands.append(DeleteTextLabelsCommand(labels))
-                if paths:
-                    commands.append(DeleteGeoPathsCommand(paths))
-                if commands:
-                    cmd = (commands[0] if len(commands) == 1
-                           else CompoundCommand(commands))
-                    viewport.history.execute(cmd)
-                    viewport.update()
+            delete_selection_or_hover(viewport)
             return True
         return False
+
+
+# ---- Delete: the selection, or what is under the cursor ------------------------
+
+def expand_pick(viewport, entity) -> list:
+    """What a click on ``entity`` would select (see ``SelectTool._expand``)."""
+    return SelectTool._expand(viewport, entity)
+
+
+def erase_entities(viewport, entities) -> bool:
+    """Erase ``entities`` (any mix of pickable types) as ONE undoable step.
+    True if anything was erased."""
+    edges = [e for e in entities if isinstance(e, Edge)]
+    faces = [f for f in entities if isinstance(f, Face)]
+    groups = [g for g in entities if isinstance(g, Group)]
+    dims = [d for d in entities if isinstance(d, Dimension)]
+    labels = [t for t in entities if isinstance(t, TextLabel)]
+    paths = [p for p in entities if isinstance(p, GeoPath)]
+    guides = [g for g in entities if isinstance(g, Guide)]
+    splanes = [p for p in entities if isinstance(p, SectionPlane)]
+    commands = []
+    if edges or faces:
+        # Erasing an edge between two coplanar faces merges them back
+        # into one (SketchUp); any other erased edge takes its faces.
+        commands.append(EraseSelectionCommand(edges, faces))
+    commands.extend(DeleteGroupCommand(g) for g in groups)
+    if guides:
+        commands.append(DeleteGuidesCommand(guides))
+    if splanes:
+        commands.append(DeleteSectionPlanesCommand(splanes))
+    if dims:
+        commands.append(DeleteDimensionsCommand(dims))
+    if labels:
+        commands.append(DeleteTextLabelsCommand(labels))
+    if paths:
+        commands.append(DeleteGeoPathsCommand(paths))
+    if not commands:
+        return False
+    cmd = commands[0] if len(commands) == 1 else CompoundCommand(commands)
+    viewport.history.execute(cmd)
+    viewport.update()
+    return True
+
+
+def delete_selection_or_hover(viewport) -> bool:
+    """The Delete key: erase the selection; with NOTHING selected, erase
+    what is highlighted under the cursor — hover an edge or a face and press
+    Supr, no click needed. The hover grows like a click would (a whole
+    circle, a whole smooth surface), so what goes is what a click-then-Supr
+    would have erased. True if anything was erased."""
+    selection = list(viewport.scene.selection)
+    if selection:
+        return erase_entities(viewport, selection)
+    hovered = getattr(viewport, "_hover_entity", None)
+    if hovered is None:
+        return False
+    viewport.set_hover(None)        # it is about to be gone
+    return erase_entities(viewport, expand_pick(viewport, hovered))

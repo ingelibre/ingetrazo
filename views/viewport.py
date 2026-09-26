@@ -8733,6 +8733,16 @@ class Viewport(QOpenGLWidget):
                     best = path
         return best
 
+    @classmethod
+    def _tool_busy_for_delete(cls, tool) -> bool:
+        """``_tool_busy`` plus the per-tool state that means "an operation
+        holds geometry": Offset's / Push-Pull's base face, Follow Me's
+        profile, Fillet's picked edges or live sizing. Delete waits then."""
+        if cls._tool_busy(tool):
+            return True
+        return any(getattr(tool, attr, None)
+                   for attr in ("base_face", "_profile", "sizing", "edges"))
+
     @staticmethod
     def _tool_busy(tool) -> bool:
         """Whether the active tool has an operation in progress that Esc should
@@ -11039,6 +11049,17 @@ class Viewport(QOpenGLWidget):
         # 2. Active tool gets first shot at the key.
         if self.active_tool is not None:
             if self.active_tool.on_key(self, ev.key(), ev.modifiers()):
+                return
+
+        # 2b. Delete in any other tool (Paint, Push/Pull, Offset…): with the
+        #     tool idle, erase the selection or — nothing selected — the edge
+        #     or face highlighted under the cursor. Mid-operation it would
+        #     pull the geometry out from under the tool, so it waits.
+        if ev.key() == Qt.Key_Delete and not ev.isAutoRepeat():
+            tool = self.active_tool
+            if tool is None or not self._tool_busy_for_delete(tool):
+                from tools.select import delete_selection_or_hover
+                delete_selection_or_hover(self)
                 return
 
         # 3. Esc, escalating (standard CAD): first clear the typed value buffer,
