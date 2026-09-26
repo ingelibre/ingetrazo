@@ -3091,7 +3091,14 @@ class Viewport(QOpenGLWidget):
     #: them. Nothing but the document boundary makes them all stale at once.
     _DOCUMENT_CACHES = ("_group_chunks", "_inst_chunks", "_fp_memo",
                         "_proto_wrappers", "_proto_draw", "_faceme_cache",
-                        "_proto_pts_store", "_container_obb")
+                        "_proto_pts_store", "_container_obb",
+                        # Also keyed by id(): a face-me's placed sprite, the
+                        # nested-placement proxies and the arc midpoints per
+                        # mesh. A group of the next document born at a dead
+                        # one's address met its entry — the scale figure
+                        # «transported» into an opened file (issue #75).
+                        "_billboard_world", "_placement_proxies",
+                        "_arc_mid_by_mesh")
 
     def reset_document_caches(self) -> None:
         """Forget the previous document's chunks at the document boundary.

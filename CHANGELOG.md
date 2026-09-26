@@ -14,6 +14,14 @@ follow [SemVer](https://semver.org).
   Preferencias ya ofrece el portugués, que solo estaba en el menú.
 
 ### Corregido
+- **Las copias de un componente comparten los grupos de dentro** (#97): al
+  copiar un componente hecho de varios grupos, editar un grupo dentro de una
+  copia no cambiaba las otras. Ahora todo lo que hay dentro de un componente
+  es de su definición, como en SketchUp; un grupo que sale de una copia
+  (Explotar) se vuelve suyo al abrirlo y no toca a las demás.
+- **Sumari ya no se cuela en un diseño recién abierto** (#75, @pacaeiro): el
+  visor guardaba datos de las figuras por su dirección en memoria, que Python
+  reutiliza; tres de esas cachés no se vaciaban al abrir otro documento.
 - **Tirar hacia arriba contra una pared** (#94, @xyont): un área dibujada en
   el peldaño de abajo de un escalón, pegada a la contrahuella, no se podía
   tirar hacia arriba («rompería el sólido»), y bajarla sí. La franja donde el
