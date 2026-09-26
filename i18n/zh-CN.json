@@ -2090,5 +2090,16 @@
  "Invert pan left / right": "反转左右平移",
  "Invert pan up / down": "反转上下平移",
  "Invert orbit up / down (tilt)": "反转上下环绕（倾斜）",
- "Invert orbit around (spin)": "反转水平环绕（旋转）"
+ "Invert orbit around (spin)": "反转水平环绕（旋转）",
+ "Keyboard shortcuts": "键盘快捷键",
+ "Keyboard shortcuts…": "键盘快捷键…",
+ "Search an action or a key…": "搜索操作或按键…",
+ "Action": "操作",
+ "Shortcut": "快捷键",
+ "New shortcut:": "新快捷键：",
+ "Back to this action's factory shortcut": "恢复此操作的默认快捷键",
+ "Pick an action, click the box and press the keys. Changes apply at once and are remembered.": "选择一个操作，点击输入框并按下按键。更改立即生效并会被记住。",
+ "Restore all defaults": "全部恢复默认",
+ "«{keys}» is already used by: {names}. Give it to «{action}» instead?": "「{keys}」已被以下操作使用：{names}。改为分配给「{action}」吗？",
+ "Put every action back on its factory shortcut?": "将所有操作恢复为默认快捷键？"
 }

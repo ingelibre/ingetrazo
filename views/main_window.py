@@ -170,6 +170,10 @@ class MainWindow(QMainWindow):
         self._saved_version: int = 0
 
         self._setup_ui()
+        # The user's own keyboard shortcuts over the factory ones (#138).
+        from views import shortcuts as _shortcuts
+        _shortcuts.remember_defaults(self)
+        _shortcuts.apply_user_shortcuts(self)
         self._activate_tool("select")
         self._apply_new_document_units()
         self._insert_scale_figure()
@@ -1076,6 +1080,9 @@ class MainWindow(QMainWindow):
         prefs_action = QAction(tr("Preferences…"), self)
         prefs_action.triggered.connect(self._on_preferences)
         window_menu.addAction(prefs_action)
+        keys_action = QAction(tr("Keyboard shortcuts…"), self)
+        keys_action.triggered.connect(self._on_shortcuts)
+        window_menu.addAction(keys_action)
         self._build_language_menu(window_menu)
 
         # Extensions — third-party plugin tools (core.extensions engine).
@@ -1318,6 +1325,11 @@ class MainWindow(QMainWindow):
             self._place_clean_screen_exit()
             self._place_sidebar_handle()
         return super().eventFilter(obj, event)
+
+    def _on_shortcuts(self) -> None:
+        """Window ▸ Keyboard shortcuts… (#138)."""
+        from views.shortcuts import ShortcutsDialog
+        ShortcutsDialog(self).exec()
 
     def _on_preferences(self) -> None:
         """Window ▸ Preferences: the scattered QSettings in one dialog."""

@@ -63,6 +63,21 @@ def current_language() -> str:
     return _lang
 
 
+_reverse: dict[str, str] | None = None
+_reverse_of: dict | None = None
+
+
+def source_of(text: str) -> str:
+    """The English source of a string ``tr`` produced — for a key that
+    must not change with the language (a remembered keyboard shortcut).
+    Text that is not a translation comes back as it is."""
+    global _reverse, _reverse_of
+    if _reverse_of is not _catalog:
+        _reverse = {v: k for k, v in _catalog.items()}
+        _reverse_of = _catalog
+    return _reverse.get(text, text)
+
+
 def tr(text: str, /, **kwargs) -> str:
     """Translate ``text`` into the active language; interpolate ``kwargs``.
 

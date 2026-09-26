@@ -17,6 +17,12 @@ follow [SemVer](https://semver.org).
   unos 4 cm. Sumari sigue en la biblioteca de personas.
 
 ### Añadido
+- **Atajos de teclado propios** (#138, @pacaeiro): Ventana ▸ Atajos de
+  teclado… lista todas las acciones con su atajo, con buscador; eliges una y
+  pulsas las teclas nuevas. Si otra acción ya las usaba, te lo pregunta y se
+  las quita (dos acciones con la misma tecla no funcionarían ninguna). Botón
+  para volver al de fábrica, de una o de todas. Se recuerdan aunque cambies
+  de idioma.
 - **Ratón 3D: invertir cada eje por separado** (#108, sugerencia de
   @mnavarromugas, el primero que lo prueba con un SpaceMouse real):
   desplazar izquierda/derecha y arriba/abajo, acercar, inclinar y girar,

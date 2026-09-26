@@ -1400,5 +1400,16 @@
  "Invert pan left / right": "Inverter deslocamento esquerda / direita",
  "Invert pan up / down": "Inverter deslocamento cima / baixo",
  "Invert orbit up / down (tilt)": "Inverter órbita cima / baixo (inclinar)",
- "Invert orbit around (spin)": "Inverter órbita ao redor (girar)"
+ "Invert orbit around (spin)": "Inverter órbita ao redor (girar)",
+ "Keyboard shortcuts": "Atalhos de teclado",
+ "Keyboard shortcuts…": "Atalhos de teclado…",
+ "Search an action or a key…": "Buscar uma ação ou uma tecla…",
+ "Action": "Ação",
+ "Shortcut": "Atalho",
+ "New shortcut:": "Novo atalho:",
+ "Back to this action's factory shortcut": "Volta ao atalho padrão desta ação",
+ "Pick an action, click the box and press the keys. Changes apply at once and are remembered.": "Escolha uma ação, clique na caixa e pressione as teclas. As mudanças valem na hora e são lembradas.",
+ "Restore all defaults": "Restaurar todos",
+ "«{keys}» is already used by: {names}. Give it to «{action}» instead?": "«{keys}» já é usado por: {names}. Passar para «{action}»?",
+ "Put every action back on its factory shortcut?": "Voltar todas as ações aos atalhos padrão?"
 }
