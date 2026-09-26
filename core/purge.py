@@ -109,6 +109,14 @@ def used_materials(scene) -> set[str]:
             name = f.attrs.get("mat")
             if name:
                 used.add(name)
+    # A group's own paint (issue #47) lives on the group, not on its faces:
+    # Purge used to delete a material that only a group wore (issue #133).
+    from core.group import iter_placements
+    for top in getattr(scene, "groups", None) or ():
+        for g, _m in iter_placements(top):
+            paint = getattr(g, "material", None) or {}
+            if paint.get("mat"):
+                used.add(paint["mat"])
     return used
 
 

@@ -19,6 +19,9 @@ follow [SemVer](https://semver.org).
   Preferencias ya ofrece el portugués, que solo estaba en el menú.
 
 ### Corregido
+- **El material de un grupo aparece en «En el modelo»** (#133, @fafecm):
+  pintar un grupo no lo añadía a la lista hasta explotarlo, y Purgar podía
+  borrar un material que solo llevaba un grupo.
 - **Al explotar un grupo, lo de dentro se dibuja donde está** (#134,
   @fafecm): tras agrupar copias, mover el grupo y explotarlo, una copia se
   dibujaba donde estaba antes de agrupar y mover (su recuadro de selección sí

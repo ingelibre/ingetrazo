@@ -135,6 +135,28 @@ def test_a_material_worn_inside_a_group_survives():
     assert unused_materials(scene) == []
 
 
+def test_a_material_only_a_GROUP_wears_survives():
+    """A group's own paint lives on the group, not on its faces: Purge used
+    to delete a material that only a group wore (issue #133) — nested at
+    any depth too."""
+    scene = Scene()
+    inner = Mesh()
+    _quad(inner)
+    box = Group(inner, name="Caja")
+    box.material = {"color": [0.8, 0.2, 0.2], "mat": "Rojo"}
+    child = Group(Mesh(), name="Hijo")
+    _quad(child.mesh, 3.0)
+    child.material = {"color": [0.2, 0.2, 0.8], "mat": "Azul"}
+    outer = Group(Mesh(), name="Fila")
+    outer.adopt([child])
+    scene.groups.extend([box, outer])
+    for name, rgb in (("Rojo", (0.8, 0.2, 0.2)), ("Azul", (0.2, 0.2, 0.8)),
+                      ("Suelto", (0.5, 0.5, 0.5))):
+        scene.materials[name] = Material(name, color=rgb)
+    assert used_materials(scene) == {"Rojo", "Azul"}
+    assert unused_materials(scene) == ["Suelto"]
+
+
 def test_purging_materials_is_undoable_with_the_recipe_intact():
     scene = Scene()
     _quad(scene.mesh)

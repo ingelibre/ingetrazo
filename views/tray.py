@@ -1949,18 +1949,31 @@ class MaterialsPanel(QWidget):
         textures: dict = {}
         opacities: dict = {}   # texture path → translucency (glass)
         names: dict = {}     # swatch key → material name (registry identity)
-        for face in self._window.viewport.scene.render_faces():
-            mat = face.attrs.get("mat")
-            tex = face.attrs.get("texture")
+        scene = self._window.viewport.scene
+
+        def in_use():
+            for face in scene.render_faces():
+                yield face.attrs
+            # A group's paint lives on the group, not on its faces (#133,
+            # @fafecm: it only showed up here once the group was exploded).
+            from core.group import iter_placements
+            for top in scene.groups:
+                for g, _m in iter_placements(top):
+                    paint = getattr(g, "material", None)
+                    if paint:
+                        yield paint
+
+        for attrs in in_use():
+            mat = attrs.get("mat")
+            tex = attrs.get("texture")
             if tex and tex.get("path"):
                 textures.setdefault(tex["path"], tex)
-                if face.attrs.get("opacity") is not None:
-                    opacities.setdefault(tex["path"],
-                                         face.attrs.get("opacity"))
+                if attrs.get("opacity") is not None:
+                    opacities.setdefault(tex["path"], attrs.get("opacity"))
                 if mat:
                     names.setdefault(("t", tex["path"]), mat)
             else:
-                col = face.attrs.get("color")
+                col = attrs.get("color")
                 if col is not None:
                     colors[tuple(col)] = col
                     if mat:
