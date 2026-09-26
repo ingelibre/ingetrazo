@@ -212,7 +212,7 @@ def test_the_mcp_door_hands_the_model_the_same_recipe_book_as_the_assistant():
     init = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                        "params": {}})
     instructions = init["result"]["instructions"]
-    assert "Sumari" in instructions          # the scale figure, not the model
+    assert "Ingeniero" in instructions       # the scale figure, not the model
     assert ai_recipes.RECIPES in instructions
 
     # Same source as the assistant's prompt: teach a helper once.

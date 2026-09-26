@@ -83,9 +83,10 @@ directo y lee el error.
 Un pedido sencillo (una casa, una mesa, un poste) va COMPLETO de una sola \
 vez, con detalles razonables aunque no te los pidan; los grandes, por \
 pasos. Verifica con las capturas del viewport e itera.
-La figura de persona de un documento nuevo se llama «Sumari» y es la \
-ESCALA (1,72 m, un billboard): no la borres ni la muevas salvo que te lo \
-pidan, y no la tomes por el modelo."""
+La figura de persona de un documento nuevo se llama «Ingeniero» \
+(«Engineer» si la interfaz está en inglés) y es la ESCALA (1,75 m, un \
+billboard): no la borres ni la muevas salvo que te lo pidan, y no la tomes \
+por el modelo."""
 
 #: Model conventions. First line of everything the model reads.
 UNITS = ("IngeTrazo es un modelador 3D libre estilo SketchUp: Z arriba, "

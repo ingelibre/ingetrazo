@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""The Sumari scale figure in a fresh document: 1.72 m tall and OFF to the
+"""The scale figure in a fresh document — the engineer, 1.75 m tall — OFF to the
 left of the origin (SketchUp-style), so the origin stays visible as the
 drawing reference."""
 from __future__ import annotations
@@ -16,13 +16,13 @@ if QApplication.instance() is None:
     QApplication(sys.argv[:1])
 
 
-def test_scale_figure_left_of_origin_and_172():
+def test_scale_figure_left_of_origin_and_175():
     from views.main_window import MainWindow
     win = MainWindow()
     try:
         fig = next(g for g in win.viewport.scene.groups
                    if getattr(g, "billboard", False))
-        assert fig.name == "Sumari"
+        assert fig.name in ("Engineer", "Ingeniero")
         xs = [v.position.x() for v in fig.mesh.vertices]
         ys = [v.position.y() for v in fig.mesh.vertices]
         zs = [v.position.z() for v in fig.mesh.vertices]
@@ -31,7 +31,7 @@ def test_scale_figure_left_of_origin_and_172():
         assert abs(anchor_x + 0.65) < 1e-6         # 65 cm left of the origin
         assert abs(anchor_y + 0.60) < 1e-6         # 60 cm toward the viewer
         assert min(zs) == 0.0                      # feet on the ground
-        assert abs(max(zs) - 1.72) < 1e-6          # the reference height
+        assert abs(max(zs) - 1.75) < 1e-6          # the reference height
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()

@@ -6,6 +6,11 @@ follow [SemVer](https://semver.org).
 
 ## [Sin publicar]
 
+### Cambiado
+- **La figura de escala de un documento nuevo es el Ingeniero** (1,75 m,
+  casco y chaleco), con los dos pies en el suelo: su pie izquierdo flotaba
+  unos 4 cm. Sumari sigue en la biblioteca de personas.
+
 ### Añadido
 - **IngeTrazo en chino simplificado** (Idioma ▸ 简体中文), traducido por
   @liujvnes (#123). Su archivo no cargaba por una coma y porque algunas
