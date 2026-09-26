@@ -522,6 +522,94 @@ def _placement(entry, group):
     return _instance_placement(group.xform)
 
 
+def _loose_edge_runs(mesh, xf=None) -> list:
+    """The mesh's edges that bound no face, as ``(points, closed, hidden)``
+    polylines for the writer (issue #137, @pacaeiro: «edges without face
+    are not exported to .skp» — the path circle of a sphere, a construction
+    line, a lone outline). The edges of one curve (a circle, an arc) go out
+    as ONE polyline, a ring closed; any other edge on its own. ``xf`` maps
+    the points (a group written in its own axes)."""
+    free = [e for e in mesh.edges if not e.faces]
+    if not free:
+        return []
+
+    def pt(v):
+        p = v.position if hasattr(v, "position") else v
+        if xf is not None:
+            p = xf.map(p)
+        return (float(p.x()) * _M_TO_IN, float(p.y()) * _M_TO_IN,
+                float(p.z()) * _M_TO_IN)          # SketchUp speaks inches
+
+    by_curve: dict = {}
+    singles = []
+    for e in free:
+        cid = getattr(e, "curve", None)
+        if cid is None:
+            singles.append(e)
+        else:
+            by_curve.setdefault(cid, []).append(e)
+    runs = []
+    for edges in by_curve.values():
+        chain = _chain_edges(edges)
+        if chain is None:
+            singles.extend(edges)
+            continue
+        verts, closed = chain
+        runs.append(([pt(v) for v in verts], closed,
+                     all(getattr(e, "hidden", False) for e in edges)))
+    for e in singles:
+        runs.append(([pt(e.v0), pt(e.v1)], False, bool(getattr(e, "hidden",
+                                                              False))))
+    return runs
+
+
+def _chain_edges(edges):
+    """``(vertices in order, closed)`` when ``edges`` form one simple path
+    or ring, else ``None``."""
+    adj: dict = {}
+    for e in edges:
+        adj.setdefault(id(e.v0), []).append((e.v1, e))
+        adj.setdefault(id(e.v1), []).append((e.v0, e))
+    if any(len(v) > 2 for v in adj.values()):
+        return None
+    ends = [e.v0 if len(adj[id(e.v0)]) == 1 else e.v1
+            for e in edges if len(adj[id(e.v0)]) == 1
+            or len(adj[id(e.v1)]) == 1]
+    start = ends[0] if ends else edges[0].v0
+    closed = not ends
+    order, used, cur = [start], set(), start
+    while True:
+        nxt = next(((v, e) for v, e in adj[id(cur)] if id(e) not in used),
+                   None)
+        if nxt is None:
+            break
+        v, e = nxt
+        used.add(id(e))
+        if closed and v is start:
+            break
+        order.append(v)
+        cur = v
+    if len(used) != len(edges):
+        return None                        # two pieces: not one polyline
+    return order, closed
+
+
+def _emit_loose_edges(sink, mesh, xf=None) -> None:
+    """Write the mesh's face-less edges into ``sink`` (the model, a group
+    or a component definition) — see :func:`_loose_edge_runs`."""
+    add = getattr(sink, "add_polyline", None)
+    if add is None:
+        return
+    for points, closed, hidden in _loose_edge_runs(mesh, xf):
+        if len(points) < 2:
+            continue
+        try:
+            add(points, closed=closed and len(points) >= 3,
+                hidden_edges=hidden)
+        except Exception:  # noqa: BLE001 - one odd line must not lose the file
+            continue
+
+
 def _local_group(g, faces, kids):
     """``(placement, local_faces, local_kids)`` for a classic group with its
     own axes, or ``None`` to write it as before (world coordinates, no
@@ -1286,6 +1374,8 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
             for face in d["mesh"].faces:
                 _emit_face(defn, face, mat_handles, layer_handles,
                            SkpWriteError, quirks, applied)
+            if not d.get("billboard"):
+                _emit_loose_edges(defn, d["mesh"])
             _place_children(defn, d["children"])
         handles.append(defn)
 
@@ -1300,9 +1390,12 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
             placed = (_instance_placement(g.xform), faces, kids)
         else:
             placed = _local_group(g, faces, kids)
+        edge_xf = None
         if placed is not None:
             placement, faces, kids = placed
             kw = {"translation": placement[0], "matrix3x3": placement[1]}
+            if getattr(g, "xform", None) is None:
+                edge_xf = g.axes.inverted()[0]   # into the group's axes
         else:
             kw = {}
         with builder.add_group(
@@ -1313,11 +1406,16 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
             for face in faces:
                 _emit_face(grp, face, mat_handles, layer_handles,
                            SkpWriteError, quirks, applied)
+            _emit_loose_edges(grp, g.mesh, edge_xf)
             _place_children(grp, kids)
 
     for face in loose_faces:
         _emit_face(builder, face, mat_handles, layer_handles, SkpWriteError,
                    quirks, applied)
+    loose_mesh = (getattr(scene, "loose_mesh", None)
+                  or getattr(scene, "mesh", None))
+    if loose_mesh is not None:
+        _emit_loose_edges(builder, loose_mesh)
 
     for di, g in roots:
         translation, matrix3x3 = _placement(defs[di], g)

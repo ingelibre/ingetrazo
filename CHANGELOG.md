@@ -38,6 +38,10 @@ follow [SemVer](https://semver.org).
   Preferencias ya ofrece el portugués, que solo estaba en el menú.
 
 ### Corregido
+- **Las líneas sueltas llegan al .skp** (#137, @pacaeiro): las aristas que no
+  bordean ninguna cara (el círculo de camino de una esfera, una línea de
+  construcción) no se exportaban. Ahora salen, y un círculo o arco como una
+  sola curva, igual que en SketchUp.
 - **Compositor: dos clics vuelven a colocar vistas, flechas y líneas** (#95,
   @pacaeiro): si entre el primer y el segundo clic el lienzo se redibujaba
   (por ejemplo al terminar el render de una vista), el primer clic se perdía.
