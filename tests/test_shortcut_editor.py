@@ -99,3 +99,15 @@ def test_default_puts_the_factory_keys_back(monkeypatch):
     finally:
         _close(win)
         QSettings().remove("shortcuts")
+
+
+def test_keys_the_viewport_reads_itself_are_refused():
+    """Digits and decimal marks type a measure, Esc cancels, the arrows
+    lock an axis: an action holding one would swallow it."""
+    from views.shortcuts import reserved_reason
+    for bad in ("5", "0", ".", ",", ";", "Esc", "Return", "Backspace",
+                "Left", "Shift+Up", "Tab"):
+        assert reserved_reason(QKeySequence(bad)) is not None, bad
+    for good in ("Ctrl+5", "Alt+Left", "Ctrl+Shift+G", "F4", "K",
+                 "Shift+K"):
+        assert reserved_reason(QKeySequence(good)) is None, good

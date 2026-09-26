@@ -63,6 +63,32 @@ def _from_text(text: str) -> list:
             for t in (text or "").split(";") if t.strip()]
 
 
+def reserved_reason(seq: QKeySequence):
+    """Why ``seq`` cannot be a shortcut, or ``None``. The viewport reads
+    some keys itself — not through actions — and an action holding one
+    would swallow it: digits and the decimal marks type a measure in the
+    value box, Esc cancels, Enter commits, Backspace edits the box, the
+    arrows lock an axis, Tab and the bare modifiers steer the tools."""
+    if seq.isEmpty():
+        return None
+    combo = seq[0]
+    key = combo.key()
+    mods = combo.keyboardModifiers() & ~Qt.KeypadModifier
+    plain = mods in (Qt.NoModifier, Qt.ShiftModifier)
+    if key in (Qt.Key_Escape, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Backspace,
+               Qt.Key_Tab, Qt.Key_Backtab, Qt.Key_Shift, Qt.Key_Control,
+               Qt.Key_Alt, Qt.Key_Meta, Qt.Key_AltGr):
+        return tr("the drawing tools use it (cancel, confirm, edit a value)")
+    if key in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down) and plain:
+        return tr("the arrow keys lock an axis while drawing")
+    if plain and (Qt.Key_0 <= key <= Qt.Key_9 or key in (
+            Qt.Key_Period, Qt.Key_Comma, Qt.Key_Semicolon, Qt.Key_Minus,
+            Qt.Key_Slash, Qt.Key_Asterisk, Qt.Key_Apostrophe,
+            Qt.Key_QuoteDbl)):
+        return tr("it types a measure in the value box")
+    return None
+
+
 def remember_defaults(window) -> None:
     """Note each action's factory keys (before the user's go on)."""
     for act in collect_actions(window):
@@ -84,7 +110,9 @@ def apply_user_shortcuts(window) -> int:
     for act in collect_actions(window):
         key = action_key(act)
         if key in saved:
-            act.setShortcuts(_from_text(saved[key]))
+            seqs = [q for q in _from_text(saved[key])
+                    if reserved_reason(q) is None]   # never a reserved key
+            act.setShortcuts(seqs)
             n += 1
     return n
 
@@ -214,6 +242,14 @@ class ShortcutsPanel(QWidget):
         _row, act = self._current()
         seq = self._edit.keySequence()
         if act is None or seq.isEmpty():
+            return
+        why = reserved_reason(seq)
+        if why is not None:
+            QMessageBox.information(
+                self, tr("Keyboard shortcuts"),
+                tr("«{keys}» cannot be a shortcut: {why}.",
+                   keys=seq.toString(QKeySequence.NativeText), why=why))
+            self._on_row()                    # show the action's keys again
             return
         self.assign(act, [seq])
 

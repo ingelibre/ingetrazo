@@ -436,7 +436,6 @@
  "Endpoint": "Extremo final",
  "Ends": "Extremos",
  "Engineer": "Ingeniero",
- "Engineer with hard hat (1.75 m)": "Ingeniero con casco (1,75 m)",
  "Entity info": "Info de entidad",
  "Eraser": "Borrador",
  "Error: {err}": "Error: {err}",
@@ -2104,5 +2103,10 @@
  "Simplified Chinese translation of the interface.": "Traducción de la interfaz al chino simplificado.",
  "Bug reports with videos that pinned down guides, group paint and exploded groups.": "Reportes con vídeo que destaparon fallos de guías, pintura de grupos y grupos explotados.",
  "First to test the 3D mouse on a real SpaceMouse; per-axis inversion.": "El primero en probar el ratón 3D con un SpaceMouse real; la inversión por eje.",
- "Reports from mechanical modelling: pulling against a wall, units for new files.": "Reportes desde el modelado mecánico: tirar contra una pared, unidades para archivos nuevos."
+ "Reports from mechanical modelling: pulling against a wall, units for new files.": "Reportes desde el modelado mecánico: tirar contra una pared, unidades para archivos nuevos.",
+ "Engineer with hard hat (1.70 m)": "Ingeniero con casco (1,70 m)",
+ "the drawing tools use it (cancel, confirm, edit a value)": "la usan las herramientas de dibujo (cancelar, confirmar, corregir un valor)",
+ "the arrow keys lock an axis while drawing": "las flechas bloquean un eje mientras dibujas",
+ "it types a measure in the value box": "sirve para escribir medidas en la casilla de valores",
+ "«{keys}» cannot be a shortcut: {why}.": "«{keys}» no puede ser un atajo: {why}."
 }

@@ -436,7 +436,6 @@
  "Endpoint": "终点",
  "Ends": "端点",
  "Engineer": "工程师",
- "Engineer with hard hat (1.75 m)": "戴安全帽的工程师 (1.75 m)",
  "Entity info": "实体信息",
  "Eraser": "橡皮擦",
  "Error: {err}": "错误: {err}",
@@ -2104,5 +2103,10 @@
  "Simplified Chinese translation of the interface.": "界面简体中文翻译。",
  "Bug reports with videos that pinned down guides, group paint and exploded groups.": "附带视频的错误报告，定位了参考线、组材质和分解组的问题。",
  "First to test the 3D mouse on a real SpaceMouse; per-axis inversion.": "首位在真实 SpaceMouse 上测试 3D 鼠标的用户；按轴反转。",
- "Reports from mechanical modelling: pulling against a wall, units for new files.": "来自机械建模的报告：贴墙拉伸、新文件的单位。"
+ "Reports from mechanical modelling: pulling against a wall, units for new files.": "来自机械建模的报告：贴墙拉伸、新文件的单位。",
+ "Engineer with hard hat (1.70 m)": "戴安全帽的工程师（1.70 米）",
+ "the drawing tools use it (cancel, confirm, edit a value)": "绘图工具要用它（取消、确认、修改数值）",
+ "the arrow keys lock an axis while drawing": "绘图时方向键用于锁定轴",
+ "it types a measure in the value box": "它用于在数值框中输入尺寸",
+ "«{keys}» cannot be a shortcut: {why}.": "「{keys}」不能作为快捷键：{why}。"
 }
