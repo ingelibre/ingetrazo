@@ -91,3 +91,20 @@ def test_two_monitors_stay_on_wayland_one_fractional_one_goes_xcb(tmp_path):
     (home2 / ".config").mkdir(parents=True)
     (home2 / ".config" / "monitors.xml").write_text(xml_int)
     assert choose_platform(AUTO, wl, home2, alone) is None
+
+
+def test_kde_plasma_on_wayland_starts_under_xcb(tmp_path):
+    """Issue #136 (@leo-smi): KDE Plasma's Wayland session draws Qt's
+    floating menus broken; XWayland draws them right — whatever the scale
+    and however many screens. The user's explicit choice still wins."""
+    home = _gnome_home(tmp_path, "1")                 # whole scale
+    both = _sysfs(tmp_path / "s", ["card1-eDP-1", "card1-HDMI-A-1"])
+    kde = {"XDG_SESSION_TYPE": "wayland", "DISPLAY": ":0",
+           "XDG_CURRENT_DESKTOP": "KDE"}
+    assert choose_platform(AUTO, kde, home, both) == XCB
+    assert choose_platform(WAYLAND, kde, home, both) is None
+    assert choose_platform(AUTO, {**kde, "QT_QPA_PLATFORM": "wayland"}, home,
+                           both) is None
+    assert choose_platform(AUTO, {**kde, "DISPLAY": ""}, home, both) is None
+    gnome = {**kde, "XDG_CURRENT_DESKTOP": "ubuntu:GNOME"}
+    assert choose_platform(AUTO, gnome, home, both) is None

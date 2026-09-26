@@ -119,8 +119,9 @@ def choose_platform(preference: str, env: dict | None = None,
     Qt's own choice. An explicit ``QT_QPA_PLATFORM`` in the environment is
     never overridden.
 
-    Automatic: xcb only for a SINGLE connected monitor at a fractional
-    scale. With two or more monitors Wayland stays — under XWayland an app
+    Automatic: xcb on KDE Plasma (its Wayland session breaks Qt's popup
+    menus, issue #136), and elsewhere only for a SINGLE connected monitor
+    at a fractional scale. With two or more monitors Wayland stays — under XWayland an app
     is scaled for the primary output and merely rescaled on the others,
     while Wayland keeps each screen crisp at its own scale (Marco,
     2026-09-14: the laptop at 125 % beside a desktop monitor at 100 %)."""
@@ -136,6 +137,12 @@ def choose_platform(preference: str, env: dict | None = None,
         return None
     if not env.get("DISPLAY"):
         return None                      # no XWayland to fall back to
+    if "KDE" in env.get("XDG_CURRENT_DESKTOP", "").upper():
+        # KDE Plasma under Wayland draws Qt's floating menus broken — torn,
+        # misplaced, flickering (issue #136, @leo-smi; Anki shows the same
+        # on the same desktop). XWayland draws them right, and broken menus
+        # cost more than the crispness Wayland keeps on a second screen.
+        return XCB
     connected = connected_outputs(sysfs)
     if len(connected) >= 2:
         return None                      # two screens: crisp on both wins

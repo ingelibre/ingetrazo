@@ -1742,7 +1742,6 @@
  "Large toolbar icons": "Iconos grandes en las barras",
  "Toolbar icons:": "Iconos de las barras:",
  "Graphics server:": "Servidor gráfico:",
- "Automatic (X11 when the display scale is fractional)": "Automático (X11 si la escala de pantalla es fraccionaria)",
  "X11 (XWayland)": "X11 (XWayland)",
  "Which display server Qt draws through. Under Wayland with a 125 % / 150 % display scale the viewport stutters; X11 (XWayland) draws smoothly and stays crisp. Takes effect at the next start.": "Por qué servidor dibuja Qt. En Wayland con escala de pantalla 125 % / 150 % el visor da tirones; X11 (XWayland) va fluido y nítido. Se aplica al siguiente arranque.",
  "Save the document (Ctrl+S)": "Guardar el documento (Ctrl+S)",
@@ -2078,5 +2077,6 @@
  "{area} — surface": "{area} — superficie",
  "surface": "superficie",
  "No thickness: a surface drawn as a single plane (a skin, a decal, a glass pane). It stays in the model; the cut list marks it as a surface.": "Sin espesor: una superficie dibujada como un solo plano (un revestimiento, una calcomanía, un vidrio). Se queda en el modelo; la lista de corte la marca como superficie.",
- "Also use for new documents": "Usar también para documentos nuevos"
+ "Also use for new documents": "Usar también para documentos nuevos",
+ "Automatic (X11 on KDE Plasma or with a fractional display scale)": "Automático (X11 en KDE Plasma o con escala de pantalla fraccionaria)"
 }

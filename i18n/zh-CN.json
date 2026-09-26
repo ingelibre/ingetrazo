@@ -1740,7 +1740,6 @@
  "Large toolbar icons": "大工具栏图标",
  "Toolbar icons:": "工具栏图标:",
  "Graphics server:": "图形服务器:",
- "Automatic (X11 when the display scale is fractional)": "自动 (当显示缩放为分数时使用 X11)",
  "X11 (XWayland)": "X11 (XWayland)",
  "Which display server Qt draws through. Under Wayland with a 125 % / 150 % display scale the viewport stutters; X11 (XWayland) draws smoothly and stays crisp. Takes effect at the next start.": "Qt 通过哪个显示服务器绘制。在 Wayland 中，如果显示缩放为 125 % / 150 %，视口会卡顿；X11 (XWayland) 绘制平滑且清晰。在下次启动时生效。",
  "Save the document (Ctrl+S)": "保存文档 (Ctrl+S)",
@@ -2078,5 +2077,6 @@
  "No thickness: a surface drawn as a single plane (a skin, a decal, a glass pane). It stays in the model; the cut list marks it as a surface.": "无厚度：作为一个单平面绘制的表面（皮肤、贴花、玻璃板）。它保留在模型中；切割列表将其标记为表面。",
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total}": "文本和标题栏的动态字段: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total}",
  "Dynamic fields: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {nombre} {hoja} {total}": "动态字段: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {nombre} {hoja} {total}",
- "Also use for new documents": "也用于新文档"
+ "Also use for new documents": "也用于新文档",
+ "Automatic (X11 on KDE Plasma or with a fractional display scale)": "自动（在 KDE Plasma 上或屏幕缩放为小数时使用 X11）"
 }

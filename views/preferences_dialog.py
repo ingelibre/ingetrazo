@@ -171,7 +171,7 @@ class PreferencesDialog(QDialog):
 
         from core.platform_choice import AUTO, WAYLAND, XCB
         self._platform = QComboBox()
-        for key, label in ((AUTO, tr("Automatic (X11 when the display scale is fractional)")),
+        for key, label in ((AUTO, tr("Automatic (X11 on KDE Plasma or with a fractional display scale)")),
                            (WAYLAND, tr("Wayland")), (XCB, tr("X11 (XWayland)"))):
             self._platform.addItem(label, key)
         self._platform.setCurrentIndex(max(0, self._platform.findData(
