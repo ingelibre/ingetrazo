@@ -6019,34 +6019,13 @@ class ComposerWindow(QMainWindow):
         dis_lay.addStretch(1)
         self._tabs.addTab(dis, tr("Layout"))
 
-        # -- tab Elementos: sheet navigator, item list and, below it, the
-        # properties of the selected item — one tab, so picking an item and
-        # changing it happen side by side (issue #93, @pacaeiro: «Select a
-        # Sheet, Pick an Item and change its properties below, all near»).
-        from PySide6.QtWidgets import (QAbstractItemView, QSplitter,
-                                       QTreeWidget)
+        # -- tab Elementos: the item list — names of one's own and folders
+        # by type (issue #93, @pacaeiro). Its own tab, the properties in the
+        # next one: Marco tried the list and the properties sharing one tab
+        # (two scrolls), folded and floating, and kept separate tabs.
+        from PySide6.QtWidgets import QAbstractItemView, QTreeWidget
         ele = QWidget()
         ele_lay = QVBoxLayout(ele)
-        ele_lay.setContentsMargins(0, 0, 0, 0)
-        nav = QHBoxLayout()
-        nav.setSpacing(2)
-
-        def _nav_btn(text, tip, step):
-            b = QPushButton(text)
-            b.setFixedWidth(26)
-            b.setToolTip(tip)
-            b.clicked.connect(lambda _c=False, s=step: self._step_sheet(s))
-            return b
-
-        nav.addWidget(_nav_btn("|<", tr("First sheet"), "first"))
-        nav.addWidget(_nav_btn("<", tr("Previous sheet"), -1))
-        self.nav_combo = QComboBox()
-        self.nav_combo.setToolTip(tr("Go to a sheet"))
-        self.nav_combo.currentIndexChanged.connect(self._on_nav_combo)
-        nav.addWidget(self.nav_combo, 1)
-        nav.addWidget(_nav_btn(">", tr("Next sheet"), 1))
-        nav.addWidget(_nav_btn(">|", tr("Last sheet"), "last"))
-        ele_lay.addLayout(nav)
         self.items_group_check = QCheckBox(tr("Group by type"))
         self.items_group_check.setToolTip(tr(
             "Show the items in folders — views, annotations, dimensions, "
@@ -6056,23 +6035,53 @@ class ComposerWindow(QMainWindow):
             str(_QS().value("composer/items_grouped", "0")) == "1")
         self.items_group_check.toggled.connect(self._on_items_grouping)
         self.items_list = QTreeWidget()
-        self.items_list.setHeaderHidden(True)
+        # QGIS's Items panel: an eye and a padlock per item, then its name.
+        self.items_list.setColumnCount(3)
+        self.items_list.setHeaderLabels(["👁", "🔒", tr("Item")])
+        head = self.items_list.header()
+        head.setStretchLastSection(True)
+        from PySide6.QtWidgets import QHeaderView
+        head.setSectionResizeMode(0, QHeaderView.Fixed)
+        head.setSectionResizeMode(1, QHeaderView.Fixed)
+        head.resizeSection(0, 30)
+        head.resizeSection(1, 30)
+        self.items_list.headerItem().setToolTip(0, tr("Visible"))
+        self.items_list.headerItem().setToolTip(1, tr("Locked"))
+        # The folders' arrows and indentation go with the NAME, so the eye
+        # and the padlock stay lined up on the left whatever the grouping.
+        self.items_list.setTreePosition(2)
         self.items_list.setRootIsDecorated(False)
-        self.items_list.setEditTriggers(
-            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
-            | QAbstractItemView.SelectedClicked)
+        # A file manager's habits (Marco, 26-09: «cuando seleccione uno de
+        # la lista debería llevarme a las propiedades»): a click selects and
+        # stays, a double-click opens the item's properties, F2 or the
+        # right-click menu renames. Only the name column is ever typed
+        # into; the eye and the padlock are plain check boxes.
+        self.items_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.items_list.itemDoubleClicked.connect(
+            lambda row, col: (row.data(0, Qt.UserRole) is not None
+                              and col == 2 and self._open_item_properties()))
+        self.items_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.items_list.customContextMenuRequested.connect(
+            self._items_context_menu)
+        from PySide6.QtGui import QShortcut as _QShortcut
+        f2 = _QShortcut(QKeySequence(Qt.Key_F2), self.items_list)
+        f2.setContext(Qt.WidgetShortcut)
+        f2.activated.connect(
+            lambda: (self.items_list.currentItem() is not None
+                     and self.items_list.currentItem().data(0, Qt.UserRole)
+                     is not None
+                     and self.items_list.editItem(
+                         self.items_list.currentItem(), 2)))
         self.items_list.setToolTip(tr(
-            "Double-click or F2 to rename an item; an empty name goes back "
-            "to the automatic one."))
+            "Double-click: the item's properties. F2 or right-click: rename "
+            "it (an empty name goes back to the automatic one)."))
         self.items_list.itemSelectionChanged.connect(self._on_list_select)
         self.items_list.itemChanged.connect(self._on_item_renamed)
-        top = QWidget()
-        top_lay = QVBoxLayout(top)
-        top_lay.setContentsMargins(0, 0, 0, 0)
-        top_lay.addWidget(self.items_group_check)
-        top_lay.addWidget(self.items_list, 1)
+        ele_lay.addWidget(self.items_group_check)
+        ele_lay.addWidget(self.items_list, 1)
+        self._tabs.addTab(ele, tr("Items"))
 
-        # per-type property pages, under the list
+        # -- tab Propiedades: per-type pages
         self.props = QStackedWidget()
 
         def _top_aligned(page: QWidget) -> QWidget:
@@ -6115,16 +6124,7 @@ class ComposerWindow(QMainWindow):
         self.props.addWidget(_top_aligned(self._page_nivel()))     # 13
         self.props.addWidget(_top_aligned(self._page_llamada()))   # 14
         self.props.addWidget(_top_aligned(self._page_cota_rad()))  # 15
-        split = QSplitter(Qt.Vertical)
-        split.setChildrenCollapsible(False)
-        split.addWidget(top)
-        split.addWidget(self.props)
-        split.setStretchFactor(0, 1)             # the list: a quarter…
-        split.setStretchFactor(1, 3)             # …the properties the rest
-        split.setSizes([160, 480])
-        self._items_split = split
-        ele_lay.addWidget(split, 1)
-        self._tabs.addTab(ele, tr("Items"))
+        self._tabs.addTab(self.props, tr("Item properties"))
 
         # Save / update / export live on the sheet toolbar at the top
         # (Marco, 2026-09-08: «para no sobrecargar la barra lateral derecha»).
@@ -7530,7 +7530,6 @@ class ComposerWindow(QMainWindow):
     def _refresh_sheet_tabs(self) -> None:
         """Both strips follow the document: this one marks the open sheet,
         the main window's marks «Model»."""
-        self._refresh_sheet_nav()
         tabs = getattr(self, "_sheet_tabs", None)
         if tabs is None:
             return
@@ -7795,6 +7794,11 @@ class ComposerWindow(QMainWindow):
             self.canvas.addItem(LlamadaCanvasItem(self, ll))
         if self.comp.cajetin is not None:
             self.canvas.addItem(CajetinItem(self, self.comp.cajetin))
+        # Hidden from the Items list's eye: not drawn, not picked (#93).
+        for it in self.canvas.items():
+            if isinstance(it, _SheetItem) and getattr(it.model, "hidden",
+                                                      False):
+                it.setVisible(False)
         if keep:
             for it in self.canvas.items():
                 if isinstance(it, _SheetItem) and any(it.model is m for m in keep):
@@ -8205,8 +8209,12 @@ class ComposerWindow(QMainWindow):
                 self.props.setCurrentIndex(10)
             else:
                 self.props.setCurrentIndex(0)
-            if item is not None and fresh and hasattr(self, "_tabs"):
-                self._tabs.setCurrentIndex(1)     # the Items tab: list + props
+            if (item is not None and fresh and hasattr(self, "_tabs")
+                    and not getattr(self, "_picking_from_list", False)):
+                # A pick on the sheet jumps to the properties; one made in
+                # the Items list stays there, or a double-click to rename
+                # would never reach its second click (#93).
+                self._tabs.setCurrentIndex(2)     # jump to properties
             self._sync_items_list(item)
         finally:
             self._updating = False
@@ -10973,12 +10981,9 @@ class ComposerWindow(QMainWindow):
 
     def _list_text(self, model) -> str:
         """What the Items list shows: the user's name, or the automatic
-        one."""
+        one (the eye and the padlock have their own columns)."""
         name = (getattr(model, "list_name", "") or "").strip()
-        label = name or self._item_label(model)
-        if getattr(model, "locked", False):
-            label = "🔒 " + label
-        return label
+        return name or self._item_label(model)
 
     def _refresh_items_list(self) -> None:
         from PySide6.QtCore import Qt as _Qt
@@ -10991,18 +10996,27 @@ class ComposerWindow(QMainWindow):
         folders: dict = {}
         if grouped:
             for key, title in self._ITEM_CATEGORIES:
-                f = QTreeWidgetItem([tr(title)])
+                f = QTreeWidgetItem(["", "", tr(title)])
                 f.setFlags(_Qt.ItemIsEnabled)          # a folder: no select
+                f.setFirstColumnSpanned(False)
                 f.setData(0, _Qt.UserRole, None)
                 folders[key] = f
         # top of the stack first — the reading order of a layers panel
         for model in sorted(self.comp.all_items(),
                             key=lambda m: getattr(m, "z", 0.0),
                             reverse=True):
-            row = QTreeWidgetItem([self._list_text(model)])
+            row = QTreeWidgetItem(["", "", self._list_text(model)])
             row.setData(0, _Qt.UserRole, id(model))
             row.setFlags(_Qt.ItemIsEnabled | _Qt.ItemIsSelectable
-                         | _Qt.ItemIsEditable)
+                         | _Qt.ItemIsEditable | _Qt.ItemIsUserCheckable)
+            row.setCheckState(0, _Qt.Unchecked
+                              if getattr(model, "hidden", False)
+                              else _Qt.Checked)
+            row.setCheckState(1, _Qt.Checked
+                              if getattr(model, "locked", False)
+                              else _Qt.Unchecked)
+            row.setToolTip(0, tr("Visible"))
+            row.setToolTip(1, tr("Locked"))
             if grouped:
                 folders[self._item_category(model)].addChild(row)
             else:
@@ -11011,7 +11025,7 @@ class ComposerWindow(QMainWindow):
             for key, _t in self._ITEM_CATEGORIES:
                 f = folders[key]
                 if f.childCount():
-                    f.setText(0, f"{f.text(0)} ({f.childCount()})")
+                    f.setText(2, f"{f.text(2)} ({f.childCount()})")
                     tree.addTopLevelItem(f)
                     f.setExpanded(True)
         tree.blockSignals(False)
@@ -11051,18 +11065,36 @@ class ComposerWindow(QMainWindow):
                 self._updating = True
                 self.canvas.clearSelection()
                 self._updating = False
-                it.force_select()
+                self._picking_from_list = True
+                try:
+                    it.force_select()
+                finally:
+                    self._picking_from_list = False
                 break
 
-    def _on_item_renamed(self, row, _column=0) -> None:
-        """A name typed in the Items list (double-click or F2): stored on
-        the item, undoable; empty goes back to the automatic name."""
+    def _on_item_renamed(self, row, column=2) -> None:
+        """A change in the Items list: the eye (column 0) shows or hides
+        the item, the padlock (1) locks it, the name (2, double-click or
+        F2) renames it — each undoable; an empty name goes back to the
+        automatic one."""
         target = row.data(0, Qt.UserRole)
         if target is None:
             return
+        if column in (0, 1):
+            field = "hidden" if column == 0 else "locked"
+            on = row.checkState(column) == Qt.Checked
+            value = (not on) if column == 0 else on
+            model = next((m for m in self.comp.all_items()
+                          if id(m) == target), None)
+            if model is not None and getattr(model, field, False) != value:
+                self.history.execute(EditItemCommand(model, {field: value}),
+                                     notify=False)
+                self._mark_dirty()
+                QTimer.singleShot(0, self._rebuild_canvas)
+            return
         for it in self.canvas.items():
             if isinstance(it, _SheetItem) and id(it.model) == target:
-                text = row.text(0).removeprefix("🔒 ").strip()
+                text = row.text(2).strip()
                 auto = self._item_label(it.model)
                 name = "" if text in ("", auto) else text
                 if name != (getattr(it.model, "list_name", "") or ""):
@@ -11075,39 +11107,36 @@ class ComposerWindow(QMainWindow):
         # Show the resolved text (the automatic name, the lock) again.
         QTimer.singleShot(0, self._refresh_items_list)
 
+    def _open_item_properties(self) -> None:
+        """The Properties tab for the item picked in the list."""
+        self._tabs.setCurrentIndex(2)
+
+    def _items_context_menu(self, pos) -> None:
+        row = self.items_list.itemAt(pos)
+        if row is None or row.data(0, Qt.UserRole) is None:
+            return
+        self.items_list.setCurrentItem(row)
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self.items_list)
+        menu.addAction(tr("Properties"), self._open_item_properties)
+        menu.addAction(tr("Rename"),
+                       lambda r=row: self.items_list.editItem(r, 2))
+        menu.addSeparator()
+        shown = row.checkState(0) == Qt.Checked
+        locked = row.checkState(1) == Qt.Checked
+        menu.addAction(tr("Hide") if shown else tr("Show"),
+                       lambda r=row, s=shown: r.setCheckState(
+                           0, Qt.Unchecked if s else Qt.Checked))
+        menu.addAction(tr("Unlock") if locked else tr("Lock"),
+                       lambda r=row, l=locked: r.setCheckState(
+                           1, Qt.Unchecked if l else Qt.Checked))
+        menu.exec(self.items_list.viewport().mapToGlobal(pos))
+
     def _on_items_grouping(self, on: bool) -> None:
         from PySide6.QtCore import QSettings
         QSettings().setValue("composer/items_grouped", "1" if on else "0")
         self._refresh_items_list()
         self._sync_items_list(self._selected_item())
-
-    # ---- sheet navigator (Items tab, issue #93) --------------------------------
-    def _refresh_sheet_nav(self) -> None:
-        combo = getattr(self, "nav_combo", None)
-        if combo is None:
-            return
-        comps = self._scene().compositions
-        combo.blockSignals(True)
-        combo.clear()
-        for c in comps:
-            combo.addItem(c.name)
-        combo.setCurrentIndex(comps.index(self.comp)
-                              if self.comp in comps else 0)
-        combo.blockSignals(False)
-
-    def _on_nav_combo(self, idx: int) -> None:
-        if idx >= 0 and idx != self.comp_combo.currentIndex():
-            self.comp_combo.setCurrentIndex(idx)     # the one switch there is
-
-    def _step_sheet(self, step) -> None:
-        n = self.comp_combo.count()
-        if not n:
-            return
-        cur = self.comp_combo.currentIndex()
-        idx = (0 if step == "first" else n - 1 if step == "last"
-               else max(0, min(n - 1, cur + int(step))))
-        if idx != cur:
-            self.comp_combo.setCurrentIndex(idx)
 
     def _on_scalebar_props(self, *_a) -> None:
         item = self._selected_item()
@@ -11740,6 +11769,8 @@ class ComposerWindow(QMainWindow):
         best = None
         best_d2 = thr_mm * thr_mm
         for frame in self.comp.frames:
+            if getattr(frame, "hidden", False):
+                continue                    # a hidden view offers no snaps
             pts, wpts = self.frame_snap_points(frame)
             if not len(pts):
                 continue
@@ -12159,6 +12190,8 @@ class ComposerWindow(QMainWindow):
 
         for m in sorted(comp.all_items(),
                         key=lambda it: getattr(it, "z", 0.0)):
+            if getattr(m, "hidden", False):
+                continue            # hidden from the Items list: not printed
             painter.save()
             painter.translate(m.x_mm, m.y_mm)
             paint(m)

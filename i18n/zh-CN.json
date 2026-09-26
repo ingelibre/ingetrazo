@@ -2081,15 +2081,12 @@
  "Automatic (X11 on KDE Plasma or with a fractional display scale)": "自动（在 KDE Plasma 上或屏幕缩放为小数时使用 X11）",
  "Hidden lines (dashed)": "隐藏线（虚线）",
  "Edges behind the model's faces, thin and dashed — the standard of a technical drawing (recomputes the view).": "位于模型面后方的边线，以细虚线显示——技术制图的标准（重新计算视图）。",
- "First sheet": "第一张图纸",
- "Previous sheet": "上一张图纸",
- "Go to a sheet": "转到图纸",
- "Next sheet": "下一张图纸",
- "Last sheet": "最后一张图纸",
  "Group by type": "按类型分组",
  "Show the items in folders — views, annotations, dimensions, graphics — instead of one list in stacking order.": "按文件夹显示元素——视图、注释、尺寸、图形——而不是按堆叠顺序的单一列表。",
- "Double-click or F2 to rename an item; an empty name goes back to the automatic one.": "双击或按 F2 重命名元素；名称留空则恢复为自动名称。",
  "Views": "视图",
  "Graphics": "图形",
- "Sheet elements": "图纸元素"
+ "Sheet elements": "图纸元素",
+ "Item": "元素",
+ "Double-click: the item's properties. F2 or right-click: rename it (an empty name goes back to the automatic one).": "双击：打开元素属性。F2 或右键：重命名（名称留空则恢复自动名称）。",
+ "Rename": "重命名"
 }

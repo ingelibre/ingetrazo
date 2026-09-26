@@ -2081,15 +2081,12 @@
  "Automatic (X11 on KDE Plasma or with a fractional display scale)": "Automático (X11 en KDE Plasma o con escala de pantalla fraccionaria)",
  "Hidden lines (dashed)": "Líneas ocultas (a trazos)",
  "Edges behind the model's faces, thin and dashed — the standard of a technical drawing (recomputes the view).": "Aristas que quedan detrás de las caras del modelo, finas y a trazos — la norma del dibujo técnico (recalcula la vista).",
- "First sheet": "Primera lámina",
- "Previous sheet": "Lámina anterior",
- "Go to a sheet": "Ir a una lámina",
- "Next sheet": "Lámina siguiente",
- "Last sheet": "Última lámina",
  "Group by type": "Agrupar por tipo",
  "Show the items in folders — views, annotations, dimensions, graphics — instead of one list in stacking order.": "Muestra los elementos en carpetas —vistas, anotaciones, cotas, gráficos— en vez de una sola lista en orden de apilado.",
- "Double-click or F2 to rename an item; an empty name goes back to the automatic one.": "Doble clic o F2 para renombrar un elemento; un nombre vacío vuelve al automático.",
  "Views": "Vistas",
  "Graphics": "Gráficos",
- "Sheet elements": "Elementos de la lámina"
+ "Sheet elements": "Elementos de la lámina",
+ "Item": "Elemento",
+ "Double-click: the item's properties. F2 or right-click: rename it (an empty name goes back to the automatic one).": "Doble clic: las propiedades del elemento. F2 o clic derecho: renombrarlo (un nombre vacío vuelve al automático).",
+ "Rename": "Renombrar"
 }

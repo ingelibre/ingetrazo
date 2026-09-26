@@ -244,6 +244,9 @@ class MarcoVista:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
     #: In-place view edits (LayOut: double-click the viewport, then pan /
     #: orbit / zoom). ``None`` = whatever the view or scene provides.
     cam_target: Optional[list] = None      # world point the camera centres on
@@ -374,6 +377,9 @@ class TextoItem:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
 
 @dataclass
@@ -405,6 +411,9 @@ class ImagenItem:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
 
 @dataclass
@@ -427,6 +436,9 @@ class Cajetin:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
     #: The EDITABLE rows: [label, value] pairs, in drawing order. Filled
     #: from the legacy fixed attributes on load when absent (old docs);
     #: all edits and painting go through this list.
@@ -545,6 +557,9 @@ class BarraEscala:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
     def segment_m(self) -> float:
         """A round model length per segment so the whole bar prints close
@@ -595,6 +610,9 @@ class FlechaNorte:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
     @property
     def w_mm(self) -> float:
@@ -634,6 +652,9 @@ class PerfilTerreno:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
 
 @dataclass
@@ -652,6 +673,9 @@ class Leyenda:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
     @property
     def h_mm(self) -> float:
@@ -677,6 +701,9 @@ class FormaItem:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
     radius_mm: float = 0.0       # rect: corner rounding radius
     sides: int = 6               # poligono: number of sides (3..24)
     color: str = "#1e242c"       # stroke colour
@@ -733,6 +760,9 @@ class EtiquetaItem:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
     @property
     def anchored(self) -> bool:
@@ -792,6 +822,9 @@ class NivelItem:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
     @property
     def anchored(self) -> bool:
@@ -851,6 +884,9 @@ class LlamadaItem:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
     @property
     def bubble_mm(self) -> float:
@@ -887,6 +923,9 @@ class CotaAngularItem:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
     def angles(self) -> tuple[float, float]:
         """``(start, sweep)`` in radians, page coordinates (y down): the
@@ -1022,6 +1061,9 @@ class CotaItem:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
     @property
     def anchored(self) -> bool:
@@ -1176,6 +1218,9 @@ class CotaRadialItem:
     #: The name the user gave it in the Items list (issue #93); "" =
     #: the automatic one (its kind and what it shows).
     list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
 
     @property
     def w_mm(self) -> float:
