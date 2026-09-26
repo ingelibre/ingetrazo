@@ -36,12 +36,12 @@ def _keys(act):
 def test_a_shortcut_of_ones_own_survives_a_restart_and_the_language(
         monkeypatch):
     from core.i18n import set_language
-    from views.shortcuts import ShortcutsDialog
+    from views.shortcuts import ShortcutsPanel
     QSettings().remove("shortcuts")
     win = _window()
     try:
         act = _action(win, "Explode Group")
-        dlg = ShortcutsDialog(win)
+        dlg = ShortcutsPanel(win)
         assert dlg.assign(act, [QKeySequence("Ctrl+Alt+E")])
         assert _keys(act) == ["Ctrl+Alt+E"]
     finally:
@@ -59,7 +59,7 @@ def test_a_shortcut_of_ones_own_survives_a_restart_and_the_language(
 
 
 def test_a_clash_takes_the_keys_from_the_other_action(monkeypatch):
-    from views.shortcuts import ShortcutsDialog, collect_actions
+    from views.shortcuts import ShortcutsPanel, collect_actions
     QSettings().remove("shortcuts")
     monkeypatch.setattr(QMessageBox, "question",
                         staticmethod(lambda *a, **k: QMessageBox.Yes))
@@ -68,7 +68,7 @@ def test_a_clash_takes_the_keys_from_the_other_action(monkeypatch):
         group = _action(win, "Make Group")
         explode = _action(win, "Explode Group")
         taken = _keys(group)[0]
-        ShortcutsDialog(win).assign(explode, [QKeySequence(taken)])
+        ShortcutsPanel(win).assign(explode, [QKeySequence(taken)])
         assert _keys(explode) == [taken]
         assert taken not in _keys(group)            # only one holds it
         seen: dict = {}
@@ -82,7 +82,7 @@ def test_a_clash_takes_the_keys_from_the_other_action(monkeypatch):
 
 
 def test_default_puts_the_factory_keys_back(monkeypatch):
-    from views.shortcuts import ShortcutsDialog, default_shortcuts
+    from views.shortcuts import ShortcutsPanel, default_shortcuts
     QSettings().remove("shortcuts")
     monkeypatch.setattr(QMessageBox, "question",
                         staticmethod(lambda *a, **k: QMessageBox.Yes))
@@ -90,7 +90,7 @@ def test_default_puts_the_factory_keys_back(monkeypatch):
     try:
         act = _action(win, "Make Group")
         factory = _keys(act)
-        dlg = ShortcutsDialog(win)
+        dlg = ShortcutsPanel(win)
         dlg.assign(act, [])
         assert _keys(act) == []
         dlg.assign(act, default_shortcuts(act))

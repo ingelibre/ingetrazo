@@ -17,10 +17,10 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout,
-                               QHeaderView, QKeySequenceEdit, QLabel,
-                               QLineEdit, QMessageBox, QPushButton,
-                               QTreeWidget, QTreeWidgetItem, QVBoxLayout)
+from PySide6.QtWidgets import (QHBoxLayout, QHeaderView, QKeySequenceEdit,
+                               QLabel, QLineEdit, QMessageBox, QPushButton,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+                               QWidget)
 
 from core.i18n import source_of, tr
 
@@ -99,15 +99,14 @@ def save_shortcut(action: QAction, seqs: list) -> None:
     st.sync()
 
 
-class ShortcutsDialog(QDialog):
-    """Window ▸ Keyboard shortcuts…: every action, its keys, a search box;
-    pick a row and press the new keys."""
+class ShortcutsPanel(QWidget):
+    """Preferences ▸ Keyboard shortcuts (Marco, 26-09: «deberían estar
+    dentro de preferencias»): every action, its keys, a search box; pick a
+    row and press the new keys. Changes apply at once and are remembered."""
 
-    def __init__(self, window) -> None:
-        super().__init__(window)
+    def __init__(self, window, parent=None) -> None:
+        super().__init__(parent)
         self._window = window
-        self.setWindowTitle(tr("Keyboard shortcuts"))
-        self.resize(560, 620)
         lay = QVBoxLayout(self)
         self._filter = QLineEdit()
         self._filter.setPlaceholderText(tr("Search an action or a key…"))
@@ -136,17 +135,15 @@ class ShortcutsDialog(QDialog):
         reset.clicked.connect(self._on_reset)
         edit_row.addWidget(reset)
         lay.addLayout(edit_row)
+        foot = QHBoxLayout()
         hint = QLabel(tr("Pick an action, click the box and press the keys. "
                          "Changes apply at once and are remembered."))
         hint.setWordWrap(True)
-        lay.addWidget(hint)
-        buttons = QDialogButtonBox()
-        reset_all = buttons.addButton(tr("Restore all defaults"),
-                                      QDialogButtonBox.ResetRole)
+        foot.addWidget(hint, 1)
+        reset_all = QPushButton(tr("Restore all defaults"))
         reset_all.clicked.connect(self._on_reset_all)
-        close = buttons.addButton(tr("Close"), QDialogButtonBox.AcceptRole)
-        close.clicked.connect(self.accept)
-        lay.addWidget(buttons)
+        foot.addWidget(reset_all)
+        lay.addLayout(foot)
         self._actions = collect_actions(window)
         self._fill()
 

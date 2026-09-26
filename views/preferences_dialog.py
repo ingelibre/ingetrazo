@@ -325,6 +325,11 @@ class PreferencesDialog(QDialog):
         form.addRow("", note)
         tabs.addTab(un, tr("Units"))
 
+        # ---- Keyboard shortcuts (issue #138) -------------------------------
+        from views.shortcuts import ShortcutsPanel
+        self._shortcuts = ShortcutsPanel(self._window)
+        tabs.addTab(self._shortcuts, tr("Keyboard shortcuts"))
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok
                                    | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
