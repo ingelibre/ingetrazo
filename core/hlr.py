@@ -555,6 +555,7 @@ def _geometry_as_lists(tris, hard, soft, soft_n):
 KIND_EDGE = 0        #: a plain edge between two visible faces
 KIND_PROFILE = 1     #: silhouette / outline against the background (SketchUp's Profiles)
 KIND_CUT = 2         #: the section plane slicing through a solid
+KIND_HIDDEN = 3      #: the part of an edge something stands in front of (dashed)
 
 
 class HlrDrawing:
@@ -599,6 +600,94 @@ def _surface_at(p, depth, tv2, tvz, tol) -> bool:
         return False
     z = l0 * tvz[:, 0] + l1 * tvz[:, 1] + l2 * tvz[:, 2]
     return bool(np.any(inside & (z <= depth + tol)))
+
+
+def _drop_hidden_under_visible(segs, world, kinds, tol: float):
+    """A hidden line that falls on a visible one is not drawn — the
+    visible line wins (the back edges of a wall seen from the front lie
+    exactly under its front outline). Segments are grouped by their line
+    (direction and offset, rounded), so this stays linear in the drawing
+    and each hidden piece is only compared with the visible pieces on its
+    own line."""
+    hid = np.nonzero(kinds == KIND_HIDDEN)[0]
+    if not len(hid):
+        return segs, world, kinds
+    atol = 1e-6                                   # radians
+    inv_d = 1.0 / max(tol, 1e-12)
+
+    def key_and_span(row):
+        x0, y0, x1, y1 = row
+        dx, dy = x1 - x0, y1 - y0
+        ln = math.hypot(dx, dy)
+        if ln < 1e-15:
+            return None
+        ux, uy = dx / ln, dy / ln
+        if ux < -1e-12 or (abs(ux) <= 1e-12 and uy < 0):
+            ux, uy = -ux, -uy                     # one direction per line
+        ang = math.atan2(uy, ux)
+        off = ux * y0 - uy * x0                   # signed distance of line
+        t0, t1 = ux * x0 + uy * y0, ux * x1 + uy * y1
+        return ((round(ang / atol), round(off * inv_d)),
+                (min(t0, t1), max(t0, t1)))
+
+    lines: dict = {}
+    for i in np.nonzero(kinds != KIND_HIDDEN)[0]:
+        ks = key_and_span(segs[i])
+        if ks is not None:
+            lines.setdefault(ks[0], []).append(ks[1])
+    if not lines:
+        return segs, world, kinds
+    keep_s, keep_w, keep_k = [], [], []
+    for i in range(len(segs)):
+        if kinds[i] != KIND_HIDDEN:
+            keep_s.append(segs[i]); keep_w.append(world[i])
+            keep_k.append(kinds[i])
+            continue
+        ks = key_and_span(segs[i])
+        if ks is None:
+            continue
+        (ka, ko), (lo, hi) = ks
+        # Hidden pieces already kept cover the line too: a box's front and
+        # back edges fall on the same line on paper, once is enough.
+        lines_here = lines
+        cover = []
+        for da in (-1, 0, 1):
+            for do in (-1, 0, 1):
+                cover.extend(lines.get((ka + da, ko + do), ()))
+        if not cover:
+            keep_s.append(segs[i]); keep_w.append(world[i])
+            keep_k.append(kinds[i])
+            lines_here.setdefault((ka, ko), []).append((lo, hi))
+            continue
+        span = hi - lo
+        if span < 1e-15:
+            continue
+        cover = sorted(((max(0.0, (c0 - lo) / span),
+                         min(1.0, (c1 - lo) / span))
+                        for c0, c1 in cover if c1 > lo and c0 < hi))
+        merged: list = []
+        for c0, c1 in cover:
+            if merged and c0 <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], c1))
+            else:
+                merged.append((c0, c1))
+        # The segment may run either way along its line.
+        x0, y0, x1, y1 = segs[i]
+        ux = (x1 - x0) / (math.hypot(x1 - x0, y1 - y0))
+        uy = (y1 - y0) / (math.hypot(x1 - x0, y1 - y0))
+        forward = ux > 1e-12 or (abs(ux) <= 1e-12 and uy > 0)
+        w0, w1 = world[i, 0, :], world[i, 1, :]
+        for t0, t1 in subtract_spans([(0.0, 1.0)], merged):
+            a, b = (t0, t1) if forward else (1.0 - t1, 1.0 - t0)
+            keep_s.append((x0 + a * (x1 - x0), y0 + a * (y1 - y0),
+                           x0 + b * (x1 - x0), y0 + b * (y1 - y0)))
+            keep_w.append((w0 + a * (w1 - w0), w0 + b * (w1 - w0)))
+            keep_k.append(KIND_HIDDEN)
+            lines_here.setdefault((ka, ko), []).append(
+                (lo + t0 * span, lo + t1 * span))
+    return (np.asarray(keep_s, dtype=float).reshape(-1, 4),
+            np.asarray(keep_w, dtype=float).reshape(-1, 2, 3),
+            np.asarray(keep_k, dtype=np.int8))
 
 
 def _merge_collinear(segs, world, kinds, tol: float):
@@ -680,7 +769,8 @@ def _merge_collinear(segs, world, kinds, tol: float):
 
 
 def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
-                fills: bool = True, caps: bool = True) -> HlrDrawing:
+                fills: bool = True, caps: bool = True,
+                hidden: bool = False) -> HlrDrawing:
     """The full line drawing of *scene* under *camera* (parallel): visible
     segments classified as edge / profile / cut, plus the section-cut
     rings to fill. :func:`hlr_view` is the segments-only view of this.
@@ -701,6 +791,13 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     tapa» (Rafael, 2026-09-16). The cut chords lie ON the plane, so the
     outline of the cut always survives. ``caps=False`` draws the open
     silhouette instead.
+
+    Hidden lines (``hidden=True``, issue #81, @pacaeiro: «I expected that
+    Hidden line will show hidden lines of the model as dashed lines —
+    that's the standard»): the parts of the hard edges that something
+    stands in front of come back too, as KIND_HIDDEN, for the sheet to ink
+    dashed. What lies inside the material behind a section cut stays out,
+    as on a drawn section; silhouettes and cut chords have no hidden part.
 
     ``geometry`` — optional pre-collected arrays ``(tris, hard, soft,
     soft_n)`` as ``Viewport.hlr_geometry()`` returns them (world space:
@@ -833,14 +930,30 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             else:
                 spans = visible_spans(a2, b2, az, bz,
                                       tv2[idx], tvz[idx], eps)
-        if cap_abg is not None and spans:
+        # The hidden part: the rest of the edge, before the section cap
+        # takes what lies inside the material (that is not drawn at all).
+        hid = (subtract_spans([(0.0, 1.0)], spans)
+               if hidden and i < n_hard else [])
+        if cap_abg is not None and (spans or hid):
             elo = np.minimum(a2, b2)
             ehi = np.maximum(a2, b2)
             if not (ehi[0] < cap_box[0][0] or elo[0] > cap_box[1][0]
                     or ehi[1] < cap_box[0][1] or elo[1] > cap_box[1][1]):
-                spans = subtract_spans(
-                    spans, cap_hidden_spans(a2, b2, az, bz, cap_P, cap_Q,
-                                            cap_abg, cap_eps))
+                inside = cap_hidden_spans(a2, b2, az, bz, cap_P, cap_Q,
+                                          cap_abg, cap_eps)
+                spans = subtract_spans(spans, inside)
+                hid = subtract_spans(hid, inside)
+        for t0, t1 in hid:
+            if (t1 - t0) < 1e-9:
+                continue
+            p = a2 + t0 * (b2 - a2)
+            q = a2 + t1 * (b2 - a2)
+            if math.hypot(q[0] - p[0], q[1] - p[1]) < zero_len:
+                continue
+            out.append((p[0], p[1], q[0], q[1]))
+            out_k.append(KIND_HIDDEN)
+            w0, w1 = E[i, 0, :], E[i, 1, :]
+            out_w.append((w0 + t0 * (w1 - w0), w0 + t1 * (w1 - w0)))
         for t0, t1 in spans:
             if (t1 - t0) < 1e-9:
                 continue
@@ -881,6 +994,9 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     if len(segs) > 1:
         segs, world, kinds = _merge_collinear(segs, world, kinds,
                                               ext_e * 1e-9)
+    if hidden and len(segs):
+        segs, world, kinds = _drop_hidden_under_visible(
+            segs, world, kinds, max(ext_e * 1e-6, 1e-9))
     return HlrDrawing(segs, world, kinds, loops if fills else [])
 
 

@@ -592,8 +592,9 @@ _VECTOR_INK = QColor(30, 36, 44)
 def vector_pens(frame: MarcoVista) -> dict:
     """The three pens of the vector style, by line class (core.hlr KIND_*):
     cut / profile / edge widths from the frame, in paper mm."""
-    from core.hlr import KIND_CUT, KIND_EDGE, KIND_PROFILE
+    from core.hlr import KIND_CUT, KIND_EDGE, KIND_HIDDEN, KIND_PROFILE
     widths = {
+        KIND_HIDDEN: float(getattr(frame, "pen_edge_mm", 0.18) or 0.18),
         KIND_EDGE: float(getattr(frame, "pen_edge_mm", 0.18) or 0.18),
         KIND_PROFILE: float(getattr(frame, "pen_profile_mm", 0.35) or 0.35),
         KIND_CUT: float(getattr(frame, "pen_cut_mm", 0.5) or 0.5)}
@@ -603,6 +604,11 @@ def vector_pens(frame: MarcoVista) -> dict:
         pen.setWidthF(max(0.05, w))
         pen.setCapStyle(Qt.RoundCap)
         pen.setJoinStyle(Qt.RoundJoin)
+        if kind == KIND_HIDDEN:
+            # Dashed, in paper mm whatever the pen: 1.5 mm dash, 0.8 gap.
+            pen.setCapStyle(Qt.FlatCap)
+            w = max(0.05, w)
+            pen.setDashPattern([1.5 / w, 0.8 / w])
         pens[kind] = pen
     return pens
 
@@ -618,7 +624,7 @@ def _paint_hlr_lines_mm(painter: QPainter, frame: MarcoVista, hlr,
     sheet never passes one."""
     import numpy as np
     from PySide6.QtCore import QLineF
-    from core.hlr import KIND_CUT, KIND_EDGE, KIND_PROFILE
+    from core.hlr import KIND_CUT, KIND_EDGE, KIND_HIDDEN, KIND_PROFILE
     segs = np.asarray(hlr, dtype=float).reshape(-1, 4)
     pens = vector_pens(frame)
     if kinds is None or len(kinds) != len(segs):
@@ -627,15 +633,16 @@ def _paint_hlr_lines_mm(painter: QPainter, frame: MarcoVista, hlr,
     else:
         k = np.asarray(kinds)
         rows = {kind: segs[k == kind]
-                for kind in (KIND_EDGE, KIND_PROFILE, KIND_CUT)}
+                for kind in (KIND_HIDDEN, KIND_EDGE, KIND_PROFILE, KIND_CUT)}
         if budget is not None and len(segs) > budget:
             left = int(budget)
-            for kind in (KIND_CUT, KIND_PROFILE, KIND_EDGE):
+            for kind in (KIND_CUT, KIND_PROFILE, KIND_EDGE, KIND_HIDDEN):
                 take = max(0, min(len(rows[kind]), left))
                 rows[kind] = rows[kind][:take]
                 left -= take
         groups = [(kind, rows[kind])
-                  for kind in (KIND_EDGE, KIND_PROFILE, KIND_CUT)]
+                  for kind in (KIND_HIDDEN, KIND_EDGE, KIND_PROFILE,
+                               KIND_CUT)]
     for kind, rows in groups:
         if not len(rows):
             continue
@@ -5059,6 +5066,26 @@ class ComposerCanvasView(QGraphicsView):
         else:
             self.composer.place_tool(start.x(), start.y(), end.x(), end.y())
 
+    def forget_scene_items(self) -> None:
+        """The canvas is about to be cleared: let go of the preview, the snap
+        marker and the rubber band — they die with it — but KEEP the points
+        of a placement in progress. Every rebuild used to drop the placement
+        instead, and a rebuild between the two clicks is ordinary: the view
+        just drawn finishes its render, a field refreshes… so the first
+        click of «two clicks» was lost and nothing was placed (#95,
+        @pacaeiro: still in 0.5.2 for views and arrows). The next mouse
+        move draws the rubber band again. A chain of dimensions keeps its
+        old behaviour (it is finished): it holds placed items."""
+        if self._chain_pts or self._chain_cotas:
+            self.cancel_placement()
+            return
+        self._preview = None
+        self._snap_marker = None
+        self._band_item = None
+        self._band_start = None
+        self._band_vp = None
+        self._band_zoom = False
+
     def cancel_placement(self) -> None:
         """Drop an in-progress two-point placement (Esc / tool switch); a
         chain in progress is FINISHED, not dropped — its cotas are placed."""
@@ -5122,6 +5149,21 @@ class ComposerCanvasView(QGraphicsView):
                 and hasattr(self.composer, "_set_tool_mode")):
             # Esc with nothing in progress leaves the tool (a second Esc
             # after cancelling a placement); the format painter too.
+            self.composer._set_tool_mode("select")
+            actions = getattr(self.composer, "_tool_actions", {})
+            if "select" in actions:
+                actions["select"].setChecked(True)
+            event.accept()
+            return
+        if (event.key() == Qt.Key_Space and not editing
+                and not event.isAutoRepeat()
+                and not event.modifiers() & ~Qt.KeypadModifier
+                and hasattr(self.composer, "_set_tool_mode")):
+            # Space = Select, as in the model (SketchUp): it ends whatever
+            # is being placed — a chain of dimensions is finished, as Esc
+            # does — and puts the arrow back (#83, @pacaeiro: «in Model
+            # view Space ends a command, in Sheet Composer it is Esc»).
+            self.cancel_placement()
             self.composer._set_tool_mode("select")
             actions = getattr(self.composer, "_tool_actions", {})
             if "select" in actions:
@@ -6440,6 +6482,12 @@ class ComposerWindow(QMainWindow):
             "Off, every edge uses the Edges pen (recomputes the view)."))
         self.profiles_check.toggled.connect(self._on_frame_pens)
         _row(self._pen_rows, None, self.profiles_check)
+        self.hidden_check = QCheckBox(tr("Hidden lines (dashed)"))
+        self.hidden_check.setToolTip(tr(
+            "Edges behind the model's faces, thin and dashed — the standard "
+            "of a technical drawing (recomputes the view)."))
+        self.hidden_check.toggled.connect(self._on_frame_pens)
+        _row(self._pen_rows, None, self.hidden_check)
         self.cut_fill_combo = QComboBox()
         self.cut_fill_combo.addItem(tr("Solid"), "solid")
         self.cut_fill_combo.addItem(tr("Hatched 45°"), "hatch")
@@ -7625,7 +7673,7 @@ class ComposerWindow(QMainWindow):
         # mid-placement (undo between the two clicks is routine). Drop the
         # placement first or the next mouse move touches dead C++ objects.
         if hasattr(self, "_view"):
-            self._view.cancel_placement()
+            self._view.forget_scene_items()
         # Likewise the frame whose view is being edited in place: its item
         # dies with the canvas, and ending the edit afterwards (the next
         # double-click does) would touch a deleted C++ object.
@@ -7811,6 +7859,8 @@ class ComposerWindow(QMainWindow):
                     float(getattr(f, "pen_edge_mm", 0.18) or 0.18))
                 self.profiles_check.setChecked(
                     bool(getattr(f, "profiles", True)))
+                self.hidden_check.setChecked(
+                    bool(getattr(f, "hidden_lines", False)))
                 fidx = self.cut_fill_combo.findData(
                     getattr(f, "cut_fill", "solid") or "solid")
                 self.cut_fill_combo.setCurrentIndex(max(fidx, 0))
@@ -8882,8 +8932,8 @@ class ComposerWindow(QMainWindow):
                      "title_style", "title_scale", "title_align",
                      "title_pos", "title_mm",
                      "pen_cut_mm", "pen_profile_mm", "pen_edge_mm",
-                     "profiles", "cut_fill", "cut_fill_color",
-                     "cut_hatch_mm"),
+                     "profiles", "hidden_lines", "cut_fill",
+                     "cut_fill_color", "cut_hatch_mm"),
         CotaRadialItem: ("text_mm", "decimals", "units", "ends",
                          "stroke_mm", "color", "text_color", "offset_mm",
                          "text_bg", "text_bg_opacity", "centre_mark"),
@@ -10120,7 +10170,7 @@ class ComposerWindow(QMainWindow):
         style; the edge and profile pens serve every style (a raster frame
         renders its lines that thick)."""
         on = frame.style == "vectorial"
-        for w in (self.pen_cut_spin, self.profiles_check,
+        for w in (self.pen_cut_spin, self.profiles_check, self.hidden_check,
                   self.cut_fill_combo, self.cut_fill_btn,
                   self.cut_hatch_spin):
             w.setEnabled(on)
@@ -10180,9 +10230,12 @@ class ComposerWindow(QMainWindow):
             "pen_profile_mm": float(self.pen_profile_spin.value()),
             "pen_edge_mm": float(self.pen_edge_spin.value()),
             "profiles": self.profiles_check.isChecked(),
+            "hidden_lines": self.hidden_check.isChecked(),
             "cut_fill": self.cut_fill_combo.currentData() or "solid",
             "cut_hatch_mm": float(self.cut_hatch_spin.value())}
         recompute = (changes["profiles"] != getattr(m, "profiles", True)
+                     or changes["hidden_lines"] != getattr(m, "hidden_lines",
+                                                           False)
                      or ((changes["cut_fill"] == "none")
                          != (getattr(m, "cut_fill", "solid") == "none")))
         # A raster frame bakes the edge / profile pens into its pixels.
@@ -11546,7 +11599,8 @@ class ComposerWindow(QMainWindow):
                 vp.scene, vp.camera, geometry=self._scene_geometry(),
                 profiles=bool(getattr(frame, "profiles", True)),
                 fills=(getattr(frame, "cut_fill", "solid") or "solid")
-                != "none")
+                != "none",
+                hidden=bool(getattr(frame, "hidden_lines", False)))
             segs = drawing.segs
             model_h = model_height_for_frame(frame.h_mm, frame.scale_n)
             k = frame.h_mm / model_h                 # paper mm per metre
@@ -11590,7 +11644,9 @@ class ComposerWindow(QMainWindow):
                                geometry=self._scene_geometry(),
                                profiles=bool(getattr(frame, "profiles",
                                                      True)),
-                               fills=False)
+                               fills=False,
+                               hidden=bool(getattr(frame, "hidden_lines",
+                                                   False)))
 
         return self._with_frame_camera(frame, run)
 
@@ -11688,15 +11744,20 @@ class ComposerWindow(QMainWindow):
         if not path:
             return
         drawing = self.model_view_drawing(item.model)
-        from core.hlr import KIND_CUT, KIND_PROFILE
+        from core.hlr import KIND_CUT, KIND_EDGE, KIND_HIDDEN, KIND_PROFILE
         from formats.dxf_out import save_dxf_layers
         layer = frame_title_text(item.model).split(" — ")[0]
         k = drawing.kinds
-        # One layer per line class — IngeCAD's pen table does the weights.
-        n = save_dxf_layers(path, [
-            (layer, drawing.segs[(k != KIND_CUT) & (k != KIND_PROFILE)]),
+        # One layer per line class — IngeCAD's pen table does the weights;
+        # the hidden lines go on their own layer, dashed (#81).
+        groups = [
+            (layer, drawing.segs[k == KIND_EDGE]),
             (f"{layer}-PERFIL", drawing.segs[k == KIND_PROFILE]),
-            (f"{layer}-CORTE", drawing.segs[k == KIND_CUT])])
+            (f"{layer}-CORTE", drawing.segs[k == KIND_CUT])]
+        if getattr(item.model, "hidden_lines", False):
+            groups.append((f"{layer}-OCULTAS", drawing.segs[k == KIND_HIDDEN],
+                           "DASHED"))
+        n = save_dxf_layers(path, groups)
         self.statusBar().showMessage(
             tr("Exported {n} lines to {name}", n=n, name=path), 5000)
 

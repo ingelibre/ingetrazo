@@ -43,3 +43,40 @@ def test_a_shaky_first_click_still_waits_for_the_second(monkeypatch, mode):
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+@pytest.mark.parametrize("mode", ["vista", "flecha", "linea", "rect"])
+def test_a_canvas_rebuild_between_the_clicks_keeps_the_first_one(
+        monkeypatch, mode):
+    """The rest of #95 (@pacaeiro, still in 0.5.2 for views and arrows):
+    between the two clicks the canvas is rebuilt — the view just drawn
+    finishes its render, a field refreshes — and every rebuild dropped the
+    placement, so the first click was lost. The test above never saw it
+    because it switches rendering off."""
+    from views.composer import ComposerWindow
+    from views.main_window import MainWindow
+    monkeypatch.setattr(ComposerWindow, "render_frame", lambda self, f: None)
+    win = MainWindow()
+    comp = ComposerWindow(win)
+    try:
+        comp.show()
+        _app.processEvents()
+        view, vp = comp._view, comp._view.viewport()
+        f = comp.comp.frames[0]
+        a = view.mapFromScene(f.x_mm + 20, f.y_mm + 20)
+        mid = view.mapFromScene(f.x_mm + 60, f.y_mm + 50)
+        b = view.mapFromScene(f.x_mm + 100, f.y_mm + 80)
+        n0 = len(comp.comp.all_items())
+        comp._tool_actions[mode].trigger()
+        QTest.mouseClick(vp, Qt.LeftButton, Qt.NoModifier, a)
+        QTest.mouseMove(vp, mid)                      # rubber band drawn
+        comp._rebuild_canvas()                        # e.g. a render lands
+        _app.processEvents()
+        assert view._drag_start is not None           # first click kept
+        QTest.mouseMove(vp, b)                        # band drawn again
+        QTest.mouseClick(vp, Qt.LeftButton, Qt.NoModifier, b)
+        assert len(comp.comp.all_items()) == n0 + 1
+        comp.close()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

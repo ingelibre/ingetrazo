@@ -1385,5 +1385,7 @@
  "The First Person tool: walk the model like a game.": "A ferramenta Primeira pessoa: percorrer o modelo como num videogame.",
  "And thanks to everyone who tries IngeTrazo and reports what they find.": "E obrigado a todas as pessoas que testam o IngeTrazo e relatam o que encontram.",
  "Also use for new documents": "Usar também para documentos novos",
- "Automatic (X11 on KDE Plasma or with a fractional display scale)": "Automático (X11 no KDE Plasma ou com escala de tela fracionária)"
+ "Automatic (X11 on KDE Plasma or with a fractional display scale)": "Automático (X11 no KDE Plasma ou com escala de tela fracionária)",
+ "Hidden lines (dashed)": "Linhas ocultas (tracejadas)",
+ "Edges behind the model's faces, thin and dashed — the standard of a technical drawing (recomputes the view).": "Arestas atrás das faces do modelo, finas e tracejadas — o padrão do desenho técnico (recalcula a vista)."
 }

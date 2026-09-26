@@ -17,6 +17,15 @@ follow [SemVer](https://semver.org).
   unos 4 cm. Sumari sigue en la biblioteca de personas.
 
 ### Añadido
+- **Líneas ocultas a trazos en las láminas** (#81, @pacaeiro): una vista en
+  estilo vectorial puede dibujar las aristas que quedan detrás de las caras,
+  finas y a trazos, como en un plano técnico (casilla «Líneas ocultas» del
+  panel; salen también en el DXF, en su propia capa discontinua).
+- **Extensiones de ejemplo de varios archivos**: el menú Extensiones ▸
+  Extensiones de ejemplo instala también una extensión que es una carpeta
+  (la base para que el CAM de @felixriestra venga incluido, PR #132).
+- **Espacio vuelve a Seleccionar en el compositor**, como en el modelo (#83,
+  @pacaeiro).
 - **IngeTrazo en chino simplificado** (Idioma ▸ 简体中文), traducido por
   @liujvnes (#123). Su archivo no cargaba por una coma y porque algunas
   variables venían traducidas (`{名称}` en vez de `{name}`); ahora una prueba
@@ -24,6 +33,9 @@ follow [SemVer](https://semver.org).
   Preferencias ya ofrece el portugués, que solo estaba en el menú.
 
 ### Corregido
+- **Compositor: dos clics vuelven a colocar vistas, flechas y líneas** (#95,
+  @pacaeiro): si entre el primer y el segundo clic el lienzo se redibujaba
+  (por ejemplo al terminar el render de una vista), el primer clic se perdía.
 - **El material de un grupo aparece en «En el modelo»** (#133, @fafecm):
   pintar un grupo no lo añadía a la lista hasta explotarlo, y Purgar podía
   borrar un material que solo llevaba un grupo.

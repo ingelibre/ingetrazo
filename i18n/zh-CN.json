@@ -2078,5 +2078,7 @@
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total}": "文本和标题栏的动态字段: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total}",
  "Dynamic fields: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {nombre} {hoja} {total}": "动态字段: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {nombre} {hoja} {total}",
  "Also use for new documents": "也用于新文档",
- "Automatic (X11 on KDE Plasma or with a fractional display scale)": "自动（在 KDE Plasma 上或屏幕缩放为小数时使用 X11）"
+ "Automatic (X11 on KDE Plasma or with a fractional display scale)": "自动（在 KDE Plasma 上或屏幕缩放为小数时使用 X11）",
+ "Hidden lines (dashed)": "隐藏线（虚线）",
+ "Edges behind the model's faces, thin and dashed — the standard of a technical drawing (recomputes the view).": "位于模型面后方的边线，以细虚线显示——技术制图的标准（重新计算视图）。"
 }

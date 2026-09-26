@@ -306,6 +306,9 @@ class MarcoVista:
     pen_profile_mm: float = 0.35
     pen_edge_mm: float = 0.18
     profiles: bool = True
+    #: Hidden edges inked thin and dashed (issue #81) — the standard of a
+    #: technical drawing; off by default, as a view shows what is seen.
+    hidden_lines: bool = False
     #: Poché of the vector style where the section plane slices a solid:
     #: "solid" | "hatch" (45° lines every ``cut_hatch_mm``) | "none".
     cut_fill: str = "solid"
