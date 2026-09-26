@@ -1,4 +1,4 @@
-; Inno Setup script for IngeTrazo.
+﻿; Inno Setup script for IngeTrazo.
 ;
 ; Builds a professional Windows installer: Spanish wizard, GPL license page,
 ; shortcuts, "Add or Remove Programs" entry and a clean uninstaller.
@@ -48,7 +48,11 @@ OutputDir=..\dist
 OutputBaseFilename=ingetrazo-setup-v{#MyAppVersion}
 
 WizardStyle=modern
-ShowLanguageDialog=no
+; (Saved as UTF-8 WITH a BOM: that is how Inno Setup knows the texts
+; below are UTF-8 — without it «Associações» would come out garbled.)
+; The wizard speaks the language of Windows (English, Spanish or Brazilian
+; Portuguese) and asks only when none of them matches (issue #135).
+ShowLanguageDialog=auto
 DisableProgramGroupPage=yes
 ; We register file-type icons/associations — tells Explorer to refresh them.
 ChangesAssociations=yes
@@ -60,11 +64,31 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\resources\icons\ingetrazo.ico
 
 [Languages]
+; English first: it is the fallback when Windows speaks something else.
+Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+
+[CustomMessages]
+english.SkpDefault=Open .skp files with IngeTrazo (double-click)
+english.FileAssociations=File associations:
+english.IgzDocument=IngeTrazo document
+english.DaeModel=COLLADA model (IngeTrazo)
+english.SkpModel=SketchUp model (IngeTrazo)
+spanish.SkpDefault=Abrir archivos .skp con IngeTrazo (doble clic)
+spanish.FileAssociations=Asociaciones de archivos:
+spanish.IgzDocument=Documento de IngeTrazo
+spanish.DaeModel=Modelo COLLADA (IngeTrazo)
+spanish.SkpModel=Modelo de SketchUp (IngeTrazo)
+brazilianportuguese.SkpDefault=Abrir arquivos .skp com o IngeTrazo (clique duplo)
+brazilianportuguese.FileAssociations=Associações de arquivos:
+brazilianportuguese.IgzDocument=Documento do IngeTrazo
+brazilianportuguese.DaeModel=Modelo COLLADA (IngeTrazo)
+brazilianportuguese.SkpModel=Modelo do SketchUp (IngeTrazo)
 
 [Tasks]
-Name: "skpdefault"; Description: "Abrir archivos .skp con IngeTrazo (doble clic)"; \
-    GroupDescription: "Asociaciones de archivos:"
+Name: "skpdefault"; Description: "{cm:SkpDefault}"; \
+    GroupDescription: "{cm:FileAssociations}"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
     GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
@@ -101,7 +125,7 @@ Root: HKCU; Subkey: "Software\Microsoft\DirectX\UserGpuPreferences"; \
 Root: HKA; Subkey: "Software\Classes\.igz"; ValueType: string; \
     ValueData: "IngeTrazo.Document"; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document"; ValueType: string; \
-    ValueData: "Documento de IngeTrazo"; Flags: uninsdeletekey
+    ValueData: "{cm:IgzDocument}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\DefaultIcon"; \
     ValueType: string; ValueData: "{app}\ingetrazo-igz.ico,0"
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\shell\open\command"; \
@@ -115,7 +139,7 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\shell\open\command"; \
 ; "Open with" menu. The ProgId carries the branded icon, which only takes visual
 ; effect if the user later chooses IngeTrazo as the default for these files.
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae"; ValueType: string; \
-    ValueData: "Modelo COLLADA (IngeTrazo)"; Flags: uninsdeletekey
+    ValueData: "{cm:DaeModel}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae\DefaultIcon"; \
     ValueType: string; ValueData: "{app}\ingetrazo-dae.ico,0"
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae\shell\open\command"; \
@@ -125,7 +149,7 @@ Root: HKA; Subkey: "Software\Classes\.dae\OpenWithProgids"; \
     Flags: uninsdeletevalue
 
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp"; ValueType: string; \
-    ValueData: "Modelo de SketchUp (IngeTrazo)"; Flags: uninsdeletekey
+    ValueData: "{cm:SkpModel}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp\DefaultIcon"; \
     ValueType: string; ValueData: "{app}\ingetrazo-skp.ico,0"
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp\shell\open\command"; \

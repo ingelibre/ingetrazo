@@ -10,6 +10,8 @@ follow [SemVer](https://semver.org).
 - **En KDE Plasma con Wayland, IngeTrazo arranca en X11 (XWayland)** (#136,
   @leo-smi): ahí los menús flotantes de Qt salen rotos. Preferencias ▸
   General ▸ Servidor gráfico sigue permitiendo elegir Wayland.
+- **El instalador de Windows habla inglés, español y portugués** (#135,
+  @xyont), según el idioma de Windows.
 - **La figura de escala de un documento nuevo es el Ingeniero** (1,75 m,
   casco y chaleco), con los dos pies en el suelo: su pie izquierdo flotaba
   unos 4 cm. Sumari sigue en la biblioteca de personas.
