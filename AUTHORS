@@ -87,6 +87,21 @@ liuandy  (github.com/liujvnes)
     Simplified Chinese translation of the interface (issue #123, some
     2 080 strings): IngeTrazo's fourth language.
 
+Carlos Martins  (github.com/fafecm)
+    Bug reports with screen recordings that made each one reproducible:
+    diagonal guides crossing a hair off (#110), a group's paint missing
+    from the materials in the model (#133), groups drawn out of place
+    after exploding (#134).
+
+mnavarromugas  (github.com/mnavarromugas)
+    The first to try the 3D mouse on a real 3Dconnexion SpaceMouse (#108)
+    and to suggest inverting each axis on its own.
+
+xyont  (github.com/xyont)
+    Reports from mechanical modelling in millimetres: pulling a face up
+    against a wall (#94), units kept for new documents (#121), colours by
+    layer (#120).
+
 ---
 
 IngeTrazo is free software under GPL-3.0-or-later (see LICENSE).

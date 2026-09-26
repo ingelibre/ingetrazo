@@ -2101,5 +2101,8 @@
  "Restore all defaults": "全部恢复默认",
  "«{keys}» is already used by: {names}. Give it to «{action}» instead?": "「{keys}」已被以下操作使用：{names}。改为分配给「{action}」吗？",
  "Put every action back on its factory shortcut?": "将所有操作恢复为默认快捷键？",
- "Simplified Chinese translation of the interface.": "界面简体中文翻译。"
+ "Simplified Chinese translation of the interface.": "界面简体中文翻译。",
+ "Bug reports with videos that pinned down guides, group paint and exploded groups.": "附带视频的错误报告，定位了参考线、组材质和分解组的问题。",
+ "First to test the 3D mouse on a real SpaceMouse; per-axis inversion.": "首位在真实 SpaceMouse 上测试 3D 鼠标的用户；按轴反转。",
+ "Reports from mechanical modelling: pulling against a wall, units for new files.": "来自机械建模的报告：贴墙拉伸、新文件的单位。"
 }

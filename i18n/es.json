@@ -2101,5 +2101,8 @@
  "Restore all defaults": "Restablecer todos",
  "«{keys}» is already used by: {names}. Give it to «{action}» instead?": "«{keys}» ya lo usa: {names}. ¿Dárselo a «{action}»?",
  "Put every action back on its factory shortcut?": "¿Devolver todas las acciones a sus atajos de fábrica?",
- "Simplified Chinese translation of the interface.": "Traducción de la interfaz al chino simplificado."
+ "Simplified Chinese translation of the interface.": "Traducción de la interfaz al chino simplificado.",
+ "Bug reports with videos that pinned down guides, group paint and exploded groups.": "Reportes con vídeo que destaparon fallos de guías, pintura de grupos y grupos explotados.",
+ "First to test the 3D mouse on a real SpaceMouse; per-axis inversion.": "El primero en probar el ratón 3D con un SpaceMouse real; la inversión por eje.",
+ "Reports from mechanical modelling: pulling against a wall, units for new files.": "Reportes desde el modelado mecánico: tirar contra una pared, unidades para archivos nuevos."
 }

@@ -59,6 +59,17 @@ CONTRIBUTORS = [
     ("liuandy",
      "Simplified Chinese translation of the interface.",
      "https://github.com/liujvnes"),
+    ("Carlos Martins",
+     "Bug reports with videos that pinned down guides, group paint and "
+     "exploded groups.",
+     "https://github.com/fafecm"),
+    ("mnavarromugas",
+     "First to test the 3D mouse on a real SpaceMouse; per-axis inversion.",
+     "https://github.com/mnavarromugas"),
+    ("xyont",
+     "Reports from mechanical modelling: pulling against a wall, units "
+     "for new files.",
+     "https://github.com/xyont"),
 ]
 
 #: Roll speed: pixels per tick, and the tick.
