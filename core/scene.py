@@ -102,7 +102,8 @@ class Scene:
     units: dict = field(default_factory=lambda: {"length": "m", "precision": 2})
     #: Extensions' own document data, one JSON-safe value per extension key
     #: (``views.extension_api.ExtensionApp.document_data``). Travels in the
-    #: .igz; the core never reads it.
+    #: .igz; the core never reads it. Changed through
+    #: ``core.history.SetPluginDataCommand`` so each edit is undoable.
     plugin_data: dict = field(default_factory=dict)
     dimension_style: dict = field(default_factory=lambda: {
         "decimals": 2, "units": "m", "font_size": 9, "color": [45, 55, 75],
@@ -534,7 +535,7 @@ class Scene:
                 or self.tile_layer or self.geo_paths or self.terrain
                 or self.guides or self.geo_points or self.text_labels
                 or self.saved_views or self.compositions
-                or self.image_planes):
+                or self.image_planes or self.plugin_data):
             self.mesh.clear()
             self.groups.clear()
             self.dimensions.clear()
@@ -546,6 +547,7 @@ class Scene:
             self.saved_views.clear()
             self.compositions.clear()
             self.custom_scales.clear()
+            self.plugin_data = {}
             self.selection.clear()
             from core.layers import DEFAULT_LAYER, Layer
             self.layers = [Layer(DEFAULT_LAYER)]
