@@ -220,12 +220,20 @@ class PreferencesDialog(QDialog):
             "Pan and zoom only (no rotation — for drawing in plan)"))
         self._ndof_lock.setChecked(nd.lock_rotation)
         form.addRow("", self._ndof_lock)
-        name = shared_input().backend_name
-        status = QLabel(
-            tr("Device driver found: {name}", name=name) if name else tr(
-                "No 3D mouse driver found. On Linux install and start "
-                "«spacenavd»; on Windows the 3Dconnexion driver is enough. "
-                "macOS is not supported yet."))
+        device = shared_input()
+        status = QLabel()
+        def update_ndof_status():
+            name = device.backend_name
+            status.setText(
+                tr("Device driver found: {name}", name=name) if name else tr(
+                    "No 3D mouse connection. On Linux start spacenavd; "
+                    "on Windows install the 3Dconnexion driver; on macOS "
+                    "install and start the 3Dconnexion driver. "
+                    "Connection is retried automatically."))
+        update_ndof_status()
+        device.status_changed.connect(update_ndof_status)
+        self.finished.connect(lambda _result: device.status_changed.disconnect(
+            update_ndof_status))
         status.setWordWrap(True)
         form.addRow("", status)
         tabs.addTab(mouse3d, tr("3D Mouse"))

@@ -27,6 +27,7 @@ ROOT = Path(SPECPATH).resolve()
 
 # ── Bundled assets — destinations MIRROR the repo layout ─────────────────────
 datas = [
+    ('resources/airfoils',        'resources/airfoils'),
     ('resources/shaders/*.vert',   'resources/shaders'),
     ('resources/shaders/*.frag',   'resources/shaders'),
     # Render with Blender (#181): the script Blender runs on the job.
@@ -104,6 +105,8 @@ hiddenimports = [
     'core.text3d',
     'core.textlabel',
 ]
+if sys.platform == "darwin":
+    hiddenimports.append('hid')  # native HIDAPI extension, SpaceMouse input
 
 # ezdxf (DXF/DWG import) is imported INSIDE functions — without this the
 # packaged build ships with CAD import dead (the core.ai lesson again).
@@ -121,6 +124,10 @@ hiddenimports += [
     # sees them and they were left out: the AI assistant died on load with
     # "cannot import name 'ai' from 'core'" in every packaged build.
     'core.ai',
+    'core.wind_tunnel',
+    'core.wind_tunnel_runner',
+    'core.assembly_animation',
+    'core.maker',             # bundled maker_tools plugin generators
     # The recipe book both AI doors read. It reaches the bundle only
     # through a plugin (the assistant) and a by-path script (the MCP
     # server), so analysis never sees it — and its absence is SILENT: the

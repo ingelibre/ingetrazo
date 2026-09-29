@@ -515,14 +515,16 @@ def build_request(provider: str, model: str, api_key: str,
     if provider == "anthropic":
         content_msgs = []
         for m in messages:
-            blocks = [{"type": "text", "text": m["text"]}]
+            blocks = ([{"type": "text", "text": m["text"]}]
+                      if m["text"].strip() else [])
             img, mime = _message_image(m)
             if img:
                 blocks.insert(0, {
                     "type": "image",
                     "source": {"type": "base64", "media_type": mime,
                                "data": img}})
-            content_msgs.append({"role": m["role"], "content": blocks})
+            if blocks:
+                content_msgs.append({"role": m["role"], "content": blocks})
         payload = {"model": model, "max_tokens": max_tokens,
                    "system": system, "messages": content_msgs}
         return ("https://api.anthropic.com/v1/messages",

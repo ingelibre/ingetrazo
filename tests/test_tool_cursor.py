@@ -19,21 +19,21 @@ def test_tool_cursor_builds_bitmap_with_hotspot():
     assert cur is not None
     assert not cur.pixmap().isNull()
     hs = cur.hotSpot()
-    assert (hs.x(), hs.y()) == (4, 28)         # (6,42) in 48-space → ×32/48
+    assert (hs.x(), hs.y()) == (3, 21)         # (6,42) in 48-space → ×24/48
     ers = tool_cursor("eraser").hotSpot()
-    assert (ers.x(), ers.y()) == (10, 21)      # middle of the rubber's accent end
+    assert (ers.x(), ers.y()) == (8, 16)      # middle of the rubber's accent end
     mv = tool_cursor("move").hotSpot()
-    assert (mv.x(), mv.y()) == (16, 16)        # centre of the cross
+    assert (mv.x(), mv.y()) == (12, 12)        # centre of the cross
     assert tool_cursor("select") is None       # Select keeps the arrow
     assert tool_cursor("no_such_tool") is None
     assert tool_cursor(None) is None
     assert tool_cursor("line") is cur          # cached
     orb = tool_cursor("orbit")                 # wheel-drag shows it (SketchUp)
-    assert orb is not None and (orb.hotSpot().x(), orb.hotSpot().y()) == (16, 16)
+    assert orb is not None and (orb.hotSpot().x(), orb.hotSpot().y()) == (12, 12)
     assert tool_cursor("pan") is not None
     zoom = tool_cursor("zoom")                 # Z shows the magnifier, not a cross
     assert zoom is not None
-    assert (zoom.hotSpot().x(), zoom.hotSpot().y()) == (14, 14)  # lens centre
+    assert (zoom.hotSpot().x(), zoom.hotSpot().y()) == (10, 10)  # lens centre
     assert tool_cursor("zoom_window") is not None
 
 

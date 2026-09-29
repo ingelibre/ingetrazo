@@ -5367,7 +5367,8 @@ class Viewport(QOpenGLWidget):
         saying how far the solid lets it go). No-op if there is no status bar
         yet."""
         window = self.window()
-        bar = window.statusBar() if window is not None else None
+        status_bar = getattr(window, "statusBar", None)
+        bar = status_bar() if callable(status_bar) else None
         if bar is not None:
             bar.showMessage(text, msec)
 
@@ -5523,7 +5524,7 @@ class Viewport(QOpenGLWidget):
             self._gl.glDrawArrays(GL_LINES, 0, len(data) // 3)
             self._rubber_vao.release()
         else:
-            self._overlay_rubber = (segments, color, 2.5 if inference else 2.0)
+            self._overlay_rubber = (segments, color, 1.5 if inference else 1.0)
 
     def _draw_rubber_band_overlay(self, painter: QPainter) -> None:
         if self._overlay_rubber is None:
@@ -5772,11 +5773,10 @@ class Viewport(QOpenGLWidget):
                 if vis is not None:
                     painter.drawLine(QPointF(*vis[0]), QPointF(*vis[1]))
         # A white halo under the marker lifts it off busy geometry, then
-        # the coloured marker on top — bigger and bolder than before so the
-        # snap point reads at a glance (a common request: the dots were too
-        # small to aim with).
-        halo = QPen(QColor(255, 255, 255, 230), 4.5)
-        mark = QPen(color, 2.6)
+        # the coloured marker on top. Fine outlines keep the exact point
+        # visible without covering the geometry being drawn.
+        halo = QPen(QColor(255, 255, 255, 230), 2.5)
+        mark = QPen(color, 1.2)
         painter.setBrush(QColor.fromRgbF(r, g, b, 0.30))
         px, py = pixel
         if snap.kind == "intersection":
@@ -5797,7 +5797,7 @@ class Viewport(QOpenGLWidget):
                            "on_axis",
                            "on_line", "extension", "from_point", "aligned",
                            "tangent"):
-            rect = QRectF(px - 7, py - 7, 14, 14)
+            rect = QRectF(px - 4, py - 4, 8, 8)
             painter.setPen(halo)
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(rect)
@@ -5807,8 +5807,8 @@ class Viewport(QOpenGLWidget):
         elif snap.kind in ("midpoint", "arc_midpoint"):
             # Cyan diamond, SketchUp-style.
             diamond = QPolygonF([
-                QPointF(px, py - 9), QPointF(px + 9, py),
-                QPointF(px, py + 9), QPointF(px - 9, py),
+                QPointF(px, py - 5), QPointF(px + 5, py),
+                QPointF(px, py + 5), QPointF(px - 5, py),
             ])
             painter.setPen(halo)
             painter.setBrush(Qt.NoBrush)
@@ -6910,9 +6910,14 @@ class Viewport(QOpenGLWidget):
         if not ok:
             return None, None
         p_near = inv.map(QVector3D(ndc_x, ndc_y, -1.0))
-        p_far = inv.map(QVector3D(ndc_x, ndc_y, 1.0))
-        direction = p_far - p_near
-        if direction.length() < 1e-9:
+        # At millimetre working distances the near/far ratio exceeds Qt's
+        # float matrix precision. Unprojecting z=1 can divide by zero at
+        # the far plane and poison every snap with NaNs. Any two depths
+        # define the same ray; use an interior point instead of infinity.
+        p_mid = inv.map(QVector3D(ndc_x, ndc_y, 0.0))
+        direction = p_mid - p_near
+        if (not all(math.isfinite(v) for p in (p_near, direction) for v in p.toTuple())
+                or direction.length() < 1e-9):
             return None, None
         return p_near, direction.normalized()
 
@@ -6992,7 +6997,8 @@ class Viewport(QOpenGLWidget):
         """Ray/plane hit, or ``None`` when it is behind the camera or the ray
         merely grazes the plane."""
         length = plane_normal.length()
-        if length < 1e-9:
+        if (not all(math.isfinite(v) for p in (origin, direction, plane_point, plane_normal)
+                    for v in p.toTuple()) or length < 1e-9):
             return None
         normal = plane_normal / length
         denom = QVector3D.dotProduct(normal, direction)
@@ -10583,6 +10589,7 @@ class Viewport(QOpenGLWidget):
             ev.globalPos(), locked_image=under if under is not picked else None)
 
     def mousePressEvent(self, ev) -> None:
+        self.setFocus(Qt.MouseFocusReason)
         # A new gesture starts with the inferences back on: the Alt
         # toggle lasts ONE operation, as in SketchUp. Mid-operation (the
         # second click of a line) the tool is still busy and nothing moves.
@@ -11654,7 +11661,7 @@ class Viewport(QOpenGLWidget):
                     comma_lists=getattr(self.active_tool, "vcb_comma_lists",
                                         False))
             if value is None:
-                self._set_value_buffer("")
+                self.flash_status(tr("Invalid dimensions. Use 100mm,50mm for a rectangle or 25mm for a radius."))
                 return True
             if isinstance(value, tuple) and value and value[0] == "ratio":
                 # A slope typed as rise:run (SketchUp "3:12") — only angle
@@ -11700,7 +11707,9 @@ class Viewport(QOpenGLWidget):
                 if _re.search(r"[\d\"']\s*(mm|cm|m|in|ft)\b|\d\s*[\"']",
                               self._value_buffer.lower()):
                     value = ("abs_len", value)
-            self.active_tool.on_value(self, value)
+            if not self.active_tool.on_value(self, value):
+                self.flash_status(tr("Choose the first point, then enter valid dimensions."))
+                return True
             self._set_value_buffer("")
             self._release_axis_lock_after_operation()
             return True
@@ -11753,6 +11762,13 @@ class Viewport(QOpenGLWidget):
             # Forbid two decimal separators in the current numeric token.
             if text in (".", ","):
                 tail = self._current_token_tail()
+                if getattr(self.active_tool, "vcb_comma_lists", False):
+                    # In a rectangle, commas separate dimensions, including
+                    # decimal dimensions such as 2.5,1.25.
+                    tail = tail.rsplit(",", 1)[-1]
+                    if text == ",":
+                        self._set_value_buffer(self._value_buffer + text)
+                        return True
                 if "." in tail or "," in tail:
                     return True
             self._set_value_buffer(self._value_buffer + text)

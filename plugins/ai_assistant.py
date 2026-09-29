@@ -610,8 +610,11 @@ class AsistentePanel(QWidget):
             self._finish()
             return
         text = ai.strip_thoughts(msg["text"])
-        self._convo.append({"role": "assistant", "text": text})
-        self._append(f"IA: {text}", "ai")
+        # A thinking-only/empty reply is not a conversation turn. In
+        # particular Anthropic rejects empty text blocks on the retry.
+        if text:
+            self._convo.append({"role": "assistant", "text": text})
+            self._append(f"IA: {text}", "ai")
         code = ai.extract_code(text)
         if code is None and ai.truncated_code(text):
             # Cut by max_tokens mid-recipe: half a block must neither run

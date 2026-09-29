@@ -54,7 +54,7 @@ class PlaceGroupTool(Tool):
         # letter) previews its real outlines; a big one (an imported
         # document) gets the box of the whole placement, the honest
         # preview that costs nothing.
-        if getattr(group, "children", None):
+        if self._instance or getattr(group, "children", None):
             self._segments = self._placement_segments(group)
         else:
             self._segments = [

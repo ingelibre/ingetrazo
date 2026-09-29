@@ -208,7 +208,6 @@ class MainWindow(QMainWindow):
         _shortcuts.apply_user_shortcuts(self)
         self._activate_tool("select")
         self._apply_new_document_units()
-        self._insert_scale_figure()
         self._update_title()
 
     # ---- Layout -------------------------------------------------------------
@@ -295,7 +294,7 @@ class MainWindow(QMainWindow):
 
     def _connect_ndof(self) -> None:
         """Listen to the 3D mouse, if the machine has one (spacenavd on
-        Linux, Raw Input on Windows). Silent when there is none."""
+        Linux, Raw Input on Windows, HIDAPI on macOS). Silent when absent."""
         self._ndof_connected = True
         try:
             from views.ndof_input import shared_input
@@ -320,7 +319,9 @@ class MainWindow(QMainWindow):
     def _on_ndof_button(self, number: int, down: bool) -> None:
         # The two buttons every model has: both fit the model, SketchUp's
         # default for the right one and the most useful single command.
-        if down and number in (0, 1) and self.isActiveWindow():
+        from views.ndof_input import current_settings
+        if (down and number in (0, 1) and self.isActiveWindow()
+                and current_settings().enabled):
             self._on_zoom_extents()
 
     def _pack_toolbars(self) -> None:
@@ -3792,7 +3793,6 @@ class MainWindow(QMainWindow):
         self._current_path = None
         self._import_name = None
         self._apply_new_document_units()
-        self._insert_scale_figure()
         self.viewport.notify_scene_changed()
         self._sync_style_menu()
         self._sync_section_menu()
