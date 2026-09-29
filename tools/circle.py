@@ -85,6 +85,7 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
         self.note_plane(ctx.viewport)
         if self.start_point is None:
             self.start_point = ctx.world
+            self.hover_point = QVector3D(ctx.world)
             if self.work_plane is None:
                 self.work_plane = self.locked_work_plane(ctx.world)
             return
@@ -126,11 +127,12 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
                 viewport.flash_status(tr("{n} sides", n=n))
                 return True
             return False
-        if self.hover_point is None or value <= 0.0:
+        if value <= 0.0:
             return False
         # Keep the cursor's direction, override only the radius.
         u, v = self._axes()
-        d = self.hover_point - self.start_point
+        d = (self.hover_point - self.start_point
+             if self.hover_point is not None else u)
         ang = math.atan2(QVector3D.dotProduct(d, v), QVector3D.dotProduct(d, u))
         rim = self.start_point + (u * math.cos(ang) + v * math.sin(ang)) * value
         pts = self._points(self.start_point, rim)

@@ -85,6 +85,9 @@ welcome arch with all its rebar (also attached to every release as
   grid, colored axes, perspective ↔ parallel and two-point perspective,
   standard views, zoom-extents, hidden-line removal, real-sun shadows.
 - **Walkthrough** — Position Camera, Walk and Look Around at eye height.
+- **3Dconnexion SpaceMouse** — simultaneous pan, zoom and orbit on Linux,
+  Windows and macOS, with speed and axis controls in Preferences ▸ 3D Mouse.
+  See [setup and controls](docs/spacemouse.md).
 - **Drawing tools** — Line, Rectangle, Rotated Rectangle, Circle, Polygon,
   Arc (2-point) and 3-Point Arc, with inferencing, snapping, axis locks and a
   Value Control Box (type exact lengths/coordinates, `200,100` or `200;100`
@@ -165,6 +168,8 @@ welcome arch with all its rebar (also attached to every release as
   via MCP). Every AI action is one transactional undo step. A broken
   plugin can never prevent IngeTrazo from starting. Plugins are the
   lowest-friction way to contribute — see [docs/plugins.md](docs/plugins.md).
+  Bundled [Maker tools](docs/maker-tools.md) also generate threaded bolts,
+  rods and nuts, involute spur gears and NACA four-digit aerofoil wings.
 - **Undo/redo** — every edit is a single atomic step (console scripts
   included).
 
@@ -286,3 +291,12 @@ en Perú. Más en [docs/](docs/).
 *SketchUp is a trademark of Trimble Inc. IngeTrazo is an independent project,
 not affiliated with or endorsed by Trimble. SketchUp es una marca registrada de
 Trimble Inc.; IngeTrazo es un proyecto independiente, sin relación con Trimble.*
+
+Assembly animation: **Extensions → Assembly Animation** adds parent attachments,
+hinges and bounded straight travel with slider playback. See
+[the assembly guide](docs/assembly-animation.md).
+
+Virtual wind tunnel: **Extensions → Virtual Wind Tunnel** exports aircraft and
+terrain cases for OpenCFD OpenFOAM v2312, runs a staged solver pipeline, and
+opens results in ParaView. Requires an external solver; see the
+[setup and validation notes](docs/wind-tunnel.md).

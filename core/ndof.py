@@ -5,7 +5,8 @@
 A 3D mouse is a cap that can be pushed, pulled, lifted, tilted and twisted:
 six axes at once. This module is the device-free half: it turns one reading
 of the six axes into a camera move. The drivers that deliver the readings
-live in ``views/ndof_input.py`` (spacenavd on Linux, Raw Input on Windows).
+live in ``views/ndof_input.py`` (spacenavd on Linux, Raw Input on Windows,
+HIDAPI on macOS).
 
 The mapping is SketchUp's and FreeCAD's default, «object mode»: you hold the
 MODEL. Move the cap right and the model goes right; lift it and the model

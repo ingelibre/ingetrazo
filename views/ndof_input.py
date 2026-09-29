@@ -2,8 +2,7 @@
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """3D mouse input — the drivers that feed :mod:`core.ndof` (issue #108).
 
-No SDK, no new dependency: each platform already has a plain way to read
-the device.
+No proprietary SDK is required.
 
 * **Linux — spacenavd.** The free driver every distribution packages
   (``spacenavd``). It serves the device on a Unix socket in a fixed binary
@@ -16,7 +15,8 @@ the device.
   3Dconnexion driver. Report 1 is translation (three int16) — or all six
   axes on the newer models, report 2 rotation, report 3 the buttons. This is
   what FreeCAD does.
-* **macOS** has no such road (only 3Dconnexion's framework): not yet.
+* **macOS — 3Dconnexion client framework**, with direct HIDAPI as a fallback
+  for machines without the driver. Driver callbacks are queued to Qt.
 
 :class:`NdofInput` picks the backend for the platform and emits
 ``motion(sample, dt)`` in the user's frame (see :mod:`core.ndof`).
@@ -28,7 +28,7 @@ import struct
 import sys
 import time
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, QTimer
 
 from core.ndof import NdofSample, from_hid, from_spacenavd
 
@@ -43,11 +43,15 @@ class NdofInput(QObject):
 
     motion = Signal(object, float)
     button = Signal(int, bool)
+    status_changed = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._backend = None
         self._last_t: float | None = None
+        self._retry = QTimer(self)
+        self._retry.setInterval(2000)
+        self._retry.timeout.connect(self.start)
 
     @property
     def backend_name(self) -> str | None:
@@ -58,23 +62,36 @@ class NdofInput(QObject):
         normal case on a machine without a 3D mouse, and silent."""
         if self._backend is not None:
             return True
+        self._retry.start()
         for cls in _backends_for(sys.platform):
+            b = None
             try:
                 b = cls(self)
                 if b.open():
                     self._backend = b
+                    self._retry.stop()
+                    self.status_changed.emit()
                     return True
             except Exception:  # noqa: BLE001 — a driver quirk never stops the app
-                continue
+                pass
+            if b is not None:
+                b.close()
         return False
 
     def stop(self) -> None:
+        self._retry.stop()
         if self._backend is not None:
             try:
                 self._backend.close()
             finally:
                 self._backend = None
         self._last_t = None
+        self.status_changed.emit()
+
+    def disconnected(self) -> None:
+        """Forget a failed connection and retry without restarting the app."""
+        self.stop()
+        self._retry.start()
 
     # ---- called by the backends ------------------------------------------
     def _emit_motion(self, sample: NdofSample, dt: float | None = None) -> None:
@@ -95,6 +112,9 @@ def _backends_for(platform: str) -> list:
         return [SpnavBackend]
     if platform == "win32":
         return [RawInputBackend]
+    if platform == "darwin":
+        from views.connexion_macos import ConnexionBackend
+        return [ConnexionBackend, HidBackend]
     return []
 
 
@@ -145,7 +165,7 @@ class SpnavBackend:
         except OSError:
             chunk = b""
         if not chunk:                       # the daemon went away
-            self.close()
+            self.owner.disconnected()
             return
         self._buf += chunk
         latest = None
@@ -175,6 +195,88 @@ def parse_spnav_packets(data: bytes) -> list:
         kind, *vals = _SPNAV_PACKET.unpack(data[i:i + size])
         out.append((kind, vals))
     return out
+
+
+# ---- macOS: HIDAPI -----------------------------------------------------------
+
+class HidBackend:
+    name = "HIDAPI (3Dconnexion)"
+
+    def __init__(self, owner: NdofInput) -> None:
+        self.owner = owner
+        self.device = None
+        self.timer = None
+        self.state = {}
+
+    def open(self) -> bool:
+        import hid
+        import ctypes
+
+        # cython-hidapi initializes HIDAPI on import but does not expose its
+        # Darwin sharing option. Use the public C API exported by the same
+        # extension (not a second HIDAPI instance). Do not seize the cap from
+        # 3Dconnexion's driver or other CAD applications.
+        library = ctypes.CDLL(hid.__file__)
+        exclusive = library.hid_darwin_set_open_exclusive
+        exclusive.argtypes = [ctypes.c_int]
+        exclusive.restype = None
+        exclusive(0)
+
+        # Logitech made the older SpaceNavigators. Filter by usage as well
+        # as vendor so ordinary Logitech mice/keyboards are never opened.
+        for info in hid.enumerate():
+            if (info.get("vendor_id") not in (0x046D, 0x256F)
+                    or info.get("usage_page") != 1
+                    or info.get("usage") != 8):
+                continue
+            device = hid.device()
+            try:
+                device.open_path(info["path"])
+                device.set_nonblocking(True)
+            except Exception:
+                device.close()
+                continue
+            self.device = device
+            self.timer = QTimer(self.owner)
+            self.timer.setInterval(8)
+            self.timer.timeout.connect(self._read)
+            self.timer.start()
+            return True
+        return False
+
+    def close(self) -> None:
+        if self.timer is not None:
+            self.timer.stop()
+            self.timer.deleteLater()
+            self.timer = None
+        if self.device is not None:
+            device, self.device = self.device, None
+            device.close()
+        self.state.clear()
+
+    def _read(self) -> None:
+        latest = None
+        try:
+            # Drain split translation/rotation reports together, preserving
+            # button edges. A bound prevents a noisy device starving Qt.
+            for _ in range(64):
+                report = self.device.read(64)
+                if not report:
+                    break
+                before = self.state.get("buttons", 0)
+                sample = parse_hid_report(bytes(report), self.state)
+                if sample is not None:
+                    latest = sample
+                after = self.state.get("buttons", 0)
+                for bit in range(32):
+                    if (before ^ after) >> bit & 1:
+                        self.owner._emit_button(bit, bool(after >> bit & 1))
+        except OSError:
+            self.owner.disconnected()
+            return
+        # Never replay a cached deflection when no new motion arrived.
+        if latest is not None:
+            self.owner._emit_motion(latest)
 
 
 # ---- Windows: Raw Input ------------------------------------------------------
@@ -372,5 +474,6 @@ def shared_input() -> NdofInput:
     if _shared is None:
         from PySide6.QtCore import QCoreApplication
         _shared = NdofInput(QCoreApplication.instance())
+        QCoreApplication.instance().aboutToQuit.connect(_shared.stop)
         _shared.start()
     return _shared

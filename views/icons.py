@@ -1802,7 +1802,7 @@ def tool_icon(key: str) -> QIcon:
 # of the move cross / protractor. Haloed so it reads over any background.
 # "select" keeps the standard arrow.
 
-_CURSOR_SIZE = 32   # logical cursor canvas (48-space icons scale onto it)
+_CURSOR_SIZE = 24   # compact drawing cursor; hotspot remains at the pencil tip
 _cursor_cache: dict = {}
 
 # Drawing tools: pencil cursor + a mini badge of the shape at bottom-right
@@ -1843,27 +1843,57 @@ _CURSOR_HOTSPOTS = {
 
 
 def _pencil(p, ink) -> None:
-    """A pencil pointing up-right, tip at (6, 42) in 48-space."""
+    """Slim red drawing pencil; the black lead ends at the exact hotspot."""
     p.save()
-    p.translate(6.0, 42.0)
-    p.rotate(-45.0)                 # +x runs up-right along the shaft
-    pen = QPen(ink, 3.0)
+    p.translate(*_PENCIL_HOT)
+    p.rotate(-45.0)
+    outline = QColor("#171717")
+    pen = QPen(outline, 1.5)
     pen.setJoinStyle(Qt.RoundJoin)
     pen.setCapStyle(Qt.RoundCap)
     p.setPen(pen)
-    p.setBrush(Qt.NoBrush)
-    # Sharpened tip.
-    p.drawPolygon(QPolygonF([QPointF(0.0, 0.0), QPointF(10.0, -5.5),
-                             QPointF(10.0, 5.5)]))
-    # Shaft with a flat butt.
-    p.drawLine(QPointF(10.0, -5.5), QPointF(40.0, -5.5))
-    p.drawLine(QPointF(10.0, 5.5), QPointF(40.0, 5.5))
-    p.drawLine(QPointF(40.0, -5.5), QPointF(40.0, 5.5))
-    # Accent lead at the very tip.
+
+    # Pale exposed wood, with a facet down the centre.
+    p.setBrush(QColor("#e9e9a5"))
+    p.drawPolygon(QPolygonF([QPointF(0, 0), QPointF(11, -3.8),
+                             QPointF(11, 3.8)]))
+    p.setPen(QPen(QColor("#92936a"), .8))
+    p.drawLine(QPointF(3.7, 0), QPointF(11, 0))
+
+    # Red lacquer: two faces of a hexagonal pencil, edged in black.
     p.setPen(Qt.NoPen)
-    p.setBrush(QBrush(_accent()))
-    p.drawPolygon(QPolygonF([QPointF(-0.6, 0.0), QPointF(4.2, -2.4),
-                             QPointF(4.2, 2.4)]))
+    p.setBrush(QColor("#f52c30"))
+    p.drawRect(QRectF(11, -3.8, 25, 3.8))
+    p.setBrush(QColor("#cc171e"))
+    p.drawRect(QRectF(11, 0, 25, 3.8))
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(11, -3.8, 25, 7.6))
+    p.setPen(QPen(outline, .8))
+    p.drawLine(QPointF(11, 0), QPointF(36, 0))
+
+    # Silver ferrule and a rounded muted-red eraser.
+    p.setPen(pen)
+    p.setBrush(QColor("#eeeeea"))
+    p.drawRect(QRectF(36, -3.8, 4, 7.6))
+    p.setPen(QPen(QColor("#777777"), .8))
+    p.drawLine(QPointF(36, 0), QPointF(40, 0))
+    cap = QPainterPath(QPointF(40, -3.8))
+    cap.lineTo(43, -3.8)
+    cap.quadTo(46, 0, 43, 3.8)
+    cap.lineTo(40, 3.8)
+    cap.closeSubpath()
+    p.setPen(pen)
+    p.setBrush(QColor("#cf6a6d"))
+    p.drawPath(cap)
+    p.setPen(QPen(outline, .8))
+    p.drawLine(QPointF(40, 0), QPointF(44.5, 0))
+
+    # Keep the tip at (0, 0), matching _PENCIL_HOT and the snap position.
+    p.setPen(Qt.NoPen)
+    p.setBrush(outline)
+    p.drawPolygon(QPolygonF([QPointF(0, 0), QPointF(4.5, -1.55),
+                             QPointF(4.5, 1.55)]))
     p.restore()
 
 
@@ -1954,7 +1984,7 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
     for dx in (-1, 0, 1):
         for dy in (-1, 0, 1):
             if dx or dy:
-                p.drawPixmap(QPointF(float(dx), float(dy)), halo)
+                p.drawPixmap(QPointF(dx * 0.5, dy * 0.5), halo)
     p.drawPixmap(QPointF(0.0, 0.0), art)
     p.end()
 

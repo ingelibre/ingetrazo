@@ -94,6 +94,7 @@ class RectangleTool(PlaneLock, Tool):
         self.note_plane(ctx.viewport)
         if self.start_point is None:
             self.start_point = ctx.world
+            self.hover_point = QVector3D(ctx.world)
             if self.work_plane is None:
                 self.work_plane = self.locked_work_plane(ctx.world)
             return
@@ -163,7 +164,7 @@ class RectangleTool(PlaneLock, Tool):
         3 m × 2 m rectangle, in the quadrant the cursor is currently dragging
         toward. The first number runs along the work plane's horizontal axis,
         the second along its vertical axis."""
-        if self.start_point is None or self.hover_point is None:
+        if self.start_point is None:
             return False
         if not (isinstance(value, tuple) and len(value) == 2):
             return False
@@ -171,7 +172,9 @@ class RectangleTool(PlaneLock, Tool):
         if w <= 0.0 or h <= 0.0:
             return False
         u, v = self._axes()
-        du, dv = self._dimensions(self.start_point, self.hover_point)
+        du, dv = self._dimensions(
+            self.start_point, self.hover_point if self.hover_point is not None
+            else self.start_point)
         su = -1.0 if du < 0 else 1.0  # keep the side the cursor is heading to
         sv = -1.0 if dv < 0 else 1.0
         if self._from_center:
