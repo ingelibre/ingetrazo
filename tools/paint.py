@@ -182,8 +182,17 @@ class PaintTool(Tool):
         viewport.set_hover(None)
 
     def on_hover(self, ctx: ToolContext) -> None:
-        face, _group = ctx.viewport.pick_face_any(ctx.screen.x(), ctx.screen.y())
-        ctx.viewport.set_hover(face)
+        vp = ctx.viewport
+        # A face inside a component is marked through the placement it was
+        # reached through, or the marking is drawn where the part WOULD be
+        # unplaced and assembled, not where the placed, exploded part is.
+        pick = getattr(vp, "pick_face_placement", None)
+        if pick is not None:
+            face, placement = pick(ctx.screen.x(), ctx.screen.y())
+            vp.set_hover(face, placement)
+            return
+        face, _group = vp.pick_face_any(ctx.screen.x(), ctx.screen.y())
+        vp.set_hover(face)
 
     def on_click(self, ctx: ToolContext) -> None:
         vp = ctx.viewport
