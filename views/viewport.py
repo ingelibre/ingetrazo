@@ -9695,11 +9695,37 @@ class Viewport(QOpenGLWidget):
         self._gedge_px_cache = (key, data)
         return data
 
+    #: The group-edge distances' contract with their two readers (the
+    #: hovered-edge pick, within ``pick_threshold_px``; the snap prefilter,
+    #: the ``GEDGE_ENOUGH`` nearest within 48 px): exact within
+    #: ``GEDGE_NEAR_PX``, and within ``GEDGE_REACH_PX`` too unless at least
+    #: ``GEDGE_ENOUGH`` edges already lie inside the near radius — then the
+    #: nearest ones are all there. Past that a big model says ``inf``.
+    GEDGE_NEAR_PX = 8.0
+    GEDGE_REACH_PX = 64.0
+    GEDGE_ENOUGH = 48
+    #: From this many group edges up, the distances come through a screen
+    #: grid (core.edge_grid) instead of one pass over all of them.
+    GEDGE_GRID_MIN = 20000
+
     def _gedge_dist(self, px: float, py: float):
-        """Screen distance from the cursor to every group hard edge — one
-        vectorised pass per hover position, shared by the hovered-edge
-        pick and the snap prefilter (both used to compute it)."""
+        """Screen distance from the cursor to every group hard edge, shared
+        by the hovered-edge pick and the snap prefilter (both used to
+        compute it); see ``GEDGE_NEAR_PX`` for how far it is exact.
+
+        On a 330 k-face city the full pass was ~30 ms of every mouse move
+        for the few dozen edges that matter. A camera that stays put for a
+        second hover gets the edges binned into a screen grid (once — the
+        projection's own lifetime), and each move then measures the cells
+        around the cursor: 0.2 ms zoomed onto a building, ~2 ms with the
+        whole city in view (11 edges per pixel: the near radius already
+        holds hundreds). The grid lives as long as the projection: the
+        first hover of a projection keeps the full pass, so one that
+        changes every event (the camera moving) never pays for a grid it
+        would use once. City-L, the interaction benchmark: hover with Line
+        103 -> 60 ms, a Move drag 101 -> 49 ms per event (median)."""
         import numpy as np
+        from core.edge_grid import EdgeGrid, segment_distances
         proj = self._gedge_screen()
         # Whole pixels: the hovered-edge pick gets the float position and
         # the snap scene the rounded one — the same pass must serve both.
@@ -9708,12 +9734,34 @@ class Viewport(QOpenGLWidget):
         if cached is not None and cached[0] == key:
             return cached[1]
         ax, ay, bx, by, ok = proj
-        dx, dy = bx - ax, by - ay
-        l2 = dx * dx + dy * dy
-        safe = np.where(l2 > 1e-12, l2, 1.0)
-        t = np.clip(((px - ax) * dx + (py - ay) * dy) / safe, 0.0, 1.0)
-        d = np.hypot(ax + t * dx - px, ay + t * dy - py)
-        d = np.where(ok, d, np.inf)
+        d = None
+        if (len(ax) >= Viewport.GEDGE_GRID_MIN
+                and getattr(self, "pick_threshold_px", 0.0)
+                <= Viewport.GEDGE_REACH_PX):
+            # (projection, grid or None): the grid waits for the second hover.
+            slot = getattr(self, "_gedge_grid_cache", None)
+            if slot is None or slot[0] is not proj:
+                self._gedge_grid_cache = (proj, None)
+            else:
+                grid = slot[1]
+                if grid is None:
+                    grid = EdgeGrid(ax, ay, bx, by, ok, self.width(),
+                                    self.height(), Viewport.GEDGE_REACH_PX)
+                    self._gedge_grid_cache = (proj, grid)
+                near_px = max(Viewport.GEDGE_NEAR_PX,
+                              getattr(self, "pick_threshold_px", 0.0))
+                for reach in (near_px, Viewport.GEDGE_REACH_PX):
+                    ids = grid.near(px, py, reach)
+                    if ids is None:
+                        break
+                    sub = segment_distances(ax, ay, bx, by, ok, px, py, ids)
+                    if (reach >= Viewport.GEDGE_REACH_PX
+                            or int((sub < reach).sum()) >= Viewport.GEDGE_ENOUGH):
+                        d = np.full(len(ax), np.inf)
+                        d[ids] = sub
+                        break
+        if d is None:
+            d = segment_distances(ax, ay, bx, by, ok, px, py)
         self._gedge_dist_cache = (key, d)
         return d
 
@@ -9780,7 +9828,13 @@ class Viewport(QOpenGLWidget):
         if not proj[4].any():
             return []
         dist = getattr(self, "_gedge_dist", None)          # stub VPs in tests
-        d = dist(px, py) if dist is not None else Viewport._gedge_dist(self, px, py)
+        if radius_px > Viewport.GEDGE_REACH_PX or cap > Viewport.GEDGE_ENOUGH:
+            # Past what _gedge_dist promises (GEDGE_NEAR_PX): every edge.
+            from core.edge_grid import segment_distances
+            d = segment_distances(*proj, px, py)
+        else:
+            d = (dist(px, py) if dist is not None
+                 else Viewport._gedge_dist(self, px, py))
         cand = np.where(d < radius_px)[0]
         if len(cand) > cap:
             cand = cand[np.argsort(d[cand])[:cap]]
