@@ -232,6 +232,7 @@ class MoveTool(Tool):
         self._dims: dict = {}                  # dimension → "line" | "rigid"
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)  # currently applied live
         self._copy = False                     # Ctrl: move a COPY
+        self._ctrl_toggled = False             # …by the Ctrl still held down
         self._sel_faces: list = []             # loose geometry copy mode duplicates
         self._sel_edges: list = []
         self._base_segments: list = []         # wireframe for the copy preview
@@ -261,28 +262,59 @@ class MoveTool(Tool):
         self._copy = False
         self._last = None
 
+    @property
+    def cursor_plus(self) -> bool:
+        """The little + beside the cursor while Ctrl has it making a COPY,
+        as the Tape shows its guide mode: the status-bar flash alone was
+        easy to miss."""
+        return self._copy
+
     # ---- Keyboard -----------------------------------------------------------
     def on_key(self, viewport, key: int, modifiers) -> bool:
         if self._grip_rot is not None:
             return self._grip_rot.on_key(viewport, key, modifiers)
         # Ctrl toggles copy mode (move a copy, the original stays).
         if key == Qt.Key_Control:
-            self._copy = not self._copy
-            if self._copy:
-                # The original stops following the cursor; the copy's
-                # wireframe takes over in rubber_band_lines.
-                self._revert_preview(viewport)
-                park = getattr(viewport, "set_groups_preview_offset", None)
-                if getattr(self, "_vp_preview", False) and park is not None:
-                    park(QVector3D(0.0, 0.0, 0.0))
-                viewport.flash_status(tr("Move a copy: on"))
-            else:
-                if self.grab is not None and self.hover_point is not None:
-                    self._apply_preview(viewport, self.hover_point - self.grab)
-                viewport.flash_status(tr("Move a copy: off"))
-            viewport.update()
+            self._toggle_copy(viewport)
+            self._ctrl_toggled = True
             return True
         return False
+
+    def _toggle_copy(self, viewport, say: bool = True) -> None:
+        self._copy = not self._copy
+        if self._copy:
+            # The original stops following the cursor; the copy's
+            # wireframe takes over in rubber_band_lines.
+            self._revert_preview(viewport)
+            park = getattr(viewport, "set_groups_preview_offset", None)
+            if getattr(self, "_vp_preview", False) and park is not None:
+                park(QVector3D(0.0, 0.0, 0.0))
+            if say:
+                viewport.flash_status(tr("Move a copy: on"))
+        else:
+            if self.grab is not None and self.hover_point is not None:
+                self._apply_preview(viewport, self.hover_point - self.grab)
+            if say:
+                viewport.flash_status(tr("Move a copy: off"))
+        apply = getattr(viewport, "_apply_tool_cursor", None)
+        if apply is not None:
+            apply()                      # the + appears or disappears now
+        viewport.update()
+
+    def on_key_release(self, viewport, key: int) -> bool:
+        if self._grip_rot is not None:
+            return self._grip_rot.on_key_release(viewport, key)
+        # The copy toggle happens on the Ctrl PRESS, so the + shows at
+        # once; a Ctrl that turns out to be part of a shortcut (Ctrl+Z,
+        # Ctrl+C…) takes it back on the release, silently — the Tape's
+        # #183, where Ctrl+Z switched its mode without a word.
+        if key != Qt.Key_Control or not self._ctrl_toggled:
+            return False
+        self._ctrl_toggled = False
+        tapped = getattr(viewport, "ctrl_tapped", None)
+        if callable(tapped) and not tapped():
+            self._toggle_copy(viewport, say=False)
+        return True
 
     # ---- Spatial input ------------------------------------------------------
     def on_click(self, ctx: ToolContext) -> None:
