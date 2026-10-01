@@ -33,3 +33,45 @@ long before — every New/Open kept the previous document's render chunks
 The reference document so far is the Plaza Yanque model
 (`plaza.igz`, 23 MB: 1035 groups, 48 000 faces drawn), kept outside the
 repository.
+
+## Interaction benchmark — what the hand on the mouse feels
+
+`scripts/bench_interaction.py` drives the app the way a user does: real Qt
+mouse, wheel and key events go through the viewport's own handlers, and
+each event is timed until the frame it caused is on screen (the paint runs
+in the event loop, so the loop is run; the GPU is waited on with
+`glFinish`; a pointer move the viewport parked to coalesce is waited for
+too — the screen catching up with the pointer is what the user waits for).
+Each event is split into **handler / paint / other / gpu**, and the hover
+pass's own compute (pick + snap) is reported apart from the coalescing wait.
+
+Gestures: orbit, pan, zoom (wheel at a point on the model), hover with
+Select, hover with Line (the inference engine — snapping to vertices,
+edges, midpoints), clicks with Select, Move of an object (click, live drag,
+click — the run fails if no undo step landed) and the Ctrl+Z of that move.
+Per gesture: median, p95, max and the share of events over one 60 Hz frame
+(16.7 ms) and over two — the share is what "it stutters" means.
+
+The documents are public and regenerable: `scripts/bench_models.py` builds
+the same synthetic city at four sizes (buildings with recessed windows —
+faces with holes —, a round column each, trees as component copies):
+
+| | objects | faces drawn | .igz |
+|---|---|---|---|
+| city-S | 39 | 8 k | 5 MB |
+| city-M | 314 | 73 k | 45 MB |
+| city-L | 1 456 | 331 k | 187 MB |
+| city-XL | 4 784 | 1 075 k | 579 MB |
+
+```bash
+python scripts/bench_models.py S M L XL          # → benchmarks/models/ (git-ignored)
+python scripts/bench_interaction.py out.json benchmarks/models/city-S.igz \
+    benchmarks/models/city-M.igz examples/pileta-fuente-yanque.igz
+python scripts/bench_interaction.py --compare before.json after.json
+```
+
+It opens a real window (the machine should be otherwise idle), uses its
+own settings (`IngeTrazo-bench`, autosave off) and the GL format `main.py`
+asks for. Vsync is off by default: with it every frame waits for the
+monitor's refresh (13.3 ms at 75 Hz), a floor that hides the cost under it;
+`--vsync` puts it back.

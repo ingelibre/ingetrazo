@@ -75,3 +75,7 @@ vendor/libredwg/bin/*
 
 # Notas de trabajo locales del asistente (no se publican)
 CLAUDE.md
+
+# Synthetic benchmark documents (scripts/bench_models.py regenerates them;
+# city-XL alone is ~580 MB)
+benchmarks/models/
