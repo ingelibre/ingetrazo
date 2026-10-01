@@ -1182,6 +1182,27 @@ class MainWindow(QMainWindow):
             rest_menu.addAction(act)
             self._rest_actions[key] = act
 
+        # Camera ▸ Component Edit, with keys of their own: Alt+Q
+        # toggles the rest of the model between hidden and the mode it had
+        # (fade or normal), Alt+W hides the other copies of the component
+        # being edited.
+        comp_menu = camera_menu.addMenu(tr("Component Edit"))
+        self._act_hide_rest = QAction(tr("Hide Rest of Model"), self)
+        self._act_hide_rest.setCheckable(True)
+        self._act_hide_rest.setShortcut(QKeySequence("Alt+Q"))
+        self._act_hide_rest.triggered.connect(self._on_toggle_hide_rest)
+        comp_menu.addAction(self._act_hide_rest)
+        self._act_hide_similar = QAction(tr("Hide Similar Components"), self)
+        self._act_hide_similar.setCheckable(True)
+        self._act_hide_similar.setShortcut(QKeySequence("Alt+W"))
+        self._act_hide_similar.triggered.connect(self._on_toggle_hide_similar)
+        comp_menu.addAction(self._act_hide_similar)
+        self._rest_shown_mode = (self.viewport.edit_rest_mode
+                                 if self.viewport.edit_rest_mode != "hide"
+                                 else "fade")
+        self._sync_component_edit_menu()
+        camera_menu.aboutToShow.connect(self._sync_component_edit_menu)
+
         # Sun shadows (core/sun.py) — the checkbox mirrors the tray panel.
         self._act_shadows = QAction(tr("Shadows"), self)
         self._act_shadows.setStatusTip(tr(
@@ -2724,6 +2745,37 @@ class MainWindow(QMainWindow):
             act.blockSignals(True)
             act.setChecked(value)
             act.blockSignals(False)
+
+    def _sync_component_edit_menu(self) -> None:
+        """The Component Edit checkmarks and the rest-mode radios follow
+        the viewport: Preferences changes the same mode."""
+        mode = self.viewport.edit_rest_mode
+        if mode != "hide":
+            self._rest_shown_mode = mode
+        self._act_hide_rest.setChecked(mode == "hide")
+        act = self._rest_actions.get(mode)
+        if act is not None:
+            act.setChecked(True)
+        self._act_hide_similar.setChecked(bool(getattr(
+            self.viewport.scene, "hide_similar_components", False)))
+
+    def _on_toggle_hide_rest(self, _checked: bool = False) -> None:
+        """Hide Rest of Model (Alt+Q). Reads the viewport, not
+        the checkmark, which Preferences may have left stale."""
+        mode = self.viewport.edit_rest_mode
+        if mode == "hide":
+            self.viewport.set_edit_rest_mode(self._rest_shown_mode)
+        else:
+            self._rest_shown_mode = mode
+            self.viewport.set_edit_rest_mode("hide")
+        self._sync_component_edit_menu()
+
+    def _on_toggle_hide_similar(self, _checked: bool = False) -> None:
+        """Hide Similar Components (Alt+W)."""
+        on = not bool(getattr(self.viewport.scene,
+                              "hide_similar_components", False))
+        self.viewport.set_hide_similar_components(on)
+        self._sync_component_edit_menu()
 
     def _set_hidden_view(self, attr: str, on: bool) -> None:
         """View ▸ Hidden Objects / Geometry: a scene flag (it travels in the

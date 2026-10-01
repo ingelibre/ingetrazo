@@ -389,6 +389,12 @@ def _load_edit_rest_mode() -> str:
     return mode if mode in EDIT_REST_MODES else "fade"
 
 
+def _load_hide_similar() -> bool:
+    from PySide6.QtCore import QSettings
+    return str(QSettings().value("display/hide_similar_components",
+                                 "0")) == "1"
+
+
 def _load_invert_wheel() -> bool:
     from PySide6.QtCore import QSettings
     return str(QSettings().value("nav/invert_wheel", "0")) != "0"
@@ -1011,6 +1017,7 @@ class Viewport(QOpenGLWidget):
         # entirely — on a heavy import that is also the fastest, since a
         # hidden group never reaches the VBOs. See `edit_rest_mode`.
         self._edit_rest_mode = _load_edit_rest_mode()
+        self.scene.hide_similar_components = _load_hide_similar()
         self._invert_wheel = _load_invert_wheel()
         self._invert_orbit_y = _load_invert_orbit_y()
         self._msaa = _load_msaa()
@@ -2387,6 +2394,8 @@ class Viewport(QOpenGLWidget):
                        # @pacaeiro).
                        bool(getattr(sc, "show_hidden_objects", False)),
                        bool(getattr(sc, "show_hidden_geometry", False)),
+                       # Hide Similar Components drops placements too.
+                       bool(getattr(sc, "hide_similar_components", False)),
                        tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers)]
 
         loose = sc.mesh
@@ -11212,6 +11221,9 @@ class Viewport(QOpenGLWidget):
         self.reset_document_caches()
         seen = max(getattr(self, "_versions_seen", 0), self.scene.version, scene.version)
         scene.version = self._versions_seen = seen + 1
+        # A view preference, not document content: it follows the viewport.
+        scene.hide_similar_components = bool(
+            getattr(self.scene, "hide_similar_components", False))
         self.scene = scene
         self.history = history
         from core import units as _units
@@ -11287,6 +11299,25 @@ class Viewport(QOpenGLWidget):
         QSettings().setValue("display/edit_rest_mode", mode)
         # "hide" keeps the rest out of the VBOs entirely, so switching to or
         # from it changes what is uploaded, not just how it is drawn.
+        self._edges_version = -1
+        self.update()
+
+    def set_hide_similar_components(self, on: bool) -> None:
+        """Hide Similar Components: the other instances of the
+        component being edited leave the frame. Persisted like the rest
+        mode; the version bump re-keys the pick index."""
+        on = bool(on)
+        from PySide6.QtCore import QSettings
+        QSettings().setValue("display/hide_similar_components",
+                             "1" if on else "0")
+        if bool(getattr(self.scene, "hide_similar_components", False)) == on:
+            return
+        self.scene.hide_similar_components = on
+        if on:
+            for ent in list(self.scene.selection):
+                if self.scene.similar_hidden(ent):
+                    self.scene.selection.discard(ent)
+        self.scene.version += 1
         self._edges_version = -1
         self.update()
 
