@@ -2701,6 +2701,7 @@ class Viewport(QOpenGLWidget):
         the LOCAL base chunk, three VAOs wiring them to the shared
         per-instance matrix buffer (divisor 1), built once per proto rev —
         and per container paint (issue #47)."""
+        self._program.bind()
         cache = getattr(self, "_proto_draw", None)
         if cache is None:
             cache = self._proto_draw = {}
