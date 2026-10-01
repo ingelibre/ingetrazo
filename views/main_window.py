@@ -1004,8 +1004,11 @@ class MainWindow(QMainWindow):
         # Edit ▸ Hide and Edit ▸ Unhide ▸ Last / All. Hide takes
         # the selected OBJECTS (groups, components) and edges; there was
         # only «Ocultar aristas» and Rafael looked for the object one and
-        # did not find it (2026-09-16, 38:40).
+        # did not find it (2026-09-16, 38:40). The keys sit on Ctrl+H
+        # because H alone is Pan and Shift+H the Protractor; Shift adds
+        # the way back for everything.
         hide_action = QAction(tr("Hide"), self)
+        hide_action.setShortcut(QKeySequence("Ctrl+H"))
         hide_action.setStatusTip(tr(
             "Stop showing the selected objects, faces and edges; they "
             "stay in the document until unhidden."))
@@ -1025,6 +1028,7 @@ class MainWindow(QMainWindow):
         unhide_last_action.triggered.connect(self._on_unhide_last)
         unhide_menu.addAction(unhide_last_action)
         unhide_all_action = QAction(tr("All"), self)
+        unhide_all_action.setShortcut(QKeySequence("Ctrl+Shift+H"))
         unhide_all_action.setStatusTip(tr(
             "Show again everything that is hidden."))
         unhide_all_action.triggered.connect(self._on_unhide_all)

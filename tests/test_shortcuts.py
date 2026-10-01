@@ -196,3 +196,51 @@ def test_la_barra_muestra_el_atajo_configurado_y_no_el_de_fabrica(ventana):
     ze = ventana._act_zoom_extents
     ze.setShortcuts([QKeySequence("Ctrl+E")])
     assert "Ctrl+E" in primera(ze)                   # el que venía escrito a mano
+
+
+def _caja(nombre: str, x0: float):
+    """Un grupo cúbico de lado 1 generado en el momento."""
+    from PySide6.QtGui import QVector3D
+    from core.group import Group
+    from core.mesh import Mesh
+    malla = Mesh()
+    P = [QVector3D(x0 + (i & 1), (i >> 1) & 1, i >> 2) for i in range(8)]
+    for q in ([0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3],
+              [0, 4, 6, 2], [1, 3, 7, 5]):
+        malla.add_face([P[i] for i in q])
+    return Group(malla, name=nombre)
+
+
+def test_ocultar_es_ctrl_h_y_mostrar_todo_ctrl_mayus_h(ventana):
+    """Ocultar y Mostrar ▸ Todo se usan sin parar y no tenían tecla. La H
+    sola es Encuadre y Mayús+H el Transportador, así que van con Ctrl."""
+    atajos = _todos_los_atajos(ventana)
+    assert atajos["Ctrl+H"] == ["Hide"]
+    assert atajos["Ctrl+Shift+H"] == ["All"]
+    _calentar(ventana)
+    assert _pulsar(ventana, Qt.Key_H, Qt.ControlModifier) == ["Hide"]
+    assert _pulsar(ventana, Qt.Key_H,
+                   Qt.ControlModifier | Qt.ShiftModifier) == ["All"]
+    # Las dos que ya tenían la H no se mueven.
+    assert _pulsar(ventana, Qt.Key_H) == ["Pan"]
+    assert _pulsar(ventana, Qt.Key_H, Qt.ShiftModifier) == ["Protractor"]
+
+
+def test_ctrl_h_oculta_la_seleccion_y_ctrl_mayus_h_lo_devuelve_todo(ventana):
+    vp = ventana.viewport
+    cajas = [_caja(f"caja{i}", 2.0 * i) for i in range(3)]
+    vp.scene.groups += cajas
+    vp.scene.version += 1
+    _calentar(ventana)
+
+    for caja in cajas[:2]:                  # dos ocultaciones separadas
+        vp.scene.select([caja])
+        QTest.keyClick(vp, Qt.Key_H, Qt.ControlModifier)
+        QApplication.processEvents()
+    assert [c.hidden for c in cajas] == [True, True, False]
+
+    QTest.keyClick(vp, Qt.Key_H, Qt.ControlModifier | Qt.ShiftModifier)
+    QApplication.processEvents()
+    assert not any(c.hidden for c in cajas)
+    vp.history.undo()                       # Mostrar todo es un solo paso
+    assert [c.hidden for c in cajas] == [True, True, False]
