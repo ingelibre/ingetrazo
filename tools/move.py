@@ -261,6 +261,13 @@ class MoveTool(Tool):
         self._copy = False
         self._last = None
 
+    @property
+    def cursor_plus(self) -> bool:
+        """The little + beside the cursor while Ctrl has it making a COPY,
+        as the Tape shows its guide mode: the status-bar flash alone was
+        easy to miss."""
+        return self._copy
+
     # ---- Keyboard -----------------------------------------------------------
     def on_key(self, viewport, key: int, modifiers) -> bool:
         if self._grip_rot is not None:
@@ -280,6 +287,9 @@ class MoveTool(Tool):
                 if self.grab is not None and self.hover_point is not None:
                     self._apply_preview(viewport, self.hover_point - self.grab)
                 viewport.flash_status(tr("Move a copy: off"))
+            apply = getattr(viewport, "_apply_tool_cursor", None)
+            if apply is not None:
+                apply()                  # the + appears or disappears now
             viewport.update()
             return True
         return False

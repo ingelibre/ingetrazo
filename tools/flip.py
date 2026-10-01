@@ -59,12 +59,22 @@ class FlipTool(Tool):
     def on_deactivate(self, viewport) -> None:
         self._hover_axis = None
 
+    @property
+    def cursor_plus(self) -> bool:
+        """The little + beside the cursor while Ctrl has it making a COPY,
+        as the Tape shows its guide mode: the status-bar flash alone was
+        easy to miss."""
+        return self._copy
+
     # ---- Input --------------------------------------------------------------
     def on_key(self, viewport, key: int, modifiers) -> bool:
         if key == Qt.Key_Control:
             self._copy = not self._copy
             viewport.flash_status(tr("Flip a copy: on") if self._copy
                                   else tr("Flip a copy: off"))
+            apply = getattr(viewport, "_apply_tool_cursor", None)
+            if apply is not None:
+                apply()                  # the + appears or disappears now
             viewport.update()
             return True
         picks = {Qt.Key_Right: "x", Qt.Key_Left: "y", Qt.Key_Up: "z"}

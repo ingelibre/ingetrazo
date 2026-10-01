@@ -90,6 +90,13 @@ class RotateTool(ProtractorBase):
         self._axis_pick = None
         self.hover_point = None
 
+    @property
+    def cursor_plus(self) -> bool:
+        """The little + beside the cursor while Ctrl has it making a COPY,
+        as the Tape shows its guide mode: the status-bar flash alone was
+        easy to miss."""
+        return self._copy
+
     # ---- Keyboard -----------------------------------------------------------
     def on_key(self, viewport, key: int, modifiers) -> bool:
         # Ctrl toggles copy mode (rotate a copy, original stays).
@@ -100,6 +107,9 @@ class RotateTool(ProtractorBase):
                 viewport.flash_status(tr("Rotate a copy: on"))
             else:
                 viewport.flash_status(tr("Rotate a copy: off"))
+            apply = getattr(viewport, "_apply_tool_cursor", None)
+            if apply is not None:
+                apply()                  # the + appears or disappears now
             viewport.update()
             return True
         return super().on_key(viewport, key, modifiers)
