@@ -196,3 +196,39 @@ def test_la_barra_muestra_el_atajo_configurado_y_no_el_de_fabrica(ventana):
     ze = ventana._act_zoom_extents
     ze.setShortcuts([QKeySequence("Ctrl+E")])
     assert "Ctrl+E" in primera(ze)                   # el que venía escrito a mano
+
+
+#: Vistas estándar por comodidad (Marco, 2026-09-30): Ctrl con el meñique y
+#: los dedos en 1-4 sin mover la mano — planta, alzado, lateral y 3D; las
+#: raras quedan lejos. Los dígitos solos escriben la medida en la casilla.
+VISTAS = {
+    Qt.Key_1: "Top", Qt.Key_2: "Front", Qt.Key_3: "Right",
+    Qt.Key_4: "Isometric", Qt.Key_5: "Back", Qt.Key_6: "Left",
+    Qt.Key_7: "Bottom",
+}
+
+
+def test_ctrl_numero_pone_la_vista_estandar(ventana, monkeypatch):
+    pedidas = []
+    monkeypatch.setattr(ventana, "_on_standard_view", pedidas.append)
+    _calentar(ventana)
+    for tecla, nombre in VISTAS.items():
+        assert _pulsar(ventana, tecla, Qt.ControlModifier) == [nombre]
+    assert pedidas == ["top", "front", "right", "iso", "back", "left",
+                       "bottom"]
+
+
+def test_menu_y_barra_comparten_la_accion_de_cada_vista(ventana):
+    """Una sola acción por vista: si el menú tuviera la suya, el atajo
+    estaría dos veces y Qt no dispararía ninguna."""
+    barra = ventana.toolbars["views"].actions()
+    for act in ventana._view_actions.values():
+        assert act in barra
+        assert len([a for a in ventana.findChildren(QAction)
+                    if a.text() == act.text()]) == 1
+
+
+def test_el_boton_de_vista_muestra_su_atajo(ventana):
+    top = ventana._view_actions["top"]
+    assert top.toolTip().split("\n")[0].endswith(
+        "(" + QKeySequence("Ctrl+1").toString(QKeySequence.NativeText) + ")")

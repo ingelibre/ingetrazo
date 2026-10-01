@@ -778,21 +778,29 @@ class MainWindow(QMainWindow):
         self.toolbars["views"] = views_tb
         # Order as Marco reads them (2026-09-14): iso, top, front, right,
         # left, back, bottom — the two you use most right after the iso.
-        for key, label, icon in [
-            ("iso", "Isometric", "view_iso"),
-            ("top", "Top", "view_top"),
-            ("front", "Front", "view_front"),
-            ("right", "Right", "view_right"),
-            ("left", "Left", "view_left"),
-            ("back", "Back", "view_back"),
-            ("bottom", "Bottom", "view_bottom"),
+        # The keys go by comfort, not by this order: the left hand holds
+        # Ctrl with the little finger and reaches 1-4 without leaving the
+        # keys, so the four daily views (plan, elevation, side, 3D) take
+        # them and the rare ones sit further away. The digits alone type a
+        # measure in the value box (views/shortcuts.py, reserved_reason).
+        self._view_actions = {}
+        for key, label, icon, keys in [
+            ("iso", "Isometric", "view_iso", "Ctrl+4"),
+            ("top", "Top", "view_top", "Ctrl+1"),
+            ("front", "Front", "view_front", "Ctrl+2"),
+            ("right", "Right", "view_right", "Ctrl+3"),
+            ("left", "Left", "view_left", "Ctrl+6"),
+            ("back", "Back", "view_back", "Ctrl+5"),
+            ("bottom", "Bottom", "view_bottom", "Ctrl+7"),
         ]:
             act = QAction(tool_icon(icon), tr(label), self)
-            act.setToolTip(tr(label))
+            act.setShortcut(QKeySequence(keys))
             act.setStatusTip(tr(_VIEW_TIPS[key]))
+            set_tooltip(act, tr(label))
             act.triggered.connect(lambda _c, k=key: self._on_standard_view(k))
             views_tb.addAction(act)
             self._icon_actions.append((act, icon))
+            self._view_actions[key] = act
 
     def _describe_buttons(self) -> None:
         """A toolbar button's tooltip says what it does under its name and
@@ -1061,19 +1069,10 @@ class MainWindow(QMainWindow):
         camera_menu = menubar.addMenu(tr("Camera"))
 
         standard_menu = camera_menu.addMenu(tr("Standard Views"))
-        for label, key in [
-            ("Top", "top"),
-            ("Bottom", "bottom"),
-            ("Front", "front"),
-            ("Back", "back"),
-            ("Left", "left"),
-            ("Right", "right"),
-            ("Isometric", "iso"),
-        ]:
-            action = QAction(tr(label), self)
-            action.setStatusTip(tr(_VIEW_TIPS[key]))
-            action.triggered.connect(lambda _checked, k=key: self._on_standard_view(k))
-            standard_menu.addAction(action)
+        # The SAME actions as the toolbar buttons: two actions holding one
+        # key leave it dead (tests/test_shortcuts.py).
+        for key in ("top", "bottom", "front", "back", "left", "right", "iso"):
+            standard_menu.addAction(self._view_actions[key])
 
         camera_menu.addAction(self._act_zoom_extents)   # la MISMA del botón
         camera_menu.addAction(self._act_zoom_selection)
