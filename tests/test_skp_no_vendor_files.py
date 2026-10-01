@@ -64,9 +64,9 @@ def test_no_skp_export_in_the_menu():
 
 
 def test_the_bundle_spec_leaves_the_sdk_template_out():
-    text = (ROOT / "ingetrazo.spec").read_text()
+    text = (ROOT / "ingetrazo.spec").read_text(encoding="utf-8")
     assert "'_scaffold' not in src" in text
-    flatpak = (ROOT / "packaging/flatpak/com.ingetrazo.IngeTrazo.yml").read_text()
+    flatpak = (ROOT / "packaging/flatpak/com.ingetrazo.IngeTrazo.yml").read_text(encoding="utf-8")
     assert "openskp/_scaffold" in flatpak and "rm -rf" in flatpak
-    snap = (ROOT / "packaging/snap/snapcraft.yaml.in").read_text()
+    snap = (ROOT / "packaging/snap/snapcraft.yaml.in").read_text(encoding="utf-8")
     assert "_scaffold" in snap

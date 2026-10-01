@@ -465,7 +465,10 @@ class AsistentePanel(QWidget):
         if encoded is None:
             self._append(tr("Could not read the image."), "err")
             return
-        name = path.rsplit("/", 1)[-1]
+        # Path(...).name, not a split on "/": a native Windows path
+        # (drag-and-drop, a pasted path) put its whole "C:\..." in the chip.
+        from pathlib import Path
+        name = Path(path).name
         self._foto = (*encoded, name)
         self._foto_chip.setText("📷 " + name)
         self._foto_chip.setVisible(True)

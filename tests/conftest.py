@@ -10,10 +10,30 @@ import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# Windows: the offscreen platform has NO font database there (fontconfig
+# finds the fonts on Linux; on Windows nothing looks), so every glyph drew
+# as an empty box — 3D text lost the O's counter and built faces for
+# spaces, and every test that measures a label's width measured boxes.
+# Pointed at the system fonts, and with the faces the app gets from the
+# native platform (Segoe UI 9 pt; the "Sans" alias the tests and the
+# Linux defaults name resolves to a sans-serif, not the alphabetically
+# first family), the suite sees the text a Windows user sees.
+_WIN_OFFSCREEN = (sys.platform == "win32"
+                  and os.environ["QT_QPA_PLATFORM"] == "offscreen")
+if _WIN_OFFSCREEN:
+    os.environ.setdefault("QT_QPA_FONTDIR", os.path.join(
+        os.environ.get("WINDIR", r"C:\Windows"), "Fonts"))
+
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 if QApplication.instance() is None:
     QApplication(sys.argv[:1])
+
+if _WIN_OFFSCREEN:
+    from PySide6.QtGui import QFont  # noqa: E402
+    for _alias in ("Sans", "Sans Serif", "DejaVu Sans"):
+        QFont.insertSubstitutions(_alias, ["Segoe UI", "Arial"])
+    QApplication.setFont(QFont("Segoe UI", 9))
 
 # And a QSettings store of its own, thrown away with the session. The suite
 # is not read-only about preferences: a test that exercises «new items
