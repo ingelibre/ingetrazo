@@ -27,7 +27,9 @@ class FilletTool(Tool):
     #: and the bare word sent people here for it (issue #49, @pacaeiro).
     name = "Fillet 3D"
     icon = "fillet"
-    shortcut = None
+    #: Shift+F, not F: plain F is Offset, and the tool that comes second
+    #: keeps Shift+key (as Shift+O, Shift+H and Shift+P do).
+    shortcut = "Shift+F"
     description = "Round the edges of a solid to the radius you set."
     uses_snap = False
     vcb_label = "Radius"

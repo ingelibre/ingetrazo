@@ -122,6 +122,16 @@ def test_las_dos_herramientas_que_cedieron_siguen_a_mano(ventana):
     assert _pulsar(ventana, Qt.Key_O, Qt.ShiftModifier) == ["Center Arc"]
 
 
+def test_redondear_3d_va_con_mayus_f_y_la_f_sigue_siendo_equidistancia(ventana):
+    """Redondear 3D no tenía tecla. La F es de Equidistancia en la tarjeta,
+    así que Redondear toma Mayús+F, como las otras que llegaron después."""
+    _calentar(ventana)
+    assert _pulsar(ventana, Qt.Key_F, Qt.ShiftModifier) == ["Fillet 3D"]
+    assert ventana.viewport.active_tool is ventana._tools["fillet"]
+    assert _pulsar(ventana, Qt.Key_F) == ["Offset"]
+    assert ventana.viewport.active_tool is ventana._tools["offset"]
+
+
 #: Lo que la tarjeta de referencia habitual SÍ trae atado de fábrica y
 #: nosotros respetamos (edición 2026). Lo que falta de esa lista es
 #: deliberado y está anotado abajo; lo que sobra son teclas que allá están libres.
