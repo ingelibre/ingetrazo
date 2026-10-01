@@ -161,31 +161,45 @@ class SolidTool(Tool):
 
 class OuterShellTool(SolidTool):
     name = "Outer Shell"
+    description = (
+        "Merge the selected solids into one, keeping only their outer "
+        "skin.")
     op = solids.OUTER_SHELL
 
 
 class UnionTool(SolidTool):
     name = "Union"
+    description = "Join solids into a single solid."
     op = solids.UNION
 
 
 class SubtractTool(SolidTool):
     name = "Subtract"
+    description = (
+        "Cut the first solid clicked out of the second, and remove "
+        "the first.")
     op = solids.SUBTRACT
 
 
 class TrimTool(SolidTool):
     name = "Trim"
+    description = (
+        "Cut the first solid clicked out of the second, and keep the "
+        "first.")
     op = solids.TRIM
 
 
 class IntersectTool(SolidTool):
     name = "Intersect"
+    description = "Keep only the part where the solids overlap."
     op = solids.INTERSECT
 
 
 class SplitTool(SolidTool):
     name = "Split"
+    description = (
+        "Split two overlapping solids into their separate parts and "
+        "their common part.")
     op = solids.SPLIT
 
 

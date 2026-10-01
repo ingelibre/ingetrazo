@@ -53,6 +53,9 @@ from tools.protractor import ProtractorBase
 class RotateTool(ProtractorBase):
     name = "Rotate"
     shortcut = "Q"
+    description = (
+        "Turn the selection around a centre with the protractor; Ctrl "
+        "leaves a copy behind.")
     vcb_label = "Angle"
     accepts_angle_ratio = True  # VCB "3:12" (rise:run) arrives as degrees
     accepts_array = True  # VCB "3x" / "/3" after a copy: a POLAR array

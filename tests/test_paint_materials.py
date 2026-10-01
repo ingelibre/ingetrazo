@@ -175,6 +175,41 @@ def test_restamp_updates_registry_and_every_face():
         assert tuple(f.attrs["color"]) == (0.62, 0.60, 0.58)
 
 
+def test_restamp_reaches_groups_painted_whole():
+    """Issue #155 (@fafecm): a colour painted on a loose face and on a group
+    as a whole; editing the colour changed the face and left the group."""
+    from core.history import SetGroupMaterialCommand
+    scene = Scene()
+    history = History(scene)
+    old = Material("Azul", color=(0.1, 0.6, 0.9))
+    scene.materials["Azul"] = old
+    face = _quad(scene.mesh)
+    face.attrs.update(old.face_attrs())
+    box = Group(Mesh(), name="Caja")
+    _quad(box.mesh, z=5.0)                       # default faces: show the paint
+    inner = Group(Mesh(), name="Tapa")           # nested, painted too
+    _quad(inner.mesh, z=6.0)
+    box.adopt([inner])
+    scene.groups.append(box)
+    other = Group(Mesh(), name="Otro")           # a different paint
+    _quad(other.mesh, z=7.0)
+    scene.groups.append(other)
+    history.execute(SetGroupMaterialCommand(box, old.face_attrs()))
+    history.execute(SetGroupMaterialCommand(other, {"color": (0.2, 0.2, 0.2)}))
+    history.execute(SetGroupMaterialCommand(inner, old.face_attrs()))
+
+    history.execute(RestampMaterialCommand(
+        "Azul", Material("Azul", color=(0.6, 1.0, 0.4))))
+    assert tuple(face.attrs["color"]) == (0.6, 1.0, 0.4)
+    assert tuple(box.material["color"]) == (0.6, 1.0, 0.4)
+    assert tuple(inner.material["color"]) == (0.6, 1.0, 0.4)
+    assert tuple(other.material["color"]) == (0.2, 0.2, 0.2)   # untouched
+
+    history.undo()
+    assert tuple(box.material["color"]) == (0.1, 0.6, 0.9)
+    assert tuple(inner.material["color"]) == (0.1, 0.6, 0.9)
+
+
 def test_restamp_from_texture_to_colour_drops_the_texture():
     scene = Scene()
     history = History(scene)
@@ -252,3 +287,41 @@ def test_the_eyedropper_button_arms_one_sample_and_pops_out():
 
     _click(vp, target)                                # and now it paints
     assert tuple(target.attrs["color"]) == (0.2, 0.4, 0.6)
+
+
+def test_the_color_row_recolours_a_plain_colour_material(monkeypatch):
+    """Marco, testing 0.5.7: with a colour material active he used the
+    Color row of the texture section — it tinted nothing, since tinting
+    needs a texture. For a plain colour it now edits the material itself,
+    on the loose face and on the group painted whole, in one undo."""
+    from PySide6.QtGui import QColor
+    from core.history import SetGroupMaterialCommand, SetFaceMaterialTagCommand, CompoundCommand
+    from views.main_window import MainWindow
+    import views.color_dialog as color_dialog
+    import views.tray as T
+    w = MainWindow()
+    try:
+        vp = w.viewport
+        scene = vp.scene
+        panel = w.findChild(T.MaterialsPanel)
+        face = _quad(scene.mesh)
+        g = Group(Mesh(), name="Caja")
+        _quad(g.mesh, z=5.0)
+        scene.groups.append(g)
+        panel._apply_color((0.1, 0.4, 0.9), name="Azul")
+        paint = PaintTool._current_as_material()
+        face.attrs.update(paint)
+        mat = PaintTool.current_material
+        vp.history.execute(CompoundCommand([
+            SetFaceMaterialTagCommand([], mat.name, mat),
+            SetGroupMaterialCommand(g, paint)]))
+        monkeypatch.setattr(color_dialog.QColorDialog, "getColor",
+                            staticmethod(lambda *a, **k: QColor(0, 255, 0)))
+        panel._on_pick_tint()                       # choose → applies at once
+        assert tuple(face.attrs["color"]) == (0.0, 1.0, 0.0)
+        assert tuple(g.material["color"]) == (0.0, 1.0, 0.0)
+        assert vp.history.undo()
+        assert tuple(g.material["color"]) == pytest.approx((0.1, 0.4, 0.9))
+    finally:
+        w._saved_version = w.viewport.scene.version
+        w.close()

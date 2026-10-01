@@ -25,6 +25,9 @@ from core.units import fmt_len
 class DimensionTool(AxisMagnet, Tool):
     name = "Dimension"
     shortcut = "D"
+    description = (
+        "Place a dimension that shows the distance between two "
+        "points.")
 
     def magnet_on(self) -> bool:
         # The second endpoint is a direction from the first (issue #50:

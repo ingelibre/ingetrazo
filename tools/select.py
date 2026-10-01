@@ -210,6 +210,10 @@ def _seg_rect_overlap(a, b, rect) -> bool:
 class SelectTool(Tool):
     name = "Select"
     shortcut = ""  # Space, bound in main_window; "S" is Scale
+    description = (
+        "Pick edges, faces and objects. Shift+click adds or takes away, "
+        "Ctrl+click adds, Shift+Ctrl+click takes away; the same with a "
+        "box.")
     uses_snap = False  # selecting picks geometry; no snap markers
     box_select = True   # supports the rubber-band window / crossing box
 
@@ -285,8 +289,19 @@ class SelectTool(Tool):
 
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
-        entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
         mode = selection_mode(ctx.modifiers)
+        # An extension's item (a render light) is drawn over the model, so
+        # a click on it outranks the geometry behind (issue #205).
+        pick_item = getattr(viewport, "pick_extension_item", None)
+        hit = (pick_item(ctx.screen.x(), ctx.screen.y())
+               if pick_item is not None else None)
+        if hit is not None:
+            viewport.scene.clear_selection()
+            viewport.set_extension_pick(hit)
+            return
+        if getattr(viewport, "extension_pick", None) is not None:
+            viewport.clear_extension_pick()
+        entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
         if entity is None:
             if viewport.scene.edit_group is not None and mode == "replace" \
                     and not viewport.scene.selection:
@@ -560,6 +575,9 @@ class SelectTool(Tool):
             elif _pt_in_rect(pp, rect) and (
                     pa is None or _pt_in_rect(pa, rect)):
                 picked.append(lab)
+        if mode == "replace" and getattr(viewport, "extension_pick",
+                                         None) is not None:
+            viewport.clear_extension_pick()
         viewport.scene.select(picked, additive=additive, mode=mode)
         viewport.update()
 
@@ -624,6 +642,8 @@ def delete_selection_or_hover(viewport) -> bool:
     Supr, no click needed. The hover grows like a click would (a whole
     circle, a whole smooth surface), so what goes is what a click-then-Supr
     would have erased. True if anything was erased."""
+    if getattr(viewport, "extension_pick", None) is not None:
+        return viewport.delete_extension_pick()      # a render light, say
     selection = list(viewport.scene.selection)
     if selection:
         return erase_entities(viewport, selection)

@@ -26,6 +26,11 @@ import sys
 from pathlib import Path
 
 PORT = int(os.environ.get("INGETRAZO_AI_PORT", 4763))
+#: Where the bridge is. It only ever listens on the app machine's loopback
+#: (no authentication, and run_python runs code in the app); a client in
+#: a container or on another machine reaches it through a tunnel the user
+#: sets up, and names the tunnel's end here (issue #130).
+HOST = os.environ.get("INGETRAZO_AI_HOST", "").strip() or "127.0.0.1"
 PROTOCOL = "2024-11-05"
 
 # The recipe book the model needs, from the app's own copy — the SAME text
@@ -111,7 +116,7 @@ def _bridge(tool: str, args: dict) -> dict:
         if _sock is None:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(180.0)
-            s.connect(("127.0.0.1", PORT))
+            s.connect((HOST, PORT))
             _sock = s
         _req_id += 1
         try:
@@ -144,9 +149,9 @@ def _call(name: str, args: dict) -> dict:
         reply = _bridge(name, args)
     except OSError as exc:
         return _tool_result(
-            "Cannot reach IngeTrazo's AI bridge on 127.0.0.1:%d (%s). "
+            "Cannot reach IngeTrazo's AI bridge on %s:%d (%s). "
             "In IngeTrazo: the AI tab of the side tray > Start bridge (or Extensions > AI Bridge (MCP))."
-            % (PORT, exc), is_error=True)
+            % (HOST, PORT, exc), is_error=True)
     if not reply.get("ok"):
         return _tool_result(str(reply.get("error")), is_error=True)
     result = reply.get("result") or {}

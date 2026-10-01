@@ -255,6 +255,9 @@ class SolidInspectorTool(Tool):
     """Extensions-menu entry that opens (or raises) the inspector."""
     name = "Solid Inspector"
     shortcut = None
+    description = (
+        "Find out why a group is not a solid, and show the edges to "
+        "blame.")
     uses_snap = False
 
     def on_activate(self, viewport) -> None:

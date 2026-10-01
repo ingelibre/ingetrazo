@@ -43,6 +43,9 @@ from core.axes import AXES as _AXES  # noqa: E402
 class TapeMeasureTool(Tool):
     name = "Tape Measure"
     shortcut = "T"
+    description = (
+        "Measure distances, or pull guide lines off edges to draw "
+        "against.")
     vcb_label = "Distance"
     #: The Line tool's axis magnet, both halves (@pacaeiro, issue #41:
     #: «TAPE and PROTRACTOR should have the soft magnetic snap of X, Y,

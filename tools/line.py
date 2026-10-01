@@ -26,6 +26,7 @@ from tools.base import Tool, ToolContext
 class LineTool(Tool):
     name = "Line"
     shortcut = "L"
+    description = "Draw edges point by point; closing a loop makes a face."
     vcb_label = "Length"
 
     #: The axis inference MAGNETISES, it does not merely light up.

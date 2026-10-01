@@ -229,6 +229,9 @@ class PushPullTool(Tool):
     #: line of code, and it costs nothing: P is what the card says.
     shortcut = "P"
     shortcut_alt = "U"
+    description = (
+        "Push or pull a face to extrude it into a solid or cut it "
+        "back.")
     uses_snap = False  # picks a face to extrude; no snap markers
     hover_group_edges = True  # …but its distance infers to a group's edge too
     vcb_label = "Distance"

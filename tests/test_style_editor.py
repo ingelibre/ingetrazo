@@ -273,12 +273,37 @@ def test_panel_back_swatch_shows_the_tint_that_draws(settings_file,
     # Automatic: the swatch shows the default blue-grey (158,178,199).
     assert "rgb(158,178,199)" in panel._back_c.styleSheet()
 
-    monkeypatch.setattr(tray.QColorDialog, "getColor",
+    import views.color_dialog as color_dialog
+    monkeypatch.setattr(color_dialog.QColorDialog, "getColor",
                         staticmethod(lambda *a, **k: QColor(255, 0, 0)))
     panel._pick_color("Back color", "back_color")
     assert style.back_color == (1.0, 0.0, 0.0)
     assert "rgb(255,0,0)" in panel._back_c.styleSheet()
     assert style.front_color == (1.0, 1.0, 1.0)     # front untouched
+
+
+def test_a_swatch_tooltip_keeps_the_tooltip_colours(settings_file):
+    """A swatch's colour is ITS background only: a bare «background: …»
+    sheet reached the tooltip over it too — light text on the white front
+    colour, unreadable."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QPalette
+    from PySide6.QtWidgets import QToolTip
+    from views.tray import StylesPanel
+    win = _Win()
+    panel = StylesPanel(win)
+    swatch = panel._front_c                          # white (255,255,255)
+    swatch.show()
+    QToolTip.showText(QPoint(10, 10), "tip", swatch)
+    QApplication.processEvents()
+    labels = [w for w in QApplication.topLevelWidgets()
+              if w.objectName() == "qtooltip_label" and w.isVisible()]
+    try:
+        assert labels
+        assert labels[0].palette().color(QPalette.Window).name() != "#ffffff"
+    finally:
+        QToolTip.hideText()
+        swatch.close()
 
 
 def test_back_color_hint_only_where_back_faces_cannot_show(settings_file):

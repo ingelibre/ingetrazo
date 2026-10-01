@@ -16,7 +16,8 @@ Face modes (Face Styles):
 - ``monochrome``  Flat default front/back colours, no materials — the
                   reversed-face checker.
 - ``wireframe``   Edges only, no faces (nothing occludes).
-- ``xray``        Everything translucent, edges always visible.
+- ``xray``        Everything translucent, edges always visible — the ones
+                  behind a face washed toward the background.
 
 Deferred (documented, not lost): back edges, depth cue, extensions,
 endpoints, jitter, watermarks, per-material edge colour.
@@ -39,6 +40,10 @@ class Style:
     face_mode: str = "textures"
     edges: bool = True
     profiles: bool = True                    # silhouette/profile edge pass
+    # Back Edges (K): the edges hidden behind faces, drawn dashed, over an
+    # opaque model — where a bar continues behind a face in a shop drawing
+    # (issue #234). Off in every preset.
+    back_edges: bool = False
     edge_color: tuple = (0.13, 0.17, 0.23)
     front_color: tuple = (1.0, 1.0, 1.0)     # hidden line / monochrome faces
     # Back-face tint (Back color). ``None`` = automatic: the
@@ -64,6 +69,7 @@ class Style:
             "face_mode": self.face_mode,
             "edges": self.edges,
             "profiles": self.profiles,
+            "back_edges": self.back_edges,
             "edge_color": list(self.edge_color),
             "front_color": list(self.front_color),
             "back_color": (list(self.back_color)
@@ -87,6 +93,7 @@ class Style:
             face_mode=mode,
             edges=bool(raw.get("edges", d.edges)),
             profiles=bool(raw.get("profiles", d.profiles)),
+            back_edges=bool(raw.get("back_edges", d.back_edges)),
             edge_color=tuple(raw.get("edge_color", d.edge_color)),
             front_color=tuple(raw.get("front_color", d.front_color)),
             back_color=_opt_rgb(raw.get("back_color")),

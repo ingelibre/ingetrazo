@@ -46,7 +46,17 @@ uniform int u_shadow_overlay;
 // drawn as a see-through screen-space GRID (1 = faces: a 1 px line every
 // 4 px each way) or DOTTED (2 = edges). Fragments off the pattern are
 // discarded, so what lies behind shows through the weave. 0 = off.
+// 3 = SELECTED faces: an opaque 2x2 px dot every 6 px each way, so the
+// face's own colour keeps showing between the dots and a selected face
+// never reads as a tinted one (an orange wash over the blue-grey back
+// looked like just another back face).
 uniform int u_stipple;
+// Back Edges (u_stipple 4): a dash measured ALONG the line from its
+// provoking vertex, in window pixels — a screen pattern breaks on a
+// diagonal (a line along x + y = const is all dash or all gap).
+flat in vec4 v_line_clip;
+uniform vec2 u_viewport_px;
+uniform float u_dash_px;
 
 in vec2 v_uv;
 in vec3 v_color;
@@ -118,6 +128,13 @@ void main() {
             discard;
     } else if (u_stipple == 2) {
         if (mod(gl_FragCoord.x + gl_FragCoord.y, 6.0) >= 3.0) discard;
+    } else if (u_stipple == 3) {
+        if (mod(gl_FragCoord.x, 6.0) >= 2.0 || mod(gl_FragCoord.y, 6.0) >= 2.0)
+            discard;
+    } else if (u_stipple == 4) {
+        vec2 o = (v_line_clip.xy / v_line_clip.w * 0.5 + 0.5) * u_viewport_px;
+        if (mod(length(gl_FragCoord.xy - o), 2.0 * u_dash_px) >= u_dash_px)
+            discard;
     }
     vec4 c;
     if (u_use_texture == 1) {

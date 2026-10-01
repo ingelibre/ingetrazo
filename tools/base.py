@@ -115,13 +115,78 @@ class PlaneLock:
 
     def drawing_plane(self):
         """``(point, normal)`` the shape is laid out on: the captured or
-        locked plane, else the plane of the last hit, else the ground."""
+        locked plane — unless a snapped point says otherwise (see
+        ``snapped_plane``) — else the plane of the last hit, else the
+        ground."""
+        plane = self._own_plane()
+        snapped = self.snapped_plane(plane)
+        return snapped if snapped is not None else plane
+
+    def _own_plane(self):
         if self.work_plane is not None:
             return self.work_plane
         if self.hover_plane is not None:
             return self.hover_plane
         from core import axes
         return axes.origin(), axes.axis("z")      # the context's ground
+
+    #: How far off the drawing plane a point must be to count as pointing
+    #: ELSEWHERE. The free cursor lies on the plane by construction, so
+    #: only a snap (endpoint, midpoint…) gets this far.
+    OFF_PLANE_TOL = 1e-3
+
+    def plane_points(self) -> list:
+        """The points the shape must pass through, first click first — the
+        clicked ones and the one under the cursor. A tool opts in to
+        ``snapped_plane`` by listing them; the default opts out."""
+        return []
+
+    def snapped_plane(self, plane):
+        """The plane the shape's points ask for when a SNAPPED one lies off
+        ``plane``, or ``None`` to keep ``plane``.
+
+        Filling a window opening (2026-09-29): first point on the midpoint
+        of one jamb's depth edge, the next on the midpoint of the other.
+        The first click captured the jamb face, where those two points
+        share a vertical line: a rectangle «0.00 × 2.41 m», a circle whose
+        rim missed the point, arcs that ended on the wrong jamb. Both lie on
+        the wall's middle plane, and that is the plane they get:
+
+        - two points: the axis plane that holds both, when exactly one
+          does (the span has no component along its normal);
+        - three points not in a line: the plane through them.
+
+        An arrow-key lock was asked for explicitly and never yields."""
+        if self.plane_lock is not None or self.plane_ref is not None:
+            return None
+        pts = [p for p in self.plane_points() if p is not None]
+        if len(pts) < 2:
+            return None
+        origin, normal = plane
+        n = QVector3D(normal).normalized()
+        tol = self.OFF_PLANE_TOL
+        if all(abs(QVector3D.dotProduct(p - origin, n)) < tol for p in pts):
+            return None
+        a = QVector3D(pts[0])
+        if len(pts) >= 3:
+            through = QVector3D.crossProduct(pts[1] - a, pts[2] - a)
+            if through.length() > tol * tol:
+                return a, through.normalized()
+        from core import axes
+        span = pts[-1] - a
+        flat = [axes.axis(k) for k in ("x", "y", "z")
+                if abs(QVector3D.dotProduct(span, axes.axis(k))) < tol]
+        if len(flat) != 1:
+            return None     # a true 3D diagonal, or a line along an axis
+        return a, flat[0]
+
+    def adopt_snapped_plane(self) -> None:
+        """Make the snapped plane the captured one — call when a point that
+        is NOT the last is clicked, so the cursor rays for the next point
+        land on the new plane instead of the old one."""
+        snapped = self.snapped_plane(self._own_plane())
+        if snapped is not None:
+            self.work_plane = snapped
 
     #: Radius (circle) / half-side (rectangle) of the cursor preview, px.
     PREVIEW_PX = 22
@@ -331,6 +396,10 @@ class Tool(ABC):
     #: it had here for a year. It is the SAME action with two shortcuts —
     #: never a second action, which is what Qt kills (tests/test_shortcuts.py).
     shortcut_alt: str | None = None
+    #: What the tool does, in a sentence — without its name or its key,
+    #: which the tooltip and F3 already show beside it (Blender's
+    #: descriptions). English; it goes through ``tr`` where it is shown.
+    description: str | None = None
     # Drawing tools snap to geometry and show the snap markers/tooltips
     # (Endpoint, On Edge, On Face, ...). Tools that only pick existing
     # geometry (Select, Push/Pull) set this False: no snap engine, no markers.

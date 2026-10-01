@@ -725,4 +725,5 @@ def setup(app) -> None:
         app.show_panel(dock)
         panel.focus_input()
 
-    app.add_menu_action(tr("AI Assistant"), summon, "Ctrl+Shift+A")
+    app.add_menu_action(tr("AI Assistant"), summon, "Ctrl+Shift+A", tr(
+        "Open a chat with an AI that can read and change the model."))

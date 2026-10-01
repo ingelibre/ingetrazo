@@ -693,12 +693,20 @@ class Scene:
             if self.entity_visible(face):
                 for v in face.vertices:
                     absorb(v)
+        # One vertex array per MESH, not per placement: a model of 21 406
+        # placements over 2 722 meshes read 14 million vertices one by one
+        # to learn its box, ~7 s (issue #158).
+        per_mesh: dict = {}
         for g, m in self.placements():
             verts = g.mesh.vertices
             if not verts:
                 continue
-            arr = np.array([[v.position.x(), v.position.y(), v.position.z()]
-                            for v in verts])
+            key = id(g.mesh)
+            arr = per_mesh.get(key)
+            if arr is None:
+                arr = per_mesh[key] = np.array(
+                    [[v.position.x(), v.position.y(), v.position.z()]
+                     for v in verts])
             if m is not None:
                 d = m.data()          # column-major
                 rot = np.array([[d[0], d[4], d[8]],

@@ -19,6 +19,10 @@ because it takes its plane from the edge you draw, not the face under the
 cursor.
 
 The behaviour is the classic one and stays; the message was the bug.
+
+Since 2026-09-29 a far corner SNAPPED off the plane picks the plane itself
+(``tests/test_snapped_plane.py``): his base corner, snapped, now draws the
+step on the ground. The message is left for what no axis plane can hold.
 """
 from __future__ import annotations
 
@@ -86,3 +90,13 @@ def test_it_is_said_in_spanish_too():
         assert "plano de dibujo" in msg
     finally:
         set_language("en")
+
+
+def test_a_snapped_corner_now_draws_the_step():
+    """The same two corners, the far one snapped (off the front face's
+    plane): the rectangle takes the ground plane that holds both."""
+    t = _tool(V(0, -1, 0))
+    t.hover_point = QVector3D(OPUESTA)
+    far, _ = t._square_corner(t.start_point, OPUESTA)
+    du, dv = t._dimensions(t.start_point, far)
+    assert sorted((round(abs(du), 3), round(abs(dv), 3))) == [0.15, 4.0]

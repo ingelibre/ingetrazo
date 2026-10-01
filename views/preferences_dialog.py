@@ -129,6 +129,14 @@ class PreferencesDialog(QDialog):
             str(st.value("section/ask_name", "1")) != "0")
         form.addRow("", self._ask_section)
 
+        # A new document starts with the 1.70 m scale figure; someone who
+        # models parts for a 3D printer starts on an empty sheet (#221).
+        self._scale_figure = QCheckBox(tr(
+            "Put the scale figure in new documents"))
+        self._scale_figure.setChecked(
+            str(st.value("new_document/scale_figure", "1")) != "0")
+        form.addRow("", self._scale_figure)
+
         self._invert = QCheckBox(tr("Invert mouse wheel zoom"))
         self._invert.setChecked(str(st.value("nav/invert_wheel", "0"))
                                 != "0")
@@ -395,6 +403,8 @@ class PreferencesDialog(QDialog):
         st.setValue("general/backup", "1" if self._backup.isChecked() else "0")
         st.setValue("section/ask_name",
                     "1" if self._ask_section.isChecked() else "0")
+        st.setValue("new_document/scale_figure",
+                    "1" if self._scale_figure.isChecked() else "0")
         st.setValue("general/undo_steps", int(self._undo_steps.value()))
         history = getattr(getattr(self._window, "viewport", None), "history", None)
         if history is not None:

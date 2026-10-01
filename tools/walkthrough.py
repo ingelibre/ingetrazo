@@ -192,6 +192,9 @@ class _EyeTool(Tool):
 
 class PositionCameraTool(_EyeTool):
     name = "Position Camera"
+    description = (
+        "Click where to stand and the eye goes there at a person's "
+        "height; drag to also say where to look.")
     uses_snap = True                  # the point you stand on is a snap
     vcb_label = "Height offset"
     DRAG_PX = 6.0
@@ -290,6 +293,7 @@ class LookAroundTool(_EyeTool):
     #: Degrees of head turn per pixel of drag, scaled to the viewport: a
     #: drag across the whole width is half a turn, the whole height a
     #: quarter (looking straight up to straight down).
+    description = "Drag to turn your head; the eye stays where it is."
     TURN_DEG_PER_WIDTH = 180.0
     PITCH_DEG_PER_HEIGHT = 90.0
 
@@ -325,6 +329,9 @@ class WalkTool(_EyeTool):
     name = "Walk"
     #: Pixels of drag from the crosshair for full walking speed, the speed
     #: itself (m/s), and how much faster Ctrl runs.
+    description = (
+        "Drag to walk through the model at eye height: up and down go "
+        "forward and back, left and right turn.")
     FULL_PX = 150.0
     WALK_SPEED = 1.5
     RUN_FACTOR = 3.0
@@ -489,6 +496,9 @@ class FirstPersonTool(_EyeTool):
     ``_follow_floor``). Q/E fly and leave the floor alone; the next step
     on the ground brings the eye back to its height above it."""
     name = "First Person"
+    description = (
+        "Walk as in a game: W, A, S and D move, the mouse turns the "
+        "head.")
     WALK_SPEED = 1.5
     RUN_FACTOR = 3.0
     TICK_MS = 16

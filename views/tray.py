@@ -24,7 +24,6 @@ from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
-    QColorDialog,
     QComboBox,
     QDateEdit,
     QDockWidget,
@@ -51,6 +50,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from views.color_dialog import get_color
 from core.i18n import tr
 from views.theme import style as theme_style
 from views.filedialogs import file_dialogs
@@ -2041,8 +2041,12 @@ class MaterialsPanel(QWidget):
         mat = scene.materials.get(name)
         menu = QMenu(button)
         if color is not None:
+            # The dialog opens once the menu has closed: a modal opened
+            # inside the menu's own event loop came back without a colour.
+            from PySide6.QtCore import QTimer
             menu.addAction(tr("Edit colour…"),
-                           lambda: self._edit_named_color(name, color))
+                           lambda: QTimer.singleShot(
+                               0, lambda: self._edit_named_color(name, color)))
         if mat is not None:
             sub = menu.addMenu(tr("Finish for the render"))
             pic = (mat.texture or {}).get("path")
@@ -2081,7 +2085,7 @@ class MaterialsPanel(QWidget):
         existing = scene.materials.get(name)
         base = (existing.color if existing and existing.color
                 else tuple(current_rgb))
-        chosen = QColorDialog.getColor(
+        chosen = get_color(
             QColor.fromRgbF(*base[:3]), self,
             tr("Edit material: {name}", name=name))
         if not chosen.isValid():
@@ -2150,11 +2154,21 @@ class MaterialsPanel(QWidget):
 
     def _on_pick_tint(self) -> None:
         base = self._tint or (0.7, 0.7, 0.7)
-        chosen = QColorDialog.getColor(
-            QColor.fromRgbF(*base[:3]), self, tr("Tint the texture"))
+        colour_only = not PaintTool.current_texture
+        if colour_only and self._tint is None and \
+                not PaintTool.current_is_default:
+            base = PaintTool.current_color
+        chosen = get_color(
+            QColor.fromRgbF(*base[:3]), self,
+            tr("Colour") if colour_only else tr("Tint the texture"))
         if not chosen.isValid():
             return
-        self._tint = (chosen.redF(), chosen.greenF(), chosen.blueF())
+        rgb = (chosen.redF(), chosen.greenF(), chosen.blueF())
+        if colour_only and self._recolour_active(rgb):
+            # A plain colour changes at once: nothing to tint, no Apply.
+            self._refresh_preview()
+            return
+        self._tint = rgb
         if not self._tint_mode.isEnabled():
             self._tint_mode.setEnabled(True)
         self._refresh_tint_swatch()
@@ -2202,9 +2216,48 @@ class MaterialsPanel(QWidget):
             self._window.statusBar().showMessage(
                 tr("Texture updated on {n} faces", n=len(targets)), 2500)
         elif not PaintTool.current_texture:
-            self._window.statusBar().showMessage(
-                tr("Pick a texture (or select textured faces) first"), 2500)
+            # A plain colour is active: the Color row changes IT — the
+            # place everyone looks for (Marco, testing 0.5.7, tinted a
+            # colour material here and nothing happened: tinting needs a
+            # texture, and the right-click edit was out of sight).
+            if not self._recolour_active(self._tint):
+                self._window.statusBar().showMessage(
+                    tr("Pick a texture (or select textured faces) first"),
+                    2500)
         self._refresh_preview()
+
+    def _recolour_active(self, rgb) -> bool:
+        """Give the active plain colour ``rgb``: a named material is edited
+        and restamped on every face and group that wears it (one undo
+        step); an anonymous colour becomes the colour to paint next.
+        False when there is no colour to change."""
+        if rgb is None or PaintTool.current_is_default:
+            return False
+        rgb = tuple(float(c) for c in rgb[:3])
+        mat = PaintTool.current_material
+        scene = self._window.viewport.scene
+        if mat is not None and mat.name in scene.materials:
+            from core.history import RestampMaterialCommand
+            from core.materials import Material
+            old = scene.materials[mat.name]
+            new_mat = Material(mat.name, color=rgb, opacity=old.opacity,
+                               finish=old.finish)
+            self._window.viewport.history.execute(
+                RestampMaterialCommand(mat.name, new_mat))
+            self._window.viewport.notify_scene_changed()
+            PaintTool.current_material = new_mat
+            PaintTool.current_color = rgb
+            self._window.statusBar().showMessage(
+                tr("Material '{name}' updated on every face that wears it",
+                   name=mat.name), 3000)
+            return True
+        PaintTool.current_color = rgb
+        if mat is not None:
+            from core.materials import Material
+            PaintTool.current_material = Material(mat.name, color=rgb)
+        self._window.statusBar().showMessage(
+            tr("Active colour changed — click faces to paint it"), 3000)
+        return True
 
     def _apply_texture(self, path: str, size: float | None = None,
                        sw: float | None = None,
@@ -2225,7 +2278,7 @@ class MaterialsPanel(QWidget):
 
     def _add_color(self) -> None:
         r, g, b = PaintTool.current_color
-        chosen = QColorDialog.getColor(QColor.fromRgbF(r, g, b), self, tr("Color"))
+        chosen = get_color(QColor.fromRgbF(r, g, b), self, tr("Color"))
         if chosen.isValid():
             # Optional identity: a named colour becomes a registry material
             # (registered on first paint) and shows in per-material takeoffs.
@@ -2385,7 +2438,7 @@ class DimensionStylePanel(QWidget):
 
     def _pick_color(self) -> None:
         c = self._style().get("color", [45, 55, 75])
-        chosen = QColorDialog.getColor(QColor(c[0], c[1], c[2]), _dialog_parent(self),
+        chosen = get_color(QColor(c[0], c[1], c[2]), _dialog_parent(self),
                                        tr("Dimension color"))
         if chosen.isValid():
             self._style()["color"] = [chosen.red(), chosen.green(), chosen.blue()]
@@ -2443,6 +2496,11 @@ class StylesPanel(QWidget):
         self._profiles = QCheckBox(tr("Profiles"))
         self._profiles.toggled.connect(self._apply_edits)
         grid.addWidget(self._profiles, 3, 0)
+        self._back_edges = QCheckBox(tr("Back edges"))
+        self._back_edges.setToolTip(tr(
+            "Draw the edges hidden behind faces as dashed lines."))
+        self._back_edges.toggled.connect(self._apply_edits)
+        grid.addWidget(self._back_edges, 3, 1)
 
         grid.addWidget(QLabel(tr("Front color:")), 4, 0)
         self._front_c = self._swatch(
@@ -2512,7 +2570,8 @@ class StylesPanel(QWidget):
     @staticmethod
     def _css(color) -> str:
         r, g, b = (max(0, min(255, round(c * 255))) for c in color[:3])
-        return f"background: rgb({r},{g},{b}); min-height: 18px;"
+        return (f"QAbstractButton {{ background: rgb({r},{g},{b}); "
+                "min-height: 18px; }")
 
     def refresh(self) -> None:
         """Mirror the active style and the user library (called on loads,
@@ -2538,6 +2597,7 @@ class StylesPanel(QWidget):
                 self._mode.findData(style.face_mode))
             self._edges.setChecked(style.edges)
             self._profiles.setChecked(style.profiles)
+            self._back_edges.setChecked(getattr(style, "back_edges", False))
             self._sky.setChecked(style.sky)
             self._fill.setChecked(style.section_fill)
             self._edge_c.setStyleSheet(self._css(style.edge_color))
@@ -2570,6 +2630,7 @@ class StylesPanel(QWidget):
         style.face_mode = self._mode.currentData()
         style.edges = self._edges.isChecked()
         style.profiles = self._profiles.isChecked()
+        style.back_edges = self._back_edges.isChecked()
         style.sky = self._sky.isChecked()
         style.section_fill = self._fill.isChecked()
         self._window._sync_style_menu()
@@ -2580,7 +2641,7 @@ class StylesPanel(QWidget):
         if style is None:
             return
         c = self._shown_color(attr)
-        chosen = QColorDialog.getColor(
+        chosen = get_color(
             QColor.fromRgbF(*(float(v) for v in c[:3])), _dialog_parent(self), title)
         if not chosen.isValid():
             return
@@ -2925,6 +2986,20 @@ class EntityInfoPanel(QWidget):
         self._label.setTextFormat(Qt.RichText)
         self._label.setStyleSheet("font-size: 12px;")
         lay.addWidget(self._label)
+        # The name of ONE group or component, edited here — where everyone
+        # looks for it (issue #214: «there seems to be no way to name this
+        # group»). The Parts panel could already rename, out of sight.
+        from PySide6.QtWidgets import QLineEdit
+        name_row = QHBoxLayout()
+        self._name_caption = QLabel(tr("Name:"))
+        self._name_edit = QLineEdit()
+        self._name_edit.setToolTip(
+            tr("The name of the selected group or component — Enter keeps it"))
+        self._name_edit.editingFinished.connect(self._on_name_edited)
+        name_row.addWidget(self._name_caption)
+        name_row.addWidget(self._name_edit, 1)
+        lay.addLayout(name_row)
+        self._named = None               # the group the field is showing
         row = QHBoxLayout()
         self._layer_caption = QLabel(tr("Layer:"))
         self._layer_box = QComboBox()
@@ -2940,7 +3015,8 @@ class EntityInfoPanel(QWidget):
         # library) slid up and down with every click (Marco, 23-09, four
         # screenshots). The layer row keeps its place when hidden, and the
         # text keeps room for the four lines a face or a solid shows.
-        for w in (self._layer_caption, self._layer_box):
+        for w in (self._layer_caption, self._layer_box,
+                  self._name_caption, self._name_edit):
             pol = w.sizePolicy()
             pol.setRetainSizeWhenHidden(True)
             w.setSizePolicy(pol)
@@ -2950,11 +3026,39 @@ class EntityInfoPanel(QWidget):
         self._label.setMinimumHeight(QFontMetrics(font).lineSpacing() * 4 + 4)
         self._layer_caption.hide()
         self._layer_box.hide()
+        self._name_caption.hide()
+        self._name_edit.hide()
 
     def refresh(self) -> None:
         sel = list(self._window.viewport.scene.selection)
         self._label.setText(self._describe(sel))
+        self._refresh_name(sel)
         self._refresh_layer(sel)
+
+    # ---- Name field ---------------------------------------------------------
+    def _refresh_name(self, sel: list) -> None:
+        one = sel[0] if len(sel) == 1 and isinstance(sel[0], Group) else None
+        self._name_caption.setVisible(one is not None)
+        self._name_edit.setVisible(one is not None)
+        changed = one is not self._named
+        self._named = one
+        if one is None:
+            return
+        # Not while typing into it — unless the selection moved on.
+        if changed or not self._name_edit.hasFocus():
+            self._name_edit.setText(one.name or "")
+
+    def _on_name_edited(self) -> None:
+        group = self._named
+        if group is None:
+            return
+        name = self._name_edit.text().strip()
+        if not name or name == (group.name or ""):
+            self._name_edit.setText(group.name or "")    # empty: keep it
+            return
+        from core.history import RenameGroupCommand
+        self._window.viewport.history.execute(RenameGroupCommand(group, name))
+        self._window.viewport.update()
 
     # ---- Layer field --------------------------------------------------------
     def _refresh_layer(self, sel: list) -> None:
@@ -3037,7 +3141,6 @@ class EntityInfoPanel(QWidget):
                     title = (tr("Solid Component") if vol is not None
                              else tr("Component"))
                     return (f"<b>{title}</b><br>"
-                            f"{tr('Name')}: {e.name}<br>"
                             f"{tr('Faces')}: {len(e.mesh.faces)}<br>"
                             f"{tr('In model')}: {kin}{solid}")
                 title = tr("Solid Group") if vol is not None else tr("Group")

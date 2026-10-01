@@ -348,9 +348,11 @@ def test_una_instancia_espejada_conserva_el_frente_de_sus_caras():
     """«Hice mirror a un componente y sus texturas desaparecen» (Marco,
     2026-09-11): un espejo da la vuelta al giro de cada triángulo, GL
     llamaba reverso al lado pintado y el tinte del reverso lo tapaba. El
-    trozo de la instancia intercambia dos esquinas por triángulo, y una
-    instancia espejada no va por el camino instanciado (que dibuja los
-    triángulos del prototipo tal cual)."""
+    trozo de la instancia intercambia dos esquinas por triángulo. Desde la
+    #158 una instancia espejada SÍ va por el camino instanciado, en un lote
+    con el frente en sentido horario (``_front_face``): 6 203 espejos en un
+    modelo industrial eran 4,2 millones de caras horneadas una a una. El
+    trozo horneado (selección, siluetas) sigue con el giro corregido."""
     import numpy as np
     from PySide6.QtGui import QMatrix4x4
     from core.group import Group
@@ -370,7 +372,7 @@ def test_una_instancia_espejada_conserva_el_frente_de_sus_caras():
     for name in ("_proto_base_chunk", "_normal_of", "_tris_of", "_area_of",
                  "_newell_of", "_instanced_eligible"):
         setattr(vp, name, getattr(Viewport, name).__get__(vp))
-    assert vp._instanced_eligible(inst) is False
+    assert vp._instanced_eligible(inst) is True
     ch = vp._group_chunk(inst)
     tris = np.frombuffer(ch["vcol"], np.float32).reshape(-1, 3, 6)[:, :, :3]
     for t in tris:

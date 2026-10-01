@@ -966,14 +966,18 @@ class RestampMaterialCommand(Command):
     every group whose ``attrs["mat"]`` carries that name receives the new
     recipe — colour/texture/opacity — in one undoable step. Keys absent
     from the new recipe are removed (a material edited from textured to
-    plain colour drops its texture). Undo restores the registry entry and
-    each face's previous values exactly."""
+    plain colour drops its texture). Groups and components painted WHOLE
+    wear it too, on the container (issue #155, @fafecm: the loose face
+    changed colour, the painted box beside it stayed the old one). Undo
+    restores the registry entry, each face's previous values and each
+    container's previous paint exactly."""
 
     def __init__(self, name, new_material) -> None:
         self._name = name
         self._new = new_material
         self._old_material = None
         self._old_faces: Optional[list] = None   # (face, {key: old value})
+        self._old_groups: Optional[list] = None  # (container, old material)
 
     _KEYS = ("color", "texture", "opacity")
 
@@ -998,6 +1002,20 @@ class RestampMaterialCommand(Command):
                 if f.attrs.get("mat") == self._name:
                     yield f
 
+    def _painted_groups(self, scene):
+        """Every placement painted as a whole with this material, nested
+        ones included. Each placement carries its own paint, so no dedupe
+        by prototype here."""
+        from core.group import iter_placements
+        seen: set = set()
+        for g in scene.groups:
+            for pg, _m in iter_placements(g):
+                paint = getattr(pg, "material", None)
+                if (id(pg) not in seen and isinstance(paint, dict)
+                        and paint.get("mat") == self._name):
+                    seen.add(id(pg))
+                    yield pg
+
     def do(self, scene) -> None:
         stamp = self._new.face_attrs()
         if self._old_faces is None:
@@ -1005,6 +1023,8 @@ class RestampMaterialCommand(Command):
             self._old_faces = [
                 (f, {k: f.attrs.get(k) for k in self._KEYS})
                 for f in self._targets(scene)]
+            self._old_groups = [(g, g.material)
+                                for g in self._painted_groups(scene)]
         scene.materials[self._name] = self._new
         for f, _old in self._old_faces:
             for k in self._KEYS:
@@ -1012,6 +1032,8 @@ class RestampMaterialCommand(Command):
                     f.attrs[k] = stamp[k]
                 else:
                     f.attrs.pop(k, None)
+        for g, _old in self._old_groups or []:
+            g.material = dict(stamp)
         _dirty_group_chunks(scene)
         scene.version += 1
 
@@ -1026,6 +1048,8 @@ class RestampMaterialCommand(Command):
                     f.attrs.pop(k, None)
                 else:
                     f.attrs[k] = old[k]
+        for g, old in self._old_groups or []:
+            g.material = old
         _dirty_group_chunks(scene)
         scene.version += 1
 

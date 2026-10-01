@@ -75,6 +75,36 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.5.7" date="2026-09-30">
+      <description>
+        <p>Parametric windows with the Windowizer example extension, the
+        selection marked with dots, back edges drawn dashed (K), an X-ray
+        mode that dims the edges behind faces (Alt+X), Scale grips that snap
+        to other objects, a short description for every command, an instant
+        command search (F3), Indonesian, big models with thousands of
+        mirrored components that open and close quickly, and Render with
+        Blender working in the Flatpak.</p>
+        <p xml:lang="es">Ventanas paramétricas con la extensión de ejemplo
+        Windowizer, la selección marcada con puntos, aristas traseras en
+        discontinua (K), un modo Rayos X que atenúa las aristas detrás de
+        las caras (Alt+X), pinzas de Escalar que enganchan otros objetos,
+        una descripción breve para cada comando, el buscador de comandos
+        (F3) al instante, indonesio, modelos grandes con miles de
+        componentes espejados que abren y cierran rápido, y Renderizar con
+        Blender funcionando en el Flatpak.</p>
+      </description>
+    </release>
+    <release version="0.5.6.1" date="2026-09-29">
+      <description>
+        <p>The AI assistant, the MCP bridge and Render with Blender load again
+        in the Windows, macOS, AppImage and tar packages; IngeTrazo describes
+        itself on its own terms across the interface and its listings.</p>
+        <p xml:lang="es">El Asistente IA, el puente MCP y Renderizar con
+        Blender vuelven a cargar en los paquetes de Windows, macOS, AppImage
+        y tar; IngeTrazo se describe por sí mismo en la interfaz y sus
+        fichas.</p>
+      </description>
+    </release>
     <release version="0.5.6" date="2026-09-29">
       <description>
         <p>Render with Blender: photorealistic images of the view with the

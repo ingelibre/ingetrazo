@@ -358,6 +358,9 @@ class PythonConsoleTool(Tool):
     """Extensions-menu entry that opens (or raises) the console."""
     name = "Python Console"
     shortcut = "Ctrl+Shift+P"
+    description = (
+        "Open a Python prompt over the open document, to inspect it "
+        "or script it.")
     uses_snap = False
 
     def on_activate(self, viewport) -> None:

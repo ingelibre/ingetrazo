@@ -436,6 +436,9 @@ class ModelInfoTool(Tool):
     """Extensions-menu tool that opens the Model Info dialog."""
     name = "Model Info"
     shortcut = None          # menu entry only; no key to fight over
+    description = (
+        "Show the model's statistics: faces, edges, groups, materials "
+        "and more.")
     uses_snap = False
 
     def on_activate(self, viewport) -> None:

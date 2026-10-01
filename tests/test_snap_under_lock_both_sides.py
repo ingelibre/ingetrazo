@@ -204,6 +204,78 @@ def test_shift_over_the_soft_axis_cue_still_locks_with_nothing_around():
     assert r.point.y() == pytest.approx(0.0, abs=1e-9)
 
 
+def _reference_edge(a, b):
+    return SimpleNamespace(a=a, b=b, center=False)
+
+
+def _reference_lock(mode, cand, edges, cursor=None, reference=None):
+    if reference is None:
+        reference = _reference_edge(V(-2, 0), V(2, 0))
+
+    def project(start, direction):
+        return start + direction * QVector3D.dotProduct(cand - start, direction)
+
+    return compute_snap(
+        candidate_world=cand,
+        candidate_pixel=_w2p(cursor if cursor is not None else cand),
+        scene=SimpleNamespace(edges=[reference, *edges]),
+        world_to_pixel=_w2p, threshold_px=9.0, edge_threshold_px=14.0,
+        start_point=V(0, 0), project_onto_line=project,
+        reference_edge=reference, reference_mode=mode,
+    )
+
+
+@pytest.mark.parametrize(("mode", "candidate", "crossing"), [
+    ("parallel", V(3.03, 0.04), V(3, 0)),
+    ("perpendicular", V(0.04, 3.03), V(0, 3)),
+])
+def test_reference_edge_lock_snaps_to_crossings(mode, candidate, crossing):
+    if mode == "parallel":
+        edges = [_reference_edge(V(3, -1), V(3, 1))]
+    else:
+        edges = [_reference_edge(V(-1, 3), V(1, 3))]
+    r = _reference_lock(mode, candidate, edges)
+    assert r.kind == "intersection"
+    assert (r.point - crossing).length() < 1e-6
+
+
+@pytest.mark.parametrize(("mode", "candidate", "corner", "foot"), [
+    ("parallel", V(3, 0.02), V(3, 1), V(3, 0)),
+    ("perpendicular", V(0.02, 3), V(1, 3), V(0, 3)),
+])
+def test_reference_edge_lock_aligns_with_an_off_line_corner(
+        mode, candidate, corner, foot):
+    edges = [_reference_edge(corner, corner + V(1, 0))]
+    r = _reference_lock(mode, candidate, edges, cursor=corner)
+    assert r.kind == "from_point"
+    assert (r.point - foot).length() < 1e-6
+
+
+@pytest.mark.parametrize(("mode", "candidate", "locked"), [
+    ("parallel", V(-3, 0.05), V(-3, 0)),
+    ("perpendicular", V(0.05, -3), V(0, -3)),
+])
+def test_reference_edge_lock_keeps_its_direction_without_a_snap(
+        mode, candidate, locked):
+    r = _reference_lock(mode, candidate, [])
+    assert r.kind == "reference"
+    assert (r.point - locked).length() < 1e-6
+
+
+@pytest.mark.parametrize(("mode", "candidate", "corner", "foot"), [
+    ("parallel", V(3.01, 3.01), V(2, 4), V(3, 3)),
+    ("perpendicular", V(-3.01, 3.01), V(-4, 2), V(-3, 3)),
+])
+def test_reference_edge_lock_aligns_points_to_diagonal_vectors(
+        mode, candidate, corner, foot):
+    reference = _reference_edge(V(0, 0), V(1, 1))
+    edges = [_reference_edge(corner, corner + V(1, 0))]
+    r = _reference_lock(mode, candidate, edges, cursor=corner,
+                        reference=reference)
+    assert r.kind == "from_point"
+    assert (r.point - foot).length() < 1e-6
+
+
 # ---- (5) L again resets the Line -------------------------------------------
 
 def test_pressing_the_tools_key_again_releases_the_first_point():

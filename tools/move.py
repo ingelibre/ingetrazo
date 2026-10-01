@@ -191,6 +191,9 @@ def rotation_grips(obb, eye: QVector3D) -> list:
 class MoveTool(Tool):
     name = "Move"
     shortcut = "M"
+    description = (
+        "Move the selection, or what you click, to a new place; Ctrl "
+        "leaves a copy behind.")
     vcb_label = "Distance"
 
     # Drag on a camera-facing vertical plane (not the ground) so pulling the

@@ -64,11 +64,8 @@ _SETTINGS = "render/"
 
 
 def _work_dir() -> Path:
-    from PySide6.QtCore import QStandardPaths
-    base = QStandardPaths.writableLocation(
-        QStandardPaths.StandardLocation.GenericCacheLocation)
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    return Path(base) / "IngeTrazo" / "render" / stamp
+    return rb.work_base() / stamp
 
 
 # ---- The document's lights and ambience ---------------------------------------
@@ -866,6 +863,11 @@ class RenderPanel(QWidget):
 
     def refresh_lights(self) -> None:
         """Show what the document holds (after an edit, an undo, Open)."""
+        if self._view_pick is not None:
+            # The lights changed under the pick: let it go, so Supr never
+            # deletes by an index that now names another light.
+            self._view_pick = None
+            self.app.release_pick()
         st = _state(self.app)
         i = self._ambience.findData(st["ambience"])
         self._ambience.blockSignals(True)
@@ -951,6 +953,33 @@ class RenderPanel(QWidget):
                    angle=float(self._angle.value()))
         if new != lt:
             st["lights"][i] = new
+            _store(self.app, st)
+
+    # ---- Picked in the viewport (Select tool; Supr deletes — #205) --------------
+    _view_pick = None               # index of the light selected in the view
+
+    def pick_light(self, viewport, px: float, py: float):
+        """The light whose bulb is under the pixel (within its rays)."""
+        best, best_d = None, 12.0
+        for i, lt in enumerate(_state(self.app)["lights"]):
+            p = viewport._world_to_pixel(QVector3D(*lt["pos"]))
+            if p is None:
+                continue
+            d = math.hypot(p[0] - px, p[1] - py)
+            if d <= best_d:
+                best, best_d = i, d
+        return best
+
+    def on_light_picked(self, index) -> None:
+        self._view_pick = index
+        if index is not None and 0 <= index < self._lights.count():
+            self._lights.setCurrentRow(index)
+        self.app.viewport.update()
+
+    def delete_light_at(self, index) -> None:
+        st = _state(self.app)
+        if 0 <= index < len(st["lights"]):
+            del st["lights"][index]
             _store(self.app, st)
 
     def _delete_light(self) -> None:
@@ -1232,6 +1261,12 @@ def draw_lights(app, panel, viewport, painter) -> None:
                                      c.y() + 8 * math.sin(a)),
                              QPointF(c.x() + 11 * math.cos(a),
                                      c.y() + 11 * math.sin(a)))
+        if i == panel._view_pick:
+            # Selected in the view, like any selected entity: the
+            # selection orange, and Supr deletes it.
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(QColor(242, 115, 41), 3.0))
+            painter.drawEllipse(c, 15.0, 15.0)
         if i == selected:
             painter.setBrush(Qt.NoBrush)
             painter.setPen(QPen(QColor(54, 137, 230), 2.0))
@@ -1251,6 +1286,11 @@ def setup(app) -> None:
     # shown again if hidden from Window ▸ Panels (Marco: «no aparece en el
     # menú Extensiones»).
     app.add_menu_action(tr("Render with Blender…"),
-                        lambda: app.show_panel(dock))
+                        lambda: app.show_panel(dock), tip=tr(
+                            "Render the model in Blender, from the Render "
+                            "tab of the side tray."))
     app.on_document_changed(panel.refresh_lights)
     app.add_overlay(lambda vp, painter: draw_lights(app, panel, vp, painter))
+    # A bulb is clicked with the Select tool and Supr deletes it (#205).
+    app.add_pickable(panel.pick_light, on_select=panel.on_light_picked,
+                     delete=panel.delete_light_at)

@@ -141,6 +141,7 @@ def clicked_back_side(viewport, face, group, x: float, y: float) -> bool:
 class PaintTool(Tool):
     name = "Paint"
     shortcut = "B"
+    description = "Click faces to paint them with the chosen material."
     uses_snap = False  # picks a face to paint; no snap markers
 
     # Shared current paint colour (RGB, 0..1), set from the toolbar swatch.

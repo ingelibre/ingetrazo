@@ -179,7 +179,15 @@ class PlaceGroupTool(Tool):
         if self._group is None:
             return
         self._update_alignment(ctx)
-        shift = ctx.world - self._rotate(self._anchor)
+        self.place_at(ctx.viewport, ctx.world)
+
+    def place_at(self, viewport, world: QVector3D) -> None:
+        """Drop the component with its anchor at ``world``, in one undo
+        step — what a click does, for a script that already knows the
+        point (``MainWindow.import_igz_path(path, at=…)``, issue #179)."""
+        if self._group is None:
+            return
+        shift = world - self._rotate(self._anchor)
         if self._instance:
             # The pose composes into the matrix: the prototype (and every
             # nested placement under it) stays put in its own frame.
@@ -202,12 +210,12 @@ class PlaceGroupTool(Tool):
             carry_axes(self._group, self._pose_matrix(shift))   # #44
         group = self._group
         self._group = None
-        ctx.viewport.history.execute(InsertGroupCommand(group))
-        ctx.viewport.flash_status(self._placed_message())
-        window = ctx.viewport.window()
+        viewport.history.execute(InsertGroupCommand(group))
+        viewport.flash_status(self._placed_message())
+        window = viewport.window()
         if hasattr(window, "_activate_tool"):
             window._activate_tool("select")
-        ctx.viewport.update()
+        viewport.update()
 
     @staticmethod
     def _placed_message() -> str:

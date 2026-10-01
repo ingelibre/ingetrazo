@@ -155,7 +155,12 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
     def value_label(self):
         if self.start_point is None or self.hover_point is None:
             return None
-        r = (self.hover_point - self.start_point).length()
+        # The radius DRAWN — the rim projected onto the plane — not the
+        # straight distance to the cursor, which a snap off the plane
+        # made longer than the circle («R 4.44» on a 2.41 m circle).
+        u, v = self._axes()
+        d = self.hover_point - self.start_point
+        r = math.hypot(QVector3D.dotProduct(d, u), QVector3D.dotProduct(d, v))
         from core.units import fmt_len
         return ("R " + fmt_len(r) + "  (" + tr("{n} sides", n=self.sides) + ")",
                 self.hover_point)
@@ -183,6 +188,13 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
 
     def _axes(self) -> tuple[QVector3D, QVector3D]:
         return plane_axes(self.drawing_plane()[1])
+
+    def plane_points(self):
+        """Centre and rim: a rim snapped off the plane turns the circle to
+        the axis plane holding both (``PlaneLock.snapped_plane``)."""
+        if self.start_point is None:
+            return []
+        return [self.start_point, self.hover_point]
 
     def _points(self, center: QVector3D, rim: QVector3D) -> list[QVector3D]:
         u, v = self._axes()
@@ -244,10 +256,14 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
 class CircleTool(_RadialTool):
     name = "Circle"
     shortcut = "C"
+    description = "Draw a circle from its centre and radius."
     sides = 24
 
 
 class PolygonTool(_RadialTool):
     name = "Polygon"
     shortcut = None  # Polygon has no default; G = Make Component
+    description = (
+        "Draw a regular polygon from its centre and radius; type a "
+        "number followed by «s» to change the sides.")
     sides = 6

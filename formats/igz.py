@@ -41,6 +41,7 @@ ZIP magic, so both shapes open transparently.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from core.version import __version__
@@ -314,6 +315,10 @@ def save_scene(scene, path: Path) -> dict:
                 # A 3D text keeps what it was made from, so it reopens
                 # editable. Older readers ignore the key.
                 entry["text3d"] = dict(g.text3d)
+            if getattr(g, "ext", None):
+                # Extensions' parameters for this container (JSON-safe by
+                # contract); older readers ignore the key.
+                entry["ext"] = json.loads(json.dumps(g.ext, default=str))
             if getattr(g, "uid", None):
                 # The identity a scene's hidden-object list names.
                 entry["uid"] = g.uid
@@ -543,11 +548,12 @@ def _read_document(path: Path):
     embedded images."""
     raw = path.read_bytes()
     if not raw.startswith(_ZIP_MAGIC):
-        return json.loads(raw.decode("utf-8")), None
+        return json.loads(raw.decode("utf-8"), parse_constant=_note_constant), None
     import zipfile
     archive = zipfile.ZipFile(path)
     try:
-        data = json.loads(archive.read(_DOC_ENTRY).decode("utf-8"))
+        data = json.loads(archive.read(_DOC_ENTRY).decode("utf-8"),
+                          parse_constant=_note_constant)
     except KeyError:
         archive.close()
         raise ValueError(
@@ -590,10 +596,54 @@ def load_into(scene, path: Path, progress=None) -> None:
             gc.enable()
 
 
+#: Entities left out of the document being opened because a coordinate
+#: is not a number (NaN / inf) — counted per load, reported on the scene.
+_dropped_nonfinite = [0]
+#: Whether the document text holds any NaN / Infinity at all. The JSON
+#: parser reports them as it reads (``parse_constant``), so a clean
+#: document — nearly every one — skips the per-coordinate check entirely.
+_saw_nonfinite = [False]
+
+
+def _note_constant(token: str) -> float:
+    _saw_nonfinite[0] = True
+    return float(token)
+
+
+def _finite_points(*points) -> bool:
+    try:
+        return all(math.isfinite(float(c)) for p in points for c in p)
+    except (TypeError, ValueError):
+        return False
+
+
+def _without_nonfinite(payload: dict) -> dict:
+    """The mesh block minus the edges and faces with a NaN or infinite
+    coordinate. One such corner made the WHOLE document unopenable
+    («cannot convert float NaN to integer», #185): the rest of the model
+    opens, the damaged pieces are left out and counted."""
+    if not _saw_nonfinite[0]:
+        return payload
+    edges = [r for r in payload.get("edges", [])
+             if _finite_points(r.get("a", ()), r.get("b", ()))]
+    faces = [r for r in payload.get("faces", [])
+             if _finite_points(*r.get("vertices", ()),
+                               *(p for h in r.get("holes", []) for p in h))]
+    dropped = (len(payload.get("edges", [])) - len(edges)
+               + len(payload.get("faces", [])) - len(faces))
+    if not dropped:
+        return payload
+    _dropped_nonfinite[0] += dropped
+    return dict(payload, edges=edges, faces=faces)
+
+
 def _load_into_inner(scene, path: Path, progress=None) -> None:
     def tick(frac, text):
         if progress is not None:
             progress(frac, text)
+
+    _dropped_nonfinite[0] = 0
+    _saw_nonfinite[0] = False
 
     tick(0.05, "Reading the document…")
     data, archive = _read_document(path)
@@ -695,6 +745,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             group.billboard = raw["billboard"]   # True | "mesh"
         if isinstance(raw.get("text3d"), dict):
             group.text3d = dict(raw["text3d"])
+        if isinstance(raw.get("ext"), dict):
+            group.ext = raw["ext"]
         if raw.get("uid"):
             group.uid = str(raw["uid"])   # older documents keep the fresh one
         if raw.get("hidden"):
@@ -808,7 +860,15 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     from core.guide import Guide
     scene.guides.clear()
     for raw in payload.get("guides", []):
+        # A guide at (nan, nan, nan) stalled every tool (#185): left out.
+        if not _finite_points(raw.get("point", ()),
+                              raw.get("direction") or (),
+                              raw.get("origin") or ()):
+            _dropped_nonfinite[0] += 1
+            continue
         scene.guides.append(Guide.from_dict(raw))
+    # What had to be left out, for the window to say so.
+    scene.load_repairs = _dropped_nonfinite[0]
 
     from core.image_plane import ImagePlane
     scene.image_planes.clear()
@@ -884,6 +944,7 @@ def _load_mesh(mesh, payload) -> None:
     import core.mesh as _mesh_mod
     from core.topology import _maximal_holes
 
+    payload = _without_nonfinite(payload)
     raw_edges = payload.get("edges", [])
     raw_faces = payload.get("faces", [])
     if len(raw_edges) + len(raw_faces) * 4 < 1024:   # ~corner estimate

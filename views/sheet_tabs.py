@@ -286,6 +286,12 @@ class SheetStatusBar(QStatusBar):
         # 2026-09-15: «debería estar alineado a la izquierda»).
         self._filler = QWidget(self)
         self.addPermanentWidget(self._filler, 1)
+        # A menu entry's description (its status tip) reaches the bar
+        # through Qt's C++ showMessage, which never calls the override
+        # below: it went to QStatusBar's own message area, hidden behind
+        # our widgets, so hovering a menu showed nothing (0.5.7, #213).
+        # Qt still announces it, and the announcement goes to our label.
+        self.messageChanged.connect(self._on_qt_message)
 
     #: The message never takes more than this share of the bar, so the
     #: right end stays clear for the coordinates and the VCB (Marco,
@@ -322,3 +328,12 @@ class SheetStatusBar(QStatusBar):
 
     def _restore(self) -> None:
         self._msg.setText(self._base)
+
+    def _on_qt_message(self, text: str) -> None:
+        """A status tip (a menu entry being hovered) while it lasts; the
+        standing text again when it clears."""
+        if text:
+            self._timer.stop()
+            self._msg.setText(text)
+        else:
+            self._msg.setText(self._base)

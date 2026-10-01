@@ -45,6 +45,9 @@ def _rdp(idx0: int, idx1: int, spts, keep) -> None:
 
 class FreehandTool(Tool):
     name = "Freehand"
+    description = (
+        "Drag to sketch a curve; a stroke that ends where it began "
+        "closes into a face.")
     uses_snap = False        # the stroke follows the hand, not the magnets
 
     def __init__(self) -> None:

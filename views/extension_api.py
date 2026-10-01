@@ -96,6 +96,14 @@ class ExtensionApp:
             notify()
         vp.update()
 
+    def import_igz(self, path, at=None):
+        """Insert the IngeTrazo document at ``path`` as one component, with
+        no file dialog. ``at=None``: it follows the mouse and a click drops
+        it; ``at=(x, y, z)`` (metres) or a ``QVector3D``: inserted with its
+        origin there, one undo step. Returns the component, or ``None``
+        when the file has no geometry; an unreadable file raises."""
+        return self._window.import_igz_path(path, at=at)
+
     def on_document_changed(self, fn) -> None:
         """Call ``fn()`` whenever the document changes — an edit, an undo,
         New, Open — so a panel can show the current data."""
@@ -160,16 +168,20 @@ class ExtensionApp:
         if the user hid it from Window ▸ Panels."""
         self._window.set_tray_shown(dock, True)
 
-    def add_menu_action(self, text: str, fn, shortcut: str | None = None):
+    def add_menu_action(self, text: str, fn, shortcut: str | None = None,
+                        tip: str | None = None):
         """An entry in the Extensions menu that calls ``fn()``; a
-        ``shortcut`` already taken by the app is left off. Returns the
-        QAction (``None`` outside a window with that menu)."""
+        ``shortcut`` already taken by the app is left off, and ``tip`` —
+        what it does, in a sentence — shows in the status bar and in F3.
+        Returns the QAction (``None`` outside a window with that menu)."""
         from PySide6.QtGui import QAction, QKeySequence
         win = self._window
         menu = getattr(win, "_ext_menu", None)
         if menu is None:
             return None
         action = QAction(text, win)
+        if tip:
+            action.setStatusTip(tip)
         if shortcut:
             seq = QKeySequence(shortcut).toString()
             taken = getattr(win, "_ext_taken_keys", set())
@@ -179,6 +191,24 @@ class ExtensionApp:
         action.triggered.connect(lambda _c=False: fn())
         menu.addAction(action)
         return action
+
+    def add_menu(self, title: str):
+        """A submenu of its own in the Extensions menu («Windowizer ▸»),
+        for an extension with several commands; returns the QMenu to fill
+        (``None`` outside a window with that menu)."""
+        menu = getattr(self._window, "_ext_menu", None)
+        return menu.addMenu(title) if menu is not None else None
+
+    def add_context_menu(self, fn) -> None:
+        """``fn(menu, selection)`` adds entries to the viewport's
+        right-click menu (a QMenu), after the ones for the selection and
+        before Paste and Undo; ``selection`` is a list of what is
+        selected. Open dialogs from the entries with
+        ``QTimer.singleShot(0, …)``, after the menu has closed."""
+        win = self._window
+        if not hasattr(win, "_ext_context_menus"):
+            win._ext_context_menus = []
+        win._ext_context_menus.append(fn)
 
     # ---- Viewport ------------------------------------------------------------
     def add_overlay(self, fn) -> None:
@@ -199,6 +229,34 @@ class ExtensionApp:
         """``fn(viewport, snap, px, py)`` → a ``SnapResult`` to use instead,
         or ``None`` to leave the engine's answer."""
         self.viewport._ext_snap_providers.append(fn)
+
+    def add_pickable(self, pick, on_select=None, delete=None) -> None:
+        """Let the user SELECT this extension's own items with the Select
+        tool and DELETE them with Supr (issue #205; moving comes later).
+
+        ``pick(viewport, px, py)`` → an item id (any value) under that
+        pixel, or ``None``. It is asked before the model's geometry, so an
+        item drawn over the model wins the click. ``on_select(item_id)``
+        is told what was selected, and ``on_select(None)`` when it is let
+        go (a click elsewhere, Esc). ``delete(item_id)`` removes it — do
+        it with :meth:`set_document_data`, so it is one undo step. After
+        any change to the document the pick is dropped, so Supr never
+        deletes by a stale id."""
+        vp = self.viewport
+        if not hasattr(vp, "_ext_pickables"):
+            vp._ext_pickables = []
+        vp._ext_pickables.append(
+            {"key": self.key, "pick": pick, "on_select": on_select,
+             "delete": delete})
+
+    def release_pick(self) -> None:
+        """Let go of this extension's selected item, without telling it
+        back (it already knows): after it changed its own data, say."""
+        vp = self.viewport
+        pick = getattr(vp, "extension_pick", None)
+        if pick is not None and pick[0]["key"] == self.key:
+            vp.clear_extension_pick(notify=False)
+            vp.update()
 
     # ---- Documents of the extension's own -----------------------------------------
     def add_file_opener(self, suffix: str, fn) -> None:

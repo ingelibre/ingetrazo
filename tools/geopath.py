@@ -30,6 +30,9 @@ _NODE_PX = 9    # grab an existing node within this pixel radius
 class GeoPathTool(Tool):
     name = "Path"
     shortcut = "Y"   # T went to Tape Measure (the usual key for it)
+    description = (
+        "Trace a path over the base map — a road, a boundary — to "
+        "profile or measure it; the model is left untouched.")
     vcb_label = "Length"
     uses_snap = False  # a georef trace snaps to nothing in the modelling mesh
 

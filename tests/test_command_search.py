@@ -457,3 +457,86 @@ def test_a_command_run_from_f3_is_the_one_shift_r_repeats(ventana):
     ventana._activate_tool("select")
     assert ventana.repeat_last_command()
     assert ventana.viewport.active_tool is ventana._tools["line"]
+
+
+# ---- opening fast (0.5.6: the shadow showed first, the list ~100 ms after) --
+def test_an_unchanged_command_is_not_worked_out_again(ventana):
+    first = {c.action: c for c in cs.commands(ventana)}
+    again = {c.action: c for c in cs.commands(ventana)}
+    assert first and all(again[a] is first[a] for a in first)
+
+
+def test_a_command_that_changed_is_worked_out_again(ventana):
+    act = QAction("Frobnicate the walls", ventana)
+    ventana.addAction(act)
+    before = next(c for c in cs.commands(ventana) if c.action is act)
+    act.setText("Frobnicate the floors")
+    after = next(c for c in cs.commands(ventana) if c.action is act)
+    assert after is not before and after.name == "Frobnicate the floors"
+    act.setShortcut("Ctrl+Alt+F")
+    keyed = next(c for c in cs.commands(ventana) if c.action is act)
+    assert keyed is not after and keyed.keys
+
+
+def test_a_removed_action_leaves_the_cache(ventana):
+    act = QAction("Frobnicate the walls", ventana)
+    ventana.addAction(act)
+    cs.commands(ventana)
+    assert act in ventana._command_cache
+    act.setParent(None)
+    cs.commands(ventana)
+    assert act not in ventana._command_cache
+
+
+def test_warm_up_works_out_the_commands_before_f3(ventana):
+    ventana._command_search = None
+    ventana._command_cache = None
+    cs.warm_up(ventana, 0)
+    QTest.qWait(50)
+    assert ventana._command_cache
+    # the box itself waits for F3, as up to 0.5.6.1
+    assert ventana._command_search is None
+
+
+@pytest.mark.parametrize("platform", ["wayland", "wayland-egl", "xcb",
+                                      "windows", "cocoa"])
+def test_warm_up_makes_no_native_popup_ahead_of_f3(ventana, monkeypatch,
+                                                   platform):
+    """Made ahead of F3, the popup's native window left the main window
+    flickering under GNOME's Wayland (a black band, the toolbar half over
+    the menu bar; Marco, 30-09, bisected to the warm-up). Off everywhere
+    until tried on each platform: the commands are still worked out, the
+    native window waits for the first F3."""
+    from PySide6.QtGui import QGuiApplication
+    monkeypatch.setattr(QGuiApplication, "platformName",
+                        staticmethod(lambda: platform))
+    made = []
+    monkeypatch.setattr(cs.CommandSearch, "winId",
+                        lambda self: made.append(self) or 0)
+    ventana._command_search = None
+    ventana._command_cache = None
+    cs.warm_up(ventana, 0)
+    QTest.qWait(50)
+    assert ventana._command_cache
+    assert made == [] and ventana._command_search is None
+
+
+def test_every_command_says_what_it_does(ventana):
+    """Blender explains every command on hover; so do both windows."""
+    comp = _composer(ventana)
+    for win in (ventana, comp):
+        bare = [c.name for c in cs.commands(win)
+                if not c.tip and c.action.isEnabled()]
+        assert bare == [], bare
+    comp.close()
+
+
+def test_a_toolbar_button_shows_its_description_under_name_and_keys(
+        ventana):
+    act = ventana._tool_actions["line"]
+    name_keys, desc = act.toolTip().split("\n")
+    assert name_keys == "Line  (L)"
+    assert desc == act.statusTip() == \
+        "Draw edges point by point; closing a loop makes a face."
+    cmd = next(c for c in cs.commands(ventana) if c.action is act)
+    assert cmd.tip == desc                         # F3 shows the same

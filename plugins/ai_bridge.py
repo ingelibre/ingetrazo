@@ -415,4 +415,6 @@ def setup(app) -> None:
         section.section.set_open(True)
         section.start()
 
-    app.add_menu_action(tr("AI Bridge (MCP)"), summon)
+    app.add_menu_action(tr("AI Bridge (MCP)"), summon, tip=tr(
+        "Start the local bridge through which an AI agent (MCP) drives "
+        "the open document."))

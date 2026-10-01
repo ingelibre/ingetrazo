@@ -48,6 +48,26 @@ revierte entero; el guard de hermeticidad valida sus recetas).
 3. Pídele cosas: *"dibuja una casita de 6×4 m con techo a dos aguas,
    agrúpala y píntala de ladrillo; muéstrame cómo quedó"*.
 
+### El agente dentro de un contenedor (Docker, WSL2)
+
+El puente escucha **solo en `127.0.0.1`** de la máquina donde corre
+IngeTrazo, y así se queda: no tiene contraseña y `run_python` ejecuta
+código dentro de la aplicación, de modo que abrirlo a la red dejaría el
+modelo (y el equipo) a merced de cualquiera en ella.
+
+- **IngeTrazo dentro de WSL2** (AppImage o `.tar.gz` con WSLg) y el
+  contenedor con `--network host`: funciona tal cual, porque comparten
+  `127.0.0.1`.
+- **En cualquier otro caso**, lleva el puerto hasta el agente con un túnel
+  que tú controlas (`ssh -L 4763:127.0.0.1:4763 usuario@equipo`, `socat`…)
+  y dile al cliente MCP dónde está el otro extremo:
+
+      INGETRAZO_AI_HOST=host.docker.internal INGETRAZO_AI_PORT=4763 \
+          python3 /ruta/a/app/scripts/ingetrazo_mcp.py
+
+  `INGETRAZO_AI_HOST` (por defecto `127.0.0.1`) solo cambia a dónde se
+  conecta el cliente; el puente no deja de escuchar únicamente en local.
+
 ## Herramientas expuestas
 
 | Tool | Qué hace |

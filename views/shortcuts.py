@@ -15,6 +15,8 @@ from the action that had them, after asking.
 """
 from __future__ import annotations
 
+from functools import lru_cache
+
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtCore import Signal
@@ -23,7 +25,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QMessageBox, QPushButton, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from core.i18n import source_of, tr
+from core.i18n import current_language, source_of, tr
 
 _GROUP = "shortcuts"
 _DEFAULTS = "ingetrazo_default_shortcuts"
@@ -31,7 +33,8 @@ _TIP = "ingetrazo_tooltip_base"
 
 
 def set_tooltip(action: QAction, base: str) -> None:
-    """A toolbar tooltip that names the action's CURRENT keys: «Line  (L)».
+    """A toolbar tooltip that names the action's CURRENT keys: «Line  (L)»,
+    and under them what the action does — its status tip, when it has one.
 
     The keys used to be written into the text once, at start-up, so a
     shortcut changed in Preferences showed in the menus (Qt reads the
@@ -49,9 +52,12 @@ def _refresh_tooltip(action: QAction) -> None:
     if base is None:
         return
     keys = action.shortcut().toString(QKeySequence.NativeText)
+    tip = f"{base}  ({keys})" if keys else base
+    if action.statusTip():
+        tip += "\n" + action.statusTip()
     # setToolTip with the same text returns early, so the changed signal
     # this emits does not loop.
-    action.setToolTip(f"{base}  ({keys})" if keys else base)
+    action.setToolTip(tip)
 
 
 def _plain(text: str) -> str:
@@ -63,7 +69,14 @@ def action_key(action: QAction) -> str:
     name = action.objectName()
     if name:
         return name
-    return "text:" + _plain(source_of(action.text()))
+    return _text_key(action.text(), current_language())
+
+
+@lru_cache(maxsize=4096)
+def _text_key(text: str, _language: str) -> str:
+    # Remembered per language: F3 asks for every action's key several
+    # times each time it opens (views/command_search.py).
+    return "text:" + _plain(source_of(text))
 
 
 def collect_actions(window) -> list:
@@ -126,12 +139,35 @@ def default_shortcuts(action: QAction) -> list:
     return _from_text(action.property(_DEFAULTS) or "")
 
 
-def apply_user_shortcuts(window) -> int:
-    """Put the remembered keys on the window's actions. Returns how many."""
+def _store_key(key: str) -> str:
+    """``key`` as a QSettings key: QSettings reads «/» as a group, so
+    «text:Push / Pull» was stored as a group «text:Push » holding « Pull»
+    and never read back — the key worked until the next start (issue
+    #236, @zhang-922). «/», «\\» and «%» travel escaped."""
+    return (key.replace("%", "%25").replace("/", "%2F")
+            .replace("\\", "%5C"))
+
+
+def _read_key(stored: str) -> str:
+    """The action key a stored QSettings key stands for. Keys written
+    before the escape come back through ``allKeys`` with their «/»."""
+    import re
+    return re.sub(r"%(25|2F|5C)",
+                  lambda m: {"25": "%", "2F": "/", "5C": "\\"}[m.group(1)],
+                  stored)
+
+
+def _saved_shortcuts() -> dict:
     st = QSettings()
     st.beginGroup(_GROUP)
-    saved = {k: str(st.value(k) or "") for k in st.childKeys()}
+    saved = {_read_key(k): str(st.value(k) or "") for k in st.allKeys()}
     st.endGroup()
+    return saved
+
+
+def apply_user_shortcuts(window) -> int:
+    """Put the remembered keys on the window's actions. Returns how many."""
+    saved = _saved_shortcuts()
     n = 0
     for act in collect_actions(window):
         key = action_key(act)
@@ -146,11 +182,61 @@ def apply_user_shortcuts(window) -> int:
 def save_shortcut(action: QAction, seqs: list) -> None:
     st = QSettings()
     key = action_key(action)
+    st.remove(f"{_GROUP}/{key}")               # a pre-escape entry, if any
     if _to_text(seqs) == (action.property(_DEFAULTS) or ""):
-        st.remove(f"{_GROUP}/{key}")           # back to the factory keys
+        st.remove(f"{_GROUP}/{_store_key(key)}")   # back to the factory keys
     else:
-        st.setValue(f"{_GROUP}/{key}", _to_text(seqs))
+        st.setValue(f"{_GROUP}/{_store_key(key)}", _to_text(seqs))
     st.sync()
+
+
+#: What an exported shortcuts file says it is (issue #142).
+EXPORT_FORMAT = "ingetrazo-shortcuts"
+
+
+def export_shortcuts(window) -> dict:
+    """Every action's keys, by its language-free key: a file made in one
+    language imports in any other, on any machine (issue #142, @pacaeiro:
+    «transfer shortcut configurations between computers, O.S., friends»).
+    Actions with no keys are written too, so a cleared key travels."""
+    return {"format": EXPORT_FORMAT, "version": 1,
+            "shortcuts": {action_key(a): _to_text(a.shortcuts())
+                          for a in collect_actions(window)}}
+
+
+def import_shortcuts(window, data) -> tuple:
+    """Put the keys of an exported file on the window's actions, and
+    remember them. Actions this machine does not have (a plugin not
+    installed) and reserved keys are skipped; a key the file gives to one
+    action is taken from any other that held it, as assigning it by hand
+    does. Returns ``(applied, skipped)``; raises ValueError for a file
+    that is not an IngeTrazo shortcuts file."""
+    if (not isinstance(data, dict) or data.get("format") != EXPORT_FORMAT
+            or not isinstance(data.get("shortcuts"), dict)):
+        raise ValueError(tr("This is not an IngeTrazo shortcuts file."))
+    wanted = {str(k): str(v or "") for k, v in data["shortcuts"].items()}
+    actions = collect_actions(window)
+    by_key = {action_key(a): a for a in actions}
+    applied = 0
+    taken: set = set()
+    for key, text in wanted.items():
+        act = by_key.get(key)
+        if act is None:
+            continue
+        seqs = [q for q in _from_text(text) if reserved_reason(q) is None]
+        act.setShortcuts(seqs)
+        save_shortcut(act, seqs)
+        taken |= {s.toString(QKeySequence.PortableText) for s in seqs}
+        applied += 1
+    for act in actions:
+        if action_key(act) in wanted:
+            continue
+        kept = [s for s in act.shortcuts()
+                if s.toString(QKeySequence.PortableText) not in taken]
+        if len(kept) != len(act.shortcuts()):
+            act.setShortcuts(kept)
+            save_shortcut(act, kept)
+    return applied, len(wanted) - applied
 
 
 class _KeyCapture(QLineEdit):
@@ -228,6 +314,15 @@ class ShortcutsPanel(QWidget):
                          "Changes apply at once and are remembered."))
         hint.setWordWrap(True)
         foot.addWidget(hint, 1)
+        export = QPushButton(tr("Export…"))
+        export.setToolTip(tr("Save these shortcuts to a file, to take them "
+                             "to another computer"))
+        export.clicked.connect(self._on_export)
+        foot.addWidget(export)
+        imp = QPushButton(tr("Import…"))
+        imp.setToolTip(tr("Use the shortcuts saved in a file"))
+        imp.clicked.connect(self._on_import)
+        foot.addWidget(imp)
         reset_all = QPushButton(tr("Restore all defaults"))
         reset_all.clicked.connect(self._on_reset_all)
         foot.addWidget(reset_all)
@@ -333,6 +428,42 @@ class ShortcutsPanel(QWidget):
         _row, act = self._current()
         if act is not None:
             self.assign(act, default_shortcuts(act))
+
+    def _on_export(self) -> None:
+        import json
+        from views.filedialogs import file_dialogs
+        path, _ = file_dialogs.getSaveFileName(
+            self, tr("Export shortcuts"), "ingetrazo-shortcuts.json",
+            tr("Shortcuts (*.json)"))
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(export_shortcuts(self._window), f, indent=1,
+                          ensure_ascii=False)
+        except OSError as exc:
+            QMessageBox.warning(self, tr("Export shortcuts"), str(exc))
+
+    def _on_import(self) -> None:
+        import json
+        from views.filedialogs import file_dialogs
+        path, _ = file_dialogs.getOpenFileName(
+            self, tr("Import shortcuts"), "", tr("Shortcuts (*.json)"))
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                applied, skipped = import_shortcuts(self._window, json.load(f))
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, tr("Import shortcuts"), str(exc))
+            return
+        self._fill()
+        msg = tr("{n} shortcuts imported.", n=applied)
+        if skipped:
+            msg += " " + tr("{n} belong to actions this installation does "
+                            "not have (a plugin, say) and were left out.",
+                            n=skipped)
+        QMessageBox.information(self, tr("Import shortcuts"), msg)
 
     def _on_reset_all(self) -> None:
         if QMessageBox.question(

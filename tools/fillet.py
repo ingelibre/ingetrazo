@@ -28,6 +28,7 @@ class FilletTool(Tool):
     name = "Fillet 3D"
     icon = "fillet"
     shortcut = None
+    description = "Round the edges of a solid to the radius you set."
     uses_snap = False
     vcb_label = "Radius"
     wireframe_color = (0.13, 0.17, 0.23, 1.0)

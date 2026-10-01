@@ -322,6 +322,24 @@ def _closest_on_segment_2d(
     return math.hypot(px - qx, py - qy), t
 
 
+def _on_edge_point(edge, t: float,
+                   project_onto_line: Optional[ProjectOntoLine]) -> QVector3D:
+    """The point of ``edge`` under the cursor, given the screen parameter
+    ``t`` from :func:`_closest_on_segment_2d`. Under perspective ``t`` is
+    not the world parameter: on a long edge — a construction guide is tens
+    of metres once clipped to the view — lerping it put the «hovered» point
+    metres away and off screen, so a lock line could never take a guide's
+    height (issue #166, @pacaeiro: Shift on the blue axis, hover the guide).
+    Through the cursor ray instead, as rule 7 does, when the caller has it."""
+    ab = edge.b - edge.a
+    if project_onto_line is not None and ab.length() > 1e-9:
+        proj = project_onto_line(edge.a, ab)
+        if proj is not None:
+            tt = QVector3D.dotProduct(proj - edge.a, ab) / QVector3D.dotProduct(ab, ab)
+            return edge.a + ab * max(0.0, min(1.0, tt))
+    return edge.a + ab * t
+
+
 def _line_segment_intersection(
     p: QVector3D, u: QVector3D, a: QVector3D, b: QVector3D, tol: float = 1e-3
 ) -> Optional[QVector3D]:
@@ -838,16 +856,16 @@ def _extension_snap(
 def _from_point_snap(
     scene, start_point, draw_dir, cx, cy, world_to_pixel, threshold_px,
     is_occluded, extra_point=None, axis_deg: float = 10.0,
-    hovered_refs: bool = False,
+    hovered_refs: bool = False, line_dir: Optional[QVector3D] = None,
+    project_onto_line: Optional[ProjectOntoLine] = None,
 ) -> Optional[SnapResult]:
     """'From point' inference ("Desde el punto"), the single clean version.
 
-    Fires **only when the draw runs along an axis** (within ``axis_deg``), the
-    way the red/green/blue axis line lights up. For every corner (and
-    midpoint) it snaps to the *fixed* foot of that point on the axis-aligned draw
-    line — the corner's coordinate along the draw, the start's other coords. So
-    the green point pins one spot (lined up with the corner) instead of sliding
-    along the projection or scattering when the draw wanders off-axis.
+    Without ``line_dir``, fires only when the draw runs along an axis (within
+    ``axis_deg``), the way the red/green/blue axis line lights up. Under
+    an explicit directional lock, ``line_dir`` supplies that locked direction
+    instead. For every corner (and midpoint) it snaps to the fixed foot of that
+    point on the draw line, pinning one spot instead of sliding or scattering.
 
     Corners → green 'from point' with an axis-coloured guide; midpoints → cyan.
 
@@ -859,17 +877,22 @@ def _from_point_snap(
     04:20: «cuando pulso la flechita para subir no me hace el snap»)."""
     if start_point is None or draw_dir.length() < 1e-6:
         return None
-    u = draw_dir.normalized()
-    # The draw must be along an axis; orient that axis along the draw direction.
-    adir = None
-    cos_axis = math.cos(math.radians(axis_deg))
-    for a in _AXIS_VECTORS.values():
-        dp = QVector3D.dotProduct(u, a)
-        if abs(dp) >= cos_axis:
-            adir = a if dp > 0 else -a
-            break
-    if adir is None:
-        return None  # diagonal draw — no clean 'from point'
+    if line_dir is not None:
+        if line_dir.length() < 1e-6:
+            return None
+        adir = QVector3D(line_dir).normalized()
+    else:
+        u = draw_dir.normalized()
+        # The draw must be along an axis; orient that axis along the draw direction.
+        adir = None
+        cos_axis = math.cos(math.radians(axis_deg))
+        for a in _AXIS_VECTORS.values():
+            dp = QVector3D.dotProduct(u, a)
+            if abs(dp) >= cos_axis:
+                adir = a if dp > 0 else -a
+                break
+        if adir is None:
+            return None  # diagonal draw — no clean 'from point'
 
     refs = []
     if extra_point is not None:
@@ -907,7 +930,7 @@ def _from_point_snap(
                 continue
             d, t = _closest_on_segment_2d((cx, cy), pa, pb)
             if d <= threshold_px and (best_edge is None or d < best_edge[0]):
-                best_edge = (d, edge.a + (edge.b - edge.a) * t)
+                best_edge = (d, _on_edge_point(edge, t, project_onto_line))
         if best_edge is not None:
             refs.append((best_edge[1], "from_point", COLOR_ENDPOINT, True))
 
@@ -1075,6 +1098,7 @@ def _intersection_snap(
 def _lock_line_snaps(
     scene, start_point, line_dir, cx, cy, world_to_pixel, threshold_px,
     is_occluded, acquired_point, chain_first_point=None,
+    project_onto_line=None,
 ) -> Optional[SnapResult]:
     """What a directional lock still lets you fetch, in order: the chain's
     own first point (closing), a vertex sitting ON the lock line, the
@@ -1136,7 +1160,8 @@ def _lock_line_snaps(
     return _from_point_snap(
         scene, start_point, line_dir, cx, cy, world_to_pixel,
         threshold_px, is_occluded, extra_point=acquired_point,
-        hovered_refs=True,
+        hovered_refs=True, line_dir=line_dir,
+        project_onto_line=project_onto_line,
     )
 
 
@@ -1211,6 +1236,7 @@ def compute_snap(
         hit = _lock_line_snaps(
             scene, start_point, axis_dir, cx, cy, world_to_pixel,
             threshold_px, is_occluded, acquired_point, chain_first_point,
+            project_onto_line,
         )
         if hit is not None:
             return hit
@@ -1242,6 +1268,7 @@ def compute_snap(
         hit = _lock_line_snaps(
             scene, start_point, lock_dir, cx, cy, world_to_pixel,
             threshold_px, is_occluded, acquired_point, chain_first_point,
+            project_onto_line,
         )
         if hit is not None:
             return hit
@@ -1259,6 +1286,16 @@ def compute_snap(
                                          work_plane_normal)
         if direction is not None:
             locked = project_onto_line(start_point, direction)
+            if QVector3D.dotProduct(locked - start_point, direction) < 0:
+                direction = -direction
+            hit = _lock_line_snaps(
+                scene, start_point, direction, candidate_pixel[0],
+                candidate_pixel[1], world_to_pixel, threshold_px,
+                is_occluded, acquired_point, chain_first_point,
+                project_onto_line,
+            )
+            if hit is not None:
+                return hit
             return SnapResult(locked, "reference", COLOR_REFERENCE)
 
     # 3. Shift held + auto axis inference → lock to that axis. This is the
@@ -1280,6 +1317,7 @@ def compute_snap(
             hit = _lock_line_snaps(
                 scene, start_point, axis_dir, cx3, cy3, world_to_pixel,
                 threshold_px, is_occluded, acquired_point, chain_first_point,
+                project_onto_line,
             )
             if hit is not None:
                 return hit

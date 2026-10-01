@@ -135,3 +135,44 @@ def test_the_key_box_captures_one_combination(monkeypatch):
     finally:
         _close(win)
         QSettings().remove("shortcuts")
+
+
+def test_a_shortcut_on_an_action_with_a_slash_survives_a_restart():
+    """«Push / Pull» and «Toggle Perspective / Parallel» on keys of one's own:
+    QSettings read the «/» as a group, stored them nested and never read
+    them back — the keys worked until the next start (issue #236,
+    @zhang-922)."""
+    from views.shortcuts import ShortcutsPanel
+    QSettings().remove("shortcuts")
+    win = _window()
+    try:
+        panel = ShortcutsPanel(win)
+        assert panel.assign(_action(win, "Push / Pull"),
+                            [QKeySequence("Ctrl+Alt+Shift+J")])
+        assert panel.assign(_action(win, "Toggle Perspective / Parallel"),
+                            [QKeySequence("Ctrl+Alt+Shift+H")])
+    finally:
+        _close(win)
+    win = _window()
+    try:
+        assert _keys(_action(win, "Push / Pull")) == ["Ctrl+Alt+Shift+J"]
+        assert _keys(_action(win, "Toggle Perspective / Parallel")) == \
+            ["Ctrl+Alt+Shift+H"]
+    finally:
+        _close(win)
+        QSettings().remove("shortcuts")
+
+
+def test_a_shortcut_saved_nested_by_an_earlier_version_is_read_back():
+    """What 0.5.6.1 wrote — a group «text:Push » with a key « Pull» — is
+    recovered, not lost."""
+    QSettings().remove("shortcuts")
+    st = QSettings()
+    st.setValue("shortcuts/text:Push / Pull", "Ctrl+Alt+Shift+J")
+    st.sync()
+    win = _window()
+    try:
+        assert _keys(_action(win, "Push / Pull")) == ["Ctrl+Alt+Shift+J"]
+    finally:
+        _close(win)
+        QSettings().remove("shortcuts")

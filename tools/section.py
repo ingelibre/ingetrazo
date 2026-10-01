@@ -30,6 +30,7 @@ from core.axes import AXES as _AXES  # noqa: E402
 
 class SectionPlaneTool(Tool):
     name = "Section Plane"
+    description = "Place a plane that cuts the model open to show its inside."
     uses_snap = True
 
     @property

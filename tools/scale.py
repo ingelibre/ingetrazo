@@ -71,8 +71,18 @@ class _Grip:
 class ScaleTool(Tool):
     name = "Scale"
     shortcut = "S"
+    description = (
+        "Resize the selection by dragging the grips of its box; the "
+        "corners keep its proportions.")
     vcb_label = "Scale"
-    uses_snap = False                      # grips, not geometry, take the click
+    @property
+    def uses_snap(self) -> bool:
+        """Only while a grip is held: then a corner, a midpoint or an edge
+        of ANOTHER object sets the size — scale «to» it (issue #233,
+        @ales-limon). Before the grab, the grips take the click, not the
+        geometry."""
+        return self._grip is not None
+
     # The VCB tags unit-suffixed entries for us ("2m" = absolute size), so a
     # bare "2" can mean ×2, the usual reading.
     accepts_absolute_length = True
@@ -277,6 +287,66 @@ class ScaleTool(Tool):
         s = (e - b * d0) / denom
         return a + u * s
 
+    #: What a held grip may land on: named points and edges, projected onto
+    #: the grip's line. Not a face (the grip would jump across every
+    #: surface it passes) and not the engine's own directional inferences.
+    _TARGET_KINDS = frozenset({
+        "endpoint", "midpoint", "intersection", "center", "origin",
+        "on_edge", "on_line", "from_point", "close", "guide",
+        "component_origin", "arc_midpoint"})
+
+    def snap_excluded(self):
+        """What is being scaled stays out of the snap engine, or the grip
+        would land on the very geometry it resizes. ``(edge ids, group
+        ids)`` as Move gives it."""
+        if self._grip is None:
+            return None
+        edges = {id(e) for v in self._verts for e in getattr(v, "edges", ())}
+        return edges, {id(g) for g in self._groups}
+
+    def _snapped_point(self, ctx):
+        snap = getattr(ctx, "snap", None) if ctx is not None else None
+        if snap is None or snap.kind not in self._TARGET_KINDS:
+            return None
+        return QVector3D(snap.point)
+
+    def _factors_from_point(self, p: QVector3D):
+        """The factors that put the held grip level with world point ``p``:
+        ``p`` projected onto the anchor→grip line (one axis, or a corner /
+        Shift), or per axis for an edge grip."""
+        grip, anchor = self._grip, self._anchor
+        g0 = self._grip_pos(grip)
+        uniform = self.uniform or grip.kind(self._active_axes()) == "corner"
+        if uniform or len(grip.mask) == 1:
+            axis_dir = g0 - anchor
+            length = axis_dir.length()
+            if length < 1e-12:
+                return None
+            f = QVector3D.dotProduct(p - anchor, axis_dir) / (length * length)
+            if uniform:
+                ext = self._extents()
+                return tuple(f if ext[i] > _FLAT else 1.0 for i in range(3))
+            factors = [1.0, 1.0, 1.0]
+            factors[grip.mask[0]] = f
+            return tuple(factors)
+        gl = self._to_local(g0) - self._to_local(anchor)
+        pl = self._to_local(p) - self._to_local(anchor)
+        factors = [1.0, 1.0, 1.0]
+        for i in grip.mask:
+            ga = (gl.x(), gl.y(), gl.z())[i]
+            if abs(ga) < 1e-12:
+                return None
+            factors[i] = (pl.x(), pl.y(), pl.z())[i] / ga
+        return tuple(factors)
+
+    def _factors_for(self, ctx, viewport, sx: float, sy: float):
+        p = self._snapped_point(ctx)
+        if p is not None:
+            got = self._factors_from_point(p)
+            if got is not None:
+                return got
+        return self._factors_from_cursor(viewport, sx, sy)
+
     def _factors_from_cursor(self, viewport, sx: float, sy: float):
         grip, anchor = self._grip, self._anchor
         g0 = self._grip_pos(grip)
@@ -344,7 +414,7 @@ class ScaleTool(Tool):
         sx, sy = ctx.screen.x(), ctx.screen.y()
 
         if self._grip is not None:         # second click commits
-            factors = self._factors_from_cursor(viewport, sx, sy)
+            factors = self._factors_for(ctx, viewport, sx, sy)
             if factors is not None:
                 self._commit(viewport, factors)
             return
@@ -414,7 +484,7 @@ class ScaleTool(Tool):
                 self._hover_grip = hover
                 viewport.update()
             return
-        factors = self._factors_from_cursor(viewport, sx, sy)
+        factors = self._factors_for(ctx, viewport, sx, sy)
         if factors is None:
             return
         if any(abs(f) < _MIN_FACTOR for f in factors):

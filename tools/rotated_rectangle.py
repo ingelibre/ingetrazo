@@ -44,7 +44,12 @@ class RotatedRectangleTool(AxisMagnet, PlaneLock, Tool):
     _MIN_WIDTH = 1e-6
 
     name = "Rotated Rect"
-    shortcut = "K"
+    # K belongs to Back Edges, as in the other modeller (issue #234);
+    # there the rotated rectangle has no default key either.
+    shortcut = None
+    description = (
+        "Draw a rectangle at any angle and in any plane: a base edge, "
+        "then the width.")
 
     @property
     def vcb_label(self) -> str:  # type: ignore[override]

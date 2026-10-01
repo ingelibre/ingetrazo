@@ -40,6 +40,9 @@ _DRAG_PX = 6.0
 class FollowMeTool(Tool):
     name = "Follow Me"
     shortcut = "W"
+    description = (
+        "Sweep a face along a path of edges — mouldings, pipes, "
+        "turned shapes.")
     uses_snap = False        # picks a profile face; no snap markers
     #: The dragged path reads RED, the usual highlight.
     wireframe_color = (0.85, 0.16, 0.16, 1.0)

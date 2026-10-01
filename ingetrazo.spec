@@ -155,6 +155,38 @@ hiddenimports += [
     'openskp.errors',
     'openskp.scene',
 ]
+
+# ...and every other app module a by-path file imports, found by reading
+# them rather than listed by hand. 0.5.6 shipped views.fold_section (new,
+# imported only by the AI and Render plugins) outside every PyInstaller
+# build, and those three extensions failed to load on Windows (#208).
+def _app_imports(paths):
+    import ast
+    found = set()
+    for path in paths:
+        try:
+            tree = ast.parse(Path(path).read_text(encoding='utf-8'))
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                names = [node.module] + [f"{node.module}.{a.name}" for a in node.names]
+            else:
+                continue
+            for name in names:
+                parts = name.split('.')
+                if (Path(*parts).with_suffix('.py').is_file()
+                        or (Path(*parts) / '__init__.py').is_file()):
+                    found.add(name)
+    return sorted(found)
+
+
+hiddenimports += _app_imports(
+    [*Path('plugins').glob('*.py'),
+     *Path('examples/extensions').rglob('*.py'),
+     Path('scripts/ingetrazo_mcp.py')])
 # The rest of openskp (export/*, _face_groups, instanced_scene, codegen…)
 # plus its PACKAGE DATA: create.py loads ``_scaffold/blank_v17.skp`` via
 # importlib.resources and PyInstaller never bundles non-Python files on its

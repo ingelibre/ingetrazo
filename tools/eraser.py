@@ -47,6 +47,9 @@ from tools.base import Tool, ToolContext
 class EraserTool(Tool):
     name = "Eraser"
     shortcut = "E"
+    description = (
+        "Click or drag over edges to erase them, together with the "
+        "faces they bound.")
     uses_snap = False
     wireframe_color = (0.90, 0.20, 0.15, 1.0)   # stroke marks show red
 

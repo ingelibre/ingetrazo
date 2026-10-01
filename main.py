@@ -9,6 +9,7 @@ Licensed under GPL-3.0-or-later. See LICENSE.
 from __future__ import annotations
 
 import faulthandler
+import os
 import sys
 from pathlib import Path
 
@@ -245,6 +246,26 @@ def _self_check() -> int:
     print(f"  AI recipe book : {'found' if ok else 'MISSING'}  {where}")
     if not ok:
         problems.append("AI recipe book")
+
+    # The bundled extensions are loaded by path, so the package builder
+    # never sees what they import. 0.5.6 left views.fold_section out and the
+    # AI assistant, the MCP bridge and Render with Blender showed «error
+    # loading» on Windows (#208): import each one here, as the app would.
+    import importlib.util
+    broken = []
+    for plugin in sorted((root / "plugins").glob("*.py")):
+        if plugin.name.startswith("_"):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"_check_plugin_{plugin.stem}", plugin)
+            spec.loader.exec_module(importlib.util.module_from_spec(spec))
+        except Exception as exc:  # noqa: BLE001 - any failure is the report
+            broken.append(f"{plugin.stem} ({exc})")
+    print(f"  extensions     : {'all load' if not broken else 'BROKEN'}"
+          f"  {'; '.join(broken)}")
+    if broken:
+        problems.append("extensions")
 
     # openskp ships a blank .skp template that its writer builds files on
     # top of. IngeTrazo does not distribute it and has no .skp export: a
@@ -522,5 +543,24 @@ def _offer_appimage_integration(window) -> None:
     QTimer.singleShot(600, ask)
 
 
+def _exit_now(code) -> None:
+    """Leave without tearing the model down object by object. Everything
+    that must reach the disk has by now: the window closed, the document
+    was saved or discarded, and the settings are synced here. What is left
+    is freeing millions of Python objects one at a time, which on a big
+    model kept the process — and its gigabytes — alive for a minute after
+    the window was gone (issue #158, @pacaeiro: 21 406 groups, 6.7 GB)."""
+    import logging
+    from PySide6.QtCore import QSettings
+    QSettings().sync()
+    logging.shutdown()
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            pass
+    os._exit(code if isinstance(code, int) else 0)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    _exit_now(main())

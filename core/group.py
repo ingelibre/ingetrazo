@@ -12,6 +12,7 @@ Selected as a unit and moved/exploded via the commands in :mod:`core.history`.
 """
 from __future__ import annotations
 
+import copy
 import itertools
 
 from core.mesh import Mesh
@@ -45,7 +46,7 @@ class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
                  "children", "owner", "context", "text3d", "hidden", "uid",
                  "material", "axes", "component", "exploded",
-                 "explode_offset")
+                 "explode_offset", "ext")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -61,6 +62,11 @@ class Group:
         # generated from — text, font, height… — so it can be re-edited and
         # laid out again in place. ``None`` on every other group.
         self.text3d = None
+        # Extensions' own parameters for this container, by extension key
+        # ({"windowizer": {...}}): kept with copies and saved in the .igz,
+        # and apart from ``ifc``, which the BIM panel replaces when it
+        # retags. ``None`` when no extension wrote here.
+        self.ext = None
         # Hide: the object stays in the document but draws,
         # picks, snaps and exports as if it were not there — until Unhide,
         # or the scene that remembers it visible (Rafael, 2026-09-16: «una
@@ -602,6 +608,7 @@ def copy_group(group, delta=None, _in_definition=False):
     g.ifc = dict(group.ifc) if group.ifc else None
     g.billboard = group.billboard
     g.text3d = dict(group.text3d) if group.text3d else None
+    g.ext = copy.deepcopy(group.ext) if getattr(group, "ext", None) else None
     g.hidden = group.hidden
     g.material = dict(group.material) if getattr(group, "material", None) else None
     g.component = getattr(group, "component", True)

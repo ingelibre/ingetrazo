@@ -99,6 +99,21 @@ deedend  (github.com/deedend)
     Italian translation of the interface (pull request #182, some
     2 110 strings): IngeTrazo's fifth language.
 
+Rainjalin  (github.com/Rainjalin)
+    Indonesian translation of the interface (issue #216, some 2 230
+    strings): IngeTrazo's sixth language.
+
+Bane Andreev  (Biro Andreev, Belgrade / Zagreb)
+    Architect. The Windowizer example extension: parametric windows from
+    faces, one container per window with its frame and panes, and the wall
+    opened and closed again — a port of Rick Wilson's Windowizer 3
+    (2004-2005, whose notice it keeps). His notes on the extension API gave
+    it add_menu, add_context_menu and per-group extension data.
+
+Rony Leonel Janampa Monago  (github.com/Ronyleonel6)
+    The Polygon properties example extension (issue #229, MIT): area,
+    centroid and second moments of a face, for sections and slabs.
+
 Carlos Martins  (github.com/fafecm)
     Bug reports with screen recordings that made each one reproducible:
     diagonal guides crossing a hair off (#110), a group's paint missing

@@ -181,14 +181,18 @@ def test_la_barra_muestra_el_atajo_configurado_y_no_el_de_fabrica(ventana):
     escribía la tecla UNA vez, al arrancar; ahora sigue a la acción."""
     from PySide6.QtGui import QKeySequence
     linea = ventana._tool_actions["line"]
-    assert linea.toolTip().endswith("(L)")
+
+    def primera(act):              # la segunda línea dice qué hace
+        return act.toolTip().split("\n")[0]
+
+    assert primera(linea).endswith("(L)")
     linea.setShortcuts([QKeySequence("Ctrl+Alt+L")])
-    assert "Ctrl+Alt+L" in linea.toolTip()
-    assert "(L)" not in linea.toolTip()
+    assert "Ctrl+Alt+L" in primera(linea)
+    assert "(L)" not in primera(linea)
     linea.setShortcuts([])
-    assert "(" not in linea.toolTip()                 # sin atajo, sin paréntesis
+    assert "(" not in primera(linea)                 # sin atajo, sin paréntesis
     linea.setShortcuts([QKeySequence("L")])
-    assert linea.toolTip().endswith("(L)")
+    assert primera(linea).endswith("(L)")
     ze = ventana._act_zoom_extents
     ze.setShortcuts([QKeySequence("Ctrl+E")])
-    assert "Ctrl+E" in ze.toolTip()                   # el que venía escrito a mano
+    assert "Ctrl+E" in primera(ze)                   # el que venía escrito a mano

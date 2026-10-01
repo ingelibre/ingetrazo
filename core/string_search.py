@@ -30,8 +30,10 @@ _SPLIT = re.compile(r"[\s\-_/▸]+")
 _UNUSED = -1
 
 
+@lru_cache(maxsize=1 << 13)
 def fold(text: str) -> str:
-    """Lower case, no accents: «Rotación» and «rotacion» are one word."""
+    """Lower case, no accents: «Rotación» and «rotacion» are one word.
+    Remembered: the same labels are folded each time a box opens."""
     decomposed = unicodedata.normalize("NFKD", text or "")
     return "".join(c for c in decomposed
                    if not unicodedata.combining(c)).casefold()

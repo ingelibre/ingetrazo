@@ -434,11 +434,33 @@ def write_job(scene, camera, work: Path, *, engine: str = "eevee",
     return path
 
 
+def work_base() -> Path:
+    """Where each render's folder goes. Blender runs OUTSIDE the Flatpak
+    sandbox, so there it must be a folder the host sees at the same path:
+    the real ``~/.cache`` (the sandbox's own cache lives under
+    ``~/.var/app``, which Blender's own Flatpak cannot read)."""
+    if in_flatpak():
+        return Path.home() / ".cache" / "IngeTrazo" / "render"
+    from PySide6.QtCore import QStandardPaths
+    base = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.GenericCacheLocation)
+    return Path(base) / "IngeTrazo" / "render"
+
+
 def command(found: BlenderFound, job: Path) -> list:
     """The full argv: Blender in the background, without the user's startup
-    file or add-ons, running our script on the job."""
+    file or add-ons, running our script on the job.
+
+    The script always travels next to the job, a folder Blender is sure to
+    see. Its own path may exist only for IngeTrazo: inside our Flatpak
+    (``/app/ingetrazo/…``, «Python file … could not be opened»), or under
+    the AppImage's ``/tmp/.mount_…`` when Blender is the Flathub one, whose
+    sandbox sees the home folder but not our /tmp."""
+    import shutil
+    script = job.parent / render_script().name
+    shutil.copyfile(render_script(), script)
     return [*found.command, "-b", "--factory-startup",
-            "--python", str(render_script()), "--", str(job)]
+            "--python", str(script), "--", str(job)]
 
 
 # ---- Sync with the view ----------------------------------------------------------

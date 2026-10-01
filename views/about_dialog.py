@@ -62,6 +62,17 @@ CONTRIBUTORS = [
     ("deedend",
      "Italian translation of the interface.",
      "https://github.com/deedend"),
+    ("Rainjalin",
+     "Indonesian translation of the interface.",
+     "https://github.com/Rainjalin"),
+    ("Bane Andreev",
+     "Architect. The Windowizer example extension: parametric windows from "
+     "faces, and the extension API's menus and group data.",
+     ""),
+    ("Rony Leonel Janampa Monago",
+     "The Polygon properties example extension: area, centroid and "
+     "second moments of a face.",
+     "https://github.com/Ronyleonel6"),
     ("Carlos Martins",
      "Bug reports with videos that pinned down guides, group paint and "
      "exploded groups.",

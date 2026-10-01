@@ -88,11 +88,12 @@ def _submenus(window) -> dict:
     return {m.menuAction(): m for m in window.findChildren(QMenu)}
 
 
-def _top_menus(window) -> list:
+def _top_menus(window, subs: dict | None = None) -> list:
     bar = _menubar(window)
     if bar is None:
         return []
-    subs = _submenus(window)
+    if subs is None:
+        subs = _submenus(window)
     return [subs[a] for a in bar.actions() if a in subs]
 
 
@@ -110,7 +111,7 @@ def menu_paths(window) -> dict:
             elif not act.isSeparator() and _plain(act.text()):
                 paths.setdefault(action_key(act), _SEP.join(trail))
 
-    for menu in _top_menus(window):
+    for menu in _top_menus(window, subs):
         walk(menu, [_plain(menu.title())])
     for bar in window.findChildren(QToolBar):
         if bar.window() is not window:
@@ -239,14 +240,37 @@ def tooltip_html(cmd: Command) -> str:
 _TIP_WIDTH = 380
 
 
+def _signature(action: QAction, path: str) -> tuple:
+    """What a Command is worked out from: when none of it changed, the
+    one made at the last opening still holds."""
+    return (action.objectName(), action.text(), action.toolTip(),
+            action.statusTip(),
+            action.shortcut().toString(QKeySequence.PortableText), path)
+
+
 def commands(window, scope: str = "") -> list:
     """Every command the box can offer, in the window as it is now; only
-    those under the menu ``scope`` («Edit ▸ Unhide») when given."""
+    those under the menu ``scope`` («Edit ▸ Unhide») when given.
+
+    The list is read afresh each time — a plugin loaded a minute ago is
+    in it — but a command whose text, tips, keys and path are unchanged
+    reuses what the last opening worked out: splitting ~200 labels in
+    two languages took most of the ~100 ms F3 needed to appear."""
     paths = menu_paths(window)
-    pool = [Command(a, paths.get(action_key(a), ""))
-            for a in collect_actions(window)
-            if a.objectName() != OBJECT_NAME and a.isVisible()
-            and _belongs(a, window)]
+    cache = getattr(window, "_command_cache", None) or {}
+    fresh: dict = {}
+    pool = []
+    for a in collect_actions(window):
+        if a.objectName() == OBJECT_NAME or not a.isVisible() \
+                or not _belongs(a, window):
+            continue
+        path = paths.get(action_key(a), "")
+        sig = _signature(a, path)
+        hit = cache.get(a)
+        cmd = hit[1] if hit is not None and hit[0] == sig else Command(a, path)
+        fresh[a] = (sig, cmd)
+        pool.append(cmd)
+    window._command_cache = fresh            # only the actions alive now
     if scope:
         pool = [c for c in pool
                 if c.path == scope or c.path.startswith(scope + _SEP)]
@@ -601,6 +625,22 @@ class CommandSearch(QFrame):
         return w
 
 
+def warm_up(window, delay_ms: int = 2000) -> None:
+    """Work out F3's command list while the window idles after opening,
+    so even the first F3 shows its list at once.
+
+    Only the list — pure Python. The box and its native popup are made on
+    the first F3, as they always were up to 0.5.6.1: made ahead, the popup
+    left the main window flickering under GNOME's Wayland, a black band
+    and the toolbar drawn half over the menu bar (Marco, 30-09, bisected
+    to ``box.winId()`` here; it only shows with two monitors, when
+    IngeTrazo runs on Wayland). Kept off on every platform until it has
+    been tried on each."""
+    def ready() -> None:
+        commands(window)
+    QTimer.singleShot(delay_ms, window, ready)
+
+
 def open_search(window, text: str = "", scope: str = "") -> CommandSearch:
     """Show the window's search box (made once, kept)."""
     box = getattr(window, "_command_search", None)
@@ -656,3 +696,4 @@ def install_menu_typing(window) -> None:
         typing.watch(menu)
         menu.aboutToShow.connect(lambda m=menu: typing.watch(m))
     window._menu_typing = typing
+    warm_up(window)

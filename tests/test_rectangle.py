@@ -81,6 +81,19 @@ def test_typed_dimensions_rejects_non_pair():
     assert len(vp.scene.faces) == 0
 
 
+def test_typed_single_dimension_builds_square_when_locked():
+    vp = _Stub()
+    t = RectangleTool()
+    t.start_point = V(0, 0)
+    t.hover_point = V(5, 4)
+    t._arrow_square_lock = True
+
+    assert t.on_value(vp, 3.0) is True
+    assert _corner_keys(vp.scene.faces[0]) == {
+        (0, 0, 0), (3, 0, 0), (3, 3, 0), (0, 3, 0)
+    }
+
+
 # ---- Ctrl: from the centre (issue #39, @pacaeiro) ------------------------
 
 def test_ctrl_toggles_centre_mode_and_the_badge():

@@ -41,6 +41,9 @@ def _point_segment_distance(p: QVector3D, a: QVector3D, b: QVector3D) -> float:
 class OffsetTool(Tool):
     name = "Offset"
     shortcut = "F"
+    description = (
+        "Draw a copy of a face's outline at an even distance inside "
+        "or outside it — walls with thickness.")
     uses_snap = False  # picks a face; no snap markers
     vcb_label = "Offset"
     wireframe_color = (0.13, 0.17, 0.23, 1.0)

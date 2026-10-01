@@ -26,6 +26,8 @@ from tools.base import Tool
 class HelloTool(Tool):
     name = "Hello"
     shortcut = None      # or "Ctrl+Shift+H" — silently dropped if taken
+    # Optional: what it does, in the status bar and the F3 search.
+    description = "Say hello in the status bar."
 
     def on_activate(self, viewport):
         viewport.flash_status("Hello from a plugin!", 3000)
@@ -141,13 +143,42 @@ def setup(app):
     app.add_panel("AI", chat, panel="ai", stretch=1)
     app.show_panel(dock)                  # to the front, shown again if hidden
 
-    # An entry in the Extensions menu (a shortcut already taken is left off).
-    app.add_menu_action("Levels…", lambda: app.show_panel(dock), "Ctrl+Shift+L")
+    # Several commands? A submenu of your own: Extensions ▸ Windowizer ▸ …
+    sub = app.add_menu("Windowizer")
+    sub.addAction("Edit window…", edit)
+
+    # Entries in the viewport's right-click menu, after the selection's own
+    # (open dialogs from them with QTimer.singleShot(0, …)):
+    app.add_context_menu(lambda menu, selection: ...)
+
+    # Parameters of YOUR container groups (a parametric window, a stair):
+    # group.ext[app.key] — kept with copies, saved in the .igz, and apart
+    # from group.ifc, which the BIM panel replaces when it retags.
+    group.ext = {app.key: {"rows": 2, "cols": 3}}
+
+    # An entry in the Extensions menu (a shortcut already taken is left off;
+    # `tip` says what it does, in the status bar and in F3).
+    app.add_menu_action("Levels…", lambda: app.show_panel(dock), "Ctrl+Shift+L",
+                        tip="Show the levels of the building.")
+
+    # Another .igz as ONE component, with no file dialog: it follows the
+    # mouse and a click drops it, or `at=` puts its origin at a point now
+    # (one undo step). Returns the component; None = no geometry.
+    app.import_igz("/path/to/bench.igz")
+    comp = app.import_igz("/path/to/bench.igz", at=(4.0, 2.0, 0.0))
 
     # Drawn with a QPainter over every frame, whatever the active tool;
     # world points (metres) to pixels, thousands at a time:
     app.add_overlay(lambda viewport, painter: ...)
     px, py, in_front = app.world_to_pixels(points_n_by_3)
+
+    # Your own items, selectable with the Select tool and deleted with
+    # Supr (moving them comes later): `pick` says which item is under a
+    # pixel (asked before the model's geometry), `on_select(id)` hears the
+    # pick and `on_select(None)` its release, `delete(id)` removes it —
+    # through set_document_data, so it is one undo step.
+    app.add_pickable(pick=lambda viewport, px, py: None,
+                     on_select=lambda item: ..., delete=lambda item: ...)
 
     # Offered the snap engine's answer on every hover and click; return a
     # core.snap.SnapResult (its `label` is the ScreenTip) or None.
@@ -229,6 +260,14 @@ for teaching architectural representation. It ships with the app but is not load
 **Extensions ▸ Example extensions ▸ Niveles** copies it into your plugins
 folder (and removes it again); restart to load it. Features only some users need
 belong in extensions like this one, not in the core.
+
+**A second one:** `examples/extensions/windowizer.py` — parametric windows
+from faces drawn on a wall: one container group per window (`IfcWindow`,
+with a Frame and its Glass panes), the wall opened through or with reveals,
+Edit window rebuilding it in place from `group.ext`, and Erase window
+closing the wall again; all in a submenu (`add_menu`) and the right-click
+menu (`add_context_menu`), each command one undo step. A port of Rick
+Wilson's Windowizer 3 by Bane Andreev, an architect, written with AI help.
 
 ## Bundled reference plugins
 

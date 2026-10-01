@@ -21,6 +21,9 @@ from core.units import fmt_area, fmt_len
 class TextTool(AxisMagnet, Tool):
     name = "Text"
     shortcut = "X"
+    description = (
+        "Place a text with a leader pointing at the model; it "
+        "suggests the length, area or coordinates of what you click.")
 
     def __init__(self) -> None:
         self.anchor: QVector3D | None = None
