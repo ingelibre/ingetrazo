@@ -99,7 +99,7 @@ def test_the_plane_can_be_renamed_after_it_is_placed():
     under Reverse / Active Cut / Align View."""
     from pathlib import Path
     text = (Path(__file__).resolve().parents[1]
-            / "views/main_window.py").read_text()
+            / "views/main_window.py").read_text(encoding="utf-8")
     i = text.index('menu.addAction(tr("Align View")')
     near = text[i:i + 500]
     assert "Name and symbol" in near
