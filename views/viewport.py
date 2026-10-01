@@ -808,6 +808,10 @@ class Viewport(QOpenGLWidget):
     tilesChanged = Signal()
     # UTM coordinate under the cursor, for the status bar readout (Track G).
     coordinateChanged = Signal(str)
+    # The camera's projection changed ("parallel" / "perspective" /
+    # "two_point"), whoever changed it — the View toolbar's quick buttons
+    # follow it.
+    projectionChanged = Signal(str)
 
     # Soft warm white painted on faces with no material colour — like the matte
     # cardstock of an architecture model (a near-white default).
@@ -1341,9 +1345,20 @@ class Viewport(QOpenGLWidget):
         from core import axes as _axes
         _axes.sync(getattr(self.scene, "drawing_frame", None))
 
+    def _sync_projection(self) -> None:
+        """Tell the quick buttons when the projection changed. Scenes,
+        saved views, the geo path and the composer all set the camera's
+        fields directly, so the check runs on every paint: whatever set
+        it, the next frame shows it and the buttons follow."""
+        mode = self.camera.projection_mode()
+        if mode != getattr(self, "_shown_projection", None):
+            self._shown_projection = mode
+            self.projectionChanged.emit(mode)
+
     def paintGL(self) -> None:
         self._tick = getattr(self, "_tick", 0) + 1     # a new epoch memo
         self._sync_axes()
+        self._sync_projection()
         if self._gl is None or self._program is None:
             return
         _pt0 = _time_mod.perf_counter() if _PERF else 0.0
@@ -12851,10 +12866,18 @@ class Viewport(QOpenGLWidget):
 
     def toggle_projection(self) -> None:
         self.camera.toggle_projection()
+        self._sync_projection()
         self.update()
 
     def toggle_two_point(self) -> None:
         self.camera.toggle_two_point()
+        self._sync_projection()
+        self.update()
+
+    def set_projection(self, mode: str) -> None:
+        """Parallel, perspective or two-point (the View toolbar's buttons)."""
+        self.camera.set_projection(mode)
+        self._sync_projection()
         self.update()
 
     # ---- Extensions (views.extension_api) -----------------------------------

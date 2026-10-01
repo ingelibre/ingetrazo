@@ -1099,6 +1099,63 @@ def _view_iso(p, ink):
                               QPointF(19, 39.5), QPointF(15, 37.5)]))   # door
 
 
+# ---- Projection quick buttons: the same box three ways --------------------
+# Parallel keeps every edge parallel; perspective leans the verticals in
+# toward the ground; two-point keeps them upright and runs the horizontals
+# to two vanishing points on the horizon. The faces in the accent, as in
+# the standard views.
+
+def _box(p, ink, left, front, right, top=None) -> None:
+    """A box seen corner-on: ``left`` / ``front`` / ``right`` are the
+    (top, bottom) points of its three visible vertical edges; ``top`` the
+    far corner of its lid, when the lid shows."""
+    lt, lb = left
+    ft, fb = front
+    rt, rb = right
+    lface = QPolygonF([lt, ft, fb, lb])
+    rface = QPolygonF([ft, rt, rb, fb])
+    _accent_fill(p, lface, 150)
+    _accent_fill(p, rface, 90)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(lface)
+    p.drawPolygon(rface)
+    if top is not None:
+        lid = QPolygonF([lt, top, rt, ft])
+        _accent_fill(p, lid, 50)
+        p.setBrush(Qt.NoBrush)
+        p.drawPolygon(lid)
+
+
+def _proj_parallel(p, ink):
+    _box(p, ink,
+         (QPointF(10, 15), QPointF(10, 33)),
+         (QPointF(24, 22), QPointF(24, 40)),
+         (QPointF(38, 15), QPointF(38, 33)),
+         top=QPointF(24, 8))
+
+
+def _proj_perspective(p, ink):
+    _box(p, ink,
+         (QPointF(9, 15), QPointF(13, 30)),
+         (QPointF(24, 21), QPointF(24, 41)),
+         (QPointF(39, 15), QPointF(35, 30)),
+         top=QPointF(24, 10))
+
+
+def _proj_two_point(p, ink):
+    # the horizon and its two vanishing points
+    p.save()
+    p.setPen(_rpen(ink, 1.6))
+    p.drawLine(QPointF(3, 24), QPointF(45, 24))
+    p.restore()
+    _dot(p, 3.5, 24, r=2.6)
+    _dot(p, 44.5, 24, r=2.6)
+    _box(p, ink,
+         (QPointF(13, 18), QPointF(13, 30.5)),
+         (QPointF(24, 11), QPointF(24, 38)),
+         (QPointF(35, 18), QPointF(35, 30.5)))
+
+
 def _text(p, ink):
     # Text: a capital T inside a text frame (dashed), with the insertion
     # point as the accent dot at the frame's corner.
@@ -1791,6 +1848,8 @@ _DRAW = {
     "look_around": _look_around, "first_person": _first_person,
     "zoom_extents": _zoom_extents, "zoom_selection": _zoom_selection,
     "view_iso": _view_iso,
+    "proj_parallel": _proj_parallel, "proj_perspective": _proj_perspective,
+    "proj_two_point": _proj_two_point,
     # Standard views — the cube with the viewed face highlighted.
     "view_top": _view_top,
     "view_bottom": _view_bottom,

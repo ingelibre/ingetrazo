@@ -794,6 +794,40 @@ class MainWindow(QMainWindow):
             views_tb.addAction(act)
             self._icon_actions.append((act, icon))
 
+        # Projection quick buttons, one click each instead of Camera ▸:
+        # parallel, perspective, two-point (verticals kept vertical, the
+        # usual view for an architectural presentation). One of the three
+        # is always down; the viewport says when anything else (Shift+P, a
+        # scene, a saved view) changed the projection.
+        views_tb.addSeparator()
+        self._projection_group = QActionGroup(self)
+        self._projection_group.setExclusive(True)
+        self._projection_actions: dict[str, QAction] = {}
+        for mode, label, tip in [
+            ("parallel", "Parallel Projection",
+             "No vanishing points: measured elevations, plans and "
+             "isometrics."),
+            ("perspective", "Perspective",
+             "The view as the eye sees it."),
+            ("two_point", "Two-Point Perspective",
+             "Vertical lines stay vertical, the usual view for "
+             "architectural presentations."),
+        ]:
+            icon = "proj_" + mode
+            act = QAction(tool_icon(icon), tr(label), self)
+            act.setObjectName("projection_" + mode)
+            act.setCheckable(True)
+            act.setStatusTip(tr(tip))
+            set_tooltip(act, tr(label))     # names the keys, if given any
+            act.triggered.connect(
+                lambda _c, m=mode: self.viewport.set_projection(m))
+            self._projection_group.addAction(act)
+            views_tb.addAction(act)
+            self._icon_actions.append((act, icon))
+            self._projection_actions[mode] = act
+        self.viewport.projectionChanged.connect(self._sync_projection_buttons)
+        self._sync_projection_buttons(self.viewport.camera.projection_mode())
+
     def _describe_buttons(self) -> None:
         """A toolbar button's tooltip says what it does under its name and
         keys, as Blender's do: the action's status tip, the sentence the
@@ -804,6 +838,11 @@ class MainWindow(QMainWindow):
                 tip = act.statusTip()
                 if tip and tip not in act.toolTip():
                     act.setToolTip(f"{act.toolTip()}\n{tip}")
+
+    def _sync_projection_buttons(self, mode: str) -> None:
+        act = self._projection_actions.get(mode)
+        if act is not None and not act.isChecked():
+            act.setChecked(True)
 
     def _refresh_toolbar_icons(self) -> None:
         """Re-draw the programmatic toolbar icons for the current palette so a
@@ -1092,18 +1131,13 @@ class MainWindow(QMainWindow):
         action_proj.triggered.connect(self.viewport.toggle_projection)
         camera_menu.addAction(action_proj)
 
-        # Two-Point Perspective: verticals stay vertical, as an
-        # architectural drawing wants them (José Castro Basso, FADU–UDELAR).
-        self._act_two_point = QAction(tr("Two-Point Perspective"), self)
-        self._act_two_point.setCheckable(True)
-        self._act_two_point.setStatusTip(tr(
-            "Perspective with vertical lines kept vertical"))
-        self._act_two_point.triggered.connect(self.viewport.toggle_two_point)
-        camera_menu.addAction(self._act_two_point)
-        camera_menu.aboutToShow.connect(
-            lambda: self._act_two_point.setChecked(
-                self.viewport.camera.two_point
-                and self.viewport.camera.perspective))
+        # The Camera menu: Parallel Projection / Perspective /
+        # Two-Point Perspective (verticals stay vertical, as an
+        # architectural drawing wants them — José Castro Basso,
+        # FADU–UDELAR). The SAME actions as the quick buttons on the
+        # Standard Views bar, so a shortcut given to one is the other's.
+        for mode in ("parallel", "perspective", "two_point"):
+            camera_menu.addAction(self._projection_actions[mode])
 
         # Styles: the model's display look — face mode, edges,
         # background. Scenes remember the style; the composer's live-look

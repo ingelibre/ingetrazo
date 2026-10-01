@@ -68,3 +68,53 @@ def test_a_scene_remembers_it():
     other = _cam()
     SavedView.from_dict(raw).apply(Scene(), other)
     assert other.two_point
+
+
+def test_the_three_projections_by_name():
+    """The View toolbar's quick buttons: parallel, perspective, two-point —
+    and two-point left on a parallel camera reads parallel."""
+    cam = _cam()
+    assert cam.projection_mode() == "perspective"
+    for mode in ("two_point", "parallel", "perspective", "two_point"):
+        cam.set_projection(mode)
+        assert cam.projection_mode() == mode
+    cam.perspective = False                     # a scene with two_point kept
+    assert cam.projection_mode() == "parallel"
+    cam.set_projection("nonsense")
+    assert cam.projection_mode() == "parallel"
+
+
+def test_the_quick_buttons_follow_the_camera(tmp_path, monkeypatch):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+    _app = QApplication.instance() or QApplication([])
+    path = tmp_path / "prefs.ini"
+    factory = lambda *a: QSettings(str(path), QSettings.IniFormat)  # noqa: E731
+    import PySide6.QtCore as qc
+    import views.main_window as mw
+    monkeypatch.setattr(qc, "QSettings", factory)
+    monkeypatch.setattr(mw, "QSettings", factory)
+    win = mw.MainWindow()
+    try:
+        acts = win._projection_actions
+        views_tb = win.toolbars["views"].actions()
+        assert all(a in views_tb for a in acts.values())
+        # the Camera menu holds the very same actions (one shortcut each)
+        cam_menu = next(m.menu() for m in win.menuBar().actions()
+                        if m.menu() and acts["two_point"] in m.menu().actions())
+        assert all(a in cam_menu.actions() for a in acts.values())
+        assert acts["perspective"].isChecked()
+        acts["two_point"].trigger()
+        assert win.viewport.camera.projection_mode() == "two_point"
+        assert acts["two_point"].isChecked()
+        win.viewport.toggle_projection()            # Shift+P
+        assert acts["parallel"].isChecked()
+        win.viewport.camera.perspective = True      # a scene restoring it
+        win.viewport._sync_projection()             # what the next frame does
+        assert acts["perspective"].isChecked()
+        assert sum(a.isChecked() for a in acts.values()) == 1
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

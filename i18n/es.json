@@ -2458,5 +2458,9 @@
  "Switch to X-ray, or back to the style you were in.": "Pasa a rayos X, o vuelve al estilo en que estabas.",
  "Back edges": "Aristas traseras",
  "Draw the edges hidden behind faces as dashed lines.": "Dibuja en discontinua las aristas que quedan detrás de las caras.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "La extensión de ejemplo Propiedades del polígono: área, centroide y momentos de segundo orden de una cara."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "La extensión de ejemplo Propiedades del polígono: área, centroide y momentos de segundo orden de una cara.",
+ "Parallel Projection": "Proyección paralela",
+ "No vanishing points: measured elevations, plans and isometrics.": "Sin puntos de fuga: alzados, plantas e isométricas a escala.",
+ "The view as the eye sees it.": "La vista como la ve el ojo.",
+ "Vertical lines stay vertical, the usual view for architectural presentations.": "Las verticales se mantienen verticales, la vista habitual de una presentación de arquitectura."
 }

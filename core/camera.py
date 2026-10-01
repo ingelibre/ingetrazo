@@ -317,6 +317,25 @@ class OrbitCamera:
         if self.two_point:
             self.perspective = True
 
+    #: The three projections the View toolbar's quick buttons offer.
+    PROJECTIONS = ("parallel", "perspective", "two_point")
+
+    def projection_mode(self) -> str:
+        """``"parallel"``, ``"perspective"`` or ``"two_point"`` — what the
+        camera is showing, as the quick buttons name it. ``two_point`` set
+        on a parallel camera is no two-point view, so it reads parallel."""
+        if not self.perspective:
+            return "parallel"
+        return "two_point" if self.two_point else "perspective"
+
+    def set_projection(self, mode: str) -> None:
+        """Put the camera in one of :attr:`PROJECTIONS` (an unknown name
+        is ignored). The pose — target, angles, distance — is untouched."""
+        if mode not in self.PROJECTIONS:
+            return
+        self.perspective = mode != "parallel"
+        self.two_point = mode == "two_point"
+
     # ---- Navigation presets ------------------------------------------------
     def fit_to(self, min_pt: QVector3D, max_pt: QVector3D, margin: float = 1.3) -> None:
         """Center the camera on the AABB and back up enough to frame it."""
