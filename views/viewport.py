@@ -1018,6 +1018,10 @@ class Viewport(QOpenGLWidget):
         # Hover highlight (Select tool). Not version-tracked — it changes with
         # the cursor, not with scene mutations — so it's uploaded per paint.
         self._hover_entity = None  # None | Edge | Face under the cursor
+        #: The placement a hovered face is reached THROUGH (a part inside a
+        #: component): its matrix puts the face's own coordinates in the
+        #: world. ``None`` for a loose face, which is already there.
+        self._hover_placement = None
         self._last_double = None   # (timestamp, pos) of the last double-click
         self._hover_faces_vao = None
         self._hover_faces_vbo = None
@@ -1888,7 +1892,8 @@ class Viewport(QOpenGLWidget):
                 # Offset, Follow Me...) wears the same dots as a selected
                 # one, so every tool points at a face the same way. An
                 # already selected face is skipped: it shows its dots.
-                hover_count = self._upload_hover_face(hovered)
+                hover_count = self._upload_hover_face(
+                    hovered, self._hover_placement)
                 if hover_count > 0:
                     front, back = self._selection_dot_colors(hovered)
                     self._set_color(*front, 1.0)
@@ -5513,15 +5518,27 @@ class Viewport(QOpenGLWidget):
                 self._gl.glDrawArrays(GL_TRIANGLES, 0, len(a))
             self._program.setUniformValue(self._loc_use_tex, 1)
 
-    def _upload_hover_face(self, face: Face) -> int:
-        """Triangulate ``face`` into the hover-faces VBO. Returns vertex count."""
+    @staticmethod
+    def _hover_face_data(face: Face, placement=None) -> array:
+        """The hover marking's triangles, in WORLD coordinates.
+
+        A face inside a component is stored in its part's OWN coordinates;
+        ``placement`` (from :meth:`pick_face_placement`) carries the matrix
+        that puts it where it is drawn. Without it the marking sat at the
+        part's unplaced, assembled position: metres away from a component
+        that had been placed and exploded."""
+        m = getattr(placement, "xform", None)
         data = array("f")
-        for t0, t1, t2 in face.triangulate():
-            data.extend([
-                t0.x(), t0.y(), t0.z(),
-                t1.x(), t1.y(), t1.z(),
-                t2.x(), t2.y(), t2.z(),
-            ])
+        for tri in face.triangulate():
+            if m is not None:
+                tri = [m.map(p) for p in tri]
+            for p in tri:
+                data.extend([p.x(), p.y(), p.z()])
+        return data
+
+    def _upload_hover_face(self, face: Face, placement=None) -> int:
+        """Triangulate ``face`` into the hover-faces VBO. Returns vertex count."""
+        data = self._hover_face_data(face, placement)
         self._hover_faces_vbo.bind()
         if data:
             raw = data.tobytes()
@@ -5849,12 +5866,16 @@ class Viewport(QOpenGLWidget):
         self._hover_edges_vbo.release()
         return len(data) // 3
 
-    def set_hover(self, entity) -> None:
+    def set_hover(self, entity, placement=None) -> None:
         """Set the entity (edge/face) highlighted under the cursor and repaint
-        if it changed. ``None`` clears the highlight."""
-        if entity is self._hover_entity:
+        if it changed. ``None`` clears the highlight. ``placement`` is the
+        component placement a face inside a component was picked through
+        (see :meth:`pick_face_placement`): it is what puts the marking on the
+        part."""
+        if entity is self._hover_entity and placement is self._hover_placement:
             return
         self._hover_entity = entity
+        self._hover_placement = placement
         self.update()
 
     def flash_status(self, text: str, msec: int = 2500) -> None:
