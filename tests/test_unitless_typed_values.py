@@ -99,6 +99,8 @@ def test_the_unitless_reading_ends_with_the_entry(bound):
 
 
 def test_which_tools_take_a_number_that_is_not_a_length():
+    from tools.arc import (ArcTool, CenterArcTool, PieTool,
+                           ThreePointArcTool)
     from tools.circle import CircleTool, PolygonTool
     from tools.move import MoveTool
     from tools.protractor import ProtractorTool
@@ -112,6 +114,13 @@ def test_which_tools_take_a_number_that_is_not_a_length():
         assert t.value_is_unitless()                 # sides, before the centre
         t.start_point = QVector3D(0, 0, 0)
         assert not t.value_is_unitless()             # the radius after it
+    for cls in (ThreePointArcTool, CenterArcTool, PieTool):
+        assert cls().value_is_unitless()             # segments, then a sweep
+    a = ArcTool()
+    assert a.value_is_unitless()                     # the segment count first
+    a.start_point = QVector3D(0, 0, 0)
+    a.end_point = QVector3D(2, 0, 0)
+    assert not a.value_is_unitless()                 # the bulge is a length
     assert not MoveTool().value_is_unitless()        # a distance
 
 

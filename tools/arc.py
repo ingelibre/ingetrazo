@@ -8,7 +8,9 @@ The classic 2-point arc:
 3. move to bulge the arc out from the chord, click to commit.
 
 The arc is committed as a polyline of short edges (it auto-faces if it closes a
-region with existing geometry). The bulge can be typed in the VCB.
+region with existing geometry). The bulge can be typed in the VCB — and the
+segment count BEFORE the first click, as the Circle's side count ("24s", which
+after a draw rebuilds that arc); every arc variant takes the count that way.
 
 Rounding a corner (Rafael's review of 2026-09-10, C2): a
 start point ON an edge makes the preview an arc **tangent to that edge**
@@ -151,6 +153,15 @@ class ArcTool(AxisMagnet, PlaneLock, Tool):
     #: Distance corner→tangent points of the last fillet (shared by every
     #: arc tool instance): a double-click near another corner repeats it.
     last_fillet_d: float | None = None
+
+    def vcb_caption(self) -> str:
+        """'Segments' before the start point, then 'Bulge' — and 'Radius'
+        while a corner fillet is armed, the number a drafter means there
+        (@pacaeiro, issue #43). Returns the English source label; the
+        status bar translates it."""
+        if self.start_point is None:
+            return "Segments"
+        return "Radius" if self._fillet is not None else "Bulge"
 
     def magnet_on(self) -> bool:
         # The chord end is a direction from the start; the bulge is not
@@ -574,9 +585,15 @@ class ArcTool(AxisMagnet, PlaneLock, Tool):
         return (length / 2.0) * math.tan(angle / 2.0)
 
     def on_value(self, viewport, value) -> bool:
-        if self.end_point is None or self.hover_point is None:
-            return False
         if isinstance(value, tuple):
+            return False
+        if self.start_point is None:
+            # Nothing drawn yet, so the number cannot be a bulge: it is the
+            # segment COUNT — the very "Ns" the arc already takes right after
+            # a draw. The resolution is set before the arc exists too, as the
+            # Circle's side count is; before, a typed number did nothing here.
+            return self.on_segments_value(viewport, int(round(value)))
+        if self.end_point is None or self.hover_point is None:
             return False
         if self._fillet is not None:
             # Both tangencies fixed — the corner is being rounded — so the
@@ -591,6 +608,11 @@ class ArcTool(AxisMagnet, PlaneLock, Tool):
         if len(pts) >= 2:
             self._commit(viewport, pts)
         return True
+
+    def value_is_unitless(self) -> bool:
+        """Before the start point the typed number is a segment COUNT, no
+        unit (#176); the bulge typed later is a length in the document's."""
+        return self.start_point is None
 
     def _fillet_with_radius(self, viewport, radius: float) -> bool:
         """Redraw the armed fillet with ``radius``: the tangent points move
@@ -831,6 +853,14 @@ class ThreePointArcTool(AxisMagnet, PlaneLock, Tool):
     name = "3-Point Arc"
     shortcut = "J"
     description = "Draw an arc that passes through three points."
+    vcb_label = "Segments"
+    #: Polyline segments of the next arc; the usual "Ns" in the VCB.
+    segments: int = _SEGMENTS
+
+    def vcb_caption(self) -> str:
+        """The segment count is the only thing typed here, so the caption
+        never changes (the English source label; the bar translates it)."""
+        return "Segments"
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None
@@ -867,6 +897,27 @@ class ThreePointArcTool(AxisMagnet, PlaneLock, Tool):
         self.hover_point = ctx.world
         ctx.viewport.update()
 
+    def on_value(self, viewport, value) -> bool:
+        """A typed number is the segment count ("Ns") — the only measurement
+        the tool has; the three points are always clicked."""
+        if isinstance(value, tuple):
+            return False
+        return self.on_segments_value(viewport, int(round(value)))
+
+    def on_segments_value(self, viewport, n: int) -> bool:
+        """The usual "Ns": how finely the arc's polyline is sampled."""
+        n = int(n)
+        if n < 2:
+            return False
+        self.segments = n
+        viewport.flash_status(tr("{n} segments", n=n))
+        viewport.update()
+        return True
+
+    def value_is_unitless(self) -> bool:
+        """A segment count has no unit, and nothing else is typed here."""
+        return True
+
     def on_cancel(self, viewport) -> None:
         self._reset()
         viewport.update()
@@ -902,7 +953,7 @@ class ThreePointArcTool(AxisMagnet, PlaneLock, Tool):
         s2, m2, e2 = (0.0, 0.0), to2(self.mid_point), to2(end)
         if math.hypot(*e2) < 1e-9 or math.hypot(*m2) < 1e-9:
             return []
-        pts2 = _arc_3pts_2d(s2, m2, e2, _SEGMENTS)
+        pts2 = _arc_3pts_2d(s2, m2, e2, self.segments)
         return [self.start_point + u * x + v * y for x, y in pts2]
 
     def _commit(self, viewport, pts: list[QVector3D]) -> None:
@@ -939,6 +990,10 @@ class CenterArcTool(AxisMagnet, PlaneLock, Tool):
     vcb_label = "Angle"
 
     _PITCH_DEG = 15.0
+    #: Polyline segments over a WHOLE circle — 24 at the usual 15° pitch, the
+    #: same lattice as the 24-side circle; the VCB "Ns" changes it, and a
+    #: partial sweep is sampled pro rata.
+    segments: int = int(360.0 / _PITCH_DEG)
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None   # the centre
@@ -978,7 +1033,13 @@ class CenterArcTool(AxisMagnet, PlaneLock, Tool):
         ctx.viewport.update()
 
     def on_value(self, viewport, value) -> bool:
-        if self.arm_point is None or isinstance(value, tuple):
+        if isinstance(value, tuple):
+            return False
+        if self.start_point is None:
+            # Nothing drawn yet, so the number cannot be an angle: it is the
+            # segment COUNT — the usual "Ns", as on the Circle's side count.
+            return self.on_segments_value(viewport, int(round(value)))
+        if self.arm_point is None:
             return False
         sign = -1.0
         if self.hover_point is not None:
@@ -987,6 +1048,22 @@ class CenterArcTool(AxisMagnet, PlaneLock, Tool):
         pts = self._points(sign * abs(value))
         if len(pts) >= 2:
             self._commit(viewport, pts)
+        return True
+
+    def on_segments_value(self, viewport, n: int) -> bool:
+        """The usual "Ns": how finely the arc's polyline is sampled."""
+        n = int(n)
+        if n < 2:
+            return False
+        self.segments = n
+        viewport.flash_status(tr("{n} segments", n=n))
+        viewport.update()
+        return True
+
+    def value_is_unitless(self) -> bool:
+        """A segment count and a sweep angle are not lengths, so the
+        document's unit must not scale them («45» was 0.045° in a
+        millimetre model, #176)."""
         return True
 
     def on_cancel(self, viewport) -> None:
@@ -1017,6 +1094,8 @@ class CenterArcTool(AxisMagnet, PlaneLock, Tool):
         return (f"{self._sweep_to(self.hover_point):+.1f}°", self.hover_point)
 
     def vcb_caption(self) -> str:
+        if self.start_point is None:
+            return "Segments"
         return "Angle" if self.arm_point is not None else "Radius"
 
     # ---- Internals ----------------------------------------------------------
@@ -1057,7 +1136,7 @@ class CenterArcTool(AxisMagnet, PlaneLock, Tool):
         if r < 1e-6:
             return []
         a0 = math.atan2(QVector3D.dotProduct(a, v), QVector3D.dotProduct(a, u))
-        steps = max(1, round(abs(sweep_deg) / self._PITCH_DEG))
+        steps = max(1, round(abs(sweep_deg) / 360.0 * self.segments))
         out = []
         for k in range(steps + 1):
             t = a0 + math.radians(sweep_deg) * k / steps

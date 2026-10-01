@@ -10,7 +10,7 @@ from PySide6.QtGui import QVector3D
 
 from core.history import History
 from core.scene import Scene
-from tools.arc import ArcTool, ThreePointArcTool
+from tools.arc import ArcTool, CenterArcTool, PieTool, ThreePointArcTool
 from tools.base import ToolContext
 from tools.circle import CircleTool, PolygonTool
 from tools.rotated_rectangle import RotatedRectangleTool
@@ -210,6 +210,74 @@ def test_typed_number_before_centre_sets_sides():
     tool.on_hover(_ctx(vp, V(2, 0, 0)))
     tool.on_click(_ctx(vp, V(2, 0, 0)))
     assert len(scene.mesh.faces[0].vertices) == 8   # octagon
+
+
+# ---- Segment count typed BEFORE the first click (#43) -------------------------
+
+def test_typed_number_before_the_start_sets_arc_segments():
+    """The Circle's «type the sides first», for the arc: with nothing drawn
+    the number cannot be a bulge, so it is the segment COUNT — and the arc
+    drawn right after honours it."""
+    scene = Scene()
+    vp = _VP(scene)
+    tool = ArcTool()
+    assert tool.vcb_caption() == "Segments"
+    assert tool.value_is_unitless() is True      # a count, no unit (#176)
+    assert tool.on_value(vp, 24.0) is True
+    assert tool.segments == 24
+    tool.on_click(_ctx(vp, V(0, 0, 0)))
+    tool.on_click(_ctx(vp, V(4, 0, 0)))
+    tool.on_hover(_ctx(vp, V(2, 1, 0)))
+    tool.on_click(_ctx(vp, V(2, 1, 0)))
+    assert len(scene.mesh.edges) == 24
+
+
+def test_the_arc_caption_asks_for_the_bulge_once_started():
+    tool = ArcTool()
+    tool.start_point = V(0, 0, 0)
+    tool.end_point = V(4, 0, 0)
+    tool.work_plane = None
+    assert tool.vcb_caption() == "Bulge"
+    assert tool.value_is_unitless() is False     # the bulge is a length
+
+
+def test_typed_number_sets_the_three_point_arc_segments():
+    scene = Scene()
+    vp = _VP(scene)
+    tool = ThreePointArcTool()
+    assert tool.vcb_caption() == "Segments"
+    assert tool.value_is_unitless() is True      # the count is the only value
+    assert tool.on_value(vp, 8.0) is True
+    assert tool.segments == 8
+    tool.on_click(_ctx(vp, V(0, 0, 0)))
+    tool.on_click(_ctx(vp, V(2, 2, 0)))
+    assert len(tool._points(V(4, 0, 0))) == 9    # 8 segments + 1 sample
+
+
+def test_the_center_arc_takes_the_segment_count_before_the_centre():
+    vp = _VP(Scene())
+    tool = CenterArcTool()
+    assert tool.vcb_caption() == "Segments"
+    assert tool.value_is_unitless() is True      # count and angle: no unit (#176)
+    assert tool.on_value(vp, 12.0) is True       # the count, before any click
+    assert tool.segments == 12
+    tool.start_point = V(0, 0, 0)
+    tool.arm_point = V(2, 0, 0)
+    assert tool.vcb_caption() == "Angle"
+    assert len(tool._points(90.0)) == 4          # 12/4 = 3 steps → 4 samples
+
+
+def test_a_pie_takes_the_segment_count_before_the_centre():
+    scene = Scene()
+    vp = _VP(scene)
+    tool = PieTool()
+    assert tool.on_value(vp, 6.0) is True        # the count, before the centre
+    assert tool.segments == 6
+    tool.on_click(_ctx(vp, V(0, 0, 0)))          # centre
+    tool.on_click(_ctx(vp, V(2, 0, 0)))          # start of the wedge
+    assert tool.vcb_caption() == "Angle"         # a sweep now, not a count
+    assert tool.on_value(vp, 180.0) is True
+    assert len(scene.mesh.faces) == 1            # the slice closes
 
 
 def test_drawn_circle_outline_is_visible():
