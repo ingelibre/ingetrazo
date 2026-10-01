@@ -10273,16 +10273,28 @@ class Viewport(QOpenGLWidget):
                 return None
         la = inv.map(pseudo.a) if inv is not None else pseudo.a
         lb = inv.map(pseudo.b) if inv is not None else pseudo.b
-        key = (id(mesh), self.scene.version)
-        table = getattr(self, "_group_edge_table", None)
-        if table is None or table[0] != key:
+        # The mesh's own registry: two O(1) vertex lookups (tolerant, the
+        # weld grid) and the edge between them by incidence. This used to
+        # build a dict of EVERY edge of the group, keyed by rounded
+        # positions, cached for one group at a time — so a cursor crossing
+        # from one group to the next rebuilt it on nearly every move:
+        # 9 ms of a 14 ms hover on pileta-fuente (2 500 edges per group).
+        va, vb = mesh.vertex_at(la), mesh.vertex_at(lb)
+        edge = mesh.find_edge(va, vb) if va is not None and vb is not None \
+            else None
+        if edge is None:
+            # The registry missed (a position past the weld tolerance):
+            # the rounded-position table, one per mesh, built once.
+            tables = getattr(self, "_group_edge_tables", None)
+            if tables is None or tables[0] != self.scene.version:
+                tables = self._group_edge_tables = (self.scene.version, {})
             def k(p):
                 return (round(p.x(), 4), round(p.y(), 4), round(p.z(), 4))
-            table = (key, {frozenset((k(e.a), k(e.b))): e for e in mesh.edges})
-            self._group_edge_table = table
-        def k(p):
-            return (round(p.x(), 4), round(p.y(), 4), round(p.z(), 4))
-        edge = table[1].get(frozenset((k(la), k(lb))))
+            table = tables[1].get(id(mesh))
+            if table is None:
+                table = tables[1][id(mesh)] = {
+                    frozenset((k(e.a), k(e.b))): e for e in mesh.edges}
+            edge = table.get(frozenset((k(la), k(lb))))
         if edge is None or getattr(edge, "curve", None) is None:
             return None
         found = self._center_of_edge(edge, mesh)
