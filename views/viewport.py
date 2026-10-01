@@ -42,9 +42,6 @@ import os
 import inspect
 import re
 import time as _time_mod
-import PySide6.QtWidgets as QtWidgets
-from PySide6.QtCore import Qt, QObject, QEvent
-from PySide6.QtGui import QMouseEvent, QCursor
 from array import array
 from pathlib import Path
 from typing import Optional
@@ -64,46 +61,6 @@ _NO_INSTANCING = os.environ.get("INGETRAZO_NO_INSTANCING", "") == "1"
 _NO_BACK_TINT = os.environ.get("INGETRAZO_NO_BACK_TINT", "") == "1"
 _perf_file = None
 
-class DynamicOrbitPanFilter(QObject):
-    """
-    Event filter to dynamically switch between Orbit and Pan navigation modes
-    when the Shift key is pressed or released while holding the middle mouse button.
-    """
-    def eventFilter(self, obj, event):
-        # Detect key press or key release events
-        if event.type() in (QEvent.KeyPress, QEvent.KeyRelease):
-            if event.key() == Qt.Key_Shift:
-                app = QtWidgets.QApplication.instance()
-                
-                # Check if the middle mouse button is currently held down
-                if app.mouseButtons() & Qt.MiddleButton:
-                    
-                    # Determine the new modifier status for Shift
-                    new_mods = event.modifiers()
-                    if event.type() == QEvent.KeyPress:
-                        new_mods |= Qt.ShiftModifier
-                    else:
-                        new_mods &= ~Qt.ShiftModifier
-                    
-                    pos = obj.mapFromGlobal(QCursor.pos())
-                    
-                    # 1. Simulate middle mouse button release
-                    release_event = QMouseEvent(
-                        QEvent.MouseButtonRelease, pos, Qt.MiddleButton, 
-                        app.mouseButtons() & ~Qt.MiddleButton, event.modifiers()
-                    )
-                    app.postEvent(obj, release_event)
-                    
-                    # 2. Simulate middle mouse button press again with the new Shift status
-                    press_event = QMouseEvent(
-                        QEvent.MouseButtonPress, pos, Qt.MiddleButton, 
-                        app.mouseButtons(), new_mods
-                    )
-                    app.postEvent(obj, press_event)
-                    
-                    return True # Consume the keyboard event to prevent double processing
-                    
-        return super().eventFilter(obj, event)
 
 def _plog(tag: str, ms: float, extra: str = "", floor: float = 50.0) -> None:
     """Frame telemetry (P0). Lines carry the writer's pid and honour
@@ -1170,9 +1127,6 @@ class Viewport(QOpenGLWidget):
         self._photo_count = 0
         self._photo_textures = []
         self._photo_ranges = []
-        # Install Dynamic Orbit/Pan navigation as a native viewport feature
-        self._nav_filter = DynamicOrbitPanFilter(self)
-        self.installEventFilter(self._nav_filter)
 
     # ---- GL lifecycle -------------------------------------------------------
     def initializeGL(self) -> None:
@@ -2701,7 +2655,6 @@ class Viewport(QOpenGLWidget):
         the LOCAL base chunk, three VAOs wiring them to the shared
         per-instance matrix buffer (divisor 1), built once per proto rev —
         and per container paint (issue #47)."""
-        self._program.bind()
         cache = getattr(self, "_proto_draw", None)
         if cache is None:
             cache = self._proto_draw = {}
