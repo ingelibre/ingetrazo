@@ -2458,5 +2458,8 @@
  "Switch to X-ray, or back to the style you were in.": "切换到X光，或回到之前的样式。",
  "Back edges": "背面边线",
  "Draw the edges hidden behind faces as dashed lines.": "以虚线绘制被面遮挡的边线。",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "示例扩展“多边形属性”：面的面积、形心和二阶矩。"
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "示例扩展“多边形属性”：面的面积、形心和二阶矩。",
+ "Click the start point — on an edge, a tangent arc. Type the segments first.": "点击起点；在边上则绘制相切圆弧。可先输入段数。",
+ "Click the start point. Type the segments first.": "点击起点。可先输入段数。",
+ "Click the centre. Type the segments first.": "点击中心。可先输入段数。"
 }

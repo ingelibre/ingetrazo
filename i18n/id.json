@@ -2255,5 +2255,8 @@
  "Switch to X-ray, or back to the style you were in.": "Beralih ke Sinar-X, atau kembali ke gaya sebelumnya.",
  "Back edges": "Tepi belakang",
  "Draw the edges hidden behind faces as dashed lines.": "Gambar tepi yang tersembunyi di balik muka sebagai garis putus-putus.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "Ekstensi contoh Properti poligon: luas, titik berat, dan momen orde kedua dari sebuah muka."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "Ekstensi contoh Properti poligon: luas, titik berat, dan momen orde kedua dari sebuah muka.",
+ "Click the start point — on an edge, a tangent arc. Type the segments first.": "Klik titik awal — pada tepi, busur tangen. Ketik jumlah segmen terlebih dahulu.",
+ "Click the start point. Type the segments first.": "Klik titik awal. Ketik jumlah segmen terlebih dahulu.",
+ "Click the centre. Type the segments first.": "Klik pusat. Ketik jumlah segmen terlebih dahulu."
 }

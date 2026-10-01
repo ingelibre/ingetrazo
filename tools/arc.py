@@ -46,6 +46,29 @@ COLOR_FILLET = (0.85, 0.30, 0.80)
 _Seg = namedtuple("_Seg", "a b")
 
 
+class SegmentCount:
+    """The segment count of the next arc, set BEFORE drawing it — the way
+    the circle takes its sides: before the first click the VCB reads
+    «Segments» and a plain number is the count; «Ns» sets it at any
+    moment. The count stays with the tool for every arc after it."""
+
+    #: Fewest spans an arc can be drawn with.
+    MIN_SEGMENTS = 2
+
+    def value_is_unitless(self) -> bool:
+        """Before the first click the typed number is a COUNT, not a length."""
+        return self.start_point is None
+
+    def _set_segments(self, viewport, n) -> bool:
+        n = int(round(n))
+        if n < self.MIN_SEGMENTS:
+            return False
+        self.segments = n
+        viewport.flash_status(tr("{n} segments", n=n))
+        viewport.update()
+        return True
+
+
 def _circumcenter2(a, b, c):
     ax, ay = a
     bx, by = b
@@ -130,7 +153,7 @@ def commit_arc(viewport, pts: list[QVector3D], close_to=None, trim=None):
     return cmd
 
 
-class ArcTool(AxisMagnet, PlaneLock, Tool):
+class ArcTool(SegmentCount, AxisMagnet, PlaneLock, Tool):
     name = "Arc"
     shortcut = "A"
     description = "Draw an arc from its two ends, then pull out its bulge."
@@ -573,10 +596,15 @@ class ArcTool(AxisMagnet, PlaneLock, Tool):
             return None                        # doubling back: no arc
         return (length / 2.0) * math.tan(angle / 2.0)
 
+    def vcb_caption(self) -> str:
+        return "Bulge" if self.start_point is not None else "Segments"
+
     def on_value(self, viewport, value) -> bool:
-        if self.end_point is None or self.hover_point is None:
-            return False
         if isinstance(value, tuple):
+            return False
+        if self.start_point is None:
+            return self._set_segments(viewport, value)
+        if self.end_point is None or self.hover_point is None:
             return False
         if self._fillet is not None:
             # Both tangencies fixed — the corner is being rounded — so the
@@ -676,10 +704,8 @@ class ArcTool(AxisMagnet, PlaneLock, Tool):
     def on_segments_value(self, viewport, n: int) -> bool:
         """The usual "Ns": the segment count of the arc — the one being
         drawn, or the one just drawn, which is rebuilt in place."""
-        n = int(n)
-        if n < 2:
+        if not self._set_segments(viewport, n):
             return False
-        self.segments = n
         cmd, params = self._last_cmd, self._last_params
         stack = getattr(getattr(viewport, "history", None), "undo_stack", None)
         if cmd is not None and params is not None and stack and stack[-1] is cmd:
@@ -692,7 +718,6 @@ class ArcTool(AxisMagnet, PlaneLock, Tool):
             self._last_cmd = commit_arc(viewport, points, trim=trim)
             self._last_params = params
             viewport.update()
-        viewport.flash_status(tr("{n} segments", n=n))
         return True
 
     def on_cancel(self, viewport) -> None:
@@ -822,7 +847,7 @@ class ArcTool(AxisMagnet, PlaneLock, Tool):
         self.wireframe_color = None
 
 
-class ThreePointArcTool(AxisMagnet, PlaneLock, Tool):
+class ThreePointArcTool(SegmentCount, AxisMagnet, PlaneLock, Tool):
     """3-point arc: the arc passes through all three clicked points.
 
     Click start, click a second point the arc runs through, then move and click
@@ -831,6 +856,11 @@ class ThreePointArcTool(AxisMagnet, PlaneLock, Tool):
     name = "3-Point Arc"
     shortcut = "J"
     description = "Draw an arc that passes through three points."
+    vcb_label = "Segments"
+
+    #: Polyline segments of the next arc: a number typed before the first
+    #: click, or «Ns» at any moment.
+    segments: int = _SEGMENTS
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None
@@ -867,6 +897,14 @@ class ThreePointArcTool(AxisMagnet, PlaneLock, Tool):
         self.hover_point = ctx.world
         ctx.viewport.update()
 
+    def on_value(self, viewport, value) -> bool:
+        if isinstance(value, tuple) or self.start_point is not None:
+            return False
+        return self._set_segments(viewport, value)
+
+    def on_segments_value(self, viewport, n: int) -> bool:
+        return self._set_segments(viewport, n)
+
     def on_cancel(self, viewport) -> None:
         self._reset()
         viewport.update()
@@ -902,7 +940,7 @@ class ThreePointArcTool(AxisMagnet, PlaneLock, Tool):
         s2, m2, e2 = (0.0, 0.0), to2(self.mid_point), to2(end)
         if math.hypot(*e2) < 1e-9 or math.hypot(*m2) < 1e-9:
             return []
-        pts2 = _arc_3pts_2d(s2, m2, e2, _SEGMENTS)
+        pts2 = _arc_3pts_2d(s2, m2, e2, self.segments)
         return [self.start_point + u * x + v * y for x, y in pts2]
 
     def _commit(self, viewport, pts: list[QVector3D]) -> None:
@@ -922,11 +960,13 @@ class ThreePointArcTool(AxisMagnet, PlaneLock, Tool):
         self.clear_plane_lock()
 
 
-class CenterArcTool(AxisMagnet, PlaneLock, Tool):
+class CenterArcTool(SegmentCount, AxisMagnet, PlaneLock, Tool):
     """Compass arc (the classic protractor 'Arc'): centre → start point (the
     radius and 0° arm) → sweep angle. The polyline samples at the same 15°
     pitch as the 24-side circle, so a centre arc drawn concentric with a
-    circle lands on the exact same lattice and welds cleanly."""
+    circle lands on the exact same lattice and welds cleanly — unless a
+    segment count was typed (before the centre, or «Ns»): then the arc has
+    exactly that many, whatever its sweep."""
 
     name = "Center Arc"
     #: Shift+O, not O: by convention plain O is Orbit and the centre arc has no
@@ -939,6 +979,9 @@ class CenterArcTool(AxisMagnet, PlaneLock, Tool):
     vcb_label = "Angle"
 
     _PITCH_DEG = 15.0
+
+    #: Polyline segments of the next arc; ``None`` samples at the 15° pitch.
+    segments: int | None = None
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None   # the centre
@@ -978,7 +1021,11 @@ class CenterArcTool(AxisMagnet, PlaneLock, Tool):
         ctx.viewport.update()
 
     def on_value(self, viewport, value) -> bool:
-        if self.arm_point is None or isinstance(value, tuple):
+        if isinstance(value, tuple):
+            return False
+        if self.start_point is None:
+            return self._set_segments(viewport, value)
+        if self.arm_point is None:
             return False
         sign = -1.0
         if self.hover_point is not None:
@@ -1016,7 +1063,12 @@ class CenterArcTool(AxisMagnet, PlaneLock, Tool):
             return ("R " + fmt_len(r), self.hover_point)
         return (f"{self._sweep_to(self.hover_point):+.1f}°", self.hover_point)
 
+    def on_segments_value(self, viewport, n: int) -> bool:
+        return self._set_segments(viewport, n)
+
     def vcb_caption(self) -> str:
+        if self.start_point is None:
+            return "Segments"
         return "Angle" if self.arm_point is not None else "Radius"
 
     # ---- Internals ----------------------------------------------------------
@@ -1057,7 +1109,10 @@ class CenterArcTool(AxisMagnet, PlaneLock, Tool):
         if r < 1e-6:
             return []
         a0 = math.atan2(QVector3D.dotProduct(a, v), QVector3D.dotProduct(a, u))
-        steps = max(1, round(abs(sweep_deg) / self._PITCH_DEG))
+        if self.segments:
+            steps = self.segments
+        else:
+            steps = max(1, round(abs(sweep_deg) / self._PITCH_DEG))
         out = []
         for k in range(steps + 1):
             t = a0 + math.radians(sweep_deg) * k / steps

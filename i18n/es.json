@@ -2458,5 +2458,8 @@
  "Switch to X-ray, or back to the style you were in.": "Pasa a rayos X, o vuelve al estilo en que estabas.",
  "Back edges": "Aristas traseras",
  "Draw the edges hidden behind faces as dashed lines.": "Dibuja en discontinua las aristas que quedan detrás de las caras.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "La extensión de ejemplo Propiedades del polígono: área, centroide y momentos de segundo orden de una cara."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "La extensión de ejemplo Propiedades del polígono: área, centroide y momentos de segundo orden de una cara.",
+ "Click the start point — on an edge, a tangent arc. Type the segments first.": "Clic en el punto inicial; sobre una arista, arco tangente. Antes puedes teclear los segmentos.",
+ "Click the start point. Type the segments first.": "Clic en el punto inicial. Antes puedes teclear los segmentos.",
+ "Click the centre. Type the segments first.": "Clic en el centro. Antes puedes teclear los segmentos."
 }
