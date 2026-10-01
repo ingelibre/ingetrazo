@@ -46,6 +46,7 @@ class FlipTool(Tool):
         self._hover_axis: str | None = None
         self._lock_axis: str | None = None      # arrow-key pick
         self._copy = False
+        self._ctrl_toggled = False              # …by the Ctrl still held down
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -66,16 +67,34 @@ class FlipTool(Tool):
         easy to miss."""
         return self._copy
 
+    def _toggle_copy(self, viewport, say: bool = True) -> None:
+        self._copy = not self._copy
+        if say:
+            viewport.flash_status(tr("Flip a copy: on") if self._copy
+                                  else tr("Flip a copy: off"))
+        apply = getattr(viewport, "_apply_tool_cursor", None)
+        if apply is not None:
+            apply()                      # the + appears or disappears now
+        viewport.update()
+
+    def on_key_release(self, viewport, key: int) -> bool:
+        # The copy toggle happens on the Ctrl PRESS, so the + shows at
+        # once; a Ctrl that turns out to be part of a shortcut (Ctrl+Z,
+        # Ctrl+C…) takes it back on the release, silently — the Tape's
+        # #183, where Ctrl+Z switched its mode without a word.
+        if key != Qt.Key_Control or not self._ctrl_toggled:
+            return False
+        self._ctrl_toggled = False
+        tapped = getattr(viewport, "ctrl_tapped", None)
+        if callable(tapped) and not tapped():
+            self._toggle_copy(viewport, say=False)
+        return True
+
     # ---- Input --------------------------------------------------------------
     def on_key(self, viewport, key: int, modifiers) -> bool:
         if key == Qt.Key_Control:
-            self._copy = not self._copy
-            viewport.flash_status(tr("Flip a copy: on") if self._copy
-                                  else tr("Flip a copy: off"))
-            apply = getattr(viewport, "_apply_tool_cursor", None)
-            if apply is not None:
-                apply()                  # the + appears or disappears now
-            viewport.update()
+            self._toggle_copy(viewport)
+            self._ctrl_toggled = True
             return True
         picks = {Qt.Key_Right: "x", Qt.Key_Left: "y", Qt.Key_Up: "z"}
         axis = picks.get(key)
@@ -97,6 +116,9 @@ class FlipTool(Tool):
             return
         self.flip(ctx.viewport, axis, copy=self._copy)
         self._copy = False           # the modifier arms ONE flip
+        apply = getattr(ctx.viewport, "_apply_tool_cursor", None)
+        if apply is not None:
+            apply()                  # …and the + goes with it
 
     def flip(self, viewport, axis: str, copy: bool = False) -> bool:
         """Mirror the selection across its own centre, along the world

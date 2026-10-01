@@ -73,6 +73,7 @@ class RotateTool(ProtractorBase):
         self._preview_deg = 0.0
         self._orig = None                   # the preview's snapshot
         self._copy = False                  # Ctrl: rotate a COPY
+        self._ctrl_toggled = False          # …by the Ctrl still held down
         self._last: dict | None = None      # hot retype of the last rotation
 
     # ---- Lifecycle ----------------------------------------------------------
@@ -101,18 +102,36 @@ class RotateTool(ProtractorBase):
     def on_key(self, viewport, key: int, modifiers) -> bool:
         # Ctrl toggles copy mode (rotate a copy, original stays).
         if key == Qt.Key_Control:
-            self._copy = not self._copy
-            if self._copy:
-                self._revert_preview(viewport)  # the original stops swinging
-                viewport.flash_status(tr("Rotate a copy: on"))
-            else:
-                viewport.flash_status(tr("Rotate a copy: off"))
-            apply = getattr(viewport, "_apply_tool_cursor", None)
-            if apply is not None:
-                apply()                  # the + appears or disappears now
-            viewport.update()
+            self._toggle_copy(viewport)
+            self._ctrl_toggled = True
             return True
         return super().on_key(viewport, key, modifiers)
+
+    def _toggle_copy(self, viewport, say: bool = True) -> None:
+        self._copy = not self._copy
+        if self._copy:
+            self._revert_preview(viewport)      # the original stops swinging
+            if say:
+                viewport.flash_status(tr("Rotate a copy: on"))
+        elif say:
+            viewport.flash_status(tr("Rotate a copy: off"))
+        apply = getattr(viewport, "_apply_tool_cursor", None)
+        if apply is not None:
+            apply()                      # the + appears or disappears now
+        viewport.update()
+
+    def on_key_release(self, viewport, key: int) -> bool:
+        # The copy toggle happens on the Ctrl PRESS, so the + shows at
+        # once; a Ctrl that turns out to be part of a shortcut (Ctrl+Z,
+        # Ctrl+C…) takes it back on the release, silently — the Tape's
+        # #183, where Ctrl+Z switched its mode without a word.
+        if key != Qt.Key_Control or not self._ctrl_toggled:
+            return False
+        self._ctrl_toggled = False
+        tapped = getattr(viewport, "ctrl_tapped", None)
+        if callable(tapped) and not tapped():
+            self._toggle_copy(viewport, say=False)
+        return True
 
     # ---- Spatial input ------------------------------------------------------
     def on_click(self, ctx: ToolContext) -> None:
@@ -259,6 +278,9 @@ class RotateTool(ProtractorBase):
         self._end_vp_preview(viewport)
         self._reset()
         self._last = None
+        apply = getattr(viewport, "_apply_tool_cursor", None)
+        if apply is not None:
+            apply()                      # one operation done: the + goes
         viewport.update()
 
     # ---- Snap exclusion -----------------------------------------------------
@@ -525,6 +547,9 @@ class RotateTool(ProtractorBase):
                               "copy": copy,
                               "sign": -1.0 if deg < 0 else 1.0}
         self._reset()
+        apply = getattr(viewport, "_apply_tool_cursor", None)
+        if apply is not None:
+            apply()                      # one operation done: the + goes
         viewport.update()
 
     def _reset(self) -> None:

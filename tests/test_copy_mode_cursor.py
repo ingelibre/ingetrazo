@@ -68,3 +68,48 @@ def test_picking_the_tool_up_again_starts_without_the_plus(win, key):
     win._activate_tool(key)
     assert vp.active_tool.cursor_plus is False
     assert _shows(vp, key, plus=False)
+
+
+def _ctrl_shortcut(vp, key, text):
+    """Ctrl held for a shortcut: the letter reaches the viewport as a
+    ShortcutOverride when a menu action owns it (Ctrl+Z), never alone."""
+    from PySide6.QtCore import QEvent
+    vp.keyPressEvent(QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Control,
+                               Qt.ControlModifier))
+    vp.event(QKeyEvent(QEvent.ShortcutOverride, key, Qt.ControlModifier, text))
+    vp.keyReleaseEvent(QKeyEvent(QKeyEvent.KeyRelease, Qt.Key_Control,
+                                 Qt.NoModifier))
+
+
+@pytest.mark.parametrize("key", ["move", "rotate", "flip"])
+def test_ctrl_z_leaves_the_copy_mode_alone(win, key):
+    """The Tape's #183, on the copy tools: Ctrl+Z (or Ctrl+C…) used to
+    switch copy mode on the way, without a word."""
+    vp = win.viewport
+    win._activate_tool(key)
+    _ctrl_shortcut(vp, Qt.Key_Z, "z")
+    assert vp.active_tool.cursor_plus is False
+    assert _shows(vp, key, plus=False)
+    _ctrl(vp)                                    # a real tap still works…
+    _ctrl_shortcut(vp, Qt.Key_C, "c")            # …and survives a shortcut
+    assert vp.active_tool.cursor_plus is True
+    assert _shows(vp, key, plus=True)
+
+
+def test_the_plus_goes_when_the_one_copy_is_made(win):
+    """Flip (like Rotate) arms Ctrl for ONE operation: once the copy is
+    made the mode is off, and the cursor must say so too."""
+    from types import SimpleNamespace
+    from PySide6.QtGui import QVector3D as V
+    vp = win.viewport
+    scene = vp.scene
+    face = scene.mesh.add_face([V(0, 0, 0), V(1, 0, 0), V(1, 1, 0), V(0, 1, 0)])
+    scene.selection = [face]
+    win._activate_tool("flip")
+    tool = vp.active_tool
+    _ctrl(vp)
+    assert _shows(vp, "flip", plus=True)
+    tool._lock_axis = "x"
+    tool.on_click(SimpleNamespace(viewport=vp))
+    assert tool.cursor_plus is False
+    assert _shows(vp, "flip", plus=False)
