@@ -713,6 +713,7 @@
  "Imported {n} feature(s) from {name}": "已导入 {name} 中的 {n} 个特征",
  "Importing {name}…": "正在导入 {name}…",
  "In model": "在模型中",
+ "Recent": "最近使用",
  "Inches": "英寸",
  "IngeTrazo auto-saves (*.igz)": "IngeTrazo 自动保存 (*.igz)",
  "IngeTrazo document (*.igz);;All files (*)": "IngeTrazo 文档 (*.igz);;所有文件 (*)",

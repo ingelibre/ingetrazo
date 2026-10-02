@@ -713,6 +713,7 @@
  "Imported {n} feature(s) from {name}": "Importadas {n} entidad(es) de {name}",
  "Importing {name}…": "Importando {name}…",
  "In model": "En el modelo",
+ "Recent": "Recientes",
  "Inches": "Pulgadas",
  "IngeTrazo auto-saves (*.igz)": "Auto-guardados de IngeTrazo (*.igz)",
  "IngeTrazo document (*.igz);;All files (*)": "Documento IngeTrazo (*.igz);;Todos los archivos (*)",

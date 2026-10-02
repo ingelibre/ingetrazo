@@ -711,6 +711,7 @@
  "Imported {n} feature(s) from {name}": "{n} recurso(s) importado(s) de {name}",
  "Importing {name}…": "Importando {name}…",
  "In model": "No modelo",
+ "Recent": "Recentes",
  "Inches": "Polegadas",
  "IngeTrazo auto-saves (*.igz)": "Auto-salvamentos do IngeTrazo (*.igz)",
  "IngeTrazo document (*.igz);;All files (*)": "Documento IngeTrazo (*.igz);;Todos os arquivos (*)",

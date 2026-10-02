@@ -61,7 +61,7 @@ from core.textlabel import TextLabel
 from georef.datum import SceneDatum
 from georef.geopath import GeoPath
 from georef.tiles import DEFAULT_SOURCE_ID, PRESETS, TileLayer, custom_source
-from tools.paint import PaintTool
+from tools.paint import RECENT_MAX, PaintTool
 
 from core.paths import app_root
 from core.units import fmt_area, fmt_len
@@ -1738,6 +1738,16 @@ class MaterialsPanel(QWidget):
         root.addWidget(self._edit_body)
         self._load_texture_fields()
 
+        # The last materials painted with, so texturing a model does not
+        # mean hunting for the same brick in the library every time.
+        self._recent_heading = self._heading(tr("Recent"))
+        root.addWidget(self._recent_heading)
+        self._recent_grid = FlowLayout(spacing=2)
+        root.addLayout(self._recent_grid)
+        if not PaintTool.recent:
+            PaintTool.recent = load_recent_materials()
+        self._refresh_recent()
+
         root.addWidget(self._heading(tr("In model")))
         self._in_model_grid = FlowLayout(spacing=2)
         root.addLayout(self._in_model_grid)
@@ -2303,6 +2313,55 @@ class MaterialsPanel(QWidget):
         # A texture picked from disk is a material named after its file.
         self._apply_texture(path_str, size, name=Path(path_str).stem)
 
+    # ---- Recent ----------------------------------------------------------
+    def recent_materials_changed(self) -> None:
+        """The Paint tool painted with a material: keep it and show it."""
+        save_recent_materials(PaintTool.recent)
+        self._refresh_recent()
+
+    def _refresh_recent(self) -> None:
+        while self._recent_grid.count():
+            w = self._recent_grid.takeAt(0).widget()
+            if w is not None:
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
+        for entry in PaintTool.recent:
+            tex = entry.get("texture")
+            pm = (_texture_pixmap(tex["path"]) if tex
+                  else _color_pixmap(tuple(entry.get("color") or (1, 1, 1))))
+            if pm is None:
+                continue
+            label = entry.get("mat") or (
+                Path(tex["path"]).stem if tex else tr("Color"))
+            b = _swatch_button(pm, label)
+            b.clicked.connect(lambda _=False, e=entry: self._apply_recent(e))
+            self._recent_grid.addWidget(b)
+        shown = self._recent_grid.count() > 0
+        self._recent_heading.setVisible(shown)
+
+    def _apply_recent(self, entry: dict) -> None:
+        """Make a recent material the active paint, exactly as it was
+        painted: image with its size, turn and tint, or the colour; its
+        translucency and its name."""
+        tex = entry.get("texture")
+        PaintTool.current_is_default = False
+        PaintTool.current_texture_plane = None
+        if tex:
+            PaintTool.current_texture = dict(tex)
+        else:
+            PaintTool.current_texture = None
+            PaintTool.current_color = tuple(entry.get("color") or (1, 1, 1))
+        PaintTool.current_opacity = entry.get("opacity")
+        PaintTool.current_material = self._material_for(
+            entry.get("mat"),
+            color=None if tex else PaintTool.current_color,
+            texture=dict(tex) if tex else None,
+            opacity=entry.get("opacity"))
+        self._window._activate_tool("paint")
+        self._load_texture_fields()
+        self._refresh_preview()
+
     def sync_from_paint(self) -> None:
         """Mirror what the Paint tool holds NOW — called after the
         eyedropper sampled a face, so the «Activo» swatch and the size
@@ -2334,6 +2393,38 @@ class MaterialsPanel(QWidget):
                 self._preview.setPixmap(pm)
                 return
         self._preview.setPixmap(_color_pixmap(PaintTool.current_color))
+
+
+_RECENT_KEY = "paint/recent_materials"
+
+
+def load_recent_materials() -> list[dict]:
+    """The «Recent» materials saved by the last session. An image that is
+    gone from disk (an import's temporary folder) is dropped."""
+    import json
+    raw = QSettings().value(_RECENT_KEY) or ""
+    try:
+        data = json.loads(raw) if isinstance(raw, str) and raw else []
+    except ValueError:
+        return []
+    out = []
+    for e in data if isinstance(data, list) else []:
+        if not isinstance(e, dict) or not (e.get("texture") or e.get("color")):
+            continue
+        tex = e.get("texture")
+        if tex and not (isinstance(tex, dict) and tex.get("path")
+                        and Path(tex["path"]).exists()):
+            continue
+        out.append(e)
+    return out[:RECENT_MAX]
+
+
+def save_recent_materials(entries: list[dict]) -> None:
+    import json
+    try:
+        QSettings().setValue(_RECENT_KEY, json.dumps(entries[:RECENT_MAX]))
+    except (TypeError, ValueError):
+        pass                       # a value JSON cannot hold: keep the old
 
 
 def _dialog_parent(panel) -> QWidget:
