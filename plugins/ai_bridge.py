@@ -43,6 +43,7 @@ from core.i18n import tr
 from views.fold_section import FoldSection, narrow
 
 DEFAULT_PORT = 4763
+_REFUSED = b'{"id": null, "ok": false, "error": "not a bridge request; closing"}\n'
 
 
 class _Bridge(QObject):
@@ -120,21 +121,44 @@ class _Bridge(QObject):
                     if not chunk:
                         break
                     buf += chunk
-                    while b"\n" in buf:
-                        line, buf = buf.split(b"\n", 1)
-                        if not line.strip():
-                            continue
-                        reply = self._handle_line(line)
-                        try:
-                            conn.sendall(reply)
-                        except OSError:
-                            break
+                    if not self._drain(conn, buf):
+                        break
+                    buf = buf[buf.rfind(b"\n") + 1:]
 
-    def _handle_line(self, line: bytes) -> bytes:
+    def _drain(self, conn, buf: bytes) -> bool:
+        """Answer every complete line in ``buf``. False when the connection
+        must close: a line that is not a JSON request ends it, and nothing
+        after it runs.
+
+        Loopback is not a wall against the browser on this machine. A web page
+        can ``fetch("http://127.0.0.1:4763", {method: "POST", mode: "no-cors",
+        body})`` — a text/plain POST needs no CORS preflight, so the browser
+        sends it and only hides the reply. Read line by line, its request line
+        and headers failed as bad JSON and its body, a tool call, ran. The
+        first line of any HTTP request is ``POST / HTTP/1.1``, so refusing the
+        connection there stops the body from ever being read. The MCP client
+        sends nothing but JSON lines and never meets this."""
+        lines = buf.split(b"\n")[:-1]
+        for line in lines:
+            if not line.strip():
+                continue
+            reply = self._handle_line(line)
+            try:
+                conn.sendall(reply if reply is not None else _REFUSED)
+            except OSError:
+                return False
+            if reply is None:
+                return False
+        return True
+
+    def _handle_line(self, line: bytes) -> bytes | None:
+        """The reply to one request line, or None if it is not a request."""
         try:
             req = json.loads(line)
         except ValueError:
-            return b'{"id": null, "ok": false, "error": "bad json"}\n'
+            return None
+        if not isinstance(req, dict):
+            return None
         job = {"req": req, "done": threading.Event(), "reply": None}
         self._dispatch.emit(job)
         job["done"].wait(timeout=120.0)

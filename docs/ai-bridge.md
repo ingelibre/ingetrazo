@@ -55,6 +55,13 @@ IngeTrazo, y así se queda: no tiene contraseña y `run_python` ejecuta
 código dentro de la aplicación, de modo que abrirlo a la red dejaría el
 modelo (y el equipo) a merced de cualquiera en ella.
 
+Escuchar en local no basta frente al navegador del mismo equipo: una página
+web puede mandar un `POST` a `http://127.0.0.1:4763` sin que el navegador
+pida permiso (`fetch` con `mode: "no-cors"` y cuerpo de texto). Por eso el
+puente corta la conexión en la primera línea que no es una petición JSON —
+la primera línea de cualquier petición HTTP es `POST / HTTP/1.1` — y el
+cuerpo nunca llega a leerse. Aun así, **detén el puente cuando no lo uses**.
+
 - **IngeTrazo dentro de WSL2** (AppImage o `.tar.gz` con WSLg) y el
   contenedor con `--network host`: funciona tal cual, porque comparten
   `127.0.0.1`.
