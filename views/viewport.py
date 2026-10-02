@@ -59,6 +59,12 @@ _NO_INSTANCING = os.environ.get("INGETRAZO_NO_INSTANCING", "") == "1"
 # set to 1 to draw every paint on both sides like before — a diagnostic,
 # and the escape hatch should a driver misbehave with front culling.
 _NO_BACK_TINT = os.environ.get("INGETRAZO_NO_BACK_TINT", "") == "1"
+# Kill-switch for the snap engine's shortcuts (edge grid, occlusion in
+# batches, centre lookup through the registry): set to 1 to run every hover
+# the way it ran before — one pass over all group edges, one ray per
+# candidate, the rounded-position table. A diagnostic, and the escape hatch
+# should a snap ever land somewhere it did not before.
+_NO_SNAP_FAST = os.environ.get("INGETRAZO_NO_SNAP_FAST", "") == "1"
 _perf_file = None
 
 
@@ -9735,7 +9741,7 @@ class Viewport(QOpenGLWidget):
             return cached[1]
         ax, ay, bx, by, ok = proj
         d = None
-        if (len(ax) >= Viewport.GEDGE_GRID_MIN
+        if (not _NO_SNAP_FAST and len(ax) >= Viewport.GEDGE_GRID_MIN
                 and getattr(self, "pick_threshold_px", 0.0)
                 <= Viewport.GEDGE_REACH_PX):
             # (projection, grid or None): the grid waits for the second hover.
@@ -10279,9 +10285,11 @@ class Viewport(QOpenGLWidget):
         # positions, cached for one group at a time — so a cursor crossing
         # from one group to the next rebuilt it on nearly every move:
         # 9 ms of a 14 ms hover on pileta-fuente (2 500 edges per group).
-        va, vb = mesh.vertex_at(la), mesh.vertex_at(lb)
-        edge = mesh.find_edge(va, vb) if va is not None and vb is not None \
-            else None
+        edge = None
+        if not _NO_SNAP_FAST:
+            va, vb = mesh.vertex_at(la), mesh.vertex_at(lb)
+            if va is not None and vb is not None:
+                edge = mesh.find_edge(va, vb)
         if edge is None:
             # The registry missed (a position past the weld tolerance):
             # the rounded-position table, one per mesh, built once.
@@ -12677,7 +12685,7 @@ class Viewport(QOpenGLWidget):
             reference_mode=self.reference_mode,
             inference_angle_deg=self.inference_angle_deg,
             is_occluded=self._is_occluded,
-            are_occluded=self._occluded_many,
+            are_occluded=None if _NO_SNAP_FAST else self._occluded_many,
             face_under_cursor=self.pick_face_any(px_x, px_y)[0] is not None,
             edge_threshold_px=self.edge_snap_threshold_px,
             magnetic_axis_deg=getattr(self.active_tool, "magnetic_axis_deg", None),
@@ -13129,7 +13137,7 @@ class Viewport(QOpenGLWidget):
             reference_mode=self.reference_mode,
             inference_angle_deg=self.inference_angle_deg,
             is_occluded=self._is_occluded,
-            are_occluded=self._occluded_many,
+            are_occluded=None if _NO_SNAP_FAST else self._occluded_many,
             face_under_cursor=self.pick_face_any(px_x, px_y)[0] is not None,
             edge_threshold_px=self.edge_snap_threshold_px,
             magnetic_axis_deg=getattr(self.active_tool, "magnetic_axis_deg", None),

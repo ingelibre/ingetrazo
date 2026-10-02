@@ -153,3 +153,32 @@ def test_compute_snap_picks_the_same_candidate_with_the_batch(hidden_below):
         assert batches == []
     else:
         assert batches                       # the rest went in one call
+
+
+def test_the_kill_switch_keeps_the_rays_one_by_one(monkeypatch):
+    # INGETRAZO_NO_SNAP_FAST=1: compute_snap gets no batch to ask.
+    import views.viewport as vv
+    monkeypatch.setattr(vv, "_NO_SNAP_FAST", True)
+    import core.snap as cs
+    seen = {}
+    real = cs.compute_snap
+
+    def spy(*a, **k):
+        seen.update(k)
+        return real(*a, **k)
+    monkeypatch.setattr(cs, "compute_snap", spy)
+    if getattr(vv, "compute_snap", None) is real:
+        monkeypatch.setattr(vv, "compute_snap", spy)
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        vp.scene.mesh.add_face([V(0, 0, 0), V(1, 0, 0), V(1, 1, 0), V(0, 1, 0)])
+        vp.scene.version += 1
+        win._activate_tool("line")
+        from PySide6.QtCore import QPointF, Qt
+        vp._process_hover(QPointF(vp.width() / 2, vp.height() / 2), Qt.NoModifier)
+        assert "are_occluded" in seen and seen["are_occluded"] is None
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()

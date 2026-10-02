@@ -132,3 +132,18 @@ def test_viewport_readers_see_what_the_full_pass_sees(density):
             c = np.flatnonzero(dist < 48.0)
             return np.sort(dist[c])[:Viewport.GEDGE_ENOUGH]
         np.testing.assert_array_equal(nearest(d), nearest(full))
+
+
+def test_the_kill_switch_runs_the_full_pass(monkeypatch):
+    # INGETRAZO_NO_SNAP_FAST=1: every edge measured, no grid built — the
+    # escape hatch's answer is the old one, exactly.
+    import views.viewport as vv
+    from views.viewport import Viewport
+    monkeypatch.setattr(vv, "_NO_SNAP_FAST", True)
+    rng = np.random.default_rng(9)
+    proj = _segments(rng, Viewport.GEDGE_GRID_MIN + 1)
+    vp = _StubVP(proj)
+    for px, py in ((400.0, 300.0), (401.0, 300.0), (900.0, 500.0)):
+        d = Viewport._gedge_dist(vp, px, py)
+        np.testing.assert_array_equal(d, segment_distances(*proj, px, py))
+    assert getattr(vp, "_gedge_grid_cache", None) is None
