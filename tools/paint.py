@@ -240,9 +240,11 @@ class PaintTool(Tool):
             # it stayed on the old paint after a sample (issue #47,
             # @pacaeiro: «the Active Material in Materials List is not
             # updated»).
-            tray = getattr(win, "tray", None)
-            if hasattr(tray, "sync_from_paint"):
-                tray.sync_from_paint()
+            # The swatch lives on the dock's Materials panel, not on the
+            # dock itself.
+            panel = getattr(getattr(win, "tray", None), "materials", None)
+            if hasattr(panel, "sync_from_paint"):
+                panel.sync_from_paint()
             vp.update()
             # Optional, like the other viewport niceties this package uses:
             # the tool has to work against a bare viewport too.
