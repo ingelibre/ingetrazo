@@ -235,3 +235,69 @@ def test_the_packaged_app_would_notice_a_missing_recipe_book():
     check = source[source.index("def _self_check"):source.index("def main()")]
     assert "ingetrazo_mcp.py" in check
     assert "ai_recipes" in check
+
+
+def _send_raw(bridge, payload: bytes) -> bytes:
+    """Send ``payload`` as-is and read until the bridge closes or goes quiet,
+    pumping Qt events on this thread so anything it dispatches can run."""
+    app = QApplication.instance()
+    out: dict = {"got": b""}
+
+    def worker():
+        s = socket.socket()
+        s.settimeout(2.0)
+        s.connect(("127.0.0.1", bridge.port))
+        try:
+            s.sendall(payload)
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                out["got"] += chunk
+        except OSError:
+            pass
+        finally:
+            s.close()
+
+    t = threading.Thread(target=worker)
+    t.start()
+    while t.is_alive():
+        app.processEvents()
+        t.join(timeout=0.01)
+    return out["got"]
+
+
+def test_a_web_page_cannot_run_code_through_the_bridge(monkeypatch):
+    """Loopback is not a wall against the browser on the same machine. A page
+    can POST to http://127.0.0.1:4763 with ``fetch(..., {mode: "no-cors",
+    body})``: a text/plain POST needs no CORS preflight, so the browser sends
+    it and only hides the answer. The bridge reads lines, so the HTTP request
+    line and headers fail as bad JSON — and the body line, a tool call, ran.
+    These are the bytes that request puts on the wire."""
+    from plugins.ai_bridge import _Bridge
+    from views.main_window import MainWindow
+    monkeypatch.setenv("INGETRAZO_AI_PORT", "0")
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        bridge = _Bridge(vp)
+        bridge.start()
+        edges0 = len(vp.scene.mesh.edges)
+        body = (json.dumps({"id": 1, "tool": "run_python", "args": {"code": (
+            "mesh.add_edge(QVector3D(0,0,0), QVector3D(7,0,0))")}}) + "\n").encode()
+        request = (
+            f"POST / HTTP/1.1\r\nHost: 127.0.0.1:{bridge.port}\r\n"
+            "Origin: https://example.com\r\n"
+            "Content-Type: text/plain;charset=UTF-8\r\n"
+            f"Content-Length: {len(body)}\r\n\r\n").encode() + body
+        _send_raw(bridge, request)
+        assert len(vp.scene.mesh.edges) == edges0, (
+            "an HTTP request's body ran as a bridge tool call")
+
+        # The agent's own client is unaffected.
+        reply = _ask(bridge, "run_python", {"code": "1 + 1"})
+        assert reply["ok"]
+        bridge.stop()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
