@@ -66,16 +66,18 @@ def test_an_edge_drawn_inside_an_open_group_is_drawn_at_once(component):
     win.close()
 
 
-def test_the_edit_box_is_world_dashes_on_its_twelve_edges():
+def test_the_edit_box_is_world_edges_on_its_twelve_edges():
     """The dashed box of the open group is geometry for the depth-tested GL
-    pass (so its back edges hide behind the faces), not an overlay."""
+    pass (so its back edges hide behind the faces), not an overlay — twelve
+    whole edges; the dash pattern is the shader's (u_stipple 4), so zooming
+    into a large group costs nothing extra per frame."""
     from core.group import oriented_box_corners
-    from views.viewport import _box_dash_vertices
+    from views.viewport import _box_edge_vertices
     corners = oriented_box_corners((V(1, 0, 0), V(0, 1, 0), V(0, 0, 1)),
                                    (0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
-    pts = list(_box_dash_vertices(corners, 0.1))
-    assert pts and len(pts) % 6 == 0
+    pts = list(_box_edge_vertices(corners))
+    assert len(pts) == 12 * 6          # twelve edges, two endpoints each
     for i in range(0, len(pts), 3):
         x, y, z = pts[i:i + 3]
         on_faces = sum(1 for c in (x, y, z) if abs(c) < 1e-6 or abs(c - 1) < 1e-6)
-        assert on_faces >= 2          # every dash point lies on a box edge
+        assert on_faces >= 2          # every endpoint lies on a box edge

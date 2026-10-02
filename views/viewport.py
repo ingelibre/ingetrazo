@@ -457,32 +457,30 @@ def _axes_vertices(spacing: float, pos_len: float = 1.0e5):
     return coords, spans
 
 
-def _box_dash_vertices(corners, spacing: float):
+def _box_edge_vertices(corners):
     """The twelve edges of a box (``corners`` in ``oriented_box_corners``
-    order) as world-space dashes for the GL pass — so the part behind the
+    order) as world-space LINES for the GL pass — so the part behind the
     geometry is hidden like any line, the way guides are (issue #23). The
     edit box used to be painted in the QPainter overlay, which has no depth:
-    inside a cube its back edges showed through the faces (Marco, 23-09)."""
+    inside a cube its back edges showed through the faces (Marco, 23-09).
+
+    Whole edges, not dashes: the pattern is the shader's (u_stipple 4,
+    measured in window pixels, like Back Edges). Tessellating dashes here
+    sized them by camera distance, and the count scaled as
+    edge_length/(0.012·distance) — zooming into a large open group pushed
+    it past a million segments rebuilt and re-uploaded EVERY frame (the
+    «viewport dies when I zoom in close» report: 5.8 s/frame at 5 cm on a
+    50 m box)."""
     coords = array("f")
-    spacing = max(spacing, 1e-4)
-    dash = spacing * 0.5
     for i in range(8):
         for bit in (1, 2, 4):
             j = i | bit
             if j == i:
                 continue
             a, b = corners[i], corners[j]
-            d = b - a
-            length = d.length()
-            if length < 1e-9:
+            if (b - a).length() < 1e-9:
                 continue
-            u = d / length
-            t = 0.0
-            while t < length:
-                t1 = min(t + dash, length)
-                p, q = a + u * t, a + u * t1
-                coords.extend([p.x(), p.y(), p.z(), q.x(), q.y(), q.z()])
-                t += spacing
+            coords.extend([a.x(), a.y(), a.z(), b.x(), b.y(), b.z()])
     return coords
 
 
@@ -1967,21 +1965,36 @@ class Viewport(QOpenGLWidget):
 
         # The dashed box of the group being edited, depth-tested like the
         # guides (it shares their buffer): the part behind the geometry is
-        # hidden instead of showing through it.
+        # hidden instead of showing through it. The dashes live in the
+        # shader (u_stipple 4): twelve solid edges at any zoom, not a
+        # per-frame tessellation whose count scaled with 1/distance.
         box = (self._edit_group_box_corners()
                if self.plano_style is None and self.style_override is None
                else None)
         if box is not None:
-            dist = max(float(self.camera.distance), 1e-3)
-            data = _box_dash_vertices(box, dist * 0.012).tobytes()
+            data = _box_edge_vertices(box).tobytes()
             if data:
                 self._guides_vbo.bind()
                 self._guides_vbo.allocate(data, len(data))
                 self._guides_vbo.release()
                 self._guides_vao.bind()
+                # Dash size in framebuffer pixels for visual parity with
+                # the old world-space dashes: their 0.006·distance length
+                # spanned 0.003/tan(fov/2) of the viewport height — a
+                # screen fraction, independent of zoom (perspective frames
+                # the target at 2·distance·tan(fov/2); parallel sizes its
+                # height from the same product). w/h are framebuffer
+                # pixels, which is what gl_FragCoord measures.
+                fov = math.radians(float(self.camera.fov_deg))
+                dash = min(20.0, max(3.0, 0.003 * h / math.tan(fov / 2.0)))
+                self._program.setUniformValue(self._loc_viewport_px,
+                                              QVector2D(float(w), float(h)))
+                self._program.setUniformValue1f(self._loc_dash_px, dash)
+                self._program.setUniformValue(self._loc_stipple, 4)
                 self._gl.glDepthMask(GL_FALSE)
                 self._set_color(90 / 255, 110 / 255, 140 / 255, 1.0)
                 self._gl.glDrawArrays(GL_LINES, 0, len(data) // 12)
+                self._program.setUniformValue(self._loc_stipple, 0)
                 self._gl.glDepthMask(GL_TRUE)
                 self._guides_vao.release()
 
