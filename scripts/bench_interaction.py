@@ -257,6 +257,10 @@ class Driver:
 
     # -- document and camera
     def open(self, path):
+        # The previous model (if any) was moved and undone: the document
+        # counts as modified, and open_path would stop on «save changes?»
+        # waiting for a click. Mark it saved — the suite's own idiom.
+        self.win._saved_version = self.vp.scene.version
         t0 = time.perf_counter()
         ok = self.win.open_path(Path(path))
         self.app.processEvents()
