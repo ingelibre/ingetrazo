@@ -50,7 +50,10 @@ Select, hover with Line (the inference engine — snapping to vertices,
 edges, midpoints), clicks with Select, Move of an object (click, live drag,
 click — the run fails if no undo step landed) and the Ctrl+Z of that move.
 Per gesture: median, p95, max and the share of events over one 60 Hz frame
-(16.7 ms) and over two — the share is what "it stutters" means.
+(16.7 ms) and over two — the share is what "it stutters" means. With
+`--repeat N` each event keeps its best run (noise only adds time), and the
+worst single run's p95 and share are reported beside it: a periodic hitch
+lands on different events each run, and the best-of alone would hide it.
 
 The documents are public and regenerable: `scripts/bench_models.py` builds
 the same synthetic city at four sizes (buildings with recessed windows —

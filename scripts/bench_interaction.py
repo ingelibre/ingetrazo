@@ -430,13 +430,24 @@ def run_model(d, path, repeat):
             runs.append(globals()[f"g_{name}"](d, pts))
             if name == "move":                  # and it puts the building back
                 undo_runs.append(g_undo(d, pts))
-        # Each event's best run: noise only ever adds time.
+        # Each event's best run: noise only ever adds time — but a PERIODIC
+        # hitch lands on different events each run and the best-of hides
+        # it (an every-5th-frame silhouette refresh of 32 ms read as a
+        # clean 13 ms median). So the worst single run's p95 and share
+        # over a frame are kept beside it: that is what the hand feels.
         best = [min(evs, key=lambda e: e[0] + e[1] + e[2] + e[3])
                 for evs in zip(*runs)]
         row = out["gestures"][name] = summarise(best)
+        per_run = [summarise(r) for r in runs]
+        worst = max(per_run, key=lambda r: r["p95_ms"])
+        row["worst_run_p95_ms"] = worst["p95_ms"]
+        row["worst_run_over_16ms_pct"] = worst["over_16ms_pct"]
+        row["worst_run_max_ms"] = worst["max_ms"]
         print(f"  {name:13} median {row['median_ms']:7.1f}  "
               f"p95 {row['p95_ms']:7.1f}  max {row['max_ms']:7.1f} ms  "
-              f">16ms {row['over_16ms_pct']:5.1f}%   "
+              f">16ms {row['over_16ms_pct']:5.1f}%  "
+              f"(worst run: p95 {row['worst_run_p95_ms']:6.1f}, "
+              f">16ms {row['worst_run_over_16ms_pct']:4.1f}%)   "
               f"[handler {row['median_handler_ms']:.1f} / paint "
               f"{row['median_paint_ms']:.1f} / other "
               f"{row['median_other_ms']:.1f} / gpu "
@@ -464,7 +475,9 @@ def compare(a_path, b_path):
             rb = mb["gestures"].get(g)
             if not rb:
                 continue
-            for k in ("median_ms", "p95_ms"):
+            for k in ("median_ms", "p95_ms", "worst_run_p95_ms"):
+                if k not in ra or k not in rb:
+                    continue
                 va, vb = ra[k], rb[k]
                 ch = (vb - va) / va * 100 if va else 0.0
                 flag = ("  <- SLOWER" if ch > 25 else
