@@ -2255,5 +2255,11 @@
  "Switch to X-ray, or back to the style you were in.": "Beralih ke Sinar-X, atau kembali ke gaya sebelumnya.",
  "Back edges": "Tepi belakang",
  "Draw the edges hidden behind faces as dashed lines.": "Gambar tepi yang tersembunyi di balik muka sebagai garis putus-putus.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "Ekstensi contoh Properti poligon: luas, titik berat, dan momen orde kedua dari sebuah muka."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "Ekstensi contoh Properti poligon: luas, titik berat, dan momen orde kedua dari sebuah muka.",
+  "copy": "salinan",
+  "original": "asli",
+  "keep the base": "pertahankan alas",
+  "move the base": "pindahkan alas",
+  "Push/Pull a copy: on": "Dorong / Tarik salinan: aktif",
+  "Push/Pull a copy: off": "Dorong / Tarik salinan: nonaktif"
 }

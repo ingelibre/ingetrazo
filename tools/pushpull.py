@@ -72,7 +72,7 @@ from core.topology import (
     loop_inside_face,
     refine_loop_with_points,
 )
-from tools.base import Tool, ToolContext
+from tools.base import Tool, ToolContext, ctrl_clause
 from core.units import fmt_len
 
 
@@ -261,6 +261,13 @@ class PushPullTool(Tool):
         # division), the extrusion stacks as a new segment instead of growing
         # the neighbours — the classic way to stack floors.
         self._keep_base: bool = False
+        # A Ctrl TAP hands the operation over to the modifier: the starting
+        # face stays put on THIS push, which is then spent (the classic
+        # one-shot modifier, like Copy in Move). `_ctrl_used` remembers that
+        # Ctrl was held when the gesture began, so its release does not
+        # toggle the mode on the way out.
+        self._keep_mode: bool = False
+        self._ctrl_used: bool = False
         # Deepest allowed inward push (positive, along −normal), computed at
         # drag start; None = unbounded. The "Offset limited to" clamp.
         self._limit_in: float | None = None
@@ -313,6 +320,8 @@ class PushPullTool(Tool):
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
         self._reset()
+        self._keep_mode = False      # the modifier arms ONE operation
+        self._ctrl_used = False
 
     def on_deactivate(self, viewport) -> None:
         self._revert_preview(viewport)
@@ -363,7 +372,7 @@ class PushPullTool(Tool):
         if self.base_face is None or self._anchor is None:
             return
         # Ctrl can be pressed/released mid-drag; the live preview follows.
-        self._keep_base = bool(ctx.modifiers & Qt.ControlModifier)
+        self._sync_keep_base(ctx.modifiers)
         # Work on the clean mesh: revert the preview before reading geometry,
         # so reference inference never sees the forming solid's moving points.
         self._revert_preview(viewport)
@@ -388,7 +397,10 @@ class PushPullTool(Tool):
 
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
-        self._keep_base = bool(ctx.modifiers & Qt.ControlModifier)
+        # A CLICK latches Ctrl as the gesture's own (see _sync_keep_base): the
+        # first click begins the gesture, the second commits it — and a mouse
+        # MOVE must never latch it, or the tap dies whenever the hand moves.
+        self._sync_keep_base(ctx.modifiers, latch_ctrl=True)
         if not self.dragging:
             face = self.hovered_face
             if face is None:
@@ -439,7 +451,7 @@ class PushPullTool(Tool):
         if last is None:
             self.on_click(ctx)
             return
-        self._keep_base = bool(ctx.modifiers & Qt.ControlModifier)
+        self._sync_keep_base(ctx.modifiers, latch_ctrl=True)
         if not self.dragging:
             face, grp = viewport.pick_face_any(ctx.screen.x(), ctx.screen.y())
             if face is None:
@@ -489,6 +501,7 @@ class PushPullTool(Tool):
         viewport.set_hover(None)
         viewport.set_suppressed_faces(set())
         self._reset()
+        self._spend_keep_mode(viewport)
         viewport.update()
 
     # ---- Visual preview -----------------------------------------------------
@@ -1148,6 +1161,7 @@ class PushPullTool(Tool):
         self._revert_preview(viewport)  # drop the live preview; redo it for real
         if self.base_face is None or abs(self.extrusion) < _MIN_EXTRUDE:
             self._reset()
+            self._spend_keep_mode(viewport)
             viewport.update()
             return
         # One snapshot wraps the edit *and* the watertight stitch: undo is exact,
@@ -1172,6 +1186,7 @@ class PushPullTool(Tool):
         else:
             PushPullTool.last_distance = self.extrusion  # double-click repeats it
         self._reset()
+        self._spend_keep_mode(viewport)
         viewport.update()
 
     #: How many halvings the commit tries when the guard refuses the distance
@@ -1749,3 +1764,64 @@ class PushPullTool(Tool):
         self._refused = False
         self._light_faces = []
         self._light_rings = []
+
+    # ---- Modifier: Ctrl keeps the starting face -----------------------------
+    def on_key(self, viewport, key: int, modifiers) -> bool:
+        """Swallow the Ctrl press — the tap acts on the RELEASE, where
+        ``ctrl_tapped`` tells a tap from the Ctrl of a shortcut (#183) and
+        Ctrl+P (Push/Pull's own key) never arms the mode in passing."""
+        if key == Qt.Key_Control:
+            return True
+        return super().on_key(viewport, key, modifiers)
+
+    def on_key_release(self, viewport, key: int) -> bool:
+        if key != Qt.Key_Control:
+            return False
+        if self._ctrl_used:
+            self._ctrl_used = False
+            return True                  # the gesture's own Ctrl, not a tap
+        if not self.ctrl_tapped(viewport):
+            return False                 # Ctrl was part of a shortcut
+        self._keep_mode = not self._keep_mode
+        self._keep_base = self._keep_mode
+        viewport.flash_status(tr("Push/Pull a copy: on") if self._keep_mode
+                              else tr("Push/Pull a copy: off"))
+        self.refresh_hint(viewport)
+        viewport.update()
+        return True
+
+    def status_clause(self) -> str:
+        # Short on purpose: the clause rides the same line as the hint, and
+        # the classic bar spends a whole one on «Ctrl = Crear un nuevo punto
+        # de partida». "Keep the base" / "move the base" is the same idea in
+        # the tool's own words (base_face, _keep_base).
+        return ctrl_clause(self._keep_mode, "keep the base", "move the base")
+
+    def _sync_keep_base(self, modifiers, latch_ctrl: bool = False) -> None:
+        """Read Ctrl where it is HELD: it keeps the base face for THIS push
+        only, so a gesture begun while Ctrl was down never latches the mode
+        (its release finds ``_ctrl_used`` and stops there). A Ctrl tapped on
+                its own arms ``_keep_mode`` instead, and that mode stands by itself.
+
+        ``latch_ctrl`` is True only where a CLICK happens — the gesture's
+        start and its commit. Whether Ctrl was a TAP is a question about keys,
+        and latching on every mouse MOVE answered it with the hand's position
+        instead: mid-drag, the first hover after the press claimed that Ctrl
+        as the gesture's own, so the mode only toggled with the cursor parked
+        — the one case where no hover came in between the press         and the release (@pacaeiro, 2026-10-01: «si estoy moviendo el ratón mientras hago
+        Ctrl, el Ctrl no altera el estado»). The live follow is unchanged:
+        Ctrl held mid-drag still keeps the base for the push in progress."""
+        held = bool(modifiers & Qt.ControlModifier)
+        if latch_ctrl:
+            self._ctrl_used = held
+        self._keep_base = held or self._keep_mode
+
+    def _spend_keep_mode(self, viewport) -> None:
+        """The Ctrl mode is spent by the push it armed, like Copy in Move
+        and Rotate: the bar stops advertising it the moment the push lands
+        (or Esc drops it), so the modifier never leaks into the next face."""
+        if not self._keep_mode:
+            return
+        self._keep_mode = False
+        self._keep_base = False
+        self.refresh_hint(viewport)

@@ -2458,5 +2458,11 @@
  "Switch to X-ray, or back to the style you were in.": "切换到X光，或回到之前的样式。",
  "Back edges": "背面边线",
  "Draw the edges hidden behind faces as dashed lines.": "以虚线绘制被面遮挡的边线。",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "示例扩展“多边形属性”：面的面积、形心和二阶矩。"
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "示例扩展“多边形属性”：面的面积、形心和二阶矩。",
+  "copy": "副本",
+  "original": "原始",
+  "keep the base": "保留底面",
+  "move the base": "移动底面",
+  "Push/Pull a copy: on": "推 / 拉副本: 开启",
+  "Push/Pull a copy: off": "推 / 拉副本: 关闭"
 }

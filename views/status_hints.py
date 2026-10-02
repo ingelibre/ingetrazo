@@ -51,7 +51,10 @@ HINTS: dict = {
     "arc3": ("Click the start point.", "Click a point the arc passes through, then the end."),
     "center_arc": ("Click the centre.", "Click the start of the arc, then its end; or type the angle."),
     "pie": ("Click the centre.", "Click the start of the wedge, then its end; or type the angle."),
-    "pushpull": ("Click a face and move. Ctrl keeps the starting face.",
+        # Ctrl is not spelled out here any more: the tool's own clause carries it
+    # — «Ctrl = [keep the base] / move the base» — the way the Tape's does,
+    # and repeating it ate the room the instruction needs (Marco, 2026-09-17).
+    "pushpull": ("Click a face and move.",
                  "Move, or type the distance and Enter. Double-click repeats the last."),
     "move": ("Click what to move (or select it first). Red + on a group = rotate it.",
              "Click the destination, or type the distance and Enter."),

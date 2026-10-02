@@ -2457,5 +2457,11 @@
  "Switch to X-ray, or back to the style you were in.": "Muda para raio-X, ou volta ao estilo em que você estava.",
  "Back edges": "Arestas de trás",
  "Draw the edges hidden behind faces as dashed lines.": "Desenha tracejadas as arestas que ficam atrás das faces.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "A extensão de exemplo Propriedades do polígono: área, centroide e momentos de segunda ordem de uma face."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "A extensão de exemplo Propriedades do polígono: área, centroide e momentos de segunda ordem de uma face.",
+  "copy": "cópia",
+  "original": "original",
+  "keep the base": "manter a base",
+  "move the base": "mover a base",
+  "Push/Pull a copy: on": "Empurrar / Puxar uma cópia: ativado",
+  "Push/Pull a copy: off": "Empurrar / Puxar uma cópia: desativado"
 }
