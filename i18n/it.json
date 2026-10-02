@@ -2459,5 +2459,11 @@
  "Switch to X-ray, or back to the style you were in.": "Passa ai raggi X, o torna allo stile in cui eri.",
  "Back edges": "Spigoli posteriori",
  "Draw the edges hidden behind faces as dashed lines.": "Disegna tratteggiati gli spigoli nascosti dietro le facce.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "L'estensione di esempio Proprietà del poligono: area, baricentro e momenti del secondo ordine di una faccia."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "L'estensione di esempio Proprietà del poligono: area, baricentro e momenti del secondo ordine di una faccia.",
+  "copy": "copia",
+  "original": "originale",
+  "keep the base": "mantieni la base",
+  "move the base": "sposta la base",
+  "Push/Pull a copy: on": "Spingi / Tira una copia: attivato",
+  "Push/Pull a copy: off": "Spingi / Tira una copia: disattivato"
 }

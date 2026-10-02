@@ -350,6 +350,18 @@ def loop_normal(corners) -> QVector3D:
     return n
 
 
+def ctrl_clause(active: bool, on: str, off: str) -> str:
+    """The classic two-state modifier clause: «Ctrl = [copy] / original».
+
+    The state in force is the bracketed one, exactly the way the Tape and
+    the Protractor spell out their cycles, so the status bar says which way
+    the modifier is set RIGHT NOW and not just what it can do (Marco,
+    2026-09-17). ``on``/``off`` are source strings handed to ``tr``."""
+    from core.i18n import tr
+    on, off = tr(on), tr(off)
+    return "Ctrl = " + (f"[{on}] / {off}" if active else f"{on} / [{off}]")
+
+
 def face_the_plane(corners, plane_normal):
     """Wind ``corners`` so the face looks the way its plane does.
 
@@ -506,9 +518,29 @@ class Tool(ABC):
         active — «Ctrl = Líneas guía del ciclo/Puntos guía/Medida» sits
         there next to the instruction — instead of flashing them once when
         you press the key. A flash tells you what just happened; this tells
-        you what you can do, and which way it is set right now (Marco,
+                you what you can do, and which way it is set right now (Marco,
         2026-09-17)."""
         return ""
+
+    @staticmethod
+    def ctrl_tapped(viewport) -> bool:
+        """Whether the Ctrl being RELEASED was a tap of its own.
+
+        A modifier toggled on the PRESS fires on every Ctrl+<key> chord too:
+        Ctrl+Z reaches the viewport only as a ShortcutOverride, so the mode
+        switched silently while undoing (issue #183, Alejandro Limón). Toggle
+        on the RELEASE and ask this first — the viewport knows whether some
+        other key came in between. Stand-ins without the tracker (tests)
+        count as a tap."""
+        tapped = getattr(viewport, "ctrl_tapped", None)
+        return bool(tapped()) if callable(tapped) else True
+
+    @staticmethod
+    def refresh_hint(viewport) -> None:
+        """Redraw the status bar, so ``status_clause`` shows the new mode."""
+        hint = getattr(viewport, "refresh_status_hint", None)
+        if callable(hint):
+            hint()
 
     # ---- Visual feedback hooks ---------------------------------------------
     def rubber_band_lines(self):

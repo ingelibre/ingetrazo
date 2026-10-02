@@ -5,8 +5,10 @@
 Flow: with a selection, three semi-transparent planes appear over it —
 red, green and blue, one per axis. Hovering highlights a plane; ONE CLICK
 flips the selection about it. The arrow keys pick a plane (Right = red,
-Left = green, Up = blue); tapping Ctrl toggles COPY mode, which leaves the
-original and creates the flipped duplicate.
+Left = green, Up = blue); a Ctrl TAP toggles COPY mode, which leaves the
+original and creates the flipped duplicate. As in the Tape (#183) the tap
+acts on the RELEASE of a Ctrl pressed alone, so Ctrl+F never arms it, and
+the mode stays on screen ("Ctrl = [copy] / original").
 
 Deferred (documented): dragging a plane to reposition it, Alt
 parent-context axes, and the magenta custom plane from hovering a face.
@@ -29,7 +31,7 @@ from core.history import (
 )
 from core.i18n import tr
 from core.mesh import Edge, Face, Mesh
-from tools.base import Tool, ToolContext
+from tools.base import Tool, ToolContext, ctrl_clause
 
 # The drawing axes (core.axes): the open group's own inside it (#44).
 from core.axes import AXES as _AXES  # noqa: E402
@@ -62,10 +64,10 @@ class FlipTool(Tool):
     # ---- Input --------------------------------------------------------------
     def on_key(self, viewport, key: int, modifiers) -> bool:
         if key == Qt.Key_Control:
-            self._copy = not self._copy
-            viewport.flash_status(tr("Flip a copy: on") if self._copy
-                                  else tr("Flip a copy: off"))
-            viewport.update()
+            # Swallow the press without toggling: the tap acts on the
+            # RELEASE, where ``ctrl_tapped`` can tell a tap from the Ctrl of
+            # a shortcut (#183 — Ctrl+F is Flip) and the mode is not armed
+            # in passing. Same two halves as the Tape.
             return True
         picks = {Qt.Key_Right: "x", Qt.Key_Left: "y", Qt.Key_Up: "z"}
         axis = picks.get(key)
@@ -74,6 +76,21 @@ class FlipTool(Tool):
         self._lock_axis = None if self._lock_axis == axis else axis
         viewport.update()
         return True
+
+    def on_key_release(self, viewport, key: int) -> bool:
+        if key != Qt.Key_Control:
+            return False
+        if not self.ctrl_tapped(viewport):
+            return False              # Ctrl was part of a shortcut
+        self._copy = not self._copy
+        viewport.flash_status(tr("Flip a copy: on") if self._copy
+                              else tr("Flip a copy: off"))
+        self.refresh_hint(viewport)
+        viewport.update()
+        return True
+
+    def status_clause(self) -> str:
+        return ctrl_clause(self._copy, "copy", "original")
 
     def on_hover(self, ctx: ToolContext) -> None:
         self.hover_point = ctx.world
@@ -104,9 +121,9 @@ class FlipTool(Tool):
         if copy:
             m = mirror_matrix(centre, n)
             for g in groups:
-                copy = copy_group(g)
-                cmds.append(InsertGroupCommand(copy))
-                cmds.append(FlipGroupsCommand([copy], centre, n))
+                dup = copy_group(g)
+                cmds.append(InsertGroupCommand(dup))
+                cmds.append(FlipGroupsCommand([dup], centre, n))
             id_map: dict[int, int] = {}
             for f in faces:
                 # Mirrored loops are re-reversed so the copy faces OUT.

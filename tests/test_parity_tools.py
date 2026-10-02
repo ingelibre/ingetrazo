@@ -186,7 +186,9 @@ def test_flip_tool_flips_group_and_copy_mode():
     assert xs == [1.0, 1.0, 2.0, 2.0]              # mirrored about centre 1.5
     assert vp.history.undo()
 
-    assert t.on_key(vp, Qt.Key_Control, Qt.NoModifier) is True  # copy mode
+    assert t.on_key(vp, Qt.Key_Control, Qt.NoModifier) is True
+    assert t.on_key_release(vp, Qt.Key_Control) is True        # Ctrl tap
+    assert t._copy is True
     assert t._lock_axis == "x"                     # the red lock stays armed
     t.on_click(_ctx(vp, 0, 0))
     assert len(scene.groups) == 2                  # original + flipped copy
