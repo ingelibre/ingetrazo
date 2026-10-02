@@ -59,6 +59,10 @@ _NO_INSTANCING = os.environ.get("INGETRAZO_NO_INSTANCING", "") == "1"
 # set to 1 to draw every paint on both sides like before — a diagnostic,
 # and the escape hatch should a driver misbehave with front culling.
 _NO_BACK_TINT = os.environ.get("INGETRAZO_NO_BACK_TINT", "") == "1"
+# Kill-switch for the GPU profile pass of instanced components: set to 1 to
+# work the silhouettes out in NumPy every few frames like before (the
+# _instanced_silhouettes path) — a diagnostic, and the escape hatch.
+_NO_GPU_SIL = os.environ.get("INGETRAZO_NO_GPU_SILHOUETTES", "") == "1"
 _perf_file = None
 
 
@@ -241,6 +245,29 @@ SHADER_DIR = app_root() / "resources" / "shaders"
 #: ~a dozen times per hover, and an exploded medium import (9k faces =
 #: ~20k edges) froze every mouse move (user report, piscina.igz).
 _LOOSE_SNAP_CAP = 3000
+
+
+def _sil_vertex_array(chunk):
+    """The GPU profile pass's vertices for a chunk's soft edges: ``(N, 2, 12)``
+    float32 — per vertex pos(3), n0(3), n1(3), (d0, d1, single). The two
+    face planes are ``n·p = d`` in the chunk's own coordinates (``d`` from a
+    point on the face); ``single`` marks a one-faced edge, always a
+    profile. silhouette.vert reads them in this order (locations 0, 1, 2,
+    7, stride 48)."""
+    import numpy as np
+    seg = np.asarray(chunk["soft_pts"], np.float32).reshape(-1, 2, 3)
+    n0 = np.asarray(chunk["soft_n0"], np.float64)
+    n1 = np.asarray(chunk["soft_n1"], np.float64)
+    d0 = np.einsum("ij,ij->i", n0, np.asarray(chunk["soft_c0"], np.float64))
+    d1 = np.einsum("ij,ij->i", n1, np.asarray(chunk["soft_c1"], np.float64))
+    single = np.asarray(chunk["soft_single"], bool).astype(np.float32)
+    per_edge = np.concatenate(
+        [n0.astype(np.float32), n1.astype(np.float32),
+         np.stack([d0.astype(np.float32), d1.astype(np.float32), single],
+                  axis=1)], axis=1)                               # (N, 9)
+    return np.concatenate(
+        [seg, np.repeat(per_edge[:, None, :], 2, axis=1)],
+        axis=2).astype(np.float32)                                # (N, 2, 12)
 
 
 def _ray_aabb_span(o, d, lo, hi):
@@ -1195,6 +1222,22 @@ class Viewport(QOpenGLWidget):
         self._loc_viewport_px = self._program.uniformLocation("u_viewport_px")
         self._loc_dash_px = self._program.uniformLocation("u_dash_px")
         self._depth_program = self._compile_depth_program()
+        # Profiles of instanced components, decided per vertex on the GPU
+        # (resources/shaders/silhouette.vert); None when the driver cannot
+        # build it — the NumPy path then draws them as before.
+        self._sil_program = None
+        if not _NO_GPU_SIL:
+            try:
+                self._sil_program = self._compile_silhouette_program()
+            except RuntimeError as exc:
+                _plog("gpu-silhouettes: " + str(exc).splitlines()[0], 0.0)
+        if self._sil_program is not None:
+            sp = self._sil_program
+            self._sil_loc_mvp = sp.uniformLocation("u_mvp")
+            self._sil_loc_eye = sp.uniformLocation("u_eye")
+            self._sil_loc_color = sp.uniformLocation("u_color")
+            self._sil_loc_clip_plane = sp.uniformLocation("u_clip_plane")
+            self._sil_loc_clip_enable = sp.uniformLocation("u_clip_enable")
         self._loc_d_mvp = self._depth_program.uniformLocation("u_mvp")
         self._loc_d_clip_plane = self._depth_program.uniformLocation(
             "u_clip_plane")
@@ -2073,6 +2116,8 @@ class Viewport(QOpenGLWidget):
                 self._silhouette_vao.release()
                 if len(_jit_p) > 1:
                     self._program.setUniformValue(self._loc_mvp, mvp)
+            if getattr(self, "_sil_program", None) is not None:
+                self._draw_instanced_silhouettes(ec, mvp, _jit_p)
         _fmark("edges")
 
         # Selected edges (drawn on top, highlighted) — never in an export
@@ -2188,6 +2233,19 @@ class Viewport(QOpenGLWidget):
         )
         if not (ok_v and ok_f and prog.link()):
             raise RuntimeError("shader compile/link failed:\n" + prog.log())
+        return prog
+
+    def _compile_silhouette_program(self) -> QOpenGLShaderProgram:
+        prog = QOpenGLShaderProgram(self)
+        ok_v = prog.addShaderFromSourceFile(
+            QOpenGLShader.Vertex, str(SHADER_DIR / "silhouette.vert")
+        )
+        ok_f = prog.addShaderFromSourceFile(
+            QOpenGLShader.Fragment, str(SHADER_DIR / "silhouette.frag")
+        )
+        if not (ok_v and ok_f and prog.link()):
+            raise RuntimeError(
+                "silhouette shader compile/link failed:\n" + prog.log())
         return prog
 
     def _compile_depth_program(self) -> QOpenGLShaderProgram:
@@ -2784,7 +2842,17 @@ class Viewport(QOpenGLWidget):
         # se había eliminado», Marco, 2026-09-11). With shadows on it never
         # showed: the shadow pass builds the entry first and rebinds its own
         # depth program afterwards.
+        inv_vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+        inv_vbo.setUsagePattern(QOpenGLBuffer.DynamicDraw)
+        inv_vbo.create()
+        inv_vbo.bind()
+        inv_vbo.allocate(64)
+        inv_vbo.release()
+        sil_vao, sil_vbo, sil_count = self._build_sil_buffers(base, mat_vbo,
+                                                              inv_vbo)
         entry = {"key": key, "mat_sig": None, "mat_vbo": mat_vbo,
+                 "inv_vbo": inv_vbo, "inv_sig": None,
+                 "sil_vao": sil_vao, "sil_vbo": sil_vbo, "sil_count": sil_count,
                  "vcol_vao": vcol_vao, "vcol_vbo": vcol_vbo,
                  "vcol_count": len(vcol_raw) // 24,
                  "edges_vao": edges_vao, "edges_vbo": edges_vbo,
@@ -2801,6 +2869,8 @@ class Viewport(QOpenGLWidget):
         """Free one prototype draw entry's VAOs and buffers (GL context
         current)."""
         for k, obj in entry.items():
+            if obj is None:               # a pass the entry has nothing for
+                continue
             if k.endswith("_vao") or k.endswith("_vbo"):
                 try:
                     obj.destroy()
@@ -2851,6 +2921,237 @@ class Viewport(QOpenGLWidget):
         if self._edit_rest_mode != "fade":
             return [(groups, 0.0)]
         return [(fuera, EDIT_REST_FADE), (dentro, 0.0)]
+
+    def _build_sil_buffers(self, chunk, mat_vbo, inv_vbo):
+        """VAO + VBO of a chunk's soft edges for the GPU profile pass — per
+        vertex pos(3) n0(3) n1(3) (d0, d1, single)(3), 12 floats — wired to
+        ``mat_vbo`` for the placement matrix (divisor 1). ``(vao, vbo,
+        vertex count)``; ``(None, None, 0)`` when there is nothing curved
+        or no program."""
+        if getattr(self, "_sil_program", None) is None \
+                or chunk.get("soft_pts") is None:
+            return None, None, 0
+        verts = _sil_vertex_array(chunk)
+        raw = verts.tobytes()
+        vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+        vbo.setUsagePattern(QOpenGLBuffer.StaticDraw)
+        vbo.create()
+        vbo.bind()
+        vbo.allocate(raw, len(raw))
+        vbo.release()
+        vao = QOpenGLVertexArrayObject(self)
+        vao.create()
+        vao.bind()
+        vbo.bind()
+        sp = self._sil_program
+        for loc, off, size in ((0, 0, 3), (1, 12, 3), (2, 24, 3), (7, 36, 3)):
+            sp.enableAttributeArray(loc)
+            sp.setAttributeBuffer(loc, GL_FLOAT, off, size, 48)
+        vbo.release()
+        mat_vbo.bind()
+        extra = self.context().extraFunctions()
+        for i, loc in enumerate(self._loc_inst):
+            sp.enableAttributeArray(loc)
+            sp.setAttributeBuffer(loc, GL_FLOAT, i * 16, 4, 64)
+            extra.glVertexAttribDivisor(loc, 1)
+        mat_vbo.release()
+        # The placement's INVERSE, per instance (locations 8-11): the eye
+        # in prototype coordinates is one mat4 * vec4 per vertex instead of
+        # a mat4 inverse() per vertex.
+        inv_vbo.bind()
+        for i in range(4):
+            sp.enableAttributeArray(8 + i)
+            sp.setAttributeBuffer(8 + i, GL_FLOAT, i * 16, 4, 64)
+            extra.glVertexAttribDivisor(8 + i, 1)
+        inv_vbo.release()
+        vao.release()
+        self._program.bind()
+        return vao, vbo, verts.shape[0] * 2
+
+    def _ensure_sil_rest(self, g):
+        """The GPU profile entry of a group the instanced face pass does not
+        draw: a loose group (its chunk in world coordinates, matrix the
+        identity) or a placement left to the consolidated passes (glass,
+        back-side content — its PROTOTYPE chunk, matrix the placement's).
+        Lives in ``_proto_draw`` so the document change frees it with the
+        rest. Keyed on the mesh and its mutation serial."""
+        cache = getattr(self, "_proto_draw", None)
+        if cache is None:
+            cache = self._proto_draw = {}
+        mesh = g.mesh
+        world = getattr(g, "xform", None) is None
+        ckey = ("sil", id(mesh), world)
+        key = (id(mesh), getattr(mesh, "_mut_serial", 0), world)
+        entry = cache.get(ckey)
+        if entry is not None and entry["key"] == key:
+            return entry
+        if entry is not None:
+            self._destroy_proto_draw_entry(entry)
+        chunk = self._group_chunk(g) if world else self._proto_base_chunk(mesh)
+        mat_vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+        mat_vbo.setUsagePattern(QOpenGLBuffer.DynamicDraw)
+        mat_vbo.create()
+        mat_vbo.bind()
+        mat_vbo.allocate(64)
+        mat_vbo.release()
+        inv_vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+        inv_vbo.setUsagePattern(QOpenGLBuffer.DynamicDraw)
+        inv_vbo.create()
+        inv_vbo.bind()
+        inv_vbo.allocate(64)
+        inv_vbo.release()
+        vao, vbo, count = self._build_sil_buffers(chunk, mat_vbo, inv_vbo)
+        entry = cache[ckey] = {"key": key, "mat_sig": None, "mat_vbo": mat_vbo,
+                               "inv_vbo": inv_vbo, "inv_sig": None,
+                               "sil_vao": vao, "sil_vbo": vbo, "sil_count": count}
+        return entry
+
+    def _update_inv_matrices(self, entry, groups) -> None:
+        """The inverses of ``groups``' placements into the entry's inverse
+        VBO, in the order _update_inst_matrices uploaded the placements —
+        once per change of the set (same signature)."""
+        sig = entry["mat_sig"]
+        if entry.get("inv_sig") == sig:
+            return
+        import numpy as np
+        rows = []
+        for g in groups:
+            xf = getattr(g, "xform", None)
+            if xf is None:
+                rows.append(np.eye(4, dtype=np.float32).flatten(order="F"))
+                continue
+            inv, ok = xf.inverted()
+            rows.append(np.asarray(list(inv.data()) if ok else list(xf.data()),
+                                   dtype=np.float32))
+        raw = np.asarray(rows, dtype=np.float32).tobytes()
+        entry["inv_vbo"].bind()
+        entry["inv_vbo"].allocate(raw, len(raw))
+        entry["inv_vbo"].release()
+        entry["inv_sig"] = sig
+
+    def _draw_instanced_silhouettes(self, ec, mvp, jit) -> None:
+        """Profiles of every instanced component placement, decided on the
+        GPU (silhouette.vert) — one instanced line draw per prototype over
+        the matrices the face pass uploaded. Replaces the NumPy recompute
+        of _instanced_silhouettes, which ran every few frames at 19–25 ms
+        on a 300 k-face room (a 3-refresh hitch every 5th frame of an
+        orbit); here the cost is a draw call, every frame, exact."""
+        by_proto = getattr(self, "_frame_instanced", None)
+        if by_proto is None:
+            by_proto = self._gather_instanced()
+        if not by_proto:
+            return
+        skip_context = (self.scene.edit_group is not None
+                        and self._edit_rest_mode in ("fade", "hide"))
+        extra = self.context().extraFunctions()
+        sp = self._sil_program
+        sp.bind()
+        sp.setUniformValue(self._sil_loc_mvp, mvp)
+        eye = self.camera.eye()
+        sp.setUniformValue(self._sil_loc_eye,
+                           QVector3D(eye.x(), eye.y(), eye.z()))
+        sp.setUniformValue(self._sil_loc_color,
+                           QVector4D(ec[0], ec[1], ec[2], 1.0))
+        clip = getattr(self, "_clip_vec", None)
+        if clip is not None:
+            sp.setUniformValue(self._sil_loc_clip_plane, clip)
+            sp.setUniformValue(self._sil_loc_clip_enable, 1)
+        else:
+            sp.setUniformValue(self._sil_loc_clip_enable, 0)
+        for mesh, paint, groups, _mirrored in by_proto.values():
+            entry = self._ensure_proto_draw(mesh, paint)
+            if not entry.get("sil_count"):
+                continue
+            for lote, fade in self._instanced_batches(groups):
+                if not lote or (skip_context and fade > 0.0):
+                    continue              # no outline on the faded context
+                n = self._update_inst_matrices(entry, lote)
+                self._update_inv_matrices(entry, lote)
+                entry["sil_vao"].bind()
+                for _dx, _dy in jit:
+                    if _dx or _dy:
+                        sp.setUniformValue(self._sil_loc_mvp,
+                                           _shifted_mvp(mvp, _dx, _dy))
+                    extra.glDrawArraysInstanced(GL_LINES, 0,
+                                                entry["sil_count"], n)
+                if len(jit) > 1:
+                    sp.setUniformValue(self._sil_loc_mvp, mvp)
+                entry["sil_vao"].release()
+        # The groups the instanced pass does not draw — a loose group of
+        # 107 k faces (160 k soft edges) stayed on the NumPy refresh and
+        # kept the 5th-frame hitch alive after the prototypes had moved.
+        # Which groups, and their boxes, change with the placements, not
+        # the camera: listed once per epoch, culled in one NumPy pass per
+        # frame (walking them per frame — a _placement_frame and a
+        # _group_chunk each — cost 4.4 ms a frame inside the room).
+        import numpy as np
+        pv_sil = getattr(self, "_preview_groups", None) or ()
+        rkey = (self._placements_epoch(), id(self.scene.mesh),
+                getattr(self, "_preview_epoch", 0), skip_context,
+                getattr(self, "_frozen_cache_version", None))
+        rest = getattr(self, "_sil_rest_pool", None)
+        if rest is None or rest[0] != rkey:
+            inst_ids = {id(g) for _m, _p, gs, _mi in by_proto.values() for g in gs}
+            # The instanced pool is culled per frame; its members may be out
+            # of by_proto this frame only because they are off screen. The
+            # pool itself (uncut) tells the two apart.
+            pool = getattr(self, "_inst_pool", None)
+            if pool is not None:
+                inst_ids |= {id(g) for g in pool[1]}
+            groups, boxes = [], []
+            for g in self._placements():
+                if (id(g) in inst_ids or id(g) in pv_sil
+                        or getattr(g, "billboard", False)
+                        or not self.scene.entity_visible(g)
+                        or (skip_context and self._draws_in_edit_context(g))):
+                    continue
+                bb = (self._group_chunk(g).get("bbox")
+                      if getattr(g, "xform", None) is None
+                      else self._placement_bbox(g))
+                groups.append(g)
+                boxes.append(bb)
+            lo = np.array([b[0] if b else (-np.inf,) * 3 for b in boxes],
+                          dtype=np.float64).reshape(-1, 3)
+            hi = np.array([b[1] if b else (np.inf,) * 3 for b in boxes],
+                          dtype=np.float64).reshape(-1, 3)
+            rest = self._sil_rest_pool = (rkey, groups, lo, hi)
+        _rk, groups, lo, hi = rest
+        planes = getattr(self, "_frame_planes", None)
+        if groups and planes is not None:
+            pl = np.asarray(planes, dtype=np.float64)
+            nrm = pl[:, :3]
+            pick = np.where(nrm[:, None, :] >= 0.0, hi[None, :, :], lo[None, :, :])
+            keep = ((pick * nrm[:, None, :]).sum(axis=2)
+                    + pl[:, 3][:, None] >= 0.0).all(axis=0)
+            groups = [g for g, k in zip(groups, keep) if k]
+        identity = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+        for g in groups:
+            entry = self._ensure_sil_rest(g)
+            if not entry["sil_count"]:
+                continue
+            xf = getattr(g, "xform", None)
+            sig = (id(g), tuple(xf.data()) if xf is not None else None)
+            if entry["mat_sig"] != sig:
+                import numpy as np
+                raw = np.asarray(list(xf.data()) if xf is not None else identity,
+                                 dtype=np.float32).tobytes()
+                entry["mat_vbo"].bind()
+                entry["mat_vbo"].allocate(raw, len(raw))
+                entry["mat_vbo"].release()
+                entry["mat_sig"] = sig
+            self._update_inv_matrices(entry, [g])
+            entry["sil_vao"].bind()
+            for _dx, _dy in jit:
+                if _dx or _dy:
+                    sp.setUniformValue(self._sil_loc_mvp,
+                                       _shifted_mvp(mvp, _dx, _dy))
+                extra.glDrawArraysInstanced(GL_LINES, 0, entry["sil_count"], 1)
+            if len(jit) > 1:
+                sp.setUniformValue(self._sil_loc_mvp, mvp)
+            entry["sil_vao"].release()
+        sp.release()
+        self._program.bind()
 
     def _draw_instanced_faces(self, mode, style) -> None:
         by_proto = self._gather_instanced()
@@ -5661,9 +5962,15 @@ class Viewport(QOpenGLWidget):
             import numpy as np
             e_np = np.array([eye.x(), eye.y(), eye.z()])
             planes = getattr(self, "_frame_planes", None)
-            got, groups = self._instanced_silhouettes(groups, eye, planes)
-            if got:
-                chunks.append(got)
+            if getattr(self, "_sil_program", None) is not None:
+                # Every group's profiles come from the GPU pass
+                # (_draw_instanced_silhouettes); only the loose mesh's soft
+                # edges, above, stay with NumPy.
+                groups = []
+            else:
+                got, groups = self._instanced_silhouettes(groups, eye, planes)
+                if got:
+                    chunks.append(got)
             for g in groups:
                 if getattr(g, "xform", None) is not None:
                     got = self._instance_silhouette(g, eye, planes)
