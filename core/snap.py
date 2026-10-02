@@ -1186,6 +1186,7 @@ def compute_snap(
     inference_angle_deg: float = 3.0,
     screen_axis_px: Optional[float] = None,
     is_occluded: Optional[Callable[[QVector3D], bool]] = None,
+    are_occluded: Optional[Callable[[list], list]] = None,
     face_under_cursor: bool = False,
     edge_threshold_px: Optional[float] = None,
     magnetic_axis_deg: Optional[float] = None,
@@ -1367,11 +1368,32 @@ def compute_snap(
         pending.sort(key=lambda c: (math.floor(c[0] / _TIE_PX),
                                     0 if c[4] is None else 1))
         chosen = None
-        for d, world, kind, color, context, occludable in pending:
+        # Once the nearest candidate turns out hidden, the next ones are
+        # asked in batches (``are_occluded``) that double in size — 8, 16,
+        # 32… — until one is visible. A dense model hides dozens behind
+        # the first wall and a ray each was most of the hover's cost; but
+        # the first visible candidate is usually the ~9th of ~100 (city-L,
+        # pileta-fuente), so one batch of ALL the rest did 10x the work
+        # the one-by-one walk did. Doubling bounds the waste to ~2x.
+        hidden: dict = {}
+        batch = 8
+        for k, (d, world, kind, color, context, occludable) in enumerate(pending):
             # Only snap to geometry the user can actually see — a vertex
             # hidden behind a face shouldn't light up.
-            if occludable and is_occluded is not None and is_occluded(world):
-                continue
+            if occludable and is_occluded is not None:
+                if k in hidden:
+                    if hidden[k]:
+                        continue
+                elif are_occluded is not None and hidden:
+                    nxt = [j for j in range(k, len(pending)) if pending[j][5]][:batch]
+                    batch *= 2
+                    hidden.update(zip(nxt, are_occluded(
+                        [pending[j][1] for j in nxt])))
+                    if hidden[k]:
+                        continue
+                elif is_occluded(world):
+                    hidden[k] = True       # from here on, ask in batches
+                    continue
             chosen = (d, world, kind, color, context)
             break
         pending.clear()

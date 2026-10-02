@@ -59,6 +59,12 @@ _NO_INSTANCING = os.environ.get("INGETRAZO_NO_INSTANCING", "") == "1"
 # set to 1 to draw every paint on both sides like before — a diagnostic,
 # and the escape hatch should a driver misbehave with front culling.
 _NO_BACK_TINT = os.environ.get("INGETRAZO_NO_BACK_TINT", "") == "1"
+# Kill-switch for the snap engine's shortcuts (edge grid, occlusion in
+# batches, centre lookup through the registry): set to 1 to run every hover
+# the way it ran before — one pass over all group edges, one ray per
+# candidate, the rounded-position table. A diagnostic, and the escape hatch
+# should a snap ever land somewhere it did not before.
+_NO_SNAP_FAST = os.environ.get("INGETRAZO_NO_SNAP_FAST", "") == "1"
 _perf_file = None
 
 
@@ -9695,11 +9701,37 @@ class Viewport(QOpenGLWidget):
         self._gedge_px_cache = (key, data)
         return data
 
+    #: The group-edge distances' contract with their two readers (the
+    #: hovered-edge pick, within ``pick_threshold_px``; the snap prefilter,
+    #: the ``GEDGE_ENOUGH`` nearest within 48 px): exact within
+    #: ``GEDGE_NEAR_PX``, and within ``GEDGE_REACH_PX`` too unless at least
+    #: ``GEDGE_ENOUGH`` edges already lie inside the near radius — then the
+    #: nearest ones are all there. Past that a big model says ``inf``.
+    GEDGE_NEAR_PX = 8.0
+    GEDGE_REACH_PX = 64.0
+    GEDGE_ENOUGH = 48
+    #: From this many group edges up, the distances come through a screen
+    #: grid (core.edge_grid) instead of one pass over all of them.
+    GEDGE_GRID_MIN = 20000
+
     def _gedge_dist(self, px: float, py: float):
-        """Screen distance from the cursor to every group hard edge — one
-        vectorised pass per hover position, shared by the hovered-edge
-        pick and the snap prefilter (both used to compute it)."""
+        """Screen distance from the cursor to every group hard edge, shared
+        by the hovered-edge pick and the snap prefilter (both used to
+        compute it); see ``GEDGE_NEAR_PX`` for how far it is exact.
+
+        On a 330 k-face city the full pass was ~30 ms of every mouse move
+        for the few dozen edges that matter. A camera that stays put for a
+        second hover gets the edges binned into a screen grid (once — the
+        projection's own lifetime), and each move then measures the cells
+        around the cursor: 0.2 ms zoomed onto a building, ~2 ms with the
+        whole city in view (11 edges per pixel: the near radius already
+        holds hundreds). The grid lives as long as the projection: the
+        first hover of a projection keeps the full pass, so one that
+        changes every event (the camera moving) never pays for a grid it
+        would use once. City-L, the interaction benchmark: hover with Line
+        103 -> 60 ms, a Move drag 101 -> 49 ms per event (median)."""
         import numpy as np
+        from core.edge_grid import EdgeGrid, segment_distances
         proj = self._gedge_screen()
         # Whole pixels: the hovered-edge pick gets the float position and
         # the snap scene the rounded one — the same pass must serve both.
@@ -9708,12 +9740,34 @@ class Viewport(QOpenGLWidget):
         if cached is not None and cached[0] == key:
             return cached[1]
         ax, ay, bx, by, ok = proj
-        dx, dy = bx - ax, by - ay
-        l2 = dx * dx + dy * dy
-        safe = np.where(l2 > 1e-12, l2, 1.0)
-        t = np.clip(((px - ax) * dx + (py - ay) * dy) / safe, 0.0, 1.0)
-        d = np.hypot(ax + t * dx - px, ay + t * dy - py)
-        d = np.where(ok, d, np.inf)
+        d = None
+        if (not _NO_SNAP_FAST and len(ax) >= Viewport.GEDGE_GRID_MIN
+                and getattr(self, "pick_threshold_px", 0.0)
+                <= Viewport.GEDGE_REACH_PX):
+            # (projection, grid or None): the grid waits for the second hover.
+            slot = getattr(self, "_gedge_grid_cache", None)
+            if slot is None or slot[0] is not proj:
+                self._gedge_grid_cache = (proj, None)
+            else:
+                grid = slot[1]
+                if grid is None:
+                    grid = EdgeGrid(ax, ay, bx, by, ok, self.width(),
+                                    self.height(), Viewport.GEDGE_REACH_PX)
+                    self._gedge_grid_cache = (proj, grid)
+                near_px = max(Viewport.GEDGE_NEAR_PX,
+                              getattr(self, "pick_threshold_px", 0.0))
+                for reach in (near_px, Viewport.GEDGE_REACH_PX):
+                    ids = grid.near(px, py, reach)
+                    if ids is None:
+                        break
+                    sub = segment_distances(ax, ay, bx, by, ok, px, py, ids)
+                    if (reach >= Viewport.GEDGE_REACH_PX
+                            or int((sub < reach).sum()) >= Viewport.GEDGE_ENOUGH):
+                        d = np.full(len(ax), np.inf)
+                        d[ids] = sub
+                        break
+        if d is None:
+            d = segment_distances(ax, ay, bx, by, ok, px, py)
         self._gedge_dist_cache = (key, d)
         return d
 
@@ -9780,7 +9834,13 @@ class Viewport(QOpenGLWidget):
         if not proj[4].any():
             return []
         dist = getattr(self, "_gedge_dist", None)          # stub VPs in tests
-        d = dist(px, py) if dist is not None else Viewport._gedge_dist(self, px, py)
+        if radius_px > Viewport.GEDGE_REACH_PX or cap > Viewport.GEDGE_ENOUGH:
+            # Past what _gedge_dist promises (GEDGE_NEAR_PX): every edge.
+            from core.edge_grid import segment_distances
+            d = segment_distances(*proj, px, py)
+        else:
+            d = (dist(px, py) if dist is not None
+                 else Viewport._gedge_dist(self, px, py))
         cand = np.where(d < radius_px)[0]
         if len(cand) > cap:
             cand = cand[np.argsort(d[cand])[:cap]]
@@ -10219,16 +10279,30 @@ class Viewport(QOpenGLWidget):
                 return None
         la = inv.map(pseudo.a) if inv is not None else pseudo.a
         lb = inv.map(pseudo.b) if inv is not None else pseudo.b
-        key = (id(mesh), self.scene.version)
-        table = getattr(self, "_group_edge_table", None)
-        if table is None or table[0] != key:
+        # The mesh's own registry: two O(1) vertex lookups (tolerant, the
+        # weld grid) and the edge between them by incidence. This used to
+        # build a dict of EVERY edge of the group, keyed by rounded
+        # positions, cached for one group at a time — so a cursor crossing
+        # from one group to the next rebuilt it on nearly every move:
+        # 9 ms of a 14 ms hover on pileta-fuente (2 500 edges per group).
+        edge = None
+        if not _NO_SNAP_FAST:
+            va, vb = mesh.vertex_at(la), mesh.vertex_at(lb)
+            if va is not None and vb is not None:
+                edge = mesh.find_edge(va, vb)
+        if edge is None:
+            # The registry missed (a position past the weld tolerance):
+            # the rounded-position table, one per mesh, built once.
+            tables = getattr(self, "_group_edge_tables", None)
+            if tables is None or tables[0] != self.scene.version:
+                tables = self._group_edge_tables = (self.scene.version, {})
             def k(p):
                 return (round(p.x(), 4), round(p.y(), 4), round(p.z(), 4))
-            table = (key, {frozenset((k(e.a), k(e.b))): e for e in mesh.edges})
-            self._group_edge_table = table
-        def k(p):
-            return (round(p.x(), 4), round(p.y(), 4), round(p.z(), 4))
-        edge = table[1].get(frozenset((k(la), k(lb))))
+            table = tables[1].get(id(mesh))
+            if table is None:
+                table = tables[1][id(mesh)] = {
+                    frozenset((k(e.a), k(e.b))): e for e in mesh.edges}
+            edge = table.get(frozenset((k(la), k(lb))))
         if edge is None or getattr(edge, "curve", None) is None:
             return None
         found = self._center_of_edge(edge, mesh)
@@ -10700,6 +10774,144 @@ class Viewport(QOpenGLWidget):
         c = float(n @ [sp.point.x(), sp.point.y(), sp.point.z()])
         pts = eye + dv * face_t[hit][:, None]
         return bool(((pts @ n - c) <= 1e-6).any())
+
+    #: Cap on rays × triangles in one NumPy block of ``_occluded_many``
+    #: (×3 float64 per array: ~50 MB at most).
+    _OCCL_BLOCK = 2_000_000
+
+    def _occluded_many(self, worlds) -> list:
+        """``_is_occluded`` for several points at once — the snap engine's
+        candidates, which all cast from the same eye. One ray at a time,
+        each paid for its own span cull and a Möller–Trumbore pass per span
+        it met, in small NumPy calls whose overhead was the cost (0.8 ms a
+        ray, ~41 rays a hover on a 330 k-face city, 60 % of the inference
+        pass). Here the rays share it: one box test for all of them against
+        every span, then each span's triangles against the rays that reach
+        it. Same rays (built with the same QVector3D arithmetic), same
+        acceptance as ``_ray_hits``; with an active section cut — per-face
+        rules — it asks ``_is_occluded`` point by point."""
+        import numpy as np
+        worlds = list(worlds)
+        out = [False] * len(worlds)
+        if not worlds or self._effective_style().face_mode in ("xray",
+                                                               "wireframe"):
+            return out
+        idx = self._pick_index()
+        own = getattr(idx, "own_spans", None) or ()
+        if getattr(idx, "tri_v0", None) is None and not own:
+            return out
+        if _active_cut(self.scene) is not None:
+            return [self._is_occluded(w) for w in worlds]
+        origin = self.camera.eye()
+        rows, dirs, dists = [], [], []
+        for i, w in enumerate(worlds):
+            delta = w - origin
+            dist = delta.length()
+            if dist < 1e-9:
+                continue
+            d = delta / dist
+            rows.append(i)
+            dirs.append((d.x(), d.y(), d.z()))
+            dists.append(dist)
+        if not rows:
+            return out
+        o = np.array([origin.x(), origin.y(), origin.z()])
+        D = np.array(dirs, dtype=np.float64)
+        best = np.full(len(rows), np.inf)
+        spans = ([] if idx.tri_v0 is None else
+                 list(getattr(idx, "tri_spans", None)
+                      or [(None, 0, len(idx.tri_v0))]))
+        spans += list(own)
+        inf = float("inf")
+        boxes = getattr(idx, "_span_boxes", None)
+        if boxes is None or boxes[0] != len(spans):
+            blo = np.array([sp[0][0] if sp[0] is not None else (-inf,) * 3
+                            for sp in spans], dtype=np.float64).reshape(-1, 3)
+            bhi = np.array([sp[0][1] if sp[0] is not None else (inf,) * 3
+                            for sp in spans], dtype=np.float64).reshape(-1, 3)
+            boxes = idx._span_boxes = (len(spans), blo, bhi)
+        _n, blo, bhi = boxes
+        # The box prefilter _ray_hits applies, in both its regimes: the
+        # vectorised slab past 64 spans, ``_ray_aabb`` (with its tolerance
+        # for a ray parallel to an axis) below — they differ on exactly
+        # those rays, the standard views'.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            if len(spans) > 64:
+                inv_d = 1.0 / np.where(np.abs(D) > 1e-12, D, 1e-12)  # (R, 3)
+                t1 = (blo[None, :, :] - o) * inv_d[:, None, :]        # (R, S, 3)
+                t2 = (bhi[None, :, :] - o) * inv_d[:, None, :]
+                tmin = np.nanmax(np.minimum(t1, t2), axis=2)
+                tmax = np.nanmin(np.maximum(t1, t2), axis=2)
+                meet = tmax >= np.maximum(tmin, 0.0)
+            else:
+                par = np.abs(D) < 1e-12                               # (R, 3)
+                inv_d = 1.0 / np.where(par, 1.0, D)
+                t1 = (blo[None, :, :] - o) * inv_d[:, None, :]
+                t2 = (bhi[None, :, :] - o) * inv_d[:, None, :]
+                lo_t = np.where(par[:, None, :], -inf, np.minimum(t1, t2))
+                hi_t = np.where(par[:, None, :], inf, np.maximum(t1, t2))
+                tmin = np.maximum(lo_t.max(axis=2), 0.0)
+                tmax = hi_t.min(axis=2)
+                inside = (o >= blo - 1e-9) & (o <= bhi + 1e-9)        # (S, 3)
+                meet = ((~par[:, None, :] | inside[None, :, :]).all(axis=2)
+                        & (tmin <= tmax))
+                unboxed = np.array([sp[0] is None for sp in spans], dtype=bool)
+                meet |= unboxed[None, :]
+                tmin = np.where(unboxed[None, :], -inf, tmin)
+        limit = np.array(dists) - 1e-3                                # (R,)
+        # Only what lies BEFORE the point can hide it: a span whose box the
+        # ray enters past the point is skipped (an occluding hit at t < limit
+        # enters its box before that), and spans go nearest first so a ray
+        # settled as hidden stops asking.
+        meet = meet & (tmin < limit[:, None])                         # (R, S)
+        ent_mask = idx.ent_vis
+        live_spans = np.flatnonzero(meet.any(axis=0))
+        order = np.argsort(np.where(meet[:, live_spans],
+                                    tmin[:, live_spans], np.inf).min(axis=0))
+        for si in live_spans[order]:
+            span = spans[si]
+            if len(span) == 3:
+                _bb, s0, n = span
+                if not n:
+                    continue
+                v0 = idx.tri_v0[s0:s0 + n]
+                e1 = idx.tri_e1[s0:s0 + n]
+                e2 = idx.tri_e2[s0:s0 + n]
+                te = idx.tri_ent[s0:s0 + n]
+            else:
+                _bb, v0, e1, e2, te_local, eoff = span
+                if not len(v0):
+                    continue
+                te = te_local + eoff
+            live = ent_mask[te]
+            if not live.any():
+                continue
+            if not live.all():
+                v0, e1, e2 = v0[live], e1[live], e2[live]
+            s = o - v0                                                # (n, 3)
+            q = np.cross(s, e1)                                       # (n, 3)
+            uq = np.einsum("ij,ij->i", e2, q)                         # (n,)
+            r_all = np.flatnonzero(meet[:, si] & (best >= limit))
+            if not len(r_all):
+                continue
+            step = max(1, self._OCCL_BLOCK // max(len(v0), 1))
+            for k in range(0, len(r_all), step):
+                r = r_all[k:k + step]
+                d = D[r]                                              # (r, 3)
+                p = np.cross(d[:, None, :], e2[None, :, :])           # (r, n, 3)
+                det = np.einsum("nj,rnj->rn", e1, p)
+                ok = np.abs(det) > 1e-6
+                inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+                u = np.einsum("nj,rnj->rn", s, p) * inv
+                v = (d @ q.T) * inv
+                t = uq[None, :] * inv
+                hit = (ok & (u >= 0.0) & (u <= 1.0) & (v >= 0.0)
+                       & (u + v <= 1.0) & (t > 1e-6))
+                tm = np.where(hit, t, np.inf).min(axis=1)
+                best[r] = np.minimum(best[r], tm)
+        for j, i in enumerate(rows):
+            out[i] = bool(best[j] < limit[j])
+        return out
 
     def pick_face(self, screen_x: float, screen_y: float):
         """Return the face the cursor ray hits, or ``None``.
@@ -12473,6 +12685,7 @@ class Viewport(QOpenGLWidget):
             reference_mode=self.reference_mode,
             inference_angle_deg=self.inference_angle_deg,
             is_occluded=self._is_occluded,
+            are_occluded=None if _NO_SNAP_FAST else self._occluded_many,
             face_under_cursor=self.pick_face_any(px_x, px_y)[0] is not None,
             edge_threshold_px=self.edge_snap_threshold_px,
             magnetic_axis_deg=getattr(self.active_tool, "magnetic_axis_deg", None),
@@ -12924,6 +13137,7 @@ class Viewport(QOpenGLWidget):
             reference_mode=self.reference_mode,
             inference_angle_deg=self.inference_angle_deg,
             is_occluded=self._is_occluded,
+            are_occluded=None if _NO_SNAP_FAST else self._occluded_many,
             face_under_cursor=self.pick_face_any(px_x, px_y)[0] is not None,
             edge_threshold_px=self.edge_snap_threshold_px,
             magnetic_axis_deg=getattr(self.active_tool, "magnetic_axis_deg", None),
