@@ -59,6 +59,14 @@ _NO_INSTANCING = os.environ.get("INGETRAZO_NO_INSTANCING", "") == "1"
 # set to 1 to draw every paint on both sides like before — a diagnostic,
 # and the escape hatch should a driver misbehave with front culling.
 _NO_BACK_TINT = os.environ.get("INGETRAZO_NO_BACK_TINT", "") == "1"
+# Kill-switch for the pick index's span grid: set to 1 to keep one span per
+# chunk however big, as before (a ray that meets the box of a 107 k-triangle
+# group then tests all of its triangles).
+_NO_SPAN_GRID = os.environ.get("INGETRAZO_NO_SPAN_GRID", "") == "1"
+#: A chunk with more triangles than this is split into grid cells for the
+#: ray prefilter (_split_chunk_spans); ~4 096 triangles a cell.
+_SPAN_GRID_MIN = 8192
+_SPAN_CELL_TRIS = 4096
 _perf_file = None
 
 
@@ -241,6 +249,69 @@ SHADER_DIR = app_root() / "resources" / "shaders"
 #: ~a dozen times per hover, and an exploded medium import (9k faces =
 #: ~20k edges) froze every mouse move (user report, piscina.igz).
 _LOOSE_SNAP_CAP = 3000
+
+
+def _split_chunk_spans(chunk, depth=0, force=False):
+    """``(v0, e1, e2, tri_ent, cells)`` of a chunk for the pick index. For a
+    chunk of more than ``_SPAN_GRID_MIN`` triangles: the triangles reordered
+    by the cell of their centroid in a grid over the chunk (cells per axis
+    in proportion to its extent there, ~``_SPAN_CELL_TRIS`` a cell), and
+    ``cells = [(bbox, start, count)]``, one per non-empty cell, each box
+    tight around its triangles; a cell that still holds over twice the
+    target (triangles cluster) is binned again on its own, up to three
+    levels. Otherwise ``cells = None`` and the arrays as they are. Cached on
+    the chunk by its revision.
+
+    One span per chunk made every ray that met the box of a big group run
+    Möller–Trumbore over all of it: a 107 k-triangle sofa, 2.6 ms a ray,
+    ~100 rays a hover with Line (snap occlusion), 300 ms a Move step on a
+    306 k-face room. The order of the triangles inside the index is free
+    (each carries its entity), so the answer does not change."""
+    v0, e1, e2, te = chunk["v0"], chunk["e1"], chunk["e2"], chunk["tri_ent"]
+    n = len(v0)
+    if _NO_SPAN_GRID or (n <= _SPAN_GRID_MIN and not force):
+        return v0, e1, e2, te, None
+    memo = chunk.get("_span_grid") if not force else None
+    if memo is not None and memo[0] == (chunk.get("rev"), n):
+        return memo[1]
+    import numpy as np
+    cen = v0 + (e1 + e2) / 3.0                                  # centroids
+    lo = cen.min(axis=0)
+    span = np.maximum(cen.max(axis=0) - lo, 1e-9)
+    # Cells per axis in proportion to the extent on it; the weights multiply
+    # to 1, so their product stays near the target count.
+    w = span / np.exp(np.log(span).mean())
+    per_axis = np.maximum(
+        1, np.round((n / _SPAN_CELL_TRIS) ** (1.0 / 3.0) * w)).astype(np.int64)
+    cell = np.minimum(((cen - lo) * (per_axis / span)).astype(np.int64),
+                      per_axis - 1)
+    key = (cell[:, 0] * per_axis[1] + cell[:, 1]) * per_axis[2] + cell[:, 2]
+    order = np.argsort(key, kind="stable")
+    key = key[order]
+    v0p = np.ascontiguousarray(v0[order])
+    e1p = np.ascontiguousarray(e1[order])
+    e2p = np.ascontiguousarray(e2[order])
+    tep = np.ascontiguousarray(te[order])
+    starts = np.flatnonzero(np.r_[True, key[1:] != key[:-1]])
+    ends = np.r_[starts[1:], len(key)]
+    cells = []
+    for s0, s1 in zip(starts.tolist(), ends.tolist()):
+        if s1 - s0 > 2 * _SPAN_CELL_TRIS and depth < 3:
+            sv0, se1, se2, ste, sub = _split_chunk_spans(
+                {"v0": v0p[s0:s1], "e1": e1p[s0:s1], "e2": e2p[s0:s1],
+                 "tri_ent": tep[s0:s1]}, depth + 1, force=True)
+            # The sub-grid is a permutation of this range: write it back.
+            v0p[s0:s1], e1p[s0:s1], e2p[s0:s1], tep[s0:s1] = sv0, se1, se2, ste
+            cells += [(bb, s0 + a, c) for bb, a, c in sub]
+            continue
+        pts = np.concatenate([v0p[s0:s1], v0p[s0:s1] + e1p[s0:s1],
+                              v0p[s0:s1] + e2p[s0:s1]])
+        cells.append(((tuple(pts.min(axis=0).tolist()),
+                       tuple(pts.max(axis=0).tolist())), s0, s1 - s0))
+    out = (v0p, e1p, e2p, tep, cells)
+    if not force:
+        chunk["_span_grid"] = ((chunk.get("rev"), n), out)
+    return out
 
 
 def _ray_aabb_span(o, d, lo, hi):
@@ -9149,13 +9220,20 @@ class Viewport(QOpenGLWidget):
                                       chunk["tri_ent"], off))
                     elif chunk["v0"] is not None:
                         static_key.append((id(chunk), chunk.get("rev"), off))
-                        b_v0.append(chunk["v0"])
-                        b_e1.append(chunk["e1"])
-                        b_e2.append(chunk["e2"])
-                        b_te.append(chunk["tri_ent"] + off)
-                        b_spans.append((chunk.get("bbox"), b_tri_off,
-                                        len(chunk["v0"])))
-                        b_tri_off += len(chunk["v0"])
+                        v0, e1, e2, te, cells = _split_chunk_spans(chunk)
+                        b_v0.append(v0)
+                        b_e1.append(e1)
+                        b_e2.append(e2)
+                        b_te.append(te + off)
+                        if cells is None:
+                            b_spans.append((chunk.get("bbox"), b_tri_off,
+                                            len(v0)))
+                        else:
+                            # One span per grid cell, each with its own box:
+                            # a ray meets the cells it crosses, not the chunk.
+                            b_spans += [(bb, b_tri_off + s0, n)
+                                        for bb, s0, n in cells]
+                        b_tri_off += len(v0)
                     if gsnap and chunk["edges"]:
                         ge = chunk.get("_pick_ge")
                         if ge is None or ge[0] is not chunk["edges"]:
@@ -9391,6 +9469,28 @@ class Viewport(QOpenGLWidget):
         d3 = (float(d[0]), float(d[1]), float(d[2]))
         best = float("inf")
         face_t = None if reduce_global else np.full(len(idx.entities), np.inf)
+        # The static spans the ray meets go through Möller–Trumbore in ONE
+        # pass: with the span grid a ray meets dozens of small spans, and a
+        # NumPy call per span (~30 µs) became the ray's whole cost.
+        ranges = []
+        rest = []
+        for span in spans:
+            if len(span) == 3:
+                bb, s0, n = span
+                if n and (bb is None or _ray_aabb(o3, d3, bb[0], bb[1])):
+                    ranges.append((s0, n))
+            else:
+                rest.append(span)
+        if ranges:
+            if len(ranges) == 1:
+                s0, n = ranges[0]
+                sel = slice(s0, s0 + n)
+            else:
+                sel = np.concatenate([np.arange(s0, s0 + n)
+                                      for s0, n in ranges])
+            rest.insert(0, (None, idx.tri_v0[sel], idx.tri_e1[sel],
+                            idx.tri_e2[sel], idx.tri_ent[sel], 0))
+        spans = rest
         for span in spans:
             if len(span) == 3:
                 bb, s0, n = span
