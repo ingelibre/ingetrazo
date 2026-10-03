@@ -118,7 +118,9 @@ def _blocked(viewport, eye: QVector3D, delta: QVector3D, h: float,
     d = d / length
     reach = length + clearance
     for origin in (eye, eye - _UP * max(h - knee, 0.0)):
-        t = dist(origin, d)
+        # Bounded: only a wall within the step counts, so the query bakes
+        # and tests what is in reach — not every placement down the street.
+        t = dist(origin, d, reach)
         if t is not None and t < reach:
             return True
     return False
