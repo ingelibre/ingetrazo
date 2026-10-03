@@ -3555,7 +3555,14 @@ class ScenesPanel(QWidget):
         if view is None:
             return
         scene = self._scene()
+        from core.saved_views import shown_state
+        before = shown_state(scene)
         view.apply(scene, self._window.viewport.camera)
+        # A scene that only moves the camera changes nothing the caches
+        # keyed on ``scene.version`` hold: bumping it re-synced every edge
+        # and profile of the model (120 ms on a 1 M-face building) and
+        # marked the document modified for a look around.
+        changed = shown_state(scene) != before
         # The view may carry a style snapshot — keep the menu in step.
         sync = getattr(self._window, "_sync_style_menu", None)
         if sync is not None:
@@ -3567,7 +3574,10 @@ class ScenesPanel(QWidget):
                 and not scene.entity_selectable(s)]
         for s in dead:
             scene.selection.discard(s)
-        self._touch()
+        if changed:
+            self._touch()
+        else:
+            self._window.viewport.update()
         self._window.tray.layers.refresh()
         self._window.statusBar().showMessage(
             tr("Scene '{name}'", name=view.name), 2000)
