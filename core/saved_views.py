@@ -224,6 +224,29 @@ def georef_objects(scene) -> list[tuple[str, object]]:
             ("survey", getattr(scene, "photo_mesh", None))]
 
 
+def shown_state(scene) -> tuple:
+    """Everything a recalled view can change besides the camera, as a value
+    to compare: layer visibility, style, section, geographic layers,
+    shadows, hidden objects. A recall that leaves it equal moved the camera
+    only, and the caches keyed on ``scene.version`` (every edge and profile
+    of the model, re-synced) have nothing to rebuild."""
+    style = getattr(scene, "display_style", None)
+    shadows = getattr(scene, "shadows", None)
+    section = (scene.active_section()
+               if hasattr(scene, "active_section") else None)
+    return (tuple((ly.name, ly.visible) for ly in scene.layers),
+            style.to_dict() if style is not None else None,
+            getattr(section, "uid", None),
+            getattr(scene, "show_section_planes", None),
+            getattr(scene, "show_section_cuts", None),
+            tuple(sorted(georef_state(scene).items())),
+            shadows.to_dict() if shadows is not None else None,
+            tuple(sorted(uid for uid, g in scene.groups_by_uid().items()
+                         if getattr(g, "hidden", False))),
+            getattr(scene, "show_hidden_objects", None),
+            getattr(scene, "show_hidden_geometry", None))
+
+
 def georef_state(scene) -> dict:
     """Visibility of the geographic layers right now — a missing object
     counts as hidden, so a scene made before any base map existed recalls

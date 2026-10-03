@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from views import prompts as _prompts
 
+import os
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QSize, Qt
@@ -3494,6 +3495,11 @@ class LayersPanel(QWidget):
 
 
 
+#: Kill-switch: set INGETRAZO_SCENE_ALWAYS_BUMP=1 to bump ``scene.version``
+#: on every scene recall, as before — also one that only moves the camera.
+_SCENE_ALWAYS_BUMP = os.environ.get("INGETRAZO_SCENE_ALWAYS_BUMP", "") == "1"
+
+
 class ScenesPanel(QWidget):
     """Saved views — "Scenes": named camera + layer-visibility
     snapshots. Double-click recalls one; the buttons capture the current
@@ -3555,7 +3561,14 @@ class ScenesPanel(QWidget):
         if view is None:
             return
         scene = self._scene()
+        from core.saved_views import shown_state
+        before = shown_state(scene)
         view.apply(scene, self._window.viewport.camera)
+        # A scene that only moves the camera changes nothing the caches
+        # keyed on ``scene.version`` hold: bumping it re-synced every edge
+        # and profile of the model (120 ms on a 1 M-face building) and
+        # marked the document modified for a look around.
+        changed = _SCENE_ALWAYS_BUMP or shown_state(scene) != before
         # The view may carry a style snapshot — keep the menu in step.
         sync = getattr(self._window, "_sync_style_menu", None)
         if sync is not None:
@@ -3567,7 +3580,10 @@ class ScenesPanel(QWidget):
                 and not scene.entity_selectable(s)]
         for s in dead:
             scene.selection.discard(s)
-        self._touch()
+        if changed:
+            self._touch()
+        else:
+            self._window.viewport.update()
         self._window.tray.layers.refresh()
         self._window.statusBar().showMessage(
             tr("Scene '{name}'", name=view.name), 2000)
