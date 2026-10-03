@@ -263,11 +263,11 @@ def _ray_aabb_span(o, d, lo, hi):
     return tmin, tmax
 
 
-def _ray_aabb(o, d, lo, hi) -> bool:
-    """Slab test: does the forward ray (t >= 0) touch the AABB? Plain
-    floats — the pick prefilter tests ~tens of chunk boxes per ray."""
+def _ray_aabb(o, d, lo, hi, reach=float("inf")) -> bool:
+    """Slab test: does the forward ray (``0 <= t <= reach``) touch the AABB?
+    Plain floats — the pick prefilter tests ~tens of chunk boxes per ray."""
     tmin = 0.0
-    tmax = float("inf")
+    tmax = reach
     for i in range(3):
         di = d[i]
         if -1e-12 < di < 1e-12:
@@ -8798,6 +8798,7 @@ class Viewport(QOpenGLWidget):
             need = np.arange(len(groups))
         elif isinstance(near, tuple) and near[0] == "ray":
             o, d = near[1], near[2]
+            reach = near[3] if len(near) > 3 else None
             o = np.array([o.x(), o.y(), o.z()])
             d = np.array([d.x(), d.y(), d.z()])
             with np.errstate(divide="ignore", invalid="ignore"):
@@ -8807,6 +8808,12 @@ class Viewport(QOpenGLWidget):
             tmin = np.nanmax(np.minimum(t1, t2), axis=1)
             tmax = np.nanmin(np.maximum(t1, t2), axis=1)
             hit = tmax >= np.maximum(tmin, 0.0)
+            if reach is not None:
+                # A bounded query (the walkthrough's wall feelers, half a
+                # metre ahead) needs nothing past its reach: an unbounded
+                # one baked every placement down the street, and turning
+                # the head brought in new ones and rebuilt the index.
+                hit &= tmin <= reach
             if px_at is not None and hit.sum() > 1:
                 # Whatever starts behind the surface the frame shows at this
                 # pixel can be neither picked nor seen.
@@ -9324,24 +9331,30 @@ class Viewport(QOpenGLWidget):
         idx._flat = flat
         return flat
 
-    def ray_distance(self, origin: QVector3D, direction: QVector3D):
+    def ray_distance(self, origin: QVector3D, direction: QVector3D,
+                     reach: float | None = None):
         """Distance along ``direction`` (unit) from ``origin`` to the nearest
         VISIBLE face, or ``None`` when the ray meets nothing. What the
         walkthrough tools ask — the floor under the eye, the wall ahead —
         over the same index every pick uses (hidden objects and hidden
-        layers are not there to bump into)."""
-        idx = self._pick_index(near=("ray", origin, direction))
+        layers are not there to bump into). With ``reach``, only faces
+        within that distance count: the query bakes and tests only what
+        lies within it."""
+        near = (("ray", origin, direction) if reach is None
+                else ("ray", origin, direction, float(reach)))
+        idx = self._pick_index(near=near)
         if idx is None or (getattr(idx, "tri_v0", None) is None
                            and not getattr(idx, "own_spans", None)):
             return None
         t = self._ray_hits(idx, origin, direction, idx.ent_vis,
-                           reduce_global=True)
-        if t is None or t == float("inf"):
+                           reduce_global=True, reach=reach)
+        if t is None or t == float("inf") or (reach is not None
+                                               and t > reach):
             return None
         return float(t)
 
     def _ray_hits(self, idx, origin, direction, ent_mask,
-                  reduce_global: bool = False):
+                  reduce_global: bool = False, reach: float | None = None):
         """Per-entity nearest ray parameter over the index triangles whose
         entity passes ``ent_mask``. Returns an (E,) array of t (``inf`` = no
         hit), the single nearest t as a float when ``reduce_global``, or
@@ -9385,10 +9398,14 @@ class Viewport(QOpenGLWidget):
                 t2 = (bhi - o) * inv_d
             tmin = np.nanmax(np.minimum(t1, t2), axis=1)
             tmax = np.nanmin(np.maximum(t1, t2), axis=1)
-            meet = np.flatnonzero(tmax >= np.maximum(tmin, 0.0))
-            spans = [(None,) + tuple(spans[i][1:]) for i in meet]
+            meet = tmax >= np.maximum(tmin, 0.0)
+            if reach is not None:
+                meet &= tmin <= reach
+            spans = [(None,) + tuple(spans[i][1:])
+                     for i in np.flatnonzero(meet)]
         o3 = (float(o[0]), float(o[1]), float(o[2]))
         d3 = (float(d[0]), float(d[1]), float(d[2]))
+        lim = float("inf") if reach is None else float(reach)
         best = float("inf")
         face_t = None if reduce_global else np.full(len(idx.entities), np.inf)
         for span in spans:
@@ -9396,7 +9413,8 @@ class Viewport(QOpenGLWidget):
                 bb, s0, n = span
                 if not n:
                     continue
-                if bb is not None and not _ray_aabb(o3, d3, bb[0], bb[1]):
+                if bb is not None and not _ray_aabb(o3, d3, bb[0], bb[1],
+                                                    lim):
                     continue
                 v0 = idx.tri_v0[s0:s0 + n]
                 e1 = idx.tri_e1[s0:s0 + n]
@@ -9406,7 +9424,8 @@ class Viewport(QOpenGLWidget):
                 bb, v0, e1, e2, te_local, eoff = span
                 if not len(v0):
                     continue
-                if bb is not None and not _ray_aabb(o3, d3, bb[0], bb[1]):
+                if bb is not None and not _ray_aabb(o3, d3, bb[0], bb[1],
+                                                    lim):
                     continue
                 te = te_local + eoff
             p = np.cross(d, e2)

@@ -133,6 +133,22 @@ def test_a_ray_bakes_what_it_crosses(vp):
     assert d == pytest.approx(9.0, abs=1e-5)                 # top of C21
 
 
+def test_a_bounded_ray_bakes_only_what_it_can_reach(vp):
+    # Along the row j = 0 at mid-height: C00 (mirrored, x in [-1, 0]) is
+    # 2 m from the origin, C10 6 m, … C50 18 m. The walkthrough's wall
+    # feelers ask half a metre ahead; an unbounded ray baked every one of
+    # them, and turning the head brought in new ones (index rebuilt).
+    o, d = V(-3.0, 0.5, 0.5), V(1.0, 0.0, 0.0)
+    _lazy(vp, True)
+    assert vp.ray_distance(o, d, 2.5) == pytest.approx(2.0, abs=1e-5)
+    assert set(vp._pick_live) == {id(next(g for g in vp.scene.groups
+                                          if g.name == "C00"))}
+    assert vp.ray_distance(o, d, 1.5) is None              # out of reach
+    _lazy(vp, True)
+    assert vp.ray_distance(o, d) == pytest.approx(2.0, abs=1e-5)
+    assert len(vp._pick_live) == 6                          # the whole row
+
+
 def _near_edges(v, x, y):
     got = v._nearby_group_edges(x, y) or []
     return sorted((round(e.a.x(), 4), round(e.a.y(), 4), round(e.a.z(), 4),
