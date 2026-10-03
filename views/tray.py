@@ -1043,25 +1043,24 @@ class BaseMapPanel(QWidget):
 
 
 class ComponentsPanel(QWidget):
-    """Components tray: a grid of clickable thumbnails.
+    """Components tray: thumbnails grouped in a tree of user-owned
+    categories (views/component_tree.py).
 
     The thumbnails are STATIC images — the 2D people are their own PNGs and
     the 3D starters ship pre-rendered PNGs in ``resources/components/thumbs``
     (regenerate with the dev script if the models change) — so showing the
     panel costs a handful of pixmap loads and never touches the GL renderer."""
 
-    COLS = 3
-
-    def __init__(self, window) -> None:
+    def __init__(self, window, taxonomy=None) -> None:
         super().__init__()
-        from PySide6.QtGui import QIcon
         self._window = window
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 6, 8, 8)
-        grid = FlowLayout(spacing=4)
         res = app_root() / "resources" / "components"
         import json as _json
-        items = []
+        from core import component_categories
+        from views.component_tree import ComponentEntry, ComponentTree
+        entries: list = []
         # The 2D people are data too: resources/components/people.json lists
         # key/name/tip and the REAL height each one stands, which is the whole
         # point of a scale figure — <key>.png is the cutout, cropped tight so
@@ -1069,35 +1068,36 @@ class ComponentsPanel(QWidget):
         people = res / "people.json"
         if people.exists():
             for entry in _json.loads(people.read_text(encoding="utf-8")):
-                items.append(
-                    (res / f"{entry['key']}.png", tr(entry["name"]),
-                     tr(entry.get("tip", entry["name"])),
-                     lambda _c=False, k=entry["key"], h=entry["height"],
-                     n=entry["name"]:
-                         window._on_insert_person_2d(f"{k}.png", h, n)))
+                entries.append(ComponentEntry(
+                    key=f"person:{entry['key']}", label=tr(entry["name"]),
+                    tip=tr(entry.get("tip", entry["name"])),
+                    icon=res / f"{entry['key']}.png",
+                    default_path=("People",),
+                    insert=lambda k=entry["key"], h=entry["height"],
+                    n=entry["name"]:
+                        window._on_insert_person_2d(f"{k}.png", h, n)))
         # The 3D starters are data: resources/components/components.json
         # lists key/name/tip; the model is <key>.glb (Sketchfab CC-BY set,
         # see SOURCES.md) with a pre-rendered thumbs/<key>.png.
         manifest = res / "components.json"
         if manifest.exists():
             for entry in _json.loads(manifest.read_text(encoding="utf-8")):
-                items.append(
-                    (res / "thumbs" / f"{entry['key']}.png",
-                     tr(entry["name"]), tr(entry.get("tip", entry["name"])),
-                     lambda _c=False, k=entry["key"], n=entry["name"]:
-                         window._on_insert_component(k, tr(n))))
-        for i, (icon_path, label, tip, callback) in enumerate(items):
-            btn = QToolButton()
-            btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-            btn.setIcon(QIcon(str(icon_path)))
-            btn.setIconSize(QSize(56, 56))
-            btn.setText(label)
-            btn.setToolTip(tip)
-            btn.setAutoRaise(True)
-            btn.setMinimumWidth(72)
-            btn.clicked.connect(callback)
-            grid.addWidget(btn, i // self.COLS, i % self.COLS)
-        lay.addLayout(grid)
+                key = f"component:{entry['key']}"
+                entries.append(ComponentEntry(
+                    key=key, label=tr(entry["name"]),
+                    tip=tr(entry.get("tip", entry["name"])),
+                    icon=res / "thumbs" / f"{entry['key']}.png",
+                    default_path=component_categories.DEFAULT_PATHS.get(
+                        key, ()),
+                    insert=lambda k=entry["key"], n=entry["name"]:
+                        window._on_insert_component(k, tr(n))))
+        # Components live in categories the user owns: a grid of every
+        # component is an endless scroll once the library grows.
+        if taxonomy is None:
+            taxonomy = component_categories.Taxonomy(
+                component_categories.default_path())
+        self.tree = ComponentTree(taxonomy, entries)
+        lay.addWidget(self.tree)
         # The bundled grid is a handful; the rest of the catalogue lives
         # online and is browsed from here (see core/library.py).
         more = QPushButton(tr("More components…"))

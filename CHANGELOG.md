@@ -43,6 +43,14 @@ en el Flatpak, IngeTrazo habla indonesio, y se resolvieron los pedidos
 pequeños que llegaron por correo y por GitHub.
 
 ### Añadido
+- **Componentes en categorías, en un árbol**: la bandeja Componentes ya no
+  es una rejilla interminable. Los componentes se agrupan en categorías
+  propias —crear, renombrar, eliminar, anidar hasta tres niveles y
+  ocultar—, con un buscador, el interruptor «Mostrar todas las categorías»
+  y arrastrar y soltar (con Alt o Ctrl, el componente queda en las dos
+  categorías). Un componente puede estar en varias a la vez. Las
+  categorías se guardan por usuario, en un archivo aparte
+  (`component_categories.sqlite`), no en el documento.
 - **Windowizer, extensión de ejemplo** (Extensiones ▸ Extensiones de
   ejemplo ▸ Windowizer), de Bane Andreev, arquitecto: ventanas paramétricas
   a partir de caras dibujadas en un muro, con filas y columnas (o

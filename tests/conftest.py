@@ -31,6 +31,11 @@ QSettings.setDefaultFormat(QSettings.IniFormat)
 for scope in (QSettings.UserScope, QSettings.SystemScope):
     QSettings.setPath(QSettings.IniFormat, scope, _settings_dir)
 
+# The Components tray keeps the user's categories in a file of its own; the
+# suite gets one that is thrown away with it, never the developer's real one.
+os.environ.setdefault("INGETRAZO_CATEGORIES_DB",
+                      os.path.join(_settings_dir, "component_categories.sqlite"))
+
 
 import pytest  # noqa: E402
 
