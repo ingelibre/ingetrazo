@@ -3848,6 +3848,34 @@ def _drag_px() -> int:
     return max(4, QApplication.startDragDistance())
 
 
+class _CotaGhostItem(QGraphicsItem):
+    """Preview-only cota of a chain run: painted exactly like a placed cota
+    (paint_cota_mm), half transparent, deaf to the mouse. Lives as a child
+    of the canvas preview item, so every place that drops the preview
+    drops it too."""
+
+    def __init__(self, model, parent=None) -> None:
+        super().__init__(parent)
+        self.model = model
+        self.setPos(model.x_mm, model.y_mm)
+        self.setOpacity(0.55)
+        self.setAcceptedMouseButtons(Qt.NoButton)
+        self.setAcceptHoverEvents(False)
+
+    def boundingRect(self) -> QRectF:
+        m = self.model
+        (ax, ay), (bx, by) = m.line_points()
+        xs = (0.0, m.dx_mm, ax, bx)
+        ys = (0.0, m.dy_mm, ay, by)
+        pad = 12.0 * float(getattr(m, "text_mm", 2.5) or 2.5) + 5.0
+        return QRectF(min(xs) - pad, min(ys) - pad,
+                      max(xs) - min(xs) + 2 * pad,
+                      max(ys) - min(ys) + 2 * pad)
+
+    def paint(self, painter, option, widget=None) -> None:
+        paint_cota_mm(painter, self.model)
+
+
 class ComposerCanvasView(QGraphicsView):
     """The page view: placement clicks/drags for the left-toolbar tools,
     live mm cursor readout, Ctrl+wheel zoom (QGIS habits)."""
@@ -3945,6 +3973,39 @@ class ComposerCanvasView(QGraphicsView):
             dx, dy = abs(b.x() - a.x()), abs(b.y() - a.y())
             return "h" if dx >= dy else "v"
         return ""
+
+    def _run_axis(self, pos, mods) -> str:
+        """Axis of a chain / baseline run for the cursor at *pos*. Once the
+        run's dimension line is placed it is fixed — every cota of the run
+        sits on that one line (a run placed free still lets Shift straighten
+        one segment, live). Before that, Shift decides it live and its
+        release frees it: from the first point by the cursor's direction,
+        while the offset is chosen by where the cursor is pulled out (as
+        DIMLINEAR: above/below = horizontal, left/right = vertical)."""
+        pts = self._chain_pts
+        if not pts:
+            return self._chain_axis
+        if self._chain_sep is not None:
+            first = self._chain_cotas[0] if self._chain_cotas else None
+            fixed = getattr(first, "axis", "") if first is not None else ""
+            if fixed in ("h", "v"):
+                return fixed
+            return (self._straighten(pts[-1][0], pos, mods)
+                    if mods & Qt.ShiftModifier else "")
+        if not (mods & Qt.ShiftModifier):
+            return ""
+        if len(pts) < 2:
+            return self._straighten(pts[-1][0], pos, mods)
+        a, b = pts[0][0], pts[1][0]
+        x0, x1 = sorted((a.x(), b.x()))
+        y0, y1 = sorted((a.y(), b.y()))
+        out_x = max(x0 - pos.x(), pos.x() - x1, 0.0)
+        out_y = max(y0 - pos.y(), pos.y() - y1, 0.0)
+        if out_y > out_x:
+            return "h"
+        if out_x > out_y:
+            return "v"
+        return self._chain_axis or self._straighten(a, b, mods)
 
     def _straighten_at(self, a, b, pos, mods) -> str:
         """Shift once both points are down: the CURSOR picks the direction,
@@ -4136,9 +4197,7 @@ class ComposerCanvasView(QGraphicsView):
         if mode in self._RUN_TOOLS and event.button() == Qt.LeftButton:
             pos, _ = self._snapped(self.mapToScene(event.position().toPoint()))
             if self._chain_pts:
-                self._chain_axis = self._straighten(
-                    self._chain_pts[-1][0], pos,
-                    event.modifiers()) or self._chain_axis
+                self._chain_axis = self._run_axis(pos, event.modifiers())
             self._chain_click(pos, self._last_hit)
             event.accept()
             return
@@ -4449,11 +4508,10 @@ class ComposerCanvasView(QGraphicsView):
         pos = self._constrain(pos, mods)
         self.composer.update_cursor_label(pos.x(), pos.y())
         mode = self.composer.tool_mode
-        if mode in self._STRAIGHT_TOOLS and (mods & Qt.ShiftModifier):
-            if mode in self._RUN_TOOLS and self._chain_pts:
-                self._chain_axis = self._straighten(
-                    self._chain_pts[-1][0], pos, mods) or self._chain_axis
-            elif self._second_pt is not None:
+        if mode in self._RUN_TOOLS and self._chain_pts:
+            self._chain_axis = self._run_axis(pos, mods)
+        elif mode in self._STRAIGHT_TOOLS and (mods & Qt.ShiftModifier):
+            if self._second_pt is not None:
                 self._cota_axis = self._straighten_at(
                     self._drag_start, self._second_pt, pos,
                     mods) or self._cota_axis
@@ -4809,8 +4867,12 @@ class ComposerCanvasView(QGraphicsView):
         return ((qx - a.x()) * d12y - (qy - a.y()) * d12x) / den
 
     def _update_chain_preview(self, pos) -> None:
-        """Rubber band of the chain: the points so far joined, the cursor
-        segment, and once the offset is fixed the chain's dimension line."""
+        """Preview of the chain: a ghost of the cota the next click will
+        place — extension lines, ends and the live value, drawn by the same
+        painter as a placed cota, so what you see is what you get (also
+        for a run forced horizontal / vertical). The cotas already placed
+        are real items on the sheet; a bare dashed rubber band only before
+        the second point."""
         from PySide6.QtGui import QPainterPath
         from PySide6.QtWidgets import QGraphicsPathItem
         if self._preview is None or not isinstance(
@@ -4822,52 +4884,43 @@ class ComposerCanvasView(QGraphicsView):
             self._preview.setPen(pen)
             self._preview.setZValue(100000)
             self.scene().addItem(self._preview)
+        for child in list(self._preview.childItems()):
+            self.scene().removeItem(child)
         pts = [p for p, _h in self._chain_pts]
         path = QPainterPath()
-        if not pts:
-            self._preview.setPath(path)
-            return
-        if self._chain_sep is None:
-            path.moveTo(pts[0])
-            for q in pts[1:]:
-                path.lineTo(q)
-            if len(pts) < 2:
-                path.lineTo(pos)
-            else:
-                # the offset phase: the would-be dimension line at the cursor
-                a, b = pts[0], pts[1]
-                sep = self._sep_between(a, b, pos)
-                dx, dy = b.x() - a.x(), b.y() - a.y()
-                length = max(1e-9, (dx * dx + dy * dy) ** 0.5)
-                nx, ny = -dy / length, dx / length
-                path.moveTo(a.x() + nx * sep, a.y() + ny * sep)
-                path.lineTo(b.x() + nx * sep, b.y() + ny * sep)
-        else:
-            base = self._from_base()
-            last = pts[0] if base else pts[-1]
-            if base:
-                step = self._run_step_mm() * len(self._chain_cotas)
-                sep = self._chain_sep + (step if self._chain_sep >= 0
-                                         else -step)
-            else:
-                sep = self._chain_sep_for(last, pos)
-            dx, dy = pos.x() - last.x(), pos.y() - last.y()
-            length = (dx * dx + dy * dy) ** 0.5
-            if length > 1e-9:
-                if self._chain_axis == "h":
-                    nx, ny, sep = 0.0, 1.0, sep
-                elif self._chain_axis == "v":
-                    nx, ny = 1.0, 0.0
+        ghost = None                     # (a, b, sep) of the cota to preview
+        if pts:
+            if self._chain_sep is None:
+                if len(pts) < 2:
+                    path.moveTo(pts[0])
+                    path.lineTo(pos)
+                    ghost = (pts[0], pos, 0.0)
                 else:
-                    nx, ny = -dy / length, dx / length
-                ax, ay = last.x() + nx * sep, last.y() + ny * sep
-                bx = (pos.x() if self._chain_axis != "v" else ax)
-                by = (pos.y() if self._chain_axis != "h" else ay)
-                path.moveTo(ax, ay)
-                path.lineTo(bx, by)
-                path.moveTo(pos)
-                path.lineTo(bx, by)
+                    a, b = pts[0], pts[1]
+                    ghost = (a, b, self._sep_between(a, b, pos))
+            else:
+                base = self._from_base()
+                last = pts[0] if base else pts[-1]
+                if base:
+                    step = self._run_step_mm() * len(self._chain_cotas)
+                    sep = self._chain_sep + (step if self._chain_sep >= 0
+                                             else -step)
+                else:
+                    sep = self._chain_sep_for(last, pos)
+                ghost = (last, pos, sep)
         self._preview.setPath(path)
+        if ghost is None:
+            return
+        a, b, sep = ghost
+        if abs(b.x() - a.x()) + abs(b.y() - a.y()) < 1e-6:
+            return
+        try:
+            model = self.composer._new_cota((a.x(), a.y()), (b.x(), b.y()),
+                                            float(sep), None,
+                                            self._chain_axis)
+            _CotaGhostItem(model, self._preview)
+        except Exception:                 # a preview must never break the tool
+            pass
 
     def finish_chain(self) -> None:
         """End the chain: stack the total over two or more segments, clear
@@ -5136,7 +5189,9 @@ class ComposerCanvasView(QGraphicsView):
     def _shift_changed(self, down: bool) -> None:
         """Shift went down or up while a segment is being drawn: redraw
         the rubber band locked (or freed) where the cursor already is."""
-        if self._last_raw is not None and self._ortho_anchor() is not None:
+        busy = (self._ortho_anchor() is not None or bool(self._chain_pts)
+                or self._second_pt is not None)
+        if self._last_raw is not None and busy:
             self._track(self._last_raw,
                         Qt.ShiftModifier if down else Qt.NoModifier)
 
