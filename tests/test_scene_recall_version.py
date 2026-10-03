@@ -66,3 +66,16 @@ def test_recall_that_changes_layers_still_bumps_version():
     finally:
         win._saved_version = scene.version
         win.close()
+
+
+def test_kill_switch_bumps_on_every_recall(monkeypatch):
+    import views.tray as tray
+    monkeypatch.setattr(tray, "_SCENE_ALWAYS_BUMP", True)
+    win, scene, cam = _window_with_two_scenes()
+    try:
+        v = scene.version
+        _activate(win, "A")
+        assert scene.version > v
+    finally:
+        win._saved_version = scene.version
+        win.close()
