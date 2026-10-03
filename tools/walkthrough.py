@@ -28,6 +28,7 @@ and the walls are the same visible-face index every pick uses
 from __future__ import annotations
 
 import math
+import os
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QVector3D
@@ -41,6 +42,10 @@ DEFAULT_EYE_HEIGHT = 1.68
 _SETTINGS_KEY = "walk/eye_height"
 
 _UP = QVector3D(0.0, 0.0, 1.0)
+
+#: Kill-switch: set INGETRAZO_NO_WALK_REACH=1 to send the wall feelers
+#: unbounded, as before (every placement down the street baked).
+_NO_WALK_REACH = os.environ.get("INGETRAZO_NO_WALK_REACH", "") == "1"
 
 
 def eye_height() -> float:
@@ -120,7 +125,7 @@ def _blocked(viewport, eye: QVector3D, delta: QVector3D, h: float,
     for origin in (eye, eye - _UP * max(h - knee, 0.0)):
         # Bounded: only a wall within the step counts, so the query bakes
         # and tests what is in reach — not every placement down the street.
-        t = dist(origin, d, reach)
+        t = dist(origin, d) if _NO_WALK_REACH else dist(origin, d, reach)
         if t is not None and t < reach:
             return True
     return False
