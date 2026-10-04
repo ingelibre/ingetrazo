@@ -342,7 +342,10 @@ def save_scene(scene, path: Path) -> dict:
             payload["protos"] = protos
     layers = getattr(scene, "layers", None)
     if layers is not None and (len(layers) > 1 or any(
-            not ly.visible or ly.locked for ly in layers)):
+            not ly.visible or ly.locked or ly.tint_color is not None
+            or ly.edge_color is not None or ly.line_style is not None
+            or ly.parent is not None or ly.transparency
+            for ly in layers)):
         payload["layers"] = [ly.to_dict() for ly in layers]
     views = getattr(scene, "saved_views", None)
     if views:

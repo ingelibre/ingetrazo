@@ -77,6 +77,16 @@ def used_layers(scene) -> set[str]:
             used.add(g.layer)
     for ent in _annotations(scene):
         used.add(layer_of(ent))
+    for name in tuple(used):
+        layer = scene.layer(name)
+        seen = set()
+        while layer is not None and layer.name not in seen:
+            seen.add(layer.name)
+            if layer.parent:
+                used.add(layer.parent)
+                layer = scene.layer(layer.parent)
+            else:
+                break
     return used
 
 

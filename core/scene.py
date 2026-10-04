@@ -190,13 +190,48 @@ class Scene:
         return None
 
     def _layer_state(self, entity) -> tuple[bool, bool]:
-        """(visible, locked) of the layer ``entity`` carries; unknown layer
-        names read as the default (visible, unlocked)."""
+        """Effective (visible, locked) state, including parent layers."""
         from core.layers import layer_of
-        ly = self.layer(layer_of(entity))
-        if ly is None:
-            return True, False
-        return ly.visible, ly.locked
+        return self.layer_state(layer_of(entity))
+
+    def layer_state(self, name: str) -> tuple[bool, bool]:
+        visible, locked = True, False
+        current = self.layer(name)
+        seen = set()
+        while current is not None and current.name not in seen:
+            seen.add(current.name)
+            visible = visible and current.visible
+            locked = locked or current.locked
+            current = self.layer(current.parent) if current.parent else None
+        return visible, locked
+
+    def layer_setting(self, name: str, attribute: str, default=None):
+        """Nearest non-inherited setting on a layer or one of its parents."""
+        current = self.layer(name)
+        seen = set()
+        while current is not None and current.name not in seen:
+            seen.add(current.name)
+            value = getattr(current, attribute, None)
+            if value is not None:
+                return value
+            current = self.layer(current.parent) if current.parent else None
+        return default
+
+    def layer_opacity(self, name: str,
+                      additional_layer: str | None = None) -> float:
+        """Combined opacity from layer ancestry and an owning group layer."""
+        opacity = 1.0
+        seen = set()
+        for start in (name, additional_layer):
+            current = self.layer(start) if start else None
+            while current is not None and current.name not in seen:
+                seen.add(current.name)
+                opacity *= 1.0 - float(current.transparency) / 100.0
+                current = self.layer(current.parent) if current.parent else None
+        return opacity
+
+    def layer_has_transparency(self) -> bool:
+        return any(ly.transparency for ly in self.layers)
 
     @staticmethod
     def _object_hidden(entity) -> bool:

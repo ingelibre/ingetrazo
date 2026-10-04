@@ -88,6 +88,150 @@ def test_layers_and_labels_round_trip_igz(tmp_path):
     assert len(tagged) == 1
 
 
+def test_layer_hierarchy_round_trip_and_inherits_visibility_and_opacity(tmp_path):
+    scene = Scene()
+    scene.layers.extend([
+        Layer("Plans", visible=False, transparency=20),
+        Layer("Walls", parent="Plans", transparency=50),
+    ])
+    face = _slab(scene)
+    assign_layer(face, "Walls")
+    assert not scene.entity_visible(face)
+    assert scene.layer_opacity("Walls") == 0.4
+
+    scene.layer("Plans").visible = True
+    assert scene.entity_visible(face)
+    path = tmp_path / "hierarchy.igz"
+    igz.save_scene(scene, path)
+    loaded = Scene()
+    igz.load_into(loaded, path)
+    assert loaded.layer("Walls").parent == "Plans"
+    assert loaded.layer("Plans").transparency == 20
+    assert loaded.layer("Walls").transparency == 50
+    assert loaded.layer_opacity("Walls") == 0.4
+
+
+def test_layer_appearance_overrides_round_trip_igz(tmp_path):
+    scene = Scene()
+    scene.layers.append(Layer(
+        "Muros", tint_color=(0.2, 0.4, 0.6),
+        edge_color=(0.1, 0.2, 0.3), line_style="dashed"))
+    path = tmp_path / "appearance.igz"
+    igz.save_scene(scene, path)
+    loaded = Scene()
+    igz.load_into(loaded, path)
+    layer = loaded.layer("Muros")
+    assert layer is not None
+    assert layer.tint_color == (0.2, 0.4, 0.6)
+    assert layer.edge_color == (0.1, 0.2, 0.3)
+    assert layer.line_style == "dashed"
+
+
+def test_layer_appearance_defaults_inherit_and_reject_malformed_values():
+    assert Layer("Inherited").to_dict() == {"name": "Inherited"}
+    restored = Layer.from_dict({
+        "name": "Safe", "tint_color": [float("nan"), 0, 0],
+        "edge_color": [1, 0], "line_style": "zigzag"})
+    assert restored.tint_color is None
+    assert restored.edge_color is None
+    assert restored.line_style is None
+
+
+def test_viewport_layer_appearance_builds_tint_and_edge_color_overlays():
+    from types import SimpleNamespace
+    from core.layers import assign_layer
+    from views.viewport import Viewport
+
+    scene = Scene()
+    layer = Layer("Muros", tint_color=(0.2, 0.4, 0.6),
+                  edge_color=(0.9, 0.1, 0.2))
+    scene.layers.append(layer)
+    face = _slab(scene)
+    assign_layer(face, "Muros")
+    edge = scene.mesh.edges[0]
+    assign_layer(edge, "Muros")
+    uploaded = {}
+
+    def upload(_vbo, slot, parts, empty=24):
+        uploaded[slot] = parts
+        return sum(map(len, parts)) or empty
+
+    viewport = SimpleNamespace(
+        scene=scene,
+        _layer_tint_vao=object(),
+        _layer_tint_vbo=object(),
+        _layer_edge_vao=object(),
+        _layer_edge_vbo=object(),
+        _tris_of=lambda f: f.triangulate(f.normal()),
+        _upload_vbo=upload,
+    )
+    # Bind the helper directly so this test covers real overlay geometry
+    # without requiring an OpenGL context.
+    Viewport._sync_layer_appearance(viewport)
+    assert viewport._layer_tint_spans == [
+        (((0.2, 0.4, 0.6), 0.24), 0, 6)]
+    assert viewport._layer_edge_spans == [
+        (((0.9, 0.1, 0.2), "solid"), 0, 2)]
+    assert len(uploaded["layer_tint"][0]) == 6 * 3 * 4
+    assert len(uploaded["layer_edges"][0]) == 2 * 3 * 4
+
+
+def test_viewport_layer_line_style_builds_patterned_edge_runs():
+    from types import SimpleNamespace
+    from core.layers import assign_layer
+    from views.viewport import Viewport
+
+    scene = Scene()
+    scene.layers.extend([
+        Layer("Plans", line_style="dashed"),
+        Layer("Walls", parent="Plans"),
+    ])
+    edge = scene.mesh.add_edge(V(0, 0), V(2, 0))
+    assign_layer(edge, "Walls")
+    uploaded = {}
+
+    def upload(_vbo, slot, parts, empty=24):
+        uploaded[slot] = parts
+        return sum(map(len, parts)) or empty
+
+    viewport = SimpleNamespace(
+        scene=scene,
+        _layer_tint_vao=object(),
+        _layer_tint_vbo=object(),
+        _layer_edge_vao=object(),
+        _layer_edge_vbo=object(),
+        _upload_vbo=upload,
+    )
+    Viewport._sync_layer_appearance(viewport)
+    assert viewport._layer_edge_spans == [
+        (((0.13, 0.17, 0.23), "dashed"), 0, 2)]
+    assert len(uploaded["layer_edges"][0]) == 2 * 3 * 4
+
+
+def test_layer_appearance_dialog_applies_line_style_and_clear():
+    from core.layers import Layer
+    from core.scene import Scene
+    from views.tray import LayerAppearanceDialog
+
+    parent = Layer("Plans", line_style="dotted")
+    child = Layer("Walls", parent="Plans", line_style="dashed")
+    scene = Scene()
+    scene.layers.extend((parent, child))
+    dialog = LayerAppearanceDialog(child, scene)
+
+    assert dialog._line_style.currentData() == "dashed"
+    dialog._line_style.setCurrentIndex(0)
+    dialog.apply_to(child)
+    assert child.line_style is None
+    assert scene.layer_setting("Walls", "line_style") == "dotted"
+
+    dialog._line_style.setCurrentIndex(
+        dialog._line_style.findData("solid"))
+    dialog.apply_to(child)
+    assert child.line_style == "solid"
+    assert scene.layer_setting("Walls", "line_style") == "solid"
+
+
 def test_edge_layer_survives_split_and_snapshot():
     scene = Scene()
     e = scene.mesh.add_edge(V(0, 0), V(4, 0))
@@ -243,6 +387,7 @@ def test_layers_tray_assigns_and_releases_annotations():
         item = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
                     if tree.topLevelItem(i).data(0, Qt.UserRole) == "Anotaciones")
         tree.setCurrentItem(item)
+        panel._set_active_layer("Anotaciones")
         scene.select([dim, lab])
         panel._on_assign()
         assert layer_of(dim) == "Anotaciones" and layer_of(lab) == "Anotaciones"
