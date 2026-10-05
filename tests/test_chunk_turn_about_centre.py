@@ -41,7 +41,9 @@ def test_turning_a_group_about_its_centre_rebuilds_its_chunk(deg):
         vp = win.viewport
         g = _cube(vp.scene)
         before = vp._group_chunk(g)
-        assert before["fp"] == vp._group_fp(g)
+        geometry_fp = vp._group_fp(g)
+        assert before["fp"][:len(geometry_fp)] == geometry_fp
+        assert before["fp"][len(geometry_fp)][0] == "paint"
         vp.history.execute(RotateGroupCommand(g, V(1, 1, 1), V(0, 0, 1), deg))
         after = vp._group_chunk(g)
         # the samples the chunk was built from are where the vertices ARE
@@ -55,6 +57,34 @@ def test_turning_a_group_about_its_centre_rebuilds_its_chunk(deg):
                 for v in g.mesh.vertices}
         drawn = {(round(float(x), 3), round(float(y), 3)) for x, y in pts}
         assert drawn <= live
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_layer_line_style_change_rebuilds_group_edge_chunk():
+    from core.layers import Layer
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        group = _cube(vp.scene)
+        layer = vp.scene.layer("Layer 0")
+        assert layer is not None
+        initial = vp._group_chunk(group)
+        assert len(initial["edges"]) > 0
+
+        layer.line_style = "dashed"
+        updated = vp._group_chunk(group)
+        assert len(updated["edges"]) == 0
+
+        # A child layer inherits the line pattern, and that inherited change
+        # must also invalidate chunks tagged to it.
+        vp.scene.layers.append(Layer("Plans", line_style="dotted"))
+        group.layer = "Walls"
+        vp.scene.layers.append(Layer("Walls", parent="Plans"))
+        inherited = vp._group_chunk(group)
+        assert len(inherited["edges"]) == 0
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()

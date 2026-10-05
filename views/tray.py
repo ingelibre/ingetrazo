@@ -157,15 +157,11 @@ def style_slider(slider) -> None:
 
 def fit_rows(view, min_rows: int = 3, max_rows: int | None = None,
              visible_rows: int | None = None) -> None:
-    """Grow a list / tree to show ALL its rows — no scroll bar of its own,
-    so the only scrolling in a tray is the tray's (Marco, 2026-09-14: «no
-    me gusta hacer scroll dentro del scroll»). Call after every refill;
-    ``min_rows`` keeps an empty list from collapsing to a sliver.
+    """Grow a list / tree to show its rows without nested scrolling.
 
-    ``max_rows`` caps that: past it the view stops growing and scrolls on
-    its own — for the lists that get long, Layers and Components in the
-    model (issue #55, @pacaeiro: «should have their own vertical scroll
-    bar»). Short lists keep the no-nested-scroll rule."""
+    ``min_rows`` keeps an empty list from collapsing to a sliver.
+    ``max_rows`` optionally caps longer lists and enables their own scrollbar.
+    """
     from PySide6.QtWidgets import QAbstractItemView, QTreeView
     model = view.model()
     rows = (visible_rows if visible_rows is not None else
@@ -3466,7 +3462,8 @@ class _VerticalResizeHandle(QWidget):
         super().__init__(parent)
         self._view = view
         self._on_resize = on_resize
-        self._minimum_height = _one_row_height(view)
+        self._minimum_height = max(
+            _one_row_height(view), view.minimumSizeHint().height())
         self._press_y = None
         self._start_height = 0
         self.setFixedHeight(14)
@@ -3727,12 +3724,9 @@ class LayersPanel(QWidget):
         else:
             self.tree.setSortingEnabled(False)
             self.tree.header().setSectionsClickable(True)
-            if not self._user_resized:
-                fit_rows(
-                    self.tree,
-                    visible_rows=min(5, self._visible_layer_rows()))
-                self.tree.setMinimumHeight(_one_row_height(self.tree))
-                self.tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        if not self._user_resized:
+            fit_rows(self.tree, visible_rows=self._visible_layer_rows())
+            self.tree.setMinimumHeight(_one_row_height(self.tree))
         self._filter_layers(self.filter_input.text())
         self._updating = False
         self._update_action_buttons()
@@ -4158,9 +4152,8 @@ class ScenesPanel(QWidget):
             self.list.addItem(item)
         count = len(self._scene().saved_views)
         if not self._user_resized:
-            fit_rows(self.list, visible_rows=min(5, count))
+            fit_rows(self.list, visible_rows=count)
             self.list.setMinimumHeight(_one_row_height(self.list))
-            self.list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._updating = False
 
     def _remember_resize(self) -> None:
