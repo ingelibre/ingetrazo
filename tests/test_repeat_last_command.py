@@ -205,6 +205,8 @@ def test_right_click_has_no_repeat_before_anything_was_done(win, monkeypatch):
     assert not any(t.startswith("Repeat") for t in texts)
 
 
+# TODO(MAC-04): Baseline macOS shows the Shift symbol in the repeat hint.
+# See docs/macos-test-failures.md; confirmed on the baseline commit, not fixed yet.
 def test_the_status_bar_says_what_would_repeat_only_in_select(win):
     lab = win._repeat_label
     assert lab.isHidden(), "nothing to repeat yet"
@@ -231,6 +233,8 @@ def test_shift_r_is_not_a_key_the_viewport_reads_itself():
     assert reserved_reason(QKeySequence("Shift+R")) is None
 
 
+# TODO(MAC-05): Baseline macOS shows native symbols for the customized repeat shortcut.
+# See docs/macos-test-failures.md; confirmed on the baseline commit, not fixed yet.
 def test_the_hint_names_the_keys_it_has_now(win):
     """Remapped in the shortcut editor (#138), the hint follows; with no
     key at all it still names what would repeat."""

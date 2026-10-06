@@ -8,6 +8,7 @@
 
 # --- Runtime ---
 PySide6>=6.7
+hidapi>=0.14,<1; sys_platform == "darwin"  # optional SpaceMouse fallback
 numpy>=1.26        # DEM heightfield decode + sampling (georef Track G, G2)
 # .skp import AND export (pure Python, VFF 2021+ AND classic MFC 2013-2020,
 # plus the legacy-format writer behind the .skp export, currently off). Our fork's

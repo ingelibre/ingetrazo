@@ -175,6 +175,8 @@ def test_la_perspectiva_se_mudo_a_mayus_p(ventana):
         "Toggle Perspective / Parallel"]
 
 
+# TODO(MAC-06): Baseline macOS shows native symbols for the customized tooltip shortcut.
+# See docs/macos-test-failures.md; confirmed on the baseline commit, not fixed yet.
 def test_la_barra_muestra_el_atajo_configurado_y_no_el_de_fabrica(ventana):
     """Issue #171 (@pacaeiro): «Menus show the correct new configured
     shortcut, toolbars show the Default shortcuts.» El tooltip del botón

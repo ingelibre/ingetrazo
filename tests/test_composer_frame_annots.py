@@ -200,6 +200,8 @@ def test_a_grown_raster_frame_keeps_the_picture_undistorted():
     assert out.pixel(300, 50) & 0xFFFFFF == 0xFFFFFF    # grown part: paper
 
 
+# TODO(MAC-02): Baseline Qt 6.11.2 converts the fixture pixel to gray instead of white.
+# See docs/macos-test-failures.md; confirmed on the baseline commit, not fixed yet.
 def test_raster_frame_image_is_made_opaque(monkeypatch):
     """A translucent water face leaves alpha < 1 under bright texels in the
     FBO read-back (labelled premultiplied): invalid data that smooth

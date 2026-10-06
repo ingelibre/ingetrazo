@@ -692,7 +692,7 @@
  "Invert zoom": "反转缩放",
  "Pan and zoom only (no rotation — for drawing in plan)": "仅平移和缩放 (不旋转：用于平面绘图)",
  "Device driver found: {name}": "找到设备驱动程序：{name}",
- "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows the 3Dconnexion driver is enough. macOS is not supported yet.": "未找到 3D 鼠标驱动程序。在 Linux 上安装并启动 «spacenavd»；在 Windows 上 3Dconnexion 驱动程序即可。macOS 尚不支持。",
+ "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows and macOS install the 3Dconnexion driver.": "未找到 3D 鼠标驱动程序。在 Linux 上安装并启动 «spacenavd»；在 Windows 和 macOS 上安装 3Dconnexion 驱动程序。",
  "3D Mouse": "3D 鼠标",
  "Click what to move (or select it first). Red + on a group = rotate it.": "点击您想移动的对象（或先选择它）。组上的红色 + 旋转它。",
  "Rotate: move to turn, click or type the angle. Ctrl = copy": "旋转：拖动旋转，点击或输入角度。Ctrl = 复制",
@@ -2458,5 +2458,6 @@
  "Switch to X-ray, or back to the style you were in.": "切换到X光，或回到之前的样式。",
  "Back edges": "背面边线",
  "Draw the edges hidden behind faces as dashed lines.": "以虚线绘制被面遮挡的边线。",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "示例扩展“多边形属性”：面的面积、形心和二阶矩。"
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "示例扩展“多边形属性”：面的面积、形心和二阶矩。",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "未连接 3D 鼠标。在 Linux 上启动 spacenavd；在 Windows 和 macOS 上安装 3Dconnexion 驱动程序。系统会自动重试连接。"
 }

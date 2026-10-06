@@ -324,8 +324,8 @@ class MainWindow(QMainWindow):
         return slot
 
     def _connect_ndof(self) -> None:
-        """Listen to the 3D mouse, if the machine has one (spacenavd on
-        Linux, Raw Input on Windows). Silent when there is none."""
+        """Listen to the 3D mouse (spacenavd on Linux, Raw Input on Windows,
+        3DconnexionClient on macOS). Silent when there is no driver."""
         self._ndof_connected = True
         try:
             from views.ndof_input import shared_input
@@ -350,7 +350,9 @@ class MainWindow(QMainWindow):
     def _on_ndof_button(self, number: int, down: bool) -> None:
         # The two buttons every model has: both fit the model, the usual
         # default for the right one and the most useful single command.
-        if down and number in (0, 1) and self.isActiveWindow():
+        from views.ndof_input import current_settings
+        if (down and number in (0, 1) and self.isActiveWindow()
+                and current_settings().enabled):
             self._on_zoom_extents()
 
     def _pack_toolbars(self) -> None:

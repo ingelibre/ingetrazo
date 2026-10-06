@@ -116,6 +116,8 @@ hiddenimports += ['manifold3d', 'core.solids', 'tools.solid_tools']
 # Copy/Paste between windows (#76): imported lazily by the viewport and
 # the main window.
 hiddenimports += ['formats.clip']
+if sys.platform == 'darwin':
+    hiddenimports += ['hid', 'views.ndof_hid', 'views.ndof_macos']
 hiddenimports += [
     # The bundled plugins import these at RUN time, so static analysis never
     # sees them and they were left out: the AI assistant died on load with

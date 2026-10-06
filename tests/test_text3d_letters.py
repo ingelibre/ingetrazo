@@ -26,6 +26,8 @@ def _extent(meshes):
             min(p.z() for p in pts), max(p.z() for p in pts))
 
 
+# TODO(MAC-07): Baseline macOS separate-letter text is approximately 0.0055014 m wider.
+# See docs/macos-test-failures.md; confirmed on the baseline commit, not fixed yet.
 def test_letters_lay_out_exactly_like_the_one_piece_text():
     """Splitting into letters changes the STRUCTURE, never the geometry:
     same faces, same block extent, same baseline."""

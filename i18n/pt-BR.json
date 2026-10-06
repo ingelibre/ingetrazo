@@ -690,7 +690,7 @@
  "Invert zoom": "Inverter zoom",
  "Pan and zoom only (no rotation — for drawing in plan)": "Apenas Panorâmica e Zoom (sem rotação — para desenhar em planta)",
  "Device driver found: {name}": "Driver de dispositivo encontrado: {name}",
- "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows the 3Dconnexion driver is enough. macOS is not supported yet.": "Nenhum driver de mouse 3D encontrado. No Linux instale e inicie «spacenavd»; no Windows o driver 3Dconnexion é suficiente. macOS ainda não é suportado.",
+ "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows and macOS install the 3Dconnexion driver.": "Nenhum driver de mouse 3D encontrado. No Linux instale e inicie «spacenavd»; no Windows e macOS instale o driver 3Dconnexion.",
  "3D Mouse": "Mouse 3D",
  "Click what to move (or select it first). Red + on a group = rotate it.": "Clique no que mover (ou selecione primeiro). Vermelho + em um grupo = rotacioná-lo.",
  "Rotate: move to turn, click or type the angle. Ctrl = copy": "Rotacionar: mover para girar, clicar ou digitar o ângulo. Ctrl = copiar",
@@ -2457,5 +2457,6 @@
  "Switch to X-ray, or back to the style you were in.": "Muda para raio-X, ou volta ao estilo em que você estava.",
  "Back edges": "Arestas de trás",
  "Draw the edges hidden behind faces as dashed lines.": "Desenha tracejadas as arestas que ficam atrás das faces.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "A extensão de exemplo Propriedades do polígono: área, centroide e momentos de segunda ordem de uma face."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "A extensão de exemplo Propriedades do polígono: área, centroide e momentos de segunda ordem de uma face.",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "Sem conexão com um mouse 3D. No Linux inicie spacenavd; no Windows e macOS instale o driver de 3Dconnexion. A conexão é tentada novamente de forma automática."
 }

@@ -85,6 +85,14 @@ welcome arch with all its rebar (also attached to every release as
   grid, colored axes, perspective ↔ parallel and two-point perspective,
   standard views, zoom-extents, hidden-line removal, real-sun shadows.
 - **Walkthrough** — Position Camera, Walk and Look Around at eye height.
+- **SpaceMouse navigation** — pan, zoom and orbit with a 3Dconnexion 3D
+  mouse on Linux (`spacenavd`), Windows and macOS (3DxWare, with a HIDAPI
+  fallback). Lost connections are retried automatically; navigation pauses
+  while a modal dialog is open on macOS. See [setup](docs/spacemouse.md).
+  Preferences ▸ 3D Mouse controls speed, per-axis inversion and rotation
+  lock. Input is released when another application takes focus. The camera
+  stays upright
+  (no roll), and either of the first two buttons fits the model in view.
 - **Drawing tools** — Line, Rectangle, Rotated Rectangle, Circle, Polygon,
   Arc (2-point) and 3-Point Arc, with inferencing, snapping, axis locks and a
   Value Control Box (type exact lengths/coordinates, `200,100` or `200;100`

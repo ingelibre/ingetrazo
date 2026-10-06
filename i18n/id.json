@@ -674,7 +674,7 @@
  "Invert zoom": "Balik zoom",
  "Pan and zoom only (no rotation — for drawing in plan)": "Hanya geser dan zoom (tanpa rotasi — untuk menggambar denah)",
  "Device driver found: {name}": "Driver perangkat ditemukan: {name}",
- "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows the 3Dconnexion driver is enough. macOS is not supported yet.": "Driver mouse 3D tidak ditemukan. Di Linux pasang dan jalankan «spacenavd»; di Windows driver 3Dconnexion sudah cukup. macOS belum didukung.",
+ "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows and macOS install the 3Dconnexion driver.": "Driver mouse 3D tidak ditemukan. Di Linux pasang dan jalankan «spacenavd»; di Windows dan macOS pasang driver 3Dconnexion.",
  "3D Mouse": "Mouse 3D",
  "Click what to move (or select it first). Red + on a group = rotate it.": "Klik objek yang akan dipindah (atau pilih terlebih dahulu). + merah pada grup = putar.",
  "Rotate: move to turn, click or type the angle. Ctrl = copy": "Putar: gerakkan untuk memutar, klik atau ketik sudutnya. Ctrl = salin",
@@ -2255,5 +2255,6 @@
  "Switch to X-ray, or back to the style you were in.": "Beralih ke Sinar-X, atau kembali ke gaya sebelumnya.",
  "Back edges": "Tepi belakang",
  "Draw the edges hidden behind faces as dashed lines.": "Gambar tepi yang tersembunyi di balik muka sebagai garis putus-putus.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "Ekstensi contoh Properti poligon: luas, titik berat, dan momen orde kedua dari sebuah muka."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "Ekstensi contoh Properti poligon: luas, titik berat, dan momen orde kedua dari sebuah muka.",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "Tidak ada koneksi mouse 3D. Di Linux jalankan spacenavd; di Windows dan macOS pasang driver 3Dconnexion. Koneksi akan dicoba kembali secara otomatis."
 }

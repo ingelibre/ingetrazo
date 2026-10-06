@@ -39,6 +39,8 @@ def test_english_installs_nothing(monkeypatch):
     assert main._qt_translator is None
 
 
+# TODO(MAC-03): Baseline macOS NativeText returns key symbols, not portable key names.
+# See docs/macos-test-failures.md; confirmed on the baseline commit, not fixed yet.
 def test_shortcuts_keep_their_english_key_names(monkeypatch):
     import main
     monkeypatch.setattr(main, "_qt_translator", None)
