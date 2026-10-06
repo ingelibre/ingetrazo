@@ -119,7 +119,7 @@ plugins; the details are in the AI plugins' comments).
 
 A plugin that needs more than a menu entry defines a module-level
 `setup(app)`. It is called once, when the main window is built, with an
-`ExtensionApp` (`views/extension_api.py`, `API_VERSION` 2). A plugin may
+`ExtensionApp` (`views/extension_api.py`, `API_VERSION` 4). A plugin may
 have tools, a `setup`, or both; if `setup` raises, the plugin shows as a
 load error and the application opens regardless.
 
@@ -191,6 +191,32 @@ it; a provider that raises is logged and skipped, an overlay that raises
 is logged once and removed, never breaking the frame or the cursor; the
 painter state is saved and restored around every overlay; document data
 that is not JSON-safe is dropped on save rather than failing it.
+
+### Reusable resources and libraries (API 4)
+
+Extensions may register their own reusable resource types without teaching
+the core what those resources mean. The extension owns the schema and payload;
+IngeTrazo owns discovery, namespacing, libraries, dependency resolution,
+search and portable bundle transport.
+
+The public entry points on `ExtensionApp` are:
+
+- `register_resource_type(...)` — register one extension-owned resource type;
+- `resource_types()` — inspect registered types;
+- `export_resource_bundle(...)` — write a portable `.iglib` bundle;
+- `import_resource_bundle(...)` — import a bundle with explicit conflict policy.
+
+The generic models and registry live in `core/resource_library.py`. Portable
+`.iglib` bundles live in `core/resource_bundle.py`; the bundle manifest is
+versioned independently from an extension's own resource schema.
+
+A resource type is intentionally opaque to the core. A wall preset, CAM tool
+library, component type or any future extension resource remains owned by its
+extension. The core does not define architectural concepts such as walls,
+layers, profiles, materials or BIM semantics.
+
+See `docs/resource_api.md`, `docs/resource_bundle.md` and the bundled
+`plugins/resource_api_demo.py` for the complete contract and a minimal example.
 
 ### Where your interface goes
 

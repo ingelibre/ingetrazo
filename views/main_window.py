@@ -228,6 +228,13 @@ class MainWindow(QMainWindow):
         #: opens itself (``ExtensionApp.add_file_opener``), from Open Recent,
         #: the command line or a double-click.
         self.file_openers: dict = {}
+
+        # Extension-owned resource types (presets, profiles, libraries, ...).
+        # The core only owns the registry; each extension owns its provider
+        # and the meaning of the resource payload.
+        from core.resource_library import ResourceRegistry
+        self.resource_registry = ResourceRegistry()
+
         self._saved_version: int = 0
 
         self._setup_ui()

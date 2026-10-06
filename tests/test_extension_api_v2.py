@@ -73,9 +73,9 @@ def _app_for(win, key="myext"):
     return ExtensionApp(win, key)
 
 
-def test_the_api_version_is_2():
+def test_the_api_still_includes_version_2():
     from views.extension_api import API_VERSION, ExtensionApp
-    assert API_VERSION == 2 and ExtensionApp.api_version == 2
+    assert API_VERSION >= 2 and ExtensionApp.api_version >= 2
 
 
 # ---- panels -----------------------------------------------------------------------
