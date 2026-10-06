@@ -1,6 +1,6 @@
 ﻿; Inno Setup script for IngeTrazo.
 ;
-; Builds a professional Windows installer: Spanish wizard, GPL license page,
+; Builds a professional Windows installer: multilingual wizard, GPL license page,
 ; shortcuts, "Add or Remove Programs" entry and a clean uninstaller.
 ;
 ; Local build (needs Inno Setup 6+):
@@ -50,8 +50,8 @@ OutputBaseFilename=ingetrazo-setup-v{#MyAppVersion}
 WizardStyle=modern
 ; (Saved as UTF-8 WITH a BOM: that is how Inno Setup knows the texts
 ; below are UTF-8 — without it «Associações» would come out garbled.)
-; The wizard speaks the language of Windows (English, Spanish or Brazilian
-; Portuguese) and asks only when none of them matches (issue #135).
+; The wizard speaks the language of Windows (English, Spanish, Brazilian
+; Portuguese or Polish) and asks only when none of them matches (issue #135).
 ShowLanguageDialog=auto
 DisableProgramGroupPage=yes
 ; We register file-type icons/associations — tells Explorer to refresh them.
@@ -68,6 +68,7 @@ SetupIconFile=..\resources\icons\ingetrazo.ico
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
 
 [CustomMessages]
 english.SkpDefault=Open .skp files with IngeTrazo (double-click)
@@ -85,6 +86,11 @@ brazilianportuguese.FileAssociations=Associações de arquivos:
 brazilianportuguese.IgzDocument=Documento do IngeTrazo
 brazilianportuguese.DaeModel=Modelo COLLADA (IngeTrazo)
 brazilianportuguese.SkpModel=Modelo SKP (IngeTrazo)
+polish.SkpDefault=Otwieraj pliki .skp w IngeTrazo (dwukrotne kliknięcie)
+polish.FileAssociations=Skojarzenia plików:
+polish.IgzDocument=Dokument IngeTrazo
+polish.DaeModel=Model COLLADA (IngeTrazo)
+polish.SkpModel=Model SKP (IngeTrazo)
 
 [Tasks]
 Name: "skpdefault"; Description: "{cm:SkpDefault}"; \
