@@ -5722,7 +5722,7 @@ class ComposerWindow(QMainWindow):
         elif mode == "leyenda":
             item = Leyenda(x_mm=x0, y_mm=y0,
                            rows=[ly.name for ly in
-                                 self._scene().layers if ly.visible])
+                                 self._scene().layers if self._scene().layer_state(ly.name)[0]])
         elif mode == "perfil":
             paths = getattr(self._scene(), "geo_paths", None) or []
             item = PerfilTerreno(x_mm=x, y_mm=y, w_mm=max(w, 80.0),
@@ -10706,7 +10706,7 @@ class ComposerWindow(QMainWindow):
             return
         item.prepareGeometryChange()
         self._panel_edit(item, {"rows": [ly.name for ly in
-                                         self._scene().layers if ly.visible]})
+                                         self._scene().layers if self._scene().layer_state(ly.name)[0]]})
 
     def _on_forma_props(self, *_a) -> None:
         item = self._selected_item()
@@ -11446,7 +11446,7 @@ class ComposerWindow(QMainWindow):
                                if sv.name == name), None)
         keep = (cam.target, cam.distance, cam.yaw, cam.pitch, cam.fov_deg,
                 cam.perspective, cam.aspect, cam.up,
-                [(ly, ly.visible) for ly in scene.layers])
+                [(ly, ly.visible) for ly in scene.layers + scene.layer_folders])
         keep_section = (
             scene.active_section() if hasattr(scene, "active_section")
             else None,
@@ -11976,6 +11976,15 @@ class ComposerWindow(QMainWindow):
             # the canvas's smooth scaling turns into red and yellow blotches
             # on the water (Marco, 2026-09-02). The render already composed
             # its own background: on paper it is simply opaque.
+            image = image.copy()
+            # Treat the already composed RGB bytes as opaque BEFORE conversion:
+            # unpremultiplying invalid bright texels can overflow on some Qt builds.
+            straight = {
+                QImage.Format_ARGB32_Premultiplied: QImage.Format_ARGB32,
+                QImage.Format_RGBA8888_Premultiplied: QImage.Format_RGBA8888,
+            }.get(image.format())
+            if straight is not None:
+                image.reinterpretAsFormat(straight)
             image = image.convertToFormat(QImage.Format_RGB32)
         if image is not None:
             self.render_cache[id(frame)] = image

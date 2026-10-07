@@ -16,6 +16,7 @@ vertical stack of lightweight collapsibles inside a scroll area.
 """
 from __future__ import annotations
 
+from core import scene
 from views import prompts as _prompts
 
 from pathlib import Path
@@ -42,6 +43,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QStyledItemDelegate,
     QSizePolicy,
     QSlider,
     QSpinBox,
@@ -3062,7 +3064,8 @@ class EntityInfoPanel(QWidget):
 
     # ---- Layer field --------------------------------------------------------
     def _refresh_layer(self, sel: list) -> None:
-        from core.layers import layer_of
+        from core.layers import DEFAULT_LAYER, layer_of
+        from PySide6.QtCore import QCollator, QLocale
         tagged = [e for e in sel if isinstance(e, _TAGGABLE)]
         show = bool(tagged)
         self._layer_caption.setVisible(show)
@@ -3070,7 +3073,17 @@ class EntityInfoPanel(QWidget):
         if not show:
             return
         scene = self._window.viewport.scene
-        names = [ly.name for ly in scene.layers]
+        # SketchUp-style tag list: default first, then natural name order.
+        locale = QLocale()
+        if locale.language() == QLocale.Language.C:
+            locale = QLocale("en_US")
+        collator = QCollator(locale)
+        collator.setCaseSensitivity(Qt.CaseInsensitive)
+        collator.setNumericMode(True)
+        collator.setIgnorePunctuation(True)
+        names = sorted((ly.name for ly in scene.layers),
+                       key=lambda name: (name != DEFAULT_LAYER,
+                                         collator.sortKey(name)))
         current = {layer_of(e) for e in tagged}
         self._updating = True
         try:
@@ -3280,6 +3293,26 @@ def _scrolled(sections) -> QScrollArea:
 
 
 
+class _LayerColorDelegate(QStyledItemDelegate):
+    """A small colour chip, retaining the row's normal selection background."""
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        color = index.data(Qt.UserRole + 2)
+        if not isinstance(color, QColor):
+            return
+        center = option.rect.center()
+        chip = QRect(center.x() - 7, center.y() - 7, 14, 14)
+        painter.save()
+        painter.setPen(QColor(0, 0, 0, 100))
+        painter.setBrush(color)
+        painter.drawRoundedRect(chip, 2, 2)
+        painter.restore()
+
+    def createEditor(self, parent, option, index):
+        return None  # Double-click opens the colour dialog.
+
+
 class LayersPanel(QWidget):
     """Layers / tags (Fase 6): one row per layer with visibility and lock
     checkboxes; buttons to add / remove layers and to move the current
@@ -3289,20 +3322,37 @@ class LayersPanel(QWidget):
 
     def __init__(self, window) -> None:
         super().__init__()
-        from PySide6.QtWidgets import (QHBoxLayout, QPushButton, QTreeWidget,
-                                       QTreeWidgetItem, QVBoxLayout)
+        from PySide6.QtWidgets import (QAbstractItemView, QHeaderView, QHBoxLayout,
+                                       QPushButton, QVBoxLayout)
         self._window = window
         self._updating = False
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 6, 8, 8)
-        self.tree = QTreeWidget()
-        self.tree.setColumnCount(3)
-        self.tree.setHeaderLabels([tr("Name"), tr("Visible"), tr("Lock")])
-        self.tree.setRootIsDecorated(False)
-        self.tree.setColumnWidth(0, 120)
-        self.tree.setColumnWidth(1, 52)
+        from views.scene_tree import LayerTree
+        self.tree = LayerTree()
+        self.tree.setHeaderHidden(False)
+        self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.tree.moved.connect(self._on_tree_moved)
+        self.tree.itemExpanded.connect(self._on_expansion)
+        self.tree.itemCollapsed.connect(self._on_expansion)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._on_context_menu)
+        self.tree.setColumnCount(4)
+        self.tree.setHeaderLabels([tr("Name"), tr("Visible"), tr("Lock"), tr("Color")])
+        self.tree.setRootIsDecorated(True)
+        self.tree.header().setStretchLastSection(False)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        for column in (1, 2, 3):
+            self.tree.header().setSectionResizeMode(column, QHeaderView.Fixed)
+            self.tree.setColumnWidth(column, 52)
+        self.tree.setColumnWidth(3, 44)
+        self.tree.setItemDelegateForColumn(3, _LayerColorDelegate(self.tree))
         self.tree.itemChanged.connect(self._on_item_changed)
+        self.tree.itemDoubleClicked.connect(self._on_color_clicked)
         lay.addWidget(self.tree)
+        self._color_by_layer = QCheckBox(tr("Color by layer"))
+        self._color_by_layer.toggled.connect(self._on_color_by_layer)
+        lay.addWidget(self._color_by_layer)
         row = QHBoxLayout()
         add_btn = QPushButton(tr("+ Layer"))
         add_btn.clicked.connect(self._on_add)
@@ -3321,6 +3371,11 @@ class LayersPanel(QWidget):
         # A flow, not a row: the four buttons wrap when the tray is narrow
         # instead of setting the whole right-hand dock area's minimum width.
         row = FlowLayout(spacing=4)
+        folder_btn = QPushButton(tr("+ Folder"))
+        folder_btn.setIcon(QIcon(str(Path(__file__).resolve().parent.parent /
+                                    "resources/icons/folderplus.svg")))
+        folder_btn.clicked.connect(self._on_add_folder)
+        row.addWidget(folder_btn)
         row.addWidget(add_btn)
         row.addWidget(del_btn)
         row.addWidget(purge_btn)
@@ -3328,24 +3383,241 @@ class LayersPanel(QWidget):
         lay.addLayout(row)
         self.refresh()
 
+    @staticmethod
+    def _item_value(item):
+        name = item.data(0, Qt.UserRole + 1)
+        return name[0] if name is not None else item.data(0, Qt.UserRole)
+
     # ---- Model → view --------------------------------------------------------
     def refresh(self) -> None:
         from PySide6.QtWidgets import QTreeWidgetItem
-        from core.layers import DEFAULT_LAYER
+        from core.layers import DEFAULT_LAYER, LayerFolder
+        from PySide6.QtCore import QCollator
+        collator = QCollator()
+        collator.setCaseSensitivity(Qt.CaseInsensitive)
+        collator.setNumericMode(True)
+        collator.setIgnorePunctuation(True)
+        current = self.tree.currentItem()
+        current_value = self._item_value(current) if current else None
+        selected = [self._item_value(item) for item in self.tree.selectedItems()]
         self._updating = True
         self.tree.clear()
-        for ly in self._window.viewport.scene.layers:
+        scene = self._scene()
+        self._color_by_layer.setChecked(scene.display_style.color_by_layer)
+        folders = {f.uid: f for f in scene.layer_folders}
+        items = {}
+        for folder in scene.layer_folders:
+            item = QTreeWidgetItem([folder.name, "", ""])
+            item.setData(0, Qt.UserRole, folder)
+            item.setFlags(item.flags() | Qt.ItemIsEditable | Qt.ItemIsUserCheckable)
+            item.setIcon(0, QIcon(str(Path(__file__).resolve().parent.parent /
+                                      "resources/icons/folder.svg")))
+            items[folder.uid] = item
+        for folder in scene.layer_folders:
+            cursor = parent_id = folder.parent_id
+            seen = {folder.uid}
+            while cursor in folders and cursor not in seen:
+                seen.add(cursor)
+                cursor = folders[cursor].parent_id
+            if cursor in seen or parent_id not in folders:
+                parent_id = None
+            items.get(parent_id, self.tree.invisibleRootItem()).addChild(items[folder.uid])
+        for ly in scene.layers:
             item = QTreeWidgetItem([ly.name, "", ""])
+            item.setData(3, Qt.UserRole + 2, QColor.fromRgbF(*ly.color))
+            item.setToolTip(3, tr("Double-click to change layer color"))
             item.setData(0, Qt.UserRole, ly.name)
-            flags = item.flags() | Qt.ItemIsUserCheckable
+            # QString strips a leading U+FEFF (present in imported SKP tags).
+            # A Python tuple keeps the exact model key through Qt's item data.
+            item.setData(0, Qt.UserRole + 1, (ly.name,))
+            item.setFlags((item.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsDropEnabled)
             if ly.name != DEFAULT_LAYER:
-                flags |= Qt.ItemIsEditable
-            item.setFlags(flags)
-            item.setCheckState(1, Qt.Checked if ly.visible else Qt.Unchecked)
-            item.setCheckState(2, Qt.Checked if ly.locked else Qt.Unchecked)
-            self.tree.addTopLevelItem(item)
-        fit_rows(self.tree, max_rows=12)
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
+            else:
+                item.setFlags(item.flags() & ~Qt.ItemIsDragEnabled)
+            items.get(ly.folder_id if ly.name != DEFAULT_LAYER else None,
+                      self.tree.invisibleRootItem()).addChild(item)
+
+        def order(parent):
+            children = [parent.takeChild(0) for _ in range(parent.childCount())]
+            def obj(item):
+                value = self._item_value(item)
+                return value if isinstance(value, LayerFolder) else scene.layer(value)
+            def sort_key(item):
+                value = obj(item)
+                category = (0 if self._item_value(item) == DEFAULT_LAYER
+                            else 1 if isinstance(value, LayerFolder) else 2)
+                return category, collator.sortKey(value.name)
+            children.sort(key=sort_key)
+            parent.addChildren(children)
+            for item in children:
+                value = obj(item)
+                item.setCheckState(1, Qt.Checked if value.visible else Qt.Unchecked)
+                item.setCheckState(2, Qt.Checked if value.locked else Qt.Unchecked)
+                if isinstance(value, LayerFolder):
+                    order(item)
+                    item.setExpanded(value.expanded)
+                if self._item_value(item) == current_value:
+                    from PySide6.QtCore import QItemSelectionModel
+                    self.tree.setCurrentItem(item, 0, QItemSelectionModel.NoUpdate)
+                if self._item_value(item) in selected:
+                    item.setSelected(True)
+        order(self.tree.invisibleRootItem())
+        self._fit_tree()
         self._updating = False
+
+    def _fit_tree(self):
+        def count(parent):
+            return sum(1 + (count(parent.child(i)) if parent.child(i).isExpanded()
+                            else 0) for i in range(parent.childCount()))
+        rows = count(self.tree.invisibleRootItem())
+        height = max(self.tree.sizeHintForRow(0), self.tree.fontMetrics().height() + 8)
+        self.tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if rows > 12
+                                             else Qt.ScrollBarAlwaysOff)
+        self.tree.setFixedHeight(self.tree.header().height() + max(3, min(rows, 12)) * height
+                                 + 2 * self.tree.frameWidth() + 2)
+
+    def _selected_folder(self):
+        from core.layers import LayerFolder
+        item = self.tree.currentItem()
+        if item is not None and not isinstance(self._item_value(item), LayerFolder):
+            item = item.parent()
+        return self._item_value(item) if item else None
+
+    def _next_position(self, folder):
+        parent_id = folder.uid if folder else None
+        scene = self._scene()
+        positions = [ly.position for ly in scene.layers if ly.folder_id == parent_id]
+        positions += [f.position for f in scene.layer_folders if f.parent_id == parent_id]
+        return max(positions, default=-1) + 1
+
+    def _on_add_folder(self):
+        from core.layers import LayerFolder
+        parent_item, selected = self.tree.folder_selection()
+        parent = self._item_value(parent_item) if parent_item else None
+        names = {f.name for f in self._scene().layer_folders}
+        base, n = tr("Folder"), 1
+        while f"{base} {n}" in names:
+            n += 1
+        folder = LayerFolder(f"{base} {n}", parent_id=parent.uid if parent else None,
+                             position=self._next_position(parent))
+        self._scene().layer_folders.append(folder)
+        if selected:
+            folder.position = min((self._item_value(item).position
+                                   if isinstance(self._item_value(item), LayerFolder)
+                                   else self._scene().layer(self._item_value(item)).position
+                                   for item in selected if item.parent() is parent_item),
+                                  default=folder.position)
+        for position, item in enumerate(selected):
+            value = self._item_value(item)
+            if isinstance(value, LayerFolder):
+                value.parent_id = folder.uid
+            else:
+                value = self._scene().layer(value)
+                value.folder_id = folder.uid
+            value.position = position
+        if parent:
+            parent.expanded = True
+        self.refresh()
+        def select(item):
+            for i in range(item.childCount()):
+                child = item.child(i)
+                if self._item_value(child) is folder:
+                    self.tree.clearSelection()
+                    self.tree.setCurrentItem(child)
+                    self.tree.editItem(child, 0)
+                    return True
+                if select(child):
+                    return True
+        select(self.tree.invisibleRootItem())
+        self._prune_selection()
+        self._touch()
+
+    def _on_expansion(self, item):
+        if not self._updating:
+            self._item_value(item).expanded = item.isExpanded()
+            self._fit_tree()
+            self._touch()
+
+    def _on_tree_moved(self):
+        from core.layers import DEFAULT_LAYER, LayerFolder
+        scene = self._scene()
+        layers, folders = [], []
+        def visit(parent, parent_id=None):
+            for index in range(parent.childCount()):
+                item = parent.child(index)
+                value = self._item_value(item)
+                if isinstance(value, LayerFolder):
+                    value.parent_id = parent_id
+                    value.position = index
+                    folders.append(value)
+                    visit(item, value.uid)
+                else:
+                    ly = scene.layer(value)
+                    ly.folder_id = parent_id if value != DEFAULT_LAYER else None
+                    ly.position = index
+                    layers.append(ly)
+        visit(self.tree.invisibleRootItem())
+        scene.layers[:] = layers
+        scene.layer_folders[:] = folders
+        self.refresh()
+        self._prune_selection()
+        self._touch()
+
+    def _on_move_to_root(self):
+        selected = self.tree.selectedItems()
+        current = self.tree.currentItem()
+        for item in selected:
+            parent = item.parent()
+            ancestor = parent
+            while ancestor is not None and ancestor not in selected:
+                ancestor = ancestor.parent()
+            if parent is not None and ancestor is None:
+                parent.takeChild(parent.indexOfChild(item))
+                self.tree.addTopLevelItem(item)
+        if selected:
+            from PySide6.QtCore import QItemSelectionModel
+            self.tree.setCurrentItem(current, 0, QItemSelectionModel.NoUpdate)
+            for item in selected:
+                item.setSelected(True)
+            self._on_tree_moved()
+
+    def _on_context_menu(self, point):
+        from core.layers import DEFAULT_LAYER
+        item = self.tree.itemAt(point)
+        if item is not None and item.isSelected():
+            from PySide6.QtCore import QItemSelectionModel
+            self.tree.setCurrentItem(item, 0, QItemSelectionModel.NoUpdate)
+        else:
+            self.tree.clearSelection()
+            self.tree.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction(tr("New folder"), self._on_add_folder)
+        if item is not None and self._item_value(item) != DEFAULT_LAYER:
+            menu.addAction(tr("Rename"), lambda: self.tree.editItem(item, 0))
+        if any(self._item_value(row) != DEFAULT_LAYER for row in self.tree.selectedItems()):
+            menu.addAction(tr("Move to root"), self._on_move_to_root)
+            menu.addAction(tr("Delete"), self._on_delete)
+        menu.exec(self.tree.viewport().mapToGlobal(point))
+
+    def _on_color_by_layer(self, enabled):
+        if self._updating:
+            return
+        self._scene().display_style.color_by_layer = enabled
+        self._window.viewport.update()
+
+    def _on_color_clicked(self, item, column):
+        if column != 3:
+            return
+        layer = self._scene().layer(self._item_value(item))
+        if layer is None:
+            return
+        chosen = get_color(QColor.fromRgbF(*layer.color),
+                           _dialog_parent(self), tr("Layer color"))
+        if chosen.isValid():
+            layer.color = (chosen.redF(), chosen.greenF(), chosen.blueF())
+            self.refresh()
+            self._touch()
 
     # ---- View → model --------------------------------------------------------
     def _scene(self):
@@ -3355,7 +3627,35 @@ class LayersPanel(QWidget):
         if self._updating:
             return
         scene = self._scene()
-        old_name = item.data(0, Qt.UserRole)
+        from core.layers import LayerFolder
+        if column in (1, 2) and item.isSelected():
+            checked = item.checkState(column) == Qt.Checked
+            self._updating = True
+            try:
+                for selected in self.tree.selectedItems():
+                    value = self._item_value(selected)
+                    target = value if isinstance(value, LayerFolder) else scene.layer(value)
+                    if column == 1:
+                        target.visible = checked
+                    else:
+                        target.locked = checked
+                    selected.setCheckState(column, Qt.Checked if checked else Qt.Unchecked)
+            finally:
+                self._updating = False
+            self._prune_selection()
+            self._touch()
+            return
+        old_name = self._item_value(item)
+        if isinstance(old_name, LayerFolder):
+            if column == 0:
+                old_name.name = item.text(0).strip() or old_name.name
+                self.refresh()
+            else:
+                old_name.visible = item.checkState(1) == Qt.Checked
+                old_name.locked = item.checkState(2) == Qt.Checked
+                self._prune_selection()
+            self._touch()
+            return
         ly = scene.layer(old_name)
         if ly is None:
             return
@@ -3364,6 +3664,12 @@ class LayersPanel(QWidget):
             if new_name and new_name != old_name \
                     and scene.layer(new_name) is None:
                 self._rename(ly, old_name, new_name)
+                blocked = self.tree.blockSignals(True)
+                try:
+                    item.setData(0, Qt.UserRole, new_name)
+                    item.setData(0, Qt.UserRole + 1, (new_name,))
+                finally:
+                    self.tree.blockSignals(blocked)
             self.refresh()
             self._touch()
             return
@@ -3377,18 +3683,24 @@ class LayersPanel(QWidget):
         from core.layers import layer_of, assign_layer
         scene = self._scene()
         ly.name = new_name
-        for ent in list(scene.mesh.faces) + list(scene.mesh.edges) \
-                + list(scene.groups):
+        from core.purge import iter_groups, iter_meshes
+        for mesh in iter_meshes(scene):
+            for ent in list(mesh.faces) + list(mesh.edges):
+                if layer_of(ent) == old_name:
+                    assign_layer(ent, new_name)
+        for ent in list(iter_groups(scene.groups)) + scene.dimensions + scene.text_labels \
+                + scene.image_planes + scene.section_planes:
             if layer_of(ent) == old_name:
                 assign_layer(ent, new_name)
+        for view in scene.saved_views:
+            view.hidden_layers = [new_name if name == old_name else name
+                                  for name in view.hidden_layers]
 
-    def _prune_selection(self, name: str) -> None:
-        from core.layers import layer_of
+    def _prune_selection(self, name=None) -> None:
         scene = self._scene()
-        dead = [s for s in scene.selection
-                if isinstance(s, (Face, Edge, Group)) and layer_of(s) == name]
-        for s in dead:
-            scene.selection.discard(s)
+        for entity in list(scene.selection):
+            if not scene.entity_selectable(entity):
+                scene.selection.discard(entity)
 
     def _on_add(self) -> None:
         from core.layers import Layer
@@ -3397,21 +3709,26 @@ class LayersPanel(QWidget):
         n = 1
         while scene.layer(f"{base} {n}") is not None:
             n += 1
-        scene.layers.append(Layer(f"{base} {n}"))
+        parent = self._selected_folder()
+        scene.layers.append(Layer(f"{base} {n}", folder_id=parent.uid if parent else None,
+                                  position=self._next_position(parent)))
+        if parent:
+            parent.expanded = True
         self.refresh()
         self._touch()
 
     def _on_delete(self) -> None:
-        from core.layers import DEFAULT_LAYER, layer_of, assign_layer
+        from core.layers import DEFAULT_LAYER, LayerFolder, layer_of, assign_layer
         scene = self._scene()
-        item = self.tree.currentItem()
-        if item is None:
+        selected = self.tree.selectedItems()
+        if not selected:
             return
-        name = item.data(0, Qt.UserRole)
-        if name == DEFAULT_LAYER:
-            return                                  # the default is permanent
-        ly = scene.layer(name)
-        if ly is None:
+        names = {self._item_value(item) for item in selected
+                 if not isinstance(self._item_value(item), LayerFolder)
+                 and self._item_value(item) != DEFAULT_LAYER}
+        folders = [item for item in selected
+                   if isinstance(self._item_value(item), LayerFolder)]
+        if not names and not folders:
             return
         # Every mesh in the document, nested placements included — walking
         # scene.groups as a flat list left the faces INSIDE a group tagged
@@ -3419,18 +3736,26 @@ class LayersPanel(QWidget):
         from core.purge import iter_groups, iter_meshes
         for mesh in iter_meshes(scene):
             for ent in list(mesh.faces) + list(mesh.edges):
-                if layer_of(ent) == name:
+                if layer_of(ent) in names:
                     assign_layer(ent, DEFAULT_LAYER)
         for ent in list(iter_groups(scene.groups)) \
                 + list(getattr(scene, "dimensions", []) or []) \
                 + list(getattr(scene, "text_labels", []) or []) \
                 + list(getattr(scene, "image_planes", []) or []) \
                 + list(getattr(scene, "section_planes", []) or []):
-            if layer_of(ent) == name:
+            if layer_of(ent) in names:
                 assign_layer(ent, DEFAULT_LAYER)
-        scene.layers.remove(ly)
-        self.refresh()
-        self._touch()
+        # Keep unselected contents when removing a folder. Selected descendants
+        # remain valid items after their parent has been removed.
+        for item in selected:
+            if self._item_value(item) == DEFAULT_LAYER:
+                continue
+            parent = item.parent() or self.tree.invisibleRootItem()
+            index = parent.indexOfChild(item)
+            children = item.takeChildren()
+            parent.takeChild(index)
+            parent.insertChildren(index, children)
+        self._on_tree_moved()
 
     def _on_purge(self) -> None:
         """The classic "Purge Unused" for tags: sweep the layers nothing
@@ -3471,7 +3796,11 @@ class LayersPanel(QWidget):
             self._window.statusBar().showMessage(
                 tr("Click a layer in the list first, then Assign."), 3000)
             return
-        name = item.data(0, Qt.UserRole)
+        name = self._item_value(item)
+        from core.layers import LayerFolder
+        if isinstance(name, LayerFolder):
+            self._window.statusBar().showMessage(tr("Click a layer in the list first, then Assign."), 3000)
+            return
         # Annotations are tagged too: a "Anotaciones" layer a
         # scene hides gives a clean plan without duplicating the model.
         targets = [ent for ent in scene.selection
@@ -3495,16 +3824,13 @@ class LayersPanel(QWidget):
 
 
 class ScenesPanel(QWidget):
-    """Saved views — "Scenes": named camera + layer-visibility
-    snapshots. Double-click recalls one; the buttons capture the current
-    view, update the selected scene from it, or delete it. Together with
-    layers this is the '2D that emerges' workflow bottled: "Planta" = top
-    camera + parallel + plan layers, one click away."""
+    """Saved views in nested folders, with drag-and-drop ordering.
+
+    Double-click recalls a scene; folders only organize presentation state.
+    """
 
     def __init__(self, window) -> None:
         super().__init__()
-        from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget,
-                                       QPushButton, QVBoxLayout)
         self._window = window
         self._updating = False
         lay = QVBoxLayout(self)
@@ -3512,21 +3838,32 @@ class ScenesPanel(QWidget):
         hint = QLabel(tr("Double-click a scene to show it"))
         hint.setStyleSheet("color: gray;")
         lay.addWidget(hint)
-        self.list = QListWidget()
+        from views.scene_tree import SceneTree
+        self.list = SceneTree()
+        self.list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.list.customContextMenuRequested.connect(self._on_context_menu)
+        self.list.moved.connect(self._on_tree_moved)
+        self.list.itemExpanded.connect(self._on_expansion)
+        self.list.itemCollapsed.connect(self._on_expansion)
         self.list.itemDoubleClicked.connect(self._on_activate)
         self.list.itemChanged.connect(self._on_item_changed)
         lay.addWidget(self.list)
-        row = QHBoxLayout()
-        add_btn = QPushButton(tr("+ Scene"))
+        add_btn = QPushButton("+ " + tr("Scene"))
         add_btn.setToolTip(tr("Save the current view and layer visibility"))
         add_btn.clicked.connect(self._on_add)
         upd_btn = QPushButton(tr("Update"))
         upd_btn.setToolTip(tr("Update the selected scene from the current view"))
         upd_btn.clicked.connect(self._on_update)
         del_btn = QPushButton(tr("−"))
-        del_btn.setToolTip(tr("Delete the selected scene"))
+        del_btn.setToolTip(tr("Delete selected scenes or folders; folder contents are kept"))
         del_btn.clicked.connect(self._on_delete)
         row = FlowLayout(spacing=4)          # wraps in a narrow tray (see Layers)
+        folder_btn = QPushButton(tr("+ Folder"))
+        folder_btn.setIcon(QIcon(str(Path(__file__).resolve().parent.parent /
+                                    "resources/icons/folderplus.svg")))
+        folder_btn.setToolTip(tr("Create a folder inside the selected folder"))
+        folder_btn.clicked.connect(self._on_add_folder)
+        row.addWidget(folder_btn)
         row.addWidget(add_btn)
         row.addWidget(upd_btn)
         row.addWidget(del_btn)
@@ -3538,21 +3875,181 @@ class ScenesPanel(QWidget):
 
     # ---- Model → view --------------------------------------------------------
     def refresh(self) -> None:
-        from PySide6.QtWidgets import QListWidgetItem
+        from core.saved_views import SceneFolder
+        from PySide6.QtWidgets import QTreeWidgetItem
+        selected = [i.data(0, Qt.UserRole) for i in self.list.selectedItems()]
+        current = self.list.currentItem()
+        current_obj = current.data(0, Qt.UserRole) if current is not None else None
         self._updating = True
         self.list.clear()
-        for view in self._scene().saved_views:
-            item = QListWidgetItem(view.name)
-            item.setData(Qt.UserRole, view)
+        scene = self._scene()
+        folders = {f.uid: f for f in scene.scene_folders}
+        items = {}
+        for folder in scene.scene_folders:
+            item = QTreeWidgetItem([folder.name])
+            item.setData(0, Qt.UserRole, folder)
             item.setFlags(item.flags() | Qt.ItemIsEditable)
-            self.list.addItem(item)
-        fit_rows(self.list)
+            item.setIcon(0, QIcon(str(Path(__file__).resolve().parent.parent /
+                                      "resources/icons/folder.svg")))
+            items[folder.uid] = item
+        # Invalid/cyclic parents from external files fall back to the root.
+        for folder in scene.scene_folders:
+            parent_id = folder.parent_id
+            seen = {folder.uid}
+            cursor = parent_id
+            while cursor in folders and cursor not in seen:
+                seen.add(cursor)
+                cursor = folders[cursor].parent_id
+            if cursor in seen or parent_id not in folders:
+                parent_id = None
+            parent = items.get(parent_id, self.list.invisibleRootItem())
+            parent.addChild(items[folder.uid])
+        for view in scene.saved_views:
+            item = QTreeWidgetItem([view.name])
+            item.setData(0, Qt.UserRole, view)
+            item.setFlags((item.flags() | Qt.ItemIsEditable) & ~Qt.ItemIsDropEnabled)
+            items.get(view.folder_id, self.list.invisibleRootItem()).addChild(item)
+
+        def order(parent):
+            children = [parent.takeChild(0) for _ in range(parent.childCount())]
+            children.sort(key=lambda i: i.data(0, Qt.UserRole).position)
+            parent.addChildren(children)
+            for item in children:
+                obj = item.data(0, Qt.UserRole)
+                if isinstance(obj, SceneFolder):
+                    order(item)
+                    item.setExpanded(obj.expanded)
+                if obj is current_obj:
+                    from PySide6.QtCore import QItemSelectionModel
+                    self.list.setCurrentItem(item, 0, QItemSelectionModel.NoUpdate)
+                if any(obj is v for v in selected):
+                    item.setSelected(True)
+        order(self.list.invisibleRootItem())
+        self._fit_tree()
         self._updating = False
 
+    def _fit_tree(self):
+        def count(parent):
+            return sum(1 + (count(parent.child(i)) if parent.child(i).isExpanded()
+                            else 0) for i in range(parent.childCount()))
+        rows = count(self.list.invisibleRootItem())
+        height = self.list.sizeHintForRow(0) if rows else 0
+        height = max(height, self.list.fontMetrics().height() + 4)
+        self.list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list.setFixedHeight(max(rows, 3) * height + 2 * self.list.frameWidth() + 2)
+
+    def _on_expansion(self, item):
+        if self._updating:
+            return
+        item.data(0, Qt.UserRole).expanded = item.isExpanded()
+        self._fit_tree()
+        self._touch()
+
+    def _on_tree_moved(self):
+        from core.saved_views import SceneFolder
+        views, folders = [], []
+        def visit(parent, parent_id=None):
+            for index in range(parent.childCount()):
+                item = parent.child(index)
+                obj = item.data(0, Qt.UserRole)
+                obj.position = index
+                if isinstance(obj, SceneFolder):
+                    obj.parent_id = parent_id
+                    folders.append(obj)
+                    visit(item, obj.uid)
+                else:
+                    obj.folder_id = parent_id
+                    views.append(obj)
+        visit(self.list.invisibleRootItem())
+        self._scene().saved_views[:] = views
+        self._scene().scene_folders[:] = folders
+        self._fit_tree()
+        self._touch()
+
+    def _selected_folder(self):
+        from core.saved_views import SceneFolder
+        item = self.list.currentItem()
+        if item is not None and not isinstance(item.data(0, Qt.UserRole), SceneFolder):
+            item = item.parent()
+        return item.data(0, Qt.UserRole) if item is not None else None
+
+    def _next_position(self, folder):
+        parent_id = folder.uid if folder else None
+        scene = self._scene()
+        positions = [v.position for v in scene.saved_views if v.folder_id == parent_id]
+        positions += [f.position for f in scene.scene_folders if f.parent_id == parent_id]
+        return max(positions, default=-1) + 1
+
+    def _on_context_menu(self, point):
+        item = self.list.itemAt(point)
+        if item is not None and not item.isSelected():
+            self.list.setCurrentItem(item)
+        elif item is None:
+            self.list.clearSelection()
+            self.list.setCurrentItem(None)
+        menu = QMenu(self)
+        menu.addAction(tr("New folder"), self._on_add_folder)
+        if item is not None:
+            menu.addAction(tr("Rename"), lambda: self.list.editItem(item, 0))
+            menu.addAction(tr("Move to root"), self._on_move_to_root)
+            menu.addAction(tr("Delete"), self._on_delete)
+        menu.exec(self.list.viewport().mapToGlobal(point))
+
+    def _on_move_to_root(self):
+        selected = self.list.selectedItems()
+        # Moving a selected parent already carries its selected descendants.
+        for item in selected:
+            parent = item.parent()
+            ancestor = parent
+            while ancestor is not None and ancestor not in selected:
+                ancestor = ancestor.parent()
+            if parent is not None and ancestor is None:
+                parent.takeChild(parent.indexOfChild(item))
+                self.list.addTopLevelItem(item)
+        self._on_tree_moved()
+
+    def _on_add_folder(self):
+        from core.saved_views import SceneFolder
+        parent_item, selected = self.list.folder_selection()
+        parent = parent_item.data(0, Qt.UserRole) if parent_item else None
+        base, n = tr("Folder"), 1
+        taken = {f.name for f in self._scene().scene_folders}
+        while f"{base} {n}" in taken:
+            n += 1
+        folder = SceneFolder(f"{base} {n}", parent_id=parent.uid if parent else None,
+                             position=self._next_position(parent))
+        self._scene().scene_folders.append(folder)
+        if selected:
+            folder.position = min((item.data(0, Qt.UserRole).position for item in selected
+                                   if item.parent() is parent_item), default=folder.position)
+        for position, item in enumerate(selected):
+            value = item.data(0, Qt.UserRole)
+            if isinstance(value, SceneFolder):
+                value.parent_id = folder.uid
+            else:
+                value.folder_id = folder.uid
+            value.position = position
+        if parent:
+            parent.expanded = True
+        self.refresh()
+        self._touch()
+        def find(item):
+            for i in range(item.childCount()):
+                child = item.child(i)
+                if child.data(0, Qt.UserRole) is folder:
+                    self.list.clearSelection()
+                    self.list.setCurrentItem(child)
+                    self.list.editItem(child, 0)
+                    return True
+                if find(child):
+                    return True
+        find(self.list.invisibleRootItem())
+
     # ---- View → model --------------------------------------------------------
-    def _on_activate(self, item) -> None:
-        view = item.data(Qt.UserRole)
-        if view is None:
+    def _on_activate(self, item, column=0) -> None:
+        view = item.data(0, Qt.UserRole)
+        from core.saved_views import SavedView
+        if not isinstance(view, SavedView):
             return
         scene = self._scene()
         view.apply(scene, self._window.viewport.camera)
@@ -3575,8 +4072,8 @@ class ScenesPanel(QWidget):
     def _on_item_changed(self, item) -> None:
         if self._updating:
             return
-        view = item.data(Qt.UserRole)
-        new_name = item.text().strip()
+        view = item.data(0, Qt.UserRole)
+        new_name = item.text(0).strip()
         if view is not None and new_name:
             view.name = new_name
         self.refresh()
@@ -3590,15 +4087,21 @@ class ScenesPanel(QWidget):
         taken = {v.name for v in scene.saved_views}
         while f"{base} {n}" in taken:
             n += 1
-        scene.saved_views.append(SavedView.capture(
-            f"{base} {n}", scene, self._window.viewport.camera))
+        folder = self._selected_folder()
+        view = SavedView.capture(f"{base} {n}", scene, self._window.viewport.camera)
+        view.folder_id = folder.uid if folder else None
+        view.position = self._next_position(folder)
+        scene.saved_views.append(view)
+        if folder:
+            folder.expanded = True
         self.refresh()
         self._touch()
 
     def _on_update(self) -> None:
         item = self.list.currentItem()
-        view = item.data(Qt.UserRole) if item is not None else None
-        if view is None:
+        view = item.data(0, Qt.UserRole) if item is not None else None
+        from core.saved_views import SavedView
+        if not isinstance(view, SavedView):
             return
         view.recapture(self._scene(), self._window.viewport.camera)
         self._touch()
@@ -3606,20 +4109,333 @@ class ScenesPanel(QWidget):
             tr("Scene '{name}' updated", name=view.name), 2000)
 
     def _on_delete(self) -> None:
-        item = self.list.currentItem()
-        view = item.data(Qt.UserRole) if item is not None else None
-        if view is None:
-            return
+        from core.saved_views import SceneFolder
         scene = self._scene()
-        if view in scene.saved_views:
-            scene.saved_views.remove(view)
+        # Remove folder containers, keeping their scenes and subfolders in place.
+        for item in self.list.selectedItems():
+            obj = item.data(0, Qt.UserRole)
+            if isinstance(obj, SceneFolder) and obj in scene.scene_folders:
+                parent = item.parent() or self.list.invisibleRootItem()
+                index = parent.indexOfChild(item)
+                children = item.takeChildren()
+                parent.takeChild(index)
+                parent.insertChildren(index, children)
+            elif obj in scene.saved_views:
+                parent = item.parent() or self.list.invisibleRootItem()
+                parent.takeChild(parent.indexOfChild(item))
+        self._on_tree_moved()
         self.refresh()
-        self._touch()
 
     def _touch(self) -> None:
         scene = self._scene()
         scene.version += 1
         self._window.viewport.update()
+
+
+
+
+class SheetsPanel(QWidget):
+    """Saved views in nested folders, with drag-and-drop ordering.
+
+    Double-click recalls a sheet; folders only organize presentation state.
+    """
+
+    def __init__(self, window) -> None:
+        super().__init__()
+        self._window = window
+        self._updating = False
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(8, 6, 8, 8)
+        hint = QLabel(tr("Double-click a sheet to show it"))
+        hint.setStyleSheet("color: gray;")
+        lay.addWidget(hint)
+        from views.scene_tree import SceneTree
+        self.list = SceneTree()
+        self.list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.list.customContextMenuRequested.connect(self._on_context_menu)
+        self.list.moved.connect(self._on_tree_moved)
+        self.list.itemExpanded.connect(self._on_expansion)
+        self.list.itemCollapsed.connect(self._on_expansion)
+        self.list.itemDoubleClicked.connect(self._on_activate)
+        self.list.itemChanged.connect(self._on_item_changed)
+        lay.addWidget(self.list)
+        add_btn = QPushButton("+ " +  tr("Sheet"))
+        add_btn.setToolTip(tr("Save the current view and layer visibility"))
+       # add_btn.clicked.connect(self._on_add)
+        #upd_btn = QPushButton(tr("Update"))
+        #upd_btn.setToolTip(tr("Update the selected scene from the current view"))
+        #upd_btn.clicked.connect(self._on_update)
+        del_btn = QPushButton(tr("−"))
+        del_btn.setToolTip(tr("Delete selected sheets or folders; folder contents are kept"))
+        del_btn.clicked.connect(self._on_delete)
+        row = FlowLayout(spacing=4)          # wraps in a narrow tray (see Layers)
+        folder_btn = QPushButton(tr("+ Folder"))
+        folder_btn.setIcon(QIcon(str(Path(__file__).resolve().parent.parent /
+                                    "resources/icons/folderplus.svg")))
+        folder_btn.setToolTip(tr("Create a folder inside the selected folder"))
+        folder_btn.clicked.connect(self._on_add_folder)
+        row.addWidget(folder_btn)
+        row.addWidget(add_btn)
+        #row.addWidget(upd_btn)
+        row.addWidget(del_btn)
+        lay.addLayout(row)
+        self.refresh()
+
+    def _scene(self):
+        return self._window.viewport.scene 
+
+    # ---- Model → view --------------------------------------------------------
+    def refresh(self) -> None:
+        from core.saved_views import CompositionFolder
+        from PySide6.QtWidgets import QTreeWidgetItem
+        selected = [i.data(0, Qt.UserRole) for i in self.list.selectedItems()]
+        current = self.list.currentItem()
+        current_obj = current.data(0, Qt.UserRole) if current is not None else None
+        self._updating = True
+        self.list.clear()
+        scene = self._scene()
+        folders = {f.uid: f for f in scene.composition_folders}
+        items = {}
+        for folder in scene.composition_folders:
+            item = QTreeWidgetItem([folder.name])
+            item.setData(0, Qt.UserRole, folder)
+            item.setFlags(item.flags() | Qt.ItemIsEditable)
+            item.setIcon(0, QIcon(str(Path(__file__).resolve().parent.parent /
+                                      "resources/icons/folder.svg")))
+            items[folder.uid] = item
+        # Invalid/cyclic parents from external files fall back to the root.
+        for folder in scene.composition_folders:
+            parent_id = folder.parent_id
+            seen = {folder.uid}
+            cursor = parent_id
+            while cursor in folders and cursor not in seen:
+                seen.add(cursor)
+                cursor = folders[cursor].parent_id
+            if cursor in seen or parent_id not in folders:
+                parent_id = None
+            parent = items.get(parent_id, self.list.invisibleRootItem())
+            parent.addChild(items[folder.uid])
+
+        for comp in scene.compositions:
+            item = QTreeWidgetItem([comp.name])
+            item.setData(0, Qt.UserRole, comp)
+            item.setFlags((item.flags() | Qt.ItemIsEditable) & ~Qt.ItemIsDropEnabled)
+            items.get(comp.folder_id, self.list.invisibleRootItem()).addChild(item)
+
+
+        def order(parent):
+            children = [parent.takeChild(0) for _ in range(parent.childCount())]
+            children.sort(key=lambda i: i.data(0, Qt.UserRole).position)
+            parent.addChildren(children)
+            for item in children:
+                obj = item.data(0, Qt.UserRole)
+                if isinstance(obj, CompositionFolder):
+                    order(item)
+                    item.setExpanded(obj.expanded)
+                if obj is current_obj:
+                    from PySide6.QtCore import QItemSelectionModel
+                    self.list.setCurrentItem(item, 0, QItemSelectionModel.NoUpdate)
+                if any(obj is v for v in selected):
+                    item.setSelected(True)
+        order(self.list.invisibleRootItem())
+        self._fit_tree()
+        self._updating = False
+
+    def _fit_tree(self):
+        def count(parent):
+            return sum(1 + (count(parent.child(i)) if parent.child(i).isExpanded()
+                            else 0) for i in range(parent.childCount()))
+        rows = count(self.list.invisibleRootItem())
+        height = self.list.sizeHintForRow(0) if rows else 0
+        height = max(height, self.list.fontMetrics().height() + 4)
+        self.list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list.setFixedHeight(max(rows, 3) * height + 2 * self.list.frameWidth() + 2)
+
+    def _on_expansion(self, item):
+        if self._updating:
+            return
+        item.data(0, Qt.UserRole).expanded = item.isExpanded()
+        self._fit_tree()
+        self._touch()
+
+    def _on_tree_moved(self):
+        from core.saved_views import CompositionFolder
+        views, folders = [], []
+        def visit(parent, parent_id=None):
+            for index in range(parent.childCount()):
+                item = parent.child(index)
+                obj = item.data(0, Qt.UserRole)
+                obj.position = index
+                if isinstance(obj, CompositionFolder):
+                    obj.parent_id = parent_id
+                    folders.append(obj)
+                    visit(item, obj.uid)
+                else:
+                    obj.folder_id = parent_id
+                    views.append(obj)
+        visit(self.list.invisibleRootItem())
+        self._scene().compositions[:] = views       
+        self._scene().composition_folders[:] = folders
+        self._fit_tree()
+        self._touch()
+
+    def _selected_folder(self):
+        from core.saved_views import CompositionFolder
+        item = self.list.currentItem()
+        if item is not None and not isinstance(item.data(0, Qt.UserRole), CompositionFolder):
+            item = item.parent()
+        return item.data(0, Qt.UserRole) if item is not None else None
+
+    def _next_position(self, folder):
+        parent_id = folder.uid if folder else None
+        scene = self._scene()
+        positions = [v.position for v in scene.compositions if v.folder_id == parent_id]
+        positions += [f.position for f in scene.composition_folders if f.parent_id == parent_id]
+        return max(positions, default=-1) + 1
+
+    def _on_context_menu(self, point):
+        item = self.list.itemAt(point)
+        if item is not None and not item.isSelected():
+            self.list.setCurrentItem(item)
+        elif item is None:
+            self.list.clearSelection()
+            self.list.setCurrentItem(None)
+        menu = QMenu(self)
+        menu.addAction(tr("New folder"), self._on_add_folder)
+        if item is not None:
+            menu.addAction(tr("Rename"), lambda: self.list.editItem(item, 0))
+            menu.addAction(tr("Move to root"), self._on_move_to_root)
+            menu.addAction(tr("Delete"), self._on_delete)
+        menu.exec(self.list.viewport().mapToGlobal(point))
+
+    def _on_move_to_root(self):
+        selected = self.list.selectedItems()
+        # Moving a selected parent already carries its selected descendants.
+        for item in selected:
+            parent = item.parent()
+            ancestor = parent
+            while ancestor is not None and ancestor not in selected:
+                ancestor = ancestor.parent()
+            if parent is not None and ancestor is None:
+                parent.takeChild(parent.indexOfChild(item))
+                self.list.addTopLevelItem(item)
+        self._on_tree_moved()
+
+    def _on_add_folder(self):
+        from core.saved_views import CompositionFolder
+        parent_item, selected = self.list.folder_selection()
+        parent = parent_item.data(0, Qt.UserRole) if parent_item else None
+        base, n = tr("Folder"), 1
+        taken = {f.name for f in self._scene().composition_folders}
+        while f"{base} {n}" in taken:
+            n += 1
+        folder = CompositionFolder(f"{base} {n}", parent_id=parent.uid if parent else None,
+                             position=self._next_position(parent))
+        self._scene().composition_folders.append(folder)
+        if selected:
+            folder.position = min((item.data(0, Qt.UserRole).position for item in selected
+                                   if item.parent() is parent_item), default=folder.position)
+        for position, item in enumerate(selected):
+            value = item.data(0, Qt.UserRole)
+            if isinstance(value, CompositionFolder):
+                value.parent_id = folder.uid
+            else:
+                value.folder_id = folder.uid
+            value.position = position
+        if parent:
+            parent.expanded = True
+        self.refresh()
+        self._touch()
+        def find(item):
+            for i in range(item.childCount()):
+                child = item.child(i)
+                if child.data(0, Qt.UserRole) is folder:
+                    self.list.clearSelection()
+                    self.list.setCurrentItem(child)
+                    self.list.editItem(child, 0)
+                    return True
+                if find(child):
+                    return True
+        find(self.list.invisibleRootItem())
+
+    # ---- View → model --------------------------------------------------------
+    def _on_activate(self, item, column=0) -> None:
+        raise NotImplementedError("Activating sheets is not implemented yet.")
+        view = item.data(0, Qt.UserRole)
+        from core.saved_views import SavedView
+        if not isinstance(view, SavedView):
+            return
+        scene = self._scene()
+        view.apply(scene, self._window.viewport.camera)
+        # The view may carry a style snapshot — keep the menu in step.
+        sync = getattr(self._window, "_sync_style_menu", None)
+        if sync is not None:
+            sync()
+        # Entities that just went invisible/unpickable leave the selection,
+        # same as toggling their layer by hand.
+        dead = [s for s in scene.selection
+                if isinstance(s, (Face, Edge, Group))
+                and not scene.entity_selectable(s)]
+        for s in dead:
+            scene.selection.discard(s)
+        self._touch()
+        self._window.tray.layers.refresh()
+        self._window.statusBar().showMessage(
+            tr("Scene '{name}'", name=view.name), 2000)
+
+    def _on_item_changed(self, item) -> None:
+        if self._updating:
+            return
+        view = item.data(0, Qt.UserRole)
+        new_name = item.text(0).strip()
+        if view is not None and new_name:
+            view.name = new_name
+        self.refresh()
+        self._touch()
+
+    def _on_add(self) -> None:
+        # BAUS
+        raise NotImplementedError("Adding sheets is not implemented yet.")
+        from core.saved_views import Composicion
+        scene = self._scene()
+        base = tr("Sheet")
+        n = 1
+        taken = {v.name for v in scene.saved_views}
+        while f"{base} {n}" in taken:
+            n += 1
+        folder = self._selected_folder()
+        view = SavedView.capture(f"{base} {n}", scene, self._window.viewport.camera)
+        view.folder_id = folder.uid if folder else None
+        view.position = self._next_position(folder)
+        scene.saved_views.append(view)
+        if folder:
+            folder.expanded = True
+        self.refresh()
+        self._touch()
+
+    def _on_delete(self) -> None:
+        from core.saved_views import CompositionFolder
+        scene = self._scene()
+        # Remove folder containers, keeping their scenes and subfolders in place.
+        for item in self.list.selectedItems():
+            obj = item.data(0, Qt.UserRole)
+            if isinstance(obj, CompositionFolder) and obj in scene.composition_folders:
+                parent = item.parent() or self.list.invisibleRootItem()
+                index = parent.indexOfChild(item)
+                children = item.takeChildren()
+                parent.takeChild(index)
+                parent.insertChildren(index, children)
+            elif obj in scene.compositions:
+                parent = item.parent() or self.list.invisibleRootItem()
+                parent.takeChild(parent.indexOfChild(item))
+        self._on_tree_moved()
+        self.refresh()
+
+    def _touch(self) -> None:
+        scene = self._scene()
+        scene.version += 1
+        self._window.viewport.update()
+
 
 
 class BimPanel(QWidget):
@@ -3833,6 +4649,7 @@ class Tray(QDockWidget):
         self.parts = PartsPanel(window)
         self.layers = LayersPanel(window)
         self.scenes = ScenesPanel(window)
+        self.sheets = SheetsPanel(window)
         # Styles, Shadows and Dimension style are NOT here: they live in
         # their own on-demand docks (toolbar toggles) — the always-open tray
         # was drowning.
@@ -3843,6 +4660,7 @@ class Tray(QDockWidget):
             (tr("Materials"), self.materials),
             (tr("Components"), self.components),
             (tr("Parts"), self.parts),
+            (tr("Sheets"), self.sheets),    
         ]))
 
     def on_scene_changed(self) -> None:
@@ -3861,7 +4679,7 @@ class Tray(QDockWidget):
         self.scenes.refresh()
         self.components.refresh_in_model()
         self.parts.refresh()
-
+        self.sheets.refresh()
 
 class BimTray(QDockWidget):
     """Right-side **BIM** dock: the semantic workspace — tag geometry as IFC

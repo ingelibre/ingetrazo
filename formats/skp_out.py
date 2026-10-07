@@ -235,14 +235,49 @@ def _collect_layers(scene, builder, used=None):
     Returns ``layer_handles``: ``layer_name → layer_slot``."""
     from core.layers import DEFAULT_LAYER
     layer_handles = {}
-    for layer in getattr(scene, "layers", []):
+    layers = getattr(scene, "layers", [])
+    if getattr(scene, "layer_folders", None):
+        layers = sorted(layers, key=lambda layer: layer.position)
+    for layer in layers:
         name = getattr(layer, "name", None)
         if not name or name in layer_handles or name == DEFAULT_LAYER:
             continue
-        if used is not None and name not in used:
+        if used is not None and name not in used and not getattr(scene, "layer_folders", None):
             continue
-        layer_handles[name] = builder.add_layer(name)
+        opts = {"hidden": not layer.visible} if "hidden" in _supported(builder.add_layer, "hidden") else {}
+        if "color" in _supported(builder.add_layer, "color"):
+            opts["color"] = tuple(round(max(0.0, min(1.0, c)) * 255)
+                                  for c in layer.color)
+        layer_handles[name] = builder.add_layer(name, **opts)
     return layer_handles
+
+
+def _collect_layer_folders(scene, builder, layer_handles):
+    """Register the complete native tree, including empty folders/tags."""
+    folders = list(getattr(scene, "layer_folders", []) or [])
+    if not folders:
+        return
+    if not callable(getattr(builder, "add_layer_folder", None)) or not callable(
+            getattr(builder, "set_layer_folder", None)):
+        raise RuntimeError("This OpenSKP writer does not support native tag folders")
+    ids = {f.uid for f in folders}
+    if len(ids) != len(folders) or any(f.parent_id is not None and f.parent_id not in ids for f in folders):
+        raise ValueError("Invalid tag-folder IDs or parent references")
+    handles = {}
+    pending = sorted(folders, key=lambda f: f.position)
+    while pending:
+        ready = [f for f in pending if f.parent_id is None or f.parent_id in handles]
+        if not ready:
+            raise ValueError("Cyclic tag-folder hierarchy")
+        for folder in ready:
+            handles[folder.uid] = builder.add_layer_folder(
+                folder.name, parent=handles.get(folder.parent_id), hidden=not folder.visible)
+            pending.remove(folder)
+    for layer in sorted(scene.layers, key=lambda layer: layer.position):
+        if layer.name in layer_handles and layer.folder_id is not None:
+            if layer.folder_id not in handles:
+                raise ValueError("Tag references a missing folder")
+            builder.set_layer_folder(layer_handles[layer.name], handles[layer.folder_id])
 
 
 def _opacity_key(attrs) -> tuple:
@@ -337,6 +372,11 @@ def _split_containers(scene):
     so a group being edited is not double-counted (its mesh is already in
     ``scene.groups``)."""
     visible = getattr(scene, "entity_visible", None) or (lambda e: True)
+    if getattr(scene, "layer_folders", None):
+        # Native folder/tag switches must hide their geometry in SketchUp,
+        # rather than removing that geometry from the exported document.
+        hidden = getattr(scene, "entity_hidden", None) or (lambda e: False)
+        visible = lambda e: not hidden(e)
     mesh = getattr(scene, "loose_mesh", None) or getattr(scene, "mesh", None)
     faces = mesh.faces if mesh is not None else getattr(scene, "faces", [])
     loose_faces = [f for f in faces if visible(f)]
@@ -1330,6 +1370,7 @@ def _write_skp(scene, path, openskp, SkpWriteError, stage_dir: Path) -> None:
     used_layers.update(getattr(g, "layer", None) for _i, g in roots)
     used_layers.discard(None)
     layer_handles = _collect_layers(scene, builder, used_layers)
+    _collect_layer_folders(scene, builder, layer_handles)
 
     # ---- Pass 2: emit geometry -------------------------------------------
     # Groups and component definitions must ALL be written before any

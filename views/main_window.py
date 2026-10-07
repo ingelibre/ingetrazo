@@ -324,8 +324,8 @@ class MainWindow(QMainWindow):
         return slot
 
     def _connect_ndof(self) -> None:
-        """Listen to the 3D mouse, if the machine has one (spacenavd on
-        Linux, Raw Input on Windows). Silent when there is none."""
+        """Listen to the 3D mouse (spacenavd on Linux, Raw Input on Windows,
+        3DconnexionClient on macOS). Silent when there is no driver."""
         self._ndof_connected = True
         try:
             from views.ndof_input import shared_input
@@ -2874,6 +2874,13 @@ class MainWindow(QMainWindow):
             act.blockSignals(True)
             act.setChecked(sh.enabled)
             act.blockSignals(False)
+        tray = getattr(self, "tray", None)
+        layers = getattr(tray, "layers", None)
+        if layers is not None:
+            checkbox = layers._color_by_layer
+            blocked = checkbox.blockSignals(True)
+            checkbox.setChecked(style.color_by_layer)
+            checkbox.blockSignals(blocked)
         panel = getattr(self, "styles_panel", None)
         if panel is not None:
             panel.refresh()

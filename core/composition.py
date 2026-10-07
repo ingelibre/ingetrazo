@@ -1354,6 +1354,8 @@ class Composicion:
     # implementar eso en composición»).
     guides_v: list = field(default_factory=list)
     guides_h: list = field(default_factory=list)
+    folder_id: str = None
+    position: int = 0
 
     def page_size_mm(self) -> tuple[float, float]:
         w, h = PAPER_SIZES_MM[self.paper]
@@ -1419,6 +1421,11 @@ class Composicion:
         if self.guides_v or self.guides_h:
             d["guides"] = {"v": [float(x) for x in self.guides_v],
                            "h": [float(y) for y in self.guides_h]}
+        if self.folder_id is not None:
+            d["folder_id"] = self.folder_id
+        if self.position:
+            d["position"] = self.position
+
         return d
 
     @classmethod

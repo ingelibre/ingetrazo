@@ -296,13 +296,32 @@ def _apply_payload_inner(scene, payload) -> str:
     # The file's layers (.skp tags) join the scene's layer list, keeping
     # their visibility — layers already present are left untouched (a re-import
     # must not flip what the user toggled).
+    folder_ids = {}
+    if payload.get("layer_folders"):
+        from core.layers import LayerFolder
+        # Allocate local IDs per import so unrelated files with identical
+        # SketchUp entity IDs cannot accidentally share a folder.
+        folders = []
+        for raw in payload["layer_folders"]:
+            if raw["id"] in folder_ids:
+                raise ValueError("duplicate SKP tag-folder ID")
+            folder = LayerFolder(raw["name"], position=raw.get("position", 0),
+                                 visible=raw.get("visible", True))
+            folder_ids[raw["id"]] = folder.uid
+            folders.append((raw, folder))
+        for raw, folder in folders:
+            folder.parent_id = folder_ids.get(raw.get("parent_id"))
+        scene.layer_folders.extend(folder for _raw, folder in folders)
     if payload.get("layers"):
         from core.layers import Layer
         known = {ly.name for ly in scene.layers}
         for raw in payload["layers"]:
             if raw.get("name") and raw["name"] not in known:
                 scene.layers.append(Layer(raw["name"],
-                                          visible=raw.get("visible", True)))
+                                          visible=raw.get("visible", True),
+                                          color=raw.get("color"),
+                                          folder_id=folder_ids.get(raw.get("folder_id")),
+                                          position=raw.get("position", 0)))
                 known.add(raw["name"])
 
     # The file's saved scenes become saved views (camera + hidden layers);
@@ -320,6 +339,9 @@ def _apply_payload_inner(scene, payload) -> str:
                 perspective=not raw.get("parallel", False),
                 ortho_height=raw.get("ortho_height") or None,
                 hidden_layers=raw.get("hidden_layers")))
+            scene.saved_views[-1].hidden_layer_folders = [
+                folder_ids[ident] for ident in raw.get("hidden_layer_folders", [])
+                if ident in folder_ids]
             existing.add(raw["name"])
 
     # Linear dimensions (.skp dimension entities): world endpoints + an

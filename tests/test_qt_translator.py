@@ -42,10 +42,12 @@ def test_english_installs_nothing(monkeypatch):
 def test_shortcuts_keep_their_english_key_names(monkeypatch):
     import main
     monkeypatch.setattr(main, "_qt_translator", None)
+    sequences = [QKeySequence("Ctrl+Shift+PgUp"), QKeySequence("Esc")]
+    native = [seq.toString(QKeySequence.NativeText) for seq in sequences]
     main._install_qt_translator("es")
     try:
-        shown = QKeySequence("Ctrl+Shift+PgUp").toString(QKeySequence.NativeText)
-        assert shown == "Ctrl+Shift+PgUp"            # not «Control+Mayúsculas…»
-        assert QKeySequence("Esc").toString(QKeySequence.NativeText) == "Esc"
+        assert [seq.toString(QKeySequence.NativeText) for seq in sequences] == native
+        assert [seq.toString(QKeySequence.PortableText) for seq in sequences] == [
+            "Ctrl+Shift+PgUp", "Esc"]
     finally:
         QApplication.removeTranslator(main._qt_translator)

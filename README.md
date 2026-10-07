@@ -85,6 +85,12 @@ welcome arch with all its rebar (also attached to every release as
   grid, colored axes, perspective ↔ parallel and two-point perspective,
   standard views, zoom-extents, hidden-line removal, real-sun shadows.
 - **Walkthrough** — Position Camera, Walk and Look Around at eye height.
+- **SpaceMouse navigation** — pan, zoom and orbit with a 3Dconnexion 3D
+  mouse on Linux (`spacenavd`), Windows and macOS (install 3DxWare).
+  Preferences ▸ 3D Mouse controls speed, per-axis inversion and rotation
+  lock. On macOS, restart IngeTrazo after installing the driver; input is
+  released when another application takes focus. The camera stays upright
+  (no roll), and either of the first two buttons fits the model in view.
 - **Drawing tools** — Line, Rectangle, Rotated Rectangle, Circle, Polygon,
   Arc (2-point) and 3-Point Arc, with inferencing, snapping, axis locks and a
   Value Control Box (type exact lengths/coordinates, `200,100` or `200;100`
@@ -143,6 +149,9 @@ the document), **import STL (with principal-plane or advanced all-surface
   future).
 - **Layers & Scenes** — visibility/lock tags (plans emerge from one model)
   and saved views (camera + per-layer visibility), both imported from `.skp`.
+  The Layers panel offers **Color by layer**; double-click a colour swatch to
+  change it. Tag colours are saved in `.igz` and imported/exported with `.skp`;
+  the display switch preserves the model's materials and keeps edges black.
 - **BIM tagging + IFC export** — tag freeform geometry with IFC classes
   (walls, slabs, columns, ...); tagged objects export to `.ifc` with honest
   quantities (areas always; volumes only when the object is watertight) —

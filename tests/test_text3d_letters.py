@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QGuiApplication, QMatrix4x4, QVector3D
@@ -39,6 +41,26 @@ def test_letters_lay_out_exactly_like_the_one_piece_text():
     # letters sit in reading order, each to the right of the previous
     lefts = [min(v.position.x() for v in m.vertices) for _c, m in letters]
     assert lefts == sorted(lefts)
+
+
+@pytest.mark.parametrize("text", ["AVATAR", "To Wa", "office", "A\u0301V", "A𝄞V"])
+def test_shaped_letters_preserve_the_whole_vertex_cloud(text):
+    whole = build_text_mesh(text, "Sans", True)
+    letters = build_text_letters(text, "Sans", True)
+
+    def cloud(meshes):
+        return sorted((round(v.position.x(), 6), round(v.position.y(), 6),
+                       round(v.position.z(), 6))
+                      for mesh in meshes for v in mesh.vertices)
+
+    assert cloud([whole]) == cloud([mesh for _ch, mesh in letters])
+
+
+def test_right_to_left_letters_preserve_the_whole_extent():
+    whole = build_text_mesh("مرحبا", "Sans", True)
+    letters = build_text_letters("مرحبا", "Sans", True)
+    assert _extent([whole]) == pytest.approx(
+        _extent([mesh for _ch, mesh in letters]), abs=1e-6)
 
 
 def test_spaces_make_no_letter_group():

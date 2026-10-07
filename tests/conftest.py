@@ -35,6 +35,37 @@ for scope in (QSettings.UserScope, QSettings.SystemScope):
 import pytest  # noqa: E402
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _isolated_application_data(tmp_path_factory):
+    """Keep autosaves, tile caches and texture caches out of real user data.
+
+    QSettings isolation alone does not cover QStandardPaths. A non-writable
+    user cache made retinting silently fall back to a new folder on every call.
+    """
+    from PySide6.QtCore import QStandardPaths
+
+    root = tmp_path_factory.mktemp("application-data")
+    original = QStandardPaths.writableLocation
+    locations = {
+        QStandardPaths.AppDataLocation, QStandardPaths.AppLocalDataLocation,
+        QStandardPaths.GenericDataLocation, QStandardPaths.CacheLocation,
+        QStandardPaths.GenericCacheLocation,
+    }
+
+    def writable_location(location):
+        if location in locations:
+            path = root / str(location.value)
+            path.mkdir(exist_ok=True)
+            return str(path)
+        return original(location)
+
+    QStandardPaths.writableLocation = staticmethod(writable_location)
+    try:
+        yield
+    finally:
+        QStandardPaths.writableLocation = staticmethod(original)
+
+
 @pytest.fixture(autouse=True)
 def _world_drawing_axes():
     """The drawing axes are process-wide (core.axes, issue #44): a test that

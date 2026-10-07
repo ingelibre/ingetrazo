@@ -1,0 +1,1037 @@
+From 61abde1ed6ae1829b926ad3f371bdac619b40057 Mon Sep 17 00:00:00 2001
+From: Guy Wydouw <guy@wydouw.be>
+Date: Tue, 6 Oct 2026 20:41:49 +0200
+Subject: [PATCH] feat(python): add native tag-folder import and export
+
+---
+ docs/tag-folder-record-notes.md               |  62 ++++
+ packages/python/src/openskp/__init__.py       |   3 +-
+ packages/python/src/openskp/_core.py          |  18 +-
+ packages/python/src/openskp/codegen.py        |  10 +
+ packages/python/src/openskp/create.py         |  99 +++++-
+ packages/python/src/openskp/edit.py           |   9 +
+ .../python/src/openskp/export/json_export.py  |   7 +
+ packages/python/src/openskp/legacy.py         |  81 ++++-
+ packages/python/src/openskp/model.py          |  24 +-
+ packages/python/src/openskp/tagfolders.py     |  84 +++++
+ packages/python/tests/test_tagfolders.py      | 311 ++++++++++++++++++
+ 11 files changed, 694 insertions(+), 14 deletions(-)
+ create mode 100644 docs/tag-folder-record-notes.md
+ create mode 100644 packages/python/src/openskp/tagfolders.py
+ create mode 100644 packages/python/tests/test_tagfolders.py
+
+diff --git a/docs/tag-folder-record-notes.md b/docs/tag-folder-record-notes.md
+new file mode 100644
+index 0000000..efa7169
+--- /dev/null
++++ b/docs/tag-folder-record-notes.md
+@@ -0,0 +1,62 @@
++# Native tag folders (Python)
++
++The Python reader exposes `SkpModel.layer_folders` and `Layer.id`,
++`Layer.folder_id`, `Layer.position`. `LayerFolder` records have `id`, `name`,
++`parent_id`, `position`, `hidden`, and `visible_on_new_scenes`. IDs are local to
++one parsed model; names can repeat. The implicit root is not exposed as a folder.
++
++The classic writer exposes `add_layer_folder(name, parent=None, hidden=False,
++visible_on_new_scenes=True)` and `set_layer_folder(layer_handle, folder_handle)`.
++Folder handles are local integers; `None` moves a tag back to the root. Finish
++layers, folders and membership before defining or emitting geometry. Empty
++folders and tags survive. `open_existing()` replay, Python code generation and
++JSON metadata export carry the hierarchy too. With folders present, the writer
++extends its classic container using a newer layer-manager schema; readers must
++support tag folders (SketchUp 2021+). This is not a new VFF geometry writer.
++Without folders the existing writer's format and behavior are unchanged.
++
++## Modern VFF records
++
++Within layer manager `983A`, the flat tag list remains `993A` > `8C3C`.
++`9B3A` contains an implicit `803E` root. Each folder has:
++
++- `DC05` > `DE05`: persistent entity ID.
++- `813E`: UTF-8 name (empty only for the implicit root).
++- `833E`: ordered direct children, each another `803E`.
++- `843E`: direct tag references, each `(u8 byte length, little-endian ID)`.
++- `823E`: current hidden flag.
++- `853E`: hidden-on-new-scenes flag.
++
++A page `7148` records hidden folder IDs in `5971` (numeric tag `0x7159`),
++using the same length-prefixed ID encoding. Python exposes these on
++`Page.hidden_layer_folder_ids`. Existing scene export remains outside the
++classic writer's scope.
++
++## Classic MFC records
++
++The file's **CVersionMap**, rather than just its year or the individual class
++header, determines these versions. Layer-manager schema 7 writes an inline
++implicit root after the active-layer back-reference and before definition
++count. Definitions embed their own layer manager and also need an implicit
++empty root; omitting it can leave a file that our reader accepts but SketchUp
++rejects.
++
++Named folders are `CLayerGroup` objects: entity preamble, UTF-16 name, u32 child
++count and object refs, u32 tag count and layer refs, then visibility. Global
++CLayerGroup version 2 stores a single hidden byte; version 3 adds the
++hidden-on-new-scenes byte. Some older implicit roots omit the PID mask.
++The writer declares version 3, uses native archive slot allocation and includes
++folder slots in all following geometry/tail reference shifts and PID counters.
++
++## Verification
++
++`packages/python/tests/test_tagfolders.py` generates tests on demand. Ordinary
++CI covers byte decoding, duplicate names, malformed IDs, classic round trips,
++replay and Python code generation. Set `OPENSKP_TEST_SKETCHUP_SDK` to a locally
++available SketchUpAPI library for independent checks: SDK-created classic/VFF
++folders, SDK reads of our writer's folder tree and geometry counts, VFF resaves,
++and scene-specific hidden folders. No SDK binary or SDK-produced fixture is
++included. The production parser/writer never loads the SDK.
++
++Cross-language ports are not part of this Python change. Locking and expansion
++state are application-specific and are not written as native SketchUp fields.
+diff --git a/packages/python/src/openskp/__init__.py b/packages/python/src/openskp/__init__.py
+index ae990b2..760d5bf 100644
+--- a/packages/python/src/openskp/__init__.py
++++ b/packages/python/src/openskp/__init__.py
+@@ -32,7 +32,7 @@ from .instanced_scene import (
+     LocalPrimitive,
+     SceneBounds,
+ )
+-from .model import SkpFile, SkpModel, loose_edge_runs
++from .model import LayerFolder, SkpFile, SkpModel, loose_edge_runs
+ from .scene import Scene, InstanceNode, MeshMetadata, GlbPrimitive, SceneTexture
+ 
+ try:
+@@ -42,6 +42,7 @@ except PackageNotFoundError:
+ __all__: list[str] = [
+     "SkpFile",
+     "SkpModel",
++    "LayerFolder",
+     "Scene",
+     "InstanceNode",
+     "MeshMetadata",
+diff --git a/packages/python/src/openskp/_core.py b/packages/python/src/openskp/_core.py
+index 025faca..a1e16fb 100644
+--- a/packages/python/src/openskp/_core.py
++++ b/packages/python/src/openskp/_core.py
+@@ -771,7 +771,7 @@ def _parse_pages(node):
+     if node is None:
+         return []
+ 
+-    def sub(items, tag):
++    def sub(items: Any, tag: int) -> Any:
+         for t, p in items or []:
+             if t == tag:
+                 return p
+@@ -796,7 +796,7 @@ def _parse_pages(node):
+                     continue
+                 page = {'name': '', 'eye': None, 'target': None, 'up': None,
+                         'fov': 35.0, 'parallel': False, 'ortho_height': 0.0,
+-                        'hidden_layer_ids': []}
++                        'hidden_layer_ids': [], 'hidden_layer_folder_ids': []}
+                 head = _tlv_items(sub(items, 0x6F54))
+                 name = sub(head, 0x6F55)
+                 if name:
+@@ -824,6 +824,8 @@ def _parse_pages(node):
+                     page['hidden_layer_ids'].append(
+                         parse_var_int(hidden, off + 1, ln))
+                     off += 1 + ln
++                from .tagfolders import read_id_list
++                page['hidden_layer_folder_ids'] = read_id_list(sub(items, 0x7159) or b'')
+                 if page['eye'] is not None and page['target'] is not None:
+                     pages.append(page)
+     return pages
+@@ -1627,8 +1629,17 @@ def full_parse(skp_path: str) -> Dict[str, Any]:
+ 
+     # Layer ID -> name
+     layer_id_to_name = {}
++    layer_folders = []
++    layer_folder_ids = {}
+     def collect_layers(nodes):
+         for el in nodes:
++            if el['tag'] == '983A':
++                for child in el['children']:
++                    if child['tag'] == '9B3A':
++                        from .tagfolders import parse_vff_folders
++                        folders, assignments = parse_vff_folders(child['payload'])
++                        layer_folders.extend(folders)
++                        layer_folder_ids.update(assignments)
+             if el['tag'] == '993A':
+                 for child in el['children']:
+                     if child['tag'] == '8C3C':
+@@ -1643,6 +1654,7 @@ def full_parse(skp_path: str) -> Dict[str, Any]:
+                                 l_id = parse_var_int(payload, 0, len(payload))
+                             l_name = name_node['payload'].decode('utf-8', errors='replace')
+                             layer_id_to_name[l_id] = l_name
++                            layer_colors.setdefault(l_name, (200, 200, 200))
+                             # 8E3C: a single byte, 1 = hidden / 0 = visible -
+                             # confirmed byte-for-byte against a real
+                             # production file's own Tags panel (openskp
+@@ -1768,6 +1780,8 @@ def full_parse(skp_path: str) -> Dict[str, Any]:
+         'layer_colors': layer_colors,
+         'layer_hidden': layer_hidden,
+         'layer_id_to_name': layer_id_to_name,
++        'layer_folders': layer_folders,
++        'layer_folder_ids': layer_folder_ids,
+         'pages': _parse_pages(page_node),
+         'dimensions': _parse_dimensions(
+             model_dat, vertex_positions, instance_world),
+diff --git a/packages/python/src/openskp/codegen.py b/packages/python/src/openskp/codegen.py
+index d0c59d6..e0f1875 100644
+--- a/packages/python/src/openskp/codegen.py
++++ b/packages/python/src/openskp/codegen.py
+@@ -170,6 +170,16 @@ def to_python_code(model: SkpModel) -> str:
+         color = (layer.color_r, layer.color_g, layer.color_b)
+         push(f"    {var_name} = builder.add_layer({layer.name!r}, color={color!r}, hidden={layer.hidden!r})")
+ 
++    folder_vars: dict[int, str] = {}
++    for i, folder in enumerate(model.layer_folders):
++        var_name = f"folder{i}"
++        parent = folder_vars.get(folder.parent_id, "None") if folder.parent_id is not None else "None"
++        push(f"    {var_name} = builder.add_layer_folder({folder.name!r}, parent={parent}, hidden={folder.hidden!r}, visible_on_new_scenes={folder.visible_on_new_scenes!r})")
++        folder_vars[folder.id] = var_name
++    for i, layer in enumerate(model.layers):
++        if layer.folder_id is not None:
++            push(f"    builder.set_layer_folder(layer{i}, {folder_vars[layer.folder_id]})")
++
+     def uv_triple_str(
+         points: Sequence[Tuple[float, float, float]],
+         normal: Optional[Tuple[float, float, float]],
+diff --git a/packages/python/src/openskp/create.py b/packages/python/src/openskp/create.py
+index 51a1159..786a591 100644
+--- a/packages/python/src/openskp/create.py
++++ b/packages/python/src/openskp/create.py
+@@ -105,7 +105,7 @@ import struct
+ import time
+ import uuid
+ from importlib import resources
+-from typing import Dict, FrozenSet, Iterator, List, NamedTuple, Optional, Sequence, Tuple, Union
++from typing import Any, Dict, FrozenSet, Iterator, List, NamedTuple, Optional, Sequence, Tuple, Union
+ 
+ from . import legacy
+ from ._face_groups import face_uv_basis
+@@ -1224,6 +1224,12 @@ class _ArchiveWriter:
+         self.buf += _u32(1)  # nlayers: always 1, an embedded copy of Layer0
+         embedded_layer_slot = self.write_layer("Layer0", with_pids=False)
+         self._backref(embedded_layer_slot)  # "decl": this definition's own active layer
++        if "CLayerGroup" in self.class_slot:
++            # Definitions embed their own layer manager, which shares the
++            # model's schema-7 version and needs an empty implicit root.
++            self._preamble(pid=0)
++            self._write_str("")
++            self.buf += _u32(0) + _u32(0) + bytes(2)
+         # A separate field from nested instances (which live in the entity
+         # list just below, like any other entity) - ground truth shows this
+         # counts CComponentDefinition classes declared inline within this
+@@ -2252,6 +2258,10 @@ class SkpBuilder:
+         #: `materials_by_name`, populated automatically by `add_layer`.
+         self.layers_by_name: Dict[str, int] = {}
+         self._layer_count = 0
++        self._layer_folders: list[dict[str, Any]] = []
++        self._folder_writer: Optional[_ArchiveWriter] = None
++        self._folder_writer_start: Optional[int] = None
++        self._layer_folder_assignment: dict[int, int] = {}
+         # Deferred the same way as the layer writer: component definitions
+         # splice in after layers, before root-level geometry, so their
+         # starting slot depends on the final material+layer shift.
+@@ -2484,15 +2494,80 @@ class SkpBuilder:
+         material_shift = self._material_writer.next_slot - self._base
+         return {n: s + material_shift for n, s in self._scaffold_class_slot.items()}
+ 
++    def add_layer_folder(self, name: str, parent: Optional[int] = None, hidden: bool = False,
++                         visible_on_new_scenes: bool = True) -> int:
++        """Register a native tag folder. Folder names may repeat.
++
++        Register layers and folders before definitions or root geometry.
++        Files with folders extend the classic container and require
++        SketchUp 2021+ (the first version with tag folders).
++        """
++        if not isinstance(name, str) or not name:
++            raise SkpWriteError("folder name must be a nonempty string")
++        if self._definition_writer is not None or self._geometry_writer is not None:
++            raise SkpWriteError("add_layer_folder must precede geometry and definitions")
++        if parent is not None and (type(parent) is not int or not 0 <= parent < len(self._layer_folders)):
++            raise SkpWriteError("parent must be a folder handle from this builder")
++        handle = len(self._layer_folders)
++        self._layer_folders.append(dict(name=name, parent=parent, hidden=bool(hidden),
++                                       visible_on_new_scenes=bool(visible_on_new_scenes)))
++        return handle
++
++    def set_layer_folder(self, layer: int, folder: Optional[int] = None) -> None:
++        """Move a registered tag into a folder, or to the root (None)."""
++        if self._definition_writer is not None or self._geometry_writer is not None:
++            raise SkpWriteError("set_layer_folder must precede geometry and definitions")
++        if layer not in self.layers_by_name.values():
++            raise SkpWriteError("layer must be a handle from add_layer")
++        if folder is not None and (type(folder) is not int or not 0 <= folder < len(self._layer_folders)):
++            raise SkpWriteError("folder must be a handle from add_layer_folder")
++        if folder is None:
++            self._layer_folder_assignment.pop(layer, None)
++        else:
++            self._layer_folder_assignment[layer] = folder
++
++    def _prepare_folders(self) -> None:
++        if self._folder_writer is not None or not self._layer_folders:
++            return
++        assert self._layer_writer is None or self._layer_writer_start is not None
++        layer_shift = (self._layer_writer.next_slot - (self._layer_writer_start or 0)
++                       if self._layer_writer else 0)
++        material_shift = self._material_writer.next_slot - self._base
++        self._folder_writer_start = self._layer_writer_base + material_shift + layer_shift
++        classes = (dict(self._layer_writer.class_slot) if self._layer_writer
++                   else self._material_shifted_class_slot())
++        w = _ArchiveWriter(next_slot=self._folder_writer_start, class_slot=classes,
++                           next_pid=self._next_pid())
++        def body(record: dict[str, Any], handle: Optional[int]) -> None:
++            w._preamble(pid=0 if handle is None else None)
++            w._write_str(record["name"])
++            kids = [(i, f) for i, f in enumerate(self._layer_folders) if f["parent"] == handle]
++            w.buf += _u32(len(kids))
++            for i, f in kids:
++                w._new_of_known_class("CLayerGroup", schema=3)
++                body(f, i)
++            members = [ly for ly, folder in self._layer_folder_assignment.items() if folder == handle]
++            w.buf += _u32(len(members))
++            for ly in members:
++                w._backref(ly)
++            w.buf += bytes([record["hidden"], not record["visible_on_new_scenes"]])
++        body(dict(name="", hidden=False, visible_on_new_scenes=True), None)
++        self._folder_writer = w
++
+     def _layer_shift(self) -> int:
+-        if self._layer_writer is None:
+-            return 0
+-        return self._layer_writer.next_slot - self._layer_writer_start
++        self._prepare_folders()
++        return ((self._layer_writer.next_slot - self._layer_writer_start
++                 if self._layer_writer else 0) +
++                (self._folder_writer.next_slot - (self._folder_writer_start or 0)
++                 if self._folder_writer else 0))
+ 
+     def _post_layer_class_slot(self) -> Dict[str, int]:
+         """The class_slot dict a writer positioned right after the layer
+         section (a definition writer, or root geometry if no definitions
+         exist) should start from."""
++        self._prepare_folders()
++        if self._folder_writer is not None:
++            return dict(self._folder_writer.class_slot)
+         if self._layer_writer is not None:
+             return dict(self._layer_writer.class_slot)
+         return self._material_shifted_class_slot()
+@@ -2780,7 +2855,7 @@ class SkpBuilder:
+         (materials, layers, definitions, root geometry), each continuing
+         where the previous one stopped."""
+         for w in (self._geometry_writer, self._definition_writer,
+-                  self._layer_writer, self._material_writer):
++                  self._folder_writer, self._layer_writer, self._material_writer):
+             if w is not None:
+                 return w.next_pid
+         return self._pid_start
+@@ -3282,7 +3357,9 @@ class SkpBuilder:
+             # no-op once already created, so this is safe to call
+             # unconditionally alongside every other call site.
+             self._ensure_geometry_writer()
+-        if self._face_count == 0:
++        if self._layer_folders and self._geometry_writer is None:
++            self._ensure_geometry_writer()
++        if self._face_count == 0 and not self._layer_folders:
+             raise SkpWriteError("no geometry added - call add_face at least once before saving")
+ 
+         # Every new-class declaration and every new object allocation each
+@@ -3334,6 +3411,8 @@ class SkpBuilder:
+         if material_shift:
+             _shift_ref(middle2a, _ACTIVE_LAYER_ANCHOR_REL, material_shift)
+         out += middle2a
++        if self._folder_writer is not None:
++            out += self._folder_writer.buf
+ 
+         out += _u32(self._orig_def_count + self._definition_count)
+         if self._definition_writer is not None:
+@@ -3370,6 +3449,9 @@ class SkpBuilder:
+                 patch = iso_patches[pos]
+                 tail[here : here + len(patch)] = patch
+         out += tail
++        if self._folder_writer is not None:
++            marker = _mfc_string("CLayerManager") + _u32(4)
++            out = out.replace(marker, _mfc_string("CLayerGroup") + _u32(3) + _mfc_string("CLayerManager") + _u32(7), 1)
+         return bytes(out)
+ 
+     def save(self, path: str) -> None:
+@@ -3391,3 +3473,8 @@ def create() -> SkpBuilder:
+     and limitations (no inline-declared nested groups; inches only).
+     """
+     return SkpBuilder()
++
++
++def _mfc_string(value: str) -> bytes:
++    encoded = value.encode("utf-16le")
++    return b"\xff\xfe\xff" + bytes([len(value)]) + encoded
+diff --git a/packages/python/src/openskp/edit.py b/packages/python/src/openskp/edit.py
+index 018b1cd..bfb2b97 100644
+--- a/packages/python/src/openskp/edit.py
++++ b/packages/python/src/openskp/edit.py
+@@ -145,6 +145,15 @@ def open_existing(
+         for layer in model.layers
+     }
+ 
++    folder_handles: dict[int, int] = {}
++    for folder in model.layer_folders:
++        folder_handles[folder.id] = builder.add_layer_folder(
++            folder.name, parent=folder_handles.get(folder.parent_id) if folder.parent_id is not None else None, hidden=folder.hidden,
++            visible_on_new_scenes=folder.visible_on_new_scenes)
++    for layer in model.layers:
++        if layer.folder_id is not None:
++            builder.set_layer_folder(layer_slots[layer.name], folder_handles[layer.folder_id])
++
+     def_builders: Dict[int, ComponentDefinitionBuilder] = {}
+     for def_id in _definition_order(model):
+         defn = model.definitions[def_id]
+diff --git a/packages/python/src/openskp/export/json_export.py b/packages/python/src/openskp/export/json_export.py
+index 0bfe78f..91f3654 100644
+--- a/packages/python/src/openskp/export/json_export.py
++++ b/packages/python/src/openskp/export/json_export.py
+@@ -165,11 +165,18 @@ def to_dict(model: SkpModel, scene: Optional[Scene] = None) -> Dict[str, Any]:
+         "layers": [
+             {
+                 "name": layer.name,
++                "id": layer.id,
++                "folder_id": layer.folder_id,
++                "position": layer.position,
+                 "color": {"r": layer.color_r, "g": layer.color_g, "b": layer.color_b},
+                 "hidden": layer.hidden,
+             }
+             for layer in model.layers
+         ],
++        "layer_folders": [dict(id=f.id, name=f.name, parent_id=f.parent_id,
++                               position=f.position, hidden=f.hidden,
++                               visible_on_new_scenes=f.visible_on_new_scenes)
++                          for f in model.layer_folders],
+         "materials": [
+             {
+                 "name": mat.name,
+diff --git a/packages/python/src/openskp/legacy.py b/packages/python/src/openskp/legacy.py
+index c880140..bac71c3 100644
+--- a/packages/python/src/openskp/legacy.py
++++ b/packages/python/src/openskp/legacy.py
+@@ -118,6 +118,8 @@ class _R:
+ class _Archive:
+     """MFC CArchive store-map bookkeeping and object-graph walk."""
+ 
++    layer_folder_root: dict[str, Any]
++
+     def __init__(self, data: bytes, ver: int):
+         self.data = data
+         self.ver = ver                # SketchUp major version (16/17/18…)
+@@ -347,7 +349,7 @@ def _is_class_ref(data: bytes, p: int, slot: int) -> bool:
+             and struct.unpack_from('<I', data, p + 2)[0] == 0x80000000 | slot)
+ 
+ 
+-def _preamble(ar, r):
++def _preamble(ar: Any, r: Any) -> dict[str, Any]:
+     """Entity preamble: attribute pointer (+ pid mask/bytes on 2017+)."""
+     slot, name, attrs = ar.read_object(r, expect='CAttributeContainer')
+     pid = 0
+@@ -609,6 +611,32 @@ def _read_attr_named(ar, r):
+     return {'k': 'dict', 'name': dictname, 'entries': entries}
+ 
+ 
++def _read_layer_group(ar: Any, r: Any, implicit: bool = False) -> dict[str, Any]:
++    # Some classic schema-7 managers serialize the implicit root without
++    # a persistent-ID mask; named folder objects still have full preambles.
++    if implicit and r.peek(5) == b'\0\0' + _STR_MARKER:
++        r.raw(2)
++        preamble = {'pid': 0}
++    else:
++        preamble = _preamble(ar, r)
++    name = r.utf16()
++    count = r.u32()
++    if count > 100000:
++        raise LegacyParseError("implausible folder child count")
++    children = [ar.read_object(r, expect='CLayerGroup')[0] for _ in range(count)]
++    count = r.u32()
++    if count > 100000:
++        raise LegacyParseError("implausible folder layer count")
++    layers = [ar.read_object(r, expect='CLayer')[0] for _ in range(count)]
++    hidden = bool(r.u8())
++    marker = _STR_MARKER + bytes([11]) + 'CLayerGroup'.encode('utf-16le')
++    pos = ar.data.find(marker, 0, ar.r.pos)
++    version = struct.unpack_from('<I', ar.data, pos + len(marker))[0] if pos >= 0 else 3
++    return dict(k='layer_folder', name=name, pid=preamble['pid'],
++                children=children, layers=layers, hidden=hidden,
++                visible_on_new_scenes=not bool(r.u8()) if version >= 3 else True)
++
++
+ def _read_layer(ar, r):
+     _preamble(ar, r)
+     name = r.utf16()
+@@ -1160,6 +1188,12 @@ def _read_definition(ar, r):
+     # field (and, behind a layer-separator null, even the decl itself): if
+     # the empty-string marker sits in the next few bytes, the real count is
+     # the first non-zero u32 after its padding.
++    marker = _STR_MARKER + bytes([13]) + 'CLayerManager'.encode('utf-16le')
++    pos = ar.data.find(marker, 0, r.pos)
++    if pos >= 0 and struct.unpack_from('<I', ar.data, pos + len(marker))[0] >= 7:
++        if decl == 0:
++            ar.read_object(r, expect='CLayer')  # trailing layer line-style null preceded the active-layer ref
++        _read_layer_group(ar, r, implicit=True)
+     count = None
+     if ar.ver >= 20:
+         count = _retry_count_after_v20_filler(r, r.pos, 5_000_000, ar)
+@@ -1269,7 +1303,7 @@ def _read_instance(ar, r):
+ _READERS = {
+     'CVertex': _read_vertex, 'CEdge': _read_edge, 'CCurve': _read_curve,
+     'CArcCurve': _read_arccurve, 'CEdgeUse': _read_edgeuse,
+-    'CLoop': _read_loop, 'CFace': _read_face, 'CLayer': _read_layer,
++    'CLoop': _read_loop, 'CFace': _read_face, 'CLayer': _read_layer, 'CLayerGroup': _read_layer_group,
+     'CMaterial': _read_material, 'CDib': _read_dib,
+     'CAttributeContainer': _read_attr_container,
+     'CAttributeNamed': _read_attr_named, 'CCamera': _read_camera,
+@@ -1380,10 +1414,15 @@ def _probe_layer_anchor_bases(data: bytes, ver: int, start: int,
+     layer_count = boot.r.u32()
+     if not 1 <= layer_count <= 100000:
+         raise LegacyParseError("implausible layer count in base probe")
+-    layer_slots = []
+-    for _ in range(layer_count):
++    layer_slots: list[int] = []
++    while len(layer_slots) < layer_count:
++        if boot.r.peek_u16() == 0:
++            boot.r.pos += 2
++            continue
+         s, _, _ = boot.read_object(boot.r, expect='CLayer')
+         layer_slots.append(s)
++    while boot.r.peek_u16() == 0:
++        boot.r.pos += 2
+     s, n, _ = boot.read_object(boot.r)
+     if n != 'premodel':
+         # under the throwaway base every absolute back-ref classifies as
+@@ -1451,6 +1490,13 @@ def _walk_model(data: bytes, ver: int, start: int, mat_count: int,
+     _, dn, _ = ar.read_object(r)
+     if dn != 'CLayer':
+         raise LegacyParseError(f"definition-list anchor is {dn}, not a layer")
++    # CLayerManager schema 7 serializes an implicit root folder after the
++    # active layer. The file's year alone is insufficient: a classic file
++    # can carry a newer manager schema (SketchUp's own 2020 save does).
++    marker = _STR_MARKER + bytes([13]) + 'CLayerManager'.encode('utf-16le')
++    manager_pos = data.find(marker, 0, start)
++    if manager_pos >= 0 and struct.unpack_from('<I', data, manager_pos + len(marker))[0] >= 7:
++        ar.layer_folder_root = _read_layer_group(ar, r, implicit=True)
+     def_count = r.u32()
+     if def_count > 1_000_000:
+         retry = _retry_count_after_v20_filler(r, r.pos - 4, 1_000_000, ar)
+@@ -1862,6 +1908,31 @@ def full_parse_legacy(skp_path: str) -> Dict[str, Any]:
+         skp_path, len(defs_dict), time.monotonic() - t0,
+     )
+ 
++    layer_folders = []
++    layer_folder_ids = {}
++    visited_folders = set()
++    def folder_tree(group: dict[str, Any], parent: Optional[int] = None, depth: int = 0) -> None:
++        if depth > 100:
++            raise LegacyParseError("folder nesting exceeds 100")
++        for position, slot in enumerate(group['children']):
++            if slot in visited_folders:
++                raise LegacyParseError("cyclic or repeated folder reference")
++            visited_folders.add(slot)
++            value = slots.get(slot)
++            if not value or value[1] != 'CLayerGroup':
++                raise LegacyParseError("invalid folder reference")
++            folder = value[2]
++            layer_folders.append(dict(id=slot, name=folder['name'], parent_id=parent,
++                                      position=position, hidden=folder['hidden'],
++                                      visible_on_new_scenes=folder['visible_on_new_scenes']))
++            for layer in folder['layers']:
++                if layer in layer_folder_ids:
++                    raise LegacyParseError("layer belongs to more than one folder")
++                layer_folder_ids[layer] = slot
++            folder_tree(folder, slot, depth+1)
++    if hasattr(ar, 'layer_folder_root'):
++        folder_tree(ar.layer_folder_root)
++
+     return {
+         'version': version,
+         'dimensions': [d for d in root_builder.dimensions
+@@ -1869,6 +1940,8 @@ def full_parse_legacy(skp_path: str) -> Dict[str, Any]:
+         'layer_colors': layer_colors,
+         'layer_hidden': layer_hidden,
+         'layer_id_to_name': layer_id_to_name,
++        'layer_folders': layer_folders,
++        'layer_folder_ids': layer_folder_ids,
+         'material_id_to_name': material_id_to_name,
+         'materials': mats,
+         'materials_by_folder': {},
+diff --git a/packages/python/src/openskp/model.py b/packages/python/src/openskp/model.py
+index 30555bb..bc32037 100644
+--- a/packages/python/src/openskp/model.py
++++ b/packages/python/src/openskp/model.py
+@@ -199,6 +199,20 @@ class Layer:
+     color_g: int = 200
+     color_b: int = 200
+     hidden: bool = False
++    id: Optional[int] = None
++    folder_id: Optional[int] = None
++    position: int = 0
++
++
++@dataclass
++class LayerFolder:
++    """Native tag folder. IDs, rather than names, identify folders."""
++    id: int
++    name: str
++    parent_id: Optional[int] = None
++    position: int = 0
++    hidden: bool = False
++    visible_on_new_scenes: bool = True
+ 
+ 
+ @dataclass
+@@ -448,6 +462,7 @@ class Page:
+     parallel: bool = False
+     ortho_height: float = 0.0
+     hidden_layers: List[str] = field(default_factory=list)
++    hidden_layer_folder_ids: List[int] = field(default_factory=list)
+ 
+ 
+ @dataclass
+@@ -629,6 +644,7 @@ class SkpModel:
+     definitions: Dict[int, Definition] = field(default_factory=dict)
+     root: Definition = field(default_factory=Definition)
+     layers: List[Layer] = field(default_factory=list)
++    layer_folders: List[LayerFolder] = field(default_factory=list)
+     pages: List[Page] = field(default_factory=list)
+     dimensions: List[Dimension] = field(default_factory=list)
+     materials: List[Material] = field(default_factory=list)
+@@ -805,11 +821,16 @@ class SkpFile:
+             else:
+                 model.definitions[def_id] = defn
+ 
++        model.layer_folders = [LayerFolder(**f) for f in parsed.get("layer_folders", [])]
++        layer_ids = {name: ident for ident, name in layer_id_to_name.items()}
++        folder_ids = parsed.get("layer_folder_ids", {})
+         # Convert layers
+         layer_hidden = parsed.get("layer_hidden", {})
+         for name, (r, g, b) in parsed["layer_colors"].items():
+             model.layers.append(
+-                Layer(name=name, color_r=r, color_g=g, color_b=b, hidden=layer_hidden.get(name, False))
++                Layer(name=name, color_r=r, color_g=g, color_b=b, hidden=layer_hidden.get(name, False),
++                      id=layer_ids.get(name), folder_id=folder_ids.get(layer_ids.get(name)),
++                      position=len(model.layers))
+             )
+ 
+         # Convert pages (saved scenes) — hidden layer ids resolve to names;
+@@ -823,6 +844,7 @@ class SkpFile:
+                 fov=pg.get("fov", 35.0),
+                 parallel=pg.get("parallel", False),
+                 ortho_height=pg.get("ortho_height", 0.0),
++                hidden_layer_folder_ids=list(pg.get("hidden_layer_folder_ids", [])),
+                 hidden_layers=[layer_id_to_name[i]
+                                for i in pg.get("hidden_layer_ids", [])
+                                if i in layer_id_to_name],
+diff --git a/packages/python/src/openskp/tagfolders.py b/packages/python/src/openskp/tagfolders.py
+new file mode 100644
+index 0000000..f2a2390
+--- /dev/null
++++ b/packages/python/src/openskp/tagfolders.py
+@@ -0,0 +1,84 @@
++"""Native SketchUp tag folder decoding; no SDK dependency."""
++
++import struct
++from collections.abc import Iterator
++from typing import Any
++
++
++def tlv_items(data: bytes) -> Iterator[tuple[str, bytes]]:
++    pos = 0
++    while pos < len(data):
++        if pos + 6 > len(data):
++            raise ValueError("truncated folder TLV header")
++        size = struct.unpack_from("<I", data, pos + 2)[0]
++        end = pos + 6 + size
++        if end > len(data):
++            raise ValueError("truncated folder TLV payload")
++        yield data[pos : pos + 2].hex().upper(), data[pos + 6 : end]
++        pos = end
++
++
++def read_id_list(data: bytes) -> list[int]:
++    ids = []
++    pos = 0
++    while pos < len(data):
++        size = data[pos]
++        pos += 1
++        if not 1 <= size <= 8 or pos + size > len(data):
++            raise ValueError("invalid folder layer ID list")
++        ids.append(int.from_bytes(data[pos : pos + size], "little"))
++        pos += size
++    return ids
++
++
++def parse_vff_folders(data: bytes) -> tuple[list[dict[str, Any]], dict[int, int]]:
++    """Read layer manager 9B3A > implicit root 803E > 833E folders.
++
++    843E carries (byte length, little-endian ID) tag references; nesting
++    gives parentage. 823E and 853E mean hidden/current and hidden/new scenes.
++    """
++    folders: list[dict[str, Any]] = []
++    assignments: dict[int, int] = {}
++
++    def visit(
++        body: bytes,
++        parent: int | None = None,
++        position: int = 0,
++        root: bool = False,
++        depth: int = 0,
++    ) -> None:
++        if depth > 100:
++            raise ValueError("folder nesting exceeds 100")
++        fields = dict(tlv_items(body))
++        ident = None
++        if not root:
++            info = dict(tlv_items(fields.get("DC05", b"")))
++            pid = info.get("DE05")
++            if not pid or len(pid) > 8:
++                raise ValueError("folder has no valid ID")
++            ident = int.from_bytes(pid, "little")
++            if any(f["id"] == ident for f in folders):
++                raise ValueError("duplicate folder ID")
++            folders.append(
++                dict(
++                    id=ident,
++                    name=fields.get("813E", b"").decode("utf-8"),
++                    parent_id=parent,
++                    position=position,
++                    hidden=bool(fields.get("823E", b"\0")[0]),
++                    visible_on_new_scenes=not bool(fields.get("853E", b"\0")[0]),
++                )
++            )
++        for layer in read_id_list(fields.get("843E", b"")):
++            if ident is not None:
++                if layer in assignments:
++                    raise ValueError("layer belongs to more than one folder")
++                assignments[layer] = ident
++        for i, (tag, child) in enumerate(tlv_items(fields.get("833E", b""))):
++            if tag == "803E":
++                visit(child, ident, i, depth=depth + 1)
++
++    for tag, body in tlv_items(data):
++        if tag == "803E":
++            visit(body, root=True)
++    return folders, assignments
+diff --git a/packages/python/tests/test_tagfolders.py b/packages/python/tests/test_tagfolders.py
+new file mode 100644
+index 0000000..d55844c
+--- /dev/null
++++ b/packages/python/tests/test_tagfolders.py
+@@ -0,0 +1,311 @@
++"""Native folder round trips, plus an optional independent SketchUp oracle.
++
++Set OPENSKP_TEST_SKETCHUP_SDK to a locally licensed SketchUpAPI library.
++No SDK files or SDK-authored model templates are bundled by this test.
++"""
++
++import ctypes as C
++import os
++import struct
++
++import pytest
++from openskp import SkpFile, SkpWriteError, create
++from openskp.tagfolders import parse_vff_folders, read_id_list
++
++
++def tlv(tag, body):
++    return bytes.fromhex(tag) + struct.pack("<I", len(body)) + body
++
++
++def folder_node(ident, name, children=b"", members=b"", hidden=False):
++    return tlv(
++        "803E",
++        tlv("DC05", tlv("DE05", ident.to_bytes(2, "little")))
++        + tlv("813E", name.encode())
++        + tlv("833E", children)
++        + tlv("843E", members)
++        + tlv("823E", bytes([hidden]))
++        + tlv("853E", b"\0"),
++    )
++
++
++def test_vff_folders_use_ids_and_keep_empty_duplicate_names():
++    child = folder_node(513, "Same", members=b"\x02\x04\x02")
++    one = folder_node(512, "Same", children=child, hidden=True)
++    empty = folder_node(514, "Same")
++    raw = tlv("803E", tlv("813E", b"") + tlv("833E", one + empty) + tlv("843E", b""))
++    folders, members = parse_vff_folders(raw)
++    assert [(f["id"], f["parent_id"], f["position"]) for f in folders] == [
++        (512, None, 0),
++        (513, 512, 0),
++        (514, None, 1),
++    ]
++    assert folders[0]["hidden"]
++    assert members == {516: 513}
++
++
++@pytest.mark.parametrize("data", [b"\0", b"\x02\x01", b"\x09" + bytes(9)])
++def test_invalid_id_lists_fail(data):
++    with pytest.raises(ValueError):
++        read_id_list(data)
++
++
++def make_builder():
++    b = create()
++    layer = b.add_layer("Walls", hidden=True)
++    spare = b.add_layer("Empty tag")
++    outer = b.add_layer_folder("Same", hidden=True, visible_on_new_scenes=False)
++    inner = b.add_layer_folder("Same", parent=outer)
++    b.add_layer_folder("Empty")
++    b.set_layer_folder(layer, inner)
++    b.set_layer_folder(spare, outer)
++    with b.add_component_definition("Triangle") as component:
++        component.add_face([(0, 0, 0), (10, 0, 0), (0, 10, 0)], layer=layer)
++    b.add_instance(component, translation=(20, 0, 0))
++    b.add_face([(0, 0, 0), (10, 0, 0), (0, 10, 0)], layer=layer)
++    return b
++
++
++def tree(model):
++    def children(parent):
++        return [
++            (
++                f.name,
++                f.hidden,
++                f.visible_on_new_scenes,
++                sorted(layer.name for layer in model.layers if layer.folder_id == f.id),
++                children(f.id),
++            )
++            for f in model.layer_folders
++            if f.parent_id == parent
++        ]
++
++    return children(None)
++
++
++def test_classic_writer_reader_and_edit_keep_native_folders(tmp_path):
++    from openskp import open_existing
++
++    path = tmp_path / "folders.skp"
++    make_builder().save(str(path))
++    model = SkpFile.open(str(path)).parse()
++    assert tree(model) == [
++        ("Same", True, False, ["Empty tag"], [("Same", False, True, ["Walls"], [])]),
++        ("Empty", False, True, [], []),
++    ]
++    assert (
++        sum(len(d.faces) for d in model.definitions.values()) + len(model.root.faces)
++        == 2
++    )
++    edited = open_existing(str(path))
++    # open_existing returns (builder, definitions, warnings).
++    edited[0].save(str(tmp_path / "edit.skp"))
++    assert tree(SkpFile.open(str(tmp_path / "edit.skp")).parse()) == tree(model)
++
++
++def test_folder_api_rejects_invalid_handles_and_late_mutations():
++    b = create()
++    layer = b.add_layer("Tag")
++    for bad in ("", None):
++        with pytest.raises(SkpWriteError):
++            b.add_layer_folder(bad)
++    with pytest.raises(SkpWriteError):
++        b.add_layer_folder("Folder", parent=100)
++    with pytest.raises(SkpWriteError):
++        b.set_layer_folder(layer, 100)
++    f = b.add_layer_folder("Folder")
++    b.set_layer_folder(layer, f)
++    b.set_layer_folder(layer, None)
++    b.add_face([(0, 0, 0), (10, 0, 0), (0, 10, 0)])
++    with pytest.raises(SkpWriteError):
++        b.add_layer_folder("Late")
++    with pytest.raises(SkpWriteError):
++        b.set_layer_folder(layer, f)
++
++
++class SDK:
++    """Small explicit ctypes binding, confined to local validation."""
++
++    def __init__(self):
++        self.dll = C.CDLL(os.environ["OPENSKP_TEST_SKETCHUP_SDK"])
++        self.dll.SUInitialize()
++
++    def call(self, name, *args):
++        result = getattr(self.dll, name)(*args)
++        assert result == 0, (name, result)
++
++    def ref(self, name, *args):
++        ref = C.c_void_p()
++        self.call(name, C.byref(ref), *args)
++        return ref
++
++    def open(self, path):
++        return self.ref("SUModelCreateFromFile", str(path).encode())
++
++    def refs(self, ref, num, get):
++        count = C.c_size_t()
++        self.call(num, ref, C.byref(count))
++        if not count.value:
++            return []
++        array = (C.c_void_p * count.value)()
++        self.call(get, ref, count, array, C.byref(count))
++        return [C.c_void_p(v) for v in array[: count.value]]
++
++    def name(self, ref, function):
++        string = self.ref("SUStringCreate")
++        try:
++            self.call(function, ref, C.byref(string))
++            size = C.c_size_t()
++            self.call("SUStringGetUTF8Length", string, C.byref(size))
++            buf = C.create_string_buffer(size.value + 1)
++            self.call(
++                "SUStringGetUTF8", string, C.c_size_t(len(buf)), buf, C.byref(size)
++            )
++            return buf.value.decode()
++        finally:
++            self.call("SUStringRelease", C.byref(string))
++
++    def folder_tree(self, parent, root=True):
++        refs = self.refs(
++            parent,
++            "SUModelGetNumLayerFolders" if root else "SULayerFolderGetNumLayerFolders",
++            "SUModelGetLayerFolders" if root else "SULayerFolderGetLayerFolders",
++        )
++        result = []
++        for f in refs:
++            visible, new = C.c_bool(), C.c_bool()
++            self.call("SULayerFolderGetVisibility", f, C.byref(visible))
++            self.call("SULayerGroupGetVisibleOnNewScenes", f, C.byref(new))
++            layers = self.refs(f, "SULayerFolderGetNumLayers", "SULayerFolderGetLayers")
++            result.append(
++                (
++                    self.name(f, "SULayerFolderGetName"),
++                    not visible.value,
++                    new.value,
++                    sorted(self.name(layer, "SULayerGetName") for layer in layers),
++                    self.folder_tree(f, False),
++                )
++            )
++        return result
++
++
++@pytest.fixture
++def sdk():
++    if not os.environ.get("OPENSKP_TEST_SKETCHUP_SDK"):
++        pytest.skip("local SketchUp SDK not configured")
++    sdk = SDK()
++    try:
++        yield sdk
++    finally:
++        sdk.dll.SUTerminate()
++
++
++def test_native_writer_matches_real_sketchup_and_vff_resave(sdk, tmp_path):
++    path = tmp_path / "written.skp"
++    make_builder().save(str(path))
++    expected = tree(SkpFile.open(str(path)).parse())
++    model = sdk.open(path)
++    try:
++        assert sdk.folder_tree(model) == expected
++        entities = C.c_void_p()
++        sdk.call("SUModelGetEntities", model, C.byref(entities))
++        count = C.c_size_t()
++        sdk.call("SUEntitiesGetNumFaces", entities, C.byref(count))
++        assert count.value == 1  # other triangle lives in a component
++        sdk.call("SUEntitiesGetNumInstances", entities, C.byref(count))
++        assert count.value == 1
++        vff = tmp_path / "vff.skp"
++        sdk.call("SUModelSaveToFile", model, str(vff).encode())
++    finally:
++        sdk.call("SUModelRelease", C.byref(model))
++    assert tree(SkpFile.open(str(vff)).parse()) == expected
++
++
++@pytest.mark.parametrize("version", [13, 14])
++def test_sdk_created_folders_are_read_independently(sdk, tmp_path, version):
++    baseline = tmp_path / "baseline.skp"
++    b = create()
++    layer = b.add_layer("Tag")
++    b.add_face([(0, 0, 0), (10, 0, 0), (0, 10, 0)], layer=layer)
++    b.save(str(baseline))
++    model = sdk.open(baseline)
++    path = tmp_path / "sdk.skp"
++    try:
++        outer = sdk.ref("SULayerFolderCreate", "Déjà vu".encode())
++        sdk.call("SUModelAddLayerFolder", model, outer)
++        child = sdk.ref("SULayerFolderCreate", "Déjà vu".encode())
++        sdk.call("SULayerFolderAddLayerFolder", outer, child)
++        sdk.call("SULayerFolderSetVisibility", outer, C.c_bool(False))
++        layers = sdk.refs(model, "SUModelGetNumLayers", "SUModelGetLayers")
++        tag = next(
++            layer for layer in layers if sdk.name(layer, "SULayerGetName") == "Tag"
++        )
++        sdk.call("SULayerFolderAddLayer", child, tag)
++        sdk.call(
++            "SUModelSaveToFileWithVersion", model, str(path).encode(), C.c_int(version)
++        )
++    finally:
++        sdk.call("SUModelRelease", C.byref(model))
++    # The saved file is the oracle; read it again rather than assuming SDK
++    # save preserves every in-memory property on a downgrade.
++    model = sdk.open(path)
++    try:
++        expected = sdk.folder_tree(model)
++    finally:
++        sdk.call("SUModelRelease", C.byref(model))
++    assert tree(SkpFile.open(str(path)).parse()) == expected
++
++
++def test_empty_folder_only_document_and_codegen(tmp_path):
++    from openskp import to_python_code
++
++    b = create()
++    b.add_layer_folder("Empty")
++    path = tmp_path / "empty.skp"
++    b.save(str(path))
++    model = SkpFile.open(str(path)).parse()
++    assert tree(model) == [("Empty", False, True, [], [])]
++    ns = {}
++    exec(to_python_code(model), ns)
++    rebuilt = tmp_path / "rebuilt.skp"
++    rebuilt.write_bytes(ns["build"]())
++    assert tree(SkpFile.open(str(rebuilt)).parse()) == tree(model)
++
++
++def test_sdk_scene_hidden_folder_ids_survive_vff_import(sdk, tmp_path):
++    path = tmp_path / "base.skp"
++    make_builder().save(str(path))
++    model = sdk.open(path)
++    out = tmp_path / "scene.skp"
++    try:
++        folder = sdk.refs(model, "SUModelGetNumLayerFolders", "SUModelGetLayerFolders")[
++            0
++        ]
++        scene = sdk.ref("SUSceneCreate")
++        sdk.call("SUSceneSetName", scene, b"Scene")
++        index = C.c_int(-1)
++        sdk.call(
++            "SUModelAddScenes", model, C.c_size_t(1), C.byref(scene), C.byref(index)
++        )
++        camera = sdk.ref("SUCameraCreate")
++        try:
++            eye = (C.c_double * 3)(100, 100, 100)
++            target = (C.c_double * 3)(0, 0, 0)
++            up = (C.c_double * 3)(0, 0, 1)
++            sdk.call(
++                "SUCameraSetOrientation",
++                camera,
++                C.byref(eye),
++                C.byref(target),
++                C.byref(up),
++            )
++            sdk.call("SUSceneSetCamera", scene, camera)
++        finally:
++            sdk.call("SUCameraRelease", C.byref(camera))
++        sdk.call("SUSceneSetFlags", scene, C.c_uint32(0x21))
++        sdk.call("SUSceneAddLayerFolder", scene, folder)
++        sdk.call("SUModelSaveToFile", model, str(out).encode())
++    finally:
++        sdk.call("SUModelRelease", C.byref(model))
++    parsed = SkpFile.open(str(out)).parse()
++    assert parsed.pages[0].hidden_layer_folder_ids == [parsed.layer_folders[0].id]
+-- 
+2.50.1 (Apple Git-155)
+

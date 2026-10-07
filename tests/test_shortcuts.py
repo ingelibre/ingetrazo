@@ -187,7 +187,7 @@ def test_la_barra_muestra_el_atajo_configurado_y_no_el_de_fabrica(ventana):
 
     assert primera(linea).endswith("(L)")
     linea.setShortcuts([QKeySequence("Ctrl+Alt+L")])
-    assert "Ctrl+Alt+L" in primera(linea)
+    assert QKeySequence("Ctrl+Alt+L").toString(QKeySequence.NativeText) in primera(linea)
     assert "(L)" not in primera(linea)
     linea.setShortcuts([])
     assert "(" not in primera(linea)                 # sin atajo, sin paréntesis
@@ -195,4 +195,5 @@ def test_la_barra_muestra_el_atajo_configurado_y_no_el_de_fabrica(ventana):
     assert primera(linea).endswith("(L)")
     ze = ventana._act_zoom_extents
     ze.setShortcuts([QKeySequence("Ctrl+E")])
-    assert "Ctrl+E" in primera(ze)                   # el que venía escrito a mano
+    # el que venía escrito a mano
+    assert QKeySequence("Ctrl+E").toString(QKeySequence.NativeText) in primera(ze)

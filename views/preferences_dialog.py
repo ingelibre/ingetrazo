@@ -232,8 +232,7 @@ class PreferencesDialog(QDialog):
         status = QLabel(
             tr("Device driver found: {name}", name=name) if name else tr(
                 "No 3D mouse driver found. On Linux install and start "
-                "«spacenavd»; on Windows the 3Dconnexion driver is enough. "
-                "macOS is not supported yet."))
+                "«spacenavd»; on Windows and macOS install the 3Dconnexion driver."))
         status.setWordWrap(True)
         form.addRow("", status)
         tabs.addTab(mouse3d, tr("3D Mouse"))

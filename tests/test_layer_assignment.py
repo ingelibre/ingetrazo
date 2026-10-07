@@ -101,6 +101,64 @@ def test_entity_info_shows_the_layer_and_changes_it():
         win.close()
 
 
+def test_entity_info_sorts_layers_and_keeps_assignment_after_refresh():
+    from types import SimpleNamespace
+    from core.layers import DEFAULT_LAYER
+    from views.tray import EntityInfoPanel
+
+    scene = Scene()
+    scene.layers += [Layer("90 TERREIN NT"), Layer("bomen"),
+                     Layer("10 walls"),
+                     Layer("2 WALLS"), Layer("arco")]
+    original_order = [ly.name for ly in scene.layers]
+    history = History(scene)
+    viewport = SimpleNamespace(scene=scene, history=history, update=lambda: None)
+    window = SimpleNamespace(
+        viewport=viewport,
+        statusBar=lambda: SimpleNamespace(showMessage=lambda *args: None))
+    panel = EntityInfoPanel(window)
+    group = Group(Mesh(), name="wall")
+    group.layer = "10 walls"
+    scene.groups.append(group)
+    scene.select([group])
+    try:
+        panel.refresh()
+        box = panel._layer_box
+        expected = [DEFAULT_LAYER, "2 WALLS", "10 walls", "90 TERREIN NT",
+                    "arco", "bomen"]
+        assert [box.itemText(i) for i in range(box.count())] == expected
+        assert box.currentData() == "10 walls"
+        assert group.layer == "10 walls"
+        assert [ly.name for ly in scene.layers] == original_order
+
+        box.setCurrentIndex(box.findData("2 WALLS"))
+        assert group.layer == "2 WALLS"
+        history.undo()
+        panel.refresh()
+        assert box.currentData() == "10 walls"
+
+        face = _square(scene.mesh)
+        scene.select([group, face])
+        panel.refresh()
+        assert box.currentData() is None
+        assert [box.itemText(i) for i in range(1, box.count())] == expected
+        box.setCurrentIndex(box.findData("arco"))
+        assert layer_of(group) == layer_of(face) == "arco"
+    finally:
+        panel.close()
+
+
+def test_entity_info_sorts_layers_in_c_locale():
+    from PySide6.QtCore import QLocale
+
+    previous = QLocale()
+    QLocale.setDefault(QLocale.c())
+    try:
+        test_entity_info_sorts_layers_and_keeps_assignment_after_refresh()
+    finally:
+        QLocale.setDefault(previous)
+
+
 def test_right_click_layer_submenu_and_new_layer():
     from PySide6.QtWidgets import QInputDialog, QMenu
     win = _window()

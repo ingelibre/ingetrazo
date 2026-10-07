@@ -4,8 +4,10 @@
 frame can carry the model's own dimensions and leader texts."""
 from __future__ import annotations
 
+import pytest
+
 from PySide6.QtCore import QEvent, QPointF, Qt
-from PySide6.QtGui import QKeyEvent, QVector3D
+from PySide6.QtGui import QImage, QKeyEvent, QVector3D
 
 from core.composition import (CotaItem, Composicion, MarcoVista,
                               mm_to_px)
@@ -200,7 +202,11 @@ def test_a_grown_raster_frame_keeps_the_picture_undistorted():
     assert out.pixel(300, 50) & 0xFFFFFF == 0xFFFFFF    # grown part: paper
 
 
-def test_raster_frame_image_is_made_opaque(monkeypatch):
+@pytest.mark.parametrize("image_format", [QImage.Format_ARGB32_Premultiplied,
+                                        QImage.Format_RGBA8888_Premultiplied,
+                                        QImage.Format_ARGB32])
+@pytest.mark.parametrize("rgb", [0xFFFFFF, 0x336699, 0xFFCC33])
+def test_raster_frame_image_is_made_opaque(monkeypatch, image_format, rgb):
     """A translucent water face leaves alpha < 1 under bright texels in the
     FBO read-back (labelled premultiplied): invalid data that smooth
     scaling on the canvas turns into red/yellow blotches. The frame keeps
@@ -211,8 +217,11 @@ def test_raster_frame_image_is_made_opaque(monkeypatch):
     win = MainWindow()
     comp = ComposerWindow(win)
     try:
-        bad = QImage(8, 8, QImage.Format_ARGB32_Premultiplied)
-        bad.fill(0xCFFFFFFF)                    # alpha 207 under white
+        bad = QImage(8, 8, QImage.Format_ARGB32)
+        bad.fill(0xCF000000 | rgb)
+        if image_format == QImage.Format_RGBA8888_Premultiplied:
+            bad = bad.convertToFormat(QImage.Format_RGBA8888)
+        bad.reinterpretAsFormat(image_format)  # simulate the FBO format label
         monkeypatch.setattr(win.viewport, "render_image",
                             lambda *a, **k: bad)
         frame = comp.comp.frames[0]
@@ -220,7 +229,9 @@ def test_raster_frame_image_is_made_opaque(monkeypatch):
         comp.render_frame(frame)
         img = comp.render_cache[id(frame)]
         assert not img.hasAlphaChannel()
-        assert img.pixel(3, 3) & 0xFFFFFF == 0xFFFFFF
+        assert img.pixel(3, 3) & 0xFFFFFF == rgb
+        assert bad.hasAlphaChannel()          # cached conversion owns its copy
+        assert bad.format() == image_format
     finally:
         comp.close()
         win._saved_version = win.viewport.scene.version

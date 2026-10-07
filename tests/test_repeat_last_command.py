@@ -212,7 +212,9 @@ def test_the_status_bar_says_what_would_repeat_only_in_select(win):
     assert lab.isHidden(), "inside a tool the corner is the VCB's"
     win._activate_tool("select")
     assert not lab.isHidden()
-    assert lab.text() == "Shift+R: repeat Line"
+    from PySide6.QtGui import QKeySequence
+    keys = QKeySequence("Shift+R").toString(QKeySequence.NativeText)
+    assert lab.text() == f"{keys}: repeat Line"
 
 
 def test_the_shortcut_editor_keeps_one_key_for_it_whatever_it_says(win):
@@ -239,7 +241,8 @@ def test_the_hint_names_the_keys_it_has_now(win):
     win._activate_tool("select")
     win._repeat_action.setShortcut(QKeySequence("Ctrl+Shift+Y"))
     win._refresh_repeat_hint()
-    assert win._repeat_label.text() == "Ctrl+Shift+Y: repeat Line"
+    keys = QKeySequence("Ctrl+Shift+Y").toString(QKeySequence.NativeText)
+    assert win._repeat_label.text() == f"{keys}: repeat Line"
     win._repeat_action.setShortcut(QKeySequence())
     win._refresh_repeat_hint()
     assert win._repeat_label.text() == "Repeat Line"

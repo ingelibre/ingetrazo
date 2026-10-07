@@ -672,7 +672,7 @@
  "Invert zoom": "Inverti zoom",
  "Pan and zoom only (no rotation — for drawing in plan)": "Solo panoramica e zoom (senza rotazione — per disegnare in pianta)",
  "Device driver found: {name}": "Driver del dispositivo trovato: {name}",
- "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows the 3Dconnexion driver is enough. macOS is not supported yet.": "Nessun driver per mouse 3D trovato. Su Linux installa e avvia «spacenavd»; su Windows basta il driver 3Dconnexion. macOS non è ancora supportato.",
+ "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows and macOS install the 3Dconnexion driver.": "Nessun driver per mouse 3D trovato. Su Linux installa e avvia «spacenavd»; su Windows e macOS installa il driver 3Dconnexion.",
  "3D Mouse": "Mouse 3D",
  "Click what to move (or select it first). Red + on a group = rotate it.": "Fai clic su ciò che vuoi spostare (o selezionalo prima). Il + rosso su un gruppo = ruotalo.",
  "Rotate: move to turn, click or type the angle. Ctrl = copy": "Ruota: muovi per girare, fai clic o digita l'angolo. Ctrl = copia",

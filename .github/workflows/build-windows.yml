@@ -55,12 +55,9 @@ jobs:
           sha256sum "$PYI_SRC"/PyInstaller/bootloader/Windows-64bit-intel/*.exe
           pip install "$PYI_SRC"
           python -c "import PyInstaller; print('PyInstaller', PyInstaller.__version__)"
-          # openskp NATIVO: UPSTREAM main — todos nuestros parches están
-          # mergeados allá (corpus legacy 186/186 PRs #194/#199, cotas y
-          # textos guía PR #203). Pineado por SHA para builds
-          # reproducibles; avanzar el SHA cuando upstream traiga algo
-          # que necesitemos.
-          pip install "openskp @ git+https://github.com/iamahsanmehmood/openskp@291700bc213655a00461838de71e5f206311e619#subdirectory=packages/python"
+          # Fork GWydouw/OpenSKP, mismo commit validado que requirements.txt
+          # y release.yml para builds reproducibles.
+          pip install "openskp @ git+https://github.com/GWydouw/openskp@291700bc213655a00461838de71e5f206311e619#subdirectory=packages/python"
           python -c "import openskp, openskp.legacy; print('openskp OK:', openskp.__name__)" 
 
       # DWG en Windows (#101): el dwg2dxf.exe OFICIAL de LibreDWG (su

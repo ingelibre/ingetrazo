@@ -2649,6 +2649,7 @@ class SnapshotImport(Command):
         self.after: Optional[dict] = None
         self.added_groups: list = []
         self.added_layers: list = []
+        self.added_layer_folders: list = []
         self.added_views: list = []
         self.added_dims: list = []
         self.added_texts: list = []
@@ -2658,6 +2659,7 @@ class SnapshotImport(Command):
         if self.after is None:
             groups_before = list(scene.groups)
             layers_before = list(scene.layers)
+            folders_before = list(scene.layer_folders)
             views_before = list(scene.saved_views)
             dims_before = list(scene.dimensions)
             texts_before = list(scene.text_labels)
@@ -2673,6 +2675,8 @@ class SnapshotImport(Command):
                                    if g in groups_before]
                 scene.layers[:] = [ly for ly in scene.layers
                                    if ly in layers_before]
+                scene.layer_folders[:] = [f for f in scene.layer_folders
+                                         if f in folders_before]
                 scene.saved_views[:] = [v for v in scene.saved_views
                                         if v in views_before]
                 scene.dimensions[:] = [d for d in scene.dimensions
@@ -2685,6 +2689,8 @@ class SnapshotImport(Command):
                                  if g not in groups_before]
             self.added_layers = [ly for ly in scene.layers
                                  if ly not in layers_before]
+            self.added_layer_folders = [f for f in scene.layer_folders
+                                       if f not in folders_before]
             self.added_views = [v for v in scene.saved_views
                                 if v not in views_before]
             self.added_dims = [d for d in scene.dimensions
@@ -2696,6 +2702,9 @@ class SnapshotImport(Command):
             for g in self.added_groups:
                 if g not in scene.groups:
                     scene.groups.append(g)
+            for f in self.added_layer_folders:
+                if f not in scene.layer_folders:
+                    scene.layer_folders.append(f)
             for ly in self.added_layers:
                 if ly not in scene.layers:
                     scene.layers.append(ly)
@@ -2720,6 +2729,9 @@ class SnapshotImport(Command):
         for ly in self.added_layers:
             if ly in scene.layers:
                 scene.layers.remove(ly)
+        for f in self.added_layer_folders:
+            if f in scene.layer_folders:
+                scene.layer_folders.remove(f)
         for v in self.added_views:
             if v in scene.saved_views:
                 scene.saved_views.remove(v)

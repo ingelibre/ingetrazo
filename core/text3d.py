@@ -23,7 +23,7 @@ plants the sign on the ground plane.
 """
 from __future__ import annotations
 
-from PySide6.QtGui import QFont, QPainterPath, QVector3D
+from PySide6.QtGui import QFont, QPainterPath, QTextLayout, QVector3D
 
 from core.mesh import Mesh
 
@@ -48,6 +48,10 @@ def _rings(text: str, font_family: str, bold: bool, italic: bool,
     font = _font(font_family, bold, italic)
     path = QPainterPath()
     path.addText(x, 0.0, font, text)
+    return _path_rings(path), _FONT_PT
+
+
+def _path_rings(path: QPainterPath) -> list[list[tuple[float, float]]]:
     rings = []
     for poly in path.toSubpathPolygons():
         ring = [(pt.x(), -pt.y()) for pt in poly]   # Qt y-down → up
@@ -56,7 +60,7 @@ def _rings(text: str, font_family: str, bold: bool, italic: bool,
                 ring = ring[:-1]
             if len(ring) >= 3:
                 rings.append(ring)
-    return rings, _FONT_PT
+    return rings
 
 
 def _ring_area(ring) -> float:
@@ -190,26 +194,40 @@ def build_text_letters(text: str, font_family: str = "", bold: bool = False,
     the block's scale and baseline, so the letters line up exactly as the
     one-piece build lays them — each simply arrives in its own mesh.
 
-    A glyph is drawn at the advance of the text before it (``QFontMetricsF``
-    honours the font's kerning for that prefix), never as a separate string
-    at x=0 shifted by hand."""
-    from PySide6.QtGui import QFontMetricsF
+    The whole line is shaped once, including kerning, font fallback and
+    ligatures. Shared glyphs belong to their first character's mesh.
+    """
     rings, _layout_h = _rings(text, font_family, bold, italic)
     if not rings:
         return []
     scale, y_min = _block_scale(rings, height)
-    metrics = QFontMetricsF(_font(font_family, bold, italic))
-    letters: list = []
+    layout = QTextLayout(text, _font(font_family, bold, italic))
+    layout.beginLayout()
+    line = layout.createLine()
+    layout.endLayout()
+    # Qt string indexes count UTF-16 units; Python indexes Unicode characters.
+    owners = {}
+    offset = 0
     for i, ch in enumerate(text):
-        if ch.isspace():
-            continue
-        x = metrics.horizontalAdvance(text[:i]) if i else 0.0
-        glyph, _h = _rings(ch, font_family, bold, italic, x=x)
+        owners[offset] = i
+        offset += len(ch.encode("utf-16-le")) // 2
+    paths = {}
+    for run in layout.glyphRuns(0, -1, QTextLayout.GlyphRunRetrievalFlag.RetrieveAll):
+        raw = run.rawFont()
+        for glyph, pos, index in zip(run.glyphIndexes(), run.positions(),
+                                     run.stringIndexes()):
+            owner = owners[index]
+            path = raw.pathForGlyph(glyph)
+            path.translate(pos.x(), pos.y() - line.ascent())
+            paths.setdefault(owner, QPainterPath()).addPath(path)
+    letters: list = []
+    for i in sorted(paths):
+        glyph = _path_rings(paths[i])
         if not glyph:
             continue
         mesh = _solid_from_rings(glyph, scale, y_min, thickness)
         if mesh.faces:
-            letters.append((ch, mesh))
+            letters.append((text[i], mesh))
     return letters
 
 

@@ -875,8 +875,25 @@ def file_layer_records(model):
             visible = not bool(ly.hidden)
         else:
             visible = bool(getattr(ly, "visible", True))
-        out.append({"name": name, "visible": visible})
+        record = {"name": name, "visible": visible}
+        if all(hasattr(ly, key) for key in ("color_r", "color_g", "color_b")):
+            record["color"] = [getattr(ly, key) / 255.0
+                               for key in ("color_r", "color_g", "color_b")]
+        if getattr(ly, "folder_id", None) is not None:
+            record["folder_id"] = ly.folder_id
+        if getattr(model, "layer_folders", None):
+            record["position"] = getattr(ly, "position", len(out))
+        out.append(record)
     return out
+
+
+def file_layer_folder_records(model):
+    """Native folders retain IDs: SketchUp permits duplicate folder names."""
+    return [{"id": folder.id, "name": folder.name,
+             "parent_id": getattr(folder, "parent_id", None),
+             "position": getattr(folder, "position", i),
+             "visible": not bool(getattr(folder, "hidden", False))}
+            for i, folder in enumerate(getattr(model, "layer_folders", []) or [])]
 
 
 def _is_empty_model(model, skp_path, legacy_era: bool) -> bool:
@@ -1234,6 +1251,9 @@ def _adapt(model, name: str, skp_path=None):
     file_layers = file_layer_records(model)
     if file_layers:
         payload["layers"] = file_layers
+    file_folders = file_layer_folder_records(model)
+    if file_folders:
+        payload["layer_folders"] = file_folders
     # The file's saved scenes (camera + hidden layers), inches → metres.
     scenes = []
     for pg in getattr(model, "pages", []) or []:
@@ -1249,6 +1269,7 @@ def _adapt(model, name: str, skp_path=None):
             "parallel": getattr(pg, "parallel", False),
             "ortho_height": getattr(pg, "ortho_height", 0.0) * _INCH,
             "hidden_layers": list(getattr(pg, "hidden_layers", []) or []),
+            "hidden_layer_folders": list(getattr(pg, "hidden_layer_folder_ids", []) or []),
         })
     if scenes:
         payload["scenes"] = scenes

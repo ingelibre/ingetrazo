@@ -16,7 +16,9 @@ the device.
   3Dconnexion driver. Report 1 is translation (three int16) — or all six
   axes on the newer models, report 2 rotation, report 3 the buttons. This is
   what FreeCAD does.
-* **macOS** has no such road (only 3Dconnexion's framework): not yet.
+* **macOS — 3DxWare.** The installed 3DconnexionClient framework forwards
+  motion and buttons through ctypes callbacks; queued Qt signals deliver
+  them to the GUI thread. See ``ndof_macos.py``.
 
 :class:`NdofInput` picks the backend for the platform and emits
 ``motion(sample, dt)`` in the user's frame (see :mod:`core.ndof`).
@@ -59,13 +61,16 @@ class NdofInput(QObject):
         if self._backend is not None:
             return True
         for cls in _backends_for(sys.platform):
+            b = None
             try:
                 b = cls(self)
                 if b.open():
                     self._backend = b
                     return True
             except Exception:  # noqa: BLE001 — a driver quirk never stops the app
-                continue
+                pass
+            if isinstance(b, QObject):
+                b.deleteLater()
         return False
 
     def stop(self) -> None:
@@ -73,6 +78,8 @@ class NdofInput(QObject):
             try:
                 self._backend.close()
             finally:
+                if isinstance(self._backend, QObject):
+                    self._backend.deleteLater()
                 self._backend = None
         self._last_t = None
 
@@ -95,6 +102,9 @@ def _backends_for(platform: str) -> list:
         return [SpnavBackend]
     if platform == "win32":
         return [RawInputBackend]
+    if platform == "darwin":
+        from views.ndof_macos import MacConnexionBackend
+        return [MacConnexionBackend]
     return []
 
 
@@ -318,7 +328,7 @@ _KEYS = (("enabled", True), ("sensitivity", 1.0), ("invert_pan", False),
 
 
 def load_settings():
-    """The user's 3D mouse settings (Preferences ▸ Navigation)."""
+    """The user's 3D mouse settings (Preferences ▸ 3D Mouse)."""
     from PySide6.QtCore import QSettings
     from core.ndof import NdofSettings
     st = QSettings()
@@ -360,6 +370,10 @@ def save_settings(settings) -> None:
                     ("1" if val else "0") if isinstance(default, bool)
                     else float(val))
     st.sync()
+    backend = getattr(_shared, "_backend", None)
+    refresh = getattr(backend, "refresh_activation", None)
+    if refresh is not None:
+        refresh()
 
 
 _shared: NdofInput | None = None
@@ -373,4 +387,10 @@ def shared_input() -> NdofInput:
         from PySide6.QtCore import QCoreApplication
         _shared = NdofInput(QCoreApplication.instance())
         _shared.start()
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(_shared.stop)
+        # Also clean up in scripts/tests which never enter app.exec().
+        import atexit
+        atexit.register(_shared.stop)
     return _shared
