@@ -161,6 +161,12 @@ class History:
         self.last_error: Optional[str] = None
 
     def execute(self, cmd: Command) -> None:
+        # Reject the entire batch BEFORE any child mutates the document.
+        # Keep selection so Entity Info can unlock the protected object.
+        if self._edits_locked_group(cmd):
+            from core.i18n import tr
+            self.last_error = tr("Object is locked")
+            return
         _t0 = _time_mod.perf_counter() if _PERF else 0.0
         snapshot = self.scene.mesh.capture_state()
         if _PERF:
@@ -190,6 +196,25 @@ class History:
             del self.undo_stack[:len(self.undo_stack) - cap]
         self.redo_stack.clear()
         self._rebind_dimensions()
+
+    def _edits_locked_group(self, cmd) -> bool:
+        if isinstance(cmd, (SetLockedCommand, HideCommand, AssignLayerCommand,
+                            RenameGroupCommand, InsertGroupCommand)):
+            return False
+        if isinstance(cmd, CompoundCommand):
+            return any(self._edits_locked_group(child) for child in cmd.commands)
+        if isinstance(cmd, (SnapshotCompound, MeshSnapshotCommand)):
+            return any(self._edits_locked_group(child) for child in cmd.inner)
+        if (self.scene.edit_group is not None
+                and self.scene.group_locked(self.scene.edit_group)):
+            return True
+        # Group-edit commands (including plugins' solid operations) expose
+        # their targets through these existing command attributes.
+        groups = [getattr(cmd, key, None) for key in ("group", "container")]
+        for key in ("groups", "_groups"):
+            groups.extend(getattr(cmd, key, ()) or ())
+        return any(isinstance(group, Group) and self.scene.group_locked(group)
+                   for group in groups)
 
     def _rebind_dimensions(self) -> None:
         """After every command, undo and redo: a dimension whose vertex
@@ -767,6 +792,27 @@ def _set_hidden(entity, hidden: bool) -> None:
             attrs.pop("hidden", None)
     else:
         entity.hidden = hidden
+
+
+class SetLockedCommand(Command):
+    """Set object locks as one undo step; mixed selections lock together."""
+
+    def __init__(self, entities, locked: bool) -> None:
+        self.entities = list(entities)
+        self.locked = bool(locked)
+        self._before = None
+
+    def do(self, scene) -> None:
+        if self._before is None:
+            self._before = [entity.locked for entity in self.entities]
+        for entity in self.entities:
+            entity.locked = self.locked
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for entity, locked in zip(self.entities, self._before):
+            entity.locked = locked
+        scene.version += 1
 
 
 class HideCommand(Command):

@@ -227,6 +227,12 @@ class Scene:
             return False
         return self._layer_state(entity)[0]
 
+    def group_locked(self, group) -> bool:
+        """Object locks protect edits while leaving objects selectable."""
+        owner = getattr(group, "owner", None)
+        return bool(getattr(group, "locked", False)
+                    or getattr(owner, "locked", False))
+
     def entity_selectable(self, entity) -> bool:
         if self._object_hidden(entity) and not self.show_hidden_objects:
             return False
@@ -271,6 +277,8 @@ class Scene:
 
         Entering a component INSTANCE edits a world copy of its shared
         definition; leaving shares the edit back to every copy."""
+        if self.group_locked(group):
+            return
         anidando = (self.edit_group is not None
                     and group in (getattr(self.edit_group, "children", None) or ()))
         if self.edit_group is not None and not anidando:

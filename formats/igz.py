@@ -324,6 +324,8 @@ def save_scene(scene, path: Path) -> dict:
                 entry["uid"] = g.uid
             if getattr(g, "hidden", False):
                 entry["hidden"] = True
+            if g.locked:
+                entry["locked"] = True
             if getattr(g, "exploded", None):
                 # An exploded view and each part's share of it, so the
                 # document reopens able to reassemble (core/explode.py).
@@ -751,6 +753,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             group.uid = str(raw["uid"])   # older documents keep the fresh one
         if raw.get("hidden"):
             group.hidden = True
+        group.locked = bool(raw.get("locked", False))
         if isinstance(raw.get("material"), dict):
             group.material = dict(raw["material"])
         if isinstance(raw.get("exploded"), dict):

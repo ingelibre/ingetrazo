@@ -131,7 +131,7 @@ class ScaleTool(Tool):
     def _selection_bounds(self, viewport):
         """World AABB of the selection: loose vertices, whole groups (their
         nested placements included) and reference images."""
-        from core.group import iter_placements
+        from core.group import Group, iter_placements
         from core.image_plane import ImagePlane
         from core.mesh import Edge, Face
 
@@ -151,6 +151,8 @@ class ScaleTool(Tool):
                     hi[i] = c
 
         for ent in viewport.scene.selection:
+            if isinstance(ent, Group) and viewport.scene.group_locked(ent):
+                continue
             if isinstance(ent, Edge):
                 absorb(ent.a)
                 absorb(ent.b)

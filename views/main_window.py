@@ -2948,6 +2948,8 @@ class MainWindow(QMainWindow):
             self.viewport.history.execute(
                 cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
             self.viewport.update()
+            if self.viewport.history.last_error:
+                self.viewport.flash_status(self.viewport.history.last_error, 3000)
 
     def _on_toggle_eyedropper(self, on: bool) -> None:
         """Arm (or cancel) a one-shot material sample. Arming picks the Paint
@@ -3091,6 +3093,9 @@ class MainWindow(QMainWindow):
         self._add_select_submenu(menu, sel)
         if has_group:
             groups = [e for e in sel if isinstance(e, Group)]
+            locked = all(group.locked for group in groups)
+            menu.addAction(tr("Unlock") if locked else tr("Lock"),
+                           self._on_toggle_entity_lock)
             if len(groups) == 1:
                 # Edit Group / Edit Component: the double-click
                 # by another road. (No parameters on the slot:
@@ -5539,12 +5544,17 @@ class MainWindow(QMainWindow):
     def _on_toggle_image_lock(self) -> None:
         """Lock an image so clicks fall through to what you are drawing on top
         of it — the usual state once a scan is aligned."""
+        self._on_toggle_entity_lock()
+
+    def _on_toggle_entity_lock(self) -> None:
+        from core.history import SetLockedCommand
         from core.image_plane import ImagePlane
-        for image in [e for e in self.viewport.scene.selection
-                      if isinstance(e, ImagePlane)]:
-            image.locked = not image.locked
-        self.viewport.scene.version += 1
-        self.viewport.update()
+        targets = [e for e in self.viewport.scene.selection
+                   if isinstance(e, (Group, ImagePlane))]
+        if targets:
+            self.viewport.history.execute(SetLockedCommand(
+                targets, not all(e.locked for e in targets)))
+            self.viewport.update()
 
     def activate_select_tool(self) -> None:
         """Back to Select — what the Image tool calls once a picture is

@@ -633,6 +633,9 @@ def erase_entities(viewport, entities) -> bool:
     cmd = commands[0] if len(commands) == 1 else CompoundCommand(commands)
     viewport.history.execute(cmd)
     viewport.update()
+    if viewport.history.last_error:
+        viewport.flash_status(viewport.history.last_error, 3000)
+        return False
     return True
 
 

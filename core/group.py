@@ -46,7 +46,7 @@ class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
                  "children", "owner", "context", "text3d", "hidden", "uid",
                  "material", "axes", "component", "exploded",
-                 "explode_offset", "ext")
+                 "explode_offset", "ext", "locked")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -73,6 +73,7 @@ class Group:
         # escena en donde esto esté oculto»). A hidden TAG hides by layer;
         # this hides the one object.
         self.hidden = False
+        self.locked = False
         # Stable identity that survives save/load — what a scene names when
         # it remembers which objects it hides. Fresh per object; a copy gets
         # its own (see ``copy_group``).
@@ -610,6 +611,7 @@ def copy_group(group, delta=None, _in_definition=False):
     g.text3d = dict(group.text3d) if group.text3d else None
     g.ext = copy.deepcopy(group.ext) if getattr(group, "ext", None) else None
     g.hidden = group.hidden
+    g.locked = group.locked
     g.material = dict(group.material) if getattr(group, "material", None) else None
     g.component = getattr(group, "component", True)
     g.exploded = dict(group.exploded) if group.exploded else None

@@ -2512,6 +2512,7 @@ class Viewport(QOpenGLWidget):
                 # Hide on an object takes its whole subtree along, and a
                 # hidden child stays hidden inside a visible parent.
                 proxy.hidden = hidden or bool(child.hidden)
+                proxy.locked = self.scene.group_locked(group) or child.locked
                 proxy.material = getattr(child, "material", None)
                 if child is ctx:
                     # The group being edited, reached as a nested placement:
@@ -11130,6 +11131,9 @@ class Viewport(QOpenGLWidget):
         component instance opens on a world copy of its definition; the
         session's commands are remembered so leaving can fold them into ONE
         undoable share-back."""
+        if self.scene.group_locked(group):
+            self.flash_status(tr("Object is locked"), 3000)
+            return
         parent = self.scene.edit_group
         in_definition = (parent is not None
                          and group in (getattr(parent, "children", None) or ())
@@ -11574,9 +11578,11 @@ class Viewport(QOpenGLWidget):
             # A command that failed was rolled back (History is
             # transactional) — surface it instead of failing silently.
             if self.history.last_error:
-                self.flash_status(
-                    tr("Operation failed and was undone: {err}",
-                       err=self.history.last_error), 8000)
+                message = (self.history.last_error
+                           if self.history.last_error == tr("Object is locked")
+                           else tr("Operation failed and was undone: {err}",
+                                   err=self.history.last_error))
+                self.flash_status(message, 8000)
             self._release_axis_lock_after_operation(committed=_drew)
             if _drew:
                 self._reassert_tool_cursor()

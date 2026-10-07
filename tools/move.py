@@ -69,7 +69,7 @@ def gather_targets(ctx: ToolContext):
     if not entities:
         group = viewport.pick_group(ctx.screen.x(), ctx.screen.y())
         if group is not None:
-            return [group], []
+            return ([] if viewport.scene.group_locked(group) else [group]), []
         edge = viewport.pick_edge(ctx.screen.x(), ctx.screen.y())
         if edge is not None:
             entities = [edge]
@@ -77,7 +77,8 @@ def gather_targets(ctx: ToolContext):
             face = viewport.pick_face(ctx.screen.x(), ctx.screen.y())
             if face is not None:
                 entities = [face]
-    groups = [ent for ent in entities if isinstance(ent, Group)]
+    groups = [ent for ent in entities if isinstance(ent, Group)
+              and not viewport.scene.group_locked(ent)]
     positions: list[QVector3D] = []
     for ent in entities:
         if isinstance(ent, Edge):
