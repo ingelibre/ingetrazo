@@ -68,6 +68,7 @@ def test_ok_writes_the_settings(settings_file):
     dlg._backup.setChecked(False)
     dlg._invert.setChecked(True)
     dlg._invert_orbit.setChecked(True)
+    dlg._middle_pans.setChecked(True)
     dlg._look_sens.setValue(40)
     dlg._msaa.setCurrentIndex(dlg._msaa.findData(8))
     dlg.accept()
@@ -82,11 +83,13 @@ def test_ok_writes_the_settings(settings_file):
     assert st.value("general/backup") == "0"
     assert st.value("nav/invert_wheel") == "1"
     assert st.value("nav/invert_orbit_y") == "1"
+    assert st.value("nav/middle_drag_pans") == "1"
     assert int(st.value("walk/look_sensitivity")) == 40
     assert int(st.value("display/msaa")) == 8
     # The live pieces reach the viewport immediately.
     assert win.viewport._invert_wheel is True
     assert win.viewport._invert_orbit_y is True
+    assert win.viewport._middle_drag_pans is True
     assert win.viewport._msaa == 8
     assert win.viewport._fbo_size is None   # next paint rebuilds the FBO
 

@@ -147,6 +147,12 @@ class PreferencesDialog(QDialog):
                                       != "0")
         form.addRow("", self._invert_orbit)
 
+        self._middle_pans = QCheckBox(tr(
+            "Middle-button drag pans (Shift + drag orbits)"))
+        self._middle_pans.setChecked(
+            str(st.value("nav/middle_drag_pans", "0")) != "0")
+        form.addRow("", self._middle_pans)
+
         from tools.walkthrough import look_sensitivity
         self._look_sens = QSpinBox()
         self._look_sens.setRange(1, 100)
@@ -437,6 +443,10 @@ class PreferencesDialog(QDialog):
         st.setValue("nav/invert_orbit_y",
                     "1" if self._invert_orbit.isChecked() else "0")
         self._window.viewport._invert_orbit_y = self._invert_orbit.isChecked()
+
+        st.setValue("nav/middle_drag_pans",
+                    "1" if self._middle_pans.isChecked() else "0")
+        self._window.viewport._middle_drag_pans = self._middle_pans.isChecked()
 
         # First Person reads it on every look move: nothing to push.
         st.setValue("walk/look_sensitivity", int(self._look_sens.value()))

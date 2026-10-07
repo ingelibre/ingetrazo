@@ -12,6 +12,7 @@ calls ``glClear`` first to avoid showing stale GPU memory.
 Navigation:
 - Middle-button drag: orbit
 - Shift + Middle-button drag: pan
+  (the two swap with Preferences ▸ "Middle-button drag pans")
 - Wheel: zoom
 - P: toggle perspective / parallel projection
 
@@ -404,6 +405,17 @@ def _load_invert_orbit_y() -> bool:
     """
     from PySide6.QtCore import QSettings
     return str(QSettings().value("nav/invert_orbit_y", "0")) != "0"
+
+
+def _load_middle_drag_pans() -> bool:
+    """Preferences ▸ middle-button drag pans, Shift + middle-drag orbits.
+
+    Off by default: the bare wheel-drag orbits, the classic way. This is
+    for the hands that learned the other convention in other modelers,
+    where the wheel-drag moves the view and a modifier turns it.
+    """
+    from PySide6.QtCore import QSettings
+    return str(QSettings().value("nav/middle_drag_pans", "0")) != "0"
 
 
 def _load_msaa() -> int:
@@ -1013,6 +1025,7 @@ class Viewport(QOpenGLWidget):
         self._edit_rest_mode = _load_edit_rest_mode()
         self._invert_wheel = _load_invert_wheel()
         self._invert_orbit_y = _load_invert_orbit_y()
+        self._middle_drag_pans = _load_middle_drag_pans()
         self._msaa = _load_msaa()
 
         # Hover highlight (Select tool). Not version-tracked — it changes with
@@ -11460,7 +11473,10 @@ class Viewport(QOpenGLWidget):
             return
         if ev.button() == Qt.MiddleButton:
             self._last_pos = ev.position().toPoint()
-            self._pan_mode = bool(ev.modifiers() & Qt.ShiftModifier)
+            # Shift swaps the drag between orbit and pan; which one is the
+            # bare drag is a preference (Preferences ▸ General).
+            self._pan_mode = (bool(ev.modifiers() & Qt.ShiftModifier)
+                              != self._middle_drag_pans)
             self._orbit_pivot = self._orbit_pivot_at(
                 ev.position().x(), ev.position().y())
             self._pan_depth = self._depth_of(self._orbit_pivot)
