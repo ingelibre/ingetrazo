@@ -1,4 +1,6 @@
 {
+ "Active layer": "Livello attivo",
+ "Set active layer": "Imposta livello attivo",
  "Add a terrain profile along a traced path (two clicks or drag)": "Aggiungi un profilo del terreno lungo un tracciato (due clic o trascinamento)",
  "Guide point": "Punto guida",
  "IngeTrazo could not read {name} with its built-in .skp reader.\n\nOpen it in the program it came from and export it as COLLADA (.dae) or OBJ, then import that file here.": "IngeTrazo non è riuscito a leggere {name} con il suo lettore .skp integrato.\n\nAprilo nel programma di origine ed esportalo come COLLADA (.dae) o OBJ, poi importa qui quel file.",

@@ -168,7 +168,7 @@ class History:
                   (_time_mod.perf_counter() - _t0) * 1000.0,
                   extra=type(cmd).__name__)
         try:
-            cmd.do(self.scene)
+            self._do_with_active_layer(cmd)
         except Exception as exc:
             self.scene.mesh.restore_state(snapshot)
             self.scene.selection.clear()
@@ -238,10 +238,66 @@ class History:
         if not self.redo_stack:
             return False
         cmd = self.redo_stack.pop()
-        self._in_command_mesh(cmd, lambda: cmd.do(self.scene))
+        self._in_command_mesh(cmd, lambda: self._do_with_active_layer(cmd))
         self.undo_stack.append(cmd)
         self._rebind_dimensions()
         return True
+
+    def _do_with_active_layer(self, cmd):
+        """Tag newly created, untagged entities; keep edits and imported tags.
+
+        Store the chosen layer on the command so redo is independent of the
+        current UI choice. Snapshot commands restore their own result before
+        this pass, so they receive the same tags on every redo.
+        """
+        from core.layers import DEFAULT_LAYER, assign_layer, layer_of
+
+        def creates(command):
+            if isinstance(command, CompoundCommand):
+                return any(creates(child) for child in command.commands)
+            if isinstance(command, (SnapshotCompound, MeshSnapshotCommand)):
+                return any(creates(child) for child in command.inner)
+            return isinstance(command, (
+                AddEdgeCommand, AddFaceCommand, AddDimensionCommand,
+                AddTextLabelCommand, PlaceSectionPlaneCommand,
+                AddImagePlaneCommand,
+                InsertGroupCommand, MakeGroupCommand, MakeNestedGroupCommand,
+                MakeComponentOfCommand,
+                SnapshotImport, SnapshotMutation))
+
+        if not hasattr(cmd, "_creation_layer"):
+            name = self.scene.active_layer
+            cmd._creation_layer = (self.scene.layer(name)
+                                   if name != DEFAULT_LAYER and creates(cmd) else None)
+            cmd._creation_layer_name = name
+        layer = cmd._creation_layer
+        if layer is None:
+            cmd.do(self.scene)
+            return
+        name = layer.name if layer in self.scene.layers else DEFAULT_LAYER
+
+        def entities():
+            scene = self.scene
+            mesh = (cmd._target(scene) if isinstance(cmd, SnapshotMutation)
+                    else scene.mesh)
+            yield from mesh.edges
+            yield from mesh.faces
+            yield from scene.groups
+            if scene.edit_group is not None:
+                yield from scene.edit_group.children
+            for collection in (scene.dimensions, scene.text_labels,
+                               scene.image_planes, scene.section_planes):
+                yield from collection
+
+        before = {id(entity) for entity in entities()}
+        cmd.do(self.scene)
+        # Follow renames and fall back to the default after deletion, including
+        # objects relinked by redo that still carry their original layer name.
+        for entity in entities():
+            if id(entity) not in before and layer_of(entity) in (
+                    DEFAULT_LAYER, cmd._creation_layer_name):
+                assign_layer(entity, name)
+        cmd._creation_layer_name = name
 
     def _in_command_mesh(self, cmd, fn) -> None:
         """Run ``fn`` with ``scene.mesh`` pointing at the mesh the command was

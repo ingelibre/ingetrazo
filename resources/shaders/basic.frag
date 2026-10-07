@@ -49,7 +49,8 @@ uniform int u_shadow_overlay;
 // 3 = SELECTED faces: an opaque 2x2 px dot every 6 px each way, so the
 // face's own colour keeps showing between the dots and a selected face
 // never reads as a tinted one (an orange wash over the blue-grey back
-// looked like just another back face).
+// looked like just another back face). 5 = dotted layer lines, with dots
+// measured along the line in window pixels (layer styling, PR #392).
 uniform int u_stipple;
 // Back Edges (u_stipple 4): a dash measured ALONG the line from its
 // provoking vertex, in window pixels — a screen pattern breaks on a
@@ -134,6 +135,10 @@ void main() {
     } else if (u_stipple == 4) {
         vec2 o = (v_line_clip.xy / v_line_clip.w * 0.5 + 0.5) * u_viewport_px;
         if (mod(length(gl_FragCoord.xy - o), 2.0 * u_dash_px) >= u_dash_px)
+            discard;
+    } else if (u_stipple == 5) {
+        vec2 o = (v_line_clip.xy / v_line_clip.w * 0.5 + 0.5) * u_viewport_px;
+        if (mod(length(gl_FragCoord.xy - o), u_dash_px) >= 1.25)
             discard;
     }
     vec4 c;

@@ -31,6 +31,7 @@ datas = [
     ('resources/shaders/*.frag',   'resources/shaders'),
     # Render with Blender (#181): the script Blender runs on the job.
     ('resources/blender/*.py',     'resources/blender'),
+    ('resources/icons/*.svg',      'resources/icons'),
     ('resources/icons/*.png',      'resources/icons'),
     ('resources/icons/*.ico',      'resources/icons'),
     ('resources/icons/mimetypes/*.ico', 'resources/icons/mimetypes'),

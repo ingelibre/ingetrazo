@@ -97,6 +97,7 @@ def layers_held_by_scenes(scene) -> set[str]:
 def unused_layers(scene) -> list:
     """The :class:`core.layers.Layer` objects a purge would remove."""
     keep = used_layers(scene) | layers_held_by_scenes(scene)
+    keep.add(scene.active_layer)
     return [ly for ly in getattr(scene, "layers", None) or ()
             if ly.name != DEFAULT_LAYER and ly.name not in keep]
 

@@ -875,7 +875,11 @@ def file_layer_records(model):
             visible = not bool(ly.hidden)
         else:
             visible = bool(getattr(ly, "visible", True))
-        out.append({"name": name, "visible": visible})
+        record = {"name": name, "visible": visible}
+        if all(hasattr(ly, key) for key in ("color_r", "color_g", "color_b")):
+            record["color"] = [getattr(ly, key) / 255.0
+                               for key in ("color_r", "color_g", "color_b")]
+        out.append(record)
     return out
 
 

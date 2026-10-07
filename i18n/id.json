@@ -1,4 +1,6 @@
 {
+ "Active layer": "Lapisan aktif",
+ "Set active layer": "Tetapkan lapisan aktif",
  "Add a terrain profile along a traced path (two clicks or drag)": "Tambahkan profil medan sepanjang jalur yang digambar (dua klik atau seret)",
  "Guide point": "Titik bantu",
  "IngeTrazo could not read {name} with its built-in .skp reader.\n\nOpen it in the program it came from and export it as COLLADA (.dae) or OBJ, then import that file here.": "IngeTrazo tidak dapat membaca {name} dengan pembaca .skp bawaannya.\n\nBuka di program asalnya lalu ekspor sebagai COLLADA (.dae) atau OBJ, kemudian impor file tersebut di sini.",

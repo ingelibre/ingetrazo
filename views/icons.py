@@ -1747,7 +1747,81 @@ def _first_person(p, ink):
         p.drawPath(cap)
 
 
+def _add_tag(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(24, 24), 15, 15)
+    p.drawLine(16, 24, 32, 24)
+    p.drawLine(24, 16, 24, 32)
+
+
+def _add_tag_folder(p, ink):
+    # Center the whole folder and its plus badge within the 48 px canvas.
+    p.save()
+    p.translate(-1.5, -3.5)
+    path = QPainterPath()
+    path.moveTo(7, 36)
+    path.lineTo(7, 11)
+    path.lineTo(19, 11)
+    path.lineTo(24, 16)
+    path.lineTo(39, 16)
+    path.lineTo(39, 36)
+    path.closeSubpath()
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    p.setBrush(QApplication.palette().window())
+    p.drawEllipse(QPointF(35, 35), 9, 9)
+    p.drawLine(30, 35, 40, 35)
+    p.drawLine(35, 30, 35, 40)
+    p.restore()
+
+
+def _tag_stack(p, ink, colored=False):
+    p.setPen(_rpen(ink, 2.4))
+    for offset, color in ((14, QColor(65, 146, 212)),
+                          (7, QColor(245, 187, 52)),
+                          (0, QColor(204, 72, 67))):
+        x = offset * 0.3
+        path = QPainterPath()
+        path.moveTo(8 + x, 22 + offset)
+        path.lineTo(24 + x, 6 + offset)
+        path.lineTo(34 + x, 6 + offset)
+        path.lineTo(34 + x, 16 + offset)
+        path.lineTo(18 + x, 32 + offset)
+        path.closeSubpath()
+        p.setBrush(color if colored else QApplication.palette().window())
+        p.drawPath(path)
+    p.setBrush(ink)
+    p.drawEllipse(QPointF(29, 11), 1.3, 1.3)
+
+
+def _more_options(p, ink):
+    p.setPen(Qt.NoPen)
+    p.setBrush(ink)
+    for y in (12, 24, 36):
+        p.drawEllipse(QPointF(24, y), 3, 3)
+
+
+def _assign_tag(p, ink):
+    path = QPainterPath()
+    path.moveTo(9, 28)
+    path.lineTo(28, 9)
+    path.lineTo(40, 21)
+    path.lineTo(21, 40)
+    path.lineTo(9, 40)
+    path.closeSubpath()
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    p.drawEllipse(QPointF(15, 34), 2.5, 2.5)
+    p.drawLine(15, 34, 5, 44)
+
+
 _DRAW = {
+    "add_tag": _add_tag,
+    "add_tag_folder": _add_tag_folder,
+    "color_by_tag": _tag_stack,
+    "color_by_tag_on": lambda p, ink: _tag_stack(p, ink, colored=True),
+    "assign_tag": _assign_tag,
+    "more_options": _more_options,
     **_SOLID_ICONS,
     "select": _select, "line": _line, "freehand": _freehand,
     "side_collapse": _side_collapse,

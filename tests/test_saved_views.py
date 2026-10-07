@@ -52,6 +52,36 @@ def test_apply_shows_layers_created_after_the_view_was_saved():
     assert scene.layer("Nueva").visible is True
 
 
+def test_scenes_preserve_color_by_layer_on_update_and_file_reopen(tmp_path):
+    from formats import igz
+
+    scene = Scene()
+    cam = OrbitCamera()
+    scene.display_style.color_by_layer = True
+    colored = SavedView.capture("Layer colors", scene, cam)
+    scene.display_style.color_by_layer = False
+    normal = SavedView.capture("Materials", scene, cam)
+    scene.saved_views = [colored, normal]
+
+    # Updating one scene must not change the other scene's style snapshot.
+    scene.display_style.color_by_layer = False
+    colored.recapture(scene, cam)
+    colored.apply(scene, cam)
+    assert scene.display_style.color_by_layer is False
+    scene.display_style.color_by_layer = True
+    colored.recapture(scene, cam)
+
+    path = tmp_path / "scene-colors.igz"
+    igz.save_scene(scene, path)
+    restored = Scene()
+    igz.load_into(restored, path)
+
+    # Recall both ways, including after another scene changed the live style.
+    for index, expected in [(1, False), (0, True), (1, False)]:
+        restored.saved_views[index].apply(restored, cam)
+        assert restored.display_style.color_by_layer is expected
+
+
 def test_from_lookat_oblique_view():
     view = from_lookat("V", eye=(10.0, 0.0, 10.0), target=(0.0, 0.0, 0.0),
                        up=(0.0, 0.0, 1.0), fov_deg=35.0)

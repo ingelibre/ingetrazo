@@ -23,8 +23,10 @@ class SavedView:
                  fov_deg: float = 45.0, perspective: bool = True,
                  two_point: bool = False, hidden_layers=None, style=None, section=None,
                  georef=None, shadows=None, hidden_objects=None,
-                 hidden_shown=None) -> None:
+                 hidden_shown=None, folder_id=None, position=0, hidden_layer_folders=None) -> None:
         self.name = name
+        self.folder_id = folder_id
+        self.position = int(position)
         self.target = tuple(target)
         self.distance = float(distance)
         self.yaw = float(yaw)
@@ -36,6 +38,7 @@ class SavedView:
         #: Layer NAMES hidden in this view. Every other layer shows — a layer
         #: created after the view was saved defaults to visible.
         self.hidden_layers = list(hidden_layers or [])
+        self.hidden_layer_folders = list(hidden_layer_folders or [])
         #: Display-style snapshot (core.style.Style.to_dict()) or ``None`` —
         #: a scene remembers the style it was saved with.
         self.style = dict(style) if style else None
@@ -87,6 +90,8 @@ class SavedView:
                    two_point=bool(getattr(camera, "two_point", False)),
                    hidden_layers=[ly.name for ly in scene.layers
                                   if not ly.visible],
+                   hidden_layer_folders=[f.uid for f in scene.layer_folders
+                                         if not f.visible],
                    style=(scene.display_style.to_dict()
                           if getattr(scene, "display_style", None) else None),
                    section={
@@ -112,6 +117,8 @@ class SavedView:
     def recapture(self, scene, camera) -> None:
         """Update this view in place from the live state (keeps the name)."""
         fresh = SavedView.capture(self.name, scene, camera)
+        fresh.folder_id = self.folder_id
+        fresh.position = self.position
         self.__dict__.update(fresh.__dict__)
 
     def apply(self, scene, camera) -> None:
@@ -128,6 +135,8 @@ class SavedView:
         hidden = set(self.hidden_layers)
         for ly in scene.layers:
             ly.visible = ly.name not in hidden
+        for folder in scene.layer_folders:
+            folder.visible = folder.uid not in self.hidden_layer_folders
         if self.style:
             from core.style import Style
             scene.display_style = Style.from_dict(self.style)
@@ -166,6 +175,9 @@ class SavedView:
             "yaw": self.yaw,
             "pitch": self.pitch,
         }
+        if self.folder_id is not None:
+            entry["folder_id"] = self.folder_id
+        entry["position"] = self.position
         if self.fov_deg != 45.0:
             entry["fov"] = self.fov_deg
         if not self.perspective:
@@ -174,6 +186,8 @@ class SavedView:
             entry["two_point"] = True
         if self.hidden_layers:
             entry["hidden_layers"] = list(self.hidden_layers)
+        if self.hidden_layer_folders:
+            entry["hidden_layer_folders"] = list(self.hidden_layer_folders)
         if self.style:
             entry["style"] = dict(self.style)
         if self.section is not None:
@@ -200,12 +214,15 @@ class SavedView:
                    perspective=not raw.get("parallel", False),
                    two_point=bool(raw.get("two_point", False)),
                    hidden_layers=raw.get("hidden_layers"),
+                   hidden_layer_folders=raw.get("hidden_layer_folders"),
                    style=raw.get("style"),
                    section=raw.get("section"),
                    georef=raw.get("georef"),
                    shadows=raw.get("shadows"),
                    hidden_objects=raw.get("hidden_objects"),
-                   hidden_shown=raw.get("hidden_shown"))
+                   hidden_shown=raw.get("hidden_shown"),
+                   folder_id=raw.get("folder_id"),
+                   position=raw.get("position", 0))
 
 
 def apply_shadow_state(scene, raw: dict) -> None:
@@ -267,3 +284,28 @@ def from_lookat(name: str, eye, target, up, fov_deg: float = 45.0,
     return SavedView(name, target=tuple(target), distance=distance, yaw=yaw,
                      pitch=pitch, fov_deg=fov_deg, perspective=perspective,
                      hidden_layers=hidden_layers)
+
+
+class SceneFolder:
+    """Document-owned folder; parent IDs allow arbitrary nested folders."""
+
+    def __init__(self, name, uid=None, parent_id=None, position=0, expanded=True):
+        from uuid import uuid4
+        self.name = name
+        self.uid = uid or str(uuid4())
+        self.parent_id = parent_id
+        self.position = int(position)
+        self.expanded = bool(expanded)
+
+    def to_dict(self) -> dict:
+        """Serialize the folder hierarchy and state for a document."""
+        return dict(name=self.name, uid=self.uid, parent_id=self.parent_id,
+                    position=self.position, expanded=self.expanded)
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "SceneFolder":
+        """Restore a folder, using defaults for omitted document fields."""
+        return cls(raw.get("name", "Folder"), uid=raw.get("uid"),
+                   parent_id=raw.get("parent_id"),
+                   position=raw.get("position", 0),
+                   expanded=raw.get("expanded", True))

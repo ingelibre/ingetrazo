@@ -38,6 +38,7 @@ DEFAULT_BACK_COLOR = (0.62, 0.70, 0.78)
 class Style:
     name: str = "Default"
     face_mode: str = "textures"
+    color_by_layer: bool = False
     edges: bool = True
     profiles: bool = True                    # silhouette/profile edge pass
     # Back Edges (K): the edges hidden behind faces, drawn dashed, over an
@@ -67,6 +68,7 @@ class Style:
         return {
             "name": self.name,
             "face_mode": self.face_mode,
+            "color_by_layer": self.color_by_layer,
             "edges": self.edges,
             "profiles": self.profiles,
             "back_edges": self.back_edges,
@@ -91,6 +93,7 @@ class Style:
         return cls(
             name=raw.get("name", d.name),
             face_mode=mode,
+            color_by_layer=bool(raw.get("color_by_layer", False)),
             edges=bool(raw.get("edges", d.edges)),
             profiles=bool(raw.get("profiles", d.profiles)),
             back_edges=bool(raw.get("back_edges", d.back_edges)),

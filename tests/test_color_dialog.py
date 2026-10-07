@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pathlib import Path  # noqa: E402
@@ -56,3 +58,20 @@ def test_a_menu_entrys_description_shows_in_the_status_bar():
     finally:
         w._saved_version = w.viewport.scene.version
         w.close()
+
+
+def test_transparency_slider_can_restore_a_fully_transparent_color():
+    from views.color_dialog import _TransparencyColorDialog
+    dialog = _TransparencyColorDialog(QColor(217, 98, 109, 0))
+    try:
+        assert dialog._transparency.value() == 100
+        assert dialog._preview._color.alpha() == 0
+        dialog._transparency.setValue(0)
+        assert dialog.color_with_transparency().alpha() == 255
+        assert dialog._preview._color.alpha() == 255
+        dialog._transparency.setValue(60)
+        dialog.setCurrentColor(QColor(50, 100, 150))
+        assert dialog.color_with_transparency().alphaF() == pytest.approx(.4, abs=.001)
+        assert dialog._value.text() == '60%'
+    finally:
+        dialog.close()

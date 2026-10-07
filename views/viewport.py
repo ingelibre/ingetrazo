@@ -209,6 +209,7 @@ GL_REPLACE = 0x1E01
 GL_BLEND = 0x0BE2
 GL_SRC_ALPHA = 0x0302
 GL_ONE_MINUS_SRC_ALPHA = 0x0303
+GL_ONE = 1
 GL_POLYGON_OFFSET_FILL = 0x8037
 GL_CULL_FACE = 0x0B44
 GL_CW = 0x0900
@@ -298,7 +299,7 @@ def _ray_aabb(o, d, lo, hi) -> bool:
 _chunk_uid = itertools.count(1)
 
 
-def _proto_wrapper(vp, mesh, paint=None):
+def _proto_wrapper(vp, mesh, paint=None, layer=None):
     """The stable stand-in a prototype mesh is baked through, one per
     (mesh, container paint): ``_group_chunk`` caches by the wrapper's id,
     so the same object must come back for the same mesh — and a painted
@@ -309,13 +310,14 @@ def _proto_wrapper(vp, mesh, paint=None):
     wrappers = getattr(vp, "_proto_wrappers", None)
     if wrappers is None:
         wrappers = vp._proto_wrappers = {}
-    wkey = (id(mesh), material_sig(paint))
+    wkey = (id(mesh), material_sig(paint), layer)
     w = wrappers.get(wkey)
     if w is None:
         w = wrappers[wkey] = SimpleNamespace(mesh=mesh, xform=None,
-                                             material=paint)
+                                             material=paint, layer=layer)
     else:
         w.material = paint
+        w.layer = layer
     return w
 
 
@@ -1158,7 +1160,8 @@ class Viewport(QOpenGLWidget):
         # coincident faces, which can rasterize to bit-identical depths.
         self._gl.glDepthFunc(GL_LEQUAL)
         self._gl.glEnable(GL_BLEND)
-        self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        self._gl.glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                                     GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 
         self._program = self._compile_program()
         self._loc_mvp = self._program.uniformLocation("u_mvp")
@@ -1221,6 +1224,11 @@ class Viewport(QOpenGLWidget):
         self._selected_vao, self._selected_vbo = self._create_dynamic()
         self._sel_faces_vao, self._sel_faces_vbo = self._create_dynamic()
         self._faces_vao, self._faces_vbo = self._create_dynamic_vcol()
+        self._layer_faces_vao, self._layer_faces_vbo = self._create_dynamic()
+        self._layer_edges_vao, self._layer_edges_vbo = self._create_dynamic()
+        self._layer_lines_vao, self._layer_lines_vbo = self._create_dynamic()
+        self._layer_tint_vao, self._layer_tint_vbo = self._create_dynamic()
+        self._layer_color_key = None
         self._tex_faces_vao, self._tex_faces_vbo = self._create_dynamic_uv()
         self._billboard_vao, self._billboard_vbo = self._create_dynamic_uv()
         self._bb_sel_vao, self._bb_sel_vbo = self._create_dynamic()
@@ -1367,14 +1375,21 @@ class Viewport(QOpenGLWidget):
         self._gl.glDepthFunc(GL_LEQUAL)
         self._gl.glDepthMask(GL_TRUE)
         self._gl.glEnable(GL_BLEND)
-        self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        # Keep the opaque backdrop's alpha at one. Using SRC_ALPHA for the
+        # alpha channel too corrupts framebuffer readback of translucent tags.
+        self._gl.glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                                     GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
         self._gl.glDisable(GL_CULL_FACE)
 
         # Effective display style (Styles): the composer's
         # plano_style override maps onto the same face modes; otherwise the
         # scene's active style drives faces, edges and background.
         style = self._effective_style()
-        mode = style.face_mode
+        layer_colors = getattr(style, "color_by_layer", False)
+        layer_lines = layer_colors or any(
+            item.edge_color is not None or item.line_style is not None
+            for item in (*self.scene.layers, *self.scene.layer_folders))
+        mode = "layer" if layer_colors else style.face_mode
         self._frame_style = style
 
         # Active section cut: ONE world-space plane; the kept
@@ -1472,8 +1487,8 @@ class Viewport(QOpenGLWidget):
         # FBO/program bindings; this block restores them and binds the map
         # on texture unit 1 for the geometry passes to sample.
         self._frame_shadow = (self._ensure_shadow_map()
-                              if mode in ("textures", "shaded",
-                                          "hidden_line", "monochrome")
+                              if style.face_mode in ("textures", "shaded",
+                                                      "hidden_line", "monochrome")
                               else None)
         if self._frame_shadow is not None:
             self._scene_fbo.bind()
@@ -1541,7 +1556,9 @@ class Viewport(QOpenGLWidget):
         if getattr(self, "_frame_shadow", None) is not None:
             self._draw_shadow_ground(style)
             self._program.setUniformValue(self._loc_shadow_enable, 1)
-        if self._faces_count > 0 and mode != "wireframe":
+        if layer_colors and style.face_mode != "wireframe":
+            self._draw_layer_colors(style)
+        if self._faces_count > 0 and mode not in ("wireframe", "layer"):
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
             if mode == "hidden_line":
@@ -1608,13 +1625,23 @@ class Viewport(QOpenGLWidget):
         # Textured faces — same depth/offset treatment, sampling each face's
         # image. One draw per texture (its GL texture bound to unit 0).
         if self._tex_faces_count > 0 and mode in ("hidden_line", "monochrome"):
-            # Plan styles: textured faces draw flat like the rest.
+            # Plan styles: textured faces draw flat like the rest. Keep
+            # transparent texture runs for the blended pass below.
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
             fr = style.front_color
             self._set_color(fr[0], fr[1], fr[2], 1.0)
+            if mode == "monochrome":
+                self._set_back_face_color()
+            else:
+                self._program.setUniformValue(
+                    self._loc_back_color,
+                    QVector4D(fr[0], fr[1], fr[2], 1.0))
             self._tex_faces_vao.bind()
-            self._gl.glDrawArrays(GL_TRIANGLES, 0, self._tex_faces_count)
+            if self._tex_opaque_count:
+                self._gl.glDrawArrays(GL_TRIANGLES, 0, self._tex_opaque_count)
+            for _key, start, count in self._back_tex_runs:
+                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
             self._tex_faces_vao.release()
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
         elif self._tex_faces_count > 0 and mode == "shaded":
@@ -1777,22 +1804,47 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_CULL_FACE)
 
-        self._draw_section_fill(mode, style)
+        self._draw_section_fill(style.face_mode if layer_colors else mode, style)
 
         # Translucent material runs (.skp trans with useTrans): drawn
         # after everything opaque, blended, depth-tested but not depth-
         # written, so glass/mesh screens show what's behind them.
         if (self._tcol_runs or self._ttex_runs
                 or self._back_tcol_runs or self._back_ttex_runs) \
-                and mode in ("textures", "shaded", "xray"):
+                and mode in ("textures", "shaded", "xray",
+                             "hidden_line", "monochrome"):
+            flat_translucency = mode in ("hidden_line", "monochrome")
+            def set_run_opacity(alpha):
+                self._program.setUniformValue1f(self._loc_opacity, float(alpha))
+                if flat_translucency:
+                    # Uniform-color faces carry alpha in their colors;
+                    # u_opacity only controls textured/vertex-color faces.
+                    self._set_color(*style.front_color, float(alpha))
+                    back = (effective_back_color(
+                        getattr(self.scene, "display_style", None), self.scene)
+                        if mode == "monochrome" else style.front_color)
+                    self._program.setUniformValue(
+                        self._loc_back_color, QVector4D(*back, float(alpha)))
+
             self._gl.glDepthMask(GL_FALSE)
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
             if self._tcol_runs or self._back_tcol_runs:
-                self._program.setUniformValue(self._loc_use_vcolor, 1)
+                if flat_translucency:
+                    fr = style.front_color
+                    self._set_color(fr[0], fr[1], fr[2], 1.0)
+                    if mode == "monochrome":
+                        self._set_back_face_color()
+                    else:
+                        self._program.setUniformValue(
+                            self._loc_back_color,
+                            QVector4D(fr[0], fr[1], fr[2], 1.0))
+                    self._program.setUniformValue(self._loc_use_vcolor, 0)
+                else:
+                    self._program.setUniformValue(self._loc_use_vcolor, 1)
                 self._faces_vao.bind()
                 for a, fc, start, count in self._tcol_runs:
-                    self._program.setUniformValue1f(self._loc_opacity, float(a))
+                    set_run_opacity(a)
                     if fc:
                         # glass-backed front copy: front side only
                         self._gl.glEnable(GL_CULL_FACE)
@@ -1805,47 +1857,77 @@ class Viewport(QOpenGLWidget):
                     self._gl.glEnable(GL_CULL_FACE)
                     self._gl.glCullFace(GL_FRONT)
                     for a, start, count in self._back_tcol_runs:
-                        self._program.setUniformValue1f(self._loc_opacity, float(a))
+                        set_run_opacity(a)
                         self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                     self._gl.glDisable(GL_CULL_FACE)
                 self._faces_vao.release()
                 self._program.setUniformValue(self._loc_use_vcolor, 0)
             if self._ttex_runs or self._back_ttex_runs:
-                self._program.setUniformValue(self._loc_use_tex, 1)
                 self._tex_faces_vao.bind()
-                for (path, shade), a, fc, start, count in self._ttex_runs:
-                    tex = self._get_texture(path)
-                    if tex is None:
-                        continue
-                    self._program.setUniformValue1f(self._loc_opacity, float(a))
-                    self._program.setUniformValue1f(self._loc_shade, float(shade))
-                    if fc:
+                if flat_translucency:
+                    fr = style.front_color
+                    self._set_color(fr[0], fr[1], fr[2], 1.0)
+                    if mode == "monochrome":
+                        self._set_back_face_color()
+                    else:
+                        self._program.setUniformValue(
+                            self._loc_back_color,
+                            QVector4D(fr[0], fr[1], fr[2], 1.0))
+                    self._program.setUniformValue(self._loc_use_tex, 0)
+                    for _run, a, fc, start, count in self._ttex_runs:
+                        set_run_opacity(a)
+                        if fc:
+                            self._gl.glEnable(GL_CULL_FACE)
+                            self._gl.glCullFace(GL_BACK)
+                        self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+                        if fc:
+                            self._gl.glDisable(GL_CULL_FACE)
+                    if self._back_ttex_runs:
                         self._gl.glEnable(GL_CULL_FACE)
-                        self._gl.glCullFace(GL_BACK)
-                    tex.bind(0)
-                    self._gl.glDrawArrays(GL_TRIANGLES, start, count)
-                    tex.release(0)
-                    if fc:
+                        self._gl.glCullFace(GL_FRONT)
+                        for _run, a, start, count in self._back_ttex_runs:
+                            set_run_opacity(a)
+                            self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                         self._gl.glDisable(GL_CULL_FACE)
-                if self._back_ttex_runs:
-                    self._gl.glEnable(GL_CULL_FACE)
-                    self._gl.glCullFace(GL_FRONT)
-                    for (path, shade), a, start, count in self._back_ttex_runs:
+                else:
+                    self._program.setUniformValue(self._loc_use_tex, 1)
+                    for (path, shade), a, fc, start, count in self._ttex_runs:
                         tex = self._get_texture(path)
                         if tex is None:
                             continue
-                        self._program.setUniformValue1f(self._loc_opacity, float(a))
+                        set_run_opacity(a)
                         self._program.setUniformValue1f(self._loc_shade, float(shade))
+                        if fc:
+                            self._gl.glEnable(GL_CULL_FACE)
+                            self._gl.glCullFace(GL_BACK)
                         tex.bind(0)
                         self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                         tex.release(0)
-                    self._gl.glDisable(GL_CULL_FACE)
+                        if fc:
+                            self._gl.glDisable(GL_CULL_FACE)
+                    if self._back_ttex_runs:
+                        self._gl.glEnable(GL_CULL_FACE)
+                        self._gl.glCullFace(GL_FRONT)
+                        for (path, shade), a, start, count in self._back_ttex_runs:
+                            tex = self._get_texture(path)
+                            if tex is None:
+                                continue
+                            set_run_opacity(a)
+                            self._program.setUniformValue1f(
+                                self._loc_shade, float(shade))
+                            tex.bind(0)
+                            self._gl.glDrawArrays(
+                                GL_TRIANGLES, start, count)
+                            tex.release(0)
+                        self._gl.glDisable(GL_CULL_FACE)
                 self._tex_faces_vao.release()
                 self._program.setUniformValue1f(self._loc_shade, 1.0)
                 self._program.setUniformValue(self._loc_use_tex, 0)
             self._program.setUniformValue1f(self._loc_opacity, 1.0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
             self._gl.glDepthMask(GL_TRUE)
+
+        self._draw_layer_tints(style)
 
         # Face-me billboards (2D people): per-frame textured cutout
         # — skipped on plan sheets and line styles: a coloured cutout person
@@ -1986,8 +2068,8 @@ class Viewport(QOpenGLWidget):
                 self._guides_vao.release()
 
         self._set_section_clip(True)
-        show_edges = style.edges or mode == "wireframe"
-        ec = style.edge_color
+        show_edges = style.edges or style.face_mode == "wireframe"
+        ec = (0.0, 0.0, 0.0) if layer_colors else style.edge_color
         # Line weight for sheet renders: a GL line is one pixel whatever
         # the DPI (core-profile Mesa clamps glLineWidth), and one pixel at
         # 300 dpi is a 0.085 mm hairline that vanishes on paper and on the
@@ -2002,7 +2084,7 @@ class Viewport(QOpenGLWidget):
         # first in the faded colour, then the ones in front at full strength.
         # From above, an open box keeps every edge dark and a lidded one
         # greys the edges under the lid — you see whether a face is there.
-        xray_edges = mode == "xray" and show_edges
+        xray_edges = style.face_mode == "xray" and show_edges
         if xray_edges:
             self._xray_face_depth()
             bg = style.background
@@ -2020,7 +2102,9 @@ class Viewport(QOpenGLWidget):
             if len(_jit_e) > 1:
                 self._program.setUniformValue(self._loc_mvp,
                                               _shifted_mvp(mvp, _dx, _dy))
-            if self._edges_count > 0 and show_edges:
+            if show_edges and layer_lines:
+                self._draw_layer_lines(style, w, h, hidden=_hidden)
+            if self._edges_count > 0 and show_edges and not layer_lines:
                 self._set_color(*_ecol, 1.0)
                 self._edges_vao.bind()
                 _espans = getattr(self, "_frame_edge_spans",
@@ -2042,7 +2126,7 @@ class Viewport(QOpenGLWidget):
                         if _vs >= split_e:
                             self._gl.glDrawArrays(GL_LINES, _vs, _vc)
                 self._edges_vao.release()
-            if show_edges:
+            if show_edges and not layer_lines:
                 self._set_color(*_ecol, 1.0)
                 self._draw_instanced_edges()
         if xray_edges:
@@ -2053,7 +2137,14 @@ class Viewport(QOpenGLWidget):
             self._gl.glClear(GL_DEPTH_BUFFER_BIT)
         elif (show_edges and getattr(style, "back_edges", False)
                 and mode != "wireframe"):
-            self._draw_back_edges(tuple(ec[:3]), w, h)
+            if layer_lines:
+                self._gl.glDepthFunc(GL_GREATER)
+                self._gl.glDepthMask(GL_FALSE)
+                self._draw_layer_lines(style, w, h, back_edges=True)
+                self._gl.glDepthFunc(GL_LEQUAL)
+                self._gl.glDepthMask(GL_TRUE)
+            else:
+                self._draw_back_edges(tuple(ec[:3]), w, h)
         if len(_jit_e) > 1:
             self._program.setUniformValue(self._loc_mvp, mvp)
 
@@ -2316,6 +2407,11 @@ class Viewport(QOpenGLWidget):
         if (_NO_INSTANCING or getattr(g, "xform", None) is None
                 or getattr(g, "billboard", False)):
             return False
+        if getattr(self._effective_style(), "color_by_layer", False):
+            # Tag-colored faces have their own opacity-aware pass. Keeping
+            # their component edges instanced avoids baking a world-space
+            # material chunk for every transparent placement.
+            return True
         # A MIRRORED placement turns the prototype's triangles inside out
         # for GL (front becomes back). It used to fall back to the
         # consolidated path, one baked copy per placement — «mirrors are
@@ -2324,6 +2420,24 @@ class Viewport(QOpenGLWidget):
         # now, in batches of its own under a clockwise front face
         # (``_front_face``).
         from core.group import effective_material
+        if self.scene.layer_has_transparency():
+            from core.layers import DEFAULT_LAYER, display_layer_name
+            inherited = getattr(g, "layer", None) or DEFAULT_LAYER
+            # Only affected placements leave the opaque instanced path.
+            if self.scene.layer_opacity(inherited) < .999:
+                return False
+            cache_key = (self.scene.version, id(self.scene.mesh))
+            cached = getattr(self, "_transparent_mesh_tags", None)
+            if cached is None or cached[0] != cache_key:
+                cached = self._transparent_mesh_tags = (cache_key, {})
+            key = (id(g.mesh), getattr(g.mesh, "_mut_serial", None))
+            names = cached[1].get(key)
+            if names is None:
+                from core.layers import layer_of
+                names = cached[1][key] = {layer_of(face) for face in g.mesh.faces}
+            if any(self.scene.layer_opacity(inherited if name == DEFAULT_LAYER else name)
+                   < .999 for name in names):
+                return False
         base = self._proto_base_chunk(g.mesh, effective_material(g))
         # Translucent / back-side / glass content still rides the
         # consolidated passes (they need global draw ordering).
@@ -2340,6 +2454,27 @@ class Viewport(QOpenGLWidget):
         plain one."""
         return self._group_chunk(_proto_wrapper(self, mesh, paint))
 
+    def _layer_opacity_state(self):
+        """Resolve tag opacity once per appearance change, not per chunk.
+
+        Keep a raw signature so direct layer edits (without a scene version
+        bump) also invalidate material chunks and the placement epoch.
+        Geometry edits and camera motion do not change these values.
+        """
+        sc = self.scene
+        signature = (tuple((ly.name, ly.folder_id, ly.transparency)
+                           for ly in sc.layers),
+                     tuple((f.uid, f.parent_id, f.transparency)
+                           for f in sc.layer_folders))
+        cached = getattr(self, "_layer_opacity_cache", None)
+        if cached is None or cached[0] != signature:
+            transparent = any(ly.transparency for ly in sc.layers) or any(
+                f.transparency for f in sc.layer_folders)
+            opacity = {ly.name: sc.layer_opacity(ly.name) if transparent else 1.0
+                       for ly in sc.layers}
+            cached = self._layer_opacity_cache = (signature, transparent, opacity)
+        return cached
+
     def _placements_epoch(self):
         """A signature of everything the per-frame placement passes read:
         the group tree (ids, matrices, mesh mutation serials, tags), the
@@ -2351,8 +2486,10 @@ class Viewport(QOpenGLWidget):
         memoised per tick (a paint or a hover) and scene version."""
         sc = self.scene
         tick = getattr(self, "_tick", 0)
+        layer_colors = bool(getattr(self._effective_style(), "color_by_layer", False))
+        memo_key = (tick, _cache_ver(self), layer_colors)
         memo = getattr(self, "_epoch_memo", None)
-        if memo is not None and memo[0] == (tick, _cache_ver(self)):
+        if memo is not None and memo[0] == memo_key:
             return memo[1]
         # Across ticks: while the version is live (not frozen by a groups
         # preview, whose matrices move without a version bump) and none of
@@ -2360,20 +2497,22 @@ class Viewport(QOpenGLWidget):
         # — every edit of a group goes through a command that bumps the
         # version. Orbiting a model of 21 406 placements walked them all on
         # every frame, ~55 ms (issue #158).
-        cheap = (sc.version, id(sc.edit_group), id(sc.mesh),
+        opacity = self._layer_opacity_state()[2]
+        cheap = (sc.version, id(sc.edit_group), id(sc.mesh), layer_colors,
                  getattr(self, "_preview_epoch", 0),
                  bool(getattr(self, "_preview_groups", None)),
                  getattr(self, "_edit_rest_mode", None),
                  bool(getattr(sc, "show_hidden_objects", False)),
                  bool(getattr(sc, "show_hidden_geometry", False)),
-                 tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers),
+                 tuple((ly.name, sc.layer_state(ly.name), opacity[ly.name])
+                       for ly in sc.layers),
                  len(sc.groups))
         live = getattr(self, "_frozen_cache_version", None) is None
         same = getattr(self, "_epoch_same", None)
         if live and same is not None and same[0] == cheap:
-            self._epoch_memo = ((tick, _cache_ver(self)), same[1])
+            self._epoch_memo = (memo_key, same[1])
             return same[1]
-        parts: list = [id(sc.edit_group), id(sc.mesh),
+        parts: list = [id(sc.edit_group), id(sc.mesh), layer_colors,
                        getattr(self, "_preview_epoch", 0),
                        bool(getattr(self, "_preview_groups", None)),
                        getattr(self, "_edit_rest_mode", None),
@@ -2387,7 +2526,8 @@ class Viewport(QOpenGLWidget):
                        # @pacaeiro).
                        bool(getattr(sc, "show_hidden_objects", False)),
                        bool(getattr(sc, "show_hidden_geometry", False)),
-                       tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers)]
+                       tuple((ly.name, sc.layer_state(ly.name), opacity[ly.name])
+                             for ly in sc.layers)]
 
         loose = sc.mesh
 
@@ -2409,7 +2549,7 @@ class Viewport(QOpenGLWidget):
         for g in sc.groups:
             walk(g)
         epoch = hash(tuple(parts))
-        self._epoch_memo = ((tick, _cache_ver(self)), epoch)
+        self._epoch_memo = (memo_key, epoch)
         self._epoch_same = (cheap, epoch) if live else None
         return epoch
 
@@ -2480,7 +2620,7 @@ class Viewport(QOpenGLWidget):
 
         ctx = self.scene.edit_group
 
-        def walk(node, world, dentro=None, hidden=False):
+        def walk(node, world, dentro=None, hidden=False, inherited=None):
             """``dentro`` = the first-level child of the open context this
             subtree hangs from, or ``None`` outside it.
 
@@ -2507,7 +2647,8 @@ class Viewport(QOpenGLWidget):
                 # parent's (the .skp convention); and when the parent's tag is hidden or
                 # locked the whole instance goes with it, whatever its
                 # children are tagged.
-                proxy.layer = forced or child.layer or node.layer
+                from core.layers import display_layer_name, DEFAULT_LAYER
+                proxy.layer = forced or display_layer_name(child, inherited or DEFAULT_LAYER)
                 proxy.billboard = child.billboard
                 # Hide on an object takes its whole subtree along, and a
                 # hidden child stays hidden inside a visible parent.
@@ -2530,9 +2671,10 @@ class Viewport(QOpenGLWidget):
                 if child.children:
                     walk(child, m,
                          child if (ctx is not None and node is ctx) else dentro,
-                         proxy.hidden)
+                         proxy.hidden, proxy.layer)
 
-        walk(group, getattr(group, "xform", None), hidden=bool(group.hidden))
+        walk(group, getattr(group, "xform", None), hidden=bool(group.hidden),
+             inherited=group.layer)
         return out
 
     def _placement_bbox(self, g):
@@ -2852,9 +2994,108 @@ class Viewport(QOpenGLWidget):
             return [(groups, 0.0)]
         return [(fuera, EDIT_REST_FADE), (dentro, 0.0)]
 
+    def _draw_layer_colors(self, style, edges=False):
+        if edges:
+            self._draw_layer_lines(style, *self._fb_size())
+        else:
+            self._draw_layer_faces(style)
+
+    def _draw_layer_tints(self, style):
+        if style.face_mode == "wireframe" or not any(
+                item.tint_color is not None
+                for item in (*self.scene.layers, *self.scene.layer_folders)):
+            return
+        self._draw_layer_faces(style, tint=True)
+
+    def _draw_layer_faces(self, style, tint=False):
+        from core.layer_display import layer_face_buffers
+        slot = "_layer_tint" if tint else "_layer_color"
+        key = (_cache_ver(self), self._placements_epoch(),
+               tuple((ly.name, ly.folder_id, ly.color, ly.tint_color, ly.transparency)
+                     for ly in self.scene.layers),
+               tuple((f.uid, f.parent_id, f.tint_color, f.transparency)
+                     for f in self.scene.layer_folders),
+               self._edit_rest_mode,
+               tuple(sorted(getattr(self, "_preview_groups", None) or ())),
+               tuple(sorted(id(f) for f in self._suppressed_faces)))
+        vao = self._layer_tint_vao if tint else self._layer_faces_vao
+        vbo = self._layer_tint_vbo if tint else self._layer_faces_vbo
+        if getattr(self, slot + "_key", None) != key:
+            data, runs = layer_face_buffers(
+                self.scene, self._tris_of, tint=tint, rest_mode=self._edit_rest_mode,
+                suppressed=self._suppressed_faces,
+                preview_groups=getattr(self, "_preview_groups", None) or ())
+            vbo.bind()
+            vbo.allocate(data, len(data))
+            vbo.release()
+            setattr(self, slot + "_runs", runs)
+            setattr(self, slot + "_key", key)
+        self._program.setUniformValue(self._loc_use_vcolor, 0)
+        self._program.setUniformValue(self._loc_use_tex, 0)
+        self._program.setUniformValue1f(self._loc_opacity, 1.0)
+        self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+        self._gl.glPolygonOffset(1.0, 1.0)
+        vao.bind()
+        for color, opacity, faded, start, count in getattr(self, slot + "_runs"):
+            if style.face_mode == "xray":
+                opacity *= XRAY_FACE_OPACITY
+            self._gl.glDepthMask(GL_FALSE if tint or opacity < .999 else GL_TRUE)
+            self._set_color(*color, opacity)
+            self._program.setUniformValue(self._loc_back_color, QVector4D(*color, opacity))
+            self._program.setUniformValue1f(self._loc_fade, EDIT_REST_FADE if faded else 0.0)
+            self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+        vao.release()
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
+        self._gl.glDepthMask(GL_TRUE)
+        self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
+    def _draw_layer_lines(self, style, w, h, hidden=False, back_edges=False):
+        """Draw inherited line overrides without a solid underlay."""
+        from core.layer_display import layer_line_buffers
+        default = (0.0, 0.0, 0.0) if style.color_by_layer else tuple(style.edge_color)
+        key = (_cache_ver(self), self._placements_epoch(), default,
+               tuple((ly.name, ly.folder_id, ly.edge_color, ly.line_style)
+                     for ly in self.scene.layers),
+               tuple((f.uid, f.parent_id, f.edge_color, f.line_style)
+                     for f in self.scene.layer_folders),
+               self._edit_rest_mode,
+               tuple(sorted(getattr(self, "_preview_groups", None) or ())))
+        if getattr(self, "_layer_line_key", None) != key:
+            data, self._layer_line_runs = layer_line_buffers(
+                self.scene, default, self._edit_rest_mode,
+                getattr(self, "_preview_groups", None) or ())
+            self._layer_lines_vbo.bind()
+            self._layer_lines_vbo.allocate(data, len(data))
+            self._layer_lines_vbo.release()
+            self._layer_line_key = key
+        dpr = max(1.0, float(self.devicePixelRatioF()))
+        self._program.setUniformValue(self._loc_viewport_px,
+                                      QVector2D(float(w), float(h)))
+        self._program.setUniformValue(self._loc_use_tex, 0)
+        self._program.setUniformValue(self._loc_use_vcolor, 0)
+        self._layer_lines_vao.bind()
+        for color, pattern, faded, start, count in self._layer_line_runs:
+            if back_edges and pattern == "solid":
+                pattern = "dashed"
+            stipple = {"solid": 0, "dashed": 4, "dotted": 5}[pattern]
+            self._program.setUniformValue(self._loc_stipple, stipple)
+            self._program.setUniformValue1f(
+                self._loc_dash_px, (3.0 if pattern == "dotted" else 4.0) * dpr)
+            if hidden:
+                bg = style.background
+                color = tuple(color[i] + (bg[i] - color[i]) * XRAY_HIDDEN_EDGE_FADE
+                              for i in range(3))
+            self._set_color(*color, 1.0)
+            self._program.setUniformValue1f(
+                self._loc_fade, EDIT_REST_FADE if faded else 0.0)
+            self._gl.glDrawArrays(GL_LINES, start, count)
+        self._layer_lines_vao.release()
+        self._program.setUniformValue(self._loc_stipple, 0)
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
+
     def _draw_instanced_faces(self, mode, style) -> None:
         by_proto = self._gather_instanced()
-        if not by_proto or mode == "wireframe":
+        if not by_proto or mode in ("wireframe", "layer"):
             return
         extra = self.context().extraFunctions()
         self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
@@ -3077,7 +3318,8 @@ class Viewport(QOpenGLWidget):
         # re-enables blending on its way out, which hid the bug behind
         # every edit (Marco, 2026-09-14: «puse sombras con el tif y orbité»).
         self._gl.glEnable(GL_BLEND)
-        self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        self._gl.glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                                     GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
         for im, tex in drawn:
             c = im.corners()
             # Two triangles, UV (0,0) at ``origin``: _get_texture uploads the
@@ -4616,8 +4858,12 @@ class Viewport(QOpenGLWidget):
         return total
 
     def _sync_edges(self) -> None:
-        if _cache_ver(self) == self._edges_version:
+        from core.layers import DEFAULT_LAYER
+        layer_colors = bool(getattr(self._effective_style(), "color_by_layer", False))
+        if (_cache_ver(self) == self._edges_version
+                and getattr(self, "_edges_layer_colors", None) == layer_colors):
             return
+        self._edges_layer_colors = layer_colors
         _st0 = _time_mod.perf_counter() if _PERF else 0.0
 
         # The scene changed: purge hover/selection references to entities that
@@ -4864,7 +5110,7 @@ class Viewport(QOpenGLWidget):
         back_ttex_runs: dict = {}    # ((path, shade), op) -> [parts]
         fcull_vcol_parts: list = []  # front copies culled to the front side
 
-        def bucket_back(face):
+        def bucket_back(face, opacity_multiplier=1.0):
             # attrs["back"]: the face is painted DIFFERENTLY on its back side
             # (.skp two-sided paint). Emit an override copy that a culled
             # pass shows only from behind. Returns True when the back is
@@ -4889,20 +5135,24 @@ class Viewport(QOpenGLWidget):
         from core.group import effective_material as _eff_mat
         from core.materials import effective_attrs as _eff_attrs
         ctx_paint = _eff_mat(self.scene.edit_group)
-
         def bucket_face(face):
             if face in suppressed_faces:
                 return
             attrs = _eff_attrs(face.attrs, ctx_paint)
-            fcull = bucket_back(face)
-            if back_is_default(attrs):
+            layer_name = (face.attrs.get("layer")
+                          or getattr(self.scene.edit_group, "layer", None)
+                          or DEFAULT_LAYER)
+            layer_opacity = self.scene.layer_opacity(
+                layer_name, getattr(self.scene.edit_group, "layer", None))
+            fcull = bucket_back(face, layer_opacity)
+            if back_is_default(attrs) and layer_opacity >= 0.999:
                 db = sink["dback"]
                 for t0, t1, t2 in self._tris_of(face):
                     db.extend([t0.x(), t0.y(), t0.z(),
                                t1.x(), t1.y(), t1.z(),
                                t2.x(), t2.y(), t2.z()])
             tex = attrs.get("texture")
-            op = float(attrs.get("opacity", 1.0))
+            op = float(attrs.get("opacity", 1.0)) * layer_opacity
             if tex is not None and tex.get("path"):
                 if op < 0.999:
                     tmp: dict = {}
@@ -5145,14 +5395,14 @@ class Viewport(QOpenGLWidget):
         self._edges_version = _cache_ver(self)
         self.sceneVersionChanged.emit(self._edges_version)
 
-    def _bucket_back_face(self, face, back):
+    def _bucket_back_face(self, face, back, opacity_multiplier=1.0):
         """Build the back-side override copy of a two-side-painted face.
         Returns ``(kind, payload)`` — ``("bvcol", bytes)`` /
         ``("btex", (key, bytes))`` for opaque overrides (culled opaque back
         pass), or ``("btcol", (op, bytes))`` / ``("bttex", ((key, op),
         bytes))`` for translucent ones (culled blended pass). ``(None,
         None)`` when the back carries nothing drawable."""
-        op = float(back.get("opacity", 1.0))
+        op = float(back.get("opacity", 1.0)) * opacity_multiplier
         tex = back.get("texture")
         if tex is not None and tex.get("path"):
             tmp: dict = {}
@@ -8015,7 +8265,8 @@ class Viewport(QOpenGLWidget):
         # prototype: default faces in the container's paint. Unpainted
         # siblings keep sharing the plain bake.
         base = self._group_chunk(
-            _proto_wrapper(self, mesh, effective_material(group)))
+            _proto_wrapper(self, mesh, effective_material(group),
+                           getattr(group, "layer", None)))
         xf = group.xform
         key = (base["uid"], tuple(xf.data()))
         cache = getattr(self, "_inst_chunks", None)
@@ -8203,6 +8454,10 @@ class Viewport(QOpenGLWidget):
         from core.materials import effective_attrs, material_sig
         paint = effective_material(group)
         msig = material_sig(paint)
+        layer_sig, transparent, _ = Viewport._layer_opacity_state(self)
+        if transparent:
+            msig = (msig or ()) + (("layer-opacity", layer_sig,
+                                   getattr(group, "layer", None)),)
         if entry is not None and entry.get("msig") != msig:
             entry = None
         # The entry answers for ONE mesh object. Explode hands every lifted
@@ -8335,12 +8590,18 @@ class Viewport(QOpenGLWidget):
         tris: list = []
         tri_ent: list = []
         from core.materials import back_is_default
+        from core.layers import DEFAULT_LAYER, layer_of
         for f in mesh.faces:
             if f.attrs.get("hidden"):
                 # Hide on a face: out of the chunk entirely — not
                 # drawn, not picked, not snapped. Its edges stay (below).
                 continue
             fattrs = effective_attrs(f.attrs, paint)
+            face_layer = (f.attrs.get("layer")
+                          or getattr(group, "layer", None)
+                          or DEFAULT_LAYER)
+            layer_opacity = self.scene.layer_opacity(
+                face_layer, getattr(group, "layer", None))
             i = len(faces)
             faces.append(f)
             if len(f.loop) < 3:
@@ -8357,7 +8618,8 @@ class Viewport(QOpenGLWidget):
             back = fattrs.get("back")
             fcull = 0
             if isinstance(back, dict):
-                kind, payload = self._bucket_back_face(f, back)
+                kind, payload = self._bucket_back_face(
+                    f, back, layer_opacity)
                 if kind == "bvcol":
                     back_vcol_parts.append(payload)
                 elif kind == "btex":
@@ -8369,7 +8631,7 @@ class Viewport(QOpenGLWidget):
                 if kind in ("btcol", "bttex"):
                     fcull = 1
             tex = fattrs.get("texture")
-            op = float(fattrs.get("opacity", 1.0))
+            op = float(fattrs.get("opacity", 1.0)) * layer_opacity
             if tex is not None and tex.get("path"):
                 if op < 0.999:
                     self._append_textured_face(
@@ -8404,7 +8666,8 @@ class Viewport(QOpenGLWidget):
                              [t1.x(), t1.y(), t1.z()],
                              [t2.x(), t2.y(), t2.z()]])
                 tri_ent.append(i)
-            if tri_list and back_is_default(fattrs):
+            if (tri_list and back_is_default(fattrs)
+                    and layer_opacity >= 0.999):
                 dback_faces.append(i)
 
         sprops: dict = {}
@@ -8552,6 +8815,8 @@ class Viewport(QOpenGLWidget):
         import hashlib
         h = hashlib.sha1()
         h.update(repr((fp[0], fp[1], fp[2], fp[3], fp[5])).encode())
+        if len(fp) > 7:
+            h.update(repr(fp[7:]).encode())
         if fp[6]:
             # Hidden-edge term, only when some edge IS hidden: meshes without
             # any (the overwhelming majority) keep their pre-existing digests,

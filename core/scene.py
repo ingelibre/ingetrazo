@@ -74,6 +74,9 @@ class Scene:
     # Saved views ("Scenes"): named camera + layer-visibility
     # snapshots (core.saved_views.SavedView). Presentation state, no geometry.
     saved_views: list = field(default_factory=list)
+    scene_folders: list = field(default_factory=list)
+    layer_folders: list = field(default_factory=list)
+    active_layer: str = "Layer 0"
     # Sheet compositions (core.composition.Composicion) — the print layouts.
     compositions: list = field(default_factory=list)
     # Scales (1:N) typed by the user in the composer beyond the common
@@ -193,10 +196,68 @@ class Scene:
         """(visible, locked) of the layer ``entity`` carries; unknown layer
         names read as the default (visible, unlocked)."""
         from core.layers import layer_of
-        ly = self.layer(layer_of(entity))
+        return self.layer_state(layer_of(entity))
+
+    def layer_state(self, name) -> tuple[bool, bool]:
+        """Effective tag state, including its folder ancestors (cycle-safe)."""
+        from core.layers import DEFAULT_LAYER
+        ly = self.layer(name)
         if ly is None:
             return True, False
-        return ly.visible, ly.locked
+        visible, locked = ly.visible, ly.locked
+        if name == DEFAULT_LAYER or ly.folder_id is None:
+            return visible, locked
+        folders = {f.uid: f for f in self.layer_folders}
+        cursor = ly.folder_id
+        seen = set()
+        while cursor in folders and cursor not in seen:
+            seen.add(cursor)
+            folder = folders[cursor]
+            visible = visible and folder.visible
+            locked = locked or folder.locked
+            cursor = folder.parent_id
+        return visible, locked
+
+    def layer_ancestors(self, name):
+        """A tag (or folder) followed by its folder ancestors, cycle-safe."""
+        from core.layers import DEFAULT_LAYER, LayerFolder
+        is_folder = isinstance(name, LayerFolder)
+        layer = name if is_folder else self.layer(name)
+        if layer is None:
+            return
+        yield layer
+        folders = {folder.uid: folder for folder in self.layer_folders}
+        cursor = (layer.parent_id if is_folder else
+                  layer.folder_id if name != DEFAULT_LAYER else None)
+        seen = set()
+        while cursor in folders and cursor not in seen:
+            seen.add(cursor)
+            folder = folders[cursor]
+            yield folder
+            cursor = folder.parent_id
+
+    def layer_setting(self, name, attribute, default=None):
+        """Nearest explicit appearance setting on a tag or folder."""
+        for item in self.layer_ancestors(name):
+            value = getattr(item, attribute, None)
+            if value is not None:
+                return value
+        return default
+
+    def layer_opacity(self, name, additional_layers=()):
+        """Multiply tag/folder opacity, counting shared ancestors only once."""
+        if isinstance(additional_layers, str):
+            additional_layers = (additional_layers,)
+        opacity, seen = 1.0, set()
+        for start in (name, *(additional_layers or ())):
+            for item in self.layer_ancestors(start):
+                if id(item) not in seen:
+                    seen.add(id(item))
+                    opacity *= 1.0 - item.transparency / 100.0
+        return opacity
+
+    def layer_has_transparency(self):
+        return any(item.transparency for item in (*self.layers, *self.layer_folders))
 
     @staticmethod
     def _object_hidden(entity) -> bool:
@@ -551,7 +612,8 @@ class Scene:
                 or self.groups or self.dimensions or self.georef
                 or self.tile_layer or self.geo_paths or self.terrain
                 or self.guides or self.geo_points or self.text_labels
-                or self.saved_views or self.compositions
+                or self.saved_views or self.scene_folders or self.layer_folders
+                or len(self.layers) > 1 or self.compositions
                 or self.image_planes or self.plugin_data):
             self.mesh.clear()
             self.groups.clear()
@@ -562,12 +624,15 @@ class Scene:
             self.guides.clear()
             self.image_planes.clear()
             self.saved_views.clear()
+            self.scene_folders.clear()
+            self.layer_folders.clear()
             self.compositions.clear()
             self.custom_scales.clear()
             self.plugin_data = {}
             self.selection.clear()
             from core.layers import DEFAULT_LAYER, Layer
             self.layers = [Layer(DEFAULT_LAYER)]
+            self.active_layer = DEFAULT_LAYER
             self.georef = None
             self.tile_layer = None
             self.terrain = None

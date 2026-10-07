@@ -1,4 +1,6 @@
 {
+ "Active layer": "当前图层",
+ "Set active layer": "设为当前图层",
  "Add a terrain profile along a traced path (two clicks or drag)": "沿着已绘制路径添加地形剖面（两次点击或拖动）",
  "Guide point": "参考点",
  "IngeTrazo could not read {name} with its built-in .skp reader.\n\nOpen it in the program it came from and export it as COLLADA (.dae) or OBJ, then import that file here.": "IngeTrazo 无法用内置的 .skp 读取器读取 {name}。\n\n请在原来的程序中打开它并导出为 COLLADA (.dae) 或 OBJ，然后在这里导入该文件。",

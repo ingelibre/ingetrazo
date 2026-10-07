@@ -143,6 +143,9 @@ the document), **import STL (with principal-plane or advanced all-surface
   future).
 - **Layers & Scenes** — visibility/lock tags (plans emerge from one model)
   and saved views (camera + per-layer visibility), both imported from `.skp`.
+  The Layers panel offers **Color by layer**; double-click a colour swatch to
+  change it. Tag colours are saved in `.igz` and imported/exported with `.skp`;
+  the display switch preserves the model's materials and keeps edges black.
 - **BIM tagging + IFC export** — tag freeform geometry with IFC classes
   (walls, slabs, columns, ...); tagged objects export to `.ifc` with honest
   quantities (areas always; volumes only when the object is watertight) —

@@ -241,7 +241,11 @@ def _collect_layers(scene, builder, used=None):
             continue
         if used is not None and name not in used:
             continue
-        layer_handles[name] = builder.add_layer(name)
+        opts = {}
+        if "color" in _supported(builder.add_layer, "color"):
+            opts["color"] = tuple(round(max(0.0, min(1.0, c)) * 255)
+                                  for c in layer.color)
+        layer_handles[name] = builder.add_layer(name, **opts)
     return layer_handles
 
 

@@ -302,7 +302,8 @@ def _apply_payload_inner(scene, payload) -> str:
         for raw in payload["layers"]:
             if raw.get("name") and raw["name"] not in known:
                 scene.layers.append(Layer(raw["name"],
-                                          visible=raw.get("visible", True)))
+                                          visible=raw.get("visible", True),
+                                          color=raw.get("color")))
                 known.add(raw["name"])
 
     # The file's saved scenes become saved views (camera + hidden layers);

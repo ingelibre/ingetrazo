@@ -151,3 +151,22 @@ of the 2022 version):
 
 These gaps are the concrete contribution targets for OpenSKP (see
 `docs/openskp-collaboration.md`). Geometry — the hard part — already works.
+
+## Layer folders in IngeTrazo (2026-10-06)
+
+The Layers panel supports nested folders, sibling order, expansion state,
+and inherited visibility/locking. These are stored in `.igz` as
+`layer_folders`; each layer records its `folder_id` and `position`.
+Saved views also record hidden folder IDs. Layer 0 remains at the root.
+
+Native SketchUp tag-folder interchange is currently unsupported. The pinned
+OpenSKP Python model exposes a flat `Layer(name, color_r, color_g, color_b,
+hidden)` list, with no folder IDs, parent relationships or folder records.
+Its writer exposes `add_layer(name, color=None, hidden=False)` and writes
+legacy files, with no tag-folder creation API. The application still has
+no SKP export menu. Import continues to preserve the flat tags and their
+own visibility; SketchUp folder membership and folder visibility are not
+available through this backend. Folder support must first be added to
+OpenSKP's parser/model and a writer supporting the relevant SketchUp format.
+No folder names are inferred from tag names, since these are independent
+SketchUp data.
