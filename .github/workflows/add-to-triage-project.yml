@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Automatically add every newly opened issue to the "Triage" project board
+# (GitHub Projects v2), so new issues show up as "New" without anyone
+# manually dragging them on.
+#
+# ---------------------------------------------------------------------
+# REQUIRES MAINTAINER SETUP — this workflow does nothing useful until:
+#
+#   1. A "Triage" Projects v2 board exists in the ingelibre org, and the
+#      placeholder PROJECT_URL below is replaced with its real URL.
+#   2. A repository (or org) secret named PROJECT_TOKEN is added, holding
+#      a classic PAT (scopes: repo, project) or a GitHub App installation
+#      token with "Projects: write" permission. The default GITHUB_TOKEN
+#      CANNOT write to org-level Projects v2 boards, so this step is not
+#      optional — without PROJECT_TOKEN the job will fail authenticating.
+#
+# See https://github.com/actions/add-to-project for token setup details.
+# ---------------------------------------------------------------------
+name: add-to-triage-project
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  add-to-project:
+    name: Add issue to Triage project
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Add to project
+        uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+        with:
+          # PLACEHOLDER: replace with the real Triage project URL once it's
+          # created, e.g. https://github.com/orgs/ingelibre/projects/3
+          project-url: https://github.com/orgs/ingelibre/projects/REPLACE_ME
+          github-token: ${{ secrets.PROJECT_TOKEN }}

@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Keep repository labels in sync with .github/labels.yml.
+#
+# .github/labels.yml is the single source of truth for every label (colors,
+# descriptions, names). Edit that file and open a PR instead of editing
+# labels in the GitHub UI — this workflow treats the file as authoritative
+# and will delete labels that aren't listed in it.
+name: sync-labels
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.yml
+  workflow_dispatch:        # manual re-sync from the Actions tab
+
+permissions:
+  issues: write             # label-sync creates/updates/deletes labels
+
+jobs:
+  sync:
+    name: Sync labels from .github/labels.yml
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the v2.3.3 tag commit (not the mutable `v2` tag) so this
+      # workflow can't change behavior out from under us.
+      - name: Sync labels
+        uses: EndBug/label-sync@52074158190acb45f3077f9099fea818aa43f97a # v2.3.3
+        with:
+          config-file: .github/labels.yml
+          delete-other-labels: true
+          token: ${{ secrets.GITHUB_TOKEN }}

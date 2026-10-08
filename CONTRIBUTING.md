@@ -75,11 +75,21 @@ isolation, and the `SnapshotImport` recipe for modifying the model) is in
    on it automatically.
 6. A maintainer will review. We try to respond within a week.
 
+## What's planned / in progress
+
+The **Project board** ([placeholder link](https://github.com/orgs/ingelibre/projects/REPLACE_ME)),
+not the raw Issues tab, is the primary place to see what's already planned,
+in review, or in progress — issues move through Triage → Main Development
+or Extension as maintainers prioritize them. See
+[docs/triage.md](docs/triage.md) for the full triage system: roles, labels,
+and how issues flow from "just opened" to "done".
+
 ## Issue triage
 
-- **Bug report** — describe the bug, steps to reproduce, expected vs. actual behavior, screenshots when relevant.
-- **Feature request** — what you want, why it matters, alternative tools that do it today.
-- **Good first issue** — these are tagged for newcomers. Comment on the issue to claim one.
+- **Bug report** — use the Bug report issue template: version/build, OS, steps to reproduce, expected vs. actual behavior, screenshots when relevant. New issues are auto-labeled `status: needs-triage`.
+- **Feature request** — use the Feature request issue template: problem being solved, proposed solution, alternatives considered.
+- **Good first issue** — these are tagged for newcomers. Comment on the issue ("I'd like to work on this") to request assignment; a maintainer will assign you.
+- Full details — roles, label meanings, how multi-feature and duplicate issues are handled — are in [docs/triage.md](docs/triage.md).
 
 ## Communication
 

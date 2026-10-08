@@ -1,0 +1,97 @@
+# Single source of truth for repository labels.
+#
+# Synced to GitHub by .github/workflows/sync-labels.yml (EndBug/label-sync)
+# on every push to main that touches this file, and on-demand via
+# workflow_dispatch. Edit this file and open a PR rather than editing
+# labels directly in the GitHub UI — manual changes get reverted on the
+# next sync.
+#
+# Format: one entry per label, each with name/color/description.
+# `color` is a 6-digit hex code without the leading `#`.
+
+# --- Existing GitHub defaults (kept as-is; listed here so this file is
+#     complete and authoritative for the whole label set) -----------------
+- name: bug
+  color: d73a4a
+  description: Something isn't working
+- name: documentation
+  color: 0075ca
+  description: Improvements or additions to documentation
+- name: duplicate
+  color: cfd3d7
+  description: This issue or pull request already exists
+- name: enhancement
+  color: a2eeef
+  description: New feature or request
+- name: good first issue
+  color: 7057ff
+  description: Good for newcomers
+- name: help wanted
+  color: 008672
+  description: Extra attention is needed
+- name: invalid
+  color: e4e669
+  description: This doesn't seem right
+- name: needs-decision
+  color: d4c5f9
+  description: Needs a maintainer decision before work can proceed
+- name: needs-info
+  color: d4c5f9
+  description: Waiting on more information from the reporter
+- name: question
+  color: d876e3
+  description: Further information is requested
+- name: wontfix
+  color: ffffff
+  description: This will not be worked on
+
+# --- Status group (where an issue sits in the triage pipeline) -----------
+# Color family: blue
+- name: "status: needs-triage"
+  color: 1d76db
+  description: New issue, not yet looked at by a Reviewer (default on open)
+- name: "status: reviewed"
+  color: 1d76db
+  description: Reviewer has triaged it (deduped, split if needed); awaiting Lead disposition/priority
+- name: "status: blocked"
+  color: 1d76db
+  description: Work is blocked on another issue, decision, or external dependency
+
+# --- Priority group (set by the Project Lead) ----------------------------
+# Color family: red -> orange -> yellow -> green (severity gradient)
+- name: "priority: critical"
+  color: b60205
+  description: Drop everything — crash, data loss, or security issue
+- name: "priority: high"
+  color: d93f0b
+  description: Should be addressed soon
+- name: "priority: medium"
+  color: fbca04
+  description: Normal priority
+- name: "priority: low"
+  color: 0e8a16
+  description: Nice to have, no urgency
+
+# --- Area group (which module the issue touches, see docs/architecture.md) --
+# Color family: purple
+- name: "area: core"
+  color: 5319e7
+  description: Scene graph, geometry, camera, snapping, topology, undo/history, BIM tagging
+- name: "area: views"
+  color: 5319e7
+  description: Qt widgets — main window, viewport, side tray, panels
+- name: "area: tools"
+  color: 5319e7
+  description: Built-in modeling tools (line, rectangle, push/pull, select, ...)
+- name: "area: plugins"
+  color: 5319e7
+  description: Plugin discovery/runtime and bundled reference plugins
+- name: "area: georef"
+  color: 5319e7
+  description: Real-world location — datum, tiles, DEM terrain, geo-paths, survey points, photogrammetric meshes
+- name: "area: formats"
+  color: 5319e7
+  description: Import/export (.igz, .skp, OBJ, COLLADA, glTF/GLB, STL, IFC)
+- name: "area: i18n"
+  color: 5319e7
+  description: UI translations (English/Spanish)

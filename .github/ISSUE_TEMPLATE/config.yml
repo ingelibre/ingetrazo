@@ -1,0 +1,15 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & open-ended discussion
+    url: https://github.com/ingelibre/ingetrazo/discussions
+    about: >-
+      For open-ended questions, architecture debates, or showing off a
+      project built with IngeTrazo — not for bug reports or feature
+      requests.
+  - name: Roadmap / what's planned or in progress
+    # PLACEHOLDER: replace with the real Triage/Main Development project URL
+    # once it exists (see docs/triage.md).
+    url: https://github.com/orgs/ingelibre/projects/REPLACE_ME
+    about: >-
+      See what's already planned, in review, or in progress before filing a
+      new issue.
