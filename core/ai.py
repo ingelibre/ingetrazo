@@ -432,6 +432,12 @@ DEFAULT_MODELS = {
 #: Providers whose default models take viewport screenshots.
 VISION = {"anthropic", "openai", "gemini", "openrouter"}
 
+#: OpenCode Go multiplexes several vendors; these model families are the
+#: multimodal ones (matched by prefix on the model id, ONLY for this
+#: provider so a "qwen"/"gpt" elsewhere is unaffected). DeepSeek's vision
+#: model is caught by the ``vision`` tag below.
+_GO_VISION = ("claude", "gpt", "grok", "gemini", "qwen")
+
 #: Model-name tags that mark a vision-capable model on providers whose
 #: DEFAULT model is text-only: Groq serves Llama 4 Scout/Maverick
 #: (multimodal) on its free tier, Ollama runs llava/qwen-vl locally.
@@ -444,6 +450,8 @@ def supports_vision(provider: str, model: str) -> bool:
     if provider in VISION:
         return True
     m = (model or "").lower()
+    if provider == "opencode-go" and m.startswith(_GO_VISION):
+        return True
     return any(t in m for t in _VISION_TAGS)
 
 
