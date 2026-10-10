@@ -26,6 +26,7 @@ import traceback
 import urllib.error
 import time
 import urllib.request
+import uuid
 
 from core.history import SnapshotImport
 from core.version import USER_AGENT as _UA, __version__
@@ -400,7 +401,7 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
 # ---- Provider layer (mirrors IngePresupuestos ai_specs) ---------------------
 
 PROVIDERS = ("groq", "anthropic", "openai", "gemini", "openrouter",
-             "deepseek", "ollama")
+             "deepseek", "opencode-go", "ollama")
 
 #: OpenAI-compatible chat endpoints; Anthropic goes through its native API.
 _OPENAI_BASES = {
@@ -409,6 +410,9 @@ _OPENAI_BASES = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "openrouter": "https://openrouter.ai/api/v1",
     "deepseek": "https://api.deepseek.com/v1",
+    # OpenCode Go: a curated OpenAI-compatible gateway (DeepSeek, GPT,
+    # Claude, Gemini, Kimi…). Bearer key, same shape as the others.
+    "opencode-go": "https://opencode.ai/zen/go/v1",
 }
 
 #: Providers ROTATE their catalogs: Groq retired llama-3.3-70b-versatile
@@ -421,6 +425,7 @@ DEFAULT_MODELS = {
     "gemini": "gemini-2.5-flash",
     "openrouter": "anthropic/claude-sonnet-5",
     "deepseek": "deepseek-chat",
+    "opencode-go": "deepseek-v4.1-flash",
     "ollama": "llama3.2",
 }
 
@@ -505,7 +510,8 @@ def _message_image(m: dict) -> tuple[str | None, str]:
 def build_request(provider: str, model: str, api_key: str,
                   system: str, messages: list,
                   ollama_url: str = "http://localhost:11434",
-                  max_tokens: int = 4096):
+                  max_tokens: int = 4096,
+                  session_id: str | None = None):
     """(url, headers, payload-bytes) for one chat turn.
 
     ``messages``: [{"role": "user"/"assistant", "text": str,
@@ -549,6 +555,11 @@ def build_request(provider: str, model: str, api_key: str,
                "User-Agent": USER_AGENT}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    if provider == "opencode-go":
+        # Go requires a stable per-conversation session id (routing and
+        # prompt caching); without it the chat endpoint answers 400
+        # "Missing sessionID" — the /models list does not.
+        headers["x-opencode-session"] = session_id or uuid.uuid4().hex
     payload = {"model": model, "max_tokens": max_tokens,
                "messages": oai_msgs}
     return (f"{base}/chat/completions", headers,
@@ -618,12 +629,14 @@ def _urlopen(url: str, headers: dict, payload: bytes | None = None,
 def chat(provider: str, model: str, api_key: str, system: str,
          messages: list, ollama_url: str = "http://localhost:11434",
          timeout: float = 180.0, max_tokens: int = 4096,
-         retries: int = 4, on_retry=None) -> str:
+         retries: int = 4, on_retry=None,
+         session_id: str | None = None) -> str:
     """One blocking chat turn. Raises with a readable message on failure —
     callers run this in a worker thread, never on the UI thread. A busy
     provider is retried ``retries`` times (see :func:`_urlopen`)."""
     url, headers, payload = build_request(
-        provider, model, api_key, system, messages, ollama_url, max_tokens)
+        provider, model, api_key, system, messages, ollama_url, max_tokens,
+        session_id=session_id)
     return parse_reply(provider, _urlopen(url, headers, payload, timeout,
                                           retries=retries, on_retry=on_retry))
 
@@ -680,6 +693,7 @@ PROVIDER_INFO = {
                "https://aistudio.google.com/app/apikey"),
     "openrouter": ("OpenRouter", "https://openrouter.ai/keys"),
     "deepseek": ("DeepSeek", "https://platform.deepseek.com/api_keys"),
+    "opencode-go": ("OpenCode Go", "https://opencode.ai/docs/go/"),
     "ollama": ("Local: Ollama / LM Studio", "https://ollama.com/download"),
 }
 
