@@ -82,6 +82,24 @@ for opt_src, opt_dst in [
 # macOS: built from the release tarball by release-macos.yml. A platform
 # whose files are not there builds without DWG, and --check says so.
 import sys as _sys
+
+
+def _is_macho(path):
+    """True when *path* begins with a Mach-O / universal binary magic.
+
+    macOS builds its dwg2dxf from the LibreDWG tarball in release-macos.yml;
+    the file committed to git is the LINUX ELF, so a plain macOS checkout
+    must not bundle it (a dead 15 MB binary that also fooled --check).
+    """
+    try:
+        head = path.read_bytes()[:4]
+    except OSError:
+        return False
+    return head in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",
+                    b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",
+                    b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca")
+
+
 _DWG_FILES = {
     "linux": ["dwg2dxf"],
     "win32": ["dwg2dxf.exe", "libredwg-0.dll", "libiconv-2.dll"],
@@ -90,8 +108,14 @@ _DWG_FILES = {
 for _plat, _names in _DWG_FILES.items():
     if _sys.platform.startswith(_plat):
         for _n in _names:
-            if (ROOT / "vendor/libredwg/bin" / _n).is_file():
-                datas.append((f"vendor/libredwg/bin/{_n}", "vendor/libredwg/bin"))
+            _src = ROOT / "vendor/libredwg/bin" / _n
+            if not _src.is_file():
+                continue
+            if _plat == "darwin" and not _is_macho(_src):
+                print('spec: dwg2dxf is not a Mach-O — not bundled (macOS '
+                      'DWG needs the LibreDWG build from release-macos.yml)')
+                continue
+            datas.append((f"vendor/libredwg/bin/{_n}", "vendor/libredwg/bin"))
         datas.append(("vendor/libredwg/SOURCES.md", "vendor/libredwg"))
 
 # ── Hidden imports ───────────────────────────────────────────────────────────

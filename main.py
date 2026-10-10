@@ -216,12 +216,16 @@ def _self_check() -> int:
         if not ok:
             problems.append(label)
 
-    # DWG import goes through LibreDWG's dwg2dxf (#101). Every package
-    # carries it now; a packaged build without it is a broken package.
+    # DWG import goes through LibreDWG's dwg2dxf (#101). Linux and Windows
+    # packages carry it and a package without it is broken. macOS gets it
+    # from release-macos.yml (built from the LibreDWG tarball), so a macOS
+    # build from a plain checkout legitimately has none: reported, not
+    # fatal. find_dwg2dxf ignores a binary built for another OS, so the
+    # Linux ELF kept in vendor/ is never mistaken for a working converter.
     from formats.dwg_bridge import find_dwg2dxf
     dwg = find_dwg2dxf()
     print(f"  DWG converter  : {'found' if dwg else 'MISSING'}  {dwg or ''}")
-    if dwg is None and is_frozen():
+    if dwg is None and is_frozen() and sys.platform != "darwin":
         problems.append("DWG converter")
 
     # ``ingetrazo --mcp`` runs scripts/ingetrazo_mcp.py by path, and that

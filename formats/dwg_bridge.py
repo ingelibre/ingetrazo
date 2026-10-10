@@ -43,16 +43,50 @@ class DwgBridgeError(Exception):
     """A DWG conversion failed or no converter is available."""
 
 
+#: Leading bytes of a native executable, per platform. The repository keeps
+#: the LINUX ELF in ``vendor/libredwg/bin`` (release-macos.yml builds the
+#: macOS one from the LibreDWG tarball), so on a plain macOS checkout the
+#: file is present but cannot run — reporting it as a usable converter was a
+#: false "DWG works". A binary built for another OS must be ignored.
+_NATIVE_MAGIC = {
+    "darwin": (
+        b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",   # Mach-O 64/32 little-endian
+        b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",   # Mach-O 64/32 big-endian
+        b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca",   # universal (fat)
+    ),
+    "linux": (b"\x7fELF",),
+    "win32": (b"MZ",),
+}
+
+
+def _is_native_executable(path: Path) -> bool:
+    """True when *path* starts with the magic of the running platform.
+
+    An unknown platform accepts anything (best effort); an unreadable file
+    is rejected.
+    """
+    magic = _NATIVE_MAGIC.get(sys.platform)
+    if not magic:
+        return True
+    try:
+        head = path.open("rb").read(4)
+    except OSError:
+        return False
+    return any(head.startswith(m) for m in magic)
+
+
 def _find_tool(name: str) -> Optional[Path]:
     # Windows ships dwg2dxf.exe (with libredwg-0.dll and libiconv-2.dll
     # beside it, #101); everywhere else the bare name.
     exe = name + ".exe" if sys.platform == "win32" else name
     for base in (_VENDOR_BIN, _SIBLING_BIN):
         bundled = base / exe
-        if bundled.is_file():
+        if bundled.is_file() and _is_native_executable(bundled):
             return bundled
     system = shutil.which(name)
-    return Path(system) if system else None
+    if system and _is_native_executable(Path(system)):
+        return Path(system)
+    return None
 
 
 def find_dwg2dxf() -> Optional[Path]:
