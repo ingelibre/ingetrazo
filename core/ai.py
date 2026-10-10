@@ -507,6 +507,34 @@ def _message_image(m: dict) -> tuple[str | None, str]:
     return shot, mime
 
 
+#: OpenCode Go serves each model family on its own wire format: the OpenAI
+#: chat default covers DeepSeek/GLM/Kimi/MiMo/Hy/Space Bunny/LongCat/Step;
+#: Claude/Qwen/MiniMax speak the Anthropic Messages API, and Grok/GPT Luna/
+#: Muse Spark the OpenAI Responses API (see opencode.ai/docs/go).
+_GO_ANTHROPIC = ("claude", "minimax", "qwen")
+_GO_RESPONSES = ("grok", "gpt", "muse-spark")
+
+
+def _wire_style(provider: str, model: str) -> str:
+    """Which request/response shape a (provider, model) pair speaks."""
+    if provider == "anthropic":
+        return "anthropic"
+    if provider == "opencode-go":
+        m = (model or "").lower()
+        if m.startswith(_GO_ANTHROPIC):
+            return "anthropic"
+        if m.startswith(_GO_RESPONSES):
+            return "responses"
+    return "openai"
+
+
+def _go_session(session_id: str | None) -> str:
+    """A stable per-conversation id: OpenCode Go's endpoints answer 400
+    "Missing sessionID" without the ``x-opencode-session`` header (the
+    /models list does not need it)."""
+    return session_id or uuid.uuid4().hex
+
+
 def build_request(provider: str, model: str, api_key: str,
                   system: str, messages: list,
                   ollama_url: str = "http://localhost:11434",
@@ -518,7 +546,9 @@ def build_request(provider: str, model: str, api_key: str,
     "image_png_b64" / "image_b64"+"image_mime": optional}] — images ride
     only on user turns.
     """
-    if provider == "anthropic":
+    style = _wire_style(provider, model)
+
+    if style == "anthropic":
         content_msgs = []
         for m in messages:
             blocks = [{"type": "text", "text": m["text"]}]
@@ -531,11 +561,44 @@ def build_request(provider: str, model: str, api_key: str,
             content_msgs.append({"role": m["role"], "content": blocks})
         payload = {"model": model, "max_tokens": max_tokens,
                    "system": system, "messages": content_msgs}
+        if provider == "opencode-go":
+            # Go's Anthropic-format endpoint reads the key as x-api-key;
+            # Bearer is kept too so either reading is satisfied.
+            return (_OPENAI_BASES["opencode-go"] + "/messages",
+                    {"Content-Type": "application/json",
+                     "User-Agent": USER_AGENT,
+                     "x-api-key": api_key,
+                     "Authorization": f"Bearer {api_key}",
+                     "anthropic-version": "2023-06-01",
+                     "x-opencode-session": _go_session(session_id)},
+                    json.dumps(payload).encode())
         return ("https://api.anthropic.com/v1/messages",
                 {"Content-Type": "application/json",
                  "User-Agent": USER_AGENT,
                  "x-api-key": api_key,
                  "anthropic-version": "2023-06-01"},
+                json.dumps(payload).encode())
+
+    if style == "responses":
+        input_items = []
+        for m in messages:
+            content: list = []
+            img, mime = _message_image(m)
+            if img:
+                content.append({"type": "input_image",
+                                "image_url": f"data:{mime};base64," + img})
+            content.append({
+                "type": "output_text" if m["role"] == "assistant"
+                else "input_text",
+                "text": m["text"]})
+            input_items.append({"role": m["role"], "content": content})
+        payload = {"model": model, "instructions": system,
+                   "input": input_items, "max_output_tokens": max_tokens}
+        return (_OPENAI_BASES["opencode-go"] + "/responses",
+                {"Content-Type": "application/json",
+                 "User-Agent": USER_AGENT,
+                 "Authorization": f"Bearer {api_key}",
+                 "x-opencode-session": _go_session(session_id)},
                 json.dumps(payload).encode())
 
     base = (ollama_url.rstrip("/") + "/v1" if provider == "ollama"
@@ -556,20 +619,34 @@ def build_request(provider: str, model: str, api_key: str,
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     if provider == "opencode-go":
-        # Go requires a stable per-conversation session id (routing and
-        # prompt caching); without it the chat endpoint answers 400
-        # "Missing sessionID" — the /models list does not.
-        headers["x-opencode-session"] = session_id or uuid.uuid4().hex
+        headers["x-opencode-session"] = _go_session(session_id)
     payload = {"model": model, "max_tokens": max_tokens,
                "messages": oai_msgs}
     return (f"{base}/chat/completions", headers,
             json.dumps(payload).encode())
 
 
-def parse_reply(provider: str, raw: bytes) -> str:
+def _parse_responses(data: dict) -> str:
+    """Text out of an OpenAI Responses payload (``output[].content[]``)."""
+    parts = []
+    for item in data.get("output", []) or []:
+        if item.get("type") != "message":
+            continue
+        for c in item.get("content", []) or []:
+            if c.get("type") in ("output_text", "text"):
+                parts.append(c.get("text", ""))
+    if not parts and isinstance(data.get("output_text"), str):
+        parts.append(data["output_text"])
+    return "".join(parts)
+
+
+def parse_reply(provider: str, raw: bytes, style: str | None = None) -> str:
     data = json.loads(raw)
-    if provider == "anthropic":
+    style = style or ("anthropic" if provider == "anthropic" else "openai")
+    if style == "anthropic":
         return "".join(b.get("text", "") for b in data.get("content", []))
+    if style == "responses":
+        return _parse_responses(data)
     choices = data.get("choices") or []
     if not choices:
         raise ValueError(str(data)[:400])
@@ -637,8 +714,9 @@ def chat(provider: str, model: str, api_key: str, system: str,
     url, headers, payload = build_request(
         provider, model, api_key, system, messages, ollama_url, max_tokens,
         session_id=session_id)
-    return parse_reply(provider, _urlopen(url, headers, payload, timeout,
-                                          retries=retries, on_retry=on_retry))
+    raw = _urlopen(url, headers, payload, timeout,
+                   retries=retries, on_retry=on_retry)
+    return parse_reply(provider, raw, style=_wire_style(provider, model))
 
 
 #: Substrings of model ids that are not chat models (speech, safety,
