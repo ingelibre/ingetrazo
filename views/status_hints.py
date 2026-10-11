@@ -97,6 +97,7 @@ HINTS: dict = {
     "look_around": "Drag to turn the camera. Type the eye height.",
     "walk": "Click and drag to walk. Ctrl = run, Shift = up/down or sideways, Alt = through walls.",
     "first_person": "W/A/S/D = walk, Q/E = down/up, drag = look. Shift = run, Alt = through walls.",
+    "field_of_view": "Drag down to widen the view angle, up to narrow it. Type an angle.",
 }
 
 NAV_HINTS: dict = {

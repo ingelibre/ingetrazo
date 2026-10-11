@@ -1931,7 +1931,9 @@ def apply_frame_camera(camera, frame: MarcoVista,
         if fov is None and saved_view is not None:
             fov = saved_view.fov_deg
         if fov is not None:
-            camera.fov_deg = max(5.0, min(120.0, float(fov)))
+            # The range Camera ▸ Field of View allows
+            # (core.camera.MIN_FOV_DEG / MAX_FOV_DEG).
+            camera.fov_deg = max(1.0, min(120.0, float(fov)))
         dist = frame.cam_distance
         if dist is None and saved_view is not None:
             dist = saved_view.distance

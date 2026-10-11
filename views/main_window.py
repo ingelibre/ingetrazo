@@ -67,6 +67,7 @@ from tools.offset import OffsetTool
 from tools.texture_position import TexturePositionTool
 from tools.walkthrough import (FirstPersonTool, LookAroundTool,
                                PositionCameraTool, WalkTool)
+from tools.field_of_view import FieldOfViewTool
 from tools.paint import PaintTool
 from tools.paste import PasteTool
 from tools.arc import PieTool
@@ -197,6 +198,9 @@ class MainWindow(QMainWindow):
             # Walking as a game plays it (W/A/S/D + mouse look), beside
             # the classic Walk rather than instead of it.
             "first_person": FirstPersonTool(),
+            # Camera ▸ Field of View (tools/field_of_view.py) — the
+            # perspective's angle; a menu entry, no toolbar button.
+            "field_of_view": FieldOfViewTool(),
         }
         # The Solid Tools (tools/solid_tools.py, core/solids.py).
         from tools.solid_tools import SOLID_TOOLS
@@ -1220,8 +1224,24 @@ class MainWindow(QMainWindow):
         camera_menu.addAction(self._act_hidden_geometry)
 
         camera_menu.addSeparator()
-        for action in self._nav_actions.values():   # Orbit / Pan / Zoom / Zoom Window
+        # Field of View sits with the Zoom it is a lens of: Orbit / Pan /
+        # Zoom / Field of View / Zoom Window. A tool rather than a nav mode
+        # (it has a Measurements box), but only the menu shows it.
+        fov_tool = self._tools["field_of_view"]
+        act_fov = QAction(tool_icon(fov_tool.icon), tr(fov_tool.name), self)
+        act_fov.setCheckable(True)
+        act_fov.setStatusTip(tr(fov_tool.description))
+        act_fov.triggered.connect(
+            lambda _c: self._activate_tool("field_of_view"))
+        self._tool_group.addAction(act_fov)
+        self._tool_actions["field_of_view"] = act_fov
+        self._icon_actions.append((act_fov, fov_tool.icon))
+        camera_menu.aboutToShow.connect(
+            lambda: act_fov.setEnabled(self.viewport.camera.perspective))
+        for key, action in self._nav_actions.items():
             camera_menu.addAction(action)
+            if key == "zoom":
+                camera_menu.addAction(act_fov)
         # Camera ▸ Position Camera / Walk / Look Around.
         camera_menu.addSeparator()
         for key in ("position_camera", "walk", "look_around", "first_person"):

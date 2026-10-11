@@ -2457,5 +2457,9 @@
  "Switch to X-ray, or back to the style you were in.": "Muda para raio-X, ou volta ao estilo em que você estava.",
  "Back edges": "Arestas de trás",
  "Draw the edges hidden behind faces as dashed lines.": "Desenha tracejadas as arestas que ficam atrás das faces.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "A extensão de exemplo Propriedades do polígono: área, centroide e momentos de segunda ordem de uma face."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "A extensão de exemplo Propriedades do polígono: área, centroide e momentos de segunda ordem de uma face.",
+ "Field of View": "Campo de visão",
+ "Drag down to widen the perspective's field of view, up to narrow it; or type an angle.": "Arraste para baixo para ampliar o campo de visão da perspectiva, para cima para reduzi-lo; ou digite um ângulo.",
+ "The field of view only applies in perspective — Camera ▸ Toggle Perspective / Parallel (Shift+P)": "O campo de visão só se aplica em perspectiva — Câmera ▸ Alternar Perspectiva / Paralela (Shift+P)",
+ "Drag down to widen the view angle, up to narrow it. Type an angle.": "Arraste para baixo para ampliar o ângulo, para cima para reduzi-lo. Digite um ângulo."
 }

@@ -2459,5 +2459,9 @@
  "Switch to X-ray, or back to the style you were in.": "Passa ai raggi X, o torna allo stile in cui eri.",
  "Back edges": "Spigoli posteriori",
  "Draw the edges hidden behind faces as dashed lines.": "Disegna tratteggiati gli spigoli nascosti dietro le facce.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "L'estensione di esempio Proprietà del poligono: area, baricentro e momenti del secondo ordine di una faccia."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "L'estensione di esempio Proprietà del poligono: area, baricentro e momenti del secondo ordine di una faccia.",
+ "Field of View": "Campo visivo",
+ "Drag down to widen the perspective's field of view, up to narrow it; or type an angle.": "Trascina in basso per allargare il campo visivo della prospettiva, in alto per restringerlo; oppure digita un angolo.",
+ "The field of view only applies in perspective — Camera ▸ Toggle Perspective / Parallel (Shift+P)": "Il campo visivo vale solo in prospettiva — Camera ▸ Alterna Prospettiva / Parallela (Shift+P)",
+ "Drag down to widen the view angle, up to narrow it. Type an angle.": "Trascina in basso per allargare l'angolo, in alto per restringerlo. Digita un angolo."
 }

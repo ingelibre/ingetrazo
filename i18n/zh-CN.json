@@ -2458,5 +2458,9 @@
  "Switch to X-ray, or back to the style you were in.": "切换到X光，或回到之前的样式。",
  "Back edges": "背面边线",
  "Draw the edges hidden behind faces as dashed lines.": "以虚线绘制被面遮挡的边线。",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "示例扩展“多边形属性”：面的面积、形心和二阶矩。"
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "示例扩展“多边形属性”：面的面积、形心和二阶矩。",
+ "Field of View": "视野",
+ "Drag down to widen the perspective's field of view, up to narrow it; or type an angle.": "向下拖动以扩大透视的视野，向上拖动以缩小；或输入角度。",
+ "The field of view only applies in perspective — Camera ▸ Toggle Perspective / Parallel (Shift+P)": "视野仅适用于透视模式 — 相机 ▸ 切换透视 / 平行 (Shift+P)",
+ "Drag down to widen the view angle, up to narrow it. Type an angle.": "向下拖动扩大视角，向上拖动缩小。可输入角度。"
 }

@@ -23,6 +23,12 @@ MIN_DISTANCE = 0.02
 #: Ceiling: past this the model is a dot and the depth buffer is noise.
 MAX_DISTANCE = 10000.0
 
+#: The perspective's field of view (vertical, degrees) that Camera ▸ Field
+#: of View lets you set: from a telephoto sliver to a wide angle. Past
+#: 120° the picture is more distortion than view.
+MIN_FOV_DEG = 1.0
+MAX_FOV_DEG = 120.0
+
 
 class OrbitCamera:
     """Camera that orbits around a target point."""
@@ -309,6 +315,15 @@ class OrbitCamera:
     def toggle_projection(self) -> None:
         self.perspective = not self.perspective
         self.two_point = False
+
+    def set_fov(self, deg: float) -> float:
+        """Camera ▸ Field of View: the angle, kept within
+        [``MIN_FOV_DEG``, ``MAX_FOV_DEG``] and to a hundredth of a degree.
+        The eye stays where it is; only how wide it sees changes. Returns
+        the angle actually set."""
+        deg = max(MIN_FOV_DEG, min(MAX_FOV_DEG, float(deg)))
+        self.fov_deg = round(deg, 2)
+        return self.fov_deg
 
     def toggle_two_point(self) -> None:
         """Camera ▸ Two-Point Perspective; turning it on also

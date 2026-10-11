@@ -2255,5 +2255,9 @@
  "Switch to X-ray, or back to the style you were in.": "Beralih ke Sinar-X, atau kembali ke gaya sebelumnya.",
  "Back edges": "Tepi belakang",
  "Draw the edges hidden behind faces as dashed lines.": "Gambar tepi yang tersembunyi di balik muka sebagai garis putus-putus.",
- "The Polygon properties example extension: area, centroid and second moments of a face.": "Ekstensi contoh Properti poligon: luas, titik berat, dan momen orde kedua dari sebuah muka."
+ "The Polygon properties example extension: area, centroid and second moments of a face.": "Ekstensi contoh Properti poligon: luas, titik berat, dan momen orde kedua dari sebuah muka.",
+ "Field of View": "Bidang Pandang",
+ "Drag down to widen the perspective's field of view, up to narrow it; or type an angle.": "Seret ke bawah untuk memperlebar bidang pandang perspektif, ke atas untuk mempersempitnya; atau ketik sebuah sudut.",
+ "The field of view only applies in perspective — Camera ▸ Toggle Perspective / Parallel (Shift+P)": "Bidang pandang hanya berlaku dalam perspektif — Kamera ▸ Beralih Perspektif / Paralel (Shift+P)",
+ "Drag down to widen the view angle, up to narrow it. Type an angle.": "Seret ke bawah untuk memperlebar sudut, ke atas untuk mempersempitnya. Ketik sebuah sudut."
 }
