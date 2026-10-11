@@ -403,3 +403,38 @@ def test_hovering_an_arc_ghosts_the_dimension_before_the_click():
     assert ghost.contains(QPointF(cx + r, cy))      # …out to the ring
     assert view._track(QPointF(cx + 3 * r, cy + 3 * r), Qt.NoModifier)
     assert view._preview is None
+
+
+# ---- the properties panel edits it ---------------------------------------
+
+def test_the_panel_edits_a_selected_radius(monkeypatch):
+    """Every field of the radius/diameter panel called a helper that does
+    not exist, so an edit raised in the slot and never reached the cota."""
+    from PySide6.QtWidgets import QApplication
+    from views.composer import ComposerWindow, CotaRadialCanvasItem
+    from views.main_window import MainWindow
+    monkeypatch.setattr(ComposerWindow, "render_frame", lambda self, f: None)
+    win = MainWindow()
+    comp = None
+    try:
+        comp = ComposerWindow(win)
+        comp.comp.cotas_rad.append(_r())
+        comp._rebuild_canvas()
+        item = next(it for it in comp.canvas.items()
+                    if isinstance(it, CotaRadialCanvasItem))
+        item.setSelected(True)
+        QApplication.processEvents()
+        assert comp.props.currentIndex() == 15          # the radius page
+
+        comp.crad_radius.setValue(35.0)
+        comp.crad_stroke.setValue(0.7)
+        comp.crad_kind.setCurrentIndex(comp.crad_kind.findData("diameter"))
+        model = comp.comp.cotas_rad[0]
+        assert model.radius_mm == pytest.approx(35.0)
+        assert model.stroke_mm == pytest.approx(0.7)
+        assert model.kind == "diameter"
+    finally:
+        if comp is not None:
+            comp.close()
+        win._saved_version = win.viewport.scene.version
+        win.close()
