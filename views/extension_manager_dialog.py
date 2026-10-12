@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSpacerItem,
     QSizePolicy,
     QTabWidget,
     QToolButton,
@@ -68,12 +69,11 @@ _ROW_MAX_HEIGHT = 300
 _ROW_MAX_WIDTH = 660
 _RENDER_BATCH_SIZE = 3
 _RENDER_BATCH_INTERVAL_MS = 1
+_CARD_OVERSCAN_ROWS = 1
 #: The width a column of cards asks for: two at the usual size, three on a
 #: maximised Full HD window, more on a wider one — no empty band at the
 #: right (Marco, 09-10).
 _COLUMN_WIDTH = 560
-
-
 
 #: The catalog's fixed tags (tools/catalog.py TAGS), named as the web page
 #: names them; an unknown tag falls back to its own words.
@@ -88,6 +88,7 @@ _TAG_LABELS = {
 
 def _tag_label(tag: str) -> str:
     return tr(_TAG_LABELS.get(tag, tag.replace("-", " ").title()))
+
 
 class _CatalogWorker(QObject):
     completed = Signal(object, object)
@@ -189,6 +190,10 @@ class ExtensionManagerDialog(QDialog):
         super().showEvent(event)
         if not self._initial_load_timer.isActive():
             self._initial_load_timer.start()
+        key = self._active_page_key()
+        if self._pages[key]["render_items"]:
+            self._schedule_visible_cards(key)
+            self._images_timer.start()
 
     def _build_page(self, key: str) -> QWidget:
         page = QWidget()
@@ -272,7 +277,8 @@ class ExtensionManagerDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.verticalScrollBar().valueChanged.connect(
-            self._images_timer.start)
+            lambda _value, page_key=key:
+            self._schedule_visible_cards(page_key))
         cards = QWidget()
         grid = QGridLayout(cards)
         grid.setContentsMargins(2, 2, 2, 12)
@@ -309,6 +315,8 @@ class ExtensionManagerDialog(QDialog):
             "render_timer": render_timer,
             "render_items": [],
             "render_index": 0,
+            "pending_indices": [],
+            "items_ready": False,
             "shown": 0,
             "total": 0,
             "dirty": True,
@@ -489,6 +497,8 @@ class ExtensionManagerDialog(QDialog):
         page["render_timer"].stop()
         page["render_items"] = []
         page["render_index"] = 0
+        page["pending_indices"] = []
+        page["items_ready"] = False
         if ident is None:
             rows = list(page["rows"].values())
             page["rows"].clear()
@@ -499,6 +509,7 @@ class ExtensionManagerDialog(QDialog):
             page["image_labels"].pop(ident, None)
         hand_rows = list(page["hand_rows"].values())
         page["hand_rows"].clear()
+        page["pending_indices"] = []
         for row in rows + hand_rows:
             row.hide()
             row.deleteLater()
@@ -558,17 +569,15 @@ class ExtensionManagerDialog(QDialog):
     def _render_page(self, key: str, *_args) -> None:
         page = self._pages[key]
         page["render_timer"].stop()
-        page["render_items"] = []
+        page["pending_indices"] = []
         page["render_index"] = 0
         self._clear_cards(key)
         extensions = self._filtered_extensions(key)
         unknown = self._hand_only(key) if key == "installed" else []
         items = ([("extension", extension) for extension in extensions]
                  + [("hand", path) for path in unknown])
-        missing = sum(
-            item.id not in page["rows"] if kind == "extension"
-            else item not in page["hand_rows"]
-            for kind, item in items)
+        page["render_items"] = items
+        page["items_ready"] = True
         page["dirty"] = True
         page["shown"] = len(items)
         page["total"] = (sum(installed_info(e.id) is not None
@@ -576,39 +585,18 @@ class ExtensionManagerDialog(QDialog):
                              for e in self._extensions)
                          + len(self._hand_only(key, filtered=False))
                          if key == "installed" else len(self._extensions))
-        if missing > _RENDER_BATCH_SIZE:
-            page["render_items"] = items
-            page["render_index"] = 0
-            page["render_timer"].start(0)
-            return
-
-        language = current_language()
-        rows = []
-        for kind, item in items:
-            if kind == "extension":
-                row = page["rows"].get(item.id)
-                if row is None:
-                    row = self._make_row(item, language, page["cards"], key)
-                    page["rows"][item.id] = row
-            else:
-                row = page["hand_rows"].get(item)
-                if row is None:
-                    row = self._make_hand_row(item, page["cards"])
-                    page["hand_rows"][item] = row
-            rows.append(row)
-        self._place_cards(key, rows)
-        for row in rows:
-            row.show()
-        self._finish_page_render(key, page)
+        self._install_card_placeholders(key)
+        self._schedule_visible_cards(key)
 
     def _render_batch(self, key: str) -> None:
         page = self._pages[key]
         items = page["render_items"]
-        start = page["render_index"]
-        end = min(start + _RENDER_BATCH_SIZE, len(items))
+        pending = page["pending_indices"]
+        indices = pending[:_RENDER_BATCH_SIZE]
+        del pending[:len(indices)]
         columns = self._columns(key)
         grid = page["grid"]
-        for index in range(start, end):
+        for index in indices:
             kind, item = items[index]
             if kind == "extension":
                 row = page["rows"].get(item.id)
@@ -621,16 +609,84 @@ class ExtensionManagerDialog(QDialog):
                 if row is None:
                     row = self._make_hand_row(item, page["cards"])
                     page["hand_rows"][item] = row
-            grid.addWidget(row, index // columns, index % columns)
+            cell = grid.itemAtPosition(index // columns, index % columns)
+            if cell is not None and cell.widget() is not row:
+                grid.removeItem(cell)
+            if cell is None or cell.widget() is not row:
+                grid.addWidget(row, index // columns, index % columns)
             row.show()
         page["columns"] = columns
-        page["render_index"] = end
-        if end < len(items):
+        if pending:
             page["render_timer"].start(_RENDER_BATCH_INTERVAL_MS)
             return
-        page["render_items"] = []
         page["render_index"] = 0
-        self._finish_page_render(key, page)
+        if page["dirty"]:
+            self._finish_page_render(key, page)
+        elif key == self._active_page_key():
+            self._images_timer.start()
+
+    def _install_card_placeholders(self, key: str) -> None:
+        page = self._pages[key]
+        grid = page["grid"]
+        columns = self._columns(key)
+        for column in range(max(columns, grid.columnCount())):
+            grid.setColumnStretch(column, 1 if column < columns else 0)
+        for index in range(len(page["render_items"])):
+            grid.addItem(
+                QSpacerItem(0, _ROW_MAX_HEIGHT, QSizePolicy.Minimum,
+                            QSizePolicy.Fixed),
+                index // columns, index % columns)
+        page["columns"] = columns
+
+    def _visible_card_indices(self, key: str) -> list[int]:
+        page = self._pages[key]
+        items = page["render_items"]
+        if not items:
+            return []
+        columns = self._columns(key)
+        viewport = page["scroll"].viewport()
+        if viewport.height() <= 0:
+            return list(range(len(items)))
+
+        row_height = _ROW_MAX_HEIGHT + page["grid"].verticalSpacing()
+        scroll_top = page["scroll"].verticalScrollBar().value()
+        total_rows = (len(items) + columns - 1) // columns
+        first_row = max(
+            0, scroll_top // row_height - _CARD_OVERSCAN_ROWS)
+        last_row = min(
+            total_rows - 1,
+            (scroll_top + viewport.height()) // row_height
+            + _CARD_OVERSCAN_ROWS)
+        start = first_row * columns
+        end = min(len(items), (last_row + 1) * columns)
+        return list(range(start, end))
+
+    def _schedule_visible_cards(self, key: str) -> None:
+        page = self._pages[key]
+        if not page["items_ready"]:
+            return
+        if not page["render_items"]:
+            if page["dirty"]:
+                self._finish_page_render(key, page)
+            if key == self._active_page_key():
+                self._images_timer.start()
+            return
+
+        columns = self._columns(key)
+        grid = page["grid"]
+        pending = []
+        for index in self._visible_card_indices(key):
+            cell = grid.itemAtPosition(index // columns, index % columns)
+            if cell is None or cell.widget() is None:
+                pending.append(index)
+        page["pending_indices"] = pending
+        page["render_index"] = 0
+        if pending:
+            page["render_timer"].start(0)
+        elif page["dirty"]:
+            self._finish_page_render(key, page)
+        elif key == self._active_page_key():
+            self._images_timer.start()
 
     def _finish_page_render(self, key: str, page: dict) -> None:
         page["dirty"] = False
@@ -651,29 +707,15 @@ class ExtensionManagerDialog(QDialog):
         width = self._pages[key]["scroll"].viewport().width()
         return max(1, width // _COLUMN_WIDTH)
 
-    def _place_cards(self, key: str, rows: list) -> None:
-        """Lay the cards out in as many columns as fit, in order."""
-        grid = self._pages[key]["grid"]
-        columns = self._columns(key)
-        for column in range(max(columns, grid.columnCount())):
-            grid.setColumnStretch(column, 1 if column < columns else 0)
-        for index, row in enumerate(rows):
-            grid.addWidget(row, index // columns, index % columns)
-        self._pages[key]["columns"] = columns
-
     def eventFilter(self, obj, event) -> bool:
-        # A wider or narrower card area: the same cards, in the columns
-        # that fit now — moved, not rebuilt (their images stay).
+        # Reflow lightweight placeholders, then materialize the new viewport.
         if event.type() == QEvent.Resize:
             for key, page in getattr(self, "_pages", {}).items():
                 if (obj is page["scroll"].viewport()
                         and self._columns(key) != page.get("columns")):
-                    grid = page["grid"]
-                    rows = [grid.itemAt(i).widget()
-                            for i in range(grid.count())]
-                    for row in rows:
-                        grid.removeWidget(row)
-                    self._place_cards(key, rows)
+                    self._clear_cards(key)
+                    self._install_card_placeholders(key)
+                    self._schedule_visible_cards(key)
         return super().eventFilter(obj, event)
 
     def _on_tab_changed(self, _index: int) -> None:
@@ -706,7 +748,7 @@ class ExtensionManagerDialog(QDialog):
         row = QWidget(parent)
         row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.setMinimumWidth(400)
-        row.setMaximumHeight(_ROW_MAX_HEIGHT)
+        row.setFixedHeight(_ROW_MAX_HEIGHT)
         row.setMaximumWidth(_ROW_MAX_WIDTH)
         row.setStyleSheet(
             "QWidget#extensionRow { background: palette(base); "
@@ -988,7 +1030,8 @@ class ExtensionManagerDialog(QDialog):
         visible = page["scroll"].viewport().rect()
         for extension in self._filtered_extensions():
             label = page["image_labels"].get(extension.id)
-            if label is None or extension.id in self._screenshots:
+            if (label is None or not label.isVisible()
+                    or extension.id in self._screenshots):
                 continue
             label_rect = label.geometry()
             label_rect.moveTopLeft(label.mapTo(
@@ -1125,6 +1168,7 @@ class ExtensionManagerDialog(QDialog):
         row.setObjectName("extensionRow")
         row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.setMinimumWidth(400)
+        row.setFixedHeight(_ROW_MAX_HEIGHT)
         row.setMaximumWidth(_ROW_MAX_WIDTH)
         row.setStyleSheet(
             "QWidget#extensionRow { background: palette(base); "

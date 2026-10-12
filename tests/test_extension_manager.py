@@ -64,6 +64,10 @@ def _stub_catalog(monkeypatch, module, extensions, reviewed=None):
 
 
 def _wait_for_catalog(dialog, app):
+    if not dialog.isVisible():
+        dialog.resize(1180, 800)
+        dialog.show()
+        app.processEvents()
     if dialog._catalog_worker is None:
         dialog._load()
     page = dialog._pages["browse"]
@@ -80,6 +84,24 @@ def _wait_for_catalog(dialog, app):
     loop.exec()
     timer.stop()
     assert dialog._catalog_worker is None
+
+
+def _wait_for_page_render(dialog, app, key):
+    page = dialog._pages[key]
+    if not page["dirty"] and not page["render_timer"].isActive():
+        return
+    loop = QEventLoop()
+    timer = QTimer()
+    timer.setInterval(10)
+    timer.timeout.connect(
+        lambda: loop.quit()
+        if not page["dirty"] and not page["render_timer"].isActive()
+        else None)
+    timer.start()
+    QTimer.singleShot(15000, loop.quit)
+    loop.exec()
+    timer.stop()
+    assert not page["dirty"]
 
 
 def test_catalog_validation_and_review_uses_the_reviewed_hash(
@@ -666,8 +688,15 @@ def test_catalog_refresh_reuses_cards_and_renders_installed_tab_lazily(
 
         dialog._tabs.setCurrentIndex(1)
         installed_page = dialog._pages["installed"]
+        _wait_for_page_render(dialog, app, "installed")
         assert installed_page["dirty"] is False
-        assert installed_page["grid"].count() == 1
+        assert installed_page["shown"] == 1, (
+            dialog._tabs.currentIndex(), installed_page["render_items"],
+            installed_page["pending_indices"])
+        assert installed_page["grid"].count() == 1, (
+            installed_page["shown"],
+            [extension.id for extension in
+             dialog._filtered_extensions("installed")])
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -700,12 +729,11 @@ def test_catalog_update_rebuilds_only_cards_with_changed_data(
             False,
         )
         dialog._apply_catalog(updated)
-        rows = [page["grid"].itemAt(index).widget()
-                for index in range(page["grid"].count())]
-        assert rows[0] is previous["sample_0"]
-        assert rows[1] is not previous["sample_1"]
-        assert rows[2] is previous["sample_2"]
-        assert rows[3] is previous["sample_3"]
+        _wait_for_page_render(dialog, app, "browse")
+        assert page["rows"]["sample_0"] is previous["sample_0"]
+        assert page["rows"]["sample_1"] is not previous["sample_1"]
+        assert page["rows"]["sample_2"] is previous["sample_2"]
+        assert page["rows"]["sample_3"] is previous["sample_3"]
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -717,32 +745,43 @@ def test_large_card_render_is_split_into_event_loop_batches(
     app = QApplication.instance() or QApplication([])
     extensions = [
         _extension(f"source {index}".encode(), f"sample_{index}")
-        for index in range(9)
+        for index in range(60)
     ]
     from views import extension_manager_dialog as dialog_module
     _stub_catalog(monkeypatch, dialog_module, extensions)
     monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
     dialog = dialog_module.ExtensionManagerDialog()
     try:
+        dialog.resize(1180, 800)
+        dialog.show()
+        app.processEvents()
+        dialog._load()
         _wait_for_catalog(dialog, app)
         page = dialog._pages["browse"]
-        dialog._discard_cached_rows("browse")
-        page["dirty"] = True
-        dialog._render_page("browse")
-        assert page["render_timer"].isActive()
-        assert page["grid"].count() == 0
+        assert page["grid"].count() == len(extensions)
+        assert len(page["rows"]) < len(extensions)
+        first_card = page["rows"]["sample_0"]
 
+        scrollbar = page["scroll"].verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
         loop = QEventLoop()
         timer = QTimer()
         timer.setInterval(10)
         timer.timeout.connect(
-            lambda: loop.quit() if not page["dirty"] else None)
+            lambda: loop.quit()
+            if not page["render_timer"].isActive()
+            and not page["pending_indices"] else None)
         timer.start()
         QTimer.singleShot(15000, loop.quit)
         loop.exec()
         timer.stop()
-        assert not page["dirty"]
-        assert page["grid"].count() == len(extensions)
+        assert not page["render_timer"].isActive()
+        assert "sample_59" in page["rows"]
+        assert len(page["rows"]) < len(extensions)
+
+        scrollbar.setValue(0)
+        app.processEvents()
+        assert page["rows"]["sample_0"] is first_card
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -765,12 +804,15 @@ def test_extension_views_use_two_columns_and_16_by_10_previews(
         dialog.resize(1180, 800)
         dialog.show()
         app.processEvents()
+        _wait_for_page_render(dialog, app, "browse")
         grid = dialog._pages["browse"]["grid"]
         assert grid.count() == len(extensions)
-        for index in range(grid.count()):
-            _row, column, _row_span, _column_span = grid.getItemPosition(index)
-            assert column == index % 2
-            assert grid.itemAt(index).widget().width() >= 400
+        for index in range(len(extensions)):
+            row, column = divmod(index, 2)
+            item = grid.itemAtPosition(row, column)
+            assert item is not None
+            assert item.widget() is not None
+            assert item.widget().width() >= 400
         image = dialog._pages["browse"]["image_labels"]["extension_0"]
         assert image.width() * 10 == image.height() * 16
         assert image.width() > 200
@@ -1005,7 +1047,7 @@ def test_switching_tabs_keeps_the_cards_and_their_screenshots(
         dialog.show()
         app.processEvents()
         grid = dialog._pages["browse"]["grid"]
-        cards = [grid.itemAt(i).widget() for i in range(grid.count())]
+        cards = dict(dialog._pages["browse"]["rows"])
         labels = dict(dialog._pages["browse"]["image_labels"])
         assert set(dialog._screenshots) == {e.id for e in extensions}
         assert all(not label.pixmap().isNull() for label in labels.values())
@@ -1014,12 +1056,12 @@ def test_switching_tabs_keeps_the_cards_and_their_screenshots(
         app.processEvents()
         dialog._tabs.setCurrentIndex(0)
         app.processEvents()
-        assert [grid.itemAt(i).widget() for i in range(grid.count())] == cards
+        assert dialog._pages["browse"]["rows"] == cards
         assert "3 of 3 extensions" in dialog._catalog_info.text()
 
         # Filtering and sorting reuse card widgets and their decoded images.
         dialog._render_page("browse")
-        assert [grid.itemAt(i).widget() for i in range(grid.count())] == cards
+        assert dialog._pages["browse"]["rows"] == cards
         for ident, label in dialog._pages["browse"]["image_labels"].items():
             assert label is labels[ident]
             assert not label.pixmap().isNull()
