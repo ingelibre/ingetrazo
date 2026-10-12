@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -211,8 +212,13 @@ def refresh_catalog() -> CatalogSnapshot:
     instead. With no usable cache, the original network error is raised.
     """
     try:
-        catalog_data = _get(CATALOG_URL, MAX_CATALOG_BYTES)
-        reviewed_data = _get(REVIEWED_URL, MAX_CATALOG_BYTES)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            catalog_future = executor.submit(
+                _get, CATALOG_URL, MAX_CATALOG_BYTES)
+            reviewed_future = executor.submit(
+                _get, REVIEWED_URL, MAX_CATALOG_BYTES)
+            catalog_data = catalog_future.result()
+            reviewed_data = reviewed_future.result()
         fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         snapshot = _parse_catalog(
             catalog_data, reviewed_data, fetched_at, False)

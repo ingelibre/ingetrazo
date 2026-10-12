@@ -10,9 +10,11 @@ follow [SemVer](https://semver.org).
 - **El gestor de extensiones ya no parpadea al cambiar de pestaña, instalar
   o descargar** (#555): cada cambio entre Explorar e Instaladas reconstruía
   todas las tarjetas, las viejas seguían pintadas un instante debajo de las
-  nuevas y cada captura se volvía a leer y escalar. Ahora cambiar de pestaña
-  solo muestra la otra página, una reconstrucción se pinta de una vez y las
-  tarjetas nacen con su imagen. Se notaba sobre todo en Windows.
+  nuevas y cada captura se volvía a leer y escalar. Ahora la ventana aparece
+  antes de cargar el catálogo, las tarjetas nuevas se crean en tandas pequeñas
+  y filtros, etiquetas y orden reutilizan las ya creadas. Una actualización
+  solo reconstruye las tarjetas que cambiaron; el gestor conserva sus
+  tarjetas e imágenes entre aperturas. Se notaba sobre todo en Windows.
 
 ## [0.5.8] — 2026-10-12
 

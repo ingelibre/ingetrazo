@@ -230,6 +230,7 @@ class MainWindow(QMainWindow):
         # main.py passes True: the plugins' setup runs once the window is up
         # (see load_extensions). Set first — the menu bar is built below.
         self._defer_extensions = bool(defer_extensions)
+        self._extension_manager_dialog = None
         self.resize(1280, 800)
 
         self._tools = {
@@ -2443,10 +2444,12 @@ class MainWindow(QMainWindow):
                 self._pack_toolbars()
 
     def _on_manage_extensions(self) -> None:
-        from views.extension_manager_dialog import ExtensionManagerDialog
-        dialog = ExtensionManagerDialog(self)
+        dialog = self._extension_manager_dialog
+        if dialog is None:
+            from views.extension_manager_dialog import ExtensionManagerDialog
+            dialog = ExtensionManagerDialog(self)
+            self._extension_manager_dialog = dialog
         dialog.exec()
-        dialog.deleteLater()
 
     PLUGIN_GUIDE_URL = ("https://github.com/ingelibre/ingetrazo"
                         "/blob/main/docs/plugins.md")

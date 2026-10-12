@@ -25,3 +25,22 @@ def test_develop_an_extension_opens_the_guide(monkeypatch):
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_manage_extensions_reuses_the_dialog_and_its_card_cache(monkeypatch):
+    from views.extension_manager_dialog import ExtensionManagerDialog
+    from views.main_window import MainWindow
+    opened = []
+    monkeypatch.setattr(
+        ExtensionManagerDialog, "exec",
+        lambda dialog: opened.append(dialog) or 0)
+    win = MainWindow()
+    try:
+        win._on_manage_extensions()
+        first = win._extension_manager_dialog
+        win._on_manage_extensions()
+        assert win._extension_manager_dialog is first
+        assert opened == [first, first]
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

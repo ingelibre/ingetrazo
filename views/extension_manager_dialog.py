@@ -66,6 +66,8 @@ _MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024
 _IMAGE_SIZE = (256, 160)  # 16:10
 _ROW_MAX_HEIGHT = 300
 _ROW_MAX_WIDTH = 660
+_RENDER_BATCH_SIZE = 3
+_RENDER_BATCH_INTERVAL_MS = 1
 #: The width a column of cards asks for: two at the usual size, three on a
 #: maximised Full HD window, more on a wider one — no empty band at the
 #: right (Marco, 09-10).
@@ -139,6 +141,10 @@ class ExtensionManagerDialog(QDialog):
         self._images_timer.setSingleShot(True)
         self._images_timer.setInterval(0)
         self._images_timer.timeout.connect(self._load_visible_images)
+        self._initial_load_timer = QTimer(self)
+        self._initial_load_timer.setSingleShot(True)
+        self._initial_load_timer.setInterval(100)
+        self._initial_load_timer.timeout.connect(self._load)
         self._network = QNetworkAccessManager(self)
         self._pages: dict[str, dict] = {}
 
@@ -178,7 +184,11 @@ class ExtensionManagerDialog(QDialog):
         close.clicked.connect(self.accept)
         footer.addWidget(close)
         layout.addLayout(footer)
-        self._load()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._initial_load_timer.isActive():
+            self._initial_load_timer.start()
 
     def _build_page(self, key: str) -> QWidget:
         page = QWidget()
@@ -274,6 +284,10 @@ class ExtensionManagerDialog(QDialog):
         scroll.setWidget(cards)
         scroll.viewport().installEventFilter(self)   # columns follow width
         page_layout.addWidget(scroll, 1)
+        render_timer = QTimer(page)
+        render_timer.setSingleShot(True)
+        render_timer.timeout.connect(lambda page_key=key:
+                                     self._render_batch(page_key))
 
         self._pages[key] = {
             "search": search,
@@ -290,12 +304,19 @@ class ExtensionManagerDialog(QDialog):
             "cards": cards,
             "grid": grid,
             "image_labels": {},
+            "rows": {},
+            "hand_rows": {},
+            "render_timer": render_timer,
+            "render_items": [],
+            "render_index": 0,
             "shown": 0,
             "total": 0,
+            "dirty": True,
         }
         return page
 
     def _load(self) -> None:
+        self._initial_load_timer.stop()
         if self._catalog_worker is not None:
             return
         cached = load_cached_catalog()
@@ -311,16 +332,35 @@ class ExtensionManagerDialog(QDialog):
         QThreadPool.globalInstance().start(worker)
 
     def _apply_catalog(self, snapshot) -> None:
+        previous_extensions = self._extensions
+        previous_reviewed = self._reviewed
+        extensions = self._with_bundled(snapshot.extensions)
+        previous_by_id = {extension.id: extension
+                          for extension in previous_extensions}
+        current_by_id = {extension.id: extension for extension in extensions}
+        changed_ids = {
+            ident for ident in previous_by_id.keys() | current_by_id.keys()
+            if previous_by_id.get(ident) != current_by_id.get(ident)
+        }
+        for ident in previous_by_id.keys() & current_by_id.keys():
+            if (is_reviewed(previous_by_id[ident], previous_reviewed)
+                    != is_reviewed(current_by_id[ident], snapshot.reviewed)):
+                changed_ids.add(ident)
+        old_tags = {tag for extension in previous_extensions
+                    for tag in extension.tags}
+        new_tags = {tag for extension in extensions for tag in extension.tags}
+        catalog_changed = (extensions != previous_extensions
+                           or bool(changed_ids))
         self._catalog_snapshot = snapshot
-        self._extensions = self._with_bundled(snapshot.extensions)
+        self._extensions = extensions
         self._reviewed = snapshot.reviewed
+        has_update_dates = any(
+            extension.updated_at for extension in self._extensions)
         for key in self._pages:
             recent_index = self._pages[key]["sort"].findData("recent")
             if recent_index >= 0:
                 recent_item = self._pages[key]["sort"].model().item(
                     recent_index)
-                has_update_dates = any(
-                    extension.updated_at for extension in self._extensions)
                 recent_item.setEnabled(has_update_dates)
             else:
                 recent_item = None
@@ -330,8 +370,18 @@ class ExtensionManagerDialog(QDialog):
                     tr("The catalog does not include per-extension update "
                        "dates."),
                     Qt.ToolTipRole)
-            self._populate_tags(key)
+            if catalog_changed:
+                for ident in changed_ids:
+                    self._discard_cached_rows(key, ident)
+                if (old_tags != new_tags
+                        or not self._pages[key]["tags_group"].buttons()):
+                    self._populate_tags(key)
+                self._pages[key]["dirty"] = True
+        key = self._active_page_key()
+        if self._pages[key]["dirty"]:
             self._render_page(key)
+        else:
+            self._show_count(key)
 
     def _catalog_loaded(self, snapshot, error) -> None:
         self._catalog_worker = None
@@ -343,7 +393,9 @@ class ExtensionManagerDialog(QDialog):
             # still installs from here.
             self._extensions = self._with_bundled([])
             for key in self._pages:
-                self._render_page(key)
+                self._populate_tags(key)
+                self._pages[key]["dirty"] = True
+            self._render_page(self._active_page_key())
             self._catalog_info.setText(
                 tr("Could not load extensions: {error}", error=str(error)))
         else:
@@ -426,11 +478,30 @@ class ExtensionManagerDialog(QDialog):
             item = grid.takeAt(0)
             widget = item.widget()
             if widget is not None:
-                # Out of the layout is not off the screen: until deleteLater
-                # runs, the old card would be painted under the new ones.
                 widget.hide()
-                widget.deleteLater()
-        page["image_labels"].clear()
+        for row in page["rows"].values():
+            row.hide()
+        for row in page["hand_rows"].values():
+            row.hide()
+
+    def _discard_cached_rows(self, key: str, ident: str | None = None) -> None:
+        page = self._pages[key]
+        page["render_timer"].stop()
+        page["render_items"] = []
+        page["render_index"] = 0
+        if ident is None:
+            rows = list(page["rows"].values())
+            page["rows"].clear()
+            page["image_labels"].clear()
+        else:
+            row = page["rows"].pop(ident, None)
+            rows = [row] if row is not None else []
+            page["image_labels"].pop(ident, None)
+        hand_rows = list(page["hand_rows"].values())
+        page["hand_rows"].clear()
+        for row in rows + hand_rows:
+            row.hide()
+            row.deleteLater()
 
     def _filtered_extensions(self, key: str | None = None) -> list[Extension]:
         key = key or self._active_page_key()
@@ -486,27 +557,84 @@ class ExtensionManagerDialog(QDialog):
 
     def _render_page(self, key: str, *_args) -> None:
         page = self._pages[key]
-        cards = page["cards"]
-        # One repaint for the whole swap, not one per card taken out and
-        # put in: on Windows the half-built page showed as a flash (#555).
-        cards.setUpdatesEnabled(False)
-        try:
-            self._clear_cards(key)
-            extensions = self._filtered_extensions(key)
-            language = current_language()
-            rows = [self._make_row(extension, language, cards, key)
-                    for extension in extensions]
-            unknown = self._hand_only(key) if key == "installed" else []
-            rows += [self._make_hand_row(path, cards) for path in unknown]
-            self._place_cards(key, rows)
-        finally:
-            cards.setUpdatesEnabled(True)
-        page["shown"] = len(extensions) + len(unknown)
+        page["render_timer"].stop()
+        page["render_items"] = []
+        page["render_index"] = 0
+        self._clear_cards(key)
+        extensions = self._filtered_extensions(key)
+        unknown = self._hand_only(key) if key == "installed" else []
+        items = ([("extension", extension) for extension in extensions]
+                 + [("hand", path) for path in unknown])
+        missing = sum(
+            item.id not in page["rows"] if kind == "extension"
+            else item not in page["hand_rows"]
+            for kind, item in items)
+        page["dirty"] = True
+        page["shown"] = len(items)
         page["total"] = (sum(installed_info(e.id) is not None
                              or installation_conflict(e.id)
                              for e in self._extensions)
                          + len(self._hand_only(key, filtered=False))
                          if key == "installed" else len(self._extensions))
+        if missing > _RENDER_BATCH_SIZE:
+            page["render_items"] = items
+            page["render_index"] = 0
+            page["render_timer"].start(0)
+            return
+
+        language = current_language()
+        rows = []
+        for kind, item in items:
+            if kind == "extension":
+                row = page["rows"].get(item.id)
+                if row is None:
+                    row = self._make_row(item, language, page["cards"], key)
+                    page["rows"][item.id] = row
+            else:
+                row = page["hand_rows"].get(item)
+                if row is None:
+                    row = self._make_hand_row(item, page["cards"])
+                    page["hand_rows"][item] = row
+            rows.append(row)
+        self._place_cards(key, rows)
+        for row in rows:
+            row.show()
+        self._finish_page_render(key, page)
+
+    def _render_batch(self, key: str) -> None:
+        page = self._pages[key]
+        items = page["render_items"]
+        start = page["render_index"]
+        end = min(start + _RENDER_BATCH_SIZE, len(items))
+        columns = self._columns(key)
+        grid = page["grid"]
+        for index in range(start, end):
+            kind, item = items[index]
+            if kind == "extension":
+                row = page["rows"].get(item.id)
+                if row is None:
+                    row = self._make_row(
+                        item, current_language(), page["cards"], key)
+                    page["rows"][item.id] = row
+            else:
+                row = page["hand_rows"].get(item)
+                if row is None:
+                    row = self._make_hand_row(item, page["cards"])
+                    page["hand_rows"][item] = row
+            grid.addWidget(row, index // columns, index % columns)
+            row.show()
+        page["columns"] = columns
+        page["render_index"] = end
+        if end < len(items):
+            page["render_timer"].start(_RENDER_BATCH_INTERVAL_MS)
+            return
+        page["render_items"] = []
+        page["render_index"] = 0
+        self._finish_page_render(key, page)
+
+    def _finish_page_render(self, key: str, page: dict) -> None:
+        page["dirty"] = False
+        page["rendered"] = True
         if key == self._active_page_key():
             self._show_count(key)
             self._images_timer.start()
@@ -549,13 +677,18 @@ class ExtensionManagerDialog(QDialog):
         return super().eventFilter(obj, event)
 
     def _on_tab_changed(self, _index: int) -> None:
-        # Both pages are rebuilt whenever what they show changes (catalog,
-        # install, enable, their own filters), so a tab change only shows
-        # the other one. Rebuilding it here, on every switch, was the
-        # flash between the two tabs (#555).
         key = self._active_page_key()
-        self._show_count(key)
+        if self._pages[key]["dirty"]:
+            self._render_page(key)
+        else:
+            self._show_count(key)
         self._images_timer.start()
+
+    def _invalidate_pages(self, ident: str | None = None) -> None:
+        for key, page in self._pages.items():
+            self._discard_cached_rows(key, ident)
+            page["dirty"] = True
+        self._render_page(self._active_page_key())
 
     def _make_row(self, extension: Extension, language: str,
                   parent: QWidget, page_key: str) -> QWidget:
@@ -949,8 +1082,7 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension installed"),
             tr("«{name}» is installed. Restart IngeTrazo to load it.",
                name=display_name(extension, current_language())))
-        for key in self._pages:
-            self._render_page(key)
+        self._invalidate_pages(extension.id)
 
     def _uninstall(self, extension: Extension) -> None:
         answer = QMessageBox.question(
@@ -969,8 +1101,7 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension uninstalled"),
             tr("«{name}» is uninstalled. Restart IngeTrazo to apply the "
                "change.", name=display_name(extension, current_language())))
-        for key in self._pages:
-            self._render_page(key)
+        self._invalidate_pages(extension.id)
 
     # ---- Extensions installed by hand ----------------------------------
     # Until 0.5.8 an extension was installed by copying its folder into the
@@ -1055,8 +1186,7 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension uninstalled"),
             tr("«{name}» is set aside as {folder}. Restart IngeTrazo to "
                "apply the change.", name=name, folder=aside.name))
-        for key in self._pages:
-            self._render_page(key)
+        self._invalidate_pages(name)
 
     def _replace(self, extension: Extension) -> None:
         name = display_name(extension, current_language())
@@ -1085,8 +1215,7 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension installed"),
             tr("«{name}» is installed. Restart IngeTrazo to load it.",
                name=name))
-        for key in self._pages:
-            self._render_page(key)
+        self._invalidate_pages(extension.id)
 
     def _toggle(self, extension: Extension) -> None:
         enabled = not is_extension_enabled(extension.id)
@@ -1101,5 +1230,4 @@ class ExtensionManagerDialog(QDialog):
             tr("«{name}» is {state}. Restart IngeTrazo for the change to "
                "take effect.", name=display_name(extension, current_language()),
                state=action))
-        for key in self._pages:
-            self._render_page(key)
+        self._invalidate_pages(extension.id)

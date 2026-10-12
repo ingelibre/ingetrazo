@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import threading
 import zipfile
 
 import pytest
@@ -64,12 +65,16 @@ def _stub_catalog(monkeypatch, module, extensions, reviewed=None):
 
 def _wait_for_catalog(dialog, app):
     if dialog._catalog_worker is None:
+        dialog._load()
+    page = dialog._pages["browse"]
+    if dialog._catalog_worker is None and not page["dirty"]:
         return
     loop = QEventLoop()
     timer = QTimer()
     timer.setInterval(10)
     timer.timeout.connect(
-        lambda: loop.quit() if dialog._catalog_worker is None else None)
+        lambda: loop.quit()
+        if dialog._catalog_worker is None and not page["dirty"] else None)
     timer.start()
     QTimer.singleShot(15000, loop.quit)
     loop.exec()
@@ -109,6 +114,24 @@ def test_catalog_validation_and_review_uses_the_reviewed_hash(
     assert manager.is_reviewed(extensions[0], reviewed)
     reviewed["sample"]["sha256"] = "0" * 64
     assert not manager.is_reviewed(extensions[0], reviewed)
+
+
+def test_catalog_and_reviewed_list_are_fetched_concurrently(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(manager, "catalog_cache_path",
+                        lambda: tmp_path / "catalog-cache.json")
+    both_requests_started = threading.Barrier(2)
+
+    def fetch(url, _limit):
+        both_requests_started.wait(timeout=2)
+        if "catalog" in url:
+            return b'{"format": 1, "extensions": []}'
+        return b""
+
+    monkeypatch.setattr(manager, "_get", fetch)
+    snapshot = manager.refresh_catalog()
+    assert snapshot.extensions == []
+    assert not snapshot.from_cache
 
 
 def test_catalog_is_cached_and_used_when_refresh_is_offline(
@@ -616,6 +639,116 @@ def test_extension_manager_search_tags_and_reviewed_filter(tmp_path, monkeypatch
         app.processEvents()
 
 
+def test_catalog_refresh_reuses_cards_and_renders_installed_tab_lazily(
+        tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    extension = _extension(TOOL_SOURCE.encode())
+    from views import extension_manager_dialog as dialog_module
+    _stub_catalog(monkeypatch, dialog_module, [extension])
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    installed = tmp_path / extension.id
+    installed.mkdir()
+    (installed / "extension.json").write_text(json.dumps({
+        "id": extension.id,
+        "version": extension.version,
+        "sha256": extension.sha256,
+    }))
+    dialog = dialog_module.ExtensionManagerDialog()
+    try:
+        _wait_for_catalog(dialog, app)
+        browse = dialog._pages["browse"]
+        row = browse["grid"].itemAt(0).widget()
+        assert browse["dirty"] is False
+
+        dialog._apply_catalog(dialog._catalog_snapshot)
+        assert browse["grid"].itemAt(0).widget() is row
+        assert dialog._pages["installed"]["dirty"] is True
+
+        dialog._tabs.setCurrentIndex(1)
+        installed_page = dialog._pages["installed"]
+        assert installed_page["dirty"] is False
+        assert installed_page["grid"].count() == 1
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_catalog_update_rebuilds_only_cards_with_changed_data(
+        tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    extensions = [
+        _extension(f"source {index}".encode(), f"sample_{index}")
+        for index in range(4)
+    ]
+    from views import extension_manager_dialog as dialog_module
+    _stub_catalog(monkeypatch, dialog_module, extensions)
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    dialog = dialog_module.ExtensionManagerDialog()
+    try:
+        _wait_for_catalog(dialog, app)
+        page = dialog._pages["browse"]
+        previous = dict(page["rows"])
+        changed = manager.Extension(**{
+            **extensions[1].__dict__,
+            "version": "2.0",
+        })
+        updated = manager.CatalogSnapshot(
+            [extensions[0], changed, extensions[2], extensions[3]],
+            dialog._reviewed,
+            "2026-10-12T11:00:00+00:00",
+            False,
+        )
+        dialog._apply_catalog(updated)
+        rows = [page["grid"].itemAt(index).widget()
+                for index in range(page["grid"].count())]
+        assert rows[0] is previous["sample_0"]
+        assert rows[1] is not previous["sample_1"]
+        assert rows[2] is previous["sample_2"]
+        assert rows[3] is previous["sample_3"]
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_large_card_render_is_split_into_event_loop_batches(
+        tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    extensions = [
+        _extension(f"source {index}".encode(), f"sample_{index}")
+        for index in range(9)
+    ]
+    from views import extension_manager_dialog as dialog_module
+    _stub_catalog(monkeypatch, dialog_module, extensions)
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    dialog = dialog_module.ExtensionManagerDialog()
+    try:
+        _wait_for_catalog(dialog, app)
+        page = dialog._pages["browse"]
+        dialog._discard_cached_rows("browse")
+        page["dirty"] = True
+        dialog._render_page("browse")
+        assert page["render_timer"].isActive()
+        assert page["grid"].count() == 0
+
+        loop = QEventLoop()
+        timer = QTimer()
+        timer.setInterval(10)
+        timer.timeout.connect(
+            lambda: loop.quit() if not page["dirty"] else None)
+        timer.start()
+        QTimer.singleShot(15000, loop.quit)
+        loop.exec()
+        timer.stop()
+        assert not page["dirty"]
+        assert page["grid"].count() == len(extensions)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
 def test_extension_views_use_two_columns_and_16_by_10_previews(
         tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
@@ -884,12 +1017,11 @@ def test_switching_tabs_keeps_the_cards_and_their_screenshots(
         assert [grid.itemAt(i).widget() for i in range(grid.count())] == cards
         assert "3 of 3 extensions" in dialog._catalog_info.text()
 
-        # A rebuild (a filter, an install): the old cards leave the screen
-        # at once and the new ones are born with their screenshot.
+        # Filtering and sorting reuse card widgets and their decoded images.
         dialog._render_page("browse")
-        assert all(card.isHidden() for card in cards)
+        assert [grid.itemAt(i).widget() for i in range(grid.count())] == cards
         for ident, label in dialog._pages["browse"]["image_labels"].items():
-            assert label is not labels[ident]
+            assert label is labels[ident]
             assert not label.pixmap().isNull()
             assert label.text() == ""
     finally:
