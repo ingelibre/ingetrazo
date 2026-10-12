@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import threading
+import uuid
 
 from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt, Signal
 from PySide6.QtGui import QFontDatabase, QImageReader, QPalette
@@ -138,6 +139,9 @@ class AsistentePanel(QWidget):
         self._viewport = viewport
         self._scope: dict = {"__name__": "__ai__"}
         self._convo: list[dict] = []
+        #: Stable per-conversation id for OpenCode Go's ``x-opencode-session``
+        #: (routing/prompt caching; its chat endpoint 400s without one).
+        self._session_id = uuid.uuid4().hex
         self._busy = False
         self._round = 0
         self._failed = 0
@@ -570,7 +574,8 @@ class AsistentePanel(QWidget):
             try:
                 text = ai.chat(provider, model, key, SYSTEM_PROMPT, convo,
                                ollama_url=ollama, max_tokens=budget,
-                               on_retry=on_retry)
+                               on_retry=on_retry,
+                               session_id=self._session_id)
                 self._reply.emit({"ok": True, "text": text})
             except Exception as exc:  # noqa: BLE001 — shown in the chat
                 self._reply.emit({"ok": False, "error": str(exc)})

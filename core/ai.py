@@ -27,6 +27,7 @@ import traceback
 import urllib.error
 import time
 import urllib.request
+import uuid
 
 from core.history import SnapshotImport
 from core.version import USER_AGENT as _UA, __version__
@@ -435,7 +436,7 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
 # ---- Provider layer (mirrors IngePresupuestos ai_specs) ---------------------
 
 PROVIDERS = ("groq", "anthropic", "openai", "gemini", "openrouter",
-             "deepseek", "ollama")
+             "deepseek", "opencode-go", "ollama")
 
 #: OpenAI-compatible chat endpoints; Anthropic goes through its native API.
 _OPENAI_BASES = {
@@ -444,6 +445,9 @@ _OPENAI_BASES = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "openrouter": "https://openrouter.ai/api/v1",
     "deepseek": "https://api.deepseek.com/v1",
+    # OpenCode Go: a curated OpenAI-compatible gateway (DeepSeek, GPT,
+    # Claude, Gemini, Kimi…). Bearer key, same shape as the others.
+    "opencode-go": "https://opencode.ai/zen/go/v1",
 }
 
 #: Providers ROTATE their catalogs: Groq retired llama-3.3-70b-versatile
@@ -456,6 +460,7 @@ DEFAULT_MODELS = {
     "gemini": "gemini-2.5-flash",
     "openrouter": "anthropic/claude-sonnet-5",
     "deepseek": "deepseek-chat",
+    "opencode-go": "deepseek-v4.1-flash",
     # A code model: llama3.2 (3B) wrote wall() for a cube and broke on
     # plain Python in Rafael's review 6 (#461).
     "ollama": "qwen2.5-coder:7b",
@@ -478,6 +483,12 @@ def small_local_model(provider: str, model: str) -> bool:
 #: Providers whose default models take viewport screenshots.
 VISION = {"anthropic", "openai", "gemini", "openrouter"}
 
+#: OpenCode Go multiplexes several vendors; these model families are the
+#: multimodal ones (matched by prefix on the model id, ONLY for this
+#: provider so a "qwen"/"gpt" elsewhere is unaffected). DeepSeek's vision
+#: model is caught by the ``vision`` tag below.
+_GO_VISION = ("claude", "gpt", "grok", "gemini", "qwen")
+
 #: Model-name tags that mark a vision-capable model on providers whose
 #: DEFAULT model is text-only: Groq serves Llama 4 Scout/Maverick
 #: (multimodal) on its free tier, Ollama runs llava/qwen-vl locally.
@@ -490,6 +501,8 @@ def supports_vision(provider: str, model: str) -> bool:
     if provider in VISION:
         return True
     m = (model or "").lower()
+    if provider == "opencode-go" and m.startswith(_GO_VISION):
+        return True
     return any(t in m for t in _VISION_TAGS)
 
 
@@ -553,17 +566,48 @@ def _message_image(m: dict) -> tuple[str | None, str]:
     return shot, mime
 
 
+#: OpenCode Go serves each model family on its own wire format: the OpenAI
+#: chat default covers DeepSeek/GLM/Kimi/MiMo/Hy/Space Bunny/LongCat/Step;
+#: Claude/Qwen/MiniMax speak the Anthropic Messages API, and Grok/GPT Luna/
+#: Muse Spark the OpenAI Responses API (see opencode.ai/docs/go).
+_GO_ANTHROPIC = ("claude", "minimax", "qwen")
+_GO_RESPONSES = ("grok", "gpt", "muse-spark")
+
+
+def _wire_style(provider: str, model: str) -> str:
+    """Which request/response shape a (provider, model) pair speaks."""
+    if provider == "anthropic":
+        return "anthropic"
+    if provider == "opencode-go":
+        m = (model or "").lower()
+        if m.startswith(_GO_ANTHROPIC):
+            return "anthropic"
+        if m.startswith(_GO_RESPONSES):
+            return "responses"
+    return "openai"
+
+
+def _go_session(session_id: str | None) -> str:
+    """A stable per-conversation id: OpenCode Go's endpoints answer 400
+    "Missing sessionID" without the ``x-opencode-session`` header (the
+    /models list does not need it)."""
+    return session_id or uuid.uuid4().hex
+
+
 def build_request(provider: str, model: str, api_key: str,
                   system: str, messages: list,
                   ollama_url: str = "http://localhost:11434",
-                  max_tokens: int = 4096):
+                  max_tokens: int = 4096,
+                  session_id: str | None = None):
     """(url, headers, payload-bytes) for one chat turn.
 
     ``messages``: [{"role": "user"/"assistant", "text": str,
     "image_png_b64" / "image_b64"+"image_mime": optional}] — images ride
     only on user turns.
     """
-    if provider == "anthropic":
+    style = _wire_style(provider, model)
+
+    if style == "anthropic":
         content_msgs = []
         for m in messages:
             blocks = [{"type": "text", "text": m["text"]}]
@@ -576,11 +620,44 @@ def build_request(provider: str, model: str, api_key: str,
             content_msgs.append({"role": m["role"], "content": blocks})
         payload = {"model": model, "max_tokens": max_tokens,
                    "system": system, "messages": content_msgs}
+        if provider == "opencode-go":
+            # Go's Anthropic-format endpoint reads the key as x-api-key;
+            # Bearer is kept too so either reading is satisfied.
+            return (_OPENAI_BASES["opencode-go"] + "/messages",
+                    {"Content-Type": "application/json",
+                     "User-Agent": USER_AGENT,
+                     "x-api-key": api_key,
+                     "Authorization": f"Bearer {api_key}",
+                     "anthropic-version": "2023-06-01",
+                     "x-opencode-session": _go_session(session_id)},
+                    json.dumps(payload).encode())
         return ("https://api.anthropic.com/v1/messages",
                 {"Content-Type": "application/json",
                  "User-Agent": USER_AGENT,
                  "x-api-key": api_key,
                  "anthropic-version": "2023-06-01"},
+                json.dumps(payload).encode())
+
+    if style == "responses":
+        input_items = []
+        for m in messages:
+            content: list = []
+            img, mime = _message_image(m)
+            if img:
+                content.append({"type": "input_image",
+                                "image_url": f"data:{mime};base64," + img})
+            content.append({
+                "type": "output_text" if m["role"] == "assistant"
+                else "input_text",
+                "text": m["text"]})
+            input_items.append({"role": m["role"], "content": content})
+        payload = {"model": model, "instructions": system,
+                   "input": input_items, "max_output_tokens": max_tokens}
+        return (_OPENAI_BASES["opencode-go"] + "/responses",
+                {"Content-Type": "application/json",
+                 "User-Agent": USER_AGENT,
+                 "Authorization": f"Bearer {api_key}",
+                 "x-opencode-session": _go_session(session_id)},
                 json.dumps(payload).encode())
 
     base = (ollama_url.rstrip("/") + "/v1" if provider == "ollama"
@@ -600,16 +677,35 @@ def build_request(provider: str, model: str, api_key: str,
                "User-Agent": USER_AGENT}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    if provider == "opencode-go":
+        headers["x-opencode-session"] = _go_session(session_id)
     payload = {"model": model, "max_tokens": max_tokens,
                "messages": oai_msgs}
     return (f"{base}/chat/completions", headers,
             json.dumps(payload).encode())
 
 
-def parse_reply(provider: str, raw: bytes) -> str:
+def _parse_responses(data: dict) -> str:
+    """Text out of an OpenAI Responses payload (``output[].content[]``)."""
+    parts = []
+    for item in data.get("output", []) or []:
+        if item.get("type") != "message":
+            continue
+        for c in item.get("content", []) or []:
+            if c.get("type") in ("output_text", "text"):
+                parts.append(c.get("text", ""))
+    if not parts and isinstance(data.get("output_text"), str):
+        parts.append(data["output_text"])
+    return "".join(parts)
+
+
+def parse_reply(provider: str, raw: bytes, style: str | None = None) -> str:
     data = json.loads(raw)
-    if provider == "anthropic":
+    style = style or ("anthropic" if provider == "anthropic" else "openai")
+    if style == "anthropic":
         return "".join(b.get("text", "") for b in data.get("content", []))
+    if style == "responses":
+        return _parse_responses(data)
     choices = data.get("choices") or []
     if not choices:
         raise ValueError(str(data)[:400])
@@ -669,14 +765,17 @@ def _urlopen(url: str, headers: dict, payload: bytes | None = None,
 def chat(provider: str, model: str, api_key: str, system: str,
          messages: list, ollama_url: str = "http://localhost:11434",
          timeout: float = 180.0, max_tokens: int = 4096,
-         retries: int = 4, on_retry=None) -> str:
+         retries: int = 4, on_retry=None,
+         session_id: str | None = None) -> str:
     """One blocking chat turn. Raises with a readable message on failure —
     callers run this in a worker thread, never on the UI thread. A busy
     provider is retried ``retries`` times (see :func:`_urlopen`)."""
     url, headers, payload = build_request(
-        provider, model, api_key, system, messages, ollama_url, max_tokens)
-    return parse_reply(provider, _urlopen(url, headers, payload, timeout,
-                                          retries=retries, on_retry=on_retry))
+        provider, model, api_key, system, messages, ollama_url, max_tokens,
+        session_id=session_id)
+    raw = _urlopen(url, headers, payload, timeout,
+                   retries=retries, on_retry=on_retry)
+    return parse_reply(provider, raw, style=_wire_style(provider, model))
 
 
 #: Substrings of model ids that are not chat models (speech, safety,
@@ -731,6 +830,7 @@ PROVIDER_INFO = {
                "https://aistudio.google.com/app/apikey"),
     "openrouter": ("OpenRouter", "https://openrouter.ai/keys"),
     "deepseek": ("DeepSeek", "https://platform.deepseek.com/api_keys"),
+    "opencode-go": ("OpenCode Go", "https://opencode.ai/docs/go/"),
     "ollama": ("Local: Ollama / LM Studio", "https://ollama.com/download"),
 }
 
