@@ -257,6 +257,16 @@ for _sp in site.getsitepackages() + [site.getusersitepackages()]:
         break
 print('spec: mapbox_earcut native files: %d' % len(_earcut_libs))
 
+# Cocoa wrappers borrow interfaces owned by Qt's accessibility caches.
+# Ship the validated native ownership fix as a binary so PyInstaller
+# processes and signs the library with the rest of the macOS bundle.
+if sys.platform == 'darwin':
+    _cocoa_fix = ROOT / 'build' / 'macos' / 'libingetrazo_cocoa_accessibility.dylib'
+    if not _cocoa_fix.is_file():
+        raise SystemExit('Build the Cocoa accessibility fix first: '
+                         'python -m core.macos_accessibility')
+    _earcut_libs.append((str(_cocoa_fix), 'resources/native'))
+
 excludes = [
     'tkinter',
     'matplotlib',
