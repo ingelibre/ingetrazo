@@ -3290,6 +3290,8 @@ class EntityInfoPanel(QWidget):
         name_row.addWidget(self._name_edit, 1)
         lay.addLayout(name_row)
         self._named = None               # the group the field is showing
+        from core.selection_totals import SelectionTotals
+        self.totals = SelectionTotals()  # the selection, counted (refresh)
         row = QHBoxLayout()
         self._layer_caption = QLabel(tr("Layer:"))
         self._layer_box = QComboBox()
@@ -3320,7 +3322,11 @@ class EntityInfoPanel(QWidget):
         self._name_edit.hide()
 
     def refresh(self) -> None:
+        from core.selection_totals import selection_totals
         sel = list(self._window.viewport.scene.selection)
+        # Everything selected, counted and measured — kept whatever the
+        # panel shows of it (core.selection_totals).
+        self.totals = selection_totals(sel, volume_of=self._solid_volume)
         self._label.setText(self._describe(sel))
         self._refresh_name(sel)
         self._refresh_layer(sel)
@@ -3404,9 +3410,11 @@ class EntityInfoPanel(QWidget):
         if len(sel) == 1:
             e = sel[0]
             if isinstance(e, Face):
+                # No vertex count: «Vertices: 4» under a selected face read
+                # as four vertices selected beside it. The panel speaks of
+                # what is selected and what it measures.
                 mat = self._material_of(e)
                 return (f"<b>{tr('Face')}</b><br>{tr('Area')}: {fmt_area(e.area())}<br>"
-                        f"{tr('Vertices')}: {len(e.vertices)}<br>"
                         f"{tr('Material')}: {mat}")
             if isinstance(e, Edge):
                 return (f"<b>{tr('Edge')}</b><br>"
@@ -3437,18 +3445,27 @@ class EntityInfoPanel(QWidget):
                 return (f"<b>{title}</b><br>"
                         f"{tr('Faces')}: {len(e.mesh.faces)}{solid}")
             return f"<b>{tr('1 entity')}</b>"
-        counts = {"faces": 0, "edges": 0, "dimensions": 0, "groups": 0}
-        for e in sel:
-            if isinstance(e, Face):
-                counts["faces"] += 1
-            elif isinstance(e, Edge):
-                counts["edges"] += 1
-            elif isinstance(e, Dimension):
-                counts["dimensions"] += 1
-            elif isinstance(e, Group):
-                counts["groups"] += 1
+        # Several entities: the counts, and — when the selection is all of
+        # one kind — the quantity they add up to. Two faces read «2 faces»
+        # and nothing else, so measuring a floor of several faces meant
+        # clicking them one by one and adding by hand. A mixed selection
+        # (faces AND edges, say) shows no quantity: a total of one kind
+        # beside the others would read as the whole selection's; Right-click
+        # ▸ Area ▸ Selection gives the faces' area of any selection. A
+        # volume only when EVERY selected group is a solid, for the same
+        # reason. ``refresh`` keeps all the totals in ``self.totals``.
+        t = self.totals
+        counts = {"faces": t.faces, "edges": t.edges,
+                  "dimensions": t.dimensions, "groups": t.groups}
         parts = [f"{n} {tr(k)}" for k, n in counts.items() if n]
-        return f"<b>{tr('Selection')}</b><br>" + ", ".join(parts)
+        rows = [f"<b>{tr('Selection')}</b>", ", ".join(parts)]
+        if t.only("faces"):
+            rows.append(f"{tr('Area')}: {fmt_area(t.area)}")
+        elif t.only("edges"):
+            rows.append(f"{tr('Length')}: {fmt_len(t.length)}")
+        elif t.only("groups") and t.volume_complete:
+            rows.append(f"{tr('Volume')}: {fmt_volume(t.volume)}")
+        return "<br>".join(rows)
 
     def _solid_volume(self, group):
         """Cached per scene version: the panel refreshes on every change and

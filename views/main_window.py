@@ -3974,6 +3974,10 @@ class MainWindow(QMainWindow):
                 texm = menu.addMenu(tr("Texture"))
                 texm.addAction(tr("Position"), self._on_texture_position)
                 texm.addAction(tr("Reset Position"), self._on_texture_reset)
+            # Area ▸ Selection: the selected faces' total area, the classic
+            # way to read a floor or a facade made of several faces.
+            area = menu.addMenu(tr("Area"))
+            area.addAction(tr("Selection"), self._on_area_selection)
         if has_mesh or has_group:
             # Flip Along ▸ Red / Green / Blue: a mirror in place about the
             # selection's centre in one click, the way modelling tutorials
@@ -4468,6 +4472,18 @@ class MainWindow(QMainWindow):
         """Right-click ▸ Flip Along ▸ Red / Green / Blue (issue #178)."""
         from tools.flip import FlipTool
         FlipTool().flip(self.viewport, axis)
+
+    def _on_area_selection(self) -> None:
+        """Right-click ▸ Area ▸ Selection: the total area of the selected
+        faces, in a modal box closed with OK. Only the faces count —
+        edges, groups or anything else selected beside them do not, nor
+        the faces inside a selected group (that is its volume)."""
+        from core.selection_totals import selected_area
+        from core.units import fmt_area
+        box = QMessageBox(QMessageBox.NoIcon, tr("Area"),
+                          fmt_area(selected_area(self.viewport.scene.selection)),
+                          QMessageBox.Ok, self)
+        box.exec()
 
     @_repeatable("Reverse Faces")
     def _on_reverse_faces(self) -> None:
