@@ -7,6 +7,16 @@ follow [SemVer](https://semver.org).
 ## [Sin publicar]
 
 ### Añadido
+- **Puente MCP: el agente mira desde cualquier vista y exporta.**
+  `screenshot` acepta `view` (iso, planta, alzados) y `fit` (zoom a todo
+  el modelo) para esa sola captura — la cámara del usuario vuelve a donde
+  estaba —, y la imagen ya no sale aplastada cuando su proporción no es la
+  de la ventana. Nueva herramienta `export_model`: STL, OBJ, GLB, DAE o IFC
+  a una ruta, sin diálogo (no pisa un archivo existente salvo
+  `overwrite=true`). El servidor negocia la revisión de MCP con el cliente
+  (hasta 2025-06-18) y marca sus herramientas: las de solo lectura
+  (`query_model`, `screenshot`) se pueden aprobar sin preguntar,
+  `run_python` no.
 - **Color de acento de los iconos y las barras** (#393): en Ventana ▸
   Preferencias ▸ General se elige el color de los detalles de los iconos y
   del fondo de los botones bajo el ratón: naranja IngeTrazo (el de siempre,

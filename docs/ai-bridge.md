@@ -81,8 +81,13 @@ cuerpo nunca llega a leerse. Aun así, **detén el puente cuando no lo uses**.
 |---|---|
 | `run_python` | Ejecuta Python sobre el documento vivo (scope: `scene`, `mesh`, `selection`, `groups`, `bim`, `QVector3D`… y los constructores `revolve(perfil)` / `extrude(contorno, z0, z1)`: una línea → un grupo sólido, suave y orientado). Un undo por llamada; rollback total si falla. |
 | `query_model` | Conteos, nombres de grupos/componentes, materiales, capas, bounds. |
-| `screenshot` | Renderiza el viewport real — el agente mira e itera. |
+| `screenshot` | Renderiza el viewport real — el agente mira e itera. Con `view` (`iso`, `top`, `front`, `back`, `left`, `right`, `bottom`) y `fit` (zoom a todo el modelo) apunta una cámara solo para esa captura: la vista del usuario no se mueve. |
+| `export_model` | Exporta el modelo a `path` (absoluta); la extensión elige el formato: `.stl`, `.obj`, `.glb`, `.dae`, `.ifc`. No reemplaza un archivo existente salvo con `overwrite=true`. |
 | `undo` / `redo` | La historia de siempre. |
+
+Las herramientas llevan las *annotations* de MCP: `query_model` y
+`screenshot` son de solo lectura (el cliente puede aprobarlas sin
+preguntar); `run_python` está marcada como destructiva.
 
 Sin el puente encendido, las tools responden con el aviso de cómo
 encenderlo. El servidor acepta un cliente a la vez y nunca escucha fuera
