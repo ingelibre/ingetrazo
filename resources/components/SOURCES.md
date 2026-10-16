@@ -20,11 +20,13 @@
   - `sofa.igz` (Sofa) — **CC0 1.0**, Blend Swap (public domain)
 
 - The face-me people in `people.json` — `ingeniero.png`, `stallman.png`,
-  `torvalds.png`, `musk.png`, `hawking.png` — are cutout illustrations
+  `torvalds.png`, `hawking.png` — are cutout illustrations
   supplied by Marco Sumari Tellez, cropped to the figure and sized to the
   real height each one stands (the manifest carries it: a scale figure whose
   height is wrong is worse than none). Hawking's is his seated height in the
   chair, because that is what the drawing shows.
+  - `pepe.png` is taken from an image on his Wikipedia page and run through an
+    LLM to render it in the same style.
 
 No `.glb` component ships any more: the Sketchfab CC-BY starter set was
 retired when the offline `.igz` set replaced it, and the bed went with it at
