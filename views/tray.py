@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QStyledItemDelegate,
     QSizePolicy,
     QSlider,
     QSpinBox,
@@ -3570,6 +3571,26 @@ def _scrolled(sections) -> QScrollArea:
 
 
 
+class _LayerColorDelegate(QStyledItemDelegate):
+    """A small colour chip, retaining the row's normal selection background."""
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        color = index.data(Qt.UserRole + 2)
+        if not isinstance(color, QColor):
+            return
+        center = option.rect.center()
+        chip = QRect(center.x() - 7, center.y() - 7, 14, 14)
+        painter.save()
+        painter.setPen(QColor(0, 0, 0, 100))
+        painter.setBrush(color)
+        painter.drawRoundedRect(chip, 2, 2)
+        painter.restore()
+
+    def createEditor(self, parent, option, index):
+        return None  # Double-click opens the colour dialog.
+
+
 class LayersPanel(QWidget):
     """Layers / tags (Fase 6): one row per layer with visibility and lock
     checkboxes; buttons to add / remove layers and to move the current
@@ -3579,20 +3600,31 @@ class LayersPanel(QWidget):
 
     def __init__(self, window) -> None:
         super().__init__()
-        from PySide6.QtWidgets import (QHBoxLayout, QPushButton, QTreeWidget,
+        from PySide6.QtWidgets import (QHeaderView, QHBoxLayout, QPushButton, QTreeWidget,
                                        QTreeWidgetItem, QVBoxLayout)
         self._window = window
         self._updating = False
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 6, 8, 8)
         self.tree = QTreeWidget()
-        self.tree.setColumnCount(3)
-        self.tree.setHeaderLabels([tr("Name"), tr("Visible"), tr("Lock")])
+        self.tree.setColumnCount(4)
+        self.tree.setHeaderLabels([tr("Name"), tr("Visible"), tr("Lock"), tr("Color")])
         self.tree.setRootIsDecorated(False)
         self.tree.setColumnWidth(0, 120)
         self.tree.setColumnWidth(1, 52)
+        self.tree.header().setStretchLastSection(False)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        for column in (1, 2, 3):
+            self.tree.header().setSectionResizeMode(column, QHeaderView.Fixed)
+            self.tree.setColumnWidth(column, 52)
+        self.tree.setColumnWidth(3, 44)
+        self.tree.setItemDelegateForColumn(3, _LayerColorDelegate(self.tree))
         self.tree.itemChanged.connect(self._on_item_changed)
+        self.tree.itemDoubleClicked.connect(self._on_color_clicked)
         lay.addWidget(self.tree)
+        self._color_by_layer = QCheckBox(tr("Color by layer"))
+        self._color_by_layer.toggled.connect(self._on_color_by_layer)
+        lay.addWidget(self._color_by_layer)
         row = QHBoxLayout()
         add_btn = QPushButton(tr("+ Layer"))
         add_btn.clicked.connect(self._on_add)
@@ -3624,8 +3656,12 @@ class LayersPanel(QWidget):
         from core.layers import DEFAULT_LAYER
         self._updating = True
         self.tree.clear()
+        self._color_by_layer.setChecked(
+            self._window.viewport.scene.display_style.color_by_layer)
         for ly in self._window.viewport.scene.layers:
             item = QTreeWidgetItem([ly.name, "", ""])
+            item.setData(3, Qt.UserRole + 2, QColor.fromRgbF(*ly.color))
+            item.setToolTip(3, tr("Double-click to change layer color"))
             item.setData(0, Qt.UserRole, ly.name)
             flags = item.flags() | Qt.ItemIsUserCheckable
             if ly.name != DEFAULT_LAYER:
@@ -3637,6 +3673,25 @@ class LayersPanel(QWidget):
         fit_rows(self.tree, max_rows=12)
         self._updating = False
 
+    def _on_color_by_layer(self, enabled):
+        if self._updating:
+            return
+        self._scene().display_style.color_by_layer = enabled
+        self._window.viewport.update()
+
+    def _on_color_clicked(self, item, column):
+        if column != 3:
+            return
+        layer = self._scene().layer(item.data(0, Qt.UserRole))
+        if layer is None:
+            return
+        chosen = get_color(QColor.fromRgbF(*layer.color),
+                           _dialog_parent(self), tr("Layer color"))
+        if chosen.isValid():
+            layer.color = (chosen.redF(), chosen.greenF(), chosen.blueF())
+            self.refresh()
+            self._touch()
+
     # ---- View → model --------------------------------------------------------
     def _scene(self):
         return self._window.viewport.scene
@@ -3645,6 +3700,7 @@ class LayersPanel(QWidget):
         if self._updating:
             return
         scene = self._scene()
+        self._color_by_layer.setChecked(scene.display_style.color_by_layer)
         old_name = item.data(0, Qt.UserRole)
         ly = scene.layer(old_name)
         if ly is None:

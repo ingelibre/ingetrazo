@@ -1300,6 +1300,9 @@ class Viewport(QOpenGLWidget):
         self._selected_vao, self._selected_vbo = self._create_dynamic()
         self._sel_faces_vao, self._sel_faces_vbo = self._create_dynamic()
         self._faces_vao, self._faces_vbo = self._create_dynamic_vcol()
+        self._layer_faces_vao, self._layer_faces_vbo = self._create_dynamic()
+        self._layer_edges_vao, self._layer_edges_vbo = self._create_dynamic()
+        self._layer_color_key = None
         self._tex_faces_vao, self._tex_faces_vbo = self._create_dynamic_uv()
         self._billboard_vao, self._billboard_vbo = self._create_dynamic_uv()
         self._bb_sel_vao, self._bb_sel_vbo = self._create_dynamic()
@@ -1464,7 +1467,8 @@ class Viewport(QOpenGLWidget):
         # plano_style override maps onto the same face modes; otherwise the
         # scene's active style drives faces, edges and background.
         style = self._effective_style()
-        mode = style.face_mode
+        layer_colors = getattr(style, "color_by_layer", False)
+        mode = "layer" if layer_colors else style.face_mode
         self._frame_style = style
 
         # Active section cut: ONE world-space plane; the kept
@@ -1562,8 +1566,8 @@ class Viewport(QOpenGLWidget):
         # FBO/program bindings; this block restores them and binds the map
         # on texture unit 1 for the geometry passes to sample.
         self._frame_shadow = (self._ensure_shadow_map()
-                              if mode in ("textures", "shaded",
-                                          "hidden_line", "monochrome")
+                              if style.face_mode in ("textures", "shaded",
+                                                      "hidden_line", "monochrome")
                               else None)
         if self._frame_shadow is not None:
             self._scene_fbo.bind()
@@ -1632,7 +1636,9 @@ class Viewport(QOpenGLWidget):
         if getattr(self, "_frame_shadow", None) is not None:
             self._draw_shadow_ground(style)
             self._program.setUniformValue(self._loc_shadow_enable, 1)
-        if self._faces_count > 0 and mode != "wireframe":
+        if layer_colors and style.face_mode != "wireframe":
+            self._draw_layer_colors(style)
+        if self._faces_count > 0 and mode not in ("wireframe", "layer"):
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
             if mode == "hidden_line":
@@ -1868,7 +1874,7 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_CULL_FACE)
 
-        self._draw_section_fill(mode, style)
+        self._draw_section_fill(style.face_mode if layer_colors else mode, style)
 
         # Translucent material runs (.skp trans with useTrans): drawn
         # after everything opaque, blended, depth-tested but not depth-
@@ -2093,8 +2099,10 @@ class Viewport(QOpenGLWidget):
                 self._guides_vao.release()
 
         self._set_section_clip(True)
-        show_edges = style.edges or mode == "wireframe"
-        ec = style.edge_color
+        show_edges = style.edges or style.face_mode == "wireframe"
+        if layer_colors and show_edges:
+            self._draw_layer_colors(style, edges=True)
+        ec = (0.0, 0.0, 0.0) if layer_colors else style.edge_color
         # Line weight for sheet renders: a GL line is one pixel whatever
         # the DPI (core-profile Mesa clamps glLineWidth), and one pixel at
         # 300 dpi is a 0.085 mm hairline that vanishes on paper and on the
@@ -2127,7 +2135,7 @@ class Viewport(QOpenGLWidget):
             if len(_jit_e) > 1:
                 self._program.setUniformValue(self._loc_mvp,
                                               _shifted_mvp(mvp, _dx, _dy))
-            if self._edges_count > 0 and show_edges:
+            if self._edges_count > 0 and show_edges and not layer_colors:
                 self._set_color(*_ecol, 1.0)
                 self._edges_vao.bind()
                 _espans = getattr(self, "_frame_edge_spans",
@@ -2149,7 +2157,7 @@ class Viewport(QOpenGLWidget):
                         if _vs >= split_e:
                             self._gl.glDrawArrays(GL_LINES, _vs, _vc)
                 self._edges_vao.release()
-            if show_edges:
+            if show_edges and not layer_colors:
                 self._set_color(*_ecol, 1.0)
                 self._draw_instanced_edges()
         if xray_edges:
@@ -2997,9 +3005,53 @@ class Viewport(QOpenGLWidget):
             return [(groups, 0.0)]
         return [(fuera, EDIT_REST_FADE), (dentro, 0.0)]
 
+    def _draw_layer_colors(self, style, edges=False):
+        from core.layer_display import layer_display_buffers
+        key = (_cache_ver(self), self._placements_epoch(),
+               tuple((ly.name, ly.color) for ly in self.scene.layers),
+               self._edit_rest_mode,
+               tuple(sorted(getattr(self, "_preview_groups", None) or ())),
+               tuple(sorted(id(f) for f in self._suppressed_faces)))
+        if getattr(self, "_layer_color_key", None) != key:
+            faces, lines = layer_display_buffers(
+                self.scene, self._tris_of, self._edit_rest_mode,
+                self._suppressed_faces,
+                getattr(self, "_preview_groups", None) or ())
+            for vbo, (data, spans) in ((self._layer_faces_vbo, faces),
+                                        (self._layer_edges_vbo, lines)):
+                vbo.bind()
+                vbo.allocate(data, len(data))
+                vbo.release()
+            self._layer_face_runs = faces[1]
+            self._layer_edge_runs = lines[1]
+            self._layer_color_key = key
+        vao = self._layer_edges_vao if edges else self._layer_faces_vao
+        runs = self._layer_edge_runs if edges else self._layer_face_runs
+        self._program.setUniformValue(self._loc_use_vcolor, 0)
+        self._program.setUniformValue(self._loc_use_tex, 0)
+        xray = style.face_mode == "xray" and not edges
+        if not edges:
+            self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+            self._gl.glPolygonOffset(1.0, 1.0)
+        if xray:
+            self._gl.glDepthMask(GL_FALSE)
+        vao.bind()
+        for color, faded, start, count in runs:
+            self._set_color(*color, XRAY_FACE_OPACITY if xray else 1.0)
+            self._program.setUniformValue1f(
+                self._loc_fade, EDIT_REST_FADE if faded else 0.0)
+            self._gl.glDrawArrays(GL_LINES if edges else GL_TRIANGLES,
+                                  start, count)
+        vao.release()
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
+        if xray:
+            self._gl.glDepthMask(GL_TRUE)
+        if not edges:
+            self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
     def _draw_instanced_faces(self, mode, style) -> None:
         by_proto = self._gather_instanced()
-        if not by_proto or mode == "wireframe":
+        if not by_proto or mode in ("wireframe", "layer"):
             return
         extra = self.context().extraFunctions()
         self._gl.glEnable(GL_POLYGON_OFFSET_FILL)

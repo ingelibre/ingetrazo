@@ -1,4 +1,7 @@
 {
+ "Color by layer": "Color por capa",
+ "Double-click to change layer color": "Doble clic para cambiar el color de la capa",
+ "Layer color": "Color de capa",
  "Add a terrain profile along a traced path (two clicks or drag)": "Añadir un perfil de terreno a lo largo de un trazado (dos clics o arrastre)",
  "Guide point": "Punto guía",
  "IngeTrazo could not read {name} with its built-in .skp reader.\n\nOpen it in the program it came from and export it as COLLADA (.dae) or OBJ, then import that file here.": "IngeTrazo no pudo leer {name} con su lector de .skp integrado.\n\nÁbrelo en el programa de origen y expórtalo como COLLADA (.dae) u OBJ, y luego importa ese archivo aquí.",
