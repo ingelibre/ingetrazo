@@ -208,6 +208,13 @@ class InferenceEngine:
             radial_arm=bool(getattr(tool, "radial_arm", False)),
             axis_in_plane=not _magnet_may_leave_plane(tool),
         )
+        offset_axis = getattr(vp, "_last_planar_axis_offset", None)
+        if offset_axis is not None and snap.kind == "none":
+            from core.snap import AXIS_COLORS
+            snap = SnapResult(
+                snap.point, "axis_inference", AXIS_COLORS[offset_axis],
+                axis=offset_axis,
+            )
         snap = self._axis_source_cue(snap, px_x, px_y)
         snap = self._extension_snap(snap, px_x, px_y)
         return snap
@@ -221,12 +228,10 @@ class InferenceEngine:
         "component_origin", "intersection", "close", "on_edge"))
 
     def _axis_source_cue(self, snap, px_x: float, px_y: float):
-        """Before its first click, a tool that reads the model axes as a
-        source (the Tape: ``axis_source``) shows the cursor is ON the red,
-        green or blue axis — the classic small square on the axis line.
-        Without the cue the axis looked ungrabbable (Marco, testing
-        Rafael's guide from an axis, 2026-09-21): the pick worked, nothing
-        said so. Only where the engine found nothing better.
+        """Before its first click, a drawing tool that reads the model axes
+        as a source (``axis_source``) snaps to the red, green or blue axis —
+        the classic small square on the axis line. Only where the engine
+        found nothing better.
 
         The pick itself stays on the viewport (``pick_axis`` is a general
         pick, the Tape reads it too): the engine calls it, the same shape as

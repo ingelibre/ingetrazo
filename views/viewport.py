@@ -6220,6 +6220,12 @@ class Viewport(QOpenGLWidget):
         # edge colour so its forming box reads like real geometry, not a loose
         # orange rubber band).
         forced = getattr(tool, "wireframe_color", None)
+        if forced is None:
+            from tools.base import PlaneLock
+            if isinstance(tool, PlaneLock):
+                plane = tool.drawing_plane()
+                if plane is not None:
+                    forced = tool.plane_color(plane[1])
         snap = self.last_snap
         # Axis / reference / extension cues read as "projection lines": draw them
         # a touch thicker so the alignment is easy to spot while drawing.
@@ -7742,9 +7748,8 @@ class Viewport(QOpenGLWidget):
         Plane choice priority:
         1. ``tool.work_plane``, captured at first click when the user clicked
            on a face — keeps the rest of the chain coplanar with that face.
-        2. If a tool has a ``start_point``, the plane goes through it; its
-           orientation is horizontal for most camera tilts and vertical only
-           near the horizon (so dragging up/down can move in Z).
+        2. If a tool has a ``start_point``, its captured plane or the
+           existing camera-aware drawing rule is used.
         3. If no ``start_point`` yet and the cursor is over an existing
            face, that face's plane (this is what lets the user draw a new
            polygon *inside* an existing one — e.g. on top of a box).
@@ -7758,7 +7763,26 @@ class Viewport(QOpenGLWidget):
         # only means something within a plane. Stashed instead of asked for
         # again: this runs on every mouse move, and the answer can cost a pick.
         self._last_work_plane = (plane_point, plane_normal)
-        hit = self._ray_plane(origin, direction, plane_point, plane_normal)
+        allow_planar_grazing = False
+        tool = self.active_tool
+        if (tool is not None
+                and getattr(tool, "start_point", None) is None
+                and getattr(tool, "work_plane", None) is None
+                and getattr(tool, "plane_lock", None) is None
+                and getattr(tool, "plane_ref", None) is None):
+            from tools.base import PlaneLock
+            if isinstance(tool, PlaneLock):
+                from core import axes
+                normal = QVector3D(plane_normal).normalized()
+                through_origin = (QVector3D(plane_point) - axes.origin()).length() < 1e-5
+                principal = any(
+                    abs(QVector3D.dotProduct(normal, axes.axis(name))) > 0.999
+                    for name in ("x", "y", "z")
+                )
+                allow_planar_grazing = through_origin and principal
+        hit = self._ray_plane(
+            origin, direction, plane_point, plane_normal,
+            allow_grazing=allow_planar_grazing)
         if hit is not None:
             return hit
         # The ray only grazes the work plane here, so the intersection is
@@ -7782,6 +7806,7 @@ class Viewport(QOpenGLWidget):
     #: architectural view — nothing on screen comes anywhere near it, so this
     #: only fires where the plane really is unreadable.
     GRAZING_PLANE_DEG = 6.0
+    HORIZON_PITCH_THRESHOLD_DEG = 15.0
 
     def _work_plane_normal(self) -> Optional[QVector3D]:
         """The normal of the plane the last pixel→world used, or ``None``."""
@@ -7855,7 +7880,8 @@ class Viewport(QOpenGLWidget):
         return face_plane
 
     def _ray_plane(self, origin: QVector3D, direction: QVector3D,
-                   plane_point: QVector3D, plane_normal: QVector3D
+                   plane_point: QVector3D, plane_normal: QVector3D,
+                   *, allow_grazing: bool = False
                    ) -> Optional[QVector3D]:
         """Ray/plane hit, or ``None`` when it is behind the camera or the ray
         merely grazes the plane."""
@@ -7864,18 +7890,102 @@ class Viewport(QOpenGLWidget):
             return None
         normal = plane_normal / length
         denom = QVector3D.dotProduct(normal, direction)
-        if abs(denom) < math.sin(math.radians(self.GRAZING_PLANE_DEG)):
+        if abs(denom) < 1e-12:
+            return None
+        if (not allow_grazing
+                and abs(denom) < math.sin(math.radians(
+                    self.GRAZING_PLANE_DEG))):
             return None
         t = QVector3D.dotProduct(normal, plane_point - origin) / denom
         if t < 0:
             return None
         return origin + direction * t
 
-    # When the camera is at least this tilted off the horizon, the work plane
-    # stays horizontal (XY) — that covers top, iso, and most architectural
-    # angles. Only at near-horizon views does it switch to a vertical plane,
-    # which is the only orientation where cursor-to-ground is ambiguous.
-    HORIZON_PITCH_THRESHOLD_DEG = 15.0
+    #: The ground remains preferred in shallow views and near ambiguous
+    #: plane transitions. These are intentionally small, tunable tolerances.
+    GROUND_PREFERENCE_ANGLE_DEG = 5.0
+    GROUND_DEPTH_PREFERENCE_RATIO = 1.25
+    PERSPECTIVE_GROUND_DEPTH_PREFERENCE_RATIO = 10.0
+    PLANE_ALIGNMENT_TIE_MARGIN = 0.05
+
+    def _camera_planar_work_plane(
+        self, cursor: Optional[tuple[float, float]] = None,
+    ) -> Optional[tuple[QVector3D, QVector3D]]:
+        """Apply the floor/ceiling policy, then compare infinite XZ and YZ.
+
+        XY has its own ground/ceiling preference and is not part of the
+        perpendicularity competition. If that policy does not select it,
+        the local cursor-ray direction chooses between the vertical planes,
+        independent of which side of the origin their intersections occupy.
+        """
+        from core import axes
+        origin = axes.origin()
+        view = self.camera.target - self.camera.eye()
+        if view.lengthSquared() < 1e-18:
+            return None
+        view.normalize()
+        ray_direction = view
+        ray_origin = self.camera.eye()
+        cursor_origin = None
+        cursor_direction = None
+        if cursor is not None:
+            cursor_origin, cursor_direction = self._pixel_to_ray(*cursor)
+            if cursor_direction is not None:
+                ray_direction = cursor_direction.normalized()
+                ray_origin = cursor_origin
+
+        normals = {name: axes.axis(name) for name in ("x", "y", "z")}
+        hits: dict[str, tuple[QVector3D, float]] = {}
+        if ray_origin is not None:
+            for name, normal in normals.items():
+                hit = self._ray_plane(
+                    ray_origin, ray_direction, origin, normal,
+                    allow_grazing=True)
+                if hit is None:
+                    continue
+                depth = (
+                    (hit - self.camera.eye()).length()
+                    if self.camera.perspective
+                    else QVector3D.dotProduct(hit - self.camera.eye(), view)
+                )
+                if depth >= 0:
+                    hits[name] = (hit, depth)
+
+        horizontal_angle = math.degrees(math.asin(min(
+            1.0, abs(QVector3D.dotProduct(view, normals["z"])))))
+        if "z" in hits:
+            vertical_depths = [
+                hits[name][1] for name in ("x", "y") if name in hits]
+            floor_ratio = (
+                self.GROUND_DEPTH_PREFERENCE_RATIO
+                if horizontal_angle <= self.GROUND_PREFERENCE_ANGLE_DEG
+                else self.PERSPECTIVE_GROUND_DEPTH_PREFERENCE_RATIO
+            )
+            if (not vertical_depths
+                    or hits["z"][1] <= min(vertical_depths) * floor_ratio):
+                return origin, normals["z"]
+
+        vertical_normals = {"x": normals["x"], "y": normals["y"]}
+        alignment = {
+            name: abs(QVector3D.dotProduct(ray_direction, normal))
+            for name, normal in vertical_normals.items()
+        }
+        candidates = set(vertical_normals)
+        if cursor_origin is not None and cursor_direction is not None:
+            candidates = {
+                name for name, normal in vertical_normals.items()
+                if self._ray_plane(
+                    cursor_origin, cursor_direction, origin, normal,
+                    allow_grazing=True) is not None
+            }
+        if not candidates:
+            candidates = set(vertical_normals)
+        normal_name = max(candidates, key=alignment.__getitem__)
+        if ({"x", "y"} <= candidates
+                and abs(alignment["x"] - alignment["y"])
+                <= self.PLANE_ALIGNMENT_TIE_MARGIN):
+            normal_name = "y"
+        return origin, vertical_normals[normal_name]
 
     def _current_work_plane(
         self, cursor: Optional[tuple[float, float]] = None
@@ -7885,11 +7995,13 @@ class Viewport(QOpenGLWidget):
         Priority: tool-captured plane > camera-aware plane through the active
         ``start_point`` > face under cursor (face-plane inference) > ground —
         except that a PLANAR shape re-plans onto the face the cursor is over,
-        capture or not (#545, see :meth:`_planar_face_plane`). A shape lives
-        in ONE plane, and the face the cursor is over is the one the user
-        means.
+        capture or not (#545, see :meth:`_planar_face_plane`). Before the
+        first point, planar tools choose the global principal plane most
+        perpendicular to the cursor's local view ray. Explicit plane locks
+        take priority; otherwise a face under the cursor still wins.
         """
         tool = self.active_tool
+        self._last_planar_axis_offset = None
         if tool is not None:
             # A tool mid-operation may know better than any plane below —
             # Push/Pull reads the cursor along its normal and must keep
@@ -7934,6 +8046,12 @@ class Viewport(QOpenGLWidget):
 
         start = getattr(tool, "start_point", None) if tool is not None else None
         if start is None:
+            from core import axes
+            from tools.base import PlaneLock
+            if isinstance(tool, PlaneLock):
+                locked = tool.locked_work_plane(axes.origin())
+                if locked is not None:
+                    return locked
             # First-click hover: if the cursor is over an existing face —
             # loose OR a group's (drawing/measuring on top of an imported
             # reference model) — use that face's plane so a new polygon
@@ -7950,11 +8068,16 @@ class Viewport(QOpenGLWidget):
                 image = self.image_plane_at(cursor[0], cursor[1])
                 if image is not None:
                     return image.plane()
+            if isinstance(tool, PlaneLock) and cursor is not None:
+                plane = self._camera_planar_work_plane(cursor)
+                if plane is not None:
+                    plane = self._planar_axis_offset_plane(plane, cursor)
+                    return plane
             # In an axis-aligned (standard) view, an unsnapped first point
             # belongs on the plane FACING the camera through the model
             # centre — so measuring/drawing in a front view stays in the
-            # frontal plane instead of dropping to the ground. Oblique
-            # orbit views keep the ground fallback (freehand unchanged).
+            # frontal plane instead of dropping to the ground for tools
+            # without a cursor-dependent plane.
             from core.snap import first_point_work_plane
             forward = self.camera.target - self.camera.eye()
             lo, hi = self.scene.bounds()
@@ -7962,8 +8085,11 @@ class Viewport(QOpenGLWidget):
                       else QVector3D(0.0, 0.0, 0.0))
             plane = first_point_work_plane(forward, center)
             if plane is not None:
+                plane = self._planar_axis_offset_plane(plane, cursor)
                 return plane
-            return QVector3D(0.0, 0.0, 0.0), QVector3D(0.0, 0.0, 1.0)
+            plane = (QVector3D(0.0, 0.0, 0.0),
+                     QVector3D(0.0, 0.0, 1.0))
+            return self._planar_axis_offset_plane(plane, cursor)
 
         base = self._start_point_plane(tool, start)
         if cursor is not None and self.axis_lock is None:
@@ -8010,6 +8136,47 @@ class Viewport(QOpenGLWidget):
                         start, cand, angle) is None:
                     return fp
         return base
+
+    def _planar_axis_offset_plane(
+        self, plane: tuple[QVector3D, QVector3D],
+        cursor: tuple[float, float],
+    ) -> tuple[QVector3D, QVector3D]:
+        """Let a free-space drawing plane's normal axis set its offset.
+
+        Before a planar tool's first point or a line's first point, hovering
+        the normal axis moves the free-space work plane along that axis. The
+        cursor still maps onto the selected plane; only its offset changes.
+        """
+        from core import axes
+        from tools.base import PlaneLock
+        from tools.line import LineTool
+        tool = self.active_tool
+        if cursor is None or not isinstance(tool, (PlaneLock, LineTool)):
+            return plane
+        point, normal = plane
+        normal = QVector3D(normal).normalized()
+        axis_name = next(
+            (name for name in ("x", "y", "z")
+             if abs(QVector3D.dotProduct(normal, axes.axis(name))) > 0.999),
+            None,
+        )
+        if axis_name is None or self.pick_axis(*cursor) != axis_name:
+            return plane
+        if (getattr(tool, "start_point", None) is not None
+                or getattr(tool, "work_plane", None) is not None):
+            return plane
+        axis_origin = axes.origin()
+        axis_point = self._project_to_lock_line(
+            axis_origin, axes.axis(axis_name), *cursor)
+        ray_origin, ray_direction = self._pixel_to_ray(*cursor)
+        if (ray_origin is None or ray_direction is None
+                or QVector3D.dotProduct(
+                    axis_point - ray_origin, ray_direction) < 0.0):
+            return plane
+        offset = QVector3D.dotProduct(axis_point - axis_origin, normal)
+        shifted_point = axis_origin + normal * offset
+        self._last_planar_axis_offset = axis_name
+        return shifted_point, normal
 
     def _still_face_under(self, px: float, py: float) -> bool:
         """Whether a face the drag is NOT bending is under the cursor —
@@ -12343,6 +12510,17 @@ class Viewport(QOpenGLWidget):
             # existing face, lock the rest of the chain to that face's
             # plane so subsequent clicks stay coplanar.
             now_start = getattr(self.active_tool, "start_point", None)
+            if (
+                not had_start
+                and now_start is not None
+                and hasattr(self.active_tool, "work_plane")
+                and self.active_tool.work_plane is None
+            ):
+                from tools.base import PlaneLock
+                if isinstance(self.active_tool, PlaneLock):
+                    plane = getattr(self, "_last_work_plane", None)
+                    if plane is not None:
+                        self.active_tool.work_plane = plane
             if (
                 not had_start
                 and now_start is not None

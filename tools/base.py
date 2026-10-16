@@ -64,6 +64,7 @@ class AxisMagnet:
 
     _MAGNET_DEG = 3.0
     _MAGNET_PX = 9.0
+    axis_source = True
 
     def magnet_on(self) -> bool:
         return True
@@ -137,6 +138,7 @@ class PlaneLock:
     not Shift's to release. See ``mark_plane``."""
 
     plane_lock: str | None = None
+    axis_source = True
     #: Down-arrow reference lock: ``(normal, kind)``, kind ``"edge"`` (the
     #: plane perpendicular to the hovered edge), ``"face"`` (parallel to the
     #: hovered face) or ``"plane"`` (the plane the shape is drawing on,
@@ -151,11 +153,8 @@ class PlaneLock:
     #: The plane the viewport used for the last cursor hit (`_last_work_plane`).
     #: A shape started on a free point (no face, no lock) has no captured
     #: ``work_plane``; its geometry is laid out on THIS plane instead, which
-    #: the viewport picks from the camera — horizontal at working tilts,
-    #: vertical facing the camera near the horizon — so the shape follows
-    #: the view the classic way (Rafael's review, 2026-09-10: a rectangle
-    #: at eye level read «5.74 × 0.00 m», its second point on a vertical
-    #: plane while the sides were measured along X/Y).
+    #: the viewport picks from the camera direction and principal drawing
+    #: planes; the cursor ray determines the point on that plane.
     hover_plane: tuple | None = None
 
     def note_plane(self, viewport) -> None:
@@ -267,20 +266,13 @@ class PlaneLock:
     def preview_plane(self, viewport, point: QVector3D):
         """The plane the shape WOULD take at ``point`` before the first
         click: the arrow-key lock, else the face under the cursor, else
-        the view's — vertical facing the camera near the horizon, flat
-        otherwise. The classic tool shows this plane on the cursor (a coloured
-        square / ring) so a lock is visible before you commit to it."""
+        the view's work plane. The classic tool shows this plane on the cursor
+        (a coloured square / ring) so a lock is visible before you commit."""
         locked = self.locked_work_plane(point)
         if locked is not None:
             return locked
         plane = getattr(viewport, "_last_work_plane", None)
         from core import axes
-        if plane is not None and abs(QVector3D.dotProduct(
-                plane[1].normalized(), axes.AXES["z"])) > 0.99:
-            near = getattr(viewport, "_near_horizon_vertical", None)
-            vertical = near(point) if near is not None else None
-            if vertical is not None:
-                return vertical
         if plane is not None:
             return QVector3D(point), plane[1]
         return QVector3D(point), axes.axis("z")
@@ -327,6 +319,16 @@ class PlaneLock:
             return None
         d = math.hypot(b[0] - a[0], b[1] - a[1])
         return 0.25 / d if d > 1e-6 else None
+
+    @classmethod
+    def plane_preview_scale(cls, viewport, point: QVector3D,
+                            u: QVector3D, v: QVector3D):
+        """World scale for a preview glyph, based on its most visible axis."""
+        scales = [
+            scale for axis in (u, v)
+            if (scale := cls.world_per_pixel(viewport, point, axis)) is not None
+        ]
+        return min(scales) if scales else None
 
     def plane_lock_key(self, viewport, key: int) -> bool:
         if (getattr(self, "start_point", None) is not None
