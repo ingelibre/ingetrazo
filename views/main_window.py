@@ -5464,12 +5464,18 @@ class MainWindow(QMainWindow):
             except OSError:
                 self.statusBar().showMessage(
                     tr("Could not write the backup copy."), 4000)
+        self.statusBar().showMessage(tr("Saving {name}…", name=path.name))
+        dlg, cb = self._import_progress(tr("Saving {name}…", name=path.name))
         try:
             self.viewport.scene.camera_home = self._camera_dict()
-            stats = igz_format.save_scene(self.viewport.scene, path) or {}
+            stats = igz_format.save_scene(self.viewport.scene, path, progress=cb) or {}
         except Exception as exc:  # noqa: BLE001
+            dlg.close()
+            self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return
+        finally:
+            dlg.close()
         # A clean save ends the recovery window for this document — and for
         # the untitled slot when this save gave the document its first name.
         from core import autosave
@@ -5488,8 +5494,11 @@ class MainWindow(QMainWindow):
                    "texture on another computer.", n=missing))
         elif embedded:
             self.statusBar().showMessage(
-                tr("Saved — {n} texture(s) packed into the document.",
-                   n=embedded), 4000)
+                tr("Saved {name} — {n} texture(s) packed into the document.",
+                   name=path.name, n=embedded), 4000)
+        else:
+            self.statusBar().showMessage(
+                tr("Saved {name}.", name=path.name), 4000)
         self._current_path = path
         self._remember_recent(path)
         self._saved_version = self.viewport.scene.version
@@ -7003,13 +7012,18 @@ class MainWindow(QMainWindow):
         path_str, _ = file_dialogs.getSaveFileName(
             self, tr("Export IFC"), "model.ifc",
             tr("IFC4 (*.ifc);;All files (*)"))
-        if not path_str:
-            return
+        path = Path(path_str)
+        self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
+        dlg, cb = self._import_progress(tr("Exporting {name}…", name=path.name))
         try:
             count = ifc_format.save_ifc(self.viewport.scene, path_str)
         except Exception as exc:  # noqa: BLE001
+            dlg.close()
+            self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Export IFC failed"), str(exc))
             return
+        finally:
+            dlg.close()
         self.statusBar().showMessage(
             tr("{n} IFC elements exported to {path}",
                n=count, path=path_str), 5000)
@@ -7178,14 +7192,25 @@ class MainWindow(QMainWindow):
         path = Path(path_str)
         if path.suffix.lower() != f".{suffix}":
             path = path.with_suffix(f".{suffix}")
+        self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
+        dlg, cb = self._import_progress(tr("Exporting {name}…", name=path.name))
         try:
-            writer(self.viewport.scene, path)
+            import inspect
+            sig = inspect.signature(writer)
+            if "progress" in sig.parameters:
+                writer(self.viewport.scene, path, progress=cb)
+            else:
+                writer(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001
+            dlg.close()
+            self.statusBar().clearMessage()
             QMessageBox.critical(
                 self, tr("Export {label} failed", label=label), str(exc))
             return
+        finally:
+            dlg.close()
         self.statusBar().showMessage(
-            tr("Exported {label} → {name}", label=label, name=path.name), 3000)
+            tr("Exported {label} → {name}", label=label, name=path.name), 4000)
 
     def _confirm_discard(self, prompt: str) -> bool:
         """Return True if it's safe to discard the current drawing."""
