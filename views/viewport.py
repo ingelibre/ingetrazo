@@ -13696,11 +13696,23 @@ class Viewport(QOpenGLWidget):
                 tail = self._current_token_tail()
                 if not tail or ":" in self._value_buffer:
                     return True
-            # Forbid two decimal separators in the current numeric token.
+            # A second decimal separator in the current numeric token: a
+            # "." is dropped, a "," starts the next value (#598) — dropping
+            # it turned «0.9,2.1» into 0.921.
             if text in (".", ","):
                 tail = self._current_token_tail()
+                comma_fields = (
+                    getattr(self.active_tool, "vcb_comma_lists", False)
+                    and ";" not in self._value_buffer
+                    and " " not in self._value_buffer)
+                if comma_fields:
+                    # Every comma separates a field here (#152).
+                    tail = tail.rsplit(",", 1)[-1]
                 if "." in tail or "," in tail:
-                    return True
+                    if text == ".":
+                        return True
+                    if not comma_fields:
+                        text = ";"
             self._set_value_buffer(self._value_buffer + text)
             return True
 
