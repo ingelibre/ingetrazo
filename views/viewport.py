@@ -2095,14 +2095,14 @@ class Viewport(QOpenGLWidget):
         self._set_section_clip(True)
         show_edges = style.edges or mode == "wireframe"
         ec = style.edge_color
-        # Line weight for sheet renders: a GL line is one pixel whatever
-        # the DPI (core-profile Mesa clamps glLineWidth), and one pixel at
-        # 300 dpi is a 0.085 mm hairline that vanishes on paper and on the
-        # composer's scaled preview (Marco, 2026-09-14: «casi no se ven»).
-        # The frame asks for a pen in pixels and the pass is redrawn at
-        # sub-pixel offsets to reach it — exports only, never the screen.
-        _jit_e = self._line_jitter(self._export_edge_px, w, h)
-        _jit_p = self._line_jitter(self._export_profile_px, w, h)
+        # Line weights: regular edges stay 1 px on screen; profile edges use
+        # _SCREEN_PROFILE_PX so the silhouette pass reads thicker on macOS
+        # Core Profile (glLineWidth is clamped to 1 px there).  On export
+        # the frame-requested pen widths apply to both passes.
+        edge_px    = self._export_edge_px    if self._export_size is not None else 1
+        profile_px = self._export_profile_px if self._export_size is not None else self._SCREEN_PROFILE_PX
+        _jit_e = self._line_jitter(edge_px,    w, h)
+        _jit_p = self._profile_jitter(w, h)
         # X-ray draws every edge, but the ones BEHIND a face come out washed
         # toward the background: the faces' depth (never written by their
         # translucent pass) is laid down here, the edges beyond it drawn
@@ -3508,9 +3508,9 @@ class Viewport(QOpenGLWidget):
     def _line_jitter(self, px: int, w: int, h: int) -> list:
         """NDC offsets that thicken a 1-px GL line to about ``px`` pixels by
         redrawing it shifted — a disc of sub-pixel samples (2 px = the four
-        half-pixel corners, 3 px = a cross, …). Only export renders ask for
-        more than one; on screen the list is the single origin."""
-        if px <= 1 or self._export_size is None:
+        half-pixel corners, 3 px = a cross, …).  Returns the single origin
+        when ``px <= 1``; the caller decides which width to request."""
+        if px <= 1:
             return [(0.0, 0.0)]
         px = min(int(px), 8)
         r = (px - 1) / 2.0
@@ -3518,6 +3518,54 @@ class Viewport(QOpenGLWidget):
         return [(dx * 2.0 / max(w, 1), dy * 2.0 / max(h, 1))
                 for dx in offs for dy in offs
                 if dx * dx + dy * dy <= r * r + 0.51]
+
+    def _profile_jitter(self, w: int, h: int) -> list:
+        """Jitter offsets for the profile (silhouette) edge pass.
+        On screen: _SCREEN_PROFILE_PX wide so profile edges read visibly
+        thicker than regular 1-px edges (glLineWidth is clamped to 1 px
+        on macOS Core Profile).  On export: uses the frame-requested
+        pen width."""
+        px = (self._export_profile_px if self._export_size is not None
+              else self._SCREEN_PROFILE_PX)
+        return self._line_jitter(px, w, h)
+
+    def _silhouette_edge_sets(self, data: dict):
+        """Yield one dict per edge kind present in *data* (soft first,
+        hard second).  Each dict has keys ``pts``, ``n0``, ``c0``,
+        ``n1``, ``c1``, ``single`` — the same arrays used by the
+        per-frame view-side sign test."""
+        for kind in ("soft", "hard"):
+            pts = data.get(f"{kind}_pts")
+            if pts is not None:
+                yield {
+                    "pts":    pts,
+                    "n0":     data[f"{kind}_n0"],
+                    "c0":     data[f"{kind}_c0"],
+                    "n1":     data[f"{kind}_n1"],
+                    "c1":     data[f"{kind}_c1"],
+                    "single": data[f"{kind}_single"],
+                }
+
+    def _combined_silhouette_data(self, base: dict):
+        """Concatenated soft + hard edge arrays ready for ``_silhouette_table``.
+        Returns ``None`` when the prototype has no profile edges at all."""
+        import numpy as np
+        sets = list(self._silhouette_edge_sets(base))
+        if not sets:
+            return None
+        def _cat(key, dtype=np.float64):
+            return np.concatenate(
+                [s[key].astype(dtype, copy=False) for s in sets])
+        return {
+            "seg":    np.concatenate([
+                          s["pts"].astype(np.float64, copy=False).reshape(-1, 2, 3)
+                          for s in sets]),
+            "n0":     _cat("n0"),
+            "c0":     _cat("c0"),
+            "n1":     _cat("n1"),
+            "c1":     _cat("c1"),
+            "single": _cat("single", dtype=bool),
+        }
 
     # ---- Base-map tiles (Track G) -------------------------------------------
     def _base_map_showing(self) -> bool:
@@ -5870,15 +5918,64 @@ class Viewport(QOpenGLWidget):
             self._soft_edges_cache = cached
         eye = self.camera.eye()
         chunks: list = []
+        e_np = np.array([eye.x(), eye.y(), eye.z()])
         if cached[1] is not None:
             pts, n0, c0, n1, c1, single = cached[1]
-            e_np = np.array([eye.x(), eye.y(), eye.z()])
             s0 = np.einsum("ij,ij->i", n0, c0 - e_np)
             s1 = np.einsum("ij,ij->i", n1, c1 - e_np)
             mask = single | ((s0 < 0) != (s1 < 0))
             chunks.append(pts[mask].tobytes())
         else:
             chunks.append(b"")
+        # Hard edges of the loose mesh that straddle the silhouette.
+        hard_cache = getattr(self, "_hard_edges_cache", None)
+        if hard_cache is None or hard_cache[0] != key:
+            hard_edges = [
+                edge for edge in self.scene.loose_mesh.edges
+                if (not getattr(edge, "soft", False)
+                    and not getattr(edge, "hidden", False)
+                    and self.scene.entity_visible(edge) and edge.faces)
+            ]
+            if hard_edges:
+                edge_pts  = np.empty((len(hard_edges), 6))
+                is_boundary = np.empty(len(hard_edges), dtype=bool)
+                face0_tris  = np.empty((len(hard_edges), 3, 3))
+                face1_tris  = np.empty((len(hard_edges), 3, 3))
+                for idx, edge in enumerate(hard_edges):
+                    edge_pts[idx] = (edge.a.x(), edge.a.y(), edge.a.z(),
+                                     edge.b.x(), edge.b.y(), edge.b.z())
+                    v0 = edge.faces[0].vertices
+                    v1 = (edge.faces[1] if len(edge.faces) == 2
+                          else edge.faces[0]).vertices
+                    face0_tris[idx] = ((v0[0].x(), v0[0].y(), v0[0].z()),
+                                       (v0[1].x(), v0[1].y(), v0[1].z()),
+                                       (v0[2].x(), v0[2].y(), v0[2].z()))
+                    face1_tris[idx] = ((v1[0].x(), v1[0].y(), v1[0].z()),
+                                       (v1[1].x(), v1[1].y(), v1[1].z()),
+                                       (v1[2].x(), v1[2].y(), v1[2].z()))
+                    is_boundary[idx] = len(edge.faces) != 2
+                face0_normals = np.cross(face0_tris[:, 1] - face0_tris[:, 0],
+                                         face0_tris[:, 2] - face0_tris[:, 0])
+                face1_normals = np.cross(face1_tris[:, 1] - face1_tris[:, 0],
+                                         face1_tris[:, 2] - face1_tris[:, 0])
+                hard_edge_data = {
+                    "pts":    edge_pts.astype(np.float32),
+                    "n0":     face0_normals,
+                    "c0":     face0_tris[:, 0],
+                    "n1":     face1_normals,
+                    "c1":     face1_tris[:, 0],
+                    "single": is_boundary,
+                }
+            else:
+                hard_edge_data = None
+            hard_cache = (key, hard_edge_data)
+            self._hard_edges_cache = hard_cache
+        if hard_cache[1] is not None:
+            data = hard_cache[1]
+            s0 = np.einsum("ij,ij->i", data["n0"], data["c0"] - e_np)
+            s1 = np.einsum("ij,ij->i", data["n1"], data["c1"] - e_np)
+            mask = data["single"] | ((s0 < 0) != (s1 < 0))
+            chunks.append(data["pts"][mask].tobytes())
         pv_sil = getattr(self, "_preview_groups", None) or ()
         # Silhouettes are a full-strength black outline; drawing them over a
         # faded (or hidden) context would put the heaviest line in the frame
@@ -5914,19 +6011,21 @@ class Viewport(QOpenGLWidget):
                             chunks.append(got)
                         continue
                 ch = self._group_chunk(g)
-                if ch["soft_pts"] is None:
+                if ch["soft_pts"] is None and ch.get("hard_pts") is None:
                     continue
                 bb = ch.get("bbox")
                 if (planes is not None and bb is not None
                         and not self._aabb_visible(planes, bb[0], bb[1])):
                     continue        # whole chunk off screen: skip the einsum
-                s0 = np.einsum("ij,ij->i", ch["soft_n0"],
-                               ch["soft_c0"] - e_np)
-                s1 = np.einsum("ij,ij->i", ch["soft_n1"],
-                               ch["soft_c1"] - e_np)
-                mask = ch["soft_single"] | ((s0 < 0) != (s1 < 0))
-                if mask.any():
-                    chunks.append(ch["soft_pts"][mask].tobytes())
+                seg_parts = []
+                for es in self._silhouette_edge_sets(ch):
+                    s0 = np.einsum("ij,ij->i", es["n0"], es["c0"] - e_np)
+                    s1 = np.einsum("ij,ij->i", es["n1"], es["c1"] - e_np)
+                    mask = es["single"] | ((s0 < 0) != (s1 < 0))
+                    if mask.any():
+                        seg_parts.append(es["pts"][mask])
+                if seg_parts:
+                    chunks.append(b"".join(p.tobytes() for p in seg_parts))
         raw = b"".join(chunks)
         self._silhouette_vbo.bind()
         if raw:
@@ -5958,8 +6057,8 @@ class Viewport(QOpenGLWidget):
                 rest.append(g)
                 continue
             base = self._proto_base_chunk(g.mesh, effective_material(g))
-            if base["soft_pts"] is None:
-                continue                      # nothing curved to outline
+            if base["soft_pts"] is None and base.get("hard_pts") is None:
+                continue                      # nothing to outline
             box, inv = self._placement_frame(g)
             if inv is None:
                 rest.append(g)
@@ -5977,14 +6076,17 @@ class Viewport(QOpenGLWidget):
             his.append(box[1] if box else (inf, inf, inf))
         table = []
         for base, fwds, invs, los, his in by_proto.values():
-            n0 = np.asarray(base["soft_n0"], np.float64)
-            n1 = np.asarray(base["soft_n1"], np.float64)
+            combined = self._combined_silhouette_data(base)
+            if combined is None:
+                continue
+            n0, n1 = combined["n0"], combined["n1"]
+            c0, c1 = combined["c0"], combined["c1"]
             table.append({
-                "seg": np.asarray(base["soft_pts"], np.float64).reshape(-1, 2, 3),
+                "seg":    combined["seg"],
                 "n0": n0, "n1": n1,
-                "d0": np.einsum("ij,ij->i", n0, np.asarray(base["soft_c0"], np.float64)),
-                "d1": np.einsum("ij,ij->i", n1, np.asarray(base["soft_c1"], np.float64)),
-                "single": np.asarray(base["soft_single"], bool),
+                "d0": np.einsum("ij,ij->i", n0, c0),
+                "d1": np.einsum("ij,ij->i", n1, c1),
+                "single": combined["single"],
                 "fwd": np.stack(fwds), "inv": np.stack(invs),
                 "lo": np.asarray(los, np.float64), "hi": np.asarray(his, np.float64),
             })
@@ -6053,7 +6155,7 @@ class Viewport(QOpenGLWidget):
         import numpy as np
         from core.group import effective_material
         base = self._proto_base_chunk(g.mesh, effective_material(g))
-        if base["soft_pts"] is None:
+        if base["soft_pts"] is None and base.get("hard_pts") is None:
             return b""
         bb, inv = self._placement_frame(g)
         if planes is not None and bb is not None \
@@ -6063,13 +6165,17 @@ class Viewport(QOpenGLWidget):
             return None
         le = inv.map(eye)
         e_np = np.array([le.x(), le.y(), le.z()])
-        s0 = np.einsum("ij,ij->i", base["soft_n0"], base["soft_c0"] - e_np)
-        s1 = np.einsum("ij,ij->i", base["soft_n1"], base["soft_c1"] - e_np)
-        mask = base["soft_single"] | ((s0 < 0) != (s1 < 0))
-        if not mask.any():
+        seg_parts = []
+        for es in self._silhouette_edge_sets(base):
+            s0 = np.einsum("ij,ij->i", es["n0"], es["c0"] - e_np)
+            s1 = np.einsum("ij,ij->i", es["n1"], es["c1"] - e_np)
+            mask = es["single"] | ((s0 < 0) != (s1 < 0))
+            if mask.any():
+                seg_parts.append(es["pts"].reshape(-1, 6)[mask])
+        if not seg_parts:
             return b""
         m = np.array(g.xform.data(), dtype=np.float64).reshape(4, 4, order="F")
-        seg = base["soft_pts"].reshape(-1, 6)[mask].astype(np.float64)
+        seg = np.concatenate(seg_parts).astype(np.float64)
         pts = seg.reshape(-1, 3) @ m[:3, :3].T + m[:3, 3]
         return pts.astype(np.float32).tobytes()
 
@@ -8421,6 +8527,12 @@ class Viewport(QOpenGLWidget):
         if entry["soft_pts"] is not None:
             sp = entry["soft_pts"].reshape(-1, 3) + dx
             entry["soft_pts"] = sp.astype(np.float32).reshape(-1, 6)
+        for kk in ("hard_c0", "hard_c1"):
+            if entry.get(kk) is not None and len(entry[kk]):
+                entry[kk] = entry[kk] + dx
+        if entry.get("hard_pts") is not None:
+            hp = entry["hard_pts"].reshape(-1, 3) + dx
+            entry["hard_pts"] = hp.astype(np.float32).reshape(-1, 6)
         entry["samples"] = [(i, (mesh.vertices[i].position.x(),
                                  mesh.vertices[i].position.y(),
                                  mesh.vertices[i].position.z()))
@@ -8512,6 +8624,12 @@ class Viewport(QOpenGLWidget):
             s6[:, 0:3] = tp(s6[:, 0:3])
             s6[:, 3:6] = tp(s6[:, 3:6])
             sp = s6.astype(np.float32)
+        hp = base.get("hard_pts")
+        if hp is not None:
+            h6 = hp.reshape(-1, 6).astype(np.float64)
+            h6[:, 0:3] = tp(h6[:, 0:3])
+            h6[:, 3:6] = tp(h6[:, 3:6])
+            hp = h6.astype(np.float32)
         entry = {
             "ikey": key,
             "uid": next(_chunk_uid),
@@ -8548,6 +8666,12 @@ class Viewport(QOpenGLWidget):
             "soft_c1": (tp(base["soft_c1"]) if len(base["soft_c1"])
                         else base["soft_c1"]),
             "soft_single": base["soft_single"],
+            "hard_pts": hp,
+            "hard_n0": tn(base["hard_n0"]),
+            "hard_c0": tp(base["hard_c0"]) if len(base["hard_c0"]) else base["hard_c0"],
+            "hard_n1": tn(base["hard_n1"]),
+            "hard_c1": tp(base["hard_c1"]) if len(base["hard_c1"]) else base["hard_c1"],
+            "hard_single": base["hard_single"],
         }
         bb = base.get("bbox")
         if bb is not None:
@@ -8612,6 +8736,14 @@ class Viewport(QOpenGLWidget):
             entry["soft_pts"] = s6.astype(np.float32)
         for kk in ("soft_c0", "soft_c1"):
             if len(entry[kk]):
+                entry[kk] = entry[kk] + dx
+        if entry.get("hard_pts") is not None:
+            h6 = entry["hard_pts"].reshape(-1, 6).copy()
+            h6[:, 0:3] += dx
+            h6[:, 3:6] += dx
+            entry["hard_pts"] = h6.astype(np.float32)
+        for kk in ("hard_c0", "hard_c1"):
+            if entry.get(kk) is not None and len(entry[kk]):
                 entry[kk] = entry[kk] + dx
 
     def _group_chunk(self, group):
@@ -8747,6 +8879,12 @@ class Viewport(QOpenGLWidget):
         soft_n1: list = []
         soft_c1: list = []
         soft_single: list = []
+        hard_pts: list = []
+        hard_n0: list = []
+        hard_c0: list = []
+        hard_n1: list = []
+        hard_c1: list = []
+        hard_single: list = []
         fprops: dict = {}
 
         # Faces first: one Newell walk per face yields normal + area, and the
@@ -8871,6 +9009,21 @@ class Viewport(QOpenGLWidget):
             if not getattr(e, "soft", False):
                 edges_data.extend([e.a.x(), e.a.y(), e.a.z(),
                                    e.b.x(), e.b.y(), e.b.z()])
+                fs = e.faces
+                if len(fs) in (1, 2):
+                    hard_pts.append([e.a.x(), e.a.y(), e.a.z(),
+                                     e.b.x(), e.b.y(), e.b.z()])
+                    n0, c0 = props(fs[0])
+                    hard_n0.append(n0)
+                    hard_c0.append(c0)
+                    if len(fs) == 2:
+                        n1, c1 = props(fs[1])
+                        hard_single.append(False)
+                    else:
+                        n1, c1 = n0, c0
+                        hard_single.append(True)
+                    hard_n1.append(n1)
+                    hard_c1.append(c1)
                 continue
             fs = e.faces
             if len(fs) not in (1, 2):
@@ -8958,7 +9111,14 @@ class Viewport(QOpenGLWidget):
                  "soft_c0": np.asarray(soft_c0, dtype=np.float64),
                  "soft_n1": np.asarray(soft_n1, dtype=np.float64),
                  "soft_c1": np.asarray(soft_c1, dtype=np.float64),
-                 "soft_single": np.asarray(soft_single, dtype=bool)}
+                 "soft_single": np.asarray(soft_single, dtype=bool),
+                 "hard_pts": (np.asarray(hard_pts, dtype=np.float32)
+                              if hard_pts else None),
+                 "hard_n0": np.asarray(hard_n0, dtype=np.float64),
+                 "hard_c0": np.asarray(hard_c0, dtype=np.float64),
+                 "hard_n1": np.asarray(hard_n1, dtype=np.float64),
+                 "hard_c1": np.asarray(hard_c1, dtype=np.float64),
+                 "hard_single": np.asarray(hard_single, dtype=bool)}
         if _PERF:
             _plog("chunk_rebuild", (_time_mod.perf_counter() - _c0) * 1000.0,
                   extra=f"faces={len(faces)}")
@@ -8989,6 +9149,7 @@ class Viewport(QOpenGLWidget):
     # Lives in the app's own cache dir (like extracted textures) and is
     # keyed by a STABLE sha1 content digest — a stale entry can only miss.
 
+    _SCREEN_PROFILE_PX = 2              # profile edge width on screen (export uses _export_profile_px)
     _CHUNK_CACHE_MIN_FACES = 5000       # small groups rebuild faster than IO
     _CHUNK_CACHE_KEEP = 120             # files kept; oldest pruned at save
 
@@ -9040,7 +9201,9 @@ class Viewport(QOpenGLWidget):
         "edges", "vcol", "by_texture", "tcol", "ttex", "back_vcol",
         "back_tex", "back_tcol", "back_ttex", "fvcol", "dback", "areas",
         "v0", "e1", "e2", "tri_ent", "soft_pts", "soft_n0", "soft_c0",
-        "soft_n1", "soft_c1", "soft_single", "bbox", "coordsum",
+        "soft_n1", "soft_c1", "soft_single",
+        "hard_pts", "hard_n0", "hard_c0", "hard_n1", "hard_c1", "hard_single",
+        "bbox", "coordsum",
         "nv", "ne", "nf", "samples")
 
     def _chunk_cache_load(self, group, fp, vkey):
@@ -9055,7 +9218,8 @@ class Viewport(QOpenGLWidget):
                 return None
             with open(path, "rb") as fh:
                 stored = pickle.load(fh)     # our own cache dir only
-            if stored.get("nf") != len(mesh.faces) or "dback" not in stored:
+            if stored.get("nf") != len(mesh.faces) or "dback" not in stored \
+                    or "hard_pts" not in stored:
                 return None          # a cache predating the back-side tint
             entry = dict(stored)
             entry.update(fp=fp, vkey=vkey, rev=0, uid=next(_chunk_uid),
