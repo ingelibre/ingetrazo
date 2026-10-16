@@ -27,9 +27,12 @@ from PySide6.QtWidgets import (
     QDialog,
     QDoubleSpinBox,
     QDialogButtonBox,
+    QFileDialog,
+    QPushButton,
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
+    QInputDialog,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -227,24 +230,8 @@ class PreferencesDialog(QDialog):
         self._ndof_speed.setSuffix(" %")
         self._ndof_speed.setValue(int(round(nd.sensitivity * 100)))
         form.addRow(tr("Speed:"), self._ndof_speed)
-        # One box per movement (issue #108, a SpaceMouse user: «a
-        # checkbox for each axis»); each shows what that axis does now,
-        # the old pair switches included.
-        self._ndof_inv = {}
-        for key, label, on in (
-                ("pan_x", tr("Invert pan left / right"),
-                 nd.invert_pan != nd.invert_pan_x),
-                ("pan_y", tr("Invert pan up / down"),
-                 nd.invert_pan != nd.invert_pan_y),
-                ("zoom", tr("Invert zoom"), nd.invert_zoom),
-                ("tilt", tr("Invert orbit up / down (tilt)"),
-                 nd.invert_rotate != nd.invert_tilt),
-                ("spin", tr("Invert orbit around (spin)"),
-                 nd.invert_rotate != nd.invert_spin)):
-            box = QCheckBox(label)
-            box.setChecked(on)
-            form.addRow("", box)
-            self._ndof_inv[key] = box
+        # Legacy inversion controls have been replaced by physical-axis controls.
+        # Preserve their effective values when upgrading an Original configuration.
         self._ndof_lock = QCheckBox(tr(
             "Pan and zoom only (no rotation — for drawing in plan)"))
         self._ndof_lock.setChecked(nd.lock_rotation)
@@ -257,6 +244,125 @@ class PreferencesDialog(QDialog):
                 "macOS is not supported yet."))
         status.setWordWrap(True)
         form.addRow("", status)
+        # Six independent physical-axis assignments.
+        from core.ndof import AXES, ACTIONS, DEFAULT_MAPPING
+        self._ndof_loading = False
+        self._ndof_named = self._read_named_ndof_profiles()
+        self._ndof_selected_name = str(st.value("ndof/selected_profile", ""))
+        self._ndof_preset = QComboBox()
+        self._ndof_preset.addItem(tr("Original"), "original")
+        self._ndof_preset.addItem(tr("FreeCAD-style"), "freecad")
+        self._ndof_preset.addItem(tr("Custom"), "custom")
+        for name in sorted(self._ndof_named, key=str.casefold):
+            self._ndof_preset.addItem(name, "named:" + name)
+        selected = ("named:" + self._ndof_selected_name
+                    if self._ndof_selected_name in self._ndof_named
+                    else nd.mapping_preset)
+        self._ndof_preset.setCurrentIndex(max(0, self._ndof_preset.findData(selected)))
+        form.addRow(tr("Axis mapping preset:"), self._ndof_preset)
+        self._ndof_axes = {}
+        axis_labels = ("Move left / right", "Move up / down", "Push / pull",
+                       "Tilt forward / back", "Twist left / right",
+                       "Roll left / right")
+        action_labels = ("Pan X", "Pan Y", "Zoom", "Orbit X", "Orbit Y",
+                         "Disabled")
+        for axis, axis_label in zip(AXES, axis_labels):
+            row = QHBoxLayout()
+            action = QComboBox()
+            for key, label in zip(ACTIONS, action_labels):
+                action.addItem(tr(label), key)
+            action.setCurrentIndex(max(
+                0, action.findData(nd.axis_mapping.get(axis, DEFAULT_MAPPING[axis]))))
+            invert = QCheckBox(tr("Invert"))
+            invert.setChecked(nd.axis_inversion.get(axis, False))
+            speed = QSpinBox()
+            speed.setRange(25, 400)
+            speed.setSingleStep(25)
+            speed.setSuffix(" %")
+            speed.setValue(round(nd.axis_sensitivity.get(axis, 1.0) * 100))
+            row.addWidget(action)
+            row.addWidget(invert)
+            row.addWidget(speed)
+            form.addRow(tr(axis_label) + ":", row)
+            self._ndof_axes[axis] = (action, invert, speed)
+
+        # Do not lock axis widgets for any preset. Editing creates Custom.
+        # Block change handlers while loading a preset to prevent recursion.
+        def _preset_changed(_index):
+            from core.ndof import FREECAD_MAPPING, FREECAD_INVERSION
+            choice = self._ndof_preset.currentData()
+            if choice == "custom":
+                return
+            if choice == "original":
+                mapping = DEFAULT_MAPPING
+                inversion = {axis: False for axis in AXES}
+                speeds = {axis: 1.0 for axis in AXES}
+                global_speed = 1.0
+            elif choice == "freecad":
+                mapping = FREECAD_MAPPING
+                inversion = FREECAD_INVERSION
+                speeds = {axis: 1.0 for axis in AXES}
+                global_speed = 1.0
+            elif isinstance(choice, str) and choice.startswith("named:"):
+                profile = self._ndof_named.get(choice[6:])
+                if profile is None:
+                    return
+                mapping, inversion, speeds = (profile.axis_mapping,
+                                               profile.axis_inversion,
+                                               profile.axis_sensitivity)
+                global_speed = profile.sensitivity
+            else:
+                return
+            self._ndof_loading = True
+            try:
+                self._ndof_speed.setValue(round(global_speed * 100))
+                for axis, (action, invert, speed) in self._ndof_axes.items():
+                    action.setCurrentIndex(action.findData(mapping[axis]))
+                    invert.setChecked(inversion[axis])
+                    speed.setValue(round(speeds[axis] * 100))
+            finally:
+                self._ndof_loading = False
+
+        def _axis_edited(*_args):
+            if self._ndof_loading:
+                return
+            index = self._ndof_preset.findData("custom")
+            if self._ndof_preset.currentIndex() != index:
+                self._ndof_preset.blockSignals(True)
+                self._ndof_preset.setCurrentIndex(index)
+                self._ndof_preset.blockSignals(False)
+
+        self._ndof_preset.currentIndexChanged.connect(_preset_changed)
+        for action, invert, speed in self._ndof_axes.values():
+            action.currentIndexChanged.connect(_axis_edited)
+            invert.toggled.connect(_axis_edited)
+            speed.valueChanged.connect(_axis_edited)
+        self._ndof_speed.valueChanged.connect(_axis_edited)
+        # Respect saved values when opening the dialog; do not reapply the
+        # preset here, which could overwrite previously customised settings.
+        if nd.mapping_preset == "original":
+            legacy = {
+                "right": nd.invert_pan != nd.invert_pan_x,
+                "up": nd.invert_pan != nd.invert_pan_y,
+                "forward": nd.invert_zoom,
+                "tilt": nd.invert_rotate != nd.invert_tilt,
+                "spin": nd.invert_rotate != nd.invert_spin,
+                "roll": False,
+            }
+            self._ndof_loading = True
+            for axis, (_, invert, _) in self._ndof_axes.items():
+                invert.setChecked(legacy[axis])
+            self._ndof_loading = False
+        profile_buttons = QHBoxLayout()
+        self._ndof_load = QPushButton(tr("Load profile…"))
+        self._ndof_save = QPushButton(tr("Save profile…"))
+        self._ndof_reset = QPushButton(tr("Reset to defaults"))
+        for button in (self._ndof_load, self._ndof_save, self._ndof_reset):
+            profile_buttons.addWidget(button)
+        form.addRow("", profile_buttons)
+        self._ndof_load.clicked.connect(self._load_ndof_profile)
+        self._ndof_save.clicked.connect(self._save_ndof_profile)
+        self._ndof_reset.clicked.connect(self._reset_ndof_profile)
         tabs.addTab(mouse3d, tr("3D Mouse"))
 
         # ---- Import ---------------------------------------------------------
@@ -379,6 +485,87 @@ class PreferencesDialog(QDialog):
         """Open on the Keyboard shortcuts page with ``action`` picked."""
         self._tabs.setCurrentWidget(self._shortcuts)
         self._shortcuts.pick(action)
+
+    def _ndof_profile_from_ui(self):
+        from core.ndof import NdofSettings
+        from core.ndof_profiles import profile_from_dict, profile_to_dict
+        nd = NdofSettings(mapping_preset="custom")
+        nd.sensitivity = self._ndof_speed.value() / 100.0
+        for axis, (action, invert, speed) in self._ndof_axes.items():
+            nd.axis_mapping[axis] = action.currentData()
+            nd.axis_inversion[axis] = invert.isChecked()
+            nd.axis_sensitivity[axis] = speed.value() / 100.0
+        return profile_from_dict(profile_to_dict(nd))
+
+    @staticmethod
+    def _read_named_ndof_profiles():
+        import json
+        from core.ndof_profiles import profile_from_dict
+        raw = QSettings().value("ndof/named_profiles", "{}")
+        try:
+            parsed = json.loads(str(raw))
+            if not isinstance(parsed, dict):
+                return {}
+            return {name: profile_from_dict(data) for name, data in parsed.items()
+                    if isinstance(name, str) and 0 < len(name) <= 80}
+        except (ValueError, TypeError):
+            return {}
+
+    def _add_ndof_named_profile(self, name, profile):
+        self._ndof_named[name] = profile
+        key = "named:" + name
+        index = self._ndof_preset.findData(key)
+        if index < 0:
+            self._ndof_preset.addItem(name, key)
+            index = self._ndof_preset.findData(key)
+        self._ndof_preset.setCurrentIndex(index)
+
+    def _load_ndof_profile(self):
+        from pathlib import Path
+        from core.ndof_profiles import load_profile
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("Load SpaceMouse profile"), "", "JSON (*.json)")
+        if not path:
+            return
+        try:
+            profile = load_profile(path)
+        except (OSError, ValueError, UnicodeError) as exc:
+            QMessageBox.warning(self, tr("Invalid SpaceMouse profile"), str(exc))
+            return
+        name = Path(path).stem
+        if name in ("Original", "FreeCAD-style", "Custom"):
+            name += " (imported)"
+        self._add_ndof_named_profile(name, profile)
+
+    def _save_ndof_profile(self):
+        name, ok = QInputDialog.getText(
+            self, tr("Save SpaceMouse profile"), tr("Profile name:"))
+        if not ok:
+            return
+        name = name.strip()
+        if not name or len(name) > 80 or name in ("Original", "FreeCAD-style", "Custom"):
+            QMessageBox.warning(self, tr("Invalid profile name"),
+                                tr("Choose a different name (1–80 characters)."))
+            return
+        if name in self._ndof_named and QMessageBox.question(
+                self, tr("Replace profile?"),
+                tr("Replace the existing profile '{name}'?", name=name)) != QMessageBox.Yes:
+            return
+        self._add_ndof_named_profile(name, self._ndof_profile_from_ui())
+
+    def _reset_ndof_profile(self):
+        self._ndof_preset.setCurrentIndex(self._ndof_preset.findData("original"))
+        self._ndof_lock.setChecked(False)
+        # Explicitly reload even when Original is already selected.
+        if self._ndof_preset.currentData() == "original":
+            from core.ndof import DEFAULT_MAPPING
+            self._ndof_loading = True
+            self._ndof_speed.setValue(100)
+            for axis, (action, invert, speed) in self._ndof_axes.items():
+                action.setCurrentIndex(action.findData(DEFAULT_MAPPING[axis]))
+                invert.setChecked(False)
+                speed.setValue(100)
+            self._ndof_loading = False
 
     # ---- Apply --------------------------------------------------------------
     # ---- Scale figure of new documents (#655) ----------------------------
@@ -582,18 +769,29 @@ class PreferencesDialog(QDialog):
 
         from core.ndof import NdofSettings
         from views.ndof_input import save_settings
-        inv = {k: b.isChecked() for k, b in self._ndof_inv.items()}
-        # Saved per axis; the old pair switches go back to off.
         nd = NdofSettings(enabled=self._ndof_on.isChecked(),
                           sensitivity=self._ndof_speed.value() / 100.0,
-                          invert_pan=False,
-                          invert_zoom=inv["zoom"],
-                          invert_rotate=False,
-                          invert_pan_x=inv["pan_x"],
-                          invert_pan_y=inv["pan_y"],
-                          invert_tilt=inv["tilt"],
-                          invert_spin=inv["spin"],
                           lock_rotation=self._ndof_lock.isChecked())
+        selected = self._ndof_preset.currentData()
+        # Named presets are materialised into Custom at runtime. Their name
+        # is stored separately so the dropdown restores on the next launch.
+        nd.mapping_preset = selected if selected in ("original", "freecad") else "custom"
+        # Original's legacy inversion is migrated into the new per-axis
+        # representation. Old QSettings inversion keys are cleared on save.
+        if selected == "original":
+            nd.mapping_preset = "custom"
+        for axis, (action, invert, speed) in self._ndof_axes.items():
+            nd.axis_mapping[axis] = action.currentData()
+            nd.axis_inversion[axis] = invert.isChecked()
+            nd.axis_sensitivity[axis] = speed.value() / 100.0
+        from core.ndof_profiles import profile_to_dict
+        import json
+        st.setValue("ndof/named_profiles", json.dumps({
+            name: profile_to_dict(profile)
+            for name, profile in self._ndof_named.items()}))
+        st.setValue("ndof/selected_profile", selected[6:]
+                    if isinstance(selected, str) and selected.startswith("named:")
+                    else "")
         save_settings(nd)                # every window reads it live
 
         st.setValue("nav/invert_wheel",
