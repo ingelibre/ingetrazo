@@ -127,6 +127,98 @@ class _Section(QWidget):
             QSettings().setValue(key, "0" if on else "1")
 
 
+class _SectionStack(QWidget):
+    """Vertical section stack whose headers can be dragged to reorder."""
+
+    def __init__(self, sections) -> None:
+        super().__init__()
+        from PySide6.QtWidgets import QApplication
+        self._app = QApplication.instance()
+        self._layout = QVBoxLayout(self)
+        self._layout.setAlignment(Qt.AlignTop)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        self._drag_start = None
+        self._sections = list(sections)
+        self._order_key = "tray/section_order/" + "|".join(sorted(
+            type(content).__name__ for _, content in sections))
+        saved = QSettings().value(self._order_key, [], type=list)
+        if saved:
+            rank = {name: i for i, name in enumerate(saved)}
+            self._sections.sort(key=lambda pair: rank.get(
+                type(pair[1]).__name__, len(rank)))
+        for title, content in self._sections:
+            section = _Section(title, content)
+            self._layout.addWidget(section, 0, Qt.AlignTop)
+            section._btn.installEventFilter(self)
+        self.setAcceptDrops(True)
+
+    def eventFilter(self, watched, event):
+        from PySide6.QtCore import QMimeData
+        from PySide6.QtGui import QDrag
+        if event.type() == event.Type.MouseButtonPress \
+                and event.button() == Qt.LeftButton:
+            self._drag_start = (watched, event.globalPosition().toPoint())
+        elif event.type() == event.Type.MouseButtonRelease:
+            self._drag_start = None
+        elif event.type() == event.Type.MouseMove and self._drag_start \
+                and self._drag_start[0] is watched \
+                and event.buttons() & Qt.LeftButton:
+            start = self._drag_start[1]
+            if (event.globalPosition().toPoint() - start).manhattanLength() \
+                    >= self._app.startDragDistance():
+                drag = QDrag(watched)
+                mime = QMimeData()
+                mime.setText("tray-section")
+                drag.setMimeData(mime)
+                drag.setProperty("section", watched.parentWidget())
+                self._drag_start = None
+                drag.exec(Qt.MoveAction)
+                return True
+        return super().eventFilter(watched, event)
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().text() == "tray-section":
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        self.dragEnterEvent(event)
+
+    def dropEvent(self, event) -> None:
+        if event.mimeData().text() != "tray-section":
+            event.ignore()
+            return
+        drag = event.source()
+        # QDrag's source is the header button; its parent is the section.
+        source = drag if isinstance(drag, _Section) else drag.parentWidget()
+        if not isinstance(source, _Section):
+            event.ignore()
+            return
+        y = event.position().toPoint().y()
+        target_index = self._layout.count()
+        for i in range(self._layout.count()):
+            item = self._layout.itemAt(i).widget()
+            if item is not None and y < item.geometry().center().y():
+                target_index = i
+                break
+        old_index = self._layout.indexOf(source)
+        if old_index < 0:
+            event.ignore()
+            return
+        self._layout.removeWidget(source)
+        if target_index > old_index:
+            target_index -= 1
+        self._layout.insertWidget(target_index, source)
+        self._sections = [(section._btn.text().strip(), section._content)
+                          for section in (self._layout.itemAt(i).widget()
+                                          for i in range(self._layout.count()))]
+        QSettings().setValue(self._order_key, [
+            type(content).__name__ for _, content in self._sections])
+        event.acceptProposedAction()
+
+
 def style_slider(slider) -> None:
     """A slider whose track reads on any theme. The platform style draws
     the groove in a shade of the window colour, which on macOS's dark
@@ -3550,17 +3642,12 @@ def _let_narrow(widget: QWidget) -> None:
 
 def _scrolled(sections) -> QScrollArea:
     """A scroll area wrapping a vertical stack of collapsible sections."""
-    inner = QWidget()
-    col = QVBoxLayout(inner)
-    col.setContentsMargins(0, 0, 0, 0)
-    col.setSpacing(2)
+    inner = _SectionStack(sections)
     scroll = QScrollArea()
     anchor = _ScrollAnchor(scroll)
-    for title, widget in sections:
-        section = _Section(title, widget)
+    for i in range(inner._layout.count()):
+        section = inner._layout.itemAt(i).widget()
         section.installEventFilter(anchor)
-        col.addWidget(section)
-    col.addStretch(1)
     _let_narrow(inner)
     scroll.setWidgetResizable(True)
     scroll.setWidget(inner)
