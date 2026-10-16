@@ -8,8 +8,7 @@ Holds collapsible sections:
   and switches to the Paint tool. ``+ Textura…`` adds an image with a tile size.
 - **Estilo de cota** — precision, unit, font size and colour of dimensions,
   applied live to ``scene.dimension_style``.
-- **Info de entidad** — read-only facts about the current selection (face area,
-  edge length, dimension value, material).
+- **Info de entidad** — selection facts, editable name/tag and visibility controls.
 
 A ``QDockWidget`` gives docking/floating/closing for free; the sections are a
 vertical stack of lightweight collapsibles inside a scroll area.
@@ -3257,73 +3256,145 @@ _TAGGABLE = (Face, Edge, Group, Dimension, TextLabel)
 
 
 class EntityInfoPanel(QWidget):
-    """Facts about the current selection, plus the one thing an Entity
-    Info panel lets you CHANGE here: the layer (its Tag field). Rafael
-    went looking for it exactly here — «debo de tener que ir a las
-    propiedades del objeto… no sé cómo cambiarlo de aquí» (2026-09-16,
-    39:00) — and found only the Layers panel's button, which he did not
-    understand."""
+    """Compact SketchUp-style selection facts and entity toggles."""
 
     def __init__(self, window) -> None:
         super().__init__()
-        from PySide6.QtWidgets import QComboBox, QHBoxLayout
         self._window = window
         self._updating = False
+        self._named = None
+        self.setObjectName("entityInfo")
+        self.setMinimumWidth(240)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 6, 8, 8)
+        lay.setContentsMargins(10, 8, 10, 10)
+        lay.setSpacing(8)
         self._label = QLabel(tr("Nothing selected"))
-        self._label.setWordWrap(True)
-        self._label.setTextFormat(Qt.RichText)
-        self._label.setStyleSheet("font-size: 12px;")
+        self._label.setTextFormat(Qt.PlainText)
+        self._label.setStyleSheet("font-size: 13px; font-weight: 600;")
         lay.addWidget(self._label)
-        # The name of ONE group or component, edited here — where everyone
-        # looks for it (issue #214: «there seems to be no way to name this
-        # group»). The Parts panel could already rename, out of sight.
-        from PySide6.QtWidgets import QLineEdit
-        name_row = QHBoxLayout()
-        self._name_caption = QLabel(tr("Name:"))
-        self._name_edit = QLineEdit()
-        self._name_edit.setToolTip(
-            tr("The name of the selected group or component — Enter keeps it"))
-        self._name_edit.editingFinished.connect(self._on_name_edited)
-        name_row.addWidget(self._name_caption)
-        name_row.addWidget(self._name_edit, 1)
-        lay.addLayout(name_row)
-        self._named = None               # the group the field is showing
-        row = QHBoxLayout()
-        self._layer_caption = QLabel(tr("Layer:"))
+        rule = QFrame()
+        rule.setFrameShape(QFrame.HLine)
+        lay.addWidget(rule)
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(1, 1)
+        lay.addLayout(grid)
+        self._layer_caption = QLabel(tr("Tag:"))
         self._layer_box = QComboBox()
+        self._layer_box.setMinimumWidth(0)
+        self._layer_box.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self._layer_box.setToolTip(
             tr("The layer the selection is on — pick another to move it"))
         self._layer_box.currentIndexChanged.connect(self._on_layer_picked)
-        row.addWidget(self._layer_caption)
-        row.addWidget(self._layer_box, 1)
-        lay.addLayout(row)
-        # A steady height. Selecting something used to resize this panel —
-        # one line for nothing, two for an edge, four and a layer row for a
-        # face — and everything below it (layers, scenes, the materials
-        # library) slid up and down with every click (Marco, 23-09, four
-        # screenshots). The layer row keeps its place when hidden, and the
-        # text keeps room for the four lines a face or a solid shows.
-        for w in (self._layer_caption, self._layer_box,
-                  self._name_caption, self._name_edit):
-            pol = w.sizePolicy()
-            pol.setRetainSizeWhenHidden(True)
-            w.setSizePolicy(pol)
-        from PySide6.QtGui import QFont, QFontMetrics
-        font = QFont(self._label.font())
-        font.setPixelSize(12)
-        self._label.setMinimumHeight(QFontMetrics(font).lineSpacing() * 4 + 4)
-        self._layer_caption.hide()
-        self._layer_box.hide()
-        self._name_caption.hide()
-        self._name_edit.hide()
+        grid.addWidget(self._layer_caption, 0, 0)
+        grid.addWidget(self._layer_box, 0, 1)
+        self._name_caption = QLabel(tr("Name:"))
+        self._name_edit = QLineEdit()
+        self._name_edit.setMinimumWidth(0)
+        self._name_edit.setToolTip(
+            tr("The name of the selected group or component — Enter keeps it"))
+        self._name_edit.editingFinished.connect(self._on_name_edited)
+        grid.addWidget(self._name_caption, 1, 0)
+        grid.addWidget(self._name_edit, 1, 1)
+        self._facts = []
+        for row in range(4):
+            caption, value = QLabel(), QLineEdit()
+            caption.setTextFormat(Qt.PlainText)
+            value.setReadOnly(True)
+            value.setMinimumWidth(0)
+            value.setObjectName("entityFact")
+            grid.addWidget(caption, row + 2, 0)
+            grid.addWidget(value, row + 2, 1)
+            self._facts.append((caption, value))
+        self._toggle_caption = QLabel(tr("Toggles:"))
+        self._toggle_widget = QWidget()
+        toggle_row = QHBoxLayout(self._toggle_widget)
+        toggle_row.setContentsMargins(0, 0, 0, 0)
+        toggle_row.setSpacing(4)
+        grid.addWidget(self._toggle_caption, 6, 0)
+        grid.addWidget(self._toggle_widget, 6, 1)
+        self._visible = QToolButton()
+        self._visible.setIcon(QIcon(str(app_root() / "resources/icons/layer_visible.svg")))
+        self._visible.setIconSize(QSize(24, 24))
+        self._visible.setFixedSize(26, 24)
+        self._visible.setCheckable(True)
+        self._visible.setAccessibleName(tr("Visible"))
+        self._visible.setToolTip(tr("Visible"))
+        self._visible.clicked.connect(self._on_visibility_clicked)
+        toggle_row.addWidget(self._visible)
+        self._locked = QToolButton()
+        self._locked.setIconSize(QSize(24, 24))
+        self._locked.setFixedSize(26, 24)
+        self._locked.setCheckable(True)
+        self._locked.setAccessibleName(tr("Locked"))
+        self._locked.clicked.connect(self._on_lock_clicked)
+        toggle_row.addWidget(self._locked)
+        toggle_row.addStretch()
+        theme_style(self, """
+            QLineEdit, QComboBox {{ min-height: 24px; border: 1px solid palette(midlight);
+                                  border-radius: 3px; padding: 0 5px; background: palette(base); }}
+            QLineEdit#entityFact {{ background: palette(alternate-base); color: {muted}; }}
+            QToolButton {{ border: 1px solid palette(midlight); border-radius: 3px; padding: 0; }}
+            QToolButton:checked {{ background: palette(base); border-color: palette(highlight); }}
+        """)
+        self.refresh()
 
     def refresh(self) -> None:
+        from html import unescape
+        from core.history import _is_hidden
         sel = list(self._window.viewport.scene.selection)
-        self._label.setText(self._describe(sel))
+        # Keep the existing selection summaries, but present facts as fields.
+        rows = [row for row in self._describe(sel).split("<br>")
+                if not row.startswith(tr("Material") + ": ")]
+        title = rows[0].removeprefix("<b>").removesuffix("</b>")
+        self._label.setText(unescape(title))
+        self._label.setToolTip(unescape(title))
+        for index, (caption, value) in enumerate(self._facts):
+            text = unescape(rows[index + 1]) if index + 1 < len(rows) else ""
+            key, sep, fact = text.partition(": ")
+            caption.setText(key + ":" if sep else tr("Selection") + ":")
+            value.setText(fact if sep else text)
+            value.setToolTip(value.text())
+            caption.setVisible(bool(text))
+            value.setVisible(bool(text))
         self._refresh_name(sel)
         self._refresh_layer(sel)
+        targets = [e for e in sel if hasattr(e, "hidden") or hasattr(e, "attrs")]
+        self._visible.setEnabled(bool(targets))
+        self._visible.setChecked(bool(targets) and not any(_is_hidden(e) for e in targets))
+        from core import history
+        # The companion backend PR supplies undoable object locks.
+        lock_targets = ([e for e in sel if hasattr(e, "locked")]
+                        if hasattr(history, "SetLockedCommand") else [])
+        locked = bool(lock_targets) and all(e.locked for e in lock_targets)
+        self._locked.setEnabled(bool(lock_targets))
+        self._locked.setChecked(locked)
+        self._locked.setToolTip(tr("Unlock") if locked else tr("Lock"))
+        icon = "entity_locked.svg" if locked else "entity_unlocked.svg"
+        self._locked.setIcon(QIcon(str(app_root() / "resources/icons" / icon)))
+
+    def _on_lock_clicked(self, locked: bool) -> None:
+        from core import history
+        lock_command = getattr(history, "SetLockedCommand", None)
+        vp = self._window.viewport
+        targets = [e for e in vp.scene.selection if hasattr(e, "locked")]
+        if targets and lock_command is not None:
+            vp.history.execute(lock_command(targets, locked))
+            vp.update()
+        self.refresh()
+
+    def _on_visibility_clicked(self, visible: bool) -> None:
+        from core.history import HideCommand
+        vp = self._window.viewport
+        targets = [e for e in vp.scene.selection
+                   if hasattr(e, "hidden") or hasattr(e, "attrs")]
+        if targets:
+            vp.history.execute(HideCommand(targets, hidden=not visible))
+            vp.update()
+        self.refresh()
 
     # ---- Name field ---------------------------------------------------------
     def _refresh_name(self, sel: list) -> None:
@@ -3352,7 +3423,8 @@ class EntityInfoPanel(QWidget):
 
     # ---- Layer field --------------------------------------------------------
     def _refresh_layer(self, sel: list) -> None:
-        from core.layers import layer_of
+        from core.layers import DEFAULT_LAYER, layer_of
+        from PySide6.QtCore import QCollator, QLocale
         tagged = [e for e in sel if isinstance(e, _TAGGABLE)]
         show = bool(tagged)
         self._layer_caption.setVisible(show)
@@ -3360,7 +3432,17 @@ class EntityInfoPanel(QWidget):
         if not show:
             return
         scene = self._window.viewport.scene
-        names = [ly.name for ly in scene.layers]
+        # SketchUp-style tag list: default first, then natural name order.
+        locale = QLocale()
+        if locale.language() == QLocale.Language.C:
+            locale = QLocale("en_US")
+        collator = QCollator(locale)
+        collator.setCaseSensitivity(Qt.CaseInsensitive)
+        collator.setNumericMode(True)
+        collator.setIgnorePunctuation(True)
+        names = sorted((ly.name for ly in scene.layers),
+                       key=lambda name: (name != DEFAULT_LAYER,
+                                         collator.sortKey(name)))
         current = {layer_of(e) for e in tagged}
         self._updating = True
         try:

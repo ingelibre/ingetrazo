@@ -50,10 +50,11 @@ def test_at_the_top_nothing_is_compensated():
     scroll.close()
 
 
-def test_entity_info_keeps_its_height_whatever_is_selected():
+def test_entity_info_collapses_unused_rows():
     from PySide6.QtGui import QVector3D as V
     from views.main_window import MainWindow
     win = MainWindow()
+    win.show()
     panel = win.tray.entity_info if hasattr(win, "tray") else None
     if panel is None:
         from views.tray import EntityInfoPanel
@@ -65,7 +66,12 @@ def test_entity_info_keeps_its_height_whatever_is_selected():
     for sel in ([], [edge], [face]):
         sc.select(sel) if sel else sc.clear_selection()
         panel.refresh()
+        _settle()
         heights.append(panel.sizeHint().height())
-    assert len(set(heights)) == 1, heights
+    # Only relevant properties take space; no reserved name/material rows.
+    assert heights[0] < heights[1] < heights[2], heights
+    assert panel._name_edit.isHidden()
+    assert [caption.text() for caption, value in panel._facts
+            if not value.isHidden()] == ["Area:", "Vertices:"]
     win._saved_version = sc.version
     win.close()
