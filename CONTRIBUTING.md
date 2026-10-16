@@ -8,7 +8,8 @@ Thank you for your interest in IngeTrazo! Contributions of any kind are welcome 
 git clone https://github.com/<your-user>/ingetrazo.git
 cd ingetrazo
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate          # Linux / macOS
+.\venv\Scripts\Activate         # Windows (PowerShell)
 pip install -r requirements.txt
 python main.py
 ```
