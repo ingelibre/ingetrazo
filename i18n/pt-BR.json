@@ -2974,5 +2974,10 @@
  "This build of IngeTrazo does not carry the Rust engine.": "Esta versão do IngeTrazo não traz o motor Rust.",
  "Computes the heavy parts (hidden lines of the sheets and more) with the new native engine, much faster on big models. It is a test: keep a copy of your files and report anything odd with the label rust-engine. Takes effect at the next start.": "Calcula as partes pesadas (linhas ocultas das pranchas e mais) com o novo motor nativo, muito mais rápido em modelos grandes. É um teste: guarde uma cópia dos seus arquivos e relate qualquer coisa estranha com a etiqueta rust-engine. Vale a partir da próxima abertura.",
  "Restart IngeTrazo to switch the engine.": "Reinicie o IngeTrazo para trocar de motor.",
- "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "O IngeTrazo não chegou a abrir da última vez com o motor Rust experimental ativado, por isso voltou ao motor normal. Você pode ativá-lo de novo em Preferências ▸ Geral."
+ "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "O IngeTrazo não chegou a abrir da última vez com o motor Rust experimental ativado, por isso voltou ao motor normal. Você pode ativá-lo de novo em Preferências ▸ Geral.",
+ "Add Scene": "Adicionar Cena",
+ "Update Scene": "Atualizar Cena",
+ "Delete Scene": "Excluir Cena",
+ "Scene '{name}' added": "Cena '{name}' adicionada",
+ "Select a scene in the Scenes panel first": "Selecione primeiro uma cena no painel Cenas"
 }

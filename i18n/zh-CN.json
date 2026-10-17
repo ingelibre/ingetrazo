@@ -2968,5 +2968,10 @@
  "This build of IngeTrazo does not carry the Rust engine.": "此版本的 IngeTrazo 不含 Rust 引擎。",
  "Computes the heavy parts (hidden lines of the sheets and more) with the new native engine, much faster on big models. It is a test: keep a copy of your files and report anything odd with the label rust-engine. Takes effect at the next start.": "用新的原生引擎计算繁重部分（图纸的隐藏线等），大型模型上快得多。这是测试功能：请保留文件副本，并用 rust-engine 标签报告任何异常。下次启动时生效。",
  "Restart IngeTrazo to switch the engine.": "重启 IngeTrazo 以切换引擎。",
- "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "上次启用实验性 Rust 引擎时 IngeTrazo 未能打开，因此已恢复为常规引擎。您可以在“首选项 ▸ 常规”中重新启用它。"
+ "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "上次启用实验性 Rust 引擎时 IngeTrazo 未能打开，因此已恢复为常规引擎。您可以在“首选项 ▸ 常规”中重新启用它。",
+ "Add Scene": "添加场景",
+ "Update Scene": "更新场景",
+ "Delete Scene": "删除场景",
+ "Scene '{name}' added": "场景 '{name}' 已添加",
+ "Select a scene in the Scenes panel first": "请先在“场景”面板中选择一个场景"
 }
