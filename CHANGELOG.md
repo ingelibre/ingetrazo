@@ -28,6 +28,12 @@ follow [SemVer](https://semver.org).
   selección en el visor 3D sigue en naranja.
 
 ### Corregido
+- **La goma ya no borra las aristas que quedan detrás de una cara** (#663,
+  @SPMech): al pasar la goma por una cara para borrar una arista dibujada
+  en ella, también marcaba la arista de la cara de atrás que caía bajo el
+  cursor, y las dos se borraban. Ahora la goma solo toma las aristas que se
+  ven, igual que Seleccionar desde #71; vale también para ocultar con Mayús
+  y para el resaltado al pasar el ratón.
 - **Abrir otro documento ya no arrastra los planos de sección del
   anterior** (#602, ArchXQ IT): un archivo sin planos se abría con los del
   documento que estaba abierto antes, y al guardarlo se quedaban grabados
