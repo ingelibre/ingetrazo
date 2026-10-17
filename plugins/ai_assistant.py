@@ -23,7 +23,7 @@ import base64
 import threading
 
 from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt, Signal
-from PySide6.QtGui import QFontDatabase, QImageReader, QPalette
+from PySide6.QtGui import QImageReader, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -212,8 +212,9 @@ class AsistentePanel(QWidget):
 
         self._chat = QTextEdit()
         self._chat.setReadOnly(True)
-        self._chat.setFont(
-            QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        # Inherit the application font. Asking fontconfig for the system
+        # FixedFont can crash inside the Flatpak sandbox (#279); naming
+        # another face would keep that lookup.
         self._chat.setMinimumHeight(80)
 
         # The prompt under the chat, with a handle between them to give it

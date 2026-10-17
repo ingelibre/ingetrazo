@@ -654,6 +654,42 @@ def test_list_models_filters_and_strips(monkeypatch):
     assert calls["headers"]["x-api-key"] == "sk-ant-k"
 
 
+def test_panel_builds_without_fixed_font_lookup(monkeypatch):
+    # Flatpak (#279): resolving QFontDatabase.FixedFont walks a host
+    # fontconfig fallback and can segfault while the panel is built. The
+    # chat must come up on the inherited application font instead.
+    from PySide6.QtGui import QFontDatabase
+    from plugins.ai_assistant import AsistentePanel
+
+    original = QFontDatabase.systemFont
+
+    def reject_fixed(which):
+        if which == QFontDatabase.FixedFont:
+            raise RuntimeError("FixedFont lookup must not run")
+        return original(which)
+
+    monkeypatch.setattr(QFontDatabase, "systemFont", reject_fixed)
+
+    panel = AsistentePanel(object())
+    try:
+        chat, prompt = panel._chat, panel._input
+        assert chat.isReadOnly()
+        chat.setPlainText("respuesta")
+        assert chat.toPlainText() == "respuesta"
+        prompt.setText("dibuja un muro")
+        assert prompt.text() == "dibuja un muro"
+
+        app_font = QApplication.instance().font()
+        for widget in (chat, prompt):
+            assert widget.font().family() == app_font.family()
+            assert widget.fontMetrics().lineSpacing() > 0
+        line = prompt.fontMetrics().lineSpacing()
+        assert prompt.minimumHeight() == 2 * line + 12
+    finally:
+        panel.deleteLater()
+        QApplication.instance().processEvents()
+
+
 def test_chat_colors_follow_theme():
     from PySide6.QtGui import QColor, QPalette
     from plugins.ai_assistant import AsistenteDialog
