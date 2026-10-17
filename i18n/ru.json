@@ -2967,5 +2967,13 @@
  "Computes the heavy parts (hidden lines of the sheets and more) with the new native engine, much faster on big models. It is a test: keep a copy of your files and report anything odd with the label rust-engine. Takes effect at the next start.": "Вычисляет тяжёлые части (скрытые линии листов и не только) новым нативным движком — намного быстрее на больших моделях. Это тест: сохраните копию файлов и сообщайте о странностях с меткой rust-engine. Вступает в силу при следующем запуске.",
  "Restart IngeTrazo to switch the engine.": "Перезапустите IngeTrazo, чтобы сменить движок.",
  "Engine": "Движок",
+ "Bridge": "Мост",
+ "Join two faces, a face and a line, or two lines with the faces between them.": "Соединяет две грани, грань и линию или две линии гранями между ними.",
+ "Bridge: {n} faces added": "Мост: добавлено граней — {n}",
+ "Select two faces, a face and a line, or two lines to bridge": "Выберите две грани, грань и линию или две линии, чтобы соединить их мостом",
+ "Each line to bridge must be one chain of edges, without branches": "Каждая линия моста должна быть одной цепочкой ребер, без ответвлений",
+ "A face with holes can only be bridged to another face with as many holes": "Грань с отверстиями можно соединить только с гранью с тем же числом отверстий",
+ "Both lie on one plane: nothing to bridge": "Обе лежат в одной плоскости: соединять нечего",
+ "The two to bridge must not touch": "Соединяемые части не должны касаться друг друга",
  "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "В прошлый раз IngeTrazo не открылся с включённым экспериментальным движком Rust, поэтому он вернулся к обычному движку. Включить его снова можно в разделе Настройки ▸ Общие."
 }

@@ -468,6 +468,24 @@ def _pushpull(p, ink):
     p.restore()
 
 
+def _bridge(p, ink):
+    """Bridge: two loose faces and, in the accent, the sides that join
+    them corner to corner."""
+    a = [QPointF(6, 25), QPointF(16, 21), QPointF(16, 38), QPointF(6, 42)]
+    b = [QPointF(32, 10), QPointF(42, 6), QPointF(42, 23), QPointF(32, 27)]
+    p.save()
+    p.setPen(QPen(_accent(), 2.2))
+    for pa, pb in zip(a, b):
+        p.drawLine(pa, pb)
+    p.restore()
+    pen = p.pen()
+    pen.setWidthF(2.4)
+    p.setPen(pen)
+    p.setBrush(QBrush(QColor(ink.red(), ink.green(), ink.blue(), 50)))
+    p.drawPolygon(QPolygonF(a))
+    p.drawPolygon(QPolygonF(b))
+
+
 def _offset(p, ink):
     p.setBrush(Qt.NoBrush)
     p.drawRect(QRectF(10, 12, 28, 24))
@@ -1831,6 +1849,7 @@ _DRAW = {
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
     "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset, "fillet": _fillet,
+    "bridge": _bridge,
     "move": _move, "paint": _paint, "eyedropper": _eyedropper,
     "dimension": _dimension, "dimension_chain": _dimension_chain,
     "dimension_radius": _dimension_radius,
