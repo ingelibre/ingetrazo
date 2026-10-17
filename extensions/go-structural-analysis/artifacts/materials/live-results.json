@@ -1,0 +1,40 @@
+[
+  {
+    "check": "Concrete_row",
+    "status": "Passed"
+  },
+  {
+    "check": "Aluminium_row",
+    "status": "Passed"
+  },
+  {
+    "check": "Wood_row",
+    "status": "Passed"
+  },
+  {
+    "check": "no_duplicate_or_overwrite",
+    "status": "Passed"
+  },
+  {
+    "check": "member_material_choices",
+    "status": "Passed",
+    "choices": [
+      "Steel",
+      "Concrete",
+      "Aluminium",
+      "Wood"
+    ]
+  },
+  {
+    "check": "editor_validation",
+    "status": "Passed"
+  },
+  {
+    "check": "legacy_roundtrip",
+    "status": "Passed"
+  },
+  {
+    "check": "original_document_preserved",
+    "status": "Passed"
+  }
+]

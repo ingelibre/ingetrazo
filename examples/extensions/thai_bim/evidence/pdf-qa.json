@@ -1,0 +1,87 @@
+{
+  "version": "0.19.0",
+  "pages": [
+    {
+      "sheet": "A101",
+      "paper_mm": [
+        420.1583333333333,
+        297.0388888888889
+      ],
+      "vector_lines": 510,
+      "raster_images": 0,
+      "metre_scale_segments_mm": [
+        19.999999962666667,
+        19.999999962666667,
+        19.999999962666667,
+        19.999999962666653
+      ],
+      "measured_grid_dimension_paper_mm": 60
+    },
+    {
+      "sheet": "A102",
+      "paper_mm": [
+        420.1583333333333,
+        297.0388888888889
+      ],
+      "vector_lines": 329,
+      "raster_images": 0,
+      "metre_scale_segments_mm": [
+        19.999999962666667,
+        19.999999962666667,
+        19.999999962666667,
+        19.999999962666653
+      ],
+      "measured_grid_dimension_paper_mm": 60
+    },
+    {
+      "sheet": "A201",
+      "paper_mm": [
+        420.1583333333333,
+        297.0388888888889
+      ],
+      "vector_lines": 171,
+      "raster_images": 0,
+      "metre_scale_segments_mm": [
+        19.999999962666667,
+        19.999999962666667,
+        19.999999962666667,
+        19.999999962666653
+      ],
+      "measured_grid_dimension_paper_mm": 60
+    },
+    {
+      "sheet": "A202",
+      "paper_mm": [
+        420.1583333333333,
+        297.0388888888889
+      ],
+      "vector_lines": 135,
+      "raster_images": 0,
+      "metre_scale_segments_mm": [
+        19.999999962666667,
+        19.999999962666667,
+        19.999999962666667,
+        19.999999962666653
+      ],
+      "measured_grid_dimension_paper_mm": 80
+    },
+    {
+      "sheet": "A301",
+      "paper_mm": [
+        420.1583333333333,
+        297.0388888888889
+      ],
+      "vector_lines": 256,
+      "raster_images": 0,
+      "metre_scale_segments_mm": [
+        19.999999962666667,
+        19.999999962666667,
+        19.999999962666667,
+        19.999999962666653
+      ],
+      "measured_grid_dimension_paper_mm": 80
+    }
+  ],
+  "pdf_sha256": "e5ec5b30ce1a7ab8ea1db43254f8b717fdbae2ab60e674838e4539c7fccbc7ee",
+  "visual_review": "Front elevation Poppler rendering inspected in v15; all five pages independently measured; synthetic coordination fixture, not construction design"
+}

@@ -1,0 +1,319 @@
+{
+  "model_node_selection": {
+    "status": "Passed"
+  },
+  "screenshot_Model-node-selected": {
+    "status": "Passed"
+  },
+  "live_node_edit": {
+    "status": "Passed"
+  },
+  "live_node_edit_undo": {
+    "status": "Passed"
+  },
+  "live_delete_member": {
+    "status": "Passed"
+  },
+  "live_delete_undo": {
+    "status": "Passed"
+  },
+  "model_tools_original_restored": {
+    "status": "Passed"
+  },
+  "geometry_conversion_confirmed": {
+    "status": "Passed"
+  },
+  "screenshot_Geometry-reviewed": {
+    "status": "Passed"
+  },
+  "geometry_original_restored": {
+    "status": "Passed"
+  },
+  "cold_process_restart": {
+    "status": "Passed",
+    "pid": 1040,
+    "old_pid": 20376
+  },
+  "cold_plugin_discovery": {
+    "status": "Passed",
+    "version": "0.2.3"
+  },
+  "plugin_api_v2": {
+    "status": "Passed"
+  },
+  "idempotent_setup": {
+    "status": "Passed"
+  },
+  "3d_frame_creation": {
+    "status": "Passed"
+  },
+  "background_analysis_nonblocking": {
+    "status": "Passed",
+    "gui_ticks": 200
+  },
+  "analysis_execution": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "solver_3_2_0": {
+    "status": "Passed"
+  },
+  "screenshot_Model": {
+    "status": "Passed"
+  },
+  "screenshot_Loads": {
+    "status": "Passed"
+  },
+  "screenshot_Results": {
+    "status": "Passed"
+  },
+  "screenshot_N": {
+    "status": "Passed"
+  },
+  "screenshot_Vy": {
+    "status": "Passed"
+  },
+  "screenshot_Vz": {
+    "status": "Passed"
+  },
+  "screenshot_My": {
+    "status": "Passed"
+  },
+  "screenshot_Mz": {
+    "status": "Passed"
+  },
+  "screenshot_T": {
+    "status": "Passed"
+  },
+  "screenshot_D": {
+    "status": "Passed"
+  },
+  "screenshot_Reaction": {
+    "status": "Passed"
+  },
+  "screenshot_Deformed": {
+    "status": "Passed"
+  },
+  "orbit_pan_zoom_member_pick": {
+    "status": "Passed"
+  },
+  "interactive_member_selection": {
+    "status": "Passed",
+    "selected": "M8"
+  },
+  "result_inspector": {
+    "status": "Passed",
+    "text": "M8 \u00b7 x = 1.113 m (right)\nN 3.06317 kN\nVy 5 kN\nVz 7.92244e-16 kN\nT -4.41875e-17 kN.m\nMy 4.74876e-16 kN.m\nMz 3.30866 kN.m\nux 0.000271703 m\nuy 4.11395e-20 m\nuz -1.70465e-06 m\nD 0.000271708 m"
+  },
+  "screenshot_Inspector": {
+    "status": "Passed"
+  },
+  "result_tables": {
+    "status": "Passed"
+  },
+  "table_dialog_capture": {
+    "status": "Passed"
+  },
+  "csv_3d": {
+    "status": "Passed"
+  },
+  "save_load_3d": {
+    "status": "Passed"
+  },
+  "stale_results": {
+    "status": "Passed"
+  },
+  "undo": {
+    "status": "Passed"
+  },
+  "redo": {
+    "status": "Passed"
+  },
+  "screenshot_Theme-Light": {
+    "status": "Passed"
+  },
+  "screenshot_Theme-Dark": {
+    "status": "Passed"
+  },
+  "screenshot_Theme-System": {
+    "status": "Passed"
+  },
+  "theme_choices": {
+    "status": "Passed"
+  },
+  "geometry_conversion_cancel_preserves_model": {
+    "status": "Passed"
+  },
+  "original_model_restored": {
+    "status": "Passed"
+  },
+  "live_example_3d_cantilever": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "secondary_restored_3d_cantilever": {
+    "status": "Passed"
+  },
+  "live_example_3d_torsion": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "screenshot_T-nonzero": {
+    "status": "Passed"
+  },
+  "secondary_restored_3d_torsion": {
+    "status": "Passed"
+  },
+  "live_example_3d_axial": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "secondary_restored_3d_axial": {
+    "status": "Passed"
+  },
+  "live_example_3d_portal": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "secondary_restored_3d_portal": {
+    "status": "Passed"
+  },
+  "live_example_3d_truss": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "secondary_restored_3d_truss": {
+    "status": "Passed"
+  },
+  "live_example_3d_multibay": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "secondary_restored_3d_multibay": {
+    "status": "Passed"
+  },
+  "live_example_3d_rotation": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "secondary_restored_3d_rotation": {
+    "status": "Passed"
+  },
+  "live_example_3d_release": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "secondary_restored_3d_release": {
+    "status": "Passed"
+  },
+  "live_example_3d_selfweight": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "secondary_restored_3d_selfweight": {
+    "status": "Passed"
+  },
+  "live_example_3d_combo": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "combination_envelope_inspector": {
+    "status": "Passed"
+  },
+  "screenshot_Combination-envelope": {
+    "status": "Passed"
+  },
+  "secondary_restored_3d_combo": {
+    "status": "Passed"
+  },
+  "live_example_3d_equilibrium": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "secondary_restored_3d_equilibrium": {
+    "status": "Passed"
+  },
+  "live_example_3d_unstable": {
+    "status": "Passed",
+    "message": "Analysis failed: The stiffness matrix is singular, which implies rigid body motion. The structure is unstable. Aborting analysis."
+  },
+  "secondary_restored_3d_unstable": {
+    "status": "Passed"
+  },
+  "live_3d_gallery_completed": {
+    "status": "Passed"
+  },
+  "live_2d_backward_compatibility": {
+    "status": "Passed"
+  },
+  "screenshot_2D-backward-compatibility": {
+    "status": "Passed"
+  },
+  "final_original_restored": {
+    "status": "Passed"
+  },
+  "screenshot_Vy-nonzero": {
+    "status": "Passed"
+  },
+  "screenshot_Vz-nonzero": {
+    "status": "Passed"
+  },
+  "screenshot_My-nonzero": {
+    "status": "Passed"
+  },
+  "screenshot_Mz-nonzero": {
+    "status": "Passed"
+  },
+  "screenshot_D-nonzero": {
+    "status": "Passed"
+  },
+  "screenshot_Deformed-nonzero": {
+    "status": "Passed"
+  },
+  "screenshot_Reaction-nonzero": {
+    "status": "Passed"
+  },
+  "orbit_tool_enabled_3d": {
+    "status": "Passed"
+  },
+  "orbit_tool_activated": {
+    "status": "Passed"
+  },
+  "orbit_mouse_drag_3d": {
+    "status": "Passed",
+    "before": [
+      [
+        2.0,
+        0.0,
+        0.0
+      ],
+      10.0,
+      -0.8,
+      0.45,
+      false
+    ],
+    "after": [
+      [
+        2.0,
+        0.0,
+        0.0
+      ],
+      10.0,
+      -1.204496908187527,
+      0.6297764036389009,
+      false
+    ]
+  },
+  "screenshot_Orbit-tool": {
+    "status": "Passed"
+  },
+  "2d_camera_plane_preserved": {
+    "status": "Passed"
+  },
+  "orbit_test_original_restored": {
+    "status": "Passed"
+  },
+  "orbit_over_node_bypasses_selection": {
+    "status": "Passed"
+  }
+}

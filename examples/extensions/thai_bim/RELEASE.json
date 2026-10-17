@@ -1,0 +1,1021 @@
+{
+  "name": "Thai BIM Toolkit",
+  "version": "0.21.0",
+  "api_version": 2,
+  "license": "GPL-3.0-or-later",
+  "pure_tests": 248,
+  "native_checks": [
+    "Native first click retains click-click mode and original Host",
+    "Native hover shows immutable wire preview",
+    "Native second click replaces only selected beam",
+    "Beam UID and member type preserved",
+    "Beam fixed end retained",
+    "One Undo restores exact original beam",
+    "One Redo restores exact edited beam",
+    "Escape cancels preview without altering geometry",
+    "Opening native hover previews before commit",
+    "Opening is two real native face hole loops",
+    "Native opening net concrete volume",
+    "Native pixel placement stays within 20 mm of target corners",
+    "Hole-loop tampering changes guarded mesh fingerprint",
+    "Slab edge edit retains opening",
+    "Native slab edge volume matches net metadata",
+    "Delete hole handle removes whole opening only",
+    "Opening deletion Undo restores exact hole Host",
+    "Opening deletion Redo restores closed Host",
+    "Outside opening rejected without mutation",
+    "Straight Left landing edit preserves UID and native closed children",
+    "Straight Left shared landing depth stored",
+    "Straight Right landing edit preserves UID and native closed children",
+    "Straight Right shared landing depth stored",
+    "L Left landing edit preserves UID and native closed children",
+    "L Left shared landing depth stored",
+    "L Right landing edit preserves UID and native closed children",
+    "L Right shared landing depth stored",
+    "U Left landing edit preserves UID and native closed children",
+    "U Left shared landing depth stored",
+    "U Right landing edit preserves UID and native closed children",
+    "U Right shared landing depth stored",
+    "Spiral Left landing edit preserves UID and native closed children",
+    "Spiral Left shared landing depth stored",
+    "Spiral Right landing edit preserves UID and native closed children",
+    "Spiral Right shared landing depth stored",
+    "Circular Left landing edit preserves UID and native closed children",
+    "Circular Left shared landing depth stored",
+    "Circular Right landing edit preserves UID and native closed children",
+    "Circular Right shared landing depth stored",
+    "Native IGZ retains all edited Hosts and identities",
+    "Actual open user model and selection unchanged",
+    "Native press-drag previews without commit",
+    "Native release commits latest endpoint despite preview throttling",
+    "Selection guard exits tool before further edits",
+    "Stale type snapshot rejects shape commit",
+    "Copied business ID blocks shape entry",
+    "Tilted selected beam rejected",
+    "Selected edit dialog exposes shape and opening buttons",
+    "One-way native cage avoids opening",
+    "One-way native sheet source retains inner outline",
+    "One-way native PDF and BBS exported",
+    "Shape edit leaves existing cage untouched for explicit review",
+    "Stale cage blocks drawing regeneration",
+    "Changed Host blocks old Sheet export",
+    "Stale cage excluded from BBS",
+    "Explicit cage and sheet rebuild succeeds after shape edit",
+    "Two-way native cage avoids opening",
+    "Two-way native sheet source retains inner outline",
+    "Two-way native PDF and BBS exported",
+    "Precast native cage avoids opening",
+    "Precast native sheet source retains inner outline",
+    "Precast native PDF and BBS exported",
+    "IGZ retains opening loops and rebuilt cages",
+    "Actual user model remains unchanged after detail tests",
+    "Existing real toolbar refreshed without duplicate selected-edit icons",
+    "User model untouched by toolbar refresh"
+  ],
+  "native_tested_source_sha256": {
+    "__init__.py": "f8b20d5b98d434e70cb400d48aac1b027b2d645a53bb5916fb90fde6571ca9dc",
+    "analytical.py": "6832e8955659f52748ba78efb8c22d1ef1b8394ca1dc2247052c6efea277ef1f",
+    "analytical_ui.py": "d0f8a3edcd65997e8ababe8aa514a4f75bc26a49dc33fd09ec59cdd44d86ada8",
+    "audit.py": "33cd59ddaa46e18ac4a260fc768c34c2efe166a0cb170b96392d5bad4c8ecdf5",
+    "builders.py": "ae5f1d3a2fb4e20679f196b00d9a889e6732e9232a08dc6bb54ff3f1cb2a4631",
+    "catalogue.py": "fb1a89a54a8c199cf2ac4b5d4d07e836491a73a01f9abc449e2cd22b267e619f",
+    "copy_identity.py": "01feff69842fdcbc113a0e38748bd48d0ff2a893eb2aa225526f4578a493bfc4",
+    "detailing.py": "69054f47b79a28d51dfb4700f8a2f48167e097fef15f12c52aae01ed84a8ee6f",
+    "drawing_layout.py": "d6e46629d16aac2fe78677f7fb78f35a9c3ae93d5cb08da9d2141ba7b7b11f28",
+    "drawings.py": "0d0a8d71f75d4b3b9cde971437bc932ba8004d703e4ab93074f66eaa2a432c41",
+    "engine.py": "ef4afbdc37eb569d50634f657068b5fb7d96566e067c297204ac32d8d03e2d92",
+    "identity_data.py": "d2f89dd52d267f606ee89caf4001ee3e3d32e3001940f29d8e222ffe44525dcb",
+    "management.py": "a65f784b79f23427f1ee4a733f9d6fe61d7ef356d26934ee755b1d6aacf81106",
+    "member_drawing_geometry.py": "e0dc1c74524f9e107adc4b179ab1985610ce08b19bc49e84dac7d7d01415027c",
+    "member_drawings.py": "530a79a953ad6269aee183d050cb7c52b07f42d2739bca6a7e11b24bad97b232",
+    "multi_place.py": "94374086dee4bce77ec7619d09e30cd118ed39f9398f62aac59c0f81105e908f",
+    "path_geometry.py": "a79e7a451892bfc0faa2d7687755f9d8041ade9a8f3abda573426a654226a309",
+    "placement.py": "0917cff0ad9db53c8d65b7a3a5a9c41bf2e6024c8ec560fec2e148e2e7b75632",
+    "rebar_recipe.py": "9f602c01312fdddfeef5e12c83739ff616ef0627f2e9ffac56cc4b92b8d35458",
+    "selected_edit.py": "c223acbb540811c525560cf88235ac70c23bb57c1b6bb208a31fd5c5da6f6c30",
+    "selected_geometry.py": "9c7fb9bea51cd8c2e720cf3a0df4d900c3f7d7bbb587958684ead2ec6ef30359",
+    "shape_edit.py": "7a377fc1c85d17e59df37b29c6ccf3ad51d6c84363b1b5f26dbb55914bfb9192",
+    "shape_geometry.py": "e9803edd604f5305b61f464b87da71ad48274a1bacdc0a153eddd2733d282b90",
+    "slab_rebar.py": "2deb0630b633993d102ab47e7ce851495e9292dae182206492eb3c227dec1752",
+    "slab_ui.py": "01b6cf3f7da6da964db97490c9892b9ec037cd26885270a02710a1c175161e38",
+    "stair_catalogue.py": "80f187464c6894d0108c2c688b15bfbd1898927a8de0c09ac61758cf561d65d6",
+    "stair_connection_ui.py": "fc3f394b04d22cb474a82a3a38124b41109bcb1a661a74ed183c8f1799d7d36d",
+    "stair_connections.py": "3c91f0fa9e5cd2dd21100018f64c6a674d324d756801bce20ddae20abbdbb276",
+    "stair_drawing_geometry.py": "185ef99f882edcaeb5548b6291138bf6ca91129e54d135fd824d0e8fa2a3428d",
+    "stair_drawings.py": "d6a636d107012263bb959567d86179a860a6b27c6ca789c83002333f68117632",
+    "stair_library_ui.py": "05faccc40c0a6d8531fb512d45f77fb2517b3e2f31297b5402ced58d2559f4b1",
+    "stair_place_ui.py": "062c3808b786d745c1e7b3facb68e697f65929f0bbd573cb28a9f5f0f685bf3b",
+    "stair_placement.py": "19177f0bcc5a03be1ba7d87a1630d94838c656b46d732d66081576a3d8c52c7b",
+    "stairs.py": "4e78f07e40f27a73b64ca455894285bc0da454bce85f51dd0af2b583e01c4b5c",
+    "stairs_ui.py": "a805468c3618916f853d45cc9765fd6b268d86f51b42d7616e61641a3f3b8e8c",
+    "steel.py": "680d13139e0677a1a015b15d8b93afdc390075abcaec04e921a6cecc97623114",
+    "structures.py": "812651feb2c1c1341a6099005cbee76070a2db8032070c07fe59b001f9b265ef",
+    "type_ui.py": "ebf76736d4900504cccc709224730683e7fa3981df3c7df46b8329e36de71820",
+    "visuals.py": "d886e061ab2ad9d6f0b208a0ff082637a59d08694aa4eb24c8c8e880b0c4284e",
+    "workflow.py": "6d33e15ed23d7ffff2209556292431f8a52e960aaac7edb741fa6201bab4afe9"
+  },
+  "native_checks_context": "66 current v21 isolated native checks. Historical suite not rerun in full. Real click/drag/release, Undo/Redo, net openings, cage staleness, explicit rebuild, PDF/BBS and IGZ; actual user model unchanged.",
+  "pdf_verification": {
+    "version": "0.19.0",
+    "pages": [
+      {
+        "sheet": "A101",
+        "paper_mm": [
+          420.1583333333333,
+          297.0388888888889
+        ],
+        "vector_lines": 510,
+        "raster_images": 0,
+        "metre_scale_segments_mm": [
+          19.999999962666667,
+          19.999999962666667,
+          19.999999962666667,
+          19.999999962666653
+        ],
+        "measured_grid_dimension_paper_mm": 60
+      },
+      {
+        "sheet": "A102",
+        "paper_mm": [
+          420.1583333333333,
+          297.0388888888889
+        ],
+        "vector_lines": 329,
+        "raster_images": 0,
+        "metre_scale_segments_mm": [
+          19.999999962666667,
+          19.999999962666667,
+          19.999999962666667,
+          19.999999962666653
+        ],
+        "measured_grid_dimension_paper_mm": 60
+      },
+      {
+        "sheet": "A201",
+        "paper_mm": [
+          420.1583333333333,
+          297.0388888888889
+        ],
+        "vector_lines": 171,
+        "raster_images": 0,
+        "metre_scale_segments_mm": [
+          19.999999962666667,
+          19.999999962666667,
+          19.999999962666667,
+          19.999999962666653
+        ],
+        "measured_grid_dimension_paper_mm": 60
+      },
+      {
+        "sheet": "A202",
+        "paper_mm": [
+          420.1583333333333,
+          297.0388888888889
+        ],
+        "vector_lines": 135,
+        "raster_images": 0,
+        "metre_scale_segments_mm": [
+          19.999999962666667,
+          19.999999962666667,
+          19.999999962666667,
+          19.999999962666653
+        ],
+        "measured_grid_dimension_paper_mm": 80
+      },
+      {
+        "sheet": "A301",
+        "paper_mm": [
+          420.1583333333333,
+          297.0388888888889
+        ],
+        "vector_lines": 256,
+        "raster_images": 0,
+        "metre_scale_segments_mm": [
+          19.999999962666667,
+          19.999999962666667,
+          19.999999962666667,
+          19.999999962666653
+        ],
+        "measured_grid_dimension_paper_mm": 80
+      }
+    ],
+    "pdf_sha256": "e5ec5b30ce1a7ab8ea1db43254f8b717fdbae2ab60e674838e4539c7fccbc7ee",
+    "visual_review": "Front elevation Poppler rendering inspected in v15; all five pages independently measured; synthetic coordination fixture, not construction design"
+  },
+  "limitations": [
+    "Selected editor modifies dimensions only; beam span and slab outline remain fixed; no multiple selection or endpoint/outline dragging",
+    "Existing cages require explicit Host review after concrete edits; no automatic bar regeneration",
+    "Analytical geometry only; no solver/materials/supports/releases/offsets/loads or torsional stiffness; solver_ready=false",
+    "Analytical conversion limited to 1000 Beam/Column members; interior crossings/near joints not automatically connected; node IDs change with coordinates",
+    "Fixed world-axis orientations: front -Y, side +X; one plan cut and one X section; floor-by-floor sets not implemented",
+    "Grid and levels are explicit user project coordinates, not inferred or checked against the building",
+    "Automatic dimensions are grid spacing and source model extents, including roof overhangs; member/opening dimensions remain manual",
+    "Vector rendering limited to 5000 source faces; technical rendering available for larger scopes, not benchmarked on whole Family10 in this release",
+    "Architectural/MEP generators and PDF/OCR remain unimplemented",
+    "Type library is local project/shared JSON; no bulk propagation; reinforcement recipes require explicit actual Host review",
+    "New viewport placement needs no Grid; legacy members hold Z fixed; horizontal beams/slabs, simple polygon without holes; advanced stairs use entrance midpoint and initial ascent with fixed or first-point Z",
+    "RC and mesh use simple polygons without openings; precast end dowels currently require a rectangular Host",
+    "Slab system designation and all reinforcement dimensions are explicit user input, not structural design",
+    "Mesh quantities are net wires; no mesh sheet count, overlaps, procurement waste, prestressing or physical plank subdivision",
+    "End dowels Straight / upward L only; no automatic support identification, anchorage or strength verification",
+    "Slab detail settings are per Host; slab recipe catalogue integration remains pending",
+    "All stair second points set ascent direction, not overall run or upper-floor Z; advanced stairs anchor at lower entrance midpoint and curve initial tangent",
+    "Explicit Stair/support geometric centreline clipping only: no automated support identification, bar extension, anchorage, cover, strength, headroom, railing or whole-building clash checks; designer input required",
+    "Advanced stair library uses a separate schema; no bulk propagation or click-to-fit dimensions; structural steel generator not implemented; new forms include full final tread at upper datum",
+    "Connection inspection compares longest continuous strict-interior model centreline against user input; surface length excluded; curved bars sampled, not analytic",
+    "Connection supports require closed non-intersecting two-manifold triangulations; overlapping shells and self-intersections unsupported; invalid meshes rejected without box fallback",
+    "Proposed uses saved Host/type settings; Actual requires valid cage; stale snapshots do not auto-refresh; limits 200 role bars, 5000 support triangles, 500000 triangle/path-point pairs and 500 project reports",
+    "User-defined reinforcement details are not strength design or certified standard compliance; existing 0.8.0 detailing limitations apply",
+    "Stair sheets use actual schema-2 Host and validated actual cage; model detail/review, not permit-ready certification or structural design.",
+    "Stair views use upright local axes, rigid yaw/translation only; multi-turn plan overlap may require manual per-level drawings; no automatic support/railing/headroom design.",
+    "Exact scales 1:20/25/50 reject paper overflow; 12000 triangles, 150000 bar path points, 120 marks, 200 sets. Spatial bars have projected views and actual BBS cut lengths.",
+    "Stair updates preserve untagged items and guides; changed pages with manual/generated edits are archived. Manual items retain paper positions and require explicit review after updates. Archives excluded from export.",
+    "Member plans/two true local sections use actual mesh; polygon dimensions are bounding extents, not every boundary edge. Not whole-floor/grid/adjacent-host detailing.",
+    "Whole actual cage projected; coincident paths overlap; MARK QTY is total count per BBS mark. Separate 200-set member store uses guarded stair engine.",
+    "Legacy general drawing sheets retain their workflow; preservation/archive behavior applies to stair and member sheet sets.",
+    "Selected shape editing supports upright fixed-Z plan geometry only; landing depth is shared across all landings of the selected stair, not independent landing relocation.",
+    "Slab openings: 20 maximum, 300 total boundary vertices, 2 mm minimum separation. No automatic opening trimmers or anchorage design; precast dowels with openings rejected.",
+    "Existing bars remain untouched but stale after shape edits; explicit review/rebuild and Sheet/Analytical update required."
+  ],
+  "source_sha256": {
+    "__init__.py": "6cbfd3fb0fbc93a97ce453dc02ed47bf1b5924d56e7d85bbf74bab605dafcd78",
+    "analytical.py": "6832e8955659f52748ba78efb8c22d1ef1b8394ca1dc2247052c6efea277ef1f",
+    "analytical_ui.py": "d0f8a3edcd65997e8ababe8aa514a4f75bc26a49dc33fd09ec59cdd44d86ada8",
+    "audit.py": "09bf169302cee47f1896a688097c7d9a4abacae4a1ec58eb0fcb378068ab2e8b",
+    "builders.py": "6849ebaef96a1d5e4a0efd716d323fca21ee6b7618c3a6613d28e583867a07f4",
+    "catalogue.py": "33fccb87c961956b98592d73c72b8c7dcafaf712c9b9f0ebbc60cd594464ace7",
+    "copy_identity.py": "01feff69842fdcbc113a0e38748bd48d0ff2a893eb2aa225526f4578a493bfc4",
+    "detailing.py": "69054f47b79a28d51dfb4700f8a2f48167e097fef15f12c52aae01ed84a8ee6f",
+    "drawing_layout.py": "d6e46629d16aac2fe78677f7fb78f35a9c3ae93d5cb08da9d2141ba7b7b11f28",
+    "drawings.py": "032262496b5c63bf5db031d890c4057486dfc65cb026586e7cb44e22be66c22f",
+    "engine.py": "a81f230ad5904dfde1c8c468c7ae3ba20628acb814d17a4c0a387fd33e7f55cf",
+    "identity_data.py": "d2f89dd52d267f606ee89caf4001ee3e3d32e3001940f29d8e222ffe44525dcb",
+    "management.py": "dcb1df1759b2b36ef034722df2a01155ed9453017022c780c27202183bc91274",
+    "member_drawing_geometry.py": "e0dc1c74524f9e107adc4b179ab1985610ce08b19bc49e84dac7d7d01415027c",
+    "member_drawings.py": "530a79a953ad6269aee183d050cb7c52b07f42d2739bca6a7e11b24bad97b232",
+    "multi_place.py": "94374086dee4bce77ec7619d09e30cd118ed39f9398f62aac59c0f81105e908f",
+    "path_geometry.py": "a79e7a451892bfc0faa2d7687755f9d8041ade9a8f3abda573426a654226a309",
+    "placement.py": "0917cff0ad9db53c8d65b7a3a5a9c41bf2e6024c8ec560fec2e148e2e7b75632",
+    "rebar_recipe.py": "9f602c01312fdddfeef5e12c83739ff616ef0627f2e9ffac56cc4b92b8d35458",
+    "selected_edit.py": "47071e7cdc0f6e440bc4d9f1f178455922090b018df302fe93050769cc78b0e6",
+    "selected_geometry.py": "9c7fb9bea51cd8c2e720cf3a0df4d900c3f7d7bbb587958684ead2ec6ef30359",
+    "shape_edit.py": "7a377fc1c85d17e59df37b29c6ccf3ad51d6c84363b1b5f26dbb55914bfb9192",
+    "shape_geometry.py": "e9803edd604f5305b61f464b87da71ad48274a1bacdc0a153eddd2733d282b90",
+    "slab_rebar.py": "2deb0630b633993d102ab47e7ce851495e9292dae182206492eb3c227dec1752",
+    "slab_ui.py": "01b6cf3f7da6da964db97490c9892b9ec037cd26885270a02710a1c175161e38",
+    "stair_catalogue.py": "80f187464c6894d0108c2c688b15bfbd1898927a8de0c09ac61758cf561d65d6",
+    "stair_connection_ui.py": "24dc8da51a94f1596bfedb1762e7fbd5483d39026eedfa92a221a4f30309af8b",
+    "stair_connections.py": "809fef73c35d20d4f6078125e02f0ccaf0d5bf2314a17b65cb0965d5e43bcc79",
+    "stair_drawing_geometry.py": "58a368bf6f0860de7e5a18216ea9ad1c467bec3170986fc2bc378a35458982fd",
+    "stair_drawings.py": "286a5504ecc61fc19b26f42f60d3dae737fa1e473151e8ce611f481608c93c9a",
+    "stair_library_ui.py": "05faccc40c0a6d8531fb512d45f77fb2517b3e2f31297b5402ced58d2559f4b1",
+    "stair_place_ui.py": "062c3808b786d745c1e7b3facb68e697f65929f0bbd573cb28a9f5f0f685bf3b",
+    "stair_placement.py": "19177f0bcc5a03be1ba7d87a1630d94838c656b46d732d66081576a3d8c52c7b",
+    "stairs.py": "4e78f07e40f27a73b64ca455894285bc0da454bce85f51dd0af2b583e01c4b5c",
+    "stairs_ui.py": "ef0ebc040c406edff879325b8184cfffc742b5c53fafee1bd885cb3a32ea67bc",
+    "steel.py": "680d13139e0677a1a015b15d8b93afdc390075abcaec04e921a6cecc97623114",
+    "structures.py": "812651feb2c1c1341a6099005cbee76070a2db8032070c07fe59b001f9b265ef",
+    "type_ui.py": "4122c0f7167a44b57d6a27f1a2d05ca7dc5d9b0df56e2fba8fcb7dbcd097f4e2",
+    "visuals.py": "d886e061ab2ad9d6f0b208a0ff082637a59d08694aa4eb24c8c8e880b0c4284e",
+    "workflow.py": "7ce5f5533ae950da7073f28eed93618e49c1e7db0281ce56deb06e5b1577f4b0"
+  },
+  "publication_note": "Line endings normalized to LF; original installed/native-tested hashes retained.",
+  "stair_pdf_verification": {
+    "version": "0.20.0",
+    "verified": [
+      {
+        "file": "stair-Straight-A3-50.pdf",
+        "pages": 9,
+        "marks": 6,
+        "bar_count": 64,
+        "vector": true,
+        "paper_mm": [
+          420,
+          297
+        ],
+        "scale": 50,
+        "checks": [
+          {
+            "number": 1,
+            "lines": 174,
+            "images": 0
+          },
+          {
+            "number": 2,
+            "lines": 238,
+            "images": 0
+          },
+          {
+            "number": 3,
+            "lines": 22,
+            "images": 0
+          },
+          {
+            "number": 4,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 5,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 6,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 7,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 8,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 9,
+            "lines": 11,
+            "images": 0
+          }
+        ]
+      },
+      {
+        "file": "stair-L-A3-50.pdf",
+        "pages": 14,
+        "marks": 10,
+        "bar_count": 89,
+        "vector": true,
+        "paper_mm": [
+          420,
+          297
+        ],
+        "scale": 50,
+        "checks": [
+          {
+            "number": 1,
+            "lines": 227,
+            "images": 0
+          },
+          {
+            "number": 2,
+            "lines": 232,
+            "images": 0
+          },
+          {
+            "number": 3,
+            "lines": 232,
+            "images": 0
+          },
+          {
+            "number": 4,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 5,
+            "lines": 22,
+            "images": 0
+          },
+          {
+            "number": 6,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 7,
+            "lines": 22,
+            "images": 0
+          },
+          {
+            "number": 8,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 9,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 10,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 11,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 12,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 13,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 14,
+            "lines": 11,
+            "images": 0
+          }
+        ]
+      },
+      {
+        "file": "stair-U-A3-50.pdf",
+        "pages": 14,
+        "marks": 10,
+        "bar_count": 96,
+        "vector": true,
+        "paper_mm": [
+          420,
+          297
+        ],
+        "scale": 50,
+        "checks": [
+          {
+            "number": 1,
+            "lines": 235,
+            "images": 0
+          },
+          {
+            "number": 2,
+            "lines": 232,
+            "images": 0
+          },
+          {
+            "number": 3,
+            "lines": 232,
+            "images": 0
+          },
+          {
+            "number": 4,
+            "lines": 22,
+            "images": 0
+          },
+          {
+            "number": 5,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 6,
+            "lines": 22,
+            "images": 0
+          },
+          {
+            "number": 7,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 8,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 9,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 10,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 11,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 12,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 13,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 14,
+            "lines": 11,
+            "images": 0
+          }
+        ]
+      },
+      {
+        "file": "stair-Spiral-A3-50.pdf",
+        "pages": 24,
+        "marks": 13,
+        "bar_count": 76,
+        "vector": true,
+        "paper_mm": [
+          420,
+          297
+        ],
+        "scale": 50,
+        "checks": [
+          {
+            "number": 1,
+            "lines": 693,
+            "images": 0
+          },
+          {
+            "number": 2,
+            "lines": 1739,
+            "images": 0
+          },
+          {
+            "number": 3,
+            "lines": 188,
+            "images": 0
+          },
+          {
+            "number": 4,
+            "lines": 188,
+            "images": 0
+          },
+          {
+            "number": 5,
+            "lines": 190,
+            "images": 0
+          },
+          {
+            "number": 6,
+            "lines": 190,
+            "images": 0
+          },
+          {
+            "number": 7,
+            "lines": 190,
+            "images": 0
+          },
+          {
+            "number": 8,
+            "lines": 190,
+            "images": 0
+          },
+          {
+            "number": 9,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 10,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 11,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 12,
+            "lines": 187,
+            "images": 0
+          },
+          {
+            "number": 13,
+            "lines": 187,
+            "images": 0
+          },
+          {
+            "number": 14,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 15,
+            "lines": 189,
+            "images": 0
+          },
+          {
+            "number": 16,
+            "lines": 189,
+            "images": 0
+          },
+          {
+            "number": 17,
+            "lines": 184,
+            "images": 0
+          },
+          {
+            "number": 18,
+            "lines": 184,
+            "images": 0
+          },
+          {
+            "number": 19,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 20,
+            "lines": 189,
+            "images": 0
+          },
+          {
+            "number": 21,
+            "lines": 189,
+            "images": 0
+          },
+          {
+            "number": 22,
+            "lines": 190,
+            "images": 0
+          },
+          {
+            "number": 23,
+            "lines": 190,
+            "images": 0
+          },
+          {
+            "number": 24,
+            "lines": 11,
+            "images": 0
+          }
+        ]
+      },
+      {
+        "file": "stair-Circular-A3-50.pdf",
+        "pages": 24,
+        "marks": 13,
+        "bar_count": 78,
+        "vector": true,
+        "paper_mm": [
+          420,
+          297
+        ],
+        "scale": 50,
+        "checks": [
+          {
+            "number": 1,
+            "lines": 432,
+            "images": 0
+          },
+          {
+            "number": 2,
+            "lines": 933,
+            "images": 0
+          },
+          {
+            "number": 3,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 4,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 5,
+            "lines": 100,
+            "images": 0
+          },
+          {
+            "number": 6,
+            "lines": 100,
+            "images": 0
+          },
+          {
+            "number": 7,
+            "lines": 100,
+            "images": 0
+          },
+          {
+            "number": 8,
+            "lines": 100,
+            "images": 0
+          },
+          {
+            "number": 9,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 10,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 11,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 12,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 13,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 14,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 15,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 16,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 17,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 18,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 19,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 20,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 21,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 22,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 23,
+            "lines": 101,
+            "images": 0
+          },
+          {
+            "number": 24,
+            "lines": 11,
+            "images": 0
+          }
+        ]
+      },
+      {
+        "file": "stair-Floating-A3-50.pdf",
+        "pages": 19,
+        "marks": 16,
+        "bar_count": 72,
+        "vector": true,
+        "paper_mm": [
+          420,
+          297
+        ],
+        "scale": 50,
+        "checks": [
+          {
+            "number": 1,
+            "lines": 98,
+            "images": 0
+          },
+          {
+            "number": 2,
+            "lines": 184,
+            "images": 0
+          },
+          {
+            "number": 3,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 4,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 5,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 6,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 7,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 8,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 9,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 10,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 11,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 12,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 13,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 14,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 15,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 16,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 17,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 18,
+            "lines": 12,
+            "images": 0
+          },
+          {
+            "number": 19,
+            "lines": 11,
+            "images": 0
+          }
+        ]
+      },
+      {
+        "file": "stair-scale-20-A1.pdf",
+        "pages": 9,
+        "paper_mm": [
+          841,
+          594
+        ],
+        "scale": 20,
+        "model_width_mm": 50.0
+      },
+      {
+        "file": "stair-scale-25-A2.pdf",
+        "pages": 9,
+        "paper_mm": [
+          594,
+          420
+        ],
+        "scale": 25,
+        "model_width_mm": 40.0
+      }
+    ],
+    "total_pages": 122
+  },
+  "member_pdf_verification": {
+    "version": "0.20.0",
+    "verified": [
+      {
+        "file": "Footing-A3-50.pdf",
+        "pages": 6,
+        "scale": 50,
+        "vector": true,
+        "marks": 2,
+        "model_width_mm": 28.0
+      },
+      {
+        "file": "Column-A3-50.pdf",
+        "pages": 6,
+        "scale": 50,
+        "vector": true,
+        "marks": 2,
+        "model_width_mm": 8.0
+      },
+      {
+        "file": "Beam-A3-50.pdf",
+        "pages": 6,
+        "scale": 50,
+        "vector": true,
+        "marks": 2,
+        "model_width_mm": 80.0
+      },
+      {
+        "file": "Slab-A3-50.pdf",
+        "pages": 6,
+        "scale": 50,
+        "vector": true,
+        "marks": 2,
+        "model_width_mm": 60.0
+      },
+      {
+        "file": "Slab-Two-way-A3-50.pdf",
+        "pages": 6,
+        "scale": 50,
+        "vector": true,
+        "marks": 2,
+        "model_width_mm": 60.0
+      },
+      {
+        "file": "Slab-Precast-A3-50.pdf",
+        "pages": 8,
+        "scale": 50,
+        "vector": true,
+        "marks": 4,
+        "model_width_mm": 60.0
+      },
+      {
+        "file": "Slab-Polygon-A3-50.pdf",
+        "pages": 8,
+        "scale": 50,
+        "vector": true,
+        "marks": 4,
+        "model_width_mm": 60.0
+      },
+      {
+        "file": "Footing-scale-20-A3.pdf",
+        "pages": 6,
+        "scale": 20,
+        "vector": true,
+        "marks": null,
+        "model_width_mm": 70.0
+      },
+      {
+        "file": "Footing-scale-25-A3.pdf",
+        "pages": 6,
+        "scale": 25,
+        "vector": true,
+        "marks": null,
+        "model_width_mm": 56.0
+      }
+    ],
+    "total_pages": 58
+  },
+  "shape_pdf_verification": {
+    "version": "0.21.0",
+    "verified": [
+      {
+        "file": "One-way-opening-A3-50.pdf",
+        "pages": 9,
+        "scale": 50,
+        "vector": true,
+        "marks": 5,
+        "model_width_mm": 80.0
+      },
+      {
+        "file": "Two-way-opening-A3-50.pdf",
+        "pages": 9,
+        "scale": 50,
+        "vector": true,
+        "marks": 5,
+        "model_width_mm": 80.0
+      },
+      {
+        "file": "Precast-opening-A3-50.pdf",
+        "pages": 9,
+        "scale": 50,
+        "vector": true,
+        "marks": 5,
+        "model_width_mm": 80.0
+      }
+    ],
+    "total_pages": 27
+  }
+}

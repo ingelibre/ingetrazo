@@ -1,0 +1,521 @@
+{
+  "igz_format": 1,
+  "app_version": "0.5.7",
+  "scene": {
+    "edges": [],
+    "faces": [],
+    "dimension_style": {
+      "decimals": 2,
+      "units": "m",
+      "font_size": 9,
+      "color": [
+        45,
+        55,
+        75
+      ],
+      "norma": "iso",
+      "base_step_mm": 8.0,
+      "ends": "arrow"
+    },
+    "plugin_data": {
+      "go_structural_analysis": {
+        "version": "0.2.3",
+        "model": {
+          "schema": 2,
+          "self_weight": false,
+          "nodes": [
+            {
+              "id": "N1",
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "support": "Fixed"
+            },
+            {
+              "id": "N2",
+              "x": 0,
+              "y": 0,
+              "z": 3,
+              "support": "Free"
+            },
+            {
+              "id": "N3",
+              "x": 0,
+              "y": 3,
+              "z": 0,
+              "support": "Fixed"
+            },
+            {
+              "id": "N4",
+              "x": 0,
+              "y": 3,
+              "z": 3,
+              "support": "Free"
+            },
+            {
+              "id": "N5",
+              "x": 0,
+              "y": 6,
+              "z": 0,
+              "support": "Fixed"
+            },
+            {
+              "id": "N6",
+              "x": 0,
+              "y": 6,
+              "z": 3,
+              "support": "Free"
+            },
+            {
+              "id": "N7",
+              "x": 4,
+              "y": 0,
+              "z": 0,
+              "support": "Fixed"
+            },
+            {
+              "id": "N8",
+              "x": 4,
+              "y": 0,
+              "z": 3,
+              "support": "Free"
+            },
+            {
+              "id": "N9",
+              "x": 4,
+              "y": 3,
+              "z": 0,
+              "support": "Fixed"
+            },
+            {
+              "id": "N10",
+              "x": 4,
+              "y": 3,
+              "z": 3,
+              "support": "Free"
+            },
+            {
+              "id": "N11",
+              "x": 4,
+              "y": 6,
+              "z": 0,
+              "support": "Fixed"
+            },
+            {
+              "id": "N12",
+              "x": 4,
+              "y": 6,
+              "z": 3,
+              "support": "Free"
+            },
+            {
+              "id": "N13",
+              "x": 8,
+              "y": 0,
+              "z": 0,
+              "support": "Fixed"
+            },
+            {
+              "id": "N14",
+              "x": 8,
+              "y": 0,
+              "z": 3,
+              "support": "Free"
+            },
+            {
+              "id": "N15",
+              "x": 8,
+              "y": 3,
+              "z": 0,
+              "support": "Fixed"
+            },
+            {
+              "id": "N16",
+              "x": 8,
+              "y": 3,
+              "z": 3,
+              "support": "Free"
+            },
+            {
+              "id": "N17",
+              "x": 8,
+              "y": 6,
+              "z": 0,
+              "support": "Fixed"
+            },
+            {
+              "id": "N18",
+              "x": 8,
+              "y": 6,
+              "z": 3,
+              "support": "Free"
+            }
+          ],
+          "materials": [
+            {
+              "id": "Steel",
+              "E": 200000000.0,
+              "G": 76923076.923,
+              "nu": 0.3,
+              "rho": 76.98
+            }
+          ],
+          "sections": [
+            {
+              "id": "S1",
+              "A": 0.01,
+              "Iy": 8e-05,
+              "Iz": 8e-05,
+              "J": 1e-05
+            }
+          ],
+          "members": [
+            {
+              "id": "M1",
+              "i": "N1",
+              "j": "N2",
+              "type": "Column",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M2",
+              "i": "N2",
+              "j": "N8",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M3",
+              "i": "N2",
+              "j": "N4",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M4",
+              "i": "N3",
+              "j": "N4",
+              "type": "Column",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M5",
+              "i": "N4",
+              "j": "N10",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M6",
+              "i": "N4",
+              "j": "N6",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M7",
+              "i": "N5",
+              "j": "N6",
+              "type": "Column",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M8",
+              "i": "N6",
+              "j": "N12",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M9",
+              "i": "N7",
+              "j": "N8",
+              "type": "Column",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M10",
+              "i": "N8",
+              "j": "N14",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M11",
+              "i": "N8",
+              "j": "N10",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M12",
+              "i": "N9",
+              "j": "N10",
+              "type": "Column",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M13",
+              "i": "N10",
+              "j": "N16",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M14",
+              "i": "N10",
+              "j": "N12",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M15",
+              "i": "N11",
+              "j": "N12",
+              "type": "Column",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M16",
+              "i": "N12",
+              "j": "N18",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M17",
+              "i": "N13",
+              "j": "N14",
+              "type": "Column",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M18",
+              "i": "N14",
+              "j": "N16",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M19",
+              "i": "N15",
+              "j": "N16",
+              "type": "Column",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M20",
+              "i": "N16",
+              "j": "N18",
+              "type": "Frame",
+              "material": "Steel",
+              "section": "S1"
+            },
+            {
+              "id": "M21",
+              "i": "N17",
+              "j": "N18",
+              "type": "Column",
+              "material": "Steel",
+              "section": "S1"
+            }
+          ],
+          "cases": [
+            "DL",
+            "LL",
+            "WX",
+            "WY"
+          ],
+          "point_loads": [
+            {
+              "node": "N2",
+              "direction": "FZ",
+              "value": -12,
+              "case": "DL"
+            },
+            {
+              "node": "N2",
+              "direction": "FX",
+              "value": 5,
+              "case": "WX"
+            },
+            {
+              "node": "N2",
+              "direction": "FY",
+              "value": 3,
+              "case": "WY"
+            },
+            {
+              "node": "N4",
+              "direction": "FZ",
+              "value": -12,
+              "case": "DL"
+            },
+            {
+              "node": "N4",
+              "direction": "FX",
+              "value": 5,
+              "case": "WX"
+            },
+            {
+              "node": "N4",
+              "direction": "FY",
+              "value": 3,
+              "case": "WY"
+            },
+            {
+              "node": "N6",
+              "direction": "FZ",
+              "value": -12,
+              "case": "DL"
+            },
+            {
+              "node": "N6",
+              "direction": "FX",
+              "value": 5,
+              "case": "WX"
+            },
+            {
+              "node": "N6",
+              "direction": "FY",
+              "value": 3,
+              "case": "WY"
+            },
+            {
+              "node": "N8",
+              "direction": "FZ",
+              "value": -12,
+              "case": "DL"
+            },
+            {
+              "node": "N8",
+              "direction": "FX",
+              "value": 5,
+              "case": "WX"
+            },
+            {
+              "node": "N8",
+              "direction": "FY",
+              "value": 3,
+              "case": "WY"
+            },
+            {
+              "node": "N10",
+              "direction": "FZ",
+              "value": -12,
+              "case": "DL"
+            },
+            {
+              "node": "N10",
+              "direction": "FX",
+              "value": 5,
+              "case": "WX"
+            },
+            {
+              "node": "N10",
+              "direction": "FY",
+              "value": 3,
+              "case": "WY"
+            },
+            {
+              "node": "N12",
+              "direction": "FZ",
+              "value": -12,
+              "case": "DL"
+            },
+            {
+              "node": "N12",
+              "direction": "FX",
+              "value": 5,
+              "case": "WX"
+            },
+            {
+              "node": "N12",
+              "direction": "FY",
+              "value": 3,
+              "case": "WY"
+            },
+            {
+              "node": "N14",
+              "direction": "FZ",
+              "value": -12,
+              "case": "DL"
+            },
+            {
+              "node": "N14",
+              "direction": "FX",
+              "value": 5,
+              "case": "WX"
+            },
+            {
+              "node": "N14",
+              "direction": "FY",
+              "value": 3,
+              "case": "WY"
+            },
+            {
+              "node": "N16",
+              "direction": "FZ",
+              "value": -12,
+              "case": "DL"
+            },
+            {
+              "node": "N16",
+              "direction": "FX",
+              "value": 5,
+              "case": "WX"
+            },
+            {
+              "node": "N16",
+              "direction": "FY",
+              "value": 3,
+              "case": "WY"
+            },
+            {
+              "node": "N18",
+              "direction": "FZ",
+              "value": -12,
+              "case": "DL"
+            },
+            {
+              "node": "N18",
+              "direction": "FX",
+              "value": 5,
+              "case": "WX"
+            },
+            {
+              "node": "N18",
+              "direction": "FY",
+              "value": 3,
+              "case": "WY"
+            }
+          ],
+          "distributed_loads": [],
+          "dimension": "3D",
+          "combinations": {},
+          "self_weight_case": "DL"
+        },
+        "result": null
+      }
+    }
+  }
+}

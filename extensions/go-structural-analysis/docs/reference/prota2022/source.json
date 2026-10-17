@@ -1,0 +1,20 @@
+{
+  "title": "ProtaStructure 2022 Basic Training Guide",
+  "source_url": "https://d2dpssj7o46s6b.cloudfront.net/documents/protastructure-2022-basic-training-guide.pdf",
+  "retrieved_at": "2026-10-11",
+  "pages": 95,
+  "sha256": "ab0701ce4560279a065be6ff1e235ec4cf79b7d08a080bb82c7d18ba251a3ece",
+  "local_file": "protastructure-2022-basic-training-guide.pdf",
+  "reviewed_pages": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    30,
+    31
+  ],
+  "usage": "Workflow reference; source PDF is local and not included in installers or committed by default. Topic index derived from table of contents; unreviewed chapters need page-level review before implementation."
+}

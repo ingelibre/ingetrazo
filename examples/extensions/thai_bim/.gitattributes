@@ -1,0 +1,3 @@
+# Keep Python sources portable and native model files byte-preserved.
+*.py text eol=lf
+*.igz binary

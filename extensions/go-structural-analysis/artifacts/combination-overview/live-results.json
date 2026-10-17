@@ -1,0 +1,48 @@
+{
+  "installed_component_import": {
+    "status": "Passed"
+  },
+  "new_custom_row_selected": {
+    "status": "Passed"
+  },
+  "numeric_matrix_edit": {
+    "status": "Passed"
+  },
+  "duplicate_preserves_factors": {
+    "status": "Passed"
+  },
+  "protected_row_read_only": {
+    "status": "Passed"
+  },
+  "original_inputs_preserved": {
+    "status": "Passed"
+  },
+  "generator_applied_to_draft": {
+    "status": "Passed"
+  },
+  "generator_custom_preserved": {
+    "status": "Passed"
+  },
+  "generator_missing_inputs_disabled": {
+    "status": "Passed"
+  },
+  "draft_save_validation": {
+    "status": "Passed"
+  },
+  "draft_save_did_not_commit_model": {
+    "status": "Passed"
+  },
+  "cancel_preserves_current_results": {
+    "status": "Passed"
+  },
+  "final_dialog_inputs_unchanged": {
+    "status": "Passed"
+  },
+  "live_numeric_editor_enter": {
+    "status": "Passed",
+    "checked_after_event_loop": true
+  },
+  "final_current_model_preserved": {
+    "status": "Passed"
+  }
+}

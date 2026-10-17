@@ -1,0 +1,157 @@
+[
+  {
+    "file": "go_structural_analysis/__init__.py",
+    "change": "Modified",
+    "sha256": "2f10915d43daa7dd72f0d32519ec8bfa733d37a3b7b1d6cfc082431bc255c3b6"
+  },
+  {
+    "file": "go_structural_analysis/client.py",
+    "change": "Modified",
+    "sha256": "cbf23c8d67cea75d1a916336986f63da830307ba78e67d975779dcbf216e4272"
+  },
+  {
+    "file": "go_structural_analysis/diagram_geometry.py",
+    "change": "Added",
+    "sha256": "bfcf06402a857c1aa7f53198f5efc1f1a0590c19d504b10ddc1c10b5ab812849"
+  },
+  {
+    "file": "go_structural_analysis/examples.py",
+    "change": "Added",
+    "sha256": "1f60a5c2d25cae703477b5af12d170ebffabaca954e2ffa4f2dd29b75371ac99"
+  },
+  {
+    "file": "go_structural_analysis/inspector.py",
+    "change": "Added",
+    "sha256": "a7f5a7bec17409efd974df20505760351989b935eeb621079ab1f358cd553514"
+  },
+  {
+    "file": "go_structural_analysis/materials.py",
+    "change": "Added",
+    "sha256": "dedf7e64fb5d9a90e62033b952945df81d5b84b848ab3acae7ee3f70f1ee20c6"
+  },
+  {
+    "file": "go_structural_analysis/model.py",
+    "change": "Modified",
+    "sha256": "092dd8b59eb4a3efb23e9dac31731eea5cfda56191bc2962f54e72f3f46cc52f"
+  },
+  {
+    "file": "go_structural_analysis/results.py",
+    "change": "Added",
+    "sha256": "988d467a7e09b091a68bb662bc7a65bb2ed49323061dbd03e09757fd0afbec4d"
+  },
+  {
+    "file": "go_structural_analysis/solver_results.py",
+    "change": "Added",
+    "sha256": "4ef83d9899a4f80e2458a23114b19530c5baa5557580dfb774459e574000f5f4"
+  },
+  {
+    "file": "go_structural_analysis/ui.py",
+    "change": "Modified",
+    "sha256": "41a389fad8fdaa2dd360b00098cf1742c00c26c2dc48c2db6a7ad632ecbf02f3"
+  },
+  {
+    "file": "go_structural_analysis/visualization.py",
+    "change": "Added",
+    "sha256": "47aef7f61e53dd0ce800a401744daa9f5f7edbfacb3c94466e42a08c628e697d"
+  },
+  {
+    "file": "go_structural_analysis/worker.py",
+    "change": "Modified",
+    "sha256": "25c6aaf0a76542dac032465a724245d147ed23f6415ecc2e9e48ab0c07b5b471"
+  },
+  {
+    "file": "tests/build_examples_gallery.py",
+    "change": "Added",
+    "sha256": "1bc82b955947697f138575e8d6cd9f1b656c6430e051396be174b8c33e27489a"
+  },
+  {
+    "file": "tests/build_report_v013.py",
+    "change": "Added",
+    "sha256": "0d7a3e8f57b46b304031d891123ce1be84c32ed04fb8cba2dc72a904f9c8b856"
+  },
+  {
+    "file": "tests/build_visual_fixtures.py",
+    "change": "Added",
+    "sha256": "2936bbc7ea895c64985bb3f0ad8fef9fa3d48e75e41588abe5e9bc619b1c3d30"
+  },
+  {
+    "file": "tests/live_audit_v013.py",
+    "change": "Added",
+    "sha256": "7311f717cfc051ba5b1d348f1b4d0f5c4e774f6ed9f7d8ca91ee01494da7dc43"
+  },
+  {
+    "file": "tests/live_examples.py",
+    "change": "Added",
+    "sha256": "79905cb33f9e4974f32645f5a07b2fe8255d0cc1d6e8a7bce8cbfe632adaf2bd"
+  },
+  {
+    "file": "tests/live_materials.py",
+    "change": "Added",
+    "sha256": "33f6a8f023628cb197c1e6c80f4f185b1829fab590f7a5fa96d6c17ff6a72302"
+  },
+  {
+    "file": "tests/live_visuals.py",
+    "change": "Added",
+    "sha256": "79eb099ba982946f1cb9df6e5cd2f6b2f6b2eda40cf322c336bc85d4a871a9d6"
+  },
+  {
+    "file": "tests/package_v013.py",
+    "change": "Added",
+    "sha256": "6d79e25556442438871bca873d21f77f14a6a4c748afc86b0adf51529a4c36a9"
+  },
+  {
+    "file": "tests/reference_frame.py",
+    "change": "Added",
+    "sha256": "390804d737255faefa0cab52f1676f5bc49daa22693cf41c5ebdaf1053a8a190"
+  },
+  {
+    "file": "tests/test_client_errors_v013.py",
+    "change": "Added",
+    "sha256": "ef1bf167a461fa842394e9f9194fa0f59b852b3e12347df9ba46069e0bdbd731"
+  },
+  {
+    "file": "tests/test_diagram_geometry.py",
+    "change": "Added",
+    "sha256": "75190d90f81e3ea92d823ae08f903f49ecc7781804bbf571460c760a3ff2e163"
+  },
+  {
+    "file": "tests/test_engineering_v013.py",
+    "change": "Added",
+    "sha256": "c0e3e85f090f5e6b2e6daf0dc5d09e2183570a72805364e58191c7692d19f8de"
+  },
+  {
+    "file": "tests/test_examples.py",
+    "change": "Added",
+    "sha256": "cb03df7e6db6e9e70b7187b7f8be4260820d4e324493a8f7b8a90c9500f48dcd"
+  },
+  {
+    "file": "tests/test_materials.py",
+    "change": "Added",
+    "sha256": "87589a122a58c2cd326cbfb9fc9553b1c00feb1df3daa676981a7e7d4e5cae9e"
+  },
+  {
+    "file": "install.ps1",
+    "change": "Modified",
+    "sha256": "338aae375ac30546bfb8085aaa38045c42186ce2cde4bc9dcc7ab39d094bdefb"
+  },
+  {
+    "file": "README.md",
+    "change": "Modified",
+    "sha256": "b89eb693ab9136e0cb2e21c17aeed995a684415fc72d09e13042fcca0bd9d466"
+  },
+  {
+    "file": "TEST_RESULTS_v0.1.3.md",
+    "change": "Added",
+    "sha256": "7786aceff58fd89c676844251b31a4b71d3d34b3c6618058b28fb9109982675f"
+  },
+  {
+    "file": "ROADMAP.md",
+    "change": "Added",
+    "sha256": "3c13b7bc669250348ea4dc8575a3591c4f0c9af84a0d529c5c3c04e78d0c73f7"
+  },
+  {
+    "file": "EXAMPLES.md",
+    "change": "Added",
+    "sha256": "4bc9b925600a6af08fe87e610f73f89d10bca4517817ad603308a17ae010c585"
+  }
+]

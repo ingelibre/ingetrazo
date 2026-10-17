@@ -1,0 +1,20 @@
+"""Each supported stair form gets actual-cage sheets, PDF and linked BBS."""
+SD19=importlib.reload(SD19);DG19=importlib.reload(DG19)
+fixtures19={'Straight':host19};exports19=[]
+for layout19 in ('L','U','Spiral','Circular','Floating'):
+ sc19=SU19.open_dialog(sp19,False);sc19.layout_kind.setCurrentText(layout19);sc19.pf['x'].setValue(len(fixtures19)*12)
+ if layout19 in ('Spiral','Circular'):sc19.rf['connection'].setValue(0)
+ if layout19=='Floating':sc19.gf['risers'].setValue(8);sc19.gf['height'].setValue(1.3)
+ sc19.create();h19=sc19.host();fixtures19[layout19]=h19;sc19.review();sc19.build_rebar()
+ sd19=SD19.open_dialog(sp19);sd19.fields['name'].setText('Thai BIM '+layout19+' synthetic');sd19.prepare();sd19.build();pc19,mt19=SD19.validate(ss19,h19.uid)
+ check19(layout19+' native plan section actual Bar Marks and BBS generated',len(pc19)>3 and pc19[0].cotas and any(r['title']=='BBS' for r in mt19['sheets']))
+ check19(layout19+' sections use verified actual cut geometry',all(c.cotas for c,r in zip(pc19,mt19['sheets']) if r['title'].startswith(('Section','Radial'))))
+ path19=SD19.export_pdf(sp19,h19.uid,out19/('stair-'+layout19+'-A3-50.pdf'));SD19.export_bbs(ss19,h19.uid,out19/('stair-'+layout19+'-BBS.xlsx'))
+ check19(layout19+' native PDF exported at requested scale',path19.exists() and path19.stat().st_size>1000)
+ exports19.append(dict(layout=layout19,sheets=len(pc19),marks=len(DG19.grouped_bars(SD19.source(ss19,h19.uid)['bars'])),path=path19.name))
+ if layout19 in ('U','Spiral','Floating'):sd19.grab().save(str(out19/('stair-'+layout19+'-sheet-dialog.png')))
+ (out19/'fixture-exports.json').write_text(json.dumps(exports19,indent=2),encoding='utf8')
+ print(layout19+' '+str(len(pc19))+' pages')
+check19('each Stair drawing set remains independent of all other Stair sets',len(ss19.plugin_data[SD19.KEY])==6 and all(not any(row['reasons'] for row in SD19.status(ss19,h.uid)) for h in fixtures19.values()))
+M07.compact_save(ss19,out19/'stair-all-forms-drawings-ไทย.igz')
+print('PASS six forms '+str(len(checks19))+' checks')

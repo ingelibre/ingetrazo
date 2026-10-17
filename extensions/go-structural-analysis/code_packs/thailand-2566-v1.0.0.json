@@ -1,0 +1,562 @@
+{
+  "metadata": {
+    "id": "TH-BUILDING-2566",
+    "version": "1.0.0",
+    "title": "Thailand 2566",
+    "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+    "publication": "2023-09-06",
+    "volume": 140,
+    "part": "54 ก",
+    "pages": [
+      7,
+      8
+    ],
+    "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+    "scope": "Load combination factors, clauses 6 and 7 only",
+    "capacity_compliance": "Not Available",
+    "earthquake_generation": "Not Available"
+  },
+  "actions": {
+    "D": "Dead load including the configured self-weight",
+    "L": "Live load including impact where applicable",
+    "W": "Wind action",
+    "E": "Earthquake action from a separately verified model",
+    "H": "Lateral earth or water pressure",
+    "F": "Liquid pressure",
+    "T": "Temperature, shrinkage, creep or settlement action"
+  },
+  "presets": [
+    {
+      "id": "TH2566-ASD-01",
+      "method": "ASD",
+      "clause": "6(1)",
+      "formula": "D + L",
+      "factors": {
+        "D": 1.0,
+        "L": 1.0
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-ASD-02",
+      "method": "ASD",
+      "clause": "6(2)",
+      "formula": "D + 0.75(L + W)",
+      "factors": {
+        "D": 1.0,
+        "L": 0.75,
+        "W": 0.75
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-ASD-03",
+      "method": "ASD",
+      "clause": "6(2)",
+      "formula": "0.6D + W",
+      "factors": {
+        "D": 0.6,
+        "W": 1.0
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-ASD-04",
+      "method": "ASD",
+      "clause": "6(3)",
+      "formula": "D + 0.7E",
+      "factors": {
+        "D": 1.0,
+        "E": 0.7
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-ASD-05",
+      "method": "ASD",
+      "clause": "6(3)",
+      "formula": "D + 0.525E + 0.75L",
+      "factors": {
+        "D": 1.0,
+        "E": 0.525,
+        "L": 0.75
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-ASD-06",
+      "method": "ASD",
+      "clause": "6(3)",
+      "formula": "0.6D + 0.7E",
+      "factors": {
+        "D": 0.6,
+        "E": 0.7
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-ASD-07",
+      "method": "ASD",
+      "clause": "6(4)",
+      "formula": "D + L + H + F + T",
+      "factors": {
+        "D": 1.0,
+        "L": 1.0,
+        "H": 1.0,
+        "F": 1.0,
+        "T": 1.0
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-01",
+      "method": "LRFD",
+      "clause": "7(1)",
+      "formula": "1.4D + 1.7L",
+      "factors": {
+        "D": 1.4,
+        "L": 1.7
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-02",
+      "method": "LRFD",
+      "clause": "7(2)",
+      "formula": "0.75(1.4D + 1.7L) + 1.6W",
+      "factors": {
+        "D": 1.05,
+        "L": 1.275,
+        "W": 1.6
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-03",
+      "method": "LRFD",
+      "clause": "7(2)",
+      "formula": "0.9D + 1.6W",
+      "factors": {
+        "D": 0.9,
+        "W": 1.6
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-04",
+      "method": "LRFD",
+      "clause": "7(3)",
+      "formula": "0.75(1.4D + 1.7L) + 1.0E",
+      "factors": {
+        "D": 1.05,
+        "L": 1.275,
+        "E": 1.0
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-05",
+      "method": "LRFD",
+      "clause": "7(3)",
+      "formula": "0.9D + 1.0E",
+      "factors": {
+        "D": 0.9,
+        "E": 1.0
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-06",
+      "method": "LRFD",
+      "clause": "7(4)",
+      "formula": "1.4D + 1.7L + 1.7H",
+      "factors": {
+        "D": 1.4,
+        "L": 1.7,
+        "H": 1.7
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-07",
+      "method": "LRFD",
+      "clause": "7(4)",
+      "formula": "0.9D + 1.7H",
+      "factors": {
+        "D": 0.9,
+        "H": 1.7
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-08",
+      "method": "LRFD",
+      "clause": "7(4)",
+      "formula": "1.4D + 1.7L + 1.4F",
+      "factors": {
+        "D": 1.4,
+        "L": 1.7,
+        "F": 1.4
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-09",
+      "method": "LRFD",
+      "clause": "7(4)",
+      "formula": "0.9D + 1.4F",
+      "factors": {
+        "D": 0.9,
+        "F": 1.4
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-10",
+      "method": "LRFD",
+      "clause": "7(5)",
+      "formula": "0.75(1.4D + 1.4T + 1.7L)",
+      "factors": {
+        "D": 1.05,
+        "T": 1.05,
+        "L": 1.275
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    },
+    {
+      "id": "TH2566-LRFD-11",
+      "method": "LRFD",
+      "clause": "7(5)",
+      "formula": "1.4D + 1.4T",
+      "factors": {
+        "D": 1.4,
+        "T": 1.4
+      },
+      "code_pack": {
+        "id": "TH-BUILDING-2566",
+        "version": "1.0.0",
+        "title": "Thailand 2566",
+        "source_url": "https://ratchakitcha.soc.go.th/documents/140A054N0000000000400.pdf",
+        "publication": "2023-09-06",
+        "volume": 140,
+        "part": "54 ก",
+        "pages": [
+          7,
+          8
+        ],
+        "source_sha256": "488f6315e12d1ca1913f72960f76a9ef9422619ceaf784df4564351ba70704c9",
+        "scope": "Load combination factors, clauses 6 and 7 only",
+        "capacity_compliance": "Not Available",
+        "earthquake_generation": "Not Available"
+      },
+      "origin": "Original statutory formula",
+      "editable": false
+    }
+  ]
+}

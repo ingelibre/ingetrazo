@@ -1,0 +1,5940 @@
+{
+  "schema": 2,
+  "dimension": "3D",
+  "self_weight": true,
+  "self_weight_case": "DL",
+  "nodes": [
+    {
+      "id": "N1",
+      "x": 1.75,
+      "y": 0.0,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N2",
+      "x": 1.75,
+      "y": 0.0,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N3",
+      "x": 1.75,
+      "y": 0.0,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N4",
+      "x": 1.75,
+      "y": 0.0,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N5",
+      "x": 5.2,
+      "y": 0.0,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N6",
+      "x": 5.2,
+      "y": 0.0,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N7",
+      "x": 5.2,
+      "y": 0.0,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N8",
+      "x": 5.2,
+      "y": 0.0,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N9",
+      "x": 9.3,
+      "y": 0.0,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N10",
+      "x": 9.3,
+      "y": 0.0,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N11",
+      "x": 9.3,
+      "y": 0.0,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N12",
+      "x": 9.3,
+      "y": 0.0,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N13",
+      "x": 0.85,
+      "y": 1.7,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N14",
+      "x": 0.85,
+      "y": 1.7,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N15",
+      "x": 0.85,
+      "y": 1.7,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N16",
+      "x": 0.85,
+      "y": 1.7,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N17",
+      "x": 5.2,
+      "y": 1.7,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N18",
+      "x": 5.2,
+      "y": 1.7,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N19",
+      "x": 5.2,
+      "y": 1.7,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N20",
+      "x": 5.2,
+      "y": 1.7,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N21",
+      "x": 0.0,
+      "y": 4.5,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N22",
+      "x": 0.0,
+      "y": 4.5,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N23",
+      "x": 0.0,
+      "y": 4.5,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N24",
+      "x": 1.75,
+      "y": 4.5,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N25",
+      "x": 1.75,
+      "y": 4.5,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N26",
+      "x": 1.75,
+      "y": 4.5,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N27",
+      "x": 1.75,
+      "y": 4.5,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N28",
+      "x": 5.2,
+      "y": 4.5,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N29",
+      "x": 5.2,
+      "y": 4.5,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N30",
+      "x": 5.2,
+      "y": 4.5,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N31",
+      "x": 5.2,
+      "y": 4.5,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N32",
+      "x": 9.3,
+      "y": 4.5,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N33",
+      "x": 9.3,
+      "y": 4.5,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N34",
+      "x": 9.3,
+      "y": 4.5,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N35",
+      "x": 9.3,
+      "y": 4.5,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N36",
+      "x": 0.0,
+      "y": 8.3,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N37",
+      "x": 0.0,
+      "y": 8.3,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N38",
+      "x": 0.0,
+      "y": 8.3,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N39",
+      "x": 5.2,
+      "y": 8.3,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N40",
+      "x": 5.2,
+      "y": 8.3,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N41",
+      "x": 5.2,
+      "y": 8.3,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N42",
+      "x": 5.2,
+      "y": 8.3,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N43",
+      "x": 9.3,
+      "y": 8.3,
+      "z": -1.0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N44",
+      "x": 9.3,
+      "y": 8.3,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N45",
+      "x": 9.3,
+      "y": 8.3,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N46",
+      "x": 9.3,
+      "y": 8.3,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N47",
+      "x": 0.85,
+      "y": -0.95,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N48",
+      "x": 1.75,
+      "y": -0.95,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N49",
+      "x": 5.2,
+      "y": -0.95,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N50",
+      "x": 0.85,
+      "y": 0.0,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N51",
+      "x": 10.1,
+      "y": 0.0,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N52",
+      "x": 1.75,
+      "y": 1.7,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N53",
+      "x": 2.95,
+      "y": 1.7,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N54",
+      "x": 0.85,
+      "y": 3.3,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N55",
+      "x": 1.75,
+      "y": 3.3,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N56",
+      "x": 2.95,
+      "y": 3.3,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N57",
+      "x": 5.2,
+      "y": 3.3,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N58",
+      "x": 0.85,
+      "y": 4.5,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N59",
+      "x": 10.1,
+      "y": 4.5,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N60",
+      "x": 10.1,
+      "y": 8.3,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N61",
+      "x": 5.2,
+      "y": 9.4,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N62",
+      "x": 9.3,
+      "y": 9.4,
+      "z": 0.55,
+      "support": "Free"
+    },
+    {
+      "id": "N63",
+      "x": 0.65,
+      "y": -0.95,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N64",
+      "x": 1.75,
+      "y": -0.95,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N65",
+      "x": 5.2,
+      "y": -0.95,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N66",
+      "x": 0.65,
+      "y": 0.0,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N67",
+      "x": 7.2,
+      "y": 0.0,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N68",
+      "x": 5.2,
+      "y": 0.7,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N69",
+      "x": 6.6,
+      "y": 0.7,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N70",
+      "x": 7.2,
+      "y": 0.7,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N71",
+      "x": 9.3,
+      "y": 0.7,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N72",
+      "x": 0.65,
+      "y": 1.7,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N73",
+      "x": 1.75,
+      "y": 1.7,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N74",
+      "x": 7.2,
+      "y": 1.7,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N75",
+      "x": 9.3,
+      "y": 1.7,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N76",
+      "x": 5.2,
+      "y": 3.35,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N77",
+      "x": 7.2,
+      "y": 3.35,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N78",
+      "x": 9.3,
+      "y": 3.35,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N79",
+      "x": 0.85,
+      "y": 4.5,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N80",
+      "x": 10.1,
+      "y": 4.5,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N81",
+      "x": 0.85,
+      "y": 8.3,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N82",
+      "x": 1.75,
+      "y": 8.3,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N83",
+      "x": 10.1,
+      "y": 0.0,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N84",
+      "x": 10.1,
+      "y": 8.3,
+      "z": 3.75,
+      "support": "Free"
+    },
+    {
+      "id": "N85",
+      "x": 1.0,
+      "y": 0.0,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N86",
+      "x": 1.0,
+      "y": 4.5,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N87",
+      "x": 1.0,
+      "y": 8.3,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N88",
+      "x": 1.75,
+      "y": 8.3,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N89",
+      "x": 5.2,
+      "y": 4.15,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N90",
+      "x": -0.1,
+      "y": -1.05,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N91",
+      "x": 1.7375,
+      "y": 0.77,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N92",
+      "x": 3.575,
+      "y": 2.59,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N93",
+      "x": 5.15,
+      "y": 4.15,
+      "z": 8.7,
+      "support": "Free"
+    },
+    {
+      "id": "N94",
+      "x": 1.75,
+      "y": -1.05,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N95",
+      "x": 2.525,
+      "y": -1.05,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N96",
+      "x": 5.15,
+      "y": -1.05,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N97",
+      "x": 5.2,
+      "y": -1.05,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N98",
+      "x": 7.775,
+      "y": -1.05,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N99",
+      "x": 9.3,
+      "y": -1.05,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N100",
+      "x": 10.4,
+      "y": -1.05,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N101",
+      "x": 3.44375,
+      "y": 0.77,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N102",
+      "x": 4.3625,
+      "y": 2.59,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N103",
+      "x": 5.15,
+      "y": 0.77,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N104",
+      "x": 5.15,
+      "y": 2.59,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N105",
+      "x": 6.85625,
+      "y": 0.77,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N106",
+      "x": 5.9375,
+      "y": 2.59,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N107",
+      "x": 8.5625,
+      "y": 0.77,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N108",
+      "x": 6.725,
+      "y": 2.59,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N109",
+      "x": 10.4,
+      "y": 1.55,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N110",
+      "x": 10.4,
+      "y": 4.15,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N111",
+      "x": 10.4,
+      "y": 4.5,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N112",
+      "x": 10.4,
+      "y": 6.75,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N113",
+      "x": 10.4,
+      "y": 9.35,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N114",
+      "x": 8.5625,
+      "y": 2.46,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N115",
+      "x": 6.725,
+      "y": 3.37,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N116",
+      "x": 8.5625,
+      "y": 4.15,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N117",
+      "x": 6.725,
+      "y": 4.15,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N118",
+      "x": 8.5625,
+      "y": 5.84,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N119",
+      "x": 6.725,
+      "y": 4.93,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N120",
+      "x": 8.5625,
+      "y": 7.53,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N121",
+      "x": 6.725,
+      "y": 5.71,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N122",
+      "x": 9.3,
+      "y": 9.35,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N123",
+      "x": 7.775,
+      "y": 9.35,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N124",
+      "x": 5.2,
+      "y": 9.35,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N125",
+      "x": 5.15,
+      "y": 9.35,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N126",
+      "x": 2.525,
+      "y": 9.35,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N127",
+      "x": -0.1,
+      "y": 9.35,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N128",
+      "x": 6.85625,
+      "y": 7.53,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N129",
+      "x": 5.9375,
+      "y": 5.71,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N130",
+      "x": 5.15,
+      "y": 7.53,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N131",
+      "x": 5.15,
+      "y": 5.71,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N132",
+      "x": 3.44375,
+      "y": 7.53,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N133",
+      "x": 4.3625,
+      "y": 5.71,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N134",
+      "x": 1.7375,
+      "y": 7.53,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N135",
+      "x": 3.575,
+      "y": 5.71,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N136",
+      "x": -0.1,
+      "y": 6.75,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N137",
+      "x": -0.1,
+      "y": 4.5,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N138",
+      "x": -0.1,
+      "y": 4.15,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N139",
+      "x": -0.1,
+      "y": 1.7,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N140",
+      "x": -0.1,
+      "y": 1.55,
+      "z": 6.8,
+      "support": "Free"
+    },
+    {
+      "id": "N141",
+      "x": 1.7375,
+      "y": 5.84,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N142",
+      "x": 3.575,
+      "y": 4.93,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N143",
+      "x": 1.7375,
+      "y": 4.15,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N144",
+      "x": 3.575,
+      "y": 4.15,
+      "z": 8.13,
+      "support": "Free"
+    },
+    {
+      "id": "N145",
+      "x": 1.7375,
+      "y": 2.46,
+      "z": 7.465,
+      "support": "Free"
+    },
+    {
+      "id": "N146",
+      "x": 3.575,
+      "y": 3.37,
+      "z": 8.13,
+      "support": "Free"
+    }
+  ],
+  "members": [
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-2-A-1",
+      "parent": "COL-SUB-2-A",
+      "i": "N1",
+      "j": "N2",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-2-A-1",
+      "parent": "COL-L0-2-A",
+      "i": "N2",
+      "j": "N3",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "COL-L1-2-A-1",
+      "parent": "COL-L1-2-A",
+      "i": "N3",
+      "j": "N4",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-3-A-1",
+      "parent": "COL-SUB-3-A",
+      "i": "N5",
+      "j": "N6",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-3-A-1",
+      "parent": "COL-L0-3-A",
+      "i": "N6",
+      "j": "N7",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "COL-L1-3-A-1",
+      "parent": "COL-L1-3-A",
+      "i": "N7",
+      "j": "N8",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-4-A-1",
+      "parent": "COL-SUB-4-A",
+      "i": "N9",
+      "j": "N10",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-4-A-1",
+      "parent": "COL-L0-4-A",
+      "i": "N10",
+      "j": "N11",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "COL-L1-4-A-1",
+      "parent": "COL-L1-4-A",
+      "i": "N11",
+      "j": "N12",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-2off-Ap-1",
+      "parent": "COL-SUB-2off-Ap",
+      "i": "N13",
+      "j": "N14",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-2off-Ap-1",
+      "parent": "COL-L0-2off-Ap",
+      "i": "N14",
+      "j": "N15",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "COL-L1-2off-Ap-1",
+      "parent": "COL-L1-2off-Ap",
+      "i": "N15",
+      "j": "N16",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-3-Ap-1",
+      "parent": "COL-SUB-3-Ap",
+      "i": "N17",
+      "j": "N18",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-3-Ap-1",
+      "parent": "COL-L0-3-Ap",
+      "i": "N18",
+      "j": "N19",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "COL-L1-3-Ap-1",
+      "parent": "COL-L1-3-Ap",
+      "i": "N19",
+      "j": "N20",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-1-B-1",
+      "parent": "COL-SUB-1-B",
+      "i": "N21",
+      "j": "N22",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-1-B-1",
+      "parent": "COL-L0-1-B",
+      "i": "N22",
+      "j": "N23",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-2-B-1",
+      "parent": "COL-SUB-2-B",
+      "i": "N24",
+      "j": "N25",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-2-B-1",
+      "parent": "COL-L0-2-B",
+      "i": "N25",
+      "j": "N26",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "COL-L1-2-B-1",
+      "parent": "COL-L1-2-B",
+      "i": "N26",
+      "j": "N27",
+      "rotation": 0
+    },
+    {
+      "section": "C250",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-3-B-1",
+      "parent": "COL-SUB-3-B",
+      "i": "N28",
+      "j": "N29",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-3-B-1",
+      "parent": "COL-L0-3-B",
+      "i": "N29",
+      "j": "N30",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "COL-L1-3-B-1",
+      "parent": "COL-L1-3-B",
+      "i": "N30",
+      "j": "N31",
+      "rotation": 0
+    },
+    {
+      "section": "C250",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-4-B-1",
+      "parent": "COL-SUB-4-B",
+      "i": "N32",
+      "j": "N33",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-4-B-1",
+      "parent": "COL-L0-4-B",
+      "i": "N33",
+      "j": "N34",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "COL-L1-4-B-1",
+      "parent": "COL-L1-4-B",
+      "i": "N34",
+      "j": "N35",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-1-C-1",
+      "parent": "COL-SUB-1-C",
+      "i": "N36",
+      "j": "N37",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-1-C-1",
+      "parent": "COL-L0-1-C",
+      "i": "N37",
+      "j": "N38",
+      "rotation": 0
+    },
+    {
+      "section": "C250",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-3-C-1",
+      "parent": "COL-SUB-3-C",
+      "i": "N39",
+      "j": "N40",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-3-C-1",
+      "parent": "COL-L0-3-C",
+      "i": "N40",
+      "j": "N41",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "COL-L1-3-C-1",
+      "parent": "COL-L1-3-C",
+      "i": "N41",
+      "j": "N42",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "SUB",
+      "source_status": "ADAPTED",
+      "id": "COL-SUB-4-C-1",
+      "parent": "COL-SUB-4-C",
+      "i": "N43",
+      "j": "N44",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "COL-L0-4-C-1",
+      "parent": "COL-L0-4-C",
+      "i": "N44",
+      "j": "N45",
+      "rotation": 0
+    },
+    {
+      "section": "C200",
+      "material": "Concrete",
+      "type": "Column",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "COL-L1-4-C-1",
+      "parent": "COL-L1-4-C",
+      "i": "N45",
+      "j": "N46",
+      "rotation": 0
+    },
+    {
+      "section": "B4A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-1-1",
+      "parent": "BM-L0-1",
+      "i": "N47",
+      "j": "N48",
+      "rotation": 0
+    },
+    {
+      "section": "B4",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-2-1",
+      "parent": "BM-L0-2",
+      "i": "N48",
+      "j": "N49",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-3-1",
+      "parent": "BM-L0-3",
+      "i": "N50",
+      "j": "N2",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-4-1",
+      "parent": "BM-L0-4",
+      "i": "N2",
+      "j": "N6",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-5-1",
+      "parent": "BM-L0-5",
+      "i": "N6",
+      "j": "N10",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-6-1",
+      "parent": "BM-L0-6",
+      "i": "N10",
+      "j": "N51",
+      "rotation": 0
+    },
+    {
+      "section": "B16A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-7-1",
+      "parent": "BM-L0-7",
+      "i": "N14",
+      "j": "N52",
+      "rotation": 0
+    },
+    {
+      "section": "B16A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-8-1",
+      "parent": "BM-L0-8",
+      "i": "N52",
+      "j": "N53",
+      "rotation": 0
+    },
+    {
+      "section": "B16A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-8-2",
+      "parent": "BM-L0-8",
+      "i": "N53",
+      "j": "N18",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-9-1",
+      "parent": "BM-L0-9",
+      "i": "N54",
+      "j": "N55",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-10-1",
+      "parent": "BM-L0-10",
+      "i": "N55",
+      "j": "N56",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-11-1",
+      "parent": "BM-L0-11",
+      "i": "N56",
+      "j": "N57",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-12-1",
+      "parent": "BM-L0-12",
+      "i": "N22",
+      "j": "N58",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-12-2",
+      "parent": "BM-L0-12",
+      "i": "N58",
+      "j": "N25",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-13-1",
+      "parent": "BM-L0-13",
+      "i": "N25",
+      "j": "N29",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-14-1",
+      "parent": "BM-L0-14",
+      "i": "N29",
+      "j": "N33",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-15-1",
+      "parent": "BM-L0-15",
+      "i": "N33",
+      "j": "N59",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-16-1",
+      "parent": "BM-L0-16",
+      "i": "N37",
+      "j": "N40",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-17-1",
+      "parent": "BM-L0-17",
+      "i": "N40",
+      "j": "N44",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-18-1",
+      "parent": "BM-L0-18",
+      "i": "N44",
+      "j": "N60",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-19-1",
+      "parent": "BM-L0-19",
+      "i": "N61",
+      "j": "N62",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-20-1",
+      "parent": "BM-L0-20",
+      "i": "N22",
+      "j": "N37",
+      "rotation": 0
+    },
+    {
+      "section": "B4A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-21-1",
+      "parent": "BM-L0-21",
+      "i": "N47",
+      "j": "N50",
+      "rotation": 0
+    },
+    {
+      "section": "B4A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-22-1",
+      "parent": "BM-L0-22",
+      "i": "N50",
+      "j": "N14",
+      "rotation": 0
+    },
+    {
+      "section": "BST",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-23-1",
+      "parent": "BM-L0-23",
+      "i": "N14",
+      "j": "N54",
+      "rotation": 0
+    },
+    {
+      "section": "BST",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-23-3",
+      "parent": "BM-L0-23",
+      "i": "N54",
+      "j": "N58",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-24-1",
+      "parent": "BM-L0-24",
+      "i": "N48",
+      "j": "N2",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-25-1",
+      "parent": "BM-L0-25",
+      "i": "N2",
+      "j": "N52",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-26-1",
+      "parent": "BM-L0-26",
+      "i": "N52",
+      "j": "N55",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-27-1",
+      "parent": "BM-L0-27",
+      "i": "N55",
+      "j": "N25",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-28-1",
+      "parent": "BM-L0-28",
+      "i": "N53",
+      "j": "N56",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-29-1",
+      "parent": "BM-L0-29",
+      "i": "N49",
+      "j": "N6",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-30-1",
+      "parent": "BM-L0-30",
+      "i": "N6",
+      "j": "N18",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-31-1",
+      "parent": "BM-L0-31",
+      "i": "N18",
+      "j": "N57",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-32-1",
+      "parent": "BM-L0-32",
+      "i": "N57",
+      "j": "N29",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-33-1",
+      "parent": "BM-L0-33",
+      "i": "N29",
+      "j": "N40",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-34-1",
+      "parent": "BM-L0-34",
+      "i": "N40",
+      "j": "N61",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-35-1",
+      "parent": "BM-L0-35",
+      "i": "N10",
+      "j": "N33",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-36-1",
+      "parent": "BM-L0-36",
+      "i": "N33",
+      "j": "N44",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-37-1",
+      "parent": "BM-L0-37",
+      "i": "N44",
+      "j": "N62",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-38-1",
+      "parent": "BM-L0-38",
+      "i": "N51",
+      "j": "N59",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L0",
+      "source_status": "ADAPTED",
+      "id": "BM-L0-39-1",
+      "parent": "BM-L0-39",
+      "i": "N59",
+      "j": "N60",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-40-1",
+      "parent": "BM-L1-40",
+      "i": "N63",
+      "j": "N64",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-41-1",
+      "parent": "BM-L1-41",
+      "i": "N64",
+      "j": "N65",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-42-1",
+      "parent": "BM-L1-42",
+      "i": "N66",
+      "j": "N3",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-43-1",
+      "parent": "BM-L1-43",
+      "i": "N3",
+      "j": "N7",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-44-1",
+      "parent": "BM-L1-44",
+      "i": "N7",
+      "j": "N67",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-45-1",
+      "parent": "BM-L1-45",
+      "i": "N67",
+      "j": "N11",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-46-1",
+      "parent": "BM-L1-46",
+      "i": "N68",
+      "j": "N69",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-47-1",
+      "parent": "BM-L1-47",
+      "i": "N69",
+      "j": "N70",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-48-1",
+      "parent": "BM-L1-48",
+      "i": "N70",
+      "j": "N71",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-49-1",
+      "parent": "BM-L1-49",
+      "i": "N72",
+      "j": "N15",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-49-2",
+      "parent": "BM-L1-49",
+      "i": "N15",
+      "j": "N73",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-50-1",
+      "parent": "BM-L1-50",
+      "i": "N73",
+      "j": "N19",
+      "rotation": 0
+    },
+    {
+      "section": "B4",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-51-1",
+      "parent": "BM-L1-51",
+      "i": "N19",
+      "j": "N74",
+      "rotation": 0
+    },
+    {
+      "section": "B4",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-52-1",
+      "parent": "BM-L1-52",
+      "i": "N74",
+      "j": "N75",
+      "rotation": 0
+    },
+    {
+      "section": "B4",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-53-1",
+      "parent": "BM-L1-53",
+      "i": "N76",
+      "j": "N77",
+      "rotation": 0
+    },
+    {
+      "section": "B4",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-54-1",
+      "parent": "BM-L1-54",
+      "i": "N77",
+      "j": "N78",
+      "rotation": 0
+    },
+    {
+      "section": "B16A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-55-1",
+      "parent": "BM-L1-55",
+      "i": "N23",
+      "j": "N79",
+      "rotation": 0
+    },
+    {
+      "section": "B16A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-55-2",
+      "parent": "BM-L1-55",
+      "i": "N79",
+      "j": "N26",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-56-1",
+      "parent": "BM-L1-56",
+      "i": "N26",
+      "j": "N30",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-57-1",
+      "parent": "BM-L1-57",
+      "i": "N30",
+      "j": "N34",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-58-1",
+      "parent": "BM-L1-58",
+      "i": "N34",
+      "j": "N80",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-59-1",
+      "parent": "BM-L1-59",
+      "i": "N38",
+      "j": "N81",
+      "rotation": 0
+    },
+    {
+      "section": "B16A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-60-1",
+      "parent": "BM-L1-60",
+      "i": "N81",
+      "j": "N82",
+      "rotation": 0
+    },
+    {
+      "section": "B16A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-61-1",
+      "parent": "BM-L1-61",
+      "i": "N82",
+      "j": "N41",
+      "rotation": 0
+    },
+    {
+      "section": "B16A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-62-1",
+      "parent": "BM-L1-62",
+      "i": "N41",
+      "j": "N45",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-63-1",
+      "parent": "BM-L1-63",
+      "i": "N63",
+      "j": "N66",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-64-1",
+      "parent": "BM-L1-64",
+      "i": "N66",
+      "j": "N72",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-65-1",
+      "parent": "BM-L1-65",
+      "i": "N23",
+      "j": "N38",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-66-1",
+      "parent": "BM-L1-66",
+      "i": "N79",
+      "j": "N81",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-67-1",
+      "parent": "BM-L1-67",
+      "i": "N64",
+      "j": "N3",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-68-1",
+      "parent": "BM-L1-68",
+      "i": "N3",
+      "j": "N73",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-69-1",
+      "parent": "BM-L1-69",
+      "i": "N26",
+      "j": "N82",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-70-1",
+      "parent": "BM-L1-70",
+      "i": "N65",
+      "j": "N7",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-71-1",
+      "parent": "BM-L1-71",
+      "i": "N7",
+      "j": "N68",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-72-1",
+      "parent": "BM-L1-72",
+      "i": "N68",
+      "j": "N19",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-73-1",
+      "parent": "BM-L1-73",
+      "i": "N19",
+      "j": "N76",
+      "rotation": 0
+    },
+    {
+      "section": "B16A",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-74-1",
+      "parent": "BM-L1-74",
+      "i": "N76",
+      "j": "N30",
+      "rotation": 0
+    },
+    {
+      "section": "B12",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-75-1",
+      "parent": "BM-L1-75",
+      "i": "N30",
+      "j": "N41",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-76-1",
+      "parent": "BM-L1-76",
+      "i": "N70",
+      "j": "N74",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-77-1",
+      "parent": "BM-L1-77",
+      "i": "N74",
+      "j": "N77",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-78-1",
+      "parent": "BM-L1-78",
+      "i": "N11",
+      "j": "N71",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-79-1",
+      "parent": "BM-L1-79",
+      "i": "N71",
+      "j": "N75",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-80-1",
+      "parent": "BM-L1-80",
+      "i": "N75",
+      "j": "N78",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-81-1",
+      "parent": "BM-L1-81",
+      "i": "N78",
+      "j": "N34",
+      "rotation": 0
+    },
+    {
+      "section": "B50",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-82-1",
+      "parent": "BM-L1-82",
+      "i": "N34",
+      "j": "N45",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-83-1",
+      "parent": "BM-L1-83",
+      "i": "N83",
+      "j": "N80",
+      "rotation": 0
+    },
+    {
+      "section": "B1",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "L1",
+      "source_status": "ADAPTED",
+      "id": "BM-L1-84-1",
+      "parent": "BM-L1-84",
+      "i": "N80",
+      "j": "N84",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-85-1",
+      "parent": "BM-RF-85",
+      "i": "N85",
+      "j": "N4",
+      "rotation": 0
+    },
+    {
+      "section": "RB2",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-86-1",
+      "parent": "BM-RF-86",
+      "i": "N4",
+      "j": "N8",
+      "rotation": 0
+    },
+    {
+      "section": "RB2",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-87-1",
+      "parent": "BM-RF-87",
+      "i": "N8",
+      "j": "N12",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-88-1",
+      "parent": "BM-RF-88",
+      "i": "N86",
+      "j": "N27",
+      "rotation": 0
+    },
+    {
+      "section": "RB2",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-89-1",
+      "parent": "BM-RF-89",
+      "i": "N27",
+      "j": "N31",
+      "rotation": 0
+    },
+    {
+      "section": "RB2",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-90-1",
+      "parent": "BM-RF-90",
+      "i": "N31",
+      "j": "N35",
+      "rotation": 0
+    },
+    {
+      "section": "B19",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-91-1",
+      "parent": "BM-RF-91",
+      "i": "N87",
+      "j": "N88",
+      "rotation": 0
+    },
+    {
+      "section": "RB2",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-92-1",
+      "parent": "BM-RF-92",
+      "i": "N88",
+      "j": "N42",
+      "rotation": 0
+    },
+    {
+      "section": "RB2",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-93-1",
+      "parent": "BM-RF-93",
+      "i": "N42",
+      "j": "N46",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-94-1",
+      "parent": "BM-RF-94",
+      "i": "N85",
+      "j": "N86",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-95-1",
+      "parent": "BM-RF-95",
+      "i": "N86",
+      "j": "N87",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-96-1",
+      "parent": "BM-RF-96",
+      "i": "N4",
+      "j": "N27",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-97-1",
+      "parent": "BM-RF-97",
+      "i": "N27",
+      "j": "N88",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-98-1",
+      "parent": "BM-RF-98",
+      "i": "N8",
+      "j": "N20",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-98-2",
+      "parent": "BM-RF-98",
+      "i": "N20",
+      "j": "N89",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-98-3",
+      "parent": "BM-RF-98",
+      "i": "N89",
+      "j": "N31",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-99-1",
+      "parent": "BM-RF-99",
+      "i": "N31",
+      "j": "N42",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-100-1",
+      "parent": "BM-RF-100",
+      "i": "N12",
+      "j": "N35",
+      "rotation": 0
+    },
+    {
+      "section": "B16",
+      "material": "Concrete",
+      "type": "Beam",
+      "level": "RF",
+      "source_status": "ADAPTED",
+      "id": "BM-RF-101-1",
+      "parent": "BM-RF-101",
+      "i": "N35",
+      "j": "N46",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-1-1",
+      "parent": "HIP-1",
+      "i": "N90",
+      "j": "N91",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-1-2",
+      "parent": "HIP-1",
+      "i": "N91",
+      "j": "N92",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-1-4",
+      "parent": "HIP-1",
+      "i": "N92",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-1-1",
+      "parent": "EAVE-1",
+      "i": "N90",
+      "j": "N94",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-1-2",
+      "parent": "EAVE-1",
+      "i": "N94",
+      "j": "N95",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-1-3",
+      "parent": "EAVE-1",
+      "i": "N95",
+      "j": "N96",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-1-4",
+      "parent": "EAVE-1",
+      "i": "N96",
+      "j": "N97",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-1-5",
+      "parent": "EAVE-1",
+      "i": "N97",
+      "j": "N98",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-1-7",
+      "parent": "EAVE-1",
+      "i": "N98",
+      "j": "N99",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-1-8",
+      "parent": "EAVE-1",
+      "i": "N99",
+      "j": "N100",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-1-1-1",
+      "parent": "RAF-1-1",
+      "i": "N95",
+      "j": "N101",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-1-1-2",
+      "parent": "RAF-1-1",
+      "i": "N101",
+      "j": "N102",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-1-1-3",
+      "parent": "RAF-1-1",
+      "i": "N102",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-1-2-1",
+      "parent": "RAF-1-2",
+      "i": "N96",
+      "j": "N103",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-1-2-2",
+      "parent": "RAF-1-2",
+      "i": "N103",
+      "j": "N104",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-1-2-3",
+      "parent": "RAF-1-2",
+      "i": "N104",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-1-3-1",
+      "parent": "RAF-1-3",
+      "i": "N98",
+      "j": "N105",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-1-3-2",
+      "parent": "RAF-1-3",
+      "i": "N105",
+      "j": "N106",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-1-3-3",
+      "parent": "RAF-1-3",
+      "i": "N106",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-1-1-1",
+      "parent": "PURL-1-1",
+      "i": "N91",
+      "j": "N101",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-1-1-2",
+      "parent": "PURL-1-1",
+      "i": "N101",
+      "j": "N103",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-1-1-3",
+      "parent": "PURL-1-1",
+      "i": "N103",
+      "j": "N105",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-1-1-4",
+      "parent": "PURL-1-1",
+      "i": "N105",
+      "j": "N107",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-1-2-1",
+      "parent": "PURL-1-2",
+      "i": "N92",
+      "j": "N102",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-1-2-2",
+      "parent": "PURL-1-2",
+      "i": "N102",
+      "j": "N104",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-1-2-3",
+      "parent": "PURL-1-2",
+      "i": "N104",
+      "j": "N106",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-1-2-4",
+      "parent": "PURL-1-2",
+      "i": "N106",
+      "j": "N108",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-2-1",
+      "parent": "HIP-2",
+      "i": "N100",
+      "j": "N107",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-2-3",
+      "parent": "HIP-2",
+      "i": "N107",
+      "j": "N108",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-2-4",
+      "parent": "HIP-2",
+      "i": "N108",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-2-1",
+      "parent": "EAVE-2",
+      "i": "N100",
+      "j": "N109",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-2-2",
+      "parent": "EAVE-2",
+      "i": "N109",
+      "j": "N110",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-2-3",
+      "parent": "EAVE-2",
+      "i": "N110",
+      "j": "N111",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-2-4",
+      "parent": "EAVE-2",
+      "i": "N111",
+      "j": "N112",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-2-6",
+      "parent": "EAVE-2",
+      "i": "N112",
+      "j": "N113",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-2-1-1",
+      "parent": "RAF-2-1",
+      "i": "N109",
+      "j": "N114",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-2-1-2",
+      "parent": "RAF-2-1",
+      "i": "N114",
+      "j": "N115",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-2-1-3",
+      "parent": "RAF-2-1",
+      "i": "N115",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-2-2-1",
+      "parent": "RAF-2-2",
+      "i": "N110",
+      "j": "N116",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-2-2-2",
+      "parent": "RAF-2-2",
+      "i": "N116",
+      "j": "N117",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-2-2-3",
+      "parent": "RAF-2-2",
+      "i": "N117",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-2-3-1",
+      "parent": "RAF-2-3",
+      "i": "N112",
+      "j": "N118",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-2-3-2",
+      "parent": "RAF-2-3",
+      "i": "N118",
+      "j": "N119",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-2-3-3",
+      "parent": "RAF-2-3",
+      "i": "N119",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-2-1-2",
+      "parent": "PURL-2-1",
+      "i": "N107",
+      "j": "N114",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-2-1-3",
+      "parent": "PURL-2-1",
+      "i": "N114",
+      "j": "N116",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-2-1-4",
+      "parent": "PURL-2-1",
+      "i": "N116",
+      "j": "N118",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-2-1-5",
+      "parent": "PURL-2-1",
+      "i": "N118",
+      "j": "N120",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-2-2-1",
+      "parent": "PURL-2-2",
+      "i": "N108",
+      "j": "N115",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-2-2-2",
+      "parent": "PURL-2-2",
+      "i": "N115",
+      "j": "N117",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-2-2-3",
+      "parent": "PURL-2-2",
+      "i": "N117",
+      "j": "N119",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-2-2-4",
+      "parent": "PURL-2-2",
+      "i": "N119",
+      "j": "N121",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-3-1",
+      "parent": "HIP-3",
+      "i": "N113",
+      "j": "N120",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-3-3",
+      "parent": "HIP-3",
+      "i": "N120",
+      "j": "N121",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-3-5",
+      "parent": "HIP-3",
+      "i": "N121",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-3-1",
+      "parent": "EAVE-3",
+      "i": "N113",
+      "j": "N122",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-3-2",
+      "parent": "EAVE-3",
+      "i": "N122",
+      "j": "N123",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-3-3",
+      "parent": "EAVE-3",
+      "i": "N123",
+      "j": "N124",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-3-4",
+      "parent": "EAVE-3",
+      "i": "N124",
+      "j": "N125",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-3-5",
+      "parent": "EAVE-3",
+      "i": "N125",
+      "j": "N126",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-3-7",
+      "parent": "EAVE-3",
+      "i": "N126",
+      "j": "N127",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-3-1-1",
+      "parent": "RAF-3-1",
+      "i": "N123",
+      "j": "N128",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-3-1-2",
+      "parent": "RAF-3-1",
+      "i": "N128",
+      "j": "N129",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-3-1-3",
+      "parent": "RAF-3-1",
+      "i": "N129",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-3-2-1",
+      "parent": "RAF-3-2",
+      "i": "N125",
+      "j": "N130",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-3-2-2",
+      "parent": "RAF-3-2",
+      "i": "N130",
+      "j": "N131",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-3-2-3",
+      "parent": "RAF-3-2",
+      "i": "N131",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-3-3-1",
+      "parent": "RAF-3-3",
+      "i": "N126",
+      "j": "N132",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-3-3-2",
+      "parent": "RAF-3-3",
+      "i": "N132",
+      "j": "N133",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-3-3-3",
+      "parent": "RAF-3-3",
+      "i": "N133",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-3-1-1",
+      "parent": "PURL-3-1",
+      "i": "N120",
+      "j": "N128",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-3-1-2",
+      "parent": "PURL-3-1",
+      "i": "N128",
+      "j": "N130",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-3-1-3",
+      "parent": "PURL-3-1",
+      "i": "N130",
+      "j": "N132",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-3-1-4",
+      "parent": "PURL-3-1",
+      "i": "N132",
+      "j": "N134",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-3-2-1",
+      "parent": "PURL-3-2",
+      "i": "N121",
+      "j": "N129",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-3-2-2",
+      "parent": "PURL-3-2",
+      "i": "N129",
+      "j": "N131",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-3-2-3",
+      "parent": "PURL-3-2",
+      "i": "N131",
+      "j": "N133",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-3-2-4",
+      "parent": "PURL-3-2",
+      "i": "N133",
+      "j": "N135",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-4-1",
+      "parent": "HIP-4",
+      "i": "N127",
+      "j": "N134",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-4-4",
+      "parent": "HIP-4",
+      "i": "N134",
+      "j": "N135",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "HIP-4-7",
+      "parent": "HIP-4",
+      "i": "N135",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-4-1",
+      "parent": "EAVE-4",
+      "i": "N127",
+      "j": "N136",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-4-2",
+      "parent": "EAVE-4",
+      "i": "N136",
+      "j": "N137",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-4-4",
+      "parent": "EAVE-4",
+      "i": "N137",
+      "j": "N138",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-4-5",
+      "parent": "EAVE-4",
+      "i": "N138",
+      "j": "N139",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-4-6",
+      "parent": "EAVE-4",
+      "i": "N139",
+      "j": "N140",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "EAVE-4-7",
+      "parent": "EAVE-4",
+      "i": "N140",
+      "j": "N90",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-4-1-1",
+      "parent": "RAF-4-1",
+      "i": "N136",
+      "j": "N141",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-4-1-2",
+      "parent": "RAF-4-1",
+      "i": "N141",
+      "j": "N142",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-4-1-3",
+      "parent": "RAF-4-1",
+      "i": "N142",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-4-2-1",
+      "parent": "RAF-4-2",
+      "i": "N138",
+      "j": "N143",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-4-2-2",
+      "parent": "RAF-4-2",
+      "i": "N143",
+      "j": "N144",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-4-2-3",
+      "parent": "RAF-4-2",
+      "i": "N144",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-4-3-1",
+      "parent": "RAF-4-3",
+      "i": "N140",
+      "j": "N145",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-4-3-2",
+      "parent": "RAF-4-3",
+      "i": "N145",
+      "j": "N146",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "RAF-4-3-3",
+      "parent": "RAF-4-3",
+      "i": "N146",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-4-1-1",
+      "parent": "PURL-4-1",
+      "i": "N134",
+      "j": "N141",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-4-1-2",
+      "parent": "PURL-4-1",
+      "i": "N141",
+      "j": "N143",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-4-1-3",
+      "parent": "PURL-4-1",
+      "i": "N143",
+      "j": "N145",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-4-1-4",
+      "parent": "PURL-4-1",
+      "i": "N145",
+      "j": "N91",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-4-2-2",
+      "parent": "PURL-4-2",
+      "i": "N135",
+      "j": "N142",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-4-2-3",
+      "parent": "PURL-4-2",
+      "i": "N142",
+      "j": "N144",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-4-2-4",
+      "parent": "PURL-4-2",
+      "i": "N144",
+      "j": "N146",
+      "rotation": 0
+    },
+    {
+      "section": "RHS75",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "PURL-4-2-5",
+      "parent": "PURL-4-2",
+      "i": "N146",
+      "j": "N92",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "POST-RF-1",
+      "parent": "POST-RF",
+      "i": "N89",
+      "j": "N93",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "BEARING-2-A-1",
+      "parent": "BEARING-2-A",
+      "i": "N4",
+      "j": "N94",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "BEARING-3-A-1",
+      "parent": "BEARING-3-A",
+      "i": "N8",
+      "j": "N97",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "BEARING-4-A-1",
+      "parent": "BEARING-4-A",
+      "i": "N12",
+      "j": "N99",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "BEARING-2off-Ap-1",
+      "parent": "BEARING-2off-Ap",
+      "i": "N16",
+      "j": "N139",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "BEARING-2-B-3",
+      "parent": "BEARING-2-B",
+      "i": "N86",
+      "j": "N137",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "BEARING-3-B-3",
+      "parent": "BEARING-3-B",
+      "i": "N42",
+      "j": "N124",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "BEARING-4-B-1",
+      "parent": "BEARING-4-B",
+      "i": "N35",
+      "j": "N111",
+      "rotation": 0
+    },
+    {
+      "section": "RHS100",
+      "material": "Steel",
+      "type": "Frame",
+      "level": "RF",
+      "source_status": "ASSUMED_SIMPLIFIED",
+      "id": "BEARING-4-C-1",
+      "parent": "BEARING-4-C",
+      "i": "N46",
+      "j": "N122",
+      "rotation": 0
+    }
+  ],
+  "sections": [
+    {
+      "id": "B1",
+      "A": 0.045,
+      "Iy": 8.437499999999998e-05,
+      "Iz": 0.0003374999999999999,
+      "J": 0.0002317412109374999
+    },
+    {
+      "id": "B2",
+      "A": 0.0525,
+      "Iy": 9.843749999999999e-05,
+      "Iz": 0.0005359374999999998,
+      "J": 0.00028773637937317775
+    },
+    {
+      "id": "B4",
+      "A": 0.0525,
+      "Iy": 9.843749999999999e-05,
+      "Iz": 0.0005359374999999998,
+      "J": 0.00028773637937317775
+    },
+    {
+      "id": "B4A",
+      "A": 0.0525,
+      "Iy": 9.843749999999999e-05,
+      "Iz": 0.0005359374999999998,
+      "J": 0.00028773637937317775
+    },
+    {
+      "id": "B12",
+      "A": 0.08000000000000002,
+      "Iy": 0.00026666666666666673,
+      "Iz": 0.001066666666666667,
+      "J": 0.0007324166666666669
+    },
+    {
+      "id": "RB2",
+      "A": 0.08000000000000002,
+      "Iy": 0.00026666666666666673,
+      "Iz": 0.001066666666666667,
+      "J": 0.0007324166666666669
+    },
+    {
+      "id": "BST",
+      "A": 0.08000000000000002,
+      "Iy": 0.00026666666666666673,
+      "Iz": 0.001066666666666667,
+      "J": 0.0007324166666666669
+    },
+    {
+      "id": "B16",
+      "A": 0.08000000000000002,
+      "Iy": 0.00026666666666666673,
+      "Iz": 0.001066666666666667,
+      "J": 0.0007324166666666669
+    },
+    {
+      "id": "B16A",
+      "A": 0.12,
+      "Iy": 0.00040000000000000013,
+      "Iz": 0.0035999999999999995,
+      "J": 0.001264345679012346
+    },
+    {
+      "id": "B19",
+      "A": 0.08000000000000002,
+      "Iy": 0.00026666666666666673,
+      "Iz": 0.001066666666666667,
+      "J": 0.0007324166666666669
+    },
+    {
+      "id": "B50",
+      "A": 0.1,
+      "Iy": 0.00033333333333333343,
+      "Iz": 0.0020833333333333333,
+      "J": 0.0009980501333333334
+    },
+    {
+      "id": "C200",
+      "A": 0.04000000000000001,
+      "Iy": 0.00013333333333333337,
+      "Iz": 0.00013333333333333337,
+      "J": 0.0002253333333333334
+    },
+    {
+      "id": "C250",
+      "A": 0.0625,
+      "Iy": 0.0003255208333333333,
+      "Iz": 0.0003255208333333333,
+      "J": 0.0005501302083333334
+    },
+    {
+      "id": "RHS100",
+      "A": 0.0011640000000000018,
+      "Iy": 1.827092000000003e-06,
+      "Iz": 1.827092000000003e-06,
+      "J": 2.738019e-06
+    },
+    {
+      "id": "RHS75",
+      "A": 0.000864000000000001,
+      "Iy": 7.477920000000002e-07,
+      "Iz": 7.477920000000002e-07,
+      "J": 1.1197439999999998e-06
+    }
+  ],
+  "materials": [
+    {
+      "id": "Concrete",
+      "E": 25000000.0,
+      "G": 10416666.666666668,
+      "nu": 0.2,
+      "rho": 24
+    },
+    {
+      "id": "Steel",
+      "E": 200000000.0,
+      "G": 76923076.92307693,
+      "nu": 0.3,
+      "rho": 76.98
+    }
+  ],
+  "cases": [
+    "DL",
+    "LL",
+    "RL",
+    "WX+",
+    "WX-",
+    "WY+",
+    "WY-"
+  ],
+  "point_loads": [
+    {
+      "node": "N2",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N2",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N6",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N6",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N10",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N10",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N14",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N14",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N18",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N18",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N22",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N22",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N25",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N25",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N29",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N29",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N33",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N33",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N37",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N37",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N40",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N40",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N44",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N44",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N3",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N3",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N7",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N7",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N11",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N11",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N15",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N15",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N19",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N19",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N23",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N23",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N26",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N26",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N30",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N30",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N34",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N34",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N38",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N38",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N41",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N41",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N45",
+      "direction": "FZ",
+      "value": -9.648750000000001,
+      "case": "DL"
+    },
+    {
+      "node": "N45",
+      "direction": "FZ",
+      "value": -12.865000000000002,
+      "case": "LL"
+    },
+    {
+      "node": "N4",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N4",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N8",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N8",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N12",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N12",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N16",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N16",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N20",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N20",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N27",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N27",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N31",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N31",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N35",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N35",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N42",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N42",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N46",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N46",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N85",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N85",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N86",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N86",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N87",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N87",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N88",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N88",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N89",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N89",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N90",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N90",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N91",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N91",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N92",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N92",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N93",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N93",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N94",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N94",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N95",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N95",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N96",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N96",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N97",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N97",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N98",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N98",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N99",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N99",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N100",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N100",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N101",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N101",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N102",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N102",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N103",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N103",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N104",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N104",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N105",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N105",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N106",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N106",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N107",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N107",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N108",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N108",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N109",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N109",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N110",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N110",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N111",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N111",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N112",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N112",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N113",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N113",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N114",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N114",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N115",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N115",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N116",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N116",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N117",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N117",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N118",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N118",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N119",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N119",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N120",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N120",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N121",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N121",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N122",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N122",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N123",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N123",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N124",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N124",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N125",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N125",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N126",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N126",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N127",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N127",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N128",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N128",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N129",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N129",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N130",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N130",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N131",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N131",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N132",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N132",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N133",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N133",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N134",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N134",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N135",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N135",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N136",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N136",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N137",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N137",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N138",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N138",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N139",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N139",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N140",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N140",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N141",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N141",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N142",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N142",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N143",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N143",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N144",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N144",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N145",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N145",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N146",
+      "direction": "FZ",
+      "value": -0.9099999999999999,
+      "case": "DL"
+    },
+    {
+      "node": "N146",
+      "direction": "FZ",
+      "value": -0.37916666666666665,
+      "case": "RL"
+    },
+    {
+      "node": "N3",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N3",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N3",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N3",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N7",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N7",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N7",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N7",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N11",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N11",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N11",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N11",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N15",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N15",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N15",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N15",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N19",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N19",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N19",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N19",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N23",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N23",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N23",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N23",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N26",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N26",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N26",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N26",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N30",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N30",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N30",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N30",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N34",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N34",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N34",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N34",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N38",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N38",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N38",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N38",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N41",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N41",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N41",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N41",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N45",
+      "direction": "FX",
+      "value": 0.8333333333333334,
+      "case": "WX+"
+    },
+    {
+      "node": "N45",
+      "direction": "FX",
+      "value": -0.8333333333333334,
+      "case": "WX-"
+    },
+    {
+      "node": "N45",
+      "direction": "FY",
+      "value": 0.8333333333333334,
+      "case": "WY+"
+    },
+    {
+      "node": "N45",
+      "direction": "FY",
+      "value": -0.8333333333333334,
+      "case": "WY-"
+    },
+    {
+      "node": "N4",
+      "direction": "FX",
+      "value": 1.0,
+      "case": "WX+"
+    },
+    {
+      "node": "N4",
+      "direction": "FX",
+      "value": -1.0,
+      "case": "WX-"
+    },
+    {
+      "node": "N4",
+      "direction": "FY",
+      "value": 1.0,
+      "case": "WY+"
+    },
+    {
+      "node": "N4",
+      "direction": "FY",
+      "value": -1.0,
+      "case": "WY-"
+    },
+    {
+      "node": "N8",
+      "direction": "FX",
+      "value": 1.0,
+      "case": "WX+"
+    },
+    {
+      "node": "N8",
+      "direction": "FX",
+      "value": -1.0,
+      "case": "WX-"
+    },
+    {
+      "node": "N8",
+      "direction": "FY",
+      "value": 1.0,
+      "case": "WY+"
+    },
+    {
+      "node": "N8",
+      "direction": "FY",
+      "value": -1.0,
+      "case": "WY-"
+    },
+    {
+      "node": "N12",
+      "direction": "FX",
+      "value": 1.0,
+      "case": "WX+"
+    },
+    {
+      "node": "N12",
+      "direction": "FX",
+      "value": -1.0,
+      "case": "WX-"
+    },
+    {
+      "node": "N12",
+      "direction": "FY",
+      "value": 1.0,
+      "case": "WY+"
+    },
+    {
+      "node": "N12",
+      "direction": "FY",
+      "value": -1.0,
+      "case": "WY-"
+    },
+    {
+      "node": "N16",
+      "direction": "FX",
+      "value": 1.0,
+      "case": "WX+"
+    },
+    {
+      "node": "N16",
+      "direction": "FX",
+      "value": -1.0,
+      "case": "WX-"
+    },
+    {
+      "node": "N16",
+      "direction": "FY",
+      "value": 1.0,
+      "case": "WY+"
+    },
+    {
+      "node": "N16",
+      "direction": "FY",
+      "value": -1.0,
+      "case": "WY-"
+    },
+    {
+      "node": "N20",
+      "direction": "FX",
+      "value": 1.0,
+      "case": "WX+"
+    },
+    {
+      "node": "N20",
+      "direction": "FX",
+      "value": -1.0,
+      "case": "WX-"
+    },
+    {
+      "node": "N20",
+      "direction": "FY",
+      "value": 1.0,
+      "case": "WY+"
+    },
+    {
+      "node": "N20",
+      "direction": "FY",
+      "value": -1.0,
+      "case": "WY-"
+    },
+    {
+      "node": "N27",
+      "direction": "FX",
+      "value": 1.0,
+      "case": "WX+"
+    },
+    {
+      "node": "N27",
+      "direction": "FX",
+      "value": -1.0,
+      "case": "WX-"
+    },
+    {
+      "node": "N27",
+      "direction": "FY",
+      "value": 1.0,
+      "case": "WY+"
+    },
+    {
+      "node": "N27",
+      "direction": "FY",
+      "value": -1.0,
+      "case": "WY-"
+    },
+    {
+      "node": "N31",
+      "direction": "FX",
+      "value": 1.0,
+      "case": "WX+"
+    },
+    {
+      "node": "N31",
+      "direction": "FX",
+      "value": -1.0,
+      "case": "WX-"
+    },
+    {
+      "node": "N31",
+      "direction": "FY",
+      "value": 1.0,
+      "case": "WY+"
+    },
+    {
+      "node": "N31",
+      "direction": "FY",
+      "value": -1.0,
+      "case": "WY-"
+    },
+    {
+      "node": "N35",
+      "direction": "FX",
+      "value": 1.0,
+      "case": "WX+"
+    },
+    {
+      "node": "N35",
+      "direction": "FX",
+      "value": -1.0,
+      "case": "WX-"
+    },
+    {
+      "node": "N35",
+      "direction": "FY",
+      "value": 1.0,
+      "case": "WY+"
+    },
+    {
+      "node": "N35",
+      "direction": "FY",
+      "value": -1.0,
+      "case": "WY-"
+    },
+    {
+      "node": "N42",
+      "direction": "FX",
+      "value": 1.0,
+      "case": "WX+"
+    },
+    {
+      "node": "N42",
+      "direction": "FX",
+      "value": -1.0,
+      "case": "WX-"
+    },
+    {
+      "node": "N42",
+      "direction": "FY",
+      "value": 1.0,
+      "case": "WY+"
+    },
+    {
+      "node": "N42",
+      "direction": "FY",
+      "value": -1.0,
+      "case": "WY-"
+    },
+    {
+      "node": "N46",
+      "direction": "FX",
+      "value": 1.0,
+      "case": "WX+"
+    },
+    {
+      "node": "N46",
+      "direction": "FX",
+      "value": -1.0,
+      "case": "WX-"
+    },
+    {
+      "node": "N46",
+      "direction": "FY",
+      "value": 1.0,
+      "case": "WY+"
+    },
+    {
+      "node": "N46",
+      "direction": "FY",
+      "value": -1.0,
+      "case": "WY-"
+    }
+  ],
+  "distributed_loads": [],
+  "combinations": {
+    "DEMO Gravity": {
+      "DL": 1,
+      "LL": 1,
+      "RL": 1
+    },
+    "DEMO Wind X+": {
+      "DL": 1,
+      "WX+": 1
+    },
+    "DEMO Wind X-": {
+      "DL": 1,
+      "WX-": 1
+    }
+  },
+  "example_metadata": {
+    "name": "บ้านเพชรนารายณ์ / Phetnaray",
+    "purpose": "TEACHING_ONLY",
+    "source_file": "อาจารย์กวี_PhetnarayBMA.html",
+    "source_sha256": "f991d399f5ad82956d9df8785136b23722318f52e83f8a417b4d0f1b511feb6e",
+    "assumptions": [
+      "HTML geometry adapted to centerlines at SSL +0.55/+3.75 and eave +6.80 m.",
+      "Fixed bases at -1.00 m; no soil/pile flexibility or floor diaphragm.",
+      "Gross uncracked concrete sections; assumed E=25 GPa, not derived from concrete strength.",
+      "Simplified apex rafters, two purlin tiers and RHS steel; not original C-section framing.",
+      "All crossings/roof bearing connections assumed rigid; no connection design.",
+      "Floor area 9.3x8.3 per level with equal equivalent column-node loads.",
+      "Additional DL=1.5 kPa floor, 0.6 kPa roof; LL=2 kPa floor; RL=0.25 kPa roof.",
+      "Wind +/-10 kN per upper level per direction is illustrative, not a code wind calculation.",
+      "Member self-weight counted once in DL; walls/stairs/slab stiffness excluded.",
+      "DEMO combinations are custom unfactored teaching cases, not statutory design presets."
+    ]
+  }
+}

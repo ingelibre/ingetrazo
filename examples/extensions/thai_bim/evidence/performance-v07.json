@@ -1,0 +1,26 @@
+{
+  "Full": {
+    "bars": 29,
+    "faces": 15526,
+    "edges": 31284,
+    "native_bytes": 21088108,
+    "compact_bytes": 756288,
+    "review_build_seconds": 3.8695195999971475
+  },
+  "Lightweight": {
+    "bars": 29,
+    "faces": 3256,
+    "edges": 6570,
+    "native_bytes": 4678153,
+    "compact_bytes": 152456,
+    "review_build_seconds": 2.366992199997185
+  },
+  "Centreline": {
+    "bars": 29,
+    "faces": 0,
+    "edges": 1289,
+    "native_bytes": 827391,
+    "compact_bytes": 32752,
+    "review_build_seconds": 0.5309182999990298
+  }
+}

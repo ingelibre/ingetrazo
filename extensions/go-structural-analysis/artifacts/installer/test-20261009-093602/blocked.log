@@ -1,0 +1,21 @@
+﻿2026-10-09 09:38:49.892   Log opened. (Time zone: UTC+07:00)
+2026-10-09 09:38:49.892   Setup version: Inno Setup version 6.7.1
+2026-10-09 09:38:49.892   Original Setup EXE: C:\Users\g_np2\Projects\ingecad\extensions\go-structural-analysis\dist\GO-Structural-Analysis-v0.1.3-Windows-x64-Setup.exe
+2026-10-09 09:38:49.892   Setup command line: /SL5="$5B071C,86713531,893952,C:\Users\g_np2\Projects\ingecad\extensions\go-structural-analysis\dist\GO-Structural-Analysis-v0.1.3-Windows-x64-Setup.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOICONS /DIR="C:\Users\g_np2\Projects\ingecad\extensions\go-structural-analysis\artifacts\installer\test-20261009-093602\blocked-install" /LOG="C:\Users\g_np2\Projects\ingecad\extensions\go-structural-analysis\artifacts\installer\test-20261009-093602\blocked.log" 
+2026-10-09 09:38:49.892   Windows version: 10.0.26300
+2026-10-09 09:38:49.892   Windows architecture: x64 (64-bit)
+2026-10-09 09:38:49.892   Machine types supported by system: x86 x64
+2026-10-09 09:38:49.892   User privileges: None
+2026-10-09 09:38:49.936   Administrative install mode: No
+2026-10-09 09:38:49.936   Install mode root key: HKEY_CURRENT_USER
+2026-10-09 09:38:49.936   64-bit install mode: Yes
+2026-10-09 09:38:49.936   RedirectionGuard status for current process: Enabled in enforcing mode
+2026-10-09 09:38:49.939   Created temporary directory: C:\Users\g_np2\AppData\Local\Temp\is-56A0KZOFOR.tmp
+2026-10-09 09:38:50.176   Extracting temporary file: C:\Users\g_np2\AppData\Local\Temp\is-56A0KZOFOR.tmp\install-helper.ps1
+2026-10-09 09:38:52.874   PrepareToInstall failed: Save your work and close IngeTrazo before installing. Setup installs only in user folders.
+2026-10-09 09:38:52.874   Need to restart Windows? No
+2026-10-09 09:38:52.874   Defaulting to OK for suppressed message box (OK):
+                          Save your work and close IngeTrazo before installing. Setup installs only in user folders.
+2026-10-09 09:38:52.874   Got EAbort exception.
+2026-10-09 09:38:52.874   Deinitializing Setup.
+2026-10-09 09:38:52.884   Log closed.

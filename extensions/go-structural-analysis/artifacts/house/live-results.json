@@ -1,0 +1,60 @@
+{
+  "cold_catalog_entry": {
+    "status": "Passed"
+  },
+  "example_button_load": {
+    "status": "Passed"
+  },
+  "capture_House-Model": {
+    "status": "Passed"
+  },
+  "background_started": {
+    "status": "Passed"
+  },
+  "current_analysis": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "background_gui_responsive": {
+    "status": "Passed",
+    "ticks": 36
+  },
+  "all_cases_equilibrium": {
+    "status": "Passed"
+  },
+  "capture_House-Loads": {
+    "status": "Passed"
+  },
+  "capture_House-Mz": {
+    "status": "Passed"
+  },
+  "capture_House-N": {
+    "status": "Passed"
+  },
+  "capture_House-Deformed": {
+    "status": "Passed"
+  },
+  "capture_House-Reaction": {
+    "status": "Passed"
+  },
+  "igz_save_load": {
+    "status": "Passed",
+    "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\examples\\house\\Phetnaray-RC-Steel-Roof.igz"
+  },
+  "edit_stale": {
+    "status": "Passed"
+  },
+  "undo_current": {
+    "status": "Passed"
+  },
+  "original_document_restored": {
+    "status": "Passed"
+  },
+  "capture_House-Model-Clean": {
+    "status": "Passed"
+  },
+  "portable_model_only_roundtrip": {
+    "status": "Passed",
+    "bytes": 165815
+  }
+}

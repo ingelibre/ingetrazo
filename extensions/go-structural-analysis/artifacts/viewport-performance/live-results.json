@@ -1,0 +1,79 @@
+{
+  "cold_load": {
+    "status": "Passed"
+  },
+  "current_house_restored": {
+    "status": "Passed",
+    "nodes": 146,
+    "members": 255,
+    "note": "Restored previously analyzed QA IGZ; no new house solver execution in this check"
+  },
+  "house_geometry_check": {
+    "status": "Passed"
+  },
+  "diagnostic_capture": {
+    "status": "Passed"
+  },
+  "camera_capture_0": {
+    "status": "Passed",
+    "perspective": false
+  },
+  "camera_capture_1": {
+    "status": "Passed",
+    "perspective": true
+  },
+  "camera_capture_2": {
+    "status": "Passed",
+    "perspective": false
+  },
+  "near_node_overlap_detection": {
+    "status": "Passed"
+  },
+  "issue_selection": {
+    "status": "Passed"
+  },
+  "issues_capture": {
+    "status": "Passed"
+  },
+  "precheck_blocks_known_rigid_body_error": {
+    "status": "Passed"
+  },
+  "unstable_worker_started": {
+    "status": "Passed"
+  },
+  "unstable_solver_rejected": {
+    "status": "Passed",
+    "message": "Analysis failed: The stiffness matrix is singular, which implies rigid body motion. The structure is unstable. Aborting analysis."
+  },
+  "stable_analysis_button_started": {
+    "status": "Passed"
+  },
+  "stable_worker_current": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "stable_equilibrium": {
+    "status": "Passed"
+  },
+  "edit_stale": {
+    "status": "Passed"
+  },
+  "undo_current": {
+    "status": "Passed"
+  },
+  "redo_stale": {
+    "status": "Passed"
+  },
+  "save_load": {
+    "status": "Passed"
+  },
+  "blue_highlight_capture": {
+    "status": "Passed"
+  },
+  "2d_overlay_capture": {
+    "status": "Passed"
+  },
+  "house_current_after_2d": {
+    "status": "Passed"
+  }
+}

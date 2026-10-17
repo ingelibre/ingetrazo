@@ -1,0 +1,70 @@
+[
+  {
+    "name": "Both methods show 18 original presets",
+    "status": "Passed"
+  },
+  {
+    "name": "Enabled methods retained on switch",
+    "status": "Passed"
+  },
+  {
+    "name": "Switch Custom retains statutory selections",
+    "status": "Passed"
+  },
+  {
+    "name": "Generator appends LRFD and retains ASD",
+    "status": "Passed"
+  },
+  {
+    "name": "Editor shows analytical length",
+    "status": "Passed"
+  },
+  {
+    "name": "Full member applies x1=0 x2=L",
+    "status": "Passed"
+  },
+  {
+    "name": "Modeless graph with current results",
+    "status": "Passed"
+  },
+  {
+    "name": "Inspector reads x/L",
+    "status": "Passed"
+  },
+  {
+    "name": "Connected collinear selection",
+    "status": "Passed"
+  },
+  {
+    "name": "Original live model preserved",
+    "status": "Passed"
+  },
+  {
+    "name": "Member context menu graph action enabled",
+    "status": "Passed"
+  },
+  {
+    "name": "Context action opens graph dialog",
+    "status": "Passed"
+  },
+  {
+    "name": "Actual model connected group has multiple members",
+    "status": "Passed"
+  },
+  {
+    "name": "Live model inputs still unchanged",
+    "status": "Passed"
+  },
+  {
+    "name": "All 3D graph components render after switching",
+    "status": "Passed"
+  },
+  {
+    "name": "Switch hides previous graph immediately",
+    "status": "Passed"
+  },
+  {
+    "name": "Model preserved after final diagram checks",
+    "status": "Passed"
+  }
+]

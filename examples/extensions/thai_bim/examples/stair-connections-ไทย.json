@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "rows": [
+    {
+      "slot": "explicit-connection-0-0",
+      "inside_length_m": 0.4000000059604645,
+      "longest_inside_m": 0.4000000059604645,
+      "inside_intervals_m": [
+        [
+          0.19999999701976776,
+          0.6000000029802323
+        ]
+      ],
+      "boundary_length_m": 0.0,
+      "required_m": 0.3,
+      "state": "geometry_length_met",
+      "path": [
+        [
+          -0.4,
+          0.2,
+          -0.1
+        ],
+        [
+          0.4,
+          0.2,
+          -0.1
+        ]
+      ]
+    },
+    {
+      "slot": "explicit-connection-0-1",
+      "inside_length_m": 0.4000000059604645,
+      "longest_inside_m": 0.4000000059604645,
+      "inside_intervals_m": [
+        [
+          0.19999999701976776,
+          0.6000000029802323
+        ]
+      ],
+      "boundary_length_m": 0.0,
+      "required_m": 0.3,
+      "state": "geometry_length_met",
+      "path": [
+        [
+          -0.4,
+          0.35,
+          -0.1
+        ],
+        [
+          0.4,
+          0.35,
+          -0.1
+        ]
+      ]
+    },
+    {
+      "slot": "explicit-connection-0-2",
+      "inside_length_m": 0.4000000059604645,
+      "longest_inside_m": 0.4000000059604645,
+      "inside_intervals_m": [
+        [
+          0.19999999701976776,
+          0.6000000029802323
+        ]
+      ],
+      "boundary_length_m": 0.0,
+      "required_m": 0.3,
+      "state": "geometry_length_met",
+      "path": [
+        [
+          -0.4,
+          0.5,
+          -0.1
+        ],
+        [
+          0.4,
+          0.5,
+          -0.1
+        ]
+      ]
+    }
+  ],
+  "required_m": 0.3,
+  "design_verified": false,
+  "basis": "Longest continuous model centreline interval strictly inside selected closed support compared with user input; total also reported; boundary excluded; sampled curves; not anchorage design",
+  "limitations": [
+    "No strength, bond/development length, cover, bar diameter envelope, splice, concrete-to-concrete contact or whole-model clash check",
+    "Designer must verify support role, actual bar shape and detailing; curved centreline is tessellated",
+    "Support shells must be closed and non-intersecting; overlapping shells and self-intersections are unsupported"
+  ],
+  "stair_uid": "aa97e02c49aa4525",
+  "stair_id": "c2379e50-79df-4991-b1fe-7e3098bd2a60",
+  "stair_name": "TBIM Stair stair-host",
+  "support_uid": "b9e5e1c536824ba9",
+  "support_name": "TBIM Beam member",
+  "support_class": "IfcBeam",
+  "mode": "Actual",
+  "role": "Explicit connection เหล็กต่อรองรับ",
+  "source_digest": "01302c175f07f272c5eac6765cb7e882e56a116000d114a0d1f89b6dc7525202"
+}

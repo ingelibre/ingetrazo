@@ -1,0 +1,34 @@
+[
+  {
+    "tab": 0,
+    "diagram": "Model",
+    "mean_ms": 52.19115001091268,
+    "max_ms": 54.69080002512783,
+    "projection_calls": 410,
+    "projected_points": 671
+  },
+  {
+    "tab": 1,
+    "diagram": "Model",
+    "mean_ms": 338.1076499936171,
+    "max_ms": 351.63439996540546,
+    "projection_calls": 2801,
+    "projected_points": 5453
+  },
+  {
+    "tab": 2,
+    "diagram": "Mz",
+    "mean_ms": 878.3070000063162,
+    "max_ms": 913.2019999669865,
+    "projection_calls": 8256,
+    "projected_points": 35360
+  },
+  {
+    "tab": 2,
+    "diagram": "Deformed",
+    "mean_ms": 107.63677500654012,
+    "max_ms": 123.22820001281798,
+    "projection_calls": 666,
+    "projected_points": 7513
+  }
+]

@@ -1,0 +1,89 @@
+{
+  "plugin_api": {
+    "status": "Passed"
+  },
+  "idempotent_setup": {
+    "status": "Passed"
+  },
+  "nonblocking_analysis": {
+    "status": "Passed",
+    "gui_ticks": 212
+  },
+  "analysis_current": {
+    "status": "Passed",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  "capture_model": {
+    "status": "Passed"
+  },
+  "capture_loads": {
+    "status": "Passed"
+  },
+  "capture_results": {
+    "status": "Passed"
+  },
+  "capture_overlay-Model": {
+    "status": "Passed"
+  },
+  "capture_overlay-N": {
+    "status": "Passed"
+  },
+  "capture_overlay-V": {
+    "status": "Passed"
+  },
+  "capture_overlay-M": {
+    "status": "Passed"
+  },
+  "capture_overlay-D": {
+    "status": "Passed"
+  },
+  "capture_overlay-Reaction": {
+    "status": "Passed"
+  },
+  "capture_overlay-Deformed": {
+    "status": "Passed"
+  },
+  "viewport_selection": {
+    "status": "Passed"
+  },
+  "inspector_value": {
+    "status": "Passed",
+    "text": "B1 \u00b7 x = 1.5 m (right)\nN 0 kN   V 15 kN\nM -33.75 kN\u00b7m   D -7.51465 mm"
+  },
+  "capture_result-inspector": {
+    "status": "Passed"
+  },
+  "result_tables": {
+    "status": "Passed"
+  },
+  "capture_result-tables": {
+    "status": "Passed"
+  },
+  "capture_table_dialog": {
+    "status": "Passed"
+  },
+  "csv_export": {
+    "status": "Passed"
+  },
+  "save_load": {
+    "status": "Passed"
+  },
+  "stale_result": {
+    "status": "Passed"
+  },
+  "undo": {
+    "status": "Passed"
+  },
+  "redo": {
+    "status": "Passed"
+  },
+  "zoom_pan_pick": {
+    "status": "Passed"
+  },
+  "capture_zoom-pan": {
+    "status": "Passed"
+  },
+  "original_restored": {
+    "status": "Passed"
+  }
+}

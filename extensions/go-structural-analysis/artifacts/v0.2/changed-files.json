@@ -1,0 +1,207 @@
+[
+  {
+    "file": ".gitignore",
+    "change": "Modified",
+    "sha256": "69c53303f36f22228aae92605773f7e8bc92a7bbbebd60d10951872b04113cc8"
+  },
+  {
+    "file": "CHANGED_FILES_v0.2.md",
+    "change": "Added",
+    "sha256": "dd7d4904ec314b7728967b1c0433081dc657032aaf814cd390735cd093b1ee04"
+  },
+  {
+    "file": "EXAMPLES_v0.2.md",
+    "change": "Added",
+    "sha256": "80542f470dc24bac4c50a75331474dd7dacd6682200f958d5e013cb9b4fe1dd3"
+  },
+  {
+    "file": "go_structural_analysis/__init__.py",
+    "change": "Modified",
+    "sha256": "db4b27c455abf6ec5dca7d00cc5c0086ab65746fef7811554d515bf0332c14d7"
+  },
+  {
+    "file": "go_structural_analysis/client.py",
+    "change": "Modified",
+    "sha256": "c828396a9f668f6ce29b6dbcfe925c8f39bbe199f76079686105e22c8e74ddc3"
+  },
+  {
+    "file": "go_structural_analysis/examples3d.py",
+    "change": "Added",
+    "sha256": "71a5f1b58e48f6cadaf85362220659bfd8299a2b94395e3cf16ac0eba967b59a"
+  },
+  {
+    "file": "go_structural_analysis/inspector.py",
+    "change": "Modified",
+    "sha256": "c21b3a614fb30f66ab4cb8fd91572af3d75871876def1e646bdcfa1bde3d98da"
+  },
+  {
+    "file": "go_structural_analysis/model.py",
+    "change": "Modified",
+    "sha256": "7795506f4e8104fa208dcba5a3e4e2bf72efe25172da9f5bf36c2413a6d15a72"
+  },
+  {
+    "file": "go_structural_analysis/model3d.py",
+    "change": "Added",
+    "sha256": "d6331508be7ad4f68cdb498ea15a8476f7fb6359a72e7ed68ff3dc9f4de684c8"
+  },
+  {
+    "file": "go_structural_analysis/results.py",
+    "change": "Modified",
+    "sha256": "2830a563a6da8dff47ad5a384f0263dbd83545904b35679da387fed82c6cd4f7"
+  },
+  {
+    "file": "go_structural_analysis/solver3d.py",
+    "change": "Added",
+    "sha256": "1f0b288b8af215e917403b7d666574f709e5818f22785a210927659bfdd0c9bc"
+  },
+  {
+    "file": "go_structural_analysis/ui.py",
+    "change": "Modified",
+    "sha256": "c242fb95a8b31ff32004dac8421c9363351964151dae8e60c404cfbc54522be9"
+  },
+  {
+    "file": "go_structural_analysis/visualization.py",
+    "change": "Modified",
+    "sha256": "8185921196bcff0cc581c5b0595df36127001e7830bd2bb929794aa59afb119f"
+  },
+  {
+    "file": "go_structural_analysis/visualization3d.py",
+    "change": "Added",
+    "sha256": "a0c54af28f0f7f2929305a1a1548baec0a6e1131bddf8335a396916b9d78975a"
+  },
+  {
+    "file": "go_structural_analysis/worker.py",
+    "change": "Modified",
+    "sha256": "f0cde1c8844cede07b1c73588625177cb178bf9f7a9f771e163f3f6a2e69f4b6"
+  },
+  {
+    "file": "install.ps1",
+    "change": "Modified",
+    "sha256": "5c50096f2ac3ec740dc287029d4d87cb75c755cb97ab0b0e4fb360de1361638c"
+  },
+  {
+    "file": "INSTALLER_TEST_RESULTS_v0.2.md",
+    "change": "Added",
+    "sha256": "3761144e597ace13dd06ea12518691b185bc529d29ffbf9583f526e1690a1f6e"
+  },
+  {
+    "file": "LICENSE",
+    "change": "Added",
+    "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  },
+  {
+    "file": "packaging/build_installer.py",
+    "change": "Modified",
+    "sha256": "b8ee0e4ec006ff8c8636b7bad302d905d2530749eabdc84777b735311876bcad"
+  },
+  {
+    "file": "packaging/healthcheck.py",
+    "change": "Modified",
+    "sha256": "246d5b70b03ccb8fcc01d3542eb3f8e15bfcf7b39c4c75af6ee6323a8438ede6"
+  },
+  {
+    "file": "packaging/install-helper.ps1",
+    "change": "Modified",
+    "sha256": "93f2a88f9d694c78d53ef0183d22f02a2d50e7b4437797e6cf25ed2043296abf"
+  },
+  {
+    "file": "packaging/README.md",
+    "change": "Modified",
+    "sha256": "026266d51687ae623c879c3648e58f9bc3b0936274eb43dcf11450af0a36ecd6"
+  },
+  {
+    "file": "packaging/setup.iss",
+    "change": "Modified",
+    "sha256": "847c1869f4858dbf734733400d81ca63462daa9c3bf25dba86747bbb7f98cde7"
+  },
+  {
+    "file": "packaging/START-HERE.txt",
+    "change": "Modified",
+    "sha256": "8af6ff4456c9bc0c212e098b855efc526b314160f94b891a17cd13114c3b1d0b"
+  },
+  {
+    "file": "packaging/test_installer.ps1",
+    "change": "Modified",
+    "sha256": "9fee0d60fdbb07ade1fa6dccb8721ccc612dc926bdd688807daa25b5cd645833"
+  },
+  {
+    "file": "packaging/test_installer_worker.py",
+    "change": "Modified",
+    "sha256": "7a721c75852f9668cfc59f7d8991d887f82bef8cf4274bcdc320b14f59c10196"
+  },
+  {
+    "file": "README.md",
+    "change": "Modified",
+    "sha256": "036b08d73945598f2b8998c131220b20af5460971d9220127741bf88101f91b8"
+  },
+  {
+    "file": "ROADMAP.md",
+    "change": "Modified",
+    "sha256": "ed996cb625d5e47daad88c2ef9f5c125aec6ef7b762dea367268cfeb64d2dcc7"
+  },
+  {
+    "file": "TEST_RESULTS_v0.2.md",
+    "change": "Added",
+    "sha256": "a25a56a4eec708fba052209590d1098320924421924df73002219f1b1629b814"
+  },
+  {
+    "file": "tests/build_report_v02.py",
+    "change": "Added",
+    "sha256": "f8605ac4e626219d31b822db95c94d2f2a31ea573e390ae42e3fd5bdc6786d55"
+  },
+  {
+    "file": "tests/live_qa_v02.py",
+    "change": "Added",
+    "sha256": "478714f4176ad651987cf24031e938767756d3beb10325e7c64c5197f55ab99b"
+  },
+  {
+    "file": "tests/package_v02.py",
+    "change": "Added",
+    "sha256": "bf01eb83fb96025097f4fac0be454262d85c816c3ae9ff86e34603069667224a"
+  },
+  {
+    "file": "tests/reference3d.py",
+    "change": "Added",
+    "sha256": "bce756bac80b52adc6b5ee7f5781c1fcc13fb641fa4c2f7dcd0cd1ef084ac0fb"
+  },
+  {
+    "file": "tests/test_client_errors_v013.py",
+    "change": "Modified",
+    "sha256": "f55922142bb8e179c6a7eaa74c4eac685a97ae2f81029b0d2f920d204fe0ce2a"
+  },
+  {
+    "file": "tests/test_loads3d.py",
+    "change": "Added",
+    "sha256": "c117e6660edb4bcc390156e19a4522414448e1d1324817a1af04294989429fca"
+  },
+  {
+    "file": "tests/test_model3d.py",
+    "change": "Added",
+    "sha256": "ce5d192142985a276e8c3f184e30fe40a146d962b49f7dd13bb993af91e33cc3"
+  },
+  {
+    "file": "tests/test_qt_v02.py",
+    "change": "Added",
+    "sha256": "2ab890e6f6a140c9e51fa76dfb07fb5bec36033a6dedac8e5013f5d3232bd1b9"
+  },
+  {
+    "file": "tests/test_solver3d.py",
+    "change": "Added",
+    "sha256": "111442aff535dcd4341e738d1dc590d95ddf6496e48fb24928e6486e5de31339"
+  },
+  {
+    "file": "tests/test_springs3d.py",
+    "change": "Added",
+    "sha256": "6ebe760ceae6d95eb9267b69b4fae29c867a73375e9b86f16cee18d1a5423e17"
+  },
+  {
+    "file": "tests/test_verification3d.py",
+    "change": "Added",
+    "sha256": "1d6e23a0e33624979758330a1a8395615d12f24da18819e8c96c3ab8e84d1d00"
+  },
+  {
+    "file": "UPDATE_v0.2.md",
+    "change": "Added",
+    "sha256": "734dab1bf89247010c75a08d33e007f5c3095b80869224fafadc167845c3b3a0"
+  }
+]

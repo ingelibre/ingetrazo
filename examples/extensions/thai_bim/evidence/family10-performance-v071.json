@@ -1,0 +1,30 @@
+{
+  "source_file_sha256": "61ac1cfc915f35a09924013e56396d2499d30904882c40eb689c979b51a29f63",
+  "source_bytes": 8679685,
+  "reviewed_bytes": 8702136,
+  "load_seconds": 21.698256100004073,
+  "audit_seconds": 0.09248540000407957,
+  "save_seconds": 44.70630240000173,
+  "reopen_seconds": 16.023801499999536,
+  "total_groups": 3980,
+  "tagged": 3962,
+  "legacy_rebar": 3178,
+  "mesh_faces": 175925,
+  "mesh_edges": 362762,
+  "navigation": {
+    "rebar-hidden": {
+      "samples": 8,
+      "mean_frame_readback_ms": 582.8532249988712,
+      "median_frame_readback_ms": 242.1540499999537,
+      "max_frame_readback_ms": 3084.6831999951974
+    },
+    "rebar-visible": {
+      "samples": 8,
+      "mean_frame_readback_ms": 752.3139875011111,
+      "median_frame_readback_ms": 722.7026500040665,
+      "max_frame_readback_ms": 860.7993999976316
+    }
+  },
+  "measurement": "8 synchronous rendered framebuffer readbacks after warm-up, includes event dispatch/GPU readback; not raw navigation FPS",
+  "limitation": "Original bars are legacy nominal meshes, not toolkit cages; no Full/Lightweight conversion or fabrication BBS inferred"
+}

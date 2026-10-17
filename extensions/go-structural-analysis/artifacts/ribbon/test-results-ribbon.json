@@ -1,0 +1,147 @@
+{
+  "date": "2026-10-11",
+  "version": "0.2.4",
+  "scope": "Compact engineering ribbon",
+  "primary": {
+    "passed": 252,
+    "failed": 0,
+    "skipped": 6
+  },
+  "qt": {
+    "passed": 39,
+    "failed": 0,
+    "skipped": 0
+  },
+  "installed_files": 30,
+  "sha256": {
+    "client.py": {
+      "source": "57555657397c57475d4398e6e468e15f3c43547f652054f53c450cc357c0b5b4",
+      "installed": "57555657397c57475d4398e6e468e15f3c43547f652054f53c450cc357c0b5b4"
+    },
+    "combination_ui.py": {
+      "source": "258734b5ad2308f6a5f0b539967576319a527cb1663e55bdaebe861ae959dff8",
+      "installed": "258734b5ad2308f6a5f0b539967576319a527cb1663e55bdaebe861ae959dff8"
+    },
+    "diagnostics.py": {
+      "source": "9094590109f0c4e3101597c309801d3deec19e8738ac6ccdbfb339afdfcac251",
+      "installed": "9094590109f0c4e3101597c309801d3deec19e8738ac6ccdbfb339afdfcac251"
+    },
+    "diagnostics_ui.py": {
+      "source": "454f788b9bb7bbdb5f81660559b449d10195c215d3d4fc56a039ef04a6657711",
+      "installed": "454f788b9bb7bbdb5f81660559b449d10195c215d3d4fc56a039ef04a6657711"
+    },
+    "diagram_geometry.py": {
+      "source": "7322085f6b325a7b73123c640707e2cd9b3bbcccbaf8107a73557e4498c722d3",
+      "installed": "7322085f6b325a7b73123c640707e2cd9b3bbcccbaf8107a73557e4498c722d3"
+    },
+    "display.py": {
+      "source": "71a48d83cdc79b4f1e6829732c2dcccf48ad4a9d10df0c4d8110a0772dbffcc1",
+      "installed": "71a48d83cdc79b4f1e6829732c2dcccf48ad4a9d10df0c4d8110a0772dbffcc1"
+    },
+    "examples.py": {
+      "source": "1f60a5c2d25cae703477b5af12d170ebffabaca954e2ffa4f2dd29b75371ac99",
+      "installed": "1f60a5c2d25cae703477b5af12d170ebffabaca954e2ffa4f2dd29b75371ac99"
+    },
+    "examples3d.py": {
+      "source": "6df0679503307c8b6b7f5c873cd545da7da1ac10f44e0a886c2d5a801e007d30",
+      "installed": "6df0679503307c8b6b7f5c873cd545da7da1ac10f44e0a886c2d5a801e007d30"
+    },
+    "house_example.py": {
+      "source": "5f6c46f59ba60080fbea19b9054e458db6745f39b133cfe5b3329cca7c6a74b4",
+      "installed": "5f6c46f59ba60080fbea19b9054e458db6745f39b133cfe5b3329cca7c6a74b4"
+    },
+    "house_reference.py": {
+      "source": "ac535dc466325ecf1da0ef9f1c9c5bae89a7a507c3c9bd16cec381c57b4a45dd",
+      "installed": "ac535dc466325ecf1da0ef9f1c9c5bae89a7a507c3c9bd16cec381c57b4a45dd"
+    },
+    "icons.py": {
+      "source": "2b91e8588047a2c766e73f6d1b6d96924daf98bb97c537175b8c63da2d3a2071",
+      "installed": "2b91e8588047a2c766e73f6d1b6d96924daf98bb97c537175b8c63da2d3a2071"
+    },
+    "inspector.py": {
+      "source": "d99f5e5efd52be385cd0b1d92436ed8a6a18e642b9edf37632dc67fb46b20fe6",
+      "installed": "d99f5e5efd52be385cd0b1d92436ed8a6a18e642b9edf37632dc67fb46b20fe6"
+    },
+    "load_case_ui.py": {
+      "source": "47c068b362ae936d7ad4105a15e0f07c9c51647ea73e981570af03fc8a58595e",
+      "installed": "47c068b362ae936d7ad4105a15e0f07c9c51647ea73e981570af03fc8a58595e"
+    },
+    "materials.py": {
+      "source": "dedf7e64fb5d9a90e62033b952945df81d5b84b848ab3acae7ee3f70f1ee20c6",
+      "installed": "dedf7e64fb5d9a90e62033b952945df81d5b84b848ab3acae7ee3f70f1ee20c6"
+    },
+    "model.py": {
+      "source": "07415c2662e7c99520e916d3a1ff9ef9cf449d81c50f5c394062aad882170dcb",
+      "installed": "07415c2662e7c99520e916d3a1ff9ef9cf449d81c50f5c394062aad882170dcb"
+    },
+    "model3d.py": {
+      "source": "8092752507bf3d9a06052fb79316331680a0f01673d81a5603238cc4710cc25a",
+      "installed": "8092752507bf3d9a06052fb79316331680a0f01673d81a5603238cc4710cc25a"
+    },
+    "projection_cache.py": {
+      "source": "1c341ac057c542c0b49f95c12761c49bfc54880e9e4ef27ddecc9cd0071827e7",
+      "installed": "1c341ac057c542c0b49f95c12761c49bfc54880e9e4ef27ddecc9cd0071827e7"
+    },
+    "results.py": {
+      "source": "9d32208d967b41d3b8ca2972022be521ad983598a6f8b3914c80c94500f5aded",
+      "installed": "9d32208d967b41d3b8ca2972022be521ad983598a6f8b3914c80c94500f5aded"
+    },
+    "ribbon_ui.py": {
+      "source": "467ae9ed15d587cb17e2d316e51e4d7fbcaf1ccf3dedffe491c3260a997bb229",
+      "installed": "467ae9ed15d587cb17e2d316e51e4d7fbcaf1ccf3dedffe491c3260a997bb229"
+    },
+    "safety.py": {
+      "source": "2329de758d828c8c934876d5f5931ef24b1d085882357c7e706d0479fee58d0e",
+      "installed": "2329de758d828c8c934876d5f5931ef24b1d085882357c7e706d0479fee58d0e"
+    },
+    "solver3d.py": {
+      "source": "0bf95591b9ee167d799e3e329ad92ad16e91b969201cb0439622f94eb57268da",
+      "installed": "0bf95591b9ee167d799e3e329ad92ad16e91b969201cb0439622f94eb57268da"
+    },
+    "solver_results.py": {
+      "source": "42a9b71a19ba595ab4fc1e3af8d5d0cd6913b5ee510367217c9e501ac7e27c7f",
+      "installed": "42a9b71a19ba595ab4fc1e3af8d5d0cd6913b5ee510367217c9e501ac7e27c7f"
+    },
+    "thai_code.py": {
+      "source": "a514a9692a9230b6b12c4c85c07389b0e965baad6feaafce83373d3223d4d0f3",
+      "installed": "a514a9692a9230b6b12c4c85c07389b0e965baad6feaafce83373d3223d4d0f3"
+    },
+    "theme.py": {
+      "source": "887d4987808e7923ed8a982253c99cb4d5af1c3e6e72a34a0dad27c61e50557f",
+      "installed": "887d4987808e7923ed8a982253c99cb4d5af1c3e6e72a34a0dad27c61e50557f"
+    },
+    "ui.py": {
+      "source": "ffa51c9da650d15a0e3751c487a8a87d2c5b9f4418a0f71264d44f5c8a7fac63",
+      "installed": "ffa51c9da650d15a0e3751c487a8a87d2c5b9f4418a0f71264d44f5c8a7fac63"
+    },
+    "visualization.py": {
+      "source": "d80cf1078697126192189124b5188935cca14c0299ea80bc459b62e5e1b34ce2",
+      "installed": "d80cf1078697126192189124b5188935cca14c0299ea80bc459b62e5e1b34ce2"
+    },
+    "visualization3d.py": {
+      "source": "9ac2c282143aab250e1ef8792390670b2969c935af3162c58c34c57400873589",
+      "installed": "9ac2c282143aab250e1ef8792390670b2969c935af3162c58c34c57400873589"
+    },
+    "worker.py": {
+      "source": "a8ee52e4257735fb75b47bc42694428ca770afc5c19e7a28e3a99232dd104a98",
+      "installed": "a8ee52e4257735fb75b47bc42694428ca770afc5c19e7a28e3a99232dd104a98"
+    },
+    "workspace_ui.py": {
+      "source": "1f546def94b4b3935655f8b77a6180cf442f016b976a0b15a5c84d7e0c37a7e7",
+      "installed": "1f546def94b4b3935655f8b77a6180cf442f016b976a0b15a5c84d7e0c37a7e7"
+    },
+    "__init__.py": {
+      "source": "02696604b604f2328cfadeca862199379370a3c789b7dd909e4ea5dd1b792e92",
+      "installed": "02696604b604f2328cfadeca862199379370a3c789b7dd909e4ea5dd1b792e92"
+    }
+  },
+  "live_status": "Not Tested",
+  "live_reason": "MCP bridge connection refused",
+  "screenshots": "Offscreen Qt adapter; not installed-host captures",
+  "not_tested": [
+    "Live host painting and mouse input",
+    "Cold restart",
+    "Clean Windows VM",
+    "Rebuilt Setup executable"
+  ]
+}

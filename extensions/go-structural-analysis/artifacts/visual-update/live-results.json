@@ -1,0 +1,138 @@
+[
+  {
+    "file": "simple_udl-Model.png",
+    "status": "Passed"
+  },
+  {
+    "file": "simple_udl-Reaction.png",
+    "status": "Passed"
+  },
+  {
+    "file": "simple_udl-V.png",
+    "status": "Passed"
+  },
+  {
+    "file": "simple_udl-M.png",
+    "status": "Passed"
+  },
+  {
+    "file": "simple_udl-N.png",
+    "status": "Passed"
+  },
+  {
+    "file": "simple_point-Model.png",
+    "status": "Passed"
+  },
+  {
+    "file": "simple_point-Reaction.png",
+    "status": "Passed"
+  },
+  {
+    "file": "simple_point-M.png",
+    "status": "Passed"
+  },
+  {
+    "file": "simple_point-N.png",
+    "status": "Passed"
+  },
+  {
+    "file": "continuous_3-Model.png",
+    "status": "Passed"
+  },
+  {
+    "file": "continuous_3-Reaction.png",
+    "status": "Passed"
+  },
+  {
+    "file": "continuous_3-M.png",
+    "status": "Passed"
+  },
+  {
+    "file": "continuous_3-N.png",
+    "status": "Passed"
+  },
+  {
+    "file": "portal_horizontal-Model.png",
+    "status": "Passed"
+  },
+  {
+    "file": "portal_horizontal-Reaction.png",
+    "status": "Passed"
+  },
+  {
+    "file": "portal_horizontal-M.png",
+    "status": "Passed"
+  },
+  {
+    "file": "portal_horizontal-N.png",
+    "status": "Passed"
+  },
+  {
+    "file": "truss-Model.png",
+    "status": "Passed"
+  },
+  {
+    "file": "truss-Reaction.png",
+    "status": "Passed"
+  },
+  {
+    "file": "truss-M.png",
+    "status": "Passed"
+  },
+  {
+    "file": "truss-N.png",
+    "status": "Passed"
+  },
+  {
+    "file": "cantilever_point-Model.png",
+    "status": "Passed"
+  },
+  {
+    "file": "cantilever_point-Reaction.png",
+    "status": "Passed"
+  },
+  {
+    "file": "cantilever_point-M.png",
+    "status": "Passed"
+  },
+  {
+    "file": "cantilever_point-N.png",
+    "status": "Passed"
+  },
+  {
+    "file": "inclined-Model.png",
+    "status": "Passed"
+  },
+  {
+    "file": "inclined-Reaction.png",
+    "status": "Passed"
+  },
+  {
+    "file": "inclined-M.png",
+    "status": "Passed"
+  },
+  {
+    "file": "inclined-N.png",
+    "status": "Passed"
+  },
+  {
+    "file": "moment_jump-Model.png",
+    "status": "Passed"
+  },
+  {
+    "file": "moment_jump-Reaction.png",
+    "status": "Passed"
+  },
+  {
+    "file": "moment_jump-M.png",
+    "status": "Passed"
+  },
+  {
+    "file": "moment_jump-N.png",
+    "status": "Passed"
+  },
+  {
+    "check": "original_model_workspace_preserved",
+    "status": "Passed"
+  }
+]

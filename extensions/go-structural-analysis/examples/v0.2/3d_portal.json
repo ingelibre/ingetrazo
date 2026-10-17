@@ -1,0 +1,230 @@
+{
+  "schema": 2,
+  "self_weight": false,
+  "nodes": [
+    {
+      "id": "N1",
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N2",
+      "x": 0,
+      "y": 0,
+      "z": 3,
+      "support": "Free"
+    },
+    {
+      "id": "N3",
+      "x": 0,
+      "y": 3,
+      "z": 0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N4",
+      "x": 0,
+      "y": 3,
+      "z": 3,
+      "support": "Free"
+    },
+    {
+      "id": "N5",
+      "x": 4,
+      "y": 0,
+      "z": 0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N6",
+      "x": 4,
+      "y": 0,
+      "z": 3,
+      "support": "Free"
+    },
+    {
+      "id": "N7",
+      "x": 4,
+      "y": 3,
+      "z": 0,
+      "support": "Fixed"
+    },
+    {
+      "id": "N8",
+      "x": 4,
+      "y": 3,
+      "z": 3,
+      "support": "Free"
+    }
+  ],
+  "materials": [
+    {
+      "id": "Steel",
+      "E": 200000000.0,
+      "G": 76923076.923,
+      "nu": 0.3,
+      "rho": 76.98
+    }
+  ],
+  "sections": [
+    {
+      "id": "S1",
+      "A": 0.01,
+      "Iy": 8e-05,
+      "Iz": 8e-05,
+      "J": 1e-05
+    }
+  ],
+  "members": [
+    {
+      "id": "M1",
+      "i": "N1",
+      "j": "N2",
+      "type": "Column",
+      "material": "Steel",
+      "section": "S1"
+    },
+    {
+      "id": "M2",
+      "i": "N2",
+      "j": "N6",
+      "type": "Frame",
+      "material": "Steel",
+      "section": "S1"
+    },
+    {
+      "id": "M3",
+      "i": "N2",
+      "j": "N4",
+      "type": "Frame",
+      "material": "Steel",
+      "section": "S1"
+    },
+    {
+      "id": "M4",
+      "i": "N3",
+      "j": "N4",
+      "type": "Column",
+      "material": "Steel",
+      "section": "S1"
+    },
+    {
+      "id": "M5",
+      "i": "N4",
+      "j": "N8",
+      "type": "Frame",
+      "material": "Steel",
+      "section": "S1"
+    },
+    {
+      "id": "M6",
+      "i": "N5",
+      "j": "N6",
+      "type": "Column",
+      "material": "Steel",
+      "section": "S1"
+    },
+    {
+      "id": "M7",
+      "i": "N6",
+      "j": "N8",
+      "type": "Frame",
+      "material": "Steel",
+      "section": "S1"
+    },
+    {
+      "id": "M8",
+      "i": "N7",
+      "j": "N8",
+      "type": "Column",
+      "material": "Steel",
+      "section": "S1"
+    }
+  ],
+  "cases": [
+    "DL",
+    "LL",
+    "WX",
+    "WY"
+  ],
+  "point_loads": [
+    {
+      "node": "N2",
+      "direction": "FZ",
+      "value": -12,
+      "case": "DL"
+    },
+    {
+      "node": "N2",
+      "direction": "FX",
+      "value": 5,
+      "case": "WX"
+    },
+    {
+      "node": "N2",
+      "direction": "FY",
+      "value": 3,
+      "case": "WY"
+    },
+    {
+      "node": "N4",
+      "direction": "FZ",
+      "value": -12,
+      "case": "DL"
+    },
+    {
+      "node": "N4",
+      "direction": "FX",
+      "value": 5,
+      "case": "WX"
+    },
+    {
+      "node": "N4",
+      "direction": "FY",
+      "value": 3,
+      "case": "WY"
+    },
+    {
+      "node": "N6",
+      "direction": "FZ",
+      "value": -12,
+      "case": "DL"
+    },
+    {
+      "node": "N6",
+      "direction": "FX",
+      "value": 5,
+      "case": "WX"
+    },
+    {
+      "node": "N6",
+      "direction": "FY",
+      "value": 3,
+      "case": "WY"
+    },
+    {
+      "node": "N8",
+      "direction": "FZ",
+      "value": -12,
+      "case": "DL"
+    },
+    {
+      "node": "N8",
+      "direction": "FX",
+      "value": 5,
+      "case": "WX"
+    },
+    {
+      "node": "N8",
+      "direction": "FY",
+      "value": 3,
+      "case": "WY"
+    }
+  ],
+  "distributed_loads": [],
+  "dimension": "3D",
+  "combinations": {},
+  "self_weight_case": "DL"
+}

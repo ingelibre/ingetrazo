@@ -1,0 +1,115 @@
+{
+  "python": "3.12.14",
+  "prefix": "C:\\Users\\g_np2\\Projects\\ingecad\\extensions\\go-structural-analysis\\artifacts\\installer\\test-20261009-093602\\installed app \u0e40\u0e18\u2014\u0e40\u0e18\u201d\u0e40\u0e18\u0e0a\u0e40\u0e18\u0e0d\u0e40\u0e18\u009a\\runtime",
+  "checks": [
+    {
+      "key": "simple_udl",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "simple_point",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "cantilever_point",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "cantilever_udl",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "continuous_2",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "continuous_3",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "portal_vertical",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "portal_horizontal",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "inclined",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "truss",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "release_j",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "release_both",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "unstable_loaded",
+      "status": "Passed",
+      "expected": "unstable rejection",
+      "message": "Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints"
+    },
+    {
+      "key": "unstable_unloaded",
+      "status": "Passed",
+      "expected": "unstable rejection",
+      "message": "Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints"
+    },
+    {
+      "key": "cases_off",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "cases_on",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "truss_weight",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "off_grid",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "triangular",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "axial",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "moment_jump",
+      "status": "Passed",
+      "expected": "success"
+    }
+  ],
+  "passed": 21,
+  "failed": 0
+}

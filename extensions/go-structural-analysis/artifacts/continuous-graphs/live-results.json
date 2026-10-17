@@ -1,0 +1,75 @@
+[
+  {
+    "name": "Current modeless continuous dialog",
+    "status": "Passed"
+  },
+  {
+    "name": "One plot for connected two-member beam",
+    "status": "Passed"
+  },
+  {
+    "name": "Total length 4+4=8 m",
+    "status": "Passed"
+  },
+  {
+    "name": "Shared station at member joint",
+    "status": "Passed"
+  },
+  {
+    "name": "Station 6 reads second member at local x=2",
+    "status": "Passed"
+  },
+  {
+    "name": "Joint left chooses first member",
+    "status": "Passed"
+  },
+  {
+    "name": "Joint right chooses second member",
+    "status": "Passed"
+  },
+  {
+    "name": "Seven 3D diagrams render on common station axis",
+    "status": "Passed",
+    "rechecked": "Each component captured/checked after Qt event loop; premature capture retained separately."
+  },
+  {
+    "name": "Single member view remains available",
+    "status": "Passed"
+  },
+  {
+    "name": "Raw inputs preserved",
+    "status": "Passed"
+  },
+  {
+    "name": "D graph visible after Qt event loop",
+    "status": "Passed"
+  },
+  {
+    "name": "N continuous diagram visible",
+    "status": "Passed"
+  },
+  {
+    "name": "Vy continuous diagram visible",
+    "status": "Passed"
+  },
+  {
+    "name": "Vz continuous diagram visible",
+    "status": "Passed"
+  },
+  {
+    "name": "T continuous diagram visible",
+    "status": "Passed"
+  },
+  {
+    "name": "My continuous diagram visible",
+    "status": "Passed"
+  },
+  {
+    "name": "Mz continuous diagram visible",
+    "status": "Passed"
+  },
+  {
+    "name": "D continuous diagram visible",
+    "status": "Passed"
+  }
+]

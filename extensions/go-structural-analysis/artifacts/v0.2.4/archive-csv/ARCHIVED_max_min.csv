@@ -1,0 +1,21 @@
+﻿Result Status,Input Fingerprint,Case / Envelope,Member,Quantity,Unit,Type,Value,x [m],x/L,Side
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,N,kN,min,0.0,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,N,kN,max,0.0,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,Vy,kN,min,15.750000000000007,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,Vy,kN,max,15.750000000000007,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,Vz,kN,min,23.950000000000003,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,Vz,kN,max,23.950000000000003,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,T,kN.m,min,0.0,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,T,kN.m,max,0.0,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,My,kN.m,min,0.0,4.0,1.0,left
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,My,kN.m,max,95.80000000000001,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,Mz,kN.m,min,-7.105427357601002e-15,4.0,1.0,left
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,Mz,kN.m,max,63.00000000000002,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,u,m,min,0.0,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,u,m,max,0.0,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,dy,m,min,-0.021,4.0,1.0,left
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,dy,m,max,0.0,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,dz,m,min,-0.03193333333333333,4.0,1.0,left
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,dz,m,max,0.0,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,D,m,min,0.0,0.0,0.0,right
+Archived/Stale,d3b77c1baa031559ef10d65ce19aeb6345ac58a7572c5b00acc423d00e8f1f13,TH2566-LRFD-02 / WY+,B1,D,m,max,0.038219599393214176,4.0,1.0,left
