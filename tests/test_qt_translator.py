@@ -17,6 +17,7 @@ _app = QApplication.instance() or QApplication([])
 @pytest.mark.parametrize("lang, yes, cancel", [
     ("es", "&Sí", "Cancelar"),
     ("pt-BR", "&Sim", "Cancelar"),
+    ("de", "&Ja", "Abbrechen"),
 ])
 def test_standard_buttons_are_translated(monkeypatch, lang, yes, cancel):
     import main

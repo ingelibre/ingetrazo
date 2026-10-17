@@ -46,20 +46,13 @@ def _init_language() -> None:
     """Load the saved UI language, or default to the system locale.
 
     Reads the persisted choice from :class:`QSettings`; on first run, falls back
-    to Spanish when the OS locale is Spanish, Brazilian Portuguese when it is
-    Portuguese, English otherwise.
+    to the catalog of the OS locale when one ships (Brazilian Portuguese for
+    every Portuguese locale), English otherwise.
     """
     saved = QSettings().value("language")
     if not saved:
-        system = QLocale.system()
-        if system.language() == QLocale.Spanish:
-            saved = "es"
-        elif system.language() == QLocale.Portuguese:
-            # The Brazilian Portuguese catalogue (PR #54, @dafrobozao)
-            # serves every Portuguese locale until a pt-PT one exists.
-            saved = "pt-BR"
-        else:
-            saved = "en"
+        saved = i18n.language_for_locale(QLocale.system().name(),
+                                         i18n.available_languages())
     i18n.set_language(str(saved))
     _install_qt_translator(str(saved))
 
