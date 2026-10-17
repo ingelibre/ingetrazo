@@ -348,9 +348,8 @@ class SelectTool(Tool):
             return
         if isinstance(entity, TextLabel):
             # As usual, double-clicking a leader text edits its text.
-            from PySide6.QtWidgets import QInputDialog
             from core.i18n import tr
-            text, ok = QInputDialog.getMultiLineText(
+            text, ok = _prompts.get_multiline_text(
                 viewport.window(), tr("Text"), tr("Label text:"),
                 entity.text)
             if ok and text.strip() and text.strip() != entity.text:
