@@ -4327,11 +4327,8 @@ class MainWindow(QMainWindow):
         one ticked, plus «New layer…». Not the usual place (that road is
         Entity Info), but it is where Rafael looked — «botón derecho… no lo veo
         tampoco» (2026-09-16, 39:30) — and it costs nothing to be there."""
-        from core.dimension import Dimension
-        from core.layers import layer_of
-        from core.textlabel import TextLabel
-        targets = [e for e in sel
-                   if isinstance(e, (Face, Edge, Group, Dimension, TextLabel))]
+        from core.layers import is_taggable, layer_of
+        targets = [e for e in sel if is_taggable(e)]
         if not targets:
             return
         current = {layer_of(e) for e in targets}
@@ -4353,13 +4350,10 @@ class MainWindow(QMainWindow):
     def _assign_layer(self, name: str) -> None:
         """Move the selection's taggable entities onto ``name`` (created if
         new), undoable."""
-        from core.dimension import Dimension
         from core.history import AssignLayerCommand
-        from core.layers import layer_of
-        from core.textlabel import TextLabel
+        from core.layers import is_taggable, layer_of
         targets = [e for e in self.viewport.scene.selection
-                   if isinstance(e, (Face, Edge, Group, Dimension, TextLabel))
-                   and layer_of(e) != name]
+                   if is_taggable(e) and layer_of(e) != name]
         if not targets:
             return
         self.viewport.history.execute(AssignLayerCommand(targets, name))
