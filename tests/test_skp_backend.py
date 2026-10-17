@@ -1030,3 +1030,72 @@ def test_openskp_adapter_flattens_a_tagged_subtree_placed_once():
         NS(definitions={0: root, 5: container, 7: leaf}), "obra")
     assert not any(p["name"] == "Jardinera" for p in payload.get("protos", []))
     assert any(g.get("layer") == "plantas" for g in payload["groups"])
+
+
+def _tagged_container_with_extracted_parts(monkeypatch, *, nested):
+    """A container tagged "Fachada" that places a component twice (shared as
+    a prototype), a face-me person and an image. All three are pulled out of
+    the container into objects of their own. ``nested``: the container sits
+    in an untagged group instead of at the top level."""
+    import formats.dae as dae_mod
+    monkeypatch.setattr(dae_mod, "_INST_MIN_POLYS", 1)
+    monkeypatch.setattr(dae_mod, "_INST_MIN_SAVED", 1)
+    eye = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
+    post = _tri_def(7, "Poste")
+    person = _tri_def(8, "Susan")
+    person.always_faces_camera = True
+    picture = _tri_def(9, "Foto")
+    picture.is_image = True
+    container = _tri_def(5, "Muro", instances=[
+        NS(ref_idx=7, matrix=eye),
+        NS(ref_idx=7, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 50, 0, 0, 1]),
+        NS(ref_idx=8, matrix=eye),
+        NS(ref_idx=9, matrix=eye)])
+    defs = {5: container, 7: post, 8: person, 9: picture}
+    placed = NS(ref_idx=5, matrix=eye, layer="Fachada")
+    if nested:
+        defs[4] = _fake_definition(id=4, name="Edificio", verts={}, edges={},
+                                   faces={}, instances=[placed])
+        placed = NS(ref_idx=4, matrix=eye)
+    defs[0] = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                               faces={}, instances=[placed])
+    return skp_openskp._adapt(NS(definitions=defs), "m")
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_openskp_adapter_extracted_parts_keep_the_tag_of_their_group(
+        monkeypatch, nested):
+    # Hiding the "Fachada" tag must hide everything inside the tagged
+    # group. The face-me person, the image and the component copies are
+    # extracted into objects of their own, and they used to land on
+    # Layer 0: the tag rode on the container's group but never reached
+    # what was pulled out of it, so they stayed on screen.
+    payload = _tagged_container_with_extracted_parts(monkeypatch,
+                                                     nested=nested)
+    groups = {gp["name"]: gp for gp in payload["groups"]}
+    assert groups["Muro"]["layer"] == "Fachada"
+    assert groups["Susan"].get("layer") == "Fachada"
+    assert groups["Foto"].get("layer") == "Fachada"
+    (post,) = [p for p in payload["protos"] if p["name"] == "Poste"]
+    assert post["instance_layers"] == ["Fachada", "Fachada"]
+    # The container's own untagged face is NOT put on the tag: as in
+    # SketchUp, it stays untagged inside the tagged group.
+    assert not (groups["Muro"]["faces"][0][2] or {}).get("layer")
+
+
+def test_openskp_adapter_an_extracted_part_keeps_its_own_tag(monkeypatch):
+    import formats.dae as dae_mod
+    monkeypatch.setattr(dae_mod, "_INST_MIN_POLYS", 1)
+    monkeypatch.setattr(dae_mod, "_INST_MIN_SAVED", 1)
+    eye = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
+    person = _tri_def(8, "Susan")
+    person.always_faces_camera = True
+    container = _tri_def(5, "Muro", instances=[
+        NS(ref_idx=8, matrix=eye, layer="Gente")])
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[
+                                NS(ref_idx=5, matrix=eye, layer="Fachada")])
+    payload = skp_openskp._adapt(
+        NS(definitions={0: root, 5: container, 8: person}), "m")
+    groups = {gp["name"]: gp for gp in payload["groups"]}
+    assert groups["Susan"].get("layer") == "Gente"
