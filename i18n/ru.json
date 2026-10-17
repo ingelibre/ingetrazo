@@ -3274,5 +3274,10 @@
  "Front color — paints faces in Hidden line and Monochrome": "Цвет передней стороны — применяется для граней в режимах «Скрытые линии» и «Монохромный»",
  "Distance ({unit}):": "Расстояние ({unit}):",
  "Restore defaults": "Восстановить значения по умолчанию",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений.",
+ "Add Scene": "Добавить сцену",
+ "Update Scene": "Обновить сцену",
+ "Delete Scene": "Удалить сцену",
+ "Scene '{name}' added": "Сцена «{name}» добавлена",
+ "Select a scene in the Scenes panel first": "Сначала выберите сцену на панели «Сцены»"
 }
