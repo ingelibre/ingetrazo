@@ -3177,23 +3177,40 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
     # Phase 3 — coplanar-merge, seeded to the operation. Fuses the whole coplanar
     # component (every shared edge, any number of faces) at once, but only when it
     # includes a face this operation created (so user diagonals survive).
+    # One scan merges every component it meets and carries on, instead of
+    # restarting from the first face after each merge — that restart
+    # re-walked every component already found, quadratic on a big
+    # triangulated import (a 2 000-face stair slab took three minutes).
+    # Faces swallowed by a merge are skipped; scans repeat until one merges
+    # nothing, so a region that only becomes connected after a merge still
+    # fuses.
     while True:
         merged = False
         ncache: dict = {}
         scache: dict = {}
+        done: set = set()
+        alive = set(mesh.faces)
         for f0 in list(mesh.faces):
+            if f0 in done or f0 not in alive:
+                continue
             comp = _coplanar_component(mesh, f0, seedkeys, ncache, scache)
+            done.add(f0)
             if len(comp) < 2:
                 continue
             if new_faces is not None and not (comp & new_faces):
                 continue
             region = mesh.dissolve_coplanar_region(comp)
             if region is not None:
+                alive -= comp
+                alive.add(region)
+                done.add(region)
+                for f in comp:
+                    ncache.pop(f, None)
+                    scache.pop(f, None)
                 if new_faces is not None:
                     new_faces -= comp
                     new_faces.add(region)
                 merged = True
-                break
         if not merged:
             break
 

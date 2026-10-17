@@ -297,6 +297,40 @@ def _scan(space, sagitta, skipped, counter, per_layer, depth=0):
     return placements
 
 
+def _expand_assemblies(doc, placements, depth: int = 0) -> list:
+    """Replace each placement of an ASSEMBLY block — one whose definition
+    holds nothing but INSERTs, the way stair, joinery and mechanical CAD
+    export a model: one block for the whole, one per part — by placements
+    of its parts, matrices composed. Each part then keeps its own name and
+    its own prototype (and its own stitch), instead of all parts exploding
+    into one mesh where touching pieces weld together. Blocks that mix
+    geometry and INSERTs keep the current behaviour (explode into one
+    prototype); a real nested hierarchy waits for nested placements."""
+    out = []
+    for name, m, layer in placements:
+        try:
+            ents = list(doc.blocks[name])
+        except Exception:
+            out.append((name, m, layer))
+            continue
+        inserts = [e for e in ents if e.dxftype() == "INSERT"]
+        rest = [e for e in ents if e.dxftype() not in ("INSERT", "ATTDEF")]
+        if not inserts or rest or depth >= _MAX_INSERT_DEPTH:
+            out.append((name, m, layer))
+            continue
+        parts = []
+        for e in inserts:
+            try:
+                km = e.matrix44()
+            except Exception:
+                continue
+            sub = getattr(e.dxf, "layer", "0") or "0"
+            # row vectors: the part's own placement first, then the whole's
+            parts.append((e.dxf.name, km * m, layer if sub == "0" else sub))
+        out.extend(_expand_assemblies(doc, parts, depth + 1))
+    return out
+
+
 def _bucket_one(e, layer, sagitta, skipped, counter, per_layer) -> None:
     kind = e.dxftype()
     loops = _mesh_faces(e)
@@ -470,6 +504,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
     skipped: dict[str, int] = {}
     counter = [0]
     placements = _scan(msp, sagitta, skipped, counter, per_layer)
+    placements = _expand_assemblies(doc, placements)
 
     # ---- Block prototypes (one mesh per used definition, local metres) ----
     proto_buckets: dict[str, dict] = {}
