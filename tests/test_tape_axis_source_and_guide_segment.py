@@ -133,6 +133,34 @@ def test_the_axis_cue_rule_lives_in_the_engine():
     assert (via_vp.kind, via_vp.axis) == ("on_axis", "x")
 
 
+def test_drawing_tools_snap_to_axes_before_their_first_click():
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from tools.arc import ArcTool
+    from tools.circle import CircleTool
+    from tools.line import LineTool
+    from tools.rectangle import RectangleTool
+    from views.viewport import Viewport
+
+    vp = Viewport(None)
+    vp.resize(1000, 600)
+    vp.camera.set_aspect(1000, 600)
+    vp.camera.set_view("top")
+    vp.camera.target = V(0, 0, 0)
+    vp.camera.distance = 12
+    px = vp._world_to_pixel(V(3, 0, 0))
+    plain = SnapResult(V(3, 0, 0), "none")
+
+    for tool_type in (LineTool, CircleTool, RectangleTool, ArcTool):
+        tool = tool_type()
+        assert tool.start_point is None
+        vp.active_tool = tool
+        got = vp.inference._axis_source_cue(plain, px[0], px[1] + 2)
+        assert got.kind == "on_axis", tool_type.__name__
+        assert got.axis == "x", tool_type.__name__
+        assert (got.point - V(3, 0, 0)).length() < 1e-6
+
+
 # ---- 2. a guide point with its segment ------------------------------------
 
 def test_from_a_vertex_the_second_click_leaves_a_guide_point_with_its_segment():

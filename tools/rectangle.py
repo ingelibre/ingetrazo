@@ -301,7 +301,7 @@ class RectangleTool(PlaneLock, Tool):
             return []
         point, normal = self.preview_plane(vp, self.hover_point)
         u, v = _plane_axes(normal)
-        scale = self.world_per_pixel(vp, self.hover_point, u)
+        scale = self.plane_preview_scale(vp, self.hover_point, u, v)
         if scale is None:
             return []
         h = 0.5 * self.PREVIEW_PX * scale

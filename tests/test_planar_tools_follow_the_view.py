@@ -1,17 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""A planar shape started on a free point follows the view (Rafael's review
-of 2026-09-10, B1/B2).
+"""Planar shapes map the 2D cursor onto a 3D drawing plane.
 
-At eye level, with the horizon mid-screen, his rectangle read «5.74 × 0.00 m»:
-the viewport handed the second corner on the camera-facing VERTICAL plane
-through the first (the near-horizon plane) while the tool measured the sides
-along world X/Y — one side was always zero, at any cursor height. The classic
-rectangle, circle and arcs lay themselves out on the plane most perpendicular
-to the view when nothing else decides; orbiting re-decides. Now the shape is
-laid out on the plane of the last hit (``PlaneLock.hover_plane``), and the
-near-horizon escape hatch — meant for the Line tool to draw upward — leaves
-captured planes of PLANAR tools alone.
+In empty space, the view direction chooses the global principal plane and the
+cursor ray determines the point on it. After the first point, that plane is
+captured so the shape remains planar; existing face placement, snapping, and
+line-tool horizon behavior continue to take precedence where applicable.
 """
 from __future__ import annotations
 
@@ -120,6 +114,379 @@ def test_circle_at_eye_level_stands_up(viewport):
     assert span.z() > 1.0 and min(span.x(), span.y()) < 1e-6
 
 
+def _plane_axis(normal):
+    from core import axes
+    return max(
+        ("x", "y", "z"),
+        key=lambda name: abs(QVector3D.dotProduct(normal, axes.axis(name))),
+    )
+
+
+def _expected_planar_axis(viewport, px):
+    from core import axes
+    ray_origin, ray_direction = viewport._pixel_to_ray(*px)
+    assert ray_origin is not None and ray_direction is not None
+    hits = {}
+    for name in ("x", "y", "z"):
+        normal = axes.axis(name)
+        hit = viewport._ray_plane(
+            ray_origin, ray_direction, axes.origin(), normal,
+            allow_grazing=True)
+        if hit is not None:
+            depth = (
+                (hit - viewport.camera.eye()).length()
+                if viewport.camera.perspective
+                else QVector3D.dotProduct(
+                    hit - viewport.camera.eye(),
+                    viewport.camera.target - viewport.camera.eye())
+            )
+            if depth >= 0:
+                hits[name] = (
+                    abs(QVector3D.dotProduct(ray_direction, normal)), depth)
+    assert hits
+
+    view = viewport.camera.target - viewport.camera.eye()
+    view.normalize()
+    floor_angle = math.degrees(math.asin(min(
+        1.0, abs(QVector3D.dotProduct(view, axes.axis("z"))))))
+    vertical_depths = [
+        hits[name][1] for name in ("x", "y") if name in hits]
+    floor_ratio = (
+        viewport.GROUND_DEPTH_PREFERENCE_RATIO
+        if floor_angle <= viewport.GROUND_PREFERENCE_ANGLE_DEG
+        else viewport.PERSPECTIVE_GROUND_DEPTH_PREFERENCE_RATIO
+    )
+    if ("z" in hits
+            and (not vertical_depths
+                 or hits["z"][1] <= min(vertical_depths) * floor_ratio)):
+        return "z"
+
+    vertical_hits = {
+        name: hits[name][0] for name in ("x", "y") if name in hits}
+    if not vertical_hits:
+        vertical_hits = {
+            name: abs(QVector3D.dotProduct(ray_direction, axes.axis(name)))
+            for name in ("x", "y")
+        }
+    if ("x" in vertical_hits and "y" in vertical_hits
+            and abs(vertical_hits["x"] - vertical_hits["y"])
+            <= viewport.PLANE_ALIGNMENT_TIE_MARGIN):
+        return "y"
+    return max(vertical_hits, key=vertical_hits.__getitem__)
+
+
+@pytest.mark.parametrize("tool_name", ["circle", "rectangle", "arc"])
+@pytest.mark.parametrize("perspective", [True, False])
+def test_planar_tools_map_cursor_position_to_a_camera_selected_plane(
+        viewport, monkeypatch, tool_name, perspective):
+    from tools.arc import ArcTool
+    from tools.circle import CircleTool
+    from tools.rectangle import RectangleTool
+    tool = {"circle": CircleTool, "rectangle": RectangleTool,
+            "arc": ArcTool}[tool_name]()
+    viewport.camera.target = QVector3D(0, 0, 0)
+    viewport.camera.distance = 12.0
+    viewport.camera.perspective = perspective
+    viewport.camera.yaw = 0.0
+    viewport.camera.pitch = math.radians(20.0)
+    viewport.active_tool = tool
+    monkeypatch.setattr(viewport, "pick_face_placement",
+                        lambda *_args: (None, None))
+    monkeypatch.setattr(viewport, "image_plane_at", lambda *_args: None)
+
+    for px in ((500, 300), (500, 200), (500, 400), (500, 100),
+               (500, 500), (800, 300), (200, 300)):
+        expected_axis = _expected_planar_axis(viewport, px)
+        plane = viewport._current_work_plane(px)
+        assert _plane_axis(plane[1]) == expected_axis
+
+    if not perspective:
+        viewport.camera.pitch = math.radians(30.0)
+        assert _plane_axis(viewport._current_work_plane((500, 300))[1]) \
+            == _expected_planar_axis(viewport, (500, 300))
+        viewport.camera.pitch = math.radians(45.0)
+        assert _plane_axis(
+            viewport._current_work_plane((500, 300))[1]) == "z"
+        assert _plane_axis(
+            viewport._current_work_plane((500, 200))[1]) \
+            == _expected_planar_axis(viewport, (500, 200))
+
+
+@pytest.mark.parametrize("side", [1.0, -1.0])
+def test_perspective_plane_choice_uses_ray_alignment_not_plane_distance(
+        viewport, monkeypatch, side):
+    from tools.circle import CircleTool
+    from core import axes
+    tool = CircleTool()
+    viewport.active_tool = tool
+    viewport.camera.perspective = True
+    ray_origin = QVector3D(0.01 * side, 10.0, 10.0)
+    ray_direction = QVector3D(-0.1 * side, -0.99, -0.01).normalized()
+    monkeypatch.setattr(
+        viewport, "_pixel_to_ray",
+        lambda *_args: (ray_origin, ray_direction))
+
+    xz_hit = viewport._ray_plane(
+        ray_origin, ray_direction, axes.origin(), axes.axis("y"),
+        allow_grazing=True)
+    yz_hit = viewport._ray_plane(
+        ray_origin, ray_direction, axes.origin(), axes.axis("x"),
+        allow_grazing=True)
+    assert xz_hit is not None and yz_hit is not None
+    assert (yz_hit - ray_origin).length() < (xz_hit - ray_origin).length()
+
+    plane = viewport._camera_planar_work_plane((700, 300))
+    assert plane is not None
+    assert abs(QVector3D.dotProduct(
+        plane[1], axes.axis("y"))) > 0.999
+
+
+def test_planar_cursor_can_cross_a_near_tangent_plane_transition(
+        viewport, monkeypatch):
+    from tools.circle import CircleTool
+    from core import axes
+    tool = CircleTool()
+    viewport.active_tool = tool
+    viewport.camera.target = QVector3D(0, 0, 0)
+    viewport.camera.pitch = 0.0
+    viewport.camera.yaw = 0.0
+    monkeypatch.setattr(viewport, "pick_face_placement",
+                        lambda *_args: (None, None))
+    monkeypatch.setattr(viewport, "image_plane_at", lambda *_args: None)
+    ray_origin = QVector3D(1, 1, 1)
+    ray_direction = QVector3D(-0.01, 1, 0).normalized()
+    monkeypatch.setattr(
+        viewport, "_pixel_to_ray",
+        lambda *_args: (ray_origin, ray_direction))
+
+    hit = viewport._world_from_pixel(500, 300)
+    assert hit is not None
+    assert abs(hit.x() - axes.origin().x()) < 1e-4
+    assert QVector3D.crossProduct(
+        hit - ray_origin, ray_direction).length() < 1e-3
+    assert viewport._ray_plane(
+        ray_origin, ray_direction, axes.origin(), axes.axis("x")) is None
+
+
+@pytest.mark.parametrize("tool_name", ["circle", "rectangle", "arc"])
+def test_first_click_captures_the_selected_plane_for_planar_tools(
+        viewport, monkeypatch, tool_name):
+    from tools.arc import ArcTool
+    from tools.circle import CircleTool
+    from tools.rectangle import RectangleTool
+    tool = {"circle": CircleTool, "rectangle": RectangleTool,
+            "arc": ArcTool}[tool_name]()
+    viewport.camera.target = QVector3D(0, 0, 0)
+    viewport.camera.distance = 12.0
+    viewport.camera.pitch = math.radians(30.0)
+    viewport.camera.yaw = math.radians(20.0)
+    viewport.active_tool = tool
+    monkeypatch.setattr(viewport, "pick_face_placement",
+                        lambda *_args: (None, None))
+    monkeypatch.setattr(viewport, "image_plane_at", lambda *_args: None)
+
+    px = (800, 300)
+    world = viewport._world_from_pixel(*px)
+    assert world is not None
+    expected = QVector3D(viewport._last_work_plane[1])
+    ctx = _ctx(viewport, world, px)
+    monkeypatch.setattr(viewport, "_build_ctx", lambda _event: ctx)
+    event = type("ClickEvent", (), {
+        "position": lambda _self: QPointF(*px),
+    })()
+    viewport._dispatch_tool_click(event)
+
+    assert tool.start_point is not None
+    assert tool.work_plane is not None
+    assert abs(QVector3D.dotProduct(
+        tool.work_plane[1], expected)) > 0.999
+    next_plane = viewport._current_work_plane((650, 350))
+    assert abs(QVector3D.dotProduct(
+        next_plane[1], expected)) > 0.999
+
+
+def test_circle_preview_uses_the_selected_plane_and_cursor_location(
+        viewport, monkeypatch):
+    from core import axes
+    from tools.circle import CircleTool
+    viewport.camera.target = QVector3D(0, 0, 0)
+    viewport.camera.distance = 12.0
+    viewport.camera.pitch = math.radians(30.0)
+    viewport.camera.yaw = math.radians(20.0)
+    tool = CircleTool()
+    viewport.active_tool = tool
+    monkeypatch.setattr(viewport, "pick_face_placement",
+                        lambda *_args: (None, None))
+    monkeypatch.setattr(viewport, "image_plane_at", lambda *_args: None)
+
+    px = (800, 300)
+    world = viewport._world_from_pixel(*px)
+    assert world is not None
+    tool.on_hover(_ctx(viewport, world, px))
+    normal = viewport._last_work_plane[1]
+    assert abs(QVector3D.dotProduct(
+        normal, axes.axis("x"))) > 0.999 or abs(QVector3D.dotProduct(
+            normal, axes.axis("y"))) > 0.999 or abs(QVector3D.dotProduct(
+                normal, axes.axis("z"))) > 0.999
+    segments = tool.rubber_band_lines()
+    assert len(segments) == tool.sides
+    for a, _b in segments:
+        assert abs(QVector3D.dotProduct(a - world, normal)) < 1e-5
+        projected = viewport._world_to_pixel(a)
+        assert projected is not None
+    center_px = viewport._world_to_pixel(world)
+    assert center_px is not None
+    assert math.hypot(center_px[0] - px[0], center_px[1] - px[1]) < 5e-2
+
+
+@pytest.mark.parametrize("normal_axis", ["x", "y", "z"])
+def test_planar_normal_axis_offsets_the_pending_center_plane(
+        viewport, monkeypatch, normal_axis):
+    from core import axes
+    from tools.circle import CircleTool
+
+    tool = CircleTool()
+    viewport.active_tool = tool
+    origin = axes.origin()
+    normal = axes.axis(normal_axis)
+    monkeypatch.setattr(viewport, "pick_face_placement",
+                        lambda *_args: (None, None))
+    monkeypatch.setattr(viewport, "image_plane_at", lambda *_args: None)
+    monkeypatch.setattr(
+        viewport, "_camera_planar_work_plane",
+        lambda *_args: (origin, normal))
+    monkeypatch.setattr(
+        viewport, "pick_axis", lambda *_args: normal_axis)
+    monkeypatch.setattr(
+        viewport, "_project_to_lock_line",
+        lambda _origin, direction, *_args: origin + direction * 2.5)
+
+    point, selected_normal = viewport._current_work_plane((500, 300))
+
+    assert (point - (origin + normal * 2.5)).length() < 1e-5
+    assert abs(QVector3D.dotProduct(selected_normal, normal)) > 0.999
+    assert viewport._last_planar_axis_offset == normal_axis
+
+
+def test_planar_tangent_axis_does_not_offset_the_pending_center_plane(
+        viewport, monkeypatch):
+    from core import axes
+    from tools.circle import CircleTool
+
+    viewport.active_tool = CircleTool()
+    origin = axes.origin()
+    normal = axes.axis("z")
+    monkeypatch.setattr(viewport, "pick_face_placement",
+                        lambda *_args: (None, None))
+    monkeypatch.setattr(viewport, "image_plane_at", lambda *_args: None)
+    monkeypatch.setattr(
+        viewport, "_camera_planar_work_plane",
+        lambda *_args: (origin, normal))
+    monkeypatch.setattr(viewport, "pick_axis", lambda *_args: "x")
+
+    plane = viewport._current_work_plane((500, 300))
+
+    assert (plane[0] - origin).length() < 1e-6
+    assert viewport._last_planar_axis_offset is None
+
+
+@pytest.mark.parametrize("tool_name", ["circle", "line"])
+def test_normal_axis_offset_is_shown_as_an_axis_inference(
+        viewport, monkeypatch, tool_name):
+    from core.snap import SnapResult
+    from core import axes
+    from tools.circle import CircleTool
+    from tools.line import LineTool
+    from types import SimpleNamespace
+
+    viewport.active_tool = {"circle": CircleTool, "line": LineTool}[tool_name]()
+    viewport._last_planar_axis_offset = "z"
+    viewport._last_work_plane = (axes.origin(), axes.axis("z"))
+    point = QVector3D(1.0, 2.0, 2.5)
+    monkeypatch.setattr(viewport, "_world_from_pixel",
+                        lambda *_args: point)
+    monkeypatch.setattr(viewport, "_snap_scene",
+                        lambda *_args: SimpleNamespace(edges=[]))
+    monkeypatch.setattr(viewport, "_world_to_pixel",
+                        lambda p: (p.x(), p.y()))
+    monkeypatch.setattr(viewport, "_still_face_under", lambda *_args: False)
+
+    snap = viewport.inference.snap(500, 300, Qt.NoModifier)
+
+    assert isinstance(snap, SnapResult)
+    assert snap.kind == "axis_inference"
+    assert snap.axis == "z"
+    assert snap.point == point
+
+
+def test_line_normal_axis_offsets_its_free_space_first_point(
+        viewport, monkeypatch):
+    from core import axes, snap
+    from tools.line import LineTool
+
+    viewport.active_tool = LineTool()
+    origin = axes.origin()
+    monkeypatch.setattr(viewport, "pick_face_placement",
+                        lambda *_args: (None, None))
+    monkeypatch.setattr(viewport, "image_plane_at", lambda *_args: None)
+    monkeypatch.setattr(snap, "first_point_work_plane",
+                        lambda *_args: None)
+    monkeypatch.setattr(viewport, "pick_axis", lambda *_args: "z")
+    monkeypatch.setattr(
+        viewport, "_project_to_lock_line",
+        lambda _origin, direction, *_args: origin + direction * 2.5)
+    monkeypatch.setattr(
+        viewport, "_pixel_to_ray",
+        lambda *_args: (QVector3D(0, 0, 10), QVector3D(0, 0, -1)))
+
+    point, normal = viewport._current_work_plane((500, 300))
+
+    assert (point - QVector3D(0, 0, 2.5)).length() < 1e-5
+    assert abs(QVector3D.dotProduct(normal, axes.axis("z"))) > 0.999
+    assert viewport._last_planar_axis_offset == "z"
+
+
+@pytest.mark.parametrize("tool_name", ["circle", "rectangle"])
+@pytest.mark.parametrize("yaw", [0.0, math.pi])
+def test_planar_cursor_preview_stays_bounded_when_viewing_xy_from_x(
+        viewport, monkeypatch, tool_name, yaw):
+    from tools.circle import CircleTool
+    from tools.rectangle import RectangleTool
+    from core import axes
+    tool = {"circle": CircleTool, "rectangle": RectangleTool}[tool_name]()
+    viewport.active_tool = tool
+    viewport.camera.target = QVector3D(0, 0, 0)
+    viewport.camera.distance = 12.0
+    viewport.camera.pitch = math.radians(20.0)
+    viewport.camera.yaw = yaw
+    viewport.camera.perspective = True
+    monkeypatch.setattr(viewport, "pick_face_placement",
+                        lambda *_args: (None, None))
+    monkeypatch.setattr(viewport, "image_plane_at", lambda *_args: None)
+
+    px = (500, 300)
+    world = viewport._world_from_pixel(*px)
+    assert world is not None
+    assert abs(QVector3D.dotProduct(
+        viewport._last_work_plane[1], axes.axis("z"))) > 0.999
+    tool.on_hover(_ctx(viewport, world, px))
+    segments = tool.rubber_band_lines()
+    assert segments
+
+    projected = [
+        viewport._world_to_pixel(point)
+        for segment in segments for point in segment
+    ]
+    assert all(point is not None for point in projected)
+    width = max(point[0] for point in projected) - min(
+        point[0] for point in projected)
+    height = max(point[1] for point in projected) - min(
+        point[1] for point in projected)
+    limit = (2 * tool.PREVIEW_PX + 4 if tool_name == "circle"
+             else tool.PREVIEW_PX + 4)
+    assert max(width, height) <= limit
+
+
 def test_a_captured_slab_keeps_a_planar_tool_flat_at_the_horizon(viewport):
     """The near-horizon escape hatch (a horizontal captured plane yields to a
     vertical one so a LINE can rise) must not touch a rectangle's captured
@@ -156,6 +523,7 @@ def test_circle_shows_a_ring_on_the_cursor_in_the_locked_plane_colour(viewport):
     from tools.circle import CircleTool
     from core.snap import AXIS_COLORS
     viewport.camera.set_view("iso")
+    viewport.camera.target = QVector3D(0, 0, 0)
     tool = CircleTool()
     viewport.active_tool = tool
     key = next(k for k, a in PLANE_LOCK_KEYS.items() if a == "y")   # Left = green
@@ -172,9 +540,12 @@ def test_circle_shows_a_ring_on_the_cursor_in_the_locked_plane_colour(viewport):
     c_px = viewport._world_to_pixel(world)
     assert abs(math.hypot(r_px[0] - c_px[0], r_px[1] - c_px[1]) - tool.PREVIEW_PX) < 4
     tool.on_key(viewport, key, None)                   # the same key frees it
+    world = viewport._world_from_pixel(*px)
     tool.on_hover(_ctx(viewport, world, px))
     assert tool.wireframe_color is None
-    assert _plane_of(tool.rubber_band_lines()).z() < 1e-6        # flat on the ground
+    plane_normal = viewport._last_work_plane[1]
+    assert abs(QVector3D.dotProduct(
+        _plane_of(tool.rubber_band_lines()), plane_normal)) < 1e-5
 
 
 def test_rectangle_shows_a_square_on_the_cursor_and_keeps_the_colour_while_drawing(viewport):
@@ -187,7 +558,9 @@ def test_rectangle_shows_a_square_on_the_cursor_and_keeps_the_colour_while_drawi
     world = viewport._world_from_pixel(*px)
     tool.on_hover(_ctx(viewport, world, px))
     segs = tool.rubber_band_lines()
-    assert len(segs) == 4 and _plane_of(segs).z() < 1e-6          # flat square glyph
+    assert len(segs) == 4
+    normal = viewport._last_work_plane[1]
+    assert abs(QVector3D.dotProduct(_plane_of(segs), normal)) < 1e-5
     assert tool.wireframe_color is None
     key = next(k for k, a in PLANE_LOCK_KEYS.items() if a == "x")   # Right = red
     tool.on_key(viewport, key, None)
