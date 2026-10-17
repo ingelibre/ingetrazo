@@ -2009,8 +2009,12 @@ class Viewport(QOpenGLWidget):
         # stays stable across zoom. Depth-write OFF so the ground axes don't cull
         # geometry sitting on z=0; drawn BEFORE user edges so an edge along an
         # axis wins the LEQUAL depth test. Rubber-band stays on top (drawn last).
-        if self.plano_style is None and self.style_override is None:
-            # No axes on a plan sheet / styled composer frame.
+        from core import axes as _axes
+        if (self.plano_style is None and self.style_override is None
+                and (getattr(self.scene, "show_axes", True)
+                     or not _axes.is_world())):
+            # No axes on a plan sheet / styled composer frame, nor the
+            # world's once Camera ▸ Axes is off (an open group keeps its own).
             spacing = max(self.camera.distance * 0.008, 1e-4)
             axes_coords, self._axes_spans = _axes_vertices(spacing)
             data = axes_coords.tobytes()

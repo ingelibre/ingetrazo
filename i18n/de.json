@@ -2966,5 +2966,7 @@
  "Rust engine (experimental)": "Rust-Rechenkern (experimentell)",
  "This build of IngeTrazo does not carry the Rust engine.": "Diese IngeTrazo-Version enthält den Rust-Rechenkern nicht.",
  "Computes the heavy parts (hidden lines of the sheets and more) with the new native engine, much faster on big models. It is a test: keep a copy of your files and report anything odd with the label rust-engine. Takes effect at the next start.": "Berechnet die aufwendigen Teile (verdeckte Linien der Blätter und mehr) mit dem neuen nativen Rechenkern, bei großen Modellen viel schneller. Es ist ein Test: Bewahre eine Kopie deiner Dateien auf und melde Auffälliges mit dem Label rust-engine. Wirkt beim nächsten Start.",
- "Restart IngeTrazo to switch the engine.": "Starte IngeTrazo neu, um den Rechenkern zu wechseln."
+ "Restart IngeTrazo to switch the engine.": "Starte IngeTrazo neu, um den Rechenkern zu wechseln.",
+ "Axes": "Achsen",
+ "Show the model's red, green and blue drawing axes. Inference along them keeps working while they are hidden.": "Zeigt die roten, grünen und blauen Zeichenachsen des Modells. Die Inferenz entlang der Achsen funktioniert auch, wenn sie ausgeblendet sind."
 }

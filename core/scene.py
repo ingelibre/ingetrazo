@@ -142,6 +142,10 @@ class Scene:
     # False for hidden things; the ghost pass draws them.
     show_hidden_objects: bool = False
     show_hidden_geometry: bool = False
+    # Camera ▸ Axes: the world's red/green/blue drawing axes. Only the
+    # drawing hides — axis inference and the arrow-key locks still work,
+    # and an open group keeps showing its own axes.
+    show_axes: bool = True
     # Camera ▸ Component Edit ▸ Hide Similar Components: while a
     # component instance is open, its sibling instances (the other copies of
     # the same definition) leave the frame instead of fading with the rest.
@@ -644,6 +648,7 @@ class Scene:
             self.show_section_cuts = True
             self.show_hidden_objects = False
             self.show_hidden_geometry = False
+            self.show_axes = True
             self.version += 1
         # Outside the guard: an empty document has a camera to forget too.
         self.camera_home = None

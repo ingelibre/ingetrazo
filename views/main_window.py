@@ -1462,6 +1462,16 @@ class MainWindow(QMainWindow):
         self._act_hidden_geometry.toggled.connect(
             lambda on: self._set_hidden_view("show_hidden_geometry", on))
         camera_menu.addAction(self._act_hidden_geometry)
+        # Camera ▸ Axes (Alt+A): the world's drawing axes on or off.
+        self._act_show_axes = QAction(tr("Axes"), self)
+        self._act_show_axes.setShortcut(QKeySequence("Alt+A"))
+        self._act_show_axes.setStatusTip(tr(
+            "Show the model's red, green and blue drawing axes. Inference "
+            "along them keeps working while they are hidden."))
+        self._act_show_axes.setCheckable(True)
+        self._act_show_axes.setChecked(True)
+        self._act_show_axes.toggled.connect(self._set_show_axes)
+        camera_menu.addAction(self._act_show_axes)
 
         camera_menu.addSeparator()
         for action in self._nav_actions.values():   # Orbit / Pan / Zoom / Zoom Window
@@ -3699,7 +3709,9 @@ class MainWindow(QMainWindow):
                 (getattr(self, "_act_hidden_objects", None),
                  getattr(scene, "show_hidden_objects", False)),
                 (getattr(self, "_act_hidden_geometry", None),
-                 getattr(scene, "show_hidden_geometry", False))):
+                 getattr(scene, "show_hidden_geometry", False)),
+                (getattr(self, "_act_show_axes", None),
+                 getattr(scene, "show_axes", True))):
             if act is None:
                 continue
             act.blockSignals(True)
@@ -3753,6 +3765,12 @@ class MainWindow(QMainWindow):
                 if scene.entity_hidden(ent) or getattr(ent, "hidden", False):
                     scene.selection.discard(ent)
         scene.version += 1
+        self.viewport.update()
+
+    def _set_show_axes(self, on: bool) -> None:
+        """Camera ▸ Axes: a scene flag (it travels in the document) and a
+        repaint; nothing else depends on the axes being drawn."""
+        self.viewport.scene.show_axes = bool(on)
         self.viewport.update()
 
     def prompt_section_name(self, plane) -> None:

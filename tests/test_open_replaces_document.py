@@ -43,6 +43,7 @@ def _rich(tmp_path):
     s.show_section_cuts = False
     s.show_hidden_objects = True
     s.show_hidden_geometry = True
+    s.show_axes = False
     s.back_face_color = (0.1, 0.2, 0.3)
     s.custom_scales = [33.0]
     s.layers.append(Layer("Walls"))
@@ -107,6 +108,7 @@ def test_a_file_with_planes_still_brings_its_own(tmp_path):
     assert scene.show_section_cuts is False
     assert scene.show_hidden_objects is True
     assert scene.show_hidden_geometry is True
+    assert scene.show_axes is False
     assert scene.back_face_color == (0.1, 0.2, 0.3)
     assert scene.custom_scales == [33.0]
     assert [ly.name for ly in scene.layers][-1] == "Walls"

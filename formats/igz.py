@@ -604,6 +604,8 @@ def save_scene(scene, path: Path) -> dict:
         shown["geometry"] = True
     if shown:
         payload["hidden_view"] = shown       # View ▸ Hidden Objects / Geometry
+    if not getattr(scene, "show_axes", True):
+        payload["axes_hidden"] = True        # Camera ▸ Axes (shown is implicit)
     dstyle = getattr(scene, "display_style", None)
     if dstyle is not None:
         from core.style import Style
@@ -999,6 +1001,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.show_section_cuts = True
     scene.show_hidden_objects = False
     scene.show_hidden_geometry = False
+    scene.show_axes = True
     scene.custom_scales = []
     scene.back_face_color = None
     from core.scene import Scene
@@ -1186,6 +1189,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     if isinstance(shown, dict):
         scene.show_hidden_objects = bool(shown.get("objects", False))
         scene.show_hidden_geometry = bool(shown.get("geometry", False))
+    scene.show_axes = not bool(payload.get("axes_hidden", False))
 
     georef = payload.get("georef")
     if isinstance(georef, dict) and isinstance(georef.get("datum"), dict):

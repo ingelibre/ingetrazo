@@ -2966,5 +2966,7 @@
  "Rust engine (experimental)": "Moteur Rust (expérimental)",
  "This build of IngeTrazo does not carry the Rust engine.": "Cette version d'IngeTrazo ne contient pas le moteur Rust.",
  "Computes the heavy parts (hidden lines of the sheets and more) with the new native engine, much faster on big models. It is a test: keep a copy of your files and report anything odd with the label rust-engine. Takes effect at the next start.": "Calcule les parties lourdes (lignes cachées des planches et plus) avec le nouveau moteur natif, bien plus rapide sur les gros modèles. C'est un essai : gardez une copie de vos fichiers et signalez toute anomalie avec l'étiquette rust-engine. Prend effet au prochain démarrage.",
- "Restart IngeTrazo to switch the engine.": "Redémarrez IngeTrazo pour changer de moteur."
+ "Restart IngeTrazo to switch the engine.": "Redémarrez IngeTrazo pour changer de moteur.",
+ "Axes": "Axes",
+ "Show the model's red, green and blue drawing axes. Inference along them keeps working while they are hidden.": "Affiche les axes de dessin rouge, vert et bleu du modèle. L'inférence le long des axes continue de fonctionner quand ils sont masqués."
 }

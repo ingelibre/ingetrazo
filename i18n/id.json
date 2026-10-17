@@ -2969,5 +2969,7 @@
  "Rust engine (experimental)": "Mesin Rust (eksperimental)",
  "This build of IngeTrazo does not carry the Rust engine.": "Versi IngeTrazo ini tidak menyertakan mesin Rust.",
  "Computes the heavy parts (hidden lines of the sheets and more) with the new native engine, much faster on big models. It is a test: keep a copy of your files and report anything odd with the label rust-engine. Takes effect at the next start.": "Menghitung bagian yang berat (garis tersembunyi pada lembar dan lainnya) dengan mesin native baru, jauh lebih cepat pada model besar. Ini uji coba: simpan salinan berkas Anda dan laporkan hal aneh dengan label rust-engine. Berlaku saat aplikasi dibuka kembali.",
- "Restart IngeTrazo to switch the engine.": "Mulai ulang IngeTrazo untuk mengganti mesin."
+ "Restart IngeTrazo to switch the engine.": "Mulai ulang IngeTrazo untuk mengganti mesin.",
+ "Axes": "Sumbu",
+ "Show the model's red, green and blue drawing axes. Inference along them keeps working while they are hidden.": "Menampilkan sumbu gambar merah, hijau, dan biru pada model. Inferensi di sepanjang sumbu tetap berfungsi saat sumbu disembunyikan."
 }
