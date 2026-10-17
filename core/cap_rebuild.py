@@ -622,6 +622,14 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
         return any(_on_seg2(ea, a, b) and _on_seg2(eb, a, b)
                    for a, b in op_rim_segs)
 
+    def _parts_paint(e) -> bool:
+        """The edge parts two faces painted differently: the line between
+        two coloured quadrants, even where the push's rim runs along it.
+        Dissolved, one paint took the whole plane (#649: a quadrant pulled
+        up and pushed back level turned the four of them green)."""
+        attrs = [f.attrs or {} for f in e.faces]
+        return any(a != attrs[0] for a in attrs[1:])
+
     keep_segs: list = []
     for e in scope_edges:
         if not (_on_plane(e.a, origin, normal) and _on_plane(e.b, origin, normal)):
@@ -629,7 +637,8 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
         if any(abs(QVector3D.dotProduct(_fnormal(f), normal)) < 0.999
                for f in e.faces):
             keep_segs.append((to2d(e.a), to2d(e.b)))
-        elif op is not None and e.faces and not _on_op_rim(e):
+        elif op is not None and e.faces and (not _on_op_rim(e)
+                                             or _parts_paint(e)):
             keep_segs.append((to2d(e.a), to2d(e.b)))
 
     result = []
