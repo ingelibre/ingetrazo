@@ -4738,16 +4738,19 @@ class MainWindow(QMainWindow):
 
     # ---- View navigation ----------------------------------------------------
     def _on_zoom_extents(self) -> None:
+        from PySide6.QtGui import QVector3D
         bounds = self.viewport.scene.bounds()
         # Face-me figures count too, as a Zoom Extents should:
         # ``Scene.bounds()`` leaves them out (they draw per frame), so a new
         # document — the scale figure alone — framed nothing, and Zoom
         # Extents did nothing after zooming far away (Marco, 23-09).
-        figs = self._figure_bounds()
-        if figs is not None:
-            lo, hi = figs
+        # Visible reference images too: a plan imported to trace on stayed
+        # off screen while Zoom Selection over it did frame it.
+        for extra in (self._figure_bounds(), self._image_bounds()):
+            if extra is None:
+                continue
+            lo, hi = extra
             if bounds[0] is not None:
-                from PySide6.QtGui import QVector3D
                 lo = QVector3D(min(lo.x(), bounds[0].x()), min(lo.y(), bounds[0].y()),
                                min(lo.z(), bounds[0].z()))
                 hi = QVector3D(max(hi.x(), bounds[1].x()), max(hi.y(), bounds[1].y()),
@@ -4793,6 +4796,19 @@ class MainWindow(QMainWindow):
         if lo is None:
             return None
         return QVector3D(*map(float, lo)), QVector3D(*map(float, hi))
+
+    def _image_bounds(self):
+        """World box of the visible reference images, or None."""
+        from PySide6.QtGui import QVector3D
+        scene = self.viewport.scene
+        pts = [c for im in getattr(scene, "image_planes", None) or []
+               if scene.entity_visible(im) for c in im.corners()]
+        if not pts:
+            return None
+        return (QVector3D(min(p.x() for p in pts), min(p.y() for p in pts),
+                          min(p.z() for p in pts)),
+                QVector3D(max(p.x() for p in pts), max(p.y() for p in pts),
+                          max(p.z() for p in pts)))
 
     def _ensure_composer(self):
         """The composer window, created but not shown — the sheet strip's
