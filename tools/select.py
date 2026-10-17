@@ -346,6 +346,7 @@ class SelectTool(Tool):
             viewport.scene.select([entity])
             viewport.update()
             return
+        if isinstance(entity, TextLabel):
             # As usual, double-clicking a leader text edits its text.
             from core.i18n import tr
             text, ok = _prompts.get_multiline_text(
