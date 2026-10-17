@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import sys
 
+import pytest
 from PySide6.QtCore import QSettings
-from PySide6.QtGui import QKeySequence
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 if QApplication.instance() is None:
@@ -33,8 +34,9 @@ def _keys(act):
     return [s.toString(QKeySequence.PortableText) for s in act.shortcuts()]
 
 
+@pytest.mark.parametrize("lang", ["es", "ja"])
 def test_a_shortcut_of_ones_own_survives_a_restart_and_the_language(
-        monkeypatch):
+        monkeypatch, lang):
     from core.i18n import set_language
     from views.shortcuts import ShortcutsPanel
     QSettings().remove("shortcuts")
@@ -46,7 +48,7 @@ def test_a_shortcut_of_ones_own_survives_a_restart_and_the_language(
         assert _keys(act) == ["Ctrl+Alt+E"]
     finally:
         _close(win)
-    set_language("es")                       # the menus now in Spanish
+    set_language(lang)
     try:
         win = _window()
         try:
@@ -56,6 +58,30 @@ def test_a_shortcut_of_ones_own_survives_a_restart_and_the_language(
     finally:
         set_language("en")
         QSettings().remove("shortcuts")
+
+
+def test_japanese_keeps_every_action_key(monkeypatch, tmp_path):
+    """Duplicate translations must not rename persisted shortcut actions."""
+    import core.extensions as extensions
+    from core.i18n import current_language, set_language
+    from core.paths import app_root
+    from views.shortcuts import action_key
+
+    monkeypatch.setattr(extensions, "plugin_dirs",
+                        lambda: [app_root() / "plugins", tmp_path])
+    original_language = current_language()
+    keys = []
+    try:
+        for language in ("en", "ja"):
+            set_language(language)
+            win = _window()
+            try:
+                keys.append([action_key(a) for a in win.findChildren(QAction)])
+            finally:
+                _close(win)
+        assert keys[0] == keys[1]
+    finally:
+        set_language(original_language)
 
 
 def test_a_clash_takes_the_keys_from_the_other_action(monkeypatch):
