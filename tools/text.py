@@ -58,8 +58,8 @@ class TextTool(AxisMagnet, Tool):
             return
         # Second click: label position → ask for the text.
         offset = ctx.world - self.anchor
-        from PySide6.QtWidgets import QInputDialog
-        text, ok = QInputDialog.getMultiLineText(
+        from views import prompts as _prompts
+        text, ok = _prompts.get_multiline_text(
             ctx.viewport.window(), tr("Text"), tr("Label text:"),
             self._default_text)
         if ok and text.strip():
