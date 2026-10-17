@@ -3350,5 +3350,10 @@
  "The Bulgarian translation.": "保加利亚语翻译。",
  "The Traditional Chinese translation.": "繁体中文翻译。",
  "A .skp component 10 000 times too big, traced.": "追查出一个大了 10 000 倍的 .skp 组件。",
- "Thanks as well to all the authors of the extensions catalogue": "同样感谢扩展目录的所有作者"
+ "Thanks as well to all the authors of the extensions catalogue": "同样感谢扩展目录的所有作者",
+ "Add Scene": "添加场景",
+ "Update Scene": "更新场景",
+ "Delete Scene": "删除场景",
+ "Scene '{name}' added": "场景 '{name}' 已添加",
+ "Select a scene in the Scenes panel first": "请先在“场景”面板中选择一个场景"
 }

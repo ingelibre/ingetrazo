@@ -3352,5 +3352,10 @@
  "The Bulgarian translation.": "Terjemahan bahasa Bulgaria.",
  "The Traditional Chinese translation.": "Terjemahan bahasa Tionghoa Tradisional.",
  "A .skp component 10 000 times too big, traced.": "Komponen .skp yang 10 000 kali terlalu besar, berhasil dilacak.",
- "Thanks as well to all the authors of the extensions catalogue": "Terima kasih juga kepada semua pembuat katalog ekstensi"
+ "Thanks as well to all the authors of the extensions catalogue": "Terima kasih juga kepada semua pembuat katalog ekstensi",
+ "Add Scene": "Tambah Scene",
+ "Update Scene": "Perbarui Scene",
+ "Delete Scene": "Hapus Scene",
+ "Scene '{name}' added": "Scene '{name}' ditambahkan",
+ "Select a scene in the Scenes panel first": "Pilih scene di panel Scene terlebih dahulu"
 }

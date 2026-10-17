@@ -3357,5 +3357,10 @@
  "The Bulgarian translation.": "Tłumaczenie bułgarskie.",
  "The Traditional Chinese translation.": "Tłumaczenie na chiński tradycyjny.",
  "A .skp component 10 000 times too big, traced.": "Namierzony komponent .skp 10 000 razy za duży.",
- "Thanks as well to all the authors of the extensions catalogue": "Dziękujemy też wszystkim autorom katalogu rozszerzeń"
+ "Thanks as well to all the authors of the extensions catalogue": "Dziękujemy też wszystkim autorom katalogu rozszerzeń",
+ "Add Scene": "Dodaj scenę",
+ "Update Scene": "Aktualizuj scenę",
+ "Delete Scene": "Usuń scenę",
+ "Scene '{name}' added": "Dodano scenę „{name}”.",
+ "Select a scene in the Scenes panel first": "Najpierw zaznacz scenę w panelu Sceny"
 }
