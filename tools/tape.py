@@ -208,8 +208,11 @@ class TapeMeasureTool(Tool):
         kind = ctx.snap.kind if ctx.snap is not None else "none"
         if self._mode == "point":
             # A guide POINT at the measured spot — no source edge needed,
-            # which is the whole use: marking a place on a face.
-            self._place_guide_point(viewport, ctx.world)
+            # which is the whole use: marking a place on a face. It keeps
+            # its dashed segment back to the first click, as SketchUp's
+            # does: from the red axis to a circle's centre (issue #693).
+            self._place_guide_point(viewport, ctx.world,
+                                    self._segment_origin(ctx.world))
         elif self._edge is not None:
             offset = self._guide_offset(ctx.world)
             if offset is not None:
@@ -243,8 +246,9 @@ class TapeMeasureTool(Tool):
             d = self.hover_point - self.start_point
             if d.length() < 1e-9:
                 return False
-            self._place_guide_point(
-                viewport, self.start_point + d.normalized() * float(value))
+            where = self.start_point + d.normalized() * float(value)
+            self._place_guide_point(viewport, where,
+                                    self._segment_origin(where))
             self._reset()
             viewport.update()
             return True
@@ -314,6 +318,13 @@ class TapeMeasureTool(Tool):
         d = self._edge_dir()
         delta = world - self.start_point
         return delta - d * QVector3D.dotProduct(delta, d)
+
+    def _segment_origin(self, where: QVector3D) -> QVector3D | None:
+        """The start, for a guide point's segment — none when the two
+        coincide (a click on the same spot leaves just the point)."""
+        if (where - self.start_point).length() < 1e-9:
+            return None
+        return QVector3D(self.start_point)
 
     def _place_guide_point(self, viewport, where: QVector3D,
                            origin: QVector3D | None = None) -> None:

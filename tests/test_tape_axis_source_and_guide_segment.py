@@ -187,3 +187,24 @@ def test_the_segment_is_drawn_and_survives_the_igz(tmp_path):
     igz.load_into(back, path)
     (b,) = back.guides
     assert b.origin is not None and (b.origin - V(1, 1)).length() < 1e-6
+
+
+def test_guide_points_mode_keeps_the_segment_from_the_axis_to_a_centre():
+    """#693 (Neil): SketchUp's guide point keeps its dashed segment back
+    to the start — from a spot on the red axis to a circle's centre. Ours
+    left a bare point in the guide-points mode, so the picture could not
+    be drawn in any of the three."""
+    scene = Scene()
+    vp = _Vp(scene, axis="x")
+    tool = TapeMeasureTool()
+    tool._mode = "point"                              # Ctrl once
+    tool.on_click(_ctx(vp, 2, 0, kind="on_edge"))     # on the red axis
+    tool.on_click(_ctx(vp, 5, 3, kind="center"))      # the circle's centre
+    (g,) = scene.guides
+    assert not g.is_line and (g.point - V(5, 3)).length() < 1e-6
+    assert g.origin is not None and (g.origin - V(2, 0)).length() < 1e-6
+    tool.on_click(_ctx(vp, 0, 0))
+    tool.on_hover(_ctx(vp, 0, 4))
+    assert tool.on_value(vp, 2.5)                     # typed, the same
+    g = scene.guides[-1]
+    assert (g.point - V(0, 2.5)).length() < 1e-6 and g.origin == V(0, 0)
