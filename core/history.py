@@ -3027,7 +3027,12 @@ class SnapshotImport(Command):
     """Wrap a file import that may add loose geometry AND/OR reference groups
     (big DAE/OBJ models land as a Group). SnapshotMutation only snapshots the
     mesh, so a group added by the loader would survive undo — this also
-    remembers and reverts the groups the import appended."""
+    remembers and reverts the groups the import appended.
+
+    Sheets too: an agent asked for "a new sheet" appends a composition
+    through ``run_python``, and untracked it was no step at all — the
+    bridge said nothing changed, and its undo took the user's previous
+    edit instead (#694)."""
 
     def __init__(self, mutate) -> None:
         self.mutate = mutate
@@ -3038,6 +3043,7 @@ class SnapshotImport(Command):
         self.added_views: list = []
         self.added_dims: list = []
         self.added_texts: list = []
+        self.added_sheets: list = []
 
     def do(self, scene) -> None:
         m = scene.mesh
@@ -3047,6 +3053,7 @@ class SnapshotImport(Command):
             views_before = list(scene.saved_views)
             dims_before = list(scene.dimensions)
             texts_before = list(scene.text_labels)
+            sheets_before = list(scene.compositions)
             self.before = m.capture_state()
             try:
                 self.mutate(scene)
@@ -3054,7 +3061,7 @@ class SnapshotImport(Command):
                 # History.execute restores the mesh, but a loader or AI
                 # recipe that fails halfway has already appended groups
                 # (extrude/revolve land one per call), layers, views,
-                # dimensions or labels — leave none of them behind.
+                # dimensions, labels or sheets — leave none of them behind.
                 scene.groups[:] = [g for g in scene.groups
                                    if g in groups_before]
                 scene.layers[:] = [ly for ly in scene.layers
@@ -3065,6 +3072,8 @@ class SnapshotImport(Command):
                                        if d in dims_before]
                 scene.text_labels[:] = [t for t in scene.text_labels
                                         if t in texts_before]
+                scene.compositions[:] = [c for c in scene.compositions
+                                         if c in sheets_before]
                 raise
             self.after = m.capture_state()
             self.added_groups = [g for g in scene.groups
@@ -3077,6 +3086,8 @@ class SnapshotImport(Command):
                                if d not in dims_before]
             self.added_texts = [t for t in scene.text_labels
                                 if t not in texts_before]
+            self.added_sheets = [c for c in scene.compositions
+                                 if c not in sheets_before]
         else:
             m.restore_state(self.after)
             for g in self.added_groups:
@@ -3094,6 +3105,9 @@ class SnapshotImport(Command):
             for t in self.added_texts:
                 if t not in scene.text_labels:
                     scene.text_labels.append(t)
+            for c in self.added_sheets:
+                if c not in scene.compositions:
+                    scene.compositions.append(c)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -3115,6 +3129,9 @@ class SnapshotImport(Command):
         for t in self.added_texts:
             if t in scene.text_labels:
                 scene.text_labels.remove(t)
+        for c in self.added_sheets:
+            if c in scene.compositions:
+                scene.compositions.remove(c)
         scene.version += 1
 
 
