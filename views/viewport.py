@@ -10540,7 +10540,13 @@ class Viewport(QOpenGLWidget):
         # used to kill on-line snapping in ordinary 3D views); guide POINTS
         # snap as degenerate pseudo-edges, exactly like survey points.
         lines = []
+        # Guides that Move is dragging pass through the cursor: left out,
+        # or the cursor locks onto its own guide (#627).
+        moving = getattr(self.active_tool, "moving_guide_ids", None)
+        moving = moving() if callable(moving) else ()
         for g in getattr(self.scene, "guides", None) or []:
+            if id(g) in moving:
+                continue
             if g.is_line:
                 seg = self._guide_snap_segment(g)
                 if seg is not None:

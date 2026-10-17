@@ -571,8 +571,8 @@ class Scene:
         """Edit ▸ Invert Selection (Ctrl+Shift+I): select every
         entity of the open context that is NOT selected now, and drop what
         is. The universe is Select All's — the loose edges and faces, the
-        context's groups (the model's, or the open group's children) and the
-        dimensions — minus what a click or a box could not pick either:
+        context's groups (the model's, or the open group's children), the
+        dimensions and, in the model, the construction guides — minus what a click or a box could not pick either:
         hidden objects and faces, hidden or locked layers, and hidden edges
         (a smoothed surface's inner edges) while the hidden-geometry view is
         off. Returns the size of the new selection."""
@@ -585,6 +585,8 @@ class Scene:
         universe += [f for f in self.faces if self.entity_selectable(f)]
         universe += [g for g in groups if self.entity_selectable(g)]
         universe += [d for d in self.dimensions if self.entity_selectable(d)]
+        if ctx is None:                      # guides belong to the model (#627)
+            universe += [g for g in self.guides if self.entity_selectable(g)]
         new = [ent for ent in universe if ent not in self.selection]
         self.selection.clear()
         self.selection.update(new)
@@ -669,18 +671,23 @@ class Scene:
         when nothing selected has a place in space.
 
         Loose edges and faces, whole groups (nested placements included,
-        vectorized per mesh like ``bounds()``), dimensions and reference
-        images. Not cached: it runs once per command, over the selection
-        only."""
+        vectorized per mesh like ``bounds()``), dimensions, reference
+        images and construction guides — by their point only: a guide line
+        is infinite, and its ±10 km segment made Ctrl+A then Zoom Selection
+        frame a dot (#627). Not cached: it runs once per command, over the
+        selection only."""
         import numpy as np
         from core.group import iter_placements
+        from core.guide import Guide
         pts: list = []
 
         def add(p: QVector3D) -> None:
             pts.append((p.x(), p.y(), p.z()))
 
         for ent in self.selection:
-            if hasattr(ent, "mesh"):          # Group / component instance
+            if isinstance(ent, Guide):        # before Edge: it has .a / .b
+                add(ent.point)
+            elif hasattr(ent, "mesh"):        # Group / component instance
                 for g, m in iter_placements(ent):
                     verts = g.mesh.vertices
                     if not verts:

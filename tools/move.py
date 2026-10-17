@@ -35,11 +35,12 @@ from core.group import Group, copy_group, transformed_attrs
 from core.i18n import tr
 from core.mesh import Edge, Face, Mesh
 from core.dimension import Dimension
-from core.history import (AddEdgeCommand, AddFaceCommand, Command,
-                          CompoundCommand,
+from core.guide import Guide
+from core.history import (AddEdgeCommand, AddFaceCommand, AddGuideCommand,
+                          Command, CompoundCommand,
                           InsertGroupCommand, MoveGroupCommand,
-                          MoveDimensionsCommand, MoveTextLabelsCommand,
-                          MoveVerticesCommand)
+                          MoveDimensionsCommand, MoveGuidesCommand,
+                          MoveTextLabelsCommand, MoveVerticesCommand)
 from core.textlabel import TextLabel
 from core.topology import _key
 from tools.base import Tool, ToolContext
@@ -133,6 +134,52 @@ def gather_labels(ctx: ToolContext) -> list[TextLabel]:
         if lab is not None:
             labels = [lab]
     return labels
+
+
+def gather_guides(ctx: ToolContext) -> list[Guide]:
+    """Construction guides Move acts on (#627): the selected ones, or (with
+    nothing selected) the guide under the cursor. A loose edge under the
+    cursor wins over the guide — the edge is the finer target — while the
+    guide wins over the face or group behind it. To move something else
+    from a point on a guide, select it first."""
+    viewport = ctx.viewport
+    guides = [g for g in viewport.scene.selection if isinstance(g, Guide)]
+    if guides or viewport.scene.selection:
+        return guides
+    pick = getattr(viewport, "pick_guide", None)
+    guide = pick(ctx.screen.x(), ctx.screen.y()) if pick else None
+    if guide is None or not viewport.scene.entity_selectable(guide):
+        return []
+    if viewport.pick_edge(ctx.screen.x(), ctx.screen.y()) is not None:
+        return []
+    return [guide]
+
+
+def guide_ghost_segments(guides, reach: float) -> list:
+    """Wireframe of guides for a copy preview: a guide line as a segment
+    ``reach`` long each way (its 10 km span would end behind the camera),
+    a guide point as a small cross, plus its dashed segment's line."""
+    out = []
+    tick = reach * 0.02
+    for g in guides:
+        if g.direction is not None:
+            d = g.direction * reach
+            out.append((g.point - d, g.point + d))
+            continue
+        for ax in (QVector3D(tick, 0, 0), QVector3D(0, tick, 0),
+                   QVector3D(0, 0, tick)):
+            out.append((g.point - ax, g.point + ax))
+        if g.origin is not None:
+            out.append((QVector3D(g.origin), QVector3D(g.point)))
+    return out
+
+
+def copied_guide(guide, m: QMatrix4x4) -> Guide:
+    """A new guide: ``guide`` carried by the transform ``m``."""
+    return Guide(m.map(guide.point),
+                 None if guide.direction is None
+                 else m.mapVector(guide.direction),
+                 None if guide.origin is None else m.map(guide.origin))
 
 
 def gather_images(ctx: ToolContext):
@@ -253,6 +300,7 @@ class MoveTool(Tool):
         self._splanes: list = []               # section planes being moved
         self._images: list = []                # reference images being moved
         self._labels: list[TextLabel] = []     # leader texts whose label moves
+        self._moved_guides: list[Guide] = []         # construction guides being moved
         self._dims: dict = {}                  # dimension → "line" | "rigid"
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)  # currently applied live
         self._copy = False                     # Ctrl: move a COPY
@@ -361,6 +409,7 @@ class MoveTool(Tool):
         if self.start_point is None:
             groups, positions = self._gather(ctx)
             labels = gather_labels(ctx)
+            guides = gather_guides(ctx)
             from core.section import SectionPlane
             splanes = [p for p in viewport.scene.selection
                        if isinstance(p, SectionPlane)]
@@ -372,12 +421,16 @@ class MoveTool(Tool):
                       if pick is not None else None)
                 if sp is not None:
                     splanes = [sp]
-                    groups, positions = [], []
+                    groups, positions, guides = [], [], []
             if labels and not viewport.scene.selection:
                 # A click on the glyphs grabs just the text, never the
                 # geometry that happens to sit behind it.
+                groups, positions, guides = [], [], []
+            hovered_guide = bool(guides) and not viewport.scene.selection
+            if hovered_guide:
+                # A click on a guide grabs the guide, not the face behind.
                 groups, positions = [], []
-            images = gather_images(ctx)
+            images = [] if hovered_guide else gather_images(ctx)
             mesh = viewport.scene.mesh
             verts = [v for v in (mesh.vertex_at(p) for p in positions)
                      if v is not None]
@@ -385,9 +438,9 @@ class MoveTool(Tool):
             if dims and not viewport.scene.selection:
                 # A click on a dimension's lines grabs the dimension, not
                 # the geometry behind it.
-                groups, positions, verts = [], [], []
+                groups, positions, verts, guides = [], [], [], []
             if not (groups or positions or labels or splanes or images
-                    or dims):
+                    or dims or guides):
                 return  # nothing under the cursor / selected to move
             self._last = None            # a new move ends the array window
             self.start_point = ctx.world
@@ -395,6 +448,7 @@ class MoveTool(Tool):
             self._groups = groups
             self._positions = positions
             self._labels = labels
+            self._moved_guides = guides
             self._dims = dims
             self._splanes = splanes
             self._images = images
@@ -591,6 +645,14 @@ class MoveTool(Tool):
         return {id(f) for v in self._verts
                 for e in getattr(v, "edges", ()) for f in e.faces}
 
+    def moving_guide_ids(self) -> set:
+        """The guides the drag carries (#627). They pass through the
+        cursor all the way, so the viewport keeps them out of the snap
+        candidates — the cursor would otherwise lock onto its own guide."""
+        if self.grab is None or self._copy:
+            return set()
+        return {id(g) for g in self._moved_guides}
+
     # ---- Rotation grips (issue #115) ----------------------------------------
     @property
     def _drag(self):
@@ -739,8 +801,11 @@ class MoveTool(Tool):
                     if xf is not None:
                         a, b = xf.map(a), xf.map(b)
                     self._base_segments.append((a, b))
+        cam = getattr(viewport, "camera", None)
+        reach = max(float(getattr(cam, "distance", 10.0)), 1e-3)
+        self._base_segments.extend(guide_ghost_segments(self._moved_guides, reach))
         sel = list(viewport.scene.selection)
-        if not sel and not self._groups:
+        if not sel and not self._groups and not self._moved_guides:
             # Nothing selected and no group hover-picked: the click grabbed
             # the loose entity under the cursor (mirror of gather_targets).
             edge = viewport.pick_edge(ctx.screen.x(), ctx.screen.y())
@@ -774,6 +839,7 @@ class MoveTool(Tool):
         groups = list(self._groups)
         faces = list(self._sel_faces)
         edges = list(self._sel_edges)
+        guides = list(self._moved_guides)
 
         # Edges that bound a copied face travel with it the old way: the
         # planner runs before the faces are stamped and would lay a second
@@ -800,6 +866,8 @@ class MoveTool(Tool):
                 m.translate(d)
                 for group in groups:
                     cmds.append(InsertGroupCommand(copy_group(group, d)))
+                for g in guides:
+                    cmds.append(AddGuideCommand(copied_guide(g, m)))
                 for f in faces:
                     cmds.append(AddFaceCommand(
                         [v + d for v in f.vertices],
@@ -857,6 +925,8 @@ class MoveTool(Tool):
             viewport.scene.mesh.move_vertex(v, step)
         for lab in self._labels:
             lab.offset = lab.offset + step
+        for g in self._moved_guides:
+            MoveGuidesCommand.shift(g, step)
         for dim, mode in self._dims.items():
             MoveDimensionsCommand.shift(dim, mode, step)
         for sp in self._splanes:
@@ -877,6 +947,8 @@ class MoveTool(Tool):
             # rebuilds. Labels/section planes ride along in Python (few).
             for lab in self._labels:
                 lab.offset = lab.offset + step
+            for g in self._moved_guides:
+                MoveGuidesCommand.shift(g, step)
             for dim, mode in self._dims.items():
                 MoveDimensionsCommand.shift(dim, mode, step)
             for sp in self._splanes:
@@ -898,6 +970,8 @@ class MoveTool(Tool):
                 step = -self._preview_delta
                 for lab in self._labels:
                     lab.offset = lab.offset + step
+                for g in self._moved_guides:
+                    MoveGuidesCommand.shift(g, step)
                 for dim, mode in self._dims.items():
                     MoveDimensionsCommand.shift(dim, mode, step)
                 for sp in self._splanes:
@@ -941,6 +1015,8 @@ class MoveTool(Tool):
                 commands.append(MoveVerticesCommand(self._positions, delta))
             if self._labels:
                 commands.append(MoveTextLabelsCommand(self._labels, delta))
+            if self._moved_guides:
+                commands.append(MoveGuidesCommand(self._moved_guides, delta))
             if self._dims:
                 commands.append(MoveDimensionsCommand(self._dims, delta))
             if self._splanes:
@@ -981,6 +1057,7 @@ class MoveTool(Tool):
         self._verts = []
         self._groups = []
         self._labels = []
+        self._moved_guides = []
         self._dims = {}
         self._splanes = []
         self._images = []

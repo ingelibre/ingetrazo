@@ -5034,8 +5034,8 @@ class MainWindow(QMainWindow):
         self.viewport.update()
 
     def _on_select_all(self) -> None:
-        """Select every entity (Ctrl+A) — edges (soft included), faces, groups
-        and dimensions. The safe way to rotate/move/scale a WHOLE model: a
+        """Select every entity (Ctrl+A) — edges (soft included), faces, groups,
+        dimensions and, in the model, the construction guides. The safe way to rotate/move/scale a WHOLE model: a
         window box-select that misses one protruding piece leaves it behind
         and the transform warps the boundary (the sigue.igz report)."""
         sel = self.viewport.scene.selection
@@ -5048,6 +5048,12 @@ class MainWindow(QMainWindow):
         sel.update(self.viewport.scene.groups if ctx is None
                    else (getattr(ctx, "children", None) or []))
         sel.update(getattr(self.viewport.scene, "dimensions", []))
+        if ctx is None:
+            # Guides belong to the model, not to a group (#627); the ones a
+            # click could not pick stay out.
+            scene = self.viewport.scene
+            sel.update(g for g in getattr(scene, "guides", [])
+                       if scene.entity_selectable(g))
         # Bump the version and say so: the GL colour caches are keyed on it
         # and Entity Info listens for it, so a selection made behind
         # Scene.select()'s back left the status bar counting entities the

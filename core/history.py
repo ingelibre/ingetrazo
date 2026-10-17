@@ -1271,6 +1271,79 @@ class MoveTextLabelsCommand(Command):
         scene.version += 1
 
 
+class MoveGuidesCommand(Command):
+    """Translate construction guides (Tape Measure) with the Move tool
+    (#627). A guide line slides parallel to itself; a guide point carries
+    its ``origin`` along, so the dashed segment it draws keeps its shape."""
+
+    def __init__(self, guides, delta) -> None:
+        self._guides = list(guides)
+        self._delta = QVector3D(delta)
+
+    @staticmethod
+    def shift(guide, step: QVector3D) -> None:
+        """Apply one step — the tool's live preview uses it too."""
+        guide.point = guide.point + step
+        if guide.origin is not None:
+            guide.origin = guide.origin + step
+
+    def do(self, scene) -> None:
+        for g in self._guides:
+            self.shift(g, self._delta)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for g in self._guides:
+            self.shift(g, -self._delta)
+        scene.version += 1
+
+
+class RotateGuidesCommand(Command):
+    """Rotate construction guides about ``centre``/``axis`` (the Rotate
+    tool, #627): the point orbits, a line's direction turns, a guide
+    point's ``origin`` orbits with it. Undo puts back the exact values from
+    before, so a turn and its undo never drift."""
+
+    def __init__(self, guides, centre: QVector3D, axis: QVector3D,
+                 deg: float) -> None:
+        self._guides = list(guides)
+        self.centre = QVector3D(centre)
+        self.axis = QVector3D(axis)
+        self.deg = float(deg)
+        self._before: list = []
+
+    @staticmethod
+    def state(guide) -> tuple:
+        """What a rotation changes, copied — the tool's preview keeps it."""
+        return (guide, QVector3D(guide.point),
+                None if guide.direction is None else QVector3D(guide.direction),
+                None if guide.origin is None else QVector3D(guide.origin))
+
+    @staticmethod
+    def place(state, m) -> None:
+        """Put a guide at ``m`` applied to its ``state`` (``None``: as it was)."""
+        guide, point, direction, origin = state
+        guide.point = m.map(point) if m is not None else QVector3D(point)
+        if direction is not None:
+            d = m.mapVector(direction) if m is not None else direction
+            guide.direction = (d.normalized() if d.length() > 1e-12
+                               else QVector3D(direction))
+        if origin is not None:
+            guide.origin = m.map(origin) if m is not None else QVector3D(origin)
+
+    def do(self, scene) -> None:
+        self._before = [self.state(g) for g in self._guides]
+        m = rotation_matrix(self.centre, self.axis, self.deg)
+        for st in self._before:
+            self.place(st, m)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for st in self._before:
+            self.place(st, None)
+        scene.version += 1
+
+
 class MoveDimensionsCommand(Command):
     """Move dimensions with the Move tool. A dimension ANCHORED at both
     ends slides its LINE by the delta (minus any component along the
