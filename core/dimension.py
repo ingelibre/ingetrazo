@@ -327,6 +327,16 @@ class Dimension:
         along = QVector3D.dotProduct(self.offset, dir_)
         return self.offset - dir_ * along
 
+    # 17.10.26 BastelBaus
+    # quick adder, later should be speed optimized
+    @property
+    def line_point_a(self) -> QVector3D:
+        return self.line_points()[0]
+
+    @property
+    def line_point_b(self) -> QVector3D:
+        return self.line_points()[1]
+
     def line_points(self) -> tuple[QVector3D, QVector3D]:
         """The dimension line's endpoints. Aligned: ``a``/``b`` shifted by
         the offset. Linear: each endpoint pushed along the extension

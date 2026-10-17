@@ -10614,6 +10614,15 @@ class Viewport(QOpenGLWidget):
             loose = [e for e in loose if id(e) not in excl[0]]
         if sp is not None:
             loose = [e for e in loose if _kept(e)]
+
+        # 10/Oct/26 added BastelBaus: add snapping to dimension edges
+        for dim in (self.scene.dimensions if hasattr(self.scene, 'dimensions') else []):
+            if not self.scene.entity_selectable(dim):
+                continue
+            #near.append(_SnapEdge(dim.a, dim.a))
+            near.append(_SnapEdge(dim.line_point_a, dim.line_point_b))
+            
+
         from types import SimpleNamespace
         return SimpleNamespace(edges=loose + lines + near)
 
