@@ -43,3 +43,43 @@ def test_save_scene_progress_callback(tmp_path):
     assert len(ticks) >= 3
     assert any("Serializing" in t[1] for t in ticks)
     assert any(t[0] == 1.0 for t in ticks)
+
+
+def test_export_ifc_cancel_does_not_export(monkeypatch):
+    import core.bim
+    from formats import ifc as ifc_format
+    from views.filedialogs import file_dialogs
+    from views.main_window import MainWindow
+
+    win = MainWindow()
+    try:
+        monkeypatch.setattr(core.bim, "collect_objects", lambda scene: [object()])
+        monkeypatch.setattr(file_dialogs, "getSaveFileName", lambda *a, **k: ("", ""))
+        saved = []
+        monkeypatch.setattr(ifc_format, "save_ifc", lambda scene, path: saved.append(path))
+        win._on_export_ifc()
+        assert not saved
+        assert "IFC elements exported" not in win.statusBar().currentMessage()
+    finally:
+        win._confirm_discard = lambda *a, **k: True
+        win.close()
+
+
+def test_export_shows_status_bar_message(tmp_path, monkeypatch):
+    from views.filedialogs import file_dialogs
+    from views.main_window import MainWindow
+
+    win = MainWindow()
+    try:
+        out_path = tmp_path / "model.obj"
+        monkeypatch.setattr(file_dialogs, "getSaveFileName", lambda *a, **k: (str(out_path), ""))
+        called = []
+        win._export("OBJ", "obj", "OBJ (*.obj)", lambda scene, path: called.append(path))
+        assert len(called) == 1
+        msg = win.statusBar().currentMessage()
+        assert "Exported OBJ" in msg
+        assert "model.obj" in msg
+    finally:
+        win._confirm_discard = lambda *a, **k: True
+        win.close()
+

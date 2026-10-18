@@ -805,6 +805,9 @@ def save_scene(scene, path: Path, progress=None) -> dict:
     images = getattr(scene, "image_planes", None)
     if images:
         payload["image_planes"] = [im.to_dict() for im in images]
+    # Images ride INSIDE the document (see the module docstring). Only a scene
+    # that actually has textures pays for the container; everything else stays
+    # plain JSON at format 1, readable by older builds.
     if progress:
         progress(0.6, "Packing textures…")
     blobs, missing = _pack_textures(payload)

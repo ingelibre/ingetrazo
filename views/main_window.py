@@ -5608,17 +5608,14 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(
                     tr("Could not write the backup copy."), 4000)
         self.statusBar().showMessage(tr("Saving {name}…", name=path.name))
-        dlg, cb = self._import_progress(tr("Saving {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             self.viewport.scene.camera_home = self._camera_dict()
-            stats = igz_format.save_scene(self.viewport.scene, path, progress=cb) or {}
+            stats = igz_format.save_scene(self.viewport.scene, path) or {}
         except Exception as exc:  # noqa: BLE001
-            dlg.close()
             self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return
-        finally:
-            dlg.close()
         # A clean save ends the recovery window for this document — and for
         # the untitled slot when this save gave the document its first name.
         from core import autosave
@@ -7206,18 +7203,17 @@ class MainWindow(QMainWindow):
         path_str, _ = file_dialogs.getSaveFileName(
             self, tr("Export IFC"), "model.ifc",
             tr("IFC4 (*.ifc);;All files (*)"))
+        if not path_str:
+            return
         path = Path(path_str)
         self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
-        dlg, cb = self._import_progress(tr("Exporting {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             count = ifc_format.save_ifc(self.viewport.scene, path_str)
         except Exception as exc:  # noqa: BLE001
-            dlg.close()
             self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Export IFC failed"), str(exc))
             return
-        finally:
-            dlg.close()
         self.statusBar().showMessage(
             tr("{n} IFC elements exported to {path}",
                n=count, path=path_str), 5000)
@@ -7387,22 +7383,14 @@ class MainWindow(QMainWindow):
         if path.suffix.lower() != f".{suffix}":
             path = path.with_suffix(f".{suffix}")
         self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
-        dlg, cb = self._import_progress(tr("Exporting {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
-            import inspect
-            sig = inspect.signature(writer)
-            if "progress" in sig.parameters:
-                writer(self.viewport.scene, path, progress=cb)
-            else:
-                writer(self.viewport.scene, path)
+            writer(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001
-            dlg.close()
             self.statusBar().clearMessage()
             QMessageBox.critical(
                 self, tr("Export {label} failed", label=label), str(exc))
             return
-        finally:
-            dlg.close()
         self.statusBar().showMessage(
             tr("Exported {label} → {name}", label=label, name=path.name), 4000)
 
