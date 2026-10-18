@@ -37,3 +37,17 @@ def test_placeholders_survive_translation(path):
 
 def test_every_language_has_a_menu_name():
     assert set(available_languages()) <= set(LANGUAGE_NAMES)
+
+
+@pytest.mark.parametrize("path", [p for p in _FILES
+                                  if p.stem not in ("en", "es")],
+                         ids=lambda p: p.stem)
+def test_every_language_has_every_message(path):
+    """A message added in Spanish and English but in no other catalog reads
+    in English there with no warning: 21 strings of Join Segments and Zoom
+    Window sat untranslated in French and Polish until a review of the
+    language PRs happened on them (17-10)."""
+    source = json.loads((_I18N_DIR / "es.json").read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    missing = [k for k in source if k not in data]
+    assert not missing, f"{len(missing)} messages missing: {missing[:3]}"

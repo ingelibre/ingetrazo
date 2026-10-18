@@ -183,16 +183,27 @@ class Group:
         self.children = []
 
     def make_unique(self) -> None:
-        """Make Unique: this instance stops sharing with its
-        siblings. Without nested placements it bakes into a classic group
-        (``materialize``); WITH them it keeps its placement and its tree —
-        a private copy of its own mesh and of every subgroup below it — so
-        the subgroups stay subgroups instead of being fused into one mesh
-        (issue #90, @fafecm: «it explodes all the subgroups within it»)."""
+        """Make Unique: this instance stops sharing with its siblings.
+
+        A COMPONENT stays a component — a definition of its own with this
+        one copy, placed where it was: a private copy of its mesh and of
+        every subgroup below it, so editing it never reaches the others
+        and the subgroups stay subgroups (issue #90, @fafecm: «it explodes
+        all the subgroups within it»). It used to come out a group, which
+        is not what Make Unique says (#620: «the new component»).
+
+        A copied GROUP (the copy entering a group makes unique on the way
+        in) bakes into a classic group without nested placements
+        (``materialize``), or keeps its tree, privately, with them."""
+        from PySide6.QtGui import QMatrix4x4
+        if self.is_component():
+            self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
+            self.children = [_independent_copy(c)
+                             for c in (self.children or ())]
+            return
         if not self.children:
             self.materialize()
             return
-        from PySide6.QtGui import QMatrix4x4
         self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
         self.children = [_independent_copy(c) for c in self.children]
         # Nothing shared any more: what is left is a group of groups.

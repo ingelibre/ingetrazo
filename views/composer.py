@@ -5494,6 +5494,8 @@ class ComposerWindow(QMainWindow):
         super().__init__(main_window)
         self.setWindowFlag(Qt.Window, True)
         self._window = main_window
+        from views.floating_toolbar import watch_toolbars
+        watch_toolbars(self)        # a torn-off bar gets a title and a ×
         import sys as _sys
         if _sys.platform == "darwin":
             # macOS has ONE menu bar, and a window without its own shows its

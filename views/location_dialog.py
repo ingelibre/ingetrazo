@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPointF, Qt, Signal
+from PySide6.QtCore import QByteArray, QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -65,6 +65,8 @@ class MapPicker(QWidget):
         self._fetcher = TileFetcher(parent=self)
         self._fetcher.tileReady.connect(lambda *_: self.update())
         self._images: dict = {}
+        self._missing: set = set()         # (x, y, z) to request after paint
+        self._requests_scheduled = False
 
     def set_center(self, lat: float, lon: float, zoom: int | None = None) -> None:
         self._lat = max(-85.0, min(85.0, float(lat)))
@@ -176,10 +178,36 @@ class MapPicker(QWidget):
         key = (x, y, self._zoom)
         img = self._images.get(key)
         if img is None:
-            img = self._fetcher.request(self._source, x, y, self._zoom)
-            if img is not None:
-                self._images[key] = img
+            # A tile on disk is read now. A download waits until this paint
+            # has returned: started inside paintEvent it crashed on Windows
+            # (#327), as it did in the viewport's paintGL.
+            data = self._fetcher.cache.get(self._source.id, x, y, self._zoom)
+            if data is not None:
+                img = QImage()
+                if img.loadFromData(QByteArray(data)):
+                    self._images[key] = img
+                    return img
+            img = None
+            self._missing.add(key)
+            if not self._requests_scheduled:
+                self._requests_scheduled = True
+                QTimer.singleShot(0, self, self._request_missing_tiles)
         return img
+
+    def _request_missing_tiles(self) -> None:
+        """Request the tiles the last paint missed, outside paintEvent."""
+        self._requests_scheduled = False
+        missing, self._missing = self._missing, set()
+        cached = False
+        for x, y, z in missing:
+            if z != self._zoom or (x, y, z) in self._images:
+                continue
+            img = self._fetcher.request(self._source, x, y, z)
+            if img is not None:
+                self._images[(x, y, z)] = img
+                cached = True
+        if cached:
+            self.update()
 
     # ---- Interaction --------------------------------------------------------
     # Max drawable capture area (km²). Caps by *area*, not per side, so a long

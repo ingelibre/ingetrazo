@@ -21,6 +21,10 @@ on:
 permissions:
   contents: write
 
+# The bundle's --check fails if the Rust engine is missing (core._native).
+env:
+  INGETRAZO_REQUIRE_RUST: "1"
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -71,6 +75,20 @@ jobs:
           pip install "openskp @ git+https://github.com/iamahsanmehmood/openskp@291700bc213655a00461838de71e5f206311e619#subdirectory=packages/python"
           python -c "import openskp, openskp.legacy; print('openskp OK:', openskp.__name__)" 
 
+      # El motor Rust EXPERIMENTAL (rust/ingetrazo_core, Preferencias ▸
+      # General; apagado por defecto). Si no compila, falla aquí: nunca
+      # publicar un instalador que lo promete y no lo trae.
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Motor Rust (experimental)
+        shell: bash
+        run: |
+          pip install maturin
+          maturin build --release -m rust/ingetrazo_core/Cargo.toml -o "$RUNNER_TEMP/wheels"
+          pip install "$RUNNER_TEMP"/wheels/ingetrazo_core-*.whl
+          INGETRAZO_RUST=1 python -c "import core._native as n; assert n.native is not None; print('motor:', n.engine())"
+
       # DWG en Windows (#101): el dwg2dxf.exe OFICIAL de LibreDWG (su
       # release win64, mingw), con las dos DLL que carga — nada más del zip.
       # Hash medido el 2026-09-28 (su dist.sha256 no lista los zips): si
@@ -116,6 +134,14 @@ jobs:
           done
           # …y sin la segunda copia de las DLL en la raíz (31 MB de sobra).
           test ! -e dist/ingetrazo/_internal/libredwg-0.dll
+          # Qt va por schannel: sin su backend OpenSSL ni las DLL -x64, una
+          # libssl ajena en System32 ya no rompe el gestor (#564). La
+          # OpenSSL de Python (libssl-3.dll, sin -x64) sí se queda.
+          test ! -e dist/ingetrazo/_internal/PySide6/plugins/tls/qopensslbackend.dll
+          test -f dist/ingetrazo/_internal/PySide6/plugins/tls/qschannelbackend.dll
+          test ! -e dist/ingetrazo/_internal/libssl-3-x64.dll
+          test ! -e dist/ingetrazo/_internal/libcrypto-3-x64.dll
+          test -f dist/ingetrazo/_internal/libssl-3.dll
           # Y el mismo --check que ya corren el tar, el AppImage y el snap
           # (release.yml), que Windows no tenía: cubre estos archivos y los
           # que se añadan después, sin que haya que acordarse de listarlos

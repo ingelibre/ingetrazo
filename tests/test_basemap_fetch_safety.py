@@ -15,8 +15,8 @@ class _QueuedTimer:
     callbacks = []
 
     @classmethod
-    def singleShot(cls, _delay, callback):
-        cls.callbacks.append(callback)
+    def singleShot(cls, _delay, *context_and_callback):
+        cls.callbacks.append(context_and_callback[-1])
 
 
 class _Fetcher:
@@ -100,6 +100,56 @@ def test_a_tile_on_disk_is_read_at_once_without_the_network(tmp_path):
     assert viewport._disk_cached_tile(PRESETS["osm"], 9, 9, 3) is None
     assert viewport._tile_fetcher is None, "the network manager was built"
     viewport.deleteLater()
+
+
+class _CachedFetcher(_Fetcher):
+    def __init__(self, cache):
+        super().__init__()
+        self.cache = cache
+
+
+def _png(color):
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice
+    from PySide6.QtGui import QImage
+    img = QImage(256, 256, QImage.Format.Format_RGB32)
+    img.fill(color)
+    data = QByteArray()
+    buf = QBuffer(data)
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    img.save(buf, "PNG")
+    return bytes(data)
+
+
+def test_the_location_map_starts_no_download_inside_its_paint(
+        monkeypatch, tmp_path):
+    """#327: "Go to location", "Search location" and a KMZ import crashed
+    on Windows when a tile was not cached. The location map started the
+    HTTPS download inside paintEvent. A cached tile still draws in the
+    same paint; a missing one is requested after the paint returns."""
+    import views.location_dialog as location_module
+    from PySide6.QtGui import QColor
+    from views.location_dialog import MapPicker
+    _QueuedTimer.callbacks = []
+    monkeypatch.setattr(location_module, "QTimer", _QueuedTimer)
+    cache = TileCache(tmp_path)
+    picker = MapPicker(PRESETS["osm"])
+    fetcher = _CachedFetcher(cache)
+    picker._fetcher = fetcher
+    picker.resize(480, 340)
+    picker.set_center(0.0, 0.0, zoom=3)
+    cache.put("osm", 4, 4, 3, _png(QColor(10, 120, 30)))
+
+    picker.grab()                         # runs paintEvent
+    assert fetcher.requests == [], "a download started inside paintEvent"
+    assert (4, 4, 3) in picker._images    # the cached tile drew at once
+    assert len(_QueuedTimer.callbacks) == 1
+    picker.grab()                         # a second paint queues no more
+    assert len(_QueuedTimer.callbacks) == 1
+
+    _QueuedTimer.callbacks.pop()()
+    assert fetcher.requests
+    assert ("osm", 4, 4, 3) not in fetcher.requests
+    picker.deleteLater()
 
 
 def test_the_tile_cache_location_needs_no_network_module():

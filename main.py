@@ -232,6 +232,18 @@ def _self_check() -> int:
     if dwg is None and is_frozen() and sys.platform != "darwin":
         problems.append("DWG converter")
 
+    # The optional native kernels (rust/ingetrazo_core): without them the
+    # Python code runs, so a missing module is not a fault — except in a
+    # build that promises them, which sets INGETRAZO_REQUIRE_RUST. The
+    # engine is off by default (Preferences), so the check asks whether
+    # the module is there and loads, not whether it is on.
+    from core._native import available, engine
+    mod = available()
+    print(f"  engine         : {engine()}"
+          + (f" (Rust {mod.__version__} available)" if mod else ""))
+    if mod is None and os.environ.get("INGETRAZO_REQUIRE_RUST") == "1":
+        problems.append("native engine")
+
     # ``ingetrazo --mcp`` runs scripts/ingetrazo_mcp.py by path, and that
     # server reads its recipe book from core.ai_recipes. The Flatpak of
     # 0.4.9 shipped without scripts/ at all: the app ran, and the MCP door
@@ -323,6 +335,23 @@ def _self_check() -> int:
     except Exception as exc:  # noqa: BLE001
         where = f"({exc})"
     print(f"  Qt buttons (opt): {where}")
+
+    # Qt's HTTPS (extension manager, map tiles): the Windows package ships
+    # no OpenSSL backend, so Qt never picks up a foreign libssl left in
+    # System32 (#564). Read from the plugin folder: asking Qt which
+    # backends exist would itself load OpenSSL.
+    if sys.platform == "win32":
+        try:
+            from PySide6.QtCore import QLibraryInfo
+            tls = Path(QLibraryInfo.path(
+                QLibraryInfo.LibraryPath.PluginsPath)) / "tls"
+            have = sorted(p.stem for p in tls.glob("*.dll"))
+        except Exception as exc:  # noqa: BLE001
+            have, tls = [], f"({exc})"
+        print(f"  TLS (Qt)       : {', '.join(have) or 'none'}  {tls}")
+        if is_frozen() and ("qopensslbackend" in have
+                            or "qschannelbackend" not in have):
+            problems.append("Qt TLS backend")
 
     if problems:
         print(f"\nNOT OK — missing: {', '.join(problems)}")
@@ -431,6 +460,11 @@ def main() -> int:
     from views.tooltips import WrappingToolTips
     tooltips = WrappingToolTips(app)
     app.installEventFilter(tooltips)
+    # The experimental Rust engine: if the last start with it on never
+    # drew its first frame, this one goes back to the normal engine (and
+    # says so below); --python-engine does it for one run.
+    from core import _native
+    engine_fell_back = _native.start_guard(sys.argv[1:])
     # The extensions' setup waits until the window is on screen (#440).
     window = MainWindow(defer_extensions=True)
     # From here on, a FileOpen Apple Event (macOS double-click / Open With,
@@ -451,7 +485,8 @@ def main() -> int:
     # NOT hand over to the running one like a double-click does, or the
     # new window never appears (issue #76).
     new_window = "--new-window" in sys.argv[1:]
-    args = [a for a in sys.argv[1:] if a != "--new-window"]
+    args = [a for a in sys.argv[1:]
+            if a not in ("--new-window", _native.FLAG)]
     arg = args[0] if args else ""
     if not arg and app.pending_open_path is not None:
         # A cold macOS launch by double-click: no argv, the path arrived as
@@ -470,7 +505,10 @@ def main() -> int:
         # the 'it does not open' failure). No ack in 1.5s → launch anyway.
         if probe.waitForReadyRead(1500) and bytes(probe.readAll()).startswith(b"ok"):
             probe.disconnectFromServer()
-            return 0                   # the running instance took over
+            # The running instance took over: this start ends here, with
+            # nothing wrong (the engine guard must not count it as failed).
+            _native.start_ok()
+            return 0
         probe.disconnectFromServer()
     # No responsive server — become one. A stale socket (crash / unresponsive
     # peer) is cleared by removeServer before listen; if even that fails we
@@ -510,6 +548,23 @@ def main() -> int:
     window.show()
     from PySide6.QtCore import QTimer
 
+    def _first_frame_drawn():
+        # This start reached the screen: the engine guard is satisfied.
+        try:
+            window.viewport.frameSwapped.disconnect(_first_frame_drawn)
+        except (RuntimeError, TypeError):
+            pass
+        _native.start_ok()
+    window.viewport.frameSwapped.connect(_first_frame_drawn)
+    if engine_fell_back:
+        from PySide6.QtWidgets import QMessageBox
+        from core.i18n import tr
+        QTimer.singleShot(0, lambda: QMessageBox.information(
+            window, tr("Rust engine (experimental)"),
+            tr("IngeTrazo did not open the last time with the experimental "
+               "Rust engine on, so it is back on the normal engine. You can "
+               "turn it on again in Preferences ▸ General.")))
+
     def _after_first_frame():
         # The plugins' setup, now that the window is up (#440) — and only
         # then the document passed on the command line (the OS file
@@ -520,11 +575,15 @@ def main() -> int:
             doc = Path(arg)
             if doc.exists():
                 _open_document_in(window, doc)
+        # Which units to work in, once the window is up and the document in
+        # (off for good with «Don't show this at startup»; Preferences ▸
+        # Units turns it back on). Offered after the opening, not beside
+        # it: the load lets events through to move its bar, the question
+        # came up in the middle of it, and the document stayed frozen at
+        # 5 % behind it, the view blank, until it was answered.
+        QTimer.singleShot(0, window.offer_units_at_start)
 
     QTimer.singleShot(0, _after_first_frame)
-    # Which units to work in, once the window is up (off for good with
-    # «Don't show this at startup»; Preferences ▸ Units turns it back on).
-    QTimer.singleShot(0, window.offer_units_at_start)
     _offer_appimage_integration(window)
     return app.exec()
 

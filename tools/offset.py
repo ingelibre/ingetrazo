@@ -68,15 +68,18 @@ class OffsetTool(Tool):
         #: (select the edges, then Offset): the first click
         #: starts the offset instead of picking.
         self._armed: bool = False
+        self._last: dict | None = None      # hot retype of the last offset
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
         self._reset()
+        self._last = None
         self._arm_from_selection(viewport)
 
     def on_deactivate(self, viewport) -> None:
         viewport.set_hover(None)
         self._reset()
+        self._last = None
         viewport.update()
 
     # ---- Spatial input ------------------------------------------------------
@@ -102,6 +105,7 @@ class OffsetTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         if not self.dragging:
+            self._last = None
             if self._armed:
                 self._armed = False          # the run is already in _loop
             elif self.hovered_face is not None:
@@ -130,18 +134,55 @@ class OffsetTool(Tool):
     def on_value(self, viewport, value) -> bool:
         if isinstance(value, tuple):
             return False
-        if not self.dragging or not self._loop or value <= 0.0:
+        if value == 0.0:
             return False
-        # Keep the side the user is dragging toward; default to inward.
-        sign = -1.0 if self.distance < 0.0 else 1.0
-        self.distance = sign * value
+        if self.dragging and self._loop:
+            # Keep the side the user is dragging toward; default to inward.
+            sign = -1.0 if self.distance < 0.0 else 1.0
+            self.distance = sign * value
+            self._commit(viewport)
+            return True
+        # Hot retype: adjust the offset just made by typing into the VCB.
+        last = self._last
+        if last is None:
+            return False
+        stack = getattr(viewport.history, "undo_stack", None)
+        if not stack or stack[-1] is not last["cmd"]:
+            self._last = None
+            return False
+        viewport.history.undo()
+        self.base_face = last["base_face"]
+        self._loop = last["loop"]
+        self._normal = last["normal"]
+        self._chain = last["chain"]
+        self._closed = last["closed"]
+        self._ref_point = last["ref_point"]
+        self._ref_inward = last["ref_inward"]
+        self.distance = last["sign"] * value
+        self.dragging = True
+        depth = len(viewport.history.undo_stack)
         self._commit(viewport)
+        if len(viewport.history.undo_stack) == depth:
+            # The new distance was refused (too far for the face): the
+            # offset already made comes back instead of vanishing with the
+            # undo above, and the retype window stays open.
+            viewport.history.redo()
+            self._last = last
         return True
 
     def on_cancel(self, viewport) -> None:
         viewport.set_hover(None)
         self._reset()
+        self._last = None
         viewport.update()
+
+    def value_label(self):
+        """Floating distance readout while dragging (and the VCB readout)."""
+        if not self.dragging or self._ref_point is None:
+            return None
+        inward = self._ref_inward if self._ref_inward is not None else QVector3D(0, 0, 0)
+        mid = self._ref_point + inward * (self.distance * 0.5)
+        return (fmt_len(abs(self.distance)), mid)
 
     # ---- Visual preview -----------------------------------------------------
     def rubber_band_lines(self):
@@ -263,19 +304,35 @@ class OffsetTool(Tool):
         # in two at 40 cm). Outward: the biggest region is the ring and the
         # original is its single hole.
         attrs = dict(getattr(self.base_face, "attrs", None) or {})
+        # The face's own holes go back with it (#537): a ring on top of
+        # four walls came back as a full square over the room otherwise.
+        own_holes = [list(h) for h in
+                     (getattr(self.base_face, "holes", None) or [])]
         if self.distance > 0:
             outer = self._loop
             inners = [loop for loop, _holes in regions]
+            placed = _place_holes(own_holes, inners, self._normal)
+            if placed is None:
+                viewport.flash_status(tr(
+                    "{d} runs into a hole of this face — try a smaller "
+                    "offset", d=fmt_len(abs(self.distance))), 5000)
+                self._reset()
+                viewport.update()
+                return
+            inner_holes, strip_holes = placed
         else:
             outer = max((loop for loop, _holes in regions),
                         key=lambda lp: _loop_extent(lp))
             inners = [self._loop]
+            inner_holes, strip_holes = [own_holes], []
         commands = [DeleteFaceCommand(self.base_face),
                     AddFaceCommand(list(outer), auto=False,
-                                   holes=[list(lp) for lp in inners],
+                                   holes=[list(lp) for lp in inners]
+                                   + strip_holes,
                                    attrs=dict(attrs))]
-        for loop in inners:
+        for loop, holes in zip(inners, inner_holes):
             commands.append(AddFaceCommand(list(loop), auto=False,
+                                           holes=holes or None,
                                            attrs=dict(attrs)))
         # Curve ids only when the offset kept the source's shape one-to-one:
         # with the boundary re-arranged there is no run to mirror.
@@ -285,7 +342,20 @@ class OffsetTool(Tool):
         # Snapshot undo: Delete/Add compose fine forward, but the hole edges
         # the ring creates don't reverse cleanly command-by-command (they
         # leaked on undo). One snapshot reverses exactly.
-        viewport.history.execute(SnapshotCompound(commands))
+        cmd = SnapshotCompound(commands)
+        viewport.history.execute(cmd)
+        sign = -1.0 if self.distance < 0 else 1.0
+        self._last = {
+            "cmd": cmd,
+            "base_face": self.base_face,
+            "loop": list(self._loop),
+            "normal": self._normal,
+            "chain": False,
+            "closed": True,
+            "ref_point": self._ref_point,
+            "ref_inward": self._ref_inward,
+            "sign": sign,
+        }
         self._reset()
         viewport.update()
 
@@ -303,15 +373,28 @@ class OffsetTool(Tool):
             return
         cam = getattr(viewport, "camera", None)
         eye = cam.eye() if cam is not None and hasattr(cam, "eye") else None
-        viewport.history.execute(
-            build_add_edges(viewport.scene, _segments(off, self._closed),
-                            eye=eye))
+        cmd = build_add_edges(viewport.scene, _segments(off, self._closed),
+                                eye=eye)
+        viewport.history.execute(cmd)
+        sign = -1.0 if self.distance < 0 else 1.0
+        self._last = {
+            "cmd": cmd,
+            "base_face": None,
+            "loop": list(self._loop),
+            "normal": self._normal,
+            "chain": True,
+            "closed": self._closed,
+            "ref_point": self._ref_point,
+            "ref_inward": self._ref_inward,
+            "sign": sign,
+        }
         self._reset()
         viewport.update()
 
     def _refuse(self, viewport) -> None:
         """Nothing survives the offset — say the limit instead of going quiet.
         A 20 cm kerb takes no 10 cm inward offset: 0.20 - 2 x 0.10 is zero."""
+        self._last = None
         sign = -1.0 if self.distance < 0 else 1.0
         room = max_offset_distance(self._loop, self._normal, sign)
         side = tr("inward") if sign > 0 else tr("outward")
@@ -448,6 +531,67 @@ def _run_from_edge(edge: Edge):
     back, _ = walk(edge.v0, edge)
     return list(reversed(back)) + [QVector3D(edge.v0.position),
                                    QVector3D(edge.v1.position)] + fwd, False
+
+
+def _place_holes(holes: list, regions: list, normal: QVector3D):
+    """Where each of a face's ``holes`` goes after an inward offset:
+    ``(per_region, strip)`` — the holes inside each of ``regions`` (in
+    order), and those left in the strip between the outline and the
+    regions. ``None`` when a hole crosses or touches a region's outline:
+    the offset reaches into the hole, and no face drawn from these loops
+    would be right (#537)."""
+    from core.arrangement import _point_in_polygon, plane_basis
+    u, w = plane_basis(normal)
+    origin = regions[0][0] if regions else QVector3D()
+
+    def flat(loop):
+        return [(QVector3D.dotProduct(p - origin, u),
+                 QVector3D.dotProduct(p - origin, w)) for p in loop]
+
+    flat_regions = [flat(r) for r in regions]
+    per_region = [[] for _ in regions]
+    strip = []
+    for hole in holes:
+        fh = flat(hole)
+        if any(_outlines_meet(fh, fr) for fr in flat_regions):
+            return None
+        # Outlines that do not meet are nested or apart: one vertex says
+        # which. A region inside the hole means the offset went past it.
+        for i, fr in enumerate(flat_regions):
+            if _point_in_polygon(fh[0], fr):
+                per_region[i].append(list(hole))
+                break
+            if _point_in_polygon(fr[0], fh):
+                return None
+        else:
+            strip.append(list(hole))
+    return per_region, strip
+
+
+def _outlines_meet(a: list, b: list, eps: float = 1e-6) -> bool:
+    """Whether two closed 2D outlines cross, touch or overlap anywhere."""
+    def orient(p, q, r):
+        v = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        return 0 if abs(v) < eps else (1 if v > 0 else -1)
+
+    def on_seg(p, q, r):
+        return (min(p[0], r[0]) - eps <= q[0] <= max(p[0], r[0]) + eps
+                and min(p[1], r[1]) - eps <= q[1] <= max(p[1], r[1]) + eps)
+
+    for i in range(len(a)):
+        p1, p2 = a[i], a[(i + 1) % len(a)]
+        for j in range(len(b)):
+            q1, q2 = b[j], b[(j + 1) % len(b)]
+            o1, o2 = orient(p1, p2, q1), orient(p1, p2, q2)
+            o3, o4 = orient(q1, q2, p1), orient(q1, q2, p2)
+            if o1 != o2 and o3 != o4:
+                return True
+            if (o1 == 0 and on_seg(p1, q1, p2)
+                    or o2 == 0 and on_seg(p1, q2, p2)
+                    or o3 == 0 and on_seg(q1, p1, q2)
+                    or o4 == 0 and on_seg(q1, p2, q2)):
+                return True
+    return False
 
 
 def _loop_extent(loop) -> float:

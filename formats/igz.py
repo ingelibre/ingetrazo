@@ -48,6 +48,7 @@ only up to format 2 refuse it with a message instead of opening it empty.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 import math
 from pathlib import Path
 
@@ -301,6 +302,15 @@ def _mesh_json(mesh, geom_sink=None) -> dict:
     """The mesh block. With a ``geom_sink`` (a large document) a big mesh
     goes to a binary block in the sink and the JSON keeps only its
     reference and face-attribute table (format 3)."""
+    from core.lazy_mesh import plan_of
+    plan = plan_of(mesh)
+    if plan is not None and geom_sink is not None and _bulk_sized(
+            len(plan.edges), plan.nfaces):
+        # A lazy mesh (experimental engine): written from its arrays, the
+        # same bytes, without building it.
+        return {"geom": _pack_plan(mesh, plan, geom_sink)}
+    if plan is not None:
+        return _plan_json(mesh, plan)
     if geom_sink is not None and _bulk_sized(len(mesh.edges),
                                              len(mesh.faces)):
         return {"geom": _pack_geometry(mesh, geom_sink)}
@@ -308,6 +318,51 @@ def _mesh_json(mesh, geom_sink=None) -> dict:
         "edges": [_edge_json(e) for e in mesh.edges],
         "faces": [_face_json(f) for f in mesh.faces],
     }
+
+
+def _plan_json(mesh, plan) -> dict:
+    """The JSON block :func:`_mesh_json` writes for the mesh a deferred
+    ``mesh`` would build, from its plan: the same entries, keys in the
+    same order."""
+    pos = plan.pos.tolist()
+    edges = []
+    for i, (a, b) in enumerate(plan.edges.tolist()):
+        entry = {"a": list(pos[a]), "b": list(pos[b])}
+        if plan.soft[i]:
+            entry["soft"] = True
+        if plan.hidden[i]:
+            entry["hidden"] = True
+        if plan.curve[i] is not None:
+            entry["curve"] = plan.curve[i]
+        if plan.layer[i] is not None:
+            entry["layer"] = plan.layer[i]
+        edges.append(entry)
+    src = mesh.__dict__["_deferred_source"]
+    raw = src["meta"].get("face_attrs") or []
+    attrs_of: dict = {}
+    corners = plan.corners.tolist()
+    sizes = plan.ring_sizes.tolist()
+    faces = []
+    c = r = 0
+    for f, (nr, k) in enumerate(zip(plan.ring_counts.tolist(),
+                                    src["face_attr"].tolist())):
+        rings = []
+        for _ in range(nr):
+            rings.append([list(pos[i]) for i in corners[c:c + sizes[r]]])
+            c += sizes[r]
+            r += 1
+        entry = {"vertices": rings[0]}
+        if len(rings) > 1:
+            entry["holes"] = rings[1:]
+        if k >= 0:
+            parsed = attrs_of.get(k)
+            if parsed is None:
+                parsed = attrs_of[k] = _face_attrs_from_json(raw[k]) or {}
+            # Fresh dicts per face, as the object writer makes (the
+            # texture packer rewrites them in place).
+            entry.update(_face_attrs_json(SimpleNamespace(attrs=parsed)))
+        faces.append(entry)
+    return {"edges": edges, "faces": faces}
 
 
 def _bulk_sized(n_edges: int, n_faces: int) -> bool:
@@ -412,7 +467,12 @@ def _pack_geometry(mesh, sink: dict) -> dict:
         arrays["edge_curve"] = curves
     if layers is not None:
         arrays["edge_layer"] = layers
+    return _write_geometry(arrays, table, layer_table, sink)
 
+
+def _write_geometry(arrays, table, layer_table, sink: dict) -> dict:
+    """The blob of a format-3 block into ``sink``; its JSON side."""
+    import numpy as np
     # One raw blob, each array at an 8-byte-aligned offset: no pickles, no
     # per-save timestamps (an .npz carries them), so two saves of the same
     # model stay byte-identical.
@@ -434,6 +494,102 @@ def _pack_geometry(mesh, sink: dict) -> dict:
     if layer_table:
         meta["edge_layers"] = layer_table
     return meta
+
+
+def _pack_plan(mesh, plan, sink: dict) -> dict:
+    """:func:`_pack_geometry` of the mesh a deferred ``mesh`` would build
+    (``plan``, core.lazy_mesh), from its arrays: the same point numbering,
+    rings, attribute and layer tables, flags — the same bytes."""
+    import numpy as np
+    from core.topology import _maximal_holes
+
+    src = mesh.__dict__["_deferred_source"]
+    corners_v = plan.corners
+    sizes = plan.ring_sizes
+    counts = plan.ring_counts
+    # Faces with more than one hole drop the nested ones, as the object
+    # writer does (by their positions).
+    if len(counts) and (counts > 2).any():
+        rs = np.concatenate([[0], np.cumsum(sizes)])
+        fr = np.concatenate([[0], np.cumsum(counts)])
+        keep_ring = np.ones(len(sizes), dtype=bool)
+        for f in np.flatnonzero(counts > 2).tolist():
+            hk = list(range(int(fr[f]) + 1, int(fr[f + 1])))
+            pos = [[QVector3D(*plan.pos[i]) for i in
+                    corners_v[int(rs[k]):int(rs[k + 1])].tolist()]
+                   for k in hk]
+            kept = {id(x) for x in _maximal_holes(pos)}
+            for k, p in zip(hk, pos):
+                keep_ring[k] = id(p) in kept
+        if not keep_ring.all():
+            corners_v = corners_v[np.repeat(keep_ring, sizes)]
+            ring_face = np.repeat(np.arange(len(counts)), counts)
+            counts = np.bincount(ring_face[keep_ring],
+                                 minlength=len(counts))
+            sizes = sizes[keep_ring]
+    corners = np.concatenate([plan.edges.reshape(-1), corners_v]) \
+        if len(plan.edges) else corners_v
+    _u, first, inverse = np.unique(corners, return_index=True,
+                                   return_inverse=True)
+    order = np.argsort(first, kind="stable")
+    rank = np.empty_like(order)
+    rank[order] = np.arange(len(order))
+    index = rank[inverse.reshape(-1)].astype(np.int32)
+    pos = plan.pos[corners[first[order]]].astype(np.float32).reshape(-1, 3)
+    if not np.isfinite(pos).all():
+        raise NonFiniteDocumentError("geometry")
+    # The attribute table, renumbered in the order faces first use it.
+    raw = src["meta"].get("face_attrs") or []
+    fa_src = np.asarray(src["face_attr"], dtype=np.int64)
+    table: list = []
+    table_index: dict = {}
+    remap: dict = {}
+    if len(fa_src):
+        u, firsts = np.unique(fa_src, return_index=True)
+        for k in u[np.argsort(firsts, kind="stable")].tolist():
+            attrs = _face_attrs_from_json(raw[k]) if k >= 0 else None
+            js = _face_attrs_json(SimpleNamespace(attrs=attrs)) \
+                if attrs else None
+            if js:
+                key = json.dumps(js, sort_keys=True, separators=(",", ":"))
+                t = table_index.get(key)
+                if t is None:
+                    t = table_index[key] = len(table)
+                    table.append(js)
+                remap[k] = t
+            else:
+                remap[k] = -1
+    keys = np.array(sorted(remap), dtype=np.int64)
+    vals = np.array([remap[k] for k in keys.tolist()], dtype=np.int32)
+    face_attr = vals[np.searchsorted(keys, fa_src)] if len(fa_src) else \
+        np.zeros(0, dtype=np.int32)
+    ne = len(plan.edges)
+    arrays = {
+        "pos": pos,
+        "edges": index[:2 * ne].reshape(-1, 2),
+        "rings": index[2 * ne:],
+        "ring_sizes": np.asarray(sizes, dtype=np.int32),
+        "ring_counts": np.asarray(counts, dtype=np.int32),
+        "face_attr": face_attr.astype(np.int32),
+    }
+    flags = (plan.soft.astype(np.uint8) | (plan.hidden.astype(np.uint8) << 1))
+    arrays["edge_flags"] = flags
+    if any(c is not None for c in plan.curve):
+        arrays["edge_curve"] = np.array(
+            [-1 if c is None else c for c in plan.curve], dtype=np.int64)
+    layer_table: list = []
+    if any(l is not None for l in plan.layer):
+        layer_index: dict = {}
+        layers = np.full(ne, -1, dtype=np.int32)
+        for i, l in enumerate(plan.layer):
+            if l is not None:
+                k = layer_index.get(l)
+                if k is None:
+                    k = layer_index[l] = len(layer_table)
+                    layer_table.append(l)
+                layers[i] = k
+        arrays["edge_layer"] = layers
+    return _write_geometry(arrays, table, layer_table, sink)
 
 
 def save_scene(scene, path: Path) -> dict:
@@ -637,7 +793,10 @@ def save_scene(scene, path: Path) -> dict:
         payload["text_labels"] = [t.to_dict() for t in labels]
     guides = getattr(scene, "guides", None)
     if guides:
-        payload["guides"] = [g.to_dict() for g in guides]
+        # A guide at NaN is left out instead of refusing the save (#723):
+        # it is only scaffolding, and the loader drops it anyway (#185).
+        payload["guides"] = [g.to_dict() for g in guides
+                             if not hasattr(g, "is_finite") or g.is_finite()]
     # Reference images. Written BEFORE the packing step below on purpose:
     # each entry hangs its file under a "texture" key, so the same walk that
     # embeds face textures embeds the scans too.
@@ -684,8 +843,9 @@ def _live_element_count(scene) -> int:
     """Faces + edges the document will hold: the loose mesh, and every
     distinct mesh of the groups (a component prototype is written once,
     however many times it is placed). Only list lengths."""
+    from core.lazy_mesh import entity_count
     mesh = scene.mesh if hasattr(scene, "mesh") else scene
-    total = len(mesh.faces) + len(mesh.edges)
+    total = entity_count(mesh)
     seen: set = set()
     stack = (list(getattr(scene, "groups", None) or ())
              + list(getattr(scene, "kept_components", None) or ()))
@@ -694,7 +854,7 @@ def _live_element_count(scene) -> int:
         m = getattr(g, "mesh", None)
         if m is not None and id(m) not in seen:
             seen.add(id(m))
-            total += len(m.faces) + len(m.edges)
+            total += entity_count(m)
         stack.extend(getattr(g, "children", None) or ())
     return total
 
@@ -887,6 +1047,62 @@ def _without_nonfinite(payload: dict) -> dict:
     return dict(payload, edges=edges, faces=faces)
 
 
+def _normalize_text_curve_ids(payload: dict, geom: dict) -> None:
+    """Map stored text curve identities to the engine's integer identities.
+
+    JSON documents can carry named curves. Their segments must stay grouped,
+    but the engine's counter and binary geometry writer require integer ids.
+    Reserve the document's existing integers first, including binary meshes
+    loaded later, so a name cannot collide with an existing numeric curve.
+    """
+    import core.mesh as _mesh_mod
+
+    def group_meshes(groups, depth=0):
+        for raw in groups:
+            if not isinstance(raw, dict):
+                continue
+            # A placement uses its prototype, not any local geometry block.
+            if raw.get("xform") is None or "proto" not in raw:
+                yield raw
+            if depth < 32:             # the same limit as _group_from
+                yield from group_meshes(raw.get("children", []) or [],
+                                        depth + 1)
+
+    def meshes():
+        yield payload
+        yield from payload.get("protos", [])
+        yield from group_meshes(payload.get("groups", []) or [])
+        yield from group_meshes(payload.get("kept_components", []) or [])
+
+    text_edges = []
+    binary_meshes = []
+    top = _mesh_mod._CURVE_COUNTER - 1
+    for block in meshes():
+        if "geom" in block:
+            binary_meshes.append(block["geom"])
+            continue
+        for raw in block.get("edges", []):
+            cid = raw.get("curve")
+            if isinstance(cid, str):
+                text_edges.append(raw)
+            elif isinstance(cid, int):
+                top = max(top, cid)
+    if not text_edges:
+        return                         # no extra scan of ordinary binary meshes
+
+    for meta in binary_meshes:
+        curves = _document_geometry_arrays(meta, geom).get("edge_curve")
+        if curves is not None and curves.size:
+            top = max(top, int(curves.max()))
+    _mesh_mod._CURVE_COUNTER = top + 1
+    ids: dict[str, int] = {}
+    for raw in text_edges:
+        name = raw["curve"]
+        if name not in ids:
+            ids[name] = Mesh.next_curve_id()
+        raw["curve"] = ids[name]
+
+
 def _load_into_inner(scene, path: Path, progress=None) -> None:
     def tick(frac, text):
         if progress is not None:
@@ -922,6 +1138,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         )
 
     payload = data.get("scene", {})
+    _normalize_text_curve_ids(payload, geom)
 
     scene.mesh.clear()
     scene.selection.clear()
@@ -932,6 +1149,21 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.georef = None
     scene.photo_mesh = survey
     scene.tile_layer = None
+    # The writer leaves a block out when it holds the default (no planes,
+    # nothing hidden, no own scales…), so what the file does not bring is
+    # reset here — or it leaked from the document open before (#602).
+    from core.layers import DEFAULT_LAYER, Layer
+    scene.layers = [Layer(DEFAULT_LAYER)]
+    scene.section_planes = []
+    scene.show_section_planes = True
+    scene.show_section_cuts = True
+    scene.show_hidden_objects = False
+    scene.show_hidden_geometry = False
+    scene.custom_scales = []
+    scene.back_face_color = None
+    from core.scene import Scene
+    scene.dimension_style = \
+        Scene.__dataclass_fields__["dimension_style"].default_factory()
 
     tick(0.35, "Building geometry…")
     _load_mesh(scene.mesh, payload, geom)
@@ -1268,6 +1500,157 @@ def _load_mesh(mesh, payload, geom=None) -> None:
         return
 
     payload = _without_nonfinite(payload)
+    from core import _native
+    if _native.wanted() and type(mesh) is _mesh_mod.Mesh:
+        # A lazy mesh (experimental engine): its arrays now, its objects —
+        # built by the very walk below — on first touch.
+        src = _json_arrays(payload)
+        if src is not None:
+            curves = src["curves"]
+            if curves is not None and curves.size and \
+                    int(curves.max()) >= _mesh_mod._CURVE_COUNTER:
+                _mesh_mod._CURVE_COUNTER = int(curves.max()) + 1
+            # Built from its own arrays, not from ``payload``: the loader
+            # empties the document tree in place once it is read
+            # (_release_in_steps), and a mesh built later from it came out
+            # with no faces at all.
+            def build(m, src=src):
+                _load_mesh_json(m, _payload_from_arrays(src))
+            if _mesh_mod.DeferredMesh.defer(mesh, build, len(src["counts"]),
+                                            src):
+                return
+    _load_mesh_json(mesh, payload)
+
+
+def _json_arrays(payload) -> dict | None:
+    """A JSON mesh block as the arrays of a format-3 one (the deferred
+    source core.lazy_mesh plans from), or ``None`` when it holds nothing.
+    The points in the order both JSON readers weld them: every edge's two
+    ends, then each face's ring and its holes (nested ones dropped first,
+    as add_face and the bulk reader do)."""
+    import numpy as np
+    from core.topology import _maximal_holes
+    raw_edges = payload.get("edges", [])
+    raw_faces = payload.get("faces", [])
+    small = not _bulk_sized(len(raw_edges), len(raw_faces))
+    flat: list = []
+    flags: list = []
+    curves: list = []
+    layers: list = []
+    names: dict = {}
+    for raw in raw_edges:
+        flat.append(raw["a"])
+        flat.append(raw["b"])
+        flags.append((1 if raw.get("soft") else 0)
+                     | (2 if raw.get("hidden") else 0))
+        cid = raw.get("curve")
+        curves.append(-1 if cid is None else int(cid))
+        lay = raw.get("layer")
+        # The per-entity walk keeps a layer only when it is truthy, the
+        # bulk one whenever it is present.
+        if lay is None or (small and not lay):
+            layers.append(-1)
+        else:
+            layers.append(names.setdefault(lay, len(names)))
+    n_edge_pts = len(flat)
+    ring_sizes: list = []
+    ring_counts: list = []
+    face_attr: list = []
+    table: list = []
+    table_index: dict = {}
+    for raw in raw_faces:
+        verts = raw["vertices"]
+        holes = raw.get("holes", [])
+        if len(holes) > 1:
+            qholes = _maximal_holes(
+                [[QVector3D(*v) for v in loop] for loop in holes])
+            holes = [[(p.x(), p.y(), p.z()) for p in loop] for loop in qholes]
+        ring_counts.append(1 + len(holes))
+        ring_sizes.append(len(verts))
+        flat.extend(verts)
+        for loop in holes:
+            ring_sizes.append(len(loop))
+            flat.extend(loop)
+        attrs = {k: v for k, v in raw.items()
+                 if k not in ("vertices", "holes")}
+        if _face_attrs_from_json(attrs):
+            key = json.dumps(attrs, sort_keys=True, default=str)
+            k = table_index.get(key)
+            if k is None:
+                k = table_index[key] = len(table)
+                table.append(attrs)
+            face_attr.append(k)
+        else:
+            face_attr.append(-1)
+    if not flat:
+        return None
+    ne = len(raw_edges)
+    meta: dict = {"face_attrs": table}
+    if names:
+        meta["edge_layers"] = list(names)
+    return dict(
+        meta=meta,
+        pos=np.asarray(flat, dtype=np.float64).reshape(-1, 3),
+        edges=np.arange(2 * ne, dtype=np.int64).reshape(-1, 2),
+        flags=np.asarray(flags, dtype=np.uint8),
+        curves=(np.asarray(curves, dtype=np.int64)
+                if any(c >= 0 for c in curves) else None),
+        layers=(np.asarray(layers, dtype=np.int32) if names else None),
+        rings=np.arange(n_edge_pts, len(flat), dtype=np.int64),
+        sizes=np.asarray(ring_sizes, dtype=np.int64),
+        counts=np.asarray(ring_counts, dtype=np.int64),
+        face_attr=np.asarray(face_attr, dtype=np.int64),
+        sequential=small)
+
+
+def _payload_from_arrays(src) -> dict:
+    """The JSON block :func:`_json_arrays` read, back from its arrays: the
+    same points (the document's own floats), flags, curves, layers, rings
+    (nested holes already dropped — dropping again keeps them) and face
+    attributes, for :func:`_load_mesh_json`."""
+    pos = src["pos"].tolist()
+    names = src["meta"].get("edge_layers") or []
+    flags = src["flags"].tolist()
+    curves = src["curves"].tolist() if src["curves"] is not None else None
+    layers = src["layers"].tolist() if src["layers"] is not None else None
+    edges = []
+    for i, (a, b) in enumerate(src["edges"].tolist()):
+        raw = {"a": pos[a], "b": pos[b]}
+        if flags[i] & 1:
+            raw["soft"] = True
+        if flags[i] & 2:
+            raw["hidden"] = True
+        if curves is not None and curves[i] >= 0:
+            raw["curve"] = curves[i]
+        if layers is not None and layers[i] >= 0:
+            raw["layer"] = names[layers[i]]
+        edges.append(raw)
+    rings = src["rings"].tolist()
+    sizes = src["sizes"].tolist()
+    table = src["meta"].get("face_attrs") or []
+    faces = []
+    c = r = 0
+    for nr, k in zip(src["counts"].tolist(), src["face_attr"].tolist()):
+        loops = []
+        for _ in range(nr):
+            loops.append([pos[i] for i in rings[c:c + sizes[r]]])
+            c += sizes[r]
+            r += 1
+        raw = dict(table[k]) if k >= 0 else {}
+        raw["vertices"] = loops[0]
+        if len(loops) > 1:
+            raw["holes"] = loops[1:]
+        faces.append(raw)
+    return {"edges": edges, "faces": faces}
+
+
+def _load_mesh_json(mesh, payload) -> None:
+    """:func:`_load_mesh` of a JSON block already cleared of non-finite
+    points: the bulk pass, or the per-entity walk for a small one."""
+    import numpy as np
+    import core.mesh as _mesh_mod
+    from core.topology import _maximal_holes
+
     raw_edges = payload.get("edges", [])
     raw_faces = payload.get("faces", [])
     if not _bulk_sized(len(raw_edges), len(raw_faces)):
@@ -1383,17 +1766,22 @@ def _geometry_arrays(meta, blob: bytes) -> dict:
     return out
 
 
+def _document_geometry_arrays(meta, geom: dict) -> dict:
+    """Read and validate a mesh's referenced format-3 geometry block."""
+    member = meta.get("member") if isinstance(meta, dict) else None
+    blob = geom.get(member)
+    if blob is None:
+        raise ValueError(f"the document lost its geometry block {member!r}")
+    return _geometry_arrays(meta, blob)
+
+
 def _load_geometry(mesh, meta, geom: dict) -> None:
     """Rebuild a mesh from its format-3 block — the same weld and the same
     bulk edge/face creation as the JSON path, fed from arrays."""
     import numpy as np
     import core.mesh as _mesh_mod
 
-    member = meta.get("member") if isinstance(meta, dict) else None
-    blob = geom.get(member)
-    if blob is None:
-        raise ValueError(f"the document lost its geometry block {member!r}")
-    a = _geometry_arrays(meta, blob)
+    a = _document_geometry_arrays(meta, geom)
     pos = a["pos"]
     edges, rings = a["edges"], a["rings"]
     sizes, counts = a["ring_sizes"], a["ring_counts"]
@@ -1424,6 +1812,29 @@ def _load_geometry(mesh, meta, geom: dict) -> None:
         face_attr = face_attr[~face_bad]
     if not len(pos) or not (len(edges) or len(counts)):
         return
+    if curves is not None and curves.size:
+        top = int(curves.max())
+        if top >= _mesh_mod._CURVE_COUNTER:
+            _mesh_mod._CURVE_COUNTER = top + 1
+
+    def build(mesh):
+        _build_geometry(mesh, meta, pos, edges, flags, curves, layers,
+                        rings, sizes, counts, face_attr)
+    from core import _native
+    if not (_native.wanted()
+            and _mesh_mod.DeferredMesh.defer(
+                mesh, build, len(counts),
+                dict(meta=meta, pos=pos, edges=edges, flags=flags,
+                     curves=curves, layers=layers, rings=rings, sizes=sizes,
+                     counts=counts, face_attr=face_attr))):
+        build(mesh)
+
+
+def _build_geometry(mesh, meta, pos, edges, flags, curves, layers, rings,
+                    sizes, counts, face_attr) -> None:
+    """The objects of a format-3 block: :func:`_load_geometry`'s second
+    half, run at once or, for a lazy mesh, on its first touch."""
+    import numpy as np
 
     vobjs, inverse = mesh.bulk_weld(pos.astype(np.float64))
     emap = None
@@ -1439,10 +1850,6 @@ def _load_geometry(mesh, meta, geom: dict) -> None:
                   else [-1] * len(edges))
             eflags = [(s, c if c >= 0 else None, names[l] if l >= 0 else None,
                        h) for s, c, l, h in zip(soft, cl, ll, hidden)]
-            if curves is not None and curves.size:
-                top = int(curves.max())
-                if top >= _mesh_mod._CURVE_COUNTER:
-                    _mesh_mod._CURVE_COUNTER = top + 1
         emap = mesh.add_edges_welded(vobjs, inverse[edges[:, 0]],
                                      inverse[edges[:, 1]], eflags)
     if len(counts):

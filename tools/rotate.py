@@ -240,6 +240,21 @@ class RotateTool(ProtractorBase):
             return True
         return False
 
+    def array_pending(self, viewport) -> bool:
+        """Whether a rotate-COPY was just made, so «3x» / «/3» would fan a
+        polar array: a bare «x» then opens the value box (#542). The same
+        test ``on_array_value`` applies."""
+        last = self._last
+        if last is None or not last.get("copy") or self.ref_point is not None:
+            return False
+        stack = getattr(viewport.history, "undo_stack", None)
+        return bool(stack) and stack[-1] is last["cmd"]
+
+    def close_array_window(self) -> None:
+        """Esc right after a rotate-copy: «3x» / «/3» stop applying and a
+        bare X is the Text shortcut again (#542)."""
+        self._last = None
+
     def on_array_value(self, viewport, count: int, mode: str) -> bool:
         """The classic polar array, typed right after a rotate-COPY: ``3x``
         lays three copies at multiples of the angle (30° → 30/60/90) and

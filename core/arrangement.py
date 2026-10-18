@@ -42,6 +42,21 @@ def _key(x: float, y: float) -> tuple[int, int]:
     return (round(x / _TOL), round(y / _TOL))
 
 
+def _area_floor(xy) -> float:
+    """The least area a traced loop needs to be a face rather than noise.
+
+    A loop thinner than the weld tolerance -- an out-and-back walk, a
+    rounding sliver -- has a mean width ``2·area/perimeter`` under ``_TOL``.
+    The old floor was ``_TOL`` itself read as an AREA: 1 cm², so a 5 mm
+    circle or a countersink's rim never became a face (tutorial hunt 2, B8).
+    The cap stays at ``_TOL`` so a big loop is never asked for more than
+    before."""
+    n = len(xy)
+    per = sum(math.hypot(xy[(i + 1) % n][0] - xy[i][0],
+                         xy[(i + 1) % n][1] - xy[i][1]) for i in range(n))
+    return min(_TOL, _TOL * per / 2.0)
+
+
 def plane_basis(normal: QVector3D) -> tuple[QVector3D, QVector3D]:
     """Two orthonormal in-plane axes for ``normal`` (stable choice of reference)."""
     n = normal.normalized()
@@ -252,9 +267,10 @@ def _classify(loops, coords) -> list:
     for loop in loops:
         xy = [coords[k] for k in loop]
         area = _signed_area(xy)
-        if area > _TOL:
+        floor = _area_floor(xy)
+        if area > floor:
             faces.append((xy, area))
-        elif area < -_TOL:
+        elif area < -floor:
             holes.append((xy, -area))
 
     if not faces:
@@ -274,7 +290,8 @@ def _classify(loops, coords) -> list:
     for hxy, harea in holes:
         hp = _interior_point(hxy)
         for fi, (fxy, farea) in enumerate(faces):
-            if farea > harea + _TOL and _point_in_polygon(hp, fxy):
+            if (farea > harea + _area_floor(hxy)
+                    and _point_in_polygon(hp, fxy)):
                 face_holes[fi].append(hxy)
                 break
 

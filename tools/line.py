@@ -49,6 +49,8 @@ class LineTool(Tool):
     #: changes. Drawing deliberately off-axis by a couple of degrees stays
     #: possible; the toggle Alt still switches it off entirely.
     magnetic_axis_deg = 3.0
+    axis_source = True
+    axis_source_empty_only = True
 
     #: …and the axes that the one above CANNOT reach, found in pixels.
     #:

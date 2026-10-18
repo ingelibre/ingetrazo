@@ -87,8 +87,8 @@ class EraserTool(Tool):
                                 rect_only=True)
                      if pick_label is not None else None)
             viewport.set_hover(label if label is not None else
-                               viewport.pick_edge(ctx.screen.x(),
-                                                  ctx.screen.y()))
+                               self._pick(viewport, ctx.screen.x(),
+                                          ctx.screen.y()))
         viewport.update()
 
     def on_release(self, viewport) -> None:
@@ -178,6 +178,13 @@ class EraserTool(Tool):
                  (6, 4), (0, 4), (1, 5), (2, 6), (3, 7))
         return [(c[i], c[j]) for i, j in pairs]
 
+    @staticmethod
+    def _pick(viewport, sx: float, sy: float):
+        """Only an edge the user can see: a stroke across a face took the
+        edges behind it too (#663), as Select stopped doing in #71."""
+        pick = getattr(viewport, "pick_visible_edge", None)
+        return (pick or viewport.pick_edge)(sx, sy)
+
     def _mark(self, viewport, sx: float, sy: float) -> None:
         self._viewport = viewport
         pick_label = getattr(viewport, "pick_text_label", None)
@@ -188,7 +195,7 @@ class EraserTool(Tool):
             if label is not None:
                 self.marked.add(label)
                 return
-        edge = viewport.pick_edge(sx, sy)
+        edge = self._pick(viewport, sx, sy)
         if edge is not None:
             # A curve is one entity: marking a segment marks its contour.
             for e in viewport.scene.mesh.curve_edges(edge):

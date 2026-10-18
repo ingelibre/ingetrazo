@@ -71,6 +71,7 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
         self.hover_point: QVector3D | None = None
         self.work_plane: tuple[QVector3D, QVector3D] | None = None
         self._viewport = None
+        self._last = None      # (command, centre, first vertex, u, v)
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -100,12 +101,27 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
         ctx.viewport.update()
 
     def on_segments_value(self, viewport, n: int) -> bool:
-        """The classic "24s": the side count, typed at any moment."""
+        """The classic "24s": the side count, typed at any moment -- and,
+        right after a shape is drawn, that shape is rebuilt in place with
+        the new count, one undo step, as the Arc does (#305)."""
         n = int(n)
         if n < 3:
             return False
         self.sides = n
         viewport.flash_status(tr("{n} sides", n=n))
+        last = self._last
+        stack = getattr(getattr(viewport, "history", None), "undo_stack", None)
+        if (self.start_point is None and last is not None and stack
+                and stack[-1] is last[0]):
+            _cmd, center, rim, u, v = last
+            viewport.history.undo()
+            d = rim - center
+            r = math.hypot(QVector3D.dotProduct(d, u), QVector3D.dotProduct(d, v))
+            a0 = math.atan2(QVector3D.dotProduct(d, v), QVector3D.dotProduct(d, u))
+            pts = [center + (u * math.cos(a0 + 2.0 * math.pi * k / n)
+                             + v * math.sin(a0 + 2.0 * math.pi * k / n)) * r
+                   for k in range(n)]
+            self._commit(viewport, pts, axes=(u, v), center=center)
         viewport.update()
         return True
 
@@ -177,7 +193,7 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
             return []
         point, normal = self.preview_plane(vp, self.hover_point)
         u, v = plane_axes(normal)
-        scale = self.world_per_pixel(vp, self.hover_point, u)
+        scale = self.plane_preview_scale(vp, self.hover_point, u, v)
         if scale is None:
             return []
         r = self.PREVIEW_PX * scale
@@ -210,8 +226,13 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
             out.append(center + (u * math.cos(a) + v * math.sin(a)) * r)
         return out
 
-    def _commit(self, viewport, pts: list[QVector3D]) -> None:
+    def _commit(self, viewport, pts: list[QVector3D], axes=None,
+                center=None) -> None:
         n = len(pts)
+        if axes is None:
+            axes = self._axes()
+        if center is None:
+            center = sum(pts, QVector3D()) / n
         segments = [(pts[i], pts[(i + 1) % n]) for i in range(n)]
         # The outline is drawn (a 24-segment circle reads round). What hides is
         # only a *swept* curve's vertical facets — done by Push/Pull, not here.
@@ -238,6 +259,8 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
         cmd = build_add_edges(
             viewport.scene, segments, detect_faces=False, extra=extra)
         viewport.history.execute(cmd)
+        # What «Ns» typed next needs to rebuild this shape in place.
+        self._last = (cmd, QVector3D(center), QVector3D(pts[0]), *axes)
         self._reset()
         viewport.update()
 
@@ -257,6 +280,8 @@ class CircleTool(_RadialTool):
     name = "Circle"
     shortcut = "C"
     description = "Draw a circle from its centre and radius."
+    axis_source = True
+    axis_source_empty_only = True
     sides = 24
 
 

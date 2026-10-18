@@ -294,6 +294,9 @@ class Mesh:
 
     def __init__(self) -> None:
         self._registry: dict[tuple, Vertex] = {}
+        # Moved vertices waiting for a key another vertex still holds (see
+        # _rekey).
+        self._displaced: dict[tuple, list[Vertex]] = {}
         #: Set by every mutation primitive; the viewport's cached group chunk
         #: clears it after (re)validating — an O(1) dirty signal so render
         #: caches never content-hash a 131k-vertex mesh per scene change.
@@ -1016,6 +1019,7 @@ class Mesh:
         self.faces[:] = snap["faces"]
         self._registry.clear()
         self._registry.update(snap["registry"])
+        self._displaced.clear()
         for v, p in snap["vpos"].items():
             v.position = QVector3D(p)
         for v, es in snap["vedges"].items():
@@ -1044,6 +1048,7 @@ class Mesh:
         self._chunk_dirty = True
         self._mut_serial += 1
         self._registry.clear()
+        self._displaced.clear()
         self.vertices.clear()
         self.edges.clear()
         self.faces.clear()
@@ -1072,9 +1077,12 @@ class Mesh:
         new = _key(v.position)
         if old == new:
             return
-        if self._registry.get(old) is v:
-            del self._registry[old]
-        self._registry.setdefault(new, v)
+        reg = self._registry
+        if not self._displaced and reg.get(old) is v and new not in reg:
+            del reg[old]               # the common case, kept inline
+            reg[new] = v
+            return
+        self._rekey(v, old, new)
 
     def place_vertex(self, v: Vertex, position: QVector3D) -> None:
         """Put a vertex AT ``position`` -- :meth:`move_vertex` with an
@@ -1088,9 +1096,40 @@ class Mesh:
         new = _key(v.position)
         if old == new:
             return
+        reg = self._registry
+        if not self._displaced and reg.get(old) is v and new not in reg:
+            del reg[old]               # the common case, kept inline
+            reg[new] = v
+            return
+        self._rekey(v, old, new)
+
+    def _rekey(self, v: Vertex, old: tuple, new: tuple) -> None:
+        """File a moved vertex under its new key.
+
+        A selection moved along itself -- two chained lines shifted one
+        length down their own axis -- moves each vertex onto the spot the
+        next one still holds. The newcomer cannot take that key yet, so it
+        waits in ``_displaced``; when the holder moves on, the first waiter
+        still standing there takes the key. Without the queue the moved
+        vertex was never filed again: Delete missed its edges and a new line
+        to it welded a duplicate."""
         if self._registry.get(old) is v:
             del self._registry[old]
-        self._registry.setdefault(new, v)
+            for w in self._displaced.pop(old, ()):
+                if w is not v and w.edges and _key(w.position) == old:
+                    self._registry[old] = w
+                    break
+        else:
+            waiting = self._displaced.get(old)
+            if waiting is not None:
+                waiting[:] = [w for w in waiting if w is not v]
+                if not waiting:
+                    del self._displaced[old]
+        holder = self._registry.get(new)
+        if holder is None:
+            self._registry[new] = v
+        elif holder is not v:
+            self._displaced.setdefault(new, []).append(v)
 
     def split_edge(self, edge: Edge, position: QVector3D) -> tuple[Edge, Edge]:
         """Split ``edge`` at ``position``, inserting a shared vertex, and return
@@ -1414,6 +1453,7 @@ class Mesh:
         loops_out.sort(key=lambda lp: _loop_area(lp), reverse=True)
         outer = loops_out[0]
         holes = loops_out[1:]
+        _orient_union_loops(outer, holes, face_a.normal())
         shared_edges = [self.find_edge(by_id[next(iter(k))],
                                        by_id[list(k)[-1]]) for k in shared]
         self.remove_face(face_a)
@@ -1476,6 +1516,7 @@ class Mesh:
             return faces[0]
         loops_out.sort(key=_loop_area, reverse=True)
         outer, holes = loops_out[0], loops_out[1:]
+        _orient_union_loops(outer, holes, n0)
         interior = [self.find_edge(by_id[tuple(k)[0]], by_id[tuple(k)[-1]])
                     for k, c in counts.items() if c >= 2]
         for f in faces:
@@ -1581,6 +1622,89 @@ class Mesh:
         merged_face = self.add_face(loop_positions, hole_positions or None)
         merged_face.attrs = dict(_dominant_attrs((face_a, face_b)))
         return merged_face
+
+
+
+def _deferred_state(name):
+    def get(self):
+        self._materialize()
+        return getattr(self, name)
+
+    def put(self, value):
+        self._materialize()
+        setattr(self, name, value)
+    return property(get, put)
+
+
+class DeferredMesh(Mesh):
+    """A mesh read from a document whose vertices, edges and faces are not
+    built yet (the experimental engine's lazy meshes): the first touch of
+    any of them builds them, with the very code an eager read runs, and
+    turns the object back into a plain :class:`Mesh`. A big model whose
+    groups are only looked at never pays for millions of Python objects.
+
+    :meth:`defer` only takes an EMPTY mesh, so the deferred build welds
+    against the same empty registry the eager one would."""
+
+    vertices = _deferred_state("vertices")
+    edges = _deferred_state("edges")
+    faces = _deferred_state("faces")
+    _registry = _deferred_state("_registry")
+    _displaced = _deferred_state("_displaced")
+
+    @staticmethod
+    def defer(mesh: Mesh, build, nfaces: int, source=None) -> bool:
+        """Turn ``mesh`` into a deferred one that runs ``build(mesh)`` on
+        first touch and makes exactly ``nfaces`` faces; ``source`` is what
+        it is built from, for :mod:`core.lazy_mesh` (kept until built).
+        False (nothing done) unless it is a plain empty mesh."""
+        d = mesh.__dict__
+        if (type(mesh) is not Mesh or d["vertices"] or d["edges"]
+                or d["faces"] or d["_registry"]):
+            return False
+        d["_deferred"] = build
+        d["_deferred_nfaces"] = nfaces
+        d["_deferred_source"] = source
+        mesh.__class__ = DeferredMesh
+        return True
+
+    def _materialize(self) -> None:
+        build = self.__dict__.pop("_deferred")
+        del self.__dict__["_deferred_nfaces"]
+        del self.__dict__["_deferred_source"]
+        self.__dict__.pop("_deferred_plan", None)
+        self.__class__ = Mesh
+        build(self)
+
+    def __reduce_ex__(self, protocol):
+        # deepcopy / pickle copy the built mesh, never the pending build.
+        self._materialize()
+        return self.__reduce_ex__(protocol)
+
+
+def face_count(mesh) -> int:
+    """``len(mesh.faces)``, without building a deferred mesh to learn it."""
+    if type(mesh) is DeferredMesh:
+        return mesh.__dict__["_deferred_nfaces"]
+    return len(mesh.faces)
+
+
+def face_attrs(mesh):
+    """Each face's own attrs, in face order — for a deferred mesh only the
+    first face of each distinct set (what a first-wins tally of materials
+    needs), read from the document without building the mesh."""
+    if type(mesh) is DeferredMesh:
+        import numpy as np
+        from formats.igz import _face_attrs_from_json
+        src = mesh.__dict__["_deferred_source"]
+        table = src["meta"].get("face_attrs") or []
+        fa = np.asarray(src["face_attr"], dtype=np.int64)
+        _u, first = np.unique(fa, return_index=True)
+        for k in fa[np.sort(first)].tolist():
+            yield (_face_attrs_from_json(table[k]) or {}) if k >= 0 else {}
+        return
+    for f in mesh.faces:
+        yield f.attrs
 
 
 def turn_face_over(face) -> None:
@@ -1700,6 +1824,22 @@ def _trace_loops(outline: list[tuple[Vertex, Vertex]]) -> Optional[list[list[Ver
             prev, cur = cur, nxt
         loops.append(loop)
     return loops
+
+
+def _orient_union_loops(
+    outer: list[Vertex], holes: list[list[Vertex]], normal: QVector3D
+) -> None:
+    """Restore face winding after tracing an undirected union boundary.
+
+    The tracer may choose either direction independently for each loop.
+    Keep the source face's front side and wind holes opposite to the outer
+    boundary, without swapping front/back paint.
+    """
+    if QVector3D.dotProduct(Face(outer).normal(), normal) < 0:
+        outer.reverse()
+    for hole in holes:
+        if QVector3D.dotProduct(Face(hole).normal(), normal) > 0:
+            hole.reverse()
 
 
 def _loop_area(loop: list[Vertex]) -> float:

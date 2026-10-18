@@ -214,7 +214,12 @@ def test_the_window_on_the_next_wall_starts_level_with_the_first_one():
         far = _hover(vp, V(8, 4.0, 1.0))
         _click(vp, far)
         assert len(vp.scene.mesh.faces) == faces_before + 1
-        new = vp.scene.mesh.faces[-1]
+        # The window, not the wall it was cut out of: the wall's plane is
+        # rebuilt after a rectangle (#538), so the list order says nothing.
+        new = next(f for f in vp.scene.mesh.faces
+                   if not f.holes and len(f.vertices) == 4
+                   and {round(v.x(), 6) for v in f.vertices} == {8.0}
+                   and max(v.y() for v in f.vertices) < 5.0 - 1e-6)
         zs = sorted({round(v.z(), 6) for v in new.vertices})
         xs = {round(v.x(), 6) for v in new.vertices}
         assert xs == {8.0}, xs                          # on the right wall

@@ -654,6 +654,42 @@ def test_list_models_filters_and_strips(monkeypatch):
     assert calls["headers"]["x-api-key"] == "sk-ant-k"
 
 
+def test_panel_builds_without_fixed_font_lookup(monkeypatch):
+    # Flatpak (#279): resolving QFontDatabase.FixedFont walks a host
+    # fontconfig fallback and can segfault while the panel is built. The
+    # chat must come up on the inherited application font instead.
+    from PySide6.QtGui import QFontDatabase
+    from plugins.ai_assistant import AsistentePanel
+
+    original = QFontDatabase.systemFont
+
+    def reject_fixed(which):
+        if which == QFontDatabase.FixedFont:
+            raise RuntimeError("FixedFont lookup must not run")
+        return original(which)
+
+    monkeypatch.setattr(QFontDatabase, "systemFont", reject_fixed)
+
+    panel = AsistentePanel(object())
+    try:
+        chat, prompt = panel._chat, panel._input
+        assert chat.isReadOnly()
+        chat.setPlainText("respuesta")
+        assert chat.toPlainText() == "respuesta"
+        prompt.setText("dibuja un muro")
+        assert prompt.text() == "dibuja un muro"
+
+        app_font = QApplication.instance().font()
+        for widget in (chat, prompt):
+            assert widget.font().family() == app_font.family()
+            assert widget.fontMetrics().lineSpacing() > 0
+        line = prompt.fontMetrics().lineSpacing()
+        assert prompt.minimumHeight() == 2 * line + 12
+    finally:
+        panel.deleteLater()
+        QApplication.instance().processEvents()
+
+
 def test_chat_colors_follow_theme():
     from PySide6.QtGui import QColor, QPalette
     from plugins.ai_assistant import AsistenteDialog
@@ -851,3 +887,24 @@ def test_rejected_key_names_the_prefix_to_check():
     hint = AsistenteDialog._bad_key_hint("groq", err)
     assert hint is not None and "gsk_" in hint
     assert AsistenteDialog._bad_key_hint("groq", "HTTP 503: busy") is None
+
+
+def test_openai_asks_for_max_completion_tokens():
+    """OpenAI's newer models reject ``max_tokens`` with HTTP 400 (#517);
+    ``max_completion_tokens`` works for all of them. The other
+    OpenAI-compatible services keep ``max_tokens``, the name they accept."""
+    msgs = [{"role": "user", "text": "x"}]
+    _u, _h, payload = ai.build_request("openai", "gpt-5", "sk-k", "SYS",
+                                       msgs, max_tokens=8192)
+    body = json.loads(payload)
+    assert body["max_completion_tokens"] == 8192
+    assert "max_tokens" not in body
+    for provider in ("groq", "gemini", "openrouter", "deepseek", "ollama"):
+        _u, _h, payload = ai.build_request(provider, "m", "k", "SYS", msgs,
+                                           max_tokens=8192)
+        body = json.loads(payload)
+        assert body["max_tokens"] == 8192, provider
+        assert "max_completion_tokens" not in body, provider
+    _u, _h, payload = ai.build_request("anthropic", "claude-sonnet-5", "k",
+                                       "SYS", msgs, max_tokens=8192)
+    assert json.loads(payload)["max_tokens"] == 8192

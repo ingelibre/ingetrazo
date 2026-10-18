@@ -17,17 +17,21 @@ pattern); Cancel touches nothing.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QSettings
-from PySide6.QtGui import QIcon, QPixmap
+from pathlib import Path
+
+from PySide6.QtCore import QSettings, Qt
+from PySide6.QtGui import QFontDatabase, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDoubleSpinBox,
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QSpinBox,
     QTabWidget,
     QLabel,
@@ -35,6 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core import _native
 from core import general_settings as _gs
 from core.i18n import LANGUAGE_NAMES as _LANGUAGE_NAMES
 from core.i18n import available_languages, current_language, tr
@@ -152,6 +157,7 @@ class PreferencesDialog(QDialog):
         self._scale_figure.setChecked(
             str(st.value("new_document/scale_figure", "1")) != "0")
         form.addRow("", self._scale_figure)
+        self._build_figure_rows(form, st)
 
         self._invert = QCheckBox(tr("Invert mouse wheel zoom"))
         self._invert.setChecked(str(st.value("nav/invert_wheel", "0"))
@@ -206,6 +212,23 @@ class PreferencesDialog(QDialog):
             "(XWayland) draws smoothly and stays crisp. Takes effect at the "
             "next start."))
         form.addRow(tr("Graphics server:"), self._platform)
+
+        # The experimental Rust engine (core._native): off by default, read
+        # once at start. Greyed out in a build that does not carry it.
+        self._rust = QCheckBox(tr("Rust engine (experimental)"))
+        self._rust.setChecked(str(_gs.value(_native.SETTING, "0", st)) == "1")
+        if _native.available() is None:
+            self._rust.setEnabled(False)
+            self._rust.setToolTip(tr("This build of IngeTrazo does not carry "
+                                     "the Rust engine."))
+        else:
+            self._rust.setToolTip(tr(
+                "Computes the heavy parts (hidden lines of the sheets and "
+                "more) with the new native engine, much faster on big "
+                "models. It is a test: keep a copy of your files and "
+                "report anything odd with the label rust-engine. Takes "
+                "effect at the next start."))
+        form.addRow("", self._rust)
         tabs.addTab(general, tr("General"))
 
         # ---- 3D mouse (issue #108) -------------------------------------------
@@ -252,6 +275,25 @@ class PreferencesDialog(QDialog):
                 "macOS is not supported yet."))
         status.setWordWrap(True)
         form.addRow("", status)
+        # Live reading: nobody on the team has a device, so an owner can say
+        # which number each move of the cap changes and which way IngeTrazo
+        # takes it — one look settles a sign (#108, the 12-10 video).
+        if name:
+            hint = QLabel(tr("Live reading — move the cap one way at a time:"))
+            hint.setWordWrap(True)
+            form.addRow("", hint)
+            self._ndof_raw = QLabel("—")
+            self._ndof_read = QLabel("—")
+            mono = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+            for lab in (self._ndof_raw, self._ndof_read):
+                lab.setFont(mono)
+                lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                form.addRow("", lab)
+            dev = shared_input()
+            dev.raw.connect(self._show_ndof_raw)
+            dev.motion.connect(self._show_ndof_read)
+            # The device outlives the dialog: let go when it closes.
+            self.finished.connect(self._drop_ndof_monitor)
         tabs.addTab(mouse3d, tr("3D Mouse"))
 
         # ---- Import ---------------------------------------------------------
@@ -366,6 +408,27 @@ class PreferencesDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def _drop_ndof_monitor(self, _result=0) -> None:
+        from views.ndof_input import shared_input
+        dev = shared_input()
+        for sig, slot in ((dev.raw, self._show_ndof_raw),
+                          (dev.motion, self._show_ndof_read)):
+            try:
+                sig.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass
+
+    def _show_ndof_raw(self, values) -> None:
+        names = ("X", "Y", "Z", "RX", "RY", "RZ")
+        self._ndof_raw.setText(tr("Device:") + "  " + "  ".join(
+            f"{n} {v:+5d}" for n, v in zip(names, values)))
+
+    def _show_ndof_read(self, sample, _dt) -> None:
+        self._ndof_read.setText(tr(
+            "IngeTrazo: right {r:+.2f}  up {u:+.2f}  forward {f:+.2f}  "
+            "tilt {t:+.2f}  twist {s:+.2f}", r=sample.right, u=sample.up,
+            f=sample.forward, t=sample.tilt, s=sample.spin))
+
     def show_units_page(self) -> None:
         """Open on the Units page (Window ▸ Units…, Ctrl+U)."""
         self._tabs.setCurrentWidget(self._units_page)
@@ -376,6 +439,133 @@ class PreferencesDialog(QDialog):
         self._shortcuts.pick(action)
 
     # ---- Apply --------------------------------------------------------------
+    # ---- Scale figure of new documents (#655) ----------------------------
+
+    def _build_figure_rows(self, form, st) -> None:
+        """Which person stands in a new document: one of the bundled cutouts
+        or the user's own picture (a PNG on a transparent background, and
+        the height that person stands)."""
+        from core import scale_figure as sf
+        self._figure = QComboBox()
+        for p in sf.people():
+            icon = QIcon(str(sf.people_dir() / f"{p['key']}.png"))
+            self._figure.addItem(
+                icon, f"{tr(p['name'])} ({float(p['height']):.2f} m)",
+                p["key"])
+        self._figure.addItem(tr("My own picture…"), sf.CUSTOM)
+        pick = str(st.value(sf.KEY_PICK, sf.DEFAULT_PICK) or sf.DEFAULT_PICK)
+        self._figure.setCurrentIndex(max(0, self._figure.findData(pick)))
+        form.addRow(tr("Scale figure:"), self._figure)
+
+        # The user's own picture: what is stored, a new file only once OK
+        # copies it into the data folder (Cancel leaves nothing behind).
+        image = str(st.value(sf.KEY_IMAGE, "") or "")
+        self._figure_image = image if Path(image).is_file() else ""
+        self._figure_source = ""
+        row = QWidget()
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self._figure_pick_btn = QPushButton(tr("Choose picture…"))
+        self._figure_pick_btn.clicked.connect(self._choose_figure_picture)
+        self._figure_height = QDoubleSpinBox()
+        self._figure_height.setRange(sf.MIN_HEIGHT, sf.MAX_HEIGHT)
+        self._figure_height.setDecimals(2)
+        self._figure_height.setSingleStep(0.01)
+        self._figure_height.setSuffix(" m")
+        self._figure_height.setToolTip(tr("The height this person stands"))
+        try:
+            self._figure_height.setValue(float(st.value(sf.KEY_HEIGHT, 1.70)))
+        except (TypeError, ValueError):
+            self._figure_height.setValue(1.70)
+        self._figure_name = QLineEdit(str(st.value(sf.KEY_NAME, "") or ""))
+        self._figure_name.setPlaceholderText(tr("Name"))
+        lay.addWidget(self._figure_pick_btn)
+        lay.addWidget(self._figure_height)
+        lay.addWidget(self._figure_name, 1)
+        self._figure_custom_row = row
+        form.addRow("", row)
+        self._figure_file_label = QLabel()
+        self._figure_file_label.setWordWrap(True)
+        form.addRow("", self._figure_file_label)
+
+        self._figure.currentIndexChanged.connect(self._on_figure_pick)
+        self._scale_figure.toggled.connect(self._sync_figure_rows)
+        self._figure_last = self._figure.currentIndex()
+        self._sync_figure_rows()
+
+    def _figure_is_custom(self) -> bool:
+        from core import scale_figure as sf
+        return self._figure.currentData() == sf.CUSTOM
+
+    def _sync_figure_rows(self) -> None:
+        on = self._scale_figure.isChecked()
+        custom = self._figure_is_custom()
+        self._figure.setEnabled(on)
+        self._figure_custom_row.setVisible(custom)
+        self._figure_custom_row.setEnabled(on)
+        shown = self._figure_source or self._figure_image
+        self._figure_file_label.setVisible(custom and bool(shown))
+        if shown:
+            self._figure_file_label.setText(
+                "<small>" + Path(shown).name + "</small>")
+
+    def _on_figure_pick(self, _index: int) -> None:
+        # «My own picture…» with none chosen yet asks for one at once; a
+        # cancelled dialog goes back to the person shown before.
+        if (self._figure_is_custom() and not self._figure_image
+                and not self._figure_source
+                and not self._choose_figure_picture()):
+            self._figure.blockSignals(True)
+            self._figure.setCurrentIndex(self._figure_last)
+            self._figure.blockSignals(False)
+        self._figure_last = self._figure.currentIndex()
+        self._sync_figure_rows()
+
+    def _choose_figure_picture(self) -> bool:
+        from views.filedialogs import file_dialogs as fd
+        path, _ = fd.getOpenFileName(
+            self, tr("Choose the picture of your scale figure"), "",
+            tr("Images") + " (*.png *.webp);;" + tr("All files") + " (*)")
+        if not path:
+            return False
+        from PySide6.QtGui import QImage
+        img = QImage(path)
+        if img.isNull() or img.height() == 0:
+            QMessageBox.warning(self, tr("Scale figure"),
+                                tr("That file is not a picture IngeTrazo can read."))
+            return False
+        if not img.hasAlphaChannel():
+            QMessageBox.information(
+                self, tr("Scale figure"),
+                tr("This picture has no transparent background, so it will "
+                   "show as a rectangle. A PNG cut out around the person "
+                   "looks best."))
+        self._figure_source = path
+        if not self._figure_name.text().strip():
+            self._figure_name.setText(Path(path).stem.replace("_", " "))
+        self._sync_figure_rows()
+        return True
+
+    def _save_figure(self, st) -> None:
+        from core import scale_figure as sf
+        pick = self._figure.currentData()
+        if pick == sf.CUSTOM and self._figure_source:
+            try:
+                self._figure_image = str(sf.store_picture(self._figure_source))
+            except (OSError, ValueError):
+                QMessageBox.warning(
+                    self, tr("Scale figure"),
+                    tr("The picture could not be copied; the previous "
+                       "figure is kept."))
+                return
+        if pick == sf.CUSTOM and not self._figure_image:
+            return
+        st.setValue(sf.KEY_PICK, pick)
+        if pick == sf.CUSTOM:
+            st.setValue(sf.KEY_IMAGE, self._figure_image)
+            st.setValue(sf.KEY_HEIGHT, round(self._figure_height.value(), 3))
+            st.setValue(sf.KEY_NAME, self._figure_name.text().strip())
+
     def accept(self) -> None:  # noqa: D102 — QDialog override
         st = QSettings()
 
@@ -438,11 +628,19 @@ class PreferencesDialog(QDialog):
                     "1" if self._ask_section.isChecked() else "0")
         st.setValue("new_document/scale_figure",
                     "1" if self._scale_figure.isChecked() else "0")
+        self._save_figure(st)
         _gs.set_value("undo_steps", int(self._undo_steps.value()), st)
         history = getattr(getattr(self._window, "viewport", None), "history", None)
         if history is not None:
             history.max_steps = int(self._undo_steps.value())
         _gs.set_value("platform", self._platform.currentData(), st)
+        rust = "1" if self._rust.isChecked() else "0"
+        if self._rust.isEnabled() and rust != str(
+                _gs.value(_native.SETTING, "0", st)):
+            _gs.set_value(_native.SETTING, rust, st)
+            QMessageBox.information(
+                self, tr("Rust engine (experimental)"),
+                tr("Restart IngeTrazo to switch the engine."))
         setup = getattr(self._window, "_setup_autosave", None)
         if callable(setup):
             setup()                     # re-arm the timer with the new pace

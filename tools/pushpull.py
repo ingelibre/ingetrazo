@@ -46,7 +46,7 @@ from PySide6.QtWidgets import QApplication
 
 from core.geometry import Face
 from core.i18n import tr
-from core.mesh import _STITCH_TOL, PAINT_KEYS
+from core.mesh import _STITCH_TOL, PAINT_KEYS, Mesh
 # MeshFace is core.mesh's Face — the class scene meshes are built from. The
 # geometry.Face imported above is a DIFFERENT legacy class; an isinstance
 # against IT is always False, so the preselection arm checks MeshFace.
@@ -325,6 +325,9 @@ class PushPullTool(Tool):
         self._prism_cap: bool = False
         self._drag_pre_oriented: bool = False
         self._anchor: QVector3D | None = None  # fixed centroid for measuring extrusion
+        # Where the face was clicked, on its plane: the drag measures from
+        # here (see _grab_point).
+        self._grab: QVector3D | None = None
         self._normal: QVector3D | None = None
         self._cap_positions: list[QVector3D] = []  # original cap vertices
         # The clean model under a STAGED preview (see _show_staged_preview):
@@ -519,11 +522,12 @@ class PushPullTool(Tool):
         if inferred is not None:
             self.extrusion = inferred
         else:
+            grab = self._grab if self._grab is not None else self._anchor
             projected = viewport._project_to_lock_line(
-                self._anchor, self._normal, ctx.screen.x(), ctx.screen.y()
+                grab, self._normal, ctx.screen.x(), ctx.screen.y()
             )
             self.extrusion = QVector3D.dotProduct(
-                projected - self._anchor, self._normal)
+                projected - grab, self._normal)
         self._clamp_extrusion(viewport)
         # A clean prism extend/shrink is previewed by MOVING the cap, so the
         # model itself shows the result and nothing of the old shape is left
@@ -574,6 +578,7 @@ class PushPullTool(Tool):
             self._drag_pre_oriented = True
             self._anchor = face.centroid()
             self._normal = self._outward_normal(face, target.mesh)
+            self._grab = self._grab_point(viewport, ctx)
             self._attached, self._prism_cap = self._classify_base(target)
             self._cap_positions = self._cap_loop_positions(face)
             self._prism_verts = self._cap_vertices(target)
@@ -596,6 +601,21 @@ class PushPullTool(Tool):
                 self._tiny_hint_shown = True
             return
         self._commit(viewport)
+
+    def _grab_point(self, viewport, ctx: ToolContext) -> QVector3D | None:
+        """The clicked spot on the face's plane, or ``None`` (the centroid
+        then stands in).
+
+        The drag is measured along the line through this point: the cursor
+        stays on it. Through the centroid instead, a click near a corner of
+        a 12 m slab read -3.39 m for a 0.3 m pull, and a ring's centroid lies
+        in its hole -- 1 m of cursor gave 0.13 m walls (tutorial hunt 2,
+        A13/B5)."""
+        hit = getattr(viewport, "_ray_hit_plane", None)
+        if hit is None or self._anchor is None or self._normal is None:
+            return None
+        return hit((ctx.screen.x(), ctx.screen.y()),
+                   (self._anchor, self._normal))
 
     def on_double_click(self, ctx: ToolContext) -> None:
         """Repeat the last committed distance on the face under the cursor,
@@ -624,6 +644,7 @@ class PushPullTool(Tool):
             self._drag_pre_oriented = True
             self._anchor = face.centroid()
             self._normal = self._outward_normal(face, target.mesh)
+            self._grab = self._grab_point(viewport, ctx)
             self._attached, self._prism_cap = self._classify_base(target)
             self._cap_positions = self._cap_loop_positions(face)
             self._prism_verts = self._cap_vertices(target)
@@ -1528,6 +1549,16 @@ class PushPullTool(Tool):
                 if id(mesh) in seen:      # shared prototypes: project once
                     continue
                 seen.add(id(mesh))
+                from core.lazy_mesh import plan_of, PlannedVertices
+                plan = plan_of(mesh)
+                if plan is not None:
+                    # A lazy mesh (experimental engine): its planned
+                    # positions, the same vertices in the same order —
+                    # pushing beside a plant no longer builds all of it.
+                    if len(plan.pos):
+                        cache.append((PlannedVertices(plan.pos),
+                                      plan.pos.copy()))
+                    continue
                 # A COPY: a staged preview edits the live list in place, and
                 # the rows of ``arr`` must keep naming the same vertices.
                 verts = list(mesh.vertices)
@@ -1580,6 +1611,16 @@ class PushPullTool(Tool):
                 best = (dd, QVector3D.dotProduct(
                     g.point - self._anchor, self._normal),
                     QVector3D(g.point), "guide_point")
+        # The origin is a point like a corner (#407): every other tool snaps
+        # to it, and pushing "level with the origin" is the usual way back
+        # to the ground plane.
+        origin = QVector3D(0.0, 0.0, 0.0)
+        pix = vp._world_to_pixel(origin)
+        if pix is not None:
+            dd = (pix[0] - sx) ** 2 + (pix[1] - sy) ** 2
+            if dd <= thr * thr and (best is None or dd < best[0]):
+                best = (dd, QVector3D.dotProduct(
+                    origin - self._anchor, self._normal), origin, "origin")
         if best is not None:
             self._inference_point = best[2]
             self._inference_kind = best[3]
@@ -1937,6 +1978,8 @@ class PushPullTool(Tool):
             base_paint = _paint_of(self.base_face)
         before_verts = ({id(v) for v in mesh.vertices}
                         if base_tag is not None or base_paint else None)
+        curve_runs = (self._curve_runs(mesh, self.base_face)
+                      if self.base_face is not None else [])
         guard = (mesh.capture_state()
                  if is_closed(mesh) and not _mesh_is_flat(mesh) else None)
         fp_before = self._mesh_fingerprint(mesh) if guard is not None else None
@@ -1953,6 +1996,7 @@ class PushPullTool(Tool):
             self._refused = True
             return
         self._soften_curve_facets(mesh, before_edges)
+        self._tag_moved_curves(mesh, curve_runs)
         if base_tag is not None or base_paint:
             # Only faces carrying at least one vertex this push created — the
             # extrusion's own walls/cap. Rebuilt neighbours (an untagged floor
@@ -1973,6 +2017,60 @@ class PushPullTool(Tool):
                     f.attrs["ifc"] = dict(base_tag)
                 if base_paint and not any(k in f.attrs for k in PAINT_KEYS):
                     f.attrs.update(base_paint)
+
+    @staticmethod
+    def _curve_runs(mesh, face) -> list:
+        """The base's curves as runs of positions: each stretch of its loops
+        whose edges share one curve id (a circle is one closed run, a
+        rounded rectangle four open ones). Read before the push."""
+        runs = []
+        for loop in (face.loop, *face.hole_loops):
+            n = len(loop)
+            if n < 2:
+                continue
+            ids = []
+            for i in range(n):
+                e = mesh.find_edge(loop[i], loop[(i + 1) % n])
+                ids.append(getattr(e, "curve", None) if e is not None else None)
+            if ids[0] is not None and all(c == ids[0] for c in ids):
+                runs.append(([QVector3D(v.position) for v in loop], True))
+                continue
+            start = next((i for i in range(n) if ids[i] != ids[i - 1]), None)
+            if start is None:
+                continue
+            i = start
+            for _ in range(n):
+                if ids[i] is not None and ids[i] != ids[i - 1]:
+                    pts = [QVector3D(loop[i].position)]
+                    j = i
+                    while ids[j] == ids[i] and len(pts) <= n:
+                        j = (j + 1) % n
+                        pts.append(QVector3D(loop[j].position))
+                    runs.append((pts, False))
+                i = (i + 1) % n
+        return runs
+
+    def _tag_moved_curves(self, mesh, runs) -> None:
+        """The base's curves, carried to the moved cap: the ring a pushed
+        circle leaves on top is a curve again, one click selects it all
+        (#626). Only the cap's own edges are looked up -- the cost is the
+        curve's, not the model's."""
+        if not runs or self._normal is None:
+            return
+        shift = self._normal * self.extrusion
+        for pts, closed in runs:
+            moved = [mesh.vertex_at(p + shift) for p in pts]
+            if any(v is None for v in moved):
+                continue
+            pairs = list(zip(moved, moved[1:]))
+            if closed:
+                pairs.append((moved[-1], moved[0]))
+            edges = [mesh.find_edge(a, b) for a, b in pairs]
+            if any(e is None or e.curve is not None for e in edges):
+                continue
+            cid = Mesh.next_curve_id()
+            for e in edges:
+                e.curve = cid
 
     @staticmethod
     def _mesh_fingerprint(mesh):
@@ -2450,6 +2548,7 @@ class PushPullTool(Tool):
         self._hover_group = None
         self._selected_arm = False
         self._anchor = None
+        self._grab = None
         self._normal = None
         self._cap_positions = []
         self._preview_snapshot = None

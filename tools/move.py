@@ -272,6 +272,8 @@ class MoveTool(Tool):
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
+        self._grip_rot = self._grip_rot_done = None
+        self._clear_grips()
         self._reset()
         self._copy = False
         self._last = None
@@ -279,6 +281,8 @@ class MoveTool(Tool):
     def on_deactivate(self, viewport) -> None:
         if self._grip_rot is not None:
             self._grip_rot.on_cancel(viewport)
+        # A helper left here kept the next Move a Rotate (#480).
+        self._grip_rot = self._grip_rot_done = None
         self._clear_grips()
         self._end_freeze(viewport)
         self._revert_preview(viewport)
@@ -454,6 +458,21 @@ class MoveTool(Tool):
             delta = direction.normalized() * value
         self._commit(viewport, delta)
         return True
+
+    def array_pending(self, viewport) -> bool:
+        """Whether a copy was just made, so «3x» / «/3» would lay an array:
+        the viewport then lets a bare «x» open the value box (#542) instead
+        of switching to Text. The same test ``on_array_value`` applies."""
+        last = self._last
+        if last is None or self.start_point is not None:
+            return False
+        stack = getattr(viewport.history, "undo_stack", None)
+        return bool(stack) and stack[-1] is last["cmd"]
+
+    def close_array_window(self) -> None:
+        """Esc right after a copy: «3x» / «/3» stop applying and a bare X
+        is the Text shortcut again (#542)."""
+        self._last = None
 
     def on_array_value(self, viewport, count: int, mode: str,
                        step: float | None = None) -> bool:

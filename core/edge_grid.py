@@ -34,7 +34,7 @@ class EdgeGrid:
     queries up to ``reach`` pixels from a cursor inside the view."""
 
     __slots__ = ("reach", "cell", "cx0", "cy0", "ncx", "ncy",
-                 "keys", "ids", "long_ids", "width", "height")
+                 "keys", "ids", "long_ids", "width", "height", "n")
 
     def __init__(self, ax, ay, bx, by, ok, width: float, height: float,
                  reach: float, cell: float = CELL_PX,
@@ -60,6 +60,7 @@ class EdgeGrid:
         cx1 = int(np.floor((self.width + self.reach) / cell))
         cy1 = int(np.floor((self.height + self.reach) / cell))
         self.ncx, self.ncy = cx1 - self.cx0 + 1, cy1 - self.cy0 + 1
+        self.n = len(live)
         idx = np.flatnonzero(live)
         x0 = np.clip(np.floor(lox[idx] / cell), self.cx0, cx1).astype(np.int64)
         x1 = np.clip(np.floor(hix[idx] / cell), self.cx0, cx1).astype(np.int64)
@@ -105,7 +106,15 @@ class EdgeGrid:
             hi = np.searchsorted(self.keys, row * self.ncx + x1, "right")
             if hi > lo:
                 parts.append(self.ids[lo:hi])
-        return np.unique(np.concatenate(parts))
+        cand = np.concatenate(parts)
+        if len(cand) * 16 < self.n:
+            return np.unique(cand)
+        # Many candidates (a whole plant in view: thousands of edges a
+        # cell): the same sorted, repeat-free indices through a mask, in
+        # one linear pass instead of a sort (~180 ms a move on #158).
+        mark = np.zeros(self.n, dtype=bool)
+        mark[cand] = True
+        return np.flatnonzero(mark)
 
 
 def segment_distances(ax, ay, bx, by, ok, px: float, py: float, which=None):

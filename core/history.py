@@ -21,6 +21,7 @@ from __future__ import annotations
 import os as _os
 import time as _time_mod
 from abc import ABC, abstractmethod
+from collections import Counter
 from pathlib import Path as _Path
 from typing import Iterable, Optional
 
@@ -1636,6 +1637,58 @@ class CreatePlanCommand(Command):
         scene.version += 1
 
 
+class ExplodeCurvesCommand(Command):
+    """Explode Curve: the curves the given edges belong to become plain
+    segments, each one picked on its own. A circle or an arc selects whole
+    because its edges share a curve id; this drops the id, the geometry
+    stays exactly as it is. Undo gives every edge its id back."""
+
+    def __init__(self, edges) -> None:
+        self.edges = list(edges)
+        self._ids: list = []
+        self.curves = 0
+
+    def do(self, scene) -> None:
+        ids = {e.curve for e in self.edges
+               if getattr(e, "curve", None) is not None}
+        self.curves = len(ids)
+        self._ids = [(e, e.curve) for e in scene.mesh.edges
+                     if e.curve in ids]
+        for e, _cid in self._ids:
+            e.curve = None
+        scene.mesh._chunk_dirty = True
+        scene.mesh._mut_serial += 1
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for e, cid in self._ids:
+            e.curve = cid
+        scene.mesh._chunk_dirty = True
+        scene.mesh._mut_serial += 1
+        scene.version += 1
+
+
+class DeleteScenesCommand(Command):
+    """Delete saved scenes, several at once (#280); undo puts each back in
+    its place in the list."""
+
+    def __init__(self, views) -> None:
+        self.views = list(views)
+        self._at: list = []
+
+    def do(self, scene) -> None:
+        self._at = [(scene.saved_views.index(v), v) for v in self.views
+                    if v in scene.saved_views]
+        for _i, v in self._at:
+            scene.saved_views.remove(v)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for i, v in sorted(self._at, key=lambda t: t[0]):
+            scene.saved_views.insert(i, v)
+        scene.version += 1
+
+
 class MoveSectionPlanesCommand(Command):
     """Translate section planes (the Move tool)."""
 
@@ -2974,7 +3027,12 @@ class SnapshotImport(Command):
     """Wrap a file import that may add loose geometry AND/OR reference groups
     (big DAE/OBJ models land as a Group). SnapshotMutation only snapshots the
     mesh, so a group added by the loader would survive undo — this also
-    remembers and reverts the groups the import appended."""
+    remembers and reverts the groups the import appended.
+
+    Sheets too: an agent asked for "a new sheet" appends a composition
+    through ``run_python``, and untracked it was no step at all — the
+    bridge said nothing changed, and its undo took the user's previous
+    edit instead (#694)."""
 
     def __init__(self, mutate) -> None:
         self.mutate = mutate
@@ -2985,6 +3043,7 @@ class SnapshotImport(Command):
         self.added_views: list = []
         self.added_dims: list = []
         self.added_texts: list = []
+        self.added_sheets: list = []
 
     def do(self, scene) -> None:
         m = scene.mesh
@@ -2994,6 +3053,7 @@ class SnapshotImport(Command):
             views_before = list(scene.saved_views)
             dims_before = list(scene.dimensions)
             texts_before = list(scene.text_labels)
+            sheets_before = list(scene.compositions)
             self.before = m.capture_state()
             try:
                 self.mutate(scene)
@@ -3001,7 +3061,7 @@ class SnapshotImport(Command):
                 # History.execute restores the mesh, but a loader or AI
                 # recipe that fails halfway has already appended groups
                 # (extrude/revolve land one per call), layers, views,
-                # dimensions or labels — leave none of them behind.
+                # dimensions, labels or sheets — leave none of them behind.
                 scene.groups[:] = [g for g in scene.groups
                                    if g in groups_before]
                 scene.layers[:] = [ly for ly in scene.layers
@@ -3012,6 +3072,8 @@ class SnapshotImport(Command):
                                        if d in dims_before]
                 scene.text_labels[:] = [t for t in scene.text_labels
                                         if t in texts_before]
+                scene.compositions[:] = [c for c in scene.compositions
+                                         if c in sheets_before]
                 raise
             self.after = m.capture_state()
             self.added_groups = [g for g in scene.groups
@@ -3024,6 +3086,8 @@ class SnapshotImport(Command):
                                if d not in dims_before]
             self.added_texts = [t for t in scene.text_labels
                                 if t not in texts_before]
+            self.added_sheets = [c for c in scene.compositions
+                                 if c not in sheets_before]
         else:
             m.restore_state(self.after)
             for g in self.added_groups:
@@ -3041,6 +3105,9 @@ class SnapshotImport(Command):
             for t in self.added_texts:
                 if t not in scene.text_labels:
                     scene.text_labels.append(t)
+            for c in self.added_sheets:
+                if c not in scene.compositions:
+                    scene.compositions.append(c)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -3062,6 +3129,9 @@ class SnapshotImport(Command):
         for t in self.added_texts:
             if t in scene.text_labels:
                 scene.text_labels.remove(t)
+        for c in self.added_sheets:
+            if c in scene.compositions:
+                scene.compositions.remove(c)
         scene.version += 1
 
 
@@ -3323,10 +3393,17 @@ class ReshareInstanceCommand(Command):
 
 class MakeUniqueCommand(Command):
     """Make Unique: bake a component instance into its OWN mesh
-    so edits stop touching the siblings' shared definition."""
+    so edits stop touching the siblings' shared definition.
 
-    def __init__(self, group) -> None:
+    ``rename``: the command Make Unique also gives it a name of its own
+    when another object in the model wears the same one — «Silla» becomes
+    «Silla #2» (#620). Opening a copied group, which makes it unique on the
+    way in, leaves the name alone."""
+
+    def __init__(self, group, rename: bool = False) -> None:
         self.group = group
+        self._rename = rename
+        self._name = None
         self._proto = None
         self._xform = None
         self._children = None
@@ -3339,6 +3416,12 @@ class MakeUniqueCommand(Command):
         self._children = self.group.children
         self._axes = self.group.axes
         self._component = self.group.component
+        self._name = self.group.name
+        if self._rename and self.group.name:
+            from core.kept_components import names_in_use, numbered_name
+            taken = names_in_use(scene, skip=self.group)
+            if self.group.name in taken:
+                self.group.name = numbered_name(self.group.name, taken)
         self.group.make_unique()
         scene.version += 1
 
@@ -3348,6 +3431,7 @@ class MakeUniqueCommand(Command):
         self.group.children = self._children or []
         self.group.axes = self._axes
         self.group.component = self._component
+        self.group.name = self._name
         scene.version += 1
 
 
@@ -3637,6 +3721,63 @@ class MakeNestedGroupCommand(Command):
         elif self.container in scene.groups:
             scene.groups.remove(self.container)
         scene.selection.clear()
+        scene.version += 1
+
+
+class GroupInContextCommand(Command):
+    """Make Group, Make Component or Explode while a group is open: what
+    it makes goes INTO the open group, as whatever you create while editing
+    a group belongs to it (#490, #561 — «making a new group directly while
+    you are inside another one is the part still missing»), and what
+    Explode lets out stays in it.
+
+    ``inner`` is the usual command (:class:`MakeGroupCommand`,
+    :class:`MakeNestedGroupCommand`, :class:`MakeComponentOfCommand`,
+    :class:`ExplodeGroupCommand`), run
+    with the open group's children standing in for the model's top level:
+    those commands take groups from and add groups to ``scene.groups``, and
+    inside a group the siblings are its children. Entering a container
+    already pushed its matrix down into them, so their coordinates are the
+    world's, the same the tools draw in. The open group gets the identity
+    matrix a group holding groups always has (``Group.adopt``), as a group.
+
+    Callers refuse it inside a component (``outliner.editing_inside_component``):
+    components keep their parts, as the Browser's drag and drop says."""
+
+    def __init__(self, inner, context) -> None:
+        self.inner = inner
+        self.context = context
+        self._state = None
+
+    @property
+    def group(self):
+        return getattr(self.inner, "group", None) or getattr(
+            self.inner, "container", None)
+
+    def _run(self, scene, step) -> None:
+        ctx = self.context
+        if ctx.children is None:
+            ctx.children = []
+        top = scene.groups
+        scene.groups = ctx.children
+        try:
+            step(scene)
+        finally:
+            scene.groups = top
+
+    def do(self, scene) -> None:
+        from PySide6.QtGui import QMatrix4x4
+        ctx = self.context
+        self._state = (ctx.xform, ctx.component)
+        self._run(scene, self.inner.do)
+        if ctx.children and ctx.xform is None:
+            ctx.xform = QMatrix4x4()
+            ctx.component = False
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self._run(scene, self.inner.undo)
+        self.context.xform, self.context.component = self._state
         scene.version += 1
 
 
@@ -4297,15 +4438,31 @@ class HealOverlapsCommand(Command):
             scene.version += 1
 
 
+_IN_TRI_SLACK = 1e-7
+
+
 def _point_in_tri(p: QVector3D, t0: QVector3D, t1: QVector3D,
                   t2: QVector3D) -> bool:
-    """Coplanar point-in-triangle via consistent cross-product orientation."""
+    """Coplanar point-in-triangle via consistent cross-product orientation.
+
+    Measured as distances (``_IN_TRI_SLACK`` metres outside an edge still
+    counts), and a sliver -- three nearly collinear corners, as a face whose
+    side was split on a straight border triangulates -- contains nothing.
+    The raw ``c·n > -1e-9`` test scaled with the triangle's area squared: a
+    sliver's tiny normal let every point through, and a 3 mm disc on the
+    border of a courtyard "covered" the 548 m² courtyard 8 m away.
+    """
     n = QVector3D.crossProduct(t1 - t0, t2 - t0)
-    if n.length() < 1e-12:
+    nl = n.length()
+    longest = max((t1 - t0).lengthSquared(), (t2 - t1).lengthSquared(),
+                  (t0 - t2).lengthSquared())
+    if nl < 1e-12 or nl < 1e-9 * longest:
         return False
     for a, b in ((t0, t1), (t1, t2), (t2, t0)):
         c = QVector3D.crossProduct(b - a, p - a)
-        if QVector3D.dotProduct(c, n) < -1e-9:
+        side = (b - a).length()
+        if side > 0 and QVector3D.dotProduct(c, n) / (nl * side) \
+                < -_IN_TRI_SLACK:
             return False
     return True
 
@@ -4446,11 +4603,39 @@ class RebuildPlaneFacesCommand(Command):
         segments = [(QVector3D(e.a), QVector3D(e.b)) for e in plane_edges]
         _, regions = planar_rebuild(segments, self.origin, self.normal)
 
+        def ring(loop):
+            return frozenset(_key(p) for p in loop)
+
+        # The openings the plane's faces already have, and the outlines a
+        # face was drawn exactly along. A region that is one of those
+        # openings stays open unless a face traces it (capping a hole on
+        # purpose) or traces the whole face around it (redrawing that face
+        # fills it, #538): a rectangle or an offset drawn AROUND a through
+        # hole covered it and the fresh face filled the hole (tutorial hunt
+        # 2, A15).
+        outlines = Counter(ring(f.vertices) for f in plane_faces)
+        openings: dict = {}
+        for f in plane_faces:
+            for h in f.holes:
+                openings.setdefault(ring(h), set()).add(ring(f.vertices))
+
+        def stays_open(outer) -> bool:
+            owners = openings.get(ring(outer))
+            if owners is None or outlines[ring(outer)]:
+                return False
+            return not any(outlines[o] > 1 for o in owners)
+
         def covering(outer, holes):
             tris = triangulate(outer, holes, self.normal)
             if not tris:
                 return None
-            probe = (tris[0][0] + tris[0][1] + tris[0][2]) / 3.0
+            # The centroid of the largest triangle, not the first: the first
+            # of a circle's fan is a sliver at the rim, and on a centimetre
+            # part its centroid sat within rounding of the face around the
+            # hole -- the hole read as covered and was capped (A15).
+            big = max(tris, key=lambda t: QVector3D.crossProduct(
+                t[1] - t[0], t[2] - t[0]).lengthSquared())
+            probe = (big[0] + big[1] + big[2]) / 3.0
             for old_tris, nrm, attrs in old:
                 if any(_point_in_tri(probe, t0, t1, t2)
                        for t0, t1, t2 in old_tris):
@@ -4459,6 +4644,8 @@ class RebuildPlaneFacesCommand(Command):
 
         keep = []
         for outer, holes in regions:
+            if not holes and stays_open(outer):
+                continue                      # an existing opening
             cov = covering(outer, holes or [])
             if cov is None:
                 continue                      # uncovered region: stays empty

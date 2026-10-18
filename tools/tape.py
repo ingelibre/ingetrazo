@@ -320,8 +320,10 @@ class TapeMeasureTool(Tool):
         """A guide POINT (a ``Guide`` with no direction) at ``where`` —
         with its guide segment back to ``origin`` when measured from a
         named point."""
-        viewport.history.execute(AddGuideCommand(
-            Guide(QVector3D(where), None, origin)))
+        guide = Guide(QVector3D(where), None, origin)
+        if not guide.is_finite():
+            return                  # a degenerate pick: leave nothing (#723)
+        viewport.history.execute(AddGuideCommand(guide))
         d = (where - self.start_point).length()
         viewport.flash_status(
             (tr("Guide point at {d}, with its segment") if origin is not None
@@ -329,6 +331,8 @@ class TapeMeasureTool(Tool):
 
     def _place_guide(self, viewport, offset: QVector3D) -> None:
         guide = Guide(self.start_point + offset, self._edge_dir())
+        if not guide.is_finite():
+            return                  # a degenerate pick: leave nothing (#723)
         viewport.history.execute(AddGuideCommand(guide))
         viewport.flash_status(
             tr("Guide at {d}").format(d=fmt_len_fine(offset.length())), 3000)

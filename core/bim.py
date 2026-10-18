@@ -23,6 +23,8 @@ exists to provide.
 """
 from __future__ import annotations
 
+import math
+
 from PySide6.QtGui import QVector3D
 
 #: Curated civil/architecture classes (IFC4 names).
@@ -30,7 +32,12 @@ IFC_CLASSES = [
     "IfcWall", "IfcSlab", "IfcColumn", "IfcBeam", "IfcFooting",
     "IfcRoof", "IfcStair", "IfcRamp", "IfcDoor", "IfcWindow",
     "IfcRailing", "IfcCovering", "IfcPile", "IfcMember", "IfcSpace",
+    "IfcReinforcingBar",
 ]
+
+#: Density of reinforcing steel, kg/m³ — the bar's weight is its volume
+#: times this, as a takeoff bills it.
+STEEL_DENSITY = 7850.0
 
 
 def next_object_id(scene) -> int:
@@ -173,6 +180,7 @@ QSET_NAMES = {
     "IfcPile": "Qto_PileBaseQuantities",
     "IfcMember": "Qto_MemberBaseQuantities",
     "IfcSpace": "Qto_SpaceBaseQuantities",
+    "IfcReinforcingBar": "Qto_ReinforcingElementBaseQuantities",
 }
 
 #: Budget unit each class is measured in (the metrado unit downstream tools
@@ -184,6 +192,7 @@ METRADO_UNIT = {
     "IfcColumn": "m3", "IfcBeam": "m3", "IfcFooting": "m3",
     "IfcPile": "m", "IfcMember": "m", "IfcRailing": "m",
     "IfcDoor": "und", "IfcWindow": "und",
+    "IfcReinforcingBar": "kg",
 }
 
 
@@ -235,7 +244,8 @@ def class_quantities(ifc_class: str, faces):
     straight from the file.
 
     Returns ``(qset_name, entries, metrado)`` where ``entries`` is a list of
-    ``(kind, name, value)`` with kind in {"area", "volume", "length"} and
+    ``(kind, name, value)`` with kind in {"area", "volume", "length",
+    "weight"} and
     ``metrado`` is ``(value, unit)`` in the class's budget unit (value may
     be ``None`` when not computable, e.g. volume of an open set)."""
     faces = list(faces)
@@ -312,6 +322,17 @@ def class_quantities(ifc_class: str, faces):
         add("length", "Length", length)
         add("volume", "GrossVolume", volume)
         metrado = length
+    elif ifc_class == "IfcReinforcingBar":
+        # A straight bar (#495): its length is the longest extent, its
+        # diameter the round section that holds its volume, its weight the
+        # steel in it -- reinforcement is billed by the kilo.
+        length = max(dx, dy, dz)
+        add("length", "Length", length)
+        if closed and length > 1e-9:
+            add("length", "NominalDiameter",
+                2.0 * (volume / (math.pi * length)) ** 0.5)
+            add("weight", "Weight", volume * STEEL_DENSITY)
+            metrado = volume * STEEL_DENSITY
     elif ifc_class == "IfcCovering":
         net = sum(face_net_area(f) for f in faces)
         add("area", "GrossArea", total)

@@ -183,6 +183,42 @@ def test_the_click_commits_the_live_angle_and_esc_puts_it_back():
     assert (min(xs), max(xs)) == pytest.approx((1.5, 2.5))
 
 
+def test_a_tool_change_mid_turn_leaves_no_rotate_helper_behind():
+    # #480: a tool change while a grip was held cancelled the turn but kept
+    # the Rotate helper, so the next Move showed the Rotate widget and did
+    # not respond.
+    scene, g, vp, tool = _setup()
+    gx = 2.0 + 0.3 * 4.0
+    tool.on_hover(_ctx(vp, gx, 0.5))
+    tool.on_click(_ctx(vp, gx, 0.5))      # take the grip
+    tool.on_hover(_ctx(vp, 2.0, 3.0))
+    tool.on_deactivate(vp)                # e.g. R for Rectangle
+    assert _corners(g) == [(0.0, 0.0), (0.0, 1.0), (4.0, 0.0), (4.0, 1.0)]
+    tool.on_activate(vp)                  # back to Move
+    assert tool._grip_rot is None and tool._drag is None
+    assert not tool.value_is_unitless()   # a distance again, not an angle
+    assert tool._grips == [] and tool._hot_grip is None
+    scene.selection.add(g)                # a plain move works
+    tool.on_hover(_ctx(vp, 0.5, 0.5))
+    tool.on_click(_ctx(vp, 0.5, 0.5))
+    tool.on_click(_ctx(vp, 0.5, 2.5))
+    assert min(c[1] for c in _corners(g)) == pytest.approx(2.0)
+
+
+def test_a_typed_angle_after_a_tool_change_does_not_turn_the_last_group():
+    scene, g, vp, tool = _setup()
+    gx = 2.0 + 0.3 * 4.0
+    tool.on_hover(_ctx(vp, gx, 0.5))
+    tool.on_click(_ctx(vp, gx, 0.5))
+    tool.on_hover(_ctx(vp, 2.0, 1.4))
+    assert tool.on_value(vp, 90.0)        # committed; its retype stays hot
+    turned = _corners(g)
+    tool.on_deactivate(vp)
+    tool.on_activate(vp)
+    assert not tool.on_value(vp, 45.0)    # no Move started: nothing to do
+    assert _corners(g) == turned
+
+
 def test_with_something_else_selected_move_shows_no_grips():
     scene, g, vp, tool = _setup()
     other = scene.mesh.add_face([V(9, 9), V(10, 9), V(10, 10), V(9, 10)])

@@ -38,6 +38,7 @@ from PySide6.QtGui import QVector3D
 
 from core.arrangement import (
     _TOL,
+    _area_floor,
     _interior_point,
     _point_in_polygon,
     _signed_area,
@@ -330,8 +331,8 @@ def _union_outline(solid_regions_xy, keep_segs=None) -> list:
 
     # Classify: CCW loops are outer faces, CW loops are holes; nest each hole in
     # the smallest outer that contains it.
-    outers = [lp for lp in loops if _signed_area(lp) > _TOL]
-    holes = [lp for lp in loops if _signed_area(lp) < -_TOL]
+    outers = [lp for lp in loops if _signed_area(lp) > _area_floor(lp)]
+    holes = [lp for lp in loops if _signed_area(lp) < -_area_floor(lp)]
     outers.sort(key=lambda lp: _signed_area(lp))  # smallest first
     result = [(o, []) for o in outers]
     for h in holes:

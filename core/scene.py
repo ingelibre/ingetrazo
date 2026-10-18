@@ -610,7 +610,12 @@ class Scene:
                 or self.guides or self.geo_points or self.text_labels
                 or self.saved_views or self.compositions
                 or self.image_planes or self.plugin_data
-                or self.kept_components):
+                or self.kept_components or self.section_planes
+                or not self.show_section_planes
+                or not self.show_section_cuts
+                or self.show_hidden_objects or self.show_hidden_geometry
+                or self.custom_scales or self.back_face_color is not None
+                or len(self.layers) > 1):
             self.mesh.clear()
             self.groups.clear()
             self.dimensions.clear()
@@ -756,16 +761,21 @@ class Scene:
         # placements over 2 722 meshes read 14 million vertices one by one
         # to learn its box, ~7 s (issue #158).
         per_mesh: dict = {}
+        from core.lazy_mesh import plan_of
         for g, m in self.placements():
-            verts = g.mesh.vertices
-            if not verts:
-                continue
             key = id(g.mesh)
             arr = per_mesh.get(key)
             if arr is None:
-                arr = per_mesh[key] = np.array(
-                    [[v.position.x(), v.position.y(), v.position.z()]
-                     for v in verts])
+                plan = plan_of(g.mesh)      # a lazy mesh: no build
+                if plan is not None:
+                    arr = plan.pos
+                else:
+                    arr = np.array(
+                        [[v.position.x(), v.position.y(), v.position.z()]
+                         for v in g.mesh.vertices])
+                per_mesh[key] = arr
+            if not len(arr):
+                continue
             if m is not None:
                 d = m.data()          # column-major
                 rot = np.array([[d[0], d[4], d[8]],

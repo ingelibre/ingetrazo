@@ -112,6 +112,11 @@ _STYLE_TIPS = {
 }
 _SAVE_TIP = ("Save the document — the model and every sheet — to its .igz "
              "file.")
+_RESET_TOOLBARS_TIP = ("Every toolbar back in its factory place and order, "
+                       "the hidden ones shown again. The panels stay as "
+                       "they are.")
+# The mesh welds points closer than this (core/mesh.py, 4 decimals).
+_WELD_LENGTH = 1e-4
 _TEXT3D_TIP = ("Build a text as an extruded solid, in the font and height "
                "you choose.")
 
@@ -232,6 +237,10 @@ class MainWindow(QMainWindow):
         # (see load_extensions). Set first — the menu bar is built below.
         self._defer_extensions = bool(defer_extensions)
         self.resize(1280, 800)
+        # Every toolbar — ours, a later one, a plugin's — floats as a
+        # small window with its name and a × to close it.
+        from views.floating_toolbar import watch_toolbars
+        watch_toolbars(self)
 
         self._tools = {
             "select": SelectTool(),
@@ -464,6 +473,83 @@ class MainWindow(QMainWindow):
                     self.addToolBarBreak(area)
                 self.addToolBar(area, tb)
                 tb.setVisible(shown)
+
+    def restore_default_toolbars(self) -> None:
+        """Window ▸ Restore default toolbars (and the right-click menu over
+        a toolbar): every toolbar back where the factory layout has it —
+        area, row, order — and shown. The panels are not touched:
+        ``restoreState`` lays out every dock the blob names, so the docks
+        go by another name meanwhile and the blob finds none of them.
+
+        First the window's own bars go back to where a new window builds
+        them, along the top in build order: a bar younger than the blob
+        (Solid Tools) is not in it, and that is its factory place. A
+        plugin's toolbar stays where it is."""
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QDockWidget
+        from core.paths import app_root
+        factory = app_root() / "resources" / "ui" / "default_layout.state"
+        if not factory.is_file():
+            return
+        own = list(self.toolbars.values())
+        panels_tb = self.findChild(QToolBar, "panels_toolbar")
+        if panels_tb is not None:
+            own.append(panels_tb)
+        for tb in own:
+            self.removeToolBar(tb)
+            self.addToolBar(Qt.TopToolBarArea, tb)
+            tb.show()
+        docks = {d: d.objectName() for d in self.findChildren(QDockWidget)}
+        rows = self._dock_tab_rows(docks)
+        size = self.size()
+        for d, name in docks.items():
+            d.setObjectName(f"_keep_{name}")
+        try:
+            self.restoreState(factory.read_bytes())
+        finally:
+            for d, name in docks.items():
+                d.setObjectName(name)
+        # Even unnamed, the docks are laid out again: their tabs come back
+        # reordered, another in front. Put each row of tabs back as it was.
+        for row, front in rows:
+            for d in row[1:]:
+                self.tabifyDockWidget(row[0], d)
+            front.raise_()
+        # Meanwhile they were docked one under the other: their heights
+        # added up past the window, which grew to hold them and slid the
+        # sidebar's handle down with the view. Back in their tabs, the
+        # window goes back to its size.
+        if self.size() != size:
+            self.layout().activate()
+            self.resize(size)
+        QTimer.singleShot(0, self, self._pack_toolbars)
+
+    def _dock_tab_rows(self, docks) -> list:
+        """Each row of tabbed docks on screen, in tab order, and the dock
+        in front."""
+        from PySide6.QtWidgets import QTabBar
+        by_title = {d.windowTitle(): d for d in docks if d.isVisible()}
+        rows = []
+        for bar in self.findChildren(QTabBar):
+            if bar.parent() is not self or not bar.isVisible():
+                continue
+            row = [by_title.get(bar.tabText(i)) for i in range(bar.count())]
+            front = by_title.get(bar.tabText(bar.currentIndex()))
+            if len(row) > 1 and None not in row and front is not None:
+                rows.append((row, front))
+        return rows
+
+    def createPopupMenu(self):  # noqa: N802 — Qt override
+        """Right-click over a toolbar: Qt's list of toolbars and panels,
+        and under it the way back to the factory toolbars."""
+        menu = super().createPopupMenu()
+        if menu is None:
+            menu = QMenu(self)
+        act = getattr(self, "_act_reset_toolbars", None)
+        if act is not None:
+            menu.addSeparator()
+            menu.addAction(act)
+        return menu
 
     def _place_new_toolbars(self, st) -> None:
         """A toolbar born after a profile saved its layout is unknown to
@@ -751,9 +837,11 @@ class MainWindow(QMainWindow):
         self._act_eyedropper = QAction(
             tool_icon("eyedropper"), tr("Sample material"), self)
         self._act_eyedropper.setCheckable(True)
-        self._act_eyedropper.setToolTip(tr(
-            "Sample material — click a face to pick up its paint or texture "
-            "(or hold Alt with the Paint tool)"))
+        from views.shortcuts import set_tooltip
+        self._act_eyedropper.setStatusTip(tr(
+            "Click a face to pick up its paint or texture "
+            "(or hold Alt with the Paint tool)."))
+        set_tooltip(self._act_eyedropper, tr("Sample material"))
         self._act_eyedropper.toggled.connect(self._on_toggle_eyedropper)
         main_tb.addAction(self._act_eyedropper)
         self._icon_actions.append((self._act_eyedropper, "eyedropper"))
@@ -809,17 +897,18 @@ class MainWindow(QMainWindow):
         self.toolbars["view"] = view_tb
         self._nav_actions: dict[str, QAction] = {}
         for key, label, short, tip in [
-            ("orbit", "Orbit", "O", "Orbit (O) — left-drag to rotate the view"),
-            ("pan", "Pan", "H", "Pan (H) — left-drag to slide the view"),
-            ("zoom", "Zoom", "Z", "Zoom (Z) — drag up/down to zoom in/out"),
+            ("orbit", "Orbit", "O", "Left-drag to rotate the view."),
+            ("pan", "Pan", "H", "Left-drag to slide the view."),
+            ("zoom", "Zoom", "Z", "Drag up or down to zoom in or out."),
             ("zoom_window", "Zoom Window", "",
-             "Zoom Window — drag a box to zoom to that region"),
+             "Drag a box to zoom to that region."),
         ]:
             action = QAction(tool_icon(key), tr(label), self)
             action.setCheckable(True)
             if short:
                 action.setShortcut(QKeySequence(short))
-            action.setToolTip(tr(tip))
+            action.setStatusTip(tr(tip))
+            set_tooltip(action, tr(label))  # names the keys, as tools do
             action.triggered.connect(lambda _c, k=key: self._activate_nav(k))
             self._tool_group.addAction(action)
             view_tb.addAction(action)
@@ -1191,6 +1280,13 @@ class MainWindow(QMainWindow):
         heal_action.triggered.connect(self._on_heal_overlaps)
         edit_menu.addAction(heal_action)
 
+        join_action = QAction(tr("Join Segments"), self)
+        join_action.setStatusTip(tr(
+            "Join collinear segments into single lines: the selected ones, "
+            "or all of them when nothing is selected."))
+        join_action.triggered.connect(self._on_join_segments)
+        edit_menu.addAction(join_action)
+
         rebuild_action = QAction(tr("Rebuild Faces (Planar)"), self)
         rebuild_action.setStatusTip(tr(
             "Work the faces out again from the edges: on the plane of the "
@@ -1442,6 +1538,12 @@ class MainWindow(QMainWindow):
             lambda m=panels_menu: self._fill_panels_menu(m))
         window_menu.addMenu(panels_menu)
         self._panels_menu = panels_menu
+        # The same entry closes the right-click menu over a toolbar.
+        self._act_reset_toolbars = window_menu.addAction(
+            tr("Restore default toolbars"))
+        self._act_reset_toolbars.setStatusTip(tr(_RESET_TOOLBARS_TIP))
+        self._act_reset_toolbars.triggered.connect(
+            self.restore_default_toolbars)
 
         toggle_profile = self.profile_dock.toggleViewAction()
         toggle_profile.setText(tr("Terrain profile"))
@@ -1466,8 +1568,10 @@ class MainWindow(QMainWindow):
         window_menu.addAction(clean_action)
         self._act_clean_screen = clean_action
         # LibreOffice's Ctrl+F5: the whole sidebar (the three trays) folds
-        # away and comes back; the strip at the right edge stays.
+        # away and comes back; the strip at the right edge stays. Ctrl+F6
+        # does the same on the left, next to it so the key can be found.
         window_menu.addAction(self._act_sidebar)
+        window_menu.addAction(self._act_left_sidebar)
 
         window_menu.addSeparator()
         # Ctrl+U: the units panel straight away (the Preferences page).
@@ -1653,16 +1757,24 @@ class MainWindow(QMainWindow):
         order = self._default_tray_order()
         order += [d for d in getattr(self, "_extension_docks", ())
                   if d not in order]
-        for d in order:
-            self.addDockWidget(Qt.RightDockWidgetArea, d)
+        # Each one straight into the tabs: docked one under the other first,
+        # their heights added up past the window, which grew to hold them.
+        self.addDockWidget(Qt.RightDockWidgetArea, order[0])
         for first, nxt in zip(order, order[1:]):
             self.tabifyDockWidget(first, nxt)
+
+    #: The side tray's width on a first run — the one the factory layout
+    #: (resources/ui/default_layout.state) gives it; Restore default
+    #: panels puts it back (tests/test_sidebar_trays.py checks they agree).
+    FACTORY_TRAY_WIDTH = 439
 
     def restore_default_trays(self) -> None:
         """Window ▸ Panels ▸ Restore default panels: the factory layout of
         the side tray back — Properties and the Browser open, the
-        rest closed and listed here — and the choice forgotten, so it
-        stands as a first run's would."""
+        rest closed and listed here, the tray as wide as on a first run,
+        the Browser's columns in their factory order, fitted to it — and
+        the choice
+        forgotten, so it stands as a first run's would."""
         from PySide6.QtCore import QTimer
         st = QSettings()
         st.remove("ui/hidden_trays")
@@ -1678,7 +1790,16 @@ class MainWindow(QMainWindow):
                 act.setChecked(True)
                 act.blockSignals(False)
         self._left_was = []
+        # Inside the Browser too: its columns in the factory order.
+        self.project_browser.outliner.reset_columns()
         self.tray.raise_()
+        # And the side tray's width: the factory one. Not the width the
+        # window opened with — the layout is saved on closing, so a tray
+        # left wide opened wide, and «restoring» to that changed nothing.
+        width = self.FACTORY_TRAY_WIDTH
+        self.resizeDocks([self.tray], [width], Qt.Horizontal)
+        QTimer.singleShot(0, self, lambda: self.resizeDocks(
+            [self.tray], [width], Qt.Horizontal))
         QTimer.singleShot(0, self, self._style_dock_tabs)
         QTimer.singleShot(0, self, self._place_sidebar_handle)
 
@@ -1944,8 +2065,12 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event):  # noqa: N802 — Qt override
         from PySide6.QtCore import QEvent
+        # ZOrderChange: a tab dragged along a tray's bar restacks the
+        # window's children, the view comes out above the handles and its
+        # OpenGL hides the half of them that lies over it.
         if obj is getattr(self, "viewport", None) and event.type() in (
-                QEvent.Resize, QEvent.Move, QEvent.Show):
+                QEvent.Resize, QEvent.Move, QEvent.Show,
+                QEvent.ZOrderChange):
             self._place_clean_screen_exit()
             self._place_sidebar_handle()
         if self._side_dock_event(obj, event):
@@ -2435,6 +2560,15 @@ class MainWindow(QMainWindow):
             action = QAction(tr("(no plugins found)"), self)
             action.setEnabled(False)
             ext_menu.insertAction(anchor, action)
+
+        # The user's keys for the extensions' entries (#595). The window put
+        # the remembered keys on its actions while it was being built, and
+        # since #440 the extensions come after it shows: their entries did
+        # not exist yet, so a key given to one lasted until the restart.
+        # Their own keys are noted first as their factory keys («Reset»).
+        from views import shortcuts as _shortcuts
+        _shortcuts.remember_defaults(self)
+        _shortcuts.apply_user_shortcuts(self)
 
         if self._defer_extensions and set(self.findChildren(QToolBar)) - bars_before:
             st = QSettings()
@@ -3001,6 +3135,27 @@ class MainWindow(QMainWindow):
         self._refresh_vcb()
         self._update_status_hint()
 
+    def _can_make_here(self) -> bool:
+        """Make Group, Make Component and Explode work inside an open
+        group — what they make goes into it (#490, #561) — but not inside
+        a component, whose parts are its shared definition."""
+        from core.outliner import editing_inside_component
+        if editing_inside_component(self.viewport.scene):
+            self.viewport.flash_status(tr(
+                "Components keep their parts: Make Unique first to "
+                "change what is inside one"), 4000)
+            return False
+        return True
+
+    def _execute_make(self, cmd) -> None:
+        """Run a Make Group / Make Component / Explode command where the
+        user is: at the model, or into the open group."""
+        ctx = self.viewport.scene.edit_group
+        if ctx is not None:
+            from core.history import GroupInContextCommand
+            cmd = GroupInContextCommand(cmd, ctx)
+        self.viewport.history.execute(cmd)
+
     @_repeatable("Make Group")
     def _on_make_group(self) -> None:
         """Make Group (G) over the selection.
@@ -3009,12 +3164,7 @@ class MainWindow(QMainWindow):
         five seconds, or an empty selection that returns in silence, reads to
         the user as "I pressed Create group and it does not create" — which
         is exactly how this was reported."""
-        if self.viewport.scene.edit_group is not None:
-            # Grouping INSIDE a group would have to land in that group's
-            # children, not at the root where MakeGroupCommand puts it.
-            self.viewport.flash_status(tr(
-                "Leave the group first (Esc) — grouping inside a group is "
-                "not wired up yet"), 4000)
+        if not self._can_make_here():
             return
         sel = self.viewport.scene.selection
         faces = [f for f in sel if isinstance(f, Face)]
@@ -3036,7 +3186,7 @@ class MainWindow(QMainWindow):
             # the classic behaviour. What used to happen here was a dialog offering
             # to merge or explode, because opening a container baked it.
             from core.history import MakeNestedGroupCommand
-            self.viewport.history.execute(
+            self._execute_make(
                 MakeNestedGroupCommand(faces, edges, groups))
             self.viewport.flash_status(tr(
                 "Grouped {n} group(s){extra} — double-click to go inside",
@@ -3049,25 +3199,28 @@ class MainWindow(QMainWindow):
             self.viewport.flash_status(tr(
                 "Select the geometry to group first"), 4000)
             return
-        self.viewport.history.execute(MakeGroupCommand(faces, edges))
+        self._execute_make(MakeGroupCommand(faces, edges))
         self.viewport.update()
 
     @_repeatable("Make Component")
     def _on_make_component(self) -> None:
         """Make Component (G): the selection becomes a shared
         DEFINITION placed as an instance — every copy shares it."""
-        if self.viewport.scene.edit_group is not None:
-            self.viewport.flash_status(tr(
-                "Leave the group first (Esc) — nested groups aren't "
-                "supported yet"))
+        if not self._can_make_here():
             return
         sel = self.viewport.scene.selection
         faces = [f for f in sel if isinstance(f, Face)]
         edges = [e for e in sel if isinstance(e, Edge)]
         groups = [g for g in sel if isinstance(g, Group)
                   and not getattr(g, "billboard", False)]
-        count = sum(1 for g in self.viewport.scene.groups
-                    if g.is_component()) + 1
+        # The first «Component #n» no object wears yet: counting the copies
+        # at the top skipped numbers and could hand out a name in use
+        # (#620, @ibsgroupdubai-netizen).
+        from core.kept_components import names_in_use
+        taken = names_in_use(self.viewport.scene)
+        count = 1
+        while tr("Component #{n}", n=count) in taken:
+            count += 1
         if len(groups) > 1 or (groups and (faces or edges)):
             # Several groups, or groups and loose geometry: ONE component
             # holding them, each still a group inside (Marco, 24-09, with
@@ -3079,7 +3232,7 @@ class MainWindow(QMainWindow):
                 text=tr("Component #{n}", n=count))
             if not ok:
                 return
-            self.viewport.history.execute(MakeComponentOfCommand(
+            self._execute_make(MakeComponentOfCommand(
                 faces, edges, groups,
                 name=name.strip() or tr("Component #{n}", n=count)))
             self.viewport.update()
@@ -3102,7 +3255,7 @@ class MainWindow(QMainWindow):
                 text=g.name or tr("Component"))
             if not ok:
                 return
-            self.viewport.history.execute(
+            self._execute_make(
                 GroupToComponentCommand(g, name.strip() or None))
             self.viewport.update()
             self.statusBar().showMessage(tr(
@@ -3117,7 +3270,7 @@ class MainWindow(QMainWindow):
             text=tr("Component #{n}", n=count))
         if not ok:
             return
-        self.viewport.history.execute(MakeGroupCommand(
+        self._execute_make(MakeGroupCommand(
             faces, edges, component=True,
             name=name.strip() or tr("Component #{n}", n=count)))
         self.viewport.update()
@@ -3129,7 +3282,7 @@ class MainWindow(QMainWindow):
         from core.history import MakeUniqueCommand
         for g in [g for g in self.viewport.scene.selection
                   if isinstance(g, Group) and g.is_component()]:
-            self.viewport.history.execute(MakeUniqueCommand(g))
+            self.viewport.history.execute(MakeUniqueCommand(g, rename=True))
         self.viewport.update()
 
     def _replacement_choices(self, sel) -> list:
@@ -3398,12 +3551,21 @@ class MainWindow(QMainWindow):
         if not scene.selection:
             self.viewport.flash_status(tr("Select faces or groups first"))
             return
-        segs = segments_for(scene, mode)
+        # A crossing shorter than the weld tolerance is a point: its two
+        # ends weld into one vertex, and that degenerate edge refused the
+        # whole step -- a sphere through a cube left nothing while the
+        # status said «178 intersection edges added» (tutorial hunt 2, A12).
+        segs = [(a, b) for a, b in segments_for(scene, mode)
+                if (b - a).length() >= _WELD_LENGTH]
         if not segs:
             self.viewport.flash_status(tr("No faces cross the selection"))
             return
-        self.viewport.history.execute(
-            build_add_edges(scene, segs, detect_faces=True))
+        history = self.viewport.history
+        history.execute(build_add_edges(scene, segs, detect_faces=True))
+        if history.last_error:
+            QMessageBox.warning(self, tr("Intersect Faces failed"),
+                                history.last_error)
+            return
         self.viewport.flash_status(
             tr("{n} intersection edges added", n=len(segs)), 3000)
 
@@ -3444,14 +3606,13 @@ class MainWindow(QMainWindow):
 
     @_repeatable("Explode Group")
     def _on_explode_group(self) -> None:
-        if self.viewport.scene.edit_group is not None:
-            self.viewport.flash_status(tr(
-                "Leave the group first (Esc) — nested groups aren't "
-                "supported yet"))
+        # Inside an open group what comes out stays in it, one level up
+        # from where it was — not out at the model (as Make Group).
+        if not self._can_make_here():
             return
         groups = [g for g in self.viewport.scene.selection if isinstance(g, Group)]
         for g in groups:
-            self.viewport.history.execute(ExplodeGroupCommand(g))
+            self._execute_make(ExplodeGroupCommand(g))
         if groups:
             self.viewport.update()
 
@@ -3935,6 +4096,15 @@ class MainWindow(QMainWindow):
             # Divide: a line or an arc into N equal pieces
             # (issue #63, @pacaeiro: «It's a needed command»).
             menu.addAction(tr("Divide…"), self._on_divide)
+            if any(getattr(e, "curve", None) is not None
+                   for e in loose_edges):
+                # Explode Curve: a circle or an arc back to plain
+                # segments, each picked on its own.
+                menu.addAction(tr("Explode Curve"), self._on_explode_curve)
+            if len(loose_edges) > 1:
+                # Join Segments, its inverse: a line drawn in pieces
+                # back to one line.
+                menu.addAction(tr("Join Segments"), self._on_join_segments)
         if self._hideable(sel):
             menu.addAction(tr("Hide"), self._on_hide)
         if any(self.viewport.scene.entity_hidden(e)
@@ -4341,6 +4511,86 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             tr("Divided into {n} segments", n=n), 3000)
 
+    @_repeatable("Join Segments")
+    def _on_explode_curve(self) -> None:
+        """Explode Curve: the selected curves become plain segments, in one
+        undo step; the geometry does not move."""
+        from core.history import ExplodeCurvesCommand
+        scene = self.viewport.scene
+        edges = [e for e in scene.selection if isinstance(e, Edge)
+                 and e in scene.mesh.edges]
+        if not any(getattr(e, "curve", None) is not None for e in edges):
+            self.statusBar().showMessage(tr("No curve selected."), 3000)
+            return
+        cmd = ExplodeCurvesCommand(edges)
+        self.viewport.history.execute(cmd)
+        self.statusBar().showMessage(
+            tr("{n} curves exploded into segments", n=cmd.curves), 3000)
+        self.viewport.update()
+
+    def _on_join_segments(self) -> None:
+        """Join the selected collinear segments into single lines; with
+        no edge selected, every one of the model being edited. First a
+        preview: a dot on each point that goes, and on each point of a
+        straight line that stays, in the colour of its reason; Enter
+        joins, Esc leaves the model alone."""
+        from core.edits import join_preview
+        from views.join_preview import JoinPreview
+        scene = self.viewport.scene
+        edges = [e for e in scene.selection if isinstance(e, Edge)
+                 and e in scene.mesh.edges]
+        whole = not edges
+        if whole:
+            edges = list(scene.mesh.edges)
+        verdicts = join_preview(scene.mesh, edges)
+        if not verdicts:
+            self.statusBar().showMessage(
+                tr("No collinear segments to join."), 3000)
+            return
+        old = getattr(self, "_join_preview", None)
+        if old is not None:
+            old.reject()
+        panel = JoinPreview(self.viewport, verdicts,
+                            self._edit_group_matrix())
+        panel.accepted.connect(lambda: self._apply_join_segments(edges, whole))
+        panel.finished.connect(lambda _ok: setattr(self, "_join_preview", None))
+        self._join_preview = panel
+
+    def _edit_group_matrix(self):
+        """The world placement of the group being edited (``None`` at
+        the top level), wherever it is nested."""
+        scene = self.viewport.scene
+        group = getattr(scene, "edit_group", None)
+        if group is None:
+            return None
+        from core.group import iter_placements
+        for top in scene.groups:
+            for g, m in iter_placements(top):
+                if g is group:
+                    return m
+        return getattr(group, "xform", None)
+
+    def _apply_join_segments(self, edges, whole: bool) -> None:
+        """Join Segments itself, once its preview is accepted: one undo
+        step, the joined lines selected in place of their pieces."""
+        from core.edits import join_edges
+        from core.history import SnapshotMutation
+        scene = self.viewport.scene
+        edges = [e for e in edges if e in scene.mesh.edges]
+        before = len(edges)
+        result: list = []
+        self.viewport.history.execute(SnapshotMutation(
+            lambda sc: result.extend(join_edges(sc.mesh, edges))))
+        joined = before - len(result)
+        if not whole:
+            scene.selection.clear()
+            scene.selection.update(result)
+        scene.version += 1
+        self.viewport.update()
+        self.statusBar().showMessage(
+            tr("Removed {n} intermediate points", n=joined) if joined
+            else tr("No collinear segments to join."), 3000)
+
     def _on_flip_along(self, axis: str) -> None:
         """Right-click ▸ Flip Along ▸ Red / Green / Blue (issue #178)."""
         from tools.flip import FlipTool
@@ -4488,16 +4738,19 @@ class MainWindow(QMainWindow):
 
     # ---- View navigation ----------------------------------------------------
     def _on_zoom_extents(self) -> None:
+        from PySide6.QtGui import QVector3D
         bounds = self.viewport.scene.bounds()
         # Face-me figures count too, as a Zoom Extents should:
         # ``Scene.bounds()`` leaves them out (they draw per frame), so a new
         # document — the scale figure alone — framed nothing, and Zoom
         # Extents did nothing after zooming far away (Marco, 23-09).
-        figs = self._figure_bounds()
-        if figs is not None:
-            lo, hi = figs
+        # Visible reference images too: a plan imported to trace on stayed
+        # off screen while Zoom Selection over it did frame it.
+        for extra in (self._figure_bounds(), self._image_bounds()):
+            if extra is None:
+                continue
+            lo, hi = extra
             if bounds[0] is not None:
-                from PySide6.QtGui import QVector3D
                 lo = QVector3D(min(lo.x(), bounds[0].x()), min(lo.y(), bounds[0].y()),
                                min(lo.z(), bounds[0].z()))
                 hi = QVector3D(max(hi.x(), bounds[1].x()), max(hi.y(), bounds[1].y()),
@@ -4543,6 +4796,19 @@ class MainWindow(QMainWindow):
         if lo is None:
             return None
         return QVector3D(*map(float, lo)), QVector3D(*map(float, hi))
+
+    def _image_bounds(self):
+        """World box of the visible reference images, or None."""
+        from PySide6.QtGui import QVector3D
+        scene = self.viewport.scene
+        pts = [c for im in getattr(scene, "image_planes", None) or []
+               if scene.entity_visible(im) for c in im.corners()]
+        if not pts:
+            return None
+        return (QVector3D(min(p.x() for p in pts), min(p.y() for p in pts),
+                          min(p.z() for p in pts)),
+                QVector3D(max(p.x() for p in pts), max(p.y() for p in pts),
+                          max(p.z() for p in pts)))
 
     def _ensure_composer(self):
         """The composer window, created but not shown — the sheet strip's
@@ -5218,6 +5484,9 @@ class MainWindow(QMainWindow):
         finally:
             self.viewport.setUpdatesEnabled(True)
         dlg.close()
+        # Painting was off while it loaded: turning it back on does not ask
+        # for a frame, and the view stayed black until the first click.
+        self.viewport.update()
         self.viewport.inference.reset()
         self._apply_camera_home()
         self._current_path = path
@@ -5377,8 +5646,9 @@ class MainWindow(QMainWindow):
         the undo history and without dirtying the document. Left out when
         Preferences say so (#221: parts for a 3D printer start on an empty
         sheet)."""
-        from PySide6.QtCore import QSettings
-        if str(QSettings().value("new_document/scale_figure", "1")) == "0":
+        from core import scale_figure
+        figure = scale_figure.chosen()
+        if figure is None:
             # Still a clean new document: nothing to ask about on close.
             self._saved_version = self.viewport.scene.version
             return
@@ -5386,14 +5656,16 @@ class MainWindow(QMainWindow):
         # and 60 cm forward (toward the viewer) of the origin.
         from PySide6.QtGui import QVector3D
         at = QVector3D(-0.65, -0.60, 0.0)
-        # The engineer since 26-09 (Marco: «el personaje Sumari no me gusta
-        # mucho, ¿ponemos el del ingeniero?»); Sumari stays in the library.
-        group = self._make_billboard_person("ingeniero.png", height=1.70,
-                                            name=tr("Engineer"), position=at)
+        # The Engineer by default since 26-09 (Marco: «el personaje Sumari no
+        # me gusta mucho, ¿ponemos el del ingeniero?»); Preferences choose
+        # another person or the user's own picture (#655).
+        group = self._make_billboard_person(figure.image, figure.height,
+                                            figure.name, position=at)
         if group is None:
             group = self._make_billboard_person(position=at)
         if group is None:
             return
+        scale_figure.mark(group)
         scene = self.viewport.scene
         scene.groups.append(group)
         scene.version += 1
@@ -5402,11 +5674,15 @@ class MainWindow(QMainWindow):
     def _make_billboard_person(self, image: str = "person_billboard.png",
                                height: float = 1.75,
                                name: str | None = None, position=None):
-        """A face-me scale figure (arch-viz cutout)."""
+        """A face-me scale figure (arch-viz cutout). ``image``: a file of
+        resources/components, or a full path (the user's own picture)."""
+        from pathlib import Path
         from PySide6.QtGui import QImage
         from core.group import make_billboard_group
         from core.paths import app_root
-        path = app_root() / "resources" / "components" / image
+        path = Path(image)
+        if not path.is_absolute():
+            path = app_root() / "resources" / "components" / image
         if not path.exists():
             return None
         img = QImage(str(path))
@@ -5465,9 +5741,15 @@ class MainWindow(QMainWindow):
         selected and ready to Move into place. Components are ``.igz``
         (models kept for offline use, textures packed in), ``.glb`` (the
         Sketchfab CC-BY set) or ``.obj``."""
+        self.viewport.end_group_edit()
+        self._start_place_shared(
+            "bundled:" + key, lambda: self._build_bundled_component(key, name))
+
+    def _build_bundled_component(self, key: str, name: str | None):
+        """The bundled starter ``key`` read from its file, as a group ready
+        to place — ``None`` (the user told why) when it cannot be read."""
         from core.group import Group
         from core.scene import Scene as _Scene
-        self.viewport.end_group_edit()
         from core.paths import app_root
         base = app_root() / "resources" / "components"
         temp = _Scene()
@@ -5483,7 +5765,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self, tr("Insert component"),
                     tr("Component file missing: {p}", p=str(igz_path)))
-                return
+                return None
             mesh = temp.groups[0].mesh
         elif glb_path.exists():
             from formats.glb import load_glb
@@ -5496,8 +5778,7 @@ class MainWindow(QMainWindow):
             parts = _obj_parts(temp)
             if parts is not None:
                 parts.name = name or tr(key.capitalize())
-                self._start_place(parts)
-                return
+                return parts
             mesh = temp.mesh
             if not mesh.faces and temp.groups:
                 # Big OBJs land as a reference group (formats/obj.py), not
@@ -5511,8 +5792,47 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, tr("Insert component"),
                 tr("Component file missing: {p}", p=str(glb_path)))
+            return None
+        return Group(mesh, name=name or tr(key.capitalize()))
+
+    def _start_place_shared(self, source: str, build) -> None:
+        """Place a library or bundled component, sharing its definition with
+        the copies of it already in the model.
+
+        Each pick read the file again and added a new, independent piece:
+        four of the same 12 600-face cabinet were 50 400 faces in the model,
+        and its 2 s read came back every time (Marco, 18-10). A copy now
+        shares the definition, as in SketchUp — an edit inside one reaches
+        them all, Make Unique parts one off — so the next pick is instant
+        and the model does not swell. ``build`` reads the file; it is called
+        only when no copy of ``source`` is left in the model."""
+        from PySide6.QtGui import QMatrix4x4
+        from core.group import copy_group
+        shared = self.__dict__.setdefault("_shared_components", {})
+        known = shared.get(source)
+        if known is not None:
+            mesh, base = known
+            live = next((g for g in self.viewport.scene.groups
+                         if g.mesh is mesh and g.is_component()), None)
+            if live is not None:
+                group = copy_group(live)
+                # A fresh pick, not a copy of how that one was left: back
+                # to the definition's own pose, unpainted, on no tag.
+                group.xform = QMatrix4x4(base)
+                group.hidden = group.locked = False
+                group.material = group.layer = group.ifc = None
+                group.exploded = group.explode_offset = None
+                group.axes = None
+                self._start_place(group)
+                return
+            del shared[source]
+        group = build()
+        if group is None:
             return
-        group = Group(mesh, name=name or tr(key.capitalize()))
+        if group.xform is None:
+            group.xform = QMatrix4x4()       # its mesh becomes the definition
+        group.component = True
+        shared[source] = (group.mesh, QMatrix4x4(group.xform))
         self._start_place(group)
 
     def insert_library_component(self, entry: dict) -> None:
@@ -5526,6 +5846,15 @@ class MainWindow(QMainWindow):
         so has to ask (see ``_obj_unit``). The facet seams are softened
         like the bundled starters, so a low-poly piece reads as a real one.
         """
+        self.viewport.end_group_edit()
+        self._start_place_shared(
+            "library:" + str(entry.get("id", "")),
+            lambda: self._build_library_component(entry))
+
+    def _build_library_component(self, entry: dict):
+        """The online-library model ``entry``, downloaded the first time and
+        read from its OBJ, as a group ready to place — ``None`` (the user
+        told why) when it cannot be had."""
         from core import library
         from core.group import Group
         from core.scene import Scene as _Scene
@@ -5538,22 +5867,20 @@ class MainWindow(QMainWindow):
                 self, tr("Component library"),
                 tr("Could not download “{name}”. Check your connection.",
                    name=entry.get("nombre", "")))
-            return
-        self.viewport.end_group_edit()
+            return None
         temp = _Scene()
         try:
             _obj.load_obj(temp, obj,
                            matrix=library.model_matrix(entry, obj))
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Component library"), str(exc))
-            return
+            return None
         parts = _obj_parts(temp)
         if parts is not None:
             # A model written as parts keeps them: one component to place,
             # its pieces inside (see formats.obj._pieces_group).
             parts.name = entry.get("nombre", "") or parts.name
-            self._start_place(parts)
-            return
+            return parts
         mesh = temp.mesh
         if not mesh.faces and temp.groups:
             mesh = temp.groups[0].mesh       # a big OBJ lands as a group
@@ -5561,9 +5888,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, tr("Component library"),
                 tr("“{name}” has no geometry.", name=entry.get("nombre", "")))
-            return
+            return None
         soften_smooth_edges(mesh, cos_threshold=0.55)
-        self._start_place(Group(mesh, name=entry.get("nombre", "")))
+        return Group(mesh, name=entry.get("nombre", ""))
 
     def _on_open_library(self) -> None:
         from views.library_dialog import LibraryDialog
@@ -6882,7 +7209,36 @@ class MainWindow(QMainWindow):
                n=count, path=path_str), 5000)
 
     def _on_export_stl(self) -> None:
-        self._export("STL", "stl", tr("STL mesh (*.stl)"), stl_format.save_stl)
+        # An STL records no unit and slicers read it as millimetres, so the
+        # model's own metres came out 1000x too small (#513): ask, the way
+        # the import does, with millimetres first and the last choice kept.
+        from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
+                                       QFormLayout)
+
+        keys = ["mm", "cm", "m", "in", "ft"]
+        labels = [tr("Millimetres"), tr("Centimetres"), tr("Metres"),
+                  tr("Inches"), tr("Feet")]
+        settings = QSettings()
+        guess = str(settings.value("export/stl_unit", "mm") or "mm")
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr("Export STL"))
+        form = QFormLayout(dialog)
+        units = QComboBox(dialog)
+        units.addItems(labels)
+        units.setCurrentIndex(keys.index(guess) if guess in keys else 0)
+        form.addRow(tr("Unit of the STL file (3D printing programs expect "
+                       "millimetres)"), units)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        unit = keys[units.currentIndex()]
+        settings.setValue("export/stl_unit", unit)
+        self._export("STL", "stl", tr("STL mesh (*.stl)"),
+                     lambda scene, path: stl_format.save_stl(scene, path, unit))
 
     def _on_export_obj(self) -> None:
         self._export("OBJ", "obj", tr("Wavefront OBJ (*.obj)"), obj_format.save_obj)

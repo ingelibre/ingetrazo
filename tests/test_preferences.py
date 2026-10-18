@@ -174,3 +174,25 @@ def test_theme_choice_applies_at_once(settings_file):
     finally:
         theme.save_theme(before)
         theme.apply_theme(app, theme.DARK)
+
+
+def test_the_3d_mouse_page_shows_the_device_live(settings_file, monkeypatch):
+    """Nobody on the team has a SpaceMouse: the page shows the six numbers
+    as the device sends them and how IngeTrazo reads them, so an owner can
+    report a wrong sign by looking (#108)."""
+    from core.ndof import NdofSample
+    from views import ndof_input
+
+    dev = ndof_input.NdofInput()
+    monkeypatch.setattr(ndof_input, "_shared", dev)
+    monkeypatch.setattr(type(dev), "backend_name",
+                        property(lambda self: "rawinput"))
+    dlg = PreferencesDialog(_Win())
+    dev.raw.emit((12, -340, 0, 0, 0, 7))
+    dev.motion.emit(NdofSample(forward=0.97), 0.01)
+    assert "Y  -340" in dlg._ndof_raw.text()
+    assert "RZ    +7" in dlg._ndof_raw.text()
+    assert "+0.97" in dlg._ndof_read.text()
+    dlg.reject()
+    dev.raw.emit((0, 0, 0, 0, 0, 0))             # closed: no longer listens
+    assert "Y  -340" in dlg._ndof_raw.text()

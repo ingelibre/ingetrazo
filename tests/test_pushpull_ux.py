@@ -2058,3 +2058,33 @@ def test_activate_with_no_selection_unchanged():
     tool.on_click(_ctx(vp))
     assert tool.dragging is True
     assert tool.base_face is top
+
+
+def test_hovering_the_origin_pushes_level_with_it():  # #407
+    """A box standing away from the origin, its top pushed down: hovering
+    the origin (nothing drawn there) brings the top level with z = 0."""
+    from PySide6.QtCore import QPointF
+    from tools.base import ToolContext
+
+    scene = Scene()
+    hist = History(scene)
+    ground = [V(3, 3, 0), V(5, 3, 0), V(5, 5, 0), V(3, 5, 0)]
+    hist.execute(build_add_edges(
+        scene, [(ground[i], ground[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(ground))]))
+    base = scene.faces[0]
+    _push(scene, base, 2.0 if base.normal().z() > 0 else -2.0)
+    vp = _InferViewport(scene)
+    tool = PushPullTool()
+    top = _top(scene, 2.0)
+    tool.base_face = top
+    tool.dragging = True
+    tool._anchor = top.centroid()
+    tool._normal = top.normal()
+    tool._attached, tool._prism_cap = tool._classify_base(scene)
+    tool._cap_positions = tool._cap_loop_positions(top)
+    ctx = ToolContext(viewport=vp, world=QVector3D(), screen=QPointF(0.0, 0.0),
+                      modifiers=Qt.NoModifier, snap=None)
+    d = tool._infer_reference_distance(ctx)
+    assert d is not None and abs(d + 2.0) < 1e-6
+    assert tool._inference_kind == "origin"

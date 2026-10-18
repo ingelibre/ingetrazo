@@ -17,6 +17,7 @@ it constraining the writer.
 from __future__ import annotations
 
 import datetime
+import math
 import uuid
 from pathlib import Path
 
@@ -29,7 +30,8 @@ _GUID_CHARS = ("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 #: GlobalId..Tag layout; the rest are padded with ``$``). Classes with quirky
 #: layouts (doors/windows carry OverallHeight/Width…, IfcSpace has LongName
 #: where others have Tag) just get the right pad width.
-_ATTR_COUNT = {"IfcPile": 10, "IfcDoor": 13, "IfcWindow": 13, "IfcSpace": 11}
+_ATTR_COUNT = {"IfcPile": 10, "IfcDoor": 13, "IfcWindow": 13, "IfcSpace": 11,
+               "IfcReinforcingBar": 14}
 _DEFAULT_ATTRS = 9
 
 
@@ -175,6 +177,17 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
                     if kind == "length"}
             attrs.append(_f(dims["Height"]) if "Height" in dims else "$")
             attrs.append(_f(dims["Width"]) if "Width" in dims else "$")
+        if cls == "IfcReinforcingBar":
+            # Tag, SteelGrade, then NominalDiameter, CrossSectionArea and
+            # BarLength: what a bar schedule reads (#495).
+            dims = {name: val for kind, name, val in qentries
+                    if kind == "length"}
+            d = dims.get("NominalDiameter")
+            attrs += ["$",
+                      _f(d) if d is not None else "$",
+                      _f(math.pi * d * d / 4.0) if d is not None else "$",
+                      _f(dims["Length"]) if "Length" in dims else "$",
+                      ".NOTDEFINED."]
         attrs += ["$"] * (total - len(attrs))
         elem = w.add(cls.upper(), *attrs)
         element_ids.append(elem)
@@ -182,7 +195,8 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
         # Per-class BaseQuantities (Qto_* naming): the takeoff numbers in
         # the budget's own measures, straight in the file.
         _Q_ENTITY = {"area": "IFCQUANTITYAREA", "volume": "IFCQUANTITYVOLUME",
-                     "length": "IFCQUANTITYLENGTH"}
+                     "length": "IFCQUANTITYLENGTH",
+                     "weight": "IFCQUANTITYWEIGHT"}
         quantities = [
             f"#{w.add(_Q_ENTITY[kind], _s(name), '$', '$', _f(val), '$')}"
             for kind, name, val in qentries

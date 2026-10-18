@@ -624,7 +624,7 @@ def _soft_edge_segments(defn, xform, out) -> None:
 def _collect(defn, xform, by_id, attr_map, out, depth, stack,
              proto_ids=frozenset(), proto_uses=None, inherited=None,
              image_uses=None, edges_out=None, layer=None,
-             layer_uses=None) -> None:
+             layer_uses=None, group_layer=None) -> None:
     """Append ``(outer, holes, attrs)`` faces for ``defn`` (transformed by
     ``xform``) and, recursively, for every definition its instances place.
 
@@ -632,6 +632,10 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
     faces with no material of their own take it (.skp inheritance).
     ``layer`` is the layer (tag) of the nearest enclosing tagged instance,
     carried onto the flattened faces the same way.
+    ``group_layer`` is the layer of the group the faces land in (the caller
+    puts it on that group, not on the faces). What is pulled OUT of the group
+    — images, face-me components, prototype placements — takes it when
+    nothing closer is tagged, so hiding the tag hides them too.
 
     When ``layer_uses`` is given, a nested instance that carries its OWN
     layer (tag) is NOT flattened here — it is recorded to become a separate
@@ -665,6 +669,9 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
         placed = xform * _matrix(ins.matrix)
         child_inherited = getattr(ins, "material_id", None) or inherited
         child_layer = getattr(ins, "layer", "") or layer
+        # What leaves the group as an object of its own carries the group's
+        # layer, which the flattened faces get from the group itself.
+        out_layer = child_layer or group_layer
         cid = getattr(child, "id", None)
         if getattr(child, "is_image", False):
             if image_uses is not None:
@@ -672,7 +679,7 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
                 # its parent so it can become its own group — cutout images
                 # turn to face the camera (billboard), like the DAE import.
                 image_uses.append((child, placed, child_inherited,
-                                   child_layer))
+                                   out_layer))
             else:
                 # Inside a face-me component being flattened: the image
                 # stays part of it, with its whole-picture UVs.
@@ -683,11 +690,11 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
                 getattr(child, "always_faces_camera", False):
             # An "always face camera" component (2D people like
             # Susan): extracted as its own billboard group.
-            image_uses.append((child, placed, child_inherited, child_layer))
+            image_uses.append((child, placed, child_inherited, out_layer))
             continue
         if proto_uses is not None and cid in proto_ids:
             proto_uses.setdefault((cid, child_inherited), []).append(
-                (placed, child_layer))
+                (placed, out_layer))
             continue
         if layer_uses is not None and getattr(ins, "layer", ""):
             # Tagged nested instance → its own group carrying the layer.
@@ -695,7 +702,7 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
             continue
         _collect(child, placed, by_id, attr_map, out, depth + 1, stack,
                  proto_ids, proto_uses, child_inherited, image_uses,
-                 edges_out, child_layer, layer_uses)
+                 edges_out, child_layer, layer_uses, group_layer)
 
 
 def _subtree_polys(defn, by_id, memo, stack) -> int:
@@ -1101,7 +1108,7 @@ def _adapt(model, name: str, skp_path=None):
             sub_edges: list = []
             _collect(child, placed, by_id, attr_map, sub, 0, set(),
                      proto_ids, proto_uses, inh, image_uses, sub_edges,
-                     layer_uses=layer_uses)
+                     layer_uses=layer_uses, group_layer=lay)
             if sub:
                 gp = {"name": getattr(child, "name", None) or name,
                       "faces": sub, "soft_edges": sub_edges,
@@ -1124,7 +1131,7 @@ def _adapt(model, name: str, skp_path=None):
         sub_edges = []
         _collect(child, placed, by_id, attr_map, sub, 0, set(),
                  proto_ids, proto_uses, inh, image_uses, sub_edges,
-                 layer_uses=layer_uses)
+                 layer_uses=layer_uses, group_layer=lay)
         if sub:
             groups.append({"name": getattr(child, "name", None) or name,
                            "faces": sub, "soft_edges": sub_edges,
@@ -1309,6 +1316,7 @@ def parse(path, progress=None):
     if progress is not None:
         progress(0.1, "Parsing .skp (OpenSKP)…")
     model = openskp.SkpFile.open(str(path)).parse()
+    openskp_compat.resolve_face_layers(model)   # tag ids → names (#700)
     if progress is not None:
         progress(0.6, "Building geometry…")
     return _adapt(model, Path(path).stem, skp_path=path)

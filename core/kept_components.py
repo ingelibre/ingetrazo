@@ -92,3 +92,26 @@ def definitions_of(scene) -> list:
         seen.add(id(g.mesh))
         out.append(make_template(g))
     return out
+
+
+def names_in_use(scene, skip=None) -> set:
+    """The names of every group and component in the model — nested ones
+    and the kept templates too — but ``skip``'s own."""
+    from core.purge import iter_groups
+    groups = list(iter_groups(getattr(scene, "groups", None)))
+    groups += list(getattr(scene, "kept_components", None) or ())
+    return {g.name for g in groups if g is not skip and g.name}
+
+
+def numbered_name(name: str, taken) -> str:
+    """``name`` made free with a number: «Silla» → «Silla #2», and a name
+    that already ends in one counts on from it — «Puerta #3» → «Puerta #4»
+    — skipping every name in ``taken`` (#620, @ibsgroupdubai-netizen: Make
+    Unique left two objects with the same name)."""
+    import re
+    m = re.match(r"^(.*?)\s*#(\d+)$", name)
+    base, n = (m.group(1), int(m.group(2)) + 1) if m else (name, 2)
+    taken = set(taken)
+    while f"{base} #{n}" in taken:
+        n += 1
+    return f"{base} #{n}"

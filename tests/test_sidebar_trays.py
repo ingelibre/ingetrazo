@@ -202,3 +202,93 @@ def test_a_new_extension_asking_to_start_hidden_does_so_on_a_used_profile(
     assert late.isHidden()                            # installed later: hidden
     assert not win.georef_tray.isHidden()             # the choice still rules
     _close(win)
+
+
+def test_restore_default_panels_gives_the_tray_its_first_run_width(
+        settings_file):
+    """The width a first run has — the factory layout's — is the one
+    Restore default panels puts back after the tray was dragged wider."""
+    from views.main_window import MainWindow
+    win = MainWindow()
+    win.resize(1400, 900)
+    _shown(win)
+    assert win.tray.width() == MainWindow.FACTORY_TRAY_WIDTH
+    win.resizeDocks([win.tray], [700], Qt.Horizontal)
+    for _ in range(5):
+        _app.processEvents()
+    assert win.tray.width() > 600
+    win.restore_default_trays()
+    for _ in range(5):
+        _app.processEvents()
+    assert win.tray.width() == MainWindow.FACTORY_TRAY_WIDTH
+    _close(win)
+
+
+def test_a_tray_left_wide_last_time_still_restores_to_the_factory_width(
+        settings_file):
+    """The report: the layout is saved on closing, so a tray left 600 px
+    wide opens 600 px wide; restoring to «the width it opened with» then
+    changed nothing. Restore default panels gives the factory width."""
+    from views.main_window import MainWindow
+    win = MainWindow()
+    win.resize(1400, 900)
+    _shown(win)
+    win.resizeDocks([win.tray], [600], Qt.Horizontal)
+    for _ in range(5):
+        _app.processEvents()
+    _close(win)                                      # saves the layout
+    win = MainWindow()
+    win.resize(1400, 900)
+    _shown(win)
+    assert abs(win.tray.width() - 600) <= 2          # opened wide
+    win.restore_default_trays()
+    for _ in range(5):
+        _app.processEvents()
+    assert win.tray.width() == MainWindow.FACTORY_TRAY_WIDTH
+    _close(win)
+
+
+def test_restore_default_panels_keeps_the_window_s_height(settings_file):
+    """Every tray was docked one under the other before being tabbed: their
+    heights added up past the window, which grew to hold them — maximized,
+    its foot went off the screen and the sidebar's handle, centred on the
+    view, slid down with it (2026-10-16: «el botón se desplaza hacia abajo
+    al restablecer paneles»)."""
+    from views.main_window import MainWindow
+    win = MainWindow()
+    win.resize(1400, 800)
+    _shown(win)
+    height, handle = win.height(), win._sidebar_handle.y()
+    win.restore_default_trays()
+    for _ in range(5):
+        _app.processEvents()
+    assert win.height() == height
+    assert abs(win._sidebar_handle.y() - handle) <= 2
+    _close(win)
+
+
+def _over_the_view(win, handle):
+    """``handle`` stacked above the viewport (later among the window's
+    children): the viewport draws with OpenGL and hides what lies under."""
+    kids = [c for c in win.children() if c.isWidgetType()]
+    return kids.index(handle) > kids.index(win.viewport)
+
+
+def test_reordering_the_panel_tabs_leaves_the_sidebar_handle_on_top(
+        settings_file):
+    """Dragging a tab along the bar restacks the window's children and the
+    viewport came out above the handle: half of it hidden under the view
+    (2026-10-16: «al mover los paneles de orden … queda medio oculto»)."""
+    from views.main_window import MainWindow
+    win = MainWindow()
+    win.resize(1400, 800)
+    _shown(win)
+    assert _over_the_view(win, win._sidebar_handle)
+    bar = next(tb for tb in win._dock_tab_bars()
+               if tb.isVisible() and tb.count() > 1 and tb.y() >= 0)
+    bar.moveTab(0, 1)
+    for _ in range(5):
+        _app.processEvents()
+    assert _over_the_view(win, win._sidebar_handle)
+    assert _over_the_view(win, win._left_handle)
+    _close(win)

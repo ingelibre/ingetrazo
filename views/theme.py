@@ -225,13 +225,19 @@ def _repolish(app) -> None:
 def _redraw_icons(app) -> None:
     """The programmatic icons are painted in the palette's ink when built;
     anything tagged with an ``icon_key`` property gets repainted. (The main
-    window keeps its own list — see MainWindow._refresh_toolbar_icons.)"""
+    window keeps its own list — see MainWindow._refresh_toolbar_icons.)
+
+    A menu is a top-level widget of its own, and with PySide 6.11.1 asking
+    one for its QActions leaves the wrappers of OTHER widgets dead: after an
+    accent change the next Open failed in the Styles/Shadows panels («C++
+    object already deleted») or F3's menu walk segfaulted (extension bench,
+    15-10). Its actions are reached anyway from the window that owns it."""
     from PySide6.QtGui import QAction
-    from PySide6.QtWidgets import QAbstractButton
+    from PySide6.QtWidgets import QAbstractButton, QMenu
     from views.icons import tool_icon
     for top in app.topLevelWidgets():
-        for obj in (top.findChildren(QAction)
-                    + top.findChildren(QAbstractButton)):
+        actions = [] if isinstance(top, QMenu) else top.findChildren(QAction)
+        for obj in actions + top.findChildren(QAbstractButton):
             key = obj.property("icon_key")
             if key:
                 obj.setIcon(tool_icon(str(key)))

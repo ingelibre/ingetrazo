@@ -515,6 +515,9 @@ def main(argv=None):
     Path(args.out).write_text(json.dumps(res, indent=1, ensure_ascii=False),
                               encoding="utf-8")
     print(f"\n-> {args.out}")
+    # The gestures edited the document (Move): close without the «discard
+    # the changes?» question, which waited forever with nobody to answer.
+    d.win._saved_content = d.win.viewport.scene.content_version
     d.win.close()
     return 0
 

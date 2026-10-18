@@ -17,6 +17,76 @@ follow [SemVer](https://semver.org).
   (hasta 2025-06-18) y marca sus herramientas: las de solo lectura
   (`query_model`, `screenshot`) se pueden aprobar sin preguntar,
   `run_python` no.
+- **«En el eje» al empezar Línea, Rectángulo, Círculo y Arco** (#546, #718,
+  @pacaeiro): en espacio vacío, el primer punto se engancha a los ejes rojo,
+  verde y azul, como ya hacía la Cinta. Solo cuando no hay nada mejor bajo
+  el cursor: nunca sobre una cara, ni con el eje tapado por el modelo o
+  visto de punta.
+- **Cambiar entre órbita y desplazamiento sin soltar la rueda** (#231, #720,
+  @pacaeiro): durante el arrastre con el botón central, pulsar o soltar
+  Mayús pasa de orbitar a desplazar y al revés.
+
+### Cambiado
+- **Elegir otra vez el mismo componente de la biblioteca pone una copia
+  del mismo componente.** Cada vez se volvía a leer el archivo del modelo
+  y se añadía una pieza nueva e independiente: cuatro veces el mismo
+  mueble de 12 600 caras eran 50 400 caras en el modelo y la lectura de
+  2 s se repetía cada vez. Ahora la primera vez se coloca un componente y
+  las siguientes son copias que comparten su definición, como en
+  SketchUp (editar una cambia todas; «Hacer único» separa una). Vale para
+  la biblioteca en línea y para los componentes incluidos. Medido con 40
+  inserciones de 10 modelos: cargar el modelo pasa de 440 a 30 ms
+  (mediana; el peor, de 2,2 a 0,13 s) y colocarlo de 286 a 118 ms. La
+  ventana de la biblioteca pinta además su primera pantalla de
+  miniaturas al abrir, sin esperar un ciclo.
+- **El gestor de extensiones abre con las imágenes ya puestas.** Cada
+  apertura volvía a leer y reducir las capturas completas (algunas de más
+  de 3000 px) y las tarjetas salían con «Vista previa no disponible» antes
+  de su imagen. Ahora la miniatura ya reducida se guarda junto a las
+  capturas (y se rehace si la captura cambia), se recuerda mientras
+  IngeTrazo está abierto y las demás se preparan en segundo plano; no se
+  descarga nada que antes no se descargara.
+- **El plano de Rectángulo, Círculo y Arco en espacio vacío lo elige la
+  cámara, por el origen de los ejes** (#719, @pacaeiro), como en SketchUp:
+  el suelo al mirar hacia abajo y los planos verticales rojo o verde según
+  hacia dónde mira la vista; antes iban al plano por el centro del modelo.
+  En vistas casi a ras, donde antes el clic no daba punto, ahora sí lo da.
+  La forma se ve del color de su plano mientras se traza. Línea, Cinta y
+  Cota no cambian.
+- **Motor Rust experimental** (apagado por defecto): en Ventana ▸
+  Preferencias ▸ General, «Motor Rust (experimental)» calcula las partes
+  más pesadas con un módulo nativo nuevo, y se aplica al volver a abrir el
+  programa. En la Plaza de Yanque (115 883 caras): las líneas ocultas de
+  una lámina vectorial pasan de 150 s a 5 s, Intersecar caras con todo
+  seleccionado de 266 s a 9 s, y Orientar caras de 34 s a 9 s; empujar y
+  tirar sobre un terreno grande va unas cuatro veces más rápido. El
+  resultado es el mismo que con el motor de siempre, comprobado cara por
+  cara. Si el módulo no carga, IngeTrazo sigue con el motor de siempre sin
+  avisar de error; Ayuda ▸ Acerca de dice qué motor está en uso. Viene en
+  Windows, macOS, AppImage y Snap; el Flatpak sigue con el motor de siempre
+  en esta versión. Es una prueba: guarda copia de tus archivos y reporta lo
+  raro con la etiqueta `rust-engine`.
+  Con el motor encendido, además, los modelos grandes se abren como
+  **mallas ligeras**: cada grupo se queda en arreglos compactos y solo se
+  construye cuando lo editas o haces clic en una de sus caras; el dibujo,
+  la selección, el panel de Materiales y el guardado leen esos arreglos.
+  En una planta industrial de 14 millones de caras (#158) abrir en ventana
+  pasa de 110 s a 16 s, la memoria de 7,5 GB a 4,8 GB y guardar de 15 s a
+  9 s, con el archivo guardado idéntico byte a byte. Si una vez el programa
+  no llega a abrirse con el motor encendido, el siguiente arranque vuelve
+  solo al motor de siempre y lo avisa; `--python-engine` en la línea de
+  órdenes hace lo mismo para un arranque. Con el motor encendido, el
+  enganche y la selección en esos modelos consultan un índice espacial
+  nativo para saber qué componentes mirar, y las consultas tardan la mitad
+  con el mismo resultado.
+- **Modelos grandes más fluidos** (#158), con los dos motores: orbitar,
+  desplazar y hacer zoom en esa planta pasa de 86 ms a 34 ms por cuadro (de
+  12 a 30 imágenes por segundo en una gráfica integrada); mover un objeto,
+  de 1 s a 0,25 s por movimiento del ratón; deshacer, de 4,6 s a unos
+  2,5 s; entrar a un grupo, de 5,2 s a 3,1 s. Las miniaturas del panel de
+  Componentes se dibujan solo para las filas visibles y el panel de
+  Materiales ya no relee las texturas del disco tras cada cambio. La
+  imagen es la misma, comprobada píxel a píxel.
 - **Color de acento de los iconos y las barras** (#393): en Ventana ▸
   Preferencias ▸ General se elige el color de los detalles de los iconos y
   del fondo de los botones bajo el ratón: naranja IngeTrazo (el de siempre,
@@ -25,6 +95,109 @@ follow [SemVer](https://semver.org).
   selección en el visor 3D sigue en naranja.
 
 ### Corregido
+- **Pasar el cursor con Línea sobre un modelo muy grande ya no da error**
+  (#158): en modelos con más de un millón de caras en componentes, las
+  aristas de los grupos cercanas al cursor se medían en una versión del
+  índice de selección y se leían en otra, que ya había incorporado más
+  componentes; el enganche podía tomar una arista ajena o fallar con
+  «index … is out of bounds». Pasaba con los dos motores y ya estaba en la
+  0.5.8. También afectaba a seleccionar un grupo por su arista.
+- **Inferencias más ligeras sobre modelos densos** (#158): la inferencia
+  «En arista» comprobaba si cada arista cercana estaba tapada, una por una,
+  aunque solo se queda con la más cercana visible; ahora pregunta desde la
+  más cercana y en tandas. Con el motor Rust encendido, además, esas
+  comprobaciones de «¿está tapado?» se calculan en el módulo nativo (las
+  pocas que quedan al límite de la precisión las sigue respondiendo el
+  cálculo de siempre, así que el punto enganchado es el mismo). Pasar el
+  cursor con Línea sobre una planta industrial de 4,7 millones de caras: el
+  movimiento más lento pasa de 28,7 s a 5,2 s y el gesto entero de 204 s a
+  103 s.
+- **Ratón 3D (SpaceMouse) en Windows: sin saltos y con el zoom en su
+  sentido** (vídeo de revisión de Rafael García; PR #581 de @deedend como
+  pista): el controlador de 3Dconnexion convierte el movimiento de la tapa
+  en giros de la rueda del ratón para los programas que no conoce, y esos
+  pasos de zoom (unos ocho por segundo) se sumaban a la lectura directa del
+  aparato. Ahora la rueda no hace nada mientras la tapa mueve la vista (por
+  encima de la zona muerta, y 0,4 s después); con la tapa quieta, la rueda
+  del ratón va como siempre. Además el eje adelante/atrás se leía con el
+  signo cambiado en Windows, así que el zoom iba al revés. Y en Preferencias
+  ▸ Ratón 3D hay una lectura en vivo: los seis números que manda el aparato
+  y cómo los entiende IngeTrazo.
+- **Una guía con coordenadas inválidas ya no impide guardar** (#723,
+  @kcgemail): el guardado se negaba entero con «un punto con coordenadas
+  inválidas … scene › guides[0] › point[0]» y el trabajo no se podía
+  guardar. Una guía es solo una ayuda para dibujar, así que ahora se deja
+  fuera del archivo, como ya pasaba con la cámara (#485); y la Cinta y el
+  Transportador ya no dejan guías así.
+- **Las caras con etiqueta propia de un .skp llegan a su capa** (#700,
+  @Aaron1992): llegaban a una capa con el número interno de la etiqueta
+  («84», «680»…) en vez de su nombre, así que ocultar «Banderas» o «Roof»
+  no las ocultaba. Pasaba en casi todos los .skp con caras etiquetadas.
+- **Las partes que se separan de un grupo etiquetado de un .skp conservan
+  su etiqueta** (#703, @Aaron1992): imágenes, figuras que miran a la cámara
+  y copias de componentes caían en Layer 0 y seguían a la vista al ocultar
+  la etiqueta del grupo.
+- **Ver todo encuadra también las imágenes de referencia visibles** (#702,
+  @Aaron1992): un plano importado para calcar, lejos del origen, se quedaba
+  fuera de la pantalla.
+- **El Asistente IA ya no cierra IngeTrazo al arrancar en algunos Flatpak**
+  (#706, @mvanhorn): pedir la fuente monoespaciada del sistema podía
+  romperse dentro del sandbox; el chat usa ahora la fuente de la
+  aplicación.
+- **Puente IA: una lámina creada con `run_python` es un paso que se puede
+  deshacer** (#715, @francisreboucas, parte de #694): antes el puente
+  respondía «sin cambios» y el deshacer del agente quitaba la edición
+  anterior del usuario.
+- Alemán: la vista trasera es «Hinten» y el relleno sólido del corte
+  «Gefüllt» (#705, @Aaron1992).
+- **La goma ya no borra las aristas que quedan detrás de una cara** (#663,
+  @SPMech): al pasar la goma por una cara para borrar una arista dibujada
+  en ella, también marcaba la arista de la cara de atrás que caía bajo el
+  cursor, y las dos se borraban. Ahora la goma solo toma las aristas que se
+  ven, igual que Seleccionar desde #71; vale también para ocultar con Mayús
+  y para el resaltado al pasar el ratón.
+- **Abrir otro documento ya no arrastra los planos de sección del
+  anterior** (#602, ArchXQ IT): un archivo sin planos se abría con los del
+  documento que estaba abierto antes, y al guardarlo se quedaban grabados
+  en él. Lo mismo pasaba con los interruptores de planos y cortes, Objetos
+  y Geometría ocultos, las escalas propias, el color del dorso de las caras
+  y las capas que el archivo no tenía. Ahora cada documento se abre solo
+  con lo suyo. Y Archivo ▸ Nuevo borra también un documento que solo
+  tenía planos de sección.
+- **Borrar la diagonal de un rectángulo ya no le da la vuelta a la cara**
+  (#529, @GWydouw): al unir dos caras de un mismo plano, el contorno salía
+  en cualquiera de los dos sentidos, y casi la mitad de las veces la cara
+  unida quedaba del revés. Ahora conserva el lado de la cara original y su
+  pintura por delante y por detrás.
+- **Intersecar caras ya no falla con caras casi paralelas**: dos planos
+  separados por un ángulo minúsculo hacían una división por cero y la orden
+  no hacía nada. Además, la búsqueda de qué caras pueden cruzarse va mucho
+  más rápida en modelos grandes.
+- **«x5» tras copiar hace la matriz, igual que «5x»** (#542): después de
+  copiar con Mover o Rotar + Ctrl, teclear «x5» abría la herramienta Texto,
+  porque la X sola es su atajo. Justo después de una copia, mientras «3x» o
+  «/3» harían una matriz, la X va a la casilla de valores; en cualquier otro
+  momento sigue abriendo Texto. Esc justo después de copiar cierra esa
+  ventana (y la X vuelve a ser Texto) antes de quitar la selección.
+- **El Asistente IA vuelve a funcionar con OpenAI** (#517, @jb-dev-github):
+  los modelos nuevos de OpenAI rechazaban cada pedido con «HTTP 400:
+  Unsupported parameter: 'max_tokens'». Con OpenAI se manda ahora
+  `max_completion_tokens`, que aceptan todos sus modelos; Groq, Gemini,
+  OpenRouter, DeepSeek y Ollama siguen con el nombre de siempre.
+- **El STL exportado sale en milímetros** (#513, @toSvenson): un STL no
+  guarda la unidad y los programas de impresión 3D lo leen en milímetros,
+  pero IngeTrazo escribía los metros del modelo, así que una pieza de
+  15 × 25 mm entraba al laminador 1000 veces más chica. Ahora Archivo ▸
+  Exportar ▸ STL pregunta la unidad, con milímetros por defecto, y recuerda
+  la elección, igual que la importación.
+- **Un plano de sección ya no deja encajar en lo que oculta** (#384,
+  @jonson7777): solo se quitaban del snap las aristas con los dos extremos
+  en el lado cortado, así que la arista que cruza el corte —la vertical de
+  un muro cortado a media altura— seguía ahí entera, y el cursor encajaba en
+  su extremo y en su tramo ocultos. Ahora lo que el corte oculta cuenta como
+  oculto para todo punto: extremos, puntos medios, «en arista», cruces, y
+  también al pulsar aristas, vértices y grupos. Vale en todos los estilos,
+  también en Rayos X y alambre; con los cortes apagados no cambia nada.
 - **El gestor de extensiones ya no parpadea al cambiar de pestaña, instalar
   o descargar** (#555): cada cambio entre Explorar e Instaladas reconstruía
   todas las tarjetas, las viejas seguían pintadas un instante debajo de las

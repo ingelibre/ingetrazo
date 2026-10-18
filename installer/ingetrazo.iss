@@ -53,6 +53,11 @@ WizardStyle=modern
 ; The wizard speaks the language of Windows (English, Spanish, Brazilian
 ; Portuguese or Polish) and asks only when none of them matches (issue #135).
 ShowLanguageDialog=auto
+; Follow Windows on every install, upgrades included. Inno Setup reuses the
+; language of the previous install by default, and every install up to
+; 0.5.3 was Spanish-only: upgrading kept showing Spanish on an English
+; Windows (issue #591).
+UsePreviousLanguage=no
 DisableProgramGroupPage=yes
 ; We register file-type icons/associations — tells Explorer to refresh them.
 ChangesAssociations=yes

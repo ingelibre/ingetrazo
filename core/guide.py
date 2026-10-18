@@ -40,6 +40,14 @@ class Guide:
     def is_line(self) -> bool:
         return self.direction is not None
 
+    def is_finite(self) -> bool:
+        """Every coordinate is a number. A guide at NaN cannot be drawn or
+        snapped to, and the file refused to save over one (#723)."""
+        import math
+        return all(math.isfinite(c) for v in (self.point, self.direction,
+                                              self.origin)
+                   if v is not None for c in (v.x(), v.y(), v.z()))
+
     def segment(self) -> tuple[QVector3D, QVector3D]:
         """The guide as a long finite segment (for render clipping and snap)."""
         if self.direction is None:

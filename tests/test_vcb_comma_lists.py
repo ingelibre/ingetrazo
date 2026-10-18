@@ -61,6 +61,43 @@ def test_typing_200_comma_100_in_the_rectangle_draws_200_by_100():
         win.close()
 
 
+def _typed(tool_name, keys):
+    """The value box after typing ``keys`` with ``tool_name`` active."""
+    from views.main_window import MainWindow
+
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        win._activate_tool(tool_name)
+        vp.setFocus()
+        QTest.keyClicks(vp, keys)
+        return vp._value_buffer
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_a_comma_after_a_decimal_number_starts_the_next_value():
+    # #598: «0.9,2.1» lost the comma, because the token already had a
+    # decimal point, and became 0.921 without a warning.
+    buf = _typed("line", "0.9,2.1")
+    assert buf == "0.9;2.1"
+    assert _parse(buf) == pytest.approx((0.9, 2.1))
+    buf = _typed("line", "2,5,1")
+    assert _parse(buf) == pytest.approx((2.5, 1.0))
+    # a second decimal point is still refused
+    assert _typed("line", "0.9.2") == "0.92"
+
+
+def test_typing_a_comma_list_of_three_in_the_rectangle_keeps_every_comma():
+    # Without ";" or a space every comma separates the Rectangle's fields,
+    # so a comma after «3,2» is a separator, not a second decimal point.
+    buf = _typed("rectangle", "3,2,1")
+    assert _parse(buf, lists=True) == pytest.approx((3.0, 2.0, 1.0))
+    buf = _typed("rectangle", "0.9,2.1")
+    assert _parse(buf, lists=True) == pytest.approx((0.9, 2.1))
+
+
 def test_mixed_inches_with_a_comma_and_a_space_are_two_values():
     # #189 (@Loonster83): «1 3/8", 1 3/16"» — a mixed number always carries
     # a space, so the comma was read as a decimal point and the whole entry

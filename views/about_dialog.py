@@ -211,6 +211,66 @@ class _Credits(QWidget):
         self._fade.raise_()
 
 
+def system_info(version: str, gl_line: str = "") -> str:
+    """The lines a bug report needs (#476), as plain text to paste in an
+    issue: program, system, Python, Qt, OpenGL, screen and language.
+
+    Always in English, whatever the interface language, so whoever reads
+    the report can read it too. Nothing personal: no user name, no paths."""
+    import platform
+
+    import PySide6
+    from PySide6.QtCore import qVersion
+    from PySide6.QtWidgets import QApplication
+
+    from core.i18n import current_language
+
+    lines = [f"IngeTrazo {version} ({_build()})",
+             f"OS: {_os_name()} ({platform.machine()})",
+             f"Python: {platform.python_version()}",
+             f"Qt: {qVersion()}, PySide6: {PySide6.__version__}"]
+    if gl_line:
+        lines.append(f"OpenGL: {gl_line}")
+    app = QApplication.instance()
+    screen = app.primaryScreen() if app is not None else None
+    if screen is not None:
+        size = screen.size()
+        lines.append(f"Screen: {size.width()}x{size.height()} "
+                     f"@ {screen.devicePixelRatio():g}x")
+    lines.append(f"Language: {current_language()}")
+    return "\n".join(lines)
+
+
+def _build() -> str:
+    """How this copy runs: a Flatpak or an AppImage say so — a Flatpak is
+    not frozen, and read «from source» in reports."""
+    import os
+    import sys
+    if os.environ.get("FLATPAK_ID"):
+        return "Flatpak"
+    if os.environ.get("APPIMAGE"):
+        return "AppImage"
+    return "packaged" if getattr(sys, "frozen", False) else "from source"
+
+
+def _os_name() -> str:
+    """The system, in words no locale translates. ``platform.platform()``
+    asks ``uname -p``, which answers in the user's language: a Spanish
+    Linux reported «…-x86_64-desconocido-with-glibc2.43»."""
+    import platform
+    system = platform.system()
+    if system == "Darwin":
+        return f"macOS {platform.mac_ver()[0]}"
+    if system == "Windows":
+        return f"Windows {platform.release()} ({platform.version()})"
+    name = f"{system} {platform.release()}"
+    try:
+        pretty = platform.freedesktop_os_release().get("PRETTY_NAME")
+    except OSError:
+        pretty = None
+    return f"{name}, {pretty}" if pretty else name
+
+
 class AboutDialog(QDialog):
     def __init__(self, parent, version: str, gl_line: str = "") -> None:
         super().__init__(parent)
@@ -241,6 +301,10 @@ class AboutDialog(QDialog):
         # The top is one compact block, so the credits below get the room
         # (Marco, 23-09).
         gl = f"<br><small>OpenGL: {gl_line}</small>" if gl_line else ""
+        from core._native import engine
+        # Which engine computes the heavy parts (Rust when the experimental
+        # native engine is on and loads) — the first thing a report needs.
+        gl += f"<br><small>{tr('Engine')}: {engine()}</small>"
         para("<b style='font-size:15px'>IngeTrazo</b> "
              f"{tr('Version')} {version}{gl}<br>"
              f"{tr('Free 3D modeler for architecture, engineering and 3D design.')}<br>"
@@ -256,4 +320,19 @@ class AboutDialog(QDialog):
              "github.com/ingelibre/ingetrazo</a></small>")
         buttons = QDialogButtonBox(QDialogButtonBox.Ok, self)
         buttons.accepted.connect(self.accept)
+        # What to paste in a bug report, one click away (#476).
+        self._info = system_info(version, gl_line)
+        self.copy_button = buttons.addButton(
+            tr("Copy to clipboard"), QDialogButtonBox.ActionRole)
+        self.copy_button.setToolTip(self._info)
+        self.copy_button.clicked.connect(self.copy_info)
         col.addWidget(buttons)
+
+    def copy_info(self) -> None:
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(self._info)
+        self.copy_button.setText(tr("Copied"))
+        # Tied to the button: closing the dialog first cancels the reset.
+        QTimer.singleShot(
+            1500, self.copy_button,
+            lambda: self.copy_button.setText(tr("Copy to clipboard")))

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QVector3D
 
-from core.snap import SnapResult
+from core.snap import POINT_SNAP_KINDS, SnapResult
 
 
 #: Arrow keys → the axis a locked drawing plane is NORMAL to (Right =
@@ -40,10 +40,15 @@ class AxisMagnet:
 
     @pacaeiro, issue #52: «The Draw commands in the group of ARCS and
     SHAPES should also use the magnetic Snaps, like LINE. Except
-    Freehand» — and #51 for Text, #50 for Dimension. Same two numbers as
+        Freehand» — and #51 for Text, #50 for Dimension. Same two numbers as
     Line (issue #31): within 3° of an axis from ``start_point`` the point
     lands ON the axis instead of merely lighting the cue, and the axis the
     work plane cannot hold is found in pixels. Alt still switches it off.
+
+    A shape that lives in ONE plane (``PlaneLock``) ever only gets the
+    first of the two. The screen detector exists for the axes the plane
+    CANNOT hold, so an inference along one of them takes the point off the
+    drawing plane: see :meth:`magnet_off_plane`.
 
     Only a click that is a *direction from the start point* wants this:
     an arc's bulge, a rotated rectangle's height or a dimension's placement
@@ -63,13 +68,34 @@ class AxisMagnet:
     def magnet_on(self) -> bool:
         return True
 
+    def magnet_off_plane(self) -> bool:
+        """Whether an inference may take the point OFF the plane the tool
+        is drawing on.
+
+        Only the screen detector can, and its whole reason to exist is the
+        axes the work plane CANNOT hold (issues #31/#42) — right for a Line,
+        which leaves the plane it started on, and for the free placement of
+        a Text or a Dimension. A shape that LIVES in one plane
+        (``PlaneLock``: circle, polygon, the arcs, the rotated rectangle)
+        can only be drawn with its points in it. Over a face the magnet
+        answered with the one axis that plane cannot hold — the face's own
+        normal, the first axis the cursor crosses when it moves up the
+        screen — so the rim left the face while the radius was measured IN
+        it, and the circle came out «a metade ou menos ainda» (Marco,
+        #545). A planar shape magnetises along the axes its plane holds;
+        that is the whole of the first half of issue #31.
+        """
+        return not isinstance(self, PlaneLock)
+
     @property
     def magnetic_axis_deg(self):
         return self._MAGNET_DEG if self.magnet_on() else None
 
     @property
     def screen_axis_px(self):
-        return self._MAGNET_PX if self.magnet_on() else None
+        if not self.magnet_on() or not self.magnet_off_plane():
+            return None
+        return self._MAGNET_PX
 
 
 class PlaneLock:
@@ -79,9 +105,16 @@ class PlaneLock:
     same key again frees it. The classic plane lock (Marco, 2026-09-08:
     «quiero dibujar un círculo en el plano ZX… apretando las teclas de
     desplazamiento»).
-    Once the first point is down the arrows are the viewport's linear
-    axis lock again, as always. The lock is spent by the shape (or Esc),
-    the classic way.
+        Before the first click the key only chooses the plane, and that click
+    anchors it at the point (``_anchor_lock``); after it the plane stops
+    following the cursor and the key holds the shape on the plane it is
+    drawing on — the same key frees it (handing the plane back to the
+    cursor), a different one switches it. The lock is spent by the shape
+    (or Esc), the classic way. The arrows went back to being the
+    viewport's linear axis lock after the first click until Marco asked
+    for them to answer the whole way through («também deve funcionar»),
+    except where a later click reads that lock —
+    ``plane_lock_after_the_first_point``.
 
     The DOWN arrow is the classic magenta reference lock: over an
     edge the plane goes PERPENDICULAR to that edge, over a face PARALLEL
@@ -89,13 +122,32 @@ class PlaneLock:
     circle on an inclined axis line, then Follow Me it (issue #10,
     @pacaeiro: «I draw lines to represent the axis of the tubes … then
     have to rotate [the circle] to align the normal of the circle's plane
-    to the line»)."""
+    to the line»).
+
+    Shift is the Down arrow HELD: for as long as the key is down the plane
+    the cursor is detecting stays where it is, and letting go hands it
+    back — nothing is locked afterwards, it is the way to look at the
+    plane before committing to it (Marco: «antes de clicar no 1º ponto o
+    Shift funciona como se clicasse na arrow down temporariamente… marca o
+    plano que está a ser considerado, por exemplo uma face num cubo;
+    depois do 1º click é igual»). It is additive: the pointer goes on
+    marking midpoints, endpoints and alignments, and the inference lock
+    the viewport takes off the cursor still happens (``Viewport.
+    _capture_shift_lock``). A plane an arrow or Down is already holding is
+    not Shift's to release. See ``mark_plane``."""
 
     plane_lock: str | None = None
     #: Down-arrow reference lock: ``(normal, kind)``, kind ``"edge"`` (the
-    #: plane perpendicular to the hovered edge) or ``"face"`` (parallel to
-    #: the hovered face). Exclusive with ``plane_lock``: the last key wins.
+    #: plane perpendicular to the hovered edge), ``"face"`` (parallel to the
+    #: hovered face) or ``"plane"`` (the plane the shape is drawing on,
+    #: marked by a held Shift — not locked: the viewport lets it go on the
+    #: release). Exclusive with ``plane_lock``: the last key wins.
     plane_ref: tuple[QVector3D, str] | None = None
+    #: Whether the arrow lock goes on answering once the first point is
+    #: down. The rotated rectangle says no: with the base edge down the
+    #: arrows are the viewport's linear axis lock, which its width magnet
+    #: reads (``RotatedRectangleTool._width_dir``).
+    plane_lock_after_the_first_point: bool = True
     #: The plane the viewport used for the last cursor hit (`_last_work_plane`).
     #: A shape started on a free point (no face, no lock) has no captured
     #: ``work_plane``; its geometry is laid out on THIS plane instead, which
@@ -159,6 +211,27 @@ class PlaneLock:
         An arrow-key lock was asked for explicitly and never yields."""
         if self.plane_lock is not None or self.plane_ref is not None:
             return None
+        if self.snap_kind is not None and self.snap_kind not in POINT_SNAP_KINDS:
+            # The cursor does not name a point of the model: it is standing
+            # on a FACE — or on an inference the engine keeps on that face
+            # (``"aligned"``, ``"from_point"``, ``"extension"``) — and that
+            # face IS the plane the shape is drawn on. The points do not get
+            # to bend it away: the plane they would ask for is derived from
+            # this same cursor, and it is the derivation that lost (#545 —
+            # a rectangle started on a cube's top vertex and drawn over its
+            # front face jumped onto the horizontal plane through the
+            # vertex). A snap that DOES name a point — a vertex, a midpoint,
+            # a crossing (``core.snap.POINT_SNAP_KINDS``) — stays the
+            # shape's business: that point may lie on no face at all, and
+            # the shape re-plans onto it (#37 — a window opening filled from
+            # jamb to jamb). ``Tool.snap_kind`` is the viewport's.
+            #
+            # ``None`` is «no kind known» — a tool driven by hand, a click
+            # whose hover never landed, the shape being built and measured
+            # directly — and keeps the rule this method had before the kind
+            # existed: the points decide. Only a kind that POSITIVELY names
+            # the face withholds the re-plan.
+            return None
         pts = [p for p in self.plane_points() if p is not None]
         if len(pts) < 2:
             return None
@@ -202,12 +275,6 @@ class PlaneLock:
             return locked
         plane = getattr(viewport, "_last_work_plane", None)
         from core import axes
-        if plane is not None and abs(QVector3D.dotProduct(
-                plane[1].normalized(), axes.AXES["z"])) > 0.99:
-            near = getattr(viewport, "_near_horizon_vertical", None)
-            vertical = near(point) if near is not None else None
-            if vertical is not None:
-                return vertical
         if plane is not None:
             return QVector3D(point), plane[1]
         return QVector3D(point), axes.axis("z")
@@ -228,15 +295,16 @@ class PlaneLock:
         return None
 
     def lock_color(self):
-        """The rubber band's colour while an arrow-key lock is on: the axis
-        colour, or the magenta for the Down-arrow reference."""
+        """The rubber band colour for a locked or camera-selected plane."""
         if self.plane_ref is not None:
             from core.snap import COLOR_REFERENCE
             return (*COLOR_REFERENCE, 1.0)
-        if self.plane_lock is None:
-            return None
-        from tools.base import PLANE_LOCK_AXES
-        return self.plane_color(PLANE_LOCK_AXES[self.plane_lock])
+        if self.plane_lock is not None:
+            from tools.base import PLANE_LOCK_AXES
+            return self.plane_color(PLANE_LOCK_AXES[self.plane_lock])
+        if self.hover_plane is not None:
+            return self.plane_color(self.hover_plane[1])
+        return None
 
     @staticmethod
     def world_per_pixel(viewport, point: QVector3D, along: QVector3D):
@@ -255,16 +323,28 @@ class PlaneLock:
         d = math.hypot(b[0] - a[0], b[1] - a[1])
         return 0.25 / d if d > 1e-6 else None
 
+    @classmethod
+    def plane_preview_scale(cls, viewport, point: QVector3D,
+                            u: QVector3D, v: QVector3D):
+        """World scale for a preview glyph, based on its most visible axis."""
+        scales = [
+            scale for axis in (u, v)
+            if (scale := cls.world_per_pixel(viewport, point, axis)) is not None
+        ]
+        return min(scales) if scales else None
+
     def plane_lock_key(self, viewport, key: int) -> bool:
-        if getattr(self, "start_point", None) is not None:
+        if (getattr(self, "start_point", None) is not None
+                and not self.plane_lock_after_the_first_point):
             return False
         if int(key) == int(Qt.Key_Down):
-            return self._reference_lock_key(viewport)
+            return self.reference_lock_key(viewport)
         axis = PLANE_LOCK_KEYS.get(int(key))
         if axis is None:
             return False
         self.plane_ref = None
         self.plane_lock = None if self.plane_lock == axis else axis
+        self._anchor_lock()
         flash = getattr(viewport, "flash_status", None)
         if flash is not None:
             from core.i18n import tr
@@ -276,18 +356,35 @@ class PlaneLock:
             update()
         return True
 
-    def _reference_lock_key(self, viewport) -> bool:
-        """Down before the first click: lock the plane perpendicular to the
-        edge under the cursor (or parallel to the face under it); Down
-        again frees it. With nothing under the cursor the classic
-        lock does nothing, and neither do we — but the key stays ours, so the
-        viewport's linear reference (which is for the SECOND point) does
-        not swallow it."""
+    def _anchor_lock(self) -> None:
+        """Put the shape on the plane a lock just took — ``work_plane``
+        through the first point. A lock taken with the first point already
+        down MOVES the plane, and this is what makes it bite: with the
+        first point down the viewport re-plans the shape onto whatever the
+        cursor detects as it moves (#545), which is a plane through the
+        CURSOR — without this the lock just asked for loses to it. Before
+        the first click the click itself anchors the plane at the point,
+        and freeing the lock here drops ``work_plane`` so the cursor has
+        the plane back."""
+        start = getattr(self, "start_point", None)
+        if start is None:
+            return
+        self.work_plane = self.locked_work_plane(start)
+
+    def reference_lock_key(self, viewport) -> bool:
+        """The Down arrow: lock the plane perpendicular to the edge under
+        the cursor (or parallel to the face under it); Down again frees it.
+        With nothing under the cursor the classic lock does nothing, and
+        neither do we — but the key stays ours, so the viewport's linear
+        reference (which is for the SECOND point) does not swallow it.
+        Before as after the first click, and shared with a held Shift
+        (``mark_plane``)."""
         from core.i18n import tr
         flash = getattr(viewport, "flash_status", None)
         update = getattr(viewport, "update", None)
         if self.plane_ref is not None:
             self.plane_ref = None
+            self._anchor_lock()
             if flash is not None:
                 flash(tr("Drawing plane free"))
         else:
@@ -296,10 +393,39 @@ class PlaneLock:
                 return True
             self.plane_ref = ref
             self.plane_lock = None
+            self._anchor_lock()
             if flash is not None:
                 flash(tr("Drawing plane locked: perpendicular to the edge")
                       if ref[1] == "edge" else
                       tr("Drawing plane locked: parallel to the face"))
+        if update is not None:
+            update()
+        return True
+
+    def mark_plane(self, viewport) -> bool:
+        """Mark the plane the shape is drawing on — the held-Shift mark.
+
+        The plane the cursor is detecting, kept for as long as the key is
+        down; the viewport owns the key and calls ``Viewport.
+        _mark_plane_for_shift``. It is the same ``plane_ref`` the Down
+        arrow toggles, so the magenta cue, the preview and the locks that
+        never yield all come for free — but it does NOT touch
+        ``work_plane``: the mark is the plane the shape is ON, and with the
+        first point down that plane is the one the cursor is detecting
+        (#545), not a parallel through the first point (freezing onto the
+        latter is the very bug #545 fixed).
+
+        Returns whether Shift is the one holding the plane now: an arrow or
+        Down lock already on is not Shift's to release, and with no plane
+        detected there is nothing to mark."""
+        if self.plane_lock is not None or self.plane_ref is not None:
+            return False
+        plane = (self.work_plane if self.work_plane is not None
+                 else self.hover_plane)
+        if plane is None:
+            return False
+        self.plane_ref = (QVector3D(plane[1]).normalized(), "plane")
+        update = getattr(viewport, "update", None)
         if update is not None:
             update()
         return True
@@ -327,7 +453,9 @@ class PlaneLock:
         return None
 
     def clear_plane_lock(self) -> None:
-        """Both locks off — the shape spent them, or Esc / deactivation."""
+        """Both locks off — the shape spent them, or Esc / deactivation. A
+        held Shift's mark (``plane_ref``) goes with them; its own release
+        then has nothing left to do."""
         self.plane_lock = None
         self.plane_ref = None
 
@@ -433,9 +561,16 @@ class Tool(ABC):
     # back edges behind its faces, like real geometry; loose drawing tools keep
     # the default (preview always visible on top).
     wireframe_depth_tested: bool = False
-    # Caption for the Measurements box (VCB) while this tool is
+            # Caption for the Measurements box (VCB) while this tool is
     # active — "Length", "Dimensions", "Distance". ``None`` hides the box.
     vcb_label: str | None = None
+    #: The kind of the cursor's snap as of the last hover or click
+    #: (``ToolContext.snap.kind``), pushed by the viewport before it calls
+    #: the tool. ``"on_face"`` over a bare face, a ``core.snap.
+    #: POINT_SNAP_KINDS`` value when the cursor names a point of the model.
+    #: ``PlaneLock.snapped_plane`` reads it: only a cursor that names a
+    #: point gets to move a planar shape's plane (#545).
+    snap_kind: str | None = None
 
     @abstractmethod
     def on_activate(self, viewport) -> None:

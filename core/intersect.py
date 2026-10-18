@@ -129,6 +129,11 @@ def cross(a: _Poly, b: _Poly) -> list:
     d1, d2 = a.d, b.d
     c = QVector3D.dotProduct(n1, n2)
     den = 1.0 - c * c
+    if den < 1e-12:
+        # Nearly parallel: QVector3D works in float32, so c rounded to
+        # exactly 1 and this divided by zero (seen on a real model while
+        # testing #541). No well-defined crossing line there.
+        return []
     k1 = (d1 - d2 * c) / den
     k2 = (d2 - d1 * c) / den
     origin = n1 * k1 + n2 * k2
@@ -141,15 +146,77 @@ def cross(a: _Poly, b: _Poly) -> list:
     return segs
 
 
-def intersect(polys_a: list, polys_b: list, same: bool = False) -> list:
+def _boxes(polys: list):
+    import numpy as np
+    lo = np.array([p.lo for p in polys], dtype=np.float64).reshape(-1, 3)
+    hi = np.array([p.hi for p in polys], dtype=np.float64).reshape(-1, 3)
+    return lo, hi
+
+
+#: Box pairs tested per NumPy block (rows × columns), to bound the memory.
+_PAIR_BLOCK = 2_000_000
+
+
+def _touching(lo_a, hi_a, lo_b, hi_b, same: bool, eps: float = 1e-6):
+    """Index pairs ``(i, j)`` whose boxes touch — ``_boxes_touch`` for every
+    pair at once, in blocks of rows (``same``: j > i only)."""
+    import numpy as np
+    # The Rust engine (core._native) answers the same pairs in the same
+    # order: the same test, with a grid that skips the far boxes.
+    from core._native import native
+    if native is not None:
+        ii, jj = native.touching_boxes(
+            *(np.ascontiguousarray(x, dtype=np.float64)
+              for x in (lo_a, hi_a, lo_b, hi_b)), bool(same), float(eps))
+        yield from zip(ii.tolist(), jj.tolist())
+        return
+    rows = max(1, _PAIR_BLOCK // max(1, len(lo_b)))
+    for r0 in range(0, len(lo_a), rows):
+        r1 = min(len(lo_a), r0 + rows)
+        ok = np.all((lo_a[r0:r1, None, :] <= hi_b[None, :, :] + eps)
+                    & (lo_b[None, :, :] <= hi_a[r0:r1, None, :] + eps), axis=2)
+        if same:
+            ok &= np.arange(len(lo_b))[None, :] > np.arange(r0, r1)[:, None]
+        ii, jj = np.nonzero(ok)
+        yield from zip((ii + r0).tolist(), jj.tolist())
+
+
+def intersect(polys_a: list, polys_b: list, same: bool = False,
+              boxes_a=None, boxes_b=None) -> list:
     """Every crossing between a face of ``polys_a`` and one of ``polys_b``
-    (``same``: the two lists are one, each pair once)."""
+    (``same``: the two lists are one, each pair once). The box test runs
+    in NumPy blocks: one Python test per pair took minutes over a whole
+    model. ``boxes_a``/``boxes_b``: the ``_boxes`` of each list, when the
+    caller already has them."""
     out = []
-    for i, a in enumerate(polys_a):
-        start = i + 1 if same else 0
-        for b in polys_b[start:]:
-            if a is b or not _boxes_touch(a, b):
-                continue
+    if not polys_a or not polys_b:
+        return out
+    lo_a, hi_a = boxes_a if boxes_a is not None else _boxes(polys_a)
+    if same:
+        lo_b, hi_b = lo_a, hi_a
+        ia = ib = None
+    else:
+        import numpy as np
+        lo_b, hi_b = boxes_b if boxes_b is not None else _boxes(polys_b)
+        # Only the faces that reach the OTHER side's whole box can cross
+        # it: a big object (a pavement under a thousand others) is cut
+        # down to the few faces near each neighbour before the pair test.
+        eps = 1e-6
+        ia = np.nonzero(np.all((lo_a <= hi_b.max(axis=0) + eps)
+                               & (hi_a >= lo_b.min(axis=0) - eps), axis=1))[0]
+        if not len(ia):
+            return out
+        lo_a, hi_a = lo_a[ia], hi_a[ia]
+        ib = np.nonzero(np.all((lo_b <= hi_a.max(axis=0) + eps)
+                               & (hi_b >= lo_a.min(axis=0) - eps), axis=1))[0]
+        if not len(ib):
+            return out
+        lo_b, hi_b = lo_b[ib], hi_b[ib]
+    for i, j in _touching(lo_a, hi_a, lo_b, hi_b, same):
+        if ia is not None:
+            i, j = int(ia[i]), int(ib[j])
+        a, b = polys_a[i], polys_b[j]
+        if a is not b:
             out.extend(cross(a, b))
     return _dedupe(out)
 

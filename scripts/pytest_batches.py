@@ -58,6 +58,14 @@ def main() -> int:
             crashed.append(f"batch {i} (exit {proc.returncode})")
             sys.stderr.write(proc.stdout[-3000:] + proc.stderr[-3000:])
         elif proc.returncode == 1:
+            # The failures' own report too: a test that fails once in a
+            # while must leave its reason behind, not only its name.
+            out = proc.stdout
+            a = out.find("= FAILURES =")
+            b = out.find("short test summary")
+            if a >= 0:
+                head = out.rfind("\n", 0, a) + 1
+                sys.stderr.write(out[head:b if b > a else None][-20000:])
             sys.stderr.write("\n".join(ln for ln in lines
                                        if ln.startswith(("FAILED", "ERROR")))
                              + "\n")
