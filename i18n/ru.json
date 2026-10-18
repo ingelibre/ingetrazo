@@ -2967,5 +2967,10 @@
  "Computes the heavy parts (hidden lines of the sheets and more) with the new native engine, much faster on big models. It is a test: keep a copy of your files and report anything odd with the label rust-engine. Takes effect at the next start.": "Вычисляет тяжёлые части (скрытые линии листов и не только) новым нативным движком — намного быстрее на больших моделях. Это тест: сохраните копию файлов и сообщайте о странностях с меткой rust-engine. Вступает в силу при следующем запуске.",
  "Restart IngeTrazo to switch the engine.": "Перезапустите IngeTrazo, чтобы сменить движок.",
  "Engine": "Движок",
- "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "В прошлый раз IngeTrazo не открылся с включённым экспериментальным движком Rust, поэтому он вернулся к обычному движку. Включить его снова можно в разделе Настройки ▸ Общие."
+ "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "В прошлый раз IngeTrazo не открылся с включённым экспериментальным движком Rust, поэтому он вернулся к обычному движку. Включить его снова можно в разделе Настройки ▸ Общие.",
+ "Add Scene": "Добавить сцену",
+ "Update Scene": "Обновить сцену",
+ "Delete Scene": "Удалить сцену",
+ "Scene '{name}' added": "Сцена «{name}» добавлена",
+ "Select a scene in the Scenes panel first": "Сначала выберите сцену на панели «Сцены»"
 }

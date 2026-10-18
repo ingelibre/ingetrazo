@@ -2975,5 +2975,10 @@
  "This build of IngeTrazo does not carry the Rust engine.": "Ta wersja IngeTrazo nie zawiera silnika Rust.",
  "Computes the heavy parts (hidden lines of the sheets and more) with the new native engine, much faster on big models. It is a test: keep a copy of your files and report anything odd with the label rust-engine. Takes effect at the next start.": "Oblicza ciężkie części (ukryte linie arkuszy i nie tylko) nowym natywnym silnikiem, znacznie szybciej przy dużych modelach. To test: zachowaj kopię plików i zgłaszaj wszystko, co dziwne, z etykietą rust-engine. Działa po ponownym uruchomieniu.",
  "Restart IngeTrazo to switch the engine.": "Uruchom ponownie IngeTrazo, aby zmienić silnik.",
- "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "Ostatnim razem IngeTrazo nie uruchomił się z włączonym eksperymentalnym silnikiem Rust, więc wrócił do zwykłego silnika. Możesz go ponownie włączyć w Preferencje ▸ Ogólne."
+ "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "Ostatnim razem IngeTrazo nie uruchomił się z włączonym eksperymentalnym silnikiem Rust, więc wrócił do zwykłego silnika. Możesz go ponownie włączyć w Preferencje ▸ Ogólne.",
+ "Add Scene": "Dodaj scenę",
+ "Update Scene": "Aktualizuj scenę",
+ "Delete Scene": "Usuń scenę",
+ "Scene '{name}' added": "Dodano scenę „{name}”.",
+ "Select a scene in the Scenes panel first": "Najpierw zaznacz scenę w panelu Sceny"
 }

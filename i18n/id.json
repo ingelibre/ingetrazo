@@ -2970,5 +2970,10 @@
  "This build of IngeTrazo does not carry the Rust engine.": "Versi IngeTrazo ini tidak menyertakan mesin Rust.",
  "Computes the heavy parts (hidden lines of the sheets and more) with the new native engine, much faster on big models. It is a test: keep a copy of your files and report anything odd with the label rust-engine. Takes effect at the next start.": "Menghitung bagian yang berat (garis tersembunyi pada lembar dan lainnya) dengan mesin native baru, jauh lebih cepat pada model besar. Ini uji coba: simpan salinan berkas Anda dan laporkan hal aneh dengan label rust-engine. Berlaku saat aplikasi dibuka kembali.",
  "Restart IngeTrazo to switch the engine.": "Mulai ulang IngeTrazo untuk mengganti mesin.",
- "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "IngeTrazo tidak terbuka terakhir kali dengan mesin Rust eksperimental aktif, jadi kembali ke mesin normal. Anda dapat mengaktifkannya lagi di Preferensi ▸ Umum."
+ "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "IngeTrazo tidak terbuka terakhir kali dengan mesin Rust eksperimental aktif, jadi kembali ke mesin normal. Anda dapat mengaktifkannya lagi di Preferensi ▸ Umum.",
+ "Add Scene": "Tambah Scene",
+ "Update Scene": "Perbarui Scene",
+ "Delete Scene": "Hapus Scene",
+ "Scene '{name}' added": "Scene '{name}' ditambahkan",
+ "Select a scene in the Scenes panel first": "Pilih scene di panel Scene terlebih dahulu"
 }

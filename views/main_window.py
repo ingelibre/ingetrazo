@@ -1306,6 +1306,29 @@ class MainWindow(QMainWindow):
         camera_menu.addAction(self._act_zoom_extents)   # la MISMA del botón
         camera_menu.addAction(self._act_zoom_selection)
 
+        # Scenes as window actions, so they can take keys of one's own in
+        # Preferences ▸ Shortcuts (#695, discussions #639 and #640): the
+        # Scenes panel's buttons were the only way in. No factory keys —
+        # the known interface stays as it was. Each runs what its button
+        # runs; Update and Delete act on the scene selected in the panel.
+        scenes_menu = camera_menu.addMenu(tr("Scenes"))
+        self._scene_actions = {}
+        for key, text, tip, slot in (
+                ("scene_add", "Add Scene",
+                 "Save the current view and layer visibility",
+                 self._on_scene_add),
+                ("scene_update", "Update Scene",
+                 "Update the selected scene from the current view",
+                 self._on_scene_update),
+                ("scene_delete", "Delete Scene",
+                 "Delete the selected scenes", self._on_scene_delete)):
+            act = QAction(tr(text), self)
+            act.setObjectName(key)            # the same key in every language
+            act.setStatusTip(tr(tip))
+            act.triggered.connect(slot)
+            scenes_menu.addAction(act)
+            self._scene_actions[key] = act
+
         camera_menu.addSeparator()
 
         action_proj = QAction(tr("Toggle Perspective / Parallel"), self)
@@ -4805,6 +4828,38 @@ class MainWindow(QMainWindow):
     def _sheet_tab_menu(self, index: int, global_pos) -> None:
         self._ensure_composer().sheet_tab_menu(index, global_pos, self)
         self._refresh_sheet_tabs()
+
+    # ---- Scenes (Camera ▸ Scenes, #695) -------------------------------------
+    def _on_scene_add(self) -> None:
+        """«+ Scene», from a menu or a key. The new scene becomes the
+        panel's current one, so Update Scene right after updates it."""
+        panel = self.tray.scenes
+        panel._on_add()
+        views = self.viewport.scene.saved_views
+        if not views:
+            return
+        panel.list.setCurrentRow(len(views) - 1)
+        self.statusBar().showMessage(
+            tr("Scene '{name}' added", name=views[-1].name), 2000)
+
+    def _on_scene_update(self) -> None:
+        panel = self.tray.scenes
+        if panel.list.currentItem() is None:
+            self._no_scene_selected()
+            return
+        panel._on_update()
+
+    def _on_scene_delete(self) -> None:
+        panel = self.tray.scenes
+        if not panel.list.selectedItems() and panel.list.currentItem() is None:
+            self._no_scene_selected()
+            return
+        panel._on_delete()
+
+    def _no_scene_selected(self) -> None:
+        # From a key the panel may be closed: say why nothing happened.
+        self.statusBar().showMessage(
+            tr("Select a scene in the Scenes panel first"), 3000)
 
     def _on_open_composer(self) -> None:
         """Open (or raise) the sheet composer — see docs/composer-plan.md."""
