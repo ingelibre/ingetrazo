@@ -223,3 +223,104 @@ def test_the_linux_driver_reads_a_spacenavd_socket(tmp_path, monkeypatch):
     finally:
         dev.stop()
         server.close()
+
+
+# ---- configurable physical-axis mapping -------------------------------------
+
+def test_original_preset_preserves_legacy_inversion():
+    from core.ndof import mapped_movements
+    st = NdofSettings(invert_pan_x=True)
+    assert mapped_movements(NdofSample(right=1), st)["pan_x"] == -1
+
+
+def test_custom_axis_can_drive_different_action():
+    from core.ndof import mapped_movements
+    st = NdofSettings(mapping_preset="custom")
+    st.axis_mapping["right"] = "zoom"
+    st.axis_mapping["forward"] = "pan_x"
+    result = mapped_movements(NdofSample(right=1), st)
+    assert result["zoom"] == 1
+    assert result["pan_x"] == 0
+
+
+def test_custom_inversion_and_per_axis_speed():
+    from core.ndof import mapped_movements
+    st = NdofSettings(mapping_preset="custom")
+    st.axis_inversion["right"] = True
+    st.axis_sensitivity["right"] = 0.5
+    assert mapped_movements(NdofSample(right=1), st)["pan_x"] == pytest.approx(-0.5)
+
+
+def test_duplicate_actions_sum_and_clamp():
+    from core.ndof import mapped_movements
+    st = NdofSettings(mapping_preset="custom")
+    st.axis_mapping["up"] = "pan_x"
+    result = mapped_movements(NdofSample(right=0.5, up=0.5), st)
+    assert result["pan_x"] > 0.5
+    assert mapped_movements(NdofSample(right=1, up=1), st)["pan_x"] == 1
+
+
+def test_sixth_axis_can_be_assigned_and_rotation_lock_still_applies():
+    st = NdofSettings(mapping_preset="custom")
+    st.axis_mapping["roll"] = "orbit_x"
+    cam, moved = _push(NdofSample(roll=1), cam=_cam(),
+                       mapping_preset="custom", axis_mapping=st.axis_mapping)
+    assert moved
+    cam, moved = _push(NdofSample(roll=1), cam=_cam(),
+                       mapping_preset="custom", axis_mapping=st.axis_mapping,
+                       lock_rotation=True)
+    assert not moved
+
+
+def test_disabled_axis_does_nothing():
+    st = NdofSettings(mapping_preset="custom")
+    st.axis_mapping["right"] = "disabled"
+    assert not _push(NdofSample(right=1), mapping_preset="custom",
+                     axis_mapping=st.axis_mapping)[1]
+
+
+def test_freecad_style_preset_matches_hardware_test():
+    from core.ndof import FREECAD_MAPPING, FREECAD_INVERSION, mapped_movements
+    st = NdofSettings(mapping_preset="freecad")
+    assert FREECAD_MAPPING == {
+        "right": "pan_x", "up": "zoom", "forward": "pan_y",
+        "tilt": "orbit_y", "spin": "disabled", "roll": "orbit_x"}
+    assert FREECAD_INVERSION["up"] and FREECAD_INVERSION["tilt"]
+    output = mapped_movements(NdofSample(up=1, forward=1), st)
+    assert output["zoom"] == -1 and output["pan_y"] == 1
+
+
+def test_profile_json_round_trip(tmp_path):
+    from core.ndof_profiles import save_profile, load_profile
+    st = NdofSettings(mapping_preset="custom", sensitivity=1.75)
+    st.axis_mapping["roll"] = "pan_y"
+    st.axis_inversion["roll"] = True
+    st.axis_sensitivity["roll"] = 2.25
+    path = tmp_path / "custom.json"
+    save_profile(path, st)
+    loaded = load_profile(path)
+    assert loaded.mapping_preset == "custom"
+    assert loaded.axis_mapping == st.axis_mapping
+    assert loaded.axis_inversion == st.axis_inversion
+    assert loaded.axis_sensitivity == st.axis_sensitivity
+    assert loaded.sensitivity == st.sensitivity
+
+
+@pytest.mark.parametrize("change", [
+    {"version": 99},
+    {"mapping": {"right": "bad"}},
+    {"inversion": {"right": "true"}},
+    {"sensitivity": {"right": float("nan")}},
+    {"global_speed": 100},
+])
+def test_profile_rejects_invalid_data(change):
+    from core.ndof_profiles import profile_to_dict, profile_from_dict
+    from copy import deepcopy
+    data = profile_to_dict(NdofSettings())
+    for key, value in change.items():
+        if isinstance(value, dict):
+            data[key].update(value)
+        else:
+            data[key] = value
+    with pytest.raises(ValueError):
+        profile_from_dict(data)

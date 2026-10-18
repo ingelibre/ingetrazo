@@ -24,6 +24,7 @@ the device.
 from __future__ import annotations
 
 import os
+import math
 import struct
 import sys
 import time
@@ -334,6 +335,20 @@ def load_settings():
                 setattr(out, key, max(0.25, min(4.0, float(raw))))
             except (TypeError, ValueError):
                 pass
+    from core.ndof import AXES, ACTIONS, DEFAULT_MAPPING
+    preset = str(st.value("ndof/mapping_preset", "original"))
+    out.mapping_preset = preset if preset in ("original", "custom", "freecad") else "original"
+    for axis in AXES:
+        action = str(st.value(f"ndof/map/{axis}", DEFAULT_MAPPING[axis]))
+        out.axis_mapping[axis] = action if action in ACTIONS else DEFAULT_MAPPING[axis]
+        out.axis_inversion[axis] = str(st.value(
+            f"ndof/map_invert/{axis}", "0")).lower() in ("1", "true")
+        try:
+            speed = float(st.value(f"ndof/map_speed/{axis}", 1.0))
+            if math.isfinite(speed):
+                out.axis_sensitivity[axis] = max(0.25, min(4.0, speed))
+        except (TypeError, ValueError):
+            pass
     return out
 
 
@@ -359,6 +374,16 @@ def save_settings(settings) -> None:
         st.setValue(f"ndof/{key}",
                     ("1" if val else "0") if isinstance(default, bool)
                     else float(val))
+    from core.ndof import AXES, ACTIONS, DEFAULT_MAPPING
+    st.setValue("ndof/mapping_preset", settings.mapping_preset
+                if settings.mapping_preset in ("original", "custom", "freecad") else "original")
+    for axis in AXES:
+        action = settings.axis_mapping.get(axis, DEFAULT_MAPPING[axis])
+        st.setValue(f"ndof/map/{axis}", action if action in ACTIONS else DEFAULT_MAPPING[axis])
+        st.setValue(f"ndof/map_invert/{axis}",
+                    "1" if settings.axis_inversion.get(axis, False) else "0")
+        speed = settings.axis_sensitivity.get(axis, 1.0)
+        st.setValue(f"ndof/map_speed/{axis}", max(0.25, min(4.0, float(speed))))
     st.sync()
 
 
