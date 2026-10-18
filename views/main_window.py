@@ -5607,10 +5607,13 @@ class MainWindow(QMainWindow):
             except OSError:
                 self.statusBar().showMessage(
                     tr("Could not write the backup copy."), 4000)
+        self.statusBar().showMessage(tr("Saving {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             self.viewport.scene.camera_home = self._camera_dict()
             stats = igz_format.save_scene(self.viewport.scene, path) or {}
         except Exception as exc:  # noqa: BLE001
+            self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return
         # A clean save ends the recovery window for this document — and for
@@ -5631,8 +5634,11 @@ class MainWindow(QMainWindow):
                    "texture on another computer.", n=missing))
         elif embedded:
             self.statusBar().showMessage(
-                tr("Saved — {n} texture(s) packed into the document.",
-                   n=embedded), 4000)
+                tr("Saved {name} — {n} texture(s) packed into the document.",
+                   name=path.name, n=embedded), 4000)
+        else:
+            self.statusBar().showMessage(
+                tr("Saved {name}.", name=path.name), 4000)
         self._current_path = path
         self._remember_recent(path)
         self._saved_version = self.viewport.scene.version
@@ -7199,9 +7205,13 @@ class MainWindow(QMainWindow):
             tr("IFC4 (*.ifc);;All files (*)"))
         if not path_str:
             return
+        path = Path(path_str)
+        self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             count = ifc_format.save_ifc(self.viewport.scene, path_str)
         except Exception as exc:  # noqa: BLE001
+            self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Export IFC failed"), str(exc))
             return
         self.statusBar().showMessage(
@@ -7372,14 +7382,17 @@ class MainWindow(QMainWindow):
         path = Path(path_str)
         if path.suffix.lower() != f".{suffix}":
             path = path.with_suffix(f".{suffix}")
+        self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             writer(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001
+            self.statusBar().clearMessage()
             QMessageBox.critical(
                 self, tr("Export {label} failed", label=label), str(exc))
             return
         self.statusBar().showMessage(
-            tr("Exported {label} → {name}", label=label, name=path.name), 3000)
+            tr("Exported {label} → {name}", label=label, name=path.name), 4000)
 
     def _confirm_discard(self, prompt: str) -> bool:
         """Return True if it's safe to discard the current drawing."""

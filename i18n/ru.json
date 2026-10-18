@@ -1107,7 +1107,6 @@
  "Save this title block as a template…": "Сохранить основную надпись как шаблон…",
  "Saved views": "Сохраненные виды",
  "Saved with missing textures": "Сохранено с отсутствующими текстурами",
- "Saved — {n} texture(s) packed into the document.": "Сохранено — {n} текстур(ы) упаковано в документ.",
  "Scale": "Масштаб",
  "Scale Uniformly: off": "Равномерный масштаб: выкл",
  "Scale Uniformly: on": "Равномерный масштаб: вкл",
@@ -2970,5 +2969,13 @@
  "IngeTrazo did not open the last time with the experimental Rust engine on, so it is back on the normal engine. You can turn it on again in Preferences ▸ General.": "В прошлый раз IngeTrazo не открылся с включённым экспериментальным движком Rust, поэтому он вернулся к обычному движку. Включить его снова можно в разделе Настройки ▸ Общие.",
  "Live reading — move the cap one way at a time:": "Показания в реальном времени — двигайте колпачок в одном направлении за раз:",
  "Device:": "Устройство:",
- "IngeTrazo: right {r:+.2f}  up {u:+.2f}  forward {f:+.2f}  tilt {t:+.2f}  twist {s:+.2f}": "IngeTrazo: вправо {r:+.2f}  вверх {u:+.2f}  вперёд {f:+.2f}  наклон {t:+.2f}  поворот {s:+.2f}"
+ "IngeTrazo: right {r:+.2f}  up {u:+.2f}  forward {f:+.2f}  tilt {t:+.2f}  twist {s:+.2f}": "IngeTrazo: вправо {r:+.2f}  вверх {u:+.2f}  вперёд {f:+.2f}  наклон {t:+.2f}  поворот {s:+.2f}",
+ "Saving {name}…": "Сохранение {name}…",
+ "Saved {name}.": "Сохранено {name}.",
+ "Saved {name} — {n} texture(s) packed into the document.": "Сохранено {name} — {n} текстур(ы) упаковано в документ.",
+ "Exporting {name}…": "Экспорт {name}…",
+ "Serializing geometry…": "Сериализация геометрии…",
+ "Packing textures…": "Упаковка текстур…",
+ "Writing file…": "Запись файла…",
+ "Saved": "Сохранено"
 }
