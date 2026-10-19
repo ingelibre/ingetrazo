@@ -214,13 +214,15 @@ def test_hidden_layer_hides_annotations_from_picks():
     assert pick_dim(100, 150) is None
 
 
-def test_layers_tray_assigns_and_releases_annotations():
+def test_layers_tray_assigns_and_releases_annotations(monkeypatch):
     """Capas ▸ assign moves selected cotas/texts to the current layer, and
     deleting that layer sends them back to the default one."""
     import os
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QVector3D
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QMessageBox
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.Yes))
     from core.dimension import Dimension
     from core.textlabel import TextLabel
     from views.main_window import MainWindow
@@ -231,7 +233,7 @@ def test_layers_tray_assigns_and_releases_annotations():
     win = MainWindow()
     try:
         scene = win.viewport.scene
-        panel = win.tray.layers
+        panel = win.layers_dock.panel
         dim = Dimension(QVector3D(0, 0, 0), QVector3D(2, 0, 0),
                         QVector3D(0, -1, 0))
         lab = TextLabel(QVector3D(1, 0, 0), QVector3D(0.5, 0.5, 1), "Pileta")
@@ -239,10 +241,7 @@ def test_layers_tray_assigns_and_releases_annotations():
         scene.text_labels.append(lab)
         scene.layers.append(Layer("Anotaciones"))
         panel.refresh()
-        tree = panel.tree
-        item = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
-                    if tree.topLevelItem(i).data(0, Qt.UserRole) == "Anotaciones")
-        tree.setCurrentItem(item)
+        panel.tree.setCurrentItem(panel.item_for("Anotaciones"))
         scene.select([dim, lab])
         panel._on_assign()
         assert layer_of(dim) == "Anotaciones" and layer_of(lab) == "Anotaciones"

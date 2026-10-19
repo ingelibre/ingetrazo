@@ -83,7 +83,7 @@ class SectionPlane:
     the active one, stays. Hidden and inactive is a plane switched off."""
 
     __slots__ = ("point", "normal", "name", "symbol", "active", "uid",
-                 "hidden", "fill")
+                 "hidden", "fill", "layer")
 
     def __init__(self, point: QVector3D, normal: QVector3D,
                  name: str = "", symbol: str = "",
@@ -103,6 +103,10 @@ class SectionPlane:
         #: "spacing": metres}``, each key optional — what is missing comes
         #: from the style. ``None``: the style's fill as it is.
         self.fill = None
+        #: Layer name (None = the default layer). A hidden layer takes the
+        #: plane away and switches its cut off; a scene that hides it does
+        #: the same (#316).
+        self.layer = None
         #: Stable identity for scenes (.igz SavedView references) — survives
         #: reordering and deletion of OTHER planes.
         self.uid = _take_uid(uid)
@@ -130,6 +134,8 @@ class SectionPlane:
             entry["active"] = True
         if self.hidden:
             entry["hidden"] = True          # older readers ignore it
+        if self.layer:
+            entry["layer"] = self.layer   # older readers ignore it
         if self.fill:
             entry["fill"] = {k: (list(v) if k == "color" else v)
                              for k, v in self.fill.items()}
@@ -141,6 +147,8 @@ class SectionPlane:
                  name=raw.get("name", ""), symbol=raw.get("symbol", ""),
                  active=bool(raw.get("active", False)),
                  uid=raw.get("uid"), hidden=bool(raw.get("hidden", False)))
+        if isinstance(raw.get("layer"), str) and raw["layer"]:
+            sp.layer = raw["layer"]
         fill = raw.get("fill")
         if isinstance(fill, dict):
             clean = {}

@@ -315,6 +315,9 @@ class MarcoVista:
     #: Hidden edges inked thin and dashed (issue #81) — the standard of a
     #: technical drawing; off by default, as a view shows what is seen.
     hidden_lines: bool = False
+    #: Lines inked in their layer's colour (the faces keep their material):
+    #: a services or zoning plan in colour without Colour by layer.
+    layer_colours: bool = False
     #: Poché of the vector style where the section plane slices a solid:
     #: "solid" | "hatch" (45° lines every ``cut_hatch_mm``) | "none".
     cut_fill: str = "solid"
@@ -667,6 +670,10 @@ class Leyenda:
     w_mm: float = 55.0
     title: str = "LEYENDA"
     rows: list = field(default_factory=list)
+    #: Each row's swatch, snapshotted with the rows: ``{name: {"color":
+    #: [r, g, b], "linetype": str}}`` (core.layers). A row without one
+    #: keeps the plain grey box older legends drew.
+    swatches: dict = field(default_factory=dict)
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
     group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped

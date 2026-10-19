@@ -1599,7 +1599,8 @@ class PushPullTool(Tool):
         # any vertex -- the nearest one on screen wins -- and a guide LINE
         # is tried right after, like an edge. They live in ``scene.guides``,
         # outside the mesh, so the vertex scan above never saw them.
-        guides = getattr(vp.scene, "guides", None) or []
+        from views.viewport import shown_guides
+        guides = shown_guides(vp.scene)
         for g in guides:
             if getattr(g, "direction", None) is not None:
                 continue

@@ -58,7 +58,6 @@ from views.filedialogs import file_dialogs
 from core.mesh import Edge, Face
 from core.group import Group
 from core.dimension import Dimension
-from core.textlabel import TextLabel
 from georef.datum import SceneDatum
 from georef.geopath import GeoPath
 from georef.tiles import DEFAULT_SOURCE_ID, PRESETS, TileLayer, custom_source
@@ -3346,11 +3345,6 @@ class ShadowsPanel(QWidget):
         self._window.viewport.update()
 
 
-#: What a layer can be assigned to (faces, edges, objects and annotations
-#: alike are tagged).
-_TAGGABLE = (Face, Edge, Group, Dimension, TextLabel)
-
-
 class EntityInfoPanel(QWidget):
     """Facts about the current selection, plus the one thing an Entity
     Info panel lets you CHANGE here: the layer (its Tag field). Rafael
@@ -3447,8 +3441,8 @@ class EntityInfoPanel(QWidget):
 
     # ---- Layer field --------------------------------------------------------
     def _refresh_layer(self, sel: list) -> None:
-        from core.layers import layer_of
-        tagged = [e for e in sel if isinstance(e, _TAGGABLE)]
+        from core.layers import layer_of, taggable
+        tagged = taggable(sel)
         show = bool(tagged)
         self._layer_caption.setVisible(show)
         self._layer_box.setVisible(show)
@@ -3481,10 +3475,10 @@ class EntityInfoPanel(QWidget):
         if not name:
             return
         from core.history import AssignLayerCommand
-        from core.layers import layer_of
+        from core.layers import layer_of, taggable
         scene = self._window.viewport.scene
-        targets = [e for e in scene.selection
-                   if isinstance(e, _TAGGABLE) and layer_of(e) != name]
+        targets = [e for e in taggable(scene.selection)
+                   if layer_of(e) != name]
         if not targets:
             return
         self._window.viewport.history.execute(AssignLayerCommand(targets, name))
@@ -3680,220 +3674,6 @@ def _scrolled(sections) -> QScrollArea:
 
 
 
-class LayersPanel(QWidget):
-    """Layers / tags (Fase 6): one row per layer with visibility and lock
-    checkboxes; buttons to add / remove layers and to move the current
-    selection onto a layer. Hiding layers of one model is the '2D that
-    emerges' workflow: plan = top view + parallel projection + the right
-    layers on."""
-
-    def __init__(self, window) -> None:
-        super().__init__()
-        from PySide6.QtWidgets import (QHBoxLayout, QPushButton, QTreeWidget,
-                                       QTreeWidgetItem, QVBoxLayout)
-        self._window = window
-        self._updating = False
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 6, 8, 8)
-        self.tree = QTreeWidget()
-        self.tree.setColumnCount(3)
-        self.tree.setHeaderLabels([tr("Name"), tr("Visible"), tr("Lock")])
-        self.tree.setRootIsDecorated(False)
-        self.tree.setColumnWidth(0, 120)
-        self.tree.setColumnWidth(1, 52)
-        self.tree.itemChanged.connect(self._on_item_changed)
-        lay.addWidget(self.tree)
-        row = QHBoxLayout()
-        add_btn = QPushButton(tr("+ Layer"))
-        add_btn.clicked.connect(self._on_add)
-        del_btn = QPushButton(tr("−"))
-        del_btn.setToolTip(tr("Delete layer (its entities go to the default)"))
-        del_btn.clicked.connect(self._on_delete)
-        purge_btn = QPushButton(tr("Purge"))
-        purge_btn.setToolTip(tr("Delete every layer no entity carries "
-                                "(a layer a scene hides is kept)"))
-        purge_btn.clicked.connect(self._on_purge)
-        assign_btn = QPushButton(tr("Assign selection"))
-        assign_btn.setToolTip(tr("Move the selected entities onto the layer "
-                                 "highlighted in the list (also: Entity "
-                                 "info ▸ Layer, or right-click ▸ Layer)"))
-        assign_btn.clicked.connect(self._on_assign)
-        # A flow, not a row: the four buttons wrap when the tray is narrow
-        # instead of setting the whole right-hand dock area's minimum width.
-        row = FlowLayout(spacing=4)
-        row.addWidget(add_btn)
-        row.addWidget(del_btn)
-        row.addWidget(purge_btn)
-        row.addWidget(assign_btn)
-        lay.addLayout(row)
-        self.refresh()
-
-    # ---- Model → view --------------------------------------------------------
-    def refresh(self) -> None:
-        from PySide6.QtWidgets import QTreeWidgetItem
-        from core.layers import DEFAULT_LAYER
-        self._updating = True
-        self.tree.clear()
-        for ly in self._window.viewport.scene.layers:
-            item = QTreeWidgetItem([ly.name, "", ""])
-            item.setData(0, Qt.UserRole, ly.name)
-            flags = item.flags() | Qt.ItemIsUserCheckable
-            if ly.name != DEFAULT_LAYER:
-                flags |= Qt.ItemIsEditable
-            item.setFlags(flags)
-            item.setCheckState(1, Qt.Checked if ly.visible else Qt.Unchecked)
-            item.setCheckState(2, Qt.Checked if ly.locked else Qt.Unchecked)
-            self.tree.addTopLevelItem(item)
-        fit_rows(self.tree, max_rows=12)
-        self._updating = False
-
-    # ---- View → model --------------------------------------------------------
-    def _scene(self):
-        return self._window.viewport.scene
-
-    def _on_item_changed(self, item, column) -> None:
-        if self._updating:
-            return
-        scene = self._scene()
-        old_name = item.data(0, Qt.UserRole)
-        ly = scene.layer(old_name)
-        if ly is None:
-            return
-        if column == 0:
-            new_name = item.text(0).strip()
-            if new_name and new_name != old_name \
-                    and scene.layer(new_name) is None:
-                self._rename(ly, old_name, new_name)
-            self.refresh()
-            self._touch()
-            return
-        ly.visible = item.checkState(1) == Qt.Checked
-        ly.locked = item.checkState(2) == Qt.Checked
-        if not ly.visible or ly.locked:
-            self._prune_selection(ly.name)
-        self._touch()
-
-    def _rename(self, ly, old_name: str, new_name: str) -> None:
-        from core.layers import layer_of, assign_layer
-        scene = self._scene()
-        ly.name = new_name
-        for ent in list(scene.mesh.faces) + list(scene.mesh.edges) \
-                + list(scene.groups):
-            if layer_of(ent) == old_name:
-                assign_layer(ent, new_name)
-
-    def _prune_selection(self, name: str) -> None:
-        from core.layers import layer_of
-        scene = self._scene()
-        dead = [s for s in scene.selection
-                if isinstance(s, (Face, Edge, Group)) and layer_of(s) == name]
-        for s in dead:
-            scene.selection.discard(s)
-
-    def _on_add(self) -> None:
-        from core.layers import Layer
-        scene = self._scene()
-        base = tr("Layer")
-        n = 1
-        while scene.layer(f"{base} {n}") is not None:
-            n += 1
-        scene.layers.append(Layer(f"{base} {n}"))
-        self.refresh()
-        self._touch()
-
-    def _on_delete(self) -> None:
-        from core.layers import DEFAULT_LAYER, layer_of, assign_layer
-        scene = self._scene()
-        item = self.tree.currentItem()
-        if item is None:
-            return
-        name = item.data(0, Qt.UserRole)
-        if name == DEFAULT_LAYER:
-            return                                  # the default is permanent
-        ly = scene.layer(name)
-        if ly is None:
-            return
-        # Every mesh in the document, nested placements included — walking
-        # scene.groups as a flat list left the faces INSIDE a group tagged
-        # with a layer that no longer existed.
-        from core.purge import iter_groups, iter_meshes
-        for mesh in iter_meshes(scene):
-            for ent in list(mesh.faces) + list(mesh.edges):
-                if layer_of(ent) == name:
-                    assign_layer(ent, DEFAULT_LAYER)
-        for ent in list(iter_groups(scene.groups)) \
-                + list(getattr(scene, "dimensions", []) or []) \
-                + list(getattr(scene, "text_labels", []) or []) \
-                + list(getattr(scene, "image_planes", []) or []) \
-                + list(getattr(scene, "section_planes", []) or []):
-            if layer_of(ent) == name:
-                assign_layer(ent, DEFAULT_LAYER)
-        scene.layers.remove(ly)
-        self.refresh()
-        self._touch()
-
-    def _on_purge(self) -> None:
-        """The classic "Purge Unused" for tags: sweep the layers nothing
-        carries. One undoable step, and it says what it did — a silent
-        sweep of a panel the user did not look at is how a deliberate
-        empty layer disappears without anyone noticing."""
-        from PySide6.QtWidgets import QMessageBox
-        from core.history import PurgeUnusedCommand
-        scene = self._scene()
-        cmd = PurgeUnusedCommand(layers=True, materials=False)
-        n_layers, _ = cmd.counts(scene)
-        if not n_layers:
-            QMessageBox.information(
-                self, tr("Purge"), tr("Every layer is in use."))
-            return
-        names = [ly.name for _i, ly in (cmd._layers or [])]
-        preview = ", ".join(names[:12]) + ("…" if len(names) > 12 else "")
-        if QMessageBox.question(
-                self, tr("Purge"),
-                tr("Delete {n} layers no entity carries?", n=n_layers)
-                + f"\n\n{preview}") != QMessageBox.Yes:
-            return
-        self._window.viewport.history.execute(cmd)
-        self.refresh()
-        self._window.viewport.update()
-        self._window.statusBar().showMessage(
-            tr("{n} unused layers purged", n=n_layers), 3000)
-
-    def _on_assign(self) -> None:
-        """Move the selection onto the HIGHLIGHTED layer — and say so when
-        there is nothing to move or no layer picked: the button used to do
-        nothing in silence, which is how it read as broken («Asignar
-        selección funcionó a la segunda», Rafael, 2026-09-16)."""
-        from core.history import AssignLayerCommand
-        scene = self._scene()
-        item = self.tree.currentItem()
-        if item is None:
-            self._window.statusBar().showMessage(
-                tr("Click a layer in the list first, then Assign."), 3000)
-            return
-        name = item.data(0, Qt.UserRole)
-        # Annotations are tagged too: a "Anotaciones" layer a
-        # scene hides gives a clean plan without duplicating the model.
-        targets = [ent for ent in scene.selection
-                   if isinstance(ent, (Face, Edge, Group, Dimension, TextLabel))]
-        if not targets:
-            self._window.statusBar().showMessage(
-                tr("Select something in the model first, then Assign."), 3000)
-            return
-        self._window.viewport.history.execute(AssignLayerCommand(targets, name))
-        self._window.viewport.update()
-        self._window.statusBar().showMessage(
-            tr("{n} entities moved to '{layer}'", n=len(targets), layer=name),
-            2500)
-
-    def _touch(self) -> None:
-        scene = self._scene()
-        scene.version += 1
-        self._window.viewport.update()
-
-
-
-
 #: Kill-switch: set INGETRAZO_SCENE_ALWAYS_BUMP=1 to bump ``scene.version``
 #: on every scene recall, as before — also one that only moves the camera.
 _SCENE_ALWAYS_BUMP = os.environ.get("INGETRAZO_SCENE_ALWAYS_BUMP", "") == "1"
@@ -3992,7 +3772,9 @@ class ScenesPanel(QWidget):
             self._touch()
         else:
             self._window.viewport.update()
-        self._window.tray.layers.refresh()
+        dock = getattr(self._window, "layers_dock", None)
+        if dock is not None:
+            dock.panel.refresh()
         self._window.statusBar().showMessage(
             tr("Scene '{name}'", name=view.name), 2000)
 
@@ -4260,14 +4042,12 @@ class Tray(QDockWidget):
         self.materials = MaterialsPanel(window)
         self.components = ComponentsPanel(window)
         self.parts = PartsPanel(window)
-        self.layers = LayersPanel(window)
         self.scenes = ScenesPanel(window)
         # Styles, Shadows and Dimension style are NOT here: they live in
         # their own on-demand docks (toolbar toggles) — the always-open tray
         # was drowning.
         self.setWidget(_scrolled([
             (tr("Entity info"), self.entity_info),
-            (tr("Layers"), self.layers),
             (tr("Scenes"), self.scenes),
             (tr("Materials"), self.materials),
             (tr("Components"), self.components),
@@ -4286,7 +4066,6 @@ class Tray(QDockWidget):
             timer.setSingleShot(True)
             timer.timeout.connect(self.materials.refresh_in_model)
         timer.start(300)
-        self.layers.refresh()
         self.scenes.refresh()
         self.components.on_scene_changed()
         self.parts.refresh()

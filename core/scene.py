@@ -66,6 +66,14 @@ class Scene:
         __import__("core.layers", fromlist=["Layer"]).Layer(
             __import__("core.layers", fromlist=["DEFAULT_LAYER"]).DEFAULT_LAYER)
     ])
+    # The layer new objects go to (core.layers.active_layer); None = the
+    # default layer.
+    active_layer: str | None = None
+    # Folder names of the Layers panel, in order — empty folders included
+    # (a layer names its own folder in ``Layer.folder``).
+    layer_folders: list = field(default_factory=list)
+    # Folder → the folder it sits in (absent: at the top).
+    folder_parents: dict = field(default_factory=dict)
     # Named materials (core.materials.Material), name → Material. The
     # registry gives identity to paint recipes; faces keep their baked
     # attrs (color/texture) as the render truth and optionally carry
@@ -297,7 +305,8 @@ class Scene:
         """The section plane currently cutting the model, or ``None``."""
         for sp in self.section_planes:
             if sp.active:
-                return sp
+                # A plane on a hidden layer cuts nothing (#316).
+                return sp if self._layer_state(sp)[0] else None
         return None
 
     def set_active_section(self, plane) -> None:
@@ -615,7 +624,8 @@ class Scene:
                 or not self.show_section_cuts
                 or self.show_hidden_objects or self.show_hidden_geometry
                 or self.custom_scales or self.back_face_color is not None
-                or len(self.layers) > 1):
+                or len(self.layers) > 1 or self.layer_folders
+                or self.active_layer):
             self.mesh.clear()
             self.groups.clear()
             self.dimensions.clear()
@@ -632,6 +642,9 @@ class Scene:
             self.selection.clear()
             from core.layers import DEFAULT_LAYER, Layer
             self.layers = [Layer(DEFAULT_LAYER)]
+            self.active_layer = None
+            self.layer_folders = []
+            self.folder_parents = {}
             self.georef = None
             self.tile_layer = None
             self.terrain = None

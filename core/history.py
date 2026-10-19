@@ -180,8 +180,10 @@ class History:
                   (_time_mod.perf_counter() - _t0) * 1000.0,
                   extra=type(cmd).__name__)
         self.last_rejected = None
+        before = self._objects_before()
         try:
             cmd.do(self.scene)
+            self._tag_new_objects(before)
         except CommandRejected as exc:
             self.scene.mesh.restore_state(snapshot)
             self.scene.version += 1
@@ -257,10 +259,36 @@ class History:
         if not self.redo_stack:
             return False
         cmd = self.redo_stack.pop()
+        before = self._objects_before()
         self._in_command_mesh(cmd, lambda: cmd.do(self.scene))
+        self._tag_new_objects(before)
         self.undo_stack.append(cmd)
         self._rebind_dimensions()
         return True
+
+    def _objects_before(self):
+        """The objects in the document before a command runs. With no
+        layer active only the guides, dimensions and texts (they go to
+        their automatic layers), so the default case never walks the
+        groups."""
+        from core.layers import (DEFAULT_LAYER, active_layer, auto_ids,
+                                 object_ids)
+        if active_layer(self.scene) == DEFAULT_LAYER:
+            return auto_ids(self.scene)
+        return object_ids(self.scene)
+
+    def _tag_new_objects(self, before) -> None:
+        """The objects a command made go onto the active layer
+        (core.layers) — groups, components, dimensions and texts; loose
+        lines and faces stay on the default layer, so hiding a layer never
+        leaves half a solid. Done here, after the command, so every tool
+        gets it without knowing about layers."""
+        if before is None:
+            return
+        from core.layers import tag_new_objects
+        if tag_new_objects(self.scene, before):
+            _dirty_group_chunks(self.scene)
+            self.scene.version += 1
 
     def _in_command_mesh(self, cmd, fn) -> None:
         """Run ``fn`` with ``scene.mesh`` pointing at the mesh the command was
@@ -829,6 +857,72 @@ class AssignLayerCommand(Command):
             ly = scene.layer(self._layer)
             if ly is not None:
                 scene.layers.remove(ly)
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+
+class DeleteLayerCommand(Command):
+    """Delete a layer: what it carried goes to the default layer, and the
+    scenes forget it. Undo puts the layer back at its place in the list,
+    with its visibility and lock, and every entity back on it.
+
+    The only Layers-panel action on the undo stack: creating and renaming
+    are easy to redo by hand and would only get between Ctrl+Z and the
+    drawing, while a deleted layer takes its assignments with it.
+
+    ``into`` merges instead: what the layer carried goes onto that layer
+    (Layers ▸ Merge into…), and the active layer, if it was this one,
+    becomes that one."""
+
+    def __init__(self, name: str, into: str | None = None) -> None:
+        self.name = name
+        self.into = into
+        self._layer = None
+        self._index = 0
+        self._carriers: list = []
+        self._views: list = []
+
+    def do(self, scene) -> None:
+        from core.layers import DEFAULT_LAYER, assign_layer, layer_of
+        from core.purge import layer_carriers
+        ly = scene.layer(self.name)
+        if ly is None or self.name == DEFAULT_LAYER:
+            raise CommandRejected("layer cannot be deleted")
+        target = self.into or DEFAULT_LAYER
+        if target == self.name or scene.layer(target) is None:
+            raise CommandRejected("no layer to merge into")
+        self._layer = ly
+        self._index = scene.layers.index(ly)
+        self._carriers = [e for e in layer_carriers(scene)
+                          if layer_of(e) == self.name]
+        self._views = []
+        for view in getattr(scene, "saved_views", None) or ():
+            hidden = getattr(view, "hidden_layers", None)
+            if hidden and self.name in hidden:
+                self._views.append((view, list(hidden)))
+                view.hidden_layers = [n for n in hidden if n != self.name]
+        for e in self._carriers:
+            assign_layer(e, target)
+        self._was_active = getattr(scene, "active_layer", None) == self.name
+        if self._was_active:
+            scene.active_layer = None if target == DEFAULT_LAYER else target
+        scene.layers.remove(ly)
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from core.layers import assign_layer
+        # A layer made and named the same after the delete (renaming is not
+        # on the stack) takes the entities back instead of a twin.
+        if self._layer not in scene.layers and scene.layer(self.name) is None:
+            scene.layers.insert(min(self._index, len(scene.layers)),
+                                self._layer)
+        for e in self._carriers:
+            assign_layer(e, self.name)
+        for view, hidden in self._views:
+            view.hidden_layers = list(hidden)
+        if getattr(self, "_was_active", False):
+            scene.active_layer = self.name
         _dirty_group_chunks(scene)
         scene.version += 1
 

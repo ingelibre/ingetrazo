@@ -62,9 +62,13 @@ class Style:
     # Lives in the STYLE, with the other modeling settings.
     section_fill: bool = True
     section_fill_color: tuple = (0.35, 0.37, 0.41)
+    # Colour by layer: faces draw in their layer's colour (core.layers
+    # .layer_color) instead of their material — the shaded, textured and
+    # X-ray modes. Off in every preset; a scene remembers it with the style.
+    color_by_layer: bool = False
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "name": self.name,
             "face_mode": self.face_mode,
             "edges": self.edges,
@@ -81,6 +85,9 @@ class Style:
             "section_fill": self.section_fill,
             "section_fill_color": list(self.section_fill_color),
         }
+        if self.color_by_layer:
+            out["color_by_layer"] = True
+        return out
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Style":
@@ -104,6 +111,7 @@ class Style:
             section_fill=bool(raw.get("section_fill", d.section_fill)),
             section_fill_color=tuple(raw.get("section_fill_color",
                                              d.section_fill_color)),
+            color_by_layer=bool(raw.get("color_by_layer", False)),
         )
 
     def copy(self) -> "Style":

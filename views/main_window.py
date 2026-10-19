@@ -728,13 +728,15 @@ class MainWindow(QMainWindow):
         self.georef_tray = GeorefTray(self)
         from views.outliner import ProjectBrowser
         self.project_browser = ProjectBrowser(self)
+        from views.layers_panel import LayersDock
+        self.layers_dock = LayersDock(self)
         self._lay_out_trays()
         # The trays are tabbed: the tab bar already names the active panel,
         # so each dock's own title bar would say the same thing right above
         # it. An empty title-bar widget removes the duplicate (a clean tray
         # look); panels are toggled from the View menu, not dragged around.
         for dock in (self.tray, self.bim_tray, self.georef_tray,
-                     self.project_browser):
+                     self.project_browser, self.layers_dock):
             dock.setTitleBarWidget(QWidget(dock))
         self.tray.raise_()
         self._build_sidebar_handle()
@@ -747,6 +749,16 @@ class MainWindow(QMainWindow):
             lambda _v: self.georef_tray.on_scene_changed())
         self.viewport.sceneVersionChanged.connect(
             lambda _v: self.project_browser.on_scene_changed())
+        self.viewport.sceneVersionChanged.connect(
+            lambda _v: self.layers_dock.on_scene_changed())
+        # The Layers toolbar: the layer drop-down and the quick layer
+        # actions, working through the Layers tab's panel.
+        from views.layers_toolbar import LayersToolbar
+        layers_tb = self._new_toolbar(tr("Layers"), "layers")
+        self.toolbars["layers"] = layers_tb
+        self.layers_toolbar = LayersToolbar(self, layers_tb)
+        self.viewport.sceneVersionChanged.connect(
+            lambda _v: self.layers_toolbar.on_scene_changed())
 
         # Styles, Shadows and Dimension style hang OFF THE TOOLBAR as
         # dropdown panels (user: the lateral bar was drowning, and floating
@@ -1741,6 +1753,7 @@ class MainWindow(QMainWindow):
         choice, the ones most work needs open and the rest wait there
         (``DEFAULT_HIDDEN_TRAYS``)."""
         hidden = self._hidden_tray_names(st)
+        self._seat_new_trays()
         docks = self._sidebar_docks()
         for d in docks:
             self._keep_docked(d)
@@ -1759,6 +1772,33 @@ class MainWindow(QMainWindow):
         menu = getattr(self, "_panels_menu", None)
         if menu is not None:
             self._fill_panels_menu(menu)
+
+    def _seat_new_trays(self) -> None:
+        """The Layers tab goes beside the Browser, as on a first run, when
+        the saved layout does not know it (saved before it existed) or left
+        it in a block of its own on the same side as the other tabs —
+        ``restoreState`` puts a dock it does not know apart from the tabs,
+        and closing the window then saved it there. Moved to the other side
+        on purpose (Window tabs ▸ Move to the left side), it stays."""
+        dock = getattr(self, "layers_dock", None)
+        if dock is None:
+            return
+        if self.restoreDockWidget(dock):
+            area = self.dockWidgetArea(dock)
+            mates = [d for d in (self.tray,
+                                 getattr(self, "project_browser", None))
+                     if d is not None and self.dockWidgetArea(d) == area]
+            tabbed = self.tabifiedDockWidgets(dock)
+            if not mates or any(d in tabbed for d in mates):
+                return
+        anchor = getattr(self, "project_browser", None)
+        if anchor is None or self.dockWidgetArea(anchor) == Qt.NoDockWidgetArea:
+            anchor = self.tray
+        area = self.dockWidgetArea(anchor)
+        if area == Qt.NoDockWidgetArea:
+            area = Qt.RightDockWidgetArea
+        self.addDockWidget(area, dock)
+        self.tabifyDockWidget(anchor, dock)
 
     def _keep_docked(self, dock) -> None:
         """The trays stay in the sidebar, as Blender's side panel does
@@ -1815,8 +1855,8 @@ class MainWindow(QMainWindow):
     #: The factory order of the side tray's tabs, all on the right:
     #: Properties first, the model's tree next, then the workspaces.
     def _default_tray_order(self) -> list:
-        return [self.tray, self.project_browser, self.bim_tray,
-                self.georef_tray]
+        return [self.tray, self.project_browser, self.layers_dock,
+                self.bim_tray, self.georef_tray]
 
     def _lay_out_trays(self) -> None:
         """The trays in their factory place: every one on the right, tabbed
@@ -1949,6 +1989,7 @@ class MainWindow(QMainWindow):
                             getattr(self, "bim_tray", None),
                             getattr(self, "georef_tray", None),
                             getattr(self, "project_browser", None),
+                            getattr(self, "layers_dock", None),
                             *getattr(self, "_extension_docks", ()))
                 if d is not None]
 
@@ -4612,11 +4653,8 @@ class MainWindow(QMainWindow):
         one ticked, plus «New layer…». Not the usual place (that road is
         Entity Info), but it is where Rafael looked — «botón derecho… no lo veo
         tampoco» (2026-09-16, 39:30) — and it costs nothing to be there."""
-        from core.dimension import Dimension
-        from core.layers import layer_of
-        from core.textlabel import TextLabel
-        targets = [e for e in sel
-                   if isinstance(e, (Face, Edge, Group, Dimension, TextLabel))]
+        from core.layers import layer_of, taggable
+        targets = taggable(sel)
         if not targets:
             return
         current = {layer_of(e) for e in targets}
@@ -4634,17 +4672,29 @@ class MainWindow(QMainWindow):
                 lambda _c=False, name=ly.name: self._assign_layer(name))
         sub.addSeparator()
         sub.addAction(tr("New layer…"), self._assign_new_layer)
+        # The layer of what was clicked, without looking for it in the
+        # Layers panel: hide it, show it alone, or draw on it next.
+        panel = getattr(getattr(self, "layers_dock", None), "panel", None)
+        if panel is not None:
+            names = sorted(current)
+            sub.addSeparator()
+            sub.addAction(tr("Hide this layer") if len(names) == 1
+                          else tr("Hide these layers"),
+                          lambda: panel.set_visible(names, False))
+            sub.addAction(tr("Isolate this layer") if len(names) == 1
+                          else tr("Isolate these layers"),
+                          lambda: panel.isolate(names))
+            if len(names) == 1:
+                sub.addAction(tr("Make this layer active"),
+                              lambda: panel.set_active(names[0]))
 
     def _assign_layer(self, name: str) -> None:
         """Move the selection's taggable entities onto ``name`` (created if
         new), undoable."""
-        from core.dimension import Dimension
         from core.history import AssignLayerCommand
-        from core.layers import layer_of
-        from core.textlabel import TextLabel
-        targets = [e for e in self.viewport.scene.selection
-                   if isinstance(e, (Face, Edge, Group, Dimension, TextLabel))
-                   and layer_of(e) != name]
+        from core.layers import layer_of, taggable
+        targets = [e for e in taggable(self.viewport.scene.selection)
+                   if layer_of(e) != name]
         if not targets:
             return
         self.viewport.history.execute(AssignLayerCommand(targets, name))
@@ -7602,6 +7652,14 @@ class MainWindow(QMainWindow):
             if vp.camera.perspective:
                 groups = [("VISTA", hlr_perspective(vp.scene, vp.camera,
                                                     geometry=geometry))]
+            elif len(vp.scene.layers) > 1:
+                # With layers, each one as a DXF layer of its own, with its
+                # colour and line type — as the composer's export.
+                from core.layers import line_styles
+                from views.composer import dxf_groups_by_layer
+                d = hlr_drawing(vp.scene, vp.camera, layers=True)
+                d.styles = line_styles(vp.scene, True)
+                groups = dxf_groups_by_layer(d, "VISTA", hidden_lines=False)
             else:
                 d = hlr_drawing(vp.scene, vp.camera, geometry=geometry)
                 k = d.kinds

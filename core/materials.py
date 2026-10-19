@@ -154,7 +154,45 @@ def effective_attrs(attrs, material):
     The classic rule, as @pacaeiro spelled it out: the face's own material
     always wins; only the faces wearing the default material take the
     container's, front and back alike. ``material`` is a dict with the same
-    keys a face uses (``color`` / ``texture``, ``opacity``, ``mat``)."""
+    keys a face uses (``color`` / ``texture``, ``opacity``, ``mat``).
+
+    Colour by layer (``core.layers.layer_paint``) passes a ``by_layer``
+    table instead: then EVERY face draws in a layer's colour on both sides —
+    its own layer's when it carries one, else the container's — over its
+    material and texture, keeping only its opacity.
+
+    The layers' own look (``core.layers.layer_look``) wraps either of
+    those in a ``layer_fx`` table: a layer's opacity makes its faces see-
+    through, and a locked layer's faces wash toward white."""
+    if material and material.get("layer_fx") is not None:
+        merged = effective_attrs(attrs, material.get("base"))
+        own = (attrs or {}).get("layer")
+        fx = material["layer_fx"].get(own) if own else None
+        if fx is None:
+            fx = material.get("fx_self")
+        if not fx:
+            return merged
+        opacity, fade = fx
+        merged = dict(merged or {})
+        if opacity < 1.0:
+            merged["opacity"] = min(float(merged.get("opacity", 1.0)),
+                                    float(opacity))
+        if fade > 0.0 and not merged.get("texture"):
+            from core.layers import DEFAULT_LAYER_COLOR
+            rgb = merged.get("color") or DEFAULT_LAYER_COLOR
+            merged["color"] = tuple(c + (1.0 - c) * fade for c in rgb[:3])
+        return merged
+    if material and material.get("by_layer") is not None:
+        own = (attrs or {}).get("layer")
+        rgb = material["by_layer"].get(own) if own else None
+        if rgb is None:
+            rgb = material.get("color")
+        merged = dict(attrs or {})
+        for key in ("texture", "mat"):
+            merged.pop(key, None)
+        merged["color"] = tuple(rgb) if rgb is not None else None
+        merged["back"] = True
+        return merged
     if not material or has_own_material(attrs):
         return attrs
     merged = dict(attrs or {})
@@ -171,6 +209,15 @@ def material_sig(material):
     ``None`` when there is none."""
     if not material:
         return None
+    if material.get("layer_fx") is not None:
+        return ("layer_fx", material_sig(material.get("base")),
+                tuple(sorted(material["layer_fx"].items())),
+                material.get("fx_self"))
+    if material.get("by_layer") is not None:
+        color = material.get("color")
+        return ("by_layer", tuple(color) if color is not None else None,
+                tuple(sorted((k, tuple(v))
+                             for k, v in material["by_layer"].items())))
     tex = material.get("texture")
     return (tuple(material["color"]) if material.get("color") is not None else None,
             (tex.get("path"), tex.get("sw"), tex.get("sh"), tex.get("rot"))

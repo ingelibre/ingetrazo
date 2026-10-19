@@ -1380,6 +1380,274 @@ def _shadows_icon(p, ink):
     p.restore()
 
 
+# ---- Layers (the Layers toolbar and tab) -------------------------------------
+# A layer is drawn as wide sheets stacked down to the left, the front one in
+# the accent — the same rounded cards as Styles, turned on their side, so
+# the two read as one family and are still told apart. A small badge at the
+# bottom-right says what the button does (pencil, eye, padlock…).
+
+def _layer_sheets(p, ink, x: float = 8.0, y: float = 6.0, s: float = 1.0,
+                  fill: bool = True, count: int = 3) -> None:
+    """``count`` wide rounded sheets stacked down-left from (x, y); the
+    front one filled with the accent when ``fill``."""
+    p.save()
+    steps = [(10, 0), (5, 5), (0, 10)][-count:]
+    for i, (dx, dy) in enumerate(steps):
+        front = i == len(steps) - 1
+        p.setBrush(_accent() if (front and fill) else
+                   QApplication.palette().base().color())
+        p.drawRoundedRect(QRectF(x + dx * s, y + dy * s, 24 * s, 15 * s),
+                          3 * s, 3 * s)
+    p.restore()
+
+
+# Every toolbar button shares one layout: the sheets at the top-left, the
+# symbol in the same bottom-right corner (like the eye and the padlock), so
+# the row reads as one set and only the symbol changes.
+
+def _toolbar_sheets(p, ink, fill: bool) -> None:
+    _layer_sheets(p, ink, 4, 4, 0.85, fill=fill)
+
+
+def _badge_plate(p) -> None:
+    """A base-coloured disc behind the symbol so it reads over the sheets."""
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QApplication.palette().base().color())
+    p.drawEllipse(QPointF(34, 34), 12, 12)
+    p.restore()
+
+
+def pencil_glyph(p) -> None:
+    """The layers' pencil in the 48 canvas (x 27–43.5, y 25.5–42), with
+    the painter's pen and brush. Also the Layers tab's active-layer mark."""
+    p.drawPolygon(QPolygonF([QPointF(27, 42), QPointF(28.5, 36),
+                             QPointF(39, 25.5), QPointF(43.5, 30),
+                             QPointF(33, 40.5)]))
+    p.drawLine(QPointF(36.5, 28), QPointF(41, 32.5))
+
+
+def _badge_pencil(p, ink) -> None:
+    _badge_plate(p)
+    p.save()
+    p.setBrush(QApplication.palette().base().color())
+    pencil_glyph(p)
+    p.restore()
+
+
+def _badge_eye(p, ink, off: bool = False) -> None:
+    _badge_plate(p)
+    p.save()
+    p.setBrush(QApplication.palette().base().color())
+    p.drawEllipse(QRectF(24, 29, 20, 11))
+    p.setBrush(QBrush(ink))
+    p.drawEllipse(QPointF(34, 34.5), 2.6, 2.6)
+    if off:
+        p.drawLine(QPointF(25, 42), QPointF(43, 27))
+    p.restore()
+
+
+def _badge_lock(p, ink) -> None:
+    _badge_plate(p)
+    p.save()
+    p.setBrush(QApplication.palette().base().color())
+    p.drawRoundedRect(QRectF(26, 32, 16, 12), 2, 2)
+    p.setBrush(Qt.NoBrush)
+    p.drawArc(QRectF(29, 24, 10, 14), 0, 180 * 16)
+    p.restore()
+
+
+def _badge_target(p, ink) -> None:
+    # The same target as the isolate mark in the drop-down's rows.
+    _badge_plate(p)
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(34, 34), 9, 9)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QBrush(ink))
+    p.drawEllipse(QPointF(34, 34), 4.2, 4.2)
+    p.restore()
+
+
+def _badge_arrow_in(p, ink) -> None:
+    # An arrow coming down into the sheets: onto the active layer.
+    _badge_plate(p)
+    p.save()
+    pen = QPen(ink, 3.0)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.drawLine(QPointF(34, 25), QPointF(34, 42))
+    p.drawPolyline(QPolygonF([QPointF(28, 36), QPointF(34, 42),
+                              QPointF(40, 36)]))
+    p.restore()
+
+
+def _badge_back(p, ink) -> None:
+    # A turning arrow, as Undo: back to the previous state.
+    _badge_plate(p)
+    p.save()
+    pen = QPen(_accent(), 3.0)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.drawArc(QRectF(26, 26, 16, 16), 160 * 16, -250 * 16)
+    p.drawPolyline(QPolygonF([QPointF(24, 27), QPointF(26.5, 33.5),
+                              QPointF(32.5, 31)]))
+    p.restore()
+
+
+def _badge_plus(p, ink) -> None:
+    # In the free corner under the sheets: nothing cut out of them.
+    p.save()
+    pen = QPen(ink, 3.4)
+    pen.setCapStyle(Qt.RoundCap)
+    p.setPen(pen)
+    p.drawLine(QPointF(37, 29), QPointF(37, 45))
+    p.drawLine(QPointF(29, 37), QPointF(45, 37))
+    p.restore()
+
+
+def _layers_panel(p, ink):
+    # Only the sheets, full size: it opens the tab, it needs no symbol.
+    _layer_sheets(p, ink, 8, 10, fill=True)
+
+
+def _layers_make_active(p, ink):
+    _toolbar_sheets(p, ink, fill=True)
+    _badge_pencil(p, ink)
+
+
+def _layers_isolate(p, ink):
+    _toolbar_sheets(p, ink, fill=True)
+    _badge_target(p, ink)
+
+
+def _layers_hide(p, ink):
+    _toolbar_sheets(p, ink, fill=False)
+    _badge_eye(p, ink, off=True)
+
+
+def _layers_lock(p, ink):
+    _toolbar_sheets(p, ink, fill=False)
+    _badge_lock(p, ink)
+
+
+def _layers_show_all(p, ink):
+    _toolbar_sheets(p, ink, fill=False)
+    _badge_eye(p, ink)
+
+
+def _layers_to_active(p, ink):
+    _toolbar_sheets(p, ink, fill=True)
+    _badge_arrow_in(p, ink)
+
+
+def _layers_previous(p, ink):
+    _toolbar_sheets(p, ink, fill=False)
+    _badge_back(p, ink)
+
+
+def _layers_colour(p, ink):
+    # Colour by layer: the layer sheets, each in a colour of its own.
+    p.save()
+    for (dx, dy), rgb in zip(((14, 6), (9, 13), (4, 20)),
+                             ((90, 160, 90), (70, 130, 200), None)):
+        p.setBrush(_accent() if rgb is None else QColor(*rgb))
+        p.drawRoundedRect(QRectF(dx, dy, 26, 16), 3, 3)
+    p.restore()
+
+
+def _fold_arrows(p, ink, outward: bool) -> None:
+    """A line across the middle and an arrow above and below it: pointing
+    away (unfold every folder) or toward it (fold them)."""
+    p.save()
+    pen = QPen(ink, 3.0)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.drawLine(QPointF(24, 6), QPointF(24, 18))
+    p.drawLine(QPointF(24, 30), QPointF(24, 42))
+    if outward:
+        heads = ((6, 12, 1), (42, 36, -1))     # tip y, base y
+    else:
+        heads = ((18, 12, 1), (30, 36, -1))
+    for tip, base, _s in heads:
+        p.drawPolyline(QPolygonF([QPointF(17, base), QPointF(24, tip),
+                                  QPointF(31, base)]))
+    accent = QPen(_accent(), 3.4)
+    accent.setCapStyle(Qt.RoundCap)
+    p.setPen(accent)
+    p.drawLine(QPointF(8, 24), QPointF(40, 24))
+    p.restore()
+
+
+def _layers_expand(p, ink):
+    _fold_arrows(p, ink, outward=True)
+
+
+def _layers_collapse(p, ink):
+    _fold_arrows(p, ink, outward=False)
+
+
+def _layers_templates(p, ink):
+    # A sheet with a folded corner holding a list of coloured layers: a
+    # layer set kept to be used again.
+    p.save()
+    p.setBrush(QApplication.palette().base().color())
+    p.drawPolygon(QPolygonF([QPointF(9, 5), QPointF(30, 5), QPointF(39, 14),
+                             QPointF(39, 43), QPointF(9, 43)]))
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(30, 5), QPointF(30, 14),
+                              QPointF(39, 14)]))
+    p.setPen(Qt.NoPen)
+    for y, colour in ((19, None), (27, QColor(70, 130, 200)),
+                      (35, QColor(90, 160, 90))):
+        p.setBrush(_accent() if colour is None else colour)
+        p.drawRoundedRect(QRectF(14, y, 20, 5), 1.5, 1.5)
+    p.restore()
+
+
+def _layers_filter(p, ink):
+    # A funnel: what goes in at the top, fewer come out at the bottom.
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(8, 10), QPointF(40, 10),
+                             QPointF(27, 25), QPointF(27, 38),
+                             QPointF(21, 41), QPointF(21, 25)]))
+    p.restore()
+
+
+def _layers_filter_on(p, ink):
+    # The funnel filled with the accent: a filter is narrowing the list.
+    p.save()
+    p.setBrush(_accent())
+    p.drawPolygon(QPolygonF([QPointF(8, 10), QPointF(40, 10),
+                             QPointF(27, 25), QPointF(27, 38),
+                             QPointF(21, 41), QPointF(21, 25)]))
+    p.restore()
+
+
+# The Layers tab's add buttons: the sheets (or a folder) where every layer
+# button has them, whole, and the «+» in the free corner below.
+
+def _layer_add(p, ink):
+    _toolbar_sheets(p, ink, fill=True)
+    _badge_plus(p, ink)
+
+
+def _folder_add(p, ink):
+    # The folder of the panel's rows, its tab up-left, in the accent.
+    p.save()
+    p.setBrush(_accent())
+    p.drawPolygon(QPolygonF([QPointF(4, 5), QPointF(14, 5), QPointF(18, 9),
+                             QPointF(34, 9), QPointF(34, 27), QPointF(4, 27)]))
+    p.setBrush(QApplication.palette().base().color())
+    p.drawRect(QRectF(4, 13, 30, 14))
+    p.restore()
+    _badge_plus(p, ink)
+
+
 # ---- Composer: Arrange (align / distribute / group / lock) -------------------
 # Two boxes and a reference line, in the same ink and accent as every other
 # tool. They replaced Unicode glyphs (⇤ ⤒ ⊞ 🔒…) that drew in the text
@@ -1844,6 +2112,15 @@ _DRAW = {
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
     "section": _section,
     "styles": _styles_icon, "shadows": _shadows_icon,
+    "layers_panel": _layers_panel, "layers_make_active": _layers_make_active,
+    "layers_isolate": _layers_isolate, "layers_hide": _layers_hide,
+    "layers_lock": _layers_lock, "layers_show_all": _layers_show_all,
+    "layers_to_active": _layers_to_active,
+    "layers_previous": _layers_previous, "layer_add": _layer_add, "folder_add": _folder_add,
+    "layers_filter": _layers_filter, "layers_filter_on": _layers_filter_on,
+    "layers_colour": _layers_colour,
+    "layers_expand": _layers_expand, "layers_collapse": _layers_collapse,
+    "layers_templates": _layers_templates,
     "section_planes": _section_planes, "section_cuts": _section_cuts,
     "section_fill": _section_fill,
     "zoom": _zoom, "zoom_window": _zoom_window,
