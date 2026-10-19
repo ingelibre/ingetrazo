@@ -1,0 +1,217 @@
+{
+  "cold_restart_plugin_api": {
+    "status": "Passed",
+    "pid": 19344
+  },
+  "analysis_current": {
+    "status": "Passed"
+  },
+  "solver_version": {
+    "status": "Passed"
+  },
+  "current_export_enabled": {
+    "status": "Passed"
+  },
+  "capture_After-Results": {
+    "status": "Passed"
+  },
+  "capture_After-Model": {
+    "status": "Passed"
+  },
+  "capture_After-Loads": {
+    "status": "Passed"
+  },
+  "manager_18_presets": {
+    "status": "Passed"
+  },
+  "manager_missing_input": {
+    "status": "Passed"
+  },
+  "capture_Combination-Manager": {
+    "status": "Passed"
+  },
+  "stale_node_change": {
+    "status": "Passed"
+  },
+  "stale_current_export_blocked": {
+    "status": "Passed"
+  },
+  "capture_Stale-Watermark-Legend-Off": {
+    "status": "Passed"
+  },
+  "capture_Archived-Snapshot": {
+    "status": "Passed"
+  },
+  "archive_csv_status": {
+    "status": "Passed"
+  },
+  "undo_current_inputs": {
+    "status": "Passed"
+  },
+  "redo_stale_inputs": {
+    "status": "Passed"
+  },
+  "save_load_codepack": {
+    "status": "Passed"
+  },
+  "governing_inspector": {
+    "status": "Passed"
+  },
+  "capture_After-Inspector": {
+    "status": "Passed"
+  },
+  "governing_tables": {
+    "status": "Passed"
+  },
+  "capture_Result-Tables": {
+    "status": "Passed"
+  },
+  "perspective_orbit_pan_zoom_pick_False_-1.3": {
+    "status": "Passed"
+  },
+  "qt_member_press_False_-1.3": {
+    "status": "Passed"
+  },
+  "perspective_orbit_pan_zoom_pick_False_-0.4": {
+    "status": "Passed"
+  },
+  "qt_member_press_False_-0.4": {
+    "status": "Passed"
+  },
+  "perspective_orbit_pan_zoom_pick_False_0.6": {
+    "status": "Passed"
+  },
+  "qt_member_press_False_0.6": {
+    "status": "Passed"
+  },
+  "perspective_orbit_pan_zoom_pick_True_-1.3": {
+    "status": "Passed"
+  },
+  "qt_member_press_True_-1.3": {
+    "status": "Passed"
+  },
+  "perspective_orbit_pan_zoom_pick_True_-0.4": {
+    "status": "Passed"
+  },
+  "qt_member_press_True_-0.4": {
+    "status": "Passed"
+  },
+  "perspective_orbit_pan_zoom_pick_True_0.6": {
+    "status": "Passed"
+  },
+  "qt_member_press_True_0.6": {
+    "status": "Passed"
+  },
+  "capture_Perspective-Diagram": {
+    "status": "Passed"
+  },
+  "capture_After-N": {
+    "status": "Passed"
+  },
+  "capture_After-Vy": {
+    "status": "Passed"
+  },
+  "capture_After-Vz": {
+    "status": "Passed"
+  },
+  "capture_After-My": {
+    "status": "Passed"
+  },
+  "capture_After-Mz": {
+    "status": "Passed"
+  },
+  "capture_After-T": {
+    "status": "Passed"
+  },
+  "capture_After-D": {
+    "status": "Passed"
+  },
+  "capture_After-Deformed": {
+    "status": "Passed"
+  },
+  "capture_After-Reaction": {
+    "status": "Passed"
+  },
+  "display_does_not_change_solver": {
+    "status": "Passed"
+  },
+  "capture_Theme-Light": {
+    "status": "Passed"
+  },
+  "capture_Theme-Dark": {
+    "status": "Passed"
+  },
+  "capture_Theme-System": {
+    "status": "Passed"
+  },
+  "hide_panel_preserves_state": {
+    "status": "Passed"
+  },
+  "running_progress_and_export_gate": {
+    "status": "Passed"
+  },
+  "rerun_reactivates_current": {
+    "status": "Passed"
+  },
+  "original_model_restored": {
+    "status": "Passed"
+  },
+  "final_cold_restart": {
+    "status": "Passed",
+    "pid": 16908,
+    "old_pid": 16216
+  },
+  "plugin_api_v2": {
+    "status": "Passed"
+  },
+  "background_gui_ticks": {
+    "status": "Passed",
+    "ticks": 278
+  },
+  "manager_readonly_factors": {
+    "status": "Passed"
+  },
+  "capture_Combination-Inputs": {
+    "status": "Passed"
+  },
+  "capture_Combination-Manager-Final": {
+    "status": "Passed"
+  },
+  "clone_edit_custom": {
+    "status": "Passed"
+  },
+  "report_capacity_unavailable": {
+    "status": "Passed"
+  },
+  "live_2d_combination": {
+    "status": "Passed"
+  },
+  "capture_After-2D-ASD": {
+    "status": "Passed"
+  },
+  "live_failed_unstable": {
+    "status": "Passed",
+    "error": "Analysis failed: The stiffness matrix is singular, which implies rigid body motion. The structure is unstable. Aborting analysis."
+  },
+  "capture_Failed-Unstable": {
+    "status": "Passed"
+  },
+  "running_api_report_export_blocked": {
+    "status": "Passed"
+  },
+  "capture_After-T-nonzero": {
+    "status": "Passed"
+  },
+  "live_pure_torsion_current": {
+    "status": "Passed"
+  },
+  "live_orbit_drag_qt": {
+    "status": "Passed"
+  },
+  "live_orbit_over_node_bypass": {
+    "status": "Passed"
+  },
+  "capture_After-Orbit-Qt-Drag": {
+    "status": "Passed"
+  }
+}

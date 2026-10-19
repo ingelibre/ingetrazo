@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="5" time="3.551" timestamp="2026-10-11T15:49:23.676969+07:00" hostname="GOLFPJ"><testcase classname="tests.test_qt_ribbon" name="test_ribbon_delegates_existing_forms" time="0.239" /><testcase classname="tests.test_qt_ribbon" name="test_ribbon_navigation_and_display_preserve_inputs" time="0.137" /><testcase classname="tests.test_qt_ribbon" name="test_ribbon_collapse_resize_and_panel_hide" time="0.170" /><testcase classname="tests.test_qt_ribbon" name="test_ribbon_result_safety_and_background_run" time="2.004"><failure message="AssertionError: assert ('Stale · Capa...Not Available' == 'Stale'&#10;  &#10;  - Stale&#10;  + Stale · Capacity / Code Compliance: Not Available)">panel = &lt;go_structural_analysis.ui.Panel(0x2d2d2fcf140, name="goPanel") at 0x000002D2D1D68480&gt;
+qtapp = &lt;PySide6.QtWidgets.QApplication(0x2d2ba60f980) at 0x000002D2D1105DC0&gt;
+
+    def test_ribbon_result_safety_and_background_run(panel,qtapp):
+        panel.put(cantilever3d()); ribbon=panel.ribbon
+        assert not ribbon.buttons['csv'].isEnabled() and not ribbon.buttons['report'].isEnabled()
+        run_background(panel,qtapp); ribbon.refresh()
+        assert ribbon.buttons['csv'].isEnabled() and ribbon.buttons['report'].isEnabled()
+        before=copy.deepcopy(panel.result); ribbon.tabs.setCurrentIndex(4); ribbon.buttons['defaults'].click(); assert panel.result==before
+        d=copy.deepcopy(panel.model()); d['nodes'][1]['x']+=1; panel.put(d)
+&gt;       assert ribbon.status.text()=='Stale' and not ribbon.buttons['csv'].isEnabled() and not ribbon.buttons['report'].isEnabled()
+E       AssertionError: assert ('Stale · Capa...Not Available' == 'Stale'
+E         
+E         - Stale
+E         + Stale · Capacity / Code Compliance: Not Available)
+
+tests\test_qt_ribbon.py:38: AssertionError</failure></testcase><testcase classname="tests.test_qt_ribbon" name="test_ribbon_inspector_and_themes" time="0.356" /></testsuite></testsuites>

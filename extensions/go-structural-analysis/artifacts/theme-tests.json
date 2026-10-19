@@ -1,0 +1,13 @@
+{
+  "light_panel": "#efefef",
+  "light_editor": "#efefef",
+  "light_icon_pixel": "#14161a",
+  "dark_panel": "#2d2d30",
+  "dark_editor": "#2d2d30",
+  "live_switch_same_panel": true,
+  "dark_card_icon_updated": true,
+  "system_panel_matches_host": true,
+  "system_editor_matches_host": true,
+  "preference_unchanged": true,
+  "document_unchanged": true
+}

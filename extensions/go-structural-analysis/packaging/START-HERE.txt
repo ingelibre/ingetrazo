@@ -1,0 +1,44 @@
+GO Structural Analysis v0.2.4 — Windows x64 trial
+================================================
+
+ก่อนเริ่ม / Before you start
+- ต้องมี IngeTrazo ที่รองรับ Plugin API v2 (ไม่ใช่ IngeCAD)
+  Download host: https://github.com/ingelibre/ingetrazo/releases
+- Windows 10/11 x64; ติดตั้งเฉพาะบัญชีผู้ใช้ ไม่ต้องใช้ Administrator
+- Setup รวม Python 3.12 และ PyNiteFEA 3.2.0 แล้ว ไม่ต้องติดตั้ง Python หรือใช้ Internet
+- บันทึกงานและปิด IngeTrazo ก่อนรัน Setup
+
+เริ่มทดลอง / Try an example
+1. เปิด IngeTrazo > Extensions > GO Structural Analysis v0.2.4
+2. Model > เลื่อนลง Engineering Examples / Benchmarks
+3. เลือกตัวอย่าง > Load selected example > Run Analysis
+4. Results > Load Case / Viewport Diagram: N, V, M, D, Reaction, Deformed
+5. คลิก Member เพื่ออ่าน Result Inspector, เลื่อน x/L, เปิด Result Tables / Export CSV
+6. Materials: เลือก Steel / Concrete / Aluminium / Wood > Add preset
+   Members > material เพื่อกำหนดวัสดุให้สมาชิก
+7. Save เก็บ structural workspace เป็น .igz; Return คืนโมเดลเดิม
+   ไม่กด Store analysis in current document หากไม่ต้องการเก็บข้อมูลลงโมเดลต้นฉบับ
+
+มี 21 ตัวอย่าง 2D และเพิ่ม 12 ตัวอย่าง 3D เลือก Workspace 2D / 3D ได้
+3D: Global Z ขึ้น, local x จาก i→j, local y/z right-handed, section rotation [deg]
+3D self-weight ลง case เดียวที่เลือก; Combination factors ผู้ใช้กำหนดเอง ไม่ใช่ code checks
+ผล 3D: N/Vy/Vz/My/Mz/T, displacement UX/UY/UZ, rotation RX/RY/RZ, envelope พร้อม governing combination
+ครอบคลุมคานยื่น/ต่อเนื่อง, Frame, Truss, Releases, Load Cases,
+Self-weight และ Exact Extrema. Stability 2 แบบต้อง Analysis failed ตามคาด
+Rx/Rz แยกแกน; Moment บวกทวนเข็ม ลบตามเข็มใน X-right/Z-up
+พื้นที่ N/V/M/D บวกสีฟ้า ลบสีส้ม; รูปร่าง Deformed ใช้ตัวคูณการแสดงผล
+
+ตรวจติดตั้ง / Installation check
+- Start menu > GO Structural Analysis > Check Solver
+- ถ้าติดตั้งล้มเหลว อ่าน setup-error.log หรือ solver-check.log ใน installation folder
+- ไม่มีการเปลี่ยน Python/PATH หรือไฟล์ใน Program Files
+- สำรองปลั๊กอินเดิมใน %LOCALAPPDATA%\GO Structural Analysis\plugin-backups
+- ถอนติดตั้งจาก Settings > Apps > GO Structural Analysis for IngeTrazo
+  ไฟล์แบบที่ผู้ใช้บันทึกและ plugin backups จะยังอยู่
+
+ข้อจำกัด / Scope
+Linear elastic 2D / 3D Euler–Bernoulli analysis: m, kN, kN·m, rad
+ยังไม่มี code/capacity checks, nonlinear/P-delta, buckling หรือ shear deformation
+Material presets เป็นค่าเริ่มต้นที่แก้ไขได้; Wood ใช้ E ตามแนวเสี้ยน ไม่ใช่ orthotropic model เต็มรูปแบบ
+ตัวติดตั้งนี้ไม่รวม IngeTrazo และไม่ได้เป็นโปรแกรมวิเคราะห์ที่เปิดเดี่ยวได้
+ดู TEST_RESULTS_v0.2.md และรายงานตัวติดตั้งสำหรับ Passed/Failed/Not Tested

@@ -1,0 +1,288 @@
+{
+  "schema": "thai-bim-analytical/1",
+  "id": "8fbb362c-0f3f-419a-889d-f0f73a591d8d",
+  "revision": 2,
+  "units": {
+    "length": "m",
+    "force": "kN",
+    "mass": "tonne",
+    "stress": "kN/m2"
+  },
+  "source_digest": "dc6c172e8597b8f496bd192462e687c25f56a8e2b8593b542546ba658620afdc",
+  "sources": [
+    {
+      "id": "200822b7-629f-4214-92e5-136ffc35bc4d",
+      "native_uid": "7dd4fc964a3648b3",
+      "name": "TBIM Beam member",
+      "kind": "Beam",
+      "params": {
+        "kind": "Beam",
+        "x": 0.0,
+        "y": -0.1,
+        "z": 1.3,
+        "width": 4.0,
+        "depth": 0.2,
+        "height": 0.4
+      },
+      "pose": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "geometry_hash": "a64b821447dcf7b79ceaaa006675ecd8f8b11a5f486c7ba1728f64b4c9b26b9c"
+    },
+    {
+      "id": "5751a6b8-7a91-45d0-966a-b754804001b7",
+      "native_uid": "29e511dcc28b4e26",
+      "name": "TBIM Column member",
+      "kind": "Column",
+      "params": {
+        "kind": "Column",
+        "x": -0.1,
+        "y": -0.1,
+        "z": 0.0,
+        "width": 0.2,
+        "depth": 0.2,
+        "height": 3.0
+      },
+      "pose": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "geometry_hash": "0dd12968985521fb7c7ff4253a4e26d8d910b32f40500af57e40eedeb6e881f3"
+    }
+  ],
+  "inspection_tolerance_m": 0.02,
+  "nodes": [
+    {
+      "id": "node-7212638e87c2410a3c474936",
+      "xyz_m": [
+        0.0,
+        0.0,
+        3.0
+      ]
+    },
+    {
+      "id": "node-846a3d78acee74f84f9f4e86",
+      "xyz_m": [
+        0.0,
+        0.0,
+        1.5
+      ]
+    },
+    {
+      "id": "node-c42502d9a3cb8c3bf47febeb",
+      "xyz_m": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "node-e1260a7a5a5b5ffeb83af5d0",
+      "xyz_m": [
+        4.0,
+        0.0,
+        1.5
+      ]
+    }
+  ],
+  "members": [
+    {
+      "id": "member-4406454fb1576e2074e900ad",
+      "source_id": "200822b7-629f-4214-92e5-136ffc35bc4d",
+      "source_native_uid": "7dd4fc964a3648b3",
+      "name": "TBIM Beam member",
+      "kind": "Beam",
+      "axis": [
+        [
+          0.0,
+          0.0,
+          1.5
+        ],
+        [
+          4.0,
+          0.0,
+          1.5
+        ]
+      ],
+      "local_axes": {
+        "x": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "y": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "z": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "section": {
+        "shape": "rectangle",
+        "width_m": 0.2,
+        "depth_m": 0.4,
+        "area_m2": 0.08000000000000002,
+        "iy_m4": 0.001066666666666667,
+        "iz_m4": 0.00026666666666666673,
+        "torsion_m4": null
+      },
+      "material_id": null,
+      "releases": null,
+      "offsets": null,
+      "basis": "Geometric centroid; verify connection offsets and modelling assumptions"
+    },
+    {
+      "id": "member-7abb8a3a1982e09162bda8ea",
+      "source_id": "5751a6b8-7a91-45d0-966a-b754804001b7",
+      "source_native_uid": "29e511dcc28b4e26",
+      "name": "TBIM Column member",
+      "kind": "Column",
+      "axis": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          3.0
+        ]
+      ],
+      "local_axes": {
+        "x": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "y": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "z": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "section": {
+        "shape": "rectangle",
+        "width_m": 0.2,
+        "depth_m": 0.2,
+        "area_m2": 0.04000000000000001,
+        "iy_m4": 0.00013333333333333337,
+        "iz_m4": 0.00013333333333333337,
+        "torsion_m4": null
+      },
+      "material_id": null,
+      "releases": null,
+      "offsets": null,
+      "basis": "Geometric centroid; verify connection offsets and modelling assumptions"
+    }
+  ],
+  "elements": [
+    {
+      "id": "element-4e552cb7d17b364619c1e376",
+      "member_id": "member-4406454fb1576e2074e900ad",
+      "node_i": "node-846a3d78acee74f84f9f4e86",
+      "node_j": "node-e1260a7a5a5b5ffeb83af5d0",
+      "type": "frame",
+      "range": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "id": "element-cdfb01436db11224f5d6b97b",
+      "member_id": "member-7abb8a3a1982e09162bda8ea",
+      "node_i": "node-c42502d9a3cb8c3bf47febeb",
+      "node_j": "node-846a3d78acee74f84f9f4e86",
+      "type": "frame",
+      "range": [
+        0.0,
+        0.5
+      ]
+    },
+    {
+      "id": "element-f1569fed72eab62104fc8b30",
+      "member_id": "member-7abb8a3a1982e09162bda8ea",
+      "node_i": "node-846a3d78acee74f84f9f4e86",
+      "node_j": "node-7212638e87c2410a3c474936",
+      "type": "frame",
+      "range": [
+        0.5,
+        1.0
+      ]
+    }
+  ],
+  "components": [
+    [
+      "node-7212638e87c2410a3c474936",
+      "node-846a3d78acee74f84f9f4e86",
+      "node-c42502d9a3cb8c3bf47febeb",
+      "node-e1260a7a5a5b5ffeb83af5d0"
+    ]
+  ],
+  "issues": [
+    {
+      "code": "free_endpoint",
+      "node_id": "node-e1260a7a5a5b5ffeb83af5d0",
+      "message": "Endpoint has one element; may be support or free end. Support not inferred"
+    },
+    {
+      "code": "free_endpoint",
+      "node_id": "node-c42502d9a3cb8c3bf47febeb",
+      "message": "Endpoint has one element; may be support or free end. Support not inferred"
+    },
+    {
+      "code": "free_endpoint",
+      "node_id": "node-7212638e87c2410a3c474936",
+      "message": "Endpoint has one element; may be support or free end. Support not inferred"
+    }
+  ],
+  "materials": [],
+  "supports": [],
+  "load_cases": [],
+  "load_combinations": [],
+  "state": "review_required",
+  "solver_ready": false,
+  "limitations": [
+    "Geometric graph only; no stiffness assembly or solver",
+    "Interior-to-interior crossings are not connected automatically; inspect visually",
+    "Supports, materials, releases, offsets and loads are unspecified; no analysis readiness inferred"
+  ]
+}

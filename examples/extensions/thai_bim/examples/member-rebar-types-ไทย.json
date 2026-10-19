@@ -1,0 +1,325 @@
+{
+  "schema": 1,
+  "types": [
+    {
+      "id": "2f3de7fe-d107-507f-961a-28c0afedaf5f",
+      "kind": "Footing",
+      "code": "F1",
+      "name": "Footing F1",
+      "revision": 2,
+      "params": {
+        "width": 1.2,
+        "depth": 1.2,
+        "height": 0.4
+      },
+      "rebar": {
+        "cover": 40.0,
+        "diameter": 12.0,
+        "tie_diameter": 6.0,
+        "spacing": 150.0,
+        "count_x": 3,
+        "count_y": 3,
+        "layers": 1,
+        "inside_radius": 24.0,
+        "tie_inside_radius": 12.0,
+        "hook_length": 0.0,
+        "tie_hook_length": 40.0,
+        "lap_length": 0.0,
+        "extension_start": 0.0,
+        "extension_end": 0.0,
+        "density": 7850.0,
+        "hook_ends": 2,
+        "representation": "Centreline",
+        "main_steel": {
+          "catalogue": "TIS 24-2559 / DB",
+          "size": "DB12",
+          "diameter_mm": 12.0,
+          "diameter_in": null,
+          "metric_designation": "12",
+          "grade": "SD40",
+          "surface": "Deformed",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-24-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        },
+        "tie_steel": {
+          "catalogue": "TIS 20-2559 / RB",
+          "size": "RB6",
+          "diameter_mm": 6.0,
+          "diameter_in": null,
+          "metric_designation": "6",
+          "grade": "SR24",
+          "surface": "Plain",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-20-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        }
+      }
+    },
+    {
+      "id": "8a1ddcb0-34b4-5e56-bbdd-5ce4b6f5b48e",
+      "kind": "Column",
+      "code": "C1",
+      "name": "Column C1",
+      "revision": 2,
+      "params": {
+        "width": 0.25,
+        "depth": 0.25,
+        "height": 3.0
+      },
+      "rebar": {
+        "cover": 40.0,
+        "diameter": 12.0,
+        "tie_diameter": 6.0,
+        "spacing": 150.0,
+        "count_x": 3,
+        "count_y": 3,
+        "layers": 1,
+        "inside_radius": 24.0,
+        "tie_inside_radius": 12.0,
+        "hook_length": 0.0,
+        "tie_hook_length": 40.0,
+        "lap_length": 0.0,
+        "extension_start": 0.0,
+        "extension_end": 0.0,
+        "density": 7850.0,
+        "hook_ends": 2,
+        "representation": "Centreline",
+        "main_steel": {
+          "catalogue": "TIS 24-2559 / DB",
+          "size": "DB12",
+          "diameter_mm": 12.0,
+          "diameter_in": null,
+          "metric_designation": "12",
+          "grade": "SD40",
+          "surface": "Deformed",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-24-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        },
+        "tie_steel": {
+          "catalogue": "TIS 20-2559 / RB",
+          "size": "RB6",
+          "diameter_mm": 6.0,
+          "diameter_in": null,
+          "metric_designation": "6",
+          "grade": "SR24",
+          "surface": "Plain",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-20-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        }
+      }
+    },
+    {
+      "id": "b16e906c-901b-5016-8e69-42cf72136e7c",
+      "kind": "Slab",
+      "code": "S1",
+      "name": "Slab S1",
+      "revision": 2,
+      "params": {
+        "width": 4.0,
+        "depth": 3.0,
+        "height": 0.15
+      },
+      "rebar": {
+        "cover": 40.0,
+        "diameter": 12.0,
+        "tie_diameter": 6.0,
+        "spacing": 150.0,
+        "count_x": 3,
+        "count_y": 3,
+        "layers": 1,
+        "inside_radius": 24.0,
+        "tie_inside_radius": 12.0,
+        "hook_length": 0.0,
+        "tie_hook_length": 40.0,
+        "lap_length": 0.0,
+        "extension_start": 0.0,
+        "extension_end": 0.0,
+        "density": 7850.0,
+        "hook_ends": 2,
+        "representation": "Centreline",
+        "main_steel": {
+          "catalogue": "TIS 24-2559 / DB",
+          "size": "DB12",
+          "diameter_mm": 12.0,
+          "diameter_in": null,
+          "metric_designation": "12",
+          "grade": "SD40",
+          "surface": "Deformed",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-24-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        },
+        "tie_steel": {
+          "catalogue": "TIS 20-2559 / RB",
+          "size": "RB6",
+          "diameter_mm": 6.0,
+          "diameter_in": null,
+          "metric_designation": "6",
+          "grade": "SR24",
+          "surface": "Plain",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-20-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        }
+      }
+    },
+    {
+      "id": "613f5cae-096e-5410-8f49-4b05e6ba1cc9",
+      "kind": "Stair",
+      "code": "ST1",
+      "name": "Stair ST1",
+      "revision": 2,
+      "params": {
+        "width": 1.0,
+        "height": 3.0,
+        "going": 0.28,
+        "risers": 18,
+        "waist": 0.15
+      },
+      "rebar": {
+        "cover": 40.0,
+        "diameter": 12.0,
+        "tie_diameter": 6.0,
+        "spacing": 150.0,
+        "count_x": 3,
+        "count_y": 3,
+        "layers": 1,
+        "inside_radius": 24.0,
+        "tie_inside_radius": 12.0,
+        "hook_length": 0.0,
+        "tie_hook_length": 40.0,
+        "lap_length": 0.0,
+        "extension_start": 0.0,
+        "extension_end": 0.0,
+        "density": 7850.0,
+        "hook_ends": 2,
+        "representation": "Centreline",
+        "main_steel": {
+          "catalogue": "TIS 24-2559 / DB",
+          "size": "DB12",
+          "diameter_mm": 12.0,
+          "diameter_in": null,
+          "metric_designation": "12",
+          "grade": "SD40",
+          "surface": "Deformed",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-24-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        },
+        "tie_steel": {
+          "catalogue": "TIS 20-2559 / RB",
+          "size": "RB6",
+          "diameter_mm": 6.0,
+          "diameter_in": null,
+          "metric_designation": "6",
+          "grade": "SR24",
+          "surface": "Plain",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-20-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        }
+      }
+    },
+    {
+      "id": "a2d4cfb6-d4af-5e57-aab8-b64e5de6809e",
+      "kind": "Beam",
+      "code": "B1",
+      "name": "Beam B1",
+      "revision": 3,
+      "params": {
+        "width": 3.0,
+        "depth": 0.2,
+        "height": 0.4
+      },
+      "rebar": {
+        "cover": 40.0,
+        "diameter": 12.0,
+        "tie_diameter": 6.0,
+        "spacing": 250.0,
+        "count_x": 2,
+        "count_y": 2,
+        "layers": 1,
+        "inside_radius": 24.0,
+        "tie_inside_radius": 12.0,
+        "hook_length": 0.0,
+        "tie_hook_length": 40.0,
+        "lap_length": 0.0,
+        "extension_start": 0.0,
+        "extension_end": 0.0,
+        "density": 7850.0,
+        "hook_ends": 2,
+        "representation": "Centreline",
+        "main_steel": {
+          "catalogue": "TIS 24-2559 / DB",
+          "size": "DB12",
+          "diameter_mm": 12.0,
+          "diameter_in": null,
+          "metric_designation": "12",
+          "grade": "SD40",
+          "surface": "Deformed",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-24-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        },
+        "tie_steel": {
+          "catalogue": "TIS 20-2559 / RB",
+          "size": "RB6",
+          "diameter_mm": 6.0,
+          "diameter_in": null,
+          "metric_designation": "6",
+          "grade": "SR24",
+          "surface": "Plain",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-20-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        }
+      }
+    },
+    {
+      "id": "2ab433f9-e122-40a3-901f-3c9e386bcd96",
+      "kind": "Beam",
+      "code": "B2",
+      "name": "Beam B1 copy",
+      "revision": 1,
+      "params": {
+        "width": 3.0,
+        "depth": 0.2,
+        "height": 0.4
+      },
+      "rebar": {
+        "cover": 40.0,
+        "diameter": 12.0,
+        "tie_diameter": 6.0,
+        "spacing": 250.0,
+        "count_x": 2,
+        "count_y": 2,
+        "layers": 1,
+        "inside_radius": 24.0,
+        "tie_inside_radius": 12.0,
+        "hook_length": 0.0,
+        "tie_hook_length": 40.0,
+        "lap_length": 0.0,
+        "extension_start": 0.0,
+        "extension_end": 0.0,
+        "density": 7850.0,
+        "hook_ends": 2,
+        "representation": "Centreline",
+        "main_steel": {
+          "catalogue": "TIS 24-2559 / DB",
+          "size": "DB12",
+          "diameter_mm": 12.0,
+          "diameter_in": null,
+          "metric_designation": "12",
+          "grade": "SD40",
+          "surface": "Deformed",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-24-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        },
+        "tie_steel": {
+          "catalogue": "TIS 20-2559 / RB",
+          "size": "RB6",
+          "diameter_mm": 6.0,
+          "diameter_in": null,
+          "metric_designation": "6",
+          "grade": "SR24",
+          "surface": "Plain",
+          "source": "https://www.tisi.go.th/data/standard/fulltext/TIS-20-2559p.pdf",
+          "basis": "Nominal catalogue; specified grade, not product certification"
+        }
+      }
+    }
+  ]
+}

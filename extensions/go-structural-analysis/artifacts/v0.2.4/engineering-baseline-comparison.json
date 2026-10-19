@@ -1,0 +1,6 @@
+{
+  "status": "Passed",
+  "comparisons": 3105,
+  "baseline": "test-results-v0.2.json",
+  "check": "names/reference identical; actual difference within original tolerance"
+}

@@ -1,0 +1,3 @@
+﻿Case,Member,End,FX_local [kN],FY_local [kN],MZ_local [kN.m]
+LC1,B1,i,0.0,30.0,-3.552713678800501e-15
+LC1,B1,j,0.0,30.0,3.552713678800501e-15

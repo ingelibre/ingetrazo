@@ -1,0 +1,84 @@
+﻿{
+    "passed":  14,
+    "test_root":  "C:\\Users\\g_np2\\Projects\\ingecad\\extensions\\go-structural-analysis\\artifacts\\installer\\test-20261009-094419",
+    "failed":  0,
+    "checks":  [
+                   {
+                       "detail":  "Exit 0",
+                       "status":  "Passed",
+                       "check":  "setup_executable_exit"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "runtime_installed"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "worker_runtime_relocated"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "solver_healthcheck"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "bundled_runtime_all_21_examples"
+                   },
+                   {
+                       "detail":  "Exit 0",
+                       "status":  "Passed",
+                       "check":  "setup_executable_exit"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "reinstall_backup"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "running_host_install_blocked"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "uninstall_exit"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "owned_plugin_removed"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "runtime_removed"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "unrelated_file_preserved"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "model_preserved"
+                   },
+                   {
+                       "detail":  "",
+                       "status":  "Passed",
+                       "check":  "original_live_plugin_unchanged"
+                   }
+               ],
+    "not_tested":  [
+                       "Clean Windows VM with no Python installed",
+                       "Interactive wizard clicks",
+                       "Cold IngeTrazo restart after installing Setup",
+                       "Windows code signing/SmartScreen reputation"
+                   ],
+    "date":  "2026-10-09T09:47:19.8586374+07:00"
+}

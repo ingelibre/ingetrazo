@@ -1,0 +1,192 @@
+{
+  "python": "3.12.14",
+  "prefix": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\installer\\test-20261010-095237\\installed app \u0e44\u0e17\u0e22\\runtime",
+  "checks": [
+    {
+      "key": "simple_udl",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "simple_point",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "cantilever_point",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "cantilever_udl",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "continuous_2",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "continuous_3",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "portal_vertical",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "portal_horizontal",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "inclined",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "truss",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "release_j",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "release_both",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "unstable_loaded",
+      "status": "Passed",
+      "expected": "unstable rejection",
+      "message": "Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints"
+    },
+    {
+      "key": "unstable_unloaded",
+      "status": "Passed",
+      "expected": "unstable rejection",
+      "message": "Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints"
+    },
+    {
+      "key": "cases_off",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "cases_on",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "truss_weight",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "off_grid",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "triangular",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "axial",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "moment_jump",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_cantilever",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_torsion",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_axial",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_portal",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_truss",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_multibay",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_rotation",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_release",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_selfweight",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_combo",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_equilibrium",
+      "status": "Passed",
+      "expected": "success"
+    },
+    {
+      "key": "3d_unstable",
+      "status": "Passed",
+      "expected": "unstable rejection",
+      "message": "The stiffness matrix is singular, which implies rigid body motion. The structure is unstable. Aborting analysis."
+    },
+    {
+      "key": "thai_2d_ASD",
+      "status": "Passed"
+    },
+    {
+      "key": "thai_2d_LRFD",
+      "status": "Passed"
+    },
+    {
+      "key": "thai_3d_ASD",
+      "status": "Passed"
+    },
+    {
+      "key": "thai_3d_LRFD",
+      "status": "Passed"
+    }
+  ],
+  "passed": 37,
+  "failed": 0
+}

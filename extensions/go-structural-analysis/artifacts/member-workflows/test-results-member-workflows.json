@@ -1,0 +1,151 @@
+{
+  "date": "2026-10-11",
+  "version": "0.2.4",
+  "task": "LC-002",
+  "primary": {
+    "passed": 259,
+    "failed": 0,
+    "not_tested": 9,
+    "source": "primary-pytest.xml"
+  },
+  "qt": {
+    "passed": 69,
+    "failed": 0,
+    "not_tested": 0,
+    "source": "qt-pytest.xml"
+  },
+  "final_focused": {
+    "passed": 8,
+    "failed": 0,
+    "not_tested": 0,
+    "source": "final-focused-pytest.xml"
+  },
+  "new_tests": {
+    "primary": 7,
+    "qt": 8
+  },
+  "live": [
+    {
+      "name": "Both methods show 18 original presets",
+      "status": "Passed"
+    },
+    {
+      "name": "Enabled methods retained on switch",
+      "status": "Passed"
+    },
+    {
+      "name": "Switch Custom retains statutory selections",
+      "status": "Passed"
+    },
+    {
+      "name": "Generator appends LRFD and retains ASD",
+      "status": "Passed"
+    },
+    {
+      "name": "Editor shows analytical length",
+      "status": "Passed"
+    },
+    {
+      "name": "Full member applies x1=0 x2=L",
+      "status": "Passed"
+    },
+    {
+      "name": "Modeless graph with current results",
+      "status": "Passed"
+    },
+    {
+      "name": "Inspector reads x/L",
+      "status": "Passed"
+    },
+    {
+      "name": "Connected collinear selection",
+      "status": "Passed"
+    },
+    {
+      "name": "Original live model preserved",
+      "status": "Passed"
+    },
+    {
+      "name": "Member context menu graph action enabled",
+      "status": "Passed"
+    },
+    {
+      "name": "Context action opens graph dialog",
+      "status": "Passed"
+    },
+    {
+      "name": "Actual model connected group has multiple members",
+      "status": "Passed"
+    },
+    {
+      "name": "Live model inputs still unchanged",
+      "status": "Passed"
+    },
+    {
+      "name": "All 3D graph components render after switching",
+      "status": "Passed"
+    },
+    {
+      "name": "Switch hides previous graph immediately",
+      "status": "Passed"
+    },
+    {
+      "name": "Model preserved after final diagram checks",
+      "status": "Passed"
+    }
+  ],
+  "live_scope": "Reloaded installed components and context registry, original 21-member document preserved; not cold plugin-load evidence",
+  "installed_sha256": {
+    "client.py": "57555657397c57475d4398e6e468e15f3c43547f652054f53c450cc357c0b5b4",
+    "combination_tools.py": "22d88b26a5afb636cc5172bfe241874771e286e2904f987dc4cea687bd2ee7b0",
+    "combination_ui.py": "726e8d2268ea1bce42f3edf360367d0e39a5f29c65478472a8719260c0f73ad7",
+    "command_ui.py": "52250c322ad2f05f3470092a5523a5e34a5301ad7eccf2b254498ac530535639",
+    "diagnostics.py": "9094590109f0c4e3101597c309801d3deec19e8738ac6ccdbfb339afdfcac251",
+    "diagnostics_ui.py": "454f788b9bb7bbdb5f81660559b449d10195c215d3d4fc56a039ef04a6657711",
+    "diagram_geometry.py": "7322085f6b325a7b73123c640707e2cd9b3bbcccbaf8107a73557e4498c722d3",
+    "display.py": "71a48d83cdc79b4f1e6829732c2dcccf48ad4a9d10df0c4d8110a0772dbffcc1",
+    "examples.py": "1f60a5c2d25cae703477b5af12d170ebffabaca954e2ffa4f2dd29b75371ac99",
+    "examples3d.py": "6df0679503307c8b6b7f5c873cd545da7da1ac10f44e0a886c2d5a801e007d30",
+    "house_example.py": "5f6c46f59ba60080fbea19b9054e458db6745f39b133cfe5b3329cca7c6a74b4",
+    "house_reference.py": "ac535dc466325ecf1da0ef9f1c9c5bae89a7a507c3c9bd16cec381c57b4a45dd",
+    "icons.py": "2b91e8588047a2c766e73f6d1b6d96924daf98bb97c537175b8c63da2d3a2071",
+    "inspector.py": "d99f5e5efd52be385cd0b1d92436ed8a6a18e642b9edf37632dc67fb46b20fe6",
+    "load_case_ui.py": "47c068b362ae936d7ad4105a15e0f07c9c51647ea73e981570af03fc8a58595e",
+    "materials.py": "dedf7e64fb5d9a90e62033b952945df81d5b84b848ab3acae7ee3f70f1ee20c6",
+    "member_geometry.py": "6f8fa3437c3fb1db47b4c0e6a65eaf2d52b18c510f3a8a68ca39364dbf28a5cf",
+    "member_graph_ui.py": "7b8c0615550770319dbb36bcf631af4788d8ae99e80989d254a066df2fa59367",
+    "model.py": "07415c2662e7c99520e916d3a1ff9ef9cf449d81c50f5c394062aad882170dcb",
+    "model3d.py": "8092752507bf3d9a06052fb79316331680a0f01673d81a5603238cc4710cc25a",
+    "projection_cache.py": "1c341ac057c542c0b49f95c12761c49bfc54880e9e4ef27ddecc9cd0071827e7",
+    "results.py": "9d32208d967b41d3b8ca2972022be521ad983598a6f8b3914c80c94500f5aded",
+    "ribbon_ui.py": "73c41447683fdba385d6f21132134277a9b9894fa8d6083364069686c6af766c",
+    "safety.py": "2329de758d828c8c934876d5f5931ef24b1d085882357c7e706d0479fee58d0e",
+    "solver3d.py": "0bf95591b9ee167d799e3e329ad92ad16e91b969201cb0439622f94eb57268da",
+    "solver_results.py": "42a9b71a19ba595ab4fc1e3af8d5d0cd6913b5ee510367217c9e501ac7e27c7f",
+    "thai_code.py": "49b7f23199a32c2a7cead11a91327b7e5bcab5f238643c6179c19252680c9b81",
+    "theme.py": "887d4987808e7923ed8a982253c99cb4d5af1c3e6e72a34a0dad27c61e50557f",
+    "ui.py": "1c192c5f156a2795af6649f6aa9cb541e682afbaa7224fba1db90828b69224eb",
+    "visualization.py": "d80cf1078697126192189124b5188935cca14c0299ea80bc459b62e5e1b34ce2",
+    "visualization3d.py": "9ac2c282143aab250e1ef8792390670b2969c935af3162c58c34c57400873589",
+    "worker.py": "a8ee52e4257735fb75b47bc42694428ca770afc5c19e7a28e3a99232dd104a98",
+    "workspace_ui.py": "1f546def94b4b3935655f8b77a6180cf442f016b976a0b15a5c84d7e0c37a7e7",
+    "__init__.py": "02696604b604f2328cfadeca862199379370a3c789b7dd909e4ea5dd1b792e92"
+  },
+  "not_tested": [
+    "Cold Restart / final full plugin load",
+    "Physical mouse interaction",
+    "Live committed Save/Load/Undo/Redo",
+    "Clean Windows VM",
+    "Rebuilt Setup"
+  ],
+  "known_limitations": [
+    "Connected members shown as separate local-sign plots; no merged global diagram",
+    "Geometry connectivity uses analytical node IDs; coincident distinct nodes are not automatically joined",
+    "Capacity / Code Compliance Not Available"
+  ],
+  "resolved_failures": [
+    "Initial generator append test failed: other-method selection not retained; fixed and rerun",
+    "Live immediate repaint showed pending old plot widgets; hide before deleteLater fixed and rechecked"
+  ],
+  "backup": "backups/member-workflows-before-20261011"
+}

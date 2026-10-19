@@ -35,6 +35,16 @@ minor versions, and rough edges exist — please
 
 ## Install
 
+### GO Structural Analysis extension
+
+The optional [GO Structural Analysis v0.1.3 extension](extensions/go-structural-analysis/README.md)
+provides 2D beam, frame and truss analysis with 21 engineering examples, result
+diagrams and an interactive inspector. Its [Windows trial installer sources](extensions/go-structural-analysis/packaging/README.md)
+bundle an offline Python/PyNite worker. See the [extension test report](extensions/go-structural-analysis/TEST_RESULTS_v0.1.3.md)
+and [installer checks and limitations](extensions/go-structural-analysis/INSTALLER_TEST_RESULTS.md).
+
+### IngeTrazo application
+
 Grab the [latest release](https://github.com/ingelibre/ingetrazo/releases/latest):
 
 - **Windows**: the `-setup-` installer (or the portable `.zip`).
@@ -169,6 +179,15 @@ the document), **import STL (with principal-plane or advanced all-surface
   lowest-friction way to contribute — see [docs/plugins.md](docs/plugins.md).
 - **Undo/redo** — every edit is a single atomic step (console scripts
   included).
+
+### Thai BIM extension in this fork
+
+[Thai BIM Toolkit](examples/extensions/thai_bim/README.md) is an optional
+Thai-language plugin with a toolbar, illustrated RC/roof/stair tools,
+Grid/Level click placement, explicit host review, detailed footing/column/beam reinforcement, BBS and quantity takeoff. Download the
+[Thai BIM 0.21.0 extension release](https://github.com/buildsmart888/ingetrazo/releases/tag/thai-bim-v0.21.0)
+or read the [Thai guide](examples/extensions/thai_bim/README-th.md).
+It models user-specified geometry and detailing, with a portable member-type library and native point placement for beams, slabs and straight stairs. Rectangular slab and straight-stair detailing include BBS; native starter sheets at 1:50 include explicit grids, levels, grid/extents dimensions and PDF export. Selected beam/slab/landing shape edits and real slab openings now have guarded member detail sheets and net BBS; opening trimmers and anchorage remain manual. It is not a structural design or LOD 350 certification tool.
 
 ![Sheet composer: a real ornamental-fountain sheet — front view, 3D, plan and section at 1:40, with dimensions, labels, a reference photo and the title block](docs/images/laminas.jpeg)
 

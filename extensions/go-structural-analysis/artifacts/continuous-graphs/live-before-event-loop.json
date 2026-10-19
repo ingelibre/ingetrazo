@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Current modeless continuous dialog",
+    "status": "Passed"
+  },
+  {
+    "name": "One plot for connected two-member beam",
+    "status": "Passed"
+  },
+  {
+    "name": "Total length 4+4=8 m",
+    "status": "Passed"
+  },
+  {
+    "name": "Shared station at member joint",
+    "status": "Passed"
+  },
+  {
+    "name": "Station 6 reads second member at local x=2",
+    "status": "Passed"
+  },
+  {
+    "name": "Joint left chooses first member",
+    "status": "Passed"
+  },
+  {
+    "name": "Joint right chooses second member",
+    "status": "Passed"
+  },
+  {
+    "name": "Seven 3D diagrams render on common station axis",
+    "status": "Failed"
+  },
+  {
+    "name": "Single member view remains available",
+    "status": "Passed"
+  },
+  {
+    "name": "Raw inputs preserved",
+    "status": "Passed"
+  }
+]

@@ -1,0 +1,59 @@
+{
+  "schema": 2,
+  "self_weight": false,
+  "nodes": [
+    {
+      "id": "N1",
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "support": "Pin"
+    },
+    {
+      "id": "N2",
+      "x": 4,
+      "y": 0,
+      "z": 0,
+      "support": "Free"
+    }
+  ],
+  "materials": [
+    {
+      "id": "Steel",
+      "E": 200000000.0,
+      "G": 76923076.923,
+      "nu": 0.3,
+      "rho": 76.98
+    }
+  ],
+  "sections": [
+    {
+      "id": "S1",
+      "A": 0.01,
+      "Iy": 8e-05,
+      "Iz": 8e-05,
+      "J": 1e-05
+    }
+  ],
+  "members": [
+    {
+      "id": "B1",
+      "i": "N1",
+      "j": "N2",
+      "type": "Beam",
+      "material": "Steel",
+      "section": "S1"
+    }
+  ],
+  "cases": [
+    "DL",
+    "LL",
+    "WX",
+    "WY"
+  ],
+  "point_loads": [],
+  "distributed_loads": [],
+  "dimension": "3D",
+  "combinations": {},
+  "self_weight_case": "DL"
+}

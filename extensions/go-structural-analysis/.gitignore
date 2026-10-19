@@ -1,0 +1,9 @@
+.venv/
+.qa-venv/
+__pycache__/
+.pytest_cache/
+dist/
+go_structural_analysis/worker_config.json
+docs/reference/prota2022/*.pdf
+tmp/
+backups/

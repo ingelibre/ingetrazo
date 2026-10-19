@@ -1,0 +1,2818 @@
+{
+  "extension": "GO Structural Analysis",
+  "version": "0.1.3",
+  "pytest": {
+    "timestamp": "2026-10-09T09:21:53.557507+07:00",
+    "seconds": 6.615,
+    "counts": {
+      "Passed": 90,
+      "Failed": 0,
+      "Not Tested": 0
+    },
+    "tests": [
+      {
+        "id": "tests.test_client_errors_v013::test_malformed_response[not json-Invalid solver JSON]",
+        "status": "Passed",
+        "seconds": 0.005
+      },
+      {
+        "id": "tests.test_client_errors_v013::test_malformed_response[[]-response object]",
+        "status": "Passed",
+        "seconds": 0.003
+      },
+      {
+        "id": "tests.test_client_errors_v013::test_malformed_response[{\"protocol\":2,\"ok\":true}-protocol mismatch]",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_client_errors_v013::test_malformed_response[{\"protocol\":1,\"ok\":false,\"error\":\"specific failure\"}-specific failure]",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_client_errors_v013::test_malformed_response[{\"protocol\":1,\"ok\":true,\"result\":[]}-result structure]",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_client_errors_v013::test_malformed_response[{\"protocol\":1,\"ok\":true,\"result\":{\"cases\":[]}}-result structure]",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_client_errors_v013::test_worker_nonzero_exit",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_reactions_independent_axes",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_moment_direction_and_anchor[10.0]",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_moment_direction_and_anchor[-10.0]",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_zero_moment_hidden",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_arrow_tip_anchored[direction0]",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_arrow_tip_anchored[direction1]",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_arrow_tip_anchored[direction2]",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_arrow_tip_anchored[direction3]",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_arrow_tip_anchored[direction4]",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_arrow_zero_hidden",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_signed_fill_crossing_and_discontinuity",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_diagram_geometry::test_zero_diagram_unfilled",
+        "status": "Passed",
+        "seconds": 0.0
+      },
+      {
+        "id": "tests.test_engineering_v013::test_axial_distributed_load",
+        "status": "Passed",
+        "seconds": 2.216
+      },
+      {
+        "id": "tests.test_engineering_v013::test_member_moment_jump",
+        "status": "Passed",
+        "seconds": 0.033
+      },
+      {
+        "id": "tests.test_engineering_v013::test_nodal_moment_at_released_rotation",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_engineering_v013::test_inspector_invalid_side",
+        "status": "Passed",
+        "seconds": 0.02
+      },
+      {
+        "id": "tests.test_engineering_v013::test_truss_selfweight_lumped_at_joints",
+        "status": "Passed",
+        "seconds": 0.05
+      },
+      {
+        "id": "tests.test_engineering_v013::test_simple[UDL]",
+        "status": "Passed",
+        "seconds": 0.02
+      },
+      {
+        "id": "tests.test_engineering_v013::test_simple[Point]",
+        "status": "Passed",
+        "seconds": 0.024
+      },
+      {
+        "id": "tests.test_engineering_v013::test_cantilever[UDL]",
+        "status": "Passed",
+        "seconds": 0.019
+      },
+      {
+        "id": "tests.test_engineering_v013::test_cantilever[Point]",
+        "status": "Passed",
+        "seconds": 0.022
+      },
+      {
+        "id": "tests.test_engineering_v013::test_continuous[2]",
+        "status": "Passed",
+        "seconds": 0.039
+      },
+      {
+        "id": "tests.test_engineering_v013::test_continuous[3]",
+        "status": "Passed",
+        "seconds": 0.052
+      },
+      {
+        "id": "tests.test_engineering_v013::test_portal[FX]",
+        "status": "Passed",
+        "seconds": 0.051
+      },
+      {
+        "id": "tests.test_engineering_v013::test_portal[FZ]",
+        "status": "Passed",
+        "seconds": 0.045
+      },
+      {
+        "id": "tests.test_engineering_v013::test_inclined",
+        "status": "Passed",
+        "seconds": 0.022
+      },
+      {
+        "id": "tests.test_engineering_v013::test_truss_axial",
+        "status": "Passed",
+        "seconds": 0.055
+      },
+      {
+        "id": "tests.test_engineering_v013::test_releases[False]",
+        "status": "Passed",
+        "seconds": 0.02
+      },
+      {
+        "id": "tests.test_engineering_v013::test_releases[True]",
+        "status": "Passed",
+        "seconds": 0.02
+      },
+      {
+        "id": "tests.test_engineering_v013::test_release_instability[False]",
+        "status": "Passed",
+        "seconds": 0.008
+      },
+      {
+        "id": "tests.test_engineering_v013::test_release_instability[True]",
+        "status": "Passed",
+        "seconds": 0.008
+      },
+      {
+        "id": "tests.test_engineering_v013::test_weight_and_cases[False]",
+        "status": "Passed",
+        "seconds": 0.038
+      },
+      {
+        "id": "tests.test_engineering_v013::test_weight_and_cases[True]",
+        "status": "Passed",
+        "seconds": 0.041
+      },
+      {
+        "id": "tests.test_engineering_v013::test_off_grid_extrema_and_jumps",
+        "status": "Passed",
+        "seconds": 0.028
+      },
+      {
+        "id": "tests.test_engineering_v013::test_triangular_udl",
+        "status": "Passed",
+        "seconds": 0.024
+      },
+      {
+        "id": "tests.test_engineering_v013::test_exact_inspection_csv_and_stale",
+        "status": "Passed",
+        "seconds": 0.045
+      },
+      {
+        "id": "tests.test_engineering_v013::test_hit_selection_pan_zoom",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_engineering_v013::test_release_validation_and_old_result",
+        "status": "Passed",
+        "seconds": 0.007
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[simple_udl]",
+        "status": "Passed",
+        "seconds": 0.02
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[simple_point]",
+        "status": "Passed",
+        "seconds": 0.024
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[cantilever_point]",
+        "status": "Passed",
+        "seconds": 0.024
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[cantilever_udl]",
+        "status": "Passed",
+        "seconds": 0.023
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[continuous_2]",
+        "status": "Passed",
+        "seconds": 0.033
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[continuous_3]",
+        "status": "Passed",
+        "seconds": 0.054
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[portal_vertical]",
+        "status": "Passed",
+        "seconds": 0.043
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[portal_horizontal]",
+        "status": "Passed",
+        "seconds": 0.046
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[inclined]",
+        "status": "Passed",
+        "seconds": 0.023
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[truss]",
+        "status": "Passed",
+        "seconds": 0.043
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[release_j]",
+        "status": "Passed",
+        "seconds": 0.02
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[release_both]",
+        "status": "Passed",
+        "seconds": 0.023
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[unstable_loaded]",
+        "status": "Passed",
+        "seconds": 0.011
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[unstable_unloaded]",
+        "status": "Passed",
+        "seconds": 0.008
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[cases_off]",
+        "status": "Passed",
+        "seconds": 0.037
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[cases_on]",
+        "status": "Passed",
+        "seconds": 0.042
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[truss_weight]",
+        "status": "Passed",
+        "seconds": 0.046
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[off_grid]",
+        "status": "Passed",
+        "seconds": 0.024
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[triangular]",
+        "status": "Passed",
+        "seconds": 0.021
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[axial]",
+        "status": "Passed",
+        "seconds": 0.021
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_solver[moment_jump]",
+        "status": "Passed",
+        "seconds": 0.031
+      },
+      {
+        "id": "tests.test_examples::test_catalogue_independent_models",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_materials::test_material_solver_and_selfweight[Concrete]",
+        "status": "Passed",
+        "seconds": 0.048
+      },
+      {
+        "id": "tests.test_materials::test_material_solver_and_selfweight[Aluminium]",
+        "status": "Passed",
+        "seconds": 0.051
+      },
+      {
+        "id": "tests.test_materials::test_material_solver_and_selfweight[Wood]",
+        "status": "Passed",
+        "seconds": 0.039
+      },
+      {
+        "id": "tests.test_materials::test_presets_independent_and_weight_units",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_solver::test_udl_closed_form",
+        "status": "Passed",
+        "seconds": 0.024
+      },
+      {
+        "id": "tests.test_solver::test_cantilever_point_load",
+        "status": "Passed",
+        "seconds": 0.028
+      },
+      {
+        "id": "tests.test_solver::test_frame_multi_case_and_selfweight",
+        "status": "Passed",
+        "seconds": 0.04
+      },
+      {
+        "id": "tests.test_solver::test_member_point_load",
+        "status": "Passed",
+        "seconds": 0.023
+      },
+      {
+        "id": "tests.test_solver::test_inclined_frame_equilibrium",
+        "status": "Passed",
+        "seconds": 0.023
+      },
+      {
+        "id": "tests.test_solver::test_truss",
+        "status": "Passed",
+        "seconds": 0.053
+      },
+      {
+        "id": "tests.test_solver::test_invalid[<lambda>0]",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_solver::test_invalid[<lambda>1]",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_solver::test_invalid[<lambda>2]",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_solver::test_invalid[<lambda>3]",
+        "status": "Passed",
+        "seconds": 0.002
+      },
+      {
+        "id": "tests.test_solver::test_invalid[<lambda>4]",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_solver::test_invalid[<lambda>5]",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_solver::test_invalid[<lambda>6]",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_solver::test_unstable",
+        "status": "Passed",
+        "seconds": 0.004
+      },
+      {
+        "id": "tests.test_solver::test_json_worker",
+        "status": "Passed",
+        "seconds": 1.806
+      },
+      {
+        "id": "tests.test_solver::test_worker_invalid_protocol",
+        "status": "Passed",
+        "seconds": 0.374
+      },
+      {
+        "id": "tests.test_solver::test_missing_runtime",
+        "status": "Passed",
+        "seconds": 0.001
+      },
+      {
+        "id": "tests.test_solver::test_timeout",
+        "status": "Passed",
+        "seconds": 0.012
+      },
+      {
+        "id": "tests.test_solver::test_schema_roundtrip",
+        "status": "Passed",
+        "seconds": 0.001
+      }
+    ]
+  },
+  "regression_original": {
+    "count": 19,
+    "passed": 19
+  },
+  "engineering": {
+    "counts": {
+      "Passed": 198,
+      "Failed": 0,
+      "Not Tested": 0
+    },
+    "comparisons": [
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.8e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "axial UDL reaction",
+        "actual": -18.0,
+        "reference": -18.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.8e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "axial UDL tip displacement",
+        "actual": 2.7000000000000002e-05,
+        "reference": 2.7e-05,
+        "absolute_error": 3.3881317890172014e-21,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "axial UDL N at x=1.37",
+        "actual": -13.89,
+        "reference": -13.89,
+        "absolute_error": 0.0,
+        "tolerance": 1.389e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "axial UDL exact minimum",
+        "actual": -18.0,
+        "reference": -18.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.8e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "member moment left reaction",
+        "actual": 1.6666666666666667,
+        "reference": 1.6666666666666667,
+        "absolute_error": 0.0,
+        "tolerance": 1.6666666666666668e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "member moment right reaction",
+        "actual": -1.6666666666666667,
+        "reference": -1.6666666666666667,
+        "absolute_error": 0.0,
+        "tolerance": 1.6666666666666668e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "member moment jump",
+        "actual": 10.0,
+        "reference": 10.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "member moment exact maximum",
+        "actual": 6.666666666666666,
+        "reference": 6.666666666666667,
+        "absolute_error": 8.881784197001252e-16,
+        "tolerance": 6.666666666666667e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "member moment maximum position",
+        "actual": 2.0,
+        "reference": 2.0,
+        "absolute_error": 0.0,
+        "tolerance": 2e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.8e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 1.7763568394002505e-15,
+        "reference": 0.0,
+        "absolute_error": 1.7763568394002505e-15,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 2.115076960188885e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 2.842170943040401e-14,
+        "reference": 0.0,
+        "absolute_error": 2.842170943040401e-14,
+        "tolerance": 6.3452308805666575e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "truss SW reaction",
+        "actual": 10.575384800944425,
+        "reference": 10.575384800944427,
+        "absolute_error": 1.7763568394002505e-15,
+        "tolerance": 1.0575384800944426e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "truss SW diagonal N",
+        "actual": 9.380467811865476,
+        "reference": 9.380467811865474,
+        "absolute_error": 1.7763568394002505e-15,
+        "tolerance": 9.380467811865474e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "truss SW B1 moment",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "truss SW T2 moment",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "truss SW T3 moment",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.8e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "UDL left reaction",
+        "actual": 30.0,
+        "reference": 30.0,
+        "absolute_error": 0.0,
+        "tolerance": 3e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "UDL moment",
+        "actual": 45.0,
+        "reference": 45.0,
+        "absolute_error": 0.0,
+        "tolerance": 4.5e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "UDL deflection",
+        "actual": -0.010546874999999999,
+        "reference": -0.010546874999999999,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 2e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "Point left reaction",
+        "actual": -10.0,
+        "reference": -10.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "Point moment",
+        "actual": 30.0,
+        "reference": 30.0,
+        "absolute_error": 0.0,
+        "tolerance": 3e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "Point deflection",
+        "actual": 0.005625000000000001,
+        "reference": 0.005624999999999999,
+        "absolute_error": 1.734723475976807e-18,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": -2.842170943040401e-14,
+        "reference": 0.0,
+        "absolute_error": 2.842170943040401e-14,
+        "tolerance": 1.8e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "cantilever UDL reaction",
+        "actual": 60.0,
+        "reference": 60.0,
+        "absolute_error": 0.0,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "cantilever UDL end moment",
+        "actual": 179.99999999999997,
+        "reference": 180.0,
+        "absolute_error": 2.842170943040401e-14,
+        "tolerance": 1.8e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "cantilever UDL deflection",
+        "actual": -0.10124999999999994,
+        "reference": -0.10124999999999999,
+        "absolute_error": 5.551115123125783e-17,
+        "tolerance": 1.0124999999999998e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": -3.552713678800501e-15,
+        "reference": 0.0,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 1e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": -3.552713678800501e-14,
+        "reference": 0.0,
+        "absolute_error": 3.552713678800501e-14,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "cantilever Point reaction",
+        "actual": 9.999999999999996,
+        "reference": 10.0,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 1e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "cantilever Point end moment",
+        "actual": 59.999999999999964,
+        "reference": 60.0,
+        "absolute_error": 3.552713678800501e-14,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "cantilever Point deflection",
+        "actual": -0.044999999999999964,
+        "reference": -0.04499999999999999,
+        "absolute_error": 2.7755575615628914e-17,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.2e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 7.2e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "2 spans R0",
+        "actual": 22.5,
+        "reference": 22.5,
+        "absolute_error": 0.0,
+        "tolerance": 2.25e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "2 spans R1",
+        "actual": 75.0,
+        "reference": 75.0,
+        "absolute_error": 0.0,
+        "tolerance": 7.499999999999999e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "2 spans R2",
+        "actual": 22.5,
+        "reference": 22.5,
+        "absolute_error": 0.0,
+        "tolerance": 2.25e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "2 spans interior hogging",
+        "actual": 45.0,
+        "reference": 45.0,
+        "absolute_error": 0.0,
+        "tolerance": 4.5e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "2 spans B0 mid deflection",
+        "actual": -0.004218749999999999,
+        "reference": -0.00421875,
+        "absolute_error": 8.673617379884035e-19,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "2 spans B1 mid deflection",
+        "actual": -0.004218750000000002,
+        "reference": -0.00421875,
+        "absolute_error": 1.734723475976807e-18,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.8e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 0.00016199999999999998,
+        "status": "Passed"
+      },
+      {
+        "name": "3 spans R0",
+        "actual": 24.0,
+        "reference": 24.0,
+        "absolute_error": 0.0,
+        "tolerance": 2.4e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "3 spans R1",
+        "actual": 66.0,
+        "reference": 66.0,
+        "absolute_error": 0.0,
+        "tolerance": 6.5999999999999995e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "3 spans R2",
+        "actual": 66.0,
+        "reference": 66.0,
+        "absolute_error": 0.0,
+        "tolerance": 6.5999999999999995e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "3 spans R3",
+        "actual": 24.0,
+        "reference": 24.0,
+        "absolute_error": 0.0,
+        "tolerance": 2.4e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "3 spans interior hogging",
+        "actual": 35.99999999999999,
+        "reference": 36.0,
+        "absolute_error": 7.105427357601002e-15,
+        "tolerance": 3.6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "3 spans B0 mid deflection",
+        "actual": -0.005484375000000002,
+        "reference": -0.005484375,
+        "absolute_error": 2.6020852139652106e-18,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "3 spans B1 mid deflection",
+        "actual": -0.0004218750000000017,
+        "reference": -0.00042187499999999994,
+        "absolute_error": 1.734723475976807e-18,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "3 spans B2 mid deflection",
+        "actual": -0.005484375000000001,
+        "reference": -0.005484375,
+        "absolute_error": 1.734723475976807e-18,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": -2.6645352591003757e-14,
+        "reference": 0.0,
+        "absolute_error": 2.6645352591003757e-14,
+        "tolerance": 1.0000000000000027e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 8.881784197001252e-16,
+        "reference": 0.0,
+        "absolute_error": 8.881784197001252e-16,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 1.1368683772161603e-13,
+        "reference": 0.0,
+        "absolute_error": 1.1368683772161603e-13,
+        "tolerance": 4.000000000000011e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX A ux",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX A uz",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX A rotation",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX A Rx",
+        "actual": -5.009824408196377,
+        "reference": -5.009824408196323,
+        "absolute_error": 5.417888360170764e-14,
+        "tolerance": 5.009824408196323e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX A Rz",
+        "actual": -2.6647717178895074,
+        "reference": -2.664771717889478,
+        "absolute_error": 2.930988785010413e-14,
+        "tolerance": 2.664771717889478e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX A My",
+        "actual": 12.033754584035428,
+        "reference": 12.033754584035297,
+        "absolute_error": 1.3145040611561853e-13,
+        "tolerance": 1.2033754584035296e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX B ux",
+        "actual": 0.0026769943532201283,
+        "reference": 0.002676994353220099,
+        "absolute_error": 2.949029909160572e-17,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX B uz",
+        "actual": 5.329543435779015e-06,
+        "reference": 5.3295434357789566e-06,
+        "absolute_error": 5.844527336054672e-20,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX B rotation",
+        "actual": -0.000503526441910668,
+        "reference": -0.0005035264419106623,
+        "absolute_error": 5.7462715141731735e-18,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX B Rx",
+        "actual": 0.0,
+        "reference": 1.1368683772161603e-13,
+        "absolute_error": 1.1368683772161603e-13,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX B Rz",
+        "actual": 0.0,
+        "reference": -2.220446049250313e-16,
+        "absolute_error": 2.220446049250313e-16,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX B My",
+        "actual": 0.0,
+        "reference": 3.9968028886505635e-15,
+        "absolute_error": 3.9968028886505635e-15,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX C ux",
+        "actual": 0.0026620238264447173,
+        "reference": 0.0026620238264446873,
+        "absolute_error": 2.992397996059992e-17,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX C uz",
+        "actual": -5.329543435779017e-06,
+        "reference": -5.329543435778957e-06,
+        "absolute_error": 5.929230630780102e-20,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX C rotation",
+        "actual": -0.0004993159812550839,
+        "reference": -0.000499315981255078,
+        "absolute_error": 5.854691731421724e-18,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX C Rx",
+        "actual": 0.0,
+        "reference": -2.2737367544323206e-13,
+        "absolute_error": 2.2737367544323206e-13,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX C Rz",
+        "actual": 0.0,
+        "reference": -2.220446049250313e-16,
+        "absolute_error": 2.220446049250313e-16,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX C My",
+        "actual": 0.0,
+        "reference": -8.881784197001252e-16,
+        "absolute_error": 8.881784197001252e-16,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX D ux",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX D uz",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX D rotation",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX D Rx",
+        "actual": -4.9901755918036494,
+        "reference": -4.990175591803594,
+        "absolute_error": 5.5067062021407764e-14,
+        "tolerance": 4.990175591803594e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX D Rz",
+        "actual": 2.6647717178895083,
+        "reference": 2.6647717178894785,
+        "absolute_error": 2.9753977059954195e-14,
+        "tolerance": 2.664771717889478e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FX D My",
+        "actual": 11.977615108627633,
+        "reference": 11.977615108627502,
+        "absolute_error": 1.3145040611561853e-13,
+        "tolerance": 1.1977615108627502e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 7.105427357601002e-15,
+        "reference": 0.0,
+        "absolute_error": 7.105427357601002e-15,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 2.842170943040401e-14,
+        "reference": 0.0,
+        "absolute_error": 2.842170943040401e-14,
+        "tolerance": 1.8e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ A ux",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ A uz",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ A rotation",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ A Rx",
+        "actual": 8.420921311168636,
+        "reference": 8.420921311168634,
+        "absolute_error": 1.7763568394002505e-15,
+        "tolerance": 8.420921311168633e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ A Rz",
+        "actual": 30.000000000000004,
+        "reference": 30.0,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 3e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ A My",
+        "actual": -11.202632317624676,
+        "reference": -11.202632317624673,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 1.1202632317624673e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ B ux",
+        "actual": 1.2631381966752894e-05,
+        "reference": 1.2631381966753852e-05,
+        "absolute_error": 9.571472303973594e-19,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ B uz",
+        "actual": -6.000000000000001e-05,
+        "reference": -6e-05,
+        "absolute_error": 6.776263578034403e-21,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ B rotation",
+        "actual": -0.001409802576178149,
+        "reference": -0.0014098025761781492,
+        "absolute_error": 2.168404344971009e-19,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ B Rx",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ B Rz",
+        "actual": 0.0,
+        "reference": -3.552713678800501e-15,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ B My",
+        "actual": 0.0,
+        "reference": -3.552713678800501e-15,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ C ux",
+        "actual": -1.2631381966753013e-05,
+        "reference": -1.2631381966752052e-05,
+        "absolute_error": 9.605353621863766e-19,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ C uz",
+        "actual": -6.000000000000001e-05,
+        "reference": -6.000000000000001e-05,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ C rotation",
+        "actual": 0.001409802576178149,
+        "reference": 0.0014098025761781487,
+        "absolute_error": 2.168404344971009e-19,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ C Rx",
+        "actual": 0.0,
+        "reference": 3.552713678800501e-15,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ C Rz",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ C My",
+        "actual": 0.0,
+        "reference": -7.105427357601002e-15,
+        "absolute_error": 7.105427357601002e-15,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ D ux",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ D uz",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ D rotation",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ D Rx",
+        "actual": -8.420921311168636,
+        "reference": -8.420921311168637,
+        "absolute_error": 1.7763568394002505e-15,
+        "tolerance": 8.420921311168638e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ D Rz",
+        "actual": 30.000000000000004,
+        "reference": 30.000000000000004,
+        "absolute_error": 0.0,
+        "tolerance": 3e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "portal FZ D My",
+        "actual": 11.202632317624674,
+        "reference": 11.20263231762468,
+        "absolute_error": 5.329070518200751e-15,
+        "tolerance": 1.120263231762468e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 1.9095836023552692e-13,
+        "reference": 0.0,
+        "absolute_error": 1.9095836023552692e-13,
+        "tolerance": 7e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": -2.4868995751603507e-14,
+        "reference": 0.0,
+        "absolute_error": 2.4868995751603507e-14,
+        "tolerance": 1e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": -6.252776074688882e-13,
+        "reference": 0.0,
+        "absolute_error": 6.252776074688882e-13,
+        "tolerance": 3.2000000000000625e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N1 ux",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N1 uz",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N1 rotation",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N1 Rx",
+        "actual": -6.999999999999809,
+        "reference": -6.999999999999545,
+        "absolute_error": 2.637889906509372e-13,
+        "tolerance": 6.999999999999545e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N1 Rz",
+        "actual": 9.999999999999975,
+        "reference": 9.999999999999545,
+        "absolute_error": 4.298783551348606e-13,
+        "tolerance": 9.999999999999544e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N1 My",
+        "actual": -32.000000000000625,
+        "reference": -32.000000000003155,
+        "absolute_error": 2.5295321393059567e-12,
+        "tolerance": 3.2000000000003154e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N2 ux",
+        "actual": -0.019195492740407126,
+        "reference": -0.019195492740408642,
+        "absolute_error": 1.5161483180037294e-15,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N2 uz",
+        "actual": -0.0288671529117577,
+        "reference": -0.028867152911759973,
+        "absolute_error": 2.2724877535296173e-15,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N2 rotation",
+        "actual": 0.007211102550928118,
+        "reference": 0.007211102550928686,
+        "absolute_error": 5.681219383824043e-16,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N2 Rx",
+        "actual": 0.0,
+        "reference": -4.547473508864641e-13,
+        "absolute_error": 4.547473508864641e-13,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N2 Rz",
+        "actual": 0.0,
+        "reference": 4.547473508864641e-13,
+        "absolute_error": 4.547473508864641e-13,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined N2 My",
+        "actual": 0.0,
+        "reference": -1.0658141036401503e-14,
+        "absolute_error": 1.0658141036401503e-14,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined transformed ux",
+        "actual": -0.01919549274040713,
+        "reference": -0.019195492740408642,
+        "absolute_error": 1.5126788710517758e-15,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "inclined transformed uz",
+        "actual": -0.028867152911757708,
+        "reference": -0.028867152911759973,
+        "absolute_error": 2.26554885962571e-15,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 8.881784197001252e-16,
+        "reference": 0.0,
+        "absolute_error": 8.881784197001252e-16,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": -3.552713678800501e-15,
+        "reference": 0.0,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 1e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": -1.0658141036401503e-14,
+        "reference": 0.0,
+        "absolute_error": 1.0658141036401503e-14,
+        "tolerance": 3e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "truss B1 axial",
+        "actual": -4.999999999999998,
+        "reference": -5.0,
+        "absolute_error": 1.7763568394002505e-15,
+        "tolerance": 5e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "truss B1 end M",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "truss T2 axial",
+        "actual": 7.071067811865475,
+        "reference": 7.071067811865475,
+        "absolute_error": 0.0,
+        "tolerance": 7.071067811865475e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "truss T2 end M",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "truss T3 axial",
+        "actual": 7.071067811865473,
+        "reference": 7.071067811865475,
+        "absolute_error": 1.7763568394002505e-15,
+        "tolerance": 7.071067811865475e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "truss T3 end M",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.8e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "release j end moment",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "released beam left reaction",
+        "actual": 37.5,
+        "reference": 37.5,
+        "absolute_error": 0.0,
+        "tolerance": 3.7499999999999997e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "released beam right reaction",
+        "actual": 22.5,
+        "reference": 22.5,
+        "absolute_error": 0.0,
+        "tolerance": 2.25e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.8e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "release j end moment",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "released beam left reaction",
+        "actual": 30.0,
+        "reference": 30.0,
+        "absolute_error": 0.0,
+        "tolerance": 3e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "released beam right reaction",
+        "actual": 30.0,
+        "reference": 30.0,
+        "absolute_error": 0.0,
+        "tolerance": 3e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "both released midpoint D",
+        "actual": -0.010546875,
+        "reference": -0.010546874999999999,
+        "absolute_error": 1.734723475976807e-18,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.8e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "LC2 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC2 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 5e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC2 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 selfweight False",
+        "actual": 60.0,
+        "reference": 60.0,
+        "absolute_error": 0.0,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC2 selfweight False",
+        "actual": 5.0,
+        "reference": 5.0,
+        "absolute_error": 0.0,
+        "tolerance": 5e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 6.461879999999999e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.938564e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "LC2 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC2 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 9.6188e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC2 equilibrium M_plane",
+        "actual": 3.552713678800501e-15,
+        "reference": 0.0,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 1.3856400000000004e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 selfweight True",
+        "actual": 64.6188,
+        "reference": 64.6188,
+        "absolute_error": 0.0,
+        "tolerance": 6.461879999999999e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC2 selfweight True",
+        "actual": 9.6188,
+        "reference": 9.6188,
+        "absolute_error": 0.0,
+        "tolerance": 9.6188e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": -3.552713678800501e-15,
+        "reference": 0.0,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 2e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": -3.552713678800501e-15,
+        "reference": 0.0,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 2.74e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "off-grid M",
+        "actual": -21.143666666666665,
+        "reference": -21.143666666666668,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 2.1143666666666666e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "off-grid M location",
+        "actual": 1.37,
+        "reference": 1.37,
+        "absolute_error": 0.0,
+        "tolerance": 1.37e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "off-grid D location",
+        "actual": 2.627409502079053,
+        "reference": 2.627409502079052,
+        "absolute_error": 8.881784197001252e-16,
+        "tolerance": 2.6274095020790523e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "off-grid D",
+        "actual": -0.0036496306171958474,
+        "reference": -0.0036496306171958474,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      },
+      {
+        "name": "shear jump right-left",
+        "actual": -20.0,
+        "reference": -20.0,
+        "absolute_error": 0.0,
+        "tolerance": 2e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 3e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.2e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "triangular left R",
+        "actual": 10.0,
+        "reference": 10.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "triangular right R",
+        "actual": 20.0,
+        "reference": 20.0,
+        "absolute_error": 0.0,
+        "tolerance": 2e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "triangular M location",
+        "actual": 3.4641016151377544,
+        "reference": 3.464101615137755,
+        "absolute_error": 4.440892098500626e-16,
+        "tolerance": 3.4641016151377545e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "triangular M magnitude",
+        "actual": 23.09401076758503,
+        "reference": 23.094010767585033,
+        "absolute_error": 3.552713678800501e-15,
+        "tolerance": 2.309401076758503e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FX",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1e-07,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium FZ",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 6e-06,
+        "status": "Passed"
+      },
+      {
+        "name": "LC1 equilibrium M_plane",
+        "actual": 0.0,
+        "reference": 0.0,
+        "absolute_error": 0.0,
+        "tolerance": 1.8e-05,
+        "status": "Passed"
+      },
+      {
+        "name": "inspector arbitrary x",
+        "actual": -0.009948351886735025,
+        "reference": -0.009948351886735025,
+        "absolute_error": 0.0,
+        "tolerance": 1e-08,
+        "status": "Passed"
+      }
+    ]
+  },
+  "live": {
+    "async_analysis": {
+      "status": "Passed",
+      "ticks_while_worker_running": 280,
+      "interval_ms": 10
+    },
+    "worker_version": "0.1.3",
+    "viewport_click": {
+      "status": "Passed",
+      "member": "B1",
+      "method": "Qt MouseButtonPress sent to live viewport (QtTest absent in frozen runtime)"
+    },
+    "inspector_slider": {
+      "status": "Passed",
+      "text": "B1 · x = 1.5 m (right)\nN 0 kN   V 15 kN\nM -33.75 kN·m   D -7.51465 mm"
+    },
+    "save_load": {
+      "status": "Passed"
+    },
+    "undo_redo": {
+      "status": "Passed"
+    },
+    "stale_results": {
+      "status": "Passed"
+    },
+    "csv_export": {
+      "status": "Passed",
+      "files": [
+        "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\csv\\node_displacements.csv",
+        "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\csv\\support_reactions.csv",
+        "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\csv\\member_end_forces.csv",
+        "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\csv\\member_extrema.csv",
+        "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\csv\\member_diagrams.csv"
+      ]
+    },
+    "tables": {
+      "status": "Passed",
+      "rows": {
+        "Node Displacements": 2,
+        "Support Reactions": 2,
+        "Member End Forces": 2,
+        "Max / Min": 8
+      }
+    },
+    "overlays": {
+      "status": "Passed",
+      "modes": [
+        {
+          "mode": "Model",
+          "status": "Passed",
+          "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-Model.png"
+        },
+        {
+          "mode": "N",
+          "status": "Passed",
+          "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-N.png"
+        },
+        {
+          "mode": "V",
+          "status": "Passed",
+          "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-V.png"
+        },
+        {
+          "mode": "M",
+          "status": "Passed",
+          "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-M.png"
+        },
+        {
+          "mode": "D",
+          "status": "Passed",
+          "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-D.png"
+        },
+        {
+          "mode": "Reaction",
+          "status": "Passed",
+          "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-Reaction.png"
+        },
+        {
+          "mode": "Deformed",
+          "status": "Passed",
+          "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-Deformed.png"
+        }
+      ]
+    },
+    "themes": {
+      "status": "Passed",
+      "modes": [
+        {
+          "theme": "dark",
+          "color": "#2d2d30",
+          "status": "Passed"
+        },
+        {
+          "theme": "light",
+          "color": "#efefef",
+          "status": "Passed"
+        },
+        {
+          "theme": "system",
+          "color": "#efefef",
+          "status": "Passed"
+        }
+      ],
+      "os_live_theme_change": "Not Tested"
+    },
+    "plugin_load": {
+      "status": "Passed",
+      "api_version": 2,
+      "version": "0.1.3",
+      "import_errors": [],
+      "setup": "idempotent setup invoked on live ExtensionApp"
+    },
+    "zoom_pan": {
+      "status": "Passed",
+      "before": [
+        [
+          "B1",
+          [
+            755.7394696883857,
+            437.9460382182151
+          ],
+          [
+            1301.1729059182107,
+            437.9460382182151
+          ]
+        ]
+      ],
+      "after": [
+        [
+          "B1",
+          [
+            711.0524041292956,
+            462.0320437825285
+          ],
+          [
+            1490.2429820684483,
+            462.0320437825285
+          ]
+        ]
+      ],
+      "member_pick_after_transform": "B1"
+    },
+    "diagram_controls": {
+      "status": "Passed",
+      "labels_off": true,
+      "legend_off": true,
+      "diagram_scale": 1.8,
+      "deformation_scale": 100.0,
+      "loads_tab_always_draws_loads": true
+    },
+    "case_selector": {
+      "status": "Passed",
+      "cases": [
+        "LC1",
+        "LC2"
+      ],
+      "LC1_Rz": 37.5,
+      "LC2_Rz": 17.037037037037038
+    },
+    "support_release_load_symbols": {
+      "status": "Passed",
+      "symbols": [
+        "Fixed",
+        "Pin",
+        "Roller",
+        "Member release",
+        "Distributed load",
+        "Point load",
+        "RollerX",
+        "Self-weight UDL"
+      ],
+      "method": "live canvas draw + Qt viewport captures"
+    },
+    "editor_validation": {
+      "status": "Passed",
+      "legacy_model_roundtrip": true,
+      "negative_E_rejected": true
+    },
+    "live_solver_error": {
+      "status": "Passed",
+      "message": "Analysis failed: The stiffness matrix is singular, which implies rigid body motion. The structure is unstable. Aborting analysis.",
+      "run_button_reenabled": true
+    },
+    "api_version_guard": {
+      "status": "Passed",
+      "api_v1_rejected": true
+    },
+    "original_document_restored": {
+      "status": "Passed",
+      "scene_identity": true,
+      "history_identity": true,
+      "plugin_data_unchanged": true,
+      "camera_exact": true,
+      "active_workspace_preserved": true
+    },
+    "release_mechanism_guard": {
+      "status": "Passed",
+      "unloaded": "Analysis failed: Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints",
+      "loaded": "Analysis failed: Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints",
+      "run_button_reenabled": true
+    }
+  },
+  "installation": [
+    {
+      "file": "__init__.py",
+      "source_sha256": "2f10915d43daa7dd72f0d32519ec8bfa733d37a3b7b1d6cfc082431bc255c3b6",
+      "installed_sha256": "2f10915d43daa7dd72f0d32519ec8bfa733d37a3b7b1d6cfc082431bc255c3b6",
+      "status": "Passed"
+    },
+    {
+      "file": "client.py",
+      "source_sha256": "cbf23c8d67cea75d1a916336986f63da830307ba78e67d975779dcbf216e4272",
+      "installed_sha256": "cbf23c8d67cea75d1a916336986f63da830307ba78e67d975779dcbf216e4272",
+      "status": "Passed"
+    },
+    {
+      "file": "diagram_geometry.py",
+      "source_sha256": "bfcf06402a857c1aa7f53198f5efc1f1a0590c19d504b10ddc1c10b5ab812849",
+      "installed_sha256": "bfcf06402a857c1aa7f53198f5efc1f1a0590c19d504b10ddc1c10b5ab812849",
+      "status": "Passed"
+    },
+    {
+      "file": "examples.py",
+      "source_sha256": "1f60a5c2d25cae703477b5af12d170ebffabaca954e2ffa4f2dd29b75371ac99",
+      "installed_sha256": "1f60a5c2d25cae703477b5af12d170ebffabaca954e2ffa4f2dd29b75371ac99",
+      "status": "Passed"
+    },
+    {
+      "file": "icons.py",
+      "source_sha256": "2b91e8588047a2c766e73f6d1b6d96924daf98bb97c537175b8c63da2d3a2071",
+      "installed_sha256": "2b91e8588047a2c766e73f6d1b6d96924daf98bb97c537175b8c63da2d3a2071",
+      "status": "Passed"
+    },
+    {
+      "file": "inspector.py",
+      "source_sha256": "a7f5a7bec17409efd974df20505760351989b935eeb621079ab1f358cd553514",
+      "installed_sha256": "a7f5a7bec17409efd974df20505760351989b935eeb621079ab1f358cd553514",
+      "status": "Passed"
+    },
+    {
+      "file": "materials.py",
+      "source_sha256": "dedf7e64fb5d9a90e62033b952945df81d5b84b848ab3acae7ee3f70f1ee20c6",
+      "installed_sha256": "dedf7e64fb5d9a90e62033b952945df81d5b84b848ab3acae7ee3f70f1ee20c6",
+      "status": "Passed"
+    },
+    {
+      "file": "model.py",
+      "source_sha256": "092dd8b59eb4a3efb23e9dac31731eea5cfda56191bc2962f54e72f3f46cc52f",
+      "installed_sha256": "092dd8b59eb4a3efb23e9dac31731eea5cfda56191bc2962f54e72f3f46cc52f",
+      "status": "Passed"
+    },
+    {
+      "file": "results.py",
+      "source_sha256": "988d467a7e09b091a68bb662bc7a65bb2ed49323061dbd03e09757fd0afbec4d",
+      "installed_sha256": "988d467a7e09b091a68bb662bc7a65bb2ed49323061dbd03e09757fd0afbec4d",
+      "status": "Passed"
+    },
+    {
+      "file": "solver_results.py",
+      "source_sha256": "4ef83d9899a4f80e2458a23114b19530c5baa5557580dfb774459e574000f5f4",
+      "installed_sha256": "4ef83d9899a4f80e2458a23114b19530c5baa5557580dfb774459e574000f5f4",
+      "status": "Passed"
+    },
+    {
+      "file": "theme.py",
+      "source_sha256": "f05fec11cfc58a837ac75484be7dc2957278dd38b296ea650e4955458350a9c3",
+      "installed_sha256": "f05fec11cfc58a837ac75484be7dc2957278dd38b296ea650e4955458350a9c3",
+      "status": "Passed"
+    },
+    {
+      "file": "ui.py",
+      "source_sha256": "41a389fad8fdaa2dd360b00098cf1742c00c26c2dc48c2db6a7ad632ecbf02f3",
+      "installed_sha256": "41a389fad8fdaa2dd360b00098cf1742c00c26c2dc48c2db6a7ad632ecbf02f3",
+      "status": "Passed"
+    },
+    {
+      "file": "visualization.py",
+      "source_sha256": "47aef7f61e53dd0ce800a401744daa9f5f7edbfacb3c94466e42a08c628e697d",
+      "installed_sha256": "47aef7f61e53dd0ce800a401744daa9f5f7edbfacb3c94466e42a08c628e697d",
+      "status": "Passed"
+    },
+    {
+      "file": "worker.py",
+      "source_sha256": "25c6aaf0a76542dac032465a724245d147ed23f6415ecc2e9e48ab0c07b5b471",
+      "installed_sha256": "25c6aaf0a76542dac032465a724245d147ed23f6415ecc2e9e48ab0c07b5b471",
+      "status": "Passed"
+    }
+  ],
+  "not_tested": [
+    {
+      "id": "cold_process_restart",
+      "status": "Not Tested",
+      "reason": "Preserved the original unsaved workspace; exercised the real discovery loader and live setup instead."
+    },
+    {
+      "id": "physical_mouse_device",
+      "status": "Not Tested",
+      "reason": "Clicked through a synthetic QMouseEvent delivered to the actual live viewport event path; no physical input device test."
+    },
+    {
+      "id": "os_theme_change_notification",
+      "status": "Not Tested",
+      "reason": "Applied Light/Dark/System through the host theme API; did not change the Windows OS theme."
+    }
+  ],
+  "live_audit_20261009": {
+    "evidence": "artifacts\\audit-20261009\\live-tests.json",
+    "counts": {
+      "Passed": 28,
+      "Failed": 0,
+      "Not Tested": 0
+    },
+    "checks": {
+      "plugin_api": {
+        "status": "Passed"
+      },
+      "idempotent_setup": {
+        "status": "Passed"
+      },
+      "nonblocking_analysis": {
+        "status": "Passed",
+        "gui_ticks": 212
+      },
+      "analysis_current": {
+        "status": "Passed",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      "capture_model": {
+        "status": "Passed"
+      },
+      "capture_loads": {
+        "status": "Passed"
+      },
+      "capture_results": {
+        "status": "Passed"
+      },
+      "capture_overlay-Model": {
+        "status": "Passed"
+      },
+      "capture_overlay-N": {
+        "status": "Passed"
+      },
+      "capture_overlay-V": {
+        "status": "Passed"
+      },
+      "capture_overlay-M": {
+        "status": "Passed"
+      },
+      "capture_overlay-D": {
+        "status": "Passed"
+      },
+      "capture_overlay-Reaction": {
+        "status": "Passed"
+      },
+      "capture_overlay-Deformed": {
+        "status": "Passed"
+      },
+      "viewport_selection": {
+        "status": "Passed"
+      },
+      "inspector_value": {
+        "status": "Passed",
+        "text": "B1 · x = 1.5 m (right)\nN 0 kN   V 15 kN\nM -33.75 kN·m   D -7.51465 mm"
+      },
+      "capture_result-inspector": {
+        "status": "Passed"
+      },
+      "result_tables": {
+        "status": "Passed"
+      },
+      "capture_result-tables": {
+        "status": "Passed"
+      },
+      "capture_table_dialog": {
+        "status": "Passed"
+      },
+      "csv_export": {
+        "status": "Passed"
+      },
+      "save_load": {
+        "status": "Passed"
+      },
+      "stale_result": {
+        "status": "Passed"
+      },
+      "undo": {
+        "status": "Passed"
+      },
+      "redo": {
+        "status": "Passed"
+      },
+      "zoom_pan_pick": {
+        "status": "Passed"
+      },
+      "capture_zoom-pan": {
+        "status": "Passed"
+      },
+      "original_restored": {
+        "status": "Passed"
+      }
+    }
+  },
+  "live_examples": {
+    "evidence": "artifacts\\examples-v0.1.3\\live-results.json",
+    "counts": {
+      "Passed": 22,
+      "Failed": 0,
+      "Not Tested": 0
+    },
+    "checks": [
+      {
+        "key": "simple_udl",
+        "title": "Simply Supported Beam — UDL",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "simple_point",
+        "title": "Simply Supported Beam — Point Load",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "cantilever_point",
+        "title": "Cantilever — Point Load",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "cantilever_udl",
+        "title": "Cantilever — UDL",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "continuous_2",
+        "title": "Continuous Beam — 2 spans",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "continuous_3",
+        "title": "Continuous Beam — 3 spans",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "portal_vertical",
+        "title": "Portal Frame — Vertical load",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "portal_horizontal",
+        "title": "Portal Frame — Horizontal load",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "inclined",
+        "title": "Inclined Frame — Transformation",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "truss",
+        "title": "2D Truss — Joint load",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "release_j",
+        "title": "Member Release — j end",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "release_both",
+        "title": "Member Releases — both ends",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "unstable_loaded",
+        "title": "Stability — released mechanism (loaded)",
+        "status": "Passed",
+        "expected": "unstable rejection",
+        "message": "Analysis failed: Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints"
+      },
+      {
+        "key": "unstable_unloaded",
+        "title": "Stability — released mechanism (unloaded)",
+        "status": "Passed",
+        "expected": "unstable rejection",
+        "message": "Analysis failed: Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints"
+      },
+      {
+        "key": "cases_off",
+        "title": "Multiple Load Cases — self-weight OFF",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "cases_on",
+        "title": "Multiple Load Cases — self-weight ON",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "truss_weight",
+        "title": "2D Truss — self-weight ON",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "off_grid",
+        "title": "Exact Extrema — off-grid point load",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "triangular",
+        "title": "Exact Extrema — triangular UDL",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "axial",
+        "title": "Axial — distributed load",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "moment_jump",
+        "title": "Moment — concentrated member moment",
+        "status": "Passed",
+        "expected": "successful analysis",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      {
+        "key": "original_restored",
+        "status": "Passed"
+      }
+    ]
+  },
+  "visual_update": {
+    "evidence": "artifacts\\visual-update\\live-results.json",
+    "counts": {
+      "Passed": 34,
+      "Failed": 0,
+      "Not Tested": 0
+    },
+    "checks": [
+      {
+        "file": "simple_udl-Model.png",
+        "status": "Passed"
+      },
+      {
+        "file": "simple_udl-Reaction.png",
+        "status": "Passed"
+      },
+      {
+        "file": "simple_udl-V.png",
+        "status": "Passed"
+      },
+      {
+        "file": "simple_udl-M.png",
+        "status": "Passed"
+      },
+      {
+        "file": "simple_udl-N.png",
+        "status": "Passed"
+      },
+      {
+        "file": "simple_point-Model.png",
+        "status": "Passed"
+      },
+      {
+        "file": "simple_point-Reaction.png",
+        "status": "Passed"
+      },
+      {
+        "file": "simple_point-M.png",
+        "status": "Passed"
+      },
+      {
+        "file": "simple_point-N.png",
+        "status": "Passed"
+      },
+      {
+        "file": "continuous_3-Model.png",
+        "status": "Passed"
+      },
+      {
+        "file": "continuous_3-Reaction.png",
+        "status": "Passed"
+      },
+      {
+        "file": "continuous_3-M.png",
+        "status": "Passed"
+      },
+      {
+        "file": "continuous_3-N.png",
+        "status": "Passed"
+      },
+      {
+        "file": "portal_horizontal-Model.png",
+        "status": "Passed"
+      },
+      {
+        "file": "portal_horizontal-Reaction.png",
+        "status": "Passed"
+      },
+      {
+        "file": "portal_horizontal-M.png",
+        "status": "Passed"
+      },
+      {
+        "file": "portal_horizontal-N.png",
+        "status": "Passed"
+      },
+      {
+        "file": "truss-Model.png",
+        "status": "Passed"
+      },
+      {
+        "file": "truss-Reaction.png",
+        "status": "Passed"
+      },
+      {
+        "file": "truss-M.png",
+        "status": "Passed"
+      },
+      {
+        "file": "truss-N.png",
+        "status": "Passed"
+      },
+      {
+        "file": "cantilever_point-Model.png",
+        "status": "Passed"
+      },
+      {
+        "file": "cantilever_point-Reaction.png",
+        "status": "Passed"
+      },
+      {
+        "file": "cantilever_point-M.png",
+        "status": "Passed"
+      },
+      {
+        "file": "cantilever_point-N.png",
+        "status": "Passed"
+      },
+      {
+        "file": "inclined-Model.png",
+        "status": "Passed"
+      },
+      {
+        "file": "inclined-Reaction.png",
+        "status": "Passed"
+      },
+      {
+        "file": "inclined-M.png",
+        "status": "Passed"
+      },
+      {
+        "file": "inclined-N.png",
+        "status": "Passed"
+      },
+      {
+        "file": "moment_jump-Model.png",
+        "status": "Passed"
+      },
+      {
+        "file": "moment_jump-Reaction.png",
+        "status": "Passed"
+      },
+      {
+        "file": "moment_jump-M.png",
+        "status": "Passed"
+      },
+      {
+        "file": "moment_jump-N.png",
+        "status": "Passed"
+      },
+      {
+        "check": "original_model_workspace_preserved",
+        "status": "Passed"
+      }
+    ]
+  },
+  "materials": {
+    "counts": {
+      "Passed": 8,
+      "Failed": 0,
+      "Not Tested": 0
+    },
+    "checks": [
+      {
+        "check": "Concrete_row",
+        "status": "Passed"
+      },
+      {
+        "check": "Aluminium_row",
+        "status": "Passed"
+      },
+      {
+        "check": "Wood_row",
+        "status": "Passed"
+      },
+      {
+        "check": "no_duplicate_or_overwrite",
+        "status": "Passed"
+      },
+      {
+        "check": "member_material_choices",
+        "status": "Passed",
+        "choices": [
+          "Steel",
+          "Concrete",
+          "Aluminium",
+          "Wood"
+        ]
+      },
+      {
+        "check": "editor_validation",
+        "status": "Passed"
+      },
+      {
+        "check": "legacy_roundtrip",
+        "status": "Passed"
+      },
+      {
+        "check": "original_document_preserved",
+        "status": "Passed"
+      }
+    ]
+  }
+}

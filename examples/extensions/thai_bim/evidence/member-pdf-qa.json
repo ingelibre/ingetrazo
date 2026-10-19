@@ -1,0 +1,78 @@
+{
+  "version": "0.20.0",
+  "verified": [
+    {
+      "file": "Footing-A3-50.pdf",
+      "pages": 6,
+      "scale": 50,
+      "vector": true,
+      "marks": 2,
+      "model_width_mm": 28.0
+    },
+    {
+      "file": "Column-A3-50.pdf",
+      "pages": 6,
+      "scale": 50,
+      "vector": true,
+      "marks": 2,
+      "model_width_mm": 8.0
+    },
+    {
+      "file": "Beam-A3-50.pdf",
+      "pages": 6,
+      "scale": 50,
+      "vector": true,
+      "marks": 2,
+      "model_width_mm": 80.0
+    },
+    {
+      "file": "Slab-A3-50.pdf",
+      "pages": 6,
+      "scale": 50,
+      "vector": true,
+      "marks": 2,
+      "model_width_mm": 60.0
+    },
+    {
+      "file": "Slab-Two-way-A3-50.pdf",
+      "pages": 6,
+      "scale": 50,
+      "vector": true,
+      "marks": 2,
+      "model_width_mm": 60.0
+    },
+    {
+      "file": "Slab-Precast-A3-50.pdf",
+      "pages": 8,
+      "scale": 50,
+      "vector": true,
+      "marks": 4,
+      "model_width_mm": 60.0
+    },
+    {
+      "file": "Slab-Polygon-A3-50.pdf",
+      "pages": 8,
+      "scale": 50,
+      "vector": true,
+      "marks": 4,
+      "model_width_mm": 60.0
+    },
+    {
+      "file": "Footing-scale-20-A3.pdf",
+      "pages": 6,
+      "scale": 20,
+      "vector": true,
+      "marks": null,
+      "model_width_mm": 70.0
+    },
+    {
+      "file": "Footing-scale-25-A3.pdf",
+      "pages": 6,
+      "scale": 25,
+      "vector": true,
+      "marks": null,
+      "model_width_mm": 56.0
+    }
+  ],
+  "total_pages": 58
+}

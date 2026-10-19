@@ -1,0 +1,2 @@
+* text=auto eol=lf
+artifacts/installer/**/*.log -text -diff

@@ -1,0 +1,45 @@
+"""Incremental native manual preservation and stale-sheet lifecycle."""
+SD19=importlib.reload(SD19);DG19=importlib.reload(DG19)
+sd19.close();sd19=SD19.open_dialog(sp19);sd19.prepare();sd19.build()
+parts19,meta19=SD19.validate(ss19,host19.uid);initial_groups19=list(ss19.groups);initial_sheets19=list(ss19.compositions);initial_data19=copy.deepcopy(ss19.plugin_data)
+check19('native stair detail dimensions include exact 280 mm going and 166.667 mm rise',any(abs(d.real_distance_m()-.28)<1e-6 for d in parts19[1].cotas) and any(abs(d.real_distance_m()-3/18)<1e-6 for d in parts19[1].cotas))
+check19('native plan contains exact 1000 mm width and 1200 mm landing depth',any(abs(d.real_distance_m()-1)<1e-6 for d in parts19[0].cotas) and any(abs(d.real_distance_m()-1.2)<1e-6 for d in parts19[0].cotas))
+rows19=DG19.grouped_bars(SD19.source(ss19,host19.uid)['bars']);records19=tb07.bbs_records(ss19)[0]
+check19('sheet Bar Marks and per-mark counts exactly equal existing validated BBS', {r['mark']:len(r['uids']) for r in rows19}=={mark:sum(b['bbs']['mark']==mark for b in records19) for mark in {b['bbs']['mark'] for b in records19}})
+check19('BBS pages explicitly have no scale bars',all(not c.scalebars for c in parts19 if 'BBS' in c.name))
+sd19.fields['revision'].setText('02');reject19('changed dialog revision blocks export of old reviewed sheets',sd19.export_current);sd19.fields['revision'].setText('01')
+# Fresh update, Undo/Redo and independent sheets.
+sd19.prepare();sd19.build();updated_sheets19=list(ss19.compositions);updated_data19=copy.deepcopy(ss19.plugin_data)
+sa19.viewport.history.undo();check19('native stair sheet update Undo restores exact old sheets and data',ss19.compositions==initial_sheets19 and ss19.plugin_data==initial_data19 and ss19.groups==initial_groups19)
+sa19.viewport.history.redo();check19('native stair sheet update Redo restores complete new set',ss19.compositions==updated_sheets19 and ss19.plugin_data==updated_data19)
+parts19,meta19=SD19.validate(ss19,host19.uid);manual19=TextoItem(x_mm=18,y_mm=37,w_mm=160,text='USER NOTE ไทย: รอยต่อชานพัก',size_pt=9);parts19[0].texts.append(manual19);manual_dict19=copy.deepcopy(manual19.__dict__);parts19[0].guides_v=[25];parts19[0].guides_h=[36]
+check19('user notes do not falsely dirty generated geometry',not SD19.status(ss19,host19.uid)[0]['reasons'])
+sd19.prepare();sd19.build();parts19,meta19=SD19.validate(ss19,host19.uid)
+check19('fresh regeneration preserves added Thai note and native guides',any(t.__dict__==manual_dict19 for t in parts19[0].texts) and parts19[0].guides_v==[25] and parts19[0].guides_h==[36])
+# Moving concrete makes the old cage stale, so both must be reviewed before new sheets.
+oldpose19=copy.deepcopy(host19.xform);host19.xform=W07.matrix(W07.P.matrix((2,3,3.75),25))
+check19('moving Stair marks all linked reinforcement sheets stale',all(r['reasons'] for r in SD19.status(ss19,host19.uid)))
+reject19('stale actual cage blocks rebuilding misleading detail sheets',sd19.prepare)
+ss19.selection={host19};sc19.read_host();sc19.review();sc19.build_rebar();sd19.prepare();sd19.build()
+check19('updated manual details are retained and explicitly pending review',any('Preserved manual details require review' in r['reasons'] for r in SD19.status(ss19,host19.uid)))
+reject19('pending manual review blocks PDF export',lambda:SD19.validate(ss19,host19.uid))
+archives19=ss19.plugin_data[SD19.KEY][host19.uid]['archives'];archivecomp19=next(c for c in ss19.compositions if c.name in archives19)
+check19('model change preserves complete old manual sheet as detached archive',any(t.text==manual19.text for t in archivecomp19.texts) and all(not i.group_id for i in archivecomp19.all_items()))
+sd19.acknowledge();parts19,meta19=SD19.validate(ss19,host19.uid);check19('explicit preserved-detail review permits fresh export',not any(r['reasons'] for r in SD19.status(ss19,host19.uid)))
+check19('world levels after yaw and move are +3.750 and +6.750',set(round(n.level_m(),3) for n in parts19[1].niveles)=={3.75,6.75})
+sa19.viewport.history.undo();reject19('manual-review Undo restores export guard',lambda:SD19.validate(ss19,host19.uid));sa19.viewport.history.redo()
+# Generated-edit preservation, restoration and export guard.
+parts19,meta19=SD19.validate(ss19,host19.uid);owned19=next(t for t in parts19[1].texts if t.group_id==meta19['sheets'][1]['marker']);owned19.text='EDITED AUTO NOTE ไทย';oldedit19=parts19[1].to_dict()
+reject19('manual edit of generated drawing blocks unreviewed export',lambda:SD19.validate(ss19,host19.uid));sd19.prepare();sd19.build()
+archive_name19=ss19.plugin_data[SD19.KEY][host19.uid]['archives'];archive19=next(c for c in ss19.compositions if c.name in archive_name19 and any(t.text=='EDITED AUTO NOTE ไทย' for t in c.texts))
+check19('editing generated items creates full preserved native sheet copy',any(t.text=='EDITED AUTO NOTE ไทย' for t in archive19.texts) and len(archive19.cotas)==len(oldedit19['cotas']))
+sd19.acknowledge();parts19,meta19=SD19.validate(ss19,host19.uid)
+# Missing sheet regeneration and source deletion guards.
+missing19=parts19[-1];ss19.compositions.remove(missing19);reject19('deleted managed sheet blocks partial PDF export',lambda:SD19.validate(ss19,host19.uid));sd19.prepare();sd19.build();sd19.acknowledge();check19('explicit update recreates missing BBS page',len(SD19.validate(ss19,host19.uid)[0])==9)
+ss19.groups.remove(host19);reject19('deleted Stair blocks drawing export',lambda:SD19.validate(ss19,host19.uid));ss19.groups.insert(0,host19)
+# Native IGZ reopen and stale/current metadata.
+M07.compact_save(ss19,out19/'stair-drawing-reviewed-ไทย.igz');reopened19=Scene();load_into(reopened19,out19/'stair-drawing-reviewed-ไทย.igz')
+check19('native IGZ reopens every stair sheet and review association',len(SD19.validate(reopened19,host19.uid)[0])==9 and reopened19.plugin_data[SD19.KEY]==ss19.plugin_data[SD19.KEY])
+check19('native IGZ preserves Thai notes and archived modified sheets',any(t.text==manual19.text for c in reopened19.compositions for t in c.texts) and any(t.text=='EDITED AUTO NOTE ไทย' for c in reopened19.compositions for t in c.texts))
+check19('drawing lifecycle keeps unrelated sheets and all concrete/cage objects',user19 in ss19.compositions and host19 in ss19.groups)
+print('PASS lifecycle '+str(len(checks19))+' checks')

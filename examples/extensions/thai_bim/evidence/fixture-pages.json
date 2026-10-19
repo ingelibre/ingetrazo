@@ -1,0 +1,9 @@
+{
+  "Footing": 6,
+  "Column": 6,
+  "Beam": 6,
+  "Slab": 6,
+  "Slab-Two-way": 6,
+  "Slab-Precast": 8,
+  "Slab-Polygon": 8
+}

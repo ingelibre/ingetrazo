@@ -1,0 +1,202 @@
+{
+  "async_analysis": {
+    "status": "Passed",
+    "ticks_while_worker_running": 280,
+    "interval_ms": 10
+  },
+  "worker_version": "0.1.3",
+  "viewport_click": {
+    "status": "Passed",
+    "member": "B1",
+    "method": "Qt MouseButtonPress sent to live viewport (QtTest absent in frozen runtime)"
+  },
+  "inspector_slider": {
+    "status": "Passed",
+    "text": "B1 · x = 1.5 m (right)\nN 0 kN   V 15 kN\nM -33.75 kN·m   D -7.51465 mm"
+  },
+  "save_load": {
+    "status": "Passed"
+  },
+  "undo_redo": {
+    "status": "Passed"
+  },
+  "stale_results": {
+    "status": "Passed"
+  },
+  "csv_export": {
+    "status": "Passed",
+    "files": [
+      "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\csv\\node_displacements.csv",
+      "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\csv\\support_reactions.csv",
+      "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\csv\\member_end_forces.csv",
+      "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\csv\\member_extrema.csv",
+      "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\csv\\member_diagrams.csv"
+    ]
+  },
+  "tables": {
+    "status": "Passed",
+    "rows": {
+      "Node Displacements": 2,
+      "Support Reactions": 2,
+      "Member End Forces": 2,
+      "Max / Min": 8
+    }
+  },
+  "overlays": {
+    "status": "Passed",
+    "modes": [
+      {
+        "mode": "Model",
+        "status": "Passed",
+        "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-Model.png"
+      },
+      {
+        "mode": "N",
+        "status": "Passed",
+        "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-N.png"
+      },
+      {
+        "mode": "V",
+        "status": "Passed",
+        "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-V.png"
+      },
+      {
+        "mode": "M",
+        "status": "Passed",
+        "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-M.png"
+      },
+      {
+        "mode": "D",
+        "status": "Passed",
+        "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-D.png"
+      },
+      {
+        "mode": "Reaction",
+        "status": "Passed",
+        "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-Reaction.png"
+      },
+      {
+        "mode": "Deformed",
+        "status": "Passed",
+        "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\artifacts\\v0.1.3\\overlay-Deformed.png"
+      }
+    ]
+  },
+  "themes": {
+    "status": "Passed",
+    "modes": [
+      {
+        "theme": "dark",
+        "color": "#2d2d30",
+        "status": "Passed"
+      },
+      {
+        "theme": "light",
+        "color": "#efefef",
+        "status": "Passed"
+      },
+      {
+        "theme": "system",
+        "color": "#efefef",
+        "status": "Passed"
+      }
+    ],
+    "os_live_theme_change": "Not Tested"
+  },
+  "plugin_load": {
+    "status": "Passed",
+    "api_version": 2,
+    "version": "0.1.3",
+    "import_errors": [],
+    "setup": "idempotent setup invoked on live ExtensionApp"
+  },
+  "zoom_pan": {
+    "status": "Passed",
+    "before": [
+      [
+        "B1",
+        [
+          755.7394696883857,
+          437.9460382182151
+        ],
+        [
+          1301.1729059182107,
+          437.9460382182151
+        ]
+      ]
+    ],
+    "after": [
+      [
+        "B1",
+        [
+          711.0524041292956,
+          462.0320437825285
+        ],
+        [
+          1490.2429820684483,
+          462.0320437825285
+        ]
+      ]
+    ],
+    "member_pick_after_transform": "B1"
+  },
+  "diagram_controls": {
+    "status": "Passed",
+    "labels_off": true,
+    "legend_off": true,
+    "diagram_scale": 1.8,
+    "deformation_scale": 100.0,
+    "loads_tab_always_draws_loads": true
+  },
+  "case_selector": {
+    "status": "Passed",
+    "cases": [
+      "LC1",
+      "LC2"
+    ],
+    "LC1_Rz": 37.5,
+    "LC2_Rz": 17.037037037037038
+  },
+  "support_release_load_symbols": {
+    "status": "Passed",
+    "symbols": [
+      "Fixed",
+      "Pin",
+      "Roller",
+      "Member release",
+      "Distributed load",
+      "Point load",
+      "RollerX",
+      "Self-weight UDL"
+    ],
+    "method": "live canvas draw + Qt viewport captures"
+  },
+  "editor_validation": {
+    "status": "Passed",
+    "legacy_model_roundtrip": true,
+    "negative_E_rejected": true
+  },
+  "live_solver_error": {
+    "status": "Passed",
+    "message": "Analysis failed: The stiffness matrix is singular, which implies rigid body motion. The structure is unstable. Aborting analysis.",
+    "run_button_reenabled": true
+  },
+  "api_version_guard": {
+    "status": "Passed",
+    "api_v1_rejected": true
+  },
+  "original_document_restored": {
+    "status": "Passed",
+    "scene_identity": true,
+    "history_identity": true,
+    "plugin_data_unchanged": true,
+    "camera_exact": true,
+    "active_workspace_preserved": true
+  },
+  "release_mechanism_guard": {
+    "status": "Passed",
+    "unloaded": "Analysis failed: Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints",
+    "loaded": "Analysis failed: Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints",
+    "run_button_reenabled": true
+  }
+}

@@ -1,0 +1,9 @@
+﻿Case,Member,Quantity,Unit,Extremum,x [m],x/L [-],Side,Value
+LC1,B1,N,kN,min,0.0,0.0,right,0.0
+LC1,B1,N,kN,max,0.0,0.0,right,0.0
+LC1,B1,V,kN,min,6.0,1.0,left,-30.0
+LC1,B1,V,kN,max,0.0,0.0,right,30.0
+LC1,B1,M,kN.m,min,3.0,0.5,right,-45.0
+LC1,B1,M,kN.m,max,0.0,0.0,right,-3.552713678800501e-15
+LC1,B1,d,m,min,2.9999999999999987,0.4999999999999998,right,-0.010546874999999999
+LC1,B1,d,m,max,0.0,0.0,right,0.0

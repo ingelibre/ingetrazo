@@ -1,0 +1,20 @@
+{
+  "cold_load": {
+    "status": "Passed"
+  },
+  "case_card_rename_saved": {
+    "status": "Passed"
+  },
+  "load_references_renamed": {
+    "status": "Passed"
+  },
+  "case_change_stale": {
+    "status": "Passed"
+  },
+  "case_undo_current": {
+    "status": "Passed"
+  },
+  "numeric_formula_preview": {
+    "status": "Failed"
+  }
+}

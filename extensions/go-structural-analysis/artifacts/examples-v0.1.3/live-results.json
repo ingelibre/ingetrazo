@@ -1,0 +1,153 @@
+[
+  {
+    "key": "simple_udl",
+    "title": "Simply Supported Beam \u2014 UDL",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "simple_point",
+    "title": "Simply Supported Beam \u2014 Point Load",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "cantilever_point",
+    "title": "Cantilever \u2014 Point Load",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "cantilever_udl",
+    "title": "Cantilever \u2014 UDL",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "continuous_2",
+    "title": "Continuous Beam \u2014 2 spans",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "continuous_3",
+    "title": "Continuous Beam \u2014 3 spans",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "portal_vertical",
+    "title": "Portal Frame \u2014 Vertical load",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "portal_horizontal",
+    "title": "Portal Frame \u2014 Horizontal load",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "inclined",
+    "title": "Inclined Frame \u2014 Transformation",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "truss",
+    "title": "2D Truss \u2014 Joint load",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "release_j",
+    "title": "Member Release \u2014 j end",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "release_both",
+    "title": "Member Releases \u2014 both ends",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "unstable_loaded",
+    "title": "Stability \u2014 released mechanism (loaded)",
+    "status": "Passed",
+    "expected": "unstable rejection",
+    "message": "Analysis failed: Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints"
+  },
+  {
+    "key": "unstable_unloaded",
+    "title": "Stability \u2014 released mechanism (unloaded)",
+    "status": "Passed",
+    "expected": "unstable rejection",
+    "message": "Analysis failed: Structural stiffness is numerically singular: unstable mechanism after member releases or inadequate restraints"
+  },
+  {
+    "key": "cases_off",
+    "title": "Multiple Load Cases \u2014 self-weight OFF",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "cases_on",
+    "title": "Multiple Load Cases \u2014 self-weight ON",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "truss_weight",
+    "title": "2D Truss \u2014 self-weight ON",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "off_grid",
+    "title": "Exact Extrema \u2014 off-grid point load",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "triangular",
+    "title": "Exact Extrema \u2014 triangular UDL",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "axial",
+    "title": "Axial \u2014 distributed load",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "moment_jump",
+    "title": "Moment \u2014 concentrated member moment",
+    "status": "Passed",
+    "expected": "successful analysis",
+    "message": "Analysis complete \u2014 PyNiteFEA 3.2.0"
+  },
+  {
+    "key": "original_restored",
+    "status": "Passed"
+  }
+]

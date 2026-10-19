@@ -1,0 +1,21 @@
+{
+  "model": true,
+  "loads": true,
+  "results": true,
+  "editor_roundtrip": true,
+  "document_unchanged": true,
+  "dock_icon": true,
+  "menu_icon": true,
+  "model_type_control": true,
+  "weight_control": true,
+  "invalid_truss_load_rejected": true,
+  "card_routes": [
+    "point_loads",
+    "distributed_loads",
+    "cases",
+    "nodes",
+    "members",
+    "sections",
+    "nodes"
+  ]
+}

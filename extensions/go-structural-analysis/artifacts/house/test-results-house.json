@@ -1,0 +1,254 @@
+{
+  "example": "House Phetnaray / บ้านเพชรนารายณ์",
+  "extension_version": "0.2.4",
+  "solver": "PyNiteFEA 3.2.0",
+  "primary": {
+    "passed": 234,
+    "failed": 0,
+    "skipped": 2
+  },
+  "qt": {
+    "passed": 18,
+    "failed": 0,
+    "skipped": 0
+  },
+  "live": {
+    "passed": 18,
+    "failed": 0,
+    "checks": {
+      "cold_catalog_entry": {
+        "status": "Passed"
+      },
+      "example_button_load": {
+        "status": "Passed"
+      },
+      "capture_House-Model": {
+        "status": "Passed"
+      },
+      "background_started": {
+        "status": "Passed"
+      },
+      "current_analysis": {
+        "status": "Passed",
+        "message": "Analysis complete — PyNiteFEA 3.2.0"
+      },
+      "background_gui_responsive": {
+        "status": "Passed",
+        "ticks": 36
+      },
+      "all_cases_equilibrium": {
+        "status": "Passed"
+      },
+      "capture_House-Loads": {
+        "status": "Passed"
+      },
+      "capture_House-Mz": {
+        "status": "Passed"
+      },
+      "capture_House-N": {
+        "status": "Passed"
+      },
+      "capture_House-Deformed": {
+        "status": "Passed"
+      },
+      "capture_House-Reaction": {
+        "status": "Passed"
+      },
+      "igz_save_load": {
+        "status": "Passed",
+        "file": "C:\\Users\\g_np2\\Projects\\go-structural-analysis\\examples\\house\\Phetnaray-RC-Steel-Roof.igz"
+      },
+      "edit_stale": {
+        "status": "Passed"
+      },
+      "undo_current": {
+        "status": "Passed"
+      },
+      "original_document_restored": {
+        "status": "Passed"
+      },
+      "capture_House-Model-Clean": {
+        "status": "Passed"
+      },
+      "portable_model_only_roundtrip": {
+        "status": "Passed",
+        "bytes": 165815
+      }
+    }
+  },
+  "installed_sources": [
+    {
+      "file": "__init__.py",
+      "sha256": "02696604b604f2328cfadeca862199379370a3c789b7dd909e4ea5dd1b792e92",
+      "status": "Passed"
+    },
+    {
+      "file": "client.py",
+      "sha256": "57555657397c57475d4398e6e468e15f3c43547f652054f53c450cc357c0b5b4",
+      "status": "Passed"
+    },
+    {
+      "file": "combination_ui.py",
+      "sha256": "edd043dbd14f8ff0ecc98f987a658ecc844d7d0186067ae98a80a3f8be723b2f",
+      "status": "Passed"
+    },
+    {
+      "file": "diagram_geometry.py",
+      "sha256": "bfcf06402a857c1aa7f53198f5efc1f1a0590c19d504b10ddc1c10b5ab812849",
+      "status": "Passed"
+    },
+    {
+      "file": "display.py",
+      "sha256": "a487523bc4f638dc5b6ff31fb602cbc043ba0f3abffd440c78dca06857305deb",
+      "status": "Passed"
+    },
+    {
+      "file": "examples.py",
+      "sha256": "1f60a5c2d25cae703477b5af12d170ebffabaca954e2ffa4f2dd29b75371ac99",
+      "status": "Passed"
+    },
+    {
+      "file": "examples3d.py",
+      "sha256": "6df0679503307c8b6b7f5c873cd545da7da1ac10f44e0a886c2d5a801e007d30",
+      "status": "Passed"
+    },
+    {
+      "file": "house_example.py",
+      "sha256": "5f6c46f59ba60080fbea19b9054e458db6745f39b133cfe5b3329cca7c6a74b4",
+      "status": "Passed"
+    },
+    {
+      "file": "house_reference.py",
+      "sha256": "ac535dc466325ecf1da0ef9f1c9c5bae89a7a507c3c9bd16cec381c57b4a45dd",
+      "status": "Passed"
+    },
+    {
+      "file": "icons.py",
+      "sha256": "2b91e8588047a2c766e73f6d1b6d96924daf98bb97c537175b8c63da2d3a2071",
+      "status": "Passed"
+    },
+    {
+      "file": "inspector.py",
+      "sha256": "d99f5e5efd52be385cd0b1d92436ed8a6a18e642b9edf37632dc67fb46b20fe6",
+      "status": "Passed"
+    },
+    {
+      "file": "materials.py",
+      "sha256": "dedf7e64fb5d9a90e62033b952945df81d5b84b848ab3acae7ee3f70f1ee20c6",
+      "status": "Passed"
+    },
+    {
+      "file": "model.py",
+      "sha256": "07415c2662e7c99520e916d3a1ff9ef9cf449d81c50f5c394062aad882170dcb",
+      "status": "Passed"
+    },
+    {
+      "file": "model3d.py",
+      "sha256": "8092752507bf3d9a06052fb79316331680a0f01673d81a5603238cc4710cc25a",
+      "status": "Passed"
+    },
+    {
+      "file": "results.py",
+      "sha256": "9d32208d967b41d3b8ca2972022be521ad983598a6f8b3914c80c94500f5aded",
+      "status": "Passed"
+    },
+    {
+      "file": "safety.py",
+      "sha256": "2329de758d828c8c934876d5f5931ef24b1d085882357c7e706d0479fee58d0e",
+      "status": "Passed"
+    },
+    {
+      "file": "solver3d.py",
+      "sha256": "0bf95591b9ee167d799e3e329ad92ad16e91b969201cb0439622f94eb57268da",
+      "status": "Passed"
+    },
+    {
+      "file": "solver_results.py",
+      "sha256": "42a9b71a19ba595ab4fc1e3af8d5d0cd6913b5ee510367217c9e501ac7e27c7f",
+      "status": "Passed"
+    },
+    {
+      "file": "thai_code.py",
+      "sha256": "a514a9692a9230b6b12c4c85c07389b0e965baad6feaafce83373d3223d4d0f3",
+      "status": "Passed"
+    },
+    {
+      "file": "theme.py",
+      "sha256": "f05fec11cfc58a837ac75484be7dc2957278dd38b296ea650e4955458350a9c3",
+      "status": "Passed"
+    },
+    {
+      "file": "ui.py",
+      "sha256": "23b586ffee4e3913bf63084b7cf2085dad58a199e81dfba945d41efbdfcfacf6",
+      "status": "Passed"
+    },
+    {
+      "file": "visualization.py",
+      "sha256": "9180d48f36fc9f63e972a6cee6ebcdc81373e3eccec0ca2c78d1038b1eabf1c4",
+      "status": "Passed"
+    },
+    {
+      "file": "visualization3d.py",
+      "sha256": "2faae2732ff8053aea7944035a5ac6996735723817a4b7f8e1e6d3be72152fa7",
+      "status": "Passed"
+    },
+    {
+      "file": "worker.py",
+      "sha256": "a8ee52e4257735fb75b47bc42694428ca770afc5c19e7a28e3a99232dd104a98",
+      "status": "Passed"
+    },
+    {
+      "file": "workspace_ui.py",
+      "sha256": "1fc8cf4ec3d78365a4d48f21005a66f4d38be633799cca1523d1dac1e76b49c4",
+      "status": "Passed"
+    }
+  ],
+  "model": {
+    "nodes": 146,
+    "members": 255,
+    "base_supports": 12,
+    "cases": 7,
+    "combinations": 3,
+    "file": "examples/house/Phetnaray-RC-Steel-Roof.igz",
+    "bytes": 165815
+  },
+  "verified": [
+    "Connected topology",
+    "Fresh editable catalog example",
+    "Single-case self-weight reaction balance",
+    "All case/combination equilibrium",
+    "Linear superposition",
+    "Independent space-frame nodal solution (1752 components)",
+    "Installed selector button/cold catalog",
+    "Background worker",
+    "IGZ roundtrip",
+    "Stale on material edit",
+    "Undo restores Current",
+    "Original document restored before preview workspace"
+  ],
+  "tolerances": {
+    "reference_relative": 1e-06,
+    "reference_absolute": 1e-07,
+    "selfweight_relative": 1e-07,
+    "selfweight_absolute": 1e-07
+  },
+  "not_tested": [
+    "Physical/manual mouse hardware",
+    "House example in the pre-existing v0.2.4 Setup payload (not rebuilt)",
+    "Clean Windows VM",
+    "Actual design/connection/soil/diaphragm verification"
+  ],
+  "resolved_issues": [
+    "Initial pytest root discovery included backups; corrected to pytest tests.",
+    "Live QA helper duplicate status keyword corrected; rerun finished.",
+    "Live in-memory catalog function required refresh before cold-load verification.",
+    "Review corrected rectangular strong-axis Iz; full primary tests rerun.",
+    "Model-mode load toggle previously forced visible; corrected and Qt render verified."
+  ],
+  "limitations": [
+    "Teaching-only centerline adaptation; roof layout/sections and loads are assumed.",
+    "No section capacity or full legal code compliance.",
+    "Equivalent nodal floor/roof loading; no floor diaphragm, wall/stair stiffness or foundation flexibility.",
+    "Portable IGZ contains inputs only; run analysis after opening."
+  ]
+}

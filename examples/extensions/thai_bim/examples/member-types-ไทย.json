@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "types": [
+    {
+      "id": "8a1ddcb0-34b4-5e56-bbdd-5ce4b6f5b48e",
+      "kind": "Column",
+      "code": "C1",
+      "name": "Column C1",
+      "revision": 1,
+      "params": {
+        "width": 0.25,
+        "depth": 0.25,
+        "height": 3.0
+      },
+      "rebar": null
+    },
+    {
+      "id": "a2d4cfb6-d4af-5e57-aab8-b64e5de6809e",
+      "kind": "Beam",
+      "code": "B1",
+      "name": "Beam B1",
+      "revision": 1,
+      "params": {
+        "width": 3.0,
+        "depth": 0.2,
+        "height": 0.4
+      },
+      "rebar": null
+    },
+    {
+      "id": "b16e906c-901b-5016-8e69-42cf72136e7c",
+      "kind": "Slab",
+      "code": "S1",
+      "name": "Slab S1",
+      "revision": 1,
+      "params": {
+        "width": 4.0,
+        "depth": 3.0,
+        "height": 0.15
+      },
+      "rebar": null
+    },
+    {
+      "id": "613f5cae-096e-5410-8f49-4b05e6ba1cc9",
+      "kind": "Stair",
+      "code": "ST1",
+      "name": "Stair ST1",
+      "revision": 1,
+      "params": {
+        "width": 1.0,
+        "height": 3.0,
+        "going": 0.28,
+        "risers": 18,
+        "waist": 0.15
+      },
+      "rebar": null
+    },
+    {
+      "id": "2f3de7fe-d107-507f-961a-28c0afedaf5f",
+      "kind": "Footing",
+      "code": "F1",
+      "name": "ฐานราก F1 ทดสอบ",
+      "revision": 2,
+      "params": {
+        "width": 1.6,
+        "depth": 1.2,
+        "height": 0.4
+      },
+      "rebar": null
+    },
+    {
+      "id": "487a0755-c3fc-4498-ac4d-442491c2a63a",
+      "kind": "Footing",
+      "code": "F2",
+      "name": "ฐานราก F1 ทดสอบ copy",
+      "revision": 1,
+      "params": {
+        "width": 1.6,
+        "depth": 1.2,
+        "height": 0.4
+      },
+      "rebar": null
+    }
+  ]
+}

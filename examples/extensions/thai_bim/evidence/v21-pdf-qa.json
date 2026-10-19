@@ -1,0 +1,30 @@
+{
+  "version": "0.21.0",
+  "verified": [
+    {
+      "file": "One-way-opening-A3-50.pdf",
+      "pages": 9,
+      "scale": 50,
+      "vector": true,
+      "marks": 5,
+      "model_width_mm": 80.0
+    },
+    {
+      "file": "Two-way-opening-A3-50.pdf",
+      "pages": 9,
+      "scale": 50,
+      "vector": true,
+      "marks": 5,
+      "model_width_mm": 80.0
+    },
+    {
+      "file": "Precast-opening-A3-50.pdf",
+      "pages": 9,
+      "scale": 50,
+      "vector": true,
+      "marks": 5,
+      "model_width_mm": 80.0
+    }
+  ],
+  "total_pages": 27
+}

@@ -1,0 +1,48 @@
+[
+  {
+    "id": "model_node_mouse_selection",
+    "initial_status": "Failed",
+    "observed": "Synthetic Model-tab node press returned selected_entity=None; the host process was subsequently absent and MCP disconnected.",
+    "fix": "Intercept Model-tab analytical node/member presses in the extension OverlayCanvas before the host native selection tool.",
+    "verification_status": "Passed",
+    "evidence": "artifacts/v0.2/live/live-results.json: model_node_selection, live_node_edit, live_node_edit_undo, live_delete_member, live_delete_undo after a new host process"
+  },
+  {
+    "id": "reference_truss_array_dtype",
+    "initial_status": "Failed",
+    "fix": "Use a floating-point reference direction array before normalization.",
+    "verification_status": "Passed",
+    "evidence": "phase5-v02.xml"
+  },
+  {
+    "id": "offscreen_qa_host_imports_and_fonts",
+    "initial_status": "Failed",
+    "fix": "Supply the host source path for Qt QA and register the installed Segoe UI font.",
+    "verification_status": "Passed",
+    "evidence": "artifacts/v0.2/qt-pytest.xml"
+  },
+  {
+    "id": "worker_stderr_windows_unicode",
+    "initial_status": "Failed",
+    "observed": "Initial installer example checks returned expected results but a subprocess reader thread raised UnicodeDecodeError on a Thai runtime path.",
+    "fix": "Force the isolated Python worker UTF-8 mode and replace undecodable stderr bytes when collecting diagnostics.",
+    "verification_status": "Passed",
+    "evidence": "test_worker_unicode_stderr; final installer log and 33 worker examples"
+  },
+  {
+    "id": "navigation_selection_priority",
+    "initial_status": "Failed",
+    "observed": "Extension analytical picking intercepted node/member presses while a navigation mode was selected.",
+    "fix": "Bypass analytical picking during native navigation; explicitly include orbit in 3D workspace tool capabilities.",
+    "verification_status": "Passed",
+    "evidence": "test_navigation_press_does_not_pick; orbit_over_node_bypasses_selection and orbit_mouse_drag_3d"
+  },
+  {
+    "id": "test_collection_scope",
+    "initial_status": "Failed",
+    "observed": "A final check invoked pytest without the tests directory and collected archived backup test modules, causing collection conflicts.",
+    "fix": "Run pytest tests explicitly as documented. No production code change was needed.",
+    "verification_status": "Passed",
+    "evidence": "artifacts/v0.2/pytest.xml: 146 passed"
+  }
+]
