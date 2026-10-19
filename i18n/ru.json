@@ -3000,5 +3000,13 @@
  "Group them when there are many": "Группировать, если их много",
  "Always in submenus": "Всегда в подменю",
  "Each entry on its own": "Каждый пункт отдельно",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске).",
+ "Bridge": "Мост",
+ "Join two faces, a face and a line, or two lines with the faces between them.": "Соединяет две грани, грань и линию или две линии гранями между ними.",
+ "Bridge: {n} faces added": "Мост: добавлено граней — {n}",
+ "Select two faces, a face and a line, or two lines to bridge": "Выберите две грани, грань и линию или две линии, чтобы соединить их мостом",
+ "Each line to bridge must be one chain of edges, without branches": "Каждая линия моста должна быть одной цепочкой ребер, без ответвлений",
+ "A face with holes can only be bridged to another face with as many holes": "Грань с отверстиями можно соединить только с гранью с тем же числом отверстий",
+ "Both lie on one plane: nothing to bridge": "Обе лежат в одной плоскости: соединять нечего",
+ "The two to bridge must not touch": "Соединяемые части не должны касаться друг друга"
 }
