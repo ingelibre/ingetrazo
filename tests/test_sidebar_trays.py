@@ -292,3 +292,39 @@ def test_reordering_the_panel_tabs_leaves_the_sidebar_handle_on_top(
     assert _over_the_view(win, win._sidebar_handle)
     assert _over_the_view(win, win._left_handle)
     _close(win)
+
+
+def test_folding_takes_along_a_panel_an_extension_docked_by_itself(
+        settings_file):
+    """igz_tb_scenes docks its «Escenas» with addDockWidget, not
+    add_panel: folding the sidebar left it alone on the right (Marco,
+    18-10: «había otra barra… trate de mostrar y ya no funciona»)."""
+    from PySide6.QtWidgets import QDockWidget, QLabel
+    from views.main_window import MainWindow
+    win = MainWindow()
+    win.resize(1400, 900)
+    win.show()
+    _app.processEvents()
+    own = QDockWidget("Scenes", win)
+    own.setObjectName("igz_tb_scenes_dock")
+    own.setWidget(QLabel("scenes"))
+    win.addDockWidget(Qt.RightDockWidgetArea, own)
+    left = QDockWidget("Left one", win)
+    left.setWidget(QLabel("left"))
+    win.addDockWidget(Qt.LeftDockWidgetArea, left)
+    _app.processEvents()
+    win._act_sidebar.setChecked(False)
+    assert own.isHidden()                 # nothing left standing alone
+    win._act_sidebar.setChecked(True)
+    assert not own.isHidden() and not win.tray.isHidden()
+    win._set_left_sidebar_visible(False)
+    assert left.isHidden()
+    win._set_left_sidebar_visible(True)
+    assert not left.isHidden()
+    # one the user closed stays closed
+    own.hide()
+    win._act_sidebar.setChecked(False)
+    win._act_sidebar.setChecked(True)
+    assert own.isHidden()
+    win._saved_version = win.viewport.scene.version
+    win.close()

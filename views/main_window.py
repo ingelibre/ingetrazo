@@ -473,6 +473,73 @@ class MainWindow(QMainWindow):
                     self.addToolBarBreak(area)
                 self.addToolBar(area, tb)
                 tb.setVisible(shown)
+        self._wrap_toolbar_rows()
+
+    def addToolBar(self, *args):  # noqa: N802 — Qt override
+        """Every toolbar, the window's own and an extension's — at start-up
+        or later from its menu — goes through here; a row that no longer
+        fits on the screen is wrapped once the layout has settled."""
+        result = super().addToolBar(*args)
+        timer = self.__dict__.get("_toolbar_wrap_timer")
+        if timer is None:
+            from PySide6.QtCore import QTimer
+            timer = self._toolbar_wrap_timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(0)
+            timer.timeout.connect(self._wrap_toolbar_rows)
+        timer.start()
+        return result
+
+    def _wrap_toolbar_rows(self) -> None:
+        """Start a new row of toolbars where a row stops fitting on the
+        screen. Qt never wraps a row by itself, and every toolbar keeps at
+        least its handle and its overflow arrow: with the 52 extensions of
+        the catalog installed, 34 toolbars shared the top row and the window
+        could not be narrower than 2205 px on a 1477 px screen — Marco
+        could not resize it (18-10). A row that fits is left as it is, so
+        the factory layout and the user's own never move."""
+        from PySide6.QtCore import Qt
+        screen = self.screen()
+        if screen is None or not self.isVisible():
+            return
+        self.layout().activate()
+        avail = screen.availableGeometry()
+        frame_w = self.frameGeometry().width() - self.width()
+        frame_h = self.frameGeometry().height() - self.height()
+        wrapped = False
+        for area in (Qt.TopToolBarArea, Qt.BottomToolBarArea,
+                     Qt.LeftToolBarArea, Qt.RightToolBarArea):
+            vertical = area in (Qt.LeftToolBarArea, Qt.RightToolBarArea)
+            limit = (avail.height() - frame_h - self.menuBar().height()
+                     if vertical else avail.width() - frame_w) - 8
+            bars = [tb for tb in self.findChildren(QToolBar)
+                    if not tb.isFloating() and tb.isVisibleTo(self)
+                    and self.toolBarArea(tb) == area]
+            if vertical:
+                bars.sort(key=lambda tb: (tb.geometry().x(), tb.geometry().y()))
+            else:
+                bars.sort(key=lambda tb: (tb.geometry().y(), tb.geometry().x()))
+            row = None
+            used = 0
+            for tb in bars:
+                g = tb.geometry()
+                line = g.x() if vertical else g.y()
+                hint = tb.minimumSizeHint()
+                size = hint.height() if vertical else hint.width()
+                if line != row:
+                    row, used = line, size
+                    continue
+                if used + size > limit:
+                    self.insertToolBarBreak(tb)
+                    wrapped = True
+                    used = size
+                else:
+                    used += size
+        if wrapped:
+            self.layout().activate()
+            if not self.isMaximized() and not self.isFullScreen() \
+                    and self.frameGeometry().width() > avail.width():
+                self.resize(avail.width() - frame_w, self.height())
 
     def restore_default_toolbars(self) -> None:
         """Window ▸ Restore default toolbars (and the right-click menu over
@@ -1975,7 +2042,8 @@ class MainWindow(QMainWindow):
                  if self.dockWidgetArea(d) != Qt.LeftDockWidgetArea]
         if on:
             shown = getattr(self, "_sidebar_was", None) or docks[:1]
-            for d in docks:
+            from shiboken6 import isValid
+            for d in docks + [d for d in shown if d not in docks and isValid(d)]:
                 d.setVisible(d in shown)
             top = getattr(self, "_sidebar_top", None)
             if top is not None and top in shown:
@@ -1983,6 +2051,7 @@ class MainWindow(QMainWindow):
         else:
             # OPEN, not on screen: a tray tabbed behind another is not
             # visible, and unfolding left BIM and Terrain closed for good.
+            docks += self._foreign_side_docks(Qt.RightDockWidgetArea)
             self._sidebar_was = [d for d in docks
                                  if d.toggleViewAction().isChecked()]
             self._sidebar_top = next((d for d in docks if d.isVisible()
@@ -2121,6 +2190,19 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self, self._style_dock_tabs)
         QTimer.singleShot(0, self, self._place_sidebar_handle)
 
+    def _foreign_side_docks(self, area) -> list:
+        """Panels docked on ``area`` that are not trays: an extension that
+        builds its own QDockWidget instead of ``add_panel`` («Escenas» of
+        igz_tb_scenes). Folding the side left it standing alone there
+        (Marco, 18-10: «había otra barra… trate de mostrar y ya no
+        funciona») — the folds take them along."""
+        from PySide6.QtWidgets import QDockWidget
+        trays = set(self._sidebar_docks())
+        return [d for d in self.findChildren(QDockWidget)
+                if d not in trays and d.parent() is self
+                and not d.isFloating() and not d.isHidden()
+                and self.dockWidgetArea(d) == area]
+
     def _side_docks(self, area) -> list:
         return [d for d in self._sidebar_docks()
                 if not d.isHidden() and self.dockWidgetArea(d) == area]
@@ -2219,7 +2301,8 @@ class MainWindow(QMainWindow):
                 shown[0].raise_()
             self._left_was = []
         else:
-            self._left_was = self._side_docks(Qt.LeftDockWidgetArea)
+            self._left_was = (self._side_docks(Qt.LeftDockWidgetArea)
+                              + self._foreign_side_docks(Qt.LeftDockWidgetArea))
             for d in self._left_was:
                 d.hide()
         btn = getattr(self, "_left_handle", None)
@@ -2548,7 +2631,9 @@ class MainWindow(QMainWindow):
             action.triggered.connect(
                 lambda _c, k=key: self._activate_plugin_tool(k))
             ext_menu.insertAction(anchor, action)
+            self.__dict__.setdefault("_ext_action_owner", {})[action] = plug.stem
             count += 1
+        self._group_extension_menu()
 
         for err in errors:
             action = QAction(tr("\u26a0 {name} (load error)", name=err.stem), self)
@@ -2578,6 +2663,41 @@ class MainWindow(QMainWindow):
                 self._show_default_trays(st)
                 self._place_new_toolbars(st)
                 self._pack_toolbars()
+            else:
+                self._wrap_toolbar_rows()
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self, self._fit_docks_to_screen)
+
+    def _fit_docks_to_screen(self) -> None:
+        """Give the tallest side panels a scroll bar while the window
+        cannot be as short as the screen. A panel's minimum height is its
+        contents', and the tabbed panels of one side all count: with the
+        whole catalog installed one extension's panel asked for 652 px and
+        the window needed 902 px on a screen with 890 to give — GNOME
+        would not maximize it (Marco, 18-10). A window that fits is left
+        as it is."""
+        from PySide6.QtWidgets import QDockWidget, QFrame, QScrollArea
+        screen = self.screen()
+        if screen is None:
+            return
+        frame_h = self.frameGeometry().height() - self.height()
+        limit = screen.availableGeometry().height() - max(frame_h, 0)
+        docks = [d for d in self.findChildren(QDockWidget)
+                 if not d.isFloating() and d.widget() is not None
+                 and not isinstance(d.widget(), QScrollArea)
+                 and self.dockWidgetArea(d) in (Qt.LeftDockWidgetArea,
+                                                Qt.RightDockWidgetArea)]
+        docks.sort(key=lambda d: -d.widget().minimumSizeHint().height())
+        for dock in docks:
+            if self.minimumSizeHint().height() <= limit:
+                return
+            inner = dock.widget()
+            scroll = QScrollArea(dock)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setWidget(inner)
+            dock.setWidget(scroll)
+            self.layout().activate()
 
     def _on_manage_extensions(self) -> None:
         from views.extension_manager_dialog import ExtensionManagerDialog
@@ -2652,6 +2772,9 @@ class MainWindow(QMainWindow):
         menu = getattr(self, "_panels_menu", None)
         if menu is not None:
             self._fill_panels_menu(menu)
+        if self.isVisible():                # one added later, from its tool
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, self, self._fit_docks_to_screen)
 
     def extension_panels(self) -> dict:
         """``objectName`` → dock for every panel an extension added."""
@@ -3986,6 +4109,171 @@ class MainWindow(QMainWindow):
             act.blockSignals(False)
         self.viewport._apply_tool_cursor()
 
+    #: More extension entries than this at the top of the right-click menu
+    #: and they all go under «Extensions ▸» (Preferences ▸ General ▸
+    #: Extension menus: «Group them when there are many»).
+    EXT_CONTEXT_INLINE = 8
+
+    @staticmethod
+    def extension_menu_mode() -> str:
+        """Preferences ▸ General ▸ Extension menus: ``"auto"`` (group them
+        when there are many — the default), ``"always"`` (the right-click
+        entries always under «Extensions ▸») or ``"flat"`` (each entry as
+        the extension adds it, as before 0.5.9)."""
+        mode = str(_gs.value("ext_menus", "auto") or "auto")
+        return mode if mode in ("auto", "always", "flat") else "auto"
+
+    #: More extensions than this at the top of the Extensions menu and
+    #: each goes into the submenu of its catalog category.
+    EXT_MENU_INLINE = 15
+
+    def _group_extension_menu(self) -> None:
+        """Tidy the Extensions menu (Marco, 18-10: with the whole catalog it
+        had 62 lines and did not fit on the screen):
+
+        - one extension's several loose entries go into a submenu with its
+          name, where its first entry was; a submenu an extension made
+          itself is left untouched (it may rebuild it);
+        - with more than :attr:`EXT_MENU_INLINE` extensions (or always, if
+          the user asked for it), each one goes into the submenu of its
+          catalog category — Architecture ▸, Drawing ▸… The tools built
+          into IngeTrazo, and any extension the catalog does not know,
+          stay at the top."""
+        mode = self.extension_menu_mode()
+        if mode == "flat":
+            return
+        menu = getattr(self, "_ext_menu", None)
+        owners = self.__dict__.get("_ext_action_owner", {})
+        if menu is None or not owners:
+            return
+        loose: dict = {}
+        for a in menu.actions():
+            key = owners.get(a)
+            if key is not None and a.menu() is None:
+                loose.setdefault(key, []).append(a)
+        for key, acts in loose.items():
+            if len(acts) < 2:
+                continue
+            sub = QMenu(self._extension_name(key), menu)
+            menu.insertMenu(acts[0], sub)
+            for a in acts:
+                menu.removeAction(a)
+                sub.addAction(a)
+            owners[sub.menuAction()] = key
+
+        catalog = self._extension_catalog()
+        mine = [a for a in menu.actions() if owners.get(a) in catalog
+                and catalog[owners[a]][1]]
+        if not mine or (mode != "always"
+                        and len({owners[a] for a in mine}) <= self.EXT_MENU_INLINE):
+            return
+        from views.extension_manager_dialog import _TAG_LABELS, _tag_label
+        order = list(_TAG_LABELS)
+        by_tag: dict = {}
+        for a in mine:
+            tag = catalog[owners[a]][1][0]
+            by_tag.setdefault(tag, []).append(a)
+        # Every category goes in where the first extension was, BEFORE any
+        # entry moves: an anchor taken out of the menu sends the next
+        # insertion to the bottom, under the menu's own entries.
+        subs = []
+        for tag in sorted(by_tag, key=lambda t: (order.index(t)
+                                                 if t in order else len(order), t)):
+            sub = QMenu(_tag_label(tag), menu)
+            menu.insertMenu(mine[0], sub)
+            subs.append((sub, by_tag[tag]))
+        for sub, acts in subs:
+            for a in acts:
+                menu.removeAction(a)
+                sub.addAction(a)
+
+    def _add_extension_context_entries(self, menu, sel) -> None:
+        """The extensions' right-click entries, grouped: one extension's
+        several entries in a submenu with its name, a single entry as it
+        is; and when that is still more than :attr:`EXT_CONTEXT_INLINE`
+        lines (or always, if the user asked for it), all of them under
+        «Extensions ▸». With the whole catalog installed the menu was
+        taller than the screen and Qt split it in two columns (Marco,
+        18-10). An extension that raises is logged and skipped."""
+        import logging
+        mode = self.extension_menu_mode()
+        fns = list(getattr(self, "_ext_context_menus", ()))
+        if mode == "flat":
+            for fn in fns:
+                try:
+                    fn(menu, sel)
+                except Exception:  # noqa: BLE001 — an extension's bug
+                    logging.getLogger(__name__).exception(
+                        "extension context menu failed")
+            return
+        owners = self.__dict__.get("_ext_context_owner", {})
+        items = []                          # (holder, [its entries])
+        for fn in fns:
+            holder = QMenu(self._extension_name(owners.get(fn, "")), menu)
+            try:
+                fn(holder, sel)
+            except Exception:  # noqa: BLE001 — an extension's bug
+                logging.getLogger(__name__).exception(
+                    "extension context menu failed")
+            acts = list(holder.actions())
+            while acts and acts[0].isSeparator():
+                acts.pop(0)
+            while acts and acts[-1].isSeparator():
+                acts.pop()
+            if acts:
+                items.append((holder, acts))
+        if not items:
+            return
+        target = menu
+        if mode == "always" or len(items) > self.EXT_CONTEXT_INLINE:
+            target = QMenu(tr("Extensions"), menu)
+            menu.addMenu(target)
+        for holder, acts in items:
+            if len(acts) == 1:
+                # The holder stays alive as the menu's child: the entry
+                # (and a submenu it opens) belongs to it.
+                target.addAction(acts[0])
+            else:
+                for a in holder.actions():
+                    if a not in acts:
+                        holder.removeAction(a)
+                target.addMenu(holder)
+        menu.addSeparator()
+
+    def _extension_catalog(self) -> dict:
+        """``{id: (name in the app's language, tags)}`` of the catalog the
+        extension manager last saw, and of the extensions that ship with
+        IngeTrazo (read once)."""
+        cat = self.__dict__.get("_ext_catalog_info")
+        if cat is None:
+            cat = {}
+            try:
+                from core.extension_manager import (bundled_extensions,
+                                                    display_name,
+                                                    load_cached_catalog)
+                lang = current_language()
+                snap = load_cached_catalog()
+                for ext in (list(snap.extensions) if snap else []) \
+                        + bundled_extensions():
+                    cat.setdefault(ext.id, (display_name(ext, lang),
+                                            tuple(ext.tags)))
+            except Exception:  # noqa: BLE001 — a name is not worth a failure
+                pass
+            self._ext_catalog_info = cat
+        return cat
+
+    def _extension_name(self, key: str) -> str:
+        """An extension's name for a submenu of its entries: the catalog's,
+        in the app's language; else the title of its own Extensions
+        submenu; else its id, readable."""
+        name = self._extension_catalog().get(key, ("", ()))[0]
+        if name:
+            return name
+        title = self.__dict__.get("_ext_menu_titles", {}).get(key)
+        if title:
+            return title
+        return key.replace("_", " ").strip().capitalize() or tr("Extension")
+
     def show_viewport_context_menu(self, global_pos, locked_image=None) -> None:
         """Right-click menu, tailored to what's selected.
         ``locked_image``: a locked reference image under the cursor that the
@@ -4135,9 +4423,12 @@ class MainWindow(QMainWindow):
                     off = menu.addAction(
                         tr("Edit 3D Text… (letters edited by hand)"))
                     off.setEnabled(False)
-            if (any(isinstance(e, Group) and not e.is_component()
-                    and not getattr(e, "billboard", False) for e in sel)
+            if not has_mesh and (
+                    any(isinstance(e, Group) and not e.is_component()
+                        and not getattr(e, "billboard", False) for e in sel)
                     or sum(1 for e in sel if isinstance(e, Group)) >= 2):
+                # (With loose geometry selected too, the entry is already
+                # up with Make Group — it came out twice, 18-10.)
                 # Convert a classic group into a component IN PLACE (free —
                 # no explode detour): the door the piscina hedge needed.
                 menu.addAction(tr("Make Component…"), self._on_make_component)
@@ -4198,13 +4489,7 @@ class MainWindow(QMainWindow):
         # Extensions' own entries (app.add_context_menu): after the
         # selection's, before Paste and Undo. One that raises is logged and
         # skipped — the menu always opens.
-        for fn in getattr(self, "_ext_context_menus", ()):
-            try:
-                fn(menu, list(sel))
-            except Exception:  # noqa: BLE001 — an extension's bug
-                import logging
-                logging.getLogger(__name__).exception(
-                    "extension context menu failed")
+        self._add_extension_context_entries(menu, list(sel))
 
         from formats import clip as clip_transfer
         if getattr(self.viewport, "clipboard", None) or clip_transfer.available():

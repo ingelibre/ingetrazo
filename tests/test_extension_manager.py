@@ -845,7 +845,9 @@ def test_a_hand_installed_copy_under_another_name_is_set_aside(
 
 def test_an_identical_loose_file_counts_as_a_copy(tmp_path, monkeypatch):
     monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
-    (tmp_path / "my_old_name.py").write_text(TOOL_SOURCE)
+    # newline="\n": byte for byte what the catalog serves (on Windows
+    # write_text puts \r\n and the copy is no longer identical).
+    (tmp_path / "my_old_name.py").write_text(TOOL_SOURCE, newline="\n")
     payload = TOOL_SOURCE.encode()
     monkeypatch.setattr(manager, "_get", lambda *_a: payload)
     with pytest.raises(manager.ExtensionManagerError, match="my_old_name.py"):

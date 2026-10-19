@@ -75,6 +75,24 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.5.9" date="2026-10-19">
+      <description>
+        <p>An experimental Rust engine (off by default) that makes hidden
+        lines, intersections and huge models many times faster; the first
+        point of Line, Rectangle, Circle and Arc snaps to the axes; switch
+        between orbit and pan without letting go of the wheel; extension
+        menus that sort themselves when there are many; library components
+        placed again become copies of the same component; and many
+        fixes.</p>
+        <p xml:lang="es">Un motor Rust experimental (apagado por defecto)
+        que hace varias veces más rápidas las líneas ocultas, las
+        intersecciones y los modelos enormes; el primer punto de Línea,
+        Rectángulo, Círculo y Arco se engancha a los ejes; pasar de orbitar a
+        desplazar sin soltar la rueda; menús de extensiones que se ordenan
+        solos cuando hay muchas; los componentes de la biblioteca colocados
+        de nuevo son copias del mismo componente; y muchos arreglos.</p>
+      </description>
+    </release>
     <release version="0.5.8" date="2026-10-12">
       <description>
         <p>An Extension Manager to browse, install, update and disable

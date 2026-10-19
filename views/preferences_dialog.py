@@ -199,6 +199,21 @@ class PreferencesDialog(QDialog):
             "sheet composer's. Applies at once."))
         form.addRow(tr("Toolbar icons:"), self._icon_px)
 
+        # How the extensions' entries show (18-10: with the whole catalog
+        # the Extensions menu and the right-click menu outgrew the screen).
+        self._ext_menus = QComboBox()
+        for code, label in (
+                ("auto", "Group them when there are many"),
+                ("always", "Always in submenus"),
+                ("flat", "Each entry on its own")):
+            self._ext_menus.addItem(tr(label), code)
+        self._ext_menus.setCurrentIndex(max(0, self._ext_menus.findData(
+            str(_gs.value("ext_menus", "auto", st) or "auto"))))
+        self._ext_menus.setToolTip(tr(
+            "How the extensions' entries show in the right-click menu "
+            "(at once) and in the Extensions menu (at the next start)."))
+        form.addRow(tr("Extension menus:"), self._ext_menus)
+
         from core.platform_choice import AUTO, WAYLAND, XCB
         self._platform = QComboBox()
         for key, label in ((AUTO, tr("Automatic (X11 on KDE Plasma or with a fractional display scale)")),
@@ -693,6 +708,8 @@ class PreferencesDialog(QDialog):
             else:
                 from views.icons import save_toolbar_icon_px
                 save_toolbar_icon_px(px)
+
+        _gs.set_value("ext_menus", self._ext_menus.currentData(), st)
 
         st.setValue("import/obj_unit", self._obj_unit.currentData())
         st.setValue("import/dxf_unit", self._dxf_unit.currentData())

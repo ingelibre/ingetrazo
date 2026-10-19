@@ -3,8 +3,8 @@
 """3D Text — real, editable geometry generated from font glyphs (Texto
 3D).
 
-Qt supplies the glyph outlines (``QPainterPath.addText`` →
-``toSubpathPolygons``); each outline ring is classified outer/hole by
+Qt supplies the glyph outlines (the line shaped by ``QTextLayout``, its
+glyph paths → ``toSubpathPolygons``); each outline ring is classified outer/hole by
 containment parity, becomes a front face (with holes) and, when a thickness
 is given, a back face plus side walls — one closed solid per contour group.
 The result is a plain ``Mesh`` for a ``Group``: the letters push/pull, paint
@@ -40,15 +40,46 @@ def _font(font_family: str, bold: bool, italic: bool) -> QFont:
     return font
 
 
-def _rings(text: str, font_family: str, bold: bool, italic: bool,
-           x: float = 0.0) -> tuple[list[list[tuple[float, float]]], float]:
-    """Glyph outline rings in font units (y already flipped to 'up') and the
-    layout height of one line. ``x`` is where the text starts, in font
-    units — a single letter of a longer string is drawn at its advance."""
-    font = _font(font_family, bold, italic)
-    path = QPainterPath()
-    path.addText(x, 0.0, font, text)
-    return _path_rings(path), _FONT_PT
+def _shaped_paths(text: str, font_family: str, bold: bool,
+                  italic: bool) -> dict[int, QPainterPath]:
+    """The line shaped ONCE (kerning, font fallback, ligatures) as glyph
+    outlines per owning character index, baseline at y=0. The whole text
+    and its letters both come from here: ``QPainterPath.addText`` places
+    glyphs its own way, and on Windows (Segoe UI) and macOS its advances
+    differ from the shaped line's, so a text built in one piece and the
+    same text split into letters did not match (MAC-07, ronda Windows
+    0.5.9)."""
+    layout = QTextLayout(text, _font(font_family, bold, italic))
+    layout.beginLayout()
+    line = layout.createLine()
+    layout.endLayout()
+    # Qt string indexes count UTF-16 units; Python indexes Unicode characters.
+    owners = {}
+    offset = 0
+    for i, ch in enumerate(text):
+        owners[offset] = i
+        offset += len(ch.encode("utf-16-le")) // 2
+    paths = {}
+    for run in layout.glyphRuns(0, -1, QTextLayout.GlyphRunRetrievalFlag.RetrieveAll):
+        raw = run.rawFont()
+        for glyph, pos, index in zip(run.glyphIndexes(), run.positions(),
+                                     run.stringIndexes()):
+            owner = owners[index]
+            path = raw.pathForGlyph(glyph)
+            path.translate(pos.x(), pos.y() - line.ascent())
+            paths.setdefault(owner, QPainterPath()).addPath(path)
+    return paths
+
+
+def _rings(text: str, font_family: str, bold: bool,
+           italic: bool) -> tuple[list[list[tuple[float, float]]], float]:
+    """Glyph outline rings of the whole shaped line in font units (y already
+    flipped to 'up') and the layout height of one line."""
+    rings = []
+    for _i, path in sorted(_shaped_paths(text, font_family, bold,
+                                         italic).items()):
+        rings.extend(_path_rings(path))
+    return rings, _FONT_PT
 
 
 def _path_rings(path: QPainterPath) -> list[list[tuple[float, float]]]:
@@ -201,25 +232,7 @@ def build_text_letters(text: str, font_family: str = "", bold: bool = False,
     if not rings:
         return []
     scale, y_min = _block_scale(rings, height)
-    layout = QTextLayout(text, _font(font_family, bold, italic))
-    layout.beginLayout()
-    line = layout.createLine()
-    layout.endLayout()
-    # Qt string indexes count UTF-16 units; Python indexes Unicode characters.
-    owners = {}
-    offset = 0
-    for i, ch in enumerate(text):
-        owners[offset] = i
-        offset += len(ch.encode("utf-16-le")) // 2
-    paths = {}
-    for run in layout.glyphRuns(0, -1, QTextLayout.GlyphRunRetrievalFlag.RetrieveAll):
-        raw = run.rawFont()
-        for glyph, pos, index in zip(run.glyphIndexes(), run.positions(),
-                                     run.stringIndexes()):
-            owner = owners[index]
-            path = raw.pathForGlyph(glyph)
-            path.translate(pos.x(), pos.y() - line.ascent())
-            paths.setdefault(owner, QPainterPath()).addPath(path)
+    paths = _shaped_paths(text, font_family, bold, italic)
     letters: list = []
     for i in sorted(paths):
         glyph = _path_rings(paths[i])

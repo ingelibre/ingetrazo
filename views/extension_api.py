@@ -198,6 +198,8 @@ class ExtensionApp:
                 action.setShortcut(QKeySequence(shortcut))
                 taken.add(seq)
         action.triggered.connect(lambda _c=False: fn())
+        # Whose it is, to gather one extension's loose entries in a submenu.
+        win.__dict__.setdefault("_ext_action_owner", {})[action] = self.key
         anchor = getattr(win, "_ext_anchor", None)
         if anchor is not None:
             # Above the menu's own entries (examples, manager, plugins
@@ -216,12 +218,18 @@ class ExtensionApp:
         menu = getattr(self._window, "_ext_menu", None)
         if menu is None:
             return None
+        # Its name, for the submenu of its right-click entries.
+        self._window.__dict__.setdefault("_ext_menu_titles", {}).setdefault(
+            self.key, title.replace("&", ""))
         anchor = getattr(self._window, "_ext_anchor", None)
         if anchor is None:
-            return menu.addMenu(title)
-        from PySide6.QtWidgets import QMenu
-        sub = QMenu(title, menu)
-        menu.insertMenu(anchor, sub)        # above the menu's own entries
+            sub = menu.addMenu(title)
+        else:
+            from PySide6.QtWidgets import QMenu
+            sub = QMenu(title, menu)
+            menu.insertMenu(anchor, sub)    # above the menu's own entries
+        self._window.__dict__.setdefault(
+            "_ext_action_owner", {})[sub.menuAction()] = self.key
         return sub
 
     def add_outliner_kind(self, fn) -> None:
@@ -245,11 +253,15 @@ class ExtensionApp:
         right-click menu (a QMenu), after the ones for the selection and
         before Paste and Undo; ``selection`` is a list of what is
         selected. Open dialogs from the entries with
-        ``QTimer.singleShot(0, …)``, after the menu has closed."""
+        ``QTimer.singleShot(0, …)``, after the menu has closed.
+
+        Several entries from one extension go into a submenu with its
+        name; with many extensions they all go under «Extensions ▸»."""
         win = self._window
         if not hasattr(win, "_ext_context_menus"):
             win._ext_context_menus = []
         win._ext_context_menus.append(fn)
+        win.__dict__.setdefault("_ext_context_owner", {})[fn] = self.key
 
     # ---- Viewport ------------------------------------------------------------
     def add_overlay(self, fn) -> None:

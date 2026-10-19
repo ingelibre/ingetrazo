@@ -353,7 +353,8 @@ def build_mesh(batches, progress=None):
                 attrs_list.append(a)
         done += len(tris)
         if progress is not None:
-            progress(0.3 + 0.4 * done / total, "Preparing geometry…")
+            # The DAE/OBJ importers' wording: already in every catalog.
+            progress(0.3 + 0.4 * done / total, "Collecting geometry…")
     if not flat_parts:
         raise ValueError("No triangle geometry found in the glTF file")
     flat = np.concatenate(flat_parts, axis=0)
@@ -368,7 +369,7 @@ def build_mesh(batches, progress=None):
                           attrs_list)
     if len(mesh.edges) <= _SOFTEN_EDGE_CAP:
         if progress is not None:
-            progress(0.9, "Smoothing seams…")
+            progress(0.9, "Smoothing edges…")
         soften_smooth_edges(mesh)
     _hide_cutout_card_edges(mesh)
     return mesh
