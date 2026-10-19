@@ -3000,5 +3000,7 @@
  "Group them when there are many": "Les regrouper quand il y en a beaucoup",
  "Always in submenus": "Toujours dans des sous-menus",
  "Each entry on its own": "Chaque entrée séparément",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Comment les entrées des extensions s'affichent dans le menu du clic droit (immédiatement) et dans le menu Extensions (au prochain démarrage)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Comment les entrées des extensions s'affichent dans le menu du clic droit (immédiatement) et dans le menu Extensions (au prochain démarrage).",
+ "Show unit": "Afficher l'unité",
+ "Off: only the number (1.30 instead of 1.30 m), for sheets that state the unit once. Feet and inches together keep their marks.": "Désactivé : seulement le nombre (1.30 au lieu de 1.30 m), pour les planches qui indiquent l'unité une seule fois. Pieds et pouces combinés gardent leurs symboles."
 }

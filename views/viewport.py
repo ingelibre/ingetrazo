@@ -7945,7 +7945,11 @@ class Viewport(QOpenGLWidget):
                     if self._occluded_on_screen(w):
                         continue
                     if ends == "tick":
-                        ox, oy = -uy * 4.0, ux * 4.0
+                        # 45° to the line, «/» on a horizontal one, as on
+                        # the sheet (composer.oblique_tick_angle); it was
+                        # square to the line, not oblique (#741)
+                        k = 4.0 * math.sqrt(0.5)
+                        ox, oy = (ux + uy) * k, (uy - ux) * k
                         painter.drawLine(QPointF(cx - ox, cy - oy),
                                          QPointF(cx + ox, cy + oy))
                     else:
@@ -7977,10 +7981,12 @@ class Viewport(QOpenGLWidget):
     @staticmethod
     def _format_dim_value(metres: float, style: dict) -> str:
         """Format a length (metres) per the dimension style: unit + precision
-        (see :mod:`core.units` — metric, decimal or fractional imperial)."""
+        (see :mod:`core.units` — metric, decimal or fractional imperial),
+        with or without the unit symbol (#374)."""
         from core.units import format_length
         return format_length(metres, style.get("units", "m"),
-                             int(style.get("decimals", 2)))
+                             int(style.get("decimals", 2)),
+                             bool(style.get("show_unit", True)))
 
     def _draw_occluded_segment(self, painter: QPainter, p3a: QVector3D,
                                p3b: QVector3D, samples: int = 16) -> None:

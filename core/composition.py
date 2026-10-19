@@ -1012,6 +1012,9 @@ class CotaItem:
     text_mm: float = 2.8         # label height on paper
     decimals: int = 2
     units: str = "m"            # m | cm | mm | in | ft | ft-in | in-frac | ft-in-frac
+    #: «1.30» instead of «1.30 m» when the sheet states the unit once
+    #: (#637). Feet and inches together keep their marks.
+    show_unit: bool = True
     ends: str = "tick"           # tick | arrow | none
     stroke_mm: float = 0.25
     color: str = "#1e242c"
@@ -1158,9 +1161,12 @@ class CotaItem:
         d = self.real_distance_m()
         n = max(0, min(int(self.decimals), 6))
         units = getattr(self, "units", "m") or "m"
-        if units == "m" and d >= 1000:
+        show = bool(getattr(self, "show_unit", True))
+        # Without its symbol a value in km would read as metres: the bare
+        # number stays in the cota's own unit.
+        if units == "m" and d >= 1000 and show:
             return f"{d / 1000:.3f} km"
-        return format_length(d, units, n)
+        return format_length(d, units, n, show)
 
     def label(self) -> str:
         """Custom text when set — with ``<>`` standing for the measured
@@ -1201,6 +1207,7 @@ class CotaRadialItem:
     text_mm: float = 2.8
     decimals: int = 2
     units: str = "m"
+    show_unit: bool = True       # as CotaItem's (#637)
     offset_mm: float = 0.5       # line → text baseline gap
     ends: str = "arrow"          # arrow | tick | none
     stroke_mm: float = 0.25
@@ -1308,9 +1315,10 @@ class CotaRadialItem:
         d = self.real_distance_m()
         n = max(0, min(int(self.decimals), 6))
         units = getattr(self, "units", "m") or "m"
-        if units == "m" and d >= 1000:
+        show = bool(getattr(self, "show_unit", True))
+        if units == "m" and d >= 1000 and show:
             return self.symbol() + f"{d / 1000:.3f} km"
-        return self.symbol() + format_length(d, units, n)
+        return self.symbol() + format_length(d, units, n, show)
 
     def label(self) -> str:
         if self.text:

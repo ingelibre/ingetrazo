@@ -1259,6 +1259,17 @@ def cota_aside_frame(ct: CotaItem) -> tuple:
     return ux * dist, uy * dist, (0.0 if horizontal else deg), tw, th
 
 
+def oblique_tick_angle(line_angle: float) -> float:
+    """Direction (radians, y DOWN) of the oblique tick that ends a
+    dimension line running at ``line_angle``: 45° to the line, turned
+    counter-clockwise ON THE SHEET, so a horizontal cota ends in «/» as the
+    technical-drawing standards draw it. Adding 45° in y-down space gave
+    «\\», 135° to the line (#741). The line's sense does not matter: a
+    reversed line gives the same tick."""
+    import math as _math
+    return line_angle - _math.pi / 4
+
+
 def paint_cota_mm(painter: QPainter, ct: CotaItem) -> None:
     """Architect-style dimension: the line runs ``sep_mm`` off the measured
     points along their normal, tied back with extension
@@ -1343,12 +1354,13 @@ def paint_cota_mm(painter: QPainter, ct: CotaItem) -> None:
         painter.restore()
     elif ct.ends != "none":
         tick = 1.6
+        t = oblique_tick_angle(ang)
         for pt in (a2, b2):
             painter.drawLine(
-                QPointF(pt.x() - tick * _math.cos(ang + _math.radians(45)),
-                        pt.y() - tick * _math.sin(ang + _math.radians(45))),
-                QPointF(pt.x() + tick * _math.cos(ang + _math.radians(45)),
-                        pt.y() + tick * _math.sin(ang + _math.radians(45))))
+                QPointF(pt.x() - tick * _math.cos(t),
+                        pt.y() - tick * _math.sin(t)),
+                QPointF(pt.x() + tick * _math.cos(t),
+                        pt.y() + tick * _math.sin(t)))
     painter.save()
     tcol = QColor(ct.text_color) if getattr(ct, "text_color", "") else color
     lx, ly = cota_label_anchor(ct)          # outside an end / dragged
@@ -1749,7 +1761,8 @@ def paint_cota_angular_mm(painter: QPainter, ca: CotaAngularItem) -> None:
         tick = 1.6
         for ang, _d in ends:
             cx, cy = R * _math.cos(ang), R * _math.sin(ang)
-            t = ang + _math.radians(45)
+            # the arc's tangent is ang + 90°: same «/» as a straight cota
+            t = oblique_tick_angle(ang + _math.pi / 2)
             painter.drawLine(QPointF(cx - tick * _math.cos(t),
                                      cy - tick * _math.sin(t)),
                              QPointF(cx + tick * _math.cos(t),
@@ -1826,7 +1839,7 @@ def paint_cota_radial_mm(painter: QPainter, cr) -> None:
         painter.restore()
     elif cr.ends != "none":
         t = 1.6
-        ang = _math.atan2(uy, ux) + _math.radians(45)
+        ang = oblique_tick_angle(_math.atan2(uy, ux))
         for (px, py), _h in tips:
             painter.drawLine(
                 QPointF(px - t * _math.cos(ang), py - t * _math.sin(ang)),
@@ -6030,6 +6043,7 @@ class ComposerWindow(QMainWindow):
         # carry ``units`` and ``decimals``, so a feet document still bore
         # metre cotas (issue #403). The look (text, ends, colour) stays.
         style.update(self._document_length_style())
+        style["show_unit"] = self._document_shows_unit()
         # The gap line → baseline. Rafael's sheet shows about a quarter of
         # the text height (AutoCAD's DIMGAP); 0.5 mm reads like it at the
         # 2.5 mm text a new cota takes.
@@ -6133,6 +6147,7 @@ class ComposerWindow(QMainWindow):
                          "color", "text_color", "ends", "text_bg",
                          "text_bg_opacity", "offset_mm")}
         keep.update(self._document_length_style())
+        keep["show_unit"] = self._document_shows_unit()
         item = CotaRadialItem(
             x_mm=centre[0], y_mm=centre[1], radius_mm=r, scale_n=n,
             kind=("diameter" if kind == "diameter" else "radius"),
@@ -7119,6 +7134,13 @@ class ComposerWindow(QMainWindow):
             "0 = whole inches, 1 = 1/4, 2 = 1/16, 3 = 1/32, 4 = 1/64."))
         self.cota_units.currentTextChanged.connect(self._on_cota_props)
         form.addRow(tr("Units"), self.cota_units)
+        self.cota_show_unit = QCheckBox(tr("Show unit"))
+        self.cota_show_unit.setToolTip(tr(
+            "Off: only the number (1.30 instead of 1.30 m), for sheets "
+            "that state the unit once. Feet and inches together keep "
+            "their marks."))
+        self.cota_show_unit.toggled.connect(self._on_cota_props)
+        form.addRow("", self.cota_show_unit)
         self.cota_ends = QComboBox()
         for label, key in ((tr("Arrows"), "arrow"),
                            (tr("Oblique ticks"), "tick"),
@@ -7444,6 +7466,9 @@ class ComposerWindow(QMainWindow):
         self.crad_units.addItems(list(UNIT_CHOICES))
         self.crad_units.currentTextChanged.connect(self._on_cota_rad_props)
         form.addRow(tr("Units"), self.crad_units)
+        self.crad_show_unit = QCheckBox(tr("Show unit"))
+        self.crad_show_unit.toggled.connect(self._on_cota_rad_props)
+        form.addRow("", self.crad_show_unit)
         self.crad_ends = QComboBox()
         for label, key in ((tr("Arrows"), "arrow"),
                            (tr("Oblique ticks"), "tick"),
@@ -7479,6 +7504,7 @@ class ComposerWindow(QMainWindow):
             "text_mm": self.crad_text_mm.value(),
             "decimals": int(self.crad_decimals.value()),
             "units": self.crad_units.currentText() or "m",
+            "show_unit": self.crad_show_unit.isChecked(),
             "ends": self.crad_ends.currentData() or "arrow",
             "stroke_mm": self.crad_stroke.value()})
 
@@ -8397,6 +8423,8 @@ class ComposerWindow(QMainWindow):
                 self.cota_decimals.setValue(item.model.decimals)
                 self.cota_units.setCurrentText(
                     getattr(item.model, "units", "m") or "m")
+                self.cota_show_unit.setChecked(
+                    bool(getattr(item.model, "show_unit", True)))
                 eidx = self.cota_ends.findData(item.model.ends)
                 self.cota_ends.setCurrentIndex(max(eidx, 0))
                 self.cota_stroke.setValue(item.model.stroke_mm)
@@ -8516,6 +8544,8 @@ class ComposerWindow(QMainWindow):
                 self.crad_decimals.setValue(m.decimals)
                 self.crad_units.setCurrentText(
                     getattr(m, "units", "m") or "m")
+                self.crad_show_unit.setChecked(
+                    bool(getattr(m, "show_unit", True)))
                 eidx = self.crad_ends.findData(m.ends)
                 self.crad_ends.setCurrentIndex(max(eidx, 0))
                 self.crad_stroke.setValue(m.stroke_mm)
@@ -9386,7 +9416,8 @@ class ComposerWindow(QMainWindow):
     # ---- Copy / paste style (Edit ▸ Copy Style / Paste Style) ----------------
     #: The look of each item kind — never its geometry or content.
     STYLE_FIELDS = {
-        CotaItem: ("text_mm", "decimals", "units", "ends", "stroke_mm", "color",
+        CotaItem: ("text_mm", "decimals", "units", "show_unit", "ends",
+                   "stroke_mm", "color",
                    "offset_mm",
                    "text_color", "text_bg", "text_bg_opacity"),
         TextoItem: ("size_pt", "bold", "italic", "underline", "family",
@@ -9403,7 +9434,7 @@ class ComposerWindow(QMainWindow):
                      "pen_cut_mm", "pen_profile_mm", "pen_edge_mm",
                      "profiles", "hidden_lines", "cut_fill",
                      "cut_fill_color", "cut_hatch_mm"),
-        CotaRadialItem: ("text_mm", "decimals", "units", "ends",
+        CotaRadialItem: ("text_mm", "decimals", "units", "show_unit", "ends",
                          "stroke_mm", "color", "text_color", "offset_mm",
                          "text_bg", "text_bg_opacity", "centre_mark"),
         CotaAngularItem: ("text_mm", "decimals", "ends", "stroke_mm",
@@ -9959,12 +9990,10 @@ class ComposerWindow(QMainWindow):
                 ends = style.get("ends", "arrow") or "arrow"
                 for (x, y), heading in ((a2, ang), (b2, ang + math.pi)):
                     if ends == "tick":                # oblique ticks
-                        t = 1.6
+                        t, k = 1.6, oblique_tick_angle(ang)
                         out.append(("line",
-                                    x - t * math.cos(ang + math.radians(45)),
-                                    y - t * math.sin(ang + math.radians(45)),
-                                    x + t * math.cos(ang + math.radians(45)),
-                                    y + t * math.sin(ang + math.radians(45))))
+                                    x - t * math.cos(k), y - t * math.sin(k),
+                                    x + t * math.cos(k), y + t * math.sin(k)))
                     elif ends != "none":              # inside arrows
                         out.append(("arrow", x, y, math.cos(heading),
                                     math.sin(heading)))
@@ -10418,6 +10447,16 @@ class ComposerWindow(QMainWindow):
         chosen = model_units_of(scene)
         return {"units": chosen["length"],
                 "decimals": int(chosen["precision"])}
+
+    def _document_shows_unit(self) -> bool:
+        """Whether a new sheet cota is born with its unit symbol: what the
+        document's dimension style says, so «1.30» on the model is «1.30»
+        on the sheet too (#374, #637). Each cota can still change it."""
+        try:
+            style = self._scene().dimension_style or {}
+        except AttributeError:
+            return True
+        return bool(style.get("show_unit", True))
 
     def dimension_norma(self) -> str:
         """The drafting standard the DOCUMENT's dimensions obey — ``"iso"``
@@ -11093,6 +11132,7 @@ class ComposerWindow(QMainWindow):
             "text_mm": self.cota_text_mm.value(),
             "decimals": int(self.cota_decimals.value()),
             "units": self.cota_units.currentText() or "m",
+            "show_unit": self.cota_show_unit.isChecked(),
             "ends": self.cota_ends.currentData() or "arrow",
             "stroke_mm": self.cota_stroke.value(),
             "text_pos": self.cota_text_pos.currentData() or "above",

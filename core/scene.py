@@ -119,7 +119,8 @@ class Scene:
     plugin_data: dict = field(default_factory=dict)
     dimension_style: dict = field(default_factory=lambda: {
         "decimals": 2, "units": "m", "font_size": 9, "color": [45, 55, 75],
-        "norma": "iso", "base_step_mm": 8.0, "ends": "arrow"})
+        "norma": "iso", "base_step_mm": 8.0, "ends": "arrow",
+        "show_unit": True})
     # Back-face tint override (RGB 0..1), e.g. adopted from an imported
     # .skp's style so unpainted faces read like they did for the author.
     # ``None`` = the viewport's default blue-grey.

@@ -2761,17 +2761,24 @@ class DimensionStylePanel(QWidget):
         self._units.currentTextChanged.connect(self._apply)
         grid.addWidget(self._units, 1, 1)
 
-        grid.addWidget(QLabel(tr("Font:")), 2, 0)
+        # «1.30» instead of «1.30 m»: many drawings state the unit once, in
+        # the title block or a note (#374).
+        self._show_unit = QCheckBox(tr("Show unit"))
+        self._show_unit.setChecked(bool(style.get("show_unit", True)))
+        self._show_unit.toggled.connect(self._apply)
+        grid.addWidget(self._show_unit, 2, 1)
+
+        grid.addWidget(QLabel(tr("Font:")), 3, 0)
         self._font = QSpinBox()
         self._font.setRange(6, 28)
         self._font.setValue(int(style.get("font_size", 9)))
         self._font.valueChanged.connect(self._apply)
-        grid.addWidget(self._font, 2, 1)
+        grid.addWidget(self._font, 3, 1)
 
-        grid.addWidget(QLabel(tr("Color:")), 3, 0)
+        grid.addWidget(QLabel(tr("Color:")), 4, 0)
         self._color_btn = QPushButton()
         self._color_btn.clicked.connect(self._pick_color)
-        grid.addWidget(self._color_btn, 3, 1)
+        grid.addWidget(self._color_btn, 4, 1)
         self._refresh_color_btn()
 
         # The drafting standard (``dimension_style["norma"]``) stays in the
@@ -2783,7 +2790,7 @@ class DimensionStylePanel(QWidget):
         # What closes the dimension line — a document-wide choice, like
         # the units (a user of DriveMeca's video, 2026-09-20: «los
         # extremos no tiene para cambiarla»).
-        grid.addWidget(QLabel(tr("Ends:")), 4, 0)
+        grid.addWidget(QLabel(tr("Ends:")), 5, 0)
         self._ends = QComboBox()
         for label, key in ((tr("Arrows"), "arrow"),
                            (tr("Oblique ticks"), "tick"),
@@ -2792,10 +2799,10 @@ class DimensionStylePanel(QWidget):
         i = self._ends.findData(str(style.get("ends", "arrow") or "arrow"))
         self._ends.setCurrentIndex(max(i, 0))
         self._ends.currentIndexChanged.connect(self._apply)
-        grid.addWidget(self._ends, 4, 1)
+        grid.addWidget(self._ends, 5, 1)
 
         # AutoCAD's DIMDLI: how far apart the rows of a baseline run sit.
-        grid.addWidget(QLabel(tr("Baseline step:")), 5, 0)
+        grid.addWidget(QLabel(tr("Baseline step:")), 6, 0)
         self._base_step = QDoubleSpinBox()
         self._base_step.setRange(1.0, 60.0)
         self._base_step.setSingleStep(0.5)
@@ -2806,7 +2813,7 @@ class DimensionStylePanel(QWidget):
             "How far apart the rows of a baseline dimension run sit on "
             "paper. It travels with the document."))
         self._base_step.valueChanged.connect(self._apply)
-        grid.addWidget(self._base_step, 5, 1)
+        grid.addWidget(self._base_step, 6, 1)
 
     def _style(self) -> dict:
         return self._window.viewport.scene.dimension_style
@@ -2815,6 +2822,7 @@ class DimensionStylePanel(QWidget):
         style = self._style()
         style["decimals"] = self._decimals.value()
         style["units"] = self._units.currentText()
+        style["show_unit"] = self._show_unit.isChecked()
         style["font_size"] = self._font.value()
         style["ends"] = self._ends.currentData() or "arrow"
         style["base_step_mm"] = float(self._base_step.value())

@@ -3003,5 +3003,7 @@
  "Group them when there are many": "Kelompokkan jika banyak",
  "Always in submenus": "Selalu dalam submenu",
  "Each entry on its own": "Setiap entri terpisah",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi).",
+ "Show unit": "Tampilkan satuan",
+ "Off: only the number (1.30 instead of 1.30 m), for sheets that state the unit once. Feet and inches together keep their marks.": "Mati: hanya angka (1.30, bukan 1.30 m), untuk lembar yang menyebut satuan sekali saja. Kaki dan inci bersama tetap memakai tandanya."
 }

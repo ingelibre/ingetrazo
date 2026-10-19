@@ -3000,5 +3000,7 @@
  "Group them when there are many": "Группировать, если их много",
  "Always in submenus": "Всегда в подменю",
  "Each entry on its own": "Каждый пункт отдельно",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске).",
+ "Show unit": "Показывать единицу",
+ "Off: only the number (1.30 instead of 1.30 m), for sheets that state the unit once. Feet and inches together keep their marks.": "Выкл.: только число (1.30 вместо 1.30 м), для листов, где единица указана один раз. Футы и дюймы вместе сохраняют свои знаки."
 }

@@ -3001,5 +3001,7 @@
  "Group them when there are many": "数量多时分组",
  "Always in submenus": "始终放在子菜单中",
  "Each entry on its own": "每个条目单独显示",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "扩展的条目在右键菜单（立即生效）和扩展菜单（下次启动时生效）中的显示方式。"
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "扩展的条目在右键菜单（立即生效）和扩展菜单（下次启动时生效）中的显示方式。",
+ "Show unit": "显示单位",
+ "Off: only the number (1.30 instead of 1.30 m), for sheets that state the unit once. Feet and inches together keep their marks.": "关闭：只显示数字（1.30 而不是 1.30 m），用于只注明一次单位的图纸。英尺和英寸组合仍保留其符号。"
 }

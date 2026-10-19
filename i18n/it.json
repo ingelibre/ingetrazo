@@ -3001,5 +3001,7 @@
  "Group them when there are many": "Raggrupparle quando sono molte",
  "Always in submenus": "Sempre in sottomenu",
  "Each entry on its own": "Ogni voce separata",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Come appaiono le voci delle estensioni nel menu del tasto destro (subito) e nel menu Estensioni (al prossimo avvio)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Come appaiono le voci delle estensioni nel menu del tasto destro (subito) e nel menu Estensioni (al prossimo avvio).",
+ "Show unit": "Mostra unità",
+ "Off: only the number (1.30 instead of 1.30 m), for sheets that state the unit once. Feet and inches together keep their marks.": "Disattivato: solo il numero (1.30 invece di 1.30 m), per tavole che indicano l'unità una sola volta. Piedi e pollici insieme mantengono i loro segni."
 }
