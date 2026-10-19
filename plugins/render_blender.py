@@ -827,9 +827,17 @@ class RenderPanel(QWidget):
     def _open_shadows(self) -> None:
         """Drop the Shadows panel down from its toolbar button, where the
         date and the time of the sun are set."""
-        from PySide6.QtWidgets import QToolButton
+        from PySide6.QtWidgets import QToolButton, QWidgetAction
+        # Found by the panel it holds: its tooltip is the title plus a
+        # line of help, so comparing it with «Shadows» never matched.
+        panel = getattr(self.app.window, "shadows_panel", None)
+        if panel is None:
+            return
         for btn in self.app.window.findChildren(QToolButton):
-            if btn.toolTip() == tr("Shadows") and btn.menu() is not None:
+            menu = btn.menu()
+            if menu is not None and any(
+                    isinstance(a, QWidgetAction) and a.defaultWidget() is panel
+                    for a in menu.actions()):
                 btn.showMenu()
                 return
 
