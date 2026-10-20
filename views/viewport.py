@@ -1007,6 +1007,53 @@ def _face_geometry(f, memo, triangulate):
     return geom
 
 
+def _curved_faces(mesh) -> set:
+    """The faces of ``mesh`` on a curved surface: those a soft edge
+    joins to another face. Only these can have a smooth corner, so
+    every other face keeps its one flat colour and costs nothing."""
+    out: set = set()
+    for e in mesh.edges:
+        if getattr(e, "soft", False) and len(e.faces) > 1:
+            out.update(e.faces)
+    return out
+
+
+def _smooth_vcol(face, base, flat_rgb, smoother, tris, light) -> list:
+    """``pos(3) + rgb(3)`` floats of ``face``'s triangles (corners as
+    float tuples), each corner on a curved surface shaded against
+    ``light`` by the SURFACE's normal there
+    (:class:`formats.meshexport.SmoothNormals`, the one the exports
+    write) instead of the face's own: the vertex colours blend across
+    the triangles and a sphere reads round, not faceted (#131). Hard
+    edges split the surface, so a cylinder keeps its crease against its
+    caps.
+
+    Unquantised, unlike ``Viewport._shaded_color``: the face pass is one
+    draw call whatever its colours, and the 1/32 shade steps would show
+    as rings across a sphere. A corner whose surface normal IS the
+    face's (coplanar faces joined by a soft diagonal) keeps the flat
+    colour, so a flat patch never shows a seam against its neighbour."""
+    corners = smoother.corners(face)
+    flat = smoother.flat(face)
+    rgb_at: dict = {}
+    out: list = []
+    for tri in tris:
+        for p in tri:
+            rgb = rgb_at.get(p)
+            if rgb is None:
+                n = corners.get(p)
+                if n is None or QVector3D.dotProduct(n, flat) > 0.99999:
+                    rgb = flat_rgb
+                else:
+                    d = abs(QVector3D.dotProduct(n, light))
+                    s = 0.62 + 0.38 * d
+                    rgb = (min(1.0, base[0] * s), min(1.0, base[1] * s),
+                           min(1.0, base[2] * s))
+                rgb_at[p] = rgb
+            out.extend((*p, *rgb))
+    return out
+
+
 class Viewport(QOpenGLWidget):
     """OpenGL viewport with orbital camera, grid, XYZ axes, tools and snapping."""
 
@@ -5606,6 +5653,13 @@ class Viewport(QOpenGLWidget):
         from core.group import effective_material as _eff_mat
         from core.materials import effective_attrs as _eff_attrs
         ctx_paint = _eff_mat(self.scene.edit_group)
+        # Curved surfaces shade smooth (#131): the faces that can have a
+        # smooth corner, and one smoother for the whole pass so faces that
+        # share a vertex share its fan.
+        from formats.meshexport import SmoothNormals
+        curved_loose = (_curved_faces(self.scene.loose_mesh)
+                        if not hide_rest else set())
+        smoother = SmoothNormals()
 
         def bucket_face(face):
             if face in suppressed_faces:
@@ -5641,12 +5695,18 @@ class Viewport(QOpenGLWidget):
             # vertex, so the whole pass is ONE draw call.
             r, g, b = self._shaded_color(base, self._normal_of(face))
             buf = array("f")
-            for t0, t1, t2 in self._tris_of(face):
-                buf.extend([
-                    t0.x(), t0.y(), t0.z(), r, g, b,
-                    t1.x(), t1.y(), t1.z(), r, g, b,
-                    t2.x(), t2.y(), t2.z(), r, g, b,
-                ])
+            if face in curved_loose:
+                tris = [tuple(t.toTuple() for t in tri)
+                        for tri in self._tris_of(face)]
+                buf.extend(_smooth_vcol(face, base, (r, g, b), smoother,
+                                        tris, self._LIGHT))
+            else:
+                for t0, t1, t2 in self._tris_of(face):
+                    buf.extend([
+                        t0.x(), t0.y(), t0.z(), r, g, b,
+                        t1.x(), t1.y(), t1.z(), r, g, b,
+                        t2.x(), t2.y(), t2.z(), r, g, b,
+                    ])
             if op < 0.999:
                 tcol_runs.setdefault((round(op, 3), fcull),
                                      []).append(buf.tobytes())
@@ -5690,6 +5750,7 @@ class Viewport(QOpenGLWidget):
                 # it is hidden.
                 sink["vcol"], sink["tex"] = subj_vcol, subj_by_texture
                 sink["dback"] = subj_dback
+                curved_loose.update(_curved_faces(g.mesh))
                 for face in g.mesh.faces:
                     bucket_face(face)   # push/pull preview suppresses faces
                 sink["vcol"], sink["tex"] = vcol, by_texture
@@ -9428,6 +9489,9 @@ class Viewport(QOpenGLWidget):
             if memo is None or len(memo) > 2 * len(mesh.faces) + 64:
                 memo = mesh.__dict__["_face_geom_memo"] = {}
             built = memo
+        from formats.meshexport import SmoothNormals
+        curved = _curved_faces(mesh)
+        smoother = SmoothNormals()
         for f in mesh.faces:
             if f.attrs.get("hidden"):
                 # Hide on a face: out of the chunk entirely — not
@@ -9479,14 +9543,17 @@ class Viewport(QOpenGLWidget):
                     dest = None
                 else:
                     dest = vcol
+                if f in curved:
+                    rows = _smooth_vcol(f, base, rgb, smoother, tri_list,
+                                        self._LIGHT)
+                else:
+                    rows = [x for t0, t1, t2 in tri_list
+                            for x in (*t0, r, g, b, *t1, r, g, b,
+                                      *t2, r, g, b)]
                 if dest is None:
-                    buf = array("f")
-                    for t0, t1, t2 in tri_list:
-                        buf.extend([*t0, r, g, b, *t1, r, g, b, *t2, r, g, b])
-                    fcull_vcol_parts.append(buf.tobytes())
-                    dest = array("f")   # discarded sink for the shared loop
-                for t0, t1, t2 in tri_list:
-                    dest.extend([*t0, r, g, b, *t1, r, g, b, *t2, r, g, b])
+                    fcull_vcol_parts.append(array("f", rows).tobytes())
+                else:
+                    dest.extend(rows)
             tris.extend(geom[6])
             tri_ent.extend([i] * len(tri_list))
             if tri_list and back_is_default(fattrs):
@@ -9657,6 +9724,11 @@ class Viewport(QOpenGLWidget):
             # Flipped this session (#197): never the digest of the same
             # mesh before the flip, which would serve its old winding.
             h.update(repr(fp[7]).encode())
+        if fp[5]:
+            # Soft edges shade smooth since #131: a chunk stored before
+            # bakes the curved surface flat. Only meshes with soft edges
+            # take the term, so the rest keep their digests.
+            h.update(b"smooth-shading")
         if fp[6]:
             # Hidden-edge term, only when some edge IS hidden: meshes without
             # any (the overwhelming majority) keep their pre-existing digests,

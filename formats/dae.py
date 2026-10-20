@@ -134,11 +134,10 @@ def save_dae(scene, path, project_name: str = "IngeTrazo model") -> None:
     for key in keys:
         textured = key[0] == "tex"
         p_tokens: list[str] = []
-        for normal, verts in prims[key]:
-            ni = _ni(normal)
-            for pos, uv in verts:
+        for _flat, verts in prims[key]:
+            for pos, uv, normal in verts:
                 p_tokens.append(str(_pi(pos)))
-                p_tokens.append(str(ni))
+                p_tokens.append(str(_ni(normal)))   # smooth across soft edges
                 if textured:
                     p_tokens.append(str(_ui(uv)))
         tri_groups.append((key, textured, p_tokens))
