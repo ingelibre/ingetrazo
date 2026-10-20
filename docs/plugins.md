@@ -96,7 +96,7 @@ The two AI plugins share a reusable layer that any plugin can import:
   whole rollback on error, no undo entry for inspect-only runs. This is
   the canonical way for generated or scripted code to mutate the model.
 - A provider layer following the IngePresupuestos convention: one API
-  key, provider detected by its prefix (`ai.detect_provider`), seven
+  key, provider detected by its prefix (`ai.detect_provider`), eight
   providers over two wire formats (Anthropic native + OpenAI-compatible),
   stdlib `urllib` only. `ai.chat(...)` does one blocking turn (run it on
   a worker thread), `ai.list_models(...)` returns what the key can

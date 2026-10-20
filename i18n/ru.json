@@ -611,7 +611,6 @@
  "Hairy gray floor carpeting": "Ворсистый серый ковролин",
  "Half round geometry": "Полукруглая геометрия",
  "Header band": "Полоса заголовка",
- "Heads-up: {model} has no vision, so the photo will NOT be sent — it is kept, and flows again when you switch to a vision model (Anthropic, OpenAI, Gemini, OpenRouter).": "Внимание: {model} не имеет функции зрения, поэтому фото НЕ будет отправлено. Оно сохранено и отправится при переключении на модель с поддержкой зрения.",
  "Heal Overlapping Faces": "Исправить перекрывающиеся грани",
  "Healed {n} overlapping face(s).": "Исправлено {n} перекрывающихся граней.",
  "Height": "Высота",
@@ -2261,7 +2260,6 @@
  "In sync — stop moving to update": "Синхронизировано — остановитесь для обновления",
  "Blender stopped; it will start again": "Blender остановлен; он будет запущен снова",
  "In sync": "Синхронизировано",
- "Enter sends · Shift+Enter: new line": "Enter для отправки · Shift+Enter: новая строка",
  "Search commands…": "Поиск команд…",
  "Search a command…": "Найти команду…",
  "No results found": "Ничего не найдено",
@@ -3000,5 +2998,11 @@
  "Group them when there are many": "Группировать, если их много",
  "Always in submenus": "Всегда в подменю",
  "Each entry on its own": "Каждый пункт отдельно",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске).",
+ "Enter sends · Shift+Enter: new line · drag an image in or paste it": "Enter отправляет · Shift+Enter: новая строка · перетащите изображение или вставьте его",
+ "Heads-up: {model} has no vision, so the photo will NOT be sent — it is kept, and flows again when you switch to a vision model (Anthropic, OpenAI, Gemini, OpenRouter, or a vision OpenCode Go model like glm-5.3-flash or kimi-k3).": "Внимание: {model} не поддерживает изображения, поэтому фото НЕ будет отправлено — оно сохраняется и будет отправлено при переключении на модель с поддержкой изображений (Anthropic, OpenAI, Gemini, OpenRouter или модель OpenCode Go с поддержкой изображений, например glm-5.3-flash или kimi-k3).",
+ "Model — «Models» in the connection box lists what your key can use": "Модель — «Модели» в поле подключения перечисляет доступные для вашего ключа",
+ "Stop": "Стоп",
+ "Stopped — the answer in flight is discarded.": "Остановлено — ответ в пути отбрасывается.",
+ "pasted image": "вставленное изображение"
 }

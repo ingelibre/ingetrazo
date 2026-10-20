@@ -611,7 +611,6 @@
  "Hairy gray floor carpeting": "毛茸茸的灰色地毯",
  "Half round geometry": "半圆形几何体",
  "Header band": "页眉带",
- "Heads-up: {model} has no vision, so the photo will NOT be sent — it is kept, and flows again when you switch to a vision model (Anthropic, OpenAI, Gemini, OpenRouter).": "注意：{model} 没有视觉功能，所以照片将不会发送 — 它会被保留，当您切换到具有视觉功能的模型时才会再次流动（Anthropic, OpenAI, Gemini, OpenRouter）。",
  "Heal Overlapping Faces": "修复重叠面",
  "Healed {n} overlapping face(s).": "已修复 {n} 个重叠面。",
  "Height": "高度",
@@ -2261,7 +2260,6 @@
  "In sync — stop moving to update": "已同步 — 停下即可更新",
  "Blender stopped; it will start again": "Blender 已停止，将重新启动",
  "In sync": "已同步",
- "Enter sends · Shift+Enter: new line": "回车发送 · Shift+回车：换行",
  "Search commands…": "搜索命令…",
  "Search a command…": "输入命令名称…",
  "No results found": "未找到结果",
@@ -3001,5 +2999,11 @@
  "Group them when there are many": "数量多时分组",
  "Always in submenus": "始终放在子菜单中",
  "Each entry on its own": "每个条目单独显示",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "扩展的条目在右键菜单（立即生效）和扩展菜单（下次启动时生效）中的显示方式。"
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "扩展的条目在右键菜单（立即生效）和扩展菜单（下次启动时生效）中的显示方式。",
+ "Enter sends · Shift+Enter: new line · drag an image in or paste it": "Enter 发送 · Shift+Enter：换行 · 拖入图片或粘贴",
+ "Heads-up: {model} has no vision, so the photo will NOT be sent — it is kept, and flows again when you switch to a vision model (Anthropic, OpenAI, Gemini, OpenRouter, or a vision OpenCode Go model like glm-5.3-flash or kimi-k3).": "提示：{model} 不支持图像，因此照片不会被发送——照片会保留，切换到支持视觉的模型（Anthropic、OpenAI、Gemini、OpenRouter，或支持视觉的 OpenCode Go 模型如 glm-5.3-flash 或 kimi-k3）后会再次发送。",
+ "Model — «Models» in the connection box lists what your key can use": "模型 — 连接框中的「模型」列出你的密钥可用的模型",
+ "Stop": "停止",
+ "Stopped — the answer in flight is discarded.": "已停止——正在传输的回复被丢弃。",
+ "pasted image": "粘贴的图片"
 }

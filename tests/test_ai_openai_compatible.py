@@ -33,3 +33,22 @@ def test_a_hosted_url_with_its_version_is_kept():
 
 def test_the_label_says_any_openai_compatible_service():
     assert "OpenAI-compatible" in ai.PROVIDER_INFO["ollama"][0]
+
+
+def test_opencode_go_is_a_named_provider():
+    """An ``oc_sk_`` key picks the provider on its own and talks to the
+    GO catalog's chat/completions endpoint (/zen/go/v1 — not plain Zen,
+    which is a different service) with a Bearer token. Go requires a
+    stable x-opencode-session header on every request."""
+    assert ai.detect_provider("oc_sk_k") == "opencode"
+    url, headers, _ = ai.build_request(
+        "opencode", "kimi-k2.6", "oc_sk_k", "s",
+        [{"role": "user", "text": "hi"}])
+    assert url == "https://opencode.ai/zen/go/v1/chat/completions"
+    assert headers["Authorization"] == "Bearer oc_sk_k"
+    assert headers["x-opencode-session"]
+
+    url, headers, _ = ai.build_request(
+        "opencode", "kimi-k2.6", "oc_sk_k", "s",
+        [{"role": "user", "text": "hi"}], session_id="conv-1")
+    assert headers["x-opencode-session"] == "conv-1"

@@ -12,7 +12,8 @@ live viewport screenshot, so it SEES what it built and iterates.
 
 Providers follow the IngePresupuestos convention the user already knows:
 paste ONE API key and the provider is detected by its prefix (gsk_ → Groq,
-sk-ant- → Anthropic, AIza → Gemini, sk-or- → OpenRouter, sk- → OpenAI), or
+sk-ant- → Anthropic, AIza → Gemini, sk-or- → OpenRouter, oc_sk_ → OpenCode
+Go, sk- → OpenAI), or
 leave it empty for a local Ollama. Model name and Ollama URL are editable;
 everything persists in QSettings. Network calls run on a worker thread —
 the recipes always execute on the Qt main thread.
@@ -21,20 +22,26 @@ from __future__ import annotations
 
 import base64
 import threading
+import uuid
 
-from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt, Signal
-from PySide6.QtGui import QImageReader, QPalette
+from PySide6.QtCore import (QBuffer, QEvent, QIODevice, QSettings, Qt,
+                            QUrl, Signal)
+from PySide6.QtGui import (QImage, QImageReader, QPalette, QPixmap,
+                           QTextDocument)
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QSplitter,
-    QTextEdit,
+    QTextBrowser,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -43,6 +50,7 @@ from core import ai, ai_recipes
 from core.i18n import tr
 from views.filedialogs import file_dialogs
 from views.fold_section import FoldSection, narrow, wrapping_form
+from views.theme import accent_color, style as theme_style
 
 MAX_ROUNDS = 12
 
@@ -102,10 +110,27 @@ def _asks_to_build(prompt: str) -> bool:
     return any(w in low for w in _BUILD_WORDS)
 
 
+#: Extensions the Photo button, drops and pastes accept as images.
+_IMG_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp")
+
+
+def _drop_image(mime) -> str | None:
+    """The local image file in a drag or a paste, or None. A clipboard
+    bitmap (a screenshot) is not a url — callers check ``hasImage`` too."""
+    for url in mime.urls():
+        if url.isLocalFile() and url.toLocalFile().lower().endswith(_IMG_EXT):
+            return url.toLocalFile()
+    return None
+
+
 class PromptEdit(QPlainTextEdit):
     """The prompt: several lines, Enter sends, Shift+Enter breaks a line.
-    ``text``/``setText`` as the one-line field it replaces had."""
+    ``text``/``setText`` as the one-line field it replaces had. An image
+    dragged in (or pasted from the clipboard) becomes a photo attachment,
+    not text."""
     submitted = Signal()
+    #: A dropped image path (str) or a pasted bitmap (QImage).
+    imageDropped = Signal(object)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -127,6 +152,38 @@ class PromptEdit(QPlainTextEdit):
     def setText(self, text: str) -> None:
         self.setPlainText(text)
 
+    def dragEnterEvent(self, ev) -> None:
+        if _drop_image(ev.mimeData()):
+            ev.acceptProposedAction()
+            return
+        super().dragEnterEvent(ev)
+
+    def dragMoveEvent(self, ev) -> None:
+        if _drop_image(ev.mimeData()):
+            ev.acceptProposedAction()
+            return
+        super().dragMoveEvent(ev)
+
+    def dropEvent(self, ev) -> None:
+        path = _drop_image(ev.mimeData())
+        if path:
+            self.imageDropped.emit(path)
+            ev.acceptProposedAction()
+            return
+        super().dropEvent(ev)
+
+    def insertFromMimeData(self, source) -> None:
+        """Ctrl+V: an image (file or bitmap) attaches instead of pasting
+        its path as text."""
+        path = _drop_image(source)
+        if path:
+            self.imageDropped.emit(path)
+            return
+        if source.hasImage():
+            self.imageDropped.emit(source.imageData())
+            return
+        super().insertFromMimeData(source)
+
 
 class AsistentePanel(QWidget):
     """The assistant as the «AI» tab of the side tray: the connection
@@ -138,6 +195,15 @@ class AsistentePanel(QWidget):
         self._viewport = viewport
         self._scope: dict = {"__name__": "__ai__"}
         self._convo: list[dict] = []
+        #: OpenCode Go asks for a stable session id per conversation
+        #: (x-opencode-session); this panel's convo lives as long as it does.
+        self._session = uuid.uuid4().hex
+        #: Turn generation: bumped on every send and on Stop, so a reply
+        #: from an abandoned turn is discarded instead of landing late.
+        self._gen = 0
+        #: Sent photos, kept so a chat thumbnail can be clicked open again
+        #: (they live in the convo but only scaled JPEGs — enough to view).
+        self._fotos: list[tuple[QImage, str]] = []
         self._busy = False
         self._round = 0
         self._failed = 0
@@ -183,7 +249,9 @@ class AsistentePanel(QWidget):
         self._model.lineEdit().setPlaceholderText(
             tr("model (default per provider)"))
         self._model.lineEdit().editingFinished.connect(self._save_settings)
-        form.addRow(tr("Model:"), self._model)
+        # The combo lives in the bottom bar (added below), not folded
+        # inside the connection box — the model is switched too often to
+        # hide it away.
 
         buttons = QHBoxLayout()
         self._modelos = QPushButton(tr("Models"))
@@ -210,8 +278,15 @@ class AsistentePanel(QWidget):
                self._shots, self._modelos, self._probar)
         layout.addWidget(conn)
 
-        self._chat = QTextEdit()
-        self._chat.setReadOnly(True)
+        # QTextBrowser (a read-only QTextEdit): emits anchorClicked so a
+        # sent photo's thumbnail opens full-size — QTextEdit alone swallows
+        # link clicks for itself.
+        self._chat = QTextBrowser()
+        self._chat.setOpenLinks(False)
+        self._chat.anchorClicked.connect(self._on_chat_link)
+        # A photo dropped on the chat attaches the same as one dropped on
+        # the prompt.
+        self._chat.installEventFilter(self)
         # Inherit the application font. Asking fontconfig for the system
         # FixedFont can crash inside the Flatpak sandbox (#279); naming
         # another face would keep that lookup.
@@ -223,22 +298,43 @@ class AsistentePanel(QWidget):
         bl = QVBoxLayout(bottom)
         bl.setContentsMargins(0, 0, 0, 0)
         chip_row = QHBoxLayout()
-        self._foto_chip = QLabel("")
-        chip_row.addWidget(self._foto_chip, 1)
-        narrow(self._foto_chip)
-        self._foto_quitar = QPushButton("×")   # Latin-1: every font has it (#658)
-        self._foto_quitar.setFixedWidth(28)
+        # Attachment preview: the thumbnail alone carries the frame, and
+        # its × sits as a small circle on the top-right corner — the way
+        # chat apps draw it. A row-wide chip looked like a stray box.
+        self._foto_frame = QWidget()
+        self._foto_frame.setVisible(False)
+        self._foto_chip = QLabel(self._foto_frame)
+        self._foto_chip.move(0, 10)            # room for the circle above
+        self._foto_quitar = QPushButton("×", self._foto_frame)
+        self._foto_quitar.setFixedSize(18, 18)  # Latin-1: every font has it (#658)
         self._foto_quitar.setToolTip(tr("Remove the photo"))
         self._foto_quitar.clicked.connect(self._clear_foto)
-        chip_row.addWidget(self._foto_quitar)
+        chip_row.addWidget(self._foto_frame)
+        chip_row.addStretch(1)
         bl.addLayout(chip_row)
 
         self._input = PromptEdit()
         self._input.setPlaceholderText(
             tr("e.g. draw a 6×4 m house with a gable roof")
-            + "\n" + tr("Enter sends · Shift+Enter: new line"))
+            + "\n" + tr("Enter sends · Shift+Enter: new line · drag an "
+                        "image in or paste it"))
         self._input.submitted.connect(self._on_send)
+        self._input.imageDropped.connect(self._on_drop_image)
         bl.addWidget(self._input, 1)
+
+        # Working indicator: a one-line status plus an indeterminate bar,
+        # shown while a turn is in flight.
+        stat = QHBoxLayout()
+        self._status = QLabel("")
+        self._status.setVisible(False)
+        stat.addWidget(self._status)
+        self._bar = QProgressBar()
+        self._bar.setRange(0, 0)                 # indeterminate
+        self._bar.setTextVisible(False)
+        self._bar.setFixedHeight(6)
+        self._bar.setVisible(False)
+        stat.addWidget(self._bar, 1)
+        bl.addLayout(stat)
 
         split = QSplitter(Qt.Vertical)
         split.setChildrenCollapsible(False)
@@ -257,32 +353,147 @@ class AsistentePanel(QWidget):
             "(give it the real measurements)"))
         self._adjuntar.clicked.connect(self._on_foto)
         row3.addWidget(self._adjuntar)
-        row3.addStretch()
-        self._send = QPushButton(tr("Send"))
-        self._send.clicked.connect(self._on_send)
+        self._model.setToolTip(tr(
+            "Model — «Models» in the connection box lists what your key "
+            "can use"))
+        row3.addWidget(self._model, 1)
+        self._send = QPushButton(
+            self.style().standardIcon(QStyle.SP_ArrowForward), tr("Send"))
+        self._send.clicked.connect(self._on_send_clicked)
         row3.addWidget(self._send)
         layout.addLayout(row3)
         self._clear_foto()
+        self._style_widgets()
+
+    def _style_widgets(self) -> None:
+        """Chrome polish — real stylesheets on the widgets (the chat's
+        rich text supports no CSS worth the name). theme_style re-applies
+        on every theme/accent change, so nothing hardcodes a shade."""
+        # Note: templates go through str.format — CSS braces double up,
+        # only {accent_rgb}/{muted} stay single.
+        theme_style(self._input,
+                    "QPlainTextEdit{{border:1px solid "
+                    "rgba({accent_rgb},0.4); border-radius:8px; "
+                    "padding:6px;}}")
+        theme_style(self._send,
+                    "QPushButton{{background:rgb({accent_rgb}); color:#fff;"
+                    " border:none; border-radius:6px; padding:5px 16px;"
+                    " font-weight:600;}}"
+                    "QPushButton:pressed{{background:rgba({accent_rgb},"
+                    "0.7);}}")
+        theme_style(self._bar,
+                    "QProgressBar{{border:none; background:"
+                    "rgba({accent_rgb},0.18); border-radius:3px;}}"
+                    "QProgressBar::chunk{{background:rgb({accent_rgb});"
+                    " border-radius:3px;}}")
+        theme_style(self._status, "color:{muted}; font-style:italic;")
+        theme_style(self._foto_chip,
+                    "QLabel{{border:1px solid rgba({accent_rgb},0.45);"
+                    " border-radius:6px;}}")
+        theme_style(self._foto_quitar,
+                    "QPushButton{{background:rgb({accent_rgb}); color:#fff;"
+                    " border:none; border-radius:9px; font-weight:700;}}"
+                    "QPushButton:pressed{{background:rgba({accent_rgb},"
+                    "0.7);}}")
+        theme_style(self._model,
+                    "QComboBox{{border:1px solid rgba({accent_rgb},0.4);"
+                    " border-radius:6px; padding:3px 8px;}}")
 
     def focus_input(self) -> None:
         self._input.setFocus(Qt.ShortcutFocusReason)
 
     def _chat_colors(self) -> dict:
-        """Text colors that read on the CURRENT theme — hardcoded
-        light-theme grays vanish on a dark chat background (user report)."""
+        """Text and bubble colors that read on the CURRENT theme —
+        hardcoded light-theme grays vanish on a dark chat background
+        (user report). The user's bubble takes the configured accent."""
         dark = self.palette().color(QPalette.ColorRole.Base).lightness() < 128
+        accent = accent_color()
+        on_accent = "#1a202c" if accent.lightness() > 160 else "#ffffff"
         if dark:
             return {"user": "#7ab7ff", "ai": "#e8eaed", "muted": "#9aa5b1",
-                    "ok": "#7ce0a3", "err": "#ff8f8f"}
+                    "ok": "#7ce0a3", "err": "#ff8f8f",
+                    "user_bg": accent.name(), "user_fg": on_accent,
+                    "ai_bg": "#30363b", "ai_fg": "#e8eaed",
+                    "stripe": accent.name()}
         return {"user": "#2b6cb0", "ai": "#1a202c", "muted": "#718096",
-                "ok": "#2f855a", "err": "#c53030"}
+                "ok": "#2f855a", "err": "#c53030",
+                "user_bg": accent.name(), "user_fg": on_accent,
+                "ai_bg": "#e4e8ec", "ai_fg": "#1a202c",
+                "stripe": accent.name()}
 
     def _append(self, text: str, role: str) -> None:
-        color = self._chat_colors()[role]
-        self._chat.append(f'<pre style="color:{color}; white-space:pre-wrap; '
-                          f'margin:2px">{_esc(text)}</pre>')
+        c = self._chat_colors()
+        if role in ("user", "ai"):
+            # Speech bubbles: the user on the right in the accent colour,
+            # the IA on the left with a thin accent edge — who's talking
+            # reads at a glance. Qt rich text has no border-radius, so a
+            # stripe cell is the polish a rounded corner can't do.
+            side = "right" if role == "user" else "left"
+            bg = c["user_bg"] if role == "user" else c["ai_bg"]
+            fg = c["user_fg"] if role == "user" else c["ai_fg"]
+            body = _esc(text).replace("\n", "<br>")
+            stripe = (f'<td width="3" bgcolor="{c["stripe"]}"></td>'
+                      if role == "ai" else "")
+            self._chat.append(
+                f'<table align="{side}" width="78%" border="0" '
+                f'cellspacing="0" cellpadding="8"><tr>{stripe}'
+                f'<td bgcolor="{bg}"><font color="{fg}">{body}</font></td>'
+                f'</tr></table>')
+        else:
+            body = _esc(text)
+            if role == "muted":
+                body = f"<i>{body}</i>"      # system chatter reads smaller
+            self._chat.append(
+                f'<pre style="color:{c[role]}; white-space:pre-wrap; '
+                f'margin:2px">{body}</pre>')
         self._chat.verticalScrollBar().setValue(
             self._chat.verticalScrollBar().maximum())
+
+    def _append_foto(self, b64: str, mime: str, name: str) -> None:
+        """A sent photo as its own right-side bubble: the thumbnail the
+        model received (the scaled JPEG), clickable to reopen it. The image
+        rides as a QTextDocument resource — ``data:`` URLs are not read."""
+        img = QImage.fromData(base64.b64decode(b64))
+        if img.isNull():
+            self._append(f"[📷 {name}]", "user")
+            return
+        idx = len(self._fotos)
+        self._fotos.append((img, name))
+        self._chat.document().addResource(
+            QTextDocument.ImageResource, QUrl(f"foto:{idx}"), img)
+        c = self._chat_colors()
+        self._chat.append(
+            f'<table align="right" border="0" cellspacing="0" '
+            f'cellpadding="7"><tr><td bgcolor="{c["user_bg"]}">'
+            f'<a href="foto:{idx}"><img src="foto:{idx}" width="180"></a>'
+            f'<br><font size="-1" color="{c["user_fg"]}">{_esc(name)}</font>'
+            f'</td></tr></table>')
+        self._chat.verticalScrollBar().setValue(
+            self._chat.verticalScrollBar().maximum())
+
+    def _on_chat_link(self, url: QUrl) -> None:
+        """A clicked chat thumbnail opens the sent photo full-size."""
+        s = url.toString()
+        if not s.startswith("foto:"):
+            return
+        try:
+            img, name = self._fotos[int(s[5:])]
+        except (ValueError, IndexError):
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle(name)
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lbl = QLabel()
+        screen = self.screen()
+        if screen is not None:
+            avail = screen.availableSize()
+            img = img.scaled(int(avail.width() * 0.85),
+                             int(avail.height() * 0.85),
+                             Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        lbl.setPixmap(QPixmap.fromImage(img))
+        lay.addWidget(lbl)
+        dlg.exec()
 
     # ---- Settings -----------------------------------------------------------
     def _settings(self) -> QSettings:
@@ -427,7 +638,8 @@ class AsistentePanel(QWidget):
             return None
         label, url = ai.PROVIDER_INFO.get(provider, ("", ""))
         prefixes = {"groq": "gsk_", "anthropic": "sk-ant-", "gemini": "AIza",
-                    "openrouter": "sk-or-", "openai": "sk-"}
+                    "openrouter": "sk-or-", "opencode": "oc_sk_",
+                    "openai": "sk-"}
         pre = prefixes.get(provider)
         tail = (tr(" A {name} key starts with «{prefix}».", name=label,
                    prefix=pre) if pre else "")
@@ -471,32 +683,66 @@ class AsistentePanel(QWidget):
             self._attach_photo(path)
 
     def _attach_photo(self, path: str) -> None:
-        encoded = self._encode_photo(path)
-        if encoded is None:
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)      # phone photos carry EXIF rotation
+        image = reader.read()
+        if image.isNull():
             self._append(tr("Could not read the image."), "err")
             return
         # Path(...).name, not a split on "/": a native Windows path
         # (drag-and-drop, a pasted path) put its whole "C:\..." in the chip.
         from pathlib import Path
-        name = Path(path).name
-        self._foto = (*encoded, name)
-        self._foto_chip.setText("📷 " + name)
-        self._foto_chip.setVisible(True)
-        self._foto_quitar.setVisible(True)
+        self._attach_image(image, Path(path).name)
+
+    def _attach_image(self, image, name: str) -> None:
+        """Attach a QImage (from a file, a drag&drop or a pasted clipboard
+        bitmap) and show its thumbnail chip above the prompt."""
+        self._foto = (*self._encode_image(image), name)
+        # Square 80×80 chip, centre-cropped like a phone-gallery
+        # thumbnail — scaling by height left landscape shots too wide.
+        thumb = QPixmap.fromImage(image).scaled(
+            80, 80, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        if thumb.width() > 80 or thumb.height() > 80:
+            thumb = thumb.copy((thumb.width() - 80) // 2,
+                               (thumb.height() - 80) // 2, 80, 80)
+        self._foto_chip.setPixmap(thumb)
+        self._foto_chip.setFixedSize(thumb.size())
+        self._foto_chip.setToolTip(name)
+        # Frame = thumb + a ledge for the circle: it overlaps the corner
+        # by 8 px instead of floating off in the margin.
+        self._foto_frame.setFixedSize(thumb.width() + 10,
+                                      thumb.height() + 10)
+        self._foto_quitar.move(thumb.width() - 8, 0)
+        self._foto_frame.setVisible(True)
         self._append(tr(
             "Photo attached: {name} — it goes with your next message. "
             "Include the real measurements: a photo has none.", name=name),
             "muted")
 
+    def _on_drop_image(self, payload) -> None:
+        """imageDropped: a str path (dragged file) or a bitmap (pasted
+        clipboard image)."""
+        if isinstance(payload, QPixmap):
+            payload = payload.toImage()
+        if isinstance(payload, QImage):
+            self._attach_image(payload, tr("pasted image"))
+        else:
+            self._attach_photo(str(payload))
+
     def _encode_photo(self, path: str) -> tuple[str, str] | None:
-        """(base64, mime) of the photo, EXIF-rotated and scaled down to
-        FOTO_MAX_EDGE, re-encoded as JPEG (a photo as PNG is ~10× the
-        bytes, and the payload rides on every later turn)."""
+        """(base64, mime) of the photo at ``path``, or None when it is not
+        a readable image."""
         reader = QImageReader(path)
         reader.setAutoTransform(True)      # phone photos carry EXIF rotation
         image = reader.read()
         if image.isNull():
             return None
+        return self._encode_image(image)
+
+    def _encode_image(self, image) -> tuple[str, str]:
+        """(base64, mime) of ``image``, EXIF-rotated already, scaled down
+        to FOTO_MAX_EDGE, re-encoded as JPEG (a photo as PNG is ~10× the
+        bytes, and the payload rides on every later turn)."""
         if max(image.width(), image.height()) > self.FOTO_MAX_EDGE:
             if image.width() >= image.height():
                 image = image.scaledToWidth(
@@ -511,8 +757,21 @@ class AsistentePanel(QWidget):
 
     def _clear_foto(self) -> None:
         self._foto = None
-        self._foto_chip.setVisible(False)
-        self._foto_quitar.setVisible(False)
+        self._foto_chip.clear()
+        self._foto_frame.setVisible(False)
+
+    def eventFilter(self, obj, ev) -> bool:
+        # A photo dropped on the chat attaches — the input is a small
+        # target, the chat is the big one.
+        if obj is self._chat and ev.type() in (
+                QEvent.DragEnter, QEvent.DragMove, QEvent.Drop):
+            path = _drop_image(ev.mimeData())
+            if path:
+                if ev.type() == QEvent.Drop:
+                    self._attach_photo(path)
+                ev.acceptProposedAction()
+                return True
+        return super().eventFilter(obj, ev)
 
     # ---- Chat loop ----------------------------------------------------------
     def _on_send(self) -> None:
@@ -528,32 +787,54 @@ class AsistentePanel(QWidget):
             return
         self._input.clear()
         self._save_settings()
-        self._append(f"Tú: {prompt}", "user")
+        self._append(prompt, "user")
         message: dict = {"role": "user", "text": prompt}
         if self._foto is not None:
             b64, mime, name = self._foto
             message["image_b64"] = b64
             message["image_mime"] = mime
-            self._append(f"[📷 {name}]", "user")
+            self._append_foto(b64, mime, name)
             provider, model = self._config()[:2]
             if not ai.supports_vision(provider, model):
                 self._append(tr(
                     "Heads-up: {model} has no vision, so the photo will "
                     "NOT be sent — it is kept, and flows again when you "
                     "switch to a vision model (Anthropic, OpenAI, Gemini, "
-                    "OpenRouter).", model=model), "muted")
+                    "OpenRouter, or a vision OpenCode Go model like "
+                    "glm-5.3-flash or kimi-k3).", model=model), "muted")
             self._clear_foto()
         self._convo.append(message)
         self._round = 0
         self._failed = 0
         self._nudged = False
         self._last_prompt = prompt
+        self._gen += 1
         self._next_turn()
+
+    def _on_send_clicked(self) -> None:
+        """The one button swaps job while the model works: Send → Stop."""
+        if self._busy:
+            self._on_stop()
+        else:
+            self._on_send()
+
+    def _on_stop(self) -> None:
+        """The HTTP turn in flight cannot be killed mid-socket: bump the
+        generation so its reply is discarded on arrival (``_on_reply``
+        drops stale ``gen``) and free the UI right away."""
+        self._gen += 1
+        self._append(tr("Stopped — the answer in flight is discarded."),
+                     "muted")
+        self._finish()
 
     def _next_turn(self) -> None:
         self._busy = True
-        self._send.setEnabled(False)
-        self._append(tr("thinking…"), "muted")
+        self._send.setText(tr("Stop"))
+        self._send.setIcon(self.style().standardIcon(QStyle.SP_MediaStop))
+        self._status.setText(tr("thinking…"))
+        self._status.setVisible(True)
+        self._bar.setVisible(True)
+        gen = self._gen
         provider, model, key, ollama = self._config()
         self._warn_local_load(provider, model)
         convo = ai.compact_messages(ai.slim_messages(
@@ -565,27 +846,32 @@ class AsistentePanel(QWidget):
             # A busy provider (Gemini's 503 «high demand»): say so and
             # wait, instead of ending the recipe at the walls.
             self._reply.emit({"retry": True, "n": n, "total": total,
-                              "wait": wait, "reason": reason})
+                              "wait": wait, "reason": reason, "gen": gen})
 
         def worker() -> None:
             try:
                 text = ai.chat(provider, model, key, SYSTEM_PROMPT, convo,
                                ollama_url=ollama, max_tokens=budget,
-                               on_retry=on_retry)
-                self._reply.emit({"ok": True, "text": text})
+                               on_retry=on_retry, session_id=self._session)
+                self._reply.emit({"ok": True, "text": text, "gen": gen})
             except Exception as exc:  # noqa: BLE001 — shown in the chat
-                self._reply.emit({"ok": False, "error": str(exc)})
+                self._reply.emit({"ok": False, "error": str(exc),
+                                  "gen": gen})
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_reply(self, msg: dict) -> None:
+        if msg.get("gen") is not None and msg["gen"] != self._gen:
+            return          # a stopped turn's late reply — discard
         if msg.get("retry"):
             reason = str(msg.get("reason", ""))
             short = reason.split(":", 1)[0]
-            self._append(tr(
+            status = tr(
                 "The provider is busy ({why}) — retry {n} of {total} in {wait} s…",
                 why=short, n=msg.get("n"), total=msg.get("total"),
-                wait=int(msg.get("wait", 0))), "muted")
+                wait=int(msg.get("wait", 0)))
+            self._status.setText(status)
+            self._append(status, "muted")
             return
         if msg.get("modelos"):
             self._modelos.setEnabled(True)
@@ -628,7 +914,7 @@ class AsistentePanel(QWidget):
         self._local_warm = True
         text = ai.strip_thoughts(msg["text"])
         self._convo.append({"role": "assistant", "text": text})
-        self._append(f"IA: {text}", "ai")
+        self._append(text, "ai")
         code = ai.extract_code(text)
         if code is None and ai.truncated_code(text):
             # Cut by max_tokens mid-recipe: half a block must neither run
@@ -734,6 +1020,10 @@ class AsistentePanel(QWidget):
     def _finish(self) -> None:
         self._busy = False
         self._send.setEnabled(True)
+        self._send.setText(tr("Send"))
+        self._send.setIcon(self.style().standardIcon(QStyle.SP_ArrowForward))
+        self._status.setVisible(False)
+        self._bar.setVisible(False)
 
     def _screenshot_b64(self) -> str | None:
         try:

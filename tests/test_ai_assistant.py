@@ -25,6 +25,7 @@ def test_detect_provider_by_key_prefix():
     assert ai.detect_provider("sk-ant-xxx") == "anthropic"
     assert ai.detect_provider("AIzaXXX") == "gemini"
     assert ai.detect_provider("sk-or-xxx") == "openrouter"
+    assert ai.detect_provider("oc_sk_xxx") == "opencode"
     assert ai.detect_provider("sk-xxx") == "openai"
     assert ai.detect_provider("") == "ollama"
 
@@ -210,6 +211,12 @@ def test_supports_vision_by_provider_or_model():
     assert ai.supports_vision("ollama", "qwen2.5-vl-7b")
     assert not ai.supports_vision("ollama", "llama3.2")
     assert not ai.supports_vision("groq", "llama-3.3-70b-versatile")
+    # OpenCode Go, probed live 2026-10-20: flash takes images, plain
+    # glm-5.3 does not — the tags must stay that specific.
+    assert ai.supports_vision("opencode", "glm-5.3-flash")
+    assert ai.supports_vision("opencode", "kimi-k3")
+    assert not ai.supports_vision("opencode", "glm-5.3")
+    assert not ai.supports_vision("opencode", "kimi-k2.6")
 
 
 def test_slim_messages_keeps_photo_and_latest_screenshot_only():
@@ -567,6 +574,116 @@ def test_encode_photo_rejects_garbage(tmp_path):
         win.close()
 
 
+def test_send_becomes_stop_and_a_stopped_turn_is_discarded(monkeypatch):
+    """While a turn runs, Send turns into Stop; stopping frees the UI at
+    once and the late reply lands nowhere (stale gen is dropped)."""
+    import threading
+    from plugins.ai_assistant import AsistenteDialog
+    from views.main_window import MainWindow
+    gate = threading.Event()
+
+    def slow_chat(*a, **k):
+        gate.wait(10)
+        return "late answer"
+
+    monkeypatch.setattr(ai, "chat", slow_chat)
+    win = MainWindow()
+    try:
+        dlg = AsistenteDialog(win.viewport, parent=win)
+        dlg._provider.setCurrentIndex(0)
+        dlg._key.setText("sk-ant-test")
+        dlg._input.setText("hola")
+        dlg._on_send()
+        assert dlg._busy
+        assert dlg._send.text() == "Stop"
+        assert dlg._status.isVisibleTo(dlg)              # thinking…
+        dlg._on_stop()
+        assert not dlg._busy
+        assert dlg._send.text() == "Send"
+        dlg._on_reply({"ok": True, "text": "late answer",
+                       "gen": dlg._gen - 1})
+        assert len(dlg._convo) == 1                    # only the user turn
+        dlg._on_reply({"ok": True, "text": "fresh", "gen": dlg._gen})
+        assert len(dlg._convo) == 2                    # a current one lands
+    finally:
+        gate.set()
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_dropped_or_pasted_image_attaches_with_thumbnail(tmp_path):
+    """An image dragged onto the prompt (or pasted from the clipboard)
+    attaches like Photo… — and the chip shows a thumbnail preview."""
+    from PySide6.QtCore import QMimeData, QUrl
+    from PySide6.QtGui import QImage
+    from pathlib import Path
+    from plugins.ai_assistant import AsistenteDialog, _drop_image
+    from views.main_window import MainWindow
+    photo = tmp_path / "pieza.png"
+    assert QImage(64, 32, QImage.Format_RGB32).save(str(photo))
+    win = MainWindow()
+    try:
+        dlg = AsistenteDialog(win.viewport, parent=win)
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(photo))])
+        path = _drop_image(mime)
+        assert Path(path) == photo     # toLocalFile() uses / on Windows
+        dlg._on_drop_image(path)
+        assert dlg._foto is not None and dlg._foto[2] == "pieza.png"
+        assert dlg._foto_chip.isVisibleTo(dlg)
+        assert not dlg._foto_chip.pixmap().isNull()      # the thumbnail
+        dlg._clear_foto()
+        assert dlg._foto_chip.pixmap().isNull()
+
+        # A pasted clipboard bitmap (no file behind it) attaches too.
+        dlg._on_drop_image(QImage(20, 10, QImage.Format_RGB32))
+        assert dlg._foto is not None
+
+        # Non-image drags do not pretend to be photos.
+        mime2 = QMimeData()
+        other = tmp_path / "x.txt"
+        other.write_text("hi")
+        mime2.setUrls([QUrl.fromLocalFile(str(other))])
+        assert _drop_image(mime2) is None
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_sent_photo_bubble_is_clickable(tmp_path, monkeypatch):
+    """A sent photo lands in the chat as a thumbnail resource; clicking
+    its link opens the viewer dialog with the full image."""
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QImage, QTextDocument
+    from PySide6.QtWidgets import QDialog
+    from plugins.ai_assistant import AsistenteDialog
+    from views.main_window import MainWindow
+    photo = tmp_path / "pieza.png"
+    assert QImage(64, 32, QImage.Format_RGB32).save(str(photo))
+    win = MainWindow()
+    try:
+        dlg = AsistenteDialog(win.viewport, parent=win)
+        b64, mime = dlg._encode_photo(str(photo))
+        dlg._append_foto(b64, mime, "pieza.png")
+        assert len(dlg._fotos) == 1
+        # The thumbnail is a document resource under foto:0.
+        res = dlg._chat.document().resource(
+            QTextDocument.ImageResource, QUrl("foto:0"))
+        assert isinstance(res, QImage) and not res.isNull()
+        # Clicking it opens a dialog (exec is patched — offscreen).
+        opened = []
+        monkeypatch.setattr(QDialog, "exec",
+                            lambda self: opened.append(self.windowTitle()))
+        dlg._on_chat_link(QUrl("foto:0"))
+        assert opened == ["pieza.png"]
+        dlg._on_chat_link(QUrl("foto:9"))          # out of range: no crash
+        dlg._on_chat_link(QUrl("https://x"))       # foreign links ignored
+        assert len(opened) == 1
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def test_user_agent_defeats_cloudflare_and_headers_carry_it():
     # Groq sits behind Cloudflare, which rejects urllib's default agent with
     # HTTP 403 error 1010 (the user's first real key hit it).
@@ -899,7 +1016,8 @@ def test_openai_asks_for_max_completion_tokens():
     body = json.loads(payload)
     assert body["max_completion_tokens"] == 8192
     assert "max_tokens" not in body
-    for provider in ("groq", "gemini", "openrouter", "deepseek", "ollama"):
+    for provider in ("groq", "gemini", "openrouter", "deepseek", "opencode",
+                     "ollama"):
         _u, _h, payload = ai.build_request(provider, "m", "k", "SYS", msgs,
                                            max_tokens=8192)
         body = json.loads(payload)

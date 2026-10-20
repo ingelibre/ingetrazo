@@ -611,7 +611,6 @@
  "Hairy gray floor carpeting": "Karpet lantai abu-abu berbulu",
  "Half round geometry": "Geometri setengah lingkaran",
  "Header band": "Pita header",
- "Heads-up: {model} has no vision, so the photo will NOT be sent — it is kept, and flows again when you switch to a vision model (Anthropic, OpenAI, Gemini, OpenRouter).": "Perhatian: {model} tidak memiliki kemampuan visi, jadi foto TIDAK akan dikirim — foto tetap tersimpan dan akan dikirim lagi saat Anda beralih ke model dengan kemampuan visi (Anthropic, OpenAI, Gemini, OpenRouter).",
  "Heal Overlapping Faces": "Perbaiki Bidang Tumpang Tindih",
  "Healed {n} overlapping face(s).": "{n} bidang tumpang tindih diperbaiki.",
  "Height": "Tinggi",
@@ -2440,7 +2439,6 @@
  "In sync — stop moving to update": "Sinkron — berhenti bergerak untuk memperbarui",
  "Blender stopped; it will start again": "Blender berhenti; akan dijalankan lagi",
  "In sync": "Sinkron",
- "Enter sends · Shift+Enter: new line": "Enter mengirim · Shift+Enter: baris baru",
  "Search commands…": "Cari perintah…",
  "Search a command…": "Cari sebuah perintah…",
  "No results found": "Tidak ada hasil ditemukan",
@@ -3003,5 +3001,11 @@
  "Group them when there are many": "Kelompokkan jika banyak",
  "Always in submenus": "Selalu dalam submenu",
  "Each entry on its own": "Setiap entri terpisah",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi).",
+ "Enter sends · Shift+Enter: new line · drag an image in or paste it": "Enter mengirim · Shift+Enter: baris baru · seret gambar ke sini atau tempel",
+ "Heads-up: {model} has no vision, so the photo will NOT be sent — it is kept, and flows again when you switch to a vision model (Anthropic, OpenAI, Gemini, OpenRouter, or a vision OpenCode Go model like glm-5.3-flash or kimi-k3).": "Perhatian: {model} tidak memiliki kemampuan visi, jadi foto TIDAK akan dikirim — foto tetap tersimpan dan akan dikirim lagi saat Anda beralih ke model dengan kemampuan visi (Anthropic, OpenAI, Gemini, OpenRouter, atau model OpenCode Go berkemampuan visi seperti glm-5.3-flash atau kimi-k3).",
+ "Model — «Models» in the connection box lists what your key can use": "Model — «Models» di kotak koneksi mencantumkan yang dapat dipakai kunci Anda",
+ "Stop": "Berhenti",
+ "Stopped — the answer in flight is discarded.": "Berhenti — jawaban yang sedang berjalan dibuang.",
+ "pasted image": "gambar yang ditempel"
 }

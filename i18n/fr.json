@@ -611,7 +611,6 @@
  "Hairy gray floor carpeting": "Moquette grise à poils longs",
  "Half round geometry": "Papier peint à demi-cercles",
  "Header band": "Bandeau d'en-tête",
- "Heads-up: {model} has no vision, so the photo will NOT be sent — it is kept, and flows again when you switch to a vision model (Anthropic, OpenAI, Gemini, OpenRouter).": "Attention : {model} n'a pas de vision, la photo ne sera donc PAS envoyée — elle est conservée et repartira dès que vous passerez à un modèle avec vision (Anthropic, OpenAI, Gemini, OpenRouter).",
  "Heal Overlapping Faces": "Réparer les faces superposées",
  "Healed {n} overlapping face(s).": "{n} face(s) superposée(s) réparée(s).",
  "Height": "Hauteur",
@@ -2257,7 +2256,6 @@
  "In sync — stop moving to update": "Synchronisé — arrêtez de bouger pour mettre à jour",
  "Blender stopped; it will start again": "Blender s'est arrêté ; il redémarrera",
  "In sync": "Synchronisé",
- "Enter sends · Shift+Enter: new line": "Entrée envoie · Maj+Entrée : nouvelle ligne",
  "Search commands…": "Rechercher des commandes…",
  "Search a command…": "Rechercher une commande…",
  "No results found": "Aucun résultat",
@@ -3000,5 +2998,11 @@
  "Group them when there are many": "Les regrouper quand il y en a beaucoup",
  "Always in submenus": "Toujours dans des sous-menus",
  "Each entry on its own": "Chaque entrée séparément",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Comment les entrées des extensions s'affichent dans le menu du clic droit (immédiatement) et dans le menu Extensions (au prochain démarrage)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Comment les entrées des extensions s'affichent dans le menu du clic droit (immédiatement) et dans le menu Extensions (au prochain démarrage).",
+ "Enter sends · Shift+Enter: new line · drag an image in or paste it": "Entrée envoie · Maj+Entrée : nouvelle ligne · glissez une image ou collez-la",
+ "Heads-up: {model} has no vision, so the photo will NOT be sent — it is kept, and flows again when you switch to a vision model (Anthropic, OpenAI, Gemini, OpenRouter, or a vision OpenCode Go model like glm-5.3-flash or kimi-k3).": "Attention : {model} n'a pas de vision, la photo ne sera donc PAS envoyée — elle est conservée et repartira dès que vous passerez à un modèle avec vision (Anthropic, OpenAI, Gemini, OpenRouter, ou un modèle OpenCode Go avec vision comme glm-5.3-flash ou kimi-k3).",
+ "Model — «Models» in the connection box lists what your key can use": "Modèle — « Modèles » dans la zone de connexion liste ceux que votre clé peut utiliser",
+ "Stop": "Arrêter",
+ "Stopped — the answer in flight is discarded.": "Arrêté — la réponse en cours est ignorée.",
+ "pasted image": "image collée"
 }

@@ -609,7 +609,6 @@
  "Hairy gray floor carpeting": "Moquette grigia a pelo lungo",
  "Half round geometry": "Geometria a semicerchi",
  "Header band": "Banda di intestazione",
- "Heads-up: {model} has no vision, so the photo will NOT be sent — it is kept, and flows again when you switch to a vision model (Anthropic, OpenAI, Gemini, OpenRouter).": "Attenzione: {model} non supporta le immagini, quindi la foto NON verrà inviata — viene conservata e tornerà a essere inviata quando passi a un modello con visione (Anthropic, OpenAI, Gemini, OpenRouter).",
  "Heal Overlapping Faces": "Ripara facce sovrapposte",
  "Healed {n} overlapping face(s).": "Riparate {n} facce sovrapposte.",
  "Height": "Altezza",
@@ -2241,7 +2240,6 @@
  "In sync — stop moving to update": "Sincronizzato — fermati per aggiornare",
  "Blender stopped; it will start again": "Blender si è fermato; ripartirà",
  "In sync": "Sincronizzato",
- "Enter sends · Shift+Enter: new line": "Invio invia · Maiusc+Invio: nuova riga",
  "Paste in Place": "Incolla sul posto",
  "Pasted in place.": "Incollato sul posto.",
  "Search commands…": "Cerca comandi…",
@@ -3001,5 +2999,11 @@
  "Group them when there are many": "Raggrupparle quando sono molte",
  "Always in submenus": "Sempre in sottomenu",
  "Each entry on its own": "Ogni voce separata",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Come appaiono le voci delle estensioni nel menu del tasto destro (subito) e nel menu Estensioni (al prossimo avvio)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Come appaiono le voci delle estensioni nel menu del tasto destro (subito) e nel menu Estensioni (al prossimo avvio).",
+ "Enter sends · Shift+Enter: new line · drag an image in or paste it": "Invio invia · Maiusc+Invio: nuova riga · trascina un'immagine o incollala",
+ "Heads-up: {model} has no vision, so the photo will NOT be sent — it is kept, and flows again when you switch to a vision model (Anthropic, OpenAI, Gemini, OpenRouter, or a vision OpenCode Go model like glm-5.3-flash or kimi-k3).": "Attenzione: {model} non supporta le immagini, quindi la foto NON verrà inviata — viene conservata e tornerà a essere inviata quando passi a un modello con visione (Anthropic, OpenAI, Gemini, OpenRouter, o un modello OpenCode Go con visione come glm-5.3-flash o kimi-k3).",
+ "Model — «Models» in the connection box lists what your key can use": "Modello — «Modelli» nella casella di connessione elenca quelli utilizzabili con la tua chiave",
+ "Stop": "Ferma",
+ "Stopped — the answer in flight is discarded.": "Fermato — la risposta in arrivo viene scartata.",
+ "pasted image": "immagine incollata"
 }
