@@ -59,6 +59,7 @@ jobs:
           VER=$(grep -m1 '^runtime-version:' packaging/flatpak/com.ingetrazo.IngeTrazo.yml | tr -d "'\"" | awk '{print $2}')
           echo "runtime=$RUNTIME//$VER  sdk=$SDK//$VER"
           flatpak install --user --noninteractive flathub "$RUNTIME//$VER" "$SDK//$VER"
+          flatpak install --user --noninteractive flathub "org.freedesktop.Sdk.Extension.rust-stable//$VER"
 
       - name: The metainfo must name the version being shipped
         run: |

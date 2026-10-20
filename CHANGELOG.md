@@ -4,6 +4,13 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+- **Flatpak Rust engine:** the bundle now builds and includes the native
+  module, so the experimental engine can be enabled in Preferences.
+  Packaging checks reject a missing or unloadable engine before export.
+
 ## [0.5.9] — 2026-10-19
 
 **Motor Rust experimental, modelos enormes mucho más fluidos y una semana
