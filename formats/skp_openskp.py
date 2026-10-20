@@ -911,8 +911,9 @@ def _is_empty_model(model, skp_path, legacy_era: bool) -> bool:
         start = data.find(b"PK\x03\x04")
         if start < 0:
             return False
+        from core import zip_limits
         with zipfile.ZipFile(io.BytesIO(data[start:])) as zf:
-            png = zf.read("meta/model_thumbnail.png")
+            png = zip_limits.read(zf, "meta/model_thumbnail.png")
     except (OSError, KeyError, zipfile.BadZipFile):
         return False
     img = QImage.fromData(png)

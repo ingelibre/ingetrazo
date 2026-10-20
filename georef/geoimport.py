@@ -91,12 +91,13 @@ def parse_kml(text: str) -> list[GeoFeature]:
 
 def parse_kmz(path: Path) -> list[GeoFeature]:
     """Parse a KMZ (zipped KML): the archive's first ``.kml`` entry."""
+    from core import zip_limits
     with zipfile.ZipFile(path) as zf:
         names = [n for n in zf.namelist() if n.lower().endswith(".kml")]
         if not names:
             return []
         name = "doc.kml" if "doc.kml" in names else names[0]
-        return parse_kml(zf.read(name).decode("utf-8", "replace"))
+        return parse_kml(zip_limits.read(zf, name).decode("utf-8", "replace"))
 
 
 def parse_geojson(text: str) -> list[GeoFeature]:

@@ -74,7 +74,9 @@ def decode(data: bytes) -> dict | None:
     from formats import igz
 
     try:
+        from core import zip_limits
         with zipfile.ZipFile(io.BytesIO(bytes(data))) as z:
+            zip_limits.check(z, "the clipboard")
             head = json.loads(z.read("clip.json"))
             doc = z.read("scene.igz")
     except (zipfile.BadZipFile, KeyError, ValueError):

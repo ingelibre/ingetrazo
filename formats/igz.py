@@ -961,7 +961,15 @@ def _read_document(path: Path, pump=None):
     if not raw.startswith(_ZIP_MAGIC):
         return _parse_json(raw.decode("utf-8"), pump), None
     import zipfile
+    from core import zip_limits
     archive = zipfile.ZipFile(path)
+    try:
+        # Every later read (geometry blocks, textures, the survey) is from
+        # this archive: one check covers them all.
+        zip_limits.check(archive, path.name)
+    except zipfile.BadZipFile:
+        archive.close()
+        raise
     try:
         data = _parse_json(archive.read(_DOC_ENTRY).decode("utf-8"), pump)
     except KeyError:
