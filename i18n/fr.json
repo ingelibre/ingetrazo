@@ -3000,5 +3000,14 @@
  "Group them when there are many": "Les regrouper quand il y en a beaucoup",
  "Always in submenus": "Toujours dans des sous-menus",
  "Each entry on its own": "Chaque entrée séparément",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Comment les entrées des extensions s'affichent dans le menu du clic droit (immédiatement) et dans le menu Extensions (au prochain démarrage)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Comment les entrées des extensions s'affichent dans le menu du clic droit (immédiatement) et dans le menu Extensions (au prochain démarrage).",
+ "Material name": "Nom du matériau",
+ "Rename the active material — on every face that wears it. The library keeps its own name.": "Renommer le matériau actif — sur toutes les faces qui le portent. La bibliothèque garde son nom.",
+ "Change the active colour — on every face that wears it": "Changer la couleur active — sur toutes les faces qui la portent",
+ "(modified)": "(modifié)",
+ "There is already a material called '{name}'": "Il existe déjà un matériau nommé « {name} »",
+ "Material '{old}' is now '{name}' on every face that wears it": "Le matériau « {old} » s'appelle maintenant « {name} » sur toutes les faces qui le portent",
+ "Rename material": "Renommer le matériau",
+ "New name:": "Nouveau nom :",
+ "Active material named '{name}' — click faces to paint it": "Matériau actif nommé « {name} » — cliquez sur des faces pour le peindre"
 }

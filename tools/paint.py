@@ -88,6 +88,21 @@ def push_recent(entries: list, entry: dict, cap: int = RECENT_MAX) -> list:
     return [entry] + rest[:max(cap - 1, 0)]
 
 
+def rename_recent(entries: list, old: str, stamp: dict) -> list:
+    """``entries`` with every one named *old* now wearing *stamp* (the
+    new material's face attrs): a material renamed or recoloured in the
+    model is not offered back under its old name and colour."""
+    out = []
+    for e in entries:
+        if e.get("mat") == old:
+            e = {k: v for k, v in e.items()
+                 if k not in ("mat", "color", "texture", "opacity")}
+            e.update({k: (list(v) if isinstance(v, tuple) else v)
+                      for k, v in stamp.items()})
+        out.append(e)
+    return out
+
+
 def _face_plane(face) -> tuple:
     """``(unit normal, offset)`` of the face's plane."""
     from PySide6.QtGui import QVector3D

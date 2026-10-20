@@ -176,3 +176,14 @@ def material_sig(material):
             (tex.get("path"), tex.get("sw"), tex.get("sh"), tex.get("rot"))
             if isinstance(tex, dict) else None,
             material.get("opacity"), material.get("mat"))
+
+
+def free_name(base: str, taken) -> str:
+    """*base*, or ``"base (2)"``, ``"base (3)"``… — the first that is not
+    in *taken* (a registry dict or any container of names)."""
+    name = base
+    n = 2
+    while name in taken:
+        name = f"{base} ({n})"
+        n += 1
+    return name

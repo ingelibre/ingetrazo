@@ -3000,5 +3000,14 @@
  "Group them when there are many": "Группировать, если их много",
  "Always in submenus": "Всегда в подменю",
  "Each entry on its own": "Каждый пункт отдельно",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске).",
+ "Material name": "Название материала",
+ "Rename the active material — on every face that wears it. The library keeps its own name.": "Переименовать активный материал — на всех гранях, где он есть. Библиотека сохраняет своё название.",
+ "Change the active colour — on every face that wears it": "Изменить активный цвет — на всех гранях, где он есть",
+ "(modified)": "(изменён)",
+ "There is already a material called '{name}'": "Материал «{name}» уже существует",
+ "Material '{old}' is now '{name}' on every face that wears it": "Материал «{old}» теперь называется «{name}» на всех гранях, где он есть",
+ "Rename material": "Переименовать материал",
+ "New name:": "Новое название:",
+ "Active material named '{name}' — click faces to paint it": "Активный материал «{name}» — щёлкните по граням, чтобы покрасить"
 }

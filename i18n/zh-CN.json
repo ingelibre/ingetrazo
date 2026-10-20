@@ -3001,5 +3001,14 @@
  "Group them when there are many": "数量多时分组",
  "Always in submenus": "始终放在子菜单中",
  "Each entry on its own": "每个条目单独显示",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "扩展的条目在右键菜单（立即生效）和扩展菜单（下次启动时生效）中的显示方式。"
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "扩展的条目在右键菜单（立即生效）和扩展菜单（下次启动时生效）中的显示方式。",
+ "Material name": "材质名称",
+ "Rename the active material — on every face that wears it. The library keeps its own name.": "重命名当前材质——所有使用它的面都会改变。材质库保留原名。",
+ "Change the active colour — on every face that wears it": "更改当前颜色——所有使用它的面都会改变",
+ "(modified)": "（已修改）",
+ "There is already a material called '{name}'": "已有名为“{name}”的材质",
+ "Material '{old}' is now '{name}' on every face that wears it": "材质“{old}”在所有使用它的面上已改名为“{name}”",
+ "Rename material": "重命名材质",
+ "New name:": "新名称：",
+ "Active material named '{name}' — click faces to paint it": "当前材质名为“{name}”——点击面进行涂色"
 }

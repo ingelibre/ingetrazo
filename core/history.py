@@ -1052,7 +1052,12 @@ class RestampMaterialCommand(Command):
     wear it too, on the container (issue #155, @fafecm: the loose face
     changed colour, the painted box beside it stayed the old one). Undo
     restores the registry entry, each face's previous values and each
-    container's previous paint exactly."""
+    container's previous paint exactly.
+
+    A ``new_material`` with ANOTHER name renames as it restamps: the old
+    entry leaves the registry, the new one takes its place and every face
+    and container now says the new name. Only the model changes — a
+    library colour renamed here stays in the library as it was."""
 
     def __init__(self, name, new_material) -> None:
         self._name = name
@@ -1060,8 +1065,9 @@ class RestampMaterialCommand(Command):
         self._old_material = None
         self._old_faces: Optional[list] = None   # (face, {key: old value})
         self._old_groups: Optional[list] = None  # (container, old material)
+        self._old_target = None   # a renamed-onto entry, put back by undo
 
-    _KEYS = ("color", "texture", "opacity")
+    _KEYS = ("mat", "color", "texture", "opacity")
 
     def _targets(self, scene):
         # Nested placements included: walking scene.groups as a flat list
@@ -1107,7 +1113,10 @@ class RestampMaterialCommand(Command):
                 for f in self._targets(scene)]
             self._old_groups = [(g, g.material)
                                 for g in self._painted_groups(scene)]
-        scene.materials[self._name] = self._new
+            self._old_target = scene.materials.get(self._new.name)
+        if self._new.name != self._name:
+            scene.materials.pop(self._name, None)
+        scene.materials[self._new.name] = self._new
         for f, _old in self._old_faces:
             for k in self._KEYS:
                 if k in stamp:
@@ -1120,6 +1129,11 @@ class RestampMaterialCommand(Command):
         scene.version += 1
 
     def undo(self, scene) -> None:
+        if self._new.name != self._name:
+            if self._old_target is None:
+                scene.materials.pop(self._new.name, None)
+            else:
+                scene.materials[self._new.name] = self._old_target
         if self._old_material is None:
             scene.materials.pop(self._name, None)
         else:

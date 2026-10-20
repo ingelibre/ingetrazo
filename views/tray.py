@@ -76,6 +76,32 @@ _RAL_FILE = app_root() / "resources" / "colors" / "ral.json"
 _SWATCH = 44  # swatch pixel size
 
 
+def _ral_rgb(name: str):
+    """The library colour of a material named after a RAL colour
+    («RAL 7035 Gris claro», in either language), or None."""
+    if not name or not name.startswith("RAL "):
+        return None
+    global _RAL_BY_CODE
+    if _RAL_BY_CODE is None:
+        import json
+        _RAL_BY_CODE = {}
+        if _RAL_FILE.exists():
+            data = json.loads(_RAL_FILE.read_text(encoding="utf-8"))
+            for fam in data.get("families", []):
+                for c in fam.get("colors", []):
+                    _RAL_BY_CODE[c["code"]] = c
+    entry = _RAL_BY_CODE.get(" ".join(name.split()[:2]))
+    if entry is None:
+        return None
+    if name not in ("%s %s" % (entry["code"], entry.get("name", "")),
+                    "%s %s" % (entry["code"], entry.get("name_es", ""))):
+        return None
+    return tuple(entry["rgb"][:3])
+
+
+_RAL_BY_CODE = None
+
+
 def _ral_name(entry: dict) -> str:
     """The RAL name in the language the app is running in."""
     from core.i18n import current_language
@@ -1924,6 +1950,38 @@ class MaterialsPanel(QWidget):
         default_btn.clicked.connect(self._apply_default)
         root.addLayout(row)
 
+        # The active material's NAME and colour, on a line of their own
+        # under the swatch: in the «Active:» flow they pushed the Default
+        # swatch onto a second line and sat lower than the 44 px swatches.
+        # A material already in the model is renamed/recoloured on every
+        # face that wears it (one undo); the library itself never changes —
+        # a library colour edited here becomes a new material of the model.
+        name_row = QHBoxLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setSpacing(4)
+        self._name_edit = QLineEdit()
+        self._name_edit.setPlaceholderText(tr("Material name"))
+        self._name_edit.setToolTip(tr(
+            "Rename the active material — on every face that wears it. "
+            "The library keeps its own name."))
+        self._name_edit.editingFinished.connect(self._on_name_edited)
+        name_row.addWidget(self._name_edit, 1)
+        self._color_btn = QPushButton()
+        side = self._name_edit.sizeHint().height()
+        self._color_btn.setFixedSize(side, side)
+        self._color_btn.setToolTip(tr(
+            "Change the active colour — on every face that wears it"))
+        self._color_btn.clicked.connect(self._on_pick_active_color)
+        name_row.addWidget(self._color_btn)
+        # As long as the «Recent» row is when full, field and button
+        # together: a bar the width of the tray read as out of place.
+        cell = _swatch_button(_color_pixmap((1, 1, 1)),
+                              "").sizeHint().width()
+        recent_w = RECENT_MAX * cell + (RECENT_MAX - 1) * 2
+        self._name_edit.setMaximumWidth(max(recent_w - side - 4, 80))
+        name_row.addStretch(0)   # only what the field cannot take
+        root.addLayout(name_row)
+
         # The usual "edit material": tile width/height + rotation, tucked
         # behind an Edit toggle so the panel stays clean. Edits the active
         # texture for future paints, and Apply re-stamps the selected
@@ -2344,6 +2402,11 @@ class MaterialsPanel(QWidget):
         scene = self._window.viewport.scene
         mat = scene.materials.get(name)
         menu = QMenu(button)
+        if mat is not None:
+            from PySide6.QtCore import QTimer
+            menu.addAction(tr("Rename…"),
+                           lambda: QTimer.singleShot(
+                               0, lambda: self._ask_rename(name)))
         if color is not None:
             # The dialog opens once the menu has closed: a modal opened
             # inside the menu's own event loop came back without a colour.
@@ -2394,16 +2457,128 @@ class MaterialsPanel(QWidget):
             tr("Edit material: {name}", name=name))
         if not chosen.isValid():
             return
+        rgb = (chosen.redF(), chosen.greenF(), chosen.blueF())
         new_mat = Material(
-            name, color=(chosen.redF(), chosen.greenF(), chosen.blueF()),
+            self._recoloured_name(name, rgb), color=rgb,
             opacity=existing.opacity if existing else None,
             finish=existing.finish if existing else None)
+        self._restamp(name, new_mat)
+
+    # ---- Rename / recolour in the model ----------------------------------
+    def _recoloured_name(self, name: str, rgb) -> str:
+        """The name a material keeps when it takes colour *rgb*: its own —
+        unless it is a library colour, whose name is a reference a painter
+        buys by («RAL 7035»). That one would be a lie in another colour, so
+        the edit becomes a new material, «RAL 7035 … (modified)», and the
+        library keeps its colour under its name."""
+        ref = _ral_rgb(name)
+        if ref is None or all(abs(a - b) < 0.002
+                              for a, b in zip(ref, rgb[:3])):
+            return name
+        from core.materials import free_name
+        return free_name("%s %s" % (name, tr("(modified)")),
+                         self._window.viewport.scene.materials)
+
+    def _restamp(self, old_name: str, new_mat) -> bool:
+        """Put *new_mat* on every face and group wearing *old_name* — a new
+        recipe, a new name, or both — in one undoable step. A name another
+        material of the model already has is refused: that would merge
+        two materials, not rename one."""
+        from core.history import RestampMaterialCommand
+        from tools.paint import rename_recent
+        scene = self._window.viewport.scene
+        if new_mat.name != old_name and new_mat.name in scene.materials:
+            self._window.statusBar().showMessage(tr(
+                "There is already a material called '{name}'",
+                name=new_mat.name), 4000)
+            return False
         self._window.viewport.history.execute(
-            RestampMaterialCommand(name, new_mat))
+            RestampMaterialCommand(old_name, new_mat))
         self._window.viewport.notify_scene_changed()
-        self._window.statusBar().showMessage(
-            tr("Material '{name}' updated on every face that wears it",
-               name=name), 3000)
+        active = PaintTool.current_material
+        if active is not None and active.name == old_name:
+            PaintTool.current_material = new_mat
+            if new_mat.color is not None and not PaintTool.current_texture:
+                PaintTool.current_color = tuple(new_mat.color)
+        recent = rename_recent(PaintTool.recent, old_name,
+                               new_mat.face_attrs())
+        if recent != PaintTool.recent:
+            PaintTool.recent = recent
+            self.recent_materials_changed()
+        self.refresh_in_model()
+        self._refresh_preview()
+        if new_mat.name != old_name:
+            msg = tr("Material '{old}' is now '{name}' on every face that "
+                     "wears it", old=old_name, name=new_mat.name)
+        else:
+            msg = tr("Material '{name}' updated on every face that wears it",
+                     name=old_name)
+        self._window.statusBar().showMessage(msg, 3000)
+        return True
+
+    def _renamed(self, old_name: str, new_name: str) -> bool:
+        """Rename the model's material *old_name* to *new_name*."""
+        from core.materials import Material
+        old = self._window.viewport.scene.materials.get(old_name)
+        if old is None:
+            return False
+        return self._restamp(old_name, Material(
+            new_name, color=old.color, texture=old.texture,
+            opacity=old.opacity, finish=old.finish))
+
+    def _ask_rename(self, name: str) -> None:
+        """Right-click ▸ Rename… on a swatch of «In model»."""
+        new, ok = QInputDialog.getText(
+            self, tr("Rename material"), tr("New name:"), text=name)
+        new = new.strip() if ok else ""
+        if new and new != name:
+            self._renamed(name, new)
+
+    def _on_name_edited(self) -> None:
+        """The name field of «Active:» was confirmed. In the model: rename
+        it everywhere. Not yet in the model (a library swatch, a fresh
+        colour): only what is painted from now on takes the new name."""
+        new = self._name_edit.text().strip()
+        if PaintTool.current_is_default:
+            self._refresh_preview()
+            return
+        mat = PaintTool.current_material
+        old = mat.name if mat is not None else ""
+        if not new or new == old:
+            self._refresh_preview()
+            return
+        scene = self._window.viewport.scene
+        if mat is not None and old in scene.materials:
+            if not self._renamed(old, new):
+                self._refresh_preview()
+            return
+        from core.materials import Material
+        if new in scene.materials:
+            # The model's own material of that name: paint with it.
+            PaintTool.current_material = scene.materials[new]
+        elif PaintTool.current_texture:
+            PaintTool.current_material = Material(
+                new, texture=dict(PaintTool.current_texture),
+                opacity=PaintTool.current_opacity)
+        else:
+            PaintTool.current_material = Material(
+                new, color=tuple(PaintTool.current_color),
+                opacity=PaintTool.current_opacity)
+        self._refresh_preview()
+        self._window.statusBar().showMessage(tr(
+            "Active material named '{name}' — click faces to paint it",
+            name=new), 3000)
+
+    def _on_pick_active_color(self) -> None:
+        """The colour button of «Active:»."""
+        if PaintTool.current_is_default or PaintTool.current_texture:
+            return
+        chosen = get_color(QColor.fromRgbF(*PaintTool.current_color[:3]),
+                           self, tr("Colour"))
+        if chosen.isValid():
+            self._recolour_active(
+                (chosen.redF(), chosen.greenF(), chosen.blueF()))
+            self._refresh_preview()
 
     def _material_for(self, name, color=None, texture=None, opacity=None):
         """The Material identity for the active swatch: the registry's
@@ -2541,24 +2716,20 @@ class MaterialsPanel(QWidget):
         mat = PaintTool.current_material
         scene = self._window.viewport.scene
         if mat is not None and mat.name in scene.materials:
-            from core.history import RestampMaterialCommand
             from core.materials import Material
             old = scene.materials[mat.name]
-            new_mat = Material(mat.name, color=rgb, opacity=old.opacity,
+            new_mat = Material(self._recoloured_name(mat.name, rgb),
+                               color=rgb, opacity=old.opacity,
                                finish=old.finish)
-            self._window.viewport.history.execute(
-                RestampMaterialCommand(mat.name, new_mat))
-            self._window.viewport.notify_scene_changed()
-            PaintTool.current_material = new_mat
-            PaintTool.current_color = rgb
-            self._window.statusBar().showMessage(
-                tr("Material '{name}' updated on every face that wears it",
-                   name=mat.name), 3000)
+            if self._restamp(mat.name, new_mat):
+                PaintTool.current_material = new_mat
+                PaintTool.current_color = rgb
             return True
         PaintTool.current_color = rgb
         if mat is not None:
             from core.materials import Material
-            PaintTool.current_material = Material(mat.name, color=rgb)
+            PaintTool.current_material = Material(
+                self._recoloured_name(mat.name, rgb), color=rgb)
         self._window.statusBar().showMessage(
             tr("Active colour changed — click faces to paint it"), 3000)
         return True
@@ -2675,7 +2846,26 @@ class MaterialsPanel(QWidget):
         self._window._activate_tool("paint")
         self._refresh_preview()
 
+    def _refresh_name_bar(self) -> None:
+        """The name field and colour button say what «Active:» holds."""
+        if getattr(self, "_name_edit", None) is None:
+            return
+        default = PaintTool.current_is_default
+        mat = PaintTool.current_material
+        self._name_edit.blockSignals(True)
+        self._name_edit.setText("" if default or mat is None else mat.name)
+        self._name_edit.blockSignals(False)
+        self._name_edit.setEnabled(not default)
+        plain = not default and not PaintTool.current_texture
+        self._color_btn.setVisible(plain)
+        if plain:
+            r, g, b = (int(round(c * 255))
+                       for c in PaintTool.current_color[:3])
+            self._color_btn.setStyleSheet(
+                f"background: rgb({r},{g},{b}); border: 1px solid #555;")
+
     def _refresh_preview(self) -> None:
+        self._refresh_name_bar()
         if PaintTool.current_is_default:
             self._preview.setPixmap(_default_pixmap())
             self._preview.setToolTip(tr("Default material (no material)"))

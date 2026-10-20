@@ -3003,5 +3003,14 @@
  "Group them when there are many": "Kelompokkan jika banyak",
  "Always in submenus": "Selalu dalam submenu",
  "Each entry on its own": "Setiap entri terpisah",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi).",
+ "Material name": "Nama material",
+ "Rename the active material — on every face that wears it. The library keeps its own name.": "Ganti nama material aktif — di semua muka yang memakainya. Pustaka tetap memakai namanya sendiri.",
+ "Change the active colour — on every face that wears it": "Ubah warna aktif — di semua muka yang memakainya",
+ "(modified)": "(diubah)",
+ "There is already a material called '{name}'": "Sudah ada material bernama '{name}'",
+ "Material '{old}' is now '{name}' on every face that wears it": "Material '{old}' sekarang '{name}' di semua muka yang memakainya",
+ "Rename material": "Ganti nama material",
+ "New name:": "Nama baru:",
+ "Active material named '{name}' — click faces to paint it": "Material aktif bernama '{name}' — klik muka untuk mengecatnya"
 }
