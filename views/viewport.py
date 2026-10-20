@@ -14428,6 +14428,9 @@ class Viewport(QOpenGLWidget):
         self._mark_plane_for_shift()
         snap = self.last_snap
         tool = self.active_tool
+        owns = getattr(tool, "owns_shift_lock", None)
+        if owns is not None and owns():
+            return  # the tool reads the cursor's motion itself
         start = getattr(tool, "start_point", None) if tool is not None else None
         if snap is None or start is None or snap.kind not in self._SHIFT_LOCKABLE:
             return
