@@ -3001,5 +3001,7 @@
  "Group them when there are many": "数量多时分组",
  "Always in submenus": "始终放在子菜单中",
  "Each entry on its own": "每个条目单独显示",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "扩展的条目在右键菜单（立即生效）和扩展菜单（下次启动时生效）中的显示方式。"
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "扩展的条目在右键菜单（立即生效）和扩展菜单（下次启动时生效）中的显示方式。",
+ "Add panels…": "添加面板…",
+ "Choose which panels the sidebar shows.": "选择侧边栏显示哪些面板。"
 }

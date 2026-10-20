@@ -3008,5 +3008,7 @@
  "Group them when there are many": "Grupuj, gdy jest ich wiele",
  "Always in submenus": "Zawsze w podmenu",
  "Each entry on its own": "Każda pozycja osobno",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Jak pozycje rozszerzeń są wyświetlane w menu prawego przycisku (od razu) i w menu Rozszerzenia (po ponownym uruchomieniu)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Jak pozycje rozszerzeń są wyświetlane w menu prawego przycisku (od razu) i w menu Rozszerzenia (po ponownym uruchomieniu).",
+ "Add panels…": "Dodaj panele…",
+ "Choose which panels the sidebar shows.": "Wybierz, które panele pokazuje pasek boczny."
 }

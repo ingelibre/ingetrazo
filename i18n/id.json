@@ -3003,5 +3003,7 @@
  "Group them when there are many": "Kelompokkan jika banyak",
  "Always in submenus": "Selalu dalam submenu",
  "Each entry on its own": "Setiap entri terpisah",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi).",
+ "Add panels…": "Tambah panel…",
+ "Choose which panels the sidebar shows.": "Pilih panel yang ditampilkan bilah samping."
 }

@@ -3000,5 +3000,7 @@
  "Group them when there are many": "Les regrouper quand il y en a beaucoup",
  "Always in submenus": "Toujours dans des sous-menus",
  "Each entry on its own": "Chaque entrée séparément",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Comment les entrées des extensions s'affichent dans le menu du clic droit (immédiatement) et dans le menu Extensions (au prochain démarrage)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Comment les entrées des extensions s'affichent dans le menu du clic droit (immédiatement) et dans le menu Extensions (au prochain démarrage).",
+ "Add panels…": "Ajouter des panneaux…",
+ "Choose which panels the sidebar shows.": "Choisir les panneaux affichés dans la barre latérale."
 }

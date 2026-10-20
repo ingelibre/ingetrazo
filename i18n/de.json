@@ -3000,5 +3000,7 @@
  "Group them when there are many": "Bei vielen gruppieren",
  "Always in submenus": "Immer in Untermenüs",
  "Each entry on its own": "Jeder Eintrag einzeln",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Wie die Einträge der Erweiterungen im Rechtsklickmenü (sofort) und im Menü Erweiterungen (beim nächsten Start) erscheinen."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Wie die Einträge der Erweiterungen im Rechtsklickmenü (sofort) und im Menü Erweiterungen (beim nächsten Start) erscheinen.",
+ "Add panels…": "Bereiche hinzufügen…",
+ "Choose which panels the sidebar shows.": "Wählen, welche Bereiche die Seitenleiste zeigt."
 }

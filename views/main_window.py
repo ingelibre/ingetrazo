@@ -174,6 +174,34 @@ class _DockTitleTab(QTabBar):
         self.installEventFilter(window)
 
 
+class _StayOpenMenu(QMenu):
+    """A menu whose check entries toggle without closing it, so several
+    panels can be shown or hidden in one go (as the Layers tab lets
+    several layers be switched); the other entries close it as usual."""
+
+    def _toggle_active(self) -> bool:
+        act = self.activeAction()
+        if act is None or not act.isCheckable() or not act.isEnabled():
+            return False
+        act.trigger()
+        return True
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 — Qt override
+        at = self.actionAt(event.position().toPoint())
+        if at is not None and at is self.activeAction() \
+                and self._toggle_active():
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 — Qt override
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space) \
+                and self._toggle_active():
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class _DockDropZone(QWidget):
     """Where a dragged tray tab can go, shown while it is dragged: a
     translucent panel at one edge of the viewport, lit while the pointer is
@@ -2226,6 +2254,7 @@ class MainWindow(QMainWindow):
                 tb.setProperty("ingetrazo_watched", True)
                 tb.setAcceptDrops(True)
                 tb.installEventFilter(self)
+            self._add_panels_button(tb)
         # A tray alone on its side has no tab bar from Qt — only its title
         # bar, an empty strip: it gets a tab of its own there, so it can
         # still be dragged across, right-clicked and dropped on.
@@ -2245,9 +2274,92 @@ class MainWindow(QMainWindow):
                 d.setTitleBarWidget(QWidget(d))
                 current.deleteLater()
             elif not tabbed and not isinstance(current, _DockTitleTab):
-                d.setTitleBarWidget(_DockTitleTab(self, d))
+                title = _DockTitleTab(self, d)
+                self._add_panels_button(title)
+                d.setTitleBarWidget(title)
                 if current is not None:
                     current.deleteLater()
+
+    #: The «+» after the tray tabs, and the gap it keeps from the arrows.
+    _PLUS_PX = 20
+    _PLUS_GAP = 4
+
+    def _add_panels_button(self, bar) -> None:
+        """A «+» right after the last tab of a tray tab bar: the Window ▸
+        Panels list, so it shows at a glance that more panels can be
+        added. Once per bar; the bar's own events keep it in place."""
+        from PySide6.QtWidgets import QStyle, QToolButton
+        if bar.findChild(QToolButton, "add_panels_button") is not None:
+            return
+        # With more tabs than fit, Qt ends them where its scroll arrows
+        # begin: told the arrows are wider by a «+», it leaves that room
+        # free of tabs, and _place_add_panels_button gives the arrows back
+        # their own width at the bar's end with the «+» just before them.
+        arrow = bar.style().pixelMetric(
+            QStyle.PM_TabBarScrollButtonWidth, None, bar)
+        bar.setProperty("ingetrazo_arrow_px", arrow)
+        room = 2 * arrow + self._PLUS_PX + 2 * self._PLUS_GAP
+        bar.setStyleSheet(bar.styleSheet()
+                          + f" QTabBar::scroller {{ width: {room}px; }}")
+        btn = QToolButton(bar)
+        btn.setObjectName("add_panels_button")
+        btn.setText("+")
+        btn.setToolTip(tr("Add panels…"))
+        btn.setStatusTip(tr("Choose which panels the sidebar shows."))
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setAutoRaise(True)
+        btn.setFixedSize(self._PLUS_PX, self._PLUS_PX)
+        theme_style(btn,             # {accent_rgb}: Preferences ▸ Accent colour
+            # Opaque: over the tabs cut by the arrows it ends them cleanly.
+            "QToolButton {{ border: none; border-radius: 4px;"
+            " background: palette(window); font-weight: bold; font-size: 14px; padding: 0 0 2px 0; }}"
+            "QToolButton:hover {{ background: rgb({accent_rgb});"
+            " color: white; }}")
+        btn.clicked.connect(lambda: self._open_panels_menu(btn))
+        btn.show()
+        self._place_add_panels_button(bar)
+
+    def _place_add_panels_button(self, bar) -> None:
+        """After the last tab while they all fit; when they do not, in the
+        room kept before the scroll arrows, which go back to their own
+        width at the bar's end."""
+        from PySide6.QtCore import QPoint, QRect
+        from PySide6.QtWidgets import QToolButton
+        btn = bar.findChild(QToolButton, "add_panels_button")
+        if btn is None or bar.count() == 0:
+            return
+        last = bar.tabRect(bar.count() - 1)
+        y = max(0, last.center().y() - btn.height() // 2 + 1)
+        arrows = sorted((b for b in bar.findChildren(QToolButton)
+                         if b is not btn and b.isVisible()),
+                        key=lambda b: b.x())
+        if arrows:
+            w = int(bar.property("ingetrazo_arrow_px") or arrows[0].width())
+            x = bar.width()
+            for b in reversed(arrows):
+                x -= w
+                geo = QRect(x, b.y(), w, b.height())
+                if b.geometry() != geo:
+                    b.setGeometry(geo)
+            # The whole room, top to bottom: the cut tab ends at its edge.
+            cell = self._PLUS_PX + 2 * self._PLUS_GAP
+            geo = QRect(max(0, x - cell), 0, cell, bar.height())
+        else:
+            geo = QRect(max(0, min(last.right() + 3,
+                                   bar.width() - self._PLUS_PX - 2)), y,
+                        self._PLUS_PX, self._PLUS_PX)
+        if btn.geometry() != geo:
+            btn.setFixedSize(geo.size())
+            btn.setGeometry(geo)
+        btn.raise_()
+
+    def _open_panels_menu(self, btn) -> None:
+        menu = _StayOpenMenu(self)
+        self._fill_panels_menu(menu)
+        self._popup_menu(menu, btn.mapToGlobal(btn.rect().bottomLeft()))
+
+    def _popup_menu(self, menu, pos) -> None:
+        menu.exec(pos)
 
     def _dock_of_tab(self, bar, index):
         if index < 0:
@@ -2322,6 +2434,11 @@ class MainWindow(QMainWindow):
         is_bar = bool(obj.property("ingetrazo_watched")) \
             if hasattr(obj, "property") else False
         if is_bar:
+            # The «+» follows the last tab: tabs come, go, get renamed and
+            # dragged along the bar with no signal of their own, but each
+            # of those repaints the bar.
+            if t in (QEvent.Paint, QEvent.Resize, QEvent.Show):
+                self._place_add_panels_button(obj)
             if t == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
                 i = obj.tabAt(event.position().toPoint())
                 # Off the tabs, on the bar: the whole side goes (-2).

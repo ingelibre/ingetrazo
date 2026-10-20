@@ -3007,5 +3007,7 @@
  "Group them when there are many": "Agrupar quando houver muitas",
  "Always in submenus": "Sempre em submenus",
  "Each entry on its own": "Cada entrada separada",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Como as entradas das extensões aparecem no menu do botão direito (na hora) e no menu Extensões (na próxima abertura)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Como as entradas das extensões aparecem no menu do botão direito (na hora) e no menu Extensões (na próxima abertura).",
+ "Add panels…": "Adicionar painéis…",
+ "Choose which panels the sidebar shows.": "Escolher quais painéis a barra lateral mostra."
 }

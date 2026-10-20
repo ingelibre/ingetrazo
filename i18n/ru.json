@@ -3000,5 +3000,7 @@
  "Group them when there are many": "Группировать, если их много",
  "Always in submenus": "Всегда в подменю",
  "Each entry on its own": "Каждый пункт отдельно",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске).",
+ "Add panels…": "Добавить панели…",
+ "Choose which panels the sidebar shows.": "Выбрать, какие панели показывает боковая панель."
 }
