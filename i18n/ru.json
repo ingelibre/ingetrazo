@@ -3000,5 +3000,12 @@
  "Group them when there are many": "Группировать, если их много",
  "Always in submenus": "Всегда в подменю",
  "Each entry on its own": "Каждый пункт отдельно",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске).",
+ "Sides:": "Стороны:",
+ "Segments:": "Сегменты:",
+ "How many straight pieces the curve is made of — it is rebuilt in place": "Из скольких прямых отрезков состоит кривая — она перестраивается на месте",
+ "Only for a flat curve: this one also bounds faces out of its plane, such as the side of a pushed cylinder": "Только для плоской кривой: эта также ограничивает грани вне своей плоскости, например боковину выдавленного цилиндра",
+ "This curve cannot be rebuilt": "Эту кривую нельзя перестроить",
+ "Diameter": "Диаметр",
+ "Side": "Сторона"
 }

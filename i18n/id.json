@@ -3003,5 +3003,12 @@
  "Group them when there are many": "Kelompokkan jika banyak",
  "Always in submenus": "Selalu dalam submenu",
  "Each entry on its own": "Setiap entri terpisah",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi).",
+ "Sides:": "Sisi:",
+ "Segments:": "Segmen:",
+ "How many straight pieces the curve is made of — it is rebuilt in place": "Berapa banyak potongan lurus yang membentuk kurva — dibangun ulang di tempat",
+ "Only for a flat curve: this one also bounds faces out of its plane, such as the side of a pushed cylinder": "Hanya untuk kurva datar: kurva ini juga membatasi muka di luar bidangnya, seperti sisi silinder yang diekstrusi",
+ "This curve cannot be rebuilt": "Kurva ini tidak dapat dibangun ulang",
+ "Diameter": "Diameter",
+ "Side": "Sisi"
 }

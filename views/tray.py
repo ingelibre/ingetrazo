@@ -3375,7 +3375,9 @@ class EntityInfoPanel(QWidget):
         # looks for it (issue #214: «there seems to be no way to name this
         # group»). The Parts panel could already rename, out of sight.
         from PySide6.QtWidgets import QLineEdit
+        from PySide6.QtWidgets import QSpinBox, QStackedWidget
         name_row = QHBoxLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
         self._name_caption = QLabel(tr("Name:"))
         self._name_edit = QLineEdit()
         self._name_edit.setToolTip(
@@ -3383,8 +3385,29 @@ class EntityInfoPanel(QWidget):
         self._name_edit.editingFinished.connect(self._on_name_edited)
         name_row.addWidget(self._name_caption)
         name_row.addWidget(self._name_edit, 1)
-        lay.addLayout(name_row)
         self._named = None               # the group the field is showing
+        # The segment count of ONE circle, arc or polygon, changed after
+        # it is drawn — the «24s» of the tools only reaches the shape just
+        # drawn. It shares the name's line: a curve is never a group, and
+        # the panel keeps its height (see below).
+        seg_row = QHBoxLayout()
+        seg_row.setContentsMargins(0, 0, 0, 0)
+        self._seg_caption = QLabel(tr("Sides:"))
+        self._seg_box = QSpinBox()
+        self._seg_box.setKeyboardTracking(False)      # one rebuild per entry
+        self._seg_box.valueChanged.connect(self._on_segments_picked)
+        seg_row.addWidget(self._seg_caption)
+        seg_row.addWidget(self._seg_box)
+        seg_row.addStretch(1)
+        self._curve = None               # (edge, shape) the field is showing
+        self._first_row = QStackedWidget()
+        for row_lay in (name_row, seg_row):
+            page = QWidget()
+            page.setLayout(row_lay)
+            self._first_row.addWidget(page)
+        self._first_row.setSizePolicy(QSizePolicy.Preferred,
+                                      QSizePolicy.Fixed)
+        lay.addWidget(self._first_row)
         row = QHBoxLayout()
         self._layer_caption = QLabel(tr("Layer:"))
         self._layer_box = QComboBox()
@@ -3400,35 +3423,43 @@ class EntityInfoPanel(QWidget):
         # library) slid up and down with every click (Marco, 23-09, four
         # screenshots). The layer row keeps its place when hidden, and the
         # text keeps room for the four lines a face or a solid shows.
-        for w in (self._layer_caption, self._layer_box,
-                  self._name_caption, self._name_edit):
+        for w in (self._layer_caption, self._layer_box, self._first_row):
             pol = w.sizePolicy()
             pol.setRetainSizeWhenHidden(True)
             w.setSizePolicy(pol)
+        # One caption column, so the name, count and layer fields start
+        # at the same x (they sat at three different ones).
+        fm = self._layer_caption.fontMetrics()
+        cap_w = max(fm.horizontalAdvance(t) for t in (
+            tr("Name:"), tr("Sides:"), tr("Segments:"), tr("Layer:"))) + 4
+        for cap in (self._name_caption, self._seg_caption,
+                    self._layer_caption):
+            cap.setFixedWidth(cap_w)
         from PySide6.QtGui import QFont, QFontMetrics
         font = QFont(self._label.font())
         font.setPixelSize(12)
         self._label.setMinimumHeight(QFontMetrics(font).lineSpacing() * 4 + 4)
         self._layer_caption.hide()
         self._layer_box.hide()
-        self._name_caption.hide()
-        self._name_edit.hide()
+        self._first_row.hide()
 
     def refresh(self) -> None:
         sel = list(self._window.viewport.scene.selection)
-        self._label.setText(self._describe(sel))
+        self._label.setText(self._styled(self._describe(sel)))
         self._refresh_name(sel)
+        self._refresh_segments(sel)
+        self._first_row.setVisible(self._named is not None
+                                   or self._curve is not None)
         self._refresh_layer(sel)
 
     # ---- Name field ---------------------------------------------------------
     def _refresh_name(self, sel: list) -> None:
         one = sel[0] if len(sel) == 1 and isinstance(sel[0], Group) else None
-        self._name_caption.setVisible(one is not None)
-        self._name_edit.setVisible(one is not None)
         changed = one is not self._named
         self._named = one
         if one is None:
             return
+        self._first_row.setCurrentIndex(0)
         # Not while typing into it — unless the selection moved on.
         if changed or not self._name_edit.hasFocus():
             self._name_edit.setText(one.name or "")
@@ -3444,6 +3475,55 @@ class EntityInfoPanel(QWidget):
         from core.history import RenameGroupCommand
         self._window.viewport.history.execute(RenameGroupCommand(group, name))
         self._window.viewport.update()
+
+    # ---- Segments field -----------------------------------------------------
+    def _refresh_segments(self, sel: list) -> None:
+        """One curve selected (its edges, all sharing one curve id) that
+        reads back as a regular circle, arc or polygon."""
+        from core.curve_segments import MAX_SEGMENTS, read_curve
+        self._curve = None
+        ids = {getattr(e, "curve", None) if isinstance(e, Edge) else None
+               for e in sel}
+        if len(ids) != 1 or None in ids:
+            return
+        mesh = self._window.viewport.scene.mesh
+        shape = read_curve(mesh, sel[0])
+        if shape is None or len(sel) != shape.segments:
+            return
+        self._curve = (sel[0], shape)
+        self._first_row.setCurrentIndex(1)
+        # «Sides» for a closed shape, as the Circle and Polygon tools
+        # count them; «Segments» for an arc, as the Arc tool does.
+        self._seg_caption.setText(tr("Sides:") if shape.closed
+                                  else tr("Segments:"))
+        self._seg_box.setEnabled(shape.flat)
+        self._seg_box.setToolTip(
+            tr("How many straight pieces the curve is made of — "
+               "it is rebuilt in place")
+            if shape.flat else
+            tr("Only for a flat curve: this one also bounds faces out of "
+               "its plane, such as the side of a pushed cylinder"))
+        self._updating = True
+        try:
+            self._seg_box.setRange(shape.minimum, MAX_SEGMENTS)
+            self._seg_box.setValue(shape.segments)
+        finally:
+            self._updating = False
+
+    def _on_segments_picked(self, n: int) -> None:
+        if self._updating or self._curve is None:
+            return
+        edge, shape = self._curve
+        if n == shape.segments:
+            return
+        from core.curve_segments import ResegmentCurveCommand
+        vp = self._window.viewport
+        vp.history.execute(ResegmentCurveCommand(edge, n))
+        vp.update()
+        if getattr(vp.history, "last_rejected", None):
+            self._window.statusBar().showMessage(
+                tr("This curve cannot be rebuilt"), 2500)
+        self.refresh()
 
     # ---- Layer field --------------------------------------------------------
     def _refresh_layer(self, sel: list) -> None:
@@ -3535,6 +3615,9 @@ class EntityInfoPanel(QWidget):
                 return (f"<b>{title}</b><br>"
                         f"{tr('Faces')}: {len(e.mesh.faces)}{solid}")
             return f"<b>{tr('1 entity')}</b>"
+        curve = self._describe_curve(sel)
+        if curve is not None:
+            return curve
         counts = {"faces": 0, "edges": 0, "dimensions": 0, "groups": 0}
         for e in sel:
             if isinstance(e, Face):
@@ -3559,6 +3642,60 @@ class EntityInfoPanel(QWidget):
                              if isinstance(e, Edge))
                 text += f"<br>{tr('Length')}: {fmt_len(length)}"
         return text
+
+    @staticmethod
+    def _styled(text: str) -> str:
+        """The description as a data sheet: each «Label: value» line with
+        its label in the muted colour, so the values stand out — the plain
+        run of text read as one block."""
+        import html
+        import re
+        from views.theme import tokens
+        muted = tokens()["muted"]
+        lines = text.split("<br>")
+        for i, line in enumerate(lines):
+            m = re.match(r"^([^<>:]+:)(\s.*)$", line)
+            if m:
+                lines[i] = (f'<span style="color:{muted}">'
+                            f'{html.escape(m.group(1), quote=False)}</span>'
+                            f'{m.group(2)}')
+        return "<br>".join(lines)
+
+    def _describe_curve(self, sel: list) -> str | None:
+        """One whole circle, polygon or arc: named as such, with the
+        measures one draws it by, rather than «Selection · 24 edges»."""
+        from core.curve_segments import read_curve
+        ids = {getattr(e, "curve", None) if isinstance(e, Edge) else None
+               for e in sel}
+        if len(ids) != 1 or None in ids:
+            return None
+        shape = read_curve(self._window.viewport.scene.mesh, sel[0])
+        if shape is None or len(sel) != shape.segments:
+            return None
+        n = shape.segments
+        side = (shape.verts[1].position - shape.verts[0].position).length()
+        length = side * n
+        if not shape.closed:
+            import math
+            return "<br>".join([
+                f"<b>{tr('Arc')}</b>",
+                f"{tr('Radius')}: {fmt_len(shape.radius)}",
+                f"{tr('Angle')}: {math.degrees(shape.sweep):.1f}°",
+                f"{tr('Length')}: {fmt_len(length)}"])
+        # The Circle and Polygon tools draw the same thing, a regular
+        # N-gon; from a dozen sides on it reads as a circle (the tools
+        # default to 24 and 6).
+        if n >= 12:
+            return "<br>".join([
+                f"<b>{tr('Circle')}</b>",
+                f"{tr('Radius')}: {fmt_len(shape.radius)}",
+                f"{tr('Diameter')}: {fmt_len(2.0 * shape.radius)}",
+                f"{tr('Perimeter')}: {fmt_len(length)}"])
+        return "<br>".join([
+            f"<b>{tr('Polygon')}</b>",
+            f"{tr('Radius')}: {fmt_len(shape.radius)}",
+            f"{tr('Side')}: {fmt_len(side)}",
+            f"{tr('Perimeter')}: {fmt_len(length)}"])
 
     def _solid_volume(self, group):
         """Cached per scene version: the panel refreshes on every change and
@@ -3594,7 +3731,10 @@ class EntityInfoPanel(QWidget):
             return Path(tex["path"]).stem
         col = face.attrs.get("color")
         if col is not None:
-            return f"color {tuple(round(c, 2) for c in col)}"
+            # A swatch of the colour and its hex code, not a tuple of floats.
+            hexa = "#" + "".join(f"{max(0, min(255, round(c * 255))):02X}"
+                                 for c in col[:3])
+            return f'<span style="color:{hexa}">■</span> {hexa}'
         return "—"
 
 

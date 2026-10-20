@@ -3001,5 +3001,12 @@
  "Group them when there are many": "数量多时分组",
  "Always in submenus": "始终放在子菜单中",
  "Each entry on its own": "每个条目单独显示",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "扩展的条目在右键菜单（立即生效）和扩展菜单（下次启动时生效）中的显示方式。"
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "扩展的条目在右键菜单（立即生效）和扩展菜单（下次启动时生效）中的显示方式。",
+ "Sides:": "边数：",
+ "Segments:": "分段数：",
+ "How many straight pieces the curve is made of — it is rebuilt in place": "曲线由多少段直线组成——原地重建",
+ "Only for a flat curve: this one also bounds faces out of its plane, such as the side of a pushed cylinder": "仅适用于平面曲线：此曲线还围合其平面之外的面，例如已拉伸圆柱的侧面",
+ "This curve cannot be rebuilt": "无法重建此曲线",
+ "Diameter": "直径",
+ "Side": "边长"
 }

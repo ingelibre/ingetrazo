@@ -3008,5 +3008,12 @@
  "Group them when there are many": "Grupuj, gdy jest ich wiele",
  "Always in submenus": "Zawsze w podmenu",
  "Each entry on its own": "Każda pozycja osobno",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Jak pozycje rozszerzeń są wyświetlane w menu prawego przycisku (od razu) i w menu Rozszerzenia (po ponownym uruchomieniu)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Jak pozycje rozszerzeń są wyświetlane w menu prawego przycisku (od razu) i w menu Rozszerzenia (po ponownym uruchomieniu).",
+ "Sides:": "Boki:",
+ "Segments:": "Segmenty:",
+ "How many straight pieces the curve is made of — it is rebuilt in place": "Z ilu prostych odcinków składa się krzywa — zostaje odbudowana w miejscu",
+ "Only for a flat curve: this one also bounds faces out of its plane, such as the side of a pushed cylinder": "Tylko dla krzywej płaskiej: ta ogranicza też ściany poza swoją płaszczyzną, jak bok wyciągniętego walca",
+ "This curve cannot be rebuilt": "Tej krzywej nie można odbudować",
+ "Diameter": "Średnica",
+ "Side": "Bok"
 }

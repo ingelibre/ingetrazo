@@ -3007,5 +3007,12 @@
  "Group them when there are many": "Agrupar quando houver muitas",
  "Always in submenus": "Sempre em submenus",
  "Each entry on its own": "Cada entrada separada",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Como as entradas das extensões aparecem no menu do botão direito (na hora) e no menu Extensões (na próxima abertura)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Como as entradas das extensões aparecem no menu do botão direito (na hora) e no menu Extensões (na próxima abertura).",
+ "Sides:": "Lados:",
+ "Segments:": "Segmentos:",
+ "How many straight pieces the curve is made of — it is rebuilt in place": "Quantos trechos retos formam a curva — ela é refeita no lugar",
+ "Only for a flat curve: this one also bounds faces out of its plane, such as the side of a pushed cylinder": "Só para uma curva plana: esta também limita faces fora do seu plano, como a lateral de um cilindro extrudado",
+ "This curve cannot be rebuilt": "Esta curva não pode ser refeita",
+ "Diameter": "Diâmetro",
+ "Side": "Lado"
 }

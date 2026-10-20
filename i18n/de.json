@@ -3000,5 +3000,12 @@
  "Group them when there are many": "Bei vielen gruppieren",
  "Always in submenus": "Immer in Untermenüs",
  "Each entry on its own": "Jeder Eintrag einzeln",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Wie die Einträge der Erweiterungen im Rechtsklickmenü (sofort) und im Menü Erweiterungen (beim nächsten Start) erscheinen."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Wie die Einträge der Erweiterungen im Rechtsklickmenü (sofort) und im Menü Erweiterungen (beim nächsten Start) erscheinen.",
+ "Sides:": "Seiten:",
+ "Segments:": "Segmente:",
+ "How many straight pieces the curve is made of — it is rebuilt in place": "Aus wie vielen geraden Stücken die Kurve besteht — sie wird an Ort und Stelle neu aufgebaut",
+ "Only for a flat curve: this one also bounds faces out of its plane, such as the side of a pushed cylinder": "Nur für eine ebene Kurve: Diese begrenzt auch Flächen außerhalb ihrer Ebene, etwa die Seite eines extrudierten Zylinders",
+ "This curve cannot be rebuilt": "Diese Kurve kann nicht neu aufgebaut werden",
+ "Diameter": "Durchmesser",
+ "Side": "Seite"
 }
