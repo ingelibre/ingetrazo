@@ -123,7 +123,7 @@ def _collect_stats(scene) -> dict:
         if f.attrs.get("mat") and "mat" not in entry:
             entry["mat"] = f.attrs["mat"]
         entry["faces"] += 1
-        entry["area"] += f.area()
+        entry["area"] += bim.face_net_area(f)   # a slab's opening is not paint
 
     # --- BIM objects — the same call behind the BIM tray and IFC export ----
     objects = [{"class": o["class"], "name": o["name"],

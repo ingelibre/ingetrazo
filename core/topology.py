@@ -12,6 +12,7 @@ decimal places (≈ 0.1 mm at metric scale) are treated as the same node.
 """
 from __future__ import annotations
 
+import math
 from collections import deque
 from typing import Iterable, Optional
 
@@ -172,22 +173,31 @@ def is_planar(vertices: list[QVector3D], tolerance: float = _PLANAR_TOLERANCE) -
         e2 = vertices[2] - vertices[0]
         return QVector3D.crossProduct(e1, e2).length() > 1e-6
 
-    v0 = vertices[0]
-    plane_normal: Optional[QVector3D] = None
-    for i in range(1, n - 1):
-        for j in range(i + 1, n):
-            cross = QVector3D.crossProduct(vertices[i] - v0, vertices[j] - v0)
-            if cross.length() > 1e-6:
-                plane_normal = cross.normalized()
-                break
-        if plane_normal is not None:
-            break
-    if plane_normal is None:
-        return False
-    for v in vertices:
-        if abs(QVector3D.dotProduct(plane_normal, v - v0)) > tolerance:
-            return False
-    return True
+    # The plane is the one through the first vertex and the two that span
+    # the widest triangle with it, worked out in double precision. It used
+    # to be the first pair whose cross product passed 1e-6 — on a circle,
+    # two neighbours nearly in line — in single precision, so the plane
+    # tilted with the distance from the origin and at 1000 m a third of
+    # flat tilted circles came out "not planar" (#571). Measuring against
+    # a plane through real vertices, and not a best-fit one, keeps what is
+    # refused: a best fit would share a corner lifted 1.5 mm out as
+    # ±0.4 mm and call the warped quad flat.
+    pts = [(v.x(), v.y(), v.z()) for v in vertices]
+    ax, ay, az = pts[0]
+    rel = [(x - ax, y - ay, z - az) for x, y, z in pts]
+    ux, uy, uz = max(rel, key=lambda p: p[0] * p[0] + p[1] * p[1] + p[2] * p[2])
+    nx = ny = nz = 0.0
+    best = 0.0
+    for vx, vy, vz in rel:
+        cx, cy, cz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+        size = cx * cx + cy * cy + cz * cz
+        if size > best:
+            best, nx, ny, nz = size, cx, cy, cz
+    length = math.sqrt(best)
+    if length <= 1e-6:
+        return False                      # every vertex in one line
+    nx, ny, nz = nx / length, ny / length, nz / length
+    return all(abs(nx * x + ny * y + nz * z) <= tolerance for x, y, z in rel)
 
 
 def segment_intersection(
@@ -402,11 +412,82 @@ def loop_inside_face(mother: Face, loop: list[QVector3D],
     if not all(_strictly_inside_2d(proj(v), poly2) for v in loop):
         return False
     if outside_holes:
+        loop2 = [proj(v) for v in loop]
         for hole in mother.holes:
             hole2 = [proj(p) for p in hole]
-            if any(_strictly_inside_2d(proj(v), hole2) for v in loop):
+            if any(_strictly_inside_2d(q, hole2) for q in loop2):
+                return False
+            # A loop that wraps or straddles the hole without a corner in
+            # it overlaps the opening all the same; punched as a second hole
+            # the two crossed, the face triangulated over its own opening
+            # and the next rebuild filled it (#519).
+            if (any(_strictly_inside_2d(q, loop2) for q in hole2)
+                    or _loops_cross_2d(loop2, hole2)):
                 return False
     return True
+
+
+def _loops_cross_2d(a: list, b: list) -> bool:
+    """Whether an edge of polygon ``a`` properly crosses one of ``b``
+    (touching at an end or running along it does not count)."""
+    def side(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    eps = 1e-12
+    for i in range(len(a)):
+        p1, p2 = a[i], a[(i + 1) % len(a)]
+        for j in range(len(b)):
+            q1, q2 = b[j], b[(j + 1) % len(b)]
+            d1, d2 = side(q1, q2, p1), side(q1, q2, p2)
+            d3, d4 = side(p1, p2, q1), side(p1, p2, q2)
+            if (((d1 > eps and d2 < -eps) or (d1 < -eps and d2 > eps))
+                    and ((d3 > eps and d4 < -eps)
+                         or (d3 < -eps and d4 > eps))):
+                return True
+    return False
+
+
+def hole_merged_with_loop(face: Face, loop: list[QVector3D]):
+    """``(hole_index, merged)`` when ``loop`` — already known to lie inside
+    ``face`` — runs along part of one of its holes' rims: the rectangle
+    drawn on a ring's top against the opening. That is no second hole (two
+    openings sharing an edge triangulate into slivers over both, #489): the
+    opening grows to take it in, ``merged`` being its new outline. ``None``
+    when the loop shares no stretch of rim with any hole."""
+    from core.arrangement import _signed_area
+    from core.cap_rebuild import _union_outline
+    from core.triangulate import plane_axes
+
+    normal = face.normal()
+    origin = face.vertices[0]
+    u, w = plane_axes(normal)
+    back: dict = {}
+
+    def proj(pts):
+        out = []
+        for p in pts:
+            rel = p - origin
+            xy = (QVector3D.dotProduct(rel, u), QVector3D.dotProduct(rel, w))
+            back[xy] = QVector3D(p)
+            out.append(xy)
+        return out
+
+    for idx, hole in enumerate(face.holes):
+        h3 = refine_loop_with_points(list(hole), loop)
+        l3 = refine_loop_with_points(list(loop), hole)
+        shared = set(_loop_edges(h3)) & set(_loop_edges(l3))
+        if not shared:
+            continue
+        rings = []
+        for ring in (proj(h3), proj(l3)):
+            if _signed_area(ring) < 0:
+                ring = ring[::-1]
+            rings.append((ring, []))
+        merged = _union_outline(rings)
+        if len(merged) != 1 or merged[0][1]:
+            return None
+        return idx, [back[xy] for xy in merged[0][0]]
+    return None
 
 
 def find_containing_face(

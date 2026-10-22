@@ -1667,6 +1667,28 @@ def compute_snap(
     if best is not None:
         return SnapResult(best[1], best[2], best[3], context=best[4])
 
+    def _edge_under_cursor(exclude_at: QVector3D) -> bool:
+        """Whether a visible edge not passing through ``exclude_at`` lies within
+        the on-edge reach of the cursor (rule 7's target)."""
+        for edge in scene.edges:
+            if (edge.b - edge.a).length() < 1e-9:
+                continue                      # a pseudo-edge: centre, origin…
+            if _point_on_segment_world(exclude_at, edge.a, edge.b):
+                continue
+            pa = world_to_pixel(edge.a)
+            pb = world_to_pixel(edge.b)
+            if pa is None or pb is None:
+                continue
+            if _closest_on_segment_2d((cx, cy), pa, pb)[0] > et:
+                continue
+            ab = edge.b - edge.a
+            tt = QVector3D.dotProduct(project_onto_line(edge.a, ab) - edge.a,
+                                      ab) / QVector3D.dotProduct(ab, ab)
+            on_pt = edge.a + ab * max(0.0, min(1.0, tt))
+            if is_occluded is None or not is_occluded(on_pt):
+                return True
+        return False
+
     # 4b. Perpendicular to a wall you started on: drawing square to it locks the
     #     exact perpendicular (magenta) and predicts the connection — where that
     #     perpendicular line crosses another edge near the cursor (the parallel
@@ -1729,6 +1751,15 @@ def compute_snap(
                     )
                     if fp is not None:
                         return fp
+                # The lock is chosen by ANGLE (an 8 degree cone), so from a
+                # corner it also catches a line meant for a point of another
+                # edge: a tapered leg ends on the far edge about 8 degrees off
+                # the perpendicular, and the lock moved it 27 px onto the wall
+                # it started on (#544). An edge under the cursor is a target
+                # the user pointed at: it wins. The edges the line starts on
+                # are not such targets - the perpendicular may be one of them.
+                if _edge_under_cursor(start_point):
+                    break
                 locked = project_onto_line(start_point, perp)
                 return SnapResult(locked, "reference", COLOR_REFERENCE)
 

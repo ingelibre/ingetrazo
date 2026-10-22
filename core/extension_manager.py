@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -378,24 +379,44 @@ def _python_fingerprint(path: Path) -> tuple[str | None, frozenset[str]]:
     return digest(path / "__init__.py"), modules
 
 
-def manual_copies(ident: str, package: Path) -> list[Path]:
+def retired_extensions(catalog_ids: Iterable[str]) -> list[Path]:
+    """Folders the manager installed whose id the catalog no longer lists —
+    renamed or withdrawn since. The catalog has no card for them, so the
+    manager lists them on their own to disable or uninstall."""
+    known = set(catalog_ids)
+    try:
+        candidates = sorted(user_plugins_dir().iterdir())
+    except OSError:
+        return []
+    return [path for path in candidates
+            if path.name not in known and not path.name.startswith(("_", "."))
+            and _ID_RE.fullmatch(path.name) and installed_info(path.name)]
+
+
+def manual_copies(ident: str, package: Path,
+                  catalog_ids: Iterable[str] | None = None) -> list[Path]:
     """Plugins installed by hand that look like ``package`` under another
     name — OpenTrace used to be unpacked as ``arquitetura_parametrica``,
     and installing it from the catalog as ``opentrace_bim`` then loaded it
     twice. The same entry module, or most of the same module files (an
-    older or newer version of it), counts as a copy."""
+    older or newer version of it), counts as a copy. With ``catalog_ids``,
+    a folder the manager installed under an id the catalog no longer lists
+    counts too: it is the same extension under its old name."""
     entry, modules = _python_fingerprint(package)
     found = []
     try:
         candidates = sorted(user_plugins_dir().iterdir())
     except OSError:
         return []
+    retired_paths = (set() if catalog_ids is None
+                     else set(retired_extensions(catalog_ids)))
     for path in candidates:
         if (path.name.startswith(("_", ".")) or path.is_symlink()
                 or path.name in (ident, f"{ident}.py")):
             continue
         if path.is_dir():
-            if ((path / "extension.json").is_file()
+            managed = (path / "extension.json").is_file()
+            if ((managed and path not in retired_paths)
                     or not (path / "__init__.py").is_file()):
                 continue
         elif path.suffix != ".py":
@@ -552,7 +573,9 @@ def remove_hand_installed(path: Path) -> Path:
 
 
 def replace_hand_installed(extension: Extension,
-                           confirm_manual_copies=None) -> list[Path]:
+                           confirm_manual_copies=None,
+                           catalog_ids: Iterable[str] | None = None
+                           ) -> list[Path]:
     """Install ``extension`` from the catalog over a copy installed by
     hand under the same name: the copy is set aside first, then the
     catalog version installs as a managed one. If the install fails, the
@@ -562,7 +585,7 @@ def replace_hand_installed(extension: Extension,
            if hand_installed_ident(p) == extension.id and p.parent == root]
     moved = [(p, _set_aside(p)) for p in own]
     try:
-        install_extension(extension, confirm_manual_copies)
+        install_extension(extension, confirm_manual_copies, catalog_ids)
     except Exception:
         for original, aside in reversed(moved):
             try:
@@ -576,13 +599,15 @@ def replace_hand_installed(extension: Extension,
 
 
 def install_extension(extension: Extension,
-                      confirm_manual_copies=None) -> None:
+                      confirm_manual_copies=None,
+                      catalog_ids: Iterable[str] | None = None) -> None:
     """Download, verify and atomically install an extension or its update.
 
     If the same extension is already installed by hand under another name,
     ``confirm_manual_copies(paths)`` decides: True sets those copies aside
     (renamed, not deleted) and installs; False — or no callback — installs
-    nothing, so the extension never loads twice."""
+    nothing, so the extension never loads twice. ``catalog_ids`` lets a
+    managed copy under an id the catalog dropped count as such a copy."""
     if not compatible_with_current(extension):
         raise ExtensionManagerError(
             f"{extension.id!r} requires IngeTrazo "
@@ -631,7 +656,7 @@ def install_extension(extension: Extension,
                 raise ExtensionManagerError(
                     f"{extension.id!r} is not a Python extension file.")
             (stage / "__init__.py").write_bytes(archive_data)
-        copies = manual_copies(extension.id, stage)
+        copies = manual_copies(extension.id, stage, catalog_ids)
         if copies:
             if (confirm_manual_copies is None
                     or not confirm_manual_copies(copies)):

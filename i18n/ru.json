@@ -740,6 +740,7 @@
  "Label colour": "Цвет метки",
  "Label column": "Колонка меток",
  "Label text:": "Текст метки:",
+ "Ctrl+Enter to accept": "Ctrl+Enter — подтвердить",
  "Dimension text (<> = measured value):": "Текст размера (<> = измеренное значение):",
  "Landscape": "Ландшафт",
  "Language": "Язык",
@@ -2846,6 +2847,7 @@
  "Installed by hand, outside the extension manager.": "Установлено вручную, вне менеджера расширений.",
  "Replace with the catalog version": "Заменить версией из каталога",
  "Installed by hand · not in the catalog": "Установлено вручную · нет в каталоге",
+ "No longer in the catalog · version {version}": "Больше нет в каталоге · версия {version}",
  "«{name}» was installed by hand. Uninstalling sets it aside instead of deleting it: it is renamed with a dot in front, in the same folder, and IngeTrazo no longer loads it.": "«{name}» было установлено вручную. Удаление не стирает его, а откладывает: оно переименовывается с точкой в начале в той же папке, и IngeTrazo больше его не загружает.",
  "«{name}» is set aside as {folder}. Restart IngeTrazo to apply the change.": "«{name}» отложено как {folder}. Перезапустите IngeTrazo, чтобы применить изменение.",
  "Replace the copy of «{name}» installed by hand with the catalog version? The copy is set aside (renamed with a dot in front), not deleted, and the catalog version can then be updated, disabled and uninstalled from here.": "Заменить копию «{name}», установленную вручную, версией из каталога? Копия будет отложена (переименована с точкой в начале), а не удалена, и версию из каталога затем можно будет обновлять, отключать и удалять отсюда.",
@@ -3000,5 +3002,8 @@
  "Group them when there are many": "Группировать, если их много",
  "Always in submenus": "Всегда в подменю",
  "Each entry on its own": "Каждый пункт отдельно",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Как пункты расширений показываются в контекстном меню (сразу) и в меню «Расширения» (при следующем запуске).",
+ "Axes": "Оси",
+ "Show the model's red, green and blue drawing axes. Inference along them keeps working while they are hidden.": "Показывает красную, зелёную и синюю оси рисования модели. Привязки вдоль них работают, даже когда оси скрыты.",
+ "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "Расширение «{name}» дало сбой в контекстном меню и исключено из него до перезапуска IngeTrazo. Обновите его или отключите в Менеджере расширений."
 }

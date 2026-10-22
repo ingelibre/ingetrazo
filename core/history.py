@@ -66,6 +66,7 @@ from core.topology import (
     find_containing_face,
     fold_nonplanar_faces,
     heal_overlapping_faces,
+    hole_merged_with_loop,
     loop_inside_face,
     new_defects,
     orient_coplanar_faces,
@@ -571,6 +572,7 @@ class AddFaceCommand(Command):
         self.face: Optional[Face] = None
         # (face_that_gained_a_hole, the vertex loop punched) for undo.
         self._punches: list[tuple[Face, list]] = []
+        self._hole_swaps: list = []
         self._subdiv_mother: Optional[Face] = None
         self._subdiv_remainder: Optional[list] = None
 
@@ -624,8 +626,16 @@ class AddFaceCommand(Command):
         # gains the new loop as a hole.
         mother = find_containing_face(m.faces, self.face.vertices, exclude=self.face)
         if mother is not None:
-            loop = m.add_hole(mother, self.face.vertices)
-            self._punches.append((mother, loop))
+            grown = hole_merged_with_loop(mother, self.face.vertices)
+            if grown is not None:
+                idx, outline = grown
+                old_loop = mother.hole_loops[idx]
+                m.remove_hole(mother, old_loop)
+                loop = m.add_hole(mother, outline)
+                self._hole_swaps.append((mother, old_loop, loop))
+            else:
+                loop = m.add_hole(mother, self.face.vertices)
+                self._punches.append((mother, loop))
             _inherit_paint(self.face, mother)
 
         # Direction B: the new face encloses existing smaller faces → it gains
@@ -639,7 +649,7 @@ class AddFaceCommand(Command):
 
         # Direction C: drawn against an existing face's boundary (corner / edge
         # rectangle) → carve a connected sub-region. Only when no hole applied.
-        if not self._punches:
+        if not self._punches and not self._hole_swaps:
             for other in list(m.faces):
                 if other is self.face:
                     continue
@@ -685,6 +695,15 @@ class AddFaceCommand(Command):
         for face, loop in self._punches:
             m.remove_hole(face, loop)
         self._punches = []
+        for face, old_loop, loop in reversed(self._hole_swaps):
+            m.remove_hole(face, loop)
+            face.hole_loops.append(old_loop)
+            n = len(old_loop)
+            for i in range(n):
+                edge = m.find_edge(old_loop[i], old_loop[(i + 1) % n])
+                if edge is not None and face not in edge.faces:
+                    edge.faces.append(face)
+        self._hole_swaps = []
         if self.face is not None:
             m.remove_face(self.face)
             # The edges and corners this face brought with it go too, when
@@ -1268,6 +1287,79 @@ class MoveTextLabelsCommand(Command):
     def undo(self, scene) -> None:
         for t in self._labels:
             t.offset = t.offset - self._delta
+        scene.version += 1
+
+
+class MoveGuidesCommand(Command):
+    """Translate construction guides (Tape Measure) with the Move tool
+    (#627). A guide line slides parallel to itself; a guide point carries
+    its ``origin`` along, so the dashed segment it draws keeps its shape."""
+
+    def __init__(self, guides, delta) -> None:
+        self._guides = list(guides)
+        self._delta = QVector3D(delta)
+
+    @staticmethod
+    def shift(guide, step: QVector3D) -> None:
+        """Apply one step — the tool's live preview uses it too."""
+        guide.point = guide.point + step
+        if guide.origin is not None:
+            guide.origin = guide.origin + step
+
+    def do(self, scene) -> None:
+        for g in self._guides:
+            self.shift(g, self._delta)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for g in self._guides:
+            self.shift(g, -self._delta)
+        scene.version += 1
+
+
+class RotateGuidesCommand(Command):
+    """Rotate construction guides about ``centre``/``axis`` (the Rotate
+    tool, #627): the point orbits, a line's direction turns, a guide
+    point's ``origin`` orbits with it. Undo puts back the exact values from
+    before, so a turn and its undo never drift."""
+
+    def __init__(self, guides, centre: QVector3D, axis: QVector3D,
+                 deg: float) -> None:
+        self._guides = list(guides)
+        self.centre = QVector3D(centre)
+        self.axis = QVector3D(axis)
+        self.deg = float(deg)
+        self._before: list = []
+
+    @staticmethod
+    def state(guide) -> tuple:
+        """What a rotation changes, copied — the tool's preview keeps it."""
+        return (guide, QVector3D(guide.point),
+                None if guide.direction is None else QVector3D(guide.direction),
+                None if guide.origin is None else QVector3D(guide.origin))
+
+    @staticmethod
+    def place(state, m) -> None:
+        """Put a guide at ``m`` applied to its ``state`` (``None``: as it was)."""
+        guide, point, direction, origin = state
+        guide.point = m.map(point) if m is not None else QVector3D(point)
+        if direction is not None:
+            d = m.mapVector(direction) if m is not None else direction
+            guide.direction = (d.normalized() if d.length() > 1e-12
+                               else QVector3D(direction))
+        if origin is not None:
+            guide.origin = m.map(origin) if m is not None else QVector3D(origin)
+
+    def do(self, scene) -> None:
+        self._before = [self.state(g) for g in self._guides]
+        m = rotation_matrix(self.centre, self.axis, self.deg)
+        for st in self._before:
+            self.place(st, m)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for st in self._before:
+            self.place(st, None)
         scene.version += 1
 
 
@@ -3263,6 +3355,19 @@ class MakeGroupCommand(Command):
     def do(self, scene) -> None:
         m = scene.mesh
         self.snapshot = m.capture_state()
+        # Built once: a redo puts back the SAME group, the one the next
+        # commands (Explode, Move, paint…) hold — a fresh one each time
+        # left them pointing at a group no longer in the model, and
+        # their redo was lost (#737).
+        if self.group is None:
+            self.group = self._build(scene)
+        self._take_off_loose(scene)
+        scene.groups.append(self.group)
+        scene.selection.clear()
+        scene.selection.add(self.group)
+        scene.version += 1
+
+    def _build(self, scene) -> Group:
         # The group is a fresh copy built from the captured positions. A
         # COMPONENT shifts them into local coordinates around the origin.
         origin = QVector3D(0.0, 0.0, 0.0)
@@ -3320,19 +3425,23 @@ class MakeGroupCommand(Command):
                  if va is not None and vb is not None else None)
             if e is not None:
                 stamp_edge_flags(e, flags)
-        self.group = Group(gmesh, name=self._name)
+        group = Group(gmesh, name=self._name)
         if self._component:
             from PySide6.QtGui import QMatrix4x4
             if rot is not None:
                 from core.axes import frame_matrix
-                self.group.xform = frame_matrix(origin, *rot)
+                group.xform = frame_matrix(origin, *rot)
             else:
                 t = QMatrix4x4()
                 t.translate(origin)
-                self.group.xform = t
+                group.xform = t
         elif rot is not None:
             from core.axes import frame_matrix
-            self.group.axes = frame_matrix(corner, *rot)
+            group.axes = frame_matrix(corner, *rot)
+        return group
+
+    def _take_off_loose(self, scene) -> None:
+        m = scene.mesh
         # Remove the grouped geometry from the loose mesh.
         face_keysets = [frozenset(_key(p) for p in loop)
                         for loop, _h, _a in self._face_loops]
@@ -3349,10 +3458,6 @@ class MakeGroupCommand(Command):
                                 (_key(e.a) in grouped and _key(e.b) in grouped)):
                 m.remove_edge(e)
                 scene.selection.discard(e)
-        scene.groups.append(self.group)
-        scene.selection.clear()
-        scene.selection.add(self.group)
-        scene.version += 1
 
     def undo(self, scene) -> None:
         if self.group in scene.groups:

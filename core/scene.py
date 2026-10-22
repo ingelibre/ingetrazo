@@ -142,6 +142,10 @@ class Scene:
     # False for hidden things; the ghost pass draws them.
     show_hidden_objects: bool = False
     show_hidden_geometry: bool = False
+    # Camera ▸ Axes: the world's red/green/blue drawing axes. Only the
+    # drawing hides — axis inference and the arrow-key locks still work,
+    # and an open group keeps showing its own axes.
+    show_axes: bool = True
     # Camera ▸ Component Edit ▸ Hide Similar Components: while a
     # component instance is open, its sibling instances (the other copies of
     # the same definition) leave the frame instead of fading with the rest.
@@ -204,11 +208,40 @@ class Scene:
     def _layer_state(self, entity) -> tuple[bool, bool]:
         """(visible, locked) of the layer ``entity`` carries; unknown layer
         names read as the default (visible, unlocked)."""
-        from core.layers import layer_of
-        ly = self.layer(layer_of(entity))
+        from core.layers import DEFAULT_LAYER, layer_of
+        name = layer_of(entity)
+        if name == DEFAULT_LAYER and self._edit_stack:
+            name = self._open_group_layer(entity) or name
+        ly = self.layer(name)
         if ly is None:
             return True, False
         return ly.visible, ly.locked
+
+    def _open_group_layer(self, entity):
+        """The layer a face or edge with none of its own follows while its
+        group is open: the open group's, or the nearest enclosing group's
+        that has one. Closed, the group's layer already decides for
+        everything in it; open, its geometry is drawn and picked as loose
+        geometry, and hiding the default layer took the contents of a
+        group on another layer with it (#366)."""
+        if hasattr(entity, "children") or not (
+                hasattr(entity, "attrs") or hasattr(entity, "v0")):
+            return None
+        group_layer = None
+        for level in reversed(self._edit_stack):
+            group_layer = getattr(level["group"], "layer", None)
+            if group_layer:
+                break
+        if not group_layer:
+            return None
+        key = (id(self.mesh), self.version, len(self.mesh.faces),
+               len(self.mesh.edges))
+        memo = getattr(self, "_open_mesh_ids", None)
+        if memo is None or memo[0] != key:
+            ids = {id(f) for f in self.mesh.faces}
+            ids.update(id(e) for e in self.mesh.edges)
+            memo = self._open_mesh_ids = (key, ids)
+        return group_layer if id(entity) in memo[1] else None
 
     @staticmethod
     def _object_hidden(entity) -> bool:
@@ -327,6 +360,7 @@ class Scene:
                     and group in (getattr(self.edit_group, "children", None) or ()))
         if self.edit_group is not None and not anidando:
             self.end_group_edit()
+        self._refresh_dimension_holds()
         anterior = self.mesh
         self._edit_share = None
         # The context's own axes (issue #44), read BEFORE anything below
@@ -368,8 +402,18 @@ class Scene:
              "frame": frame, "definition": definition})
         self.mesh = group.mesh
         self.edit_group = group
+        self._refresh_dimension_holds()
         self.selection.clear()
         self.version += 1
+
+    def _refresh_dimension_holds(self) -> None:
+        """Read every dimension's endpoints once, either side of an edit
+        context swapping a group's mesh (#621). Before the swap, the last
+        known spots are made current; after it, a hold on the mesh that
+        went away finds the vertex now standing there — before any edit
+        can move it out from under that spot."""
+        for d in self.dimensions:
+            d.a, d.b
 
     @staticmethod
     def _bake_container_xform(group) -> None:
@@ -417,6 +461,7 @@ class Scene:
     def _leave_level(self) -> None:
         if not self._edit_stack:
             return
+        self._refresh_dimension_holds()
         nivel = self._edit_stack.pop()
         share = nivel["share"]
         nivel["share"] = None
@@ -434,6 +479,7 @@ class Scene:
                            else None)
         if not self._edit_stack:
             self._loose_mesh = None
+        self._refresh_dimension_holds()
         self.selection.clear()
         self.version += 1
 
@@ -571,8 +617,8 @@ class Scene:
         """Edit ▸ Invert Selection (Ctrl+Shift+I): select every
         entity of the open context that is NOT selected now, and drop what
         is. The universe is Select All's — the loose edges and faces, the
-        context's groups (the model's, or the open group's children) and the
-        dimensions — minus what a click or a box could not pick either:
+        context's groups (the model's, or the open group's children), the
+        dimensions and, in the model, the construction guides — minus what a click or a box could not pick either:
         hidden objects and faces, hidden or locked layers, and hidden edges
         (a smoothed surface's inner edges) while the hidden-geometry view is
         off. Returns the size of the new selection."""
@@ -585,6 +631,8 @@ class Scene:
         universe += [f for f in self.faces if self.entity_selectable(f)]
         universe += [g for g in groups if self.entity_selectable(g)]
         universe += [d for d in self.dimensions if self.entity_selectable(d)]
+        if ctx is None:                      # guides belong to the model (#627)
+            universe += [g for g in self.guides if self.entity_selectable(g)]
         new = [ent for ent in universe if ent not in self.selection]
         self.selection.clear()
         self.selection.update(new)
@@ -611,6 +659,7 @@ class Scene:
                 or self.saved_views or self.compositions
                 or self.image_planes or self.plugin_data
                 or self.kept_components or self.section_planes
+                or self.materials
                 or not self.show_section_planes
                 or not self.show_section_cuts
                 or self.show_hidden_objects or self.show_hidden_geometry
@@ -628,6 +677,7 @@ class Scene:
             self.compositions.clear()
             self.custom_scales.clear()
             self.kept_components.clear()
+            self.materials.clear()
             self.plugin_data = {}
             self.selection.clear()
             from core.layers import DEFAULT_LAYER, Layer
@@ -644,6 +694,7 @@ class Scene:
             self.show_section_cuts = True
             self.show_hidden_objects = False
             self.show_hidden_geometry = False
+            self.show_axes = True
             self.version += 1
         # Outside the guard: an empty document has a camera to forget too.
         self.camera_home = None
@@ -669,18 +720,23 @@ class Scene:
         when nothing selected has a place in space.
 
         Loose edges and faces, whole groups (nested placements included,
-        vectorized per mesh like ``bounds()``), dimensions and reference
-        images. Not cached: it runs once per command, over the selection
-        only."""
+        vectorized per mesh like ``bounds()``), dimensions, reference
+        images and construction guides — by their point only: a guide line
+        is infinite, and its ±10 km segment made Ctrl+A then Zoom Selection
+        frame a dot (#627). Not cached: it runs once per command, over the
+        selection only."""
         import numpy as np
         from core.group import iter_placements
+        from core.guide import Guide
         pts: list = []
 
         def add(p: QVector3D) -> None:
             pts.append((p.x(), p.y(), p.z()))
 
         for ent in self.selection:
-            if hasattr(ent, "mesh"):          # Group / component instance
+            if isinstance(ent, Guide):        # before Edge: it has .a / .b
+                add(ent.point)
+            elif hasattr(ent, "mesh"):        # Group / component instance
                 for g, m in iter_placements(ent):
                     verts = g.mesh.vertices
                     if not verts:

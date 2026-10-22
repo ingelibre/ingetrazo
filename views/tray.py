@@ -56,6 +56,7 @@ from core.i18n import tr
 from views.theme import style as theme_style
 from views.filedialogs import file_dialogs
 from core.mesh import Edge, Face
+from core.bim import face_net_area
 from core.group import Group
 from core.dimension import Dimension
 from core.textlabel import TextLabel
@@ -3503,7 +3504,7 @@ class EntityInfoPanel(QWidget):
             e = sel[0]
             if isinstance(e, Face):
                 mat = self._material_of(e)
-                return (f"<b>{tr('Face')}</b><br>{tr('Area')}: {fmt_area(e.area())}<br>"
+                return (f"<b>{tr('Face')}</b><br>{tr('Area')}: {fmt_area(face_net_area(e))}<br>"
                         f"{tr('Vertices')}: {len(e.vertices)}<br>"
                         f"{tr('Material')}: {mat}")
             if isinstance(e, Edge):
@@ -3552,7 +3553,8 @@ class EntityInfoPanel(QWidget):
         # every selection change would slow the panel down.
         if len(sel) <= self.TOTALS_UP_TO:
             if counts["faces"]:
-                area = sum(e.area() for e in sel if isinstance(e, Face))
+                area = sum(face_net_area(e) for e in sel
+                           if isinstance(e, Face))
                 text += f"<br>{tr('Area')}: {fmt_area(area)}"
             if counts["edges"]:
                 length = sum((e.b - e.a).length() for e in sel

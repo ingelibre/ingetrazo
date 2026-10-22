@@ -76,6 +76,12 @@ class VertexAnchor:
             return True
         if not self.chain:
             return self.mesh is getattr(scene, "loose_mesh", scene.mesh)
+        if self.mesh is not getattr(self.chain[-1], "mesh", None):
+            # The group holds another mesh now: entering a component swaps
+            # the instance onto a world copy of its definition (placement
+            # cleared), leaving swaps it back. Read through the chain, the
+            # old mesh would land a placement off (#621).
+            return False
         return self.chain[0] in (getattr(scene, "groups", None) or ())
 
     def position(self, scene=None):
@@ -114,7 +120,10 @@ def resolve_vertex_anchor(scene, point: QVector3D, tol: float = 1e-4):
             return None
         return VertexAnchor(v, mesh, chain)
 
-    found = hit(scene.mesh, QVector3D(point), ())
+    # The LOOSE mesh, not ``scene.mesh``: inside a group edit that is the
+    # open group's, which the loop below finds with its chain — held as
+    # loose, the anchor was dead from birth (#621).
+    found = hit(getattr(scene, "loose_mesh", scene.mesh), QVector3D(point), ())
     if found is not None:
         return found
     for g in getattr(scene, "groups", None) or ():
@@ -344,6 +353,30 @@ class Dimension:
     def midpoint(self) -> QVector3D:
         ap, bp = self.line_points()
         return (ap + bp) * 0.5
+
+    def ends_riding(self, group_ids) -> tuple:
+        """Which endpoints (``"a"``, ``"b"``) hold a vertex placed by one of
+        the groups whose ``id`` is in *group_ids* — the ones a transform of
+        those groups carries along."""
+        return tuple(
+            which for which in ("a", "b")
+            if (an := getattr(self, "anchor_" + which)) is not None
+            and any(id(g) in group_ids for g in an.chain))
+
+    def carried(self, m: QMatrix4x4, ends) -> "Dimension":
+        """A frozen copy with the endpoints in *ends* taken through *m*:
+        what the dimension will read once a groups transform previewed
+        through *m* is committed (#621). The offset stays, as the commit
+        leaves it; :meth:`line_points` squares it to the new segment."""
+        import copy
+        c = copy.copy(self)
+        a, b = self.a, self.b
+        c._a = m.map(a) if "a" in ends else QVector3D(a)
+        c._b = m.map(b) if "b" in ends else QVector3D(b)
+        c.offset = QVector3D(self.offset)
+        c.anchor_a = c.anchor_b = None
+        c._scene = None
+        return c
 
     @staticmethod
     def offset_for_cursor(a: QVector3D, b: QVector3D,

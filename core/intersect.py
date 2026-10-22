@@ -283,4 +283,10 @@ def segments_for(scene, mode: str) -> list:
             else scene.groups
         rest += [g for g in kids if id(g) not in selected]
     others = polys_of(rest)
+    if mode == WITH_MODEL:
+        # The selection is part of the model: Select All + With Model is the
+        # usual way to cut everything against everything, and taking the
+        # selection out of «the rest» left nothing to cut against (#541).
+        return _dedupe(intersect(mine, others)
+                       + intersect(mine, mine, same=True))
     return intersect(mine, others)

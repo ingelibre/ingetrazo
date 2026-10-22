@@ -739,6 +739,7 @@
  "Label colour": "Kolor etykiety",
  "Label column": "Kolumna Etykieta",
  "Label text:": "Tekst etykiety:",
+ "Ctrl+Enter to accept": "Ctrl+Enter, aby zatwierdzić",
  "Dimension text (<> = measured value):": "Tekst wymiarowy (<> = wartość zmierzona):",
  "Landscape": "Pozioma",
  "Language": "Język",
@@ -2568,6 +2569,7 @@
  "Installed by hand, outside the extension manager.": "Zainstalowane ręcznie, poza menedżerem rozszerzeń.",
  "Replace with the catalog version": "Zastąp wersją z katalogu",
  "Installed by hand · not in the catalog": "Zainstalowane ręcznie · brak w katalogu",
+ "No longer in the catalog · version {version}": "Brak w katalogu · wersja {version}",
  "«{name}» was installed by hand. Uninstalling sets it aside instead of deleting it: it is renamed with a dot in front, in the same folder, and IngeTrazo no longer loads it.": "«{name}» zostało zainstalowane ręcznie. Odinstalowanie odkłada je na bok zamiast usuwać: nazwa dostaje kropkę na początku, w tym samym folderze, a IngeTrazo przestaje je wczytywać.",
  "«{name}» is set aside as {folder}. Restart IngeTrazo to apply the change.": "«{name}» odłożono na bok jako {folder}. Uruchom IngeTrazo ponownie, aby zastosować zmianę.",
  "Replace the copy of «{name}» installed by hand with the catalog version? The copy is set aside (renamed with a dot in front), not deleted, and the catalog version can then be updated, disabled and uninstalled from here.": "Zastąpić ręcznie zainstalowaną kopię «{name}» wersją z katalogu? Kopia zostanie odłożona na bok (z kropką na początku nazwy), nie usunięta, a wersję z katalogu będzie można stąd aktualizować, wyłączać i odinstalowywać.",
@@ -3008,5 +3010,8 @@
  "Group them when there are many": "Grupuj, gdy jest ich wiele",
  "Always in submenus": "Zawsze w podmenu",
  "Each entry on its own": "Każda pozycja osobno",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Jak pozycje rozszerzeń są wyświetlane w menu prawego przycisku (od razu) i w menu Rozszerzenia (po ponownym uruchomieniu)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Jak pozycje rozszerzeń są wyświetlane w menu prawego przycisku (od razu) i w menu Rozszerzenia (po ponownym uruchomieniu).",
+ "Axes": "Osie",
+ "Show the model's red, green and blue drawing axes. Inference along them keeps working while they are hidden.": "Pokazuje czerwoną, zieloną i niebieską oś rysowania modelu. Przyciąganie wzdłuż osi działa nadal, gdy są ukryte.",
+ "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "Rozszerzenie «{name}» zawiodło w menu prawego przycisku i zostaje z niego usunięte do ponownego uruchomienia IngeTrazo. Zaktualizuj je lub wyłącz w Menedżerze rozszerzeń."
 }

@@ -1007,6 +1007,13 @@ def _face_geometry(f, memo, triangulate):
     return geom
 
 
+
+def _finite_point(p) -> bool:
+    """Whether ``p`` (a QVector3D or None) is a real point."""
+    import math
+    return p is not None and all(
+        math.isfinite(c) for c in (p.x(), p.y(), p.z()))
+
 class Viewport(QOpenGLWidget):
     """OpenGL viewport with orbital camera, grid, XYZ axes, tools and snapping."""
 
@@ -2140,8 +2147,12 @@ class Viewport(QOpenGLWidget):
         # stays stable across zoom. Depth-write OFF so the ground axes don't cull
         # geometry sitting on z=0; drawn BEFORE user edges so an edge along an
         # axis wins the LEQUAL depth test. Rubber-band stays on top (drawn last).
-        if self.plano_style is None and self.style_override is None:
-            # No axes on a plan sheet / styled composer frame.
+        from core import axes as _axes
+        if (self.plano_style is None and self.style_override is None
+                and (getattr(self.scene, "show_axes", True)
+                     or not _axes.is_world())):
+            # No axes on a plan sheet / styled composer frame, nor the
+            # world's once Camera ▸ Axes is off (an open group keeps its own).
             spacing = max(self.camera.distance * 0.008, 1e-4)
             axes_coords, self._axes_spans = _axes_vertices(spacing)
             data = axes_coords.tobytes()
@@ -5064,17 +5075,24 @@ class Viewport(QOpenGLWidget):
         self._preview_matrix = QMatrix4x4(m)
         self.update()
 
+    def _groups_preview_transform(self) -> QMatrix4x4:
+        """The world transform the groups preview draws its movers through:
+        the full matrix (Rotate/Scale) or the translation (Move)."""
+        m = getattr(self, "_preview_matrix", None)
+        if m is not None:
+            return QMatrix4x4(m)
+        m = QMatrix4x4()
+        off = getattr(self, "_preview_offset", None)
+        if off is not None:
+            m.translate(off)
+        return m
+
     def _draw_groups_preview(self, mvp) -> None:
         """Draw the frozen scratch copies of the moving groups at the
         current preview offset: one translated MVP, zero array churn."""
         if not getattr(self, "_preview_groups", None):
             return
-        m = getattr(self, "_preview_matrix", None)
-        if m is None:
-            m = QMatrix4x4()
-            off = getattr(self, "_preview_offset", None)
-            if off is not None:
-                m.translate(off)
+        m = self._groups_preview_transform()
         self._program.setUniformValue(self._loc_mvp, mvp * m)
         n = getattr(self, "_pv_vcol_count", 0)
         if n:
@@ -6980,9 +6998,10 @@ class Viewport(QOpenGLWidget):
             self.camera.target = focus
         frac = max(bw / max(self.width(), 1), bh / max(self.height(), 1))
         frac = max(frac, 0.04)        # don't zoom past a sane limit in one go
-        from core.camera import MAX_DISTANCE, MIN_DISTANCE
+        from core.camera import MAX_DISTANCE
         self.camera.distance = max(
-            MIN_DISTANCE, min(self.camera.distance * frac, MAX_DISTANCE))
+            self.camera.min_distance(),
+            min(self.camera.distance * frac, MAX_DISTANCE))
         self.update()
 
     def _draw_snap_indicator(self, painter: QPainter, snap: SnapResult) -> None:
@@ -7918,11 +7937,20 @@ class Viewport(QOpenGLWidget):
         font = QFont()
         font.setPointSize(int(style.get("font_size", 9)))
         font.setBold(True)
+        # A groups preview (Move/Rotate) moves no geometry until the commit:
+        # the dimensions held by the movers' vertices are drawn where the
+        # commit will put them, or they lagged behind the whole drag (#621).
+        riders = getattr(self, "_preview_groups", None)
+        carry = self._groups_preview_transform() if riders else None
         for dim in dims:
             if not self.scene.entity_visible(dim):      # hidden layer
                 continue
             ink = (sel_ink if (dim in selection or dim is self._hover_entity)
                    else default_ink)
+            if riders:
+                ends = dim.ends_riding(riders)
+                if ends:
+                    dim = dim.carried(carry, ends)
             ap, bp = dim.line_points()
             pap = self._world_to_pixel(ap)
             pbp = self._world_to_pixel(bp)
@@ -8765,6 +8793,17 @@ class Viewport(QOpenGLWidget):
     #: Eye depth (m) a segment is cut at when it runs behind the camera.
     _CLIP_W = 1e-3
 
+    def _clip_w(self) -> float:
+        """Where a segment is cut in front of the eye: 1 mm, or the near
+        plane when the camera has come closer than that would allow — at a
+        few millimetres from a small part, 1 mm cut away the very line
+        being drawn (#653, #692)."""
+        cam = self.camera
+        if not getattr(cam, "perspective", True):
+            return self._CLIP_W
+        near = getattr(cam, "near_plane", None)
+        return min(self._CLIP_W, near()) if callable(near) else self._CLIP_W
+
     def _segment_to_pixels(self, p0: QVector3D, p1: QVector3D):
         """A world segment → its two screen pixels, cut where it passes
         behind the eye instead of dropped whole. A guide is kilometres
@@ -8773,7 +8812,7 @@ class Viewport(QOpenGLWidget):
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
         c0 = mvp.map(QVector4D(p0.x(), p0.y(), p0.z(), 1.0))
         c1 = mvp.map(QVector4D(p1.x(), p1.y(), p1.z(), 1.0))
-        w0, w1, eps = c0.w(), c1.w(), self._CLIP_W
+        w0, w1, eps = c0.w(), c1.w(), self._clip_w()
         if w0 < eps and w1 < eps:
             return None
         if w0 < eps:
@@ -11419,7 +11458,13 @@ class Viewport(QOpenGLWidget):
         # used to kill on-line snapping in ordinary 3D views); guide POINTS
         # snap as degenerate pseudo-edges, exactly like survey points.
         lines = []
+        # Guides that Move is dragging pass through the cursor: left out,
+        # or the cursor locks onto its own guide (#627).
+        moving = getattr(self.active_tool, "moving_guide_ids", None)
+        moving = moving() if callable(moving) else ()
         for g in getattr(self.scene, "guides", None) or []:
+            if id(g) in moving:
+                continue
             if g.is_line:
                 seg = self._guide_snap_segment(g)
                 if seg is not None:
@@ -13945,17 +13990,33 @@ class Viewport(QOpenGLWidget):
             if focus is None:
                 focus = self._world_under_cursor(pos.x(), pos.y())
         if focus is not None:
-            # A perceptible retreat even from a 2 cm close-up: ~1 % of the
+            # A perceptible retreat even from a close-up: ~1 % of the
             # model's size per notch when the frame scaling alone would move
             # the eye less than that (the "zoom is stuck" report).
-            diag = self._model_diag()
             self.camera.zoom_to(steps, focus,
-                                min_step=max(0.05, 0.01 * diag) * floor_share)
+                                min_step=self._zoom_out_step() * floor_share)
         else:
             self.camera.zoom(steps)
         self._zoom_focus = (pose(), pos.x(), pos.y(),
                             self.scene.version, focus)
         return reproj, reused
+
+    #: The least a notch of the wheel backs out, from a close-up, once the
+    #: camera stands 2 cm or more from what it looks at — and always in an
+    #: empty scene, which has no size to go by.
+    _ZOOM_OUT_STEP = 0.05
+
+    def _zoom_out_step(self) -> float:
+        """Zoom-out floor per notch: 1 % of the model, never less than 5 cm
+        — as it always was — except closer than 2 cm to a small part, where
+        5 cm would throw it out of sight in one notch: there the 5 cm
+        shrinks with the distance (1.25 cm at the 5 mm close-up)."""
+        diag = self._model_diag()
+        if diag <= 0.0:
+            return self._ZOOM_OUT_STEP
+        from core.camera import MIN_DISTANCE_FAR
+        near = min(1.0, float(self.camera.distance) / MIN_DISTANCE_FAR)
+        return max(self._ZOOM_OUT_STEP * near, 0.01 * diag)
 
     def _model_diag(self) -> float:
         """The model's size, for the zoom step. On a huge model it comes
@@ -14861,8 +14922,17 @@ class Viewport(QOpenGLWidget):
         place. Returns ``None`` when the pixel casts no world point (the ray
         misses the plane / the point is behind the camera). A tool that does
         not snap (Select, Push/Pull) gets a ``"none"`` result instead - no
-        snap engine, no occlusion raycasts, no marker."""
-        return self.inference.snap(px_x, px_y, modifiers)
+        snap engine, no occlusion raycasts, no marker.
+
+        A point that is not finite counts as no point: a NaN that reached a
+        tool showed «nan m» in the length box and failed the Line's commit
+        with «AddEdgeCommand: cannot convert float NaN to integer» (#466,
+        #754). Whatever inference produced it, the cursor just gives
+        nothing for that pixel."""
+        snap = self.inference.snap(px_x, px_y, modifiers)
+        if snap is not None and not _finite_point(snap.point):
+            return None
+        return snap
 
     def _build_ctx(self, ev) -> Optional[ToolContext]:
         self._sync_axes()

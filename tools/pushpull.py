@@ -65,6 +65,7 @@ from core.arrangement import _interior_point, _point_in_polygon, plane_basis
 from core.orient import _ray_triangle, is_closed, orient_outward
 from core.cap_rebuild import (
     RebuildCache,
+    _canon_loop,
     apply_rebuild,
     crack_planes,
     edges_along,
@@ -251,6 +252,16 @@ def _faces_window(faces):
     m = 0.01 + 1e-6 * max(abs(c) for c in lo + hi)
     return (lo[0] - m, lo[1] - m, lo[2] - m, hi[0] + m, hi[1] + m, hi[2] + m)
 
+
+
+def _face_shape(face) -> tuple:
+    """Which way round a face is wound does not matter here: whether the
+    rebuild handed back the same face, outline and holes."""
+    def loop(pts):
+        pts = list(pts)
+        return min(_canon_loop(pts), _canon_loop(pts[::-1]))
+    return (loop(face.vertices), frozenset(loop(h) for h in face.holes),
+            face.interior)
 
 class PushPullTool(Tool):
     name = "Push / Pull"
@@ -1403,6 +1414,11 @@ class PushPullTool(Tool):
         # push (−n has a component out of it) overflows at any depth — the
         # long wall of a triangular prism can't move inward at all without
         # boolean subtraction. Limit 0 (the push becomes a no-op).
+        # The lean is judged in metres, not as a bare cosine: how far the
+        # wall's far end strays from square. Coordinates saved in single
+        # precision tilt a narrow wall's normal by ~2e-5 — the 15 mm top of a
+        # board read as leaning away and its corner could not be cut through
+        # (#710) — while the strayed distance is a fraction of a micron.
         direction = -n
         mesh = scene.mesh
         for loop in [self.base_face.loop] + self.base_face.hole_loops:
@@ -1417,7 +1433,13 @@ class PushPullTool(Tool):
                     gn = g.normal().normalized()
                     if abs(QVector3D.dotProduct(gn, n)) > 0.999:
                         continue  # parallel/coplanar: not a lateral wall
-                    if QVector3D.dotProduct(direction, gn) > 1e-6:
+                    lean = QVector3D.dotProduct(direction, gn)
+                    if lean <= 1e-6:
+                        continue
+                    root = loop[i].position
+                    depth = max(QVector3D.dotProduct(v - root, direction)
+                                for v in g.vertices)
+                    if lean * depth > _STITCH_TOL:
                         self._limit_in = 0.0
                         return
 
@@ -2384,7 +2406,15 @@ class PushPullTool(Tool):
                 if apply_rebuild(mesh, origin, plane_n, fresh, keep_mode,
                                  removing, op=op_rims, cache=cache):
                     changed = True
-                    fresh |= set(mesh.faces) - before_faces
+                    # A rebuild replaces every face of the plane, so the
+                    # user's own faces there come back as new objects. One
+                    # that comes back unchanged is still the user's, not the
+                    # op's: counted as fresh, the next round read a free
+                    # sheet (a triangle drawn on the ground beside the
+                    # solid) as op debris and deleted it (#552).
+                    kept = {_face_shape(f) for f in before_faces - fresh}
+                    fresh |= {f for f in set(mesh.faces) - before_faces
+                              if _face_shape(f) not in kept}
             if not changed:
                 break
             fresh = {f for f in fresh if f in mesh.faces}

@@ -144,3 +144,23 @@ def test_the_numpy_box_test_finds_the_same_pairs():
     cross_pairs = {(i, j) for i in range(len(a)) for j in range(len(b))
                    if X._boxes_touch(a[i], b[j])}
     assert set(X._touching(la, ha, lb, hb, same=False)) == cross_pairs
+
+
+def test_with_model_and_everything_selected_still_cuts():
+    """Select All + With Model: the selection is cut against the whole
+    model, itself included — taking it out of «the rest» left nothing
+    (#541)."""
+    scene = Scene()
+    hist = History(scene)
+    for f in _box(0, 0, 0, 2, 2, 2, RED).mesh.faces:
+        scene.mesh.add_face(f.vertices)
+    bar = _box(1, -1, 1, 1.5, 3, 3, BLUE)
+    scene.groups.append(bar)
+    scene.selection = set(scene.mesh.faces) | {bar}
+    segs = X.segments_for(scene, X.WITH_MODEL)
+    scene.selection = set(scene.mesh.faces)
+    assert len(segs) == len(X.segments_for(scene, X.WITH_MODEL)) > 0
+    scene.selection = set(scene.mesh.faces) | {bar}
+    hist.execute(build_add_edges(scene, segs, detect_faces=True))
+    assert len(scene.mesh.faces) == 10                # 2 sides + top split
+    assert solid_report(scene.mesh)[0]

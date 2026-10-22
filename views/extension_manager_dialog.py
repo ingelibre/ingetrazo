@@ -54,6 +54,7 @@ from core.extension_manager import (
     remove_hand_installed,
     replace_hand_installed,
     restart_required,
+    retired_extensions,
     set_extension_enabled,
     tested_version_is_old,
     uninstall_extension,
@@ -604,14 +605,17 @@ class ExtensionManagerDialog(QDialog):
                     for extension in extensions]
             unknown = self._hand_only(key) if key == "installed" else []
             rows += [self._make_hand_row(path, cards) for path in unknown]
+            retired = self._retired(key) if key == "installed" else []
+            rows += [self._make_retired_row(path, cards) for path in retired]
             self._place_cards(key, rows)
         finally:
             cards.setUpdatesEnabled(True)
-        page["shown"] = len(extensions) + len(unknown)
+        page["shown"] = len(extensions) + len(unknown) + len(retired)
         page["total"] = (sum(installed_info(e.id) is not None
                              or installation_conflict(e.id)
                              for e in self._extensions)
                          + len(self._hand_only(key, filtered=False))
+                         + len(self._retired(key, filtered=False))
                          if key == "installed" else len(self._extensions))
         if key == self._active_page_key():
             self._show_count(key)
@@ -1160,7 +1164,8 @@ class ExtensionManagerDialog(QDialog):
         try:
             install_extension(
                 extension, confirm_manual_copies=lambda paths:
-                self._confirm_manual_copies(extension, paths))
+                self._confirm_manual_copies(extension, paths),
+                catalog_ids=[e.id for e in self._extensions])
         except (ExtensionManagerError, OSError) as exc:
             QMessageBox.warning(self, tr("Extension manager"), str(exc))
             return
@@ -1188,6 +1193,90 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension uninstalled"),
             tr("«{name}» is uninstalled. Restart IngeTrazo to apply the "
                "change.", name=display_name(extension, current_language())))
+        for key in self._pages:
+            self._render_page(key)
+
+    # ---- Extensions that left the catalog ------------------------------
+    # The manager installed them, so it can disable and uninstall them: the
+    # catalog just no longer has a card to do it from (renamed or withdrawn).
+
+    def _retired(self, key: str, filtered: bool = True) -> list:
+        query = (self._pages[key]["search"].text().strip().casefold()
+                 if filtered else "")
+        return [path for path in retired_extensions(
+                    e.id for e in self._extensions)
+                if query in path.name.casefold()]
+
+    def _make_retired_row(self, path, parent: QWidget) -> QWidget:
+        ident = path.name
+        row = QWidget(parent)
+        row.setObjectName("extensionRow")
+        row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        row.setMinimumWidth(400)
+        row.setMaximumWidth(_ROW_MAX_WIDTH)
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(10, 10, 10, 8)
+        layout.setSpacing(6)
+        title = QLabel(ident)
+        title.setObjectName("extHandTitle")
+        layout.addWidget(title)
+        version = str((installed_info(ident) or {}).get("version", "?"))
+        note = QLabel(tr("No longer in the catalog · version {version}",
+                         version=version))
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        actions = QHBoxLayout()
+        enabled = is_extension_enabled(ident)
+        toggle = QPushButton(tr("Disable") if enabled else tr("Enable"))
+        toggle.clicked.connect(
+            lambda _checked=False, name=ident: self._toggle_retired(name))
+        actions.addWidget(toggle)
+        folder = QPushButton(tr("Open extension folder"))
+        folder.clicked.connect(
+            lambda _checked=False, name=ident:
+            self._open_extension_folder(name))
+        actions.addWidget(folder)
+        remove = QPushButton(tr("Uninstall"))
+        remove.clicked.connect(
+            lambda _checked=False, name=ident: self._uninstall_retired(name))
+        actions.addWidget(remove)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+        for label in row.findChildren(QLabel):
+            label.setTextFormat(Qt.PlainText)
+        return row
+
+    def _toggle_retired(self, ident: str) -> None:
+        enabled = not is_extension_enabled(ident)
+        try:
+            set_extension_enabled(ident, enabled)
+        except (ExtensionManagerError, OSError) as exc:
+            QMessageBox.warning(self, tr("Extension manager"), str(exc))
+            return
+        QMessageBox.information(
+            self, tr("Extension changed"),
+            tr("«{name}» is {state}. Restart IngeTrazo for the change to "
+               "take effect.", name=ident,
+               state=tr("enabled") if enabled else tr("disabled")))
+        for key in self._pages:
+            self._render_page(key)
+
+    def _uninstall_retired(self, ident: str) -> None:
+        answer = QMessageBox.question(
+            self, tr("Uninstall extension"),
+            tr("Uninstall «{name}»? Its files will be removed.", name=ident),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            uninstall_extension(ident)
+        except (ExtensionManagerError, OSError) as exc:
+            QMessageBox.warning(self, tr("Extension manager"), str(exc))
+            return
+        QMessageBox.information(
+            self, tr("Extension uninstalled"),
+            tr("«{name}» is uninstalled. Restart IngeTrazo to apply the "
+               "change.", name=ident))
         for key in self._pages:
             self._render_page(key)
 
@@ -1293,7 +1382,8 @@ class ExtensionManagerDialog(QDialog):
         try:
             replace_hand_installed(
                 extension, confirm_manual_copies=lambda paths:
-                self._confirm_manual_copies(extension, paths))
+                self._confirm_manual_copies(extension, paths),
+                catalog_ids=[e.id for e in self._extensions])
         except (ExtensionManagerError, OSError) as exc:
             QMessageBox.warning(self, tr("Extension manager"), str(exc))
             return

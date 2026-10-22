@@ -760,6 +760,8 @@ def save_scene(scene, path: Path) -> dict:
         shown["geometry"] = True
     if shown:
         payload["hidden_view"] = shown       # View ▸ Hidden Objects / Geometry
+    if not getattr(scene, "show_axes", True):
+        payload["axes_hidden"] = True        # Camera ▸ Axes (shown is implicit)
     dstyle = getattr(scene, "display_style", None)
     if dstyle is not None:
         from core.style import Style
@@ -1146,6 +1148,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.geo_paths.clear()
     scene.geo_points.clear()
     scene.text_labels.clear()
+    scene.dimensions.clear()
     scene.georef = None
     scene.photo_mesh = survey
     scene.tile_layer = None
@@ -1159,6 +1162,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.show_section_cuts = True
     scene.show_hidden_objects = False
     scene.show_hidden_geometry = False
+    scene.show_axes = True
     scene.custom_scales = []
     scene.back_face_color = None
     from core.scene import Scene
@@ -1286,7 +1290,16 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         from core.group import reserve_group_names
         reserve_group_names(names)   # new groups never reuse a stored "Group N"
 
+    # Until #765 every open-and-save doubled the dimensions: a file can hold
+    # each one 128 times over (1024 entries for 8, reported). The copies
+    # are identical entry for entry, so an entry equal to one already read
+    # is dropped; two dimensions that differ in anything both stay.
+    seen_dims: set = set()
     for raw in payload.get("dimensions", []):
+        key = json.dumps(raw, sort_keys=True, default=str)
+        if key in seen_dims:
+            continue
+        seen_dims.add(key)
         dim = Dimension(
             QVector3D(*raw["a"]), QVector3D(*raw["b"]),
             QVector3D(*raw["offset"]), layer=raw.get("layer") or None,
@@ -1346,6 +1359,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     if isinstance(shown, dict):
         scene.show_hidden_objects = bool(shown.get("objects", False))
         scene.show_hidden_geometry = bool(shown.get("geometry", False))
+    scene.show_axes = not bool(payload.get("axes_hidden", False))
 
     georef = payload.get("georef")
     if isinstance(georef, dict) and isinstance(georef.get("datum"), dict):

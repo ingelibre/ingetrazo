@@ -720,6 +720,7 @@
  "Label colour": "Warna label",
  "Label column": "Kolom label",
  "Label text:": "Teks label:",
+ "Ctrl+Enter to accept": "Ctrl+Enter untuk mengonfirmasi",
  "Dimension text (<> = measured value):": "Teks dimensi (<> = nilai terukur):",
  "Landscape": "Lanskap",
  "Language": "Bahasa",
@@ -2728,6 +2729,7 @@
  "Installed by hand, outside the extension manager.": "Dipasang manual, di luar pengelola ekstensi.",
  "Replace with the catalog version": "Ganti dengan versi katalog",
  "Installed by hand · not in the catalog": "Dipasang manual · tidak ada di katalog",
+ "No longer in the catalog · version {version}": "Tidak lagi ada di katalog · versi {version}",
  "«{name}» was installed by hand. Uninstalling sets it aside instead of deleting it: it is renamed with a dot in front, in the same folder, and IngeTrazo no longer loads it.": "«{name}» dipasang secara manual. Mencopotnya akan menyisihkannya, bukan menghapusnya: namanya diberi titik di depan, di folder yang sama, dan IngeTrazo tidak lagi memuatnya.",
  "«{name}» is set aside as {folder}. Restart IngeTrazo to apply the change.": "«{name}» disisihkan sebagai {folder}. Mulai ulang IngeTrazo untuk menerapkan perubahan.",
  "Replace the copy of «{name}» installed by hand with the catalog version? The copy is set aside (renamed with a dot in front), not deleted, and the catalog version can then be updated, disabled and uninstalled from here.": "Ganti salinan «{name}» yang dipasang manual dengan versi katalog? Salinan itu disisihkan (diberi titik di depan namanya), tidak dihapus, dan versi katalog nantinya bisa diperbarui, dinonaktifkan, dan dicopot dari sini.",
@@ -3003,5 +3005,8 @@
  "Group them when there are many": "Kelompokkan jika banyak",
  "Always in submenus": "Selalu dalam submenu",
  "Each entry on its own": "Setiap entri terpisah",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Cara entri ekstensi ditampilkan di menu klik kanan (langsung) dan di menu Ekstensi (saat dibuka lagi).",
+ "Axes": "Sumbu",
+ "Show the model's red, green and blue drawing axes. Inference along them keeps working while they are hidden.": "Menampilkan sumbu gambar merah, hijau, dan biru pada model. Inferensi di sepanjang sumbu tetap berfungsi saat sumbu disembunyikan.",
+ "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "Ekstensi «{name}» gagal di menu klik kanan dan dikeluarkan darinya sampai IngeTrazo dimulai ulang. Perbarui atau matikan di Pengelola ekstensi."
 }

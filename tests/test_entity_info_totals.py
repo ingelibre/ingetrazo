@@ -29,3 +29,22 @@ def test_two_faces_and_three_edges_show_their_totals():
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_a_face_with_an_opening_shows_its_net_area():
+    """Entity Info reads the face as it is drawn: a 4×4 m face with a
+    1×1 m opening is 15 m², alone and in a selection total."""
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        m = win.viewport.scene.mesh
+        f = m.add_face([V(0, 0, 0), V(4, 0, 0), V(4, 4, 0), V(0, 4, 0)],
+                       [[V(1, 1, 0), V(1, 2, 0), V(2, 2, 0), V(2, 1, 0)]])
+        g = m.add_face([V(6, 0, 0), V(7, 0, 0), V(7, 1, 0), V(6, 1, 0)])
+        one = win.tray.entity_info._describe([f]).replace(",", ".")
+        assert "15" in one and "16" not in one
+        both = win.tray.entity_info._describe([f, g]).replace(",", ".")
+        assert "16" in both.split(":")[-1]          # 15 + 1
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

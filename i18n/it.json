@@ -719,6 +719,7 @@
  "Label colour": "Colore dell'etichetta",
  "Label column": "Colonna delle etichette",
  "Label text:": "Testo dell'etichetta:",
+ "Ctrl+Enter to accept": "Ctrl+Invio per confermare",
  "Dimension text (<> = measured value):": "Testo della quota (<> = valore misurato):",
  "Landscape": "Orizzontale",
  "Language": "Lingua",
@@ -2732,6 +2733,7 @@
  "Installed by hand, outside the extension manager.": "Installata a mano, fuori dal gestore delle estensioni.",
  "Replace with the catalog version": "Sostituisci con la versione del catalogo",
  "Installed by hand · not in the catalog": "Installata a mano · non presente nel catalogo",
+ "No longer in the catalog · version {version}": "Non più nel catalogo · versione {version}",
  "«{name}» was installed by hand. Uninstalling sets it aside instead of deleting it: it is renamed with a dot in front, in the same folder, and IngeTrazo no longer loads it.": "«{name}» è stata installata a mano. Disinstallarla la mette da parte invece di eliminarla: viene rinominata con un punto davanti, nella stessa cartella, e IngeTrazo non la carica più.",
  "«{name}» is set aside as {folder}. Restart IngeTrazo to apply the change.": "«{name}» è stata messa da parte come {folder}. Riavvia IngeTrazo per applicare la modifica.",
  "Replace the copy of «{name}» installed by hand with the catalog version? The copy is set aside (renamed with a dot in front), not deleted, and the catalog version can then be updated, disabled and uninstalled from here.": "Sostituire la copia di «{name}» installata a mano con la versione del catalogo? La copia viene messa da parte (rinominata con un punto davanti), non eliminata, e la versione del catalogo potrà poi essere aggiornata, disattivata e disinstallata da qui.",
@@ -3001,5 +3003,8 @@
  "Group them when there are many": "Raggrupparle quando sono molte",
  "Always in submenus": "Sempre in sottomenu",
  "Each entry on its own": "Ogni voce separata",
- "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Come appaiono le voci delle estensioni nel menu del tasto destro (subito) e nel menu Estensioni (al prossimo avvio)."
+ "How the extensions' entries show in the right-click menu (at once) and in the Extensions menu (at the next start).": "Come appaiono le voci delle estensioni nel menu del tasto destro (subito) e nel menu Estensioni (al prossimo avvio).",
+ "Axes": "Assi",
+ "Show the model's red, green and blue drawing axes. Inference along them keeps working while they are hidden.": "Mostra gli assi di disegno rosso, verde e blu del modello. L'inferenza lungo gli assi continua a funzionare anche quando sono nascosti.",
+ "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "L'estensione «{name}» non ha funzionato nel menu del clic destro e ne resta esclusa finché IngeTrazo non viene riavviato. Aggiornala o disattivala nel Gestore delle estensioni."
 }

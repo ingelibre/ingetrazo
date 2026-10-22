@@ -866,6 +866,50 @@ def test_unpainted_push_stays_unpainted():
     assert all(not f.attrs for f in scene.faces)
 
 
+def _painted_quadrants(scene, hist):
+    """A box whose top is split in four, each quadrant its own colour."""
+    _cube(scene, hist, size=4.0, height=3.0)
+    hist.execute(build_add_edges(scene, [(V(2, 0, 3), V(2, 4, 3)),
+                                         (V(0, 2, 3), V(4, 2, 3))]))
+    for (cx, cy), mat in {(1, 1): "yellow", (3, 1): "green",
+                          (3, 3): "red", (1, 3): "grey"}.items():
+        _quadrant(scene, cx, cy, 3.0).attrs["mat"] = mat
+
+
+def _quadrant(scene, cx, cy, z):
+    return next(f for f in scene.faces
+                if all(abs(v.z() - z) < 1e-9 for v in f.vertices)
+                and abs(f.centroid().x() - cx) < 1e-6
+                and abs(f.centroid().y() - cy) < 1e-6)
+
+
+def _paint_at(scene, z):
+    return sorted((round(f.centroid().x(), 6), round(f.centroid().y(), 6),
+                   f.attrs.get("mat"))
+                  for f in scene.faces
+                  if all(abs(v.z() - z) < 1e-9 for v in f.vertices))
+
+
+def test_quadrants_pushed_back_level_keep_their_lines_and_paint():
+    # #649 (@Rainjalin): one painted quadrant pulled up and pushed back
+    # level dissolved every dividing line, and the whole top took one
+    # colour. The lines between different paints are the user's.
+    scene = Scene()
+    hist = History(scene)
+    _painted_quadrants(scene, hist)
+    start = _paint_at(scene, 3.0)
+    assert len(start) == 4
+    _push(scene, _quadrant(scene, 3, 1, 3.0), 1.0)      # green up
+    _push(scene, _quadrant(scene, 1, 1, 3.0), 1.0)      # yellow up
+    # Side by side at the same height they stay two faces, two colours.
+    assert _paint_at(scene, 4.0) == [(1.0, 1.0, "yellow"), (3.0, 1.0, "green")]
+    _push(scene, _quadrant(scene, 3, 1, 4.0), -1.0)     # green back
+    _push(scene, _quadrant(scene, 1, 1, 4.0), -1.0)     # yellow back
+    assert _paint_at(scene, 3.0) == start
+    assert is_closed(scene.mesh)
+    assert abs(signed_volume(scene.mesh) - 48.0) < 1e-6
+
+
 # ---- The drag wireframe follows the same softening as the commit ------------
 
 def _ngon_face(scene, n, r=2.0):

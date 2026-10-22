@@ -36,17 +36,20 @@ from core.group import Group, copy_group, transformed_attrs
 from core.history import (
     AddEdgeCommand,
     AddFaceCommand,
+    AddGuideCommand,
     CompoundCommand,
     InsertGroupCommand,
     RotateGroupCommand,
+    RotateGuidesCommand,
     RotateVerticesCommand,
     rotation_matrix,
 )
 from core.i18n import tr
 from core.mesh import Edge, Face, Mesh
 from core.axes import plane_axes  # drawing axes (#44)
+from core.guide import Guide
 from tools.base import ToolContext
-from tools.move import gather_targets
+from tools.move import copied_guide, gather_targets, guide_ghost_segments
 from tools.protractor import ProtractorBase
 
 
@@ -65,6 +68,7 @@ class RotateTool(ProtractorBase):
         self._groups: list[Group] = []
         self._splanes: list = []               # section planes being rotated
         self._images: list = []                # reference images being rotated
+        self._moved_guides: list = []                # selected construction guides
         self._positions: list[QVector3D] = []
         self._verts: list = []
         self._sel_faces: list = []          # for copy mode (loose geometry)
@@ -153,13 +157,16 @@ class RotateTool(ProtractorBase):
                     groups, positions = [], []
             from tools.move import gather_images
             images = gather_images(ctx)
-            if not (groups or positions or splanes or images):
+            guides = [g for g in viewport.scene.selection
+                      if isinstance(g, Guide)]
+            if not (groups or positions or splanes or images or guides):
                 viewport.flash_status(
                     tr("Select (or click) the geometry to rotate first"))
                 return
             self._groups = groups
             self._splanes = splanes
             self._images = images
+            self._moved_guides = guides
             self._positions = positions
             mesh = viewport.scene.mesh
             self._verts = [v for v in (mesh.vertex_at(p) for p in positions)
@@ -314,6 +321,12 @@ class RotateTool(ProtractorBase):
             return None
         return edges, groups
 
+    def moving_guide_ids(self) -> set:
+        """The guides swinging live, kept out of the snap (#627)."""
+        if self.ref_point is None or self._copy:
+            return set()
+        return {id(g) for g in self._moved_guides}
+
     # ---- Visual preview -----------------------------------------------------
     def rubber_band_lines(self):
         centre = (self.start_point if self.start_point is not None
@@ -382,6 +395,9 @@ class RotateTool(ProtractorBase):
                     if xf is not None:
                         a, b = xf.map(a), xf.map(b)
                     self._base_segments.append((a, b))
+        cam = getattr(viewport, "camera", None)
+        reach = max(float(getattr(cam, "distance", 10.0)), 1e-3)
+        self._base_segments.extend(guide_ghost_segments(self._moved_guides, reach))
         sel = list(viewport.scene.selection)
         if not sel and not self._groups:
             # Nothing selected and no group hover-picked: the click grabbed
@@ -417,7 +433,7 @@ class RotateTool(ProtractorBase):
         if snap is not None:
             return snap
         from PySide6.QtGui import QMatrix4x4
-        snap = {"xf": [], "gv": [], "v": [], "sp": [], "im": []}
+        snap = {"xf": [], "gv": [], "v": [], "sp": [], "im": [], "gd": []}
         vp_only = getattr(self, "_vp_preview", False)
         if not vp_only:
             for group in self._groups:
@@ -431,6 +447,7 @@ class RotateTool(ProtractorBase):
                       for sp in self._splanes]
         snap["im"] = [(im, QVector3D(im.origin), QVector3D(im.u),
                        QVector3D(im.v)) for im in self._images]
+        snap["gd"] = [RotateGuidesCommand.state(g) for g in self._moved_guides]
         self._orig = snap
         return snap
 
@@ -453,6 +470,8 @@ class RotateTool(ProtractorBase):
             im.origin = m.map(origin) if m is not None else QVector3D(origin)
             im.u = m.mapVector(u) if m is not None else QVector3D(u)
             im.v = m.mapVector(v) if m is not None else QVector3D(v)
+        for st in snap["gd"]:
+            RotateGuidesCommand.place(st, m)
         if snap["xf"] or snap["gv"] or snap["v"]:
             viewport.scene.version += 1
 
@@ -488,6 +507,7 @@ class RotateTool(ProtractorBase):
         groups = list(self._groups)
         splanes = list(self._splanes)
         images = list(self._images)
+        guides = list(self._moved_guides)
         positions = list(self._positions)
         faces = list(self._sel_faces)
         edges = list(self._sel_edges)
@@ -506,6 +526,8 @@ class RotateTool(ProtractorBase):
                         g = copy_group(group)  # instance → sibling instance
                         cmds.append(InsertGroupCommand(g))
                         cmds.append(RotateGroupCommand(g, start, axis, deg))
+                    for gd in guides:
+                        cmds.append(AddGuideCommand(copied_guide(gd, m)))
                     for f in faces:
                         cmds.append(AddFaceCommand(
                             [m.map(v) for v in f.vertices],
@@ -541,6 +563,9 @@ class RotateTool(ProtractorBase):
                     from core.history import RotateImagePlanesCommand
                     cmds.append(RotateImagePlanesCommand(
                         images, start, axis, deg))
+                if guides:
+                    cmds.append(RotateGuidesCommand(
+                        guides, start, axis, deg))
             if not cmds:
                 return None
             return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
@@ -573,6 +598,7 @@ class RotateTool(ProtractorBase):
         self._groups = []
         self._splanes = []
         self._images = []
+        self._moved_guides = []
         self._positions = []
         self._verts = []
         self._sel_faces = []
