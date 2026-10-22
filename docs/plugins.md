@@ -335,6 +335,12 @@ Wilson's Windowizer 3 by Bane Andreev, an architect, written with AI help.
   lets an external agent (Claude Code/Desktop) drive the document; a
   section of the same «AI» tab (`panel="ai"`). The reference for socket
   servers and main-thread relays.
+- `plugins/cad_views.py` — 2D CAD View: floor plans (cut height + view
+  depth), elevations and sections exported as a layered DXF — every line on
+  its discipline layer (`A-WALL-CUT`, `S-COLS-PROJ`, `M-DUCT-HIDN`…) with
+  its pen. A dialog over a headless core (`core/cad_views.py`,
+  `core/cad_layers.py`, `formats/dxf_cad.py`); nothing is added to the
+  document.
 - `plugins/render_blender.py` — Render with Blender: a tray tab with
   folding sections, lights placed with a click and drawn over the
   viewport, document data, a child process, and the image in a window of
