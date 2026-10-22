@@ -1077,7 +1077,7 @@ class Viewport(QOpenGLWidget):
     #: place along an edge or on a face).
     _ENCOURAGING_KINDS = frozenset((
         "endpoint", "midpoint", "arc_midpoint", "center", "component_origin",
-        "origin", "intersection", "close"))
+        "origin", "intersection", "close", "face_center"))
 
     _SNAP_LABELS = {
         "endpoint": "Endpoint",
@@ -1089,6 +1089,7 @@ class Viewport(QOpenGLWidget):
         "tangent": "Tangent at vertex",
         "on_edge": "On edge",
         "on_face": "On face",
+        "face_center": "Face center",
         "origin": "Origin",
         "extension": "Extension",
         "intersection": "Intersection",
@@ -6942,6 +6943,8 @@ class Viewport(QOpenGLWidget):
                 painter.drawEllipse(QPointF(*pc), 4.0, 4.0)
                 painter.setPen(QPen(QColor.fromRgbF(*_CE, 1.0), 1.5))
                 painter.drawEllipse(QPointF(*pc), 4.0, 4.0)
+        # The centres of the selected faces, under the snap marker.
+        self._draw_selected_face_centers(painter)
         # Snap indicator
         if (
             self.active_tool is not None
@@ -7173,6 +7176,17 @@ class Viewport(QOpenGLWidget):
             painter.drawEllipse(QPointF(px, py), 5.5, 5.5)
             painter.setPen(mark)
             painter.drawEllipse(QPointF(px, py), 5.5, 5.5)
+        elif snap.kind == "face_center":
+            # A filled ring with a cross inside: the one point of the face,
+            # not just somewhere on it. The size of the endpoint's square
+            # (14 px), so every point marker reads the same.
+            for pen in (halo, mark):
+                painter.setPen(pen)
+                painter.setBrush(Qt.NoBrush if pen is halo
+                                 else QColor.fromRgbF(r, g, b, 0.30))
+                painter.drawEllipse(QPointF(px, py), 7.0, 7.0)
+                painter.drawLine(QPointF(px - 7, py), QPointF(px + 7, py))
+                painter.drawLine(QPointF(px, py - 7), QPointF(px, py + 7))
         elif snap.kind == "close":
             painter.setPen(halo)
             painter.drawEllipse(QPointF(px, py), 9.0, 9.0)
@@ -8767,6 +8781,118 @@ class Viewport(QOpenGLWidget):
             return False
         moving = getattr(self.active_tool, "moving_face_ids", None)
         return not (grp is None and callable(moving) and id(face) in moving())
+
+    def _face_center_under(self, px: float, py: float):
+        """The «Face center» inference: ``(point, context)`` for the centre
+        of area of the face under the cursor, or ``None`` — no face, the
+        centre falls outside it (an L, a ring), it is too far from the
+        cursor to matter, or the face is in motion (a face being bent, a
+        group being moved: the point would chase the cursor)."""
+        face, place = self.pick_face_placement(px, py)
+        if face is None:
+            return None
+        tool = self.active_tool
+        if place is None:
+            moving = getattr(tool, "moving_face_ids", None)
+            if callable(moving) and id(face) in moving():
+                return None
+            context = None
+        else:
+            owner = self._owner_of(place)
+            excl = getattr(tool, "snap_excluded", None)
+            excl = excl() if callable(excl) else None
+            if excl is not None and (id(owner) in excl[1] or id(place) in excl[1]):
+                return None
+            is_comp = getattr(owner, "is_instance", None)
+            context = "component" if (callable(is_comp) and is_comp()) else "group"
+        from core.snap import face_center_of_face
+        c = face_center_of_face(face, getattr(place, "xform", None))
+        if c is None:
+            return None
+        pc = self._world_to_pixel(c)
+        if pc is None or math.hypot(pc[0] - px, pc[1] - py) > self.POINT_INFERENCE_PX:
+            return None
+        return c, context
+
+    #: More selected faces than this and their centres are neither drawn
+    #: nor offered: a «select all» would bury the model in dots.
+    FACE_CENTER_SELECTION_MAX = 500
+
+    def _selected_face_centers(self) -> list:
+        """The «Face center» of every selected face, ``[QVector3D]`` in
+        world space: drawn as dots and offered to the snap engine wherever
+        the cursor is, so a ring's centre — in its hole, where no face is
+        under the cursor — can be reached. Only faces picked one by one: a
+        selected group offers none (a whole object would fill with dots).
+        An open group's faces are loose and already in world space. A face
+        a tool is bending is left out (its centre would chase the cursor).
+        Cached per scene version and selection."""
+        faces = [e for e in self.scene.selection if isinstance(e, Face)]
+        if not faces or len(faces) > self.FACE_CENTER_SELECTION_MAX:
+            return []
+        moving = getattr(self.active_tool, "moving_face_ids", None)
+        moving = moving() if callable(moving) else ()
+        key = (self.scene.version, tuple(id(f) for f in faces),
+               frozenset(moving))
+        cached = getattr(self, "_sel_face_centers", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        from core.snap import face_center_of_face
+        pts = []
+        for f in faces:
+            if id(f) in moving:
+                continue
+            c = face_center_of_face(f)
+            if c is not None:
+                pts.append(c)
+        self._sel_face_centers = (key, pts)
+        return pts
+
+    def _face_centers_near(self, px: float, py: float) -> list:
+        """The «Face center» points for the snap engine, ``[(point,
+        context)]``: the face under the cursor, and the selected faces whose
+        centre is near it."""
+        out = []
+        under = self._face_center_under(px, py)
+        if under is not None:
+            out.append(under)
+        for c in self._selected_face_centers():
+            pc = self._world_to_pixel(c)
+            if pc is not None and math.hypot(pc[0] - px, pc[1] - py) <= self.POINT_INFERENCE_PX:
+                out.append((c, None))
+        return out
+
+    def _draw_selected_face_centers(self, painter: QPainter) -> None:
+        """A small dot at the centre of each selected face (the ones the
+        view can see), so the point is in sight before the cursor gets
+        there — on a ring it sits in the hole, where hovering finds no face."""
+        pts = self._selected_face_centers()
+        if not pts:
+            return
+        cam = self.camera
+        key = (self.scene.version, tuple((p.x(), p.y(), p.z()) for p in pts), cam.yaw,
+               cam.pitch, cam.distance, cam.perspective, cam.target.x(),
+               cam.target.y(), cam.target.z(), self.width(), self.height())
+        cached = getattr(self, "_sel_face_center_dots", None)
+        if cached is None or cached[0] != key:
+            hidden = self._occluded_many(pts)
+            dots = []
+            for p, h in zip(pts, hidden):
+                pc = None if h else self._world_to_pixel(p)
+                if pc is not None:
+                    dots.append(pc)
+            cached = self._sel_face_center_dots = (key, dots)
+        if not cached[1]:
+            return
+        # As big as a snap marker (14 px, like the endpoint's square), so
+        # the dot reads at a glance; solid and without the cross, so the
+        # one the cursor has snapped to still stands out.
+        from core.snap import COLOR_ON_FACE
+        painter.setPen(QPen(QColor(255, 255, 255, 230), 2.5))
+        painter.setBrush(QColor.fromRgbF(*COLOR_ON_FACE, 0.85))
+        for x, y in cached[1]:
+            painter.drawEllipse(QPointF(x, y), 7.0, 7.0)
+        painter.setBrush(Qt.NoBrush)
 
     def _hover_face_plane(self, cursor):
         """World plane of the face under the cursor, or None.

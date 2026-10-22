@@ -207,10 +207,18 @@ class InferenceEngine:
             work_plane_normal=vp._work_plane_normal(),
             radial_arm=bool(getattr(tool, "radial_arm", False)),
             axis_in_plane=not _magnet_may_leave_plane(tool),
+            face_centers=self._face_centers(px_x, px_y),
         )
         snap = self._axis_source_cue(snap, px_x, px_y)
         snap = self._extension_snap(snap, px_x, px_y)
         return snap
+
+    def _face_centers(self, px_x: float, px_y: float):
+        """The «Face center» points near the cursor — the face under it and
+        the selected faces — as the viewport sees them (``None`` from a
+        stand-in viewport without the method)."""
+        near = getattr(self.viewport, "_face_centers_near", None)
+        return near(px_x, px_y) if callable(near) else None
 
     # ---- Post-processors (axis-source cue, extensions) ----------------------
 
@@ -218,7 +226,8 @@ class InferenceEngine:
     #: name is the user's target, and the snap engine already ranked it.
     _NAMED_SNAPS = frozenset((
         "endpoint", "midpoint", "arc_midpoint", "center", "origin",
-        "component_origin", "intersection", "close", "on_edge"))
+        "component_origin", "intersection", "close", "on_edge",
+        "face_center"))
 
     def _axis_source_cue(self, snap, px_x: float, px_y: float):
         """Before its first click, a tool that reads the model axes as a

@@ -10,6 +10,9 @@ Snap kinds (priority high → low):
 5. ``"endpoint"``       — vertex of an existing edge.
 6. ``"intersection"``   — where two edges / guide lines actually cross (green X).
 7. ``"midpoint"``       — midpoint of an existing edge.
+   ``"face_center"``    — centre of area of the face under the cursor or
+                          of a selected face (with the endpoints, which
+                          win a tie).
 8. ``"origin"``         — world origin.
 9. ``"on_edge"``        — arbitrary point along an edge (start a shape on it).
 10. ``"aligned"``       — level with / in line with an encouraged point across
@@ -632,6 +635,100 @@ def curve_centers_of_face(face, xform=None) -> list:
             if fit is not None:
                 out.append((fit[0], fit[1], (li, ri)))
     return out
+
+
+def _inside_2d(p, poly) -> bool:
+    """Even-odd ray cast: whether ``p`` lies inside ``poly`` [(x, y)]."""
+    x, y = p
+    inside = False
+    j = len(poly) - 1
+    for i in range(len(poly)):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def face_center_of_face(face, xform=None) -> Optional[QVector3D]:
+    """The *Face center* inference: the centre of AREA of the face, holes
+    taken out, in world space (``xform`` places a component's face).
+
+    Not the average of the corners (``Face.centroid``): a trapezoid, or a
+    face with many vertices crowded on one side (a rounded corner), pulls
+    that average away from the middle.
+
+    A centre in a HOLE still counts: the middle of a frame or a ring is
+    exactly the point one is after. ``None`` when it falls outside the
+    outer boundary — the elbow of an L, where the point belongs to no
+    part of the face — and for a degenerate face."""
+    loops = [list(face.vertices)] + [list(h) for h in (face.holes or [])]
+    if xform is not None:
+        loops = [[xform.map(QVector3D(p)) for p in loop] for loop in loops]
+    outer = loops[0]
+    if len(outer) < 3:
+        return None
+    # Newell's normal of the outer loop, in doubles.
+    nx = ny = nz = 0.0
+    for i in range(len(outer)):
+        a, b = outer[i], outer[(i + 1) % len(outer)]
+        nx += (a.y() - b.y()) * (a.z() + b.z())
+        ny += (a.z() - b.z()) * (a.x() + b.x())
+        nz += (a.x() - b.x()) * (a.y() + b.y())
+    nlen = math.sqrt(nx * nx + ny * ny + nz * nz)
+    if nlen < 1e-12:
+        return None
+    n = (nx / nlen, ny / nlen, nz / nlen)
+    # An orthonormal basis (u, v) of the face's plane, origin at a corner.
+    seed = (1.0, 0.0, 0.0) if abs(n[0]) < 0.9 else (0.0, 1.0, 0.0)
+    u = (n[1] * seed[2] - n[2] * seed[1],
+         n[2] * seed[0] - n[0] * seed[2],
+         n[0] * seed[1] - n[1] * seed[0])
+    ul = math.sqrt(u[0] ** 2 + u[1] ** 2 + u[2] ** 2)
+    u = (u[0] / ul, u[1] / ul, u[2] / ul)
+    v = (n[1] * u[2] - n[2] * u[1],
+         n[2] * u[0] - n[0] * u[2],
+         n[0] * u[1] - n[1] * u[0])
+    o = outer[0]
+    ox, oy, oz = o.x(), o.y(), o.z()
+
+    def flat(loop):
+        out = []
+        for p in loop:
+            dx, dy, dz = p.x() - ox, p.y() - oy, p.z() - oz
+            out.append((dx * u[0] + dy * u[1] + dz * u[2],
+                        dx * v[0] + dy * v[1] + dz * v[2]))
+        return out
+
+    flats = [flat(loop) for loop in loops if len(loop) >= 3]
+    area = sx = sy = 0.0
+    for k, poly in enumerate(flats):
+        a = cx = cy = 0.0
+        for i in range(len(poly)):
+            x0, y0 = poly[i]
+            x1, y1 = poly[(i + 1) % len(poly)]
+            cr = x0 * y1 - x1 * y0
+            a += cr
+            cx += (x0 + x1) * cr
+            cy += (y0 + y1) * cr
+        if abs(a) < 1e-18:
+            continue
+        # Each loop's area-weighted centre, whatever its winding: the
+        # outer loop adds, the holes take away.
+        sign = 1.0 if k == 0 else -1.0
+        w = abs(a) * 0.5 * sign
+        area += w
+        sx += w * cx / (3.0 * a)
+        sy += w * cy / (3.0 * a)
+    if area <= 1e-12:
+        return None
+    c = (sx / area, sy / area)
+    if not _inside_2d(c, flats[0]):
+        return None
+    return QVector3D(ox + c[0] * u[0] + c[1] * v[0],
+                     oy + c[0] * u[1] + c[1] * v[1],
+                     oz + c[0] * u[2] + c[1] * v[2])
 
 
 def _vertex_on_line(
@@ -1373,6 +1470,7 @@ def compute_snap(
     work_plane_normal: Optional[QVector3D] = None,
     radial_arm: bool = False,
     axis_in_plane: bool = False,
+    face_centers: Optional[list] = None,
 ) -> SnapResult:
     # Linear-inference toggle (Alt): "all" = every inference, "off" =
     # point snaps only, "parallel_perp" = keep only parallel/perpendicular. The
@@ -1671,6 +1769,21 @@ def compute_snap(
             # 2026-09-14 — so the colours stay, the tip says "in component".)
             _consider(edge.a, "endpoint", COLOR_ENDPOINT, context=getattr(edge, "context", None))
             _consider(edge.b, "endpoint", COLOR_ENDPOINT, context=getattr(edge, "context", None))
+        for point, context in face_centers or ():
+            # The centres of the face under the cursor and of the selected
+            # faces, ``(point, context)``. Handed in on their own, not as
+            # degenerate pseudo-edges: the line rules (on edge, extension,
+            # the lock's 'endpoint on the line') would read such a point as
+            # a scrap of edge. After the endpoints, so a corner wins a tie.
+            #
+            # Not the point the operation started on: a circle begun at a
+            # face's centre found that same centre again under its rim, and
+            # the radius snapped back to nothing — no disc was built. A
+            # corner is geometry the drawing welds to; this point is not,
+            # and landing on it again only gives a zero-length step.
+            if start_point is not None and (point - start_point).length() < 1e-6:
+                continue
+            _consider(point, "face_center", COLOR_ON_FACE, context=context)
         # A "close" already chosen stands; otherwise the nearest visible of
         # the named points and endpoints (named ones first on a tie — they
         # were appended first and the sort is stable).
