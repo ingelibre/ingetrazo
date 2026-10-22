@@ -855,6 +855,66 @@ def test_an_identical_loose_file_counts_as_a_copy(tmp_path, monkeypatch):
     assert not (tmp_path / "sample").exists()
 
 
+def test_a_loose_file_with_crlf_line_endings_counts_as_a_copy(
+        tmp_path, monkeypatch):
+    # #764: a hand-installed copy whose line endings were converted to
+    # CRLF (a Windows editor, a zip tool, Path.write_text on Windows)
+    # is the same extension, even though its raw bytes differ.
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    crlf = TOOL_SOURCE.encode().replace(b"\n", b"\r\n")
+    (tmp_path / "my_old_name.py").write_bytes(crlf)
+    payload = TOOL_SOURCE.encode()
+    monkeypatch.setattr(manager, "_get", lambda *_a: payload)
+    with pytest.raises(manager.ExtensionManagerError, match="my_old_name.py"):
+        manager.install_extension(_extension(payload))
+    assert not (tmp_path / "sample").exists()
+
+
+def test_a_loose_file_with_a_bom_and_crlf_counts_as_a_copy(
+        tmp_path, monkeypatch):
+    # #764: a UTF-8 BOM saved by a Windows editor must not hide a copy
+    # either.
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    crlf = TOOL_SOURCE.encode().replace(b"\n", b"\r\n")
+    (tmp_path / "my_old_name.py").write_bytes(b"\xef\xbb\xbf" + crlf)
+    payload = TOOL_SOURCE.encode()
+    monkeypatch.setattr(manager, "_get", lambda *_a: payload)
+    with pytest.raises(manager.ExtensionManagerError, match="my_old_name.py"):
+        manager.install_extension(_extension(payload))
+    assert not (tmp_path / "sample").exists()
+
+
+def test_a_package_whose_entry_has_crlf_line_endings_counts_as_a_copy(
+        tmp_path, monkeypatch):
+    # #764, the package form: only the entry module's endings changed.
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: plugins)
+    hand = plugins / "hand_copy"
+    hand.mkdir()
+    (hand / "__init__.py").write_bytes(
+        TOOL_SOURCE.encode().replace(b"\n", b"\r\n"))
+    package = tmp_path / "catalog_copy"
+    package.mkdir()
+    (package / "__init__.py").write_bytes(TOOL_SOURCE.encode())
+    assert manager.manual_copies("sample", package) == [hand]
+
+
+def test_a_different_loose_file_with_crlf_is_not_a_copy(
+        tmp_path, monkeypatch):
+    # Normalizing endings must not collapse different code into a copy:
+    # a file that differs beyond its line endings stays unrelated.
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    other = TOOL_SOURCE.replace("Catalog tool", "Another tool")
+    (tmp_path / "my_old_name.py").write_bytes(
+        other.encode().replace(b"\n", b"\r\n"))
+    payload = TOOL_SOURCE.encode()
+    monkeypatch.setattr(manager, "_get", lambda *_a: payload)
+    manager.install_extension(_extension(payload))
+    assert (tmp_path / "sample" / "__init__.py").is_file()
+    assert (tmp_path / "my_old_name.py").is_file()
+
+
 def test_switching_tabs_keeps_the_cards_and_their_screenshots(
         tmp_path, monkeypatch):
     """#555: every tab switch rebuilt all the cards, the old ones stayed

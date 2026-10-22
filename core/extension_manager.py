@@ -364,12 +364,21 @@ def uninstall_extension(ident: str) -> None:
 
 def _python_fingerprint(path: Path) -> tuple[str | None, frozenset[str]]:
     """``(sha256 of the entry module, the package's module paths)`` of an
-    installed plugin — a loose ``x.py`` or a package folder."""
+    installed plugin — a loose ``x.py`` or a package folder. The hash is
+    taken over the entry module with line endings normalized to ``\\n``
+    and a leading UTF-8 BOM stripped, so a hand-installed copy whose
+    endings were converted (``\\n`` -> ``\\r\\n`` by a Windows editor, a
+    zip tool, or ``Path.write_text`` on Windows) still counts as the
+    same extension (#764)."""
     def digest(file: Path) -> str | None:
         try:
-            return hashlib.sha256(file.read_bytes()).hexdigest()
+            data = file.read_bytes()
         except OSError:
             return None
+        if data.startswith(b"\xef\xbb\xbf"):
+            data = data[len(b"\xef\xbb\xbf"):]
+        data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        return hashlib.sha256(data).hexdigest()
     if path.is_file():
         return digest(path), frozenset()
     modules = frozenset(
