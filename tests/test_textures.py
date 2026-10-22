@@ -523,6 +523,44 @@ def test_rotating_and_scaling_a_group_keep_its_texture():
     assert _uvs(face) == before
 
 
+def _rendered_uvs(face):
+    """The UVs the viewport computes for ``face`` — fitted map when the
+    face carries one, else the planar projection of its CURRENT normal."""
+    from core.texture import face_uv_axes
+    gu, cu, gv, cv = face_uv_axes(face.attrs["texture"], face.normal())
+    return [(round(QVector3D.dotProduct(gu, p) + cu, 6),
+             round(QVector3D.dotProduct(gv, p) + cv, 6))
+            for p in face.vertices]
+
+
+def test_rotating_a_group_keeps_a_planar_texture_on_its_face():
+    # #847: a face textured by planar projection alone (no fitted uvw —
+    # the normal case for a texture painted in the app) showed its image
+    # correctly in the Rotate live preview, then jumped on commit: the
+    # commit re-projected onto the TURNED face's normal (measured on the
+    # report's setup: V range 0..1 became -0.933..-0.433). The rotation
+    # must pin the projection the face is showing into a fitted map and
+    # carry it, like it already does for imported maps.
+    from core.group import Group
+    from core.history import RotateGroupCommand
+    from core.mesh import Mesh
+    mesh = Mesh()
+    face = mesh.add_face([V(0.1, 0, 0), V(0.2, 0, 0),
+                          V(0.2, 0.2, 0), V(0.1, 0.2, 0)])
+    face.attrs["texture"] = {"path": "skin.jpg", "sw": 0.1, "sh": 0.2,
+                             "rot": 0.0}
+    group = Group(mesh)
+    scene = Scene()
+    scene.groups.append(group)
+    before = _rendered_uvs(face)
+    cmd = RotateGroupCommand(group, V(0.1, 0, 0), V(0, 1, 0), 30.0)
+    cmd.do(scene)
+    assert _rendered_uvs(face) == before
+    cmd.undo(scene)
+    assert _rendered_uvs(face) == before
+    assert "uvw" not in face.attrs["texture"]
+
+
 def test_undoing_the_move_puts_the_texture_back():
     from core.history import RotateGroupCommand
     scene = Scene()
