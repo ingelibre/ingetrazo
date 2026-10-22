@@ -611,6 +611,7 @@ class Scene:
                 or self.saved_views or self.compositions
                 or self.image_planes or self.plugin_data
                 or self.kept_components or self.section_planes
+                or self.materials
                 or not self.show_section_planes
                 or not self.show_section_cuts
                 or self.show_hidden_objects or self.show_hidden_geometry
@@ -628,6 +629,7 @@ class Scene:
             self.compositions.clear()
             self.custom_scales.clear()
             self.kept_components.clear()
+            self.materials.clear()
             self.plugin_data = {}
             self.selection.clear()
             from core.layers import DEFAULT_LAYER, Layer
