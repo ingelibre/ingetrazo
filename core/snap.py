@@ -35,6 +35,7 @@ from typing import Callable, Optional
 
 from PySide6.QtGui import QVector3D
 
+from .geometry import Edge
 
 # Colors used by the rubber band and the 2D snap indicator. RGB floats [0, 1].
 COLOR_ENDPOINT = (0.16, 0.62, 0.36)
@@ -99,7 +100,12 @@ class SnapResult:
     #: The ScreenTip's own words, already translated — what an extension's
     #: inference says («Level PA»); wins over the kind's built-in label.
     label: Optional[str] = None
-
+    # 17.10.26 BasteBaus: stores an edge if snapped to an edge to be used in 
+    #                     dimension tool do directly create a dimension on an edge
+    edge: Optional[Edge] = None
+    # 17.10.26 BasteBaus: stores an point from which was snapped to be used in 
+    #                     dimension tool if snapping to points not on the dimension line
+    from_point: Optional[QVector3D] = None
 
 # ---- Helpers ---------------------------------------------------------------
 
@@ -1105,13 +1111,22 @@ def _from_point_snap(
     # The guide runs perpendicular to the draw, from the corner to the foot —
     # colour it by the axis it most aligns with (red/green/blue).
     guide_color = None
+    dim_axis = None
     if kind == "from_point":
         gdn = (foot - ref).normalized()
         gaxis = max(_AXIS_VECTORS,
                     key=lambda k: abs(QVector3D.dotProduct(gdn, _AXIS_VECTORS[k])))
         guide_color = AXIS_COLORS[gaxis]
+
+        # 17.10.26 BastelBaus: dimension of snap to be forwarded when creating
+        #                      Dimension along one axis
+        dim_axis = max(_AXIS_VECTORS,
+                    key=lambda k: abs(QVector3D.dotProduct(line_dir, _AXIS_VECTORS[k]))) if line_dir is not None else None
+        # todo: is it line_dir or draw_dir ??
+
     return SnapResult(foot, kind, color, guide=(ref, foot),
-                      guide_color=guide_color)
+                      guide_color=guide_color, 
+                      axis=dim_axis)
 
 
 def _through_point_snap(
@@ -1915,7 +1930,12 @@ def compute_snap(
         if getattr(edge, "guide", False):
             return SnapResult(on_pt, "on_line", COLOR_ON_EDGE)   # a guide line
         return SnapResult(on_pt, "on_edge", COLOR_ON_EDGE,
-                          context=getattr(edge, "context", None))
+                          context=getattr(edge, "context", None),
+                          edge=edge)
+                          # 17.10.26 Bastelbaus: added edge which is used on dimension tool
+                          #                      to directly create a dimension by clickling
+                          #                      on an edge
+
 
     # 8b. Acquired-edge parallel inference. An edge the cursor hovered while
     #     drawing is held as a reference; when the draw runs parallel to it the

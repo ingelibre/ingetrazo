@@ -202,14 +202,19 @@ class Dimension:
 
     def __init__(self, a: QVector3D, b: QVector3D, offset: QVector3D,
                  layer: str | None = None, text: str | None = None,
-                 axis: str | None = None) -> None:
+                 axis: str | None = None, axis_on_extension:bool=False) -> None:
         self._a = QVector3D(a)
         self._b = QVector3D(b)
         #: displacement from the a–b segment to the dimension line
         self.offset = QVector3D(offset)
+        #: The axis in which the dimension measures
         #: ``None`` = aligned; ``"x"``/``"y"``/``"z"`` = linear along that
         #: world axis (see the module docstring).
         self.axis = axis if axis in _AXIS_VECTORS else None
+        # 18.10.26 BastelBaus:
+        #: true if the axis is on the extension itself and not only
+        #: on the edge points
+        self.axis_on_extension = axis_on_extension
         #: Layer (tag) the annotation lives on; ``None`` = default
         #: layer. Scenes hide layers, so a plan scene can show a clean model
         #: and an "Anotaciones" layer can carry the cotas and leader texts.
@@ -221,6 +226,9 @@ class Dimension:
         self.anchor_a: VertexAnchor | None = None
         self.anchor_b: VertexAnchor | None = None
         self._scene = None                   # set by bind(); re-binding
+
+    def __str__(self) -> str:
+        return f"Dimension ({id(self)}):\n {self.a=}\n {self.b=}\n {self.offset=}\n {self.axis=} {self.axis_on_extension=}"
 
     # ---- endpoints ----------------------------------------------------------
     def _live(self, which: str) -> QVector3D:
@@ -336,17 +344,174 @@ class Dimension:
         along = QVector3D.dotProduct(self.offset, dir_)
         return self.offset - dir_ * along
 
+    @property
+    def extension_a(self) -> QVector3D:
+        """ the point the fixed line startes until the dimension line """
+        return self.a #+ self._dimension_height
+    
+    @property
+    def extension_b(self) -> QVector3D:
+        """ the point the fixed line startes until the dimension line """
+        if not self.axis_on_extension :
+            return self.b #+ self._dimension_height
+
+        ax = _AXIS_VECTORS.get(self.axis,None) 
+        if not ax:
+            return QVector3D(0,0,0)
+        
+        extension =  self.a - ax * QVector3D.dotProduct(self.a-self.b,ax)
+        return extension #+ self._dimension_height
+
+
+
+    # 17.10.26 BastelBaus
+    # added 
+
+    @property
+    def _dimension_offset(self) -> (QVector3D):
+
+        #if self.extension_b is self.b: # no extension !!
+        #return QVector3D(0,0,0)
+
+        if self.axis_on_extension: # helping lines to extension !!
+
+            if self.axis == 'x':
+                extension_dir = _AXIS_VECTORS.get('y',None)
+            elif self.axis == 'y':
+                extension_dir = _AXIS_VECTORS.get('x',None)
+            elif self.axis == 'z':
+                extension_dir = _AXIS_VECTORS.get('y',None)
+
+            off = extension_dir * QVector3D.dotProduct(extension_dir,self.offset)
+
+        else: # extensions direct on anchor points
+            ax = _AXIS_VECTORS.get(self.axis,None)
+            if ax is None:
+                off =  QVector3D(0,0,0)
+            else:            
+                ortho_vec = QVector3D.crossProduct( self.a-self.b,self.offset-self.a)
+                ortho_vec = QVector3D.crossProduct( self.a-self.b,ortho_vec)
+                ortho_vec = ortho_vec / ortho_vec.length()
+                length = QVector3D.dotProduct(self.offset,ortho_vec)
+                off = ortho_vec * length
+
+        return off
+
+
+    @property
+    def _dimension_height(self) -> (QVector3D):
+        return QVector3D(0,0,0)
+    
+        ax = _AXIS_VECTORS.get(self.axis,None) 
+        extension_b =  self.a - ax * QVector3D.dotProduct(self.a-self.b,ax) if ax else self.b
+        
+        ortho_vec = QVector3D.crossProduct( extension_b-self.b,self.a-extension_b)
+        ortho_vec = ortho_vec / ortho_vec.length()
+        
+        height_vec = QVector3D.crossProduct( ortho_vec,self.a-extension_b)
+        height_vec = height_vec / height_vec.length()
+        height = QVector3D.dotProduct(self.offset,height_vec)
+
+        #print(height_vec,height,self.offset)
+        return  height_vec * height
+        
+
+    
+    @property
+    def line_point_a(self) -> QVector3D:
+        #print(f"{self.extension_a=}")
+        #print(f"{self.extension_b=}")                        
+        if self.axis_on_extension: 
+            print("on extention")
+            return self.extension_a + self._dimension_offset
+        else:
+            print("not on extention")
+            ax = _AXIS_VECTORS.get(self.axis,None)
+            if ax is None:
+                print("ax is none")
+                off = self.perpendicular_offset()
+            else:
+                print("ax is ", self.axis)
+
+                if self.axis == 'y':
+                    extension_dir = _AXIS_VECTORS.get('y',None)
+                elif self.axis == 'x':
+                    extension_dir = _AXIS_VECTORS.get('x',None)
+                elif self.axis == 'z':
+                    extension_dir = _AXIS_VECTORS.get('z',None)
+
+                off = extension_dir * QVector3D.dotProduct(extension_dir,self.offset)
+
+                #off = self.b - (self.line_point_a + ax* QVector3D.dotProduct(ax,self.a-self.b))
+                
+                #off = ax * self.offset.length()
+                #ax2 = QVector3D.crossProduct(ax,self.b-self.a)
+                #off = QVector3D.crossProduct(ax2,ax) / (self.b-self.a).length() * self.offset.length()               
+                #l2 = QVector3D.dotProduct(off,self.a-self.b)
+                #l2 = abs(l2)
+
+                #off = off* (self.offset.length() + l2)               
+                #print("bb:",ax,ax2,off,l2)
+
+            return self.extension_a + off 
+
+    # 17.10.26 BastelBaus
+    # quick adder, later should be speed optimized
+    @property
+    def line_point_b(self) -> QVector3D:
+        if self.axis_on_extension: 
+            return self.extension_b + self._dimension_offset 
+        else:
+            ax = _AXIS_VECTORS.get(self.axis,None)
+            if ax is None: # not locked on axis, line from edge(a&b)
+                off = self.perpendicular_offset()
+            else: # locked on axis, line from edge(a&b)
+
+                if self.axis == 'y':
+                    extension_dir = _AXIS_VECTORS.get('y',None)
+                elif self.axis == 'x':
+                    extension_dir = _AXIS_VECTORS.get('x',None)
+                elif self.axis == 'z':
+                    extension_dir = _AXIS_VECTORS.get('y',None)
+
+                off1 = extension_dir * QVector3D.dotProduct(extension_dir,self.offset)
+                off2 = extension_dir * QVector3D.dotProduct(extension_dir,self.a-self.b)
+                off = off1 + off2
+
+                #off = self.b - (self.line_point_a + ax* QVector3D.dotProduct(ax,self.a-self.b))
+
+                #ax2 = QVector3D.crossProduct(ax,self.b-self.a)
+                #off = QVector3D.crossProduct(ax2,ax) / (self.b-self.a).length() 
+                #l2 = QVector3D.dotProduct(off,self.a-self.b)
+                #l2 = abs(l2)
+                #off = off* (self.offset.length() + l2)               
+                #print("bb:",ax,ax2,off,l2)
+
+                #l2 =QVector3D.dotProduct(self.offset,self.b-self.a)
+                #off = ax * self.offset.length()*2
+
+            return self.extension_b + off 
+
+
     def line_points(self) -> tuple[QVector3D, QVector3D]:
         """The dimension line's endpoints. Aligned: ``a``/``b`` shifted by
         the offset. Linear: each endpoint pushed along the extension
         direction until both sit on one line parallel to the axis — the one
         through ``a + offset``."""
+
+        return self.line_point_a,self.line_point_b
+
         frame = _linear_frame(self.a, self.b, self.axis)
         if frame is not None:
+            print("frame not none")
             _u, e = frame
             t_a = QVector3D.dotProduct(self.offset, e)
             t_b = t_a - QVector3D.dotProduct(self.b - self.a, e)
             return self.a + e * t_a, self.b + e * t_b
+            
+            
+        
+        print("frame none")
         off = self.perpendicular_offset()
         return self.a + off, self.b + off
 
