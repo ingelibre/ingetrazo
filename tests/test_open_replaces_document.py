@@ -6,7 +6,11 @@ holds the default (no planes, nothing hidden…), so the loader must reset
 what the file does not bring — otherwise it leaks from the document that
 was open before. One fixture that sets every such field, one plain file,
 and the scene must end exactly as if the plain file were the only one
-ever opened."""
+ever opened.
+
+Issue #765 is the same leak for dimensions: ``load_into()`` appended the
+file's dimensions without clearing the previous ones, so they doubled on
+every open/save cycle. The rich fixture carries dimensions too."""
 from __future__ import annotations
 
 import os
@@ -16,6 +20,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QVector3D  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from core.dimension import Dimension  # noqa: E402
 from core.layers import Layer  # noqa: E402
 from core.scene import Scene  # noqa: E402
 from core.section import SectionPlane  # noqa: E402
@@ -47,6 +52,10 @@ def _rich(tmp_path):
     s.custom_scales = [33.0]
     s.layers.append(Layer("Walls"))
     s.dimension_style = dict(s.dimension_style, extra_key=1)
+    s.dimensions.append(Dimension(QVector3D(0, 0, 0), QVector3D(1, 0, 0),
+                                  QVector3D(0, -1, 0)))
+    s.dimensions.append(Dimension(QVector3D(0, 0, 0), QVector3D(0, 1, 0),
+                                  QVector3D(-1, 0, 0)))
     path = tmp_path / "rich.igz"
     igz.save_scene(s, path)
     return path
@@ -80,6 +89,40 @@ def test_opening_a_plain_file_drops_the_previous_section_planes(tmp_path):
     assert scene.section_planes == []
     assert scene.show_section_planes is True
     assert scene.show_section_cuts is True
+
+
+def _dimension_points(scene):
+    return [((d.a.x(), d.a.y(), d.a.z()), (d.b.x(), d.b.y(), d.b.z()),
+             (d.offset.x(), d.offset.y(), d.offset.z()))
+            for d in scene.dimensions]
+
+
+def test_opening_a_plain_file_drops_the_previous_dimensions(tmp_path):
+    rich, plain = _rich(tmp_path), _plain(tmp_path)
+    scene = Scene()
+    igz.load_into(scene, rich)
+    assert len(scene.dimensions) == 2      # the fixture does load them
+    igz.load_into(scene, plain)
+    assert scene.dimensions == []
+
+
+def test_reopening_the_same_file_does_not_double_its_dimensions(tmp_path):
+    rich = _rich(tmp_path)
+    scene = Scene()
+    for _ in range(3):
+        igz.load_into(scene, rich)
+        assert len(scene.dimensions) == 2
+
+
+def test_a_file_with_dimensions_brings_exactly_its_own(tmp_path):
+    rich, plain = _rich(tmp_path), _plain(tmp_path)
+    scene = Scene()
+    igz.load_into(scene, plain)
+    igz.load_into(scene, rich)
+    assert _dimension_points(scene) == [
+        ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, -1.0, 0.0)),
+        ((0.0, 0.0, 0.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0)),
+    ]
 
 
 def test_nothing_of_the_previous_document_survives_an_open(tmp_path):

@@ -1146,6 +1146,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.geo_paths.clear()
     scene.geo_points.clear()
     scene.text_labels.clear()
+    scene.dimensions.clear()
     scene.georef = None
     scene.photo_mesh = survey
     scene.tile_layer = None
