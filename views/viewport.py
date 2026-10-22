@@ -9177,6 +9177,70 @@ class Viewport(QOpenGLWidget):
             ln = np.linalg.norm(out, axis=1, keepdims=True)
             return out / np.where(ln > 1e-12, ln, 1.0)
 
+        # The prototype's colours and texture runs were shaded from its
+        # LOCAL face normals (#482): a rotated instance kept its
+        # definition's light while the same geometry as a plain group
+        # shaded by its world normals. Re-shade here, per triangle:
+        # colours scale by shade(world)/shade(local) — the unshaded base
+        # is gone (baked and quantised), but the ratio is exact wherever
+        # the bake did not clamp — and texture runs regroup under the
+        # world shade. A pure translation changes no normal, so it keeps
+        # the prototype's shading untouched.
+        _light = np.array([self._LIGHT.x(), self._LIGHT.y(),
+                           self._LIGHT.z()], dtype=np.float64)
+
+        def _shades(normals):
+            """_shade_factor, vectorised over (N, 3) normals."""
+            ln = np.linalg.norm(normals, axis=1)
+            d = np.abs(normals @ _light) / np.where(ln > 1e-12, ln, 1.0)
+            return np.where(ln > 1e-12,
+                            np.round((0.62 + 0.38 * d) * 32.0) / 32.0,
+                            0.84375)
+
+        def _tri_normals(pos):
+            t = pos.reshape(-1, 3, 3)
+            return np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+
+        def tp32_shaded(raw):
+            """tp32 for a stride-6 pos+rgb array, colours re-shaded."""
+            a = np.frombuffer(raw, np.float32).reshape(-1, 6).copy()
+            if not len(a):
+                return raw
+            pos = a[:, :3].astype(np.float64)
+            ratio = (_shades(_tri_normals(tp(pos)))
+                     / _shades(_tri_normals(pos)))
+            a[:, :3] = tp(pos).astype(np.float32)
+            a[:, 3:6] = np.clip(
+                a[:, 3:6].astype(np.float64)
+                * np.repeat(ratio, 3)[:, None], 0.0, 1.0).astype(np.float32)
+            if mirrored and len(a) % 3 == 0:
+                a = a.reshape(-1, 3, 6)[:, [0, 2, 1], :].reshape(-1, 6)
+            return a.tobytes()
+
+        def _tex_world_shades(raw):
+            """{world shade: bytes} for one stride-5 textured bucket."""
+            a = np.frombuffer(raw, np.float32).reshape(-1, 5)
+            if not len(a):
+                return {}
+            pos = a[:, :3].astype(np.float64)
+            shades = _shades(_tri_normals(tp(pos)))
+            b = np.frombuffer(tp32(raw, 5), np.float32).reshape(-1, 3, 5)
+            out = {}
+            for s in np.unique(shades):
+                sel = b[shades == s]
+                if len(sel):
+                    out[float(s)] = sel.reshape(-1, 5).astype(
+                        np.float32).tobytes()
+            return out
+
+        def _rekey_tex(d, split):
+            out = {}
+            for k, raw in d.items():
+                for s, bts in _tex_world_shades(raw).items():
+                    nk = split(k, s)
+                    out[nk] = out.get(nk, b"") + bts
+            return out
+
         sp = base["soft_pts"]
         if sp is not None:
             s6 = sp.reshape(-1, 6).astype(np.float64)
@@ -9190,21 +9254,21 @@ class Viewport(QOpenGLWidget):
             "nv": base["nv"], "ne": base["ne"], "nf": base["nf"],
             "edges": tp32(base["edges"], 3, tris=False),
             "dback": tp32(base.get("dback", b""), 3),
-            "vcol": tp32(base["vcol"], 6),
-            "by_texture": {p: tp32(raw, 5)
-                           for p, raw in base["by_texture"].items()},
-            "tcol": {a: tp32(raw, 6)
+            "vcol": tp32_shaded(base["vcol"]),
+            "by_texture": _rekey_tex(base["by_texture"],
+                                      lambda k, s: (k[0], s)),
+            "tcol": {a: tp32_shaded(raw)
                      for a, raw in base.get("tcol", {}).items()},
-            "ttex": {k: tp32(raw, 5)
-                     for k, raw in base.get("ttex", {}).items()},
-            "back_vcol": tp32(base.get("back_vcol", b""), 6),
-            "back_tex": {k: tp32(raw, 5)
-                         for k, raw in base.get("back_tex", {}).items()},
-            "back_tcol": {k: tp32(raw, 6)
+            "ttex": _rekey_tex(base.get("ttex", {}),
+                               lambda k, s: ((k[0][0], s), k[1], k[2])),
+            "back_vcol": tp32_shaded(base.get("back_vcol", b"")),
+            "back_tex": _rekey_tex(base.get("back_tex", {}),
+                                    lambda k, s: (k[0], s)),
+            "back_tcol": {k: tp32_shaded(raw)
                           for k, raw in base.get("back_tcol", {}).items()},
-            "back_ttex": {k: tp32(raw, 5)
-                          for k, raw in base.get("back_ttex", {}).items()},
-            "fvcol": tp32(base.get("fvcol", b""), 6),
+            "back_ttex": _rekey_tex(base.get("back_ttex", {}),
+                                     lambda k, s: ((k[0][0], s), k[1])),
+            "fvcol": tp32_shaded(base.get("fvcol", b"")),
             "faces": base["faces"],
             "areas": base["areas"] * (abs(det) ** (2.0 / 3.0)),
             "v0": tp(base["v0"]) if base["v0"] is not None else None,
