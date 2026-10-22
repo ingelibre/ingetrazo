@@ -95,6 +95,29 @@ def test_place_face_frame_maps_walls_and_floors():
 
 # ---- Leader text labels -------------------------------------------------------
 
+def test_the_default_label_of_a_face_with_an_opening_quotes_its_net_area():
+    """#742: clicking a 4x4 m face with a 1x1 m opening with the Text
+    tool offers a label of 15 m², not the outline's 16."""
+    from types import SimpleNamespace
+    from core.mesh import Mesh
+    from tools.text import TextTool
+
+    mesh = Mesh()
+    face = mesh.add_face(
+        [QVector3D(0, 0, 0), QVector3D(4, 0, 0), QVector3D(4, 4, 0),
+         QVector3D(0, 4, 0)],
+        [[QVector3D(1, 1, 0), QVector3D(1, 2, 0), QVector3D(2, 2, 0),
+          QVector3D(2, 1, 0)]])
+    viewport = SimpleNamespace(pick_edge=lambda x, y: None,
+                               pick_face_any=lambda x, y: face)
+    ctx = SimpleNamespace(
+        viewport=viewport,
+        screen=SimpleNamespace(x=lambda: 0, y=lambda: 0),
+        world=QVector3D(0, 0, 0))
+    label = TextTool()._describe(ctx).replace(",", ".")
+    assert "15" in label and "16" not in label
+
+
 def test_label_commands_undo_redo():
     scene = Scene()
     history = History(scene)

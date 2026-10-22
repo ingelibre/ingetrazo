@@ -89,6 +89,9 @@ def _loop_area(loop) -> float:
 
 def face_net_area(f) -> float:
     """Face area with hole loops (door/window openings) subtracted."""
+    net = getattr(f, "net_area", None)
+    if callable(net):
+        return net()
     area = f.area()
     for h in f.hole_loops:
         area -= _loop_area(h)

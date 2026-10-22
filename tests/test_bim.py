@@ -181,6 +181,21 @@ def test_slab_net_area_discounts_holes():
     assert abs(metrado - 11.0) < 1e-6 and unit == "m2"
 
 
+def test_face_net_area_method_agrees_with_bim_helper():
+    """#742: the face itself knows its net area, and ``area()`` stays
+    gross — the engine (heal thresholds, dominant normal) reads it."""
+    from core.bim import face_net_area
+    scene = Scene()
+    f = scene.mesh.add_face(
+        [V(0, 0), V(4, 0), V(4, 3), V(0, 3)],
+        hole_loops=[[V(1, 1), V(2, 1), V(2, 2), V(1, 2)]])
+    assert abs(f.area() - 12.0) < 1e-6
+    assert abs(f.net_area() - 11.0) < 1e-6
+    assert abs(face_net_area(f) - f.net_area()) < 1e-9
+    plain = scene.mesh.add_face([V(5, 0), V(6, 0), V(6, 1), V(5, 1)])
+    assert plain.net_area() == plain.area()
+
+
 def test_tag_survives_pushpull_churn():
     # The reason tags live in attrs: the engine's rebuilds replace face
     # objects, and the tag must ride the identity-inheritance machinery.

@@ -265,6 +265,32 @@ class Face:
             return 0.0
         return 0.5 * self._newell().length()
 
+    def net_area(self) -> float:
+        """``area()`` with the hole loops subtracted: the surface a
+        person measuring the face means — a wall's window opening is
+        not wall. ``area()`` itself stays gross on purpose (the engine
+        reads it: heal thresholds, the dominant normal), so the
+        user-facing numbers — Entity Info, quantities, labels — read
+        this one instead (#742)."""
+        if len(self.loop) < 3:
+            return 0.0
+        area = self.area()
+        for hole in self.hole_loops:
+            count = len(hole)
+            if count < 3:
+                continue
+            nx = ny = nz = 0.0
+            for i in range(count):
+                curr = hole[i].position
+                nxt = hole[(i + 1) % count].position
+                x0, y0, z0 = curr.x(), curr.y(), curr.z()
+                x1, y1, z1 = nxt.x(), nxt.y(), nxt.z()
+                nx += (y0 - y1) * (z0 + z1)
+                ny += (z0 - z1) * (x0 + x1)
+                nz += (x0 - x1) * (y0 + y1)
+            area -= 0.5 * QVector3D(nx, ny, nz).length()
+        return max(area, 0.0)
+
     def centroid(self) -> QVector3D:
         count = len(self.loop)
         if count == 0:
