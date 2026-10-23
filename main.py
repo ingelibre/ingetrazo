@@ -171,6 +171,8 @@ class _App(QApplication):
 
     def __init__(self, argv: list[str]) -> None:
         super().__init__(argv)
+        from core.macos_accessibility import install_cocoa_accessibility_fix
+        install_cocoa_accessibility_fix(self)
         self.open_window = None            # set once MainWindow exists
         self.pending_open_path: Path | None = None
 
@@ -206,6 +208,12 @@ def _self_check() -> int:
     print(f"  app root   : {root}")
 
     problems: list[str] = []
+    if sys.platform == "darwin" and is_frozen():
+        from core.macos_accessibility import LIBRARY_NAME
+        cocoa_fix = root / "resources" / "native" / LIBRARY_NAME
+        print(f"  Cocoa a11y fix : {'found' if cocoa_fix.is_file() else 'MISSING'}  {cocoa_fix}")
+        if not cocoa_fix.is_file():
+            problems.append("Cocoa accessibility fix")
     # Only files something actually reads at runtime.
     for label, path in (
         ("vertex shader", root / "resources" / "shaders" / "basic.vert"),
