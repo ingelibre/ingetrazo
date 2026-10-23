@@ -386,8 +386,8 @@ class DeleteEdgesCommand(Command):
 class EraseSelectionCommand(Command):
     """Erase selected edges and faces, the usual way.
 
-    An edge that divides two *coplanar* faces is dissolved and the faces merge
-    back into one (rubbing out a face's split line reunites it). Any other erased
+    An edge that divides two *coplanar* faces goes alone and the plane's faces
+    are rebuilt (rubbing out a face's split line reunites it). Any other erased
     edge takes the faces it bounds with it (a non-planar pair can't become one
     face). Undo restores an identity-preserving snapshot — the merge restructures
     connectivity too much for a clean per-edge inverse."""
@@ -417,17 +417,14 @@ class EraseSelectionCommand(Command):
         # One segment->faces index for the cascade below: the per-edge scan
         # over every face was O(edges x faces) — deleting a curved tiled
         # wall (hundreds of curve segments) took 30+ s on an exploded
-        # 28k-face mesh (piscina.igz report). Kept live as faces merge/die.
+        # 28k-face mesh (piscina.igz report). Faces that die are skipped
+        # through dead_faces.
         seg_faces: dict = {}
-
-        def _index_face(f) -> None:
+        for f in m.faces:
             for ek in _loop_edges(f.vertices):
                 seg_faces.setdefault(ek, []).append(f)
-
-        for f in m.faces:
-            _index_face(f)
         dead_faces: set = set()
-        slit_planes: list = []
+        rebuild_planes: list = []
         for a, b in self._edge_endpoints:
             v0 = m.vertex_at(a)
             v1 = m.vertex_at(b)
@@ -435,7 +432,6 @@ class EraseSelectionCommand(Command):
             if edge is None:
                 continue
             faces = list(edge.faces)
-            merged = None
             if len(faces) == 2 and faces[0] is faces[1]:
                 # Slit edge: ONE face walks it twice — a fence line joining an
                 # inner boundary to the outline turns the ring into a cut-open
@@ -445,34 +441,41 @@ class EraseSelectionCommand(Command):
                 # regions below (the ring comes back as outer + hole; other
                 # fence pieces survive as free edges).
                 f = faces[0]
-                slit_planes.append((QVector3D(f.vertices[0]), f.normal()))
+                rebuild_planes.append((QVector3D(f.vertices[0]), f.normal()))
                 m.remove_edge(edge)
                 scene.selection.discard(edge)
                 continue
-            if len(faces) == 2 and QVector3D.dotProduct(
+            if len(faces) == 2 and abs(QVector3D.dotProduct(
                 faces[0].normal(), faces[1].normal()
-            ) > 0.999:
-                merged = m.dissolve_coplanar_region(faces)  # reunite the split
-                if merged is not None:
-                    dead_faces.update(id(f) for f in faces)
-                    _index_face(merged)
-            if merged is None:
-                # Cascade: the edge and every face bounding it (a face can't
-                # outlive a bounding edge) go away.
-                ekey = frozenset((_key(edge.v0.position), _key(edge.v1.position)))
-                for f in seg_faces.get(ekey, ()):
-                    if id(f) in dead_faces:
-                        continue
-                    dead_faces.add(id(f))
-                    m.remove_face(f)
-                    scene.selection.discard(f)
+            )) > 0.999:
+                # Coplanar pair, either winding: drop this edge only and let
+                # the plane rebuild below reunite the faces. Dissolving the
+                # pair removed EVERY edge they share — one erased side of a
+                # rectangle drawn on a face took the whole outline (#631) —
+                # and the signed test sent an opposite-wound pair into the
+                # cascade, which deleted both faces (#356).
+                f = faces[0]
+                rebuild_planes.append((QVector3D(f.vertices[0]), f.normal()))
                 m.remove_edge(edge)
+                scene.selection.discard(edge)
+                continue
+            # Cascade: the edge and every face bounding it (a face can't
+            # outlive a bounding edge) go away.
+            ekey = frozenset((_key(edge.v0.position), _key(edge.v1.position)))
+            for f in seg_faces.get(ekey, ()):
+                if id(f) in dead_faces:
+                    continue
+                dead_faces.add(id(f))
+                m.remove_face(f)
+                scene.selection.discard(f)
+            m.remove_edge(edge)
             scene.selection.discard(edge)
-        # Slit removals re-derive their plane from the arrangement while the
-        # cut-ring face is still present to provide coverage (it re-emits as
-        # outer + hole, attrs intact; uncovered regions stay empty).
+        # Slit and coplanar removals re-derive their plane from the
+        # arrangement while the faces are still present to provide coverage
+        # (a cut ring re-emits as outer + hole, a split face as one, attrs
+        # intact; uncovered regions stay empty).
         done_planes: list = []
-        for origin, normal in slit_planes:
+        for origin, normal in rebuild_planes:
             nn = normal.normalized()
             if any(abs(QVector3D.dotProduct(nn, n)) > 0.999 and
                    abs(QVector3D.dotProduct(origin - o, n)) < 1e-4
