@@ -29,7 +29,7 @@ _I18N_DIR = app_root() / "i18n"
 LANGUAGE_NAMES = {"en": "English", "es": "Español",
                   "pt-BR": "Português (Brasil)", "zh-CN": "简体中文", "it": "Italiano",
                   "id": "Bahasa Indonesia", "fr": "Français", "de": "Deutsch",
-                  "pl": "Polski", "ru": "Русский"}
+                  "pl": "Polski", "ru": "Русский", "th": "ไทย"}
 
 _catalog: dict[str, str] = {}
 _lang = "en"

@@ -218,8 +218,8 @@ Developed on **Python 3.14** (3.11+ should work). Run the tests with
 Contributors from anywhere are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
 and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). All code, comments and commit
 messages are in **English**; the UI speaks Spanish, English, Brazilian
-Portuguese, Simplified Chinese, Italian, Indonesian, French, German, Polish
-and Russian (translations are one JSON file each under `i18n/`).
+Portuguese, Simplified Chinese, Italian, Indonesian, French, German, Polish,
+Russian and Thai (translations are one JSON file each under `i18n/`).
 
 ## Acknowledgements
 
