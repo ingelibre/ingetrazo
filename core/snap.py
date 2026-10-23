@@ -9,6 +9,9 @@ Snap kinds (priority high → low):
 4. ``"close"``          — closing the current polygon chain.
 5. ``"endpoint"``       — vertex of an existing edge.
 6. ``"intersection"``   — where two edges / guide lines actually cross (green X).
+   Under a direction lock the crossing of the lock line with an edge is
+   ``"intersection_edge"`` and with a face (loose, in a group or component)
+   ``"intersection_face"``.
 7. ``"midpoint"``       — midpoint of an existing edge.
 8. ``"origin"``         — world origin.
 9. ``"on_edge"``        — arbitrary point along an edge (start a shape on it).
@@ -50,6 +53,7 @@ COLOR_AXIS_Y = (0.16, 0.62, 0.36)
 COLOR_AXIS_Z = (0.20, 0.40, 0.78)
 COLOR_REFERENCE = (0.85, 0.30, 0.80)  # magenta — parallel / perpendicular
 COLOR_EXTENSION = (0.55, 0.55, 0.58)  # grey — collinear extension of an edge
+COLOR_LOCK_INTERSECT = (0.85, 0.20, 0.20)  # red — a Shift lock meeting an acquired edge / face
 COLOR_IN_GROUP = (0.85, 0.30, 0.80)   # magenta — a point inside a group / component
 COLOR_TANGENT = (0.20, 0.66, 0.74)    # cyan — an arc tangent to the arc it starts from
 COLOR_NONE = (0.0, 0.0, 0.0)
@@ -75,7 +79,8 @@ AXIS_NAMES = {"x": "X", "y": "Y", "z": "Z"}
 #: _planar_face_plane``, #545). Same test as ``RotatedRectangleTool.
 #: _POINT_SNAPS``, which asks the same question of the protractor's width.
 POINT_SNAP_KINDS = frozenset({
-    "endpoint", "midpoint", "intersection", "on_edge", "on_line", "close",
+    "endpoint", "midpoint", "intersection", "intersection_edge",
+    "intersection_face", "on_edge", "on_line", "close",
     "origin", "center", "centre", "component_origin", "arc_midpoint",
 })
 
@@ -995,6 +1000,7 @@ def _from_point_snap(
     is_occluded, extra_point=None, axis_deg: float = 10.0,
     hovered_refs: bool = False, line_dir: Optional[QVector3D] = None,
     project_onto_line: Optional[ProjectOntoLine] = None,
+    edge_body: bool = True,
 ) -> Optional[SnapResult]:
     """'From point' inference ("Desde el punto"), the single clean version.
 
@@ -1053,7 +1059,7 @@ def _from_point_snap(
     # nothing (issue #27, @pacaeiro).
     refs.append((QVector3D(0.0, 0.0, 0.0), "origin", COLOR_ORIGIN))
 
-    if hovered_refs:
+    if hovered_refs and edge_body:
         # The point of an edge under the cursor is a reference too (the
         # window's sill, not just its corners): the closest point of the
         # nearest edge, as a plain 'from point'. Corners and midpoints come
@@ -1243,10 +1249,59 @@ def _intersection_snap(
     return SnapResult(hit, "intersection", COLOR_ENDPOINT)
 
 
+def _lock_reference_snap(
+    start_point, line_dir, world_to_pixel, hover_edge, hover_plane,
+) -> Optional[SnapResult]:
+    """SketchUp's «constrained on line / plane» under a direction lock (arrow,
+    Shift or reference lock): with the cursor ON an edge or a face, the point
+    where the lock line meets that edge's INFINITE line
+    (``intersection_edge``) or that face's PLANE (``intersection_face``) is
+    offered automatically - the cursor need not be anywhere near it. The
+    dotted guide runs from the edge's near end (or from the cursor, for a
+    face) to the point. An edge wins over a face. ``hover_plane`` is
+    ``(point, normal, ref)``; skew and parallel cases offer nothing."""
+    if hover_edge is not None:
+        a, b = hover_edge.a, hover_edge.b
+        v = b - a
+        if v.lengthSquared() > 1e-12:
+            w0 = start_point - a
+            bb = QVector3D.dotProduct(line_dir, v)
+            cc = QVector3D.dotProduct(v, v)
+            dd = QVector3D.dotProduct(line_dir, w0)
+            ee = QVector3D.dotProduct(v, w0)
+            uu = QVector3D.dotProduct(line_dir, line_dir)
+            den = cc * uu - bb * bb
+            if abs(den) > 1e-9 * cc * uu:
+                s = (bb * ee - cc * dd) / den
+                t = (ee * uu - bb * dd) / den
+                on_line = start_point + line_dir * s
+                on_edge = a + v * t
+                if ((on_line - on_edge).length() <= 1e-3
+                        and world_to_pixel(on_edge) is not None):
+                    # Beyond an end of the edge that stretch is the dotted
+                    # extension; inside it, the crossing rule answered.
+                    near_end = a if t < 0.5 else b
+                    return SnapResult(on_edge, "intersection_edge",
+                                      COLOR_LOCK_INTERSECT,
+                                      guide=(near_end, on_edge),
+                                      guide_color=COLOR_EXTENSION)
+    if hover_plane is not None:
+        p0, n, ref = hover_plane
+        den = QVector3D.dotProduct(n, line_dir)
+        if abs(den) > 1e-6:
+            s = QVector3D.dotProduct(n, p0 - start_point) / den
+            hit = start_point + line_dir * s
+            if world_to_pixel(hit) is not None:
+                return SnapResult(hit, "intersection_face",
+                                  COLOR_LOCK_INTERSECT, guide=(ref, hit),
+                                  guide_color=COLOR_EXTENSION)
+    return None
+
+
 def _lock_line_snaps(
     scene, start_point, line_dir, cx, cy, world_to_pixel, threshold_px,
     is_occluded, acquired_point, chain_first_point=None,
-    project_onto_line=None,
+    project_onto_line=None, hover_edge=None, hover_plane=None,
 ) -> Optional[SnapResult]:
     """What a directional lock still lets you fetch, in order: the chain's
     own first point (closing), a vertex sitting ON the lock line, the
@@ -1305,12 +1360,27 @@ def _lock_line_snaps(
                           guide=(start_point, best_hit[1]))
     # 'From point' along the lock line: line up with a corner (green) or
     # midpoint (cyan) projected onto the locked axis — or hover it.
-    return _from_point_snap(
+    # The cursor ON an edge: its meeting with the lock line is the answer
+    # (SketchUp's «constrained on line»), so the edge's body must not offer
+    # an arbitrary 'from point' instead; corners and midpoints still do.
+    edge_hit = (_lock_reference_snap(start_point, line_dir, world_to_pixel,
+                                     hover_edge, None)
+                if hover_edge is not None else None)
+    hit = _from_point_snap(
         scene, start_point, line_dir, cx, cy, world_to_pixel,
         threshold_px, is_occluded, extra_point=acquired_point,
         hovered_refs=True, line_dir=line_dir,
         project_onto_line=project_onto_line,
+        edge_body=edge_hit is None,
     )
+    if hit is not None:
+        return hit
+    if edge_hit is not None:
+        return edge_hit
+    # Nothing better: the cursor over a face constrains the lock line to
+    # that plane.
+    return _lock_reference_snap(start_point, line_dir, world_to_pixel,
+                                None, hover_plane)
 
 
 #: Two point candidates closer than this on screen are a tie, and the tie
@@ -1375,6 +1445,8 @@ def compute_snap(
     work_plane_normal: Optional[QVector3D] = None,
     radial_arm: bool = False,
     axis_in_plane: bool = False,
+    hover_lock_edge=None,
+    hover_lock_plane: Optional[tuple] = None,
     face_crossing: Optional[Callable[[], Optional[tuple]]] = None,
 ) -> SnapResult:
     # Linear-inference toggle (Alt): "all" = every inference, "off" =
@@ -1460,7 +1532,7 @@ def compute_snap(
         hit = _lock_line_snaps(
             scene, start_point, axis_dir, cx, cy, world_to_pixel,
             threshold_px, is_occluded, acquired_point, chain_first_point,
-            project_onto_line,
+            project_onto_line, hover_lock_edge, hover_lock_plane,
         )
         if hit is not None:
             hit.lock_color = AXIS_COLORS[axis_lock]
@@ -1493,7 +1565,7 @@ def compute_snap(
         hit = _lock_line_snaps(
             scene, start_point, lock_dir, cx, cy, world_to_pixel,
             threshold_px, is_occluded, acquired_point, chain_first_point,
-            project_onto_line,
+            project_onto_line, hover_lock_edge, hover_lock_plane,
         )
         color = shift_lock_color if shift_lock_color is not None else COLOR_REFERENCE
         if hit is not None:
@@ -1518,7 +1590,7 @@ def compute_snap(
                 scene, start_point, direction, candidate_pixel[0],
                 candidate_pixel[1], world_to_pixel, threshold_px,
                 is_occluded, acquired_point, chain_first_point,
-                project_onto_line,
+                project_onto_line, hover_lock_edge, hover_lock_plane,
             )
             if hit is not None:
                 hit.lock_color = COLOR_REFERENCE
@@ -1544,7 +1616,7 @@ def compute_snap(
             hit = _lock_line_snaps(
                 scene, start_point, axis_dir, cx3, cy3, world_to_pixel,
                 threshold_px, is_occluded, acquired_point, chain_first_point,
-                project_onto_line,
+                project_onto_line, hover_lock_edge, hover_lock_plane,
             )
             if hit is not None:
                 hit.lock_color = AXIS_COLORS[inferred]

@@ -1077,7 +1077,8 @@ class Viewport(QOpenGLWidget):
     #: place along an edge or on a face).
     _ENCOURAGING_KINDS = frozenset((
         "endpoint", "midpoint", "arc_midpoint", "center", "component_origin",
-        "origin", "intersection", "close"))
+        "origin", "intersection", "intersection_edge", "intersection_face",
+        "close"))
 
     _SNAP_LABELS = {
         "endpoint": "Endpoint",
@@ -1092,6 +1093,8 @@ class Viewport(QOpenGLWidget):
         "origin": "Origin",
         "extension": "Extension",
         "intersection": "Intersection",
+        "intersection_edge": "Intersect with Edge",
+        "intersection_face": "Intersect with Face",
         "from_point": "From point",
         # The axis PLANE through an encouraged point cut by the face under
         # the cursor (rule 8e): "Level with point" when it is the horizontal
@@ -7146,7 +7149,7 @@ class Viewport(QOpenGLWidget):
             painter.setBrush(QColor.fromRgbF(r, g, b, 0.85))
             painter.drawEllipse(QPointF(px, py), 6.5, 6.5)
         elif snap.kind in ("endpoint", "origin", "component_origin", "on_edge",
-                           "on_axis",
+                           "on_axis", "intersection_edge", "intersection_face",
                            "on_line", "extension", "from_point", "aligned",
                            "tangent"):
             rect = QRectF(px - 7, py - 7, 14, 14)

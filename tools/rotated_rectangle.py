@@ -417,6 +417,7 @@ class RotatedRectangleTool(AxisMagnet, PlaneLock, Tool):
     #: Everything else (the drawing plane, a face, an axis direction) only
     #: says where the cursor is, and is read on the protractor's plane.
     _POINT_SNAPS = frozenset({"endpoint", "midpoint", "intersection",
+                              "intersection_edge", "intersection_face",
                               "on_edge", "close", "origin", "center",
                               "centre", "on_line"})
 

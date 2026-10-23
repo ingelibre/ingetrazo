@@ -81,6 +81,7 @@ class TapeMeasureTool(Tool):
     #: from — a guide segment needs a real point; a midpoint or a
     #: spot on an edge is not one (Rafael: «el punto medio es ficticio»).
     _POINT_KINDS = frozenset(("endpoint", "origin", "intersection",
+                              "intersection_edge", "intersection_face",
                               "component_origin", "center"))
 
     #: The order Ctrl walks, and the label each one flashes.
@@ -203,7 +204,9 @@ class TapeMeasureTool(Tool):
             self._edge = edge if (self._mode == "line" and edge is not None
                                   and kind not in ("endpoint", "midpoint",
                                                    "close", "origin",
-                                                   "intersection")) else None
+                                                   "intersection",
+                                                   "intersection_edge",
+                                                   "intersection_face")) else None
             return
         kind = ctx.snap.kind if ctx.snap is not None else "none"
         if self._mode == "point":
