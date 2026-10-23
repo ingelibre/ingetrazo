@@ -47,7 +47,7 @@ def _init_language() -> None:
 
     Reads the persisted choice from :class:`QSettings`; on first run, falls back
     to Spanish when the OS locale is Spanish, Brazilian Portuguese when it is
-    Portuguese, English otherwise.
+    Portuguese, Korean when it is Korean, English otherwise.
     """
     saved = QSettings().value("language")
     if not saved:
@@ -58,6 +58,8 @@ def _init_language() -> None:
             # The Brazilian Portuguese catalogue (PR #54, @dafrobozao)
             # serves every Portuguese locale until a pt-PT one exists.
             saved = "pt-BR"
+        elif system.language() == QLocale.Korean:
+            saved = "ko"
         else:
             saved = "en"
     i18n.set_language(str(saved))

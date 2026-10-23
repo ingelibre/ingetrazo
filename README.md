@@ -218,8 +218,8 @@ Developed on **Python 3.14** (3.11+ should work). Run the tests with
 Contributors from anywhere are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
 and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). All code, comments and commit
 messages are in **English**; the UI speaks Spanish, English, Brazilian
-Portuguese, Simplified Chinese, Italian, Indonesian, French, German, Polish
-and Russian (translations are one JSON file each under `i18n/`).
+Portuguese, Simplified Chinese, Italian, Indonesian, French, German, Polish,
+Russian and Korean (translations are one JSON file each under `i18n/`).
 
 ## Acknowledgements
 
@@ -263,8 +263,9 @@ Help ▸ About; those who have given the most are marked with a ★ there.
   ([Rainjalin](https://github.com/Rainjalin)), French
   ([Yann Steffan](https://github.com/YannFR81)), German
   ([PESI3D](https://github.com/PESI3D)), Polish
-  ([Piotr Szmitkowski](https://github.com/jackalski)) and Russian
-  ([RomanErshow](https://github.com/RomanErshow)).
+  ([Piotr Szmitkowski](https://github.com/jackalski)), Russian
+  ([RomanErshow](https://github.com/RomanErshow)) and Korean
+  ([ChangWoo Lee](https://github.com/ultracat)).
 
 ## License
 

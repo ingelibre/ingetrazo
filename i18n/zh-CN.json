@@ -2982,6 +2982,7 @@
  "French translation of the interface.": "界面的法语翻译。",
  "Polish translation of the interface.": "界面的波兰语翻译。",
  "Russian translation of the interface.": "界面的俄语翻译。",
+ "Korean translation of the interface.": "界面韩语翻译。",
  "Sheet dimensions and level marks in the document's units, and sheets made from the AI bridge undone in one step.": "图纸尺寸与标高采用文档单位；通过 AI 桥创建的图纸可一步撤销。",
  "Fixes for the location map, Move's rotation grips and typed values.": "修复位置地图、移动工具的旋转手柄和输入数值的问题。",
  "A fix for the AI Assistant crash in the Flatpak.": "修复 Flatpak 中 AI 助手崩溃的问题。",

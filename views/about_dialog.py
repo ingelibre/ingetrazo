@@ -130,6 +130,9 @@ CONTRIBUTORS = [
     ("RomanErshow",
      "Russian translation of the interface.",
      "https://github.com/RomanErshow"),
+    ("ChangWoo Lee",
+     "Korean translation of the interface.",
+     "https://github.com/ultracat"),
     ("Francis Rebouças",
      "Sheet dimensions and level marks in the document's units, and "
      "sheets made from the AI bridge undone in one step.",

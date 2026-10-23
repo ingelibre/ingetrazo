@@ -205,6 +205,9 @@ Piotr Szmitkowski  (github.com/jackalski)
 RomanErshow  (github.com/RomanErshow)
     Russian translation of the interface (#399).
 
+ChangWoo Lee <ultracat.lcw@gmail.com>  (github.com/ultracat)
+    Korean translation of the interface.
+
 Francis Rebouças  (github.com/francisreboucas)
     Sheet dimensions and level marks born in the document's units (#403),
     and a sheet made through the AI bridge undone in one step (#694).

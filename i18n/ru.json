@@ -2981,6 +2981,7 @@
  "French translation of the interface.": "Французский перевод интерфейса.",
  "Polish translation of the interface.": "Польский перевод интерфейса.",
  "Russian translation of the interface.": "Русский перевод интерфейса.",
+ "Korean translation of the interface.": "Перевод интерфейса на корейский язык.",
  "Sheet dimensions and level marks in the document's units, and sheets made from the AI bridge undone in one step.": "Размеры и отметки уровня на листах в единицах документа, а листы, созданные через мост ИИ, отменяются одним шагом.",
  "Fixes for the location map, Move's rotation grips and typed values.": "Исправления карты местоположения, ручек поворота в «Переместить» и вводимых значений.",
  "A fix for the AI Assistant crash in the Flatpak.": "Исправление падения ИИ-ассистента во Flatpak.",
