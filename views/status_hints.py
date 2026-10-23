@@ -18,6 +18,7 @@ HINTS: dict = {
     "select": "Shift = add/remove, Ctrl = add. Double-click a group to edit it. F3 = search commands.",
     "change_axes": ("Click the new origin.",
                     "Click the red direction, then the green one."),
+    "scale_manager": "Type the X, Y, Z scale in the window; Enter or leaving the field applies it.",
     "outer_shell": ("Click a solid group or component (1).",
                     "Click another solid (2) — and more to add them."),
     "solid_union": ("Click a solid group or component (1).",

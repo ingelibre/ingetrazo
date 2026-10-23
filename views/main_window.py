@@ -293,6 +293,8 @@ class MainWindow(QMainWindow):
         # usual convention.
         from tools.change_axes import ChangeAxesTool
         self._tools["change_axes"] = ChangeAxesTool()
+        from tools.scale_manager import ScaleManagerTool
+        self._tools["scale_manager"] = ScaleManagerTool()
         # Tag each tool with its icon key so the viewport can turn the mouse
         # pointer into the tool's icon (tool-shaped cursors).
         for key, tool in self._tools.items():
@@ -3273,7 +3275,8 @@ class MainWindow(QMainWindow):
         self._update_status_hint()
         # Select is where Repeat is pressed FROM, and the two tools entered
         # from a right-click need the face or group that click was on.
-        if key not in ("select", "texture_position", "change_axes"):
+        if key not in ("select", "texture_position", "change_axes",
+                       "scale_manager"):
             self._remember_command(tool.name,
                                    lambda k=key: self._activate_tool(k))
 
@@ -3479,6 +3482,11 @@ class MainWindow(QMainWindow):
                   if isinstance(g, Group) and g.is_component()]:
             self.viewport.history.execute(MakeUniqueCommand(g, rename=True))
         self.viewport.update()
+
+    def _on_scale_dialog(self, group) -> None:
+        tool = self._tools["scale_manager"]
+        tool.target = group
+        self._activate_tool("scale_manager")
 
     def _replacement_choices(self, sel) -> list:
         """``[(label, instance)]``: one row per component definition in the
@@ -4564,6 +4572,10 @@ class MainWindow(QMainWindow):
                 act.setChecked(kept)
                 act.triggered.connect(
                     lambda on: self.keep_selected_components(bool(on)))
+            scale_one = groups[0] if len(groups) == 1 and len(sel) == 1 else None
+            scale_act = menu.addAction(
+                tr("Scale…"), lambda: self._on_scale_dialog(scale_one))
+            scale_act.setEnabled(scale_one is not None)
             if len(groups) == 1 and len(sel) == 1:
                 menu.addAction(tr("Change Axes"),
                                lambda g=groups[0]: self._on_change_axes(g))

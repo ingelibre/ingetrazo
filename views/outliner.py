@@ -3078,6 +3078,10 @@ class OutlinerPanel(QWidget):
                              parse_scale(scale.text(), 50.0),
                              open_sheet=open_it.isChecked())
 
+    def ask_scale(self, group) -> None:
+        self._window._on_scale_dialog(group)
+        self.refresh()
+
     def ask_plan(self, group) -> None:
         """The dialog: cut height above the group's base, a sheet or not,
         and its scale."""
@@ -3285,6 +3289,10 @@ class OutlinerPanel(QWidget):
                            lambda: self.toggle_locked(targets))
             menu.addAction(tr("Open for editing"),
                            lambda: self.open_item(item))
+            scale_act = menu.addAction(
+                tr("Scale…"), lambda: QTimer.singleShot(
+                    0, lambda: self.ask_scale(group)))
+            scale_act.setEnabled(len(targets) == 1)
             # Make Group / Make Component from here, as from the view's
             # right-click (#561, @BastelBaus); inside an open group what
             # they make goes into it (#490).
