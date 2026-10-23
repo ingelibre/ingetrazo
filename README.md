@@ -6,6 +6,7 @@
 **A free 3D modeler for architecture, engineering and 3D design — draw as if by hand, built natively for Linux.**
 
 ![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
+![CI](https://github.com/ingelibre/ingetrazo/actions/workflows/ci.yml/badge.svg)
 ![Status: usable](https://img.shields.io/badge/status-usable%20·%200.3.x-brightgreen)
 ![Platform: Linux · Windows · macOS](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-informational)
 ![Made in Peru](https://img.shields.io/badge/made%20in-Peru%20%F0%9F%87%B5%F0%9F%87%AA-red)
