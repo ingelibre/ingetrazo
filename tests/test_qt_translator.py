@@ -17,6 +17,7 @@ _app = QApplication.instance() or QApplication([])
 @pytest.mark.parametrize("lang, yes, cancel", [
     ("es", "&Sí", "Cancelar"),
     ("pt-BR", "&Sim", "Cancelar"),
+    ("ja", "はい(&Y)", "キャンセル"),
 ])
 def test_standard_buttons_are_translated(monkeypatch, lang, yes, cancel):
     import main
@@ -39,12 +40,13 @@ def test_english_installs_nothing(monkeypatch):
     assert main._qt_translator is None
 
 
-def test_shortcuts_keep_their_english_key_names(monkeypatch):
+@pytest.mark.parametrize("lang", ["es", "ja"])
+def test_shortcuts_keep_their_english_key_names(monkeypatch, lang):
     import main
     monkeypatch.setattr(main, "_qt_translator", None)
     sequences = [QKeySequence("Ctrl+Shift+PgUp"), QKeySequence("Esc")]
     native = [seq.toString(QKeySequence.NativeText) for seq in sequences]
-    main._install_qt_translator("es")
+    main._install_qt_translator(lang)
     try:
         assert [seq.toString(QKeySequence.NativeText) for seq in sequences] == native
         assert [seq.toString(QKeySequence.PortableText) for seq in sequences] == [
