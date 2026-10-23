@@ -42,6 +42,35 @@ def available_languages() -> list[str]:
     return sorted(p.stem for p in _I18N_DIR.glob("*.json"))
 
 
+#: Chinese locales written in Traditional characters; the shipped zh-CN
+#: catalog is Simplified, so they keep English until a zh-TW one exists.
+_TRADITIONAL_CHINESE = frozenset({"TW", "HK", "MO"})
+
+
+def language_for_locale(locale_name: str, available: list[str]) -> str:
+    """The catalog a first run opens in for the OS locale ``locale_name``
+    (``QLocale.name()``: ``de_DE``, ``pt_PT``, ``zh_CN``…), English when none
+    of ``available`` fits.
+
+    The exact locale wins (``pt_BR`` -> ``pt-BR``), then the bare language
+    (``de_AT`` -> ``de``), then any catalog of that language (``pt_PT`` ->
+    ``pt-BR``, which serves every Portuguese locale until a pt-PT exists)."""
+    tag = (locale_name or "").replace("_", "-")
+    lang, _, region = tag.partition("-")
+    lang = lang.lower()
+    by_code = {code.lower(): code for code in available}
+    if tag.lower() in by_code:
+        return by_code[tag.lower()]
+    if lang == "zh" and region.upper() in _TRADITIONAL_CHINESE:
+        return "en"
+    if lang in by_code:
+        return by_code[lang]
+    for code in available:
+        if code.lower().partition("-")[0] == lang:
+            return code
+    return "en"
+
+
 def set_language(lang: str) -> None:
     """Activate ``lang`` for subsequent :func:`tr` calls.
 
