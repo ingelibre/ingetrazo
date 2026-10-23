@@ -1713,6 +1713,12 @@ class Viewport(QOpenGLWidget):
         # Imported reference images (a scanned plan, a facade photo). Last of
         # the reference layers and before any model geometry: they are what
         # the user draws ON TOP of.
+        if self.scene.edit_group is not None:
+            # One colour for every faded pass (images, loose, grouped,
+            # instanced, face-me figures); set before the first of them.
+            self._program.setUniformValue(
+                self._loc_fade_color, QVector3D(*edit_fade_color(
+                    style.background)))
         self._draw_image_planes()
         _fmark("ground")
 
@@ -1773,11 +1779,6 @@ class Viewport(QOpenGLWidget):
                   and getattr(self, "_edit_split_f", None) is not None)
         split_f = self._edit_split_f if fading else None
         split_e = self._edit_split_e if fading else None
-        if self.scene.edit_group is not None:
-            # One colour for every faded pass (loose, grouped, instanced).
-            self._program.setUniformValue(
-                self._loc_fade_color, QVector3D(*edit_fade_color(
-                    style.background)))
         spans = getattr(self, "_face_spans", None)
         if spans:
             face_spans, culled_fv = self._visible_spans(spans, planes, split_f)
@@ -3739,8 +3740,13 @@ class Viewport(QOpenGLWidget):
             if tex is None:
                 continue
             drawn.append((im, tex))
-        if not drawn:
+        # An image is never part of a group: inside one it is always the
+        # surroundings, and greys (or hides) with the rest of the model —
+        # it stayed in full colour on top of a grey model.
+        rest = self._edit_rest_fade(None)
+        if not drawn or rest is None:
             return
+        self._program.setUniformValue1f(self._loc_fade, rest)
         self._program.setUniformValue(self._loc_use_tex, 1)
         self._program.setUniformValue(self._loc_use_vcolor, 0)
         self._program.setUniformValue1f(self._loc_shade, 1.0)
@@ -3794,8 +3800,22 @@ class Viewport(QOpenGLWidget):
             if opaque:
                 self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
         self._program.setUniformValue1f(self._loc_opacity, 1.0)
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
         self._gl.glDepthMask(GL_TRUE)
         self._program.setUniformValue(self._loc_use_tex, 0)
+
+    def _edit_rest_fade(self, group):
+        """How a reference image (``group=None``) or a face-me figure is
+        drawn while a group is open: the fade to apply, or ``None`` to skip
+        it. These passes bypass the buffers that carry the edit split, so
+        the people and images kept their colours on a grey model."""
+        if self.scene.edit_group is None:
+            return 0.0
+        if group is not None and not self._draws_in_edit_context(group):
+            return 0.0
+        if self._edit_rest_mode == "hide":
+            return None
+        return EDIT_REST_FADE if self._edit_rest_mode == "fade" else 0.0
 
     def image_plane_at(self, screen_x: float, screen_y: float,
                        selectable_only: bool = False):
@@ -6137,6 +6157,10 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue(self._loc_hard_cutout, 1)
         self._billboard_vao.bind()
         for g in groups:
+            fade = self._edit_rest_fade(g)
+            if fade is None:
+                continue
+            self._program.setUniformValue1f(self._loc_fade, fade)
             if getattr(g, "billboard", False) == "mesh":
                 # Imported face-me silhouette: its REAL geometry (a cut
                 # outline, not a rectangle) turns toward the camera.
@@ -6165,6 +6189,7 @@ class Viewport(QOpenGLWidget):
                 # Selection cue: repaint with the highlight colour untextured.
                 pass
         self._billboard_vao.release()
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
         self._program.setUniformValue(self._loc_hard_cutout, 0)
         self._program.setUniformValue(self._loc_use_tex, 0)
 
