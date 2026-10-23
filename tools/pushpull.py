@@ -2187,6 +2187,16 @@ class PushPullTool(Tool):
         scene = self._target_scene(scene)
         face = self.base_face
         d = self.extrusion
+        # Keep the moved face's outline as a selectable division when it
+        # becomes flush with a neighbour. Snapshot positions before either
+        # translation or extrusion replaces the face and its vertices.
+        normal = self._normal if self._normal is not None else face.normal()
+        shift = normal * d
+        cap_rim = []
+        for loop in (face.loop, *face.hole_loops):
+            for i in range(len(loop)):
+                cap_rim.append((loop[i].position + shift,
+                                loop[(i + 1) % len(loop)].position + shift))
 
         # A prism cap is exactly a translation of the cap along its normal; the
         # walls follow through shared vertices. Then repair connectivity
@@ -2213,7 +2223,8 @@ class PushPullTool(Tool):
                 fresh = {f for f in scene.mesh.faces
                          if any(_key(v) in seedkeys for v in f.vertices)}
                 self._rebuild_planes_fixpoint(scene.mesh, fresh, seedkeys,
-                                              removing=d < 0)
+                                              removing=d < 0,
+                                              keep_edges=cap_rim)
             else:
                 # A full collapse flattened the solid. The cap may have landed
                 # on a *subdivided* base (hole-bearing cycles never dedupe as
@@ -2382,7 +2393,8 @@ class PushPullTool(Tool):
         if solid:
             self._rebuild_planes_fixpoint(scene.mesh, set(new_faces), seedkeys,
                                           keep_mode=self._keep_base,
-                                          removing=d < 0)
+                                          removing=d < 0,
+                                          keep_edges=cap_rim)
         # Give any closed solid a consistent outward orientation — every face's
         # normal pointing out. The extrude can otherwise commit a closed solid
         # wound inconsistently (a flipped cap, or the base of a first flat→solid
@@ -2464,7 +2476,8 @@ class PushPullTool(Tool):
     @staticmethod
     def _rebuild_planes_fixpoint(mesh, fresh: set, seedkeys: set,
                                  keep_mode: bool = False,
-                                 removing: bool = True) -> None:
+                                 removing: bool = True,
+                                 keep_edges=()) -> None:
         """Deterministic root-fix (path C): recompute each touched plane's
         faces from its edges — the planar arrangement finds every region,
         winding-classification keeps the ones inside the solid and drops
@@ -2526,7 +2539,8 @@ class PushPullTool(Tool):
                 origin, plane_n = planes[key]
                 before_faces = set(mesh.faces)
                 if apply_rebuild(mesh, origin, plane_n, fresh, keep_mode,
-                                 removing, op=op_rims, cache=cache):
+                                 removing, op=op_rims, cache=cache,
+                                 keep_edges=keep_edges):
                     changed = True
                     # A rebuild replaces every face of the plane, so the
                     # user's own faces there come back as new objects. One
