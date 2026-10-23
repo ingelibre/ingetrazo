@@ -326,3 +326,91 @@ def test_the_display_name_survives_a_file_with_blocks(tmp_path):
     loose = next(g for g in scene.groups
                  if g.layer is None and g.xform is None)
     assert loose.name == "Detalles Plaza Yanque"
+
+
+# ---- Mesh entities: POLYFACE, polygon mesh, MESH ----------------------------
+_BOX_V = [(0, 0, 0), (3, 0, 0), (3, 2, 0), (0, 2, 0),
+          (0, 0, 1), (3, 0, 1), (3, 2, 1), (0, 2, 1)]
+_BOX_F = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
+          (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
+
+
+def _polyface_box(layout, layer="0", triangles=False):
+    faces = []
+    for f in _BOX_F:
+        q = [_BOX_V[i] for i in f]
+        faces += [[q[0], q[1], q[2]], [q[0], q[2], q[3]]] if triangles else [q]
+    pf = layout.add_polyface(dxfattribs={"layer": layer})
+    pf.append_faces(faces)
+    pf.optimize()                            # shared vertices, as CAD writes it
+    return pf
+
+
+def test_a_polyface_box_arrives_as_a_closed_solid(tmp_path):
+    """Joinery and stair programs export each 3D part as a POLYFACE mesh;
+    it used to come in as nothing at all ("no importable geometry")."""
+    from core.solids import solid_volume
+    doc = _doc()
+    _polyface_box(doc.modelspace(), layer="Plateau")
+    scene, stats = _load(tmp_path, doc)
+    g = scene.groups[0]
+    assert g.name == "Plateau" and len(g.mesh.faces) == 6
+    assert abs(solid_volume(g) - 6.0) < 1e-9
+
+
+def test_a_triangulated_polyface_merges_back_to_its_six_faces(tmp_path):
+    # many exporters write triangles with the diagonals flagged invisible
+    from core.solids import solid_volume
+    doc = _doc()
+    _polyface_box(doc.modelspace(), triangles=True)
+    scene, _ = _load(tmp_path, doc)
+    g = scene.groups[0]
+    assert len(g.mesh.faces) == 6
+    assert abs(solid_volume(g) - 6.0) < 1e-9
+
+
+def test_polyface_blocks_become_shared_solid_components(tmp_path):
+    from core.solids import is_solid
+    doc = _doc()
+    _polyface_box(doc.blocks.new("PIED"))
+    msp = doc.modelspace()
+    msp.add_blockref("PIED", (0, 0, 0))
+    msp.add_blockref("PIED", (10, 0, 0))
+    scene, stats = _load(tmp_path, doc)
+    a, b = [g for g in scene.groups if g.xform is not None]
+    assert a.mesh is b.mesh and len(a.mesh.faces) == 6
+    assert stats["components"] == {"PIED": 2}
+    assert is_solid(a) and is_solid(b)
+
+
+def test_a_polygon_mesh_grid_becomes_faces(tmp_path):
+    # an M x N POLYLINE mesh (a flat 3 x 4 grid here) is faces, and the
+    # coplanar merge gives back the one panel it describes
+    doc = _doc()
+    pm = doc.modelspace().add_polymesh(size=(3, 4))
+    for m in range(3):
+        for n in range(4):
+            pm.set_mesh_vertex((m, n), (m * 1.0, n * 1.0, 0.0))
+    scene, _ = _load(tmp_path, doc)
+    faces = scene.groups[0].mesh.faces
+    assert len(faces) == 1 and abs(faces[0].area() - 6.0) < 1e-6
+
+
+def test_a_mesh_entity_becomes_faces(tmp_path):
+    from core.solids import solid_volume
+    doc = _doc()
+    mesh = doc.modelspace().add_mesh()
+    with mesh.edit_data() as data:
+        data.vertices = [tuple(map(float, v)) for v in _BOX_V]
+        data.faces = [list(f) for f in _BOX_F]
+    scene, _ = _load(tmp_path, doc)
+    g = scene.groups[0]
+    assert len(g.mesh.faces) == 6 and abs(solid_volume(g) - 6.0) < 1e-9
+
+
+def test_a_plain_3d_polyline_stays_linework(tmp_path):
+    doc = _doc()
+    doc.modelspace().add_polyline3d([(0, 0, 0), (1, 0, 1), (2, 1, 1)])
+    scene, _ = _load(tmp_path, doc)
+    m = scene.groups[0].mesh
+    assert len(m.faces) == 0 and len(m.edges) == 2

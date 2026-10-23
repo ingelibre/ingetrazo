@@ -12,7 +12,10 @@ our machinery. D1 + D2:
   nested blocks deserve (piscina's hedge lesson). INSERTs *inside* a
   block explode into its prototype for now (nested sharing deferred);
   MINSERT arrays explode in place.
-- **3DFACE / SOLID / TRACE become faces** (D2), then each mesh that gained
+- **3DFACE / SOLID / TRACE become faces** (D2), and so do the mesh
+  entities CAD and joinery programs export their 3D parts with: POLYFACE
+  and polygon-mesh POLYLINEs and MESH (each face of the mesh one face,
+  invisible edges included). Then each mesh that gained
   faces runs the stitch + coplanar merge every importer here uses — a
   triangulated CAD terrain comes back as clean polygons, as with a "merge
   coplanar faces" option always on.
@@ -205,6 +208,39 @@ def _entity_segments(e, sagitta: float):
     return None, False
 
 
+def _mesh_faces(e):
+    """The face loops of a mesh entity (POLYFACE / polygon-mesh POLYLINE,
+    MESH), or ``None`` for any other entity. A plain 2D/3D POLYLINE is
+    linework and stays with :func:`_entity_segments`."""
+    kind = e.dxftype()
+    try:
+        if kind == "POLYLINE":
+            if not (e.is_poly_face_mesh or e.is_polygon_mesh):
+                return None
+            from ezdxf.render import MeshBuilder
+            mb = MeshBuilder.from_polyface(e)
+        elif kind == "MESH":
+            from ezdxf.render import MeshBuilder
+            mb = MeshBuilder.from_mesh(e)
+        else:
+            return None
+    except Exception:
+        return []                           # unreadable mesh: nothing, not a crash
+    verts = mb.vertices
+    loops = []
+    for face in mb.faces:
+        seen: list = []
+        for i in face:
+            p = verts[i]
+            if not seen or (p - seen[-1]).magnitude > 1e-12:
+                seen.append(p)
+        if len(seen) > 1 and (seen[0] - seen[-1]).magnitude <= 1e-12:
+            seen.pop()
+        if len(seen) >= 3:
+            loops.append(seen)
+    return loops
+
+
 def _entity_face(e):
     """The corner loop of a face entity, or ``None``. SOLID/TRACE store their
     quad in Z order — corners 2 and 3 swap to walk the perimeter."""
@@ -262,6 +298,12 @@ def _scan(space, sagitta, skipped, counter, per_layer, depth=0):
 
 def _bucket_one(e, layer, sagitta, skipped, counter, per_layer) -> None:
     kind = e.dxftype()
+    loops = _mesh_faces(e)
+    if loops is not None:
+        if loops:
+            counter[0] += 1
+            per_layer.setdefault(layer, _Bucket()).faces.extend(loops)
+        return
     loop = _entity_face(e)
     if loop is not None:
         counter[0] += 1
