@@ -8,8 +8,10 @@ plainest picture of what the tool does: the drawing tools *are* their shapes (a
 line is a line, a rectangle a rectangle), Paint is a brush laying a band of
 colour, Move/Pan are the familiar crossed-arrows / open-hand, Push/Pull is a
 face with an extrude arrow, Orbit is a pair of curved arrows. Drawing them
-ourselves keeps the set consistent, theme-aware (ink follows the palette), tiny,
-and free of any third-party icon licence. No SVG files, no QtSvg, no assets.
+ourselves keeps the set consistent, theme-aware (ink follows the palette),
+and free of any third-party icon licence. Toolbar artwork is refined in
+``resources/icons/toolbar.json`` and rendered by ``views.toolbar_icons``.
+The drawings below remain the cursor geometry and toolbar fallback.
 
 ``tool_icon(key)`` returns a :class:`QIcon` for a tool/nav key, or a null icon
 for an unknown key (the action keeps its text label).
@@ -1864,10 +1866,17 @@ _DRAW = {
 
 
 def tool_icon(key: str) -> QIcon:
-    """Programmatic :class:`QIcon` for a tool/nav ``key`` (null if unknown)."""
+    """Themed toolbar :class:`QIcon` for a tool/nav key (null if unknown)."""
     draw = _DRAW.get(key)
     if draw is None:
         return QIcon()
+    from views.toolbar_icons import toolbar_icon
+
+    app = QApplication.instance()
+    background = app.palette().window().color() if app is not None else QColor("white")
+    refined = toolbar_icon(key, _ink(), _accent(), background)
+    if refined is not None:
+        return refined
     pm, p, ink = _canvas()
     draw(p, ink)
     p.end()

@@ -33,6 +33,7 @@ datas = [
     ('resources/blender/*.py',     'resources/blender'),
     ('resources/icons/*.png',      'resources/icons'),
     ('resources/icons/*.ico',      'resources/icons'),
+    ('resources/icons/*.json',     'resources/icons'),  # themed toolbar geometry
     ('resources/icons/mimetypes/*.ico', 'resources/icons/mimetypes'),
     ('resources/mime/*.xml',       'resources/mime'),
     ('resources/colors/*.json',    'resources/colors'),
