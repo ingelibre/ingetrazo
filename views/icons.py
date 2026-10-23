@@ -1880,7 +1880,7 @@ def tool_icon(key: str) -> QIcon:
 # for the drawing tools (whose cursor is a pencil with the shape as a small
 # badge), the eraser's working corner, the paint bucket's spout, the centre
 # of the move cross / protractor. Haloed so it reads over any background.
-# "select" keeps the standard arrow.
+# "select" keeps the standard arrow; Offset has an arrow with a small badge.
 
 _CURSOR_SIZE = 32   # logical cursor canvas (48-space icons scale onto it)
 _cursor_cache: dict = {}
@@ -1906,7 +1906,7 @@ _PENCIL_HOT = (6.0, 42.0)          # the tip, in 48-space
 _CURSOR_HOTSPOTS = {
     "move": (24, 24), "rotate": (24, 24), "scale": (24, 24),
     "flip": (24, 24),
-    "pushpull": (24, 24), "offset": (24, 24), "followme": (24, 24),
+    "pushpull": (24, 24), "offset": (3, 3), "followme": (24, 24),
     "fillet": (24, 24),
     "dimension": (12, 30),          # left end of the dimension line
     "text": (24, 24), "text3d": (24, 24),
@@ -1952,6 +1952,25 @@ def _pencil(p, ink) -> None:
     p.restore()
 
 
+def _offset_pointer(p, ink) -> None:
+    """Keep the arrow tip clear, with the Offset symbol beside the pointer."""
+    p.save()
+    arrow = QPainterPath()
+    arrow.moveTo(3, 3)
+    for x, y in ((3, 27), (9, 21), (13.5, 31.5), (17.25, 30),
+                 (12.75, 19.5), (21, 19.5)):
+        arrow.lineTo(x, y)
+    arrow.closeSubpath()
+    p.setPen(QPen(ink, 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(ink)
+    p.drawPath(arrow)
+    p.translate(15, 15)
+    p.scale(0.75, 0.75)
+    p.setPen(QPen(ink, 3.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    _offset(p, ink)
+    p.restore()
+
+
 def _silhouette(src: QPixmap, color: QColor) -> QPixmap:
     """The pixmap's alpha shape filled with ``color`` (for the halo)."""
     s = QPixmap(src.size())
@@ -1966,8 +1985,8 @@ def _silhouette(src: QPixmap, color: QColor) -> QPixmap:
 
 
 def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
-    """A cursor that IS the tool, or ``None`` to keep the standard arrow
-    (unknown keys, and Select).
+    """A tool cursor, or ``None`` to keep the standard arrow (unknown keys,
+    and Select). Offset keeps an arrow tip with its icon as a small badge.
 
     ``plus`` adds a little ``+``: on the Tape and the Protractor it
     is the ENTIRE interface of the Ctrl toggle — a plus beside the cursor
@@ -2015,6 +2034,8 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
             p.setPen(bpen)
             badge(p, ink)
             p.restore()
+    elif key == "offset":
+        _offset_pointer(p, ink)
     else:
         draw(p, ink)
     if plus:

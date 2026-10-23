@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Tool cursors: activating a tool turns the mouse pointer
-into the tool's icon (aim cross at the hotspot); Select keeps the arrow."""
+into the tool's icon; Offset has an arrow with a badge, Select keeps the arrow."""
 from __future__ import annotations
 
 import sys
@@ -35,6 +35,19 @@ def test_tool_cursor_builds_bitmap_with_hotspot():
     assert zoom is not None
     assert (zoom.hotSpot().x(), zoom.hotSpot().y()) == (14, 14)  # lens centre
     assert tool_cursor("zoom_window") is not None
+
+
+def test_offset_keeps_an_arrow_tip_with_its_icon_beside_it():
+    from views.icons import tool_cursor
+    cur = tool_cursor("offset")
+    assert cur.hotSpot().x() == cur.hotSpot().y() == 2
+    pm = cur.pixmap()
+    assert pm.deviceIndependentSize().width() == 32
+    image, dpr = pm.toImage(), pm.devicePixelRatio()
+    # The pointer occupies the upper-left; the tool badge is below-right.
+    assert image.pixelColor(round(3 * dpr), round(7 * dpr)).alpha() > 0
+    assert image.pixelColor(round(18 * dpr), round(18 * dpr)).alpha() > 0
+    assert tool_cursor("offset") is cur
 
 
 def test_activating_tools_swaps_the_viewport_cursor():
