@@ -3010,5 +3010,6 @@
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Ändert den Bildwinkel der Kamera wie ein Objektiv: weiter zeigt mehr, enger hält die Linien ruhig.",
  "Field of view in degrees (10–120):": "Sichtfeld in Grad (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "Das Sichtfeld gilt für die Perspektive; wechseln Sie zuerst zu Perspektive.",
- "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: jede Fläche hat ein eigenes Material, daher hat sich nichts geändert – öffnen Sie es und malen Sie die Flächen"
+ "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: jede Fläche hat ein eigenes Material, daher hat sich nichts geändert – öffnen Sie es und malen Sie die Flächen",
+ "Option = copy": "Option = Kopie"
 }

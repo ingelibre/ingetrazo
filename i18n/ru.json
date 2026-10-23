@@ -3010,5 +3010,6 @@
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Меняет угол обзора камеры, как объектив: шире — видно больше, уже — линии спокойнее.",
  "Field of view in degrees (10–120):": "Поле зрения в градусах (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "Поле зрения относится к перспективе; сначала переключитесь на перспективу.",
- "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: у каждой грани свой материал, поэтому ничего не изменилось — откройте объект и окрасьте грани"
+ "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: у каждой грани свой материал, поэтому ничего не изменилось — откройте объект и окрасьте грани",
+ "Option = copy": "Option = копия"
 }

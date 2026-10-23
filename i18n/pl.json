@@ -3018,5 +3018,6 @@
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Zmienia kąt widzenia kamery jak obiektyw: szerszy obejmuje więcej, węższy zachowuje spokojne linie.",
  "Field of view in degrees (10–120):": "Pole widzenia w stopniach (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "Pole widzenia dotyczy perspektywy; najpierw przełącz na Perspektywę.",
- "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: każda ściana ma własny materiał, więc nic się nie zmieniło — otwórz go i pomaluj ściany"
+ "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: każda ściana ma własny materiał, więc nic się nie zmieniło — otwórz go i pomaluj ściany",
+ "Option = copy": "Option = kopiuj"
 }

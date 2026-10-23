@@ -3013,5 +3013,6 @@
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Ubah sudut pandang kamera, seperti lensa: lebih lebar mencakup lebih banyak, lebih sempit menjaga garis tetap tenang.",
  "Field of view in degrees (10–120):": "Bidang pandang dalam derajat (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "Bidang pandang berlaku untuk perspektif; beralih ke Perspektif terlebih dahulu.",
- "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: setiap muka punya material sendiri, jadi tidak ada yang berubah — buka dan cat muka-mukanya"
+ "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: setiap muka punya material sendiri, jadi tidak ada yang berubah — buka dan cat muka-mukanya",
+ "Option = copy": "Option = salin"
 }

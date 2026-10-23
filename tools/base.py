@@ -540,6 +540,8 @@ class Tool(ABC):
     #: which the tooltip and F3 already show beside it (Blender's
     #: descriptions). English; it goes through ``tr`` where it is shown.
     description: str | None = None
+    #: On macOS, Option is an alias for this tool's Ctrl copy toggle.
+    option_copies: bool = False
     #: Where a plugin tool's entry goes in the Extensions menu among the
     #: others: lower first, the same keeps the folder order. The Python
     #: Console, a tool for developers, goes after the model tools.

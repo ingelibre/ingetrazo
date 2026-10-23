@@ -11,6 +11,8 @@ the arc knows its bulge step, the fillet its sizing step. Tools not in
 the table fall back to their name."""
 from __future__ import annotations
 
+import sys
+
 from core.i18n import tr
 
 #: Tool key → hint per phase. A plain string is the same hint always.
@@ -180,6 +182,8 @@ def _with_alt(text: str, key, tool, linear_mode) -> str:
     The tool's stays up the whole time it is active (the classic bar keeps
     its modifiers on screen); Alt's only appears mid-operation, because that is
     the only time the key does anything (issue #26)."""
+    if sys.platform == "darwin" and getattr(tool, "option_copies", False):
+        return f"{text} | {tr('Option = copy')}"
     # One modifier at a time, each in the phase where it does something —
     # the classic line carries «Ctrl = …» before the first click and
     # «Alt = …» once a line is under way, never both. Stacking them made

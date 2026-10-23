@@ -262,6 +262,7 @@ class _PlannedWhenRun(Command):
 class MoveTool(Tool):
     name = "Move"
     shortcut = "M"
+    option_copies = True
     description = (
         "Move the selection, or what you click, to a new place; Ctrl "
         "leaves a copy behind.")
