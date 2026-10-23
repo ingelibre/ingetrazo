@@ -57,6 +57,19 @@ def layer_of(entity) -> str:
     return getattr(entity, "layer", None) or DEFAULT_LAYER
 
 
+def is_taggable(entity) -> bool:
+    """Whether the Tag field, right-click ▸ Layer and the Layers panel's
+    Assign move ``entity``: faces, edges, objects, annotations and reference
+    images. One list for all of them, so none of the roads skips a kind."""
+    from core.dimension import Dimension
+    from core.group import Group
+    from core.image_plane import ImagePlane
+    from core.mesh import Edge, Face
+    from core.textlabel import TextLabel
+    return isinstance(entity, (Face, Edge, Group, Dimension, TextLabel,
+                               ImagePlane))
+
+
 def assign_layer(entity, name: str) -> None:
     """Label an entity with a layer (default name clears the label)."""
     value = None if name == DEFAULT_LAYER else name
