@@ -445,11 +445,14 @@ class Mesh:
     def resplit_curves(self) -> None:
         """Re-partition curve ids into contiguous contours.
 
-        A curve breaks at any vertex where other geometry attaches (a non-curve
-        edge is incident) or where its own connectivity isn't a simple chain
-        (curve-degree ≠ 2). Each resulting chain keeps/gets its own id — so a
-        circle crossed by a square's edges selects as two separate arcs ('two
-        contours'). A pristine circle stays one curve."""
+        A curve breaks where its own connectivity isn't a simple chain
+        (curve-degree ≠ 2), or where other geometry attaches IN ITS PLANE (a
+        line crossing or touching the circle). Each resulting chain
+        keeps/gets its own id — so a circle crossed by a square's edges
+        selects as two separate arcs ('two contours'). A pristine circle
+        stays one curve, and so does the rim of a cylinder: its side seams
+        leave the circle's plane, and counting them broke the rim into one
+        curve per segment on every copy, explode or solid operation."""
         self._chunk_dirty = True
         self._mut_serial += 1
         global _CURVE_COUNTER
@@ -461,8 +464,27 @@ class Mesh:
             eset = set(edges)
 
             def is_break(v) -> bool:
-                cdeg = sum(1 for e in v.edges if e in eset)
-                return cdeg != 2 or len(v.edges) != cdeg
+                mine = [e for e in v.edges if e in eset]
+                if len(mine) != 2:
+                    return True
+                if len(v.edges) == 2:
+                    return False
+                p = v.position
+                a = mine[0].other(v).position - p
+                b = mine[1].other(v).position - p
+                n = QVector3D.crossProduct(a, b)
+                if n.length() <= 1e-6 * a.length() * b.length():
+                    return True              # straight through: no plane
+                n.normalize()
+                for e in v.edges:
+                    if e in eset:
+                        continue
+                    u = e.other(v).position - p
+                    length = u.length()
+                    if (length <= 1e-12
+                            or abs(QVector3D.dotProduct(u, n)) < 0.05 * length):
+                        return True
+                return False
 
             # Walk chains between break vertices; a break-free component is a
             # closed loop (one chain).

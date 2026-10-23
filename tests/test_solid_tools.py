@@ -176,6 +176,66 @@ def test_a_smooth_side_stays_smooth():
     assert sum(1 for e in res.mesh.edges if e.soft) >= n - 4
 
 
+def _curved_cylinder(n=24, r=1.0, h=2.0):
+    """A cylinder as Push/Pull leaves it: soft side seams, and each rim one
+    curve (one click selects the whole circle)."""
+    import core.edits  # noqa: F401  (Mesh helpers)
+    m = Mesh()
+    ring = [V(r * math.cos(2 * math.pi * k / n), r * math.sin(2 * math.pi * k / n))
+            for k in range(n)]
+    top = [p + V(0, 0, h) for p in ring]
+    m.add_face(list(reversed(ring)))
+    m.add_face(top)
+    for k in range(n):
+        m.add_face([ring[k], ring[(k + 1) % n], top[(k + 1) % n], top[k]])
+    for k in range(n):
+        m.find_edge(m.vertex_at(ring[k]), m.vertex_at(top[k])).soft = True
+    m.tag_curve(ring)
+    m.tag_curve(top)
+    return Group(m, name="cyl")
+
+
+def _curves_at(mesh, z):
+    """Sizes of the curves whose edges all lie at height ``z``."""
+    sizes: dict = {}
+    for e in mesh.edges:
+        if (e.curve is not None and abs(e.a.z() - z) < 1e-6
+                and abs(e.b.z() - z) < 1e-6):
+            sizes[e.curve] = sizes.get(e.curve, 0) + 1
+    return sorted(sizes.values())
+
+
+def test_a_circle_the_cut_does_not_touch_stays_one_curve():
+    """A bite out of the side: both rims come out whole, as one curve each
+    (they used to come out as 24 loose segments)."""
+    cyl = _curved_cylinder()
+    cutter = _box(0.5, -0.3, 0.5, 3, 0.3, 1.5, BLUE)
+    _gone, (res,) = solids.run(solids.SUBTRACT, [cutter, cyl])
+    assert _curves_at(res.mesh, 0.0) == [24]
+    assert _curves_at(res.mesh, 2.0) == [24]
+
+
+def test_a_circle_the_cut_breaks_is_one_curve_per_arc():
+    cyl = _curved_cylinder()
+    cutter = _box(0.5, -0.3, 1.0, 3, 0.3, 3, BLUE)      # notch through the top
+    _gone, (res,) = solids.run(solids.SUBTRACT, [cutter, cyl])
+    assert _curves_at(res.mesh, 0.0) == [24]
+    arcs = _curves_at(res.mesh, 2.0)
+    assert len(arcs) == 1 and 20 <= arcs[0] < 24       # the rest of the rim
+
+
+def test_a_hidden_or_tagged_edge_keeps_its_flags():
+    a, b = _pair()
+    e = next(e for e in b.mesh.edges
+             if e.a.z() == 3 and e.b.z() == 3 and e.a.x() == e.b.x() == 3)
+    e.hidden = True
+    e.layer = "Layer 2"
+    _gone, (res,) = solids.run(solids.SUBTRACT, [a, b])
+    kept = [e for e in res.mesh.edges
+            if e.a.z() == 3 and e.b.z() == 3 and e.a.x() == e.b.x() == 3]
+    assert kept and all(e.hidden and e.layer == "Layer 2" for e in kept)
+
+
 # ---- The command ---------------------------------------------------------------
 
 def test_one_undo_step_puts_everything_back():

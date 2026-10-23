@@ -92,9 +92,14 @@ class _Sources:
         self.attrs: list[dict] = []
         #: Pairs of source face ids joined by a soft edge (curved surfaces).
         self.soft_pairs: set[tuple[int, int]] = set()
+        #: Source edges that carry more than their ends — a circle's curve
+        #: id, a tag, hidden — as ``(a, b, curve_key, layer, hidden)`` in
+        #: world space; ``curve_key`` is ``(input index, id)`` because two
+        #: instances of one component share their curve ids.
+        self.flagged: list[tuple] = []
 
 
-def _to_manifold(group, sources: _Sources):
+def _to_manifold(group, sources: _Sources, index_in_op: int = 0):
     import manifold3d as m3d
     from core.materials import effective_attrs
     from core.group import effective_material
@@ -132,6 +137,13 @@ def _to_manifold(group, sources: _Sources):
             fs = [x for x in fs if x is not None]
             if len(fs) == 2:
                 sources.soft_pairs.add((min(fs), max(fs)))
+        cid = getattr(e, "curve", None)
+        layer = getattr(e, "layer", None)
+        hidden = getattr(e, "hidden", False)
+        if cid is not None or layer is not None or hidden:
+            sources.flagged.append((
+                (e.a.x(), e.a.y(), e.a.z()), (e.b.x(), e.b.y(), e.b.z()),
+                None if cid is None else (index_in_op, cid), layer, hidden))
     if not tris:
         raise SolidError("empty")
     v = np.asarray(verts, dtype=np.float64)
@@ -299,10 +311,74 @@ def _group_from_loops(loops, sources: _Sources, name: str, layer):
         if len(fs) == 2 and None not in fs:
             if (min(fs), max(fs)) in sources.soft_pairs:
                 e.soft = True
+    _carry_edge_flags(mesh, sources)
     g = Group(mesh, name=name)
     if layer is not None:
         g.layer = layer
     return g
+
+
+def _carry_edge_flags(mesh, sources: _Sources, rel_tol: float = 1e-7) -> None:
+    """Every result edge lying along a source edge takes that edge's curve,
+    tag and hidden flag. Without this a cylinder's top circle came out of
+    any cut as loose segments — even when the cut never touched it. A curve
+    the cut broke comes back as one curve per remaining arc."""
+    if not sources.flagged or not mesh.edges:
+        return
+    a = np.array([f[0] for f in sources.flagged], dtype=np.float64)
+    b = np.array([f[1] for f in sources.flagged], dtype=np.float64)
+    d = b - a
+    len2 = np.maximum((d * d).sum(axis=1), 1e-300)
+    lo, hi = np.minimum(a, b), np.maximum(a, b)
+    scale = max(1.0, float(np.abs(np.concatenate([a, b])).max()))
+    tol = rel_tol * scale
+
+    def off2(p):
+        s = np.clip(((p - a) * d).sum(axis=1) / len2, 0.0, 1.0)
+        q = a + s[:, None] * d - p
+        return (q * q).sum(axis=1)
+
+    by_key: dict = {}
+    for e in mesh.edges:
+        pa = np.array((e.a.x(), e.a.y(), e.a.z()))
+        pb = np.array((e.b.x(), e.b.y(), e.b.z()))
+        near = (np.all(lo <= np.minimum(pa, pb) + tol, axis=1)
+                & np.all(hi >= np.maximum(pa, pb) - tol, axis=1))
+        if not near.any():
+            continue
+        hit = near & (off2(pa) <= tol * tol) & (off2(pb) <= tol * tol)
+        idx = np.flatnonzero(hit)
+        if not len(idx):
+            continue
+        _a, _b, key, layer, hidden = sources.flagged[int(idx[0])]
+        e.layer = layer
+        e.hidden = bool(hidden)
+        if key is not None:
+            by_key.setdefault(key, []).append(e)
+    # One id per unbroken run: the chain goes on through a vertex where
+    # exactly two of its edges meet (the side seams of a cylinder meet the
+    # rim there too, so other edges do not break it).
+    for edges in by_key.values():
+        eset = set(edges)
+        parent = {e: e for e in edges}
+
+        def find(x):
+            while parent[x] is not x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for e in edges:
+            for v in (e.v0, e.v1):
+                mine = [o for o in v.edges if o in eset]
+                if len(mine) == 2:
+                    parent[find(mine[0])] = find(mine[1])
+        ids: dict = {}
+        for e in edges:
+            r = find(e)
+            if r not in ids:
+                ids[r] = Mesh.next_curve_id()
+            e.curve = ids[r]
 
 
 def _drop_collinear(polys, tol: float = 1e-9) -> None:
@@ -354,7 +430,7 @@ def run(op: str, groups: list) -> tuple[list, list]:
     for g in groups:
         _need_solid(g)
     sources = _Sources()
-    mans = [_to_manifold(g, sources) for g in groups]
+    mans = [_to_manifold(g, sources, i) for i, g in enumerate(groups)]
     first, second = groups[0], groups[1]
     from core.i18n import tr
     name = tr(RESULT_NAMES[op])
