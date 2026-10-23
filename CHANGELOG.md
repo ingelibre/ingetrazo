@@ -4,6 +4,20 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [Sin publicar]
+
+### Añadido
+- **Puente MCP: el agente mira desde cualquier vista y exporta.**
+  `screenshot` acepta `view` (iso, planta, alzados) y `fit` (zoom a todo
+  el modelo) para esa sola captura — la cámara del usuario vuelve a donde
+  estaba —, y la imagen ya no sale aplastada cuando su proporción no es la
+  de la ventana. Nueva herramienta `export_model`: STL, OBJ, GLB, DAE o IFC
+  a una ruta, sin diálogo (no pisa un archivo existente salvo
+  `overwrite=true`). El servidor negocia la revisión de MCP con el cliente
+  (hasta 2025-06-18) y marca sus herramientas: las de solo lectura
+  (`query_model`, `screenshot`) se pueden aprobar sin preguntar,
+  `run_python` no.
+
 ## [0.5.9] — 2026-10-19
 
 **Motor Rust experimental, modelos enormes mucho más fluidos y una semana

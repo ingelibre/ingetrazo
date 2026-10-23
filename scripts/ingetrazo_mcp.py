@@ -12,7 +12,8 @@ Register it with Claude Code:
     claude mcp add ingetrazo -- python3 /path/to/app/scripts/ingetrazo_mcp.py
 
 Tools: run_python (transactional, one undo step per call), query_model,
-screenshot (the agent SEES the viewport), undo, redo. Every mutation goes
+screenshot (the agent SEES the viewport, from any standard view),
+export_model (STL/OBJ/GLB/DAE/IFC), undo, redo. Every mutation goes
 through IngeTrazo's command engine — the hermeticity guard validates the
 agent's recipes, and Ctrl+Z always works.
 """
@@ -31,7 +32,12 @@ PORT = int(os.environ.get("INGETRAZO_AI_PORT", 4763))
 #: a container or on another machine reaches it through a tunnel the user
 #: sets up, and names the tunnel's end here (issue #130).
 HOST = os.environ.get("INGETRAZO_AI_HOST", "").strip() or "127.0.0.1"
-PROTOCOL = "2024-11-05"
+#: MCP revisions this server speaks, newest first. The handshake answers
+#: with the client's own revision when it is one of these (the spec's
+#: negotiation) and with the newest otherwise; the stdio framing and the
+#: tools/* methods used here are the same in all of them.
+PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
+PROTOCOL = PROTOCOLS[0]
 
 # The recipe book the model needs, from the app's own copy — the SAME text
 # the in-app assistant teaches (core/ai_recipes.py explains what its absence
@@ -76,32 +82,75 @@ TOOLS = [
             "properties": {"code": {"type": "string"}},
             "required": ["code"],
         },
+        # Rolls back whole on error and is one undo step, but it can still
+        # rewrite the user's document: clients should ask before running it.
+        "annotations": {"title": "Run Python in IngeTrazo",
+                        "readOnlyHint": False, "destructiveHint": True,
+                        "idempotentHint": False, "openWorldHint": False},
     },
     {
         "name": "query_model",
         "description": ("Model overview: entity counts, group/component "
                         "names, materials, layers, bounds, selection size."),
         "inputSchema": {"type": "object", "properties": {}},
+        "annotations": {"title": "Model overview", "readOnlyHint": True,
+                        "openWorldHint": False},
     },
     {
         "name": "screenshot",
-        "description": ("Render the current viewport and LOOK at it — use "
-                        "after building to verify and iterate."),
+        "description": (
+            "Render the viewport and LOOK at it — use after building to "
+            "verify and iterate. `view` (iso, top, front, back, left, right, "
+            "bottom) and `fit` (zoom to the whole model) aim a camera for "
+            "this picture only; the user's own view is left as it was."),
         "inputSchema": {
             "type": "object",
-            "properties": {"width": {"type": "integer"},
-                           "height": {"type": "integer"}},
+            "properties": {
+                "width": {"type": "integer", "minimum": 64, "maximum": 4096,
+                          "default": 1024},
+                "height": {"type": "integer", "minimum": 64, "maximum": 4096,
+                           "default": 768},
+                "view": {"type": "string",
+                         "enum": ["iso", "top", "bottom", "front", "back",
+                                  "left", "right"]},
+                "fit": {"type": "boolean", "default": False},
+            },
         },
+        "annotations": {"title": "Screenshot", "readOnlyHint": True,
+                        "openWorldHint": False},
+    },
+    {
+        "name": "export_model",
+        "description": (
+            "Export the open model to a file; the suffix picks the format: "
+            ".stl, .obj (+ .mtl), .glb, .dae (+ textures), .ifc (BIM-tagged "
+            "objects only). `path` must be absolute; an existing file is "
+            "only replaced with overwrite=true."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "overwrite": {"type": "boolean", "default": False},
+            },
+            "required": ["path"],
+        },
+        "annotations": {"title": "Export model", "readOnlyHint": False,
+                        "destructiveHint": False, "idempotentHint": True,
+                        "openWorldHint": False},
     },
     {
         "name": "undo",
         "description": "Undo the last step in IngeTrazo.",
         "inputSchema": {"type": "object", "properties": {}},
+        "annotations": {"title": "Undo", "readOnlyHint": False,
+                        "destructiveHint": False, "openWorldHint": False},
     },
     {
         "name": "redo",
         "description": "Redo the last undone step in IngeTrazo.",
         "inputSchema": {"type": "object", "properties": {}},
+        "annotations": {"title": "Redo", "readOnlyHint": False,
+                        "destructiveHint": False, "openWorldHint": False},
     },
 ]
 
@@ -184,8 +233,9 @@ def handle(msg: dict) -> dict | None:
     method = msg.get("method")
     msg_id = msg.get("id")
     if method == "initialize":
+        asked = (msg.get("params") or {}).get("protocolVersion")
         return {"jsonrpc": "2.0", "id": msg_id, "result": {
-            "protocolVersion": PROTOCOL,
+            "protocolVersion": asked if asked in PROTOCOLS else PROTOCOL,
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "ingetrazo", "version": "1.0.0"},
             "instructions": INSTRUCTIONS,

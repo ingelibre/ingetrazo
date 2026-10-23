@@ -36,6 +36,7 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import QVector3D
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit,
                                QPushButton, QVBoxLayout, QWidget)
 
@@ -44,6 +45,29 @@ from views.fold_section import FoldSection, narrow
 
 DEFAULT_PORT = 4763
 _REFUSED = b'{"id": null, "ok": false, "error": "not a bridge request; closing"}\n'
+
+#: The views ``screenshot`` can point its one-shot camera from — the
+#: Camera ▸ Standard Views presets (``OrbitCamera.set_view``).
+STANDARD_VIEWS = ("iso", "top", "bottom", "front", "back", "left", "right")
+
+
+def _writer(module: str, name: str):
+    """A writer resolved on first use: the bridge loads at startup, the
+    format modules only when an agent actually exports."""
+    def resolve():
+        import importlib
+        return getattr(importlib.import_module(f"formats.{module}"), name)
+    return resolve
+
+
+#: ``export_model``'s suffix → writer — the File ▸ Export set.
+EXPORT_FORMATS = {
+    ".stl": _writer("stl", "save_stl"),
+    ".obj": _writer("obj", "save_obj"),
+    ".glb": _writer("gltf", "save_glb"),
+    ".dae": _writer("dae", "save_dae"),
+    ".ifc": _writer("ifc", "save_ifc"),
+}
 
 
 class _Bridge(QObject):
@@ -213,15 +237,69 @@ class _Bridge(QObject):
                         "max": [hi.x(), hi.y(), hi.z()]}),
         }
 
-    def _tool_screenshot(self, width: int = 1024, height: int = 768) -> dict:
+    def _tool_screenshot(self, width: int = 1024, height: int = 768,
+                         view: str | None = None, fit: bool = False) -> dict:
+        """Render the viewport. ``view`` (a standard view: top, front, iso…)
+        and ``fit`` (zoom extents) point a camera at the model for this one
+        picture only: the user's own camera is put back afterwards, so the
+        agent can look from anywhere without yanking the user's view."""
         width = max(64, min(int(width), 4096))
         height = max(64, min(int(height), 4096))
-        image = self._viewport.render_image(width, height)
+        if view is not None and view not in STANDARD_VIEWS:
+            raise ValueError(f"unknown view {view!r}; one of: "
+                             + ", ".join(STANDARD_VIEWS))
+        vp = self._viewport
+        cam = vp.camera
+        saved = (QVector3D(cam.target), cam.distance, cam.yaw, cam.pitch,
+                 cam.perspective, cam.two_point, cam.aspect)
+        # render_image leaves the aspect of an explicit height to the caller:
+        # without this a 1024×768 shot of a wide window came out squashed.
+        # The overlay painters follow the live widget, so they only join in
+        # when the shot has the widget's shape.
+        live = max(vp.width(), 1) / max(vp.height(), 1)
+        overlays = abs(width / height - live) < 0.01
+        try:
+            cam.aspect = width / height
+            if view is not None:
+                cam.set_view(view)
+                if view != "iso":           # elevations read best parallel
+                    cam.perspective, cam.two_point = False, False
+            if fit:
+                lo, hi = vp.scene.bounds()
+                if lo is not None:
+                    cam.fit_box(lo, hi)
+            image = vp.render_image(width, height, overlays=overlays)
+        finally:
+            (cam.target, cam.distance, cam.yaw, cam.pitch,
+             cam.perspective, cam.two_point, cam.aspect) = saved
+        if image is None:
+            raise RuntimeError("the viewport has no GL context to render with")
         out_dir = Path(tempfile.gettempdir()) / "ingetrazo-ai"
         out_dir.mkdir(parents=True, exist_ok=True)
         out = out_dir / "viewport.png"
         image.save(str(out))
         return {"path": str(out), "width": width, "height": height}
+
+    def _tool_export_model(self, path: str = "", overwrite: bool = False) -> dict:
+        """Write the open model to ``path``; the suffix picks the format
+        (the same writers as File ▸ Export, without the dialog)."""
+        out = Path(path).expanduser()
+        if not path or not out.is_absolute():
+            raise ValueError("path must be an absolute file path")
+        writer = EXPORT_FORMATS.get(out.suffix.lower())
+        if writer is None:
+            raise ValueError(f"unsupported format {out.suffix!r}; one of: "
+                             + ", ".join(EXPORT_FORMATS))
+        if out.exists() and not overwrite:
+            raise FileExistsError(f"{out} exists; pass overwrite=true to replace it")
+        if not out.parent.is_dir():
+            raise FileNotFoundError(f"folder {out.parent} does not exist")
+        count = writer()(self._viewport.scene, out)
+        result = {"path": str(out), "format": out.suffix.lower()[1:],
+                  "bytes": out.stat().st_size}
+        if isinstance(count, int):
+            result["elements"] = count     # IFC: how many BIM objects went out
+        return result
 
     def _tool_undo(self) -> dict:
         ok = self._viewport.history.undo()

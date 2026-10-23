@@ -5,11 +5,14 @@ localhost, transactionally, and the MCP layer frames it for Claude."""
 from __future__ import annotations
 
 import json
+import math
 import os
 import socket
 import sys
 import threading
 from pathlib import Path, PurePosixPath
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -348,3 +351,127 @@ def test_a_web_page_cannot_run_code_through_the_bridge(monkeypatch):
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_screenshot_aims_a_one_shot_camera_and_gives_the_users_back(monkeypatch):
+    """``view``/``fit`` let the agent look at the model from a standard
+    view without moving the camera the USER is looking through."""
+    from plugins.ai_bridge import _Bridge
+    from views.main_window import MainWindow
+    monkeypatch.setenv("INGETRAZO_AI_PORT", "0")
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        bridge = _Bridge(vp)
+        bridge.start()
+        assert _ask(bridge, "run_python", {"code": (
+            "extrude([(0,0),(4,0),(4,3),(0,3)], 0, 2.5, name='Caja')")})["ok"]
+
+        cam = vp.camera
+        before = (cam.target.x(), cam.target.y(), cam.target.z(),
+                  cam.distance, cam.yaw, cam.pitch, cam.perspective,
+                  cam.aspect)
+        seen = {}
+        real_render = vp.render_image
+
+        def spy(w, h, **kw):
+            seen.update(yaw=cam.yaw, pitch=cam.pitch, aspect=cam.aspect,
+                        perspective=cam.perspective)
+            return real_render(w, h, **kw)
+
+        monkeypatch.setattr(vp, "render_image", spy)
+        reply = _ask(bridge, "screenshot",
+                     {"width": 800, "height": 400, "view": "top", "fit": True})
+        # The camera was aimed for the shot (top view, parallel, 2:1)…
+        assert seen["pitch"] == pytest.approx(math.radians(90.0))
+        assert seen["aspect"] == pytest.approx(2.0)
+        assert seen["perspective"] is False
+        # …and given back whether or not this machine could render it.
+        after = (cam.target.x(), cam.target.y(), cam.target.z(),
+                 cam.distance, cam.yaw, cam.pitch, cam.perspective,
+                 cam.aspect)
+        assert after == before
+        if reply["ok"]:
+            assert Path(reply["result"]["path"]).is_file()
+        else:
+            assert "GL context" in reply["error"]
+
+        reply = _ask(bridge, "screenshot", {"view": "sideways"})
+        assert reply["ok"] is False and "unknown view" in reply["error"]
+        bridge.stop()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_export_model_writes_the_format_its_suffix_names(monkeypatch, tmp_path):
+    from plugins.ai_bridge import _Bridge
+    from views.main_window import MainWindow
+    monkeypatch.setenv("INGETRAZO_AI_PORT", "0")
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        bridge = _Bridge(vp)
+        bridge.start()
+        assert _ask(bridge, "run_python", {"code": (
+            "extrude([(0,0),(1,0),(1,1),(0,1)], 0, 1, name='Cubo')")})["ok"]
+
+        out = tmp_path / "cubo.stl"
+        reply = _ask(bridge, "export_model", {"path": str(out)})
+        assert reply["ok"], reply
+        assert reply["result"]["format"] == "stl"
+        # binary STL: 80-byte header + count + 50 bytes per triangle
+        data = out.read_bytes()
+        tris = int.from_bytes(data[80:84], "little")
+        assert tris >= 12 and len(data) == 84 + 50 * tris
+        assert reply["result"]["bytes"] == len(data)
+
+        # An existing file is only replaced on request.
+        reply = _ask(bridge, "export_model", {"path": str(out)})
+        assert reply["ok"] is False and "overwrite" in reply["error"]
+        reply = _ask(bridge, "export_model",
+                     {"path": str(out), "overwrite": True})
+        assert reply["ok"]
+
+        reply = _ask(bridge, "export_model", {"path": str(tmp_path / "x.obj")})
+        assert reply["ok"] and (tmp_path / "x.mtl").is_file()
+
+        for bad, why in (("cubo.stl", "absolute"),
+                         (str(tmp_path / "cubo.xyz"), "unsupported format"),
+                         (str(tmp_path / "no" / "cubo.stl"), "does not exist")):
+            reply = _ask(bridge, "export_model", {"path": bad})
+            assert reply["ok"] is False and why in reply["error"], (bad, reply)
+        bridge.stop()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_mcp_server_negotiates_the_revision_and_annotates_its_tools():
+    import ingetrazo_mcp as mcp
+
+    def init(version):
+        return mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                           "params": {"protocolVersion": version}})
+
+    # A client's own revision is answered in kind; an unknown one gets ours.
+    for version in mcp.PROTOCOLS:
+        assert init(version)["result"]["protocolVersion"] == version
+    assert init("2099-01-01")["result"]["protocolVersion"] == mcp.PROTOCOL
+    assert mcp.PROTOCOL == mcp.PROTOCOLS[0] == max(mcp.PROTOCOLS)
+
+    tools = {t["name"]: t for t in mcp.handle(
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]}
+    # Looking is safe to auto-approve; running code is not.
+    assert tools["query_model"]["annotations"]["readOnlyHint"] is True
+    assert tools["screenshot"]["annotations"]["readOnlyHint"] is True
+    assert tools["run_python"]["annotations"]["destructiveHint"] is True
+    assert tools["export_model"]["inputSchema"]["required"] == ["path"]
+
+    # The schema offers exactly the views the bridge accepts.
+    from plugins.ai_bridge import EXPORT_FORMATS, STANDARD_VIEWS
+    from core.camera import OrbitCamera
+    view_enum = tools["screenshot"]["inputSchema"]["properties"]["view"]["enum"]
+    assert set(view_enum) == set(STANDARD_VIEWS) == set(OrbitCamera._STANDARD_VIEWS)
+    for suffix in EXPORT_FORMATS:
+        assert suffix in tools["export_model"]["description"]
