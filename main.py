@@ -34,7 +34,7 @@ elif sys.stderr is not None:
 # if the ghost bothers you: run with QT_QPA_PLATFORM=xcb. Re-test the ghost
 # when Mutter/Qt update; no app-side workaround cured it (see CLAUDE.md).
 
-from PySide6.QtCore import (QEvent, QLibraryInfo, QLocale, QSettings, Qt,
+from PySide6.QtCore import (QEvent, QLibraryInfo, QSettings, Qt,
                             QTranslator)
 from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtWidgets import QApplication
@@ -43,25 +43,15 @@ from core import i18n
 
 
 def _init_language() -> None:
-    """Load the saved UI language, or default to the system locale.
+    """Load the saved UI language, or follow the system's.
 
-    Reads the persisted choice from :class:`QSettings`; on first run, falls back
-    to Spanish when the OS locale is Spanish, Brazilian Portuguese when it is
-    Portuguese, English otherwise.
+    Reads the persisted choice from :class:`QSettings`; with none yet, or
+    "Same as the system" chosen (#818), the OS display language picks the
+    closest catalog (see :func:`core.i18n.language_for_locales`).
     """
-    saved = QSettings().value("language")
-    if not saved:
-        system = QLocale.system()
-        if system.language() == QLocale.Spanish:
-            saved = "es"
-        elif system.language() == QLocale.Portuguese:
-            # The Brazilian Portuguese catalogue (PR #54, @dafrobozao)
-            # serves every Portuguese locale until a pt-PT one exists.
-            saved = "pt-BR"
-        else:
-            saved = "en"
-    i18n.set_language(str(saved))
-    _install_qt_translator(str(saved))
+    lang = i18n.resolve_language(QSettings().value("language"))
+    i18n.set_language(lang)
+    _install_qt_translator(lang)
 
 
 class _ButtonsOnlyTranslator(QTranslator):
