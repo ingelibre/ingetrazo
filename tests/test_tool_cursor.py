@@ -52,3 +52,22 @@ def test_activating_tools_swaps_the_viewport_cursor():
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_tool_cursor_respects_cursor_style_preference():
+    from core import general_settings as _gs
+    from views.icons import tool_cursor
+
+    try:
+        _gs.set_value("cursor_style", "tool")
+        cur_tool = tool_cursor("line")
+        assert cur_tool is not None and cur_tool.shape() == Qt.BitmapCursor
+
+        _gs.set_value("cursor_style", "crosshair")
+        cur_cross = tool_cursor("line")
+        assert cur_cross is not None and cur_cross.shape() == Qt.CrossCursor
+
+        _gs.set_value("cursor_style", "arrow")
+        assert tool_cursor("line") is None
+    finally:
+        _gs.set_value("cursor_style", "tool")

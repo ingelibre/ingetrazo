@@ -1976,6 +1976,12 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
     click (issue #29, @pacaeiro)."""
     if not key or key == "select":
         return None
+    from core import general_settings as _gs
+    style = str(_gs.value("cursor_style", "tool")).lower()
+    if style == "crosshair":
+        return QCursor(Qt.CrossCursor)
+    if style == "arrow":
+        return None
     pencil = key in _PENCIL_TOOLS
     hot48 = _PENCIL_HOT if pencil else _CURSOR_HOTSPOTS.get(key)
     draw = _DRAW.get(key)
