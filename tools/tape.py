@@ -2,7 +2,9 @@
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Tape Measure tool (T): measure distances and place construction guides.
 
-The classic behaviour, two modes decided by what the first click lands on:
+A line under the pointer is acquired when the tool is picked up. Moving
+pulls its guide; a click or typed distance places it. Elsewhere, the first
+click chooses the source. The result depends on what the source is:
 
 - **From an edge's body** → dragging pulls out an infinite **guide line**
   parallel to that edge, at the dragged (or VCB-typed) offset. This is the
@@ -27,8 +29,8 @@ locks onto, erasable with the Eraser or Edit ▸ Delete Guides. Esc cancels.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QVector3D
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QColor, QPen, QVector3D
 
 from core.guide import Guide
 from core.history import AddGuideCommand
@@ -123,6 +125,38 @@ class TapeMeasureTool(Tool):
         self._reset()
         self.hover_point = None
 
+    def start_from_hover(self, viewport) -> bool:
+        """Picking T over a line starts its guide without a first click."""
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QCursor
+        from views.viewport import _HoverEvent
+        if self.start_point is not None or self._mode != "line":
+            return False
+        pixel = viewport.mapFromGlobal(QCursor.pos())
+        if not viewport.rect().contains(pixel):
+            return False                 # toolbar/menu pickup outside the canvas
+        ev = _HoverEvent(QPointF(pixel), Qt.NoModifier)
+        ctx = viewport._build_ctx(ev)
+        if ctx is None or (ctx.snap is not None and
+                ctx.snap.kind in self._POINT_KINDS | {"close"}):
+            return False                 # named points keep their point workflow
+        edge = viewport.pick_edge_any(pixel.x(), pixel.y())
+        guide = viewport.pick_guide(pixel.x(), pixel.y()) if edge is None else None
+        axis = (viewport.pick_axis(pixel.x(), pixel.y())
+                if edge is None and not getattr(guide, "is_line", False) else None)
+        if edge is None and not getattr(guide, "is_line", False) and axis is None:
+            return False
+        # Use the normal click dispatch to retain face-plane capture,
+        # snapping, value-buffer clearing and the operation's lock lifecycle.
+        viewport._dispatch_tool_click(ev)
+        if self._edge is None:
+            self._reset()
+            return False
+        self.hover_point = QVector3D(self.start_point)
+        viewport.measurementChanged.emit(viewport._measurement_text())
+        viewport.update()
+        return True
+
     # ---- Keyboard -----------------------------------------------------------
     def on_key(self, viewport, key: int, modifiers) -> bool:
         # Ctrl toggles guide creation (the Tape either measures or
@@ -201,9 +235,17 @@ class TapeMeasureTool(Tool):
                     self.start_point = axis * QVector3D.dotProduct(
                         ctx.world, axis)
             self._edge = edge if (self._mode == "line" and edge is not None
-                                  and kind not in ("endpoint", "midpoint",
+                                  and kind not in ("endpoint",
                                                    "close", "origin",
                                                    "intersection")) else None
+            if self._edge is not None:
+                direction = self._edge.b - self._edge.a
+                if direction.lengthSquared() < 1e-12:
+                    self._edge = None
+                else:
+                    direction.normalize()
+                    self.start_point = self._edge.a + direction * QVector3D.dotProduct(
+                        self.start_point - self._edge.a, direction)
             return
         kind = ctx.snap.kind if ctx.snap is not None else "none"
         if self._mode == "point":
@@ -302,10 +344,29 @@ class TapeMeasureTool(Tool):
         if self._edge is not None:
             offset = self._guide_offset(self.hover_point)
             d = offset.length() if offset is not None else 0.0
+            mid = self.start_point + offset * .5 if offset is not None else self.start_point
         else:
             d = (self.hover_point - self.start_point).length()
-        mid = (self.start_point + self.hover_point) * 0.5
+            mid = (self.start_point + self.hover_point) * 0.5
         return (fmt_len(d), mid)
+
+    def draw_overlay(self, viewport, painter):
+        """Keep the first measurement point visible while pulling a guide."""
+        if self.start_point is None:
+            return
+        pixel = viewport._world_to_pixel(self.start_point)
+        if pixel is None:
+            return
+        hidden = getattr(viewport, "_occluded_on_screen", lambda _p: False)
+        if hidden(self.start_point):
+            return
+        painter.save()
+        try:
+            painter.setPen(QPen(QColor(255, 255, 255), 1.5))
+            painter.setBrush(QColor(195, 28, 44))
+            painter.drawRect(QRectF(pixel[0] - 3.5, pixel[1] - 3.5, 7, 7))
+        finally:
+            painter.restore()
 
     # ---- Internals ----------------------------------------------------------
     def _edge_dir(self) -> QVector3D:

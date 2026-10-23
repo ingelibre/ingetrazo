@@ -3265,6 +3265,8 @@ class MainWindow(QMainWindow):
             return
         tool = self._tools[key]
         self.viewport.set_active_tool(tool)
+        if key == "tape":
+            tool.start_from_hover(self.viewport)
         action = self._tool_actions.get(key)
         if action is not None:
             action.setChecked(True)
