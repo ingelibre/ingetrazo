@@ -8123,8 +8123,7 @@ class Viewport(QOpenGLWidget):
             prev_px, prev_vis = px, vis
 
     def _draw_inference_marker(self, painter: QPainter) -> None:
-        """Green endpoint-style square where the active tool's distance
-        inference is engaged (Push/Pull snapping level with a corner or face)."""
+        """Snap cue where the active tool's distance inference is engaged."""
         tool = self.active_tool
         provider = getattr(tool, "inference_marker", None) if tool is not None else None
         if not callable(provider):
@@ -8136,9 +8135,10 @@ class Viewport(QOpenGLWidget):
         # The same colours and words as the snap markers: a corner is the
         # endpoint green, an edge the on-edge red, a face the on-face blue
         # — the classic cue says "On edge" while you push level with one.
-        from core.snap import (COLOR_ENDPOINT, COLOR_ON_EDGE, COLOR_ON_FACE,
-                               COLOR_ORIGIN)
+        from core.snap import (COLOR_ENDPOINT, COLOR_MIDPOINT, COLOR_ON_EDGE,
+                               COLOR_ON_FACE, COLOR_ORIGIN)
         palette = {
+            "midpoint": (COLOR_MIDPOINT, "midpoint"),
             "origin": (COLOR_ORIGIN, "origin"),
             "edge": (COLOR_ON_EDGE, "on_edge"),
             "face": (COLOR_ON_FACE, "on_face"),
@@ -8167,12 +8167,22 @@ class Viewport(QOpenGLWidget):
         if pixel is None:
             return
         px, py = pixel
+        diamond = QPolygonF([
+            QPointF(px, py - 9), QPointF(px + 9, py),
+            QPointF(px, py + 9), QPointF(px - 9, py),
+        ]) if kind == "midpoint" else None
         painter.setPen(QPen(QColor(255, 255, 255, 230), 4.0))
         painter.setBrush(Qt.NoBrush)
-        painter.drawRect(QRectF(px - 6, py - 6, 12, 12))
+        if diamond is not None:
+            painter.drawPolygon(diamond)
+        else:
+            painter.drawRect(QRectF(px - 6, py - 6, 12, 12))
         painter.setPen(QPen(color, 2.4))
         painter.setBrush(QColor.fromRgbF(*rgb, 0.30))
-        painter.drawRect(QRectF(px - 6, py - 6, 12, 12))
+        if diamond is not None:
+            painter.drawPolygon(diamond)
+        else:
+            painter.drawRect(QRectF(px - 6, py - 6, 12, 12))
         text = tr(self._SNAP_LABELS.get(label, ""))
         if text:
             font = QFont()

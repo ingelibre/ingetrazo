@@ -1359,8 +1359,8 @@ class PushPullTool(Tool):
     def inference_marker(self):
         """Return ``(world_point, kind)`` for the marker the viewport draws
         when the distance inference is locked onto model geometry, or
-        ``None``. ``kind`` is ``"vertex"``, ``"edge"`` or ``"face"`` — drawn
-        and labelled like the endpoint / on-edge / on-face snaps."""
+        ``None``. The kind selects the matching snap colour and label,
+        including the cyan midpoint cue."""
         if not self.dragging or self._inference_point is None:
             return None
         return self._inference_point, self._inference_kind
@@ -1565,9 +1565,9 @@ class PushPullTool(Tool):
         preview first, the vertex cache predates any stage, and a staged
         preview's own faces/edges are skipped), so the forming solid's moving
         points never feed back. A model **vertex** within the snap threshold
-        wins first (a precise corner); otherwise the **face** under the cursor
-        is used, projecting the ray∩plane hit onto the push axis (level with
-        where you point on it).
+        wins first (a precise corner), followed by a nearby edge's fixed
+        **midpoint**. Otherwise an edge or face under the cursor is used,
+        projecting its point onto the push axis (level with where you point).
         Records the engaged point in ``self._inference_point`` for the overlay
         marker. Returns ``None`` when nothing engages."""
         vp = ctx.viewport
@@ -1669,6 +1669,12 @@ class PushPullTool(Tool):
             self._inference_kind = best[3]
             return best[1]
 
+        midpoint = self._infer_edge_midpoint(vp, sx, sy, thr, exclude)
+        if midpoint is not None:
+            self._inference_point = midpoint
+            self._inference_kind = "midpoint"
+            return QVector3D.dotProduct(midpoint - self._anchor, self._normal)
+
         line_hit = self._infer_guide_line(vp, guides, sx, sy, thr)
         if line_hit is not None:
             on, dist = line_hit
@@ -1735,6 +1741,42 @@ class PushPullTool(Tool):
         self._inference_point = None
         self._inference_kind = None
         return None
+
+    def _infer_edge_midpoint(self, vp, sx, sy, thr, exclude):
+        """A visible fixed midpoint within the normal point-snap radius.
+
+        Read nearby loose and placed edges in world space, excluding the
+        cap and staged edges. Spatial prefilters avoid walking every edge
+        of a large import. An edge parallel to the push axis still has a
+        precise midpoint, even though an arbitrary point along it is not a
+        useful distance reference.
+        """
+        edges = []
+        for name in ("_nearby_loose_edges", "_nearby_group_edges"):
+            nearby = getattr(vp, name, None)
+            if callable(nearby):
+                edges.extend(nearby(sx, sy, radius_px=thr))
+        hovered = getattr(vp, "_hover_edge", None)
+        if hovered is not None:
+            edges.append(hovered)
+        best = None
+        for edge in edges:
+            if edge in self._stage_new or getattr(edge, "guide", False):
+                continue
+            a, b = QVector3D(edge.a), QVector3D(edge.b)
+            if (a - b).lengthSquared() < 1e-18:
+                continue
+            if _key(a) in exclude and _key(b) in exclude:
+                continue  # the moving cap's own edges are not references
+            point = (a + b) * 0.5
+            pixel = vp._world_to_pixel(point)
+            if pixel is None:
+                continue
+            dd = (pixel[0] - sx) ** 2 + (pixel[1] - sy) ** 2
+            if (dd <= thr * thr and (best is None or dd < best[0])
+                    and not self._reference_hidden(vp, point)):
+                best = (dd, point)
+        return None if best is None else best[1]
 
     @staticmethod
     def _borders_base(face, base_keys) -> bool:
