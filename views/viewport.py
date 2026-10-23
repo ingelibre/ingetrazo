@@ -1053,6 +1053,9 @@ class Viewport(QOpenGLWidget):
     # "two_point"), whoever changed it — the View toolbar's quick buttons
     # follow it.
     projectionChanged = Signal(str)
+    # A trackpad's smart zoom (two-finger double tap on macOS): the window
+    # frames the model, and a second one goes back (#248).
+    smartZoomRequested = Signal()
 
     # Soft warm white painted on faces with no material colour — like the matte
     # cardstock of an architecture model (a near-white default).
@@ -14233,18 +14236,41 @@ class Viewport(QOpenGLWidget):
             ev.accept()
             return
         self._input_t = _time_mod.monotonic()   # P0: input→paint latency
+        import time as _time
+        steps = ev.angleDelta().y() / 120.0
+        if self._invert_wheel:          # Preferences ▸ General (the usual
+            steps = -steps              # Compatibility ▸ invert wheel)
+        now = _time.monotonic()
+        reproj, reused = self._zoom_at(steps, ev.position())
+        if _PERF:
+            _plog("wheel", (_time_mod.monotonic() - now) * 1000.0,
+                  extra=f"reused={'proj' if reproj else reused}", floor=10.0)
+        self.update()
+
+    def _pinch_zoom(self, ev) -> None:
+        """A trackpad pinch (macOS, and libinput touchpads) zooms like the
+        wheel, toward the point under the fingers. Qt hands each step as
+        the change of scale (+0.05 = 5 % bigger); a wheel notch is ×1/0.9,
+        so the step becomes the matching fraction of a notch — a pinch and
+        the wheel share one zoom, its cached focus included (#248)."""
+        self._input_t = _time_mod.monotonic()
+        value = ev.value()
+        if value <= -1.0:
+            return
+        steps = math.log1p(value) / -math.log(0.9)
+        # The zoom-out floor is for a notch; a pinch is many tiny steps,
+        # each would take the whole floor and the view would race away.
+        self._zoom_at(steps, ev.position(), floor_share=min(1.0, abs(steps)))
+        self.update()
+
+    def _zoom_at(self, steps: float, pos, floor_share: float = 1.0):
+        """Zoom ``steps`` notches toward the point under ``pos``; returns
+        ``(reprojected, reused)`` for the perf log."""
         # Zoom toward the cursor: keep the point under the
         # pointer fixed on screen, not the origin. During a wheel burst the
         # focus is CACHED: zoom_to pins that world point, so re-picking every
         # tick both wasted ~25 ms/tick against a big model (the zoom felt
         # heavy) and let float error drift the pinned point.
-        import time as _time
-        steps = ev.angleDelta().y() / 120.0
-        if self._invert_wheel:          # Preferences ▸ General (the usual
-            steps = -steps              # Compatibility ▸ invert wheel)
-        pos = ev.position()
-        now = _time.monotonic()
-
         def pose():
             c = self.camera
             t = c.target
@@ -14287,15 +14313,12 @@ class Viewport(QOpenGLWidget):
             # model's size per notch when the frame scaling alone would move
             # the eye less than that (the "zoom is stuck" report).
             self.camera.zoom_to(steps, focus,
-                                min_step=self._zoom_out_step())
+                                min_step=self._zoom_out_step() * floor_share)
         else:
             self.camera.zoom(steps)
         self._zoom_focus = (pose(), pos.x(), pos.y(),
                             self.scene.version, focus)
-        if _PERF:
-            _plog("wheel", (_time_mod.monotonic() - now) * 1000.0,
-                  extra=f"reused={'proj' if reproj else reused}", floor=10.0)
-        self.update()
+        return reproj, reused
 
     #: The least a notch of the wheel backs out, from a close-up, once the
     #: camera stands 2 cm or more from what it looks at — and always in an
@@ -14343,6 +14366,15 @@ class Viewport(QOpenGLWidget):
         return getattr(self, "_ctrl_alone", False)
 
     def event(self, ev) -> bool:
+        if ev.type() == QEvent.NativeGesture:
+            if ev.gestureType() == Qt.ZoomNativeGesture:
+                self._pinch_zoom(ev)
+                ev.accept()
+                return True
+            if ev.gestureType() == Qt.SmartZoomNativeGesture:
+                self.smartZoomRequested.emit()
+                ev.accept()
+                return True
         if (ev.type() in (QEvent.ShortcutOverride, QEvent.KeyPress)
                 and ev.key() not in self._MODIFIER_KEYS):
             self._ctrl_alone = False

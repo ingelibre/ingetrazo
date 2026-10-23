@@ -1029,6 +1029,7 @@ class MainWindow(QMainWindow):
         act_ze.triggered.connect(self._on_zoom_extents)
         view_tb.addAction(act_ze)
         self._act_zoom_extents = act_ze
+        self.viewport.smartZoomRequested.connect(self._on_smart_zoom)
 
         # Zoom Selection: the same framing over the selection alone. With
         # nothing selected it does nothing (Zoom Extents is one key away).
@@ -5160,6 +5161,28 @@ class MainWindow(QMainWindow):
                 return
         self.viewport.camera.fit_box(bounds[0], bounds[1])
         self.viewport.update()
+
+    def _camera_pose(self) -> tuple:
+        cam = self.viewport.camera
+        t = cam.target
+        return (t.x(), t.y(), t.z(), cam.distance, cam.yaw, cam.pitch)
+
+    def _on_smart_zoom(self) -> None:
+        """A trackpad's smart zoom (two-finger double tap): Zoom Extents;
+        another one with the view untouched since goes back to where it
+        was, the way a double tap zooms in and back out on macOS (#248)."""
+        back = getattr(self, "_smart_zoom_back", None)
+        if back is not None and back[1] == self._camera_pose():
+            cam = self.viewport.camera
+            x, y, z, cam.distance, cam.yaw, cam.pitch = back[0]
+            cam.target = QVector3D(x, y, z)
+            self._smart_zoom_back = None
+            self.viewport.update()
+            return
+        before = self._camera_pose()
+        self._on_zoom_extents()
+        after = self._camera_pose()
+        self._smart_zoom_back = (before, after) if after != before else None
 
     def _on_zoom_selection(self) -> None:
         """Zoom Extents over the selection. Nothing selected: nothing."""
