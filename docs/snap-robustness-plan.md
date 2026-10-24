@@ -302,4 +302,4 @@ much at once.
 - The number of cues drawn at once as a *drawing* decision. If "several
   indicators at the same time" survives Phase 2, the residue is about how many
   cues are painted and which one wins the ScreenTip - a presentation question,
-  in `views/viewport.py`, not in the engine.
+  in `views/viewport/`, not in the engine.
