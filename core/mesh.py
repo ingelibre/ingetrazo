@@ -1167,23 +1167,59 @@ class Mesh:
         special ``split_edge_in_faces`` pass plus the holes patch; here it falls
         straight out of shared connectivity. The new vertex lands collinearly,
         so faces stay flat until it is later moved (a gable ridge, a T-junction).
+
+        A face may walk the edge more than once: a slit (a line from its
+        outline to a hole, walked up and back) or a jamb two of its holes
+        share. The vertex goes into every use, and each half lists the face
+        once per use, as :meth:`add_face` lists it — the first use alone
+        left the others a segment with no edge.
         """
         v0, v1 = edge.v0, edge.v1
         mid = self.vertex(position)
         if mid is v0 or mid is v1:
             # position coincides with an endpoint → nothing to split
             return edge, edge
-        incident = list(edge.faces)
+        incident = list({id(f): f for f in edge.faces}.values())
         self.remove_edge(edge)
         e0 = self._link_edge(v0, mid)
         e1 = self._link_edge(mid, v1)
         for face in incident:
-            self._insert_into_face_loops(face, v0, v1, mid)
-            if face not in e0.faces:
-                e0.faces.append(face)
-            if face not in e1.faces:
-                e1.faces.append(face)
+            self._insert_at_every_use(face, v0, v1, mid)
+            for sub in (e0, e1):
+                missing = (self._uses(face, sub.v0, sub.v1)
+                           - sum(1 for f in sub.faces if f is face))
+                sub.faces.extend([face] * max(0, missing))
         return e0, e1
+
+    @staticmethod
+    def _insert_at_every_use(
+        face: Face, v0: Vertex, v1: Vertex, mid: Vertex
+    ) -> None:
+        """Insert ``mid`` into every ``v0``/``v1`` segment of the face: in the
+        outer loop and every hole, as many times as a loop walks it."""
+        for loop in (face.loop, *face.hole_loops):
+            i = 0
+            while i < len(loop):
+                j = (i + 1) % len(loop)
+                if (loop[i] is v0 and loop[j] is v1) or (
+                    loop[i] is v1 and loop[j] is v0
+                ):
+                    loop.insert(i + 1, mid)  # i+1 == len wraps to an append
+                    i += 2
+                else:
+                    i += 1
+
+    @staticmethod
+    def _uses(face: Face, a: Vertex, b: Vertex) -> int:
+        """How many segments of the face's loops run between ``a`` and ``b``."""
+        n = 0
+        for loop in (face.loop, *face.hole_loops):
+            m = len(loop)
+            for i in range(m):
+                p, q = loop[i], loop[(i + 1) % m]
+                if (p is a and q is b) or (p is b and q is a):
+                    n += 1
+        return n
 
     @staticmethod
     def _insert_into_face_loops(
