@@ -6,6 +6,8 @@ from __future__ import annotations
 import math
 import time as _time_mod
 from array import array
+from dataclasses import dataclass, field
+from typing import Optional
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QMatrix4x4, QVector2D, QVector3D, QVector4D
 from core.mesh import Edge, Face
@@ -23,6 +25,25 @@ from views.viewport._support import (_PERF, _NO_BACK_TINT, _plog, GL_LINES, _shi
                                      _guide_vertices)
 
 
+@dataclass(slots=True)
+class _Frame:
+    """What the passes of one paintGL share: the target size, the camera,
+    the display style, and the spans that survived culling."""
+
+    w: int
+    h: int
+    default_fbo: int
+    mvp: QMatrix4x4
+    style: object
+    mode: str
+    planes: object = None
+    fading: bool = False
+    split_f: Optional[int] = None
+    split_e: Optional[int] = None
+    face_spans: list = field(default_factory=list)
+
+
+
 class RenderMixin:
     """Frame rendering: the paintGL passes, shading, previews, hidden ghosts, hover and silhouettes."""
 
@@ -34,6 +55,102 @@ class RenderMixin:
             return
         _pt0 = _time_mod.perf_counter() if _PERF else 0.0
 
+        f = self._begin_frame()
+        # P0 frame telemetry: coarse per-section CPU times, logged with the
+        # cull counters when the frame is slow (INGETRAZO_PERF=1).
+        _fseg: dict = {}
+        _fprev = _pt0
+
+        def _fmark(name: str) -> None:
+            nonlocal _fprev
+            if _PERF:
+                now = _time_mod.perf_counter()
+                _fseg[name] = _fseg.get(name, 0.0) + (now - _fprev) * 1000.0
+                _fprev = now
+
+        self._reset_draw_uniforms(f.mvp)
+        self._draw_backdrop(f)
+        _fmark("ground")
+
+        # No grid — the infinite axes are the spatial reference.
+
+        # Persistent edges + faces
+        self._sync_edges()
+        _fmark("sync")
+
+        self._bind_shadow_map(f)
+        _fmark("shadowmap")
+
+        self._cull_frame_spans(f)
+
+        self._set_section_clip(True)
+        self._draw_solid_faces(f)
+        self._draw_textured_faces(f)
+        self._draw_default_backs(f)
+
+        # Instanced components (P2): eligible instances draw from their
+        # prototype's local VBOs with per-instance matrices — the
+        # consolidated passes above excluded them in _sync_edges.
+        self._draw_instanced_faces(f.mode, f.style)
+        # Shadows stop at the face passes: edges, overlays, previews and
+        # billboards stay unlit (v1 scope).
+        if getattr(self, "_frame_shadow", None) is not None:
+            self._program.setUniformValue(self._loc_shadow_enable, 0)
+
+        self._draw_back_overrides(f.mode)
+        self._draw_section_fill(f.mode, f.style)
+        self._draw_translucent_faces(f.mode)
+        self._draw_billboard_pass(f.mode)
+        self._draw_face_highlights()
+
+        _fmark("faces")
+        # Shaded solid preview (Push/Pull box forming as you drag). Drawn after
+        # the persistent faces, depth-tested so it occludes geometry behind it
+        # and reads as a real solid; its wireframe goes on top via the rubber
+        # band below.
+        self._set_section_clip(False)
+        self._draw_preview_faces()
+        self._draw_groups_preview(f.mvp)
+        self._draw_hidden_ghosts(f.mvp)
+
+        self._draw_axes()
+        self._draw_guide_lines()
+        self._draw_edit_box(f)
+
+        self._set_section_clip(True)
+        self._draw_edges(f)
+        self._draw_profile_edges(f)
+        _fmark("edges")
+
+        self._draw_edge_highlights()
+        self._set_section_clip(False)
+        self._draw_section_cut_edges()   # ON the plane — drawn unclipped
+
+        self._draw_rubber_band_pass()
+
+        self._program.release()
+
+        if self._export_size is not None:
+            # Hi-res export: the scene stays in the FBO for render_image to
+            # read back; the widget blit and its QPainter overlay don't apply.
+            self._scene_fbo.release()
+            return
+
+        self._present_frame(f)
+        if _PERF:
+            _plog("paintGL.gl+blit",
+                  (_time_mod.perf_counter() - _pt0) * 1000.0, floor=30.0)
+            _ov0 = _time_mod.perf_counter()
+
+        # 2D overlays on top of the OpenGL framebuffer.
+        self._draw_overlay()
+
+        if _PERF:
+            self._log_frame_perf(_pt0, _ov0, _fseg)
+
+    def _begin_frame(self) -> _Frame:
+        """Bind the scene FBO, reset the GL state QPainter left behind, clear,
+        and set up the camera, the style and the section clip of this frame."""
         # Render the 3D scene into our own FBO (which has a real depth buffer)
         # then blit the colour to the widget's default framebuffer. Sizes are
         # in framebuffer pixels — using logical (self.width/height) here would
@@ -83,18 +200,10 @@ class RenderMixin:
         # Frustum planes for chunk culling — also consumed by the
         # silhouette pass (skip whole chunks that are off screen).
         self._frame_planes = self._frustum_planes(mvp)
-        # P0 frame telemetry: coarse per-section CPU times, logged with the
-        # cull counters when the frame is slow (INGETRAZO_PERF=1).
-        _fseg: dict = {}
-        _fprev = _pt0
+        return _Frame(w, h, default_fbo, mvp, style, mode)
 
-        def _fmark(name: str) -> None:
-            nonlocal _fprev
-            if _PERF:
-                now = _time_mod.perf_counter()
-                _fseg[name] = _fseg.get(name, 0.0) + (now - _fprev) * 1000.0
-                _fprev = now
-
+    def _reset_draw_uniforms(self, mvp) -> None:
+        """Program uniforms back to their defaults for a plain solid-colour draw."""
         self._program.bind()
         self._program.setUniformValue(self._loc_mvp, mvp)
         # Instanced-matrix attributes default to IDENTITY for every
@@ -116,6 +225,10 @@ class RenderMixin:
         self._program.setUniformValue(self._loc_hard_cutout, 0)
         self._program.setUniformValue1f(self._loc_fade, 0.0)
 
+    def _draw_backdrop(self, f: _Frame) -> None:
+        """Sky, base-map tiles, terrain, photo mesh and image planes: what the
+        model draws on top of."""
+        mvp, style = f.mvp, f.style
         # Sky / ground backdrop with a horizon anchored to the camera pitch —
         # premium modeller feel. Fixed on zoom (it's the point at infinity),
         # moves only on orbit. Skipped over the base map / terrain (which supply
@@ -144,14 +257,10 @@ class RenderMixin:
         # the reference layers and before any model geometry: they are what
         # the user draws ON TOP of.
         self._draw_image_planes()
-        _fmark("ground")
 
-        # No grid — the infinite axes are the spatial reference.
-
-        # Persistent edges + faces
-        self._sync_edges()
-        _fmark("sync")
-
+    def _bind_shadow_map(self, f: _Frame) -> None:
+        """Render or reuse the sun shadow map and bind it for the face passes."""
+        w, h, mode = f.w, f.h, f.mode
         # Sun shadow map — AFTER the sync, so the consolidated VBOs hold
         # THIS frame's geometry; cached across frames by geometry+sun (it is
         # camera-independent: orbit and zoom reuse it). The pass borrows the
@@ -186,8 +295,11 @@ class RenderMixin:
                 self._loc_sun_dir, QVector3D(sun[0], sun[1], sun[2]))
         self._program.setUniformValue(self._loc_shadow_enable, 0)
         self._program.setUniformValue(self._loc_shadow_overlay, 0)
-        _fmark("shadowmap")
 
+    def _cull_frame_spans(self, f: _Frame) -> None:
+        """Cull the consolidated face and edge spans against the frustum and
+        split them for the faded edit context."""
+        style = f.style
         # Frustum culling (P1): the consolidated VBOs carry per-chunk draw
         # spans; only spans whose chunk AABB touches the frustum are
         # submitted. Conservative — a missing bbox always draws.
@@ -221,10 +333,14 @@ class RenderMixin:
         self._frame_edge_spans = edge_spans
         self._cull_stats = (culled_fv // 3, self._faces_count // 3,
                             culled_ev // 2)
+        f.planes, f.fading, f.split_f, f.split_e = planes, fading, split_f, split_e
+        f.face_spans = face_spans
 
+    def _draw_solid_faces(self, f: _Frame) -> None:
+        """The consolidated faces in the style's face mode, and the shadow ground."""
+        style, mode, split_f, face_spans = f.style, f.mode, f.split_f, f.face_spans
         # Faces — drawn before edges, with polygon offset so coincident
         # boundary edges sit cleanly on top instead of z-fighting.
-        self._set_section_clip(True)
         if getattr(self, "_frame_shadow", None) is not None:
             self._draw_shadow_ground(style)
             self._program.setUniformValue(self._loc_shadow_enable, 1)
@@ -292,6 +408,10 @@ class RenderMixin:
             self._program.setUniformValue(self._loc_use_vcolor, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
+    def _draw_textured_faces(self, f: _Frame) -> None:
+        """Textured faces: flat in plan styles, average colour in Shaded,
+        sampled in Textures and X-ray."""
+        style, mode, planes, fading = f.style, f.mode, f.planes, f.fading
         # Textured faces — same depth/offset treatment, sampling each face's
         # image. One draw per texture (its GL texture bound to unit 0).
         if self._tex_faces_count > 0 and mode in ("hidden_line", "monochrome"):
@@ -377,6 +497,9 @@ class RenderMixin:
             self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
+    def _draw_default_backs(self, f: _Frame) -> None:
+        """The style's back colour on the unpainted back of every opaque face."""
+        mode, planes, fading = f.mode, f.planes, f.fading
         # The default back: a painted face shows its material on
         # the side you painted and the style's blue-grey on the other, so
         # the reverse of a wall reads as the reverse. Every face whose back
@@ -420,15 +543,8 @@ class RenderMixin:
             self._gl.glDisable(GL_CULL_FACE)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
-        # Instanced components (P2): eligible instances draw from their
-        # prototype's local VBOs with per-instance matrices — the
-        # consolidated passes above excluded them in _sync_edges.
-        self._draw_instanced_faces(mode, style)
-        # Shadows stop at the face passes: edges, overlays, previews and
-        # billboards stay unlit (v1 scope).
-        if getattr(self, "_frame_shadow", None) is not None:
-            self._program.setUniformValue(self._loc_shadow_enable, 0)
-
+    def _draw_back_overrides(self, mode: str) -> None:
+        """Faces painted differently on their back side."""
         # Back-side material overrides (faces painted DIFFERENTLY per side,
         # two-sided paint from .skp): drawn with front-face culling so they
         # only show from behind, without the face passes' polygon offset so
@@ -464,8 +580,8 @@ class RenderMixin:
                 self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_CULL_FACE)
 
-        self._draw_section_fill(mode, style)
-
+    def _draw_translucent_faces(self, mode: str) -> None:
+        """Translucent material runs, blended after everything opaque."""
         # Translucent material runs (.skp trans with useTrans): drawn
         # after everything opaque, blended, depth-tested but not depth-
         # written, so glass/mesh screens show what's behind them.
@@ -534,6 +650,8 @@ class RenderMixin:
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
             self._gl.glDepthMask(GL_TRUE)
 
+    def _draw_billboard_pass(self, mode: str) -> None:
+        """Face-me billboards and their selection outlines."""
         # Face-me billboards (2D people): per-frame textured cutout
         # — skipped on plan sheets and line styles: a coloured cutout person
         # on a technical drawing gives the raster away; scale figures belong
@@ -546,6 +664,8 @@ class RenderMixin:
                 # (Marco, 2026-09-07).
                 self._draw_billboard_outlines()
 
+    def _draw_face_highlights(self) -> None:
+        """The dots on selected faces and on the face under the cursor."""
         # Face highlights (selection + hover) — translucent overlays drawn on
         # top of the cream faces. Same polygon offset as the faces so they sit
         # at matching depth (LEQUAL lets this later draw win); depth-write OFF
@@ -590,16 +710,8 @@ class RenderMixin:
             self._gl.glDepthMask(GL_TRUE)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
-        _fmark("faces")
-        # Shaded solid preview (Push/Pull box forming as you drag). Drawn after
-        # the persistent faces, depth-tested so it occludes geometry behind it
-        # and reads as a real solid; its wireframe goes on top via the rubber
-        # band below.
-        self._set_section_clip(False)
-        self._draw_preview_faces()
-        self._draw_groups_preview(mvp)
-        self._draw_hidden_ghosts(mvp)
-
+    def _draw_axes(self) -> None:
+        """The infinite X, Y and Z axes."""
         # Axes — long solid positive + evenly-dashed negative per axis.
         # Dash spacing scales with the camera distance so the on-screen density
         # stays stable across zoom. Depth-write OFF so the ground axes don't cull
@@ -628,6 +740,8 @@ class RenderMixin:
             self._gl.glDepthMask(GL_TRUE)
             self._axes_vao.release()
 
+    def _draw_guide_lines(self) -> None:
+        """Construction guides, depth-tested."""
         # Guides — dashed, DEPTH-TESTED, so geometry in front hides them
         # (issue #23). They used to be painted in the QPainter overlay,
         # which runs after the render and has no depth at all, so a guide
@@ -677,6 +791,9 @@ class RenderMixin:
                 self._gl.glDepthMask(GL_TRUE)
                 self._guides_vao.release()
 
+    def _draw_edit_box(self, f: _Frame) -> None:
+        """The dashed box of the group being edited."""
+        w, h = f.w, f.h
         # The dashed box of the group being edited, depth-tested like the
         # guides (it shares their buffer): the part behind the geometry is
         # hidden instead of showing through it. The dashes live in the
@@ -713,7 +830,9 @@ class RenderMixin:
                 self._gl.glDepthMask(GL_TRUE)
                 self._guides_vao.release()
 
-        self._set_section_clip(True)
+    def _draw_edges(self, f: _Frame) -> None:
+        """Model edges, with the X-ray hidden-edge fade and the back edges."""
+        w, h, mvp, style, mode, split_e = f.w, f.h, f.mvp, f.style, f.mode, f.split_e
         show_edges = style.edges or mode == "wireframe"
         ec = style.edge_color
         # Line weight for sheet renders: a GL line is one pixel whatever
@@ -723,7 +842,6 @@ class RenderMixin:
         # The frame asks for a pen in pixels and the pass is redrawn at
         # sub-pixel offsets to reach it — exports only, never the screen.
         _jit_e = self._line_jitter(self._export_edge_px, w, h)
-        _jit_p = self._line_jitter(self._export_profile_px, w, h)
         # X-ray draws every edge, but the ones BEHIND a face come out washed
         # toward the background: the faces' depth (never written by their
         # translucent pass) is laid down here, the edges beyond it drawn
@@ -785,6 +903,12 @@ class RenderMixin:
         if len(_jit_e) > 1:
             self._program.setUniformValue(self._loc_mvp, mvp)
 
+    def _draw_profile_edges(self, f: _Frame) -> None:
+        """Profile (silhouette) edges, rebuilt every frame."""
+        w, h, mvp, style, mode = f.w, f.h, f.mvp, f.style, f.mode
+        show_edges = style.edges or mode == "wireframe"
+        ec = style.edge_color
+        _jit_p = self._line_jitter(self._export_profile_px, w, h)
         # Profile (silhouette) edges: soft seams of a curved surface are hidden,
         # except where the surface turns away from the viewer — the cylinder's
         # outline. View-dependent, so rebuilt every frame.
@@ -801,8 +925,9 @@ class RenderMixin:
                 self._silhouette_vao.release()
                 if len(_jit_p) > 1:
                     self._program.setUniformValue(self._loc_mvp, mvp)
-        _fmark("edges")
 
+    def _draw_edge_highlights(self) -> None:
+        """Selected edges and the edge under the cursor."""
         # Selected edges (drawn on top, highlighted) — never in an export
         if self._selected_count > 0 and self._export_size is None:
             self._set_color(0.95, 0.45, 0.16, 1.0)
@@ -819,9 +944,9 @@ class RenderMixin:
             self._hover_edges_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, hover_count)
             self._hover_edges_vao.release()
-        self._set_section_clip(False)
-        self._draw_section_cut_edges()   # ON the plane — drawn unclipped
 
+    def _draw_rubber_band_pass(self) -> None:
+        """The active tool's rubber band, on top unless the tool wants depth."""
         # Rubber band preview. Loose drawing tools float it on top (depth test
         # off, so it never z-fights with coincident axes). Push/Pull's solid
         # preview keeps depth testing on, so the forming box's back edges are
@@ -837,14 +962,9 @@ class RenderMixin:
         if not depth_wire:
             self._gl.glEnable(GL_DEPTH_TEST)
 
-        self._program.release()
-
-        if self._export_size is not None:
-            # Hi-res export: the scene stays in the FBO for render_image to
-            # read back; the widget blit and its QPainter overlay don't apply.
-            self._scene_fbo.release()
-            return
-
+    def _present_frame(self, f: _Frame) -> None:
+        """Read the frame's depth for the overlay and blit the scene FBO to the widget."""
+        w, h, mvp, default_fbo = f.w, f.h, f.mvp, f.default_fbo
         # The depth this frame just drew, read ONCE for the overlay's
         # annotations (dimensions, leader texts), which ask «is this point
         # hidden?» for every sample of every line — see _occluded_on_screen.
@@ -868,42 +988,36 @@ class RenderMixin:
             0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST
         )
         self._gl.glBindFramebuffer(GL_FRAMEBUFFER, default_fbo)
-        if _PERF:
-            _plog("paintGL.gl+blit",
-                  (_time_mod.perf_counter() - _pt0) * 1000.0, floor=30.0)
-            _ov0 = _time_mod.perf_counter()
 
-        # 2D overlays on top of the OpenGL framebuffer.
-        self._draw_overlay()
-
-        if _PERF:
-            _plog("paintGL.overlay",
-                  (_time_mod.perf_counter() - _ov0) * 1000.0, floor=30.0)
-            _dt = (_time_mod.perf_counter() - _pt0) * 1000.0
-            _plog("paintGL", _dt)
-            # P0 breakdown: per-section CPU ms + cull counters + the
-            # input→paint latency of the gesture that triggered this frame.
-            if _dt >= 25.0:
-                cf, tf, ce = getattr(self, "_cull_stats", (0, 0, 0))
-                it = getattr(self, "_input_t", None)
-                lat = (f" lat={( _time_mod.monotonic() - it) * 1000.0:.0f}ms"
-                       if it is not None else "")
-                segs = " ".join(f"{k}={v:.0f}ms" for k, v in _fseg.items())
-                _plog("frame", _dt,
-                      extra=f"{segs} cull={cf//1000}k/{tf//1000}k"
-                            f" tris +{ce//1000}k edges{lat}", floor=0.0)
-            self._input_t = None
-            st = getattr(self, "_perf_stat", None) or \
-                [_time_mod.perf_counter(), 0, 0.0]
-            st[1] += 1
-            st[2] += _dt
-            now = _time_mod.perf_counter()
-            if now - st[0] >= 1.0:
-                _plog("frames/s", st[2] / max(st[1], 1),
-                      extra=f"{st[1]} paints en {now-st[0]:.1f}s (avg ms)",
-                      floor=0.0)
-                st = [now, 0, 0.0]
-            self._perf_stat = st
+    def _log_frame_perf(self, _pt0: float, _ov0: float, _fseg: dict) -> None:
+        """INGETRAZO_PERF telemetry for the frame that just finished."""
+        _plog("paintGL.overlay",
+              (_time_mod.perf_counter() - _ov0) * 1000.0, floor=30.0)
+        _dt = (_time_mod.perf_counter() - _pt0) * 1000.0
+        _plog("paintGL", _dt)
+        # P0 breakdown: per-section CPU ms + cull counters + the
+        # input→paint latency of the gesture that triggered this frame.
+        if _dt >= 25.0:
+            cf, tf, ce = getattr(self, "_cull_stats", (0, 0, 0))
+            it = getattr(self, "_input_t", None)
+            lat = (f" lat={( _time_mod.monotonic() - it) * 1000.0:.0f}ms"
+                   if it is not None else "")
+            segs = " ".join(f"{k}={v:.0f}ms" for k, v in _fseg.items())
+            _plog("frame", _dt,
+                  extra=f"{segs} cull={cf//1000}k/{tf//1000}k"
+                        f" tris +{ce//1000}k edges{lat}", floor=0.0)
+        self._input_t = None
+        st = getattr(self, "_perf_stat", None) or \
+            [_time_mod.perf_counter(), 0, 0.0]
+        st[1] += 1
+        st[2] += _dt
+        now = _time_mod.perf_counter()
+        if now - st[0] >= 1.0:
+            _plog("frames/s", st[2] / max(st[1], 1),
+                  extra=f"{st[1]} paints en {now-st[0]:.1f}s (avg ms)",
+                  floor=0.0)
+            st = [now, 0, 0.0]
+        self._perf_stat = st
 
     #: Default back-face colour, the classic blue-grey: a visible back face
     #: means "you are looking at the inside" (or at a genuinely inverted

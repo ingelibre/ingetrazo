@@ -33,7 +33,7 @@ The 3D viewport uses **QOpenGLWidget** (PySide6) as the Qt-managed surface and *
 | --- | --- | --- |
 | `__init__.py` | `Viewport` | Signals, `__init__`, the document (`set_document`), hover, projection toggles |
 | `gl_setup.py` | `GLSetupMixin` | GL context, scene FBO, shader programs, buffers, textures and their release |
-| `render.py` | `RenderMixin` | `paintGL`, shading, previews, hidden ghosts, hover and silhouettes |
+| `render.py` | `RenderMixin` | `paintGL` and its passes (one method each), shading, previews, hidden ghosts, hover and silhouettes |
 | `instancing.py` | `InstancingMixin` | Instanced components: placements, prototype draw entries, recorded GL passes |
 | `chunks.py` | `ChunkCacheMixin` | Mesh-to-GPU chunks, edge and face sync, the on-disk chunk cache, culling spans |
 | `billboards.py` | `BillboardMixin` | Face-me components and billboards |
