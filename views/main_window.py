@@ -237,6 +237,10 @@ class MainWindow(QMainWindow):
         # main.py passes True: the plugins' setup runs once the window is up
         # (see load_extensions). Set first — the menu bar is built below.
         self._defer_extensions = bool(defer_extensions)
+        # Keep the startup cover up while asynchronous extension hosts add
+        # their toolbars. addToolBar() bumps this revision for each change.
+        self._startup_layout_pending = self._defer_extensions
+        self._startup_toolbar_revision = 0
         self.resize(1280, 800)
         # Every toolbar — ours, a later one, a plugin's — floats as a
         # small window with its name and a × to close it.
@@ -513,6 +517,8 @@ class MainWindow(QMainWindow):
         or later from its menu — goes through here; a row that no longer
         fits on the screen is wrapped once the layout has settled."""
         result = super().addToolBar(*args)
+        if self._startup_layout_pending:
+            self._startup_toolbar_revision += 1
         timer = self.__dict__.get("_toolbar_wrap_timer")
         if timer is None:
             from PySide6.QtCore import QTimer
@@ -2588,7 +2594,7 @@ class MainWindow(QMainWindow):
         if not self._defer_extensions:
             self.load_extensions()
 
-    def load_extensions(self) -> None:
+    def load_extensions(self, progress=None) -> None:
         """Run every discovered plugin's ``setup(app)`` and add its entries
         to the Extensions menu. Once; later calls do nothing.
 
@@ -2605,10 +2611,27 @@ class MainWindow(QMainWindow):
         from core.extensions import discover_plugins
 
         log = logging.getLogger("ingetrazo.plugins")
+
+        def report(heading: str, value: int, detail: str) -> None:
+            if progress is None:
+                return
+            try:
+                progress(tr(heading), value, tr(detail))
+            except Exception:  # noqa: BLE001 — the splash cannot block startup
+                log.debug("startup progress callback failed", exc_info=True)
+
         ext_menu = self._ext_menu
         anchor = self._ext_anchor
         bars_before = set(self.findChildren(QToolBar))
-        plugins, errors = discover_plugins()
+        report("Loading plugins", 8, "Scanning installed plugins…")
+
+        def discovery_progress(current: int, total: int, stem: str) -> None:
+            percent = 8 + round(45 * (current - 1) / max(total, 1))
+            name = stem.replace("_", " ").replace("-", " ").title()
+            report("Loading plugins", percent,
+                   tr("Loading {name}…", name=name))
+
+        plugins, errors = discover_plugins(progress=discovery_progress)
         from core.extension_manager import extension_startup_state
         self._extension_startup_state = extension_startup_state()
 
@@ -2643,9 +2666,16 @@ class MainWindow(QMainWindow):
 
         count = 0
         from views.extension_api import ExtensionApp
-        for plug in list(plugins):
+        setup_plugins = [plug for plug in plugins if plug.setup is not None]
+        report("Loading plugins", 56, "Registering tools and panels…")
+        for index, plug in enumerate(setup_plugins, start=1):
             if plug.setup is None:
                 continue
+            name = plug.stem.replace("_", " ").replace("-", " ").title()
+            percent = 56 + round(27 * (index - 1)
+                                  / max(len(setup_plugins), 1))
+            report("Loading plugins", percent,
+                   tr("Registering {name}…", name=name))
             try:
                 plug.setup(ExtensionApp(self, plug.stem))
             except Exception as exc:  # noqa: BLE001 — never break startup
@@ -2699,6 +2729,8 @@ class MainWindow(QMainWindow):
             action.setEnabled(False)
             ext_menu.insertAction(anchor, action)
 
+        report("Arranging workspace", 88,
+               "Restoring saved panel and toolbar positions…")
         # The user's keys for the extensions' entries (#595). The window put
         # the remembered keys on its actions while it was being built, and
         # since #440 the extensions come after it shows: their entries did
@@ -2713,6 +2745,8 @@ class MainWindow(QMainWindow):
                 self._wrap_toolbar_rows()
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0, self, self._fit_docks_to_screen)
+        report("Arranging workspace", 96,
+               "Finishing the workspace layout…")
 
     def restore_late_toolbars(self) -> bool:
         """Put toolbars that arrived after the window was laid out where the
@@ -2725,12 +2759,46 @@ class MainWindow(QMainWindow):
         st = QSettings()
         state = st.value("ui/window_state")
         if not state:
+            from core.paths import app_root
+            factory = app_root() / "resources" / "ui" / "default_layout.state"
+            if factory.is_file():
+                state = factory.read_bytes()
+        if not state:
             return False
         restored = bool(self.restoreState(state))
         self._show_default_trays(st)
         self._place_new_toolbars(st)
         self._pack_toolbars()
         return restored
+
+    def pending_startup_extension_hosts(self) -> list[str]:
+        """Return asynchronous extension hosts that have not reported ready."""
+        from PySide6.QtCore import QObject, QProcess
+
+        pending = []
+        for child in self.findChildren(QObject):
+            ready = getattr(child, "ready", None)
+            process = getattr(child, "proc", None)
+            if (not isinstance(ready, bool) or ready
+                    or not isinstance(process, QProcess)
+                    or process.state() != QProcess.ProcessState.Running):
+                continue
+            label = getattr(child, "key", None) or type(child).__name__
+            pending.append(str(label))
+        return pending
+
+    def startup_toolbar_revision(self) -> int:
+        """How many toolbar mutations occurred during deferred startup."""
+        return self._startup_toolbar_revision
+
+    def settle_startup_layout(self) -> None:
+        """Restore the saved layout after all startup toolbars are present."""
+        self._startup_layout_pending = False
+        self.restore_late_toolbars()
+        self._pack_toolbars()
+        self.layout().activate()
+        self._wrap_toolbar_rows()
+        self._fit_docks_to_screen()
 
     def _fit_docks_to_screen(self) -> None:
         """Give the tallest side panels a scroll bar while the window
@@ -6485,6 +6553,17 @@ class MainWindow(QMainWindow):
     def _import_progress(self, title):
         """A modal progress dialog + the callback the loaders call at
         milestones (big imports take ~20 s; a bar is the usual answer)."""
+        startup_report = getattr(self, "_startup_splash_progress", None)
+        if startup_report is not None:
+            class _SplashProgress:
+                def close(self):
+                    pass
+
+            def cb(frac, text):
+                startup_report(title, frac, tr(text))
+
+            return _SplashProgress(), cb
+
         from PySide6.QtWidgets import QApplication, QProgressDialog
         # Closed is not deleted: each open or import left its dialog behind
         # as a child of the window for the whole session (the release check,

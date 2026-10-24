@@ -124,50 +124,61 @@ def _import_by_path(stem: str, file: Path):
     return mod
 
 
-def discover_plugins(dirs=None):
+def discover_plugins(dirs=None, progress=None):
     """Scan ``dirs`` (default :func:`plugin_dirs`) and load every plugin.
 
     Returns ``(plugins, errors)`` and never raises: each failing candidate
     becomes a :class:`PluginError` instead of an exception, because the one
-    thing a plugin system must not do is keep the host from starting.
+    thing a plugin system must not do is keep the host from starting. When
+    supplied, ``progress(current, total, stem)`` reports before each plugin
+    import so a startup screen can stay responsive during slow imports.
     """
     from tools.base import Tool     # deferred: core stays Qt-import-light
 
     plugins: list[LoadedPlugin] = []
     errors: list[PluginError] = []
     seen: set[str] = set()
+    candidates = [
+        (p_dir, stem, file)
+        for p_dir in (list(dirs) if dirs is not None else plugin_dirs())
+        if p_dir.is_dir()
+        for stem, file in _candidates(p_dir)
+    ]
+    total = len(candidates)
 
-    for p_dir in (list(dirs) if dirs is not None else plugin_dirs()):
-        if not p_dir.is_dir():
-            continue
-        for stem, file in _candidates(p_dir):
-            if stem in seen:
-                log.warning("plugin %r at %s shadowed by an earlier one; "
-                            "skipped", stem, file)
-                continue
-            seen.add(stem)
+    for index, (_p_dir, stem, file) in enumerate(candidates, start=1):
+        if progress is not None:
             try:
-                mod = _import_by_path(stem, file)
-                tools = [
-                    obj() for _n, obj in inspect.getmembers(mod,
-                                                            inspect.isclass)
-                    if (issubclass(obj, Tool) and obj is not Tool
-                        and obj.__module__ == mod.__name__     # defined here
-                        and not inspect.isabstract(obj)
-                        and _builds_bare(obj))
-                ]
-            except Exception as exc:                # noqa: BLE001 — contract
-                log.exception("failed to load plugin %r from %s", stem, file)
-                errors.append(PluginError(
-                    stem, file, f"{type(exc).__name__}: {exc}"))
-                continue
-            setup = getattr(mod, "setup", None)
-            if not callable(setup):
-                setup = None
-            if tools or setup is not None:
-                plugins.append(LoadedPlugin(stem, file, tools, setup))
-                for t in tools:
-                    log.info("loaded plugin tool %r from %s", t.name, file)
+                progress(index, total, stem)
+            except Exception:  # noqa: BLE001 — progress must not block startup
+                log.debug("plugin discovery progress callback failed",
+                          exc_info=True)
+        if stem in seen:
+            log.warning("plugin %r at %s shadowed by an earlier one; "
+                        "skipped", stem, file)
+            continue
+        seen.add(stem)
+        try:
+            mod = _import_by_path(stem, file)
+            tools = [
+                obj() for _n, obj in inspect.getmembers(mod, inspect.isclass)
+                if (issubclass(obj, Tool) and obj is not Tool
+                    and obj.__module__ == mod.__name__     # defined here
+                    and not inspect.isabstract(obj)
+                    and _builds_bare(obj))
+            ]
+        except Exception as exc:                # noqa: BLE001 — contract
+            log.exception("failed to load plugin %r from %s", stem, file)
+            errors.append(PluginError(
+                stem, file, f"{type(exc).__name__}: {exc}"))
+            continue
+        setup = getattr(mod, "setup", None)
+        if not callable(setup):
+            setup = None
+        if tools or setup is not None:
+            plugins.append(LoadedPlugin(stem, file, tools, setup))
+            for t in tools:
+                log.info("loaded plugin tool %r from %s", t.name, file)
     return plugins, errors
 
 

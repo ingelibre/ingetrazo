@@ -13,6 +13,17 @@ import os
 import sys
 from pathlib import Path
 
+# PyInstaller's Windows bootloader points DLL lookup at _MEIPASS, while the
+# PySide6 wheel keeps Qt6Core.dll beside its extension modules in PySide6/.
+# Set Qt's extension directory before importing QtCore; native modules in the
+# rest of the bundle are registered after Qt has loaded below.
+if sys.platform == "win32" and getattr(sys, "frozen", False):
+    import ctypes
+
+    _qt_dll_dir = Path(sys._MEIPASS) / "PySide6"
+    if _qt_dll_dir.is_dir():
+        ctypes.windll.kernel32.SetDllDirectoryW(str(_qt_dll_dir))
+
 # Black box: a native crash (GL driver, Qt) kills the process without a
 # Python traceback — faulthandler leaves the Python stacks of every thread
 # in this file so the next "it just closed" has an autopsy. It lives in the
@@ -38,6 +49,12 @@ from PySide6.QtCore import (QEvent, QLibraryInfo, QLocale, QSettings, Qt,
                             QTranslator)
 from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtWidgets import QApplication
+
+# SetDllDirectoryW is needed for Qt above, but it also replaces PyInstaller's
+# default DLL search directory. Re-add _MEIPASS now that Qt is loaded so other
+# bundled native extensions can resolve their private runtime dependencies.
+if sys.platform == "win32" and getattr(sys, "frozen", False):
+    _bundle_dll_handle = os.add_dll_directory(str(sys._MEIPASS))
 
 from core import i18n
 
@@ -144,9 +161,8 @@ def _open_document_in(window, doc: "Path") -> None:
     if hasattr(window, "load_extensions"):
         window.load_extensions()
     ext = doc.suffix.lower()
-    if ext == ".igz" or ext in getattr(window, "file_openers", {}):
-        window.open_path(doc)       # an extension's own type goes to its opener
-    elif ext == ".skp":
+    if ext == ".skp" and not getattr(
+            window, "_startup_splash_progress", None):
         from PySide6.QtCore import QTimer
 
         def _open_skp():
@@ -154,6 +170,9 @@ def _open_document_in(window, doc: "Path") -> None:
                 window._on_zoom_extents()
 
         QTimer.singleShot(0, _open_skp)
+    elif (ext in {".igz", ".dae", ".skp", ".dxf", ".dwg"}
+          or ext in getattr(window, "file_openers", {})):
+        window.open_path(doc)       # an extension's own type goes to its opener
 
 
 class _App(QApplication):
@@ -171,7 +190,9 @@ class _App(QApplication):
 
     def __init__(self, argv: list[str]) -> None:
         super().__init__(argv)
-        self.open_window = None            # set once MainWindow exists
+        # File-open events stay queued until the startup cover is gone and
+        # plugins have had a chance to register their file handlers.
+        self.open_window = None
         self.pending_open_path: Path | None = None
 
     def event(self, e) -> bool:
@@ -212,6 +233,8 @@ def _self_check() -> int:
         ("fragment shader", root / "resources" / "shaders" / "basic.frag"),
         ("translations", root / "i18n" / "es.json"),
         ("texture library", root / "resources" / "textures" / "library.json"),
+        ("startup artwork", root / "resources" / "ui"
+                            / "startup_blueprint.png"),
         ("components", root / "resources" / "components" / "components.json"),
         ("app icon", root / "resources" / "icons" / "ingetrazo_256.png"),
     ):
@@ -465,6 +488,36 @@ def main() -> int:
     # says so below); --python-engine does it for one run.
     from core import _native
     engine_fell_back = _native.start_guard(sys.argv[1:])
+    from core.i18n import tr
+
+    # Avoid flashing a splash in a second process that is about to hand its
+    # file to the already-running window.
+    from PySide6.QtNetwork import QLocalSocket
+    early_new_window = "--new-window" in sys.argv[1:]
+    early_args = [a for a in sys.argv[1:]
+                  if a not in ("--new-window", _native.FLAG)]
+    early_arg = early_args[0] if early_args else str(
+        app.pending_open_path or "")
+    early_probe_connected = False
+    if not early_new_window:
+        early_probe = QLocalSocket()
+        early_probe.connectToServer("ingetrazo-single-instance")
+        if early_probe.waitForConnected(200):
+            early_probe_connected = True
+            early_probe.write((early_arg + "\n").encode("utf-8"))
+            early_probe.flush()
+            early_probe.waitForBytesWritten(300)
+            if (early_probe.waitForReadyRead(1500)
+                    and bytes(early_probe.readAll()).startswith(b"ok")):
+                early_probe.disconnectFromServer()
+                _native.start_ok()
+                return 0
+            early_probe.disconnectFromServer()
+
+    from views.startup_splash import StartupSplash
+    startup_splash = StartupSplash()
+    startup_splash.show()
+    startup_splash.repaint()
     # The extensions' setup waits until the window is on screen (#440).
     window = MainWindow(defer_extensions=True)
     # From here on, a FileOpen Apple Event (macOS double-click / Open With,
@@ -472,13 +525,8 @@ def main() -> int:
     # _App.event) opens straight into this window, no process handoff
     # needed: unlike Linux/Windows, macOS delivers it to the ALREADY-RUNNING
     # process instead of spawning a new one.
-    app.open_window = window
-
-    # Single instance: if IngeTrazo is already running, hand the document to
-    # that window and quit — so a second double-click opens the file in the
-    # existing window instead of spawning a rival instance that the desktop
-    # then kills as a duplicate (the 'it doesn't open' failure). Fail-open:
-    # any socket trouble just launches a normal standalone instance.
+    # From here on, FileOpen Apple Events and secondary launches can be
+    # deferred until plugin handlers and saved panel positions are ready.
     from PySide6.QtNetwork import QLocalServer, QLocalSocket
     _SOCKET = "ingetrazo-single-instance"
     # File ▸ New Window starts a second IngeTrazo with --new-window: it must
@@ -494,9 +542,10 @@ def main() -> int:
         arg = str(app.pending_open_path)
         app.pending_open_path = None
     probe = QLocalSocket()
-    if not new_window:
+    if not new_window and not early_probe_connected:
         probe.connectToServer(_SOCKET)
-    if not new_window and probe.waitForConnected(200):
+    if (not new_window and not early_probe_connected
+            and probe.waitForConnected(200)):
         probe.write((arg + "\n").encode("utf-8"))
         probe.flush()
         probe.waitForBytesWritten(300)
@@ -522,6 +571,9 @@ def main() -> int:
         if not server.listen(_SOCKET):
             server = None
 
+    startup_ready = False
+    pending_instance_paths: list[Path] = []
+
     def _handle_second_launch():
         conn = server.nextPendingConnection()
         if conn is None:
@@ -529,14 +581,18 @@ def main() -> int:
         if conn.waitForReadyRead(300):
             path = bytes(conn.readAll()).decode("utf-8", "replace").strip()
             if path:
-                _open_document_in(window, Path(path))
+                if startup_ready:
+                    _open_document_in(window, Path(path))
+                else:
+                    pending_instance_paths.append(Path(path))
         conn.write(b"ok\n")            # ACK so the caller knows we are alive
         conn.flush()
         conn.waitForBytesWritten(300)
         conn.disconnectFromServer()
-        window.show()
-        window.raise_()
-        window.activateWindow()
+        if startup_ready:
+            window.show()
+            window.raise_()
+            window.activateWindow()
 
     if server is not None:
         server.newConnection.connect(_handle_second_launch)
@@ -545,8 +601,13 @@ def main() -> int:
         # the next launch.
         app.aboutToQuit.connect(lambda: QLocalServer.removeServer(_SOCKET))
 
-    window.show()
     from PySide6.QtCore import QTimer
+
+    # The branded cover is smaller than the application window. Keep the
+    # real workspace fully transparent while it initializes underneath it,
+    # otherwise the edges of the window appear before startup has finished.
+    window.setWindowOpacity(0.0)
+    window.show()
 
     def _first_frame_drawn():
         # This start reached the screen: the engine guard is satisfied.
@@ -556,35 +617,201 @@ def main() -> int:
             pass
         _native.start_ok()
     window.viewport.frameSwapped.connect(_first_frame_drawn)
-    if engine_fell_back:
-        from PySide6.QtWidgets import QMessageBox
-        from core.i18n import tr
-        QTimer.singleShot(0, lambda: QMessageBox.information(
-            window, tr("Rust engine (experimental)"),
-            tr("IngeTrazo did not open the last time with the experimental "
-               "Rust engine on, so it is back on the normal engine. You can "
-               "turn it on again in Preferences ▸ General.")))
-
     def _after_first_frame():
-        # The plugins' setup, now that the window is up (#440) — and only
-        # then the document passed on the command line (the OS file
-        # association's double-click hands it as argv[1]): an extension may
-        # register the opener for its own file type.
-        window.load_extensions()
+        # Register extensions behind the splash, then let the main window's
+        # queued dock-fit/layout work run before revealing the workspace.
+        startup_splash.set_progress(
+            tr("Loading plugins"), 7, tr("Scanning installed plugins…"))
+        try:
+            window.load_extensions(progress=startup_splash.set_progress)
+        except Exception:  # noqa: BLE001 — a faulty extension must not trap startup
+            import logging
+            logging.getLogger("ingetrazo.plugins").exception(
+                "unexpected error while finishing extension startup")
+        startup_splash.set_progress(
+            tr("Arranging workspace"), 97,
+            tr("Waiting for plugin toolbars to finish…"))
+
+        # Plugin setup can start a Ruby host and return before that host has
+        # sent its initial toolbar batch. Keep the cover up until those hosts
+        # report ready, then allow their startup timers to publish any final
+        # toolbar changes before applying the saved layout one last time.
+        import time
+        wait_started = time.monotonic()
+        quiet_since = None
+        last_toolbar_change = wait_started
+        last_toolbar_revision = window.startup_toolbar_revision()
+        last_progress_detail = None
+        layout_poll = QTimer(window)
+        layout_poll.setInterval(50)
+
+        def _poll_plugin_layout():
+            nonlocal quiet_since, last_toolbar_change
+            nonlocal last_toolbar_revision, last_progress_detail
+            now = time.monotonic()
+            revision = window.startup_toolbar_revision()
+            if revision != last_toolbar_revision:
+                last_toolbar_revision = revision
+                last_toolbar_change = now
+
+            pending = window.pending_startup_extension_hosts()
+            if pending:
+                quiet_since = None
+                detail = tr("Waiting for {name}…", name=pending[0])
+                if detail != last_progress_detail:
+                    startup_splash.set_progress(
+                        tr("Loading plugins"), 95, detail)
+                    last_progress_detail = detail
+                if now - wait_started < 25:
+                    return
+                import logging
+                logging.getLogger("ingetrazo.plugins").warning(
+                    "startup continuing while extension hosts are still "
+                    "starting: %s", ", ".join(pending))
+                layout_poll.stop()
+                window.settle_startup_layout()
+                startup_splash.set_progress(
+                    tr("Arranging workspace"), 99,
+                    tr("Opening with the plugins that are ready…"))
+                QTimer.singleShot(100, _finish_startup)
+                return
+
+            if quiet_since is None:
+                quiet_since = now
+                last_progress_detail = tr("Confirming plugin toolbar positions…")
+                startup_splash.set_progress(
+                    tr("Arranging workspace"), 97, last_progress_detail)
+            # The Ruby compatibility hosts service their startup timers at
+            # most once a second. A longer quiet window catches those bars,
+            # then one final restore keeps them from appearing in the wrong
+            # row after the main window is uncovered.
+            if (now - quiet_since >= 1.35
+                    and now - last_toolbar_change >= 0.35):
+                layout_poll.stop()
+                window.settle_startup_layout()
+                startup_splash.set_progress(
+                    tr("Arranging workspace"), 99,
+                    tr("Opening your workspace…"))
+                QTimer.singleShot(100, _finish_startup)
+
+        window._startup_layout_poll = layout_poll
+        layout_poll.timeout.connect(_poll_plugin_layout)
+        layout_poll.start()
+
+    def _finish_startup():
+        # Keep the splash up while the launch document is parsed and its
+        # drawing data is prepared. Importers route their normal progress
+        # milestones into this cover instead of opening a second progress UI.
+        initial_documents = []
         if arg:
-            doc = Path(arg)
-            if doc.exists():
+            startup_doc = Path(arg)
+            if startup_doc.exists():
+                initial_documents.append(startup_doc)
+
+        def _take_queued_documents():
+            documents = []
+            if app.pending_open_path is not None:
+                documents.append(app.pending_open_path)
+                app.pending_open_path = None
+            if pending_instance_paths:
+                documents.extend(pending_instance_paths)
+                pending_instance_paths.clear()
+            return documents
+
+        initial_documents.extend(_take_queued_documents())
+        initial_seen: set[str] = set()
+        documents = []
+        for doc in initial_documents:
+            key = str(doc).casefold()
+            if key not in initial_seen:
+                initial_seen.add(key)
+                documents.append(doc)
+        seen_documents: set[str] = set()
+
+        def _finish_after_files():
+            nonlocal startup_ready
+            more_documents = _take_queued_documents()
+            if more_documents:
+                _open_startup_documents(more_documents)
+                return
+
+            startup_ready = True
+            app.open_window = window
+            window._startup_splash_progress = None
+            # Reveal the prepared workspace only after plugins, layout, and
+            # any launch file have completed. The splash remains on top until
+            # the opacity change has taken effect.
+            window.setWindowOpacity(1.0)
+            startup_splash.close()
+            window.raise_()
+            window.activateWindow()
+
+            if engine_fell_back:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    window, tr("Rust engine (experimental)"),
+                    tr("IngeTrazo did not open the last time with the experimental "
+                       "Rust engine on, so it is back on the normal engine. You can "
+                       "turn it on again in Preferences ▸ General."))
+
+            # The optional first-run units prompt follows any requested opening,
+            # so it cannot obscure a large file's loading progress.
+            QTimer.singleShot(0, window.offer_units_at_start)
+            _offer_appimage_integration(window)
+
+        def _check_startup_queue():
+            more_documents = _take_queued_documents()
+            if more_documents:
+                _open_startup_documents(more_documents)
+            else:
+                _finish_after_files()
+
+        def _open_startup_documents(batch):
+            unique = []
+            for doc in batch:
+                key = str(doc).casefold()
+                if key not in seen_documents:
+                    seen_documents.add(key)
+                    unique.append(doc)
+            if not unique:
+                QTimer.singleShot(150, _check_startup_queue)
+                return
+
+            doc = unique.pop(0)
+            # Preserve any additional documents until the next pass. This
+            # also drains file-open requests received while a large model is
+            # being parsed.
+            pending_instance_paths[0:0] = unique
+            heading = tr("Opening {name}", name=doc.name)
+            startup_splash.set_progress(heading, 87,
+                                        tr("Preparing file…"))
+
+            def _report_file_progress(title, fraction, detail):
+                value = 87 + round(max(0.0, min(1.0, fraction)) * 12)
+                startup_splash.set_progress(
+                    heading, min(99, value), detail or title)
+
+            window._startup_splash_progress = _report_file_progress
+            try:
                 _open_document_in(window, doc)
-        # Which units to work in, once the window is up and the document in
-        # (off for good with «Don't show this at startup»; Preferences ▸
-        # Units turns it back on). Offered after the opening, not beside
-        # it: the load lets events through to move its bar, the question
-        # came up in the middle of it, and the document stayed frozen at
-        # 5 % behind it, the view blank, until it was answered.
-        QTimer.singleShot(0, window.offer_units_at_start)
+            except Exception:  # noqa: BLE001 — keep a failed opener from trapping startup
+                import logging
+                logging.getLogger("ingetrazo.startup").exception(
+                    "could not open startup file %s", doc)
+            finally:
+                window._startup_splash_progress = None
+
+            startup_splash.set_progress(
+                tr("Finalizing workspace"), 99,
+                tr("Finishing {name}…", name=doc.name))
+            QTimer.singleShot(0, _check_startup_queue)
+
+        if documents:
+            _open_startup_documents(documents)
+        else:
+            QTimer.singleShot(150, _check_startup_queue)
 
     QTimer.singleShot(0, _after_first_frame)
-    _offer_appimage_integration(window)
     return app.exec()
 
 

@@ -41,6 +41,8 @@ datas = [
     # Factory window layout (Marco's toolbar arrangement, harvested
     # 2026-08-31): fresh profiles restore it; user changes override it.
     ('resources/ui/*.state',       'resources/ui'),
+    # Branded startup cover shown while plugins restore their saved places.
+    ('resources/ui/startup_blueprint.png', 'resources/ui'),
     # The library itself — a whole tree, and it was MISSING: the Materials
     # tray read library.json and then found no images, so every category
     # came up empty in the packaged build (the Flatpak copies all of
@@ -348,11 +350,38 @@ if sys.platform == 'win32':
 # schannel. Python's own ssl uses libssl-3.dll / libcrypto-3.dll (no -x64)
 # and stays.
 if sys.platform == 'win32':
-    _QT_OPENSSL = {'qopensslbackend.dll', 'libssl-3-x64.dll',
-                   'libcrypto-3-x64.dll'}
+    _QT_OPENSSL = {'qopensslbackend.dll'}
+    _PYTHON_SSL_NAMES = {
+        'libssl-3.dll', 'libcrypto-3.dll',
+        'libssl-3-x64.dll', 'libcrypto-3-x64.dll',
+    }
+    _python_dll_dir = (Path(sys.base_prefix) / 'DLLs').resolve()
+
+    def _is_python_ssl(binary):
+        name = Path(binary[0]).name.lower()
+        if name not in _PYTHON_SSL_NAMES:
+            return False
+        try:
+            Path(binary[1]).resolve().relative_to(_python_dll_dir)
+            return True
+        except ValueError:
+            return False
+
     _before = len(a.binaries)
     a.binaries = [b for b in a.binaries
-                  if Path(b[0]).name.lower() not in _QT_OPENSSL]
+                  if (Path(b[0]).name.lower() not in _QT_OPENSSL
+                      and (Path(b[0]).name.lower() not in _PYTHON_SSL_NAMES
+                           or _is_python_ssl(b)))]
+    # Python.org names these libssl-3.dll/libcrypto-3.dll. The bundled
+    # Codex CPython runtime names them *-3-x64.dll, which collides with Qt's
+    # OpenSSL naming; include the exact Python DLLs explicitly and discard
+    # same-named copies collected from unrelated tools such as Poppler.
+    for _name in _PYTHON_SSL_NAMES:
+        _src = _python_dll_dir / _name
+        if _src.is_file():
+            a.binaries = [b for b in a.binaries
+                          if Path(b[0]).name.lower() != _name]
+            a.binaries.append((_name, str(_src), 'BINARY'))
     print('spec: dropped %d OpenSSL files of Qt (#564)'
           % (_before - len(a.binaries)))
 
@@ -397,6 +426,11 @@ mcp_a = Analysis(
     excludes=excludes,
     noarchive=False,
 )
+if sys.platform == 'win32':
+    # The GUI Analysis contributes Python's SSL DLLs to the shared bundle;
+    # remove duplicates and any third-party OpenSSL from the MCP analysis.
+    mcp_a.binaries = [b for b in mcp_a.binaries
+                      if Path(b[0]).name.lower() not in _PYTHON_SSL_NAMES]
 mcp_pyz = PYZ(mcp_a.pure)
 mcp_exe = EXE(
     mcp_pyz,
