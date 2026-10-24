@@ -7927,6 +7927,9 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard(tr("Quit IngeTrazo?")):
             event.ignore()
             return
+        bridge = getattr(self, "_ai_bridge", None)
+        if bridge is not None:
+            bridge.stop()
         # A clean goodbye: whatever the user decided (save or discard), this
         # session's recovery slot no longer speaks for anyone.
         from core import autosave

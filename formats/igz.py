@@ -51,6 +51,7 @@ import json
 from types import SimpleNamespace
 import math
 from pathlib import Path
+from uuid import uuid4
 
 from core.version import __version__
 
@@ -1150,6 +1151,9 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     payload = data.get("scene", {})
     _normalize_text_curve_ids(payload, geom)
 
+    # A newly opened file is a new runtime target, including reopening the
+    # same path. Invalidate queued bridge requests before replacing geometry.
+    scene.document_id = uuid4().hex
     scene.mesh.clear()
     scene.selection.clear()
     scene.groups.clear()
