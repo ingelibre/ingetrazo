@@ -287,6 +287,42 @@ def test_restart_required_detects_disable_against_startup(tmp_path, monkeypatch)
     assert manager.restart_required("sample", startup)
 
 
+def test_restart_button_tracks_extension_enablement_changes(
+        tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    folder = tmp_path / "sample"
+    folder.mkdir()
+    (folder / "extension.json").write_text(json.dumps({
+        "id": "sample",
+        "version": "1.0",
+        "sha256": "a" * 64,
+    }))
+    from views import extension_manager_dialog as dialog_module
+    from PySide6.QtWidgets import QWidget
+    parent = QWidget()
+    parent._extension_startup_state = {
+        "sample": {"sha256": "a" * 64, "enabled": True}}
+    dialog = dialog_module.ExtensionManagerDialog(parent)
+    try:
+        dialog._restart_candidates = {"sample"}
+        dialog._sync_restart_button()
+        assert dialog._restart_button.isHidden()
+
+        (folder / ".disabled").write_text("", encoding="utf-8")
+        dialog._sync_restart_button()
+        assert not dialog._restart_button.isHidden()
+
+        (folder / ".disabled").unlink()
+        dialog._sync_restart_button()
+        assert dialog._restart_button.isHidden()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        parent.deleteLater()
+        app.processEvents()
+
+
 def test_download_checksum_mismatch_never_creates_install(tmp_path, monkeypatch):
     monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
     extension = _extension(b"expected")

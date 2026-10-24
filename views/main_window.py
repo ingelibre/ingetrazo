@@ -2771,6 +2771,41 @@ class MainWindow(QMainWindow):
             dialog = ExtensionManagerDialog(self)
             self._extension_manager_dialog = dialog
         dialog.exec()
+        if dialog._restart_requested:
+            dialog._restart_requested = False
+            if self._prepare_extension_restart():
+                self._launch_extension_restart()
+
+    def _prepare_extension_restart(self) -> bool:
+        if self._workspace is not None:
+            QMessageBox.information(
+                self, tr("Restart IngeTrazo"),
+                tr("Leave the extension workspace before restarting."))
+            return False
+        if self._current_path is None and self._import_name is not None:
+            # Imported files have no native path to reopen. Preserve the
+            # converted document through the normal Save As flow first.
+            self._on_save()
+            return self._current_path is not None and not self._is_dirty()
+        return self._confirm_discard(
+            tr("Restart IngeTrazo to apply extension changes?"))
+
+    def _launch_extension_restart(self) -> bool:
+        from PySide6.QtCore import QProcess
+
+        command = self._new_window_command()
+        arguments = command[1:]
+        if self._current_path is not None:
+            arguments.append(str(self._current_path))
+        self._save_window_settings()
+        if not QProcess.startDetached(command[0], arguments):
+            QMessageBox.warning(
+                self, tr("Restart IngeTrazo"),
+                tr("Could not restart IngeTrazo."))
+            return False
+        self._restart_confirmed = True
+        self.close()
+        return True
 
     PLUGIN_GUIDE_URL = ("https://github.com/ingelibre/ingetrazo"
                         "/blob/main/docs/plugins.md")
@@ -7927,24 +7962,15 @@ class MainWindow(QMainWindow):
         if self._workspace is not None and not self.leave_workspace():
             event.ignore()
             return
-        if not self._confirm_discard(tr("Quit IngeTrazo?")):
+        if (not getattr(self, "_restart_confirmed", False)
+                and not self._confirm_discard(tr("Quit IngeTrazo?"))):
             event.ignore()
             return
         # A clean goodbye: whatever the user decided (save or discard), this
         # session's recovery slot no longer speaks for anyone.
         from core import autosave
         autosave.clear(self._current_path)
-        # The window arrangement (toolbars, docks, size) IS a preference.
-        # Closing mid-presentation must remember the WORKSPACE, not the
-        # clean screen's everything-hidden state.
-        act = getattr(self, "_act_clean_screen", None)
-        clean_state = getattr(self, "_clean_screen_state", None)
-        st = QSettings()
-        st.setValue("ui/window_state",
-                    clean_state if (act is not None and act.isChecked()
-                                    and clean_state is not None)
-                    else self.saveState())
-        st.setValue("ui/window_geometry", self.saveGeometry())
+        self._save_window_settings()
         # Free every GL texture while a GL context still exists — the survey
         # atlases (hundreds of MB), the tile and terrain textures, and the
         # general texture cache (faces, reference images). Letting Qt tear
@@ -7956,3 +7982,16 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001 — never block quitting on cleanup
             pass
         super().closeEvent(event)
+
+    def _save_window_settings(self) -> None:
+        # The window arrangement (toolbars, docks, size) IS a preference.
+        # Closing mid-presentation must remember the WORKSPACE, not the
+        # clean screen's everything-hidden state.
+        act = getattr(self, "_act_clean_screen", None)
+        clean_state = getattr(self, "_clean_screen_state", None)
+        st = QSettings()
+        st.setValue("ui/window_state",
+                    clean_state if (act is not None and act.isChecked()
+                                    and clean_state is not None)
+                    else self.saveState())
+        st.setValue("ui/window_geometry", self.saveGeometry())

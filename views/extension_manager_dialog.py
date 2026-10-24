@@ -90,7 +90,7 @@ _THUMBS_DIR = "thumbs"
 #: and the next opening find them ready.
 _PREFETCH_DELAY_MS = 150
 _PREFETCH_BATCH = 4
-_ROW_MAX_HEIGHT = 300
+_ROW_MAX_HEIGHT = 260
 _ROW_MAX_WIDTH = 660
 _RENDER_BATCH_SIZE = 3
 _RENDER_BATCH_INTERVAL_MS = 1
@@ -216,6 +216,8 @@ class ExtensionManagerDialog(QDialog):
         startup_state = getattr(parent, "_extension_startup_state", None)
         self._startup_state = (startup_state if startup_state is not None
                                else extension_startup_state())
+        self._restart_candidates = set(self._startup_state)
+        self._restart_requested = False
         self._requested_images: set[str] = set()
         self._image_failures: dict[str, int] = {}
         # Screenshots already decoded and scaled, by extension id: a card
@@ -254,6 +256,10 @@ class ExtensionManagerDialog(QDialog):
         self._catalog_info.setStyleSheet(
             "color: palette(text); font-size: 11px")
         header.addWidget(self._catalog_info)
+        self._restart_button = QPushButton(tr("Restart to apply changes"))
+        self._restart_button.clicked.connect(self._request_restart)
+        self._restart_button.setVisible(False)
+        header.addWidget(self._restart_button)
         self._refresh = QPushButton(tr("Refresh"))
         self._refresh.clicked.connect(self._load)
         header.addWidget(self._refresh)
@@ -837,6 +843,17 @@ class ExtensionManagerDialog(QDialog):
                shown=page["shown"], total=page["total"])
             + self._catalog_status_suffix())
 
+    def _sync_restart_button(self, ident: str | None = None) -> None:
+        if ident is not None:
+            self._restart_candidates.add(ident)
+        self._restart_button.setVisible(any(
+            restart_required(candidate, self._startup_state)
+            for candidate in self._restart_candidates))
+
+    def _request_restart(self) -> None:
+        self._restart_requested = True
+        self.accept()
+
     def _columns(self, key: str) -> int:
         """How many columns of cards fit the page's width."""
         width = self._pages[key]["scroll"].viewport().width()
@@ -1373,6 +1390,7 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension installed"),
             tr("«{name}» is installed. Restart IngeTrazo to load it.",
                name=display_name(extension, current_language())))
+        self._sync_restart_button(extension.id)
         self._invalidate_pages(extension.id)
 
     def _uninstall(self, extension: Extension) -> None:
@@ -1392,6 +1410,7 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension uninstalled"),
             tr("«{name}» is uninstalled. Restart IngeTrazo to apply the "
                "change.", name=display_name(extension, current_language())))
+        self._sync_restart_button(extension.id)
         self._invalidate_pages(extension.id)
 
     # ---- Extensions that left the catalog ------------------------------
@@ -1456,6 +1475,7 @@ class ExtensionManagerDialog(QDialog):
             tr("«{name}» is {state}. Restart IngeTrazo for the change to "
                "take effect.", name=ident,
                state=tr("enabled") if enabled else tr("disabled")))
+        self._sync_restart_button(ident)
         for key in self._pages:
             self._discard_cached_rows(key, ident)
             self._render_page(key)
@@ -1476,6 +1496,7 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension uninstalled"),
             tr("«{name}» is uninstalled. Restart IngeTrazo to apply the "
                "change.", name=ident))
+        self._sync_restart_button(ident)
         for key in self._pages:
             self._discard_cached_rows(key, ident)
             self._render_page(key)
@@ -1591,6 +1612,7 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension installed"),
             tr("«{name}» is installed. Restart IngeTrazo to load it.",
                name=name))
+        self._sync_restart_button(extension.id)
         self._invalidate_pages(extension.id)
 
     def _toggle(self, extension: Extension) -> None:
@@ -1606,4 +1628,5 @@ class ExtensionManagerDialog(QDialog):
             tr("«{name}» is {state}. Restart IngeTrazo for the change to "
                "take effect.", name=display_name(extension, current_language()),
                state=action))
+        self._sync_restart_button(extension.id)
         self._invalidate_pages(extension.id)

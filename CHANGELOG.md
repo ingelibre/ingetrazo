@@ -10,6 +10,9 @@ follow [SemVer](https://semver.org).
 - **El gestor de extensiones crea tarjetas al acercarse a ellas**: las
   entradas fuera de pantalla usan marcadores ligeros; las tarjetas completas
   se construyen en tandas al desplazarse por la lista.
+- **El gestor puede reiniciar IngeTrazo para aplicar cambios de extensiones**,
+  conservando el documento abierto después de confirmar cómo guardar sus
+  cambios pendientes.
 
 ## [0.5.9] — 2026-10-19
 
