@@ -36,8 +36,10 @@ def _uploaded_edges(vp):
     vp._upload_vbo = fake_upload
     # No GL here: the buffers the sync hands to the fake upload are names.
     import re
+    from pathlib import Path
     import views.viewport as vpmod
-    src = open(vpmod.__file__, encoding="utf-8").read()
+    src = "\n".join(p.read_text(encoding="utf-8")
+                    for p in Path(vpmod.__file__).parent.glob("*.py"))
     for name in set(re.findall(r"self\.(_\w+_vbo)\b", src)):
         if not hasattr(vp, name):
             setattr(vp, name, None)

@@ -26,7 +26,7 @@ app = QApplication(sys.argv)
 app.setOrganizationName("IngeTrazoThumbs")
 app.setApplicationName("gen-thumbs")
 
-import views.viewport as vpmod
+import views.viewport.render as vpmod
 
 # No axes, no sky: flat light background for the thumbnails.
 vpmod._axes_vertices = lambda spacing: (

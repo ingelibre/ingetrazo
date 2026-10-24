@@ -38,8 +38,8 @@ from core.snap import SnapResult, compute_snap
 def _no_snap_fast() -> bool:
     """The viewport's ``INGETRAZO_NO_SNAP_FAST`` switch (batched occlusion
     off, for A/B timing), read at call time to avoid a circular import."""
-    from views import viewport as _viewport
-    return bool(getattr(_viewport, "_NO_SNAP_FAST", False))
+    from views.viewport import snapping as _snapping
+    return bool(_snapping._NO_SNAP_FAST)
 
 
 def _magnet_may_leave_plane(tool) -> bool:

@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 from PySide6.QtGui import QVector3D
 
-import views.viewport as vv
+import views.viewport._support as vv
 from views.viewport import Viewport, _split_chunk_spans
 
 

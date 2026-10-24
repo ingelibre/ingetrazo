@@ -109,8 +109,9 @@ def test_every_cache_filled_by_id_of_a_group_is_a_document_cache():
     """The guard for the next cache: a dict the viewport fills with
     ``cache[id(group)]`` (or a child, or a mesh) must be in the list."""
     from views.viewport import Viewport
-    src = (Path(__file__).resolve().parents[1] / "views" / "viewport.py"
-           ).read_text(encoding="utf-8")
+    pkg = Path(__file__).resolve().parents[1] / "views" / "viewport"
+    src = "\n".join(p.read_text(encoding="utf-8")
+                    for p in sorted(pkg.glob("*.py")))
     listed = set(Viewport._DOCUMENT_CACHES)
     missing = set()
     for m in re.finditer(r"cache = self\.(_\w+) = \{\}", src):

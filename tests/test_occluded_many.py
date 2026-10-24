@@ -157,7 +157,7 @@ def test_compute_snap_picks_the_same_candidate_with_the_batch(hidden_below):
 
 def test_the_kill_switch_keeps_the_rays_one_by_one(monkeypatch):
     # INGETRAZO_NO_SNAP_FAST=1: compute_snap gets no batch to ask.
-    import views.viewport as vv
+    import views.viewport.snapping as vv
     monkeypatch.setattr(vv, "_NO_SNAP_FAST", True)
     import core.snap as cs
     seen = {}
@@ -310,7 +310,7 @@ def test_the_native_rays_hide_exactly_what_numpy_hides(viewport, view,
     block runs in core/occlusion.rs; a ray it cannot call bit for bit comes
     back to NumPy. Either way the answer is NumPy's, point for point —
     points on faces and at their corners included (the threshold cases)."""
-    import views.viewport as vv
+    import views.viewport.occlusion as vv
     if vv._occlusion_native() is None:
         pytest.skip("the native engine is off or not built")
     vp = viewport

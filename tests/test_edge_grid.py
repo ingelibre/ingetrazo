@@ -137,7 +137,7 @@ def test_viewport_readers_see_what_the_full_pass_sees(density):
 def test_the_kill_switch_runs_the_full_pass(monkeypatch):
     # INGETRAZO_NO_SNAP_FAST=1: every edge measured, no grid built — the
     # escape hatch's answer is the old one, exactly.
-    import views.viewport as vv
+    import views.viewport.snapping as vv
     from views.viewport import Viewport
     monkeypatch.setattr(vv, "_NO_SNAP_FAST", True)
     rng = np.random.default_rng(9)

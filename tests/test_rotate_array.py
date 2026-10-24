@@ -91,7 +91,7 @@ def _rotate_copy(vp, tool, deg: float):
 
 def test_the_tool_declares_arrays_so_the_value_box_keeps_the_x():
     """The viewport only buffers the "x" of «3x» for tools that declare
-    ``accepts_array`` (views/viewport.py). Without it the digit reached
+    ``accepts_array`` (views/viewport/value_input.py). Without it the digit reached
     ``on_value`` alone and became an angle — the whole of #24."""
     assert getattr(RotateTool, "accepts_array", False) is True
     assert callable(getattr(RotateTool, "on_array_value", None))
