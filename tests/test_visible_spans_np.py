@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import random
 
-import views.viewport as vpm
+import views.viewport.chunks as vpm
 
 
 def _spans(rng, n):

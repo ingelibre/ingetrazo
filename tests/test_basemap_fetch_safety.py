@@ -7,7 +7,7 @@ from PySide6.QtCore import QUrl
 from georef.datum import SceneDatum
 from georef.tile_fetcher import TileFetcher
 from georef.tiles import PRESETS, TileCache, TileLayer
-import views.viewport as viewport_module
+import views.viewport.geo as viewport_module
 from views.viewport import Viewport
 
 

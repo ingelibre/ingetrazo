@@ -20,7 +20,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
-import views.viewport as vpmod  # noqa: E402
+import views.viewport.render as vpmod  # noqa: E402
 from core.guide import Guide  # noqa: E402
 
 

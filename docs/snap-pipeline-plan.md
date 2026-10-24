@@ -44,7 +44,7 @@ the mixing, so that (a) there is **one** code path that runs inference, and
   `QtGui` and `core.snap`; the two post-processors add `core.axes` and
   `logging` **lazily**, inside the method (step 4), so the no-drawing claim
   still holds.
-- `views/viewport.py`: event routing, drawing, and a **bridge** of delegating
+- `views/viewport/`: event routing, drawing, and a **bridge** of delegating
   properties. The reference state is no longer declared in `__init__`, and
   `compute_snap` is no longer imported.
 
@@ -110,7 +110,7 @@ Deviations from the original sketch, recorded so nobody "fixes" them back:
 ### One code path, as intended
 
 `compute_snap(` has exactly **one** production call site now:
-`core/inference.py::InferenceEngine.snap`. `views/viewport.py` mentions it only
+`core/inference.py::InferenceEngine.snap`. `views/viewport/` mentions it only
 in prose. Re-verify with:
 
     grep -rn 'compute_snap(' --include='*.py'
@@ -296,7 +296,7 @@ on the `Viewport` reach them through the delegating properties.
 
 1. **Freeze the contract. [DONE]** Confirm nothing outside the viewport
    constructs the `compute_snap(...)` kwargs. **Result (verified):** the only
-   production call-sites were `views/viewport.py::_refresh_snap` and
+   production call-sites were `views/viewport/snapping.py::_refresh_snap` and
    `::_build_ctx` (2 sites); every other call-site is in `tests/`;
    `core/snap.py` is the sole definition; no call-site under `plugins/ tools/
    georef/ formats/ analysis/ scripts/`; no dynamic dispatch
