@@ -33,6 +33,11 @@ $BUILDER \
   --state-dir "$STATE_DIR" \
   "$BUILD_DIR" "$HERE/$APPID.yml"
 
+# Check in the runtime, without the SDK or its Rust extension mounted.
+# A bundle without a loadable native engine must never be exported.
+echo "▶ Checking the installed Flatpak…"
+flatpak run --env=INGETRAZO_REQUIRE_RUST=1 "$APPID" --check
+
 if [ "${1:-}" = "--bundle" ]; then
   BUNDLE="$HERE/.staging/IngeTrazo.flatpak"
   echo "▶ Exporting the distributable bundle…"

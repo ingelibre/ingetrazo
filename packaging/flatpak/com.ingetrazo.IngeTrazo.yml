@@ -6,6 +6,10 @@ app-id: com.ingetrazo.IngeTrazo
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
 command: ingetrazo
 
 finish-args:
@@ -70,6 +74,18 @@ modules:
       - pip3 install --prefix=${FLATPAK_DEST} --no-warn-script-location -r reqs.txt
       # openskp's blank writer template is not distributed (no .skp export).
       - rm -rf ${FLATPAK_DEST}/lib/python3*/site-packages/openskp/_scaffold
+      # Compile against the sandbox's Python and libc, not the host's.
+      # Keep maturin and its build environment out of the shipped /app.
+      - |
+        set -e
+        python3 -m venv /tmp/ingetrazo-rust-build
+        /tmp/ingetrazo-rust-build/bin/python -m pip install maturin
+        /tmp/ingetrazo-rust-build/bin/maturin build --locked --release \
+          --interpreter /usr/bin/python3 \
+          --manifest-path rust/ingetrazo_core/Cargo.toml \
+          --out /tmp/ingetrazo-rust-wheels
+        pip3 install --prefix=${FLATPAK_DEST} --no-deps --no-warn-script-location \
+          /tmp/ingetrazo-rust-wheels/ingetrazo_core-*.whl
       # 2. The application, as source — GPL code hides from nobody.
       #    materials/ and styles/ are importable packages; plugins/ carries
       #    the bundled reference extensions (core/extensions.py discovers
