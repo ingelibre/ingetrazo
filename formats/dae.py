@@ -134,11 +134,10 @@ def save_dae(scene, path, project_name: str = "IngeTrazo model") -> None:
     for key in keys:
         textured = key[0] == "tex"
         p_tokens: list[str] = []
-        for normal, verts in prims[key]:
-            ni = _ni(normal)
-            for pos, uv in verts:
+        for _flat, verts in prims[key]:
+            for pos, uv, normal in verts:
                 p_tokens.append(str(_pi(pos)))
-                p_tokens.append(str(ni))
+                p_tokens.append(str(_ni(normal)))   # smooth across soft edges
                 if textured:
                     p_tokens.append(str(_ui(uv)))
         tri_groups.append((key, textured, p_tokens))
@@ -657,6 +656,55 @@ def _collect_direct(dae: _Dae, node_el, m: QMatrix4x4, out: list) -> None:
                 out.append(([world[i] for i in lp], color, tex))
 
 
+def _prim_segments(prim_el, count: int) -> list:
+    """Index pairs of one ``lines`` / ``linestrips`` primitive."""
+    v_off, _uv, _src, stride = _prim_inputs(prim_el)
+    pairs: list = []
+    strips = ([prim_el.find(f"{_NS}p")] if _tag(prim_el) == "lines"
+              else prim_el.findall(f"{_NS}p"))
+    for p in strips:
+        idx = _ints(p.text if p is not None else "")
+        verts = [idx[k + v_off] for k in range(0, len(idx) - stride + 1,
+                                               stride)]
+        if _tag(prim_el) == "lines":
+            pairs.extend(zip(verts[0::2], verts[1::2]))
+        else:
+            pairs.extend(zip(verts, verts[1:]))
+    return [(a, b) for a, b in pairs
+            if a != b and 0 <= a < count and 0 <= b < count]
+
+
+def _collect_lines(dae: _Dae, node_el, xform: QMatrix4x4, out: list,
+                   depth: int = 0) -> None:
+    """The loose lines (``lines`` / ``linestrips``) of a node tree, as
+    world ``(a, b)`` segments — a drawing's 2D lines, which the polygon
+    walk never read, so they were dropped on import (#633)."""
+    if depth > 32:
+        return
+    m = xform * _node_matrix(node_el)
+    for el in node_el:
+        t = _tag(el)
+        if t == "instance_geometry":
+            geom = dae.ref(el.get("url"))
+            mesh_el = geom.find(f"{_NS}mesh") if geom is not None else None
+            if mesh_el is None:
+                continue
+            prims = [pr for pr in mesh_el
+                     if _tag(pr) in ("lines", "linestrips")]
+            if not prims:
+                continue
+            world = [m.map(p) for p in _positions(dae, mesh_el)]
+            for pr in prims:
+                for a, b in _prim_segments(pr, len(world)):
+                    out.append((world[a], world[b]))
+        elif t == "node":
+            _collect_lines(dae, el, m, out, depth)
+        elif t == "instance_node":
+            target = dae.ref(el.get("url"))
+            if target is not None:
+                _collect_lines(dae, target, m, out, depth + 1)
+
+
 def _image_has_cutout(dae: _Dae, path: str) -> bool:
     """Whether the image carries REAL transparency (some pixels see-through)
     — the signature of a photo sprite (a person/animal/tree cutout PNG),
@@ -910,6 +958,304 @@ def _bucketize(dae: _Dae, top_nodes, faceme: list | None = None,
     return buckets
 
 
+# ---- Survey coordinates: move a far-out file near the origin -------------------
+#
+# The importer composes node transforms and maps vertices in single precision
+# (QMatrix4x4, QVector3D): a file at a UTM northing of 8,500,000 m has lost the
+# metre before the first face is made. So, before anything else reads the
+# document, this pass measures the scene in DOUBLE precision and — when it
+# reaches past formats.recenter.RECENTER_BEYOND_M — rewrites the document
+# itself so the offset is gone: the rest of the importer then reads a file
+# that simply sits near the origin.
+#
+# The offset is taken out where the large numbers first appear going down
+# the node tree: a node whose own translation is far out absorbs it (its
+# transform is rewritten as one double-precision <matrix>); otherwise it is
+# carried down, expressed in each node's frame, and finally subtracted from
+# the vertex positions of the geometry that holds it. A geometry or a library
+# node reached with two different shifts (one model placed twice) is copied
+# for the second, so no copy moves the other.
+
+_TRANSFORM_TAGS = ("matrix", "translate", "rotate", "scale", "lookat", "skew")
+
+
+def _node_matrix64(node_el):
+    """:func:`_node_matrix` in double precision (NumPy, row-major)."""
+    import math
+
+    import numpy as np
+    m = np.eye(4)
+    for el in node_el:
+        t = _tag(el)
+        if t == "matrix":
+            vals = _floats(el.text)
+            if len(vals) == 16:
+                m = m @ np.array(vals, dtype=np.float64).reshape(4, 4)
+        elif t == "translate":
+            v = _floats(el.text)
+            if len(v) >= 3:
+                tm = np.eye(4)
+                tm[:3, 3] = v[:3]
+                m = m @ tm
+        elif t == "rotate":
+            v = _floats(el.text)
+            if len(v) >= 4:
+                axis = np.array(v[:3], dtype=np.float64)
+                n = np.linalg.norm(axis)
+                if n > 0:
+                    x, y, z = axis / n
+                    a = math.radians(v[3])
+                    c, s = math.cos(a), math.sin(a)
+                    rm = np.eye(4)
+                    rm[:3, :3] = [
+                        [c + x * x * (1 - c), x * y * (1 - c) - z * s,
+                         x * z * (1 - c) + y * s],
+                        [y * x * (1 - c) + z * s, c + y * y * (1 - c),
+                         y * z * (1 - c) - x * s],
+                        [z * x * (1 - c) - y * s, z * y * (1 - c) + x * s,
+                         c + z * z * (1 - c)]]
+                    m = m @ rm
+        elif t == "scale":
+            v = _floats(el.text)
+            if len(v) >= 3:
+                m = m @ np.diag([v[0], v[1], v[2], 1.0])
+    return m
+
+
+def _zup3(dae: _Dae):
+    """:meth:`_Dae.to_zup` as a 3×3 double-precision matrix."""
+    import numpy as np
+    s = dae.scale
+    if dae.up == "Y_UP":
+        return np.array([[s, 0, 0], [0, 0, -s], [0, s, 0]], dtype=np.float64)
+    if dae.up == "X_UP":
+        return np.array([[0, s, 0], [s, 0, 0], [0, 0, s]], dtype=np.float64)
+    return np.eye(3) * s
+
+
+def _position_source(dae: _Dae, mesh_el):
+    """The ``<source>`` holding a mesh's POSITION array, or ``None``."""
+    verts = mesh_el.find(f"{_NS}vertices")
+    if verts is None:
+        return None
+    for inp in verts.findall(f"{_NS}input"):
+        if inp.get("semantic") == "POSITION":
+            return dae.ref(inp.get("source"))
+    return None
+
+
+def _local_points(dae: _Dae, geom_el):
+    """A geometry's vertex positions as an ``(n, 3)`` double array."""
+    import numpy as np
+    mesh_el = geom_el.find(f"{_NS}mesh")
+    src = _position_source(dae, mesh_el) if mesh_el is not None else None
+    if src is None:
+        return np.zeros((0, 3))
+    arr = src.find(f"{_NS}float_array")
+    data = _floats(arr.text if arr is not None else "")
+    stride = 3
+    acc = src.find(f"{_NS}technique_common/{_NS}accessor")
+    if acc is not None and acc.get("stride"):
+        stride = max(int(acc.get("stride")), 3)
+    n = len(data) // stride
+    if n == 0:
+        return np.zeros((0, 3))
+    return np.array(data[:n * stride], dtype=np.float64).reshape(n, stride)[:, :3]
+
+
+def _scene_box(dae: _Dae, top_nodes):
+    """The scene's box in Z-up metres, double precision: every geometry's
+    own box corners carried through its full chain of node transforms."""
+    import numpy as np
+
+    from formats.recenter import Bounds
+    box = Bounds()
+    zup = _zup3(dae)
+    corner_cache: dict = {}
+
+    def corners(geom_el):
+        got = corner_cache.get(id(geom_el))
+        if got is None:
+            pts = _local_points(dae, geom_el)
+            if len(pts):
+                lo, hi = pts.min(axis=0), pts.max(axis=0)
+                got = np.array([[x, y, z] for x in (lo[0], hi[0])
+                                for y in (lo[1], hi[1])
+                                for z in (lo[2], hi[2])])
+            else:
+                got = np.zeros((0, 3))
+            corner_cache[id(geom_el)] = got
+        return got
+
+    def walk(node_el, parent, depth):
+        if depth > 32:
+            return
+        m = parent @ _node_matrix64(node_el)
+        for el in node_el:
+            t = _tag(el)
+            if t == "instance_geometry":
+                geom = dae.ref(el.get("url"))
+                if geom is None:
+                    continue
+                c = corners(geom)
+                if len(c):
+                    world = c @ m[:3, :3].T + m[:3, 3]
+                    box.add_array(world @ zup.T)
+            elif t == "node":
+                walk(el, m, depth)
+            elif t == "instance_node":
+                target = dae.ref(el.get("url"))
+                if target is not None:
+                    walk(target, m, depth + 1)
+
+    for nd in top_nodes:
+        walk(nd, np.eye(4), 0)
+    return box
+
+
+def _fmt(values) -> str:
+    return " ".join(repr(float(v)) for v in values)
+
+
+def _clone(dae: _Dae, el, parent):
+    """A deep copy of ``el`` appended to ``parent``, every ``id`` inside it
+    renamed and every internal ``#reference`` to those ids rewired."""
+    import copy
+    dup = copy.deepcopy(el)
+    dae._clones = getattr(dae, "_clones", 0) + 1
+    suffix = f"-recentred{dae._clones}"
+    renamed = {}
+    for sub in dup.iter():
+        old = sub.get("id")
+        if old is not None:
+            renamed[old] = old + suffix
+            sub.set("id", old + suffix)
+    for sub in dup.iter():
+        for attr in ("source", "url", "target"):
+            ref = sub.get(attr)
+            if ref and ref.startswith("#") and ref[1:] in renamed:
+                sub.set(attr, "#" + renamed[ref[1:]])
+    parent.append(dup)
+    for sub in dup.iter():
+        if sub.get("id") is not None:
+            dae.by_id[sub.get("id")] = sub
+    return dup
+
+
+def _set_node_matrix(node_el, m) -> None:
+    """Replace a node's transform elements with one ``<matrix>``."""
+    for el in [el for el in node_el if _tag(el) in _TRANSFORM_TAGS]:
+        node_el.remove(el)
+    mat = ET.Element(f"{_NS}matrix")
+    mat.text = _fmt(m.reshape(-1))
+    at = 1 if len(node_el) and _tag(node_el[0]) == "asset" else 0
+    node_el.insert(at, mat)
+
+
+def _shift_geometry(dae: _Dae, geom_el, r) -> None:
+    """Subtract ``r`` (in the geometry's own frame) from its positions."""
+    import numpy as np
+    mesh_el = geom_el.find(f"{_NS}mesh")
+    src = _position_source(dae, mesh_el) if mesh_el is not None else None
+    arr = src.find(f"{_NS}float_array") if src is not None else None
+    if arr is None:
+        return
+    data = np.array(_floats(arr.text), dtype=np.float64)
+    stride = 3
+    acc = src.find(f"{_NS}technique_common/{_NS}accessor")
+    if acc is not None and acc.get("stride"):
+        stride = max(int(acc.get("stride")), 3)
+    n = len(data) // stride
+    view = data[:n * stride].reshape(n, stride)
+    view[:, :3] -= r
+    arr.text = _fmt(data)
+    dae._src_cache.pop(id(src), None)
+
+
+def _recenter_dom(root):
+    """Move a COLLADA document in survey coordinates near the origin, in
+    place and in double precision (see the notes above). Returns the
+    ``(x, y, z)`` offset in Z-up metres, or ``None`` when the file sits
+    near enough the origin to be read as it is."""
+    import numpy as np
+
+    from formats.recenter import RECENTER_BEYOND_M
+    dae = _Dae(root)
+    top_nodes: list = []
+    for vs in root.iter(f"{_NS}visual_scene"):
+        top_nodes.extend(vs.findall(f"{_NS}node"))
+    offset = _scene_box(dae, top_nodes).offset()
+    if offset is None:
+        return None
+    zup = _zup3(dae)
+    far = RECENTER_BEYOND_M / 2 / max(abs(dae.scale), 1e-12)
+    # What each shared element was shifted by: a second, different shift
+    # works on a copy.
+    shifted: dict = {}
+
+    def claim(el, r, parent):
+        key = id(el)
+        done = shifted.get(key)
+        if done is None:
+            shifted[key] = r
+            return el
+        if np.allclose(done, r, rtol=0.0, atol=1e-9):
+            return None                      # already shifted by this much
+        dup = _clone(dae, el, parent)
+        shifted[id(dup)] = r
+        return dup
+
+    def apply(node_el, r, depth):
+        """Take ``r`` (a vector in the node's PARENT frame) out of the
+        node's subtree."""
+        if depth > 32 or not np.any(r):
+            return
+        m = _node_matrix64(node_el)
+        t = m[:3, 3]
+        if np.max(np.abs(t)) > far:
+            m[:3, 3] = t - r                 # the node itself is far out
+            _set_node_matrix(node_el, m)
+            return
+        try:
+            r_local = np.linalg.solve(m[:3, :3], r)
+        except np.linalg.LinAlgError:
+            return
+        for el in node_el:
+            tag = _tag(el)
+            if tag == "instance_geometry":
+                geom = dae.ref(el.get("url"))
+                if geom is None:
+                    continue
+                own = claim(geom, r_local, _parent_of(geom))
+                if own is None:
+                    continue
+                if own is not geom:
+                    el.set("url", "#" + own.get("id"))
+                _shift_geometry(dae, own, r_local)
+            elif tag == "node":
+                apply(el, r_local, depth)
+            elif tag == "instance_node":
+                target = dae.ref(el.get("url"))
+                if target is None:
+                    continue
+                own = claim(target, r_local, _parent_of(target))
+                if own is None:
+                    continue
+                if own is not target:
+                    el.set("url", "#" + own.get("id"))
+                apply(own, r_local, depth + 1)   # a library node: same rules
+
+    parents = {id(c): p for p in root.iter() for c in p}
+
+    def _parent_of(el):
+        return parents.get(id(el), root)
+
+    off_dae = np.linalg.solve(zup, np.array(offset, dtype=np.float64))
+    for nd in top_nodes:
+        apply(nd, off_dae, 0)
+    return offset
+
+
 def _adopt_geolocation(scene, root) -> None:
     """If the COLLADA carries ``<asset><coverage><geographic_location>`` and the
     scene has no datum yet, anchor the scene there — so a georeferenced model
@@ -938,21 +1284,36 @@ def _adopt_geolocation(scene, root) -> None:
     scene.georef = SceneDatum(lat, lon, alt)
 
 
-def load_dae(scene, path, progress=None) -> None:
+def _add_lines(mesh, dae: _Dae, lines: list) -> None:
+    """Add the file's loose lines to ``mesh`` (Z-up). Only the small,
+    editable import takes them: in the reference import (big files) an
+    exporter that writes every edge as a line would double the model."""
+    for a, b in lines:
+        a, b = dae.to_zup(a), dae.to_zup(b)
+        if (a - b).length() < 1e-6:
+            continue
+        try:
+            mesh.add_edge(a, b)
+        except Exception:  # noqa: BLE001 — skip a degenerate line
+            continue
+
+
+def load_dae(scene, path, progress=None):
     """See :func:`_load_dae_inner`. Wrapped to run with the generational GC off —
     mass vertex/edge/face construction ahead (see formats.skp.apply_payload);
-    collection is merely deferred to the re-enable."""
+    collection is merely deferred to the re-enable. Returns the survey offset
+    the file was moved by (formats/recenter.py), or ``None``."""
     import gc
     _gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        _load_dae_inner(scene, path, progress=progress)
+        return _load_dae_inner(scene, path, progress=progress)
     finally:
         if _gc_was_enabled:
             gc.enable()
 
 
-def _load_dae_inner(scene, path, progress=None) -> None:
+def _load_dae_inner(scene, path, progress=None):
     """Add the geometry of a COLLADA file at ``path`` to ``scene``.
 
     Small models (≤ ``_MAX_FUSE_LOOPS`` polygons) go into the loose mesh and
@@ -975,6 +1336,9 @@ def _load_dae_inner(scene, path, progress=None) -> None:
 
     tick(0.02, "Reading file…")
     root = ET.parse(Path(path)).getroot()
+    # Survey coordinates come out of the document first, in double
+    # precision, before anything below turns them single precision.
+    offset = _recenter_dom(root)
     dae = _Dae(root, base_dir=Path(path).parent)
     _adopt_geolocation(scene, root)
     top_nodes: list = []
@@ -1067,11 +1431,13 @@ def _load_dae_inner(scene, path, progress=None) -> None:
             done += len(loops)
         scene.version += 1
         tick(1.0, "Done")
-        return
+        return offset
 
     pending: list = []
     faceme: list = []
+    lines: list = []
     for node in top_nodes:
+        _collect_lines(dae, node, QMatrix4x4(), lines)
         sub: list = []
         _collect(dae, node, QMatrix4x4(), sub, faceme=faceme)
         if sub and _looks_faceme(dae, sub):
@@ -1109,10 +1475,11 @@ def _load_dae_inner(scene, path, progress=None) -> None:
                         pending.append(([positions[i] for i in lp],
                                         None, None))
     if not pending:
-        if faceme:
+        if faceme or lines:
+            _add_lines(scene.mesh, dae, lines)
             scene.version += 1
             tick(1.0, "Done")
-            return
+            return offset
         raise ValueError("No geometry found in the COLLADA file")
 
     if len(pending) > _MAX_FUSE_LOOPS:
@@ -1139,7 +1506,7 @@ def _load_dae_inner(scene, path, progress=None) -> None:
         scene.groups.append(Group(target, name=Path(path).stem))
         scene.version += 1
         tick(1.0, "Done")
-        return
+        return offset
 
     target = scene.mesh
     seed: set = set()
@@ -1162,4 +1529,8 @@ def _load_dae_inner(scene, path, progress=None) -> None:
     # (Big models took the reference-group path above with the fast fusion.)
     run_stitch(scene.mesh, seed, new_faces, coplanar_merge=True)
     orient_outward(scene.mesh)
+    # Loose lines after the faces: one lying on a face edge is that edge
+    # (add_edge finds it), the rest stay as the drawing's own lines.
+    _add_lines(scene.mesh, dae, lines)
     scene.version += 1
+    return offset

@@ -90,6 +90,9 @@ class LibraryDialog(QDialog):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._fill_visible_thumbs)
         self._timer.start(120)
+        # The first screenful straight away, not a tick later: from the
+        # cache that is all the waiting there is (138 → 52 ms, 18-10).
+        QTimer.singleShot(0, self, self._fill_visible_thumbs)
 
     # ---- listing -------------------------------------------------------
     #: The catalogue's categories, which arrive in Spanish, said in the

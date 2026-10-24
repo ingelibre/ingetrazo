@@ -61,6 +61,15 @@ uniform float u_dash_px;
 in vec2 v_uv;
 in vec3 v_color;
 in vec3 v_world;
+in vec3 v_local;
+// Instanced component pass (#482): face colours and texture shades were
+// baked from the PROTOTYPE's normals against the fixed world light, so a
+// rotated copy kept the light of the unrotated one. With this on, the
+// baked tone is scaled by the light of the face as placed over the light
+// of the face as baked — the same 0.62..1.0 matte law as the bake
+// (Viewport._shade_factor), unquantised so neighbouring pixels agree.
+uniform int u_reshade;
+uniform vec3 u_light_fixed;
 
 out vec4 fragColor;
 
@@ -122,7 +131,14 @@ const float BAYER[16] = float[16](
      3.5/16.0, 11.5/16.0,  1.5/16.0,  9.5/16.0,
     15.5/16.0,  7.5/16.0, 13.5/16.0,  5.5/16.0);
 
+float matte(vec3 n) {
+    return 0.62 + 0.38 * abs(dot(n, u_light_fixed));
+}
+
 void main() {
+    // Taken before any discard, while the whole pixel quad is alive.
+    vec3 n_local = cross(dFdx(v_local), dFdy(v_local));
+    vec3 n_world = cross(dFdx(v_world), dFdy(v_world));
     if (u_stipple == 1) {
         if (mod(gl_FragCoord.x, 4.0) >= 1.0 && mod(gl_FragCoord.y, 4.0) >= 1.0)
             discard;
@@ -170,6 +186,14 @@ void main() {
         // path), where it is honest "you are looking at the inside" feedback.
         vec4 front = (u_use_vcolor == 1) ? vec4(v_color, u_opacity) : u_color;
         c = (gl_FrontFacing || u_use_vcolor == 1) ? front : u_back_color;
+    }
+    if (u_reshade == 1 && (u_use_texture == 1 || u_use_vcolor == 1)) {
+        float ll = length(n_local);
+        float lw = length(n_world);
+        if (ll > 1e-20 && lw > 1e-20) {
+            c.rgb = min(c.rgb * (matte(n_world / lw) / matte(n_local / ll)),
+                        vec3(1.0));
+        }
     }
     if (u_shadow_enable == 1) {
         if (u_shadow_overlay == 1) {

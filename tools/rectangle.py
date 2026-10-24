@@ -21,7 +21,8 @@ from PySide6.QtGui import QVector3D
 from core.edits import build_add_edges
 from core.i18n import tr
 from core.history import AddFaceCommand
-from tools.base import face_the_plane, PlaneLock, Tool, ToolContext
+from tools.base import (PLANE_LOCK_KEYS, PLANE_LOCK_NAMES, face_the_plane,
+                        PlaneLock, Tool, ToolContext)
 from core.units import fmt_pair
 
 
@@ -56,6 +57,8 @@ class RectangleTool(PlaneLock, Tool):
     name = "Rectangle"
     shortcut = "R"
     description = "Draw a rectangle from two opposite corners."
+    axis_source = True
+    axis_source_empty_only = True
     vcb_label = "Dimensions"
     # Only a width AND a height mean something here, so "200,100" is two
     # values (the list comma, #152), not the decimal 200.1.
@@ -300,12 +303,16 @@ class RectangleTool(PlaneLock, Tool):
             return []
         point, normal = self.preview_plane(vp, self.hover_point)
         u, v = _plane_axes(normal)
-        scale = self.world_per_pixel(vp, self.hover_point, u)
+        scale = self.plane_preview_scale(vp, self.hover_point, u, v)
         if scale is None:
             return []
         h = 0.5 * self.PREVIEW_PX * scale
         c = self.hover_point
-        pts = [c + u * h + v * h, c - u * h + v * h, c - u * h - v * h, c + u * h - v * h]
+        if self._from_center:
+            pts = [c + u * h + v * h, c - u * h + v * h,
+                   c - u * h - v * h, c + u * h - v * h]
+        else:
+            pts = [c, c + u * (2*h), c + (u+v) * (2*h), c + v * (2*h)]
         return [(pts[i], pts[(i + 1) % 4]) for i in range(4)]
 
     def plane_points(self):
@@ -371,6 +378,7 @@ class RectangleTool(PlaneLock, Tool):
             segments,
             detect_faces=False,
             extra=[AddFaceCommand(list(corners))],
+            plane_rebuild=True,     # on a populated plane (#538)
         )
         viewport.history.execute(cmd)
         self._reset()
@@ -416,7 +424,37 @@ class RectangleTool(PlaneLock, Tool):
                 self._arrow_square_lock = True
                 viewport.update()
                 return True
+        if self.start_point is not None and int(key) in PLANE_LOCK_KEYS:
+            return self._plane_lock_after_start(viewport, key)
         return self.plane_lock_key(viewport, key)
+
+    def _plane_lock_after_start(self, viewport, key: int) -> bool:
+        """An arrow AFTER the first corner still chooses the drawing plane
+        (issue #543: «after the first click the arrows still choose the
+        plane, and the typed size always follows the preview»).
+
+        ``PlaneLock.plane_lock_key`` refuses once ``start_point`` is down —
+        the arrows are the viewport's linear axis lock from there on — so
+        the key never reached the plane. Here it toggles the same lock and
+        RE-ANCHORS the captured plane on the first corner: both
+        ``_current_work_plane`` (pixel ray) and ``drawing_plane`` (axes)
+        read ``work_plane`` first, so the preview and a typed size land on
+        the locked plane. Freed, the plane falls back to the one under the
+        cursor."""
+        axis = PLANE_LOCK_KEYS[int(key)]
+        self.plane_ref = None
+        self.plane_lock = None if self.plane_lock == axis else axis
+        self.work_plane = (self.locked_work_plane(self.start_point)
+                           if self.plane_lock is not None else None)
+        flash = getattr(viewport, "flash_status", None)
+        if callable(flash):
+            flash(tr("Drawing plane locked: {plane}",
+                     plane=PLANE_LOCK_NAMES[self.plane_lock])
+                  if self.plane_lock else tr("Drawing plane free"))
+        update = getattr(viewport, "update", None)
+        if callable(update):
+            update()
+        return True
 
     def _reset(self) -> None:
         self.start_point = None

@@ -202,6 +202,25 @@ is logged once and removed, never breaking the frame or the cursor; the
 painter state is saved and restored around every overlay; document data
 that is not JSON-safe is dropped on save rather than failing it.
 
+### Toolbars created after startup
+
+A worker can publish its toolbars after `setup(app)` and the window's initial
+layout restoration have finished. Give every toolbar a stable `objectName`.
+Then call `app.restore_toolbar_layout()` from the worker's queued GUI-thread
+ready handler, after adding all its toolbars:
+
+```python
+def on_worker_ready(self):             # a slot on the GUI-thread host QObject
+    self.create_toolbars()             # stable object names, including their actions
+    self.app.restore_toolbar_layout()
+```
+
+The call restores saved docking areas, rows, order and visibility. Repeated
+ready notifications on the same `ExtensionApp` do nothing after restoration,
+so they cannot undo a subsequent user rearrangement. A fresh profile keeps
+the extension's default placement. This hook is for startup completion;
+do not create a new `ExtensionApp` and restore the layout on every command.
+
 ### Managing community extensions
 
 **Extensions ▸ Manage extensions…** reads the community catalog from

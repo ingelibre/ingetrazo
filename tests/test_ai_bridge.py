@@ -105,6 +105,50 @@ def test_bridge_runs_python_transactionally(monkeypatch):
         win.close()
 
 
+def test_a_sheet_made_through_the_bridge_is_one_undoable_step(monkeypatch):
+    """#694: a sheet appended by ``run_python`` was no step at all — the
+    reply said nothing changed, and the agent's undo took the user's last
+    edit while the sheet stayed. A script that failed after appending one
+    left it behind."""
+    from core.history import AddEdgeCommand
+    from plugins.ai_bridge import _Bridge
+    from views.main_window import MainWindow
+    from PySide6.QtGui import QVector3D
+    monkeypatch.setenv("INGETRAZO_AI_PORT", "0")
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        vp.history.execute(AddEdgeCommand(QVector3D(0, 0, 0),
+                                          QVector3D(3, 0, 0)))  # the user's
+        edges = len(vp.scene.mesh.edges)
+        sheets = len(vp.scene.compositions)
+        bridge = _Bridge(vp)
+        bridge.start()
+        add = ("from core.composition import Composicion\n"
+               "c = Composicion(name='A1')\n"
+               "c.frames.append(c.default_frame())\n"
+               "scene.compositions.append(c)\n")
+
+        reply = _ask(bridge, "run_python", {"code": add})
+        assert reply["ok"] and reply["result"]["changed"] is True
+        assert len(vp.scene.compositions) == sheets + 1
+        assert _ask(bridge, "undo")["result"]["ok"]
+        assert len(vp.scene.compositions) == sheets      # the sheet went
+        assert len(vp.scene.mesh.edges) == edges         # the user's edge stayed
+        assert _ask(bridge, "redo")["result"]["ok"]
+        assert vp.scene.compositions[-1].name == "A1"
+        assert vp.history.undo()
+
+        reply = _ask(bridge, "run_python",
+                     {"code": add + "raise RuntimeError('boom')"})
+        assert reply["result"]["error"] and reply["result"]["changed"] is False
+        assert len(vp.scene.compositions) == sheets      # nothing half-applied
+        bridge.stop()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def test_mcp_server_protocol_and_bridge_down_message(monkeypatch):
     import ingetrazo_mcp as mcp
     monkeypatch.setattr(mcp, "PORT", 1)            # nothing listens there

@@ -35,6 +35,10 @@ from __future__ import annotations
 from PySide6.QtGui import QMatrix4x4, QVector3D
 
 
+#: Holds an endpoint remembers (see Dimension._live).
+_MAX_HOLDS = 8
+
+
 class VertexAnchor:
     """A hold on one mesh vertex: the vertex, the mesh that registers it
     (to notice when it is gone) and the chain of groups whose transforms
@@ -76,6 +80,12 @@ class VertexAnchor:
             return True
         if not self.chain:
             return self.mesh is getattr(scene, "loose_mesh", scene.mesh)
+        if self.mesh is not getattr(self.chain[-1], "mesh", None):
+            # The group holds another mesh now: entering a component swaps
+            # the instance onto a world copy of its definition (placement
+            # cleared), leaving swaps it back. Read through the chain, the
+            # old mesh would land a placement off (#621).
+            return False
         return self.chain[0] in (getattr(scene, "groups", None) or ())
 
     def position(self, scene=None):
@@ -114,7 +124,10 @@ def resolve_vertex_anchor(scene, point: QVector3D, tol: float = 1e-4):
             return None
         return VertexAnchor(v, mesh, chain)
 
-    found = hit(scene.mesh, QVector3D(point), ())
+    # The LOOSE mesh, not ``scene.mesh``: inside a group edit that is the
+    # open group's, which the loop below finds with its chain — held as
+    # loose, the anchor was dead from birth (#621).
+    found = hit(getattr(scene, "loose_mesh", scene.mesh), QVector3D(point), ())
     if found is not None:
         return found
     for g in getattr(scene, "groups", None) or ():
@@ -211,33 +224,65 @@ class Dimension:
         self.text = text
         self.anchor_a: VertexAnchor | None = None
         self.anchor_b: VertexAnchor | None = None
+        #: Every hold each endpoint has had, oldest first (see _live).
+        self._holds: dict = {"a": [], "b": []}
         self._scene = None                   # set by bind(); re-binding
 
     # ---- endpoints ----------------------------------------------------------
-    def _live(self, which: str) -> QVector3D:
-        anchor = getattr(self, "anchor_" + which)
+    def _hold(self, which: str, anchor) -> None:
+        """Make ``anchor`` the endpoint's hold and remember it."""
+        setattr(self, "anchor_" + which, anchor)
         if anchor is None:
+            return
+        holds = self._holds_of(which)
+        if not any(h.vertex is anchor.vertex and h.mesh is anchor.mesh
+                   for h in holds):
+            holds.append(anchor)
+            del holds[:-_MAX_HOLDS]
+
+    def _holds_of(self, which: str) -> list:
+        holds = getattr(self, "_holds", None)
+        if holds is None:
+            holds = self._holds = {"a": [], "b": []}
+        return holds[which]
+
+    def _live(self, which: str) -> QVector3D:
+        holds = self._holds_of(which)
+        anchor = getattr(self, "anchor_" + which)
+        if anchor is None and not holds:
             return getattr(self, "_" + which)
         scene = self._scene
-        p = anchor.position(scene)
+        # The OLDEST hold still alive wins. A push collapsing the measured
+        # edge welds its vertex into the one below, and the endpoint takes
+        # that one; undo — or the next preview frame of the same drag —
+        # brings the first vertex back, and the dimension must go back to
+        # it, not stay on the one it fell onto (#254).
+        for h in holds:
+            p = h.position(scene)
+            if p is not None:
+                setattr(self, "anchor_" + which, h)
+                setattr(self, "_" + which, p)
+                return p
+        if anchor is not None and anchor not in holds:
+            p = anchor.position(scene)
+            if p is not None:
+                setattr(self, "_" + which, p)
+                return p
+        # The hold is gone — but the geometry may just have changed
+        # hands: Make Group puts new vertices in the group's mesh at
+        # the very spots the loose ones stood, Explode the other way
+        # round (Marco, 2026-09-20: a cube dimensioned, then cube AND
+        # dimension grouped, then scaled — «la cota no sigue»). Look
+        # again where the endpoint last was; freeze only when nothing
+        # stands there any more.
+        frozen = getattr(self, "_" + which)
+        again = (resolve_vertex_anchor(scene, frozen)
+                 if scene is not None else None)
+        p = again.position(scene) if again is not None else None
         if p is None:
-            # The hold is gone — but the geometry may just have changed
-            # hands: Make Group puts new vertices in the group's mesh at
-            # the very spots the loose ones stood, Explode the other way
-            # round (Marco, 2026-09-20: a cube dimensioned, then cube AND
-            # dimension grouped, then scaled — «la cota no sigue»). Look
-            # again where the endpoint last was; freeze only when nothing
-            # stands there any more.
-            frozen = getattr(self, "_" + which)
-            again = (resolve_vertex_anchor(scene, frozen)
-                     if scene is not None else None)
-            setattr(self, "anchor_" + which, again)
-            if again is None:
-                return frozen
-            p = again.position(scene)
-            if p is None:
-                setattr(self, "anchor_" + which, None)
-                return frozen
+            setattr(self, "anchor_" + which, None)
+            return frozen
+        self._hold(which, again)
         setattr(self, "_" + which, p)
         return p
 
@@ -263,8 +308,9 @@ class Dimension:
         positions, and the vertex at that very position is the one the
         drafter snapped to)."""
         self._scene = scene
-        self.anchor_a = resolve_vertex_anchor(scene, self._a)
-        self.anchor_b = resolve_vertex_anchor(scene, self._b)
+        self._holds = {"a": [], "b": []}
+        self._hold("a", resolve_vertex_anchor(scene, self._a))
+        self._hold("b", resolve_vertex_anchor(scene, self._b))
 
     def refresh_anchors(self, scene) -> None:
         """Re-take a hold that died — the vertex changed meshes — from the
@@ -274,10 +320,14 @@ class Dimension:
         self._scene = scene
         for which in ("a", "b"):
             anchor = getattr(self, "anchor_" + which)
-            if anchor is None or anchor.alive(scene):
+            if anchor is None and not self._holds_of(which):
                 continue
-            setattr(self, "anchor_" + which,
-                    resolve_vertex_anchor(scene, getattr(self, "_" + which)))
+            if any(h.alive(scene) for h in self._holds_of(which)):
+                continue
+            if anchor is not None and anchor.alive(scene):
+                continue
+            self._hold(which, resolve_vertex_anchor(
+                scene, getattr(self, "_" + which)))
 
     @property
     def anchored(self) -> bool:
@@ -344,6 +394,31 @@ class Dimension:
     def midpoint(self) -> QVector3D:
         ap, bp = self.line_points()
         return (ap + bp) * 0.5
+
+    def ends_riding(self, group_ids) -> tuple:
+        """Which endpoints (``"a"``, ``"b"``) hold a vertex placed by one of
+        the groups whose ``id`` is in *group_ids* — the ones a transform of
+        those groups carries along."""
+        return tuple(
+            which for which in ("a", "b")
+            if (an := getattr(self, "anchor_" + which)) is not None
+            and any(id(g) in group_ids for g in an.chain))
+
+    def carried(self, m: QMatrix4x4, ends) -> "Dimension":
+        """A frozen copy with the endpoints in *ends* taken through *m*:
+        what the dimension will read once a groups transform previewed
+        through *m* is committed (#621). The offset stays, as the commit
+        leaves it; :meth:`line_points` squares it to the new segment."""
+        import copy
+        c = copy.copy(self)
+        a, b = self.a, self.b
+        c._a = m.map(a) if "a" in ends else QVector3D(a)
+        c._b = m.map(b) if "b" in ends else QVector3D(b)
+        c.offset = QVector3D(self.offset)
+        c.anchor_a = c.anchor_b = None
+        c._holds = {"a": [], "b": []}
+        c._scene = None
+        return c
 
     @staticmethod
     def offset_for_cursor(a: QVector3D, b: QVector3D,

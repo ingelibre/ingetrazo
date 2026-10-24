@@ -451,10 +451,10 @@ FULL_SEEDS = range(50, 250)    # +800 sequences = 1000 total, the certification
 # is **draw-side**: ``_draw_rect`` (``build_add_edges`` + heal) leaving orphan
 # edges or an unmerged coplanar seam when a rectangle lands on certain faces —
 # a different subsystem from push/pull.
-KNOWN_BAD = {
-    "cube": {121},
-    "plan": {152, 210, 242},
-}
+# 2026-10-22: empty. cube-121 and plan-152/210 had been passing unnoticed;
+# plan-242 started passing once a room raised beside a sheet winds outward
+# (#550), which changes the faces the sequence picks.
+KNOWN_BAD: dict = {}
 
 
 def _run_or_xfail(scenario: str, seed: int) -> None:

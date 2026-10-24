@@ -144,9 +144,11 @@ def test_cruzar_la_rampa_llega_a_la_arista_de_enfrente():
 
 def test_sin_el_plano_el_magenta_lo_dejaba_a_ras_de_suelo():
     """La conducta vieja, para que se vea qué cambia: sin plano, el bloqueo
-    perpendicular es horizontal y el punto nunca sube por la rampa."""
+    perpendicular es horizontal y el punto nunca sube por la rampa. Lejos
+    de las aristas, sin ninguna bajo el cursor: una arista bajo el cursor
+    gana al bloqueo (#544)."""
     scene, _normal = _rampa()
-    cursor = V(2, 3.9, SUBIDA * 3.9 / 4.0)
+    cursor = V(2, 3.0, SUBIDA * 3.0 / 4.0)
     r = _snap_en_la_rampa(scene, None, V(2, 0, 0), cursor)
     assert r.kind == "reference"          # el magenta que restringía
     assert abs(r.point.z()) < 1e-9        # z = 0: fuera de la rampa

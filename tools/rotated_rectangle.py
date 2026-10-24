@@ -48,8 +48,14 @@ class RotatedRectangleTool(AxisMagnet, PlaneLock, Tool):
     # there the rotated rectangle has no default key either.
     shortcut = None
     description = (
-        "Draw a rectangle at any angle and in any plane: a base edge, "
-        "then the width.")
+    "Draw a rectangle at any angle and in any plane: a base edge, "
+    "then the width.")
+
+    # The arrows answer before the first click (choosing the plane of the
+    # base edge); once the base is down they are the viewport's linear axis
+    # lock again, which the width of the third click reads — do not take
+    # this away (``_width_dir``).
+    plane_lock_after_the_first_point = False
 
     @property
     def vcb_label(self) -> str:  # type: ignore[override]
@@ -400,7 +406,8 @@ class RotatedRectangleTool(AxisMagnet, PlaneLock, Tool):
         segments = [(corners[i], corners[(i + 1) % 4]) for i in range(4)]
         cmd = build_add_edges(
             viewport.scene, segments, detect_faces=False,
-            extra=[AddFaceCommand(list(corners))])
+            extra=[AddFaceCommand(list(corners))],
+            plane_rebuild=True)     # on a populated plane (#538)
         viewport.history.execute(cmd)
         self._reset()
         viewport.update()

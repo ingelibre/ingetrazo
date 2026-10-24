@@ -10,7 +10,10 @@ Marco Sumari Tellez <ing.sumari@gmail.com>
 
 Contributors
 -------------
-Pedro Caeiro <pacaeiro2@sapo.pt>  (github.com/pacaeiro)
+★ marks those who have given the most (measured by merged pull requests,
+reports and the work they carried); they also come first in Help ▸ About.
+
+★ Pedro Caeiro <pacaeiro2@sapo.pt>  (github.com/pacaeiro)
     Architectural and mechanical draftsman.
     Five merged pull requests (#11, #13, #15, #17, #21): the protractor
     shortcut conflict with pan, the exact axis Shift lock, opt-in larger
@@ -30,8 +33,14 @@ Pedro Caeiro <pacaeiro2@sapo.pt>  (github.com/pacaeiro)
     keeps its drawing undistorted and renders again off the release.
     Two more for 0.5.4: a moved view catches vertices where it is (#124)
     and a centred rectangle's square cue is a real square (#126).
+    And for 0.5.9: a typed length drops the axis lock (#568), stale
+    inference references cleared after undo (#556), the arrows and Shift
+    locking the drawing plane (#634, #608), planar alignment on selected
+    geometry (#690), first-point axis snaps for the drawing tools (#718),
+    camera-aware planar previews (#719) and switching orbit and pan during a
+    middle-button drag (#720). Over a hundred issues filed in all.
 
-Rafael García Rodríguez — "Rafael 3D" (youtube.com/@Rafa3D)
+★ Rafael García Rodríguez — "Rafael 3D" (youtube.com/@Rafa3D)
     Draftsman and 3D modelling reviewer.
     Hour-long filmed reviews of IngeTrazo, walking the program as a
     professional would and narrating every friction — the source of the
@@ -45,7 +54,7 @@ Rafael García Rodríguez — "Rafael 3D" (youtube.com/@Rafa3D)
     on its own. In his words: «a software can be very powerful but it can
     all go to waste if it does not meet the standards designers need».
 
-Ahsan Mehmood <mail.ahsanmehmood@gmail.com>  (github.com/iamahsanmehmood)
+★ Ahsan Mehmood <mail.ahsanmehmood@gmail.com>  (github.com/iamahsanmehmood)
     Author of OpenSKP, the clean-room pure-Python .skp reader IngeTrazo's
     native .skp import is built on, and reviewer of the patches contributed
     back upstream. His plugin pull requests (#1–#3) became the Extensions
@@ -56,7 +65,7 @@ dafrobozao <dafrobozao.93@gmail.com>  (github.com/dafrobozao)
     1 260 strings): IngeTrazo's third language, and the first one
     contributed from outside.
 
-Félix Riestra  (github.com/felixriestra)
+★ Félix Riestra  (github.com/felixriestra)
     The macOS package (pull request #64): the IngeTrazo.app bundle and the
     .dmg built by CI for Apple Silicon, with double-click opening of .igz
     and .skp files. IngeTrazo's first Mac version.
@@ -67,7 +76,7 @@ Félix Riestra  (github.com/felixriestra)
     extension, overlays that project world points, file types an extension
     opens itself, and workspaces that stand in for the model.
 
-Gabriel Rodríguez Arregin  (github.com/canalsecuario-blip)
+★ Gabriel Rodríguez Arregin  (github.com/canalsecuario-blip)
     The Back color in Styles (pull request #99): the Front/Back colour
     pair, the tint of faces seen from behind.
     Edit ▸ Invert Selection (pull request #113), on Ctrl+Shift+I, leaving
@@ -80,6 +89,14 @@ Gabriel Rodríguez Arregin  (github.com/canalsecuario-blip)
     The Browser: the model's groups and components as a tree (the
     Outliner, built with Carlos Martins's plugin, #87, on Roy Méndez
     Castro's scope, #219), and Views and sheets in the sheet composer.
+    The units system: one core to show and read every measure, the Units
+    panel (Ctrl+U), a choice at startup and 3D Text in the document's
+    unit. Fillet 3D bevels, profiles and corners; the Solid Inspector,
+    repairing problem by problem; Join Segments with its preview; the
+    Browser's make, explode, make unique and batch rename (#642); floating
+    toolbars that look like a window (#670), Restore default toolbars and
+    panels (#668, #677), tooltips with the name in bold (#667), the left
+    sidebar shortcut (#662) and About ▸ Copy to clipboard (#674).
 
 José Castro Basso — FADU–UDELAR, Montevideo  (github.com/castrobasso)
     Architect and teacher of architectural representation. Two-point
@@ -146,6 +163,97 @@ kagehak  (github.com/kagehak)
     STL import (pull request #161): binary and ASCII, the model's unit,
     flat surfaces merged on import, the reading off the window's thread,
     and Edit ▸ Simplify Mesh for any mesh.
+    The extension manager (pull request #464): the community catalogue
+    browsed, installed and updated from inside the program.
+
+Orian Beltrame  (github.com/orianbsilva)
+    Performance, measured: hovering with Line and Move up to twice as fast
+    (#312), the pick index split into grid cells so a ray tests only the
+    cells it crosses (#346), scene recalls and First Person that no longer
+    re-sync the whole model (#360, #361), the interaction benchmark that
+    times what the hand on the mouse feels (#308) and the fast suite
+    passing on Windows (#288).
+
+FG-RVT  (github.com/FG-RVT)
+    Push/Pull usability (pull requests #455, #487): a preselected face
+    arms the tool, the release commits the drag, the distance stays ready
+    to retype, a dashed line shows what it is locked onto, and the drag
+    previews the real result on split faces.
+
+Guy Wydouw  (github.com/GWydouw)
+    Eight macOS regressions fixed in text layout, frame colours and tests
+    (#435), and faces kept the right way round when erasing a dividing
+    line (#529).
+
+Aaron Kern  (github.com/Aaron1992)
+    German corrections (#705), Zoom Extents that frames the visible
+    reference images (#702), and what is pulled out of a tagged .skp group
+    keeping the group's tag (#703).
+
+Alex Joedt  (github.com/alexjoedt)
+    Keeps the German translation in line with the Spanish source (#669).
+
+PESI3D  (github.com/PESI3D)
+    German translation of the interface (#365).
+
+Yann Steffan  (github.com/YannFR81)
+    French translation of the interface (#295).
+
+Piotr Szmitkowski  (github.com/jackalski)
+    Polish translation of the interface (#424).
+
+RomanErshow  (github.com/RomanErshow)
+    Russian translation of the interface (#399).
+
+Francis Rebouças  (github.com/francisreboucas)
+    Sheet dimensions and level marks born in the document's units (#403),
+    and a sheet made through the AI bridge undone in one step (#694).
+
+pkoska  (github.com/pkoska)
+    The location map that starts no download inside its paint (#327), no
+    Rotate helper left behind by a tool change mid grip (#480), and a comma
+    after a decimal number starting the next typed value (#598).
+
+Matt Van Horn  (github.com/mvanhorn)
+    The AI Assistant no longer crashes in the Flatpak (#706).
+
+Luis Romo  (github.com/luisfergromo)
+    Offset with its distance live in the measurements box and hot retype
+    (#665).
+
+Victor Crespo  (github.com/vicc3d)
+    A confirmation before installing an unreviewed extension (#578).
+
+APBureauEtude  (github.com/APBureauEtude)
+    OBJ and MTL files read and written as UTF-8 on every platform (#523).
+
+SebWell  (github.com/SebWell)
+    The macOS package no longer bundles the Linux dwg2dxf (#515).
+
+BlackFlash73  (github.com/blackflash73)
+    RGBA face colours no longer break GLB, DAE and OBJ export (#462).
+
+borborborja  (github.com/borborborja)
+    Documents with textual curve IDs open again (#659).
+
+lelopes05  (github.com/lelopes05)
+    Malformed extension value labels guarded (#413).
+
+PINYO PATTANAWASANPORN  (github.com/PINYOPATTANAWASANPORN)
+    The base-map fix that stopped the program closing on Windows with AMD
+    graphics (#327), from their own fork.
+
+jonson7777  (github.com/jonson7777)
+    Bug reports and requests from daily use: Push/Pull keeping internal
+    faces, Offset's measurement box, toolbars and the sidebars.
+
+tomlai-git  (github.com/tomlai-git)
+    Reports on installation, the extension manager, keyboard shortcuts and
+    faceted curved surfaces.
+
+arthurarquitetoamb  (github.com/arthurarquitetoamb)
+    Feature requests from modelling practice: 3D text, copies along
+    Follow Me, points, and Push/Pull on lines.
 
 ---
 

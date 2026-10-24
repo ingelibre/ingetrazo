@@ -217,8 +217,51 @@ class PaintTool(Tool):
     def on_deactivate(self, viewport) -> None:
         viewport.set_hover(None)
 
+    @staticmethod
+    def _sampling(ctx: ToolContext) -> bool:
+        """Whether a click now samples (the eyedropper) instead of painting:
+        Alt held, or tapped (a toggle), or the toolbar's pipette armed."""
+        return (bool(ctx.modifiers & Qt.AltModifier)
+                or bool(getattr(ctx.viewport, "_alt_down", False))
+                or PaintTool.sample_armed)
+
+    @staticmethod
+    def _container_under(vp, group, x: float, y: float):
+        """The group or component a click at ``(x, y)`` paints as a whole —
+        a face inside a container reached from OUTSIDE it — or ``None``
+        when the click paints the face. The hover and the click both ask
+        here, so the marking always shows what the click will paint."""
+        if group is None:
+            return None
+        pick_obj = getattr(vp, "pick_group", None)
+        return pick_obj(x, y) if pick_obj is not None else None
+
+    @staticmethod
+    def _every_face_painted(obj) -> bool:
+        """Whether every face of the group or component — nested
+        placements included — carries its own material, so painting it as
+        a whole shows no change."""
+        from core.group import iter_placements
+        from core.materials import has_own_material
+        seen = False
+        for g, _m in iter_placements(obj):
+            for f in g.mesh.faces:
+                seen = True
+                if not has_own_material(f.attrs):
+                    return False
+        return seen
+
     def on_hover(self, ctx: ToolContext) -> None:
         vp = ctx.viewport
+        x, y = ctx.screen.x(), ctx.screen.y()
+        # A closed group or component is painted whole, so no face of it is
+        # marked: a marked face promised a paint the click does not do. The
+        # eyedropper samples one face and marks that face.
+        if not self._sampling(ctx):
+            _face, group = vp.pick_face_any(x, y)
+            if self._container_under(vp, group, x, y) is not None:
+                vp.set_hover(None)
+                return
         # A face inside a component is marked through the placement it was
         # reached through, or the marking is drawn where the part WOULD be
         # unplaced and assembled, not where the placed, exploded part is.
@@ -240,9 +283,7 @@ class PaintTool(Tool):
 
         # The pointer is the promise: whenever it shows the eyedropper — Alt
         # held, or tapped (a toggle) — the click samples.
-        alt = (bool(ctx.modifiers & Qt.AltModifier)
-               or bool(getattr(vp, "_alt_down", False)))
-        if alt or PaintTool.sample_armed:
+        if self._sampling(ctx):
             # Eyedropper: adopt the face's material (texture if it has one, else
             # colour) as the current paint material — identity included, so
             # sampling "Concreto visto" paints "Concreto visto". The side
@@ -303,27 +344,33 @@ class PaintTool(Tool):
         # (issue #47, @pacaeiro: «it's painting the picked face, instead of
         # the whole group or component»). Its default faces take the paint;
         # faces painted themselves keep their own.
-        if group is not None:
-            pick_obj = getattr(vp, "pick_group", None)
-            obj = (pick_obj(ctx.screen.x(), ctx.screen.y())
-                   if pick_obj is not None else None)
-            if obj is not None:
-                mat = PaintTool.current_material
-                vp.history.execute(CompoundCommand([
-                    SetFaceMaterialTagCommand(
-                        [], mat.name if mat is not None else None, mat),
-                    SetGroupMaterialCommand(
-                        obj, None if PaintTool.current_is_default
-                        else self._current_as_material()),
-                ]))
-                flash = getattr(vp, "flash_status", None)
-                if callable(flash):
-                    flash(tr("{name} painted as a whole; a face that already "
-                             "had its own material keeps it",
-                             name=getattr(obj, "name", "") or tr("Group")))
-                self._remember_current(vp)
-                vp.update()
-                return
+        obj = self._container_under(vp, group, ctx.screen.x(), ctx.screen.y())
+        if obj is not None:
+            mat = PaintTool.current_material
+            vp.history.execute(CompoundCommand([
+                SetFaceMaterialTagCommand(
+                    [], mat.name if mat is not None else None, mat),
+                SetGroupMaterialCommand(
+                    obj, None if PaintTool.current_is_default
+                    else self._current_as_material()),
+            ]))
+            flash = getattr(vp, "flash_status", None)
+            if callable(flash):
+                name = getattr(obj, "name", "") or tr("Group")
+                if self._every_face_painted(obj):
+                    # Nothing on screen changes: say why, and how (#807,
+                    # components from a .skp whose faces carry their own
+                    # material — the SketchUp rule, as in #408).
+                    flash(tr("{name}: every face has its own material, so "
+                             "nothing changed — open it and paint the "
+                             "faces", name=name))
+                else:
+                    flash(tr("{name} painted as a whole; a face that "
+                             "already had its own material keeps it",
+                             name=name))
+            self._remember_current(vp)
+            vp.update()
+            return
 
         # Paint the clicked face — or, if it is part of the current face
         # selection, the whole selection. A face on a curved surface (cylinder

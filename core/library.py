@@ -211,7 +211,9 @@ def model_dir(ident: str) -> Path | None:
         return None
     try:
         out.mkdir(parents=True, exist_ok=True)
+        from core import zip_limits
         with zipfile.ZipFile(z) as zf:
+            zip_limits.check(zf, ident)
             for m in zf.namelist():
                 # Flat by construction, but never trust an archive's names.
                 name = Path(m).name

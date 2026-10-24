@@ -23,6 +23,8 @@ exists to provide.
 """
 from __future__ import annotations
 
+import math
+
 from PySide6.QtGui import QVector3D
 
 #: Curated civil/architecture classes (IFC4 names).
@@ -30,7 +32,12 @@ IFC_CLASSES = [
     "IfcWall", "IfcSlab", "IfcColumn", "IfcBeam", "IfcFooting",
     "IfcRoof", "IfcStair", "IfcRamp", "IfcDoor", "IfcWindow",
     "IfcRailing", "IfcCovering", "IfcPile", "IfcMember", "IfcSpace",
+    "IfcReinforcingBar",
 ]
+
+#: Density of reinforcing steel, kg/m³ — the bar's weight is its volume
+#: times this, as a takeoff bills it.
+STEEL_DENSITY = 7850.0
 
 
 def next_object_id(scene) -> int:
@@ -82,6 +89,9 @@ def _loop_area(loop) -> float:
 
 def face_net_area(f) -> float:
     """Face area with hole loops (door/window openings) subtracted."""
+    net = getattr(f, "net_area", None)
+    if callable(net):
+        return net()
     area = f.area()
     for h in f.hole_loops:
         area -= _loop_area(h)
@@ -113,10 +123,29 @@ def face_set_volume(faces):
     return abs(total)
 
 
-def collect_objects(scene) -> list[dict]:
+def _group_signature(g) -> tuple:
+    """What a tagged group's quantities depend on: its tag and, for every
+    placement down its tree, the mesh, that mesh's mutation serial and the
+    composed matrix. Equal signatures measure the same."""
+    from core.group import iter_placements
+    tag = tuple(sorted((k, repr(v)) for k, v in (g.ifc or {}).items()))
+    parts = []
+    for placed, m in iter_placements(g):
+        mesh = placed.mesh
+        parts.append((id(mesh), getattr(mesh, "_mut_serial", None),
+                      None if m is None else tuple(m.data())))
+    return (id(g), tag, tuple(parts))
+
+
+def collect_objects(scene, memo: dict | None = None) -> list[dict]:
     """Every tagged BIM object in the document, with live quantities:
     ``{"key", "class", "name", "area", "volume" (or None), "faces" | "group"}``.
-    Loose-face objects group by tag id; each tagged group is one object."""
+    Loose-face objects group by tag id; each tagged group is one object.
+
+    ``memo`` (a dict the caller keeps between calls) reuses a tagged
+    group's object while its :func:`_group_signature` is unchanged, so an
+    edit re-measures only what it touched (#857: 238 rebar bars took 25 s
+    each time); entries no longer in the model are dropped from it."""
     out: list[dict] = []
     by_id: dict = {}
     for f in scene.loose_mesh.faces:
@@ -133,10 +162,19 @@ def collect_objects(scene) -> list[dict]:
             "volume": face_set_volume(faces),
             "faces": faces,
         })
+    seen = set()
     for g in scene.groups:
         tag = getattr(g, "ifc", None)
         if not tag:
             continue
+        sig = None
+        if memo is not None:
+            sig = _group_signature(g)
+            seen.add(sig)
+            hit = memo.get(sig)
+            if hit is not None and hit.get("group") is g:
+                out.append(hit)
+                continue
         # Quantities are world-space, and a component's nested placements
         # are part of the object being measured.
         if getattr(g, "xform", None) is not None or getattr(g, "children",
@@ -145,14 +183,20 @@ def collect_objects(scene) -> list[dict]:
             faces = list(world_mesh(g).faces)
         else:
             faces = list(g.mesh.faces)
-        out.append({
+        obj = {
             "key": ("group", id(g)),
             "class": tag.get("class", ""),
             "name": tag.get("name", ""),
             "area": face_set_area(faces),
             "volume": face_set_volume(faces),
             "group": g,
-        })
+        }
+        if memo is not None:
+            memo[sig] = obj
+        out.append(obj)
+    if memo is not None:
+        for sig in [k for k in memo if k not in seen]:
+            del memo[sig]
     return out
 
 
@@ -173,6 +217,7 @@ QSET_NAMES = {
     "IfcPile": "Qto_PileBaseQuantities",
     "IfcMember": "Qto_MemberBaseQuantities",
     "IfcSpace": "Qto_SpaceBaseQuantities",
+    "IfcReinforcingBar": "Qto_ReinforcingElementBaseQuantities",
 }
 
 #: Budget unit each class is measured in (the metrado unit downstream tools
@@ -184,6 +229,7 @@ METRADO_UNIT = {
     "IfcColumn": "m3", "IfcBeam": "m3", "IfcFooting": "m3",
     "IfcPile": "m", "IfcMember": "m", "IfcRailing": "m",
     "IfcDoor": "und", "IfcWindow": "und",
+    "IfcReinforcingBar": "kg",
 }
 
 
@@ -235,7 +281,8 @@ def class_quantities(ifc_class: str, faces):
     straight from the file.
 
     Returns ``(qset_name, entries, metrado)`` where ``entries`` is a list of
-    ``(kind, name, value)`` with kind in {"area", "volume", "length"} and
+    ``(kind, name, value)`` with kind in {"area", "volume", "length",
+    "weight"} and
     ``metrado`` is ``(value, unit)`` in the class's budget unit (value may
     be ``None`` when not computable, e.g. volume of an open set)."""
     faces = list(faces)
@@ -312,6 +359,17 @@ def class_quantities(ifc_class: str, faces):
         add("length", "Length", length)
         add("volume", "GrossVolume", volume)
         metrado = length
+    elif ifc_class == "IfcReinforcingBar":
+        # A straight bar (#495): its length is the longest extent, its
+        # diameter the round section that holds its volume, its weight the
+        # steel in it -- reinforcement is billed by the kilo.
+        length = max(dx, dy, dz)
+        add("length", "Length", length)
+        if closed and length > 1e-9:
+            add("length", "NominalDiameter",
+                2.0 * (volume / (math.pi * length)) ** 0.5)
+            add("weight", "Weight", volume * STEEL_DENSITY)
+            metrado = volume * STEEL_DENSITY
     elif ifc_class == "IfcCovering":
         net = sum(face_net_area(f) for f in faces)
         add("area", "GrossArea", total)

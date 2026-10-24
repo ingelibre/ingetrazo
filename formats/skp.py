@@ -130,14 +130,21 @@ def parse_skp(path, progress=None) -> dict:
     raise NeedsConverter(path, fmt)
 
 
-def apply_payload(scene, payload) -> str:
+def apply_payload(scene, payload, progress=None) -> str:
     """Add a parsed payload's geometry to ``scene`` as reference groups (an
     isolated ``Mesh`` per group, like the big-DAE import). Runs the same
     clean-up the DAE reference import does — coplanar fusion (merges the raw
     ``.skp`` polygons and drops double-sided duplicates) and smooth-edge
     softening — so a ``.skp`` opened through the pure backend looks identical
     to one that came through the converter. Cheap relative to the parse; the
-    caller wraps it in a command for undo. Returns the backend name."""
+    caller wraps it in a command for undo. Returns the backend name.
+
+    ``progress(frac, text)``, when given, is called now and then (at most
+    every 0.15 s) while the scene is built: on a 946 000-face file this
+    stage ran for minutes without returning to the event loop, and Windows
+    marked the window "Not Responding" (#787). It is only called while no
+    half-built group is in the scene — inside a mesh not yet added, or
+    between whole groups."""
     import gc
     from PySide6.QtGui import QVector3D
     from core.group import Group
@@ -152,18 +159,37 @@ def apply_payload(scene, payload) -> str:
     _gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        return _apply_payload_inner(scene, payload)
+        return _apply_payload_inner(scene, payload, progress)
     finally:
         if _gc_was_enabled:
             gc.enable()
 
 
-def _apply_payload_inner(scene, payload) -> str:
+def _apply_payload_inner(scene, payload, progress=None) -> str:
+    import time
     from PySide6.QtGui import QVector3D
     from core.group import Group
     from core.mesh import Mesh
     from formats.dae import _add_fused
     from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
+
+    groups = payload.get("groups", []) or []
+    protos = payload.get("protos", []) or []
+    n_parts = max(1, len(groups) + 2 * len(protos))
+    done = [0, 0.0]               # parts built, time of the last report
+
+    def _tick(step=0):
+        """Report progress through this stage (0.75 → 0.96 of the bar),
+        throttled so the event loop is pumped without slowing the build."""
+        done[0] += step
+        if progress is None:
+            return
+        now = time.monotonic()
+        if now - done[1] < 0.15:
+            return
+        done[1] = now
+        progress(0.75 + 0.21 * min(1.0, done[0] / n_parts),
+                 "Building geometry…")
 
     def _q(p):
         # Payload corners are plain [x, y, z] lists from the openskp
@@ -236,7 +262,9 @@ def _apply_payload_inner(scene, payload) -> str:
                 # float noise between the payload's segment coordinates and
                 # the stored vertex positions can never drop a flag (the old
                 # rounded-cell comparison could).
-                for a, b in soft_edges:
+                for k, (a, b) in enumerate(soft_edges):
+                    if not k & 4095:
+                        _tick()     # one group can carry 1.7 M flags
                     va = mesh.vertex_at(QVector3D(a[0], a[1], a[2]))
                     vb = mesh.vertex_at(QVector3D(b[0], b[1], b[2]))
                     if va is None or vb is None or va is vb:
@@ -361,7 +389,8 @@ def _apply_payload_inner(scene, payload) -> str:
             scene.text_labels.append(TextLabel(
                 anchor, label - anchor, raw["text"]))
 
-    for gp in payload.get("groups", []):
+    for gp in groups:
+        _tick(1)
         mesh = _build_mesh(gp["faces"], gp.get("soft_edges"))
         if mesh.faces:
             g = Group(mesh, name=gp.get("name"))
@@ -388,9 +417,10 @@ def _apply_payload_inner(scene, payload) -> str:
     # prototype may PLACE other prototypes — the sharing a component already
     # has inside itself — and those become the instance's ``children``, one
     # object to the user however deep the tree.
-    protos = payload.get("protos", []) or []
-    proto_meshes = [_build_mesh(pr["faces"], pr.get("soft_edges"))
-                    for pr in protos]
+    proto_meshes = []
+    for pr in protos:
+        _tick(1)
+        proto_meshes.append(_build_mesh(pr["faces"], pr.get("soft_edges")))
 
     def _place(idx, xf, layer=None, depth=0):
         pr = protos[idx]
@@ -407,6 +437,7 @@ def _apply_payload_inner(scene, payload) -> str:
     for idx, pr in enumerate(protos):
         if not proto_meshes[idx].faces and not (pr.get("children") or []):
             continue
+        _tick(1)
         layers = pr.get("instance_layers") or []
         for i, xf in enumerate(pr.get("instances", []) or []):
             g = _place(idx, xf, layers[i] if i < len(layers) else None)

@@ -133,6 +133,99 @@ def test_the_axis_cue_rule_lives_in_the_engine():
     assert (via_vp.kind, via_vp.axis) == ("on_axis", "x")
 
 
+def test_supported_drawing_tools_expose_an_axis_source_before_click():
+    from tools.arc import ArcTool, CenterArcTool, ThreePointArcTool
+    from tools.circle import CircleTool
+    from tools.line import LineTool
+    from tools.rectangle import RectangleTool
+
+    for tool_type in (LineTool, RectangleTool, CircleTool, ArcTool,
+                      ThreePointArcTool, CenterArcTool):
+        tool = tool_type()
+        assert tool.axis_source is True, tool_type.__name__
+        assert tool.axis_source_empty_only is True, tool_type.__name__
+        assert tool.start_point is None, tool_type.__name__
+
+
+def test_supported_drawing_tools_snap_to_a_visible_axis_at_first_point():
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from tools.arc import ArcTool, CenterArcTool, ThreePointArcTool
+    from tools.circle import CircleTool
+    from tools.line import LineTool
+    from tools.rectangle import RectangleTool
+    from views.viewport import Viewport
+
+    vp = Viewport(None)
+    vp.resize(1000, 600)
+    vp.camera.set_aspect(1000, 600)
+    vp.camera.set_view("top")
+    vp.camera.target = V(0, 0, 0)
+    vp.camera.distance = 12
+    px = vp._world_to_pixel(V(3, 0, 0))
+    cursor = (px[0], px[1] + 2)
+
+    for tool_type in (LineTool, RectangleTool, CircleTool, ArcTool,
+                      ThreePointArcTool, CenterArcTool):
+        vp.set_active_tool(tool_type())
+        candidate = vp._world_from_pixel(*cursor)
+        assert candidate is not None
+        got = vp.inference._axis_source_cue(
+            SnapResult(candidate, "none"), *cursor)
+        assert got.kind == "on_axis", tool_type.__name__
+        assert got.axis == "x", tool_type.__name__
+        assert abs(got.point.y()) < 1e-6
+        assert abs(got.point.z()) < 1e-6
+
+
+def test_drawing_axis_source_only_replaces_an_empty_space_snap():
+    from types import SimpleNamespace
+    from core.inference import InferenceEngine
+
+    class DrawingTool:
+        axis_source = True
+        axis_source_empty_only = True
+        start_point = None
+
+    vp = SimpleNamespace(
+        active_tool=DrawingTool(),
+        pick_axis=lambda *_args: "x",
+        _project_to_lock_line=lambda *_args: V(3, 0, 0),
+        _axis_source_visible=lambda *_args: True,
+        _is_occluded=lambda *_args: False,
+    )
+    engine = InferenceEngine.__new__(InferenceEngine)
+    engine.viewport = vp
+    empty = SnapResult(V(3, 0, 0), "none")
+    face = SnapResult(V(3, 0, 0), "on_face")
+
+    assert engine._axis_source_cue(empty, 300, 200).kind == "on_axis"
+    assert engine._axis_source_cue(face, 300, 200) is face
+
+
+def test_drawing_axis_source_ignores_hidden_or_end_on_axes():
+    from types import SimpleNamespace
+    from core.inference import InferenceEngine
+
+    class DrawingTool:
+        axis_source = True
+        axis_source_empty_only = True
+        start_point = None
+
+    candidate = SnapResult(V(3, 0, 0), "none")
+    for visible, occluded in ((False, False), (True, True)):
+        vp = SimpleNamespace(
+            active_tool=DrawingTool(),
+            pick_axis=lambda *_args: "x",
+            _project_to_lock_line=lambda *_args: V(3, 0, 0),
+            _axis_source_visible=lambda *_args: visible,
+            _is_occluded=lambda *_args: occluded,
+        )
+        engine = InferenceEngine.__new__(InferenceEngine)
+        engine.viewport = vp
+        assert engine._axis_source_cue(candidate, 300, 200) is candidate
+
+
 # ---- 2. a guide point with its segment ------------------------------------
 
 def test_from_a_vertex_the_second_click_leaves_a_guide_point_with_its_segment():
@@ -187,3 +280,24 @@ def test_the_segment_is_drawn_and_survives_the_igz(tmp_path):
     igz.load_into(back, path)
     (b,) = back.guides
     assert b.origin is not None and (b.origin - V(1, 1)).length() < 1e-6
+
+
+def test_guide_points_mode_keeps_the_segment_from_the_axis_to_a_centre():
+    """#693 (Neil): SketchUp's guide point keeps its dashed segment back
+    to the start — from a spot on the red axis to a circle's centre. Ours
+    left a bare point in the guide-points mode, so the picture could not
+    be drawn in any of the three."""
+    scene = Scene()
+    vp = _Vp(scene, axis="x")
+    tool = TapeMeasureTool()
+    tool._mode = "point"                              # Ctrl once
+    tool.on_click(_ctx(vp, 2, 0, kind="on_edge"))     # on the red axis
+    tool.on_click(_ctx(vp, 5, 3, kind="center"))      # the circle's centre
+    (g,) = scene.guides
+    assert not g.is_line and (g.point - V(5, 3)).length() < 1e-6
+    assert g.origin is not None and (g.origin - V(2, 0)).length() < 1e-6
+    tool.on_click(_ctx(vp, 0, 0))
+    tool.on_hover(_ctx(vp, 0, 4))
+    assert tool.on_value(vp, 2.5)                     # typed, the same
+    g = scene.guides[-1]
+    assert (g.point - V(0, 2.5)).length() < 1e-6 and g.origin == V(0, 0)

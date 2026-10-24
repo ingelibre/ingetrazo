@@ -5,8 +5,9 @@
 Binary STL: every face (the loose mesh plus every group) is triangulated and
 written with its outward geometric normal. The engine keeps solids
 outward-consistent (``orient_outward``), so the normals come out right for
-slicers. STL carries no colour or units — it is pure geometry in the model's
-own coordinates (metres).
+slicers. STL carries no colour or units, so the file is written in the unit
+the caller picks: ``save_stl`` defaults to the model's own metres, and the
+export menu asks — millimetres first, which is what slicers assume (#513).
 """
 from __future__ import annotations
 
@@ -151,7 +152,7 @@ def _ascii_stl(path: Path, scale: float, progress, file_size: int):
 
 
 def load_stl(scene, path, progress=None, scale: float = 1.0,
-             simplify_mode: str = "none") -> None:
+             simplify_mode: str = "none"):
     """Add binary or ASCII STL geometry to ``scene``.
 
     STL has no unit declaration, so callers supply the metres-per-unit scale.
@@ -159,18 +160,24 @@ def load_stl(scene, path, progress=None, scale: float = 1.0,
     ``"all"`` (coplanar surfaces in any orientation); curved facets stay split.
     Small imports are merged into the editable loose mesh; larger imports are
     kept as a named reference group to avoid costly topology cleanup.
+    Returns the survey offset the file was moved by (formats/recenter.py),
+    or ``None``.
     """
+    report: dict = {}
     target = parse_stl(path, progress=progress, scale=scale,
-                       simplify_mode=simplify_mode)
+                       simplify_mode=simplify_mode, report=report)
     add_stl_mesh(scene, path, target)
+    return report.get("offset")
 
 
 def parse_stl(path, progress=None, scale: float = 1.0,
-              simplify_mode: str = "none"):
+              simplify_mode: str = "none", report: dict | None = None):
     """Parse and prepare STL geometry without touching a scene.
 
     Safe to call from a worker thread; returned mesh insertion belongs on the
-    UI thread via :func:`add_stl_mesh`.
+    UI thread via :func:`add_stl_mesh`. A file in survey coordinates is moved
+    near the origin before its first vertex turns single precision; the
+    offset lands in ``report["offset"]`` (``None`` when it was not moved).
     """
     import gc
 
@@ -178,14 +185,15 @@ def parse_stl(path, progress=None, scale: float = 1.0,
     gc.disable()
     try:
         return _parse_stl_inner(Path(path), progress=progress, scale=scale,
-                                simplify_mode=simplify_mode)
+                                simplify_mode=simplify_mode,
+                                report=report)
     finally:
         if was_enabled:
             gc.enable()
 
 
 def _parse_stl_inner(path: Path, progress=None, scale: float = 1.0,
-                     simplify_mode: str = "none"):
+                     simplify_mode: str = "none", report: dict | None = None):
     if not math.isfinite(scale) or scale <= 0:
         raise ValueError("STL unit scale must be a positive finite number")
     if simplify_mode not in ("none", "principal", "all"):
@@ -204,24 +212,23 @@ def _parse_stl_inner(path: Path, progress=None, scale: float = 1.0,
                       and (size == expected_size
                            or header[:5].lower() != b"solid"))
 
+    import numpy as np
     from core.mesh import Mesh
+    from formats.recenter import Bounds
     target = Mesh()
     batch = []
-    np = None
+    # The triangles wait in double precision until the whole file is
+    # measured: a file in survey coordinates must move near the origin
+    # BEFORE its first vertex turns single precision in the mesh.
+    chunks: list = []
+    box = Bounds()
 
     def flush_batch():
-        nonlocal np
         if not batch:
             return
-        if np is None:
-            import numpy as np_module
-            np = np_module
-        count = len(batch)
         positions = np.asarray(batch, dtype=np.float64).reshape(-1, 3)
-        target.add_faces_bulk(
-            positions,
-            np.full(count, 3, dtype=np.int64),
-            np.ones(count, dtype=np.int64))
+        box.add_array(positions)
+        chunks.append(positions)
         batch.clear()
 
     if binary:
@@ -248,6 +255,18 @@ def _parse_stl_inner(path: Path, progress=None, scale: float = 1.0,
                 if len(batch) >= _BATCH_SIZE:
                     flush_batch()
     flush_batch()
+
+    offset = box.offset()
+    if report is not None:
+        report["offset"] = offset
+    shift = np.asarray(offset or (0.0, 0.0, 0.0), dtype=np.float64)
+    for positions in chunks:
+        count = len(positions) // 3
+        target.add_faces_bulk(
+            positions - shift if offset else positions,
+            np.full(count, 3, dtype=np.int64),
+            np.ones(count, dtype=np.int64))
+    chunks.clear()
 
     if not target.faces:
         raise ValueError("STL file contains no usable triangles")
@@ -293,19 +312,22 @@ def add_stl_mesh(scene, path, target) -> None:
     scene.version += 1
 
 
-def save_stl(scene, path) -> None:
-    """Write the scene as a binary STL to ``path``."""
+def save_stl(scene, path, unit: str = "m") -> None:
+    """Write the scene as a binary STL to ``path``, its coordinates in
+    ``unit`` (a key of ``STL_UNITS``). The model is in metres; a slicer reads
+    an STL as millimetres, so a metre file came in 1000x too small (#513)."""
+    scale = 1.0 / STL_UNITS[unit]
     tris = list(iter_triangles(scene))
     with open(Path(path), "wb") as f:
         f.write(b"IngeTrazo STL export".ljust(80, b"\x00"))  # 80-byte header
         f.write(struct.pack("<I", len(tris)))
         for a, b, c in tris:
-            n = _normal(a, b, c)
+            n = _normal(a, b, c)    # unit length: the scale leaves it alone
             f.write(struct.pack(
                 "<12fH",
                 n.x(), n.y(), n.z(),
-                a.x(), a.y(), a.z(),
-                b.x(), b.y(), b.z(),
-                c.x(), c.y(), c.z(),
+                *_scaled_point((a.x(), a.y(), a.z()), scale),
+                *_scaled_point((b.x(), b.y(), b.z()), scale),
+                *_scaled_point((c.x(), c.y(), c.z()), scale),
                 0,  # attribute byte count
             ))

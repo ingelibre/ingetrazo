@@ -82,6 +82,24 @@ for opt_src, opt_dst in [
 # macOS: built from the release tarball by release-macos.yml. A platform
 # whose files are not there builds without DWG, and --check says so.
 import sys as _sys
+
+
+def _is_macho(path):
+    """True when *path* begins with a Mach-O / universal binary magic.
+
+    macOS builds its dwg2dxf from the LibreDWG tarball in release-macos.yml;
+    the file committed to git is the LINUX ELF, so a plain macOS checkout
+    must not bundle it (a dead 15 MB binary that also fooled --check).
+    """
+    try:
+        head = path.read_bytes()[:4]
+    except OSError:
+        return False
+    return head in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",
+                    b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",
+                    b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca")
+
+
 _DWG_FILES = {
     "linux": ["dwg2dxf"],
     "win32": ["dwg2dxf.exe", "libredwg-0.dll", "libiconv-2.dll"],
@@ -90,8 +108,14 @@ _DWG_FILES = {
 for _plat, _names in _DWG_FILES.items():
     if _sys.platform.startswith(_plat):
         for _n in _names:
-            if (ROOT / "vendor/libredwg/bin" / _n).is_file():
-                datas.append((f"vendor/libredwg/bin/{_n}", "vendor/libredwg/bin"))
+            _src = ROOT / "vendor/libredwg/bin" / _n
+            if not _src.is_file():
+                continue
+            if _plat == "darwin" and not _is_macho(_src):
+                print('spec: dwg2dxf is not a Mach-O — not bundled (macOS '
+                      'DWG needs the LibreDWG build from release-macos.yml)')
+                continue
+            datas.append((f"vendor/libredwg/bin/{_n}", "vendor/libredwg/bin"))
         datas.append(("vendor/libredwg/SOURCES.md", "vendor/libredwg"))
 
 # ── Hidden imports ───────────────────────────────────────────────────────────
@@ -116,6 +140,13 @@ hiddenimports += ['manifold3d', 'core.solids', 'tools.solid_tools']
 # Copy/Paste between windows (#76): imported lazily by the viewport and
 # the main window.
 hiddenimports += ['formats.clip']
+# The optional native kernels (rust/ingetrazo_core, built with maturin):
+# shipped when the build environment has them installed, and simply
+# absent otherwise (core._native falls back to Python).
+import importlib.util as _ilu
+hiddenimports += ['core._native']
+if _ilu.find_spec('ingetrazo_core') is not None:
+    hiddenimports += ['ingetrazo_core']
 hiddenimports += [
     # The bundled plugins import these at RUN time, so static analysis never
     # sees them and they were left out: the AI assistant died on load with
@@ -307,7 +338,25 @@ if sys.platform == 'win32':
                   if not (Path(b[0]).name.lower() in _DWG_DLLS
                           and Path(b[0]).parent == Path('.'))]
 
-pyz = PYZ(a.pure, a.zipped_data)
+# Qt's HTTPS on Windows goes through Windows' own TLS (schannel), never
+# OpenSSL. Qt looks for libssl-3-x64.dll beside the .exe, then in System32,
+# and reaches the copy in _internal only through PATH — so a machine where
+# another program left OpenSSL 3.6 in System32 got that libssl, linked
+# against OUR libcrypto 3.5, and the extension manager died on «CRYPTO_calloc
+# not found» (#564). Choosing schannel in code is too late: asking Qt which
+# backends exist already loads OpenSSL. Without the plugin Qt picks
+# schannel. Python's own ssl uses libssl-3.dll / libcrypto-3.dll (no -x64)
+# and stays.
+if sys.platform == 'win32':
+    _QT_OPENSSL = {'qopensslbackend.dll', 'libssl-3-x64.dll',
+                   'libcrypto-3-x64.dll'}
+    _before = len(a.binaries)
+    a.binaries = [b for b in a.binaries
+                  if Path(b[0]).name.lower() not in _QT_OPENSSL]
+    print('spec: dropped %d OpenSSL files of Qt (#564)'
+          % (_before - len(a.binaries)))
+
+pyz =PYZ(a.pure, a.zipped_data)
 
 icon = None
 if sys.platform == 'win32':

@@ -138,7 +138,8 @@ def test_make_unique_detaches_the_instance():
     a.xform = QMatrix4x4()
     scene.groups.append(a)
     hist.execute(MakeUniqueCommand(a))
-    assert a.xform is None and a.mesh is not proto  # its own mesh now
+    assert a.mesh is not proto                      # its own mesh now
+    assert a.is_component()                         # still a component
     assert hist.undo()
     assert a.mesh is proto and a.xform is not None  # sharing restored
 

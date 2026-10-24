@@ -106,3 +106,61 @@ def test_with_selection_ignores_what_is_not_selected():
     with_model = X.segments_for(scene, X.WITH_MODEL)
     assert len(only_ab) == 6
     assert len(with_model) > len(only_ab)             # the bar counts too
+
+
+
+def test_nearly_parallel_faces_do_not_divide_by_zero():
+    """Two planes a hair apart in angle: QVector3D works in float32, so
+    their normals' dot rounded to exactly 1 and the crossing line divided
+    by zero — Intersect Faces died on a real model (found testing #541)."""
+    a = X.world_polys(_box(0, 0, 0, 1, 1, 1, RED).mesh.faces[0])
+    tilt = 2e-5
+    m = Mesh()
+    f = m.add_face([V(-1, -1, 0), V(2, -1, 0), V(2, 2, 2 * tilt),
+                    V(-1, 2, 2 * tilt)])
+    b = X.world_polys(f)
+    assert X.cross(a, b) == []                        # no crossing, no crash
+
+
+def test_the_numpy_box_test_finds_the_same_pairs():
+    """The box test runs in NumPy blocks now; it must pick exactly the
+    pairs the one-by-one ``_boxes_touch`` picked."""
+    import random
+    rnd = random.Random(3)
+    polys = []
+    for _ in range(120):
+        x, y, z = rnd.uniform(0, 10), rnd.uniform(0, 10), rnd.uniform(0, 3)
+        polys += [p for p in (X.world_polys(f) for f in _box(
+            x, y, z, x + rnd.uniform(0.2, 2), y + rnd.uniform(0.2, 2),
+            z + rnd.uniform(0.2, 2), RED).mesh.faces) if p is not None]
+    lo, hi = X._boxes(polys)
+    same = {(i, j) for i in range(len(polys)) for j in range(i + 1, len(polys))
+            if X._boxes_touch(polys[i], polys[j])}
+    assert set(X._touching(lo, hi, lo, hi, same=True)) == same
+    half = len(polys) // 2
+    a, b = polys[:half], polys[half:]
+    la, ha = X._boxes(a)
+    lb, hb = X._boxes(b)
+    cross_pairs = {(i, j) for i in range(len(a)) for j in range(len(b))
+                   if X._boxes_touch(a[i], b[j])}
+    assert set(X._touching(la, ha, lb, hb, same=False)) == cross_pairs
+
+
+def test_with_model_and_everything_selected_still_cuts():
+    """Select All + With Model: the selection is cut against the whole
+    model, itself included — taking it out of «the rest» left nothing
+    (#541)."""
+    scene = Scene()
+    hist = History(scene)
+    for f in _box(0, 0, 0, 2, 2, 2, RED).mesh.faces:
+        scene.mesh.add_face(f.vertices)
+    bar = _box(1, -1, 1, 1.5, 3, 3, BLUE)
+    scene.groups.append(bar)
+    scene.selection = set(scene.mesh.faces) | {bar}
+    segs = X.segments_for(scene, X.WITH_MODEL)
+    scene.selection = set(scene.mesh.faces)
+    assert len(segs) == len(X.segments_for(scene, X.WITH_MODEL)) > 0
+    scene.selection = set(scene.mesh.faces) | {bar}
+    hist.execute(build_add_edges(scene, segs, detect_faces=True))
+    assert len(scene.mesh.faces) == 10                # 2 sides + top split
+    assert solid_report(scene.mesh)[0]

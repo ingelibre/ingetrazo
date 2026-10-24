@@ -183,16 +183,27 @@ class Group:
         self.children = []
 
     def make_unique(self) -> None:
-        """Make Unique: this instance stops sharing with its
-        siblings. Without nested placements it bakes into a classic group
-        (``materialize``); WITH them it keeps its placement and its tree —
-        a private copy of its own mesh and of every subgroup below it — so
-        the subgroups stay subgroups instead of being fused into one mesh
-        (issue #90, @fafecm: «it explodes all the subgroups within it»)."""
+        """Make Unique: this instance stops sharing with its siblings.
+
+        A COMPONENT stays a component — a definition of its own with this
+        one copy, placed where it was: a private copy of its mesh and of
+        every subgroup below it, so editing it never reaches the others
+        and the subgroups stay subgroups (issue #90, @fafecm: «it explodes
+        all the subgroups within it»). It used to come out a group, which
+        is not what Make Unique says (#620: «the new component»).
+
+        A copied GROUP (the copy entering a group makes unique on the way
+        in) bakes into a classic group without nested placements
+        (``materialize``), or keeps its tree, privately, with them."""
+        from PySide6.QtGui import QMatrix4x4
+        if self.is_component():
+            self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
+            self.children = [_independent_copy(c)
+                             for c in (self.children or ())]
+            return
         if not self.children:
             self.materialize()
             return
-        from PySide6.QtGui import QMatrix4x4
         self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
         self.children = [_independent_copy(c) for c in self.children]
         # Nothing shared any more: what is left is a group of groups.
@@ -276,10 +287,42 @@ def make_billboard_group(image_path: str, height: float, name: str,
     return g
 
 
+def _implicit_uvw(face, tex, minv):
+    """The world→UV map a textured face WITHOUT a fitted ``uvw`` is
+    rendering with, recovered at its PRE-transform positions: the planar
+    projection (:func:`core.texture.face_uv_axes`) is anchored to the
+    face's normal, so once the geometry turns, the projection turns with
+    the NEW normal and the texture slides — while the live preview keeps
+    the UVs it generated before the turn. Materialising the projection
+    the face is showing now (positions run back through ``minv``, the
+    inverse of the transform about to be accounted for) pins that look
+    into a ``uvw`` the remap below can carry. ``None`` for a degenerate
+    face, whose projection is meaningless either way."""
+    from PySide6.QtGui import QVector3D
+
+    from core.texture import face_uv_axes
+    pts = [minv.map(p) for p in face.vertices]
+    if len(pts) < 3:
+        return None
+    normal = QVector3D()
+    for i in range(1, len(pts) - 1):
+        normal = QVector3D.crossProduct(pts[i] - pts[0], pts[i + 1] - pts[0])
+        if normal.length() > 1e-12:
+            break
+    if normal.length() <= 1e-12:
+        return None
+    gu, cu, gv, cv = face_uv_axes(tex, normal.normalized())
+    return [gu.x(), gu.y(), gu.z(), float(cu),
+            gv.x(), gv.y(), gv.z(), float(cv)]
+
+
 def _remap_uvws(mesh, m) -> None:
     """Rewrite each face's world→UV affine map (``uvw``) so that evaluating
     it at the TRANSFORMED positions reproduces the prototype's UVs:
-    g' = L⁻ᵀ·g, c' = c − g'·t."""
+    g' = L⁻ᵀ·g, c' = c − g'·t. A face still on the implicit planar
+    projection gets that projection materialised first (at its
+    pre-transform pose), so it turns WITH the geometry instead of being
+    re-projected onto the turned face."""
     minv, ok = m.inverted()
     if not ok:
         return
@@ -288,7 +331,9 @@ def _remap_uvws(mesh, m) -> None:
         t = f.attrs.get("texture") if f.attrs else None
         uvw = t.get("uvw") if t else None
         if not uvw or len(uvw) != 8:
-            continue
+            uvw = _implicit_uvw(f, t, minv) if t else None
+            if uvw is None:
+                continue
         new = list(uvw)
         for base in (0, 4):
             gx, gy, gz, c = uvw[base:base + 4]

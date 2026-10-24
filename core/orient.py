@@ -139,11 +139,12 @@ class _PackedTris:
     every triangle in pure Python — the O(F²·T) hot loop that froze the app as
     solids grew; one vectorised pass per ray replaces it."""
 
-    __slots__ = ("a", "e1", "e2", "face_idx", "bvh")
+    __slots__ = ("a", "e1", "e2", "face_idx", "bvh", "native")
 
     def __init__(self, a, e1, e2, face_idx) -> None:
         self.a, self.e1, self.e2, self.face_idx = a, e1, e2, face_idx
         self.bvh = None             # _Clusters, built on first use
+        self.native = None          # the Rust engine's copy, ditto
 
 
 #: Below this many triangles a ray just tests them all.
@@ -315,7 +316,7 @@ class _ParityQuery:
 def ray_parity_outside(origin: QVector3D, direction: QVector3D,
                        triangle_lists, rng: random.Random,
                        packed: Optional[_PackedTris] = None,
-                       mask=None) -> Optional[bool]:
+                       mask=None, skip: Optional[int] = None) -> Optional[bool]:
     """Whether ``origin`` sits *outside* the volume bounded by the triangles, by
     crossing parity along jittered rays around ``direction`` (majority vote —
     a single ray can graze a shared edge and miscount). Even crossings ahead →
@@ -329,10 +330,13 @@ def ray_parity_outside(origin: QVector3D, direction: QVector3D,
 
     Pass ``packed`` (+ optional boolean ``mask`` over its triangles) to reuse a
     prebuilt triangle set across many queries; otherwise ``triangle_lists`` is
-    packed on the fly. Either way the crossing count is vectorised."""
+    packed on the fly. Either way the crossing count is vectorised.
+    ``skip``: a face index of ``packed`` whose triangles do not count (the
+    face asking), on top of ``mask``."""
     if packed is None:
         packed = _pack_lists(triangle_lists)
         mask = None
+        skip = None
     n = direction.normalized()
     u, v = _basis(n)
     # The rays first (the same draws from ``rng``, in the same order).
@@ -345,6 +349,42 @@ def ray_parity_outside(origin: QVector3D, direction: QVector3D,
                  + u * rng.uniform(-_JITTER, _JITTER)
                  + v * rng.uniform(-_JITTER, _JITTER)).normalized()
         rays.append(d)
+    from core._native import native
+    if native is not None and packed.a.shape[0]:
+        # The Rust engine: the same exact test over the same triangles,
+        # found through its own ray index.
+        import numpy as np
+        if packed.native is None:
+            packed.native = native.ParityTris(
+                np.ascontiguousarray(packed.a, dtype=np.float64),
+                np.ascontiguousarray(packed.e1, dtype=np.float64),
+                np.ascontiguousarray(packed.e2, dtype=np.float64),
+                np.ascontiguousarray(packed.face_idx, dtype=np.int64))
+        dirs = np.array([[d.x(), d.y(), d.z()] for d in rays],
+                        dtype=np.float64)
+        counts = packed.native.crossings(
+            (origin.x(), origin.y(), origin.z()), dirs,
+            None if mask is None else np.ascontiguousarray(mask, dtype=bool),
+            None if skip is None else int(skip))
+    else:
+        counts = _python_crossings(origin, n, rays, packed, mask, skip)
+    outside_votes = 0
+    inside_votes = 0
+    for crossings in counts:
+        if crossings % 2 == 0:
+            outside_votes += 1
+        else:
+            inside_votes += 1
+    if outside_votes == inside_votes:
+        return None
+    return outside_votes > inside_votes
+
+
+def _python_crossings(origin, n, rays, packed, mask, skip) -> list:
+    """Crossing counts of ``rays`` from ``origin`` (NumPy)."""
+    if skip is not None:
+        keep = packed.face_idx != skip
+        mask = keep if mask is None else mask & keep
     if packed.a.shape[0] >= _BVH_MIN_TRIS:
         if packed.bvh is None:
             packed.bvh = _Clusters(packed)
@@ -357,22 +397,12 @@ def ray_parity_outside(origin: QVector3D, direction: QVector3D,
                              packed.e2[rows], packed.face_idx[rows])
         if mask is not None:
             mask = mask[rows]
-    query = _ParityQuery(origin, packed, mask)
-    outside_votes = 0
-    inside_votes = 0
-    for crossings in query.crossings_many(rays):
-        if crossings % 2 == 0:
-            outside_votes += 1
-        else:
-            inside_votes += 1
-    if outside_votes == inside_votes:
-        return None
-    return outside_votes > inside_votes
+    return _ParityQuery(origin, packed, mask).crossings_many(rays)
 
 
 def _face_side_state(face, tris_by_face: dict, rng: random.Random,
                      packed: Optional[_PackedTris] = None,
-                     mask=None) -> Optional[str]:
+                     mask=None, skip: Optional[int] = None) -> Optional[str]:
     """Classify ``face`` against the volume bounded by ``tris_by_face`` (the
     current *boundary* faces): ``"outward"`` / ``"inward"`` for a boundary face
     (by which side is empty), ``"interior"`` for a partition with material on
@@ -397,13 +427,13 @@ def _face_side_state(face, tris_by_face: dict, rng: random.Random,
     # The region just past the probe along the normal being outside is
     # exactly the normal pointing outward.
     ahead = ray_parity_outside(probe, n, others, rng,
-                               packed=packed, mask=mask)
+                               packed=packed, mask=mask, skip=skip)
     if ahead is not False:
         return "outward" if ahead else None
     # The +normal side is inside. An inward-wound boundary face has its *other*
     # side outside; an interior partition is inside both ways.
     behind = ray_parity_outside(probe, -n, others, rng,
-                                packed=packed, mask=mask)
+                                packed=packed, mask=mask, skip=skip)
     if behind is True:
         return "inward"
     return "interior" if behind is False else None
@@ -573,8 +603,8 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
             c = comp_of[f]
             sp = sub[c]
             state = _face_side_state(
-                f, boundary, rng, packed=sp,
-                mask=base_by_comp[c] & (sp.face_idx != fidx[f]))
+                f, boundary, rng, packed=sp, mask=base_by_comp[c],
+                skip=fidx[f])
             if state == "interior":
                 interior_now.add(f)
         if interior_now == {f for f in scope if f not in boundary}:
@@ -610,8 +640,7 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
         c = comp_of[f]
         sp = sub[c]
         if _face_side_state(f, boundary, rng, packed=sp,
-                            mask=base_by_comp[c] & (sp.face_idx != fidx[f])) \
-                == "inward":
+                            mask=base_by_comp[c], skip=fidx[f]) == "inward":
             to_flip.append(f)
     # Through an open mesh (the scoped path above) the flips are checked
     # before they stay: a solid whose shared edges disagree MORE after the

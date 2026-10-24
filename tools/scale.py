@@ -258,16 +258,31 @@ class ScaleTool(Tool):
                        for i, t in enumerate(grip.params))
         return self._grip_pos(_Grip(params, grip.mask))
 
+    #: Half the side of a drawn grip square, in pixels.
+    _GRIP_HALF_PX = 5.0
+
     def _grip_under(self, viewport, sx: float, sy: float) -> _Grip | None:
+        """The grip under the cursor. Where two grips overlap on screen the
+        one in front wins — it is the one drawn on top (#833) — otherwise
+        the nearest on screen."""
         threshold = float(getattr(viewport, "pick_threshold_px", 10.0))
-        best, best_d = None, threshold
+        cam = getattr(viewport, "camera", None)
+        eye = cam.eye() if cam is not None else QVector3D()
+        fwd = cam.target - eye if cam is not None else QVector3D()
+        best, best_key = None, None
         for g in self._grips:
-            px = viewport._world_to_pixel(self._grip_pos(g))
+            pos = self._grip_pos(g)
+            px = viewport._world_to_pixel(pos)
             if px is None:
                 continue
             d = ((px[0] - sx) ** 2 + (px[1] - sy) ** 2) ** 0.5
-            if d < best_d:
-                best, best_d = g, d
+            if d >= threshold:
+                continue
+            inside = d <= self._GRIP_HALF_PX
+            depth = QVector3D.dotProduct(pos - eye, fwd)
+            key = (0, depth) if inside else (1, d)
+            if best_key is None or key < best_key:
+                best, best_key = g, key
         return best
 
     # ---- Cursor → factors ---------------------------------------------------

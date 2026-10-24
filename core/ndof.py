@@ -162,9 +162,13 @@ def from_spacenavd(x, y, z, rx, ry, rz) -> NdofSample:
 
 def from_hid(x, y, z, rx, ry, rz) -> NdofSample:
     """The raw USB HID frame every 3Dconnexion device reports (what Windows
-    Raw Input hands over): X right, Y toward the user, Z DOWN."""
-    # Right-hand rotations about those axes: +rx brings the cap's top toward
-    # the user, +rz turns it clockwise seen from above (Z points down), +ry
-    # tips it to the left.
-    return NdofSample.from_raw(right=x, up=-z, forward=-y,
-                               tilt=-rx, spin=-rz, roll=-ry)
+    Raw Input hands over): X right, Y AWAY from the user, Z down.
+
+    Not guessed: FreeCAD turns both drivers into one frame, (−x, y, z, −rx,
+    ry, rz) from the HID report and (−x, −z, −y, −rx, −rz, −ry) from
+    spacenavd, so HID y = −spacenavd z, z = −y, ry = −rz, rz = −ry. Through
+    that, this is :func:`from_spacenavd`, which a SpaceMouse owner checked
+    axis by axis on Linux (#108). The first version had Y toward the user:
+    on Windows the zoom ran backwards (a reviewer's video, 12-10)."""
+    return NdofSample.from_raw(right=x, up=-z, forward=y,
+                               tilt=-rx, spin=-rz, roll=ry)

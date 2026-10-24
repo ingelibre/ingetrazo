@@ -448,3 +448,71 @@ def test_instance_edit_flows_make_unique():
     assert xs == {0.0, 1.0}
     hist.undo()
     assert g1 in scene.groups and not scene.mesh.faces
+
+
+def _lines_dae(tmp_path, with_face=True):
+    """A floor square (optional) plus a node of loose ``<lines>`` and a
+    ``<linestrips>``, as SketchUp writes a drawing's 2D lines (#633)."""
+    face_geom = """
+    <geometry id="sq"><mesh>
+      <source id="sq-pos">
+        <float_array id="sq-pos-arr" count="12">0 0 0 1 0 0 1 1 0 0 1 0</float_array>
+        <technique_common><accessor source="#sq-pos-arr" count="4" stride="3"/></technique_common>
+      </source>
+      <vertices id="sq-v"><input semantic="POSITION" source="#sq-pos"/></vertices>
+      <triangles count="2"><input semantic="VERTEX" source="#sq-v" offset="0"/>
+        <p>0 1 2 0 2 3</p></triangles>
+    </mesh></geometry>""" if with_face else ""
+    face_node = ('<node id="f"><instance_geometry url="#sq"/></node>'
+                 if with_face else "")
+    text = f"""<?xml version="1.0"?>
+<COLLADA {_NSDECL} version="1.4.1">
+  <asset><unit meter="1.0"/><up_axis>Z_UP</up_axis></asset>
+  <library_geometries>{face_geom}
+    <geometry id="ln"><mesh>
+      <source id="ln-pos">
+        <float_array id="ln-pos-arr" count="15">3 0 0 4 0 0 3 1 0 4 1 0 5 1 0</float_array>
+        <technique_common><accessor source="#ln-pos-arr" count="5" stride="3"/></technique_common>
+      </source>
+      <vertices id="ln-v"><input semantic="POSITION" source="#ln-pos"/></vertices>
+      <lines count="1"><input semantic="VERTEX" source="#ln-v" offset="0"/>
+        <p>0 1</p></lines>
+      <linestrips count="1"><input semantic="VERTEX" source="#ln-v" offset="0"/>
+        <p>2 3 4</p></linestrips>
+    </mesh></geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="scene">
+      {face_node}
+      <node id="lines"><matrix>1 0 0 0 0 1 0 0 0 0 1 2 0 0 0 1</matrix>
+        <instance_geometry url="#ln"/></node>
+    </visual_scene>
+  </library_visual_scenes>
+</COLLADA>
+"""
+    p = tmp_path / "lines.dae"
+    p.write_text(text)
+    return p
+
+
+def _loose(scene):
+    return sorted(
+        tuple(sorted((round(e.v0.position.x(), 3), round(e.v1.position.x(), 3))))
+        + (round(e.v0.position.y(), 3), round(e.v0.position.z(), 3))
+        for e in scene.mesh.edges if not e.faces)
+
+
+def test_loose_lines_come_in_as_edges_633(tmp_path):
+    scene = Scene()
+    load_dae(scene, str(_lines_dae(tmp_path)))
+    assert len(scene.mesh.faces) == 1
+    # The <lines> pair and the two strip segments, lifted by the node matrix.
+    assert _loose(scene) == [(3.0, 4.0, 0.0, 2.0), (3.0, 4.0, 1.0, 2.0),
+                             (4.0, 5.0, 1.0, 2.0)]
+
+
+def test_a_file_of_only_lines_still_opens_633(tmp_path):
+    scene = Scene()
+    load_dae(scene, str(_lines_dae(tmp_path, with_face=False)))
+    assert len(scene.mesh.faces) == 0
+    assert len(_loose(scene)) == 3

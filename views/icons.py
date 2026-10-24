@@ -61,7 +61,10 @@ def _canvas():
 
 
 def _accent() -> QColor:
-    return QColor(243, 115, 41)   # IngeTrazo orange, for endpoint dots / handles
+    """Endpoint dots / handles: IngeTrazo orange unless Preferences ▸
+    General ▸ Accent colour says otherwise (views.theme)."""
+    from views.theme import accent_color
+    return accent_color()
 
 
 # ---- Per-tool drawings ---------------------------------------------------------
@@ -1881,6 +1884,11 @@ def tool_icon(key: str) -> QIcon:
 
 _CURSOR_SIZE = 32   # logical cursor canvas (48-space icons scale onto it)
 _cursor_cache: dict = {}
+
+
+def clear_cursor_cache() -> None:
+    """Forget the drawn cursors (the accent colour changed)."""
+    _cursor_cache.clear()
 
 # Drawing tools: pencil cursor + a mini badge of the shape at bottom-right
 # (None = bare pencil, for Line). Hotspot = the pencil tip.

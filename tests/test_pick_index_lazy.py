@@ -215,3 +215,48 @@ def test_with_a_frame_on_screen_the_depth_cull_changes_no_answer(vp):
     _lazy(vp, True)
     assert _answers(vp, pts) == full
     assert [_near_edges(vp, *vp._world_to_pixel(p)) for p in pts[:6]] == full_e
+
+
+def _owner_holds(e):
+    """Whether a group pseudo-edge lies on the cube its owner places."""
+    inv, ok = e.group.xform.inverted()
+    assert ok
+    return all(-1e-4 <= c <= 1 + 1e-4
+               for p in (inv.map(e.a), inv.map(e.b))
+               for c in (p.x(), p.y(), p.z()))
+
+
+#: Where four cubes meet around the cursor (and one beside a single cube):
+#: each query bakes one more and the cap lets an earlier one go, so the
+#: lazy part of the index changes order between two queries.
+_GAPS = [V(1.6, 1.6, 1.0), V(7.6, 4.6, 1.0), V(1.6, 7.6, 1.0),
+         V(13.6, 4.6, 1.0), V(4.6, 1.6, 1.0), V(10.6, 7.6, 1.0),
+         V(1.45, 0.5, 1.0)]
+
+
+def test_the_snap_edges_come_from_the_index_they_were_measured_on(vp):
+    # The SPR of #158, hovering with Line: the candidates were measured on
+    # the index as it stood and then read from the one a second query
+    # baked — under the cap that one had let others go, so an edge came
+    # with another group's owner, or past the end ("index 1281112 is out
+    # of bounds for axis 0 with size 1247456").
+    _lazy(vp, True, cap=12)                             # two cubes at most
+    vp._PICK_NEW_PER_QUERY = 1                          # one more per query
+    for p in _GAPS:
+        x, y = vp._world_to_pixel(p)
+        for e in vp._nearby_group_edges(x, y):
+            assert _owner_holds(e)
+            pa, pb = vp._world_to_pixel(e.a), vp._world_to_pixel(e.b)
+            from core.snap import _closest_on_segment_2d
+            assert _closest_on_segment_2d((x, y), pa, pb)[0] < 48.0 + 1e-6
+
+
+def test_the_hovered_group_edge_comes_from_the_index_it_was_measured_on(vp):
+    _lazy(vp, True, cap=12)
+    vp._PICK_NEW_PER_QUERY = 1
+    for p in _GAPS:
+        x, y = vp._world_to_pixel(p)
+        e = vp.pick_edge_any(x, y)
+        if e is not None and getattr(e, "group", None) is not None:
+            assert _owner_holds(e)
+        vp.pick_group(x, y)                             # must not raise

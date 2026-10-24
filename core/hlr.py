@@ -907,13 +907,27 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     out: list = []
     out_w: list = []
     out_k: list = []
+    # The native kernels (core._native) answer the two costly questions —
+    # every edge's visible spans, and the Profiles probes — for all rows at
+    # once, with the same arithmetic; the rest of the pass stays here.
+    from core._native import native
+    occ = n_off = n_spans = None
+    probes: list = []                   # (row in out, mid, nrm, zm)
+    if native is not None and tv2 is not None:
+        occ = native.HlrOccluders(np.ascontiguousarray(TC))
+        n_off, n_spans = occ.visible_spans(
+            np.ascontiguousarray(A), np.ascontiguousarray(B), float(eps))
     for i in range(len(A)):
         a2, b2 = A[i, :2], B[i, :2]
         az, bz = A[i, 2], B[i, 2]
         is_cut = i >= n_hard + n_sil
         base_kind = (KIND_CUT if is_cut
                      else KIND_PROFILE if i >= n_hard else KIND_EDGE)
-        if tv2 is None:
+        if occ is not None:
+            spans = [(float(s0), float(s1))
+                     for s0, s1 in n_spans[n_off[i]:n_off[i + 1]]]
+            idx = None
+        elif tv2 is None:
             spans = [(0.0, 1.0)]
             idx = None
         else:
@@ -967,7 +981,13 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
                 # span's midpoint; background on either side = outline.
                 d = q - p
                 ln = math.hypot(d[0], d[1])
-                if ln > 1e-12:
+                if ln > 1e-12 and occ is not None:
+                    nrm = np.array([-d[1] / ln, d[0] / ln]) * delta
+                    mid = (p + q) * 0.5
+                    tm = (t0 + t1) * 0.5
+                    zm = az + tm * (bz - az)
+                    probes.append((len(out), mid, nrm, zm))
+                elif ln > 1e-12:
                     nrm = np.array([-d[1] / ln, d[0] / ln]) * delta
                     mid = (p + q) * 0.5
                     tm = (t0 + t1) * 0.5
@@ -987,6 +1007,15 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             out_k.append(kind)
             w0, w1 = E[i, 0, :], E[i, 1, :]
             out_w.append((w0 + t0 * (w1 - w0), w0 + t1 * (w1 - w0)))
+    if probes:
+        flags = occ.profile_flags(
+            np.array([pr[1] for pr in probes], dtype=np.float64),
+            np.array([pr[2] for pr in probes], dtype=np.float64),
+            np.array([pr[3] for pr in probes], dtype=np.float64),
+            float(delta), float(ptol))
+        for (row, _m, _n, _z), outline in zip(probes, flags):
+            if outline:
+                out_k[row] = KIND_PROFILE
     segs = np.asarray(out) if out else np.empty((0, 4))
     world = np.asarray(out_w) if out_w else np.empty((0, 2, 3))
     kinds = (np.asarray(out_k, dtype=np.int8) if out_k

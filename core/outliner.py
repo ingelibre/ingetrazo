@@ -252,6 +252,20 @@ def in_component(groups, group) -> bool:
     return False
 
 
+def editing_inside_component(scene) -> bool:
+    """Whether the open group is a component, or sits inside one: what is
+    made there would change a shared definition, so Make Group and Make
+    Component refuse there, as the Browser's drag and drop does. An open
+    component instance has lost its matrix for the session (it edits a
+    world copy), so the edit stack says it, not ``is_component``."""
+    stack = getattr(scene, "_edit_stack", None) or ()
+    if any(lvl.get("share") is not None or lvl.get("definition") is not None
+           for lvl in stack):
+        return True
+    ctx = getattr(scene, "edit_group", None)
+    return ctx is not None and in_component(scene.groups, ctx)
+
+
 def reparent_problem(groups, chosen, target) -> str | None:
     """Why ``chosen`` cannot go into ``target`` (``None``: the model) —
     ``"cycle"``, ``"component"``, ``"locked"`` — or ``None`` when it can
@@ -465,3 +479,78 @@ def fit_scale(scene, view, w_mm: float, h_mm: float,
         if n >= need:
             return float(n)
     return float(STANDARD_SCALES[-1])
+
+
+def material_choices(scene, recent=()) -> list:
+    """``[(label, paint)]`` for the Browser's «Material ▸» menu (#565,
+    @fafecm: paint several rows from the Browser without going to the
+    Materials tab): the document's materials by name, then the recent
+    paints not already listed, newest first. ``paint`` is a container
+    material — the keys a face's attrs use, as the Paint tool hands one to
+    a group — so a texture travels as well as a colour."""
+    from tools.paint import recent_key
+    out: list = []
+    seen: set = set()
+    mats = getattr(scene, "materials", None) or {}
+    for name in sorted(mats, key=lambda n: n.casefold()):
+        m = mats[name]
+        if m.color is None and m.texture is None:
+            continue
+        paint: dict = {"mat": name}
+        if m.texture is not None:
+            paint["texture"] = dict(m.texture)
+        else:
+            paint["color"] = list(m.color)
+        if m.opacity is not None:
+            paint["opacity"] = float(m.opacity)
+        out.append((name, paint))
+        seen.add(recent_key(paint))
+    for entry in recent or ():
+        key = recent_key(entry)
+        if key in seen or not (entry.get("color") or entry.get("texture")):
+            continue
+        seen.add(key)
+        out.append((paint_label(entry), dict(entry)))
+    return out
+
+
+def paint_label(paint: dict) -> str:
+    """A name for a paint in a menu: its material's, the image's file name,
+    or the colour as ``#RRGGBB``."""
+    import os
+    if paint.get("mat"):
+        return str(paint["mat"])
+    tex = paint.get("texture")
+    if tex and tex.get("path"):
+        return os.path.basename(str(tex["path"]))
+    col = paint.get("color") or (0.0, 0.0, 0.0)
+    return "#" + "".join(f"{max(0, min(255, round(float(c) * 255))):02X}"
+                         for c in list(col)[:3])
+
+
+# ---- Renaming several rows at once (#565, #87) --------------------------------
+
+def numbered_names(count: int, base: str, start: int = 1,
+                   digits: int = 2) -> list:
+    """``count`` names: ``base`` and a number padded to ``digits`` —
+    ``W01, W02, W03…`` from ``start``."""
+    digits = max(1, int(digits))
+    return [f"{base}{n:0{digits}d}" for n in range(int(start),
+                                                    int(start) + count)]
+
+
+def replaced_names(names, find: str, replace: str,
+                   match_case: bool = False) -> list:
+    """Each name with every ``find`` swapped for ``replace`` — any case
+    unless ``match_case``. An empty ``find`` changes nothing."""
+    import re
+    if not find:
+        return list(names)
+    flags = 0 if match_case else re.IGNORECASE
+    pattern = re.compile(re.escape(find), flags)
+    return [pattern.sub(lambda _m: replace, n) for n in names]
+
+
+def affixed_names(names, prefix: str = "", suffix: str = "") -> list:
+    """Each name with ``prefix`` before it and ``suffix`` after it."""
+    return [f"{prefix}{n}{suffix}" for n in names]

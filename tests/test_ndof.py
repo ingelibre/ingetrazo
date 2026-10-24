@@ -152,13 +152,24 @@ def test_spacenavd_frame():
 
 
 def test_hid_frame():
-    # X right, Y toward the user, Z down: pressing the cap down is +z.
+    # X right, Y away from the user, Z down: pressing the cap down is +z.
     s = from_hid(350, 0, 350, 0, 0, 0)
     assert s.right == pytest.approx(1.0) and s.up == pytest.approx(-1.0)
-    assert from_hid(0, -350, 0, 0, 0, 0).forward == pytest.approx(1.0)
+    assert from_hid(0, 350, 0, 0, 0, 0).forward == pytest.approx(1.0)
     # with Z down, +rz is clockwise seen from above
     assert from_hid(0, 0, 0, 0, 0, 350).spin == pytest.approx(-1.0)
     assert from_hid(0, 0, 0, 999, 0, 0).tilt == pytest.approx(-1.0)  # clipped
+
+
+@pytest.mark.parametrize("hid", [
+    (350, 0, 0, 0, 0, 0), (0, 350, 0, 0, 0, 0), (0, 0, 350, 0, 0, 0),
+    (0, 0, 0, 350, 0, 0), (0, 0, 0, 0, 350, 0), (0, 0, 0, 0, 0, 350)])
+def test_hid_and_spacenavd_agree_through_freecads_frames(hid):
+    # FreeCAD posts (−x, y, z, −rx, ry, rz) for a HID report and
+    # (−x, −z, −y, −rx, −rz, −ry) for spacenavd: the same physical move,
+    # read by either driver, must give the same sample.
+    x, y, z, rx, ry, rz = hid
+    assert from_hid(*hid) == from_spacenavd(x, -z, -y, rx, -rz, -ry)
 
 
 # ---- wire formats ------------------------------------------------------------
@@ -207,6 +218,8 @@ def test_the_linux_driver_reads_a_spacenavd_socket(tmp_path, monkeypatch):
     got, buttons = [], []
     dev.motion.connect(lambda s, dt: got.append((s, dt)))
     dev.button.connect(lambda n, down: buttons.append((n, down)))
+    raws = []
+    dev.raw.connect(raws.append)
     try:
         assert dev.start() and dev.backend_name == "spacenavd"
         conn, _ = server.accept()
@@ -219,7 +232,64 @@ def test_the_linux_driver_reads_a_spacenavd_socket(tmp_path, monkeypatch):
         assert got and got[0][0].right == pytest.approx(1.0)
         assert got[0][1] == pytest.approx(0.016)       # the daemon's period
         assert buttons == [(1, True)]
+        assert raws == [(350, 0, 0, 0, 0, 0)]   # as the daemon sent it
         conn.close()
     finally:
         dev.stop()
         server.close()
+
+
+# ---- the driver's wheel imitation --------------------------------------------
+
+def test_the_cap_counts_as_in_use_past_the_dead_zone_and_a_moment_after(
+        monkeypatch):
+    from views import ndof_input
+    dev = ndof_input.NdofInput()
+    clock = [100.0]
+    monkeypatch.setattr(ndof_input.time, "monotonic", lambda: clock[0])
+    assert not dev.in_use()
+    dev._emit_motion(NdofSample(right=0.03))      # resting noise
+    assert not dev.in_use()
+    dev._emit_motion(NdofSample(forward=0.5))
+    assert dev.in_use()
+    clock[0] += dev.WHEEL_QUIET_S - 0.05
+    assert dev.in_use()
+    clock[0] += 0.1
+    assert not dev.in_use()
+    # the dead zone is the user's: a wider one ignores a bigger resting drift
+    monkeypatch.setattr(ndof_input, "current_settings",
+                        lambda: NdofSettings(deadzone=0.2))
+    dev._emit_motion(NdofSample(forward=0.15))
+    assert not dev.in_use()
+    dev._emit_motion(NdofSample(forward=0.25))
+    assert dev.in_use()
+
+
+def test_wheel_notches_do_not_zoom_while_the_cap_moves_the_view(monkeypatch):
+    """3Dconnexion's driver turns a push of the cap into wheel notches for
+    programs it does not know; with ours reading the device too, the view
+    took a zoom step about eight times a second (12-10 video)."""
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QApplication
+    from views import ndof_input
+    from views.viewport import Viewport
+    vp = Viewport(None)
+    vp.resize(400, 300)
+
+    def notch():
+        QApplication.sendEvent(vp, QWheelEvent(
+            QPointF(200, 150), QPointF(200, 150), QPoint(), QPoint(0, 120),
+            Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False))
+
+    class Busy:
+        def in_use(self):
+            return True
+
+    monkeypatch.setattr(ndof_input, "_shared", Busy())
+    d0 = vp.camera.distance
+    notch()
+    assert vp.camera.distance == d0
+    monkeypatch.setattr(ndof_input, "_shared", None)
+    notch()
+    assert vp.camera.distance < d0                # an ordinary wheel zooms

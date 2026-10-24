@@ -12,6 +12,7 @@ decimal places (≈ 0.1 mm at metric scale) are treated as the same node.
 """
 from __future__ import annotations
 
+import math
 from collections import deque
 from typing import Iterable, Optional
 
@@ -172,22 +173,31 @@ def is_planar(vertices: list[QVector3D], tolerance: float = _PLANAR_TOLERANCE) -
         e2 = vertices[2] - vertices[0]
         return QVector3D.crossProduct(e1, e2).length() > 1e-6
 
-    v0 = vertices[0]
-    plane_normal: Optional[QVector3D] = None
-    for i in range(1, n - 1):
-        for j in range(i + 1, n):
-            cross = QVector3D.crossProduct(vertices[i] - v0, vertices[j] - v0)
-            if cross.length() > 1e-6:
-                plane_normal = cross.normalized()
-                break
-        if plane_normal is not None:
-            break
-    if plane_normal is None:
-        return False
-    for v in vertices:
-        if abs(QVector3D.dotProduct(plane_normal, v - v0)) > tolerance:
-            return False
-    return True
+    # The plane is the one through the first vertex and the two that span
+    # the widest triangle with it, worked out in double precision. It used
+    # to be the first pair whose cross product passed 1e-6 — on a circle,
+    # two neighbours nearly in line — in single precision, so the plane
+    # tilted with the distance from the origin and at 1000 m a third of
+    # flat tilted circles came out "not planar" (#571). Measuring against
+    # a plane through real vertices, and not a best-fit one, keeps what is
+    # refused: a best fit would share a corner lifted 1.5 mm out as
+    # ±0.4 mm and call the warped quad flat.
+    pts = [(v.x(), v.y(), v.z()) for v in vertices]
+    ax, ay, az = pts[0]
+    rel = [(x - ax, y - ay, z - az) for x, y, z in pts]
+    ux, uy, uz = max(rel, key=lambda p: p[0] * p[0] + p[1] * p[1] + p[2] * p[2])
+    nx = ny = nz = 0.0
+    best = 0.0
+    for vx, vy, vz in rel:
+        cx, cy, cz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+        size = cx * cx + cy * cy + cz * cz
+        if size > best:
+            best, nx, ny, nz = size, cx, cy, cz
+    length = math.sqrt(best)
+    if length <= 1e-6:
+        return False                      # every vertex in one line
+    nx, ny, nz = nx / length, ny / length, nz / length
+    return all(abs(nx * x + ny * y + nz * z) <= tolerance for x, y, z in rel)
 
 
 def segment_intersection(
@@ -402,11 +412,82 @@ def loop_inside_face(mother: Face, loop: list[QVector3D],
     if not all(_strictly_inside_2d(proj(v), poly2) for v in loop):
         return False
     if outside_holes:
+        loop2 = [proj(v) for v in loop]
         for hole in mother.holes:
             hole2 = [proj(p) for p in hole]
-            if any(_strictly_inside_2d(proj(v), hole2) for v in loop):
+            if any(_strictly_inside_2d(q, hole2) for q in loop2):
+                return False
+            # A loop that wraps or straddles the hole without a corner in
+            # it overlaps the opening all the same; punched as a second hole
+            # the two crossed, the face triangulated over its own opening
+            # and the next rebuild filled it (#519).
+            if (any(_strictly_inside_2d(q, loop2) for q in hole2)
+                    or _loops_cross_2d(loop2, hole2)):
                 return False
     return True
+
+
+def _loops_cross_2d(a: list, b: list) -> bool:
+    """Whether an edge of polygon ``a`` properly crosses one of ``b``
+    (touching at an end or running along it does not count)."""
+    def side(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    eps = 1e-12
+    for i in range(len(a)):
+        p1, p2 = a[i], a[(i + 1) % len(a)]
+        for j in range(len(b)):
+            q1, q2 = b[j], b[(j + 1) % len(b)]
+            d1, d2 = side(q1, q2, p1), side(q1, q2, p2)
+            d3, d4 = side(p1, p2, q1), side(p1, p2, q2)
+            if (((d1 > eps and d2 < -eps) or (d1 < -eps and d2 > eps))
+                    and ((d3 > eps and d4 < -eps)
+                         or (d3 < -eps and d4 > eps))):
+                return True
+    return False
+
+
+def hole_merged_with_loop(face: Face, loop: list[QVector3D]):
+    """``(hole_index, merged)`` when ``loop`` — already known to lie inside
+    ``face`` — runs along part of one of its holes' rims: the rectangle
+    drawn on a ring's top against the opening. That is no second hole (two
+    openings sharing an edge triangulate into slivers over both, #489): the
+    opening grows to take it in, ``merged`` being its new outline. ``None``
+    when the loop shares no stretch of rim with any hole."""
+    from core.arrangement import _signed_area
+    from core.cap_rebuild import _union_outline
+    from core.triangulate import plane_axes
+
+    normal = face.normal()
+    origin = face.vertices[0]
+    u, w = plane_axes(normal)
+    back: dict = {}
+
+    def proj(pts):
+        out = []
+        for p in pts:
+            rel = p - origin
+            xy = (QVector3D.dotProduct(rel, u), QVector3D.dotProduct(rel, w))
+            back[xy] = QVector3D(p)
+            out.append(xy)
+        return out
+
+    for idx, hole in enumerate(face.holes):
+        h3 = refine_loop_with_points(list(hole), loop)
+        l3 = refine_loop_with_points(list(loop), hole)
+        shared = set(_loop_edges(h3)) & set(_loop_edges(l3))
+        if not shared:
+            continue
+        rings = []
+        for ring in (proj(h3), proj(l3)):
+            if _signed_area(ring) < 0:
+                ring = ring[::-1]
+            rings.append((ring, []))
+        merged = _union_outline(rings)
+        if len(merged) != 1 or merged[0][1]:
+            return None
+        return idx, [back[xy] for xy in merged[0][0]]
+    return None
 
 
 def find_containing_face(
@@ -1559,6 +1640,48 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
     return folded
 
 
+def _box_grid(lo, hi):
+    """``meeting(i)``: the indices, ascending, of the boxes (rows of ``lo`` /
+    ``hi``) that meet box ``i`` — the same answer as testing all of them.
+
+    One NumPy sweep over every box per query was 4 s of each Line click on an
+    exploded DWG plan of 19 800 edges, 11 700 of them faceless (#491). Boxes
+    go in the cells they cover; the cell grows until they cover a few each."""
+    import numpy as np
+    n = len(lo)
+    size = max(float(np.median((hi - lo).max(axis=1))) if n else 1.0, 1e-6)
+    while (np.prod(np.floor(hi / size) - np.floor(lo / size) + 1, axis=1)
+           .sum() > 8 * max(n, 1)):
+        size *= 2.0
+    c_lo = np.floor(lo / size).astype(np.int64).tolist()
+    c_hi = np.floor(hi / size).astype(np.int64).tolist()
+    lo_l, hi_l = lo.tolist(), hi.tolist()
+    grid: dict = {}
+    for k in range(n):
+        (x0, y0, z0), (x1, y1, z1) = c_lo[k], c_hi[k]
+        for cx in range(x0, x1 + 1):
+            for cy in range(y0, y1 + 1):
+                for cz in range(z0, z1 + 1):
+                    grid.setdefault((cx, cy, cz), []).append(k)
+
+    def meeting(i):
+        (x0, y0, z0), (x1, y1, z1) = c_lo[i], c_hi[i]
+        cand: set = set()
+        for cx in range(x0, x1 + 1):
+            for cy in range(y0, y1 + 1):
+                for cz in range(z0, z1 + 1):
+                    cand.update(grid.get((cx, cy, cz), ()))
+        (ax, ay, az), (bx, by, bz) = lo_l[i], hi_l[i]
+        out = []
+        for j in sorted(cand):
+            (px, py, pz), (qx, qy, qz) = lo_l[j], hi_l[j]
+            if (qx >= ax and qy >= ay and qz >= az
+                    and px <= bx and py <= by and pz <= bz):
+                out.append(j)
+        return out
+    return meeting
+
+
 def prune_collinear_orphan_edges(mesh) -> list:
     """Remove edges that bound no face and lie collinearly over another edge — the
     unwelded collinear overlaps that leave a duplicate 'division line'. Returns
@@ -1577,14 +1700,13 @@ def prune_collinear_orphan_edges(mesh) -> list:
     lo = np.minimum(P[:, :3], P[:, 3:]) - _PLANAR_TOLERANCE
     hi = np.maximum(P[:, :3], P[:, 3:]) + _PLANAR_TOLERANCE
     slot = {id(e): i for i, e in enumerate(edges)}
+    meeting = _box_grid(lo, hi)
     # An orphan already pruned must not prune the one it lay on: the bare
     # loop read the LIVE edge list, so the partner had to still be there.
     gone: set = set()
     for e in orphans:
         i = slot[id(e)]
-        near = np.flatnonzero((hi >= lo[i]).all(axis=1)
-                              & (lo <= hi[i]).all(axis=1))
-        for j in near:
+        for j in meeting(i):
             other = edges[j]
             if other is e or id(other) in gone:
                 continue
@@ -1616,6 +1738,25 @@ def _mesh_is_flat(mesh) -> bool:
 #: Above this many faces the overlap heal is skipped entirely — see the
 #: guard at the top of :func:`heal_overlapping_faces`.
 _HEAL_FACE_CAP = 3000
+
+
+#: Slack on the face boxes the heal filters pairs with: far past the
+#: planar tolerance a "coplanar" point may sit off the plane by.
+_BOX_PAD = 1e-2
+
+
+def _outer_boxes(faces):
+    """``(lo, hi)``: per face, the bounding box of its outer loop."""
+    import numpy as np
+    if not faces:
+        return np.empty((0, 3)), np.empty((0, 3))
+    lo = np.empty((len(faces), 3))
+    hi = np.empty((len(faces), 3))
+    for i, f in enumerate(faces):
+        pts = np.array([(v.x(), v.y(), v.z()) for v in f.vertices])
+        lo[i] = pts.min(axis=0)
+        hi[i] = pts.max(axis=0)
+    return lo, hi
 
 
 def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None,
@@ -1696,6 +1837,7 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None,
     N = np.array([[(n := f.normal()).x(), n.y(), n.z()] for f in snap],
                  dtype=np.float64) if snap else np.empty((0, 3))
     A = np.array([f.area() for f in snap], dtype=np.float64)
+    LO, HI = _outer_boxes(snap)
     gone: set = set()
     for i, face in enumerate(snap):
         a_face = A[i]
@@ -1704,8 +1846,13 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None,
         # The coplanar partner test for the WHOLE mesh in one dot product.
         # Same tolerance, same pairs — but the scalar form ran 4.2M times in
         # Python (66 s of the 82 s a Delete cost inside the imported
-        # barbecue, plus 5 s once its normals were cached).
-        cand = np.flatnonzero((np.abs(N @ N[i]) > 0.999) & (A < a_face))
+        # barbecue, plus 5 s once its normals were cached). A loop strictly
+        # inside the face sits inside its box too: on a flat plan every face
+        # is coplanar with every other, and the box test is what keeps an
+        # exploded DWG of 700 faces from testing them all (#491).
+        cand = np.flatnonzero((np.abs(N @ N[i]) > 0.999) & (A < a_face)
+                              & (LO >= LO[i] - _BOX_PAD).all(axis=1)
+                              & (HI <= HI[i] + _BOX_PAD).all(axis=1))
         covered = 0.0
         for j in cand:
             g = snap[j]
@@ -1733,6 +1880,7 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None,
         N3 = np.array([[(n := f.normal()).x(), n.y(), n.z()] for f in snap3],
                       dtype=np.float64) if snap3 else np.empty((0, 3))
         A3 = np.array([f.area() for f in snap3], dtype=np.float64)
+        LO3, HI3 = _outer_boxes(snap3)
         punch: dict = defaultdict(list)
         for i3, face in enumerate(snap3):
             if id(face) in gone:
@@ -1747,8 +1895,13 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None,
                 continue
             probes = [(t0 + t1 + t2) / 3.0 for t0, t1, t2 in tris]
             a_face = A3[i3]
+            # Probes are in this face's box and count only inside g's outer
+            # loop, so g's box must meet ours — 2.4 M probe tests, 135 s,
+            # on an exploded DWG plan without it (#491).
             for j3 in np.flatnonzero((np.abs(N3 @ N3[i3]) > 0.999)
-                                     & (A3 > a_face)):
+                                     & (A3 > a_face)
+                                     & (LO3 <= HI3[i3] + _BOX_PAD).all(axis=1)
+                                     & (HI3 >= LO3[i3] - _BOX_PAD).all(axis=1)):
                 g = snap3[j3]
                 if g is face or id(g) in gone:
                     continue

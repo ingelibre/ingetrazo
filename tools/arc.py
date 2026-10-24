@@ -157,6 +157,8 @@ class ArcTool(SegmentCount, AxisMagnet, PlaneLock, Tool):
     name = "Arc"
     shortcut = "A"
     description = "Draw an arc from its two ends, then pull out its bulge."
+    axis_source = True
+    axis_source_empty_only = True
     vcb_label = "Bulge"
 
     #: Within this many screen pixels of the tangent bulge, the arc snaps
@@ -858,6 +860,8 @@ class ThreePointArcTool(SegmentCount, AxisMagnet, PlaneLock, Tool):
     name = "3-Point Arc"
     shortcut = "J"
     description = "Draw an arc that passes through three points."
+    axis_source = True
+    axis_source_empty_only = True
     vcb_label = "Segments"
 
     #: Polyline segments of the next arc: a number typed before the first
@@ -978,6 +982,8 @@ class CenterArcTool(SegmentCount, AxisMagnet, PlaneLock, Tool):
     description = (
         "Draw an arc from its centre: the centre, where the arc "
         "starts, then the angle it sweeps.")
+    axis_source = True
+    axis_source_empty_only = True
     vcb_label = "Angle"
 
     _PITCH_DEG = 15.0

@@ -81,6 +81,57 @@ def test_extension_needs_a_collinear_draw_direction():
     assert r.kind not in ("extension", "intersection")
 
 
+# ---- over a face, the extension is CUT by that face (#545, @pacaeiro) -------
+
+def test_over_a_face_the_extension_lands_on_it():
+    """«Se eu coloco o rato directamente na face diz (on face), mas o plano
+    permanece imutável»: the point offered must be a point OF the face the
+    cursor is on, not the cursor ray's own projection onto the edge's line,
+    which sits off that face. A sloped edge rising off the ground — its
+    line meets z = 0 at (−1, 0, 0) — read from a cursor on the ground."""
+    scene = Scene()
+    scene.mesh.add_edge(V(0, 0, 1), V(2, 0, 3))         # runs up and away
+    r = _snap(scene, V(-1.05, 0.0, 0.0), start_point=V(0, 0, 1),
+              face_under_cursor=True, work_plane_normal=V(0, 0, 1))
+    assert r.kind == "extension"
+    assert (r.point - V(-1.0, 0.0, 0.0)).length() < 1e-3
+    assert abs(r.point.z()) < 1e-6, "the crossing is ON the ground"
+
+
+def test_the_plane_cut_is_not_a_straight_projection():
+    """The same edge, the same cursor, with no face under it: the projection
+    onto the edge's line — 2.5 cm off the ground — is what the cut replaces."""
+    scene = Scene()
+    scene.mesh.add_edge(V(0, 0, 1), V(2, 0, 3))
+    r = _snap(scene, V(-1.05, 0.0, 0.0), start_point=V(0, 0, 1))
+    assert r.kind == "extension"
+    assert abs(r.point.z()) > 0.02
+
+
+def test_an_edge_lying_in_the_face_is_not_cut_away():
+    """An edge already in the plane has no crossing to take: its line is
+    parallel to the face, and the plain projection is in the face too."""
+    scene = Scene()
+    scene.mesh.add_edge(V(0, 0, 0), V(2, 0, 0))         # edge in the ground
+    r = _snap(scene, V(3.0, 0.0, 0.0), start_point=V(2, 0, 0),
+              face_under_cursor=True, work_plane_normal=V(0, 0, 1))
+    assert r.kind == "extension"
+    assert abs(r.point.x() - 3.0) < 1e-9
+    assert abs(r.point.z()) < 1e-9
+
+
+def test_a_midpoint_off_the_face_still_wins_over_the_face():
+    """Pinned, not assumed: the face sets the PLANE, it does not swallow the
+    point inferences that come off it — «a aresta obriga o plano a
+    atualizar» (``snapped_plane`` re-plans the shape onto this point)."""
+    scene = Scene()
+    scene.mesh.add_edge(V(0, 0, 1), V(2, 0, 1))          # a metre above
+    r = _snap(scene, V(1.03, 0.0, 1.03), start_point=V(0, 0, 0),
+              face_under_cursor=True, work_plane_normal=V(0, 0, 1))
+    assert r.kind == "midpoint"
+    assert abs(r.point.z() - 1.0) < 1e-6, "off the face, as it should be"
+
+
 # ---- perpendicular-to-edge inference ----------------------------------------
 
 def _proj_factory(cand):

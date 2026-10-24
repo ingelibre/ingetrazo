@@ -20,7 +20,7 @@
   - `sofa.igz` (Sofa) — **CC0 1.0**, Blend Swap (public domain)
 
 - The face-me people in `people.json` — `ingeniero.png`, `stallman.png`,
-  `torvalds.png`, `musk.png`, `hawking.png` — are cutout illustrations
+  `torvalds.png`, `hawking.png` — are cutout illustrations
   supplied by Marco Sumari Tellez, cropped to the figure and sized to the
   real height each one stands (the manifest carries it: a scale figure whose
   height is wrong is worse than none). Hawking's is his seated height in the

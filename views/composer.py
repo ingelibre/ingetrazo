@@ -5494,6 +5494,8 @@ class ComposerWindow(QMainWindow):
         super().__init__(main_window)
         self.setWindowFlag(Qt.Window, True)
         self._window = main_window
+        from views.floating_toolbar import watch_toolbars
+        watch_toolbars(self)        # a torn-off bar gets a title and a ×
         import sys as _sys
         if _sys.platform == "darwin":
             # macOS has ONE menu bar, and a window without its own shows its
@@ -5929,6 +5931,7 @@ class ComposerWindow(QMainWindow):
                     frame.uid = uuid.uuid4().hex
                 item.anchor_uid = frame.uid
                 item.a_world = list(hit_a[2])
+                self._follow_anchor(item, "a_world")
         elif mode == "nivel":
             style = dict(getattr(self, "_last_nivel_style", None) or {})
             # Born in the document's units. A remembered look may carry a
@@ -5952,6 +5955,7 @@ class ComposerWindow(QMainWindow):
                     frame.uid = uuid.uuid4().hex
                 item.anchor_uid = frame.uid
                 item.a_world = [float(v) for v in hit_a[2]]
+                self._follow_anchor(item, "a_world")
                 item.x_mm, item.y_mm = float(hit_a[0]), float(hit_a[1])
                 # a plan (looking down) wants the plan symbol
                 if frame.view_key == "std:top":
@@ -6066,6 +6070,9 @@ class ComposerWindow(QMainWindow):
             item.a_world = list(a_world)
             item.b_world = list(b_world)
             item.scale_n = frame.scale_n
+            # Take the hold now, while both points sit on their vertices.
+            self._follow_anchor(item, "a_world")
+            self._follow_anchor(item, "b_world")
         return item
 
     def place_chain_cota(self, a, b, sep_mm: float, anchors=None,
@@ -8860,8 +8867,8 @@ class ComposerWindow(QMainWindow):
 
     def _on_templates_menu(self) -> None:
         from PySide6.QtWidgets import QInputDialog, QMenu
-        from PySide6.QtGui import QCursor, QDesktopServices
-        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QCursor
+        from core.desktop_open import open_url
         menu = QMenu(self)
         save = menu.addAction(tr("Save this sheet as a template…"))
         names = self.template_names()
@@ -8899,8 +8906,7 @@ class ComposerWindow(QMainWindow):
         elif chosen in def_acts:
             self.set_default_template(def_acts[chosen])
         elif chosen is folder:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(
-                str(self.templates_dir())))
+            open_url(self.templates_dir())
 
     # ---- Arrange: align / distribute / duplicate (QGIS's Align toolbar) -----
     def _sync_item_caches(self) -> None:
@@ -10905,8 +10911,8 @@ class ComposerWindow(QMainWindow):
 
     def _on_cajetin_templates_menu(self) -> None:
         from PySide6.QtWidgets import QInputDialog, QMenu
-        from PySide6.QtGui import QCursor, QDesktopServices
-        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QCursor
+        from core.desktop_open import open_url
         item = self._selected_item()
         have = isinstance(item, CajetinItem)
         menu = QMenu(self)
@@ -10964,8 +10970,7 @@ class ComposerWindow(QMainWindow):
             if have:
                 self._sync_cajetin_design_combo(item.model)
         elif chosen is folder:
-            QDesktopServices.openUrl(
-                QUrl.fromLocalFile(str(self.cajetin_templates_dir())))
+            open_url(self.cajetin_templates_dir())
 
     def _on_cajetin_add_row(self) -> None:
         item = self._selected_item()
@@ -12118,6 +12123,44 @@ class ComposerWindow(QMainWindow):
 
         return self._with_frame_camera(frame, run)
 
+    def _follow_anchor(self, item, attr: str) -> bool:
+        """Carry ``item.<attr>`` (a world point) along with the model vertex
+        it was placed on, however far that vertex moved — the re-snap below
+        only reaches 2.5 paper mm (#854, @cescmari: a face pushed further
+        left the cota behind). The hold is the model dimensions' own
+        :class:`VertexAnchor`, taken while the point still sits on the
+        vertex and kept for the session; vertex identity survives move,
+        scale and undo. True when the hold answered (moved or not), so the
+        nearest-point re-snap is not needed; False leaves it to that."""
+        from PySide6.QtGui import QVector3D
+        from core.dimension import resolve_vertex_anchor
+        try:
+            scene = self._scene()
+        except Exception:  # noqa: BLE001 — no model behind the composer
+            return False
+        holds = self.__dict__.setdefault("_anchor_holds", {})
+        cur = getattr(item, attr, None)
+        if not cur:
+            return False
+        key = (id(item), attr)
+        held = holds.get(key)
+        if held is None or held[0] is not item or held[1] != list(cur):
+            hold = resolve_vertex_anchor(scene, QVector3D(*cur))
+            holds[key] = (item, list(cur), hold)
+            return hold is not None
+        hold = held[2]
+        if hold is None:
+            return False
+        p = hold.position(scene)
+        if p is None:                     # erased or welded away: let go
+            holds[key] = (item, list(cur), None)
+            return False
+        now = [float(p.x()), float(p.y()), float(p.z())]
+        if now != list(cur):
+            setattr(item, attr, now)
+            holds[key] = (item, now, hold)
+        return True
+
     def _reproject_anchored_cotas(self) -> None:
         """Anchored cotas follow the model: re-attach each 3D anchor to the
         nearest CURRENT snap point within a small paper tolerance (the
@@ -12127,6 +12170,8 @@ class ComposerWindow(QMainWindow):
         sync, like the render caches — never an undo step."""
         import numpy as np
         frames = {f.uid: f for f in self.comp.frames if f.uid}
+        # The fake reprojector of the tests has no model to follow.
+        follow = getattr(self, "_follow_anchor", None) or (lambda *_: False)
         for ct in self.comp.cotas:
             if not ct.anchored:
                 continue
@@ -12143,6 +12188,8 @@ class ComposerWindow(QMainWindow):
                     frame, [ct.a_world, ct.b_world])
                 for attr, (px, py) in zip(("a_world", "b_world"),
                                           old_pages):
+                    if follow(ct, attr):
+                        continue
                     # An anchor whose point projects OUTSIDE the frame is
                     # clipped from the snap set, not moved — re-snapping it
                     # would capture whatever visible point is nearest.
@@ -12179,6 +12226,8 @@ class ComposerWindow(QMainWindow):
                 inside = (frame.x_mm - 0.5 <= px <= frame.x_mm + frame.w_mm + 0.5
                           and frame.y_mm - 0.5 <= py
                           <= frame.y_mm + frame.h_mm + 0.5)
+                if follow(et, "a_world"):
+                    inside = False
                 if inside and len(wpts):
                     w = np.asarray(et.a_world, dtype=np.float64)
                     d2 = ((wpts - w) ** 2).sum(axis=1)
@@ -12215,6 +12264,8 @@ class ComposerWindow(QMainWindow):
                 inside = (frame.x_mm - 0.5 <= px <= frame.x_mm + frame.w_mm + 0.5
                           and frame.y_mm - 0.5 <= py
                           <= frame.y_mm + frame.h_mm + 0.5)
+                if follow(nv, "a_world"):
+                    inside = False
                 if inside and len(wpts):
                     w = np.asarray(nv.a_world, dtype=np.float64)
                     d2 = ((wpts - w) ** 2).sum(axis=1)
@@ -13041,10 +13092,11 @@ class ComposerWindow(QMainWindow):
         btn.setToolTip(self._act_sidebar.toolTip())
         btn.setCursor(Qt.PointingHandCursor)
         btn.setAutoRaise(True)
-        btn.setStyleSheet(
-            "QToolButton { background: palette(mid); border: none;"
-            " border-radius: 4px; }"
-            "QToolButton:hover { background: rgb(243, 115, 41); }")
+        from views.theme import style as theme_style
+        theme_style(btn,             # {accent_rgb}: Preferences ▸ Accent colour
+            "QToolButton {{ background: palette(mid); border: none;"
+            " border-radius: 4px; }}"
+            "QToolButton:hover {{ background: rgb({accent_rgb}); }}")
         btn.clicked.connect(
             lambda: self._act_sidebar.setChecked(
                 not self._act_sidebar.isChecked()))
@@ -13139,11 +13191,12 @@ class ComposerWindow(QMainWindow):
         btn.setToolTip(tr("Back to the workspace (Ctrl+0)"))
         btn.setCursor(Qt.PointingHandCursor)
         btn.setAutoRaise(True)
-        btn.setStyleSheet(
-            "QToolButton { background: rgba(30, 36, 44, 170); color: white;"
+        from views.theme import style as theme_style
+        theme_style(btn,
+            "QToolButton {{ background: rgba(30, 36, 44, 170); color: white;"
             " border: 1px solid rgba(255, 255, 255, 90); border-radius: 6px;"
-            " padding: 4px 10px; font-weight: bold; }"
-            "QToolButton:hover { background: rgba(243, 115, 41, 220); }")
+            " padding: 4px 10px; font-weight: bold; }}"
+            "QToolButton:hover {{ background: rgba({accent_rgb}, 220); }}")
         btn.clicked.connect(lambda: self._act_clean_screen.setChecked(False))
         btn.hide()
         self._clean_exit_btn = btn

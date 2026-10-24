@@ -43,6 +43,10 @@ from pathlib import Path
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
 
+# Coordinates beyond RECENTER_BEYOND_M trigger recentring — the rule every
+# importer shares (formats/recenter.py).
+from formats.recenter import RECENTER_BEYOND_M, survey_offset  # noqa: F401
+
 # Metres per drawing unit, by $INSUNITS code (DXF reference, group 70).
 _INSUNITS_TO_M = {
     1: 0.0254,       # inches
@@ -55,10 +59,6 @@ _INSUNITS_TO_M = {
     10: 0.9144,      # yards
 }
 
-#: Coordinates beyond this (metres, after unit scale) trigger recentring:
-#: far enough that float32 precision starts eating survey drawings, well
-#: past anything drawn around the origin on purpose.
-RECENTER_BEYOND_M = 100_000.0
 
 # How finely curves flatten: maximum sagitta in METRES (converted to drawing
 # units per file). 1 cm reads as a smooth curve at plan scales without
@@ -427,9 +427,8 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
     for _bname, m, _layer in placements:
         t = m.get_row(3)
         absorb(t[0] * scale, t[1] * scale, t[2] * scale)
-    offset = (0.0, 0.0, 0.0)
-    if lo[0] < hi[0] and max(abs(c) for c in lo + hi) > RECENTER_BEYOND_M:
-        offset = tuple(float(int(c)) for c in lo)
+    offset = (survey_offset(lo, hi) if lo[0] < hi[0] else None) \
+        or (0.0, 0.0, 0.0)
 
     # ---- Build: one tagged group per layer, one proto per block ----
     tick(0.6, "Building geometry…")

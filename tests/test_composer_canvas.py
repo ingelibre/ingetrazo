@@ -357,6 +357,61 @@ class TestAnchoredEndToEnd:
         import math
         assert math.hypot(ct.dx_mm, ct.dy_mm) == pytest.approx(62.0)
 
+    def _stretch(self, composer, x_from, x_to, undo=None):
+        # Through the real Move command, as the user's push/move does: it
+        # keeps the vertex registry (and so vertex identity) right.
+        from PySide6.QtGui import QVector3D
+        from core.history import MoveVerticesCommand
+        scene = composer._scene()
+        if undo is not None:
+            undo.undo(scene)
+            cmd = None
+        else:
+            src = [QVector3D(v.position) for v in scene.mesh.vertices
+                   if abs(v.position.x() - x_from) < 1e-9]
+            cmd = MoveVerticesCommand(src, QVector3D(x_to - x_from, 0, 0))
+            cmd.do(scene)
+        composer._invalidate_geometry_caches()
+        composer._rebuild_canvas()
+        return cmd
+
+    def test_cota_follows_a_face_moved_past_the_snap_tolerance_854(self):
+        # #854 (@cescmari): a face pushed further than the re-snap
+        # tolerance (0.25 m at 1:100) left the cota where it was. It
+        # follows the vertex it measured, both ways.
+        composer, frame = self._composer()
+        composer.tool_mode = "cota"
+        composer.place_tool(30.0, 100.0, 90.0, 100.0, sep_mm=6.0,
+                            anchors=(frame, (0.0, 0.0, 0.0),
+                                     (6.0, 0.0, 0.0)))
+        ct = composer.comp.cotas[0]
+        cmd = self._stretch(composer, 6.0, 8.0)
+        assert ct.b_world[0] == pytest.approx(8.0)
+        assert ct.label() == "8.00 m"
+        assert ct.a_world == pytest.approx([0.0, 0.0, 0.0])
+        self._stretch(composer, 8.0, 6.0, undo=cmd)          # and undone
+        assert ct.label() == "6.00 m"
+        self._stretch(composer, 6.0, 3.0)                    # and shorter
+        assert ct.label() == "3.00 m"
+
+    def test_cota_on_deleted_geometry_keeps_its_anchor_854(self):
+        composer, frame = self._composer()
+        composer.tool_mode = "cota"
+        composer.place_tool(30.0, 100.0, 90.0, 100.0, sep_mm=6.0,
+                            anchors=(frame, (0.0, 0.0, 0.0),
+                                     (6.0, 0.0, 0.0)))
+        ct = composer.comp.cotas[0]
+        composer._rebuild_canvas()
+        mesh = composer._scene().mesh
+        for f in list(mesh.faces):
+            mesh.remove_face(f)
+        for e in list(mesh.edges):
+            mesh.remove_edge(e)
+        composer._invalidate_geometry_caches()
+        composer._rebuild_canvas()
+        assert ct.anchored
+        assert ct.b_world == pytest.approx([6.0, 0.0, 0.0])
+
     def test_free_cota_is_left_alone(self):
         composer, frame = self._composer()
         composer.tool_mode = "cota"
