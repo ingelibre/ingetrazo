@@ -900,9 +900,9 @@ def find_subdividing_chain(
 
     This is the "rectangle drawn in a corner / along an edge" case: the loop
     neither sits strictly inside the face (a hole) nor is a single straight
-    chord — it carves a connected sub-region. Loops that poke outside the face,
-    and loops touching the boundary in more than one place are out of scope and
-    return ``None``.
+    chord — it carves a connected sub-region. Loops that poke outside the face
+    or leave its plane, and loops touching the boundary in more than one place
+    are out of scope and return ``None``.
 
     Holes on ``face`` are allowed and ignored here (the chain only concerns the
     outer boundary): drawing a door on a wall that already has a window must
@@ -912,15 +912,23 @@ def find_subdividing_chain(
     if len(face.vertices) < 3 or len(loop) < 3:
         return None
     proj, poly2 = _face_plane_proj(face)
+    normal, origin = face.normal(), face.vertices[0]
 
     labels: list[str] = []
     for v in loop:
         if _locate_on_loop(face.vertices, v) is not None:
             labels.append("bdry")
-        elif _strictly_inside_2d(proj(v), poly2):
+        elif (abs(QVector3D.dotProduct(normal, v - origin)) <= _PLANAR_TOLERANCE
+              and _strictly_inside_2d(proj(v), poly2)):
             labels.append("in")
         else:
-            return None  # loop pokes outside the face → not a clean subdivision
+            # The loop pokes outside the face, or off its plane → not a clean
+            # subdivision. The projection alone is not enough: a window drawn
+            # against a box's corner edge has its far corners 3 m in front of
+            # the side wall, projected onto that wall's edge, and float noise
+            # on a turned box put them a hair inside it — the side wall was
+            # carved into a face 2.9 m off its plane.
+            return None
     if "in" not in labels or "bdry" not in labels:
         return None
 
