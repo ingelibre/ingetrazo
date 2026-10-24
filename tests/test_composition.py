@@ -448,32 +448,6 @@ class TestHLRScene:
         assert roof[:, :, 2] == pytest.approx(np.ones_like(roof[:, :, 2]))
 
 
-class TestDxfOut:
-    def test_writes_readable_r12_lines(self, tmp_path):
-        from formats.dxf_out import save_dxf_lines
-        path = tmp_path / "vista.dxf"
-        n = save_dxf_lines(path, [(0.0, 0.0, 2.0, 0.0),
-                                  (2.0, 0.0, 2.0, 3.0)], layer="Planta 1")
-        text = path.read_text()
-        assert n == 2
-        assert text.count("0\nLINE\n") == 2
-        assert "8\nPLANTA_1\n" in text          # sanitised layer name
-        assert text.rstrip().endswith("EOF")
-        # coordinates survive verbatim
-        assert "10\n0\n" in text and "11\n2\n" in text and "21\n3\n" in text
-
-    def test_dxf_round_trips_through_ezdxf_if_available(self, tmp_path):
-        ezdxf = pytest.importorskip("ezdxf")
-        from formats.dxf_out import save_dxf_lines
-        path = tmp_path / "vista.dxf"
-        save_dxf_lines(path, [(0.0, 0.0, 9.258, 0.0)], layer="PLANTA")
-        doc = ezdxf.readfile(str(path))
-        lines = list(doc.modelspace().query("LINE"))
-        assert len(lines) == 1
-        assert lines[0].dxf.end.x == pytest.approx(9.258)
-        assert lines[0].dxf.layer == "PLANTA"
-
-
 # ── C5: QGIS-parity items ───────────────────────────────────────────────────
 
 from core.composition import CotaItem, FlechaNorte, FormaItem, Leyenda

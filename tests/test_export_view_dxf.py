@@ -21,9 +21,8 @@ def _fountain_like(scene):
 
 
 def _lines(path):
-    text = path.read_text(encoding="ascii").split("\n")
-    return sum(1 for i, t in enumerate(text)
-               if t == "LINE" and text[i - 1] == "0")
+    import ezdxf
+    return len(ezdxf.readfile(str(path)).modelspace().query("LINE"))
 
 
 def test_the_view_goes_out_as_dxf_in_every_projection(tmp_path, monkeypatch):
@@ -48,7 +47,9 @@ def test_the_view_goes_out_as_dxf_in_every_projection(tmp_path, monkeypatch):
             win._on_export_view_dxf()
             out[mode] = _lines(path)
         assert all(n > 20 for n in out.values()), out
-        assert "VISTA-PERFIL" in (tmp_path / "parallel.dxf").read_text()
+        import ezdxf
+        layers = ezdxf.readfile(str(tmp_path / "parallel.dxf")).layers
+        assert "VISTA-PERFIL" in layers
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()

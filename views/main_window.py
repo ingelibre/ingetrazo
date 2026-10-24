@@ -7776,6 +7776,7 @@ class MainWindow(QMainWindow):
             return
         from core.hlr import (KIND_CUT, KIND_PROFILE, hlr_drawing,
                               hlr_perspective)
+        from core.units import model_unit
         from formats.dxf_out import save_dxf_layers
         vp = self.viewport
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -7791,7 +7792,7 @@ class MainWindow(QMainWindow):
                                            & (k != KIND_PROFILE)]),
                           ("VISTA-PERFIL", d.segs[k == KIND_PROFILE]),
                           ("VISTA-CORTE", d.segs[k == KIND_CUT])]
-            n = save_dxf_layers(path, groups)
+            n = save_dxf_layers(path, groups, model_unit())
         except Exception as exc:  # noqa: BLE001
             QApplication.restoreOverrideCursor()
             QMessageBox.critical(self, tr("Export DXF failed"), str(exc))
