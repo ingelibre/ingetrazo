@@ -3193,22 +3193,15 @@ class SnapshotImport(Command):
             try:
                 self.mutate(scene)
             except BaseException:
-                # History.execute restores the mesh, but a loader or AI
-                # recipe that fails halfway has already appended groups
-                # (extrude/revolve land one per call), layers, views,
-                # dimensions, labels or sheets — leave none of them behind.
-                scene.groups[:] = [g for g in scene.groups
-                                   if g in groups_before]
-                scene.layers[:] = [ly for ly in scene.layers
-                                   if ly in layers_before]
-                scene.saved_views[:] = [v for v in scene.saved_views
-                                        if v in views_before]
-                scene.dimensions[:] = [d for d in scene.dimensions
-                                       if d in dims_before]
-                scene.text_labels[:] = [t for t in scene.text_labels
-                                        if t in texts_before]
-                scene.compositions[:] = [c for c in scene.compositions
-                                         if c in sheets_before]
+                # Restore membership and order, not only newly appended items:
+                # failed recipes may also remove or reorder existing objects.
+                # Slice assignment preserves references held by scripting scopes.
+                scene.groups[:] = groups_before
+                scene.layers[:] = layers_before
+                scene.saved_views[:] = views_before
+                scene.dimensions[:] = dims_before
+                scene.text_labels[:] = texts_before
+                scene.compositions[:] = sheets_before
                 raise
             self.after = m.capture_state()
             self.added_groups = [g for g in scene.groups

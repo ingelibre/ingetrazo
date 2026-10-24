@@ -65,6 +65,11 @@ def on_activate(self, viewport):
     viewport.notify_scene_changed()
 ```
 
+On failure, `SnapshotImport` restores the original membership and order of
+groups, layers, saved views, dimensions, text labels and sheets, including
+objects removed by the failed mutation. These collections are restored in
+place so existing scripting-scope references stay valid.
+
 Useful, honest data points (what the app itself uses — see the bundled
 `plugins/model_info.py` for a worked example):
 
