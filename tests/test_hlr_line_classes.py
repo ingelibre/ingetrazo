@@ -254,10 +254,13 @@ def test_dxf_export_puts_each_line_class_on_its_own_layer(tmp_path):
         ("Planta-PERFIL", [(0, 0, 0, 1)]),
         ("Planta-CORTE", [])])
     assert n == 3
-    text = path.read_text()
-    assert text.count("0\nLAYER\n2\n") == 3
-    assert "2\nPLANTA-CORTE\n" in text and "2\nPLANTA-PERFIL\n" in text
-    assert text.count("8\nPLANTA\n") == 2 and text.count("8\nPLANTA-PERFIL\n") == 1
+    import ezdxf
+    doc = ezdxf.readfile(str(path))
+    assert {"PLANTA", "PLANTA-PERFIL", "PLANTA-CORTE"} <= {
+        layer.dxf.name for layer in doc.layers}
+    lines = list(doc.modelspace().query("LINE"))
+    assert sum(e.dxf.layer == "PLANTA" for e in lines) == 2
+    assert sum(e.dxf.layer == "PLANTA-PERFIL" for e in lines) == 1
     # the single-layer writer is the same file with one group
     assert save_dxf_lines(tmp_path / "one.dxf", [(0, 0, 1, 1)], layer="x") == 1
 

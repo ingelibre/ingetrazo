@@ -12844,6 +12844,7 @@ class ComposerWindow(QMainWindow):
             return
         drawing = self.model_view_drawing(item.model, for_dxf=True)
         from core.hlr import KIND_CUT, KIND_EDGE, KIND_HIDDEN, KIND_PROFILE
+        from core.units import model_unit
         from formats.dxf_out import save_dxf_layers
         layer = frame_title_text(item.model).split(" — ")[0]
         k = drawing.kinds
@@ -12853,7 +12854,7 @@ class ComposerWindow(QMainWindow):
             groups = dxf_groups_by_layer(drawing, layer,
                                          getattr(item.model, "hidden_lines",
                                                  False))
-            n = save_dxf_layers(path, groups)
+            n = save_dxf_layers(path, groups, model_unit())
             self.statusBar().showMessage(
                 tr("Exported {n} lines to {name}", n=n, name=path), 5000)
             return
@@ -12866,7 +12867,7 @@ class ComposerWindow(QMainWindow):
         if getattr(item.model, "hidden_lines", False):
             groups.append((f"{layer}-OCULTAS", drawing.segs[k == KIND_HIDDEN],
                            "DASHED"))
-        n = save_dxf_layers(path, groups)
+        n = save_dxf_layers(path, groups, model_unit())
         self.statusBar().showMessage(
             tr("Exported {n} lines to {name}", n=n, name=path), 5000)
 

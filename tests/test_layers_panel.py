@@ -485,11 +485,13 @@ def test_dxf_writes_each_layer_with_its_linetype_and_colour(tmp_path):
     path = tmp_path / "v.dxf"
     n = save_dxf_layers(path, groups)
     assert n == len(d.segs)
-    text = path.read_text(encoding="ascii")
-    assert "2\nDASHED\n" in text
-    import re
-    assert re.search(r"0\nLAYER\n2\nA\n70\n0\n62\n\d+\n6\nDASHED\n", text)
-    assert "0\nLAYER\n2\nB\n70\n0\n62\n1\n6\nCONTINUOUS\n" in text   # red
+    import ezdxf
+    doc = ezdxf.readfile(str(path))
+    assert "DASHED" in doc.linetypes
+    assert doc.layers.get("A").dxf.linetype == "DASHED"
+    b = doc.layers.get("B")
+    assert b.dxf.linetype == "CONTINUOUS"
+    assert b.dxf.color == 1                                     # red
 
 
 def test_pens_take_the_layer_line():
@@ -2039,11 +2041,16 @@ def test_the_columns_menu_reads_show_all_switches_then_defaults(win):
 
 # ---- DXF: every layer with its colour ---------------------------------------
 
+def _dxf_layer_colours(path) -> dict:
+    """Each layer of the DXF at ``path`` with its palette colour (ACI)."""
+    import ezdxf
+    return {ly.dxf.name: ly.dxf.color for ly in ezdxf.readfile(str(path)).layers}
+
+
 def test_the_sheet_dxf_colours_every_layer_without_colour_by_layer(
         tmp_path, monkeypatch):
     """A CAD file arrives with each layer coloured, Colour by layer or not;
     the sheet itself still prints black."""
-    import re
     from core.composition import MarcoVista
     from views.composer import ComposerWindow
     from views.main_window import MainWindow
@@ -2072,9 +2079,9 @@ def test_the_sheet_dxf_colours_every_layer_without_colour_by_layer(
         from views.composer import dxf_groups_by_layer
         path = tmp_path / "hoja.dxf"
         save_dxf_layers(path, dxf_groups_by_layer(d, "PLANTA", False))
-        text = path.read_text(encoding="ascii")
+        colours = _dxf_layer_colours(path)
         # Seen from the top the squares are outlines: on «B-PERFIL», red.
-        assert re.search(r"0\nLAYER\n2\nB(-PERFIL)?\n70\n0\n62\n1\n", text)
+        assert 1 in (colours.get("B"), colours.get("B-PERFIL"))
     finally:
         comp.close()
         win._saved_version = win.viewport.scene.version
@@ -2083,7 +2090,6 @@ def test_the_sheet_dxf_colours_every_layer_without_colour_by_layer(
 
 def test_the_view_dxf_writes_each_layer_with_its_colour(tmp_path,
                                                         monkeypatch):
-    import re
     from views import main_window as mw
     from views.main_window import MainWindow
     win = MainWindow()
@@ -2103,10 +2109,9 @@ def test_the_view_dxf_writes_each_layer_with_its_colour(tmp_path,
         monkeypatch.setattr(mw.file_dialogs, "getSaveFileName",
                             lambda *a, **k: (str(path), ""))
         win._on_export_view_dxf()
-        text = path.read_text(encoding="ascii")
-        assert re.search(r"0\nLAYER\n2\nB(-PERFIL)?\n70\n0\n62\n1\n",
-                         text)                               # red
-        assert re.search(r"\n2\nA(-PERFIL)?\n", text)
+        colours = _dxf_layer_colours(path)
+        assert 1 in (colours.get("B"), colours.get("B-PERFIL"))    # red
+        assert {"A", "A-PERFIL"} & set(colours)
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
@@ -2129,10 +2134,11 @@ def test_every_line_type_has_a_name_a_dxf_twin_and_a_pattern(tmp_path):
     groups = [(k, seg, L.DXF_LINETYPES[k], None) for k in L.LINETYPES]
     path = tmp_path / "tipos.dxf"
     save_dxf_layers(path, groups)
-    text = path.read_text(encoding="ascii")
+    import ezdxf
+    defined = ezdxf.readfile(str(path)).linetypes
     for key in L.LINETYPES:
         if key != "continuous":
-            assert f"0\nLTYPE\n2\n{L.DXF_LINETYPES[key]}\n" in text
+            assert L.DXF_LINETYPES[key] in defined
 
 
 def test_a_frame_can_ink_its_lines_in_their_layer_colours(monkeypatch):
