@@ -236,3 +236,83 @@ def test_raster_frame_image_is_made_opaque(monkeypatch, image_format, rgb):
         comp.close()
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_saved_scene_restores_complete_live_state_even_on_error(monkeypatch, fail):
+    from types import SimpleNamespace
+    from core.group import Group
+    from core.layers import Layer
+    from core.saved_views import SavedView, shown_state
+    from core.section import SectionPlane
+    from core.style import Style
+
+    win, comp = _composer(monkeypatch)
+    try:
+        vp = win.viewport
+        scene, cam = vp.scene, vp.camera
+        parent, child = Group(name="Envelope"), Group(name="Partition")
+        parent.children.append(child)
+        scene.groups.append(parent)
+        parent.hidden, child.hidden = True, False
+        scene.layers.append(Layer("Construction", visible=False))
+        scene.tile_layer = SimpleNamespace(visible=True)
+        scene.terrain = SimpleNamespace(visible=False)
+        scene.photo_mesh = SimpleNamespace(visible=True)
+        plane = SectionPlane(QVector3D(), QVector3D(0, 0, 1), active=True)
+        scene.section_planes.append(plane)
+        scene.show_section_planes = False
+        scene.show_section_cuts = True
+        scene.show_hidden_objects, scene.show_hidden_geometry = True, False
+        scene.display_style = Style()
+        scene.shadows.enabled = True
+        cam.two_point = True
+        before = SavedView.capture("Before", scene, cam).to_dict()
+        shown = shown_state(scene)
+        camera_extra = (cam.aspect, QVector3D(cam.up))
+        style = scene.display_style
+        shadows = scene.shadows
+        version = scene.version
+        geom, circles = object(), object()
+        comp._geom_cache, comp._circles_cache = geom, circles
+        saved = SavedView(
+            "Detail", target=(5, 6, 7), two_point=False,
+            hidden_objects=[child.uid], hidden_layers=[],
+            hidden_shown={"objects": False, "geometry": True},
+            section={"active": None, "planes_shown": True, "cuts_shown": False},
+            style=Style(face_mode="wireframe").to_dict(),
+            georef={"map": False, "terrain": True, "survey": False},
+            shadows={"enabled": False})
+        scene.saved_views.append(saved)
+        frame = MarcoVista(view_key="scene:Detail")
+
+        def inspect_detail():
+            assert not parent.hidden and child.hidden
+            assert not cam.two_point
+            assert scene.show_hidden_objects is False
+            assert scene.show_hidden_geometry is True
+            assert scene.layer("Construction").visible
+            assert scene.active_section() is None
+            assert scene.display_style.face_mode == "wireframe"
+            assert not scene.tile_layer.visible and scene.terrain.visible
+            assert not scene.photo_mesh.visible
+            assert comp._geom_cache is None and comp._circles_cache is None
+            if fail:
+                raise RuntimeError("render failed")
+            return "rendered"
+
+        if fail:
+            with pytest.raises(RuntimeError, match="render failed"):
+                comp._with_frame_camera(frame, inspect_detail)
+        else:
+            assert comp._with_frame_camera(frame, inspect_detail) == "rendered"
+        assert SavedView.capture("Before", scene, cam).to_dict() == before
+        assert shown_state(scene) == shown
+        assert (cam.aspect, cam.up) == camera_extra
+        assert scene.display_style is style and scene.shadows is shadows
+        assert scene.version == version
+        assert comp._geom_cache is geom and comp._circles_cache is circles
+        assert comp._with_frame_camera(
+            MarcoVista(view_key="__current__"), lambda: shown_state(scene)) == shown
+    finally:
+        _close(win, comp)

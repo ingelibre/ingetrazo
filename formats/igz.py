@@ -40,8 +40,9 @@ ZIP magic, so both shapes open transparently.
 
 **Large documents are format 3** (see ``_LARGE_DOCUMENT``): always a ZIP, and
 each big mesh is a ``{"geom": {...}}`` block instead of ``edges``/``faces``
-lists — its distinct points once as float32, edges and face rings as int32
-indices, edge flags and a shared table of face attributes, in one raw
+lists — its distinct vertices once as float32, edges and face rings as int32
+indices (authoritative, never position-welded), edge flags and a shared table
+of face attributes, in one raw
 member under ``geom/`` (layout in the JSON, no pickles). Builds that read
 only up to format 2 refuse it with a message instead of opening it empty.
 """
@@ -91,10 +92,9 @@ _LARGE_DOCUMENT = 20_000
 # the JSON spelled out 19 M points to describe 2 M distinct ones, and
 # parsing that text was half of the minute it took to open. Structure —
 # groups, layers, materials, the face attributes — stays JSON. Small meshes
-# stay JSON too: the reader rebuilds a small mesh entity by entity, a big
-# one in one bulk pass (see :func:`_bulk_sized`), and the two number their
-# vertices differently — a mesh goes binary only where the JSON reader
-# would take the bulk pass, so either way it reopens the same.
+# stay in their legacy JSON representation below _BULK_MIN. Indexed blocks
+# retain vertex identities rather than invoking the drawing weld; close but
+# distinct vertices can therefore intentionally differ from legacy JSON.
 _GEOM_PREFIX = "geom/"
 _BULK_MIN = 1024
 #: The dtypes a geometry block may declare — anything else is refused, so a
@@ -299,20 +299,22 @@ def _edge_json(e) -> dict:
 
 
 def _mesh_json(mesh, geom_sink=None) -> dict:
-    """The mesh block. With a ``geom_sink`` (a large document) a big mesh
-    goes to a binary block in the sink and the JSON keeps only its
-    reference and face-attribute table (format 3)."""
+    """Use indexed blocks for large meshes or authoritative topology.
+
+    Small indexed meshes also need format 3: coordinate-only JSON cannot
+    distinguish touching shells or preserve sub-weld-tolerance edges.
+    """
     from core.lazy_mesh import plan_of
     plan = plan_of(mesh)
-    if plan is not None and geom_sink is not None and _bulk_sized(
-            len(plan.edges), plan.nfaces):
-        # A lazy mesh (experimental engine): written from its arrays, the
-        # same bytes, without building it.
-        return {"geom": _pack_plan(mesh, plan, geom_sink)}
+    indexed = mesh.__dict__.get("_indexed_vertices", False)
     if plan is not None:
+        indexed = "member" in mesh.__dict__["_deferred_source"]["meta"]
+        if geom_sink is not None and (
+                indexed or _bulk_sized(len(plan.edges), plan.nfaces)):
+            return {"geom": _pack_plan(mesh, plan, geom_sink)}
         return _plan_json(mesh, plan)
-    if geom_sink is not None and _bulk_sized(len(mesh.edges),
-                                             len(mesh.faces)):
+    if geom_sink is not None and (
+            indexed or _bulk_sized(len(mesh.edges), len(mesh.faces))):
         return {"geom": _pack_geometry(mesh, geom_sink)}
     return {
         "edges": [_edge_json(e) for e in mesh.edges],
@@ -375,11 +377,11 @@ def _pack_geometry(mesh, sink: dict) -> dict:
     """Write ``mesh`` as a format-3 geometry block into ``sink`` (member
     name → bytes) and return its JSON side.
 
-    The points are numbered in the order a JSON document lists them —
-    every edge's two ends, then every face's outer ring and holes — so
-    the reader's weld meets them in the same order and rebuilds the same
-    vertices. Holes nested in a bigger hole are dropped here, where the
-    JSON reader drops them (:func:`core.topology._maximal_holes`)."""
+    Vertex objects are numbered by first appearance: every edge's two ends,
+    then every face's outer ring and holes. These indices are authoritative,
+    including for distinct vertices closer than the drawing weld tolerance.
+    Nested holes are dropped here, as in the legacy JSON writer/reader
+    (:func:`core.topology._maximal_holes`)."""
     import numpy as np
     from core.topology import _maximal_holes
 
@@ -598,10 +600,10 @@ def save_scene(scene, path: Path) -> dict:
     be read (those keep pointing at their original path)."""
     # Accept a Scene or a bare Mesh (the M1 read-compat path feeds a Mesh).
     mesh = scene.mesh if hasattr(scene, "mesh") else scene
-    # Decided BEFORE anything is serialized: a large document writes its
-    # big meshes as binary blocks (format 3) and never builds their JSON.
+    # Large documents use compact JSON and binary blocks for big meshes.
+    # Every document can also carry small meshes with authoritative indices.
     large = _live_element_count(scene) > _LARGE_DOCUMENT
-    geom: dict | None = {} if large else None
+    geom: dict = {}
     payload = _mesh_json(mesh, geom)
     groups = getattr(scene, "groups", None)
     kept = getattr(scene, "kept_components", None)
@@ -805,9 +807,8 @@ def save_scene(scene, path: Path) -> dict:
     images = getattr(scene, "image_planes", None)
     if images:
         payload["image_planes"] = [im.to_dict() for im in images]
-    # Images ride INSIDE the document (see the module docstring). Only a scene
-    # that actually has textures pays for the container; everything else stays
-    # plain JSON at format 1, readable by older builds.
+    # Images and indexed geometry ride inside the document. Ordinary small
+    # drawings without either remain plain format-1 JSON.
     blobs, missing = _pack_textures(payload)
     # The photogrammetric survey (Track G, G6) rides inside the document too,
     # for the same reason the textures do: a reference mesh that lives in a
@@ -1798,8 +1799,7 @@ def _document_geometry_arrays(meta, geom: dict) -> dict:
 
 
 def _load_geometry(mesh, meta, geom: dict) -> None:
-    """Rebuild a mesh from its format-3 block — the same weld and the same
-    bulk edge/face creation as the JSON path, fed from arrays."""
+    """Rebuild a format-3 mesh using its authoritative vertex indices."""
     import numpy as np
     import core.mesh as _mesh_mod
 
@@ -1832,6 +1832,12 @@ def _load_geometry(mesh, meta, geom: dict) -> None:
         rings = rings[np.repeat(keep_r, sizes)]
         sizes, counts = sizes[keep_r], counts[~face_bad]
         face_attr = face_attr[~face_bad]
+        # The bad vertices are no longer referenced. Remove their rows too:
+        # indexed construction must never put a NaN into the registry.
+        remap = np.full(len(pos), -1, dtype=np.int64)
+        remap[~bad] = np.arange(int((~bad).sum()))
+        pos = pos[~bad]
+        edges, rings = remap[edges], remap[rings]
     if not len(pos) or not (len(edges) or len(counts)):
         return
     if curves is not None and curves.size:
@@ -1858,7 +1864,8 @@ def _build_geometry(mesh, meta, pos, edges, flags, curves, layers, rings,
     half, run at once or, for a lazy mesh, on its first touch."""
     import numpy as np
 
-    vobjs, inverse = mesh.bulk_weld(pos.astype(np.float64))
+    vobjs = mesh.add_vertices_indexed(pos)
+    inverse = np.arange(len(vobjs), dtype=np.int64)
     emap = None
     if len(edges):
         eflags = None

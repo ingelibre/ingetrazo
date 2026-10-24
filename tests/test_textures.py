@@ -561,6 +561,33 @@ def test_rotating_a_group_keeps_a_planar_texture_on_its_face():
     assert "uvw" not in face.attrs["texture"]
 
 
+def test_world_mesh_keeps_textures_on_transformed_and_nested_faces():
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import world_mesh
+
+    root, root_face = _textured_group()
+    del root_face.attrs["texture"]["uvw"]  # app-painted planar projection
+    root.xform = QMatrix4x4()
+    root.xform.translate(2.0, 3.0, 4.0)
+    root.xform.rotate(30.0, V(0, 1, 0))
+    root_uvs = _rendered_uvs(root_face)
+    assert _rendered_uvs(world_mesh(root).faces[0]) == root_uvs
+
+    child, child_face = _textured_group(offset=2.0)  # imported fitted map
+    child.xform = QMatrix4x4()
+    child.xform.translate(-3.0, 1.0, 2.0)
+    child.xform.rotate(45.0, V(0, 0, 1))
+    child_uvs = _rendered_uvs(child_face)
+    root.children = [child]
+    placed = world_mesh(root)
+    assert _rendered_uvs(placed.faces[0]) == root_uvs
+    assert _rendered_uvs(placed.faces[1]) == child_uvs
+    assert _rendered_uvs(root_face) == root_uvs
+    assert _rendered_uvs(child_face) == child_uvs
+    assert "uvw" not in root_face.attrs["texture"]
+
+
+
 def test_undoing_the_move_puts_the_texture_back():
     from core.history import RotateGroupCommand
     scene = Scene()

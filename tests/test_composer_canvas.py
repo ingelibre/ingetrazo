@@ -294,13 +294,15 @@ class TestReprojection:
 
 
 class _FakeViewport:
-    """A GL-free stand-in: the composer only needs scene, camera, update."""
+    """GL-free scene, camera and temporary render state for composer tests."""
 
     def __init__(self):
         from core.camera import OrbitCamera
         from core.scene import Scene
         self.scene = Scene()
         self.camera = OrbitCamera()
+        self.plano_style = None
+        self.style_override = None
 
     def update(self):
         pass

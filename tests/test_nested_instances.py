@@ -13,6 +13,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QMatrix4x4, QVector3D  # noqa: E402
 
+import numpy as np  # noqa: E402
+import pytest  # noqa: E402
+
 from core.group import (Group, copy_group, iter_placements,  # noqa: E402
                         world_mesh)
 from core.mesh import Mesh  # noqa: E402
@@ -68,6 +71,73 @@ def test_world_mesh_folds_children_without_touching_the_prototype():
     xs = sorted({round(v.position.x()) for v in world.vertices})
     zs = sorted({round(v.position.z()) for v in world.vertices})
     assert xs == [0, 1, 10, 11] and zs == [1000]
+
+
+def _flashing_tongues(count):
+    """Local coordinates 1000x actual size; real film is still 12 mil."""
+    mesh = Mesh()
+    triangles = np.array([(0, 2, 1), (3, 4, 5), (0, 1, 4), (0, 4, 3),
+                          (1, 2, 5), (1, 5, 4), (2, 0, 3), (2, 3, 5)])
+    for i in range(count):
+        y = i * 100.0
+        pos = [(0, y, 0), (1000, y, 0), (1000, y + 0.05, 0),
+               (0, y, 0.3048), (1000, y, 0.3048),
+               (1000, y + 0.05, 0.3048)]
+        mesh.add_faces_indexed(pos, triangles.reshape(-1),
+                               [3] * 8, [1] * 8)
+    g = Group(mesh, name="12mil flashing with short CSG edges")
+    g.xform = _at(20, 12, 3)
+    g.xform.scale(0.001)
+    return g
+
+
+def _assert_flashing_tongues(mesh, count):
+    assert len(mesh.vertices) == 6 * count
+    assert len(mesh.edges) == 12 * count
+    assert len(mesh.faces) == 8 * count
+    assert all(len(e.faces) == 2 and e.v0 is not e.v1 for e in mesh.edges)
+    assert all(len({id(v) for v in f.loop}) == 3 for f in mesh.faces)
+    live = np.array([v.position.toTuple() for v in mesh.vertices])
+    assert np.ptp(live[:, 2]) == pytest.approx(0.0003048, abs=2e-7)
+    drawn = np.array([[p.toTuple() for p in tri] for f in mesh.faces
+                      for tri in f.triangulate()])
+    assert len(drawn) == 8 * count
+    drawn -= live[0]
+    volume = np.einsum("ij,ij->i", drawn[:, 0],
+                       np.cross(drawn[:, 1], drawn[:, 2])).sum() / 6
+    # Float32 at a house-scale translation costs microns, not connectivity.
+    assert volume == pytest.approx(7.62e-9 * count, rel=0.03)
+
+
+@pytest.mark.parametrize("count", [1, 48], ids=["small", "array-transform"])
+@pytest.mark.parametrize("nested", [False, True], ids=["leaf", "nested"])
+def test_world_mesh_preserves_scaled_flashing_topology(count, nested):
+    leaf = _flashing_tongues(count)
+    group = Group(name="assembly") if nested else leaf
+    if nested:
+        group.children = [leaf]
+    world = world_mesh(group)
+    _assert_flashing_tongues(world, count)
+    assert all(v not in leaf.mesh.vertices for v in world.vertices)
+    # No consumer's copy may move or merge the shared prototype.
+    assert len(leaf.mesh.vertices) == 6 * count
+    assert max(v.position.z() for v in leaf.mesh.vertices) > 0.3
+
+
+def test_scaled_flashing_survives_igz_reload(tmp_path, monkeypatch):
+    from core import _native
+    from formats import igz
+
+    # Authoritative topology uses format 3 even for a small document.
+    monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 10**12)
+    monkeypatch.setattr(_native, "wanted", lambda: False)
+    scene = Scene()
+    scene.groups.append(_flashing_tongues(1))
+    path = tmp_path / "flashing.igz"
+    igz.save_scene(scene, path)
+    reopened = Scene()
+    igz.load_into(reopened, path)
+    _assert_flashing_tongues(world_mesh(reopened.groups[0]), 1)
 
 
 def test_copy_group_keeps_the_nesting_and_the_shared_prototype():

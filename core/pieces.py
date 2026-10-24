@@ -313,9 +313,9 @@ def _edges_only(edges):
 
 def copy_part(faces, edges) -> Mesh:
     """A new mesh holding a deep copy of ``faces`` and ``edges`` — attrs,
-    holes and every edge flag included — in one vectorized weld, the recipe
-    :func:`core.group.transformed_mesh` uses (a part of a leafy import is
-    thousands of faces, and a per-face walk froze the UI at that scale)."""
+    holes and every edge flag included — in one vectorized weld. Splitting
+    deliberately joins coincident fragment corners; ordinary placement
+    materialization preserves vertex identity instead."""
     import numpy as np
     from core.topology import _maximal_holes
 
@@ -382,6 +382,11 @@ def split_into_pieces(group) -> list:
     frame = Group(group.mesh)
     frame.children = list(group.children)
     local = world_mesh(frame)
+    if group.children:
+        # Materialization keeps placements isolated. Split analysis instead
+        # joins material-cut fragments across children, on a private mesh:
+        # neither the prototypes nor ordinary world_mesh callers are welded.
+        local = copy_part(local.faces, local.edges)
     parts = solid_parts(local)
     if len(parts) <= 1 and not group.children:
         return []

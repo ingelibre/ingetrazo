@@ -43,6 +43,10 @@ class Scene:
     view_version: int = 0
     # Encapsulated chunks (own meshes), isolated from the main mesh's welding.
     groups: list = field(default_factory=list)
+    # Numerical BIM quantities and geometry keys, never flattened component
+    # meshes or object references. collect_objects replaces this per collection.
+    _bim_quantity_cache: dict = field(default_factory=dict, init=False,
+                                      repr=False, compare=False)
     # Annotation entities (static dimensions) — not geometry, drawn as overlays.
     dimensions: list = field(default_factory=list)
     # Leader-text annotations (the Text tool) — same overlay treatment.
@@ -652,6 +656,7 @@ class Scene:
 
     def clear(self) -> None:
         self.end_group_edit()
+        self._bim_quantity_cache.clear()
         if (self.mesh.edges or self.mesh.faces or self.selection
                 or self.groups or self.dimensions or self.georef
                 or self.tile_layer or self.geo_paths or self.terrain

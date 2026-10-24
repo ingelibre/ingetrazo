@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QVector3D
+from PySide6.QtGui import QMatrix4x4, QVector3D
 
 from core.bim import (
     class_quantities,
@@ -16,6 +16,8 @@ from core.bim import (
     tag_group,
 )
 from core.edits import build_add_edges
+from core.group import Group
+from core.mesh import DeferredMesh, Mesh
 from core.history import AddFaceCommand, History, MakeGroupCommand
 from core.scene import Scene
 from formats import igz
@@ -212,3 +214,206 @@ def test_tag_survives_pushpull_churn():
     pp._commit(vp)
     tagged = [g for g in scene.mesh.faces if g.attrs.get("ifc")]
     assert tagged                                   # the tag survived the push
+
+
+def _quantity_cube():
+    mesh = Mesh()
+    for loop in (
+        [(0, 0, 0), (0, 1, 0), (1, 1, 0), (1, 0, 0)],
+        [(0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)],
+        [(0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)],
+        [(1, 0, 0), (1, 1, 0), (1, 1, 1), (1, 0, 1)],
+        [(1, 1, 0), (0, 1, 0), (0, 1, 1), (1, 1, 1)],
+        [(0, 1, 0), (0, 0, 0), (0, 0, 1), (0, 1, 1)],
+    ):
+        mesh.add_face([V(*p) for p in loop])
+    return mesh
+
+
+def _assert_quantities(obj, area, volume):
+    assert abs(obj["area"] - area) < 1e-6
+    if volume is None:
+        assert obj["volume"] is None
+    else:
+        assert abs(obj["volume"] - volume) < 1e-6
+
+
+def test_collected_quantities_follow_vertex_edits_and_undo():
+    scene = Scene(mesh=_quantity_cube())
+    tag_faces(scene.mesh.faces, "IfcColumn", "Column", 1)
+    before = scene.mesh.capture_state()
+    _assert_quantities(collect_objects(scene)[0], 6.0, 1.0)
+    for vertex in list(scene.mesh.vertices):
+        if vertex.position.x() == 1.0:
+            scene.mesh.move_vertex(vertex, V(1, 0, 0))
+    _assert_quantities(collect_objects(scene)[0], 10.0, 2.0)
+    scene.mesh.restore_state(before)
+    obj = collect_objects(scene)[0]
+    _assert_quantities(obj, 6.0, 1.0)
+    assert obj["faces"] == scene.mesh.faces
+
+
+def test_collected_nested_quantities_follow_shared_geometry_and_placements():
+    scene = Scene()
+    prototype = _quantity_cube()
+    left, right = Group(prototype), Group(prototype)
+    left.xform = QMatrix4x4()
+    right.xform = QMatrix4x4()
+    right.xform.translate(4, 0, 0)
+    branch = Group()
+    branch.adopt([left, right])
+    root = Group()
+    root.adopt([branch])
+    tag_group(root, "IfcMember", "Assembly")
+    scene.groups.append(root)
+    _assert_quantities(collect_objects(scene)[0], 12.0, 2.0)
+    for vertex in list(prototype.vertices):
+        if vertex.position.z() == 1.0:
+            prototype.place_vertex(vertex, vertex.position + V(0, 0, 1))
+    _assert_quantities(collect_objects(scene)[0], 20.0, 4.0)
+    # In-place edits to matrices at either nesting depth must invalidate too.
+    left.xform.scale(2, 1, 1)
+    _assert_quantities(collect_objects(scene)[0], 26.0, 6.0)
+    branch.xform.scale(1, 2, 1)
+    _assert_quantities(collect_objects(scene)[0], 40.0, 12.0)
+    root.xform.scale(2)
+    _assert_quantities(collect_objects(scene)[0], 160.0, 96.0)
+    assert root.children == [branch]
+    assert branch.children == [left, right]
+    assert left.mesh is prototype and right.mesh is prototype
+
+
+def test_collected_quantities_follow_replacement_and_nested_membership():
+    scene = Scene()
+    child = Group(_quantity_cube())
+    root = Group()
+    root.adopt([child])
+    tag_group(root, "IfcColumn", "Container")
+    scene.groups.append(root)
+    _assert_quantities(collect_objects(scene)[0], 6.0, 1.0)
+    original = child.mesh
+    child.mesh = Mesh()
+    child.mesh.add_face([V(0, 0), V(3, 0), V(3, 2), V(0, 2)])
+    _assert_quantities(collect_objects(scene)[0], 6.0, None)
+    child.mesh = original
+    _assert_quantities(collect_objects(scene)[0], 6.0, 1.0)
+    root.children.clear()
+    _assert_quantities(collect_objects(scene)[0], 0.0, None)
+    root.children.append(child)
+    _assert_quantities(collect_objects(scene)[0], 6.0, 1.0)
+
+
+def test_collected_quantities_follow_holes_and_direct_winding_changes():
+    scene = Scene(mesh=_quantity_cube())
+    tag_faces(scene.mesh.faces, "IfcColumn", "Column", 1)
+    _assert_quantities(collect_objects(scene)[0], 6.0, 1.0)
+    top = scene.mesh.faces[1]
+    hole = scene.mesh.add_hole(
+        top, [V(.25, .25, 1), V(.25, .75, 1),
+              V(.75, .75, 1), V(.75, .25, 1)])
+    _assert_quantities(collect_objects(scene)[0], 6.0, None)
+    scene.mesh.remove_hole(top, hole)
+    _assert_quantities(collect_objects(scene)[0], 6.0, 1.0)
+    # Face-loop edits do not bump the mesh mutation serial.
+    top.loop.reverse()
+    _assert_quantities(collect_objects(scene)[0], 6.0, 1.0 / 3.0)
+    top.loop.reverse()
+    _assert_quantities(collect_objects(scene)[0], 6.0, 1.0)
+
+
+def test_collected_quantities_refresh_tags_face_membership_and_live_results():
+    from core.bim import untag_faces, untag_group
+
+    scene = Scene(mesh=_quantity_cube())
+    tag_faces(scene.mesh.faces, "IfcColumn", "Original", 1)
+    first = collect_objects(scene)[0]
+    tag_faces(scene.mesh.faces, "IfcBeam", "Renamed", 1)
+    obj = collect_objects(scene)[0]
+    assert obj["class"] == "IfcBeam" and obj["name"] == "Renamed"
+    _assert_quantities(obj, 6.0, 1.0)
+    # Returned dictionaries/lists are live snapshots, not cached containers.
+    first["area"] = -1
+    first["faces"].clear()
+    assert collect_objects(scene)[0]["faces"] == scene.mesh.faces
+    face = scene.mesh.faces[-1]
+    untag_faces([face])
+    obj = collect_objects(scene)[0]
+    _assert_quantities(obj, 5.0, None)
+    assert face not in obj["faces"]
+    tag_faces([face], "IfcSlab", "Separate", 2)
+    objs = collect_objects(scene)
+    assert [o["key"] for o in objs] == [("faces", 1), ("faces", 2)]
+    _assert_quantities(objs[1], 1.0, None)
+    scene.mesh.remove_face(face)
+    assert len(collect_objects(scene)) == 1
+    group = Group(_quantity_cube())
+    tag_group(group, "IfcColumn", "Grouped")
+    scene.groups.append(group)
+    assert collect_objects(scene)[-1]["group"] is group
+    tag_group(group, "IfcBeam", "Retagged")
+    obj = collect_objects(scene)[-1]
+    assert obj["class"] == "IfcBeam" and obj["name"] == "Retagged"
+    assert obj["group"] is group
+    untag_group(group)
+    assert len(collect_objects(scene)) == 1
+    untag_faces(scene.mesh.faces)
+    assert collect_objects(scene) == []
+    tag_group(group, "IfcColumn", "Restored")
+    assert collect_objects(scene)[0]["group"] is group
+    scene.groups.remove(group)
+    assert collect_objects(scene) == []
+    scene.groups.append(group)
+    assert len(collect_objects(scene)) == 1
+    scene.clear()
+    assert collect_objects(scene) == []
+    replacement = Group(_quantity_cube())
+    tag_group(replacement, "IfcFooting", "New document")
+    scene.groups.append(replacement)
+    obj = collect_objects(scene)[0]
+    assert obj["group"] is replacement and obj["name"] == "New document"
+    _assert_quantities(obj, 6.0, 1.0)
+
+
+def test_collected_quantities_ignore_layer_and_object_visibility():
+    from core.layers import Layer, assign_layer
+
+    scene = Scene(mesh=_quantity_cube())
+    scene.layers.append(Layer("Structure"))
+    tag_faces(scene.mesh.faces, "IfcColumn", "Loose", 1)
+    for face in scene.mesh.faces:
+        assign_layer(face, "Structure")
+    child = Group(_quantity_cube())
+    root = Group()
+    root.adopt([child])
+    assign_layer(root, "Structure")
+    tag_group(root, "IfcBeam", "Nested")
+    scene.groups.append(root)
+    for visible in (True, False, True):
+        scene.layers[-1].visible = visible
+        root.hidden = not visible
+        scene.version += 1
+        objs = collect_objects(scene)
+        assert len(objs) == 2
+        for obj in objs:
+            _assert_quantities(obj, 6.0, 1.0)
+        assert objs[0]["faces"] == scene.mesh.faces
+        assert objs[1]["group"] is root
+
+
+def test_collected_quantities_handle_deferred_prototype_and_later_edits():
+    mesh = Mesh()
+
+    def build(target):
+        target.restore_state(_quantity_cube().capture_state())
+
+    assert DeferredMesh.defer(mesh, build, 6)
+    group = Group(mesh)
+    group.xform = QMatrix4x4()
+    tag_group(group, "IfcColumn", "Deferred")
+    scene = Scene(groups=[group])
+    _assert_quantities(collect_objects(scene)[0], 6.0, 1.0)
+    _assert_quantities(collect_objects(scene)[0], 6.0, 1.0)
+    for vertex in list(mesh.vertices):
+        if vertex.position.x() == 1.0:
+            mesh.move_vertex(vertex, V(1, 0, 0))
+    _assert_quantities(collect_objects(scene)[0], 10.0, 2.0)

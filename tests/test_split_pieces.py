@@ -62,9 +62,16 @@ def test_fragments_across_children_join_into_the_piece_they_are():
         halves.append(g)
     stool = Group()
     stool.adopt(halves)
+    assert len(world_mesh(stool).vertices) == 16
     pieces = split_into_pieces(stool)
     assert len(pieces) == 1
     assert len(pieces[0].mesh.faces) == 6
+    assert len(pieces[0].mesh.vertices) == 8
+    assert len(pieces[0].mesh.edges) == 12
+    # Joining is specific to split analysis, not placement materialization;
+    # the source fragments and their vertex identities remain independent.
+    assert [len(m.vertices) for m in (a, b)] == [8, 8]
+    assert len(world_mesh(stool).vertices) == 16
 
 
 def test_a_piece_keeps_the_name_of_the_file_part_it_came_from():

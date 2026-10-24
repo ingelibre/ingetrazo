@@ -69,27 +69,64 @@ def test_a_selection_keeps_the_takeoff_and_an_edit_remeasures(monkeypatch):
         win.close()
 
 
-def test_an_edit_remeasures_only_the_object_it_touched():
-    from core.bim import collect_objects
+def test_an_edit_remeasures_only_the_object_it_touched(monkeypatch):
+    import core.bim as bim
     from core.scene import Scene
     scene = Scene()
     bars = [_bar(i) for i in range(3)]
     scene.groups += bars
+    measured = []
+    real = bim.face_set_volume
+
+    def measure(faces):
+        measured.append(1)
+        return real(faces)
+
+    monkeypatch.setattr(bim, "face_set_volume", measure)
     memo = {}
-    first = collect_objects(scene, memo)
-    again = collect_objects(scene, memo)
-    assert all(a is b for a, b in zip(first, again))      # nothing re-measured
+    bim.collect_objects(scene, memo)
+    again = bim.collect_objects(scene, memo)
+    assert [o["volume"] for o in again] == pytest.approx([1, 1, 1])
+    assert len(measured) == 3
     bars[1].xform.scale(2.0)
-    third = collect_objects(scene, memo)
-    assert third[0] is first[0] and third[2] is first[2]
-    assert third[1] is not first[1]
-    assert third[1]["volume"] == pytest.approx(8.0)
+    third = bim.collect_objects(scene, memo)
+    assert [o["volume"] for o in third] == pytest.approx([1, 8, 1])
+    assert len(measured) == 4
     bars[2].ifc = dict(bars[2].ifc, name="renamed")
-    fourth = collect_objects(scene, memo)
-    assert fourth[2] is not third[2] and fourth[2]["name"] == "renamed"
-    # Untagged or removed objects leave the memo.
+    fourth = bim.collect_objects(scene, memo)
+    assert fourth[2]["name"] == "renamed"
+    assert len(measured) == 4  # tags do not alter numeric quantities
     scene.groups.remove(bars[0])
-    collect_objects(scene, memo)
-    assert len(memo) == 2
-    # Without a memo every call measures afresh, as the IFC export wants.
-    assert collect_objects(scene)[0] is not collect_objects(scene)[0]
+    assert [o["name"] for o in bim.collect_objects(scene, memo)] == [
+        "bar 1", "renamed"]
+
+
+def test_takeoff_updates_after_hole_removal_and_direct_winding_edits():
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        scene = win.viewport.scene
+        bar = _bar(0)
+        bar.ifc["class"] = "IfcColumn"
+        scene.groups.append(bar)
+        panel = win.bim_tray.bim
+
+        def volume():
+            scene.version += 1
+            panel.refresh()
+            return panel.tree.topLevelItem(0).text(3)
+
+        assert volume() == "1.00"
+        top = bar.mesh.faces[1]
+        hole = bar.mesh.add_hole(
+            top, [V(.25, .25, 1), V(.25, .75, 1),
+                  V(.75, .75, 1), V(.75, .25, 1)])
+        assert volume() == "—"
+        bar.mesh.remove_hole(top, hole)
+        assert volume() == "1.00"
+        top.loop.reverse()
+        assert volume() == "0.33"
+        assert panel.tree.topLevelItem(0).text(2) == "0.33 m³"
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

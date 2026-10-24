@@ -136,3 +136,92 @@ def test_auto_render_rerenders_raster_frames_and_ignores_sheet_edits(
             comp.close()
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_saved_scene_renders_recollect_visibility_without_document_edits(monkeypatch):
+    """Exercise real VBO collection and pick/HLR caches across saved scenes,
+    including a nested hidden object, then return to the current live view."""
+    from core.composition import MarcoVista
+    from core.group import Group
+    from core.layers import Layer
+    from core.mesh import Mesh
+    from core.saved_views import SavedView
+    from tests.test_group_edit import _FakeVBO
+    from views.composer import ComposerWindow
+    from views.main_window import MainWindow
+
+    win = MainWindow()
+    comp = ComposerWindow(win)
+    try:
+        vp, scene = win.viewport, win.viewport.scene
+
+        def triangle(x):
+            mesh = Mesh()
+            mesh.add_face([QVector3D(x, 0, 0), QVector3D(x + 1, 0, 0),
+                           QVector3D(x, 0, 1)])
+            return mesh
+
+        root = Group(name="Assembly")
+        first, second = Group(triangle(0)), Group(triangle(10))
+        root.children.extend([first, second])
+        scene.groups.append(root)
+        scene.layers.append(Layer("Loose"))
+        face = scene.mesh.add_face(
+            [QVector3D(20, 0, 0), QVector3D(21, 0, 0), QVector3D(20, 0, 1)])
+        face.attrs["layer"] = "Loose"
+        for edge in scene.mesh.edges:
+            edge.layer = "Loose"
+        scene.version += 1
+        scene.selection.add(face)
+        comp._on_model_version(scene.version)
+        monkeypatch.setattr("views.viewport._NO_INSTANCING", True)
+        scene.saved_views.extend([
+            SavedView("First", hidden_objects=[second.uid], hidden_layers=["Loose"]),
+            SavedView("Second", hidden_objects=[first.uid], hidden_layers=[]),
+        ])
+        # Retain the real incremental upload code; only the GPU is replaced.
+        for name in ("_edges_vbo", "_selected_vbo", "_sel_faces_vbo",
+                     "_faces_vbo", "_dback_vbo", "_tex_faces_vbo"):
+            monkeypatch.setattr(vp, name, _FakeVBO(), raising=False)
+
+        def geometry_x(geometry):
+            tris, hard, _soft, _normals = geometry
+            points = np.concatenate([tris.reshape(-1, 3), hard.reshape(-1, 3)])
+            return set(np.floor(points[:, 0] / 10).astype(int))
+
+        def uploaded_x():
+            vp._sync_edges()
+            data = bytes(vp._edges_vbo.data[:vp._edges_count * 12])
+            return set(np.floor(np.frombuffer(data, dtype=np.float32)
+                                .reshape(-1, 3)[:, 0] / 10).astype(int))
+
+        assert uploaded_x() == {0, 1, 2}
+        live_geometry = comp._scene_geometry()
+        assert geometry_x(live_geometry) == {0, 1, 2}
+        # Warm both epoch shortcuts and the pick index in the same tick.
+        vp._placements_epoch()
+        seen = []
+
+        def render_buffers(*args, **kwargs):
+            seen.append((uploaded_x(), geometry_x(comp._scene_geometry())))
+            return None
+
+        monkeypatch.setattr(vp, "render_image", render_buffers)
+        unrelated = MarcoVista()
+        comp._stale.add(id(unrelated))
+        version, last_version = scene.version, comp._last_model_version
+        for key in ("scene:First", "scene:Second", "__current__"):
+            comp.render_frame(MarcoVista(view_key=key, style="sombreado"))
+            assert scene.version == version
+            assert comp._last_model_version == last_version
+            assert id(unrelated) in comp._stale
+            assert comp._geom_cache is live_geometry
+        assert seen == [({0}, {0}), ({1, 2}, {1, 2}),
+                        ({0, 1, 2}, {0, 1, 2})]
+        assert not first.hidden and not second.hidden
+        assert scene.selection == {face}
+        assert scene.layer("Loose").visible
+    finally:
+        comp.close()
+        win._saved_version = win.viewport.scene.version
+        win.close()

@@ -130,3 +130,36 @@ P0 is half a session. P1 and P3 are a session each and pay the most
 "feel" per line. P2 is the big one (touches chunks, picks, move/rotate
 paths) — a full session with the regression suite as the net. P4 rides
 wherever the telemetry points. P5 only on evidence.
+
+## BIM quantities and saved-scene rendering
+
+BIM quantity caches follow mesh topology and nested placement transforms,
+not document revisions or layer visibility. Hidden or tab-covered BIM
+panels defer refresh and release their previous object rows. Revealing a
+panel refreshes it against the current model; takeoff memoization also
+checks topology before reusing rows.
+
+Saved-scene sheet renders invalidate visibility-dependent viewport caches
+without changing the document revision. Page switching and atlas export
+recollect each scene's framing independently. Temporary views restore the
+live camera, nested visibility, selection, render settings and composer
+geometry collections afterward.
+
+Camera clipping fits visible model bounds to retain real-thickness film
+precision in distant and parallel views. Visible face-me figures, including
+nested placements, and construction guides retain the original clipping
+range because model bounds do not include them.
+Picking rays remain independent of fitted clipping: they keep unfitted
+origins so new sketch points in front of the model are reachable, and use
+camera-space directions to avoid cancellation at face boundaries.
+
+Materialization, indexed native-file persistence and lazy mesh plans retain
+explicit vertex identities, including small parts and touching shells.
+Erase cascades, snapshot collision registrations and redo after topology
+rebuilds preserve that connectivity; drawing still finds surviving
+coincident vertices. Transformed copies retain fitted texture maps and
+app-painted planar projections through nested placements.
+
+Split into Pieces deliberately rejoins coincident material-cut fragments
+across children on a private analysis mesh. This operation does not weld
+the original prototypes or ordinary placement materialization.

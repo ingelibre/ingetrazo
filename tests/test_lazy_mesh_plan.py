@@ -3,8 +3,8 @@
 """A deferred mesh's plan (core.lazy_mesh) is the mesh building it makes,
 index for index: vertex positions in list order, edges in list order with
 their direction and flags, face corners, and each edge's incident faces in
-order — on scenes whose corners sit a hair apart, so the weld's boundary
-probes run, with duplicate and welded-shut edges."""
+order — on scenes whose distinct indexed corners sit a hair apart, and on
+legacy unindexed points whose weld boundary probes must still run."""
 from __future__ import annotations
 
 import random
@@ -92,15 +92,15 @@ def test_weld_is_bulk_weld(monkeypatch, engine):
             [id(m.vertices[i]) for i in pid.tolist()]
 
 
-def test_duplicate_and_shut_edges(binary, tmp_path):
+def test_close_distinct_indexed_vertices_are_not_welded(binary, tmp_path):
     scene = Scene()
     m = scene.mesh
     m.add_face([V(0, 0, 0), V(1, 0, 0), V(1, 1, 0), V(0, 1, 0)])
     e = m.add_edge(V(5, 0, 0), V(6, 0, 0))
     e.soft, e.curve, e.layer = True, 3, "Guias"
     m.add_edge(V(6, 0, 0), V(6, 1, 0)).hidden = True
-    # Saved apart, welded shut on reading: the ends of an edge and the
-    # corner of a face moved a hair from their neighbours.
+    # Distinct serialized indices remain distinct even when a user moves
+    # endpoints or corners inside the ordinary drawing weld distance.
     shut = m.add_edge(V(7, 0, 0), V(7.5, 0, 0))
     shut.v1.position = V(7 + 2e-6, 0, 0)
     tri = m.add_face([V(9, 0, 0), V(10, 0, 0), V(10, 1, 0), V(9.5, 1, 0)])
@@ -111,6 +111,9 @@ def test_duplicate_and_shut_edges(binary, tmp_path):
     s2 = Scene()
     igz.load_into(s2, path)
     _compare(lazy_mesh.plan_of(s2.mesh), s2.mesh)
+    assert len(s2.mesh.vertices) == len(m.vertices)
+    assert len(s2.mesh.edges) == len(m.edges)
+    assert all(e.v0 is not e.v1 for e in s2.mesh.edges)
 
 
 @pytest.mark.parametrize("engine", ["numpy", "rust"])

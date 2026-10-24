@@ -2,6 +2,8 @@
 """The frame's «Paper background»: render on white with no sky whatever
 the style says (Marco, 2026-09-08, the rebar in X-ray: «no me gusta que
 tenga el fondo gris del model»)."""
+import pytest
+
 from PySide6.QtWidgets import QApplication, QWidget
 
 from core.composition import Composicion, MarcoVista
@@ -63,3 +65,35 @@ def test_paper_bg_renders_white_without_sky_and_keeps_the_face_mode():
     assert composer.paper_bg_check.isChecked()
     composer.paper_bg_check.setChecked(False)
     assert frame.paper_bg is False
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_frame_render_restores_existing_viewport_overrides(monkeypatch, fail):
+    from core.style import Style
+
+    host = QWidget()
+    host.viewport = _RecordingViewport()
+    composer = ComposerWindow(host)
+    try:
+        vp = host.viewport
+        original_style = Style(face_mode="xray")
+        vp.plano_style, vp.style_override = "lineas", original_style
+        vp._export_edge_px, vp._export_profile_px = 7, 9
+        frame = MarcoVista(style="tecnico")
+
+        def render(*args, **kwargs):
+            assert vp.plano_style == "tecnico"
+            if fail:
+                raise RuntimeError("render failed")
+            return None
+
+        monkeypatch.setattr(vp, "render_image", render)
+        if fail:
+            with pytest.raises(RuntimeError, match="render failed"):
+                composer.render_frame(frame)
+        else:
+            composer.render_frame(frame)
+        assert vp.plano_style == "lineas" and vp.style_override is original_style
+        assert (vp._export_edge_px, vp._export_profile_px) == (7, 9)
+    finally:
+        composer.close()

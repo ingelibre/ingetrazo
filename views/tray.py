@@ -4322,11 +4322,31 @@ class BimTray(QDockWidget):
         self.setFeatures(QDockWidget.DockWidgetMovable
                          | QDockWidget.DockWidgetFloatable
                          | QDockWidget.DockWidgetClosable)
+        self._content_visible = False
+        self._refresh_pending = False
         self.bim = BimPanel(window)
         self.setWidget(_scrolled([(tr("BIM tagging"), self.bim)]))
+        self.visibilityChanged.connect(self._on_visibility_changed)
 
     def on_scene_changed(self) -> None:
-        self.bim.refresh()
+        if not self._content_visible and not self._refresh_pending:
+            # Rows retain their source geometry. Drop stale references so
+            # a closed dock cannot keep a previous document alive.
+            self.bim._objects.clear()
+            self.bim.tree.clear()
+            self.bim.__dict__.get("_takeoff_memo", {}).clear()
+            self.bim._takeoff_key = None
+        self._refresh_pending = True
+        if self._content_visible:
+            self.bim.refresh()
+            self._refresh_pending = False
+
+    def _on_visibility_changed(self, visible: bool) -> None:
+        # Dock tabs can be open but covered by another tab. Qt reports
+        # their actual content visibility here, unlike isVisible().
+        self._content_visible = visible
+        if visible and self._refresh_pending:
+            self.on_scene_changed()
 
 
 class SurveyPointsPanel(QWidget):

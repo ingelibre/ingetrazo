@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Format 3: a large document keeps its big meshes as binary blocks.
 
-The promise is that nothing changes but the speed: a model written in
-binary reopens exactly as the same model written as JSON — same vertices,
-edges, faces, holes, flags, attributes, in the same order."""
+Indexed geometry preserves the stored vertex identities and connectivity,
+including edges below drawing weld tolerance. Unindexed legacy JSON still
+reconstructs shared topology by position."""
 from __future__ import annotations
 
 import json
 import zipfile
 
 import pytest
+import numpy as np
 from PySide6.QtGui import QImage, QMatrix4x4, QVector3D as V
 
 from core.group import Group
@@ -185,16 +186,117 @@ def test_a_nan_point_is_refused_on_save(tmp_path, binary):
     assert not out.exists()
 
 
-def test_a_mesh_goes_binary_only_where_json_would_load_in_bulk():
-    """The JSON reader rebuilds small meshes entity by entity and big ones
-    in bulk, and the two number vertices differently: a mesh the JSON
-    reader takes one by one must stay JSON, or it reopens in another
-    order (23 meshes of the #158 model did)."""
-    m = Mesh()
-    for i in range(600):                 # 600 edges: 1200 ends, < 1024 rule
-        m.add_edge(V(i, 0, 0), V(i, 1, 0))
-    assert not igz._bulk_sized(len(m.edges), len(m.faces))
-    assert "edges" in igz._mesh_json(m, {})
-    for i in range(500):
-        m.add_edge(V(i, 2, 0), V(i, 3, 0))
-    assert "geom" in igz._mesh_json(m, {})
+@pytest.mark.parametrize("gauge", [0.0003048, 0.000381],
+                         ids=["12mil-tape", "15mil-flashing"])
+@pytest.mark.parametrize("deferred", [False, True], ids=["eager", "deferred"])
+def test_indexed_thin_film_roundtrip_preserves_drawn_volume(
+        tmp_path, monkeypatch, gauge, deferred):
+    from core import _native, lazy_mesh
+    from core.mesh import DeferredMesh
+
+    monkeypatch.setattr(_native, "wanted", lambda: deferred)
+    scene = Scene()
+    pos = np.array([(20, 12, 3), (21, 12, 3), (21, 12.00005, 3),
+                    (20, 12, 3 + gauge), (21, 12, 3 + gauge),
+                    (21, 12.00005, 3 + gauge)])
+    triangles = np.array([(0, 2, 1), (3, 4, 5), (0, 1, 4), (0, 4, 3),
+                          (1, 2, 5), (1, 5, 4), (2, 0, 3), (2, 3, 5)])
+    scene.mesh.add_faces_indexed(pos, triangles.reshape(-1),
+                                 [3] * 8, [1] * 8)
+    expected = np.array([v.position.toTuple() for v in scene.mesh.vertices])
+    reopened = _save_and_load(scene, tmp_path / "thin-film.igz")
+    mesh = reopened.mesh
+    if deferred:
+        assert type(mesh) is DeferredMesh
+        plan = lazy_mesh.plan_of(mesh)
+        assert len(plan.pos) == 6 and len(plan.edges) == 12
+        assert all(len(set(r)) == 3 for r in plan.corners.reshape(-1, 3))
+        # The native buffer conversion consumes these same authoritative
+        # indices; exercise its actual triangle stream when it is available.
+        if _native.native is not None and _native.qt_hypot() is not None:
+            from views.array_bake import _geometry
+            indices = _geometry(mesh, plan)[3]
+            native_drawn = plan.pos[indices].copy()
+            assert len(native_drawn) == 8
+            native_drawn -= expected[0]
+            native_volume = np.einsum(
+                "ij,ij->i", native_drawn[:, 0],
+                np.cross(native_drawn[:, 1], native_drawn[:, 2])).sum() / 6
+            assert native_volume == pytest.approx(
+                np.prod(np.ptp(expected, axis=0)) / 2, rel=1e-6)
+        assert type(mesh) is DeferredMesh, "planning must not build objects"
+
+    assert len(mesh.vertices) == 6 and len(mesh.edges) == 12
+    assert all(len(e.faces) == 2 and e.v0 is not e.v1 for e in mesh.edges)
+    actual = np.array([v.position.toTuple() for v in mesh.vertices])
+    assert sorted(map(tuple, actual)) == sorted(map(tuple, expected))
+    assert np.ptp(actual[:, 2]) == pytest.approx(gauge, abs=2e-7)
+    drawn = np.array([[p.toTuple() for p in tri] for f in mesh.faces
+                      for tri in f.triangulate()])
+    assert len(drawn) == 8
+    drawn -= expected[0]
+    volume = np.einsum("ij,ij->i", drawn[:, 0],
+                       np.cross(drawn[:, 1], drawn[:, 2])).sum() / 6
+    assert volume == pytest.approx(
+        np.prod(np.ptp(expected, axis=0)) / 2, rel=1e-6)
+
+
+@pytest.mark.parametrize("deferred", [False, True], ids=["eager", "deferred"])
+def test_nonfinite_indexed_vertex_drops_only_affected_geometry(
+        tmp_path, binary, monkeypatch, deferred):
+    from core import _native, lazy_mesh
+
+    monkeypatch.setattr(_native, "wanted", lambda: deferred)
+    scene = Scene()
+    for x in (0, 10):
+        scene.mesh.add_face([V(x, 0, 0), V(x + 1, 0, 0), V(x, 1, 0)])
+    path = tmp_path / "damaged-point.igz"
+    igz.save_scene(scene, path)
+
+    def damage(doc, members):
+        meta = doc["scene"]["geom"]
+        dtype, shape, offset = meta["arrays"]["pos"]
+        blob = bytearray(members[meta["member"]])
+        positions = np.ndarray(shape, dtype=dtype, buffer=blob, offset=offset)
+        positions[0, 0] = np.nan
+        members[meta["member"]] = bytes(blob)
+
+    _tamper(path, damage)
+    reopened = Scene()
+    igz.load_into(reopened, path)
+    if deferred:
+        assert np.isfinite(lazy_mesh.plan_of(reopened.mesh).pos).all()
+    assert reopened.load_repairs == 3       # one face and its two bad edges
+    assert len(reopened.mesh.faces) == 1
+    assert all(np.isfinite(v.position.toTuple()).all()
+               for v in reopened.mesh.vertices)
+    assert min(v.x() for v in reopened.mesh.faces[0].vertices) == 10
+
+
+@pytest.mark.parametrize("deferred", [False, True], ids=["eager", "deferred"])
+def test_small_touching_shells_stay_separate_after_resaving(
+        tmp_path, monkeypatch, deferred):
+    from core import _native
+    from core.mesh import DeferredMesh
+
+    monkeypatch.setattr(_native, "wanted", lambda: deferred)
+    scene = Scene()
+    pos = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1),
+           (0, 0, 0), (-1, 0, 0), (0, -1, 0), (0, 0, -1)]
+    triangles = [(0, 2, 1), (0, 1, 3), (0, 3, 2), (1, 2, 3)]
+    triangles += [(a + 4, c + 4, b + 4) for a, b, c in triangles[:]]
+    scene.mesh.add_faces_indexed(
+        pos, np.asarray(triangles).reshape(-1), [3] * 8, [1] * 8)
+    reopened = _save_and_load(scene, tmp_path / "touching-shells.igz")
+    second = tmp_path / "resaved-shells.igz"
+    igz.save_scene(reopened, second)
+    if deferred:
+        assert type(reopened.mesh) is DeferredMesh
+    back = Scene()
+    igz.load_into(back, second)
+    mesh = back.mesh
+    assert len(mesh.vertices) == 8 and len(mesh.edges) == 12
+    origins = [v for v in mesh.vertices if v.position == V(0, 0, 0)]
+    assert len(origins) == 2
+    assert all(len(v.edges) == 3 for v in mesh.vertices)
+    assert origins[0].faces().isdisjoint(origins[1].faces())
