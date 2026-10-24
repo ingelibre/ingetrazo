@@ -57,6 +57,7 @@ def _stub_catalog(monkeypatch, module, extensions, reviewed=None):
         extensions, reviewed or {}, "2026-10-07T10:00:00+00:00", False)
     monkeypatch.setattr(module, "load_cached_catalog", lambda: snapshot)
     monkeypatch.setattr(module, "refresh_catalog", lambda: snapshot)
+    monkeypatch.setattr(module, "load_extension_sources", lambda: [])
     if hasattr(module, "bundled_extensions"):
         # Only the catalog under test: the extensions shipped with the app
         # have their own test (test_extension_manager_hand_installed.py).
@@ -158,6 +159,131 @@ def test_catalog_validation_and_review_uses_the_reviewed_hash(
     assert not manager.is_reviewed(extensions[0], reviewed)
 
 
+def test_custom_catalog_source_is_merged_but_not_marked_reviewed(
+        tmp_path, monkeypatch):
+    payload = TOOL_SOURCE.encode()
+    custom_url = "https://extensions.example/catalog.json"
+    custom_catalog = {
+        "format": 1,
+        "extensions": [{
+            "id": "outside",
+            "version": "1.0",
+            "author": "Author",
+            "license": "MIT",
+            "repository": "https://example.org/outside",
+            "download": "https://extensions.example/outside.py",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "ingetrazo": "0.1.0",
+            "name": {"en": "Outside"},
+            "summary": {"en": "External source"},
+            "tags": [],
+        }],
+    }
+    monkeypatch.setattr(manager, "catalog_cache_path",
+                        lambda: tmp_path / "catalog-cache.json")
+
+    def fetch(url, _limit):
+        if url == custom_url:
+            return json.dumps(custom_catalog).encode()
+        if url == manager.CATALOG_URL:
+            return b'{"format": 1, "extensions": []}'
+        return b""
+
+    monkeypatch.setattr(manager, "_get", fetch)
+    source = manager.normalize_extension_source("catalog", custom_url)
+    snapshot = manager.refresh_catalog([source])
+
+    assert [extension.id for extension in snapshot.extensions] == ["outside"]
+    assert snapshot.extensions[0].source_name == "extensions.example"
+    assert not manager.is_reviewed(snapshot.extensions[0], snapshot.reviewed)
+
+
+def test_local_folder_source_supports_catalog_and_direct_packages(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path / "user")
+    package = tmp_path / "packages"
+    package.mkdir()
+    payload = TOOL_SOURCE.encode()
+    (package / "catalog_package.py").write_bytes(payload)
+    catalog_source = tmp_path / "catalog-source"
+    catalog_source.mkdir()
+    local_packages = catalog_source / "packages"
+    local_packages.mkdir()
+    local_catalog_package = local_packages / "catalog_package"
+    local_catalog_package.mkdir()
+    (local_catalog_package / "__init__.py").write_bytes(payload)
+    catalog_entry = {
+        "id": "catalog_package",
+        "version": "1.0",
+        "author": "Author",
+        "license": "MIT",
+        "repository": "https://example.org/catalog_package",
+        "download": "packages/catalog_package",
+        "sha256": manager._bundle_digest(local_catalog_package),
+        "ingetrazo": "0.1.0",
+        "name": {"en": "Catalog package"},
+        "summary": {"en": "Local catalog"},
+        "tags": [],
+    }
+    (catalog_source / "catalog.json").write_text(json.dumps({
+        "format": 1, "extensions": [catalog_entry],
+    }), encoding="utf-8")
+    local_catalog = manager.normalize_extension_source(
+        "folder", str(catalog_source))
+    catalog_extension = manager._load_custom_source(local_catalog)[0]
+    assert catalog_extension.local_path == str(local_catalog_package)
+    manager.install_extension(catalog_extension)
+    assert (
+        (tmp_path / "user" / "catalog_package" / "__init__.py").read_bytes()
+        == payload)
+
+    # Relative catalog paths cannot escape their own source directory.
+    catalog_entry["download"] = "../packages/catalog_package.py"
+    (catalog_source / "catalog.json").write_text(json.dumps({
+        "format": 1, "extensions": [catalog_entry],
+    }), encoding="utf-8")
+    with pytest.raises(manager.ExtensionManagerError, match="outside"):
+        manager._load_custom_source(local_catalog)
+
+    local_payloads = tmp_path / "local-source"
+    local_payloads.mkdir()
+    local_file = local_payloads / "local_package.py"
+    local_file.write_bytes(payload)
+    zip_path = local_payloads / "zip_package.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("zip_package.py", payload)
+    local_package_folder = local_payloads / "local_folder"
+    local_package_folder.mkdir()
+    (local_package_folder / "__init__.py").write_bytes(payload)
+    nested_package = local_payloads / "grouped" / "nested_folder"
+    nested_package.mkdir(parents=True)
+    (nested_package / "__init__.py").write_bytes(payload)
+    local_folder = manager.normalize_extension_source(
+        "folder", str(local_payloads))
+    extensions = manager._load_custom_source(local_folder)
+    by_id = {extension.id: extension for extension in extensions}
+    assert set(by_id) == {
+        "nested_folder", "local_folder", "local_package", "zip_package"}
+    assert by_id["nested_folder"].local_path == str(nested_package)
+    assert by_id["local_package"].local_path == str(local_file)
+    manager.install_extension(by_id["zip_package"])
+    assert (
+        (tmp_path / "user" / "zip_package" / "__init__.py").read_bytes()
+        == payload)
+    assert not manager.is_reviewed(by_id["local_package"], {})
+
+
+def test_local_sources_reject_oversized_packages_and_malformed_urls(
+        tmp_path, monkeypatch):
+    package = tmp_path / "large.py"
+    package.write_bytes(b"too large")
+    monkeypatch.setattr(manager, "MAX_DOWNLOAD_BYTES", 4)
+    with pytest.raises(manager.ExtensionManagerError, match="too large"):
+        manager._local_extension(package, "local")
+    with pytest.raises(manager.ExtensionManagerError, match="valid HTTPS"):
+        manager.normalize_extension_source("catalog", "https://[invalid")
+
+
 def test_catalog_and_reviewed_list_are_fetched_concurrently(
         tmp_path, monkeypatch):
     monkeypatch.setattr(manager, "catalog_cache_path",
@@ -224,6 +350,46 @@ def test_catalog_refresh_without_cache_surfaces_failure(tmp_path, monkeypatch):
         manager.refresh_catalog()
 
 
+def test_first_show_refreshes_catalog_without_manual_refresh(
+        tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    from views import extension_manager_dialog as dialog_module
+    extension = _extension(b"first-open")
+    snapshot = manager.CatalogSnapshot(
+        [extension], {}, "2026-10-07T10:00:00+00:00", False)
+    refresh_calls = []
+    monkeypatch.setattr(
+        dialog_module, "load_cached_catalog", lambda: snapshot)
+    monkeypatch.setattr(dialog_module, "load_extension_sources", lambda: [])
+    monkeypatch.setattr(dialog_module, "bundled_extensions", lambda: [])
+
+    def refresh():
+        refresh_calls.append(True)
+        return snapshot
+
+    monkeypatch.setattr(dialog_module, "refresh_catalog", refresh)
+    dialog = dialog_module.ExtensionManagerDialog()
+    try:
+        dialog.show()
+        loop = QEventLoop()
+        timer = QTimer()
+        timer.setInterval(10)
+        timer.timeout.connect(
+            lambda: loop.quit()
+            if refresh_calls and dialog._catalog_worker is None else None)
+        timer.start()
+        QTimer.singleShot(5000, loop.quit)
+        loop.exec()
+        timer.stop()
+
+        assert refresh_calls == [True]
+        assert [item.id for item in dialog._extensions] == [extension.id]
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
 def test_install_verify_disable_and_enable_extension(tmp_path, monkeypatch):
     monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
     extension = _extension(TOOL_SOURCE.encode())
@@ -258,6 +424,48 @@ def test_install_verify_disable_and_enable_extension(tmp_path, monkeypatch):
     newer = (updated_source + "# newer\n").encode()
     manager.install_extension(_extension(newer))
     assert manager.restart_required("sample", startup)
+
+
+def test_install_extension_accepts_a_pre_downloaded_verified_payload(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+
+    def unexpected_download(*_args):
+        raise AssertionError(
+            "the supplied payload should avoid a second download")
+
+    monkeypatch.setattr(manager, "_get", unexpected_download)
+    payload = TOOL_SOURCE.encode()
+    extension = _extension(payload)
+    with pytest.raises(manager.ExtensionManagerError, match="Checksum"):
+        manager.install_extension(extension, downloaded_data=b"tampered")
+    assert not (tmp_path / "sample").exists()
+
+    manager.install_extension(
+        extension, downloaded_data=payload)
+
+    assert (tmp_path / "sample" / "__init__.py").read_bytes() == payload
+
+
+def test_replace_hand_installed_uses_the_downloaded_payload(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    legacy = tmp_path / "sample"
+    legacy.mkdir()
+    (legacy / "__init__.py").write_text("# hand installed", encoding="utf-8")
+    payload = TOOL_SOURCE.encode()
+    extension = _extension(payload)
+
+    def unexpected_download(*_args):
+        raise AssertionError(
+            "the supplied payload should avoid a second download")
+
+    monkeypatch.setattr(manager, "_get", unexpected_download)
+    manager.replace_hand_installed(extension, downloaded_data=payload)
+
+    assert (legacy / "extension.json").is_file()
+    assert (legacy / "__init__.py").read_bytes() == payload
+    assert list(tmp_path.glob(".sample.manual-*"))
 
 
 def test_uninstall_removes_only_manager_owned_extension(tmp_path, monkeypatch):
@@ -553,6 +761,154 @@ def test_manager_shows_update_and_trust_details_without_downloading(
         assert "font-size: 13px" in _card_rule(row, license_label)
         assert "font-weight: bold" in _card_rule(row, license_label)
         assert download_calls == []
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_successful_install_uses_inline_status_without_success_popup(
+        tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    extension = manager.Extension(**{
+        **_extension(TOOL_SOURCE.encode()).__dict__,
+        "bundled": str(tmp_path / "sample.py"),
+    })
+    from views import extension_manager_dialog as dialog_module
+    _stub_catalog(monkeypatch, dialog_module, [extension])
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    installed = []
+    information = []
+    monkeypatch.setattr(
+        dialog_module, "install_extension",
+        lambda item, **_kwargs: installed.append(item.id))
+    monkeypatch.setattr(
+        dialog_module.QMessageBox, "information",
+        staticmethod(lambda *args: information.append(args)))
+    dialog = dialog_module.ExtensionManagerDialog()
+    try:
+        _wait_for_catalog(dialog, app)
+        dialog._install(extension)
+        app.processEvents()
+        assert installed == ["sample"]
+        assert information == []
+        assert "Restart IngeTrazo" in dialog._install_status.text()
+        assert not dialog._install_retry.isVisible()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_unreviewed_install_still_requires_trust_confirmation(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    from views import extension_manager_dialog as dialog_module
+    dialog = dialog_module.ExtensionManagerDialog()
+    warnings = []
+    monkeypatch.setattr(dialog, "_reviewed", {})
+    monkeypatch.setattr(
+        dialog_module.QMessageBox, "warning",
+        staticmethod(lambda *args: warnings.append(args)
+                     or dialog_module.QMessageBox.No))
+    try:
+        assert not dialog._confirm_unreviewed(_extension(b"sample"))
+        assert warnings
+        assert "not been reviewed" in warnings[0][2]
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_extension_download_progress_can_be_cancelled_before_install(
+        tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    from views import extension_manager_dialog as dialog_module
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    dialog = dialog_module.ExtensionManagerDialog()
+
+    class FakeReply:
+        aborted = False
+
+        def abort(self):
+            self.aborted = True
+
+    reply = FakeReply()
+    dialog._active_install_reply = reply
+    dialog._show_install_progress(
+        "Downloading…", indeterminate=True, cancellable=True)
+    try:
+        dialog._extension_download_progress(reply, 1024, 2048)
+        assert dialog._install_progress.value() == 50
+        dialog._cancel_install_download()
+        assert reply.aborted
+        assert dialog._install_cancelled
+        dialog._retry_install_request = (_extension(b"retry"), False)
+        dialog._fail_install("Download failed. You can retry.", retry=True)
+        assert "You can retry" in dialog._install_status.text()
+        assert not dialog._install_retry.isHidden()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_catalog_install_downloads_with_progress_then_installs(
+        tmp_path, monkeypatch):
+    from PySide6.QtCore import QByteArray, QObject, QUrl
+    from PySide6.QtNetwork import QNetworkReply
+
+    app = QApplication.instance() or QApplication([])
+    payload = TOOL_SOURCE.encode()
+    extension = _extension(payload)
+    from views import extension_manager_dialog as dialog_module
+    _stub_catalog(monkeypatch, dialog_module, [extension], {
+        extension.id: {"sha256": extension.sha256}})
+    monkeypatch.setattr(dialog_module, "extension_startup_state", lambda: {})
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    installed = []
+
+    class FakeReply(QObject):
+        downloadProgress = Signal(int, int)
+        finished = Signal()
+
+        def error(self):
+            return QNetworkReply.NetworkError.NoError
+
+        def attribute(self, _attribute):
+            return 200
+
+        def url(self):
+            return QUrl("https://example.org/sample.py")
+
+        def readAll(self):
+            return QByteArray(payload)
+
+        def errorString(self):
+            return ""
+
+    class FakeNetwork:
+        def get(self, _request):
+            return reply
+
+    reply = FakeReply()
+    monkeypatch.setattr(
+        dialog_module, "install_extension",
+        lambda item, **kwargs:
+        installed.append((item.id, kwargs["downloaded_data"])))
+    dialog = dialog_module.ExtensionManagerDialog()
+    dialog._network = FakeNetwork()
+    try:
+        _wait_for_catalog(dialog, app)
+        dialog._begin_install(extension)
+        received = len(payload) // 2
+        reply.downloadProgress.emit(received, len(payload))
+        assert dialog._install_progress.value() == received * 100 // len(payload)
+        reply.downloadProgress.emit(len(payload), len(payload))
+        reply.finished.emit()
+        app.processEvents()
+        assert installed == [("sample", payload)]
+        assert "Restart IngeTrazo" in dialog._install_status.text()
     finally:
         dialog.close()
         dialog.deleteLater()

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import hashlib
 
+from PySide6.QtCore import QEventLoop, QObject, QTimer, QUrl, Signal
+from PySide6.QtNetwork import QNetworkReply
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core import extension_manager as manager
@@ -14,6 +16,35 @@ from tests.test_extension_manager import (
     _extension, _stub_catalog, _wait_for_catalog)
 
 SOURCE = b"def setup(app):\n    pass\n"
+
+
+class _FakeReply(QObject):
+    downloadProgress = Signal(int, int)
+    finished = Signal()
+
+    def __init__(self):
+        super().__init__()
+        QTimer.singleShot(0, self.finished.emit)
+
+    def error(self):
+        return QNetworkReply.NetworkError.NoError
+
+    def attribute(self, _attribute):
+        return 200
+
+    def url(self):
+        return QUrl("https://example.org/sample.py")
+
+    def readAll(self):
+        return SOURCE
+
+    def errorString(self):
+        return ""
+
+
+class _FakeNetwork:
+    def get(self, _request):
+        return _FakeReply()
 
 
 def _open(monkeypatch, tmp_path, reviewed):
@@ -27,8 +58,22 @@ def _open(monkeypatch, tmp_path, reviewed):
     monkeypatch.setattr(QMessageBox, "information",
                         staticmethod(lambda *a, **k: QMessageBox.Ok))
     dialog = dialog_module.ExtensionManagerDialog()
+    dialog._network = _FakeNetwork()
     _wait_for_catalog(dialog, app)
     return app, dialog, extension
+
+
+def _wait_for_install(dialog, app):
+    loop = QEventLoop()
+    timer = QTimer()
+    timer.setInterval(10)
+    timer.timeout.connect(
+        lambda: loop.quit() if dialog._pending_install is None else None)
+    timer.start()
+    QTimer.singleShot(5000, loop.quit)
+    loop.exec()
+    timer.stop()
+    assert dialog._pending_install is None
 
 
 def _asked(monkeypatch, answer):
@@ -70,6 +115,7 @@ def test_an_unreviewed_extension_installs_once_the_user_says_yes(
     try:
         dialog._install(extension)
         assert len(asked) == 1
+        _wait_for_install(dialog, app)
         info = manager.installed_info("sample")
         assert info and info["sha256"] == hashlib.sha256(SOURCE).hexdigest()
     finally:
@@ -82,6 +128,7 @@ def test_a_reviewed_extension_installs_without_asking(tmp_path, monkeypatch):
     try:
         dialog._install(extension)
         assert asked == []
+        _wait_for_install(dialog, app)
         assert manager.installed_info("sample") is not None
     finally:
         _close(app, dialog)
@@ -101,6 +148,7 @@ def test_a_bundled_extension_installs_without_asking(tmp_path, monkeypatch):
     try:
         dialog._install(bundled)
         assert asked == []
+        _wait_for_install(dialog, app)
         assert manager.installed_info("sample") is not None
     finally:
         _close(app, dialog)

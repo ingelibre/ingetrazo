@@ -18,12 +18,17 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
+    QInputDialog,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSpacerItem,
@@ -39,6 +44,7 @@ from core.i18n import current_language, tr
 from core.extension_manager import (
     Extension,
     ExtensionManagerError,
+    MAX_DOWNLOAD_BYTES,
     bundled_extensions,
     compatible_with_current,
     display_name,
@@ -51,13 +57,16 @@ from core.extension_manager import (
     is_extension_enabled,
     is_reviewed,
     installation_conflict,
+    load_extension_sources,
     load_cached_catalog,
+    normalize_extension_source,
     refresh_catalog,
     remove_hand_installed,
     replace_hand_installed,
     restart_required,
     retired_extensions,
     set_extension_enabled,
+    save_extension_sources,
     tested_version_is_old,
     uninstall_extension,
 )
@@ -179,9 +188,15 @@ def _tag_label(tag: str) -> str:
 class _CatalogWorker(QObject):
     completed = Signal(object, object)
 
+    def __init__(self, sources: list[dict[str, str]]) -> None:
+        super().__init__()
+        self.sources = sources
+
     def refresh(self) -> None:
         try:
-            self.completed.emit(refresh_catalog(), None)
+            snapshot = (refresh_catalog(self.sources) if self.sources
+                        else refresh_catalog())
+            self.completed.emit(snapshot, None)
         except (ExtensionManagerError, OSError) as exc:
             self.completed.emit(None, exc)
         except Exception as exc:
@@ -190,9 +205,9 @@ class _CatalogWorker(QObject):
 
 
 class _CatalogTask(QRunnable):
-    def __init__(self) -> None:
+    def __init__(self, sources: list[dict[str, str]] | None = None) -> None:
         super().__init__()
-        self.signals = _CatalogWorker()
+        self.signals = _CatalogWorker(sources or [])
 
     def run(self) -> None:
         self.signals.refresh()
@@ -211,6 +226,7 @@ class ExtensionManagerDialog(QDialog):
             "background: palette(window); }")
         self._extensions: list[Extension] = []
         self._reviewed: dict[str, dict] = {}
+        self._custom_sources = load_extension_sources()
         self._catalog_snapshot = None
         self._catalog_worker = None
         startup_state = getattr(parent, "_extension_startup_state", None)
@@ -244,6 +260,11 @@ class ExtensionManagerDialog(QDialog):
         if self._waiting_first_paint:
             self.setWindowOpacity(0.0)
         self._network = QNetworkAccessManager(self)
+        self._pending_install: tuple[Extension, bool] | None = None
+        self._active_install_reply = None
+        self._install_cancelled = False
+        self._install_download_error: str | None = None
+        self._retry_install_request: tuple[Extension, bool] | None = None
         self._pages: dict[str, dict] = {}
 
         layout = QVBoxLayout(self)
@@ -260,10 +281,35 @@ class ExtensionManagerDialog(QDialog):
         self._restart_button.clicked.connect(self._request_restart)
         self._restart_button.setVisible(False)
         header.addWidget(self._restart_button)
+        self._sources_button = QPushButton(tr("Sources…"))
+        self._sources_button.clicked.connect(self._manage_sources)
+        header.addWidget(self._sources_button)
         self._refresh = QPushButton(tr("Refresh"))
         self._refresh.clicked.connect(self._load)
         header.addWidget(self._refresh)
         layout.addLayout(header)
+
+        self._install_status = QLabel()
+        self._install_status.setWordWrap(False)
+        self._install_status.setSizePolicy(QSizePolicy.Ignored,
+                                           QSizePolicy.Fixed)
+        self._install_progress = QProgressBar()
+        self._install_progress.setFixedWidth(110)
+        self._install_progress.setTextVisible(True)
+        self._install_cancel = QPushButton(tr("Cancel download"))
+        self._install_cancel.clicked.connect(self._cancel_install_download)
+        self._install_retry = QPushButton(tr("Retry"))
+        self._install_retry.clicked.connect(self._retry_install)
+        progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(0, 0, 0, 0)
+        progress_row.setSpacing(6)
+        progress_row.addWidget(self._install_status, 1)
+        progress_row.addWidget(self._install_progress)
+        progress_row.addWidget(self._install_cancel)
+        progress_row.addWidget(self._install_retry)
+        self._install_progress_widget = QWidget()
+        self._install_progress_widget.setLayout(progress_row)
+        self._install_progress_widget.hide()
 
         intro = QLabel(tr(
             "Tools the community adds to IngeTrazo. All are free software "
@@ -280,21 +326,15 @@ class ExtensionManagerDialog(QDialog):
         footer = QHBoxLayout()
         warning = QLabel(tr(
             "Extensions are Python code. Only install extensions you trust."))
-        warning.setWordWrap(True)
+        warning.setWordWrap(False)
+        warning.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        warning.setToolTip(warning.text())
         footer.addWidget(warning, 1)
+        footer.addWidget(self._install_progress_widget, 2)
         close = QPushButton(tr("Close"))
         close.clicked.connect(self.accept)
         footer.addWidget(close)
         layout.addLayout(footer)
-
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        if not self._initial_load_timer.isActive():
-            self._initial_load_timer.start()
-        key = self._active_page_key()
-        if self._pages[key]["render_items"]:
-            self._schedule_visible_cards(key)
-            self._images_timer.start()
 
     def _build_page(self, key: str) -> QWidget:
         page = QWidget()
@@ -433,16 +473,98 @@ class ExtensionManagerDialog(QDialog):
         if self._catalog_worker is not None:
             return
         cached = load_cached_catalog()
-        if cached is not None:
+        if cached is not None and self._catalog_snapshot is None:
             self._apply_catalog(cached)
-        elif not self._extensions:
+        elif cached is None and not self._extensions:
             self._catalog_info.setText(tr("Loading extension catalog…"))
+        self._catalog_info.setToolTip("")
         self._refresh.setEnabled(False)
-        worker = _CatalogTask()
+        self._sources_button.setEnabled(False)
+        worker = _CatalogTask(list(self._custom_sources))
         worker.signals.completed.connect(
             self._catalog_loaded, Qt.QueuedConnection)
         self._catalog_worker = worker
         QThreadPool.globalInstance().start(worker)
+
+    def _manage_sources(self) -> None:
+        source_dialog = QDialog(self)
+        source_dialog.setWindowTitle(tr("Extension sources"))
+        source_dialog.setMinimumWidth(640)
+        layout = QVBoxLayout(source_dialog)
+        entries = QListWidget()
+        sources = [dict(source) for source in self._custom_sources]
+
+        def append_source(source: dict[str, str]) -> None:
+            if source in sources:
+                QMessageBox.information(
+                    source_dialog, tr("Extension sources"),
+                    tr("That source has already been added."))
+                return
+            sources.append(source)
+            kind = (tr("Catalog") if source["kind"] == "catalog"
+                    else tr("Local folder"))
+            item = QListWidgetItem(f"{kind} — {source['location']}")
+            item.setData(Qt.UserRole, source)
+            entries.addItem(item)
+
+        for source in sources:
+            kind = (tr("Catalog") if source["kind"] == "catalog"
+                    else tr("Local folder"))
+            item = QListWidgetItem(f"{kind} — {source['location']}")
+            item.setData(Qt.UserRole, source)
+            entries.addItem(item)
+        layout.addWidget(entries)
+        actions = QHBoxLayout()
+        add_catalog = QPushButton(tr("Add catalog URL"))
+        add_folder = QPushButton(tr("Add local folder"))
+        remove = QPushButton(tr("Remove selected"))
+        actions.addWidget(add_catalog)
+        actions.addWidget(add_folder)
+        actions.addWidget(remove)
+        actions.addStretch(1)
+        done = QPushButton(tr("Done"))
+        actions.addWidget(done)
+        layout.addLayout(actions)
+
+        def add_catalog_source() -> None:
+            url, accepted = QInputDialog.getText(
+                source_dialog, tr("Add catalog URL"),
+                tr("HTTPS URL to the catalog.json file:"))
+            if not accepted:
+                return
+            try:
+                append_source(normalize_extension_source("catalog", url))
+            except ExtensionManagerError as exc:
+                QMessageBox.warning(source_dialog, tr("Extension sources"),
+                                    str(exc))
+
+        def add_folder_source() -> None:
+            folder = QFileDialog.getExistingDirectory(
+                source_dialog, tr("Choose extension source folder"))
+            if not folder:
+                return
+            try:
+                append_source(normalize_extension_source("folder", folder))
+            except ExtensionManagerError as exc:
+                QMessageBox.warning(source_dialog, tr("Extension sources"),
+                                    str(exc))
+
+        def remove_source() -> None:
+            row = entries.currentRow()
+            if row < 0:
+                return
+            entries.takeItem(row)
+            sources.pop(row)
+
+        add_catalog.clicked.connect(add_catalog_source)
+        add_folder.clicked.connect(add_folder_source)
+        remove.clicked.connect(remove_source)
+        done.clicked.connect(source_dialog.accept)
+        source_dialog.exec()
+        if sources != self._custom_sources:
+            self._custom_sources = sources
+            save_extension_sources(sources)
+            self._load()
 
     def _apply_catalog(self, snapshot) -> None:
         previous = self._catalog_snapshot
@@ -506,9 +628,12 @@ class ExtensionManagerDialog(QDialog):
     def _catalog_loaded(self, snapshot, error) -> None:
         self._catalog_worker = None
         self._refresh.setEnabled(True)
+        self._sources_button.setEnabled(True)
         if snapshot is not None:
+            self._catalog_info.setToolTip("\n".join(snapshot.source_errors))
             self._apply_catalog(snapshot)
         elif self._catalog_snapshot is None:
+            self._catalog_info.setToolTip(str(error))
             # Offline with no cached catalog: what ships with IngeTrazo
             # still installs from here.
             self._extensions = self._with_bundled([])
@@ -872,6 +997,11 @@ class ExtensionManagerDialog(QDialog):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        if not self._initial_load_timer.isActive():
+            self._initial_load_timer.start()
+        key = self._active_page_key()
+        if self._pages[key]["render_items"]:
+            self._schedule_visible_cards(key)
         self._images_timer.start()
         if self._waiting_first_paint:
             # Never left invisible, whatever happens to the first paint.
@@ -959,7 +1089,7 @@ class ExtensionManagerDialog(QDialog):
         # The catalog's check only admits https:// — enforced here too, so
         # a tampered cache cannot hand the browser a file:// or app link.
         repository.setEnabled(extension.repository.startswith("https://"))
-        if extension.bundled:
+        if extension.bundled or not extension.repository.startswith("https://"):
             # Hide only: setVisible(True) here, before the button is in the
             # card, made it a window of its own and showed it — on Windows
             # 43 little windows flashed while the manager was built, ~0.8 s
@@ -1003,6 +1133,11 @@ class ExtensionManagerDialog(QDialog):
             badge.setObjectName("extBadge")
             version_row.addWidget(badge, 0, Qt.AlignTop)
         details.addLayout(version_row)
+        if extension.source_name:
+            source_label = QLabel(
+                tr("Source: {name}", name=extension.source_name))
+            source_label.setObjectName("extSource")
+            details.addWidget(source_label)
 
         title_row = QHBoxLayout()
         title = QLabel(display_name(extension, language))
@@ -1077,8 +1212,10 @@ class ExtensionManagerDialog(QDialog):
             if compatible:
                 replace = QPushButton(
                     tr("Replace with the version included with IngeTrazo")
-                    if extension.bundled
-                    else tr("Replace with the catalog version"))
+                    if extension.bundled else
+                    tr("Replace with the local source version")
+                    if extension.local_path else
+                    tr("Replace with the catalog version"))
                 replace.clicked.connect(
                     lambda _checked=False, e=extension: self._replace(e))
                 actions.addWidget(replace)
@@ -1092,7 +1229,8 @@ class ExtensionManagerDialog(QDialog):
             install = QPushButton(
                 tr("Update") if update_available
                 else tr("Up to date") if managed
-                else tr("Install") if extension.bundled
+                else tr("Install") if (extension.bundled
+                                       or extension.local_path)
                 else tr("Download"))
             install.setEnabled(not current and (managed or not conflict))
             install.clicked.connect(
@@ -1139,8 +1277,13 @@ class ExtensionManagerDialog(QDialog):
             return ""
         date = snapshot.fetched_at.replace("T", " ").replace("+00:00", " UTC")
         if snapshot.from_cache:
-            return tr(" · Cached catalog from {date}", date=date)
-        return tr(" · Refreshed {date}", date=date)
+            suffix = tr(" · Cached catalog from {date}", date=date)
+        else:
+            suffix = tr(" · Refreshed {date}", date=date)
+        if snapshot.source_errors:
+            suffix += tr(" · {count} sources unavailable",
+                         count=len(snapshot.source_errors))
+        return suffix
 
     def _show_load_error(self, extension: Extension, failure: dict) -> None:
         error = failure.get("error", tr("Unknown extension loading error"))
@@ -1376,24 +1519,211 @@ class ExtensionManagerDialog(QDialog):
         return answer == QMessageBox.Yes
 
     def _install(self, extension: Extension) -> None:
+        if self._pending_install is not None:
+            return
         if not self._confirm_unreviewed(extension):
             return
-        try:
-            install_extension(
-                extension, confirm_manual_copies=lambda paths:
-                self._confirm_manual_copies(extension, paths),
-                catalog_ids=[e.id for e in self._extensions])
-        except (ExtensionManagerError, OSError) as exc:
-            QMessageBox.warning(self, tr("Extension manager"), str(exc))
+        self._begin_install(extension)
+
+    def _begin_install(self, extension: Extension, replace: bool = False) -> None:
+        if self._pending_install is not None:
             return
-        QMessageBox.information(
-            self, tr("Extension installed"),
-            tr("«{name}» is installed. Restart IngeTrazo to load it.",
-               name=display_name(extension, current_language())))
+        self._pending_install = (extension, replace)
+        self._retry_install_request = (extension, replace)
+        self._install_cancelled = False
+        self._install_download_error = None
+        self._set_install_actions_enabled(False)
+        if extension.bundled or extension.local_path:
+            self._show_install_progress(
+                tr("Installing «{name}»…",
+                   name=display_name(extension, current_language())),
+                indeterminate=True)
+            QTimer.singleShot(
+                0, lambda: self._finish_install(extension, replace, None))
+            return
+
+        self._show_install_progress(
+            tr("Connecting to download «{name}»…",
+               name=display_name(extension, current_language())),
+            indeterminate=True, cancellable=True)
+        request = QNetworkRequest(QUrl(extension.download))
+        request.setRawHeader(b"User-Agent", b"IngeTrazo")
+        request.setAttribute(
+            QNetworkRequest.RedirectPolicyAttribute,
+            QNetworkRequest.NoLessSafeRedirectPolicy)
+        reply = self._network.get(request)
+        self._active_install_reply = reply
+        reply.downloadProgress.connect(
+            lambda received, total, r=reply:
+            self._extension_download_progress(r, received, total))
+        reply.finished.connect(
+            lambda r=reply: self._extension_download_finished(r))
+
+    def _show_install_progress(self, message: str, *, indeterminate: bool,
+                               cancellable: bool = False,
+                               retry: bool = False) -> None:
+        self._install_status.setText(message)
+        self._install_status.setToolTip(message)
+        if indeterminate:
+            self._install_progress.setRange(0, 0)
+        else:
+            self._install_progress.setRange(0, 100)
+            if retry:
+                self._install_progress.setValue(0)
+        self._install_cancel.setVisible(cancellable)
+        self._install_cancel.setEnabled(cancellable)
+        self._install_retry.setVisible(retry)
+        self._install_progress_widget.show()
+
+    def _extension_download_progress(self, reply, received: int,
+                                     total: int) -> None:
+        if reply is not self._active_install_reply:
+            return
+        if received > MAX_DOWNLOAD_BYTES or total > MAX_DOWNLOAD_BYTES:
+            self._install_download_error = tr(
+                "The extension download exceeds the {size} MB size limit.",
+                size=MAX_DOWNLOAD_BYTES // (1024 * 1024))
+            reply.abort()
+            return
+        if total > 0:
+            self._install_progress.setRange(0, 100)
+            self._install_progress.setValue(min(100, received * 100 // total))
+            message = tr(
+                "Downloading extension… {received} of {total} MB",
+                received=f"{received / 1048576:.1f}",
+                total=f"{total / 1048576:.1f}")
+        else:
+            self._install_progress.setRange(0, 0)
+            message = tr("Downloading extension… {received} MB",
+                         received=f"{received / 1048576:.1f}")
+        self._install_status.setText(message)
+        self._install_status.setToolTip(message)
+
+    def _extension_download_finished(self, reply) -> None:
+        if reply is not self._active_install_reply:
+            reply.deleteLater()
+            return
+        self._active_install_reply = None
+        extension, replace = self._pending_install
+        try:
+            if self._install_cancelled:
+                self._fail_install(tr("Download cancelled. You can retry."),
+                                   retry=True)
+                return
+            if self._install_download_error:
+                self._fail_install(self._install_download_error, retry=True)
+                return
+            status = reply.attribute(
+                QNetworkRequest.HttpStatusCodeAttribute)
+            if (reply.error() != QNetworkReply.NetworkError.NoError
+                    or status is None or not 200 <= int(status) < 300):
+                detail = reply.errorString()
+                if status is not None:
+                    detail = tr("HTTP {status}: {detail}",
+                                status=status, detail=detail)
+                self._fail_install(
+                    tr("Download failed: {detail}. You can retry.",
+                       detail=detail), retry=True)
+                return
+            if reply.url().scheme().lower() != "https":
+                self._fail_install(
+                    tr("The download redirected to a non-HTTPS address."),
+                    retry=True)
+                return
+            data = bytes(reply.readAll())
+            if len(data) > MAX_DOWNLOAD_BYTES:
+                self._fail_install(
+                    tr("The extension download exceeds the {size} MB size "
+                       "limit.", size=MAX_DOWNLOAD_BYTES // (1024 * 1024)),
+                    retry=True)
+                return
+            self._show_install_progress(
+                tr("Installing «{name}»…",
+                   name=display_name(extension, current_language())),
+                indeterminate=True)
+            QTimer.singleShot(
+                0, lambda payload=data:
+                self._finish_install(extension, replace, payload))
+        finally:
+            reply.deleteLater()
+
+    def _finish_install(self, extension: Extension, replace: bool,
+                        downloaded_data: bytes | None) -> None:
+        try:
+            confirm = lambda paths: self._confirm_manual_copies(
+                extension, paths)
+            catalog_ids = [item.id for item in self._extensions]
+            if replace:
+                if downloaded_data is None:
+                    replace_hand_installed(
+                        extension, confirm_manual_copies=confirm,
+                        catalog_ids=catalog_ids)
+                else:
+                    replace_hand_installed(
+                        extension, confirm_manual_copies=confirm,
+                        catalog_ids=catalog_ids,
+                        downloaded_data=downloaded_data)
+            elif downloaded_data is None:
+                install_extension(
+                    extension, confirm_manual_copies=confirm,
+                    catalog_ids=catalog_ids)
+            else:
+                install_extension(
+                    extension, confirm_manual_copies=confirm,
+                    catalog_ids=catalog_ids,
+                    downloaded_data=downloaded_data)
+        except (ExtensionManagerError, OSError) as exc:
+            self._fail_install(
+                tr("Could not install «{name}»: {error}. You can retry.",
+                   name=display_name(extension, current_language()),
+                   error=exc), retry=True)
+            return
+        self._pending_install = None
+        self._retry_install_request = None
+        self._set_install_actions_enabled(True)
+        self._show_install_progress(
+            tr("«{name}» is installed. Restart IngeTrazo to apply it.",
+               name=display_name(extension, current_language())),
+            indeterminate=False)
+        self._install_progress.setRange(0, 100)
+        self._install_progress.setValue(100)
         self._sync_restart_button(extension.id)
         self._invalidate_pages(extension.id)
 
+    def _fail_install(self, message: str, *, retry: bool) -> None:
+        self._pending_install = None
+        self._active_install_reply = None
+        self._set_install_actions_enabled(True)
+        self._show_install_progress(message, indeterminate=False, retry=retry)
+
+    def _cancel_install_download(self) -> None:
+        reply = self._active_install_reply
+        if reply is None:
+            return
+        self._install_cancelled = True
+        self._install_cancel.setEnabled(False)
+        reply.abort()
+
+    def _retry_install(self) -> None:
+        request = self._retry_install_request
+        if request is None:
+            return
+        self._retry_install_request = None
+        self._begin_install(*request)
+
+    def _set_install_actions_enabled(self, enabled: bool) -> None:
+        action_labels = {
+            tr("Install"), tr("Update"), tr("Replace"), tr("Uninstall"),
+            tr("Enable"), tr("Disable")}
+        for page in self._pages.values():
+            for button in page["cards"].findChildren(QPushButton):
+                if button.text() in action_labels:
+                    button.setEnabled(enabled)
+        self._restart_button.setEnabled(enabled)
+
     def _uninstall(self, extension: Extension) -> None:
+        if self._pending_install is not None:
+            return
         answer = QMessageBox.question(
             self, tr("Uninstall extension"),
             tr("Uninstall «{name}»? Its files will be removed.",
@@ -1464,6 +1794,8 @@ class ExtensionManagerDialog(QDialog):
         return row
 
     def _toggle_retired(self, ident: str) -> None:
+        if self._pending_install is not None:
+            return
         enabled = not is_extension_enabled(ident)
         try:
             set_extension_enabled(ident, enabled)
@@ -1481,6 +1813,8 @@ class ExtensionManagerDialog(QDialog):
             self._render_page(key)
 
     def _uninstall_retired(self, ident: str) -> None:
+        if self._pending_install is not None:
+            return
         answer = QMessageBox.question(
             self, tr("Uninstall extension"),
             tr("Uninstall «{name}»? Its files will be removed.", name=ident),
@@ -1562,6 +1896,8 @@ class ExtensionManagerDialog(QDialog):
                 return
 
     def _uninstall_hand(self, path, name: str) -> None:
+        if self._pending_install is not None:
+            return
         answer = QMessageBox.question(
             self, tr("Uninstall extension"),
             tr("«{name}» was installed by hand. Uninstalling sets it aside "
@@ -1583,6 +1919,8 @@ class ExtensionManagerDialog(QDialog):
         self._invalidate_pages(name)
 
     def _replace(self, extension: Extension) -> None:
+        if self._pending_install is not None:
+            return
         if not self._confirm_unreviewed(extension):
             return
         name = display_name(extension, current_language())
@@ -1594,28 +1932,19 @@ class ExtensionManagerDialog(QDialog):
                 "included version can then be disabled and uninstalled from "
                 "here.", name=name) if extension.bundled else
              tr("Replace the copy of «{name}» installed by hand with the "
-                "catalog version? The copy is set aside (renamed with a dot "
-                "in front), not deleted, and the catalog version can then be "
-                "updated, disabled and uninstalled from here.", name=name)),
+                "{source} version? The copy is set aside (renamed with a dot "
+                "in front), not deleted, and the installed version can then be "
+                "updated, disabled and uninstalled from here.", name=name,
+                source=tr("local source") if extension.local_path
+                else tr("catalog"))),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
         if answer != QMessageBox.Yes:
             return
-        try:
-            replace_hand_installed(
-                extension, confirm_manual_copies=lambda paths:
-                self._confirm_manual_copies(extension, paths),
-                catalog_ids=[e.id for e in self._extensions])
-        except (ExtensionManagerError, OSError) as exc:
-            QMessageBox.warning(self, tr("Extension manager"), str(exc))
-            return
-        QMessageBox.information(
-            self, tr("Extension installed"),
-            tr("«{name}» is installed. Restart IngeTrazo to load it.",
-               name=name))
-        self._sync_restart_button(extension.id)
-        self._invalidate_pages(extension.id)
+        self._begin_install(extension, replace=True)
 
     def _toggle(self, extension: Extension) -> None:
+        if self._pending_install is not None:
+            return
         enabled = not is_extension_enabled(extension.id)
         try:
             set_extension_enabled(extension.id, enabled)
