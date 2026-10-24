@@ -1132,6 +1132,7 @@ class Viewport(QOpenGLWidget):
 
         self.camera = OrbitCamera()
         self.scene = Scene()
+        self.camera.depth_bounds = self._projection_bounds
         from core import units as _units
         _units.bind_scene(self.scene)   # readouts format in the model's units
         self.history = History(self.scene)
@@ -1585,6 +1586,40 @@ class Viewport(QOpenGLWidget):
         world's at the top level, the open group's own inside it."""
         from core import axes as _axes
         _axes.sync(getattr(self.scene, "drawing_frame", None))
+
+    def _projection_bounds(self):
+        """Visible model bounds for camera depth precision.
+
+        Auxiliary geometry and tool previews are not covered by Scene.bounds.
+        In those views retain the original clip range rather than risk
+        chopping a reference surface or a solid being drawn. Hidden reference
+        images do not disable fitting; neither do hidden model placements
+        (Scene.bounds already applies model visibility).
+        """
+        sc = self.scene
+        tool = self.active_tool
+        preview = getattr(tool, "preview_faces", None)
+        # Every Tool inherits an empty provider. Only an override can supply
+        # geometry outside Scene.bounds; do not construct previews just to
+        # decide the clipping range on each projection query.
+        has_preview = (callable(preview)
+                       and getattr(preview, "__func__", preview)
+                       is not Tool.preview_faces)
+        if (self._base_map_showing() or self._terrain_showing()
+                or self._photo_showing()
+                or getattr(sc, "show_hidden_objects", False)
+                or getattr(sc, "show_hidden_geometry", False)
+                or self._rest_is_hidden()
+                or getattr(self, "_preview_groups", None)
+                or has_preview
+                or getattr(tool, "wireframe_depth_tested", False)
+                or (getattr(sc, "guides", None)
+                    and self.plano_style is None and self.style_override is None)
+                or self._visible_billboards()
+                or any(sc.entity_visible(im)
+                       for im in getattr(sc, "image_planes", ()))):
+            return None, None
+        return sc.bounds()
 
     def _sync_projection(self) -> None:
         """Tell the quick buttons when the projection changed. Scenes,
@@ -4184,6 +4219,27 @@ class Viewport(QOpenGLWidget):
                         "_billboard_world", "_placement_proxies",
                         "_arc_mid_by_mesh")
 
+    def invalidate_visibility_caches(self) -> None:
+        """Recollect presentation state without changing the document version.
+
+        Sheet frames temporarily recall saved views, including hidden nested
+        objects. Their visibility can change within one paint tick and version,
+        so both placement-epoch shortcuts and version-only render/pick caches
+        must be forgotten. Keep the expensive, visibility-independent mesh
+        chunks and GPU allocations.
+        """
+        self._edges_version = -1
+        self._epoch_memo = None
+        self._epoch_same = None
+        self._epoch_frozen_base = None
+        self._pick_index_cache = None
+        self._pick_block = None
+        self._pick_last_q = None
+        self._soft_edges_cache = None
+        self._sil_last = None
+        self._sil_table = None
+        self._shadow_key = None
+
     def reset_document_caches(self) -> None:
         """Forget the previous document's chunks at the document boundary.
 
@@ -6113,21 +6169,23 @@ class Viewport(QOpenGLWidget):
         c1 = anchor + r * (w / 2)
         return ([c0, c1, c1 + up * h, c0 + up * h], tex)
 
+    def _visible_billboards(self):
+        """Share the placement-epoch collection between depth fitting and draw."""
+        bkey = self._placements_epoch()
+        bmemo = getattr(self, "_billboard_groups", None)
+        if bmemo is not None and bmemo[0] == bkey:
+            return bmemo[1]
+        groups = [g for g in self._placements()
+                  if getattr(g, "billboard", False)
+                  and self.scene.entity_visible(g)]
+        self._billboard_groups = (bkey, groups)
+        return groups
+
     def _draw_billboards(self) -> None:
         """Per-frame pass: each face-me billboard is a textured cutout quad
         turned toward the camera (2D people). Depth-tested, so it
         hides behind walls correctly; the shader discards transparent texels."""
-        # The face-me figures are a handful among thousands of placements:
-        # found once per change of the placements, not on every frame.
-        bkey = self._placements_epoch()
-        bmemo = getattr(self, "_billboard_groups", None)
-        if bmemo is not None and bmemo[0] == bkey:
-            groups = bmemo[1]
-        else:
-            groups = [g for g in self._placements()
-                      if getattr(g, "billboard", False)
-                      and self.scene.entity_visible(g)]
-            self._billboard_groups = (bkey, groups)
+        groups = self._visible_billboards()
         if not groups:
             return
         self._program.setUniformValue(self._loc_use_tex, 1)
@@ -8322,29 +8380,33 @@ class Viewport(QOpenGLWidget):
         h = max(self.height(), 1)
         ndc_x = 2.0 * x / w - 1.0
         ndc_y = 1.0 - 2.0 * y / h
-        mvp = self.camera.projection_matrix() * self.camera.view_matrix()
-        inv, ok = mvp.inverted()
+        cam = self.camera
+        projection = cam.projection_matrix().data()
+        inverse_view, ok = cam.view_matrix().inverted()
         if not ok:
             return None, None
-        p_near = inv.map(QVector3D(ndc_x, ndc_y, -1.0))
-
-        def finite(v):
-            return all(map(math.isfinite, (v.x(), v.y(), v.z())))
-        # The far plane gives the most exact direction, far from the near
-        # point. But a camera a few centimetres from a part (#583) has its
-        # near plane 0.4 mm out and the far one kilometres away: past
-        # float32 the depth term rounds to exactly -1, the far plane goes
-        # to infinity, and the ray came out NaN — and with it every snap
-        # built on the cursor. Then a point just short of it serves.
-        direction = None
-        for depth in (1.0, 0.999, 0.9, 0.0):
-            d = inv.map(QVector3D(ndc_x, ndc_y, depth)) - p_near
-            if finite(d) and d.length() >= 1e-9:
-                direction = d
-                break
-        if direction is None or not finite(p_near):
+        # Depth fitting is a rendering optimization, not the start of a
+        # drawing ray: the next sketch point can be closer than the current
+        # model's bounds. Keep the historical, unfitted near-plane origin.
+        # Work in camera space as well: subtracting two unprojected world
+        # points across a tightly fitted depth range loses lateral precision
+        # and can turn a ray on a face boundary into a miss.
+        if cam.perspective:
+            local_direction = QVector3D(
+                (ndc_x + projection[8]) / projection[0],
+                (ndc_y + projection[9]) / projection[5], -1.0)
+            local_origin = local_direction * cam.near_plane()
+        else:
+            local_direction = QVector3D(0.0, 0.0, -1.0)
+            local_origin = QVector3D(
+                (ndc_x - projection[12]) / projection[0],
+                (ndc_y - projection[13]) / projection[5], cam.far_plane())
+        origin = inverse_view.map(local_origin)
+        direction = inverse_view.mapVector(local_direction).normalized()
+        if not all(math.isfinite(c) for v in (origin, direction)
+                   for c in v.toTuple()) or direction.lengthSquared() < 1e-18:
             return None, None
-        return p_near, direction.normalized()
+        return origin, direction
 
     def _coplanar_eps(self, origin: QVector3D, direction: QVector3D,
                       best_t: float) -> float:

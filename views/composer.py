@@ -11829,13 +11829,11 @@ class ComposerWindow(QMainWindow):
                      and f.y_mm <= page_y <= f.y_mm + f.h_mm), None)
 
     def _with_frame_camera(self, frame: MarcoVista, fn):
-        """Run ``fn()`` with the live camera pointed at *frame* (exact
-        scale), restoring camera, aspect, up, layer visibility, section
-        state and display style after — the composer never disturbs the
-        viewport. A frame bound to a scene applies that scene WHOLE (its
-        cut and style included, via SavedView.apply), so all of it must
-        come back: a sheet with a section scene used to leave the live
-        model cut and restyled (Marco, 2026-09-02)."""
+        """Run ``fn()`` in a frame's presentation state, then restore the live
+        viewport even on failure. Saved scenes include hidden nested objects,
+        overlays, cuts, style, geographic layers and shadows, not just cameras.
+        Transient visibility changes invalidate renderer caches, never the
+        document version or other frames' rendered/snap caches."""
         vp = self._window.viewport
         cam = vp.camera
         scene = vp.scene
@@ -11846,7 +11844,16 @@ class ComposerWindow(QMainWindow):
                                if sv.name == name), None)
         keep = (cam.target, cam.distance, cam.yaw, cam.pitch, cam.fov_deg,
                 cam.perspective, cam.aspect, cam.up,
-                [(ly, ly.visible) for ly in scene.layers])
+                getattr(cam, "two_point", False))
+        keep_layers = [(ly, ly.visible) for ly in scene.layers]
+        keep_hidden = ([(g, g.hidden) for g in scene.groups_by_uid().values()]
+                       if saved_view is not None else [])
+        keep_selection = set(scene.selection) if saved_view is not None else None
+        keep_shown = (getattr(scene, "show_hidden_objects", False),
+                      getattr(scene, "show_hidden_geometry", False))
+        keep_geometry = (getattr(self, "_geom_cache", None),
+                         getattr(self, "_circles_cache", None))
+        invalidate = getattr(vp, "invalidate_visibility_caches", None)
         keep_section = (
             scene.active_section() if hasattr(scene, "active_section")
             else None,
@@ -11869,12 +11876,21 @@ class ComposerWindow(QMainWindow):
         try:
             apply_frame_camera(cam, frame, saved_view, scene)
             apply_frame_shadows(frame, scene)
+            if saved_view is not None:
+                # Collections are visibility-filtered, not universal geometry.
+                self._geom_cache = self._circles_cache = None
+                if invalidate is not None:
+                    invalidate()
             return fn()
         finally:
             (cam.target, cam.distance, cam.yaw, cam.pitch, cam.fov_deg,
-             cam.perspective, cam.aspect, cam.up) = keep[:8]
-            for ly, visible in keep[8]:
+             cam.perspective, cam.aspect, cam.up, cam.two_point) = keep
+            for ly, visible in keep_layers:
                 ly.visible = visible
+            for obj, hidden in keep_hidden:
+                obj.hidden = hidden
+            (scene.show_hidden_objects,
+             scene.show_hidden_geometry) = keep_shown
             scene._bounds_cache = None
             if hasattr(scene, "set_active_section"):
                 scene.set_active_section(keep_section[0])
@@ -11886,6 +11902,12 @@ class ComposerWindow(QMainWindow):
                 obj.visible = visible
             if keep_shadows is not None:
                 apply_shadow_state(scene, keep_shadows)
+            if saved_view is not None:
+                scene.selection.clear()
+                scene.selection.update(keep_selection)
+                self._geom_cache, self._circles_cache = keep_geometry
+                if invalidate is not None:
+                    invalidate()
             vp.update()
 
     def frame_is_perspective(self, frame) -> bool:
@@ -11964,9 +11986,9 @@ class ComposerWindow(QMainWindow):
             return []
         from core.composition import frame_page_projector
         from core.hlr import _to_cam, camera_basis
-        circles = self._scene_circles()
 
         def run():
+            circles = self._scene_circles()
             vp = self._window.viewport
             eye, right, up, fwd = camera_basis(vp.camera)
             local = frame_page_projector(frame, vp.camera)
@@ -12040,7 +12062,7 @@ class ComposerWindow(QMainWindow):
         from core.composition import frame_page_projector
         from core.hlr import _to_cam, camera_basis, hlr_view
 
-        geometry = self._scene_geometry()
+        geometry = self._with_frame_camera(frame, self._scene_geometry)
         tris, hard, soft, _soft_n = geometry
 
         def page_mapper():
@@ -12471,6 +12493,9 @@ class ComposerWindow(QMainWindow):
 
         def run():
             vp = self._window.viewport
+            keep_render = (vp.plano_style, vp.style_override,
+                           getattr(vp, "_export_edge_px", 1),
+                           getattr(vp, "_export_profile_px", 1))
             try:
                 if frame.style in ("tecnico", "lineas"):
                     vp.plano_style = frame.style
@@ -12500,10 +12525,8 @@ class ComposerWindow(QMainWindow):
                     getattr(frame, "pen_profile_mm", 0.35), RENDER_DPI)
                 return vp.render_image(w_px, h_px, overlays=False)
             finally:
-                vp.plano_style = None
-                vp.style_override = None
-                vp._export_edge_px = 1
-                vp._export_profile_px = 1
+                (vp.plano_style, vp.style_override,
+                 vp._export_edge_px, vp._export_profile_px) = keep_render
 
         image = self._with_frame_camera(frame, run)
         if image is not None and image.hasAlphaChannel():

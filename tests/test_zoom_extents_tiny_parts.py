@@ -75,6 +75,7 @@ def _two_lines_then_zoom(win):
     _type(vp, "10")
     _move(vp, V(1, 0.01, 0))
     _type(vp, "10")                              # the line is still going
+    assert len(vp.scene.mesh.edges) == 2          # both typed segments survived
     win._on_zoom_extents()
     vp.repaint()
     _app.processEvents()

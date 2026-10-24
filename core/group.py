@@ -316,7 +316,7 @@ def _implicit_uvw(face, tex, minv):
             gv.x(), gv.y(), gv.z(), float(cv)]
 
 
-def _remap_uvws(mesh, m) -> None:
+def _remap_uvws(mesh, m, *, faces=None) -> None:
     """Rewrite each face's world→UV affine map (``uvw``) so that evaluating
     it at the TRANSFORMED positions reproduces the prototype's UVs:
     g' = L⁻ᵀ·g, c' = c − g'·t. A face still on the implicit planar
@@ -327,7 +327,7 @@ def _remap_uvws(mesh, m) -> None:
     if not ok:
         return
     tx, ty, tz = m(0, 3), m(1, 3), m(2, 3)
-    for f in mesh.faces:
+    for f in mesh.faces if faces is None else faces:
         t = f.attrs.get("texture") if f.attrs else None
         uvw = t.get("uvw") if t else None
         if not uvw or len(uvw) != 8:
@@ -365,78 +365,16 @@ def world_mesh(group) -> Mesh:
 
 
 def _merged_placements(group) -> Mesh:
-    """Every placement of ``group`` welded into ONE mesh, in a single
-    vectorized pass.
+    """Every placement in one independent mesh, without changing topology.
 
-    Folding the children by copying each subtree and appending it face by
-    face cost 20 s on the hedge against 4.5 s for the old single
-    ``transformed_mesh`` — the per-entity walk this codebase already learned
-    to avoid. Here each placement's corners are transformed as one array and
-    the whole component welds once, the same recipe ``transformed_mesh`` and
-    the ``.igz`` loader use."""
-    import numpy as np
-    from core.topology import _maximal_holes
+    A placement is not a geometry edit: small features must not be welded
+    away just because its component coordinates were scaled into the world.
+    Keep the connectivity within each placement and the isolation between
+    placements, just as the per-prototype renderer does.
+    """
     new = Mesh()
-    edge_parts: list = []
-    face_parts: list = []
-    edge_flags: list = []
-    ring_sizes: list = []
-    ring_counts: list = []
-    attrs_list: list = []
     for g, m in iter_placements(group):
-        src = g.mesh
-        epts: list = []
-        fpts: list = []
-        for e in src.edges:
-            epts.append((e.a.x(), e.a.y(), e.a.z()))
-            epts.append((e.b.x(), e.b.y(), e.b.z()))
-            edge_flags.append((e.soft, e.curve, None))
-        for f in src.faces:
-            holes = f.holes or []
-            if len(holes) > 1:
-                holes = _maximal_holes([list(h) for h in holes])
-            ring_counts.append(1 + len(holes))
-            ring_sizes.append(len(f.vertices))
-            fpts.extend((v.x(), v.y(), v.z()) for v in f.vertices)
-            for h in holes:
-                ring_sizes.append(len(h))
-                fpts.extend((v.x(), v.y(), v.z()) for v in h)
-            # The texture's world->UV map travels with the placement, so a
-            # nested leaf keeps its wood grain instead of inheriting the
-            # parent's frame.
-            attrs_list.append(transformed_attrs(f.attrs, m)
-                              if (f.attrs and m is not None)
-                              else (dict(f.attrs) if f.attrs else None))
-        if m is not None:
-            rot, trans = np_affine(m)
-            if epts:
-                epts = np.asarray(epts, dtype=np.float64) @ rot.T + trans
-            if fpts:
-                fpts = np.asarray(fpts, dtype=np.float64) @ rot.T + trans
-        else:
-            epts = np.asarray(epts, dtype=np.float64) if epts else None
-            fpts = np.asarray(fpts, dtype=np.float64) if fpts else None
-        if epts is not None and len(epts):
-            edge_parts.append(epts)
-        if fpts is not None and len(fpts):
-            face_parts.append(fpts)
-    e_all = (np.concatenate(edge_parts) if edge_parts
-             else np.empty((0, 3), dtype=np.float64))
-    f_all = (np.concatenate(face_parts) if face_parts
-             else np.empty((0, 3), dtype=np.float64))
-    if not len(e_all) and not len(f_all):
-        return new
-    pts = np.concatenate([e_all, f_all])
-    n_edge_pts = len(e_all)
-    vobjs, inverse = new.bulk_weld(pts)
-    emap = None
-    if n_edge_pts:
-        emap = new.add_edges_welded(
-            vobjs, inverse[0:n_edge_pts:2], inverse[1:n_edge_pts:2],
-            edge_flags)
-    if ring_counts:
-        new.add_faces_welded(vobjs, inverse[n_edge_pts:], ring_sizes,
-                             ring_counts, attrs_list, edge_map=emap)
+        _append_transformed_mesh(new, g.mesh, m)
     new.resplit_curves()
     return new
 
@@ -492,86 +430,52 @@ def np_affine(m):
 
 
 def transformed_mesh(src: Mesh, m) -> Mesh:
-    """A DEEP copy of ``src`` with every position mapped through ``m``,
-    carrying face attrs, soft/curve flags and re-fitted texture UV maps.
+    """A topology-preserving DEEP copy with positions and UV maps transformed.
 
-    Big meshes go through one vectorized ``bulk_weld`` pass (same recipe as
-    the ``.igz`` loader): the per-entity ``add_face``/``add_edge`` walk froze
-    the UI for ~16 s copying a 17k-face plant group (piscina report) — and
-    ran TWICE, once at copy and once per paste stamp. Small meshes keep the
-    plain walk (the bulk pass's fixed cost loses there)."""
-    if len(src.edges) * 2 + len(src.faces) * 4 < 1024:
-        return _transformed_mesh_walk(src, m)
-    import numpy as np
-    from core.topology import _maximal_holes
+    Re-inserting transformed corners through ``add_face`` / ``bulk_weld``
+    changed connectivity at world-space weld tolerance. An accurately scaled
+    component could therefore lose thin features merely by being copied or
+    expanded into world geometry. Transform vertices, not topology.
+    """
     new = Mesh()
-    flat: list = []
-    for e in src.edges:
-        flat.append((e.a.x(), e.a.y(), e.a.z()))
-        flat.append((e.b.x(), e.b.y(), e.b.z()))
-    n_edge_pts = len(flat)
-    ring_sizes: list = []
-    ring_counts: list = []
-    attrs_list: list = []
-    for f in src.faces:
-        holes = f.holes or []
-        if len(holes) > 1:
-            holes = _maximal_holes([list(h) for h in holes])
-        ring_counts.append(1 + len(holes))
-        ring_sizes.append(len(f.vertices))
-        flat.extend((v.x(), v.y(), v.z()) for v in f.vertices)
-        for h in holes:
-            ring_sizes.append(len(h))
-            flat.extend((v.x(), v.y(), v.z()) for v in h)
-        attrs_list.append(dict(f.attrs) if f.attrs else None)
-    if not flat:
-        return new
-    rot, trans = np_affine(m)
-    pts = np.array(flat, dtype=np.float64) @ rot.T + trans
-    vobjs, inverse = new.bulk_weld(pts)
-    emap = None
-    if src.edges:
-        flags = [(e.soft, e.curve, None) for e in src.edges]
-        emap = new.add_edges_welded(
-            vobjs, inverse[0:n_edge_pts:2], inverse[1:n_edge_pts:2], flags)
-    if ring_counts:
-        new.add_faces_welded(vobjs, inverse[n_edge_pts:], ring_sizes,
-                             ring_counts, attrs_list, edge_map=emap)
+    _append_transformed_mesh(new, src, m)
     new.resplit_curves()
-    _remap_uvws(new, m)
     return new
 
 
-def _transformed_mesh_walk(src: Mesh, m) -> Mesh:
-    """Sequential per-entity copy — exact semantics for small meshes."""
-    from PySide6.QtGui import QVector3D
-    new = Mesh()
+def _append_transformed_mesh(dst: Mesh, src: Mesh, m) -> None:
+    """Copy one placement's connectivity, registering but never welding it."""
+    from core.mesh import Edge, Face, edge_flags, stamp_edge_flags
 
-    def W(p) -> QVector3D:
-        return m.map(p)
+    vertices = src.vertices
+    if m is not None and len(vertices) >= 256:
+        import numpy as np
+        rot, trans = np_affine(m)
+        pts = np.array([v.position.toTuple() for v in vertices],
+                       dtype=np.float64) @ rot.T + trans
+        positions = pts
+    else:
+        positions = (m.map(v.position) if m is not None else v.position
+                     for v in vertices)
+    vmap = dict(zip(vertices, dst.add_vertices_indexed(positions)))
 
-    for f in src.faces:
-        try:
-            nf = new.add_face([W(v) for v in f.vertices],
-                              [[W(v) for v in h] for h in f.holes] or None)
-        except Exception:  # noqa: BLE001 — degenerate under the transform
-            continue
-        if f.attrs:
-            nf.attrs.update(dict(f.attrs))
-    for e in src.edges:
-        v0, v1 = new.vertex_at(W(e.a)), new.vertex_at(W(e.b))
-        ne = (new.find_edge(v0, v1)
-              if v0 is not None and v1 is not None else None)
-        if ne is None:
-            try:
-                ne = new.add_edge(W(e.a), W(e.b))
-            except Exception:  # noqa: BLE001
-                continue
-        ne.soft = e.soft
-        ne.curve = e.curve
-    new.resplit_curves()
-    _remap_uvws(new, m)
-    return new
+    fmap = {}
+    for old in src.faces:
+        face = Face([vmap[v] for v in old.loop],
+                    [[vmap[v] for v in h] for h in old.hole_loops])
+        face.attrs = dict(old.attrs)
+        face.interior = old.interior
+        fmap[old] = face
+        dst.faces.append(face)
+    for old in src.edges:
+        edge = Edge(vmap[old.v0], vmap[old.v1])
+        stamp_edge_flags(edge, edge_flags(old))
+        edge.faces = [fmap[f] for f in old.faces]
+        edge.v0.edges.add(edge)
+        edge.v1.edges.add(edge)
+        dst.edges.append(edge)
+    if m is not None:
+        _remap_uvws(dst, m, faces=fmap.values())
 
 
 def transformed_attrs(attrs, m) -> dict:
@@ -813,7 +717,7 @@ def placement_points(group, cache=None):
     revision): rebuilding the plaza's arrays cost 73 ms per box.
 
     A bounding box only ever needed the POINTS, but the only way to get them
-    used to be ``world_mesh`` — which welds a merged copy of the whole
+    used to be ``world_mesh`` — which builds a merged copy of the whole
     component to answer a question about eight corners. On the hedge that was
     23 s per selection once its geometry moved into nested placements (5 s
     before, already the wrong shape of work). Here each prototype's array is

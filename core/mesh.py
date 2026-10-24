@@ -323,6 +323,8 @@ class Mesh:
         # Moved vertices waiting for a key another vertex still holds (see
         # _rekey).
         self._displaced: dict[tuple, list[Vertex]] = {}
+        # Authoritative topology must not fall back to coordinate-only JSON.
+        self._indexed_vertices = False
         #: Set by every mutation primitive; the viewport's cached group chunk
         #: clears it after (re)validating — an O(1) dirty signal so render
         #: caches never content-hash a 131k-vertex mesh per scene change.
@@ -559,6 +561,12 @@ class Mesh:
         self.vertices[:] = [v for v in self.vertices if id(v) not in doomed]
         for k in [k for k, v in self._registry.items() if id(v) in doomed]:
             del self._registry[k]
+        for k, waiting in list(self._displaced.items()):
+            waiting[:] = [v for v in waiting if id(v) not in doomed]
+            if k not in self._registry and waiting:
+                self._registry[k] = waiting.pop(0)
+            if not waiting:
+                del self._displaced[k]
         self._chunk_dirty = True
         self._mut_serial += 1
         return len(doomed)
@@ -882,6 +890,46 @@ class Mesh:
             b0 = b1
         return faces_out
 
+    def add_vertices_indexed(self, pos):
+        """Append one vertex per position row, preserving supplied indices.
+
+        Unlike :meth:`bulk_weld`, distinct rows remain distinct vertices,
+        including when they occupy the same sticky-geometry cell.
+        """
+        vobjs = []
+        for p in pos:
+            v = Vertex(p if isinstance(p, QVector3D) else QVector3D(*p))
+            self.vertices.append(v)
+            vobjs.append(v)
+            k = _key(v.position)
+            if k in self._registry:
+                self._displaced.setdefault(k, []).append(v)
+            else:
+                self._registry[k] = v
+        if vobjs:
+            self._indexed_vertices = True
+        self._chunk_dirty = True
+        self._mut_serial += 1
+        return vobjs
+
+    def add_faces_indexed(self, pos, corners, ring_sizes, face_ring_counts,
+                          attrs=None):
+        """Add faces with authoritative vertex indices, without welding.
+
+        ``pos`` contains one row per vertex; ``corners`` indexes those rows
+        in the same ring layout as :meth:`add_faces_welded`. Use this when a
+        mesh kernel already supplies shared topology: coordinate welding can
+        collapse valid short edges in a thin boolean result. The positions
+        still have QVector3D's float32 precision, but distinct input indices
+        remain distinct vertices, even in the same sticky-geometry cell.
+
+        Format-3 indexed documents preserve this topology; unindexed legacy
+        JSON documents still reconstruct shared vertices by position.
+        """
+        vobjs = self.add_vertices_indexed(pos)
+        return self.add_faces_welded(vobjs, corners, ring_sizes,
+                                     face_ring_counts, attrs)
+
     def add_faces_bulk(self, pos, ring_sizes, face_ring_counts, attrs=None):
         """Convenience: :meth:`bulk_weld` + :meth:`add_faces_welded`."""
         vobjs, inverse = self.bulk_weld(pos)
@@ -1020,6 +1068,8 @@ class Mesh:
             "edges": list(self.edges),
             "faces": list(self.faces),
             "registry": dict(self._registry),
+            "displaced": {k: list(vs) for k, vs in self._displaced.items()},
+            "indexed_vertices": self._indexed_vertices,
             "vpos": {v: QVector3D(v.position) for v in self.vertices},
             "vedges": {v: set(v.edges) for v in self.vertices},
             "efaces": {e: list(e.faces) for e in self.edges},
@@ -1040,12 +1090,15 @@ class Mesh:
         dropped; captured ones are re-listed with their fields reset."""
         self._chunk_dirty = True
         self._mut_serial += 1
+        self._indexed_vertices = snap.get("indexed_vertices", False)
         self.vertices[:] = snap["vertices"]
         self.edges[:] = snap["edges"]
         self.faces[:] = snap["faces"]
         self._registry.clear()
         self._registry.update(snap["registry"])
         self._displaced.clear()
+        self._displaced.update(
+            (k, list(vs)) for k, vs in snap.get("displaced", {}).items())
         for v, p in snap["vpos"].items():
             v.position = QVector3D(p)
         for v, es in snap["vedges"].items():
@@ -1075,6 +1128,7 @@ class Mesh:
         self._mut_serial += 1
         self._registry.clear()
         self._displaced.clear()
+        self._indexed_vertices = False
         self.vertices.clear()
         self.edges.clear()
         self.faces.clear()
@@ -1141,9 +1195,12 @@ class Mesh:
         to it welded a duplicate."""
         if self._registry.get(old) is v:
             del self._registry[old]
-            for w in self._displaced.pop(old, ()):
+            waiting = self._displaced.pop(old, ())
+            for i, w in enumerate(waiting):
                 if w is not v and w.edges and _key(w.position) == old:
                     self._registry[old] = w
+                    if i + 1 < len(waiting):
+                        self._displaced[old] = waiting[i + 1:]
                     break
         else:
             waiting = self._displaced.get(old)

@@ -408,24 +408,33 @@ class EraseSelectionCommand(Command):
     connectivity too much for a clean per-edge inverse."""
 
     def __init__(self, edges: Iterable, faces: Iterable = ()) -> None:
-        self._edge_endpoints = [(QVector3D(e.a), QVector3D(e.b)) for e in edges]
-        self._face_loops = [[QVector3D(v) for v in f.vertices] for f in faces]
+        self._edges = list(edges)
+        self._faces = list(faces)
+        self._edge_endpoints = [(QVector3D(e.a), QVector3D(e.b))
+                                for e in self._edges]
+        self._face_loops = [[QVector3D(v) for v in f.vertices]
+                            for f in self._faces]
         self.snapshot: Optional[dict] = None
 
     def do(self, scene) -> None:
         m = scene.mesh
         self.snapshot = m.capture_state()
         footprint = winding_footprint(m)
-        # Loop->face lookups through ONE index: _find_face_by_loop scans the
-        # whole mesh per call, and deleting thousands of box-selected faces
-        # froze for ~26 s on a 28k-face mesh (piscina.igz report, round 2).
+        live_faces = set(m.faces)
+        live_edges = set(m.edges)
+        # A preceding command may recreate objects on redo. Resolve those
+        # references by geometry, but prefer identity for touching shells.
         by_loop: dict = {}
-        for f in m.faces:
-            by_loop.setdefault(
-                frozenset(_key(p) for p in f.vertices), []).append(f)
-        for loop in self._face_loops:
-            bucket = by_loop.get(frozenset(_key(p) for p in loop))
-            f = bucket.pop(0) if bucket else None
+        if any(f not in live_faces for f in self._faces):
+            for f in m.faces:
+                by_loop.setdefault(
+                    frozenset(_key(p) for p in f.vertices), []).append(f)
+        for original, loop in zip(self._faces, self._face_loops):
+            if original in live_faces:
+                f = original
+            else:
+                bucket = by_loop.get(frozenset(_key(p) for p in loop))
+                f = bucket.pop(0) if bucket else None
             if f is not None:
                 m.remove_face(f)
                 scene.selection.discard(f)
@@ -436,18 +445,22 @@ class EraseSelectionCommand(Command):
         seg_faces: dict = {}
 
         def _index_face(f) -> None:
-            for ek in _loop_edges(f.vertices):
-                seg_faces.setdefault(ek, []).append(f)
+            for loop in (f.loop, *f.hole_loops):
+                for i, v in enumerate(loop):
+                    ek = frozenset((v, loop[(i + 1) % len(loop)]))
+                    seg_faces.setdefault(ek, []).append(f)
 
         for f in m.faces:
             _index_face(f)
         dead_faces: set = set()
         slit_planes: list = []
         across: list = []
-        for a, b in self._edge_endpoints:
-            v0 = m.vertex_at(a)
-            v1 = m.vertex_at(b)
-            edge = m.find_edge(v0, v1) if (v0 is not None and v1 is not None) else None
+        for edge, (a, b) in zip(self._edges, self._edge_endpoints):
+            if edge not in live_edges or edge not in edge.v0.edges:
+                v0 = m.vertex_at(a)
+                v1 = m.vertex_at(b)
+                edge = (m.find_edge(v0, v1)
+                        if v0 is not None and v1 is not None else None)
             if edge is None:
                 continue
             faces = list(edge.faces)
@@ -491,7 +504,7 @@ class EraseSelectionCommand(Command):
             if merged is None:
                 # Cascade: the edge and every face bounding it (a face can't
                 # outlive a bounding edge) go away.
-                ekey = frozenset((_key(edge.v0.position), _key(edge.v1.position)))
+                ekey = frozenset((edge.v0, edge.v1))
                 for f in seg_faces.get(ekey, ()):
                     if id(f) in dead_faces:
                         continue

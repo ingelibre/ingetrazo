@@ -105,3 +105,53 @@ def test_bulk_weld_reuses_preexisting_vertices():
     vobjs, ids = mesh.bulk_weld(np.array([(0.0, 0.0, 0.0), (5.0, 0.0, 0.0)]))
     assert vobjs[ids[0]] is v0
     assert len(mesh.vertices) == 2
+
+
+@pytest.mark.parametrize("gauge", [0.0003048, 0.000381],
+                         ids=["12mil-tape", "15mil-flashing"])
+def test_indexed_thin_film_retains_short_edges_and_enclosed_volume(gauge):
+    # A 1 m long triangular nib, 0.05 mm wide, on a real-gauge film.
+    # Its shared topology is authoritative even though the short edges fall
+    # inside the ordinary sticky-geometry weld distance.
+    pos = np.array([(20, 12, 3), (21, 12, 3), (21, 12.00005, 3),
+                    (20, 12, 3 + gauge), (21, 12, 3 + gauge),
+                    (21, 12.00005, 3 + gauge)], dtype=np.float64)
+    triangles = np.array([(0, 2, 1), (3, 4, 5), (0, 1, 4), (0, 4, 3),
+                          (1, 2, 5), (1, 5, 4), (2, 0, 3), (2, 3, 5)])
+    mesh = Mesh()
+    mesh.add_faces_indexed(pos, triangles.reshape(-1), [3] * 8, [1] * 8)
+
+    assert len(mesh.vertices) == 6
+    assert len(mesh.edges) == 12
+    assert len(mesh.faces) == 8
+    assert all(len(e.faces) == 2 and e.v0 is not e.v1 for e in mesh.edges)
+    live = np.array([v.position.toTuple() for v in mesh.vertices])
+    assert np.ptp(live[:, 2]) == pytest.approx(gauge, abs=2e-7)
+    drawn = np.array([[p.toTuple() for p in tri] for f in mesh.faces
+                      for tri in f.triangulate()])
+    assert len(drawn) == 8
+    # Measure the actual rendered triangles, centred to avoid cancellation
+    # in this small volume at house-scale world coordinates.
+    drawn -= live[0]
+    volume = np.einsum("ij,ij->i", drawn[:, 0],
+                       np.cross(drawn[:, 1], drawn[:, 2])).sum() / 6
+    expected = np.prod(np.ptp(live, axis=0)) / 2
+    assert volume == pytest.approx(expected, rel=1e-6)
+
+
+def test_indexed_snapshot_keeps_same_cell_vertices_available_for_drawing():
+    mesh = Mesh()
+    mesh.add_faces_indexed(
+        np.array([(0, 0, 0), (1, 0, 0), (0, 1, 0),
+                  (0, 0, 0), (-1, 0, 0), (0, -1, 0),
+                  (0, 0, 0), (0, 0, 1), (0, 1, 1)]),
+        np.arange(9), [3, 3, 3], [1, 1, 1])
+    first, second, third = mesh.vertices[0::3]
+    snap = mesh.capture_state()
+    mesh.move_vertex(first, QVector3D(0, 0, 1))
+    mesh.restore_state(snap)
+    mesh.move_vertex(first, QVector3D(0, 0, 2))
+    assert mesh.vertex(QVector3D()) is second
+    mesh.move_vertex(second, QVector3D(0, 0, 3))
+    assert mesh.vertex(QVector3D()) is third
+    assert len(mesh.vertices) == 9

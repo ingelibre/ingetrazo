@@ -123,18 +123,57 @@ def face_set_volume(faces):
     return abs(total)
 
 
-def _group_signature(g) -> tuple:
-    """What a tagged group's quantities depend on: its tag and, for every
-    placement down its tree, the mesh, that mesh's mutation serial and the
-    composed matrix. Equal signatures measure the same."""
-    from core.group import iter_placements
-    tag = tuple(sorted((k, repr(v)) for k, v in (g.ifc or {}).items()))
-    parts = []
-    for placed, m in iter_placements(g):
-        mesh = placed.mesh
-        parts.append((id(mesh), getattr(mesh, "_mut_serial", None),
-                      None if m is None else tuple(m.data())))
-    return (id(g), tag, tuple(parts))
+def _mesh_quantity_key(mesh, previous, current):
+    """Geometry only, once per shared prototype in this collection.
+
+    Mesh mutation serials do not cover every edit (hole removal and face
+    winding can change loops directly). Keep the actual topology/positions
+    instead, without paint, tags or visibility. Reading faces also materializes
+    a deferred mesh before its key is recorded.
+    """
+    mid = id(mesh)
+    if mid in current:
+        return current[mid]
+    points = {}
+
+    def vertex_key(v):
+        vid = id(v)
+        if vid not in points:
+            p = v.position
+            points[vid] = (p.x(), p.y(), p.z())
+        return vid
+
+    faces = tuple(
+        (id(f), tuple(tuple(vertex_key(v) for v in loop)
+                      for loop in (f.loop, *f.hole_loops)))
+        for f in mesh.faces)
+    edges = tuple((vertex_key(e.v0), vertex_key(e.v1)) for e in mesh.edges)
+    key = (mid, tuple(points.items()), faces, edges)
+    # Reuse equal keys too: repeated placements then compare their shared
+    # prototype keys by identity rather than walking its geometry again.
+    old = previous.get(mid)
+    if old == key:
+        key = old
+    current[mid] = key
+    return key
+
+
+def _group_quantity_key(group, previous, current, mesh_key):
+    gid = id(group)
+    if gid in current:
+        return current[gid]
+    xform = getattr(group, "xform", None)
+    key = (
+        gid, mesh_key(group.mesh),
+        tuple(xform.data()) if xform is not None else None,
+        tuple(_group_quantity_key(child, previous, current, mesh_key)
+              for child in (getattr(group, "children", None) or ())),
+    )
+    old = previous.get(gid)
+    if old == key:
+        key = old
+    current[gid] = key
+    return key
 
 
 def collect_objects(scene, memo: dict | None = None) -> list[dict]:
@@ -142,10 +181,23 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
     ``{"key", "class", "name", "area", "volume" (or None), "faces" | "group"}``.
     Loose-face objects group by tag id; each tagged group is one object.
 
-    ``memo`` (a dict the caller keeps between calls) reuses a tagged
-    group's object while its :func:`_group_signature` is unchanged, so an
-    edit re-measures only what it touched (#857: 238 rebar bars took 25 s
-    each time); entries no longer in the model are dropped from it."""
+    ``memo`` optionally retains group rows, including budget quantities,
+    while their topology, placement and tags remain unchanged. Numeric
+    quantities are reused independently without retaining document objects."""
+    previous = scene._bim_quantity_cache
+    meshes, groups, quantities = {}, {}, {}
+
+    def mesh_key(mesh):
+        return _mesh_quantity_key(mesh, previous.get("meshes", {}), meshes)
+
+    def cached_quantities(key, geometry, faces):
+        old = previous.get("quantities", {}).get(key)
+        if old is not None and old[0] == geometry:
+            quantities[key] = old
+            return old[1:]
+        area, volume = face_set_area(faces), face_set_volume(faces)
+        quantities[key] = (geometry, area, volume)
+        return area, volume
     out: list[dict] = []
     by_id: dict = {}
     for f in scene.loose_mesh.faces:
@@ -154,12 +206,15 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
             by_id.setdefault(tag.get("id"), (tag, []))[1].append(f)
     for obj_id, (tag, faces) in sorted(by_id.items(),
                                        key=lambda kv: kv[0] or 0):
+        key = ("faces", obj_id)
+        geometry = (mesh_key(scene.loose_mesh), tuple(id(f) for f in faces))
+        area, volume = cached_quantities(key, geometry, faces)
         out.append({
-            "key": ("faces", obj_id),
+            "key": key,
             "class": tag.get("class", ""),
             "name": tag.get("name", ""),
-            "area": face_set_area(faces),
-            "volume": face_set_volume(faces),
+            "area": area,
+            "volume": volume,
             "faces": faces,
         })
     seen = set()
@@ -167,28 +222,39 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
         tag = getattr(g, "ifc", None)
         if not tag:
             continue
+        key = ("group", id(g))
+        geometry = _group_quantity_key(
+            g, previous.get("groups", {}), groups, mesh_key)
         sig = None
         if memo is not None:
-            sig = _group_signature(g)
+            sig = (geometry, tuple(sorted(
+                (k, repr(v)) for k, v in tag.items())))
             seen.add(sig)
             hit = memo.get(sig)
             if hit is not None and hit.get("group") is g:
+                quantities[key] = (geometry, hit["area"], hit["volume"])
                 out.append(hit)
                 continue
-        # Quantities are world-space, and a component's nested placements
-        # are part of the object being measured.
-        if getattr(g, "xform", None) is not None or getattr(g, "children",
-                                                            None):
-            from core.group import world_mesh
-            faces = list(world_mesh(g).faces)
+        old = previous.get("quantities", {}).get(key)
+        if old is not None and old[0] == geometry:
+            quantities[key] = old
+            area, volume = old[1:]
         else:
-            faces = list(g.mesh.faces)
+            # Compute quantities in world space without replacing the actual
+            # components. Only numbers are cached, never flattened meshes.
+            if getattr(g, "xform", None) is not None or getattr(g, "children",
+                                                                None):
+                from core.group import world_mesh
+                faces = list(world_mesh(g).faces)
+            else:
+                faces = list(g.mesh.faces)
+            area, volume = cached_quantities(key, geometry, faces)
         obj = {
-            "key": ("group", id(g)),
+            "key": key,
             "class": tag.get("class", ""),
             "name": tag.get("name", ""),
-            "area": face_set_area(faces),
-            "volume": face_set_volume(faces),
+            "area": area,
+            "volume": volume,
             "group": g,
         }
         if memo is not None:
@@ -197,6 +263,11 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
     if memo is not None:
         for sig in [k for k in memo if k not in seen]:
             del memo[sig]
+    # Replace, rather than grow: only currently tagged objects and their
+    # prototypes remain, and keys contain no references to document objects.
+    scene._bim_quantity_cache = {
+        "meshes": meshes, "groups": groups, "quantities": quantities,
+    }
     return out
 
 

@@ -10,6 +10,7 @@ coordinates (``yaw``, ``pitch``, ``distance``). Both perspective and parallel
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
 
@@ -65,6 +66,11 @@ class OrbitCamera:
         self.znear = 0.1
         self.zfar = 10000.0
         self.perspective = True
+        #: Optional live bounds of the geometry drawn by a viewport. Keeping
+        #: this separate from znear/zfar preserves saved camera clip settings.
+        self.depth_bounds: Callable[
+            [], tuple[QVector3D, QVector3D] | tuple[None, None]
+        ] | None = None
         #: Two-Point Perspective: vertical lines stay vertical
         #: (José Castro Basso, FADU–UDELAR, for teaching architectural
         #: drawing). Only in perspective; see ``_level_forward``.
@@ -174,12 +180,10 @@ class OrbitCamera:
 
     def projection_matrix(self) -> QMatrix4x4:
         m = QMatrix4x4()
+        near, far = self.depth_range()
         if self.perspective:
-            # The near plane follows the camera in: at any normal working
-            # distance it is the usual 0.1 m, and only when you come right up
-            # to something does it step back out of the way — otherwise the
-            # near plane itself is what stops you.
-            near = self.near_plane()
+            # depth_range keeps the close-view near plane and only tightens
+            # it when the whole drawn model is safely farther from the eye.
             level = self._level_forward()
             if level is not None:
                 # A view camera's rise: the frustum slides up or down by the
@@ -191,16 +195,15 @@ class OrbitCamera:
                 depth = QVector3D.dotProduct(rel, level)
                 shift = rel.z() * near / depth
                 m.frustum(-half_w, half_w, -half_h + shift, half_h + shift,
-                          near, self.far_plane())
+                          near, far)
                 return m
-            m.perspective(self.fov_deg, self.aspect, near, self.far_plane())
+            m.perspective(self.fov_deg, self.aspect, near, far)
         else:
             # Parallel projection — size derived from camera distance so the
             # framing matches what the user sees in perspective.
             half_h = self.distance * math.tan(math.radians(self.fov_deg) / 2.0)
             half_w = half_h * self.aspect
-            far = self.far_plane()
-            m.ortho(-half_w, half_w, -half_h, half_h, -far, far)
+            m.ortho(-half_w, half_w, -half_h, half_h, near, far)
         return m
 
     def near_plane(self) -> float:
@@ -219,6 +222,47 @@ class OrbitCamera:
         if not math.isfinite(far):
             return MIN_DISTANCE_FAR
         return min(MIN_DISTANCE_FAR, max(MIN_DISTANCE, far * _MIN_PER_METRE))
+
+    def depth_range(self) -> tuple[float, float]:
+        """Fit depth precision to drawn geometry, within the camera's clip
+        envelope. Unbound cameras retain their historical projection.
+
+        A 20 km orthographic range has 1.2 mm depth steps in a 24-bit
+        buffer; perspective with a 0.1 m near plane has 1.5 mm steps at
+        50 m. Both merge the two sides of real 12 mil flashing tape.
+        Moving the near plane blindly with orbit distance would instead
+        cut away nearby walls during a walkthrough. Bounds let us tighten
+        only empty space; bounds crossing the eye keep the close near plane.
+        """
+        far = self.far_plane()
+        near = self.near_plane() if self.perspective else -far
+        if self.depth_bounds is None:
+            return near, far
+        lo, hi = self.depth_bounds()
+        if lo is None or hi is None:
+            return near, far
+        eye = self.eye()
+        forward = self._level_forward()
+        if forward is None:
+            forward = self.forward()
+        # Scalar arithmetic avoids rounding camera-space depths through a
+        # QVector3D a second time. This is the exact support interval of an
+        # AABB along the view direction, including two-point perspective.
+        low = high = 0.0
+        for a, b, e, f in zip(lo.toTuple(), hi.toTuple(),
+                              eye.toTuple(), forward.toTuple()):
+            da, db = (a - e) * f, (b - e) * f
+            low += min(da, db)
+            high += max(da, db)
+        if not (math.isfinite(low) and math.isfinite(high)):
+            return near, far
+        # Leave room for rasterization, section caps and polygon offset.
+        pad = max(0.1, (high - low) * 0.05)
+        fitted_near = max(near, low - pad)
+        fitted_far = min(far, high + pad)
+        if fitted_far <= fitted_near:
+            return near, far
+        return fitted_near, fitted_far
 
     def far_plane(self) -> float:
         """The far clipping distance: ``zfar`` at any working distance,

@@ -88,3 +88,80 @@ def test_erasing_a_face_takes_its_corners():
         EraseSelectionCommand(list(m.edges), [m.faces[0]]))
     assert m.faces == []
     assert m.vertices == []
+
+
+def test_erasing_indexed_short_edge_preserves_the_other_shell_and_undo():
+    import numpy as np
+
+    scene = Scene()
+    mesh = scene.mesh
+    mesh.add_faces_indexed(
+        np.array([(0, 0, 0), (1, 0, 0), (1, .00004, 0),
+                  (0, 0, 0), (1, 0, 0), (0, -1, 0)]),
+        np.arange(6), [3, 3], [1, 1])
+    removed, kept = mesh.faces
+    short = mesh.find_edge(mesh.vertices[1], mesh.vertices[2])
+    history = History(scene)
+    history.execute(EraseSelectionCommand([short]))
+    assert short not in mesh.edges
+    assert mesh.faces == [kept]
+    assert history.undo()
+    assert mesh.faces == [removed, kept]
+    assert short in mesh.edges
+    assert history.redo()
+    assert mesh.faces == [kept]
+
+
+def test_erasing_indexed_face_keeps_coincident_unselected_face():
+    import numpy as np
+
+    scene = Scene()
+    mesh = scene.mesh
+    mesh.add_faces_indexed(
+        np.array([(0, 0, 0), (1, 0, 0), (0, 1, 0)] * 2),
+        np.arange(6), [3, 3], [1, 1])
+    kept, selected = mesh.faces
+    history = History(scene)
+    history.execute(EraseSelectionCommand([], [selected]))
+    assert mesh.faces == [kept]
+    history.undo()
+    assert mesh.faces == [kept, selected]
+
+
+def test_erasing_indexed_shell_keeps_surviving_vertices_registered():
+    import numpy as np
+
+    scene = Scene()
+    mesh = scene.mesh
+    mesh.add_faces_indexed(
+        np.array([(0, 0, 0), (1, 0, 0), (0, 1, 0),
+                  (0, 0, 0), (-1, 0, 0), (0, -1, 0)]),
+        np.arange(6), [3, 3], [1, 1])
+    first, second = mesh.faces
+    surviving_origin = second.loop[0]
+    edges = [mesh.find_edge(v, first.loop[(i + 1) % 3])
+             for i, v in enumerate(first.loop)]
+    History(scene).execute(EraseSelectionCommand(edges, [first]))
+    assert mesh.faces == [second]
+    assert mesh.vertex(QVector3D()) is surviving_origin
+    assert len(mesh.vertices) == 3
+
+
+def test_erase_redo_resolves_edges_recreated_by_an_earlier_rebuild():
+    from core.history import RebuildPlanarFacesCommand
+
+    scene = Scene()
+    mesh = scene.mesh
+    mesh.add_face([V(0, 0), V(2, 0), V(0, 2)])
+    history = History(scene)
+    history.execute(RebuildPlanarFacesCommand())
+    original_edge = mesh.edges[0]
+    history.execute(EraseSelectionCommand([original_edge]))
+    assert len(mesh.edges) == 2 and not mesh.faces
+    for _ in range(2):
+        assert history.undo()  # erase
+        assert history.undo()  # rebuild
+        assert history.redo()  # rebuild creates new edge objects
+        assert original_edge not in mesh.edges
+        assert history.redo()  # erase must resolve against the rebuilt mesh
+        assert len(mesh.edges) == 2 and not mesh.faces

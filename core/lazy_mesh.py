@@ -3,12 +3,12 @@
 """A deferred mesh's shape as arrays: what building it WOULD make, without
 making a single Python object (the experimental engine's lazy meshes).
 
-:func:`plan` replays :meth:`Mesh.bulk_weld`, :meth:`Mesh.add_edges_welded`
-and :meth:`Mesh.add_faces_welded` on an empty mesh in NumPy: the vertex
-positions in ``mesh.vertices`` order, the edges in ``mesh.edges`` order
-with their flags, the faces' corners as vertex indices and each edge's
-incident faces in ``edge.faces`` order. tests/test_lazy_mesh_plan.py holds
-it to the built mesh, index for index."""
+:func:`plan` preserves the vertex indices of format-3 blocks, and replays
+:meth:`Mesh.bulk_weld` only for unindexed legacy JSON. It then mirrors
+:meth:`Mesh.add_edges_welded` and :meth:`Mesh.add_faces_welded`: positions in
+``mesh.vertices`` order, edges with their flags, face corners as vertex
+indices, and incidence in ``edge.faces`` order. tests/test_lazy_mesh_plan.py
+holds it to the built mesh, index for index."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -174,11 +174,17 @@ def _weld(pos: np.ndarray):
 
 
 def plan(pos, edges, flags, curves, layers, layer_names, rings, sizes,
-         counts, sequential=False) -> Plan:
-    """The built mesh of a format-3 block (already cleared of non-finite
-    points), as :class:`Plan`. ``sequential``: built by the per-entity
-    walk (vertices in the order each one's point comes)."""
-    vpos, inverse = weld(pos, sequential)
+         counts, sequential=False, *, indexed=True) -> Plan:
+    """Plan a format-3 block with its authoritative vertex indices.
+
+    ``indexed=False`` is only for unindexed legacy JSON: reconstruct shared
+    vertices by welding, in its sequential or bulk reader's creation order.
+    """
+    if indexed:
+        vpos = np.ascontiguousarray(pos, dtype=np.float32).astype(np.float64)
+        inverse = np.arange(len(vpos), dtype=np.int64)
+    else:
+        vpos, inverse = weld(pos, sequential)
     u = len(vpos)
     ia = inverse[edges[:, 0]] if len(edges) else np.empty(0, np.int64)
     ib = inverse[edges[:, 1]] if len(edges) else np.empty(0, np.int64)
@@ -285,7 +291,8 @@ def plan_of(mesh) -> Plan | None:
         hit = d["_deferred_plan"] = plan(
             s["pos"], s["edges"], s["flags"], s["curves"], s["layers"],
             s["meta"].get("edge_layers") or [], s["rings"], s["sizes"],
-            s["counts"], s.get("sequential", False))
+            s["counts"], s.get("sequential", False),
+            indexed="member" in s["meta"])
     return hit
 
 
