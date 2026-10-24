@@ -3010,5 +3010,9 @@
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Modifie l'angle de vue de la caméra, comme un objectif : plus large montre davantage, plus serré garde les lignes calmes.",
  "Field of view in degrees (10–120):": "Champ de vision en degrés (10–120) :",
  "Field of view applies to perspective; switch to Perspective first.": "Le champ de vision concerne la perspective ; passez d'abord en Perspective.",
- "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name} : chaque face a son propre matériau, rien n’a donc changé — ouvrez-le et peignez les faces"
+ "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name} : chaque face a son propre matériau, rien n’a donc changé — ouvrez-le et peignez les faces",
+ "DWG import cancelled.": "Import du DWG annulé.",
+ "The DWG conversion took too long and was stopped.": "La conversion du DWG a pris trop de temps et a été arrêtée.",
+ "The DWG converter could not convert this drawing.": "Le convertisseur DWG n’a pas pu convertir ce dessin.",
+ "Details: {details}": "Détails : {details}"
 }

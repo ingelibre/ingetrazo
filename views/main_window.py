@@ -7286,8 +7286,8 @@ class MainWindow(QMainWindow):
         """Import a DWG through the LibreDWG satellite (D3): convert to a
         temporary DXF, feed the DXF pipeline, discard the temp. The user
         never sees the intermediate — IngeCAD's dwg_bridge pattern."""
-        from formats.dwg_bridge import (DwgBridgeError, discard_temp_dxf,
-                                        dwg_to_dxf, have_dwg_support)
+        from formats.dwg_bridge import (DwgBridgeError, DwgConverter,
+                                        discard_temp_dxf, have_dwg_support)
 
         if not have_dwg_support():
             QMessageBox.critical(
@@ -7299,21 +7299,47 @@ class MainWindow(QMainWindow):
                    "converter such as ODA File Converter), then File ▸ "
                    "Import ▸ AutoCAD DXF."))
             return False
-        dlg, cb = self._import_progress(tr("Importing {name}…",
-                                           name=path.name))
-        cb(0.02, tr("Converting DWG…"))
+        dlg, _cb = self._import_progress(tr("Importing {name}…",
+                                            name=path.name))
+        # The converter runs in a QProcess under a local event loop: the
+        # window stays alive and Cancel kills the process (#401).
+        dlg.setRange(0, 0)
+        dlg.setLabelText(tr("Converting DWG…"))
+        dlg.setCancelButtonText(tr("Cancel"))
+        converter = DwgConverter(self)
+        dlg.canceled.connect(converter.cancel)
         try:
-            dxf = dwg_to_dxf(path)
+            dxf = converter.convert(path)
         except DwgBridgeError as exc:
             dlg.close()
-            QMessageBox.critical(self, tr("Import DWG failed"), str(exc))
+            if exc.kind == "cancelled":
+                self.statusBar().showMessage(tr("DWG import cancelled."), 5000)
+            else:
+                QMessageBox.critical(self, tr("Import DWG failed"),
+                                     self._dwg_failure_text(exc))
             return False
+        finally:
+            converter.deleteLater()
         dlg.close()
         try:
             ok = self._import_dxf_path(dxf, label=path)
         finally:
             discard_temp_dxf(dxf)
         return ok
+
+    @staticmethod
+    def _dwg_failure_text(exc) -> str:
+        """The translated message for a failed or timed-out conversion."""
+        if exc.kind == "timeout":
+            head = tr("The DWG conversion took too long and was stopped.")
+        else:
+            head = (tr("The DWG converter could not convert this drawing.")
+                    + "\n" + tr("Details: {details}", details=str(exc)))
+        return head + "\n\n" + tr(
+            "To work on the drawing anyway: save it as DXF from your "
+            "CAD program (or convert it with a free DWG → DXF "
+            "converter such as ODA File Converter), then File ▸ "
+            "Import ▸ AutoCAD DXF.")
 
     def _on_import_dxf(self) -> None:
         path_str, _ = file_dialogs.getOpenFileName(

@@ -162,3 +162,111 @@ def test_check_reports_the_converter(capsys):
     import main
     main._self_check()
     assert "DWG converter" in capsys.readouterr().out
+
+
+# ---- Converter as a QProcess (#401) -------------------------------------------
+_FAKE = r"""\
+import sys, time
+mode, out = sys.argv[1], sys.argv[2]
+if mode == "ok":
+    open(out, "w").write("0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n")
+elif mode == "fail":
+    sys.stderr.write("Error: cannot read this drawing\n")
+    sys.exit(1)
+elif mode == "hang":
+    time.sleep(60)
+"""
+
+
+@pytest.fixture
+def fake_converter(tmp_path, monkeypatch):
+    """Stand in for dwg2dxf: ``set_mode`` picks what the fake script does."""
+    import sys
+
+    script = tmp_path / "fake_dwg2dxf.py"
+    script.write_text(_FAKE)
+    mode = {"value": "ok"}
+
+    monkeypatch.setattr(dwg_bridge, "find_dwg2dxf", lambda: Path(sys.executable))
+    monkeypatch.setattr(
+        dwg_bridge, "_converter_command",
+        lambda tool, dwg, out: [str(tool), str(script), mode["value"], str(out)])
+    return lambda value: mode.update(value=value)
+
+
+def _temp_dirs_left():
+    import tempfile
+    return list(Path(tempfile.gettempdir()).glob("ingetrazo-dwg-*"))
+
+
+def test_sync_path_still_converts_headless(fake_converter, tmp_path):
+    fake_converter("ok")
+    dxf = dwg_bridge.dwg_to_dxf(tmp_path / "a.dwg")
+    try:
+        assert dxf.is_file()
+    finally:
+        dwg_bridge.discard_temp_dxf(dxf)
+
+
+def test_sync_failure_leaves_no_temp_dir(fake_converter, tmp_path):
+    fake_converter("fail")
+    before = set(_temp_dirs_left())
+    with pytest.raises(dwg_bridge.DwgBridgeError) as err:
+        dwg_bridge.dwg_to_dxf(tmp_path / "a.dwg")
+    assert err.value.kind == "failed"
+    assert set(_temp_dirs_left()) == before
+
+
+def test_converter_success(fake_converter, tmp_path):
+    fake_converter("ok")
+    dxf = dwg_bridge.DwgConverter().convert(tmp_path / "a.dwg")
+    try:
+        assert dxf.is_file()
+    finally:
+        dwg_bridge.discard_temp_dxf(dxf)
+
+
+def test_converter_failure_reports_the_converter_output(fake_converter, tmp_path):
+    fake_converter("fail")
+    before = set(_temp_dirs_left())
+    with pytest.raises(dwg_bridge.DwgBridgeError) as err:
+        dwg_bridge.DwgConverter().convert(tmp_path / "a.dwg")
+    assert err.value.kind == "failed"
+    assert "cannot read this drawing" in str(err.value)
+    assert set(_temp_dirs_left()) == before
+
+
+def test_converter_timeout_kills_the_process(fake_converter, tmp_path, monkeypatch):
+    fake_converter("hang")
+    monkeypatch.setattr(dwg_bridge, "_TIMEOUT", 0.5)
+    before = set(_temp_dirs_left())
+    with pytest.raises(dwg_bridge.DwgBridgeError) as err:
+        dwg_bridge.DwgConverter().convert(tmp_path / "a.dwg")
+    assert err.value.kind == "timeout"
+    assert set(_temp_dirs_left()) == before
+
+
+def test_converter_cancel_keeps_the_event_loop_alive(fake_converter, tmp_path):
+    from PySide6.QtCore import QTimer
+
+    fake_converter("hang")
+    conv = dwg_bridge.DwgConverter()
+    ticks = []
+    ticker = QTimer()
+    ticker.timeout.connect(lambda: ticks.append(1))
+    ticker.start(20)
+    QTimer.singleShot(400, conv.cancel)
+    before = set(_temp_dirs_left())
+    with pytest.raises(dwg_bridge.DwgBridgeError) as err:
+        conv.convert(tmp_path / "a.dwg")
+    ticker.stop()
+    assert err.value.kind == "cancelled"
+    assert len(ticks) >= 3                # the GUI thread was not blocked
+    assert set(_temp_dirs_left()) == before
+
+
+def test_missing_converter_error_kind(tmp_path, monkeypatch):
+    monkeypatch.setattr(dwg_bridge, "find_dwg2dxf", lambda: None)
+    with pytest.raises(dwg_bridge.DwgBridgeError) as err:
+        dwg_bridge.DwgConverter().convert(tmp_path / "x.dwg")
+    assert err.value.kind == "unavailable"
