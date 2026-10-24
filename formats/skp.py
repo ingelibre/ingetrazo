@@ -389,59 +389,63 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
             scene.text_labels.append(TextLabel(
                 anchor, label - anchor, raw["text"]))
 
-    for gp in groups:
-        _tick(1)
-        mesh = _build_mesh(gp["faces"], gp.get("soft_edges"))
-        if mesh.faces:
-            g = Group(mesh, name=gp.get("name"))
-            if gp.get("layer"):
-                g.layer = gp["layer"]
-            axes = gp.get("axes")
-            if isinstance(axes, list) and len(axes) == 16:
-                # The .skp instance's transformation, kept as the
-                # group's own axes (issue #44) — its mesh stays in world
-                # coordinates. Column-major, as QMatrix4x4.data() wrote it.
-                from PySide6.QtGui import QMatrix4x4
-                m = QMatrix4x4(*[axes[c * 4 + r] for r in range(4)
-                                 for c in range(4)])
-                if not m.isIdentity():
-                    g.axes = m
-            if gp.get("billboard"):
-                # Image-entity cutout (photo person/animal/tree): the real
-                # geometry turns toward the camera each frame, like the DAE
-                # face-me import.
-                g.billboard = "mesh"
-            scene.groups.append(g)
-    # Shared components: ONE prototype mesh (local coordinates), one Group per
-    # placement with only a local->world matrix (Components v1 instances). A
-    # prototype may PLACE other prototypes — the sharing a component already
-    # has inside itself — and those become the instance's ``children``, one
-    # object to the user however deep the tree.
-    proto_meshes = []
-    for pr in protos:
-        _tick(1)
-        proto_meshes.append(_build_mesh(pr["faces"], pr.get("soft_edges")))
+    if payload.get('_skp_hierarchy') == 1:
+        from formats.skp_hierarchy import build_groups
+        scene.groups.extend(build_groups(payload, _build_mesh, _tick))
+    else:
+        for gp in groups:
+            _tick(1)
+            mesh = _build_mesh(gp["faces"], gp.get("soft_edges"))
+            if mesh.faces:
+                g = Group(mesh, name=gp.get("name"))
+                if gp.get("layer"):
+                    g.layer = gp["layer"]
+                axes = gp.get("axes")
+                if isinstance(axes, list) and len(axes) == 16:
+                    # The .skp instance's transformation, kept as the
+                    # group's own axes (issue #44) — its mesh stays in world
+                    # coordinates. Column-major, as QMatrix4x4.data() wrote it.
+                    from PySide6.QtGui import QMatrix4x4
+                    m = QMatrix4x4(*[axes[c * 4 + r] for r in range(4)
+                                     for c in range(4)])
+                    if not m.isIdentity():
+                        g.axes = m
+                if gp.get("billboard"):
+                    # Image-entity cutout (photo person/animal/tree): the real
+                    # geometry turns toward the camera each frame, like the DAE
+                    # face-me import.
+                    g.billboard = "mesh"
+                scene.groups.append(g)
+        # Shared components: ONE prototype mesh (local coordinates), one Group per
+        # placement with only a local->world matrix (Components v1 instances). A
+        # prototype may PLACE other prototypes — the sharing a component already
+        # has inside itself — and those become the instance's ``children``, one
+        # object to the user however deep the tree.
+        proto_meshes = []
+        for pr in protos:
+            _tick(1)
+            proto_meshes.append(_build_mesh(pr["faces"], pr.get("soft_edges")))
 
-    def _place(idx, xf, layer=None, depth=0):
-        pr = protos[idx]
-        g = Group(proto_meshes[idx], name=pr.get("name"))
-        g.xform = xf
-        if layer:
-            g.layer = layer
-        if depth < 32:      # a malformed file must not spin
-            g.adopt(_place(kid["proto"], kid["xform"], kid.get("layer"),
-                           depth + 1)
-                    for kid in pr.get("children", []) or [])
-        return g
+        def _place(idx, xf, layer=None, depth=0):
+            pr = protos[idx]
+            g = Group(proto_meshes[idx], name=pr.get("name"))
+            g.xform = xf
+            if layer:
+                g.layer = layer
+            if depth < 32:      # a malformed file must not spin
+                g.adopt(_place(kid["proto"], kid["xform"], kid.get("layer"),
+                               depth + 1)
+                        for kid in pr.get("children", []) or [])
+            return g
 
-    for idx, pr in enumerate(protos):
-        if not proto_meshes[idx].faces and not (pr.get("children") or []):
-            continue
-        _tick(1)
-        layers = pr.get("instance_layers") or []
-        for i, xf in enumerate(pr.get("instances", []) or []):
-            g = _place(idx, xf, layers[i] if i < len(layers) else None)
-            scene.groups.append(g)
+        for idx, pr in enumerate(protos):
+            if not proto_meshes[idx].faces and not (pr.get("children") or []):
+                continue
+            _tick(1)
+            layers = pr.get("instance_layers") or []
+            for i, xf in enumerate(pr.get("instances", []) or []):
+                g = _place(idx, xf, layers[i] if i < len(layers) else None)
+                scene.groups.append(g)
     back = payload.get("back_color")
     if back and getattr(scene, "back_face_color", None) is None:
         # Adopt the file's style back-face colour so unpainted faces seen

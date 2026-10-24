@@ -2380,6 +2380,18 @@ class Viewport(QOpenGLWidget):
             self._gl.glDrawArrays(GL_LINES, 0, self._selected_count)
             self._selected_vao.release()
 
+        if self._export_size is None:
+            from views.group_selection import _group_selection_plan, _draw_group_selection
+            from views import viewport as viewport_module
+            plan = _group_selection_plan(self)
+            self._gl.glDepthMask(GL_FALSE)
+            self._set_color(0.95, 0.45, 0.16, 1.0)
+            try:
+                _draw_group_selection(self, plan, mvp, ((0.0, 0.0),), viewport_module)
+            finally:
+                self._program.setUniformValue(self._loc_mvp, mvp)
+                self._gl.glDepthMask(GL_TRUE)
+
         # Hovered edge — light blue, on top of everything else so it reads as
         # the pick candidate even when it overlaps a selected (orange) edge.
         # A curve segment highlights its whole contour (what a click selects).
@@ -2610,6 +2622,24 @@ class Viewport(QOpenGLWidget):
     # silhouettes, selection and the drag preview; only the CONSOLIDATED
     # draw excludes them. INGETRAZO_NO_INSTANCING=1 reverts to the old path.
 
+    def _imported_mesh_counts(self):
+        """Reuse counts for retained SKP definitions, including saved documents."""
+        key = (self.scene.version, id(self.scene.mesh))
+        memo = getattr(self, '_imported_counts_cache', None)
+        if memo is not None and memo[0] == key:
+            return memo[1]
+        counts = {}
+        def walk(g):
+            if (getattr(g, 'ext', None) or {}).get('skp_source'):
+                mid = id(g.mesh)
+                counts[mid] = counts.get(mid, 0) + 1
+            for child in (g.children or ()):
+                walk(child)
+        for g in self.scene.groups:
+            walk(g)
+        self._imported_counts_cache = (key, counts)
+        return counts
+
     def _instanced_eligible(self, g) -> bool:
         if (_NO_INSTANCING or getattr(g, "xform", None) is None
                 or getattr(g, "billboard", False)):
@@ -2621,6 +2651,13 @@ class Viewport(QOpenGLWidget):
         # million faces baked one by one (issue #158). It draws instanced
         # now, in batches of its own under a clockwise front face
         # (``_front_face``).
+        # Import hierarchy is independent of GPU batching. Small source
+        # definitions with little reuse use the consolidated buffers.
+        if len(g.mesh.faces) < 60:
+            counts = getattr(self, '_imported_mesh_counts', None)
+            n = counts().get(id(g.mesh), 0) if counts is not None else 0
+            if n and len(g.mesh.faces) * (n - 1) < 400:
+                return False
         from core.group import effective_material
         paint = effective_material(g)
         # The answer is the prototype's (and its paint's), which the
@@ -4196,6 +4233,8 @@ class Viewport(QOpenGLWidget):
         document also slowed down reopen after reopen (the garbage collector
         walking the dead ones). And a CPython id() reused by a new group
         could meet an old entry — the composer's lesson with frames."""
+        from views.group_selection import _clear_group_selection
+        _clear_group_selection(self, destroy=True)
         draws = getattr(self, "_proto_draw", None)
         if draws and self.context() is not None:
             self.makeCurrent()                # GPU objects need the context
@@ -4214,6 +4253,7 @@ class Viewport(QOpenGLWidget):
         self._sil_groups = None
         self._billboard_groups = None
         self._placements_memo = None
+        self._imported_counts_cache = None
         self._epoch_same = None
         self._pick_lazy_memo = None
         self._pick_near_memo = None
@@ -4258,6 +4298,8 @@ class Viewport(QOpenGLWidget):
         """Forget every lazily made GL object (see ``_LAZY_GL``) and the
         per-prototype draw entries (their VAOs and buffers): the next frame
         makes them again in the current context."""
+        from views.group_selection import _clear_group_selection
+        _clear_group_selection(self, destroy=False)
         for name in self._LAZY_GL:
             if getattr(self, name, None) is not None:
                 setattr(self, name, None)
@@ -4287,6 +4329,8 @@ class Viewport(QOpenGLWidget):
         leaked with a "Texture has not been destroyed" warning each (harmless
         at process exit, real if the context is ever torn down and recreated
         mid-session, e.g. on reparenting)."""
+        from views.group_selection import _clear_group_selection
+        _clear_group_selection(self, destroy=True)
         self._forget_frame_records()
         self.makeCurrent()
         try:

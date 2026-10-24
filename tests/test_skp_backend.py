@@ -171,8 +171,8 @@ def test_face_ring_reads_the_same_square_under_either_coedge_contract(senses,
 def _placed(payload):
     """The single placed definition's entry. Every top-level instance imports
     as a prototype now (a component placed once is still a component), so the
-    material/layer rules below read it there; the classic-group path is what
-    is left for subtrees instancing cannot carry (face-me, tagged children)."""
+    material/layer rules below read it there. Root-level image entities and
+    face-me artwork retain their specialized group payload."""
     if payload.get("protos"):
         assert len(payload["protos"]) == 1
         return payload["protos"][0]
@@ -621,9 +621,13 @@ def test_openskp_adapter_default_mapping_is_local(tmp_path):
     skp.write_bytes(b"")
     payload = skp_openskp._adapt(model, "m", skp_path=skp)
 
+    scene = Scene()
+    skp_format.apply_payload(scene, payload)
     uv_sets = []
-    for gp in payload["groups"]:
-        outer, holes, attrs = gp["faces"][0]
+    for group in scene.groups:
+        face = group.mesh.faces[0]
+        outer = face.vertices
+        attrs = face.attrs
         uvw = attrs["texture"]["uvw"]
         uv_sets.append([(round(u, 5), round(v, 5))
                         for u, v in affine_uv(uvw, outer)])
@@ -821,7 +825,7 @@ def test_openskp_adapter_top_level_instance_layer_on_group():
     assert _placed(payload)["instance_layers"] == ["Vegetacion"]
 
 
-def test_openskp_adapter_extracts_nested_tagged_instance_as_layer_group():
+def test_openskp_adapter_preserves_nested_tagged_child_group():
     # A TAGGED instance nested inside an untagged container must become its
     # own group carrying the layer — reference chunks hide whole groups, so
     # flattening it per-face would make the layer toggle a no-op.
@@ -835,9 +839,12 @@ def test_openskp_adapter_extracts_nested_tagged_instance_as_layer_group():
                             faces={}, instances=[top])
     payload = skp_openskp._adapt(
         NS(definitions={0: root, 5: container, 7: leaf}), "m")
-    by_layer = {gp.get("layer"): gp for gp in payload["groups"]}
-    assert "plantas" in by_layer
-    assert len(by_layer["plantas"]["faces"]) == 1
+    scene = Scene()
+    skp_format.apply_payload(scene, payload)
+    parent, = scene.groups
+    child, = parent.children
+    assert child.layer == "plantas"
+    assert len(child.mesh.faces) == 1
 
 
 def test_openskp_adapter_face_layer_lands_in_attrs():
@@ -1082,10 +1089,8 @@ def test_openskp_adapter_keeps_a_component_placed_once_a_component():
     assert payload["groups"] == []          # nothing flattened
 
 
-def test_openskp_adapter_flattens_a_face_me_subtree_placed_once():
-    """The exclusions are about what instancing cannot carry, not about copy
-    counts: a billboard inside a prototype would flatten into its geometry and
-    stop turning toward the camera."""
+def test_openskp_adapter_keeps_a_face_me_child_in_its_container():
+    """The child still turns toward the camera and moves with its parent."""
     leaf = _tri_def(7, "Susan")
     leaf.always_faces_camera = True
     nested = NS(ref_idx=7, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
@@ -1096,12 +1101,17 @@ def test_openskp_adapter_flattens_a_face_me_subtree_placed_once():
                             faces={}, instances=[top])
     payload = skp_openskp._adapt(
         NS(definitions={0: root, 5: container, 7: leaf}), "obra")
-    assert not any(p["name"] == "Patio" for p in payload.get("protos", []))
+    scene = Scene()
+    skp_format.apply_payload(scene, payload)
+    patio, = scene.groups
+    person, = patio.children
+    assert patio.name == "Patio" and not patio.mesh.faces
+    assert person.name == "Susan" and person.billboard == "mesh"
+    assert len(person.mesh.faces) == 1
 
 
-def test_openskp_adapter_flattens_a_tagged_subtree_placed_once():
-    """Same reason: a tagged child has to come out as its own group for the
-    layer toggle to hide it, and a prototype flattens its subtree."""
+def test_openskp_adapter_keeps_a_tagged_child_in_its_container():
+    """Keep both the group boundary and the child's tag."""
     leaf = _tri_def(7, "Planta")
     tagged = NS(ref_idx=7, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
                 layer="plantas")
@@ -1112,14 +1122,18 @@ def test_openskp_adapter_flattens_a_tagged_subtree_placed_once():
                             faces={}, instances=[top])
     payload = skp_openskp._adapt(
         NS(definitions={0: root, 5: container, 7: leaf}), "obra")
-    assert not any(p["name"] == "Jardinera" for p in payload.get("protos", []))
-    assert any(g.get("layer") == "plantas" for g in payload["groups"])
+    scene = Scene()
+    skp_format.apply_payload(scene, payload)
+    planter, = scene.groups
+    plant, = planter.children
+    assert planter.name == "Jardinera" and not planter.mesh.faces
+    assert plant.name == "Planta" and plant.layer == "plantas"
 
 
-def _tagged_container_with_extracted_parts(monkeypatch, *, nested):
+def _tagged_container_with_nested_parts(monkeypatch, *, nested):
     """A container tagged "Fachada" that places a component twice (shared as
-    a prototype), a face-me person and an image. All three are pulled out of
-    the container into objects of their own. ``nested``: the container sits
+    a prototype), a face-me person and an image. All remain children of
+    the container. ``nested``: the container sits
     in an untagged group instead of at the top level."""
     import formats.dae as dae_mod
     monkeypatch.setattr(dae_mod, "_INST_MIN_POLYS", 1)
@@ -1147,27 +1161,30 @@ def _tagged_container_with_extracted_parts(monkeypatch, *, nested):
 
 
 @pytest.mark.parametrize("nested", [False, True])
-def test_openskp_adapter_extracted_parts_keep_the_tag_of_their_group(
+def test_openskp_adapter_nested_parts_inherit_the_tag_of_their_group(
         monkeypatch, nested):
     # Hiding the "Fachada" tag must hide everything inside the tagged
-    # group. The face-me person, the image and the component copies are
-    # extracted into objects of their own, and they used to land on
-    # Layer 0: the tag rode on the container's group but never reached
-    # what was pulled out of it, so they stayed on screen.
-    payload = _tagged_container_with_extracted_parts(monkeypatch,
+    # group. Their viewport proxies inherit the container tag while the
+    # original nested objects retain their own untagged geometry.
+    payload = _tagged_container_with_nested_parts(monkeypatch,
                                                      nested=nested)
-    groups = {gp["name"]: gp for gp in payload["groups"]}
-    assert groups["Muro"]["layer"] == "Fachada"
-    assert groups["Susan"].get("layer") == "Fachada"
-    assert groups["Foto"].get("layer") == "Fachada"
-    (post,) = [p for p in payload["protos"] if p["name"] == "Poste"]
-    assert post["instance_layers"] == ["Fachada", "Fachada"]
+    from views.viewport import Viewport
+    scene = Scene()
+    skp_format.apply_payload(scene, payload)
+    wall = scene.groups[0].children[0] if nested else scene.groups[0]
+    assert wall.name == "Muro" and wall.layer == "Fachada"
+    assert [c.name for c in wall.children] == ["Poste", "Poste", "Susan", "Foto"]
+    assert wall.children[0].mesh is wall.children[1].mesh
+    vp = Viewport()
+    vp.scene = scene
+    parts = [g for g in vp._placements() if g.name in {"Poste", "Susan", "Foto"}]
+    assert len(parts) == 4 and all(g.layer == "Fachada" for g in parts)
     # The container's own untagged face is NOT put on the tag: as in
     # SketchUp, it stays untagged inside the tagged group.
-    assert not (groups["Muro"]["faces"][0][2] or {}).get("layer")
+    assert not wall.mesh.faces[0].attrs.get("layer")
 
 
-def test_openskp_adapter_an_extracted_part_keeps_its_own_tag(monkeypatch):
+def test_openskp_adapter_a_nested_part_keeps_its_own_tag(monkeypatch):
     import formats.dae as dae_mod
     monkeypatch.setattr(dae_mod, "_INST_MIN_POLYS", 1)
     monkeypatch.setattr(dae_mod, "_INST_MIN_SAVED", 1)
@@ -1181,5 +1198,7 @@ def test_openskp_adapter_an_extracted_part_keeps_its_own_tag(monkeypatch):
                                 NS(ref_idx=5, matrix=eye, layer="Fachada")])
     payload = skp_openskp._adapt(
         NS(definitions={0: root, 5: container, 8: person}), "m")
-    groups = {gp["name"]: gp for gp in payload["groups"]}
-    assert groups["Susan"].get("layer") == "Gente"
+    scene = Scene()
+    skp_format.apply_payload(scene, payload)
+    person, = scene.groups[0].children
+    assert person.name == "Susan" and person.layer == "Gente"
