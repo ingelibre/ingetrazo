@@ -6735,6 +6735,9 @@ class MainWindow(QMainWindow):
                         "{name} has no geometry — nothing to import.",
                         name=skp.name), 8000)
                 else:
+                    # Keep the viewing direction, but frame the scene after
+                    # import: the old camera may be far from the new geometry.
+                    self._on_zoom_extents()
                     self.statusBar().showMessage(
                         tr("Imported {name}", name=skp.name), 3000)
                 return True
