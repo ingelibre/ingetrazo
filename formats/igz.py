@@ -115,14 +115,20 @@ def _texture_entries(node):
     materials, back-side materials (``attrs["back"]``), and whatever nests one
     later. Walking the JSON keeps this honest as the schema grows: a new place
     to hang a texture is embedded without touching this module. Coordinate
-    blocks (:data:`_TEXTURE_WALK_SKIP`) and leaf value lists are skipped —
-    they are the bulk of the document and can never carry a texture."""
+    blocks (:data:`_TEXTURE_WALK_SKIP`) and leaf values are skipped before
+    recursing: entering a generator for every colour, offset and scalar
+    dominates the walk on documents with many small JSON meshes."""
     if isinstance(node, dict):
         for key, value in node.items():
             if key == "texture" and isinstance(value, dict):
                 yield value
             elif key not in _TEXTURE_WALK_SKIP:
-                yield from _texture_entries(value)
+                if isinstance(value, dict):
+                    yield from _texture_entries(value)
+                elif (isinstance(value, list) and value
+                      and isinstance(value[0], (dict, list))):
+                    for child in value:
+                        yield from _texture_entries(child)
     elif isinstance(node, list):
         if node and not isinstance(node[0], (dict, list)):
             return                       # a leaf value list (colour, offsets)
