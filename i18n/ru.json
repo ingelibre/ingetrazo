@@ -3392,5 +3392,13 @@
  "Print all: the sheets marked for printing, each on its own paper": "Печатать все: отмеченные для печати листы, каждый на своей бумаге",
  "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "Берётся «Печатать все» и «Экспортировать все» — щелчок по принтеру строки переключает его; принтер папки переключает все её листы",
  "Print…": "Печать…",
- "Rename (F2)": "Переименовать (F2)"
+ "Rename (F2)": "Переименовать (F2)",
+ "PROJECT": "ПРОЕКТ",
+ "AUTHOR": "АВТОР",
+ "DATE": "ДАТА",
+ "SCALE": "МАСШТАБ",
+ "SHEET": "ЛИСТ",
+ "LEGEND": "УСЛОВНЫЕ ОБОЗНАЧЕНИЯ",
+ "FFL {z}": "УЧП {z}",
+ "SCALE {escala}": "М {escala}"
 }

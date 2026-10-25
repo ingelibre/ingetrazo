@@ -3393,5 +3393,13 @@
  "Print all: the sheets marked for printing, each on its own paper": "Stampa tutto: le tavole segnate per la stampa, ognuna sul proprio foglio",
  "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "Preso da Stampa tutto ed Esporta tutto — un clic sulla stampante di una riga la cambia; quella di una cartella cambia tutte le sue tavole",
  "Print…": "Stampa…",
- "Rename (F2)": "Rinomina (F2)"
+ "Rename (F2)": "Rinomina (F2)",
+ "PROJECT": "PROGETTO",
+ "AUTHOR": "AUTORE",
+ "DATE": "DATA",
+ "SCALE": "SCALA",
+ "SHEET": "TAVOLA",
+ "LEGEND": "LEGENDA",
+ "FFL {z}": "Q.P.F. {z}",
+ "SCALE {escala}": "SCALA {escala}"
 }

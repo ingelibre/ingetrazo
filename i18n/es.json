@@ -3392,5 +3392,13 @@
  "Print all: the sheets marked for printing, each on its own paper": "Imprimir todo: las láminas marcadas para imprimir, cada una en su propio papel",
  "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "Lo que toman Imprimir todo y Exportar todo — un clic en la impresora de una fila la cambia; la de una carpeta cambia todas sus láminas",
  "Print…": "Imprimir…",
- "Rename (F2)": "Renombrar (F2)"
+ "Rename (F2)": "Renombrar (F2)",
+ "PROJECT": "PROYECTO",
+ "AUTHOR": "AUTOR",
+ "DATE": "FECHA",
+ "SCALE": "ESCALA",
+ "SHEET": "LÁMINA",
+ "LEGEND": "LEYENDA",
+ "FFL {z}": "N.P.T. {z}",
+ "SCALE {escala}": "ESC. {escala}"
 }

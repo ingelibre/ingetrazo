@@ -25,7 +25,7 @@ V = QVector3D
 def test_the_value_reads_signed_with_a_datum_and_plus_minus_zero():
     nv = NivelItem(z_m=0.15)
     assert nv.units == "m"
-    assert nv.label() == "N.P.T. +0.15"
+    assert nv.label() == "FFL +0.15"
     nv.z_m = -0.3
     assert nv.value_text() == "-0.30"
     nv.z_m = 0.004                         # zero at two decimals
@@ -61,7 +61,7 @@ def test_a_level_mark_writes_its_own_unit_with_the_same_signs():
     assert NivelItem(z_m=0.0, units="cm").value_text() == "±0.00 cm"
     # a sheet saved before the field existed is still a metre mark
     old = Composicion.from_dict({"niveles": [{"z_m": 0.15}]}).niveles[0]
-    assert old.units == "m" and old.label() == "N.P.T. +0.15"
+    assert old.units == "m" and old.label() == "FFL +0.15"
     gone = Composicion.from_dict(Composicion(
         niveles=[NivelItem(z_m=0.3048, units="ft", decimals=1)]).to_dict())
     assert gone.niveles[0].units == "ft"
@@ -96,7 +96,7 @@ def test_the_tool_anchors_the_mark_to_the_clicked_model_point():
     nv = composer.comp.niveles[0]
     assert nv.anchored and nv.anchor_uid == frame.uid
     assert nv.level_m() == pytest.approx(3.0)
-    assert nv.label() == "N.P.T. +3.00"
+    assert nv.label() == "FFL +3.00"
     assert (nv.x_mm, nv.y_mm) == pytest.approx((px, py))
     assert nv.symbol == "triangle"          # an elevation: the triangle
     # a free click away from any geometry: a free mark at the click
@@ -212,7 +212,7 @@ def test_the_level_panel_edits_in_the_mark_unit():
     assert composer.nv_z.suffix() == " m"
     composer.nv_decimals.setValue(3)
     assert m.decimals == 3 and m.z_m == pytest.approx(0.9144)
-    assert m.label() == "N.P.T. +0.914"
+    assert m.label() == "FFL +0.914"
 
 
 def test_pasting_a_level_mark_style_carries_its_unit():
@@ -238,7 +238,7 @@ def test_level_marks_roundtrip_and_live_on_the_canvas():
     back = Composicion.from_dict(c.to_dict()).niveles[0]
     assert back.symbol == "circle" and back.mirror is True
     assert back.a_world == [1.0, 2.0, 3.0] and back.datum_m == 0.25
-    assert back.label() == "N.P.T. +2.750"
+    assert back.label() == "FFL +2.750"
     assert back in Composicion.from_dict(c.to_dict()).all_items() or True
     composer, frame, _host = _composer()
     composer.comp.niveles.append(NivelItem(x_mm=50, y_mm=50, z_m=0.5))
@@ -254,7 +254,7 @@ def test_level_marks_roundtrip_and_live_on_the_canvas():
     composer.nv_mirror.setChecked(True)
     m = items[0].model
     assert m.z_m == 0.75 and m.mirror is True
-    assert m.label() == "N.P.T. +0.75"
+    assert m.label() == "FFL +0.75"
     assert composer._item_label(m).endswith("+0.75")
 
 

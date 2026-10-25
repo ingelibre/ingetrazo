@@ -3400,5 +3400,13 @@
  "Print all: the sheets marked for printing, each on its own paper": "Drukuj wszystko: arkusze oznaczone do druku, każdy na własnym papierze",
  "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "Brane przez Drukuj wszystko i Eksportuj wszystko — klik w drukarkę wiersza ją przełącza; drukarka folderu przełącza wszystkie jego arkusze",
  "Print…": "Drukuj…",
- "Rename (F2)": "Zmień nazwę (F2)"
+ "Rename (F2)": "Zmień nazwę (F2)",
+ "PROJECT": "PROJEKT",
+ "AUTHOR": "AUTOR",
+ "DATE": "DATA",
+ "SCALE": "SKALA",
+ "SHEET": "ARKUSZ",
+ "LEGEND": "LEGENDA",
+ "FFL {z}": "PPW {z}",
+ "SCALE {escala}": "SKALA {escala}"
 }

@@ -470,24 +470,56 @@ class Cajetin:
                    "label_mm", "border_mm", "line_mm")
 
     #: (label, field-name) legacy rows — the pre-editable schema, kept to
-    #: migrate old documents into ``campos``.
+    #: migrate old documents into ``campos``; the labels are the Spanish
+    #: ones those documents were written with.
     FIELDS = (("PROYECTO", "proyecto"), ("AUTOR", "autor"),
               ("FECHA", "fecha"), ("ESCALA", "escala"),
               ("LÁMINA", "lamina"))
+    #: Each field's label as a NEW title block shows it — the English
+    #: source, translated into the interface's language when the title
+    #: block is made. A label the user typed, or one a document was saved
+    #: with, stays as it is: the rows are the sheet's own text.
+    FIELD_LABELS = {"proyecto": "PROJECT", "autor": "AUTHOR",
+                    "fecha": "DATE", "escala": "SCALE", "lamina": "SHEET"}
 
     def __post_init__(self) -> None:
         if not self.campos:
-            self.campos = [[label, getattr(self, attr)]
-                           for label, attr in self.FIELDS]
+            self.campos = self.default_rows()
+
+    def default_rows(self) -> list:
+        """The rows a new title block starts with, labelled in the
+        interface's language."""
+        return [[_tr(self.FIELD_LABELS[attr]), getattr(self, attr)]
+                for _label, attr in self.FIELDS]
+
+    @classmethod
+    def field_labels(cls, key: str) -> set:
+        """Every spelling a row of field ``key`` (``fecha``, ``escala``,
+        ``lamina``…) may carry, upper-cased: the Spanish one of older
+        documents, the English source and the interface's translation."""
+        legacy = next((label for label, attr in cls.FIELDS if attr == key),
+                      key)
+        source = cls.FIELD_LABELS.get(key, key)
+        return {s.strip().upper() for s in (legacy, source, _tr(source))}
 
     def set_field(self, label: str, value: str) -> None:
-        """Set the first row whose label matches (case-insensitive); add
-        the row if the title block does not have it yet."""
+        """Set the first row of field ``label`` — a field key (``fecha``,
+        ``escala``, ``lamina``…) matches that field's label in Spanish, in
+        English or in the interface's language; anything else matches a
+        row's label as written (case-insensitive). The row is added, with
+        the label in the interface's language, if the title block does not
+        have it yet."""
+        key = label if label in self.FIELD_LABELS else next(
+            (attr for legacy, attr in self.FIELDS
+             if legacy == label.strip().upper()), None)
+        wanted = (self.field_labels(key) if key is not None
+                  else {label.strip().upper()})
         for row in self.campos:
-            if str(row[0]).strip().upper() == label.strip().upper():
+            if str(row[0]).strip().upper() in wanted:
                 row[1] = value
                 return
-        self.campos.append([label, value])
+        self.campos.append([_tr(self.FIELD_LABELS[key]) if key is not None
+                            else label, value])
 
     def look(self) -> dict:
         return {k: getattr(self, k) for k in self.LOOK_FIELDS}
@@ -669,7 +701,9 @@ class Leyenda:
     x_mm: float = 20.0
     y_mm: float = 20.0
     w_mm: float = 55.0
-    title: str = "LEYENDA"
+    # In the interface's language when the item is made; a saved sheet
+    # keeps the text it was written with.
+    title: str = field(default_factory=lambda: _tr("LEGEND"))
     rows: list = field(default_factory=list)
     #: Each row's swatch, snapshotted with the rows: ``{name: {"color":
     #: [r, g, b], "linetype": str}}`` (core.layers). A row without one
@@ -740,7 +774,7 @@ class EtiquetaItem:
     w_mm: float = 50.0
     ax_mm: float = -20.0         # the pointed-at spot, relative to the block
     ay_mm: float = 15.0
-    text: str = "Texto"
+    text: str = field(default_factory=lambda: _tr("Text"))
     size_pt: float = 11.0
     bold: bool = False
     italic: bool = False
@@ -812,7 +846,9 @@ class NivelItem:
     ax_mm: float = 0.0           # the model point, relative to the apex
     ay_mm: float = 0.0           # (a thin leader joins them when apart)
     symbol: str = "triangle"     # triangle | circle
-    text: str = "N.P.T. {z}"     # {z} = the signed level
+    # {z} = the signed level; «FFL» (finished floor level) is «N.P.T.»
+    # in Spanish — in the interface's language when the item is made.
+    text: str = field(default_factory=lambda: _tr("FFL {z}"))
     z_m: float = 0.0             # the level when free (metres)
     datum_m: float = 0.0         # the project's ±0.00, in model metres
     units: str = "m"             # how {z} reads; "" / missing stays metres
@@ -1338,7 +1374,7 @@ class CotaRadialItem:
 class Composicion:
     """One sheet: a page plus its items."""
 
-    name: str = "Lámina 1"
+    name: str = field(default_factory=lambda: _tr("Sheet {n}", n=1))
     paper: str = "A4"
     landscape: bool = True
     margin_mm: float = 10.0
@@ -1453,7 +1489,7 @@ class Composicion:
         """Rebuild a sheet from its .igz record. Keys this version does not
         know (a sheet saved by a newer IngeTrazo) are dropped, not fatal:
         the model must open whatever the sheets carry."""
-        c = cls(name=d.get("name", "Lámina 1"),
+        c = cls(name=d.get("name") or _tr("Sheet {n}", n=1),
                 paper=d.get("paper", "A4"),
                 landscape=bool(d.get("landscape", True)),
                 margin_mm=float(d.get("margin_mm", 10.0)))

@@ -3395,5 +3395,13 @@
  "Print all: the sheets marked for printing, each on its own paper": "Cetak semua: lembar yang ditandai untuk dicetak, masing-masing pada kertasnya sendiri",
  "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "Diambil Cetak semua dan Ekspor semua — klik printer sebuah baris untuk mengubahnya; printer folder mengubah semua lembar di dalamnya",
  "Print…": "Cetak…",
- "Rename (F2)": "Ganti nama (F2)"
+ "Rename (F2)": "Ganti nama (F2)",
+ "PROJECT": "PROYEK",
+ "AUTHOR": "PEMBUAT",
+ "DATE": "TANGGAL",
+ "SCALE": "SKALA",
+ "SHEET": "LEMBAR",
+ "LEGEND": "LEGENDA",
+ "FFL {z}": "EL. LANTAI {z}",
+ "SCALE {escala}": "SKALA {escala}"
 }

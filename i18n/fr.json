@@ -3392,5 +3392,13 @@
  "Print all: the sheets marked for printing, each on its own paper": "Tout imprimer : les planches marquées pour l’impression, chacune sur son propre papier",
  "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "Pris par Tout imprimer et Tout exporter — un clic sur l’imprimante d’une ligne la bascule ; celle d’un dossier bascule toutes ses planches",
  "Print…": "Imprimer…",
- "Rename (F2)": "Renommer (F2)"
+ "Rename (F2)": "Renommer (F2)",
+ "PROJECT": "PROJET",
+ "AUTHOR": "AUTEUR",
+ "DATE": "DATE",
+ "SCALE": "ÉCHELLE",
+ "SHEET": "PLANCHE",
+ "LEGEND": "LÉGENDE",
+ "FFL {z}": "NPF {z}",
+ "SCALE {escala}": "ÉCH. {escala}"
 }

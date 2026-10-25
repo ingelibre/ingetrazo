@@ -3393,5 +3393,13 @@
  "Print all: the sheets marked for printing, each on its own paper": "全部打印：打印标记的图纸，每张使用各自的纸张",
  "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "由“全部打印”和“全部导出”采用 — 单击某行的打印机图标切换；文件夹的打印机图标会切换其中所有图纸",
  "Print…": "打印…",
- "Rename (F2)": "重命名 (F2)"
+ "Rename (F2)": "重命名 (F2)",
+ "PROJECT": "项目",
+ "AUTHOR": "作者",
+ "DATE": "日期",
+ "SCALE": "比例",
+ "SHEET": "图纸",
+ "LEGEND": "图例",
+ "FFL {z}": "完成面 {z}",
+ "SCALE {escala}": "比例 {escala}"
 }

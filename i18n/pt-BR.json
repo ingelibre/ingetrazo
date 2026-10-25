@@ -3399,5 +3399,13 @@
  "Print all: the sheets marked for printing, each on its own paper": "Imprimir tudo: as pranchas marcadas para imprimir, cada uma no seu próprio papel",
  "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "O que Imprimir tudo e Exportar tudo levam — um clique na impressora de uma linha a alterna; a de uma pasta alterna todas as suas pranchas",
  "Print…": "Imprimir…",
- "Rename (F2)": "Renomear (F2)"
+ "Rename (F2)": "Renomear (F2)",
+ "PROJECT": "PROJETO",
+ "AUTHOR": "AUTOR",
+ "DATE": "DATA",
+ "SCALE": "ESCALA",
+ "SHEET": "PRANCHA",
+ "LEGEND": "LEGENDA",
+ "FFL {z}": "N.P.A. {z}",
+ "SCALE {escala}": "ESC. {escala}"
 }

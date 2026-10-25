@@ -270,7 +270,8 @@ def view_title_texts(frame: MarcoVista) -> dict:
         "subtitle": ex(getattr(frame, "title_subtitle", "")),
         "scale": ("" if not getattr(frame, "title_scale", True)
                   else tr("NO SCALE") if persp
-                  else "ESC. " + format_scale(frame.scale_n)),
+                  else tr("SCALE {escala}").replace(
+                      "{escala}", format_scale(frame.scale_n))),
         "number": ex(getattr(frame, "title_number", "")),
         "sheet": ex(getattr(frame, "title_sheet", "")),
     }
@@ -2210,14 +2211,15 @@ def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
     heavy.setWidthF(c.border_mm)
     light = QPen(line_color)
     light.setWidthF(c.line_mm)
-    campos = c.campos or [[label, getattr(c, attr)]
-                          for label, attr in Cajetin.FIELDS]
-    # Dynamic fields in the values; an empty ESCALA row reads the sheet's
-    # main frame by itself (the title block that never lies about scale).
+    campos = c.campos or c.default_rows()
+    # Dynamic fields in the values; an empty scale row (in whichever
+    # language it is labelled) reads the sheet's main frame by itself —
+    # the title block that never lies about scale.
+    scale_labels = Cajetin.field_labels("escala")
     expanded = []
     for label, value in campos:
         v = expand_fields(str(value or ""))
-        if not v and str(label).strip().lower() in ("escala", "scale"):
+        if not v and str(label).strip().upper() in scale_labels:
             v = expand_fields("{escala}")
         expanded.append([label, v])
     campos = expanded
@@ -8921,13 +8923,14 @@ class ComposerWindow(QMainWindow):
 
     def add_scale_label(self, frame) -> TextoItem:
         """A movable scale label for *frame*: a bound text block under its
-        bottom-right corner, "ESC. {escala}", bold."""
+        bottom-right corner, «SCALE {escala}» in the interface's language,
+        bold."""
         import uuid
         if not frame.uid:
             frame.uid = uuid.uuid4().hex
         item = TextoItem(x_mm=frame.x_mm + frame.w_mm - 40.0,
                          y_mm=frame.y_mm + frame.h_mm + 1.5, w_mm=40.0,
-                         text="ESC. {escala}", size_pt=10.0, bold=True,
+                         text=tr("SCALE {escala}"), size_pt=10.0, bold=True,
                          align="right", frame_uid=frame.uid, follow=True)
         item.z = self._next_z()
         self._pending_sel = item
@@ -10550,10 +10553,10 @@ class ComposerWindow(QMainWindow):
             pw, ph = self.comp.page_size_mm()      # keep it docked
             m = self.comp.margin_mm
             c.x_mm, c.y_mm = pw - m - c.w_mm, ph - m - c.h_mm
-        c.set_field("FECHA", datetime.date.today().strftime("%d/%m/%Y"))
+        c.set_field("fecha", datetime.date.today().strftime("%d/%m/%Y"))
         if self.comp.frames:
             f = self.comp.frames[0]
-            c.set_field("ESCALA", f"1:{f.scale_n:g}")
+            c.set_field("escala", f"1:{f.scale_n:g}")
         c.z = self._next_z()
         self.history.execute(AddItemCommand(self.comp, c))
 
@@ -12818,7 +12821,7 @@ class ComposerWindow(QMainWindow):
     def _on_renumber(self) -> None:
         for i, comp in enumerate(self._scene().compositions):
             if comp.cajetin is not None:
-                comp.cajetin.set_field("LÁMINA", f"L-{i + 1:02d}")
+                comp.cajetin.set_field("lamina", f"L-{i + 1:02d}")
         self._mark_dirty()
         self._rebuild_canvas()
 

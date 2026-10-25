@@ -3392,5 +3392,13 @@
  "Print all: the sheets marked for printing, each on its own paper": "Alle drucken: die zum Drucken markierten Blätter, jedes auf seinem eigenen Papier",
  "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "Von „Alle drucken“ und „Alle exportieren“ genommen — Klick auf den Drucker einer Zeile schaltet ihn um; der eines Ordners schaltet alle Blätter darin",
  "Print…": "Drucken…",
- "Rename (F2)": "Umbenennen (F2)"
+ "Rename (F2)": "Umbenennen (F2)",
+ "PROJECT": "PROJEKT",
+ "AUTHOR": "VERFASSER",
+ "DATE": "DATUM",
+ "SCALE": "MASSSTAB",
+ "SHEET": "BLATT",
+ "LEGEND": "LEGENDE",
+ "FFL {z}": "OKFF {z}",
+ "SCALE {escala}": "M {escala}"
 }
