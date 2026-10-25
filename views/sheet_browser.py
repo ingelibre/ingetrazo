@@ -127,13 +127,15 @@ def _icon(key: str):
 
 
 def _print_icon(state: str):
-    """``on``: printed; ``off``: not; ``some``: a folder only partly."""
+    """``on``: printed; ``off``: switched off itself; ``inherited``: on
+    itself but left out by a folder around it switched off — faded, as the
+    Browser shows what a hidden group hides."""
     if state == "on":
         return _icon("print")
     if state == "off":
         return _icon("print_off")
     from views.outliner import _faded
-    return _faded(_icon("print"))
+    return _faded(_icon("print_off"))
 
 
 class SheetExplorer(QWidget):
@@ -190,7 +192,10 @@ class SheetExplorer(QWidget):
                 "PDF, each page at its own paper size"), self.export_all),
         )
         for attr, icon, tip, slot in buttons:
-            btn = _tool_button("", tip, slot)
+            # Called with nothing: ``clicked`` passes its ``checked`` flag,
+            # which the slots took for their optional argument — the new
+            # sheet landed in a folder called False and never showed.
+            btn = _tool_button("", tip, lambda _checked=False, s=slot: s())
             btn.setIcon(_icon(icon))
             setattr(self, attr, btn)
             bar.addWidget(btn)
@@ -203,7 +208,8 @@ class SheetExplorer(QWidget):
         head_item.setIcon(COL_PRINT, _icon("print"))
         head_item.setToolTip(COL_PRINT, tr(
             "Printed by Print all and Export all — click a row's printer to "
-            "switch it; a folder's switches every sheet inside it"))
+            "switch it; a folder switched off leaves out everything inside "
+            "it"))
         head = self.tree.header()
         head.setStretchLastSection(False)
         head.setSectionResizeMode(COL_NAME, QHeaderView.Stretch)
@@ -243,7 +249,7 @@ class SheetExplorer(QWidget):
     def _fingerprint(self, scene) -> tuple:
         current = getattr(self._composer_win, "comp", None)
         return (
-            tuple((f.id, f.name, f.parent_id, f.expanded)
+            tuple((f.id, f.name, f.parent_id, f.expanded, f.print_in_all)
                   for f in sf.folders_of(scene)),
             tuple((id(c), c.name, c.folder_id, c.print_in_all,
                    tuple((id(f), f.view_key, f.scale_n) for f in c.frames))
@@ -264,14 +270,40 @@ class SheetExplorer(QWidget):
         self._poll.stop()
         super().hideEvent(ev)
 
-    def _folder_print_state(self, scene, folder) -> str:
-        """``on`` when every sheet inside (at any depth) prints, ``off``
-        when none does — an empty folder too — ``some`` in between."""
-        sheets = self._sheets_under(scene, folder)
-        printed = sum(1 for c in sheets if c.print_in_all)
-        if sheets and printed == len(sheets):
-            return "on"
-        return "off" if printed == 0 else "some"
+    @staticmethod
+    def _print_state(scene, obj) -> str:
+        """A folder's or sheet's printer: ``off`` when its own switch is
+        off, ``inherited`` when it is on but a folder around it is off,
+        ``on`` otherwise. What a folder holds never changes it."""
+        if not getattr(obj, "print_in_all", True):
+            return "off"
+        around = (obj.parent_id if isinstance(obj, sf.SheetFolder)
+                  else obj.folder_id)
+        return "on" if sf.folder_printed(scene, around) else "inherited"
+
+    @staticmethod
+    def _left_out_by(scene, obj):
+        """The nearest folder around ``obj`` switched off, or ``None``."""
+        fid = (obj.parent_id if isinstance(obj, sf.SheetFolder)
+               else obj.folder_id)
+        seen: set = set()
+        while fid is not None and fid not in seen:
+            seen.add(fid)
+            f = sf.folder_by_id(scene, fid)
+            if f is None:
+                return None
+            if not f.print_in_all:
+                return f
+            fid = f.parent_id
+        return None
+
+    def _set_print_cell(self, scene, item, obj) -> None:
+        state = self._print_state(scene, obj)
+        item.setIcon(COL_PRINT, _print_icon(state))
+        by = self._left_out_by(scene, obj) if state == "inherited" else None
+        item.setToolTip(COL_PRINT, tr(
+            "Left out by the folder «{name}», switched off",
+            name=by.name) if by is not None else "")
 
     @staticmethod
     def _sheets_under(scene, folder) -> list:
@@ -305,8 +337,7 @@ class SheetExplorer(QWidget):
                 item = QTreeWidgetItem([f.name, ""])
                 item.setData(COL_NAME, Qt.UserRole, (_FOLDER, f))
                 item.setIcon(COL_NAME, _icon("folder"))
-                item.setIcon(COL_PRINT, _print_icon(
-                    self._folder_print_state(scene, f)))
+                self._set_print_cell(scene, item, f)
                 item.setFlags(item.flags() | Qt.ItemIsEditable
                               | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled)
                 parent_item.addChild(item)
@@ -317,8 +348,7 @@ class SheetExplorer(QWidget):
                 item = QTreeWidgetItem([c.name, ""])
                 item.setData(COL_NAME, Qt.UserRole, (_SHEET, c))
                 item.setIcon(COL_NAME, _icon("sheet"))
-                item.setIcon(COL_PRINT, _print_icon(
-                    "on" if c.print_in_all else "off"))
+                self._set_print_cell(scene, item, c)
                 item.setFlags(item.flags() | Qt.ItemIsEditable
                               | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled)
                 item.setToolTip(COL_NAME, tr(
@@ -510,37 +540,44 @@ class SheetExplorer(QWidget):
         if not d or d[0] == _FRAME:
             return
         scene = self._scene()
-        if d[0] == _FOLDER:
-            sheets = self._sheets_under(scene, d[1])
-            on = self._folder_print_state(scene, d[1]) != "on"
-        else:
-            # On one of several selected sheets: all of them, as the
-            # Browser's eye does.
-            picked, _folders = self._picked()
-            sheets = picked if d[1] in picked else [d[1]]
-            on = not d[1].print_in_all
-        self.set_printed(sheets, on, defer=True)
+        obj = d[1]
+        # Left out by a folder around it, not by itself: that folder is
+        # what brings it back — say so, as the Browser does for a group.
+        by = self._left_out_by(scene, obj)
+        if by is not None and obj.print_in_all:
+            self._window.viewport.flash_status(tr(
+                "Left out by the folder «{name}»: switch it on first",
+                name=by.name), 3500)
+            return
+        # On one of several selected rows: all of them, as the Browser's
+        # eye does.
+        sheets, folders = self._picked()
+        if obj not in sheets and obj not in folders:
+            sheets, folders = (([], [obj]) if d[0] == _FOLDER
+                               else ([obj], []))
+        self.set_printed(sheets, not obj.print_in_all, defer=True,
+                         folders=folders)
 
-    def set_printed(self, sheets, on: bool, defer: bool = False) -> None:
-        """Whether Print all and Export all take ``sheets`` — one undo
-        step."""
+    def set_printed(self, sheets, on: bool, defer: bool = False,
+                    folders=()) -> None:
+        """The Print switch of ``sheets`` and ``folders`` — one undo step.
+        A folder's is its own: what it holds keeps theirs."""
         sheets = [c for c in sheets if c.print_in_all != bool(on)]
-        if not sheets:
+        folders = [f for f in folders if f.print_in_all != bool(on)]
+        if not sheets and not folders:
             return
         from core.history import SetSheetPrintCommand
-        self._history().execute(SetSheetPrintCommand(sheets, on))
+        self._history().execute(SetSheetPrintCommand(sheets, on, folders))
         (self._after_edit_in_tree if defer else self._after_tree_change)()
 
     def toggle_print_selected(self) -> None:
-        """Space: the selected sheets (and every sheet in the selected
-        folders) flip together — on, unless all of them already are."""
-        scene = self._scene()
+        """Space: the selected sheets and folders flip together — on,
+        unless all of them already are."""
         sheets, folders = self._picked()
-        for f in folders:
-            sheets += [c for c in self._sheets_under(scene, f)
-                       if c not in sheets]
-        if sheets:
-            self.set_printed(sheets, not all(c.print_in_all for c in sheets))
+        rows = sheets + folders
+        if rows:
+            self.set_printed(sheets, not all(r.print_in_all for r in rows),
+                             folders=folders)
 
     def add_sheet(self, folder_id=...) -> None:
         """A new sheet — as the «+» tab makes it — in the selected folder
@@ -892,12 +929,11 @@ class SheetExplorer(QWidget):
                                                "move one level up)"),
                            lambda: self.delete(sheets, folders))
             menu.addSeparator()
-            on = self._folder_print_state(scene, folder) != "on"
-            act = menu.addAction(_print_icon("on" if on else "off"),
-                                 tr("Include all in Print all") if on
-                                 else tr("Exclude all from Print all"),
-                                 lambda: self.set_printed(inside, on))
-            act.setEnabled(bool(inside))
+            on = not all(f.print_in_all for f in folders)
+            menu.addAction(_print_icon("on" if on else "off"),
+                           tr("Include in Print all") if on
+                           else tr("Exclude from Print all"),
+                           lambda: self.set_printed([], on, folders=folders))
             printed = [c for c in sf.printed_sheets(scene) if c in inside]
             act = menu.addAction(_icon("print"), tr("Print…"),
                                  lambda: self.print_sheets(printed))
@@ -917,9 +953,10 @@ class SheetExplorer(QWidget):
                        lambda: self.add_folder(here))
         if not d:
             menu.addSeparator()
-            menu.addAction(_icon("print"), tr("Print all…"), self.print_all)
+            menu.addAction(_icon("print"), tr("Print all…"),
+                           lambda: self.print_all())
             menu.addAction(_icon("pdf"), tr("Export all (PDF)…"),
-                           self.export_all)
+                           lambda: self.export_all())
         return menu
 
     # ---- Print / Export -------------------------------------------------------

@@ -105,7 +105,7 @@ def _print_state(item):
         return "on"
     if key == node_icon("print_off").cacheKey():
         return "off"
-    return "some" if not item.icon(COL_PRINT).isNull() else None
+    return "inherited" if not item.icon(COL_PRINT).isNull() else None
 
 
 def _rows(explorer, item=None, depth=0, shown_only=False):
@@ -333,28 +333,62 @@ def test_the_printer_is_one_undo_step():
     _close(win)
 
 
-def test_a_folder_printer_switches_every_sheet_inside_and_shows_some():
+def test_a_folder_keeps_its_own_printer_whatever_moves_in_or_out():
+    """A folder's printer is its own, on by default: emptying the folder or
+    filling it changes nothing (it read «off» once all its sheets left)."""
     win, scene, explorer, plans, details = _window()
-    _click_printer(explorer, plans)             # all on → all off
-    assert not _sheet(scene, "G").print_in_all
-    assert not _sheet(scene, "D").print_in_all  # inside Details, too
-    assert _print_state(explorer.items[id(plans)]) == "off"
-    _click_printer(explorer, _sheet(scene, "D"))
-    assert _print_state(explorer.items[id(plans)]) == "some"
-    assert _print_state(explorer.items[id(details)]) == "on"
-    _click_printer(explorer, plans)             # some → all on
+    assert _print_state(explorer.items[id(plans)]) == "on"
+    _drag(explorer, _sheet(scene, "G"), _sheet(scene, "D"), onto=None)
+    _drag(explorer, details, onto=None)
+    assert sf.sheets_in(scene, plans.id) == [] and \
+        sf.subfolders(scene, plans.id) == []
+    assert plans.print_in_all
+    assert _print_state(explorer.items[id(plans)]) == "on"
+    _click_printer(explorer, _sheet(scene, "A"))     # a sheet switched off…
+    _drag(explorer, _sheet(scene, "A"), onto=plans)  # …moved in
+    assert _print_state(explorer.items[id(plans)]) == "on"
+    _close(win)
+
+
+def test_a_folder_switched_off_leaves_out_what_it_holds():
+    win, scene, explorer, plans, details = _window()
+    _click_printer(explorer, plans)
+    assert not plans.print_in_all
+    # The sheets keep their own switches; they are left out, shown faded.
     assert _sheet(scene, "G").print_in_all and _sheet(scene, "D").print_in_all
+    assert _print_state(explorer.items[id(plans)]) == "off"
+    for obj in (details, _sheet(scene, "G"), _sheet(scene, "D")):
+        assert _print_state(explorer.items[id(obj)]) == "inherited"
+    assert "Plans" in explorer.items[id(_sheet(scene, "D"))].toolTip(
+        COL_PRINT)
+    assert [c.name for c in sf.printed_sheets(scene)] == ["A"]
+    # A click on a sheet left out by its folder says so and changes nothing.
+    _click_printer(explorer, _sheet(scene, "G"))
+    assert _sheet(scene, "G").print_in_all
+    _click_printer(explorer, plans)                   # back on: all of it
+    assert [c.name for c in sf.printed_sheets(scene)] == ["D", "G", "A"]
     win.viewport.history.undo()
-    assert not _sheet(scene, "G").print_in_all
+    assert not plans.print_in_all
+    _close(win)
+
+
+def test_a_sheet_s_own_switch_survives_its_folder_switching():
+    win, scene, explorer, plans, _details = _window()
+    _click_printer(explorer, _sheet(scene, "G"))      # G off itself
+    _click_printer(explorer, plans)                   # the folder off …
+    _click_printer(explorer, plans)                   # … and on again
+    assert not _sheet(scene, "G").print_in_all        # G kept its own
+    assert _print_state(explorer.items[id(_sheet(scene, "G"))]) == "off"
     _close(win)
 
 
 def test_space_flips_the_printer_of_the_selection():
-    win, scene, explorer, *_ = _window()
-    _pick(explorer, _sheet(scene, "A"), _sheet(scene, "G"))
+    win, scene, explorer, plans, details = _window()
+    _pick(explorer, _sheet(scene, "A"), _sheet(scene, "G"), details)
     QTest.keyClick(explorer.tree, Qt.Key_Space)
     assert not _sheet(scene, "A").print_in_all
     assert not _sheet(scene, "G").print_in_all
+    assert not details.print_in_all                   # the folder's own
     assert _sheet(scene, "D").print_in_all
     _close(win)
 
@@ -697,6 +731,44 @@ def test_creating_a_plan_shows_its_scene_in_the_composer():
     _close(win)
 
 
+def test_the_icon_buttons_work_when_clicked(monkeypatch, tmp_path):
+    """Clicked for real: ``clicked`` hands its ``checked`` flag over, which
+    the slots took for their argument — a new sheet landed in a folder
+    called False and never showed, Export all got the path False."""
+    from views.filedialogs import file_dialogs
+    win, scene, explorer, plans, details = _window()
+    _pick(explorer, details)
+    explorer.add_sheet_btn.click()
+    new = win._composer.comp
+    assert new.folder_id == details.id and id(new) in explorer.items
+    _pick(explorer, plans)
+    explorer.add_folder_btn.click()
+    folder = scene.sheet_folders[-1]
+    assert folder.parent_id == plans.id and id(folder) in explorer.items
+    _pick(explorer, plans)
+    explorer.rename_btn.click()                       # no error
+    explorer.tree.closePersistentEditor(explorer.items[id(plans)])
+    monkeypatch.setattr(file_dialogs, "getSaveFileName",
+                        lambda *a, **k: (str(tmp_path / "b.pdf"), ""))
+    explorer.export_btn.click()
+    assert (tmp_path / "b.pdf").is_file()
+    _pick(explorer, folder)
+    explorer.delete_btn.click()
+    assert folder not in scene.sheet_folders
+    _close(win)
+
+
+def test_a_sheet_naming_an_unknown_folder_shows_at_the_top():
+    win, scene, explorer, *_ = _window()
+    lost = Composicion(name="Lost", folder_id="no-such-folder")
+    scene.compositions.append(lost)
+    explorer.refresh(force=True)
+    assert id(lost) in explorer.items
+    assert explorer.items[id(lost)].parent() is None
+    assert lost in sf.tree_order(scene)
+    _close(win)
+
+
 # ---- Right-click ------------------------------------------------------------------
 
 def test_the_sheet_menu_has_the_bar_s_actions_rename_and_delete():
@@ -716,7 +788,7 @@ def test_the_folder_menu_and_the_empty_space_menu():
     win, scene, explorer, plans, _details = _window()
     _pick(explorer, plans)
     texts = _texts(explorer.build_menu(("folder", plans)))
-    for want in ("Rename… (F2)", "Exclude all from Print all", "Print…",
+    for want in ("Rename… (F2)", "Exclude from Print all", "Print…",
                  "Export PDF…", "New sheet here", "New folder here"):
         assert want in texts, want
     assert any(t.startswith("Delete folder") for t in texts)

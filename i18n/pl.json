@@ -3385,11 +3385,9 @@
  "This build of IngeTrazo has no printing support (Qt's print module is missing), so the sheets cannot be printed from here.\n\nExport all (PDF) gives you the same sheets, each at its exact paper size, ready to print.": "Ta wersja IngeTrazo nie obsługuje drukowania (brak modułu drukowania Qt), więc arkuszy nie można stąd wydrukować.\n\nEksportuj wszystko (PDF) daje te same arkusze, każdy w dokładnym formacie papieru, gotowe do druku.",
  "Delete folder (its sheets move one level up)": "Usuń folder (jego arkusze przechodzą poziom wyżej)",
  "Delete the selected sheets and folders (Delete) — a deleted folder moves what it holds one level up": "Usuń zaznaczone arkusze i foldery (Delete) — usunięty folder przenosi zawartość poziom wyżej",
- "Exclude all from Print all": "Wyłącz wszystkie z Drukuj wszystko",
  "Exclude from Print all": "Wyłącz z Drukuj wszystko",
  "Export all (PDF): the sheets marked for printing into one PDF, each page at its own paper size": "Eksportuj wszystko (PDF): arkusze oznaczone do druku w jednym PDF, każda strona we własnym formacie",
  "Filter sheets, folders, scenes…": "Filtruj arkusze, foldery, sceny…",
- "Include all in Print all": "Włącz wszystkie do Drukuj wszystko",
  "Include in Print all": "Włącz do Drukuj wszystko",
  "New folder here": "Nowy folder tutaj",
  "New folder, inside the selected one": "Nowy folder wewnątrz zaznaczonego",
@@ -3397,7 +3395,6 @@
  "New sheet, in the selected folder": "Nowy arkusz w zaznaczonym folderze",
  "No sheet is marked for printing": "Żaden arkusz nie jest oznaczony do druku",
  "Print all: the sheets marked for printing, each on its own paper": "Drukuj wszystko: arkusze oznaczone do druku, każdy na własnym papierze",
- "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "Brane przez Drukuj wszystko i Eksportuj wszystko — klik w drukarkę wiersza ją przełącza; drukarka folderu przełącza wszystkie jego arkusze",
  "Print…": "Drukuj…",
  "Rename (F2)": "Zmień nazwę (F2)",
  "PROJECT": "PROJEKT",
@@ -3410,5 +3407,8 @@
  "SCALE {escala}": "SKALA {escala}",
  "Drag a scene onto a sheet. Double-click shows it.": "Przeciągnij scenę na arkusz. Dwuklik ją pokazuje.",
  "Double-click a sheet to open it; drag sheets and folders to order them, and a scene onto a sheet to place it. The printer marks the sheets Print all and Export all take. Right-click for more.": "Kliknij dwukrotnie arkusz, aby go otworzyć; przeciągaj arkusze i foldery, aby je uporządkować, a scenę na arkusz, aby ją umieścić. Drukarka oznacza arkusze, które biorą Drukuj wszystko i Eksportuj wszystko. Prawy klik — więcej.",
- "Drag a scene onto a sheet. Double-click places it on the open sheet.": "Przeciągnij scenę na arkusz. Dwuklik umieszcza ją na otwartym arkuszu."
+ "Drag a scene onto a sheet. Double-click places it on the open sheet.": "Przeciągnij scenę na arkusz. Dwuklik umieszcza ją na otwartym arkuszu.",
+ "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Brane przez Drukuj wszystko i Eksportuj wszystko — klik w drukarkę wiersza ją przełącza; wyłączony folder pomija całą swoją zawartość",
+ "Left out by the folder «{name}», switched off": "Pominięty przez wyłączony folder «{name}»",
+ "Left out by the folder «{name}»: switch it on first": "Pominięty przez folder «{name}»: najpierw go włącz"
 }

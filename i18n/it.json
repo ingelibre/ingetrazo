@@ -3378,11 +3378,9 @@
  "This build of IngeTrazo has no printing support (Qt's print module is missing), so the sheets cannot be printed from here.\n\nExport all (PDF) gives you the same sheets, each at its exact paper size, ready to print.": "Questa versione di IngeTrazo non supporta la stampa (manca il modulo di stampa di Qt), quindi le tavole non si possono stampare da qui.\n\nEsporta tutto (PDF) ti dà le stesse tavole, ognuna al suo formato esatto, pronte da stampare.",
  "Delete folder (its sheets move one level up)": "Elimina cartella (le sue tavole salgono di un livello)",
  "Delete the selected sheets and folders (Delete) — a deleted folder moves what it holds one level up": "Elimina le tavole e le cartelle selezionate (Canc) — una cartella eliminata sposta il suo contenuto di un livello in su",
- "Exclude all from Print all": "Escludi tutte da Stampa tutto",
  "Exclude from Print all": "Escludi da Stampa tutto",
  "Export all (PDF): the sheets marked for printing into one PDF, each page at its own paper size": "Esporta tutto (PDF): le tavole segnate per la stampa in un unico PDF, ogni pagina al proprio formato",
  "Filter sheets, folders, scenes…": "Filtra tavole, cartelle, scene…",
- "Include all in Print all": "Includi tutte in Stampa tutto",
  "Include in Print all": "Includi in Stampa tutto",
  "New folder here": "Nuova cartella qui",
  "New folder, inside the selected one": "Nuova cartella, dentro quella selezionata",
@@ -3390,7 +3388,6 @@
  "New sheet, in the selected folder": "Nuova tavola, nella cartella selezionata",
  "No sheet is marked for printing": "Nessuna tavola è segnata per la stampa",
  "Print all: the sheets marked for printing, each on its own paper": "Stampa tutto: le tavole segnate per la stampa, ognuna sul proprio foglio",
- "Printed by Print all and Export all — click a row's printer to switch it; a folder's switches every sheet inside it": "Preso da Stampa tutto ed Esporta tutto — un clic sulla stampante di una riga la cambia; quella di una cartella cambia tutte le sue tavole",
  "Print…": "Stampa…",
  "Rename (F2)": "Rinomina (F2)",
  "PROJECT": "PROGETTO",
@@ -3403,5 +3400,8 @@
  "SCALE {escala}": "SCALA {escala}",
  "Drag a scene onto a sheet. Double-click shows it.": "Trascina una scena su una tavola. Doppio clic la mostra.",
  "Double-click a sheet to open it; drag sheets and folders to order them, and a scene onto a sheet to place it. The printer marks the sheets Print all and Export all take. Right-click for more.": "Doppio clic su una tavola per aprirla; trascina tavole e cartelle per ordinarle, e una scena su una tavola per posizionarla. La stampante segna le tavole che prendono Stampa tutto ed Esporta tutto. Clic destro per altro.",
- "Drag a scene onto a sheet. Double-click places it on the open sheet.": "Trascina una scena su una tavola. Doppio clic la posiziona sulla tavola aperta."
+ "Drag a scene onto a sheet. Double-click places it on the open sheet.": "Trascina una scena su una tavola. Doppio clic la posiziona sulla tavola aperta.",
+ "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Preso da Stampa tutto ed Esporta tutto — un clic sulla stampante di una riga la cambia; una cartella spenta esclude tutto ciò che contiene",
+ "Left out by the folder «{name}», switched off": "Esclusa dalla cartella «{name}», spenta",
+ "Left out by the folder «{name}»: switch it on first": "Esclusa dalla cartella «{name}»: accendila prima"
 }

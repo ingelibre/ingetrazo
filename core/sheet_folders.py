@@ -36,6 +36,12 @@ class SheetFolder:
     #: Whether the explorer shows it open — saved with the document, so a
     #: file opens the way it was left.
     expanded: bool = True
+    #: The folder's own Print switch, on by default. Off leaves out of
+    #: Print all and Export all everything inside it — whatever the sheets'
+    #: own switches say, which come back when it is on again (as a hidden
+    #: group hides what it holds in the Browser). What is moved in or out
+    #: never changes it.
+    print_in_all: bool = True
 
     def to_dict(self) -> dict:
         d = {"id": self.id, "name": self.name}
@@ -43,6 +49,8 @@ class SheetFolder:
             d["parent_id"] = self.parent_id
         if not self.expanded:
             d["expanded"] = False
+        if not self.print_in_all:
+            d["print_in_all"] = False
         return d
 
     @classmethod
@@ -51,7 +59,8 @@ class SheetFolder:
         return cls(name=str(d.get("name") or "Folder"),
                    parent_id=str(parent) if parent is not None else None,
                    id=str(d.get("id") or new_folder_id()),
-                   expanded=bool(d.get("expanded", True)))
+                   expanded=bool(d.get("expanded", True)),
+                   print_in_all=bool(d.get("print_in_all", True)))
 
 
 # ---- Reading the tree ------------------------------------------------------
@@ -74,9 +83,15 @@ def subfolders(scene, parent_id) -> list:
 
 def sheets_in(scene, folder_id) -> list:
     """The sheets directly inside ``folder_id`` (``None``: the top), in
-    their order."""
-    return [c for c in getattr(scene, "compositions", None) or []
-            if getattr(c, "folder_id", None) == folder_id]
+    their order. A sheet naming a folder the document does not have counts
+    as at the top — it must never drop out of sight."""
+    comps = getattr(scene, "compositions", None) or []
+    if folder_id is not None:
+        return [c for c in comps if getattr(c, "folder_id", None) == folder_id]
+    ids = {f.id for f in folders_of(scene)}
+    return [c for c in comps
+            if getattr(c, "folder_id", None) is None
+            or getattr(c, "folder_id", None) not in ids]
 
 
 def descendant_ids(scene, folder_id) -> set:
@@ -126,10 +141,32 @@ def sync_order(scene) -> bool:
     return True
 
 
+def folder_printed(scene, folder_id) -> bool:
+    """Whether folder ``folder_id`` and every folder around it are switched
+    on for printing (``None``, the top, always is)."""
+    seen: set = set()
+    while folder_id is not None and folder_id not in seen:
+        seen.add(folder_id)
+        f = folder_by_id(scene, folder_id)
+        if f is None:
+            return True
+        if not f.print_in_all:
+            return False
+        folder_id = f.parent_id
+    return True
+
+
+def sheet_printed(scene, sheet) -> bool:
+    """Whether Print all takes ``sheet``: its own switch on, and every
+    folder around it on."""
+    return bool(getattr(sheet, "print_in_all", True)) and folder_printed(
+        scene, getattr(sheet, "folder_id", None))
+
+
 def printed_sheets(scene) -> list:
-    """The sheets Print all and Export all take: ticked, in tree order."""
-    return [c for c in tree_order(scene)
-            if getattr(c, "print_in_all", True)]
+    """The sheets Print all and Export all take — switched on, in folders
+    switched on — in tree order."""
+    return [c for c in tree_order(scene) if sheet_printed(scene, c)]
 
 
 # ---- Repairs (a damaged or hand-edited file still opens) --------------------
@@ -186,7 +223,8 @@ def capture(scene) -> dict:
     comps = list(getattr(scene, "compositions", None) or [])
     return {
         "folders": folders,
-        "folder_state": [(f.name, f.parent_id, f.expanded) for f in folders],
+        "folder_state": [(f.name, f.parent_id, f.expanded, f.print_in_all)
+                         for f in folders],
         "sheets": comps,
         "sheet_state": [(getattr(c, "folder_id", None),
                          getattr(c, "print_in_all", True)) for c in comps],
@@ -202,9 +240,10 @@ def restore(scene, snap: dict) -> None:
     now stay; those the snapshot knows get their folder, Print flag and
     order back, a newer one keeps its place after the sheet it followed."""
     scene.sheet_folders[:] = snap["folders"]
-    for f, (name, parent, expanded) in zip(snap["folders"],
-                                           snap["folder_state"]):
+    for f, (name, parent, expanded, printed) in zip(snap["folders"],
+                                                    snap["folder_state"]):
         f.name, f.parent_id, f.expanded = name, parent, expanded
+        f.print_in_all = printed
     known = {id(c): state for c, state in zip(snap["sheets"],
                                                snap["sheet_state"])}
     now = list(scene.compositions)

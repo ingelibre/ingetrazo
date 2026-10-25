@@ -2033,15 +2033,18 @@ class MoveSheetItemsCommand(_SheetTreeCommand):
 
 
 class SetSheetPrintCommand(_SheetTreeCommand):
-    """Whether Print all and Export all take these sheets."""
+    """The Print switch of these sheets and folders — whether Print all and
+    Export all take them (a folder switched off leaves out what it holds,
+    whatever their own switches say)."""
 
-    def __init__(self, sheets, printed: bool) -> None:
+    def __init__(self, sheets, printed: bool, folders=()) -> None:
         super().__init__()
         self.sheets = list(sheets)
+        self.folders = list(folders)
         self.printed = bool(printed)
 
     def _apply(self, scene) -> None:
-        for c in self.sheets:
+        for c in self.sheets + self.folders:
             c.print_in_all = self.printed
 
 
