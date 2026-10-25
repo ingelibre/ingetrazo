@@ -1700,6 +1700,7 @@ class DeferredMesh(Mesh):
         del self.__dict__["_deferred_source"]
         self.__dict__.pop("_deferred_plan", None)
         self.__dict__.pop("_deferred_bbox", None)
+        self.__dict__.pop("_deferred_geom", None)
         self.__class__ = Mesh
         # Mass object construction, as in formats.igz.load_into: with the
         # generational GC re-scanning the growing heap, building every

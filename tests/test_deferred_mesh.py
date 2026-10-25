@@ -427,3 +427,29 @@ def test_deferred_loading_requires_a_loaded_engine(
     igz.save_scene(eager, before)
     igz.save_scene(opened, after)
     assert before.read_bytes() == after.read_bytes()
+
+
+def test_materializing_releases_cached_face_geometry():
+    """The array bake's cache belongs only to the deferred representation."""
+    import weakref
+    import numpy as np
+
+    def build(mesh):
+        mesh.add_face([V(0, 0, 0), V(1, 0, 0), V(0, 1, 0)])
+
+    expected = M.Mesh()
+    build(expected)
+    mesh = M.Mesh()
+    assert M.DeferredMesh.defer(mesh, build, 1)
+    geometry = np.zeros((3, 3), dtype=np.float32)
+    retained = weakref.ref(geometry)
+    mesh.__dict__["_deferred_geom"] = (geometry,)
+    del geometry
+    assert retained() is not None
+    assert len(mesh.faces) == 1
+    assert type(mesh) is M.Mesh
+    assert "_deferred_geom" not in mesh.__dict__
+    assert retained() is None
+    assert [v.position.toTuple() for v in mesh.vertices] == \
+        [v.position.toTuple() for v in expected.vertices]
+    assert igz._mesh_json(mesh) == igz._mesh_json(expected)
