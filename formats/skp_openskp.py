@@ -418,9 +418,46 @@ def _defn_geom(defn):
     return geom
 
 
+class _PointRows:
+    """List-compatible coordinate rows sharing one packed float32 array.
+
+    Faces keep slices of the transformed array instead of allocating a list
+    and three Python floats per corner. Reading a row returns the same Python
+    float values as the former float32 → float64 → tolist conversion. Repr
+    deliberately remains the list repr used by prototype deduplication.
+    """
+
+    __slots__ = ("_array", "_indices")
+
+    def __init__(self, array, indices=None):
+        self._array = array
+        self._indices = range(len(array)) if indices is None else indices
+
+    def __len__(self):
+        return len(self._indices)
+
+    def __getitem__(self, key):
+        indices = self._indices[key]
+        if isinstance(key, slice):
+            return _PointRows(self._array, indices)
+        return self._array[indices].tolist()
+
+    def __iter__(self):
+        for i in self._indices:
+            yield self._array[i].tolist()
+
+    def __repr__(self):
+        return repr(list(self))
+
+    def __eq__(self, other):
+        if isinstance(other, (list, _PointRows)):
+            return list(self) == list(other)
+        return NotImplemented
+
+
 def _world_points(pos_m, xform):
     """``pos_m`` (local metres) transformed by the QMatrix4x4 ``xform``, as a
-    list of ``[x, y, z]`` lists. Float32-quantized so the payload carries the
+    sequence of ``[x, y, z]`` rows. Float32-quantized so the payload carries the
     same values a ``Vertex`` will store — welding and soft-edge matching key
     on those."""
     import numpy as np
@@ -429,7 +466,7 @@ def _world_points(pos_m, xform):
     else:
         m = np.array(xform.data(), dtype=np.float64).reshape(4, 4, order="F")
         world = pos_m @ m[:3, :3].T + m[:3, 3]
-    return world.astype(np.float32).astype(np.float64).tolist()
+    return _PointRows(world.astype(np.float32))
 
 
 def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
