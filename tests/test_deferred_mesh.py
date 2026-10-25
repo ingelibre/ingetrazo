@@ -111,14 +111,22 @@ def test_built_on_touch_is_the_eager_mesh(binary, monkeypatch, tmp_path,
     assert _canonical(lazy) == _canonical(eager)
 
 
+def _a_corner(m) -> V:
+    """A position holding a vertex of ``m``, read without building it."""
+    from core.lazy_mesh import plan_of
+    plan = plan_of(m)
+    return V(*plan.pos[0]) if plan is not None else \
+        V(m.vertices[0].position)
+
+
 def test_any_first_touch_builds_it(binary, monkeypatch, tmp_path):
-    """Whatever touches a deferred mesh first — a read, a lookup, a copy,
-    an edit — it is built before, so the result is the eager mesh's with
-    the same touch."""
+    """Whatever touches a deferred mesh first — a read, a lookup of a
+    vertex it holds, a copy, an edit — it is built before, so the result
+    is the eager mesh's with the same touch."""
     path = tmp_path / "doc.igz"
     igz.save_scene(_random_scene(random.Random(9)), path)
     touches = (lambda m: m.vertices, lambda m: m.edges, lambda m: m.faces,
-               lambda m: m.vertex_at(V(0, 0, 0)),
+               lambda m: m.vertex_at(_a_corner(m)),
                lambda m: m.vertex(V(0, 0, 0)), lambda m: copy.deepcopy(m),
                lambda m: m.add_edge(V(90, 0, 0), V(91, 0, 0)))
     for touch in touches:
@@ -130,6 +138,59 @@ def test_any_first_touch_builds_it(binary, monkeypatch, tmp_path):
                 assert type(m) is M.Mesh
             out.append(_canonical(scene))
         assert out[0] == out[1], touch
+
+
+def test_a_lookup_that_misses_builds_nothing(binary, monkeypatch, tmp_path):
+    """vertex_at answers like the eager mesh at every distance from a
+    vertex — and a position no document point comes near leaves the mesh
+    deferred: a definite miss needs no objects to be sure of."""
+    path = tmp_path / "doc.igz"
+    igz.save_scene(_random_scene(random.Random(5)), path)
+    eager = list(_meshes(_open(monkeypatch, path, False)))
+    k = next(i for i, m in enumerate(_meshes(_open(monkeypatch, path, True)))
+             if type(m) is M.DeferredMesh)
+    corner = V(eager[k].vertices[3].position)
+    # On the vertex, within the weld, just outside it, and nowhere near.
+    for off in (0.0, 5e-5, 1.5e-4, 3e-4, 1e-3, 1e3):
+        m = list(_meshes(_open(monkeypatch, path, True)))[k]
+        q = corner + V(off, 0, 0)
+        want = eager[k].vertex_at(q)
+        got = m.vertex_at(q)
+        assert (got is None) == (want is None), off
+        if want is not None:
+            assert got.position == want.position
+            assert type(m) is M.Mesh
+        if off >= 3e-4:                     # no document point within reach
+            assert type(m) is M.DeferredMesh, off
+
+
+def test_a_dimension_in_the_document_builds_only_its_mesh(
+        binary, monkeypatch, tmp_path):
+    """Opening a document binds its dimensions, and an anchor probes every
+    placement with vertex_at: that built every lazy mesh of a 20 000-group
+    model over ONE dimension. Only the mesh holding the vertex is built,
+    and the anchor is the eager one."""
+    from core.dimension import Dimension
+    scene = _random_scene(random.Random(7))
+    far = scene.groups[-1].mesh                 # the classic group
+    far.add_face([V(100, 100, 0), V(102, 100, 0), V(102, 101, 0),
+                  V(100, 101, 0)])
+    scene.dimensions.append(Dimension(V(100, 100, 0), V(102, 100, 0),
+                                      V(0, -1, 0)))
+    path = tmp_path / "doc.igz"
+    igz.save_scene(scene, path)
+    eager = _open(monkeypatch, path, False)
+    lazy = _open(monkeypatch, path, True)
+    meshes = list(_meshes(lazy))
+    built = [m for m in meshes if type(m) is M.Mesh]
+    assert built == [lazy.groups[-1].mesh]
+    assert len(meshes) > 2
+    dim_e, dim_l = eager.dimensions[0], lazy.dimensions[0]
+    assert dim_l.anchor_a is not None and dim_l.anchor_b is not None
+    assert dim_l.anchor_a.mesh is lazy.groups[-1].mesh
+    assert dim_e.anchor_a.mesh is eager.groups[-1].mesh
+    assert (dim_l.a, dim_l.b) == (dim_e.a, dim_e.b)
+    assert _canonical(lazy) == _canonical(eager)
 
 
 def test_a_deep_copy_is_its_own_mesh(binary, monkeypatch, tmp_path):

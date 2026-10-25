@@ -1699,8 +1699,31 @@ class DeferredMesh(Mesh):
         del self.__dict__["_deferred_nfaces"]
         del self.__dict__["_deferred_source"]
         self.__dict__.pop("_deferred_plan", None)
+        self.__dict__.pop("_deferred_bbox", None)
         self.__class__ = Mesh
-        build(self)
+        # Mass object construction, as in formats.igz.load_into: with the
+        # generational GC re-scanning the growing heap, building every
+        # mesh of a 2.5 M-face model took 30.5 s and peaked at 4.2 GB;
+        # without it, 19.4 s and 2.8 GB.
+        import gc
+        was_enabled = gc.isenabled()
+        gc.disable()
+        try:
+            build(self)
+        finally:
+            if was_enabled:
+                gc.enable()
+
+    def vertex_at(self, position: QVector3D) -> Optional[Vertex]:
+        """The vertex at ``position`` — a miss answered from the document's
+        points without building (core.lazy_mesh.has_vertex_near); a possible
+        hit builds the mesh and asks the registry, as an eager mesh does.
+        Opening a document with ONE dimension built every lazy mesh of a
+        20 000-group model: its anchors probe every placement this way."""
+        from core.lazy_mesh import has_vertex_near
+        if not has_vertex_near(self, position):
+            return None
+        return Mesh.vertex_at(self, position)
 
     def __reduce_ex__(self, protocol):
         # deepcopy / pickle copy the built mesh, never the pending build.
