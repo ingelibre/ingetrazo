@@ -239,7 +239,7 @@ class SheetExplorer(QWidget):
         # when nothing did).
         self._poll = QTimer(self)
         self._poll.setInterval(1000)
-        self._poll.timeout.connect(self.refresh)
+        self._poll.timeout.connect(self._poll_tick)
         self.refresh()
 
     # ---- Model → view ----------------------------------------------------------
@@ -266,9 +266,15 @@ class SheetExplorer(QWidget):
         self.refresh()
         self._poll.start()
 
-    def hideEvent(self, ev) -> None:
-        self._poll.stop()
-        super().hideEvent(ev)
+    def _poll_tick(self) -> None:
+        """The once-a-second check; it stops itself off screen. (No Python
+        hideEvent for that: Qt calls it while it destroys the widget, when
+        the timer may be gone already — memory went bad there and a later
+        test crashed in native code.)"""
+        if not self.isVisible():
+            self._poll.stop()
+            return
+        self.refresh()
 
     @staticmethod
     def _print_state(scene, obj) -> str:
