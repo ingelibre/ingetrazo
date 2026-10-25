@@ -215,7 +215,7 @@ def test_repeated_flat_geometry_survives_until_its_last_visit():
 
 
 @pytest.mark.parametrize("test_name", [
-    "test_openskp_adapter_image_entities_become_billboards",
+    "test_openskp_adapter_image_entities_stay_static",
     "test_a_cutout_image_stuck_on_a_face_stays_put",
 ])
 @pytest.mark.parametrize("nested", [False, True])

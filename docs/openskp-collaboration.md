@@ -156,6 +156,9 @@ Contribution targets, most valuable first:
    (`campesiono.png`, 2.44 m on its pedestal) both surface as billboards.
    The exact "always face camera" component flag remains undecoded (the
    alpha heuristic covers the practical cases).
+   **Superseded (2026-10-26):** the flag is decoded now and drives the
+   billboards; Image entities stay static panels as in SketchUp (the
+   heuristic turned transparent reference plans into face-me sprites).
 8. **Legacy MFC (v8–v20)** version coverage, if not already handled.
 
 The differential harness lives at **`scripts/skp_diff.py`**:

@@ -630,13 +630,6 @@ def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
     return (outer, holes, attrs)
 
 
-def _image_has_cutout(path) -> bool:
-    """See :func:`core.texture.image_has_cutout` — one test for the import,
-    the renderer's back-side rule and the exporter."""
-    from core.texture import image_has_cutout
-    return image_has_cutout(path)
-
-
 def _image_quad_faces(child, placed, attr_map, inherited):
     """Payload faces for an Image entity's quad, with whole-picture UVs.
 
@@ -669,204 +662,6 @@ def _image_quad_faces(child, placed, attr_map, inherited):
         faces.append((outer, [], attrs))
     return faces
 
-
-# How close an image may lie to a face and still count as stuck on it: the
-# logos of #429 sit 0–1.5 mm off their faces, the plaza's free-standing bull
-# and statue 8 m and 19 cm from anything parallel.
-_GLUE_TOL = 0.01
-
-
-def _face_boxes(defn):
-    """Per-face local bounding boxes of ``defn`` (metres), cached: ``(lo,
-    hi)`` arrays of shape ``(F, 3)`` in the order of ``_defn_geom``'s
-    metadata. Holes lie inside their outer ring, so a face's corners — holes
-    included — are one contiguous run and one ``reduceat`` boxes them all."""
-    boxes = getattr(defn, "_face_boxes", None)
-    if boxes is not None:
-        return boxes
-    import numpy as np
-    pos_m, _raw, meta = _defn_geom(defn)
-    if not meta:
-        boxes = (np.empty((0, 3)), np.empty((0, 3)))
-    else:
-        starts = np.fromiter((m[1] for m in meta), dtype=np.intp,
-                             count=len(meta))
-        boxes = (np.minimum.reduceat(pos_m, starts, axis=0),
-                 np.maximum.reduceat(pos_m, starts, axis=0))
-    _remember_geometry(defn, "_face_boxes", boxes,
-                       sum(array.nbytes for array in boxes))
-    return boxes
-
-
-def _image_geometry_bounds(defn):
-    """A conservative local box, without resolving any face rings.
-
-    Every resolved ring corner comes from this vertex table. Unused vertices
-    can only enlarge the box. Invalid/non-finite unused coordinates must not
-    reject valid faces: in that case leave the existing face test in charge.
-    The caller caches only six floats per definition for this image query.
-    """
-    import numpy as np
-
-    vertices = getattr(defn, "vertices", {})
-    if not vertices or not getattr(defn, "faces", None):
-        return None
-    try:
-        points = np.fromiter(
-            (c for v in vertices.values() for c in (v.x, v.y, v.z)),
-            dtype=np.float64, count=3 * len(vertices)).reshape(-1, 3)
-        points *= _INCH
-        lo, hi = points.min(axis=0), points.max(axis=0)
-    except (AttributeError, TypeError, ValueError, OverflowError):
-        return None
-    if not (np.isfinite(lo).all() and np.isfinite(hi).all()):
-        return None
-    return lo, hi
-
-
-def _rests_on_a_face(roots, by_id, quad) -> bool:
-    """Whether the image quad ``quad`` (world ``QVector3D`` corners) lies ON
-    a face of the model: parallel to it, within ``_GLUE_TOL``, with its
-    centre over the face. That is a logo or a sign stuck to a surface, which
-    must stay put (#429); a cut-out standing free — the plaza's bull and
-    statue — is the one turned to face the camera.
-
-    Walks the placement tree in NumPy: each definition's face boxes are
-    tested against the image centre in that definition's own frame, and only
-    the few faces whose box holds it get the exact plane test."""
-    import numpy as np
-    q = np.array([[p.x(), p.y(), p.z()] for p in quad], dtype=np.float64)
-    if len(q) < 3:
-        return False
-    centre = q.mean(axis=0)
-    n = np.zeros(3)
-    for i in range(len(q)):
-        n += np.cross(q[i], q[(i + 1) % len(q)])
-    if np.linalg.norm(n) < 1e-12:
-        return False
-    n /= np.linalg.norm(n)
-
-    def on_face(world):
-        fn = np.zeros(3)
-        for i in range(len(world)):
-            fn += np.cross(world[i], world[(i + 1) % len(world)])
-        ln = np.linalg.norm(fn)
-        if ln < 1e-12:
-            return False
-        fn /= ln
-        if abs(abs(fn @ n) - 1.0) > 1e-3:
-            return False
-        if abs((centre - world[0]) @ fn) > _GLUE_TOL:
-            return False
-        # The centre over the face: even-odd in the face's own plane.
-        a = np.cross(fn, [1.0, 0.0, 0.0] if abs(fn[0]) < 0.9
-                     else [0.0, 1.0, 0.0])
-        a /= np.linalg.norm(a)
-        b = np.cross(fn, a)
-        uv = np.stack([(world - centre) @ a, (world - centre) @ b], axis=1)
-        inside = False
-        for i in range(len(uv)):
-            (x0, y0), (x1, y1) = uv[i], uv[i - 1]
-            if (y0 > 0) != (y1 > 0) and 0 < x0 + (x1 - x0) * (-y0) / (y1 - y0):
-                inside = not inside
-        return inside
-
-    bounds = {}
-
-    def walk(defn, m, depth, stack):
-        if depth > _MAX_DEPTH or id(defn) in stack:
-            return False
-        stack = stack | {id(defn)}
-        oid = id(defn)
-        if oid not in bounds:
-            bounds[oid] = _image_geometry_bounds(defn)
-        box = bounds[oid]
-        test_faces = True
-        if box is not None:
-            try:
-                inv = np.linalg.inv(m)
-            except np.linalg.LinAlgError:
-                # Preserve the old behavior for singular placements: an empty
-                # resolved mesh need not invert, a nonempty one still raises.
-                pass
-            else:
-                c = inv[:3, :3] @ centre + inv[:3, 3]
-                s = min(np.linalg.norm(m[:3, :3], axis=0).min(), 1.0) or 1.0
-                tol = _GLUE_TOL / s
-                lo, hi = box
-                test_faces = bool(np.all((lo - tol <= c) & (c <= hi + tol)))
-        if test_faces:
-            lo, hi = _face_boxes(defn)
-            if len(lo):
-                inv = np.linalg.inv(m)
-                c = inv[:3, :3] @ centre + inv[:3, 3]
-                # The tolerance in this frame: a scaled-down copy needs more.
-                s = min(np.linalg.norm(m[:3, :3], axis=0).min(), 1.0) or 1.0
-                tol = _GLUE_TOL / s
-                hit = np.nonzero(np.all((lo - tol <= c) & (c <= hi + tol),
-                                        axis=1))[0]
-                if len(hit):
-                    pos_m, _raw, meta = _defn_geom(defn)
-                    for k in hit:
-                        _f, s0, s1, _hs = meta[k]
-                        world = pos_m[s0:s1] @ m[:3, :3].T + m[:3, 3]
-                        if on_face(world):
-                            return True
-        for ins in getattr(defn, "instances", []):
-            child = by_id.get(getattr(ins, "ref_idx", None))
-            if child is None or getattr(child, "is_image", False) or \
-                    getattr(child, "always_faces_camera", False):
-                continue
-            cm = np.array(_matrix(ins.matrix).data(),
-                          dtype=np.float64).reshape(4, 4, order="F")
-            if walk(child, m @ cm, depth + 1, stack):
-                return True
-        return False
-
-    return any(walk(r, np.eye(4), 0, frozenset()) for r in roots)
-
-
-
-def _image_use_key(child, placed, inherited):
-    import struct
-    return id(child), struct.pack("=16f", *placed.data()), inherited
-
-
-def _image_billboard_flags(roots, by_id, attr_map, proto_ids):
-    """Finish image attachment tests before an owned model loses geometry.
-
-    Called only after FlatGeometry proves the reachable graph is acyclic and
-    within the census depth limit. Follow the same world matrix/material chain
-    as _collect; tagged group extraction does not change either. Face-camera
-    subtrees flatten their own images and never run these attachment tests.
-    Only the booleans survive, not the source model or derived face geometry.
-    """
-    flags = {}
-
-    def walk(definition, xform, inherited, top=False):
-        for ins in getattr(definition, "instances", ()):
-            child = by_id.get(getattr(ins, "ref_idx", None))
-            if child is None:
-                continue
-            matrix = _matrix(ins.matrix)
-            placed = matrix if top else xform * matrix
-            material = getattr(ins, "material_id", None)
-            inh = material if top else material or inherited
-            if getattr(child, "is_image", False):
-                key = _image_use_key(child, placed, inh)
-                if key not in flags:
-                    faces = _image_quad_faces(child, placed, attr_map, inh)
-                    tex = next((a["texture"]["path"] for _o, _h, a in faces
-                                if a and "texture" in a), None)
-                    flags[key] = bool(tex and _image_has_cutout(tex)
-                                      and not _rests_on_a_face(roots, by_id, faces[0][0]))
-            elif not getattr(child, "always_faces_camera", False) and \
-                    getattr(child, "id", None) not in proto_ids:
-                walk(child, placed, inh)
-
-    for root in roots:
-        walk(root, QMatrix4x4(), None, top=True)
-    return flags
 
 def _soft_edge_segments(defn, xform, out) -> None:
     """Append the transformed endpoint pairs of ``defn``'s soft/smooth/
@@ -970,9 +765,9 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
         cid = getattr(child, "id", None)
         if getattr(child, "is_image", False):
             if image_uses is not None:
-                # An Image entity (photo placed as an object): pulled out of
-                # its parent so it can become its own group — cutout images
-                # turn to face the camera (billboard), like the DAE import.
+                # An Image entity (photo or plan placed as an object):
+                # pulled out of its parent so it can become its own static
+                # group.
                 image_uses.append((child, placed, child_inherited,
                                    out_layer))
             else:
@@ -1387,12 +1182,10 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
             proto_ids.add(child.id)
 
     release_flat = None
-    image_flags = None
     if consume:
         from formats.skp_consumption import FlatGeometry
         flat = FlatGeometry(by_id, proto_ids, uses, roots, _MAX_DEPTH)
         if flat.remaining:
-            image_flags = _image_billboard_flags(roots, by_id, attr_map, proto_ids)
             release_flat = flat.release
 
     groups: list = []
@@ -1467,25 +1260,21 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
                            "layer": lay,
                            "axes": [float(x) for x in placed.data()]})
 
-    # Image entities → their own groups; cutout images (real alpha) become
-    # face-me billboards that turn toward the camera, opaque photos stay
-    # static panels — same rule as the DAE face-me import. An image quad
-    # always shows the WHOLE picture once (see _image_quad_faces). An
-    # "always faces camera" component (Susan) flattens its whole subtree
-    # into one billboard group — the flag decides, no heuristic needed.
+    # Image entities → their own groups, static panels exactly where the
+    # file places them: SketchUp never turns an Image toward the camera
+    # (reference plans, scanned drawings and photos are placed as Images
+    # precisely because they must keep their orientation). An image quad
+    # always shows the WHOLE picture once (see _image_quad_faces). Face-me
+    # behaviour comes from the "always faces camera" component flag alone:
+    # such a component (Susan) flattens its whole subtree into one
+    # billboard group. Until that flag was decoded, cut-out images (real
+    # alpha) stood in for face-me components; that heuristic also turned
+    # transparent plans and elevations into billboards (#429 covered only
+    # the glued case), so it is gone.
     for child, placed, inh, lay in image_uses:
         if getattr(child, "is_image", False):
             faces = _image_quad_faces(child, placed, attr_map, inh)
-            tex = next((a["texture"]["path"] for _o, _h, a in faces
-                        if a and "texture" in a), None)
-            # A cut-out turns to face the camera — unless it is stuck on a
-            # face, like a logo on a device (#429): the file has no face-me
-            # flag for images, SketchUp never turns one.
-            if image_flags is not None:
-                billboard = image_flags[_image_use_key(child, placed, inh)]
-            else:
-                billboard = bool(tex and _image_has_cutout(tex)
-                                 and not _rests_on_a_face(roots, by_id, faces[0][0]))
+            billboard = False
         else:
             faces = []
             _collect(child, placed, by_id, attr_map, faces, 0, set(),
@@ -1509,8 +1298,8 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
     # done inside a component: the hedge in piscina.igz is 4480 + 5120 faces
     # placed 48 times, and it arrived as 230400 real ones, twenty-four times
     # over, for the element that is 89% of that model.
-    # Geometry stays available through image attachment tests. From here,
-    # only prototype extraction can read it. Count all inherited-material
+    # From here, only prototype extraction can read the geometry. Count all
+    # inherited-material
     # variants before releasing anything: a child may be flattened into
     # several different prototypes, or shared by several parents.
     consumer = None

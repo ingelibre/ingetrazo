@@ -512,10 +512,12 @@ def test_openskp_adapter_bakes_positioned_texture_uvs(tmp_path):
         assert v == pytest.approx(ve, abs=2e-3)
 
 
-def test_openskp_adapter_image_entities_become_billboards(tmp_path):
+def test_openskp_adapter_image_entities_stay_static(tmp_path):
     # A def with is_image=True (upstream PR openskp#8) placed by an instance
-    # becomes its OWN group; a cutout texture (real alpha) marks it as a
-    # face-me billboard, an opaque photo stays a static panel.
+    # becomes its OWN group and keeps the orientation the file gives it,
+    # cut-out or not: SketchUp never turns an Image toward the camera
+    # (plans and elevations are placed as transparent Images). Face-me
+    # comes from the component flag only, see the test below.
     from PySide6.QtGui import QImage
 
     cutout = tmp_path / "toro.png"
@@ -554,22 +556,22 @@ def test_openskp_adapter_image_entities_become_billboards(tmp_path):
     payload = skp_openskp._adapt(model, "m", skp_path=skp)
 
     by_name = {g["name"]: g for g in payload["groups"]}
-    assert by_name["imagen#1"]["billboard"] is True     # cutout -> face-me
+    assert by_name["imagen#1"]["billboard"] is False    # cutout -> static too
     assert by_name["imagen#2"]["billboard"] is False    # opaque -> static
 
     scene = Scene()
     skp_format.apply_payload(scene, payload)
     bb = {g.name: g.billboard for g in scene.groups}
-    assert bb["imagen#1"] == "mesh"
+    assert bb["imagen#1"] is False
     assert bb["imagen#2"] is False
 
 
 def test_a_cutout_image_stuck_on_a_face_stays_put(tmp_path):
     # #429 (audioinnovation.skp): logos with transparency glued to a device
-    # turned to face the camera — the file has no face-me flag for images,
-    # the cutout guess did it. Lying on a face (here a face of ANOTHER
-    # component, as in that file, 0.5 mm off it) keeps one static; a cutout
-    # standing free — the plaza's bull — still turns.
+    # turned to face the camera while the cutout guess stood in for the
+    # (then undecoded) face-me flag. Images never turn now, glued (here a
+    # face of ANOTHER component, 0.5 mm off it) or standing free like the
+    # plaza's bull — SketchUp keeps both exactly where they were placed.
     from PySide6.QtGui import QImage
 
     cutout = tmp_path / "logo.png"
@@ -607,7 +609,7 @@ def test_a_cutout_image_stuck_on_a_face_stays_put(tmp_path):
 
     by_name = {g["name"]: g for g in payload["groups"]}
     assert by_name["logo"]["billboard"] is False        # glued -> static
-    assert by_name["toro"]["billboard"] is True         # free -> face-me
+    assert by_name["toro"]["billboard"] is False        # free -> static too
 
 
 def test_openskp_adapter_default_mapping_is_local(tmp_path):
