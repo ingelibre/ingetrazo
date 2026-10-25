@@ -41,6 +41,7 @@ from PySide6.QtGui import QMatrix4x4, QVector3D
 
 from core.texture import fit_uv_affine, projection_basis
 from formats.skp_consumption import SoftSegments
+from formats.skp_coordinates import PointRows as _PointRows
 
 _INCH = 0.0254          # .skp internal unit → metres
 _MAX_DEPTH = 32         # guard against pathological instance nesting
@@ -501,43 +502,6 @@ def _defn_geom(defn):
     size += 128 * sum(len(item[3]) for item in meta)
     _remember_geometry(defn, "_geom", geom, size)
     return geom
-
-
-class _PointRows:
-    """List-compatible coordinate rows sharing one packed float32 array.
-
-    Faces keep slices of the transformed array instead of allocating a list
-    and three Python floats per corner. Reading a row returns the same Python
-    float values as the former float32 → float64 → tolist conversion. Repr
-    deliberately remains the list repr used by prototype deduplication.
-    """
-
-    __slots__ = ("_array", "_indices")
-
-    def __init__(self, array, indices=None):
-        self._array = array
-        self._indices = range(len(array)) if indices is None else indices
-
-    def __len__(self):
-        return len(self._indices)
-
-    def __getitem__(self, key):
-        indices = self._indices[key]
-        if isinstance(key, slice):
-            return _PointRows(self._array, indices)
-        return self._array[indices].tolist()
-
-    def __iter__(self):
-        for i in self._indices:
-            yield self._array[i].tolist()
-
-    def __repr__(self):
-        return repr(list(self))
-
-    def __eq__(self, other):
-        if isinstance(other, (list, _PointRows)):
-            return list(self) == list(other)
-        return NotImplemented
 
 
 def _world_points(pos_m, xform):

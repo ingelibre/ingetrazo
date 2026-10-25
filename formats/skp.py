@@ -286,9 +286,10 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
             # edges visible (glass mullions, beam/column lines), so fusing them
             # dissolved real user lines. Built in one vectorized bulk pass —
             # the per-face add_face welding dominated big imports.
-            import numpy as np
             from core.topology import _maximal_holes
-            flat: list = []
+            from formats.skp_coordinates import flatten_rings
+            flat_rings: list = []
+            corner_count = 0
             ring_sizes: list = []
             ring_counts: list = []
             attrs_list: list = []
@@ -304,16 +305,14 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
                 ring_counts.append(len(rings))
                 for r in rings:
                     ring_sizes.append(len(r))
-                    if r and hasattr(r[0], "x"):   # QVector3D payload corners
-                        flat.extend(p.toTuple() for p in r)
-                    else:
-                        flat.extend(r)
+                    flat_rings.append(r)
+                    corner_count += len(r)
                 attrs_list.append(attrs)
             bulk = None
             if ring_counts:
-                if len(flat) >= 1024:          # corners; bulk wins above ~700
+                if corner_count >= 1024:          # corners; bulk wins above ~700
                     vertices, inverse = mesh.bulk_weld(
-                        np.array(flat, dtype=np.float64).reshape(-1, 3))
+                        flatten_rings(flat_rings, corner_count))
                     edge_map = {}
                     mesh.add_faces_welded(vertices, inverse, ring_sizes,
                                           ring_counts, attrs_list, edge_map=edge_map)
@@ -322,7 +321,7 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
                     # Small group: the bulk pass's fixed NumPy cost loses to
                     # the plain per-face walk (a file with a thousand small
                     # groups pays that fixed cost a thousand times).
-                    corners = [QVector3D(p[0], p[1], p[2]) for p in flat]
+                    corners = [_q(p) for ring in flat_rings for p in ring]
                     ci = 0
                     ri = 0
                     for fi, nr in enumerate(ring_counts):
