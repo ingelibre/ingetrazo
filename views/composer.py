@@ -5756,10 +5756,13 @@ class ComposerWindow(QMainWindow):
         # «Views and sheets» on the left, the page in the middle, the
         # properties on the right: the two side panels fold away the same
         # way, each with its handle on the splitter line and its key.
-        from views.outliner import SheetsPanel
-        self.views_panel = SheetsPanel(main_window, composer=self)
+        # The same Scenes-above-Sheets page as the main window's Sheets tab
+        # (views/sheet_browser.py). Its key stays «views», so a side and
+        # place the user gave it are kept.
+        from views.sheet_browser import SheetsTab
+        self.views_panel = SheetsTab(main_window, composer=self)
         self._pages["views"] = self.views_panel
-        self._page_titles["views"] = tr("Views and sheets")
+        self._page_titles["views"] = tr("Sheets")
         self._left_tabs = _PanelTabs(self, "left")
         left = QWidget()
         left_lay = QVBoxLayout(left)
@@ -13026,6 +13029,12 @@ class ComposerWindow(QMainWindow):
             comps = [c for c in comps if id(c) in wanted]
         writer = QPdfWriter(path)
         writer.setResolution(RENDER_DPI)
+        return self._paint_atlas(writer, comps, RENDER_DPI)
+
+    def _paint_atlas(self, device, comps, dpi) -> list:
+        """Paint ``comps`` on ``device`` (a PDF writer or a printer), one
+        page each at its own paper size and orientation. Returns the names
+        of the sheets where a frame would not render."""
         painter = None
         troubled: list = []
         try:
@@ -13043,21 +13052,61 @@ class ComposerWindow(QMainWindow):
                             troubled.append(comp.name)
                     finally:
                         self.comp = saved
-                writer.setPageSize(QPageSize(getattr(QPageSize, comp.paper)))
-                writer.setPageOrientation(
+                device.setPageSize(QPageSize(getattr(QPageSize, comp.paper)))
+                device.setPageOrientation(
                     QPageLayout.Landscape if comp.landscape
                     else QPageLayout.Portrait)
                 if painter is None:
-                    painter = QPainter(writer)
+                    painter = QPainter(device)
                 else:
-                    writer.newPage()
+                    device.newPage()
                 painter.resetTransform()
-                painter.scale(RENDER_DPI / 25.4, RENDER_DPI / 25.4)
+                painter.scale(dpi / 25.4, dpi / 25.4)
                 self._paint_sheet(painter, comp)
         finally:
             if painter is not None:
                 painter.end()
         return troubled
+
+    def print_sheets(self, sheets, parent=None, printer=None) -> bool:
+        """Print ``sheets`` — the printer dialog once, then one page per
+        sheet at its own paper size and orientation, as the PDF atlas lays
+        them out. ``printer`` skips the dialog (tests print to a PDF file).
+        Without Qt's print module it says so and points at Export all,
+        which gives the same pages. True if anything went to print."""
+        sheets = [c for c in sheets if c in self._scene().compositions]
+        if not sheets:
+            return False
+        mod = self.print_support()
+        if mod is None and printer is None:
+            QMessageBox.information(
+                parent or self, tr("Print all…"),
+                tr("This build of IngeTrazo has no printing support "
+                   "(Qt's print module is missing), so the sheets cannot "
+                   "be printed from here.\n\nExport all (PDF) gives you "
+                   "the same sheets, each at its exact paper size, ready "
+                   "to print."))
+            return False
+        if printer is None:
+            from PySide6.QtGui import QPageLayout, QPageSize
+            printer = mod.QPrinter(mod.QPrinter.HighResolution)
+            printer.setFullPage(True)     # the sheets carry their margins
+            first = sheets[0]
+            printer.setPageSize(QPageSize(getattr(QPageSize, first.paper)))
+            printer.setPageOrientation(
+                QPageLayout.Landscape if first.landscape
+                else QPageLayout.Portrait)
+            dlg = mod.QPrintDialog(printer, parent or self)
+            dlg.setWindowTitle(tr("Print all…"))
+            if not dlg.exec():                   # cancelled
+                return False
+        dpi = float(printer.resolution() or RENDER_DPI)
+        troubled = self._paint_atlas(printer, sheets, dpi)
+        if troubled:
+            self.statusBar().showMessage(
+                tr("Printed — but a view would not render on {sheets}",
+                   sheets=", ".join(troubled)), 10000)
+        return True
 
     def _set_field_context(self, comp) -> None:
         comps = list(getattr(self._scene(), "compositions", []) or [])

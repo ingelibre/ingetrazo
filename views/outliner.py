@@ -237,6 +237,52 @@ def _draw(key: str):
             p.drawRoundedRect(QRectF(4, 8.5, 10, 7.5), 1.5, 1.5)
             p.drawArc(QRectF(8.5, 1.5, 7, 9), 0, 180 * 16)
             p.drawLine(QPointF(8.5, 6), QPointF(8.5, 8.5))
+    elif key in ("print", "print_off"):
+        # A printer: the paper in, the body, the sheet coming out.
+        if key == "print_off":
+            p.setPen(QPen(QColor(ink.red(), ink.green(), ink.blue(), 110),
+                          1.2))
+        p.drawRect(QRectF(5.5, 2.5, 7, 4))
+        p.drawRoundedRect(QRectF(2.5, 6.5, 13, 6.5), 1.2, 1.2)
+        p.drawRect(QRectF(5.5, 10.5, 7, 5.5))
+        p.drawLine(QPointF(7, 13), QPointF(11, 13))
+    elif key in ("sheet_add", "folder_add"):
+        if key == "sheet_add":
+            p.drawPolygon([QPointF(2.5, 1.5), QPointF(9.5, 1.5),
+                           QPointF(12.5, 4.5), QPointF(12.5, 13),
+                           QPointF(2.5, 13)])
+            p.drawLine(QPointF(9.5, 1.5), QPointF(9.5, 4.5))
+            p.drawLine(QPointF(9.5, 4.5), QPointF(12.5, 4.5))
+        else:
+            p.drawPolygon([QPointF(1.5, 4), QPointF(6, 4), QPointF(7.5, 5.5),
+                           QPointF(13.5, 5.5), QPointF(13.5, 13),
+                           QPointF(1.5, 13)])
+        # The plus, in the accent colour, bottom-right.
+        p.setPen(QPen(_accent(), 2.0))
+        p.drawLine(QPointF(13.5, 10.5), QPointF(13.5, 17))
+        p.drawLine(QPointF(10.25, 13.75), QPointF(16.75, 13.75))
+    elif key == "delete":
+        # A bin: the lid with its handle, the can with its ribs.
+        p.drawLine(QPointF(3, 4.5), QPointF(15, 4.5))
+        p.drawRect(QRectF(7, 2, 4, 2.5))
+        p.drawPolygon([QPointF(4.5, 4.5), QPointF(13.5, 4.5),
+                       QPointF(12.5, 16), QPointF(5.5, 16)])
+        p.drawLine(QPointF(7.5, 7), QPointF(7.75, 13.5))
+        p.drawLine(QPointF(10.5, 7), QPointF(10.25, 13.5))
+    elif key == "pdf":
+        # A page with an arrow down into a tray: export to a file.
+        p.drawPolygon([QPointF(3.5, 1.5), QPointF(10.5, 1.5),
+                       QPointF(13.5, 4.5), QPointF(13.5, 10),
+                       QPointF(3.5, 10)])
+        p.drawLine(QPointF(10.5, 1.5), QPointF(10.5, 4.5))
+        p.drawLine(QPointF(10.5, 4.5), QPointF(13.5, 4.5))
+        p.setPen(QPen(_accent(), 1.6))
+        p.drawLine(QPointF(8.5, 5), QPointF(8.5, 14))
+        p.drawPolyline([QPointF(5.5, 11), QPointF(8.5, 14),
+                        QPointF(11.5, 11)])
+        p.setPen(QPen(ink, 1.2))
+        p.drawPolyline([QPointF(2.5, 13.5), QPointF(2.5, 16.5),
+                        QPointF(14.5, 16.5), QPointF(14.5, 13.5)])
     elif key in ("eye", "eye_off"):
         if key == "eye_off":
             p.setPen(QPen(QColor(ink.red(), ink.green(), ink.blue(), 110),

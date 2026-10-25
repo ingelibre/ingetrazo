@@ -891,6 +891,10 @@ class MainWindow(QMainWindow):
         from views.tray import ScenesDock
         self.scenes_dock = ScenesDock(self)
         self.tray.scenes = self.scenes_dock.panel
+        # The sheet explorer: the same page as the composer's «Sheets»
+        # (views/sheet_browser.py).
+        from views.sheet_browser import SheetsTray
+        self.sheets_tray = SheetsTray(self)
         self._lay_out_trays()
         # The trays are tabbed: the tab bar already names the active panel,
         # so each dock's own title bar would say the same thing right above
@@ -898,7 +902,7 @@ class MainWindow(QMainWindow):
         # look); panels are toggled from the View menu, not dragged around.
         for dock in (self.tray, self.bim_tray, self.georef_tray,
                      self.project_browser, self.layers_dock,
-                     self.scenes_dock):
+                     self.scenes_dock, self.sheets_tray):
             dock.setTitleBarWidget(QWidget(dock))
         self.tray.raise_()
         self._build_sidebar_handle()
@@ -2068,13 +2072,15 @@ class MainWindow(QMainWindow):
 
     #: The tabs younger than some saved layouts, each with the tabs it
     #: follows on a first run, nearest first: Layers after the Browser,
-    #: Scenes after Layers (#1158).
+    #: Scenes after Layers (#1158), Sheets after Scenes.
     _NEW_TRAYS = (("layers_dock", ("project_browser",)),
-                  ("scenes_dock", ("layers_dock", "project_browser")))
+                  ("scenes_dock", ("layers_dock", "project_browser")),
+                  ("sheets_tray", ("scenes_dock", "layers_dock",
+                                   "project_browser")))
 
     def _seat_new_trays(self) -> None:
-        """A tab younger than the saved layout (Layers, Scenes) goes in its
-        place of a first run when that layout does not know it (saved
+        """A tab younger than the saved layout (Layers, Scenes, Sheets) goes
+        in its place of a first run when that layout does not know it (saved
         before it existed) or left it in a block of its own on the same
         side as the other tabs — ``restoreState`` puts a dock it does not
         know apart from the tabs, and closing the window then saved it
@@ -2190,10 +2196,12 @@ class MainWindow(QMainWindow):
                     sorted({str(k) for k in known} | set(names)))
 
     #: The factory order of the side tray's tabs, all on the right:
-    #: Properties first, the model's tree next, then the workspaces.
+    #: Properties first, the model's tree next and the sheets beside it,
+    #: then the workspaces.
     def _default_tray_order(self) -> list:
         return [self.tray, self.project_browser, self.layers_dock,
-                self.scenes_dock, self.bim_tray, self.georef_tray]
+                self.scenes_dock, self.sheets_tray, self.bim_tray,
+                self.georef_tray]
 
     def _lay_out_trays(self) -> None:
         """The trays in their factory place: every one on the right, tabbed
@@ -2328,6 +2336,7 @@ class MainWindow(QMainWindow):
                             getattr(self, "project_browser", None),
                             getattr(self, "layers_dock", None),
                             getattr(self, "scenes_dock", None),
+                            getattr(self, "sheets_tray", None),
                             *getattr(self, "_extension_docks", ()))
                 if d is not None]
 
@@ -6459,8 +6468,8 @@ class MainWindow(QMainWindow):
             return lambda *a: fn(*a) if vp is self.viewport else None
         vp.projectionChanged.connect(live(self._sync_projection_buttons))
         for name in ("tray", "bim_tray", "georef_tray", "project_browser",
-                     "layers_dock", "scenes_dock", "layers_toolbar",
-                     "profile_dock"):
+                     "layers_dock", "scenes_dock", "sheets_tray",
+                     "layers_toolbar", "profile_dock"):
             panel = getattr(self, name, None)
             if panel is not None:
                 vp.sceneVersionChanged.connect(
