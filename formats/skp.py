@@ -263,6 +263,7 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
         # Replace references; never clear lists another part may share.
         part["faces"] = []
         part.pop("soft_edges", None)
+        part.pop("loose_edges", None)
 
     n_parts = max(1, len(groups) + 2 * len(protos))
     done = [0, 0.0]               # parts built, time of the last report
