@@ -6,11 +6,18 @@ A folder is a name and a parent (``None`` at the top), so folders nest as
 deep as wanted. A sheet (:class:`~core.composition.Composicion`) names the
 folder it sits in with ``folder_id`` (``None`` at the top).
 
+Folders and sheets mix freely inside a folder: a folder's ``pos`` says how
+many of its sibling sheets come before it (0: above them all, which is
+where every folder of an older file sits). :func:`children` reads a level
+in that mixed order.
+
 ``scene.compositions`` stays THE order of the sheets — the sheet tabs, the
 PDF atlas and ``{hoja}`` all read it — and :func:`sync_order` keeps it equal
-to the tree read from top to bottom: in each folder, its subfolders first
-(each with everything inside it), then its own sheets. Folders keep their
-order in ``scene.sheet_folders``, sheets theirs in ``scene.compositions``.
+to the tree read from top to bottom. Folders keep their order in
+``scene.sheet_folders``.
+
+Sheets are compared by identity here, never with ``==``: two sheets with
+the same contents are still two sheets.
 
 Nothing here is undoable by itself: the commands in :mod:`core.history`
 call these helpers and keep the undo.
@@ -42,6 +49,10 @@ class SheetFolder:
     #: group hides what it holds in the Browser). What is moved in or out
     #: never changes it.
     print_in_all: bool = True
+    #: Where it sits among its sibling SHEETS: how many of them come before
+    #: it (0: above them all). Folders with the same ``pos`` keep their
+    #: order in ``scene.sheet_folders``.
+    pos: int = 0
 
     def to_dict(self) -> dict:
         d = {"id": self.id, "name": self.name}
@@ -51,16 +62,23 @@ class SheetFolder:
             d["expanded"] = False
         if not self.print_in_all:
             d["print_in_all"] = False
+        if self.pos:
+            d["pos"] = int(self.pos)
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "SheetFolder":
         parent = d.get("parent_id")
+        try:
+            pos = max(0, int(d.get("pos", 0) or 0))
+        except (TypeError, ValueError):
+            pos = 0
         return cls(name=str(d.get("name") or "Folder"),
                    parent_id=str(parent) if parent is not None else None,
                    id=str(d.get("id") or new_folder_id()),
                    expanded=bool(d.get("expanded", True)),
-                   print_in_all=bool(d.get("print_in_all", True)))
+                   print_in_all=bool(d.get("print_in_all", True)),
+                   pos=pos)
 
 
 # ---- Reading the tree ------------------------------------------------------
@@ -94,6 +112,20 @@ def sheets_in(scene, folder_id) -> list:
             or getattr(c, "folder_id", None) not in ids]
 
 
+def children(scene, parent_id) -> list:
+    """What sits directly inside ``parent_id`` (``None``: the top) —
+    folders and sheets mixed, in the order the explorer shows them."""
+    folders = subfolders(scene, parent_id)
+    sheets = sheets_in(scene, parent_id)
+    out: list = []
+    for k, sheet in enumerate(sheets):
+        out.extend(f for f in folders if min(max(f.pos, 0), len(sheets)) == k)
+        out.append(sheet)
+    out.extend(f for f in folders if min(max(f.pos, 0), len(sheets))
+               == len(sheets))
+    return out
+
+
 def descendant_ids(scene, folder_id) -> set:
     """The ids of every folder inside ``folder_id``, at any depth (not
     ``folder_id`` itself)."""
@@ -108,19 +140,29 @@ def descendant_ids(scene, folder_id) -> set:
     return out
 
 
-def tree_order(scene) -> list:
-    """Every sheet, in the order the explorer shows them top to bottom."""
+def _walk(scene):
+    """Every folder and sheet, top to bottom (folders before what they
+    hold)."""
     out: list = []
     seen: set = set()
 
     def walk(folder_id) -> None:
-        for f in subfolders(scene, folder_id):
-            if f.id in seen:            # a cycle: repair() breaks those
-                continue
-            seen.add(f.id)
-            walk(f.id)
-        out.extend(sheets_in(scene, folder_id))
+        for item in children(scene, folder_id):
+            if isinstance(item, SheetFolder):
+                if item.id in seen:     # a cycle: repair() breaks those
+                    continue
+                seen.add(item.id)
+                out.append(item)
+                walk(item.id)
+            else:
+                out.append(item)
     walk(None)
+    return out
+
+
+def tree_order(scene) -> list:
+    """Every sheet, in the order the explorer shows them top to bottom."""
+    out = [x for x in _walk(scene) if not isinstance(x, SheetFolder)]
     # Sheets in a folder the walk never reached (a cycle cut off) still
     # count: at the end, in their order.
     listed = {id(c) for c in out}
@@ -216,15 +258,15 @@ def repair(scene) -> int:
 
 def capture(scene) -> dict:
     """The whole sheet tree as it stands: which folders, their names,
-    parents and order, each sheet's folder and Print flag, the sheet
-    order. The objects themselves are kept, so undo puts back the very
-    same folders and sheets."""
+    parents, places and order, each sheet's folder and Print flag, the
+    sheet order. The objects themselves are kept, so undo puts back the
+    very same folders and sheets."""
     folders = list(folders_of(scene))
     comps = list(getattr(scene, "compositions", None) or [])
     return {
         "folders": folders,
-        "folder_state": [(f.name, f.parent_id, f.expanded, f.print_in_all)
-                         for f in folders],
+        "folder_state": [(f.name, f.parent_id, f.expanded, f.print_in_all,
+                          f.pos) for f in folders],
         "sheets": comps,
         "sheet_state": [(getattr(c, "folder_id", None),
                          getattr(c, "print_in_all", True)) for c in comps],
@@ -240,10 +282,10 @@ def restore(scene, snap: dict) -> None:
     now stay; those the snapshot knows get their folder, Print flag and
     order back, a newer one keeps its place after the sheet it followed."""
     scene.sheet_folders[:] = snap["folders"]
-    for f, (name, parent, expanded, printed) in zip(snap["folders"],
-                                                    snap["folder_state"]):
+    for f, (name, parent, expanded, printed, pos) in zip(
+            snap["folders"], snap["folder_state"]):
         f.name, f.parent_id, f.expanded = name, parent, expanded
-        f.print_in_all = printed
+        f.print_in_all, f.pos = printed, pos
     known = {id(c): state for c, state in zip(snap["sheets"],
                                                snap["sheet_state"])}
     now = list(scene.compositions)
@@ -253,8 +295,11 @@ def restore(scene, snap: dict) -> None:
         if id(c) in known:
             continue
         # A sheet the snapshot never saw: after the one it follows now.
-        prev = next((p for p in reversed(now[:i]) if p in ordered), None)
-        ordered.insert(ordered.index(prev) + 1 if prev is not None else 0, c)
+        placed = {id(x) for x in ordered}
+        prev = next((p for p in reversed(now[:i]) if id(p) in placed), None)
+        at = (next(k for k, x in enumerate(ordered) if x is prev) + 1
+              if prev is not None else 0)
+        ordered.insert(at, c)
     for c in ordered:
         if id(c) in known:
             c.folder_id, c.print_in_all = known[id(c)]
@@ -277,59 +322,91 @@ def can_move_folder(scene, folder, target_id) -> bool:
         target_id not in descendant_ids(scene, folder.id)
 
 
+def _layout(scene) -> dict:
+    """``{parent id: [children…]}`` for the top and every folder."""
+    lay = {None: children(scene, None)}
+    for f in folders_of(scene):
+        lay[f.id] = children(scene, f.id)
+    return lay
+
+
+def _apply(scene, lay: dict) -> None:
+    """Write a layout back: each child's parent, each folder's place among
+    its sibling sheets, and the folder and sheet orders, read from the top
+    down."""
+    folders: list = []
+    sheets: list = []
+    seen: set = set()
+
+    def walk(parent_id) -> None:
+        before = 0
+        for item in lay.get(parent_id, ()):
+            if isinstance(item, SheetFolder):
+                if item.id in seen:
+                    continue
+                seen.add(item.id)
+                item.parent_id = parent_id
+                item.pos = before
+                folders.append(item)
+                walk(item.id)
+            else:
+                item.folder_id = parent_id
+                sheets.append(item)
+                before += 1
+    walk(None)
+    listed = {id(x) for x in sheets}
+    sheets += [c for c in getattr(scene, "compositions", None) or []
+               if id(c) not in listed]
+    kept = {id(f) for f in folders}
+    folders += [f for f in folders_of(scene) if id(f) not in kept]
+    scene.sheet_folders[:] = folders
+    scene.compositions[:] = sheets
+
+
 def move_items(scene, sheets, folders, target_id, before=None) -> None:
     """Put ``sheets`` and ``folders`` into folder ``target_id`` (``None``:
-    the top). ``before`` is the item (a sheet or a folder) they go in
-    front of; ``None`` puts them at the end — sheets after the folder's
-    sheets, folders after its subfolders. A folder that would land inside
-    itself is left where it is."""
+    the top), in front of ``before`` (a sheet or a folder there; ``None``:
+    at the end), in the order they are shown. A folder that would land
+    inside itself stays where it is, and what a moving folder holds travels
+    with it."""
     folders = [f for f in folders if can_move_folder(scene, f, target_id)]
+    inside: set = set()
     for f in folders:
-        f.parent_id = target_id
-    for c in sheets:
-        c.folder_id = target_id
-    if folders:
-        lst = scene.sheet_folders
-        moving = [f for f in lst if f in folders]      # keep their order
-        rest = [f for f in lst if f not in folders]
-        at = len(rest)
-        if isinstance(before, SheetFolder) and before in rest:
-            at = rest.index(before)
-        elif before is None or not isinstance(before, SheetFolder):
-            # At the end of the target's subfolders.
-            last = [i for i, f in enumerate(rest) if f.parent_id == target_id]
-            at = last[-1] + 1 if last else len(rest)
-        lst[:] = rest[:at] + moving + rest[at:]
-    if sheets:
-        comps = scene.compositions
-        moving = [c for c in comps if c in sheets]
-        rest = [c for c in comps if c not in sheets]
-        at = len(rest)
-        if before is not None and not isinstance(before, SheetFolder) \
-                and before in rest:
-            at = rest.index(before)
-        comps[:] = rest[:at] + moving + rest[at:]
-    sync_order(scene)
+        inside |= {f.id} | descendant_ids(scene, f.id)
+    moving_ids = {id(c) for c in sheets if c.folder_id not in inside}
+    moving_ids |= {id(f) for f in folders if f.parent_id not in inside}
+    if not moving_ids:
+        return
+    moving = [x for x in _walk(scene) if id(x) in moving_ids]
+    lay = _layout(scene)
+    for key in lay:
+        lay[key] = [x for x in lay[key] if id(x) not in moving_ids]
+    target = lay.setdefault(target_id, [])
+    at = next((k for k, x in enumerate(target) if x is before), len(target))
+    target[at:at] = moving
+    _apply(scene, lay)
 
 
 def delete_folders(scene, folders) -> None:
     """Remove ``folders``; what they hold — sheets and subfolders — moves one
-    level up, to the nearest folder above that is not being removed."""
+    level up, in the folder's place, to the nearest folder above that is
+    not being removed."""
     gone = {f.id for f in folders}
-    by_id = {f.id: f for f in folders_of(scene)}
-
-    def keeper(fid):
-        while fid is not None and fid in gone:
-            parent = by_id.get(fid)
-            fid = parent.parent_id if parent is not None else None
-        return fid
-
-    for f in folders_of(scene):
-        if f.id not in gone and f.parent_id in gone:
-            f.parent_id = keeper(f.parent_id)
-    for c in getattr(scene, "compositions", None) or []:
-        if getattr(c, "folder_id", None) in gone:
-            c.folder_id = keeper(c.folder_id)
-    scene.sheet_folders[:] = [f for f in folders_of(scene)
-                              if f.id not in gone]
-    sync_order(scene)
+    lay = _layout(scene)
+    changed = True
+    while changed:                      # a removed folder inside another
+        changed = False
+        for key, items in lay.items():
+            out: list = []
+            for x in items:
+                if isinstance(x, SheetFolder) and x.id in gone:
+                    out.extend(lay.get(x.id, ()))
+                    changed = True
+                else:
+                    out.append(x)
+            lay[key] = out
+    for fid in gone:
+        lay.pop(fid, None)
+    keep = [f for f in folders_of(scene) if f.id not in gone]
+    scene.sheet_folders[:] = keep
+    _apply(scene, lay)
