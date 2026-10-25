@@ -734,6 +734,32 @@ def _face_boxes(defn):
     return boxes
 
 
+def _image_geometry_bounds(defn):
+    """A conservative local box, without resolving any face rings.
+
+    Every resolved ring corner comes from this vertex table. Unused vertices
+    can only enlarge the box. Invalid/non-finite unused coordinates must not
+    reject valid faces: in that case leave the existing face test in charge.
+    The caller caches only six floats per definition for this image query.
+    """
+    import numpy as np
+
+    vertices = getattr(defn, "vertices", {})
+    if not vertices or not getattr(defn, "faces", None):
+        return None
+    try:
+        points = np.fromiter(
+            (c for v in vertices.values() for c in (v.x, v.y, v.z)),
+            dtype=np.float64, count=3 * len(vertices)).reshape(-1, 3)
+        points *= _INCH
+        lo, hi = points.min(axis=0), points.max(axis=0)
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+    if not (np.isfinite(lo).all() and np.isfinite(hi).all()):
+        return None
+    return lo, hi
+
+
 def _rests_on_a_face(roots, by_id, quad) -> bool:
     """Whether the image quad ``quad`` (world ``QVector3D`` corners) lies ON
     a face of the model: parallel to it, within ``_GLUE_TOL``, with its
@@ -781,26 +807,47 @@ def _rests_on_a_face(roots, by_id, quad) -> bool:
                 inside = not inside
         return inside
 
+    bounds = {}
+
     def walk(defn, m, depth, stack):
         if depth > _MAX_DEPTH or id(defn) in stack:
             return False
         stack = stack | {id(defn)}
-        lo, hi = _face_boxes(defn)
-        if len(lo):
-            inv = np.linalg.inv(m)
-            c = inv[:3, :3] @ centre + inv[:3, 3]
-            # The tolerance in this frame: a scaled-down copy needs more.
-            s = min(np.linalg.norm(m[:3, :3], axis=0).min(), 1.0) or 1.0
-            tol = _GLUE_TOL / s
-            hit = np.nonzero(np.all((lo - tol <= c) & (c <= hi + tol),
-                                    axis=1))[0]
-            if len(hit):
-                pos_m, _raw, meta = _defn_geom(defn)
-                for k in hit:
-                    _f, s0, s1, _hs = meta[k]
-                    world = pos_m[s0:s1] @ m[:3, :3].T + m[:3, 3]
-                    if on_face(world):
-                        return True
+        oid = id(defn)
+        if oid not in bounds:
+            bounds[oid] = _image_geometry_bounds(defn)
+        box = bounds[oid]
+        test_faces = True
+        if box is not None:
+            try:
+                inv = np.linalg.inv(m)
+            except np.linalg.LinAlgError:
+                # Preserve the old behavior for singular placements: an empty
+                # resolved mesh need not invert, a nonempty one still raises.
+                pass
+            else:
+                c = inv[:3, :3] @ centre + inv[:3, 3]
+                s = min(np.linalg.norm(m[:3, :3], axis=0).min(), 1.0) or 1.0
+                tol = _GLUE_TOL / s
+                lo, hi = box
+                test_faces = bool(np.all((lo - tol <= c) & (c <= hi + tol)))
+        if test_faces:
+            lo, hi = _face_boxes(defn)
+            if len(lo):
+                inv = np.linalg.inv(m)
+                c = inv[:3, :3] @ centre + inv[:3, 3]
+                # The tolerance in this frame: a scaled-down copy needs more.
+                s = min(np.linalg.norm(m[:3, :3], axis=0).min(), 1.0) or 1.0
+                tol = _GLUE_TOL / s
+                hit = np.nonzero(np.all((lo - tol <= c) & (c <= hi + tol),
+                                        axis=1))[0]
+                if len(hit):
+                    pos_m, _raw, meta = _defn_geom(defn)
+                    for k in hit:
+                        _f, s0, s1, _hs = meta[k]
+                        world = pos_m[s0:s1] @ m[:3, :3].T + m[:3, 3]
+                        if on_face(world):
+                            return True
         for ins in getattr(defn, "instances", []):
             child = by_id.get(getattr(ins, "ref_idx", None))
             if child is None or getattr(child, "is_image", False) or \
