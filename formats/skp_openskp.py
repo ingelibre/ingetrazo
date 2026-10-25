@@ -1211,13 +1211,23 @@ def _is_empty_model(model, skp_path, legacy_era: bool) -> bool:
 
 def _adapt(model, name: str, skp_path=None, *, consume=False):
     """Adapt with a bounded temporary geometry cache, including on failure."""
+    import gc
+
+    enabled = gc.isenabled()
     cache = _GeometryCache(_GEOMETRY_CACHE_BYTES)
     token = _geometry_cache.set(cache)
+    gc.disable()
     try:
-        return _adapt_inner(model, name, skp_path, consume=consume)
+        if consume:
+            return _adapt_inner(model, name, skp_path, consume=True)
+        return _adapt_inner(model, name, skp_path)
     finally:
-        cache.clear()
-        _geometry_cache.reset(token)
+        try:
+            cache.clear()
+            _geometry_cache.reset(token)
+        finally:
+            if enabled:
+                gc.enable()
 
 
 def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
