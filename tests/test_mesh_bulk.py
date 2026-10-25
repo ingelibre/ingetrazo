@@ -105,3 +105,103 @@ def test_bulk_weld_reuses_preexisting_vertices():
     vobjs, ids = mesh.bulk_weld(np.array([(0.0, 0.0, 0.0), (5.0, 0.0, 0.0)]))
     assert vobjs[ids[0]] is v0
     assert len(mesh.vertices) == 2
+
+
+def _reference_bulk_weld(mesh, points):
+    """Scalar oracle: isolated cells first, then candidate points in order."""
+    from core.mesh import _key
+
+    points = [QVector3D(*p) for p in np.asarray(points, dtype=np.float32).tolist()]
+    keys = [_key(p) for p in points]
+    first = {}
+    for i, key in enumerate(keys):
+        first.setdefault(key, i)
+    cells = set(first)
+    candidates = {
+        key for key in cells if any(
+            (key[0] + dx, key[1] + dy, key[2] + dz) in mesh._registry
+            or ((dx or dy or dz)
+                and (key[0] + dx, key[1] + dy, key[2] + dz) in cells)
+            for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1))
+    }
+    touched, indices = [], {}
+
+    def index(vertex):
+        if vertex not in indices:
+            indices[vertex] = len(touched)
+            touched.append(vertex)
+        return indices[vertex]
+
+    for key, i in first.items():
+        if key not in candidates:
+            index(mesh.vertex(points[i]))
+    ids = [index(mesh.vertex(p)) for p in points]
+    return touched, np.array(ids, dtype=np.int64)
+
+
+@pytest.mark.parametrize("seed", range(24))
+@pytest.mark.parametrize("existing", [False, True])
+def test_bulk_weld_preserves_exact_order_at_cell_boundaries(seed, existing):
+    rng = np.random.default_rng(seed)
+    offsets = np.array([0, 1e-6, -1e-6, 4.9e-5, 5.1e-5, 9.9e-5, 1.01e-4])
+    points = rng.integers(-3, 4, size=(180, 3)) * 0.5
+    points += rng.choice(offsets, size=points.shape)
+    line = np.zeros((40, 3))
+    line[:, 0] = np.arange(40) * 4.9e-5
+    points = np.concatenate([points, line, points[:40],
+                             [[-1e8, 0, 0], [1e8, 0, 0]]])
+    rng.shuffle(points)
+    a, b = Mesh(), Mesh()
+    if existing:
+        for p in points[::11]:
+            a.vertex(QVector3D(*p))
+            b.vertex(QVector3D(*p))
+    av, ai = _reference_bulk_weld(a, points)
+    bv, bi = b.bulk_weld(points)
+    assert [v.position.toTuple() for v in a.vertices] == \
+        [v.position.toTuple() for v in b.vertices]
+    assert [v.position.toTuple() for v in av] == [v.position.toTuple() for v in bv]
+    assert ai.tolist() == bi.tolist()
+    assert {k: a.vertices.index(v) for k, v in a._registry.items()} == \
+        {k: b.vertices.index(v) for k, v in b._registry.items()}
+
+
+def test_bulk_weld_resave_matches_scalar_oracle(tmp_path, monkeypatch):
+    from core.scene import Scene
+    from formats import igz
+    from tests.test_deferred_mesh import _painted_scene
+    from tests.test_igz_format3 import _canonical
+
+    monkeypatch.setenv("INGETRAZO_RUST", "0")
+    monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 0)
+    monkeypatch.setattr(igz, "_BULK_MIN", 1)
+    source = tmp_path / "source.igz"
+    igz.save_scene(_painted_scene(8, tmp_path), source)
+    actual, expected = Scene(), Scene()
+    igz.load_into(actual, source)
+    with monkeypatch.context() as mp:
+        mp.setattr(Mesh, "bulk_weld", _reference_bulk_weld)
+        igz.load_into(expected, source)
+    assert _canonical(actual) == _canonical(expected)
+    before, after = tmp_path / "before.igz", tmp_path / "after.igz"
+    igz.save_scene(expected, before)
+    igz.save_scene(actual, after)
+    assert before.read_bytes() == after.read_bytes()
+
+
+def test_weld_candidate_padding_and_integer_overflow_fallback(monkeypatch):
+    from types import SimpleNamespace
+    from core.mesh import _weld_candidates
+
+    # Sparse gaps and axis boundaries must not turn a packed carry into a
+    # neighbouring cell. Compare against literal 26-neighbour membership.
+    keys = np.array([[-10, 0, 0], [-9, 1, -1], [0, 0, 0], [0, 0, 1000],
+                     [0, 3, 0], [1, -1000, 0], [1, -999, 1], [1000, 1, 1]])
+    cells = {tuple(k) for k in keys.tolist()}
+    expected = [any((x + dx, y + dy, z + dz) in cells
+                    for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
+                    if dx or dy or dz) for x, y, z in keys.tolist()]
+    assert _weld_candidates(keys).tolist() == expected
+    # Force the unbounded-integer branch without allocating millions of cells.
+    monkeypatch.setattr(np, "iinfo", lambda dtype: SimpleNamespace(max=31))
+    assert _weld_candidates(keys).tolist() == expected
