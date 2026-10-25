@@ -1940,6 +1940,111 @@ class MoveSheetCommand(Command):
         scene.version += 1
 
 
+class _SheetTreeCommand(Command):
+    """A change to the sheet explorer's tree (core.sheet_folders), undone by
+    putting the whole tree back as it was: folders, their names and
+    parents, each sheet's folder and Print flag, the sheet order. The tree
+    is small, so the snapshot is cheap — and it is exact, however the
+    change moved things around."""
+
+    def __init__(self) -> None:
+        self._before: Optional[dict] = None
+        self._after: Optional[dict] = None
+
+    def _apply(self, scene) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def do(self, scene) -> None:
+        from core import sheet_folders as sf
+        if self._after is not None:             # redo: the same result
+            sf.restore(scene, self._after)
+        else:
+            self._before = sf.capture(scene)
+            try:
+                self._apply(scene)
+            except BaseException:
+                # History restores the mesh only: the tree goes back here.
+                sf.restore(scene, self._before)
+                raise
+            self._after = sf.capture(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from core import sheet_folders as sf
+        if self._before is not None:
+            sf.restore(scene, self._before)
+        scene.version += 1
+
+
+class AddSheetFolderCommand(_SheetTreeCommand):
+    """A new folder in the sheet explorer, inside ``folder.parent_id``
+    (``None``: the top), after the folders already there."""
+
+    def __init__(self, folder) -> None:
+        super().__init__()
+        self.folder = folder
+
+    def _apply(self, scene) -> None:
+        from core import sheet_folders as sf
+        scene.sheet_folders.append(self.folder)
+        sf.sync_order(scene)
+
+
+class RenameSheetFolderCommand(_SheetTreeCommand):
+    def __init__(self, folder, name: str) -> None:
+        super().__init__()
+        self.folder = folder
+        self.name = name
+
+    def _apply(self, scene) -> None:
+        self.folder.name = self.name
+
+
+class DeleteSheetFoldersCommand(_SheetTreeCommand):
+    """Remove folders; the sheets and folders they hold move one level up.
+    No sheet is ever deleted with its folder."""
+
+    def __init__(self, folders) -> None:
+        super().__init__()
+        self.folders = list(folders)
+
+    def _apply(self, scene) -> None:
+        from core import sheet_folders as sf
+        sf.delete_folders(scene, self.folders)
+
+
+class MoveSheetItemsCommand(_SheetTreeCommand):
+    """Sheets and/or folders into folder ``target_id`` (``None``: the top),
+    in front of ``before`` (a sheet or folder) or at the end — what a drag
+    and drop in the sheet explorer does. A folder is never put inside
+    itself."""
+
+    def __init__(self, sheets, folders, target_id, before=None) -> None:
+        super().__init__()
+        self.sheets = list(sheets)
+        self.folders = list(folders)
+        self.target_id = target_id
+        self.before = before
+
+    def _apply(self, scene) -> None:
+        from core import sheet_folders as sf
+        sf.move_items(scene, self.sheets, self.folders, self.target_id,
+                      self.before)
+
+
+class SetSheetPrintCommand(_SheetTreeCommand):
+    """Whether Print all and Export all take these sheets."""
+
+    def __init__(self, sheets, printed: bool) -> None:
+        super().__init__()
+        self.sheets = list(sheets)
+        self.printed = bool(printed)
+
+    def _apply(self, scene) -> None:
+        for c in self.sheets:
+            c.print_in_all = self.printed
+
+
 class CreatePlanCommand(Command):
     """A floor plan from a group, in one undo step: a horizontal section
     plane at the cut height (made the active cut), a scene looking down on
@@ -3519,6 +3624,8 @@ class SnapshotImport(Command):
         ("dimensions", "added_dims", "removed_dims"),
         ("text_labels", "added_texts", "removed_texts"),
         ("compositions", "added_sheets", "removed_sheets"),
+        # the sheet browser's folders (core.sheet_folders)
+        ("sheet_folders", "added_sheet_folders", "removed_sheet_folders"),
     )
 
     def __init__(self, mutate) -> None:

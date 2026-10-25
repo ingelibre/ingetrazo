@@ -1370,6 +1370,11 @@ class Composicion:
     # implementar eso en composición»).
     guides_v: list = field(default_factory=list)
     guides_h: list = field(default_factory=list)
+    #: The sheet explorer's folder this sheet sits in (``None``: the top;
+    #: see :mod:`core.sheet_folders`).
+    folder_id: Optional[str] = None
+    #: Whether Print all and Export all take this sheet.
+    print_in_all: bool = True
 
     def page_size_mm(self) -> tuple[float, float]:
         w, h = PAPER_SIZES_MM[self.paper]
@@ -1435,6 +1440,12 @@ class Composicion:
         if self.guides_v or self.guides_h:
             d["guides"] = {"v": [float(x) for x in self.guides_v],
                            "h": [float(y) for y in self.guides_h]}
+        # Only when not the default, so a sheet outside any folder and in
+        # Print all saves exactly as before.
+        if self.folder_id is not None:
+            d["folder_id"] = self.folder_id
+        if not self.print_in_all:
+            d["print_in_all"] = False
         return d
 
     @classmethod
@@ -1473,6 +1484,9 @@ class Composicion:
         if isinstance(g, dict):
             c.guides_v = [float(x) for x in (g.get("v") or [])]
             c.guides_h = [float(y) for y in (g.get("h") or [])]
+        fid = d.get("folder_id")
+        c.folder_id = str(fid) if fid is not None else None
+        c.print_in_all = bool(d.get("print_in_all", True))
         _migrate_fixed_scale_labels(c)
         return c
 
