@@ -247,30 +247,33 @@ def _face_attrs_json(f) -> dict:
     """Everything a face stores besides its loops — the part a format-3
     geometry block keeps as JSON, in a table shared by equal faces."""
     entry: dict = {}
+    # One lookup of the attrs dict, not one per key: this runs once per
+    # face, millions of times on a big save.
+    get = getattr(f, "attrs", {}).get
     # Material colour (the Paint tool), written only when set.
-    color = getattr(f, "attrs", {}).get("color")
+    color = get("color")
     if color is not None:
         entry["color"] = list(color)
-    texture = getattr(f, "attrs", {}).get("texture")
+    texture = get("texture")
     if texture is not None:
         entry["texture"] = dict(texture)
-    layer = getattr(f, "attrs", {}).get("layer")
+    layer = get("layer")
     if layer is not None:
         entry["layer"] = layer
-    ifc = getattr(f, "attrs", {}).get("ifc")
+    ifc = get("ifc")
     if ifc is not None:
         entry["ifc"] = dict(ifc)
-    opacity = getattr(f, "attrs", {}).get("opacity")
+    opacity = get("opacity")
     if opacity is not None:
         entry["opacity"] = float(opacity)
-    if getattr(f, "attrs", {}).get("hidden"):
+    if get("hidden"):
         entry["hidden"] = True          # Hide on a face
     # Material identity (core.materials): the registry name this face was
     # painted with. Written only when present; older readers ignore it.
-    mat = getattr(f, "attrs", {}).get("mat")
+    mat = get("mat")
     if mat:
         entry["mat"] = mat
-    back = getattr(f, "attrs", {}).get("back")
+    back = get("back")
     if isinstance(back, dict):
         # Deep-copy the nested texture: _pack_textures rewrites the entries it
         # finds, and it must never reach into the live scene's attrs.
@@ -282,6 +285,13 @@ def _face_attrs_json(f) -> dict:
         # both sides becomes). Absent = the style's default back.
         entry["back"] = True
     return entry
+
+
+#: The key equal face attributes share in a format-3 attribute table: the
+#: entry as compact, key-sorted JSON. One encoder for the whole save —
+#: json.dumps builds a fresh one per call, a quarter of the key's cost on
+#: two million faces.
+_attrs_key = json.JSONEncoder(sort_keys=True, separators=(",", ":")).encode
 
 
 def _edge_json(e) -> dict:
@@ -408,7 +418,7 @@ def _pack_geometry(mesh, sink: dict) -> dict:
             corners.extend(h)
         attrs = _face_attrs_json(f) if f.attrs else None
         if attrs:
-            key = json.dumps(attrs, sort_keys=True, separators=(",", ":"))
+            key = _attrs_key(attrs)
             k = table_index.get(key)
             if k is None:
                 k = table_index[key] = len(table)
@@ -551,7 +561,7 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
             js = _face_attrs_json(SimpleNamespace(attrs=attrs)) \
                 if attrs else None
             if js:
-                key = json.dumps(js, sort_keys=True, separators=(",", ":"))
+                key = _attrs_key(js)
                 t = table_index.get(key)
                 if t is None:
                     t = table_index[key] = len(table)
