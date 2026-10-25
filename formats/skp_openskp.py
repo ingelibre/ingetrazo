@@ -33,6 +33,8 @@ later refinement). Both joins are guarded, so PyPI 0.2.0 still imports (uncolour
 """
 from __future__ import annotations
 
+from collections import OrderedDict
+from contextvars import ContextVar
 from pathlib import Path
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
@@ -41,6 +43,51 @@ from core.texture import fit_uv_affine, projection_basis
 
 _INCH = 0.0254          # .skp internal unit → metres
 _MAX_DEPTH = 32         # guard against pathological instance nesting
+_GEOMETRY_CACHE_BYTES = 64 * 1024 * 1024
+_geometry_cache = ContextVar("skp_geometry_cache", default=None)
+
+
+class _GeometryCache:
+    """Bound adapter-owned derived geometry for one adaptation.
+
+    Eviction drops only our cached reference; callers currently reading the
+    geometry keep their local references. Raw definition geometry is untouched.
+    """
+
+    def __init__(self, limit):
+        self.limit = limit
+        self.entries = OrderedDict()
+        self.size = 0
+
+    def remember(self, definition, attribute, value, size):
+        key = (id(definition), attribute)
+        previous = self.entries.pop(key, None)
+        if previous is not None:
+            self.size -= previous[3]
+        self.entries[key] = (definition, attribute, value, size)
+        self.size += size
+        while self.size > self.limit:
+            self._evict()
+
+    def _evict(self):
+        _key, (definition, attribute, value, size) = self.entries.popitem(last=False)
+        self.size -= size
+        if getattr(definition, attribute, None) is value:
+            delattr(definition, attribute)
+
+    def clear(self):
+        while self.entries:
+            self._evict()
+
+
+def _remember_geometry(definition, attribute, value, size):
+    try:
+        setattr(definition, attribute, value)
+    except AttributeError:  # __slots__ definition: skip the cache
+        return
+    cache = _geometry_cache.get()
+    if cache is not None:
+        cache.remember(definition, attribute, value, size)
 
 
 def _ring_raw(defn, loop):
@@ -411,10 +458,11 @@ def _defn_geom(defn):
         meta.append((face, s0, s1, hs))
     pos_m = np.asarray(flat, dtype=np.float64).reshape(-1, 3) * _INCH
     geom = (pos_m, flat, meta)
-    try:
-        defn._geom = geom
-    except AttributeError:          # __slots__ definition: skip the cache
-        pass
+    # Estimate Python tuple/list metadata conservatively without traversing
+    # every coordinate again. Float objects themselves belong to the source.
+    size = pos_m.nbytes + 96 * len(flat) + 256 * len(meta)
+    size += 128 * sum(len(item[3]) for item in meta)
+    _remember_geometry(defn, "_geom", geom, size)
     return geom
 
 
@@ -644,10 +692,8 @@ def _face_boxes(defn):
                              count=len(meta))
         boxes = (np.minimum.reduceat(pos_m, starts, axis=0),
                  np.maximum.reduceat(pos_m, starts, axis=0))
-    try:
-        defn._face_boxes = boxes
-    except AttributeError:
-        pass
+    _remember_geometry(defn, "_face_boxes", boxes,
+                       sum(array.nbytes for array in boxes))
     return boxes
 
 
@@ -756,10 +802,7 @@ def _soft_edge_segments(defn, xform, out) -> None:
             pairs.append((va.x, va.y, va.z))
             pairs.append((vb.x, vb.y, vb.z))
         arr = np.asarray(pairs, dtype=np.float64).reshape(-1, 3) * _INCH
-        try:
-            defn._soft_arr = arr
-        except AttributeError:      # __slots__ definition: just skip the cache
-            pass
+        _remember_geometry(defn, "_soft_arr", arr, arr.nbytes)
     if not len(arr):
         return
     wl = _world_points(arr, xform)
@@ -1074,6 +1117,17 @@ def _is_empty_model(model, skp_path, legacy_era: bool) -> bool:
 
 
 def _adapt(model, name: str, skp_path=None):
+    """Adapt with a bounded temporary geometry cache, including on failure."""
+    cache = _GeometryCache(_GEOMETRY_CACHE_BYTES)
+    token = _geometry_cache.set(cache)
+    try:
+        return _adapt_inner(model, name, skp_path)
+    finally:
+        cache.clear()
+        _geometry_cache.reset(token)
+
+
+def _adapt_inner(model, name: str, skp_path=None):
     """An ``SkpModel`` → a payload ``{"backend", "groups", "protos"}`` or
     ``None`` when it yields no geometry (the seam reports it as unreadable).
 
