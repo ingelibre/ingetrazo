@@ -30,6 +30,7 @@ def test_adapter_releases_definitions_without_a_gc_sweep():
         payload = skp_openskp._adapt(model, "model")
         again = skp_openskp._adapt(model, "model")
         assert model.definitions[0] is root
+        assert not hasattr(root, "_geom")
         assert payload == again
         assert len(payload["groups"][0]["faces"]) == 1
         del root, model
