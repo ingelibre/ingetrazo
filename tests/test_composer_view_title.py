@@ -41,7 +41,7 @@ def test_title_texts_default_to_the_view_name_and_expand_fields():
     f = composer.comp.frames[0]
     f.view_key, f.scale_n, f.show_title = "std:top", 50.0, True
     t = view_title_texts(f)
-    assert t["title"] == "Top (plan)" and t["scale"] == "ESC. 1:50"
+    assert t["title"] == "Top (plan)" and t["scale"] == "SCALE 1:50"
     assert t["number"] == "" and t["sheet"] == "" and t["subtitle"] == ""
     assert frame_title_text(f) == "Top (plan) — 1:50"     # the DXF layer name
     f.title_text = "PLANTA — {escala}"
