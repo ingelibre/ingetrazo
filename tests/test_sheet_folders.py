@@ -165,8 +165,8 @@ def test_moving_a_folder_takes_everything_inside_it():
     scene, plans, roof, details = _doc()
     History(scene).execute(MoveSheetItemsCommand([], [roof], details.id))
     assert roof.parent_id == details.id
-    # Details: Roof (R) first, then D; Plans now only G.
-    assert _names(scene.compositions) == ["G", "R", "D", "A"]
+    # Details: D, then Roof (R) at the end; Plans now only G.
+    assert _names(scene.compositions) == ["G", "D", "R", "A"]
 
 
 def test_a_folder_cannot_go_into_itself_or_below_itself():
@@ -178,6 +178,59 @@ def test_a_folder_cannot_go_into_itself_or_below_itself():
     assert plans.parent_id is None
     assert not sf.can_move_folder(scene, plans, roof.id)
     assert sf.can_move_folder(scene, roof, None)
+
+
+def test_folders_and_sheets_mix_in_any_order():
+    """A folder is not stuck above the sheets of its level: it can sit
+    between them, or below all of them."""
+    scene, plans, roof, details = _doc()
+    a = _sheet(scene, "A")
+    History(scene).execute(MoveSheetItemsCommand([], [details], None))
+    assert [x.name for x in sf.children(scene, None)] == [
+        "Plans", "A", "Details"]                       # below the sheet
+    assert details.pos == 1
+    assert _names(scene.compositions) == ["R", "G", "A", "D"]
+    History(scene).execute(MoveSheetItemsCommand([a], [], None,
+                                                 before=plans))
+    assert [x.name for x in sf.children(scene, None)] == [
+        "A", "Plans", "Details"]
+    assert _names(scene.compositions) == ["A", "R", "G", "D"]
+
+
+def test_deleting_a_folder_puts_what_it_holds_in_its_place():
+    scene, plans, roof, details = _doc()
+    History(scene).execute(MoveSheetItemsCommand([], [details], None))
+    hist = History(scene)
+    hist.execute(DeleteSheetFoldersCommand([plans]))   # Roof, G move up
+    assert [x.name for x in sf.children(scene, None)] == [
+        "Roof", "G", "A", "Details"]
+    hist.undo()
+    assert [x.name for x in sf.children(scene, None)] == [
+        "Plans", "A", "Details"]
+
+
+def test_a_folder_s_place_survives_save_and_open(tmp_path):
+    scene, plans, roof, details = _doc()
+    History(scene).execute(MoveSheetItemsCommand([], [details], None))
+    back, path = _round_trip(scene, tmp_path)
+    assert [x.name for x in sf.children(back, None)] == [
+        "Plans", "A", "Details"]
+    data = json.loads(path.read_text(encoding="utf-8"))["scene"]
+    saved = {f["name"]: f for f in data["sheet_folders"]}
+    assert saved["Details"]["pos"] == 1 and "pos" not in saved["Plans"]
+
+
+def test_two_equal_sheets_stay_two():
+    """Sheets are compared by identity: two with the same contents moved
+    apart must not be taken for one another."""
+    scene = Scene()
+    folder = SheetFolder("F")
+    scene.sheet_folders.append(folder)
+    one, two = Composicion(name="Same"), Composicion(name="Same")
+    scene.compositions[:] = [one, two]
+    History(scene).execute(MoveSheetItemsCommand([two], [], folder.id))
+    assert one.folder_id is None and two.folder_id == folder.id
+    assert scene.compositions[0] is two and scene.compositions[1] is one
 
 
 def test_a_folder_moves_in_front_of_another():

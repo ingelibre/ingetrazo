@@ -249,8 +249,8 @@ class SheetExplorer(QWidget):
     def _fingerprint(self, scene) -> tuple:
         current = getattr(self._composer_win, "comp", None)
         return (
-            tuple((f.id, f.name, f.parent_id, f.expanded, f.print_in_all)
-                  for f in sf.folders_of(scene)),
+            tuple((f.id, f.name, f.parent_id, f.expanded, f.print_in_all,
+                   f.pos) for f in sf.folders_of(scene)),
             tuple((id(c), c.name, c.folder_id, c.print_in_all,
                    tuple((id(f), f.view_key, f.scale_n) for f in c.frames))
                   for c in scene.compositions),
@@ -331,20 +331,25 @@ class SheetExplorer(QWidget):
         from views.composer import frame_view_name
 
         def add(parent_item, folder_id, seen) -> None:
-            for f in sf.subfolders(scene, folder_id):
-                if f.id in seen:
+            # Folders and sheets mixed, as the user placed them.
+            for entry in sf.children(scene, folder_id):
+                if isinstance(entry, sf.SheetFolder):
+                    f = entry
+                    if f.id in seen:
+                        continue
+                    item = QTreeWidgetItem([f.name, ""])
+                    item.setData(COL_NAME, Qt.UserRole, (_FOLDER, f))
+                    item.setIcon(COL_NAME, _icon("folder"))
+                    self._set_print_cell(scene, item, f)
+                    item.setFlags(item.flags() | Qt.ItemIsEditable
+                                  | Qt.ItemIsDragEnabled
+                                  | Qt.ItemIsDropEnabled)
+                    parent_item.addChild(item)
+                    self.items[id(f)] = item
+                    add(item, f.id, seen | {f.id})
+                    item.setExpanded(f.expanded)
                     continue
-                item = QTreeWidgetItem([f.name, ""])
-                item.setData(COL_NAME, Qt.UserRole, (_FOLDER, f))
-                item.setIcon(COL_NAME, _icon("folder"))
-                self._set_print_cell(scene, item, f)
-                item.setFlags(item.flags() | Qt.ItemIsEditable
-                              | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled)
-                parent_item.addChild(item)
-                self.items[id(f)] = item
-                add(item, f.id, seen | {f.id})
-                item.setExpanded(f.expanded)
-            for c in sf.sheets_in(scene, folder_id):
+                c = entry
                 item = QTreeWidgetItem([c.name, ""])
                 item.setData(COL_NAME, Qt.UserRole, (_SHEET, c))
                 item.setIcon(COL_NAME, _icon("sheet"))
@@ -708,11 +713,6 @@ class SheetExplorer(QWidget):
         sheets = [c for c in sheets if c.folder_id not in moving_ids]
         if not sheets and not folders:
             return
-        if isinstance(before, sf.SheetFolder) and sheets and not folders:
-            # Sheets sit after the subfolders: «above a folder» is the
-            # folder's first sheet place.
-            before = next((c for c in sf.sheets_in(scene, target_id)
-                           if c not in sheets), None)
         from core.history import MoveSheetItemsCommand
         self._history().execute(MoveSheetItemsCommand(
             sheets, folders, target_id, before))
@@ -761,37 +761,29 @@ class SheetExplorer(QWidget):
     def _next_sibling(scene, obj, sheets, folders):
         """The item after ``obj`` in its folder that is not moving — what
         «after ``obj``» goes in front of (``None``: the end)."""
-        if isinstance(obj, sf.SheetFolder):
-            sibs = [f for f in sf.subfolders(scene, obj.parent_id)
-                    if f not in folders]
-            rest = sibs[sibs.index(obj) + 1:] if obj in sibs else []
-            if rest:
-                return rest[0]
-            if sheets and not folders:
-                return next((c for c in sf.sheets_in(scene, obj.parent_id)
-                             if c not in sheets), None)
-            return None
-        sibs = [c for c in sf.sheets_in(scene, obj.folder_id)
-                if c not in sheets]
-        rest = sibs[sibs.index(obj) + 1:] if obj in sibs else []
+        moving = {id(x) for x in list(sheets) + list(folders)}
+        parent = (obj.parent_id if isinstance(obj, sf.SheetFolder)
+                  else obj.folder_id)
+        sibs = [x for x in sf.children(scene, parent)
+                if id(x) not in moving or x is obj]
+        at = next((k for k, x in enumerate(sibs) if x is obj), None)
+        rest = [x for x in sibs[at + 1:] if id(x) not in moving] \
+            if at is not None else []
         return rest[0] if rest else None
 
     def move_current(self, step: int) -> None:
         """Alt+↑/↓: the current sheet (or folder) one place up or down
-        among its neighbours in the same folder."""
+        among its neighbours in the same folder — sheets and folders
+        alike."""
         item = self.tree.currentItem()
         d = item.data(COL_NAME, Qt.UserRole) if item is not None else None
         if not d or d[0] == _FRAME:
             return
         scene = self._scene()
         obj = d[1]
-        if d[0] == _FOLDER:
-            sibs = sf.subfolders(scene, obj.parent_id)
-            target = obj.parent_id
-        else:
-            sibs = sf.sheets_in(scene, obj.folder_id)
-            target = obj.folder_id
-        i = sibs.index(obj)
+        target = obj.parent_id if d[0] == _FOLDER else obj.folder_id
+        sibs = sf.children(scene, target)
+        i = next(k for k, x in enumerate(sibs) if x is obj)
         j = i + step
         if not 0 <= j < len(sibs):
             return
@@ -973,7 +965,9 @@ class SheetExplorer(QWidget):
         if path is None:
             from views.filedialogs import file_dialogs
             path, _ = file_dialogs.getSaveFileName(
-                self, tr("Export PDF…"), "sheets.pdf", "PDF (*.pdf)")
+                self, tr("Export PDF…"),
+                self._window._ensure_composer().default_pdf_path(),
+                "PDF (*.pdf)")
         if not path:
             return
         troubled = self._window._ensure_composer().export_all_pdf(
@@ -1004,7 +998,9 @@ class SheetExplorer(QWidget):
         if path is None:
             from views.filedialogs import file_dialogs
             path, _ = file_dialogs.getSaveFileName(
-                self, tr("Export all (PDF)…"), "sheets.pdf", "PDF (*.pdf)")
+                self, tr("Export all (PDF)…"),
+                self._window._ensure_composer().default_pdf_path(),
+                "PDF (*.pdf)")
         self.export_sheets(sheets, path)
 
 

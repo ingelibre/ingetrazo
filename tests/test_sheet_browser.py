@@ -561,13 +561,47 @@ def test_a_folder_moves_with_everything_inside_but_never_into_itself():
     win, scene, explorer, plans, details = _window()
     _drag(explorer, details, onto=None)               # empty space: the top
     assert details.parent_id is None
-    assert _names(scene) == ["G", "D", "A"]
+    assert _names(scene) == ["G", "A", "D"]             # at the very end
     _drag(explorer, plans, onto=details)              # Plans into Details
     assert plans.parent_id == details.id
     _drag(explorer, details, onto=plans)              # into its own child
     assert details.parent_id is None and plans.parent_id == details.id
     _drag(explorer, details, onto=details)            # into itself
     assert details.parent_id is None
+    _close(win)
+
+
+def test_a_folder_drops_below_a_sheet_and_alt_moves_it_past_sheets():
+    win, scene, explorer, plans, details = _window()
+    a = _sheet(scene, "A")
+    _drag(explorer, plans, onto=a, where=_BELOW)        # under the sheet
+    assert [r[1] for r in _rows(explorer) if r[0] == 0] == ["A", "Plans"]
+    assert _names(scene) == ["A", "D", "G"]             # the tabs follow
+    explorer.tree.setCurrentItem(explorer.items[id(plans)])
+    QTest.keyClick(explorer.tree, Qt.Key_Up, Qt.AltModifier)
+    assert [r[1] for r in _rows(explorer) if r[0] == 0] == ["Plans", "A"]
+    explorer.tree.setCurrentItem(explorer.items[id(_sheet(scene, "G"))])
+    QTest.keyClick(explorer.tree, Qt.Key_Up, Qt.AltModifier)  # G above Details
+    assert [r[1] for r in _rows(explorer) if r[0] == 1] == ["G", "Details"]
+    _close(win)
+
+
+def test_pdfs_are_offered_under_the_project_s_name(tmp_path, monkeypatch):
+    from views.filedialogs import file_dialogs
+    win, scene, explorer, *_ = _window()
+    asked = []
+    monkeypatch.setattr(file_dialogs, "getSaveFileName",
+                        lambda parent, title, name, *a, **k:
+                        asked.append(name) or ("", ""))
+    explorer.export_all()                            # never saved: generic
+    assert asked[-1] == "sheets.pdf"
+    win._current_path = tmp_path / "Casa.igz"
+    explorer.export_all()
+    explorer.export_sheets([_sheet(scene, "A")])
+    win._composer._on_export_all()
+    win._composer._on_export_pdf()
+    assert asked[1:] == [str(tmp_path / "Casa.pdf")] * 4
+    win._current_path = None
     _close(win)
 
 

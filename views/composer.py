@@ -12836,7 +12836,7 @@ class ComposerWindow(QMainWindow):
                 tr("No sheet is marked for printing"), 4000)
             return
         path, _ = file_dialogs.getSaveFileName(
-            self, tr("Export all sheets (PDF)…"), "sheets.pdf",
+            self, tr("Export all sheets (PDF)…"), self.default_pdf_path(),
             "PDF (*.pdf)")
         if not path:
             return
@@ -12886,10 +12886,20 @@ class ComposerWindow(QMainWindow):
             tr("Exported {n} lines to {name}", n=n, name=path), 5000)
 
     # ---- export --------------------------------------------------------------
+    def default_pdf_path(self) -> str:
+        """Where a PDF export is offered to go: named after the project,
+        beside it («Casa.igz» → «Casa.pdf»); ``sheets.pdf`` for a document
+        never saved."""
+        current = getattr(self._window, "_current_path", None)
+        if current:
+            from pathlib import Path
+            return str(Path(current).with_suffix(".pdf"))
+        return "sheets.pdf"
+
     def _on_export_pdf(self) -> None:
         self.refresh_all_frames()
         path, _ = file_dialogs.getSaveFileName(
-            self, tr("Export PDF…"), "lamina.pdf", "PDF (*.pdf)")
+            self, tr("Export PDF…"), self.default_pdf_path(), "PDF (*.pdf)")
         if not path:
             return
         self.export_pdf(path)
