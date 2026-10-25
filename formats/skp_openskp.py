@@ -1342,6 +1342,10 @@ def _adapt(model, name: str, skp_path=None):
     # holds nothing but one placement — and a wholly empty entry simply
     # places nothing.
     protos = _merge_equal_protos(protos)
+    # Recursive helpers keep their closure cells alive until cyclic GC.
+    # Drop this private index now: applying the payload disables GC while
+    # constructing the scene, and must not retain the raw model alongside it.
+    by_id.clear()
 
     payload = {"backend": "openskp", "groups": groups, "protos": protos}
     if not groups and not any(e["faces"] or e["children"] for e in protos):
