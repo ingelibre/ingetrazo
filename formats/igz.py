@@ -407,8 +407,10 @@ def _pack_geometry(mesh, sink: dict) -> dict:
     ring_sizes: list = []
     ring_counts: list = []
     face_attr: list = []
-    table: list = []
-    table_index: dict = {}
+    from formats.igz_attributes import AttributeTable
+    attributes = AttributeTable(_face_attrs_json, json.JSONEncoder(
+        sort_keys=True, separators=(",", ":")).encode)
+    table = attributes.entries
     for f in mesh.faces:
         loop = f.loop
         holes = f.hole_loops or ()
@@ -422,16 +424,7 @@ def _pack_geometry(mesh, sink: dict) -> dict:
         for h in holes:
             ring_sizes.append(len(h))
             corners.extend(h)
-        attrs = _face_attrs_json(f) if f.attrs else None
-        if attrs:
-            key = _attrs_key(attrs)
-            k = table_index.get(key)
-            if k is None:
-                k = table_index[key] = len(table)
-                table.append(attrs)
-            face_attr.append(k)
-        else:
-            face_attr.append(-1)
+        face_attr.append(attributes.add(f))
 
     # Number the vertex objects by first appearance.
     ids = np.fromiter(map(id, corners), dtype=np.uint64,
