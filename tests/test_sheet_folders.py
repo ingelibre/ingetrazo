@@ -74,6 +74,30 @@ def test_printed_sheets_are_the_ticked_ones_in_tree_order():
     assert _names(sf.printed_sheets(scene)) == ["R", "D", "A"]
 
 
+def test_a_folder_switched_off_leaves_out_everything_inside():
+    scene, plans, roof, details = _doc()
+    plans.print_in_all = False
+    # Plans holds Roof (R) and G; the sheets keep their own switches.
+    assert _names(sf.printed_sheets(scene)) == ["D", "A"]
+    assert all(c.print_in_all for c in scene.compositions)
+    assert not sf.folder_printed(scene, roof.id)      # inside Plans
+    plans.print_in_all = True
+    roof.print_in_all = False
+    assert _names(sf.printed_sheets(scene)) == ["G", "D", "A"]
+
+
+def test_the_folder_switch_is_one_undo_step_and_saved(tmp_path):
+    scene, plans, *_ = _doc()
+    hist = History(scene)
+    hist.execute(SetSheetPrintCommand([], False, folders=[plans]))
+    assert not plans.print_in_all
+    back, _ = _round_trip(scene, tmp_path)
+    assert not next(f for f in back.sheet_folders
+                    if f.id == plans.id).print_in_all
+    hist.undo()
+    assert plans.print_in_all
+
+
 def test_descendants_reach_every_depth():
     scene, plans, roof, details = _doc()
     assert sf.descendant_ids(scene, plans.id) == {roof.id}

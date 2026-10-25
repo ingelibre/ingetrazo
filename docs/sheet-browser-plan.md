@@ -32,8 +32,11 @@
 - New `SheetFolder`: `id`, `name`, `parent_id` (`None` = top level),
   `expanded`. Stored in a new list `scene.sheet_folders`. Nesting is unlimited.
 - Two new fields on each sheet:
-  - `folder_id`: `None` = top level.
+  - `folder_id`: `None` = top level (a folder the document does not have
+    counts as the top too, so a sheet never drops out of sight).
   - `print_in_all`: included in Print all / Export all; default `True`.
+- A folder has its own `print_in_all` too (default `True`): a sheet prints
+  when its own switch and every folder around it are on.
 - **Order:** `scene.compositions` stays the single sheet order. After every
   move it is re-sorted to match the tree from top to bottom — in each folder
   its subfolders first, then its own sheets — so the sheet tabs, the PDF and
@@ -98,7 +101,7 @@ composer still showed it.)
 
 | Name | 🖨 |
 |---|---|
-| folder, sheet or scene | printer: in Print all / Export all. Click to switch; a folder's switches every sheet inside it and shows half-faded when only some print |
+| folder, sheet or scene | printer: in Print all / Export all. Click to switch. A folder has its own switch, on by default and saved with the document; what is moved in or out never changes it. A folder switched off leaves out everything inside it — the sheets keep their own switches, shown faded meanwhile (as the Browser shows what a hidden group hides), and come back when it is on again |
 
 **Bar:** a filter field (like the Browser's) and small icon buttons with
 tips: new sheet · new folder · rename · delete · print all · export all
