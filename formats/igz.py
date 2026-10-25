@@ -1523,7 +1523,8 @@ def _load_mesh(mesh, payload, geom=None) -> None:
 
     payload = _without_nonfinite(payload)
     from core import _native
-    if _native.wanted() and type(mesh) is _mesh_mod.Mesh:
+    if (_native.wanted() and _native.available() is not None
+            and type(mesh) is _mesh_mod.Mesh):
         # A lazy mesh (experimental engine): its arrays now, its objects —
         # built by the very walk below — on first touch.
         src = _json_arrays(payload)
@@ -1843,7 +1844,7 @@ def _load_geometry(mesh, meta, geom: dict) -> None:
         _build_geometry(mesh, meta, pos, edges, flags, curves, layers,
                         rings, sizes, counts, face_attr)
     from core import _native
-    if not (_native.wanted()
+    if not (_native.wanted() and _native.available() is not None
             and _mesh_mod.DeferredMesh.defer(
                 mesh, build, len(counts),
                 dict(meta=meta, pos=pos, edges=edges, flags=flags,

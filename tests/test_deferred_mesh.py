@@ -26,8 +26,19 @@ def binary(monkeypatch):
     monkeypatch.setattr(igz, "_BULK_MIN", 1)
 
 
+def _enable_lazy(monkeypatch):
+    """Exercise deferred readers even on a build without the optional kernels."""
+    native = _native.native
+    monkeypatch.setattr(_native, "native", native)
+    monkeypatch.setattr(_native, "available", lambda: native or object())
+    monkeypatch.setattr(_native, "wanted", lambda: True)
+
+
 def _open(monkeypatch, path, lazy):
-    monkeypatch.setattr(_native, "wanted", lambda: lazy)
+    if lazy:
+        _enable_lazy(monkeypatch)
+    else:
+        monkeypatch.setattr(_native, "wanted", lambda: False)
     scene = Scene()
     igz.load_into(scene, path)
     return scene
@@ -376,3 +387,43 @@ def test_a_json_mesh_builds_after_the_document_is_released(
     igz._release_in_steps(trees[0], lambda: None)       # as the window does
     assert real is igz._load_into_inner
     assert _canonical(lazy) == _canonical(eager)
+
+
+@pytest.mark.parametrize("storage", ["binary", "json-walk", "json-bulk"])
+@pytest.mark.parametrize("env,preference,loadable", [
+    ("1", "0", False), (None, "1", False),
+    ("0", "1", True), ("1", "0", True),
+])
+def test_deferred_loading_requires_a_loaded_engine(
+        monkeypatch, tmp_path, storage, env, preference, loadable):
+    """An enabled but missing/broken module must use the eager reader.
+
+    The environment still overrides Preferences, including after another
+    test has resolved the session's native value to None.
+    """
+    from core import general_settings
+
+    monkeypatch.setattr(igz, "_LARGE_DOCUMENT",
+                        0 if storage == "binary" else 10 ** 12)
+    monkeypatch.setattr(igz, "_BULK_MIN", 10 ** 12 if storage == "json-walk" else 1)
+    monkeypatch.setattr(general_settings, "value", lambda *a: preference)
+    monkeypatch.setattr(_native, "_module", object() if loadable else None)
+    monkeypatch.setattr(_native, "native", None)
+    monkeypatch.setenv("INGETRAZO_RUST", "0")
+    path = tmp_path / "source.igz"
+    igz.save_scene(_painted_scene(2, tmp_path), path)
+    eager = Scene()
+    igz.load_into(eager, path)
+    if env is None:
+        monkeypatch.delenv("INGETRAZO_RUST")
+    else:
+        monkeypatch.setenv("INGETRAZO_RUST", env)
+    opened = Scene()
+    igz.load_into(opened, path)
+    deferred = loadable and env != "0"
+    assert all((type(m) is M.DeferredMesh) == deferred for m in _meshes(opened))
+    assert _canonical(opened) == _canonical(eager)
+    before, after = tmp_path / "eager.igz", tmp_path / "opened.igz"
+    igz.save_scene(eager, before)
+    igz.save_scene(opened, after)
+    assert before.read_bytes() == after.read_bytes()
