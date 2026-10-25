@@ -434,7 +434,7 @@ def _pack_geometry(mesh, sink: dict) -> dict:
             face_attr.append(-1)
 
     # Number the vertex objects by first appearance.
-    ids = np.fromiter((id(v) for v in corners), dtype=np.uint64,
+    ids = np.fromiter(map(id, corners), dtype=np.uint64,
                       count=len(corners))
     _u, first, inverse = np.unique(ids, return_index=True,
                                    return_inverse=True)
@@ -944,24 +944,30 @@ def _write_container(path: Path, doc: str, blobs: dict,
     are already compressed — deflating them again costs time for nothing).
     ``fast`` deflates at level 1 (see ``_LARGE_DOCUMENT``). ``deflated``
     holds members compressed like the document — the geometry blocks."""
-    import io
     import zipfile
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        info = zipfile.ZipInfo(_DOC_ENTRY, date_time=_ZIP_EPOCH)
-        info.compress_type = zipfile.ZIP_DEFLATED
-        zf.writestr(info, doc, compresslevel=1 if fast else None)
-        for member in sorted(deflated or ()):
-            info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
+    # The archive can be as large as the scene: write its seekable temporary
+    # file directly rather than retaining a second complete copy in BytesIO.
+    # Keep the same ZIP member order, headers and compression settings.
+    tmp = path.with_name(path.name + ".part")
+    try:
+        with zipfile.ZipFile(tmp, "w") as zf:
+            info = zipfile.ZipInfo(_DOC_ENTRY, date_time=_ZIP_EPOCH)
             info.compress_type = zipfile.ZIP_DEFLATED
-            zf.writestr(info, deflated[member],
-                        compresslevel=1 if fast else None)
-        for member in sorted(blobs):
-            info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
-            info.compress_type = zipfile.ZIP_STORED
-            zf.writestr(info, blobs[member])
-    _write_atomic(path, buf.getvalue())
+            zf.writestr(info, doc, compresslevel=1 if fast else None)
+            for member in sorted(deflated or ()):
+                info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                zf.writestr(info, deflated[member],
+                            compresslevel=1 if fast else None)
+            for member in sorted(blobs):
+                info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
+                info.compress_type = zipfile.ZIP_STORED
+                zf.writestr(info, blobs[member])
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _parse_json(text, pump=None):
