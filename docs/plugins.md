@@ -245,6 +245,24 @@ Each download is checked against the catalog's SHA-256 before it is installed.
 The manager marks an extension as reviewed only when its hash matches the
 maintainer's entry in `reviewed.toml`.
 
+Use **Sources…** to add more catalogs or local folders; these choices are
+stored in the current user's IngeTrazo settings. A catalog source is an HTTPS
+URL to a format-1 `catalog.json` file. It uses the same fields as the community
+catalog, and package downloads must also use HTTPS. Custom catalogs are not
+treated as reviewed by IngeTrazo, even if they publish their own review list.
+
+A local folder can contain a format-1 `catalog.json` whose `download` values
+are relative paths to package files or folders inside that source directory.
+Alternatively, without a `catalog.json`, the manager discovers `.py` and
+`.zip` files at any depth and searches nested folders for package folders
+containing `__init__.py`. It also accepts the selected folder itself if it
+contains `__init__.py`; once a package folder is found, its contents are not
+scanned as separate extensions. Local packages are unreviewed and show the
+trust warning before installation. Their SHA-256 is checked again when
+installed; local catalog paths that escape the selected folder are rejected.
+Local package files are limited to 64 MiB; package folders are limited to
+2,000 files and 128 MiB, and symbolic links inside a package are rejected.
+
 Installed catalog extensions can be updated, enabled, disabled, or uninstalled
 from the manager. Update availability is shown as soon as the catalog is
 loaded; extension package files are downloaded only after choosing Download or

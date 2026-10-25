@@ -4,6 +4,24 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [Sin publicar]
+
+### Añadido
+- **Fuentes propias en el gestor de extensiones**: añade catálogos HTTPS o
+  carpetas locales con un catálogo, archivos `.py`/`.zip` o paquetes Python.
+  Las extensiones externas conservan el aviso de confianza.
+
+### Mejorado
+- **El gestor de extensiones crea tarjetas al acercarse a ellas**: las
+  entradas fuera de pantalla usan marcadores ligeros; las tarjetas completas
+  se construyen en tandas al desplazarse por la lista.
+- **El gestor puede reiniciar IngeTrazo para aplicar cambios de extensiones**,
+  conservando el documento abierto después de confirmar cómo guardar sus
+  cambios pendientes.
+- **La instalación de extensiones muestra el progreso de descarga**, permite
+  cancelarla de forma segura y ofrece reintento ante errores; las instalaciones
+  correctas se notifican en el gestor sin ventanas emergentes.
+
 ## [0.5.9] — 2026-10-19
 
 **Motor Rust experimental, modelos enormes mucho más fluidos y una semana

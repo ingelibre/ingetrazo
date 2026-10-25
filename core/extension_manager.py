@@ -17,6 +17,7 @@ import urllib.request
 import uuid
 import zipfile
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -35,6 +36,7 @@ MAX_CATALOG_BYTES = 2 * 1024 * 1024
 MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
 MAX_ARCHIVE_FILES = 2000
 MAX_EXTRACTED_BYTES = 128 * 1024 * 1024
+_EXTENSION_SOURCES_KEY = "extensions/custom_sources"
 _ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
@@ -61,6 +63,10 @@ class Extension:
     #: An extension that ships inside IngeTrazo (``examples/extensions``):
     #: the local file or folder it installs from — nothing is downloaded.
     bundled: str | None = None
+    #: Local package selected from a user-added source.
+    local_path: str | None = None
+    #: Name of a user-added catalog or folder source, when applicable.
+    source_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +75,7 @@ class CatalogSnapshot:
     reviewed: dict[str, dict]
     fetched_at: str
     from_cache: bool
+    source_errors: tuple[str, ...] = ()
 
 
 def _get(url: str, limit: int) -> bytes:
@@ -94,7 +101,8 @@ def _text_map(value, field: str) -> dict[str, str]:
     return value
 
 
-def _parse_extension(raw: object) -> Extension:
+def _parse_extension(raw: object, *, local_root: Path | None = None,
+                     source_name: str | None = None) -> Extension:
     if not isinstance(raw, dict):
         raise ExtensionManagerError("Invalid extension entry in catalog.")
     ident = raw.get("id")
@@ -109,9 +117,13 @@ def _parse_extension(raw: object) -> Extension:
     if not _SHA_RE.fullmatch(raw["sha256"]):
         raise ExtensionManagerError(
             f"Extension {ident!r} has an invalid SHA-256 digest.")
-    if not raw["download"].startswith("https://"):
-        raise ExtensionManagerError(
-            f"Extension {ident!r} does not use an HTTPS download URL.")
+    local_path = None
+    if local_root is None:
+        if not raw["download"].startswith("https://"):
+            raise ExtensionManagerError(
+                f"Extension {ident!r} does not use an HTTPS download URL.")
+    else:
+        local_path = _resolve_source_path(local_root, raw["download"])
     tags = raw.get("tags", [])
     if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
         raise ExtensionManagerError(f"Extension {ident!r} has invalid tags.")
@@ -139,13 +151,17 @@ def _parse_extension(raw: object) -> Extension:
         name=_text_map(raw.get("name"), "name"),
         summary=_text_map(raw.get("summary"), "summary"),
         tags=tuple(tags),
-        screenshot=screenshot,
+        screenshot=None if source_name is not None else screenshot,
         updated_at=updated_at,
+        local_path=local_path,
+        source_name=source_name,
     )
 
 
 def _parse_catalog(catalog_data: bytes, reviewed_data: bytes,
-                   fetched_at: str, from_cache: bool) -> CatalogSnapshot:
+                   fetched_at: str, from_cache: bool, *,
+                   local_root: Path | None = None,
+                   source_name: str | None = None) -> CatalogSnapshot:
     try:
         catalog = json.loads(catalog_data)
         import tomllib
@@ -158,13 +174,297 @@ def _parse_catalog(catalog_data: bytes, reviewed_data: bytes,
     raw_extensions = catalog.get("extensions")
     if not isinstance(raw_extensions, list):
         raise ExtensionManagerError("The extension catalog has no entries.")
-    extensions = [_parse_extension(raw) for raw in raw_extensions]
+    extensions = [
+        _parse_extension(raw, local_root=local_root,
+                         source_name=source_name)
+        for raw in raw_extensions]
     ids = [extension.id for extension in extensions]
     if len(ids) != len(set(ids)):
         raise ExtensionManagerError("The catalog contains duplicate IDs.")
     if not isinstance(reviewed, dict):
         raise ExtensionManagerError("The reviewed-extension list is invalid.")
     return CatalogSnapshot(extensions, reviewed, fetched_at, from_cache)
+
+
+def _resolve_source_path(root: Path, relative: str) -> str:
+    base = root.resolve()
+    path = Path(relative)
+    if path.is_absolute():
+        raise ExtensionManagerError(
+            "Local catalog downloads must use relative paths.")
+    try:
+        resolved = (base / path).resolve()
+        resolved.relative_to(base)
+    except (OSError, ValueError) as exc:
+        raise ExtensionManagerError(
+            "A local catalog download points outside its source folder.") from exc
+    if not resolved.is_file() and not resolved.is_dir():
+        raise ExtensionManagerError(
+            f"Local extension package does not exist: {relative}")
+    if resolved.is_dir() and not (resolved / "__init__.py").is_file():
+        raise ExtensionManagerError(
+            f"Local extension package folder has no __init__.py: {relative}")
+    return str(resolved)
+
+
+def normalize_extension_source(kind: str, location: str,
+                               *, require_exists: bool = True) -> dict[str, str]:
+    """Validate and normalize one user-added catalog URL or local folder."""
+    value = location.strip()
+    if kind == "catalog":
+        try:
+            parsed = urllib.parse.urlsplit(value)
+        except ValueError as exc:
+            raise ExtensionManagerError(
+                "Enter a valid HTTPS catalog URL.") from exc
+        if (parsed.scheme.lower() != "https" or not parsed.netloc
+                or not parsed.hostname or parsed.username or parsed.password):
+            raise ExtensionManagerError(
+                "Catalog sources must be HTTPS URLs without credentials.")
+        return {"kind": kind, "location": value, "name": parsed.netloc}
+    if kind == "folder":
+        try:
+            path = Path(value).expanduser().resolve()
+        except OSError as exc:
+            raise ExtensionManagerError(
+                f"Could not access local source folder: {exc}") from exc
+        if require_exists and not path.is_dir():
+            raise ExtensionManagerError(
+                "Choose an existing local source folder.")
+        return {"kind": kind, "location": str(path),
+                "name": path.name or str(path)}
+    raise ExtensionManagerError("Unknown extension source type.")
+
+
+def load_extension_sources() -> list[dict[str, str]]:
+    """Read custom sources from the user's application settings."""
+    from PySide6.QtCore import QSettings
+
+    raw = QSettings().value(_EXTENSION_SOURCES_KEY, "[]", type=str)
+    try:
+        entries = json.loads(raw)
+    except (TypeError, ValueError):
+        logging.getLogger("ingetrazo.extensions").warning(
+            "invalid saved extension sources")
+        return []
+    if not isinstance(entries, list):
+        return []
+    sources = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            source = normalize_extension_source(
+                entry.get("kind", ""), entry.get("location", ""),
+                require_exists=False)
+        except (AttributeError, ExtensionManagerError):
+            continue
+        if source not in sources:
+            sources.append(source)
+    return sources
+
+
+def save_extension_sources(sources: Iterable[dict[str, str]]) -> None:
+    """Persist user-added sources without accepting arbitrary settings data."""
+    from PySide6.QtCore import QSettings
+
+    normalized = []
+    for entry in sources:
+        try:
+            source = normalize_extension_source(
+                entry.get("kind", ""), entry.get("location", ""),
+                require_exists=False)
+        except (AttributeError, ExtensionManagerError):
+            continue
+        if source not in normalized:
+            normalized.append(source)
+    QSettings().setValue(_EXTENSION_SOURCES_KEY,
+                         json.dumps(normalized, ensure_ascii=False))
+
+
+def _local_extension(path: Path, source_name: str) -> Extension:
+    digest = _local_bundle_digest(path)
+    metadata_path = (path / "extension.json"
+                     if path.is_dir() else path.with_suffix(".json"))
+    if metadata_path.is_symlink():
+        raise ExtensionManagerError(
+            f"Local extension metadata for {path.name!r} cannot be a "
+            "symbolic link.")
+    try:
+        if metadata_path.stat().st_size > MAX_CATALOG_BYTES:
+            raise ExtensionManagerError(
+                f"Local extension metadata for {path.name!r} is too large.")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        metadata = {}
+    except (OSError, UnicodeError, ValueError):
+        metadata = {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    ident = metadata.get("id")
+    if not isinstance(ident, str) or not _ID_RE.fullmatch(ident):
+        ident = path.stem if path.is_file() else path.name
+    if not _ID_RE.fullmatch(ident):
+        raise ExtensionManagerError(
+            f"Local extension {path.name!r} has an invalid ID.")
+    version = metadata.get("version")
+    version = version if isinstance(version, str) and version else "Local"
+    author = metadata.get("author")
+    author = author if isinstance(author, str) and author else source_name
+    license_name = metadata.get("license")
+    license_name = (license_name if isinstance(license_name, str)
+                    else "Unknown")
+    repository = metadata.get("repository")
+    repository = (repository if isinstance(repository, str)
+                  and repository.startswith("https://") else "")
+    minimum_version = metadata.get("ingetrazo", __version__)
+    if not isinstance(minimum_version, str):
+        minimum_version = __version__
+    name = metadata.get("name")
+    if isinstance(name, str):
+        name = {"en": name}
+    if not isinstance(name, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in name.items()):
+        name = {"en": ident.replace("_", " ").replace("-", " ").title()}
+    summary = metadata.get("summary")
+    if isinstance(summary, str):
+        summary = {"en": summary}
+    if not isinstance(summary, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in summary.items()):
+        summary = {"en": f"Installed from local source: {source_name}"}
+    tags = metadata.get("tags", ["local"])
+    if not isinstance(tags, list) or not all(
+            isinstance(tag, str) for tag in tags):
+        tags = ["local"]
+    return Extension(
+        id=ident, version=version, author=author, license=license_name,
+        repository=repository, download=path.name,
+        sha256=digest, minimum_version=minimum_version,
+        name=name, summary=summary, tags=tuple(tags),
+        local_path=str(path), source_name=source_name)
+
+
+def _local_bundle_digest(path: Path) -> str:
+    """Hash a bounded local package while rejecting links outside its tree."""
+    if path.is_symlink():
+        raise ExtensionManagerError(
+            f"Local extension package {path.name!r} cannot be a symlink.")
+    if path.is_file():
+        try:
+            if path.stat().st_size > MAX_DOWNLOAD_BYTES:
+                raise ExtensionManagerError(
+                    f"Local extension package {path.name!r} is too large.")
+        except OSError as exc:
+            raise ExtensionManagerError(
+                f"Could not inspect local extension package {path}: {exc}"
+            ) from exc
+        return _bundle_digest(path)
+
+    files = []
+    total_size = 0
+    try:
+        for candidate in path.rglob("*"):
+            if candidate.is_symlink():
+                raise ExtensionManagerError(
+                    f"Local extension package {path.name!r} contains a "
+                    "symbolic link.")
+            if not candidate.is_file():
+                continue
+            if "__pycache__" in candidate.parts or candidate.suffix == ".pyc":
+                continue
+            files.append(candidate)
+            total_size += candidate.stat().st_size
+            if len(files) > MAX_ARCHIVE_FILES:
+                raise ExtensionManagerError(
+                    f"Local extension package {path.name!r} has too many "
+                    "files.")
+            if total_size > MAX_EXTRACTED_BYTES:
+                raise ExtensionManagerError(
+                    f"Local extension package {path.name!r} is too large.")
+    except OSError as exc:
+        raise ExtensionManagerError(
+            f"Could not inspect local extension package {path}: {exc}") from exc
+
+    digest = hashlib.sha256()
+    for file in sorted(files):
+        digest.update(file.relative_to(path).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(file.read_bytes())
+    return digest.hexdigest()
+
+
+def _load_custom_source(source: dict[str, str]) -> list[Extension]:
+    kind = source["kind"]
+    location = source["location"]
+    name = source["name"]
+    fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    if kind == "catalog":
+        data = _get(location, MAX_CATALOG_BYTES)
+        return _parse_catalog(
+            data, b"", fetched_at, False, source_name=name).extensions
+
+    root = Path(location).expanduser().resolve()
+    if not root.is_dir():
+        raise ExtensionManagerError(
+            f"Local source folder is unavailable: {root}")
+    catalog_path = root / "catalog.json"
+    if catalog_path.exists() or catalog_path.is_symlink():
+        catalog_path = Path(_resolve_source_path(root, "catalog.json"))
+    if catalog_path.is_file():
+        try:
+            catalog_data = catalog_path.read_bytes()
+        except OSError as exc:
+            raise ExtensionManagerError(
+                f"Could not read {catalog_path}: {exc}") from exc
+        if len(catalog_data) > MAX_CATALOG_BYTES:
+            raise ExtensionManagerError("The local catalog is too large.")
+        return _parse_catalog(
+            catalog_data, b"", fetched_at, False,
+            local_root=root, source_name=name).extensions
+
+    if (root / "__init__.py").is_file():
+        candidates = [root]
+    else:
+        candidates = []
+        pending = [root]
+        while pending:
+            folder = pending.pop()
+            try:
+                children = sorted(
+                    folder.iterdir(),
+                    key=lambda path: path.name.casefold(),
+                    reverse=True)
+            except OSError as exc:
+                logging.getLogger("ingetrazo.extensions").warning(
+                    "could not scan local extension folder %s: %s",
+                    folder, exc)
+                continue
+            for path in children:
+                if path.name.startswith((".", "_")) or path.is_symlink():
+                    continue
+                if path.is_file() and path.suffix.lower() in (".py", ".zip"):
+                    candidates.append(path)
+                elif path.is_dir():
+                    if (path / "__init__.py").is_file():
+                        candidates.append(path)
+                    else:
+                        pending.append(path)
+        candidates.sort(
+            key=lambda path: path.relative_to(root).as_posix().casefold())
+
+    extensions = []
+    for path in candidates:
+        try:
+            extensions.append(_local_extension(path, name))
+        except (ExtensionManagerError, OSError, ValueError) as exc:
+            logging.getLogger("ingetrazo.extensions").warning(
+                "skipping local extension %s: %s", path, exc)
+    if not extensions:
+        raise ExtensionManagerError(
+            f"No .py, .zip, or extension package folders found in {root}.")
+    return extensions
 
 
 def catalog_cache_path() -> Path:
@@ -205,41 +505,89 @@ def load_cached_catalog() -> CatalogSnapshot | None:
         return None
 
 
-def refresh_catalog() -> CatalogSnapshot:
+def refresh_catalog(
+        sources: Iterable[dict[str, str]] = ()) -> CatalogSnapshot:
     """Fetch and validate online catalog data, caching a complete snapshot.
 
     If the network is unavailable, a previously validated cache is returned
-    instead. With no usable cache, the original network error is raised.
+    instead. User-added sources are loaded independently, so one bad source
+    never hides entries from another source.
     """
+    sources = list(sources)
+    official_error = None
     try:
-        catalog_data = _get(CATALOG_URL, MAX_CATALOG_BYTES)
-        reviewed_data = _get(REVIEWED_URL, MAX_CATALOG_BYTES)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            catalog_future = executor.submit(
+                _get, CATALOG_URL, MAX_CATALOG_BYTES)
+            reviewed_future = executor.submit(
+                _get, REVIEWED_URL, MAX_CATALOG_BYTES)
+            catalog_data = catalog_future.result()
+            reviewed_data = reviewed_future.result()
         fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         snapshot = _parse_catalog(
             catalog_data, reviewed_data, fetched_at, False)
     except (ExtensionManagerError, OSError) as exc:
         cached = load_cached_catalog()
-        if cached is not None:
+        if cached is None:
+            if not sources:
+                raise
+            snapshot = CatalogSnapshot(
+                [], {}, datetime.now(timezone.utc).isoformat(
+                    timespec="seconds"), True)
+            official_error = str(exc)
+        else:
             logging.getLogger("ingetrazo.extensions").info(
                 "using cached extension catalog after refresh failed: %s",
                 exc)
-            return cached
-        raise
+            snapshot = cached
+    else:
+        path = catalog_cache_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(path.suffix + ".part")
+            temporary.write_text(json.dumps({
+                "catalog": json.loads(catalog_data),
+                "reviewed": reviewed_data.decode("utf-8"),
+                "fetched_at": fetched_at,
+            }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            temporary.replace(path)
+        except OSError:
+            logging.getLogger("ingetrazo.extensions").warning(
+                "could not cache extension catalog at %s", path,
+                exc_info=True)
 
-    path = catalog_cache_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(path.suffix + ".part")
-        temporary.write_text(json.dumps({
-            "catalog": json.loads(catalog_data),
-            "reviewed": reviewed_data.decode("utf-8"),
-            "fetched_at": fetched_at,
-        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        temporary.replace(path)
-    except OSError:
-        logging.getLogger("ingetrazo.extensions").warning(
-            "could not cache extension catalog at %s", path, exc_info=True)
-    return snapshot
+    extensions = list(snapshot.extensions)
+    known = {extension.id for extension in extensions}
+    errors = ([f"IngeTrazo catalog: {official_error}"]
+              if official_error else [])
+    if sources:
+        with ThreadPoolExecutor(max_workers=min(4, len(sources))) as executor:
+            futures = [executor.submit(_load_custom_source, source)
+                       for source in sources]
+            results = []
+            for source, future in zip(sources, futures):
+                try:
+                    results.append((source, future.result(), None))
+                except (ExtensionManagerError, OSError, ValueError) as exc:
+                    results.append((source, None, exc))
+    else:
+        results = []
+    for source, source_extensions, error in results:
+        if error is not None:
+            errors.append(f"{source['name']}: {error}")
+            logging.getLogger("ingetrazo.extensions").warning(
+                "could not load extension source %s: %s",
+                source["name"], error)
+            continue
+        for extension in source_extensions:
+            if extension.id in known:
+                continue
+            known.add(extension.id)
+            extensions.append(extension)
+    return CatalogSnapshot(extensions, snapshot.reviewed,
+                           snapshot.fetched_at,
+                           snapshot.from_cache and official_error is None,
+                           tuple(errors))
 
 
 def load_catalog() -> tuple[list[Extension], dict[str, dict]]:
@@ -583,7 +931,8 @@ def remove_hand_installed(path: Path) -> Path:
 
 def replace_hand_installed(extension: Extension,
                            confirm_manual_copies=None,
-                           catalog_ids: Iterable[str] | None = None
+                           catalog_ids: Iterable[str] | None = None,
+                           downloaded_data: bytes | None = None,
                            ) -> list[Path]:
     """Install ``extension`` from the catalog over a copy installed by
     hand under the same name: the copy is set aside first, then the
@@ -594,7 +943,8 @@ def replace_hand_installed(extension: Extension,
            if hand_installed_ident(p) == extension.id and p.parent == root]
     moved = [(p, _set_aside(p)) for p in own]
     try:
-        install_extension(extension, confirm_manual_copies, catalog_ids)
+        install_extension(extension, confirm_manual_copies, catalog_ids,
+                          downloaded_data)
     except Exception:
         for original, aside in reversed(moved):
             try:
@@ -609,14 +959,17 @@ def replace_hand_installed(extension: Extension,
 
 def install_extension(extension: Extension,
                       confirm_manual_copies=None,
-                      catalog_ids: Iterable[str] | None = None) -> None:
+                      catalog_ids: Iterable[str] | None = None,
+                      downloaded_data: bytes | None = None) -> None:
     """Download, verify and atomically install an extension or its update.
 
     If the same extension is already installed by hand under another name,
     ``confirm_manual_copies(paths)`` decides: True sets those copies aside
     (renamed, not deleted) and installs; False — or no callback — installs
     nothing, so the extension never loads twice. ``catalog_ids`` lets a
-    managed copy under an id the catalog dropped count as such a copy."""
+    managed copy under an id the catalog dropped count as such a copy.
+    ``downloaded_data`` lets an asynchronous caller supply the downloaded
+    bytes; they are still checked against the catalog checksum."""
     if not compatible_with_current(extension):
         raise ExtensionManagerError(
             f"{extension.id!r} requires IngeTrazo "
@@ -626,12 +979,30 @@ def install_extension(extension: Extension,
         raise ExtensionManagerError(
             f"A plugin named {extension.id!r} already exists and is not "
             "managed by the extension manager.")
-    source = Path(extension.bundled) if extension.bundled else None
-    if source is not None:
-        if not source.exists():
+    local_source = bool(extension.local_path)
+    source_path = (Path(extension.bundled) if extension.bundled else
+                   Path(extension.local_path) if extension.local_path else None)
+    if source_path is not None:
+        if not source_path.exists():
             raise ExtensionManagerError(
-                f"{extension.id!r} is not shipped with this IngeTrazo.")
-        archive_data = source.read_bytes() if source.is_file() else None
+                f"Source package for {extension.id!r} is no longer available.")
+        if local_source:
+            digest = _local_bundle_digest(source_path)
+            if digest != extension.sha256:
+                raise ExtensionManagerError(
+                    f"Local source for {extension.id!r} changed; refresh "
+                    "the catalog before installing.")
+        archive_data = (source_path.read_bytes()
+                        if source_path.is_file() else None)
+    elif downloaded_data is not None:
+        archive_data = downloaded_data
+        if len(archive_data) > MAX_DOWNLOAD_BYTES:
+            raise ExtensionManagerError("The downloaded file is too large.")
+        digest = hashlib.sha256(archive_data).hexdigest()
+        if digest != extension.sha256:
+            raise ExtensionManagerError(
+                f"Checksum mismatch for {extension.id!r}; nothing was "
+                "installed.")
     else:
         archive_data = _get(extension.download, MAX_DOWNLOAD_BYTES)
         digest = hashlib.sha256(archive_data).hexdigest()
@@ -648,7 +1019,7 @@ def install_extension(extension: Extension,
     backup = root / f".{extension.id}-backup-{uuid.uuid4().hex}"
     try:
         if archive_data is None:            # a bundled package folder
-            shutil.copytree(source, stage, dirs_exist_ok=True,
+            shutil.copytree(source_path, stage, dirs_exist_ok=True,
                             ignore=shutil.ignore_patterns(
                                 "__pycache__", "*.pyc"))
             is_zip = False
