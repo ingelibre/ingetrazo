@@ -596,6 +596,24 @@ def save_scene(scene, path: Path) -> dict:
     """Write ``scene`` to ``path``. Returns ``{"embedded", "missing"}``: how
     many texture images were packed into the document, and how many could not
     be read (those keep pointing at their original path)."""
+    import gc
+
+    # Mass object construction ahead, as in load_into and
+    # formats.skp.apply_payload: the document tree of a big model is tens of
+    # millions of small containers made in one go, and the generational GC
+    # re-scanning that growing heap took 15 of the 36 s a 2.5 M-face model
+    # needed to save. Collection is merely deferred: whatever cycles the
+    # save leaves are reclaimed once it is re-enabled.
+    _gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        return _save_scene_inner(scene, path)
+    finally:
+        if _gc_was_enabled:
+            gc.enable()
+
+
+def _save_scene_inner(scene, path: Path) -> dict:
     # Accept a Scene or a bare Mesh (the M1 read-compat path feeds a Mesh).
     mesh = scene.mesh if hasattr(scene, "mesh") else scene
     # Decided BEFORE anything is serialized: a large document writes its
