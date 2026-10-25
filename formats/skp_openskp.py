@@ -1257,6 +1257,7 @@ def _adapt(model, name: str, skp_path=None):
     # Which definitions the file places as GROUPS, not components (see
     # openskp_compat): they import as groups.
     from formats import openskp_compat
+    openskp_compat.note_model_kinds(model)
     single_groups = {did for did in openskp_compat.group_definitions()
                      if uses.get(did) == 1}
     # A COMPONENT copied side by side at the top level is a component however
