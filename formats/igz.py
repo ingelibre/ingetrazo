@@ -136,7 +136,7 @@ def _texture_entries(node):
             yield from _texture_entries(value)
 
 
-def _pack_textures(payload) -> tuple[dict, int]:
+def _pack_textures(payload, *, blobs=None, resolved=None) -> tuple[dict, int]:
     """Rewrite the payload's texture entries in place for storage inside the
     container: ``"path"`` (a machine-local absolute path) → ``"embed"`` (an
     archive member name). Returns ``({member name: image bytes}, missing)``,
@@ -146,8 +146,8 @@ def _pack_textures(payload) -> tuple[dict, int]:
     import hashlib
     from core.texture import is_image_file, texture_file_name
 
-    blobs: dict = {}
-    resolved: dict = {}          # source path → member name ("" = unreadable)
+    blobs = {} if blobs is None else blobs
+    resolved = {} if resolved is None else resolved  # source → member ("" = unreadable)
     missing = 0
     def _member_for(src):
         nonlocal missing
@@ -630,13 +630,33 @@ def save_scene(scene, path: Path) -> dict:
 
 
 def _save_scene_inner(scene, path: Path) -> dict:
+    large = _live_element_count(scene) > _LARGE_DOCUMENT
+    if large:
+        from formats.igz_stream import SaveStream
+        with SaveStream() as stream:
+            return _save_document(scene, path, large=True, stream=stream)
+    return _save_document(scene, path, large=False)
+
+
+def _save_document(scene, path, *, large, stream=None):
     # Accept a Scene or a bare Mesh (the M1 read-compat path feeds a Mesh).
     mesh = scene.mesh if hasattr(scene, "mesh") else scene
     # Decided BEFORE anything is serialized: a large document writes its
     # big meshes as binary blocks (format 3) and never builds their JSON.
-    large = _live_element_count(scene) > _LARGE_DOCUMENT
-    geom: dict | None = {} if large else None
-    payload = _mesh_json(mesh, geom)
+    geom = stream if large else None
+
+    def mesh_json(mesh):
+        block = _mesh_json(mesh, geom)
+        if stream is not None:
+            _, missing = _pack_textures(block, blobs=stream.blobs, resolved=stream.resolved)
+            stream.missing += missing
+            try:
+                block = {key: stream.json(value) for key, value in block.items()}
+            except ValueError:
+                raise NonFiniteDocumentError(_non_finite_where(block)) from None
+        return block
+
+    payload = mesh_json(mesh)
     groups = getattr(scene, "groups", None)
     kept = getattr(scene, "kept_components", None)
     if groups or kept:
@@ -654,7 +674,7 @@ def _save_scene_inner(scene, path: Path) -> dict:
                 if idx is None:
                     idx = proto_index[id(g.mesh)] = len(protos)
                     protos.append(None)          # reserve: recursion is depth
-                    protos[idx] = _mesh_json(g.mesh, geom)
+                    protos[idx] = mesh_json(g.mesh)
                 entry = {"proto": idx,
                          "xform": [float(x) for x in xf.data()]}
                 # Group or component (issue #90): a group of groups and a
@@ -663,7 +683,7 @@ def _save_scene_inner(scene, path: Path) -> dict:
                 # the reader tells apart its own way. Older readers ignore it.
                 entry["component"] = bool(getattr(g, "component", True))
             else:
-                entry = _mesh_json(g.mesh, geom)
+                entry = mesh_json(g.mesh)
             # The name — never written until 2026-09-11, so every reopened
             # document renumbered its groups and a "Pérgola" came back as
             # "Group 7". Older readers ignore the key.
@@ -842,7 +862,11 @@ def _save_scene_inner(scene, path: Path) -> dict:
     # Images ride INSIDE the document (see the module docstring). Only a scene
     # that actually has textures pays for the container; everything else stays
     # plain JSON at format 1, readable by older builds.
-    blobs, missing = _pack_textures(payload)
+    if stream is None:
+        blobs, missing = _pack_textures(payload)
+    else:
+        blobs, missing = _pack_textures(payload, blobs=stream.blobs, resolved=stream.resolved)
+        missing += stream.missing
     # The photogrammetric survey (Track G, G6) rides inside the document too,
     # for the same reason the textures do: a reference mesh that lives in a
     # folder next to the .igz is one move away from being lost.
@@ -860,7 +884,7 @@ def _save_scene_inner(scene, path: Path) -> dict:
     }
     try:
         if large:
-            doc = json.dumps(data, separators=(",", ":"), allow_nan=False)
+            doc = stream.document(data)
         else:
             doc = json.dumps(data, indent=2, allow_nan=False)
     except ValueError:
@@ -871,7 +895,10 @@ def _save_scene_inner(scene, path: Path) -> dict:
     if blobs or geom:
         _write_container(path, doc, blobs, fast=large, deflated=geom)
     else:
-        _write_atomic(path, doc.encode("utf-8"))
+        if stream is None:
+            _write_atomic(path, doc.encode("utf-8"))
+        else:
+            _write_stream_atomic(path, doc.chunks())
     return {"embedded": len(blobs), "missing": missing}
 
 
@@ -945,25 +972,45 @@ def _write_container(path: Path, doc: str, blobs: dict,
     ``fast`` deflates at level 1 (see ``_LARGE_DOCUMENT``). ``deflated``
     holds members compressed like the document — the geometry blocks."""
     import zipfile
+    from formats.igz_stream import Fragment
 
-    # The archive can be as large as the scene: write its seekable temporary
-    # file directly rather than retaining a second complete copy in BytesIO.
-    # Keep the same ZIP member order, headers and compression settings.
     tmp = path.with_name(path.name + ".part")
     try:
         with zipfile.ZipFile(tmp, "w") as zf:
-            info = zipfile.ZipInfo(_DOC_ENTRY, date_time=_ZIP_EPOCH)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            zf.writestr(info, doc, compresslevel=1 if fast else None)
+            def write(member, data, compression):
+                info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
+                info.compress_type = compression
+                if isinstance(data, Fragment):
+                    # Match writestr's headers, including its known size and
+                    # Unix file permissions. A seekable archive needs no data
+                    # descriptor and deflate is independent of write boundaries.
+                    info.file_size = data.size
+                    info.external_attr = 0o600 << 16
+                    info._compresslevel = 1 if fast else None
+                    with zf.open(info, "w") as dest:
+                        for chunk in data.chunks():
+                            dest.write(chunk)
+                else:
+                    zf.writestr(info, data, compresslevel=1 if fast else None)
+
+            write(_DOC_ENTRY, doc, zipfile.ZIP_DEFLATED)
             for member in sorted(deflated or ()):
-                info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
-                info.compress_type = zipfile.ZIP_DEFLATED
-                zf.writestr(info, deflated[member],
-                            compresslevel=1 if fast else None)
+                write(member, deflated[member], zipfile.ZIP_DEFLATED)
             for member in sorted(blobs):
-                info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
-                info.compress_type = zipfile.ZIP_STORED
-                zf.writestr(info, blobs[member])
+                write(member, blobs[member], zipfile.ZIP_STORED)
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _write_stream_atomic(path, chunks):
+    """The same atomic replacement for a large, untextured JSON document."""
+    tmp = path.with_name(path.name + ".part")
+    try:
+        with tmp.open("wb") as dest:
+            for chunk in chunks:
+                dest.write(chunk)
         tmp.replace(path)
     except BaseException:
         tmp.unlink(missing_ok=True)
