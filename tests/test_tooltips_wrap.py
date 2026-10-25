@@ -206,7 +206,9 @@ def test_an_extensions_toolbar_added_after_start_up_shows_names_in_bold(
         for bar, act, bold, under in (
                 (tb, one_line, "<b>Extruder</b><br>",
                  "Extruye cada cara a su propio grupo"),
-                (tb, status_only, "<b>Summon Faces</b>  (Ctrl+Shift+J)<br>",
+                (tb, status_only,
+                 "<b>Summon Faces</b>  (%s)<br>" % QKeySequence("Ctrl+Shift+J")
+                 .toString(QKeySequence.NativeText),
                  "Crea caras a partir de las aristas."),
                 (win.toolbars["main"], also_main, "<b>Late tool</b><br>",
                  "Added by an update")):
