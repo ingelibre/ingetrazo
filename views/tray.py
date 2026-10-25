@@ -2452,10 +2452,9 @@ class MaterialsPanel(QWidget):
         self._swatch_sig = sig
         self._swatch_count = self._in_model_grid.count()
         if bar is not None and keep is not None:
-            from PySide6.QtCore import QTimer
             bar.setValue(keep)
             # …and once more after the layout settles its new height.
-            QTimer.singleShot(0, lambda b=bar, v=keep: b.setValue(v))
+            _restore_scrollbar_later(bar, keep)
 
     # ---- Apply / add --------------------------------------------------------
     def _apply_color(self, rgb, name: str | None = None) -> None:
@@ -3759,9 +3758,28 @@ class _ScrollAnchor(QObject):
                 target = bar.value() + delta
                 # After the layout has taken the new height, or the bar's
                 # range would clamp the move.
-                QTimer.singleShot(0, lambda b=bar, t=target: b.setValue(t))
+                _restore_scrollbar_later(bar, target)
         return False
 
+
+
+def _restore_scrollbar_later(bar, value: int) -> None:
+    """Set ``bar`` to ``value`` once the pending layout pass has run.
+
+    The panel is rebuilt on every scene change, so by the time the zero-delay
+    timer fires the scroll area (and its bar) may already have been destroyed:
+    calling into the dead C++ object raises RuntimeError from inside the Qt
+    event loop. Skip the restore in that case; a bar that no longer exists has
+    nothing to keep in place.
+    """
+    from PySide6.QtCore import QTimer
+    from shiboken6 import isValid
+
+    def restore(b=bar, v=value):
+        if isValid(b):
+            b.setValue(v)
+
+    QTimer.singleShot(0, restore)
 
 def _wrapping_check(text: str):
     """A check box whose text wraps: ``(checkbox, row widget)``. A long
