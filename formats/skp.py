@@ -48,7 +48,11 @@ def detect_format(path) -> str:
     * ``"unknown"`` — not recognisably a ``.skp`` file / unreadable.
     """
     try:
-        head = Path(path).read_bytes()[:64]
+        # The first 64 bytes only: read_bytes() pulled the whole file into
+        # memory to look at them — 442 MB for a big model, before the
+        # import had even started.
+        with open(path, "rb") as fh:
+            head = fh.read(64)
     except OSError:
         return "unknown"
     if head[:4] == b"PK\x03\x04":
