@@ -191,6 +191,42 @@ from core.texture import hls_to_rgb as _hls_to_rgb  # noqa: E402,F401
 from core.texture import rgb_to_hls as _rgb_to_hls  # noqa: E402,F401
 
 
+# Keep only compressed results, not source images or full-resolution arrays.
+# Imports may run in workers; protect accounting, not the expensive transform.
+from collections import OrderedDict  # noqa: E402
+from threading import Lock  # noqa: E402
+
+_COLORIZE_CACHE_LIMIT = 32 * 1024 * 1024
+_colorize_cache = OrderedDict()
+_colorize_cache_lock = Lock()
+
+
+def _cached_colorize(data, color, ctype):
+    """Reuse exact colourized bytes across materials and repeated imports."""
+    import hashlib
+
+    try:
+        key = (hashlib.sha256(data).digest(), tuple(color[:3]), ctype)
+        with _colorize_cache_lock:
+            cached = _colorize_cache.get(key)
+            if cached is not None:
+                _colorize_cache.move_to_end(key)
+                return cached
+    except (TypeError, ValueError):
+        return _colorize_image(data, color, ctype)
+    result = _colorize_image(data, color, ctype)
+    # The transform returns its input on failure. Retrying must remain possible.
+    if result is not data and len(result) <= _COLORIZE_CACHE_LIMIT:
+        with _colorize_cache_lock:
+            _colorize_cache[key] = result
+            _colorize_cache.move_to_end(key)
+            size = sum(len(value) for value in _colorize_cache.values())
+            while size > _COLORIZE_CACHE_LIMIT or len(_colorize_cache) > 128:
+                _, removed = _colorize_cache.popitem(last=False)
+                size -= len(removed)
+    return result
+
+
 def _needs_tint(data, declared_rgb) -> bool:
     """Whether a colourized-flagged texture actually needs re-tinting: only
     when the declared material colour differs from the image's (alpha-
@@ -292,7 +328,7 @@ def _material_attrs(model, skp_path):
                 # guard skips materials whose declared colour already IS the
                 # image average (the legacy colourized flag is greedy —
                 # e.g. geolocation snapshots would go greyscale otherwise).
-                data = _colorize_image(
+                data = _cached_colorize(
                     data, getattr(mat, "color", (128, 128, 128)),
                     getattr(mat, "colorize_type", 0))
                 safe = f"{mid}_{safe or 'material.png'}"
