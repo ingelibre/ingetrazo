@@ -40,6 +40,7 @@ from pathlib import Path
 from PySide6.QtGui import QMatrix4x4, QVector3D
 
 from core.texture import fit_uv_affine, projection_basis
+from formats.skp_consumption import SoftSegments
 
 _INCH = 0.0254          # .skp internal unit → metres
 _MAX_DEPTH = 32         # guard against pathological instance nesting
@@ -814,6 +815,48 @@ def _rests_on_a_face(roots, by_id, quad) -> bool:
     return any(walk(r, np.eye(4), 0, frozenset()) for r in roots)
 
 
+
+def _image_use_key(child, placed, inherited):
+    import struct
+    return id(child), struct.pack("=16f", *placed.data()), inherited
+
+
+def _image_billboard_flags(roots, by_id, attr_map, proto_ids):
+    """Finish image attachment tests before an owned model loses geometry.
+
+    Called only after FlatGeometry proves the reachable graph is acyclic and
+    within the census depth limit. Follow the same world matrix/material chain
+    as _collect; tagged group extraction does not change either. Face-camera
+    subtrees flatten their own images and never run these attachment tests.
+    Only the booleans survive, not the source model or derived face geometry.
+    """
+    flags = {}
+
+    def walk(definition, xform, inherited, top=False):
+        for ins in getattr(definition, "instances", ()):
+            child = by_id.get(getattr(ins, "ref_idx", None))
+            if child is None:
+                continue
+            matrix = _matrix(ins.matrix)
+            placed = matrix if top else xform * matrix
+            material = getattr(ins, "material_id", None)
+            inh = material if top else material or inherited
+            if getattr(child, "is_image", False):
+                key = _image_use_key(child, placed, inh)
+                if key not in flags:
+                    faces = _image_quad_faces(child, placed, attr_map, inh)
+                    tex = next((a["texture"]["path"] for _o, _h, a in faces
+                                if a and "texture" in a), None)
+                    flags[key] = bool(tex and _image_has_cutout(tex)
+                                      and not _rests_on_a_face(roots, by_id, faces[0][0]))
+            elif not getattr(child, "always_faces_camera", False) and \
+                    getattr(child, "id", None) not in proto_ids:
+                walk(child, placed, inh)
+
+    for root in roots:
+        walk(root, QMatrix4x4(), None, top=True)
+    return flags
+
 def _soft_edge_segments(defn, xform, out) -> None:
     """Append the transformed endpoint pairs of ``defn``'s soft/smooth/
     hidden edges to ``out`` — the file's own edge-display flags, used by
@@ -841,6 +884,16 @@ def _soft_edge_segments(defn, xform, out) -> None:
         _remember_geometry(defn, "_soft_arr", arr, arr.nbytes)
     if not len(arr):
         return
+    if isinstance(out, SoftSegments):
+        # Same arithmetic and final quantization as _world_points, without
+        # expanding the endpoint array into millions of Python floats.
+        if xform.isIdentity():
+            world = arr
+        else:
+            m = np.array(xform.data(), dtype=np.float64).reshape(4, 4, order="F")
+            world = arr @ m[:3, :3].T + m[:3, 3]
+        out.add(world.astype(np.float32))
+        return
     wl = _world_points(arr, xform)
     for i in range(0, len(wl), 2):
         a = wl[i]
@@ -851,7 +904,7 @@ def _soft_edge_segments(defn, xform, out) -> None:
 def _collect(defn, xform, by_id, attr_map, out, depth, stack,
              proto_ids=frozenset(), proto_uses=None, inherited=None,
              image_uses=None, edges_out=None, layer=None,
-             layer_uses=None, group_layer=None) -> None:
+             layer_uses=None, group_layer=None, release=None) -> None:
     """Append ``(outer, holes, attrs)`` faces for ``defn`` (transformed by
     ``xform``) and, recursively, for every definition its instances place.
 
@@ -888,6 +941,10 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
                 out.append(entry)
     if edges_out is not None:
         _soft_edge_segments(defn, xform, edges_out)
+    if release is not None:
+        release(defn)
+        # No raw face/flattening locals need to survive child recursion.
+        del pos_m, raw_l, meta
     for ins in getattr(defn, "instances", []):
         rid = getattr(ins, "ref_idx", None)
         child = by_id.get(rid)
@@ -929,7 +986,7 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
             continue
         _collect(child, placed, by_id, attr_map, out, depth + 1, stack,
                  proto_ids, proto_uses, child_inherited, image_uses,
-                 edges_out, child_layer, layer_uses, group_layer)
+                 edges_out, child_layer, layer_uses, group_layer, release)
 
 
 def _subtree_polys(defn, by_id, memo, stack) -> int:
@@ -1152,18 +1209,18 @@ def _is_empty_model(model, skp_path, legacy_era: bool) -> bool:
     return bool((px == px[0]).all())
 
 
-def _adapt(model, name: str, skp_path=None):
+def _adapt(model, name: str, skp_path=None, *, consume=False):
     """Adapt with a bounded temporary geometry cache, including on failure."""
     cache = _GeometryCache(_GEOMETRY_CACHE_BYTES)
     token = _geometry_cache.set(cache)
     try:
-        return _adapt_inner(model, name, skp_path)
+        return _adapt_inner(model, name, skp_path, consume=consume)
     finally:
         cache.clear()
         _geometry_cache.reset(token)
 
 
-def _adapt_inner(model, name: str, skp_path=None):
+def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
     """An ``SkpModel`` → a payload ``{"backend", "groups", "protos"}`` or
     ``None`` when it yields no geometry (the seam reports it as unreadable).
 
@@ -1179,6 +1236,9 @@ def _adapt_inner(model, name: str, skp_path=None):
     Definitions with faces that nothing instances are library entries not
     placed in the model — they are not part of the visible model, so we skip
     them.
+    ``consume=True`` transfers raw geometry ownership to this adaptation.
+    Geometry is discarded after its last prototype use; a failed consumed
+    adaptation must be reparsed. The default leaves caller models reusable.
     ``skp_path`` anchors where extracted texture images land; the material
     joins are guarded so PyPI 0.2.0 still imports (uncoloured)."""
     from formats.dae import _INST_MIN_POLYS, _INST_MIN_SAVED
@@ -1305,6 +1365,15 @@ def _adapt_inner(model, name: str, skp_path=None):
                 continue
             proto_ids.add(child.id)
 
+    release_flat = None
+    image_flags = None
+    if consume:
+        from formats.skp_consumption import FlatGeometry
+        flat = FlatGeometry(by_id, proto_ids, uses, roots, _MAX_DEPTH)
+        if flat.remaining:
+            image_flags = _image_billboard_flags(roots, by_id, attr_map, proto_ids)
+            release_flat = flat.release
+
     groups: list = []
     proto_uses: dict = {}
     image_uses: list = []
@@ -1321,7 +1390,7 @@ def _adapt_inner(model, name: str, skp_path=None):
                 if entry is not None:
                     loose.append(entry)
         if loose:
-            loose_edges: list = []
+            loose_edges = SoftSegments()
             _soft_edge_segments(r, ident, loose_edges)
             groups.append({"name": name, "faces": loose,
                            "soft_edges": loose_edges})
@@ -1344,10 +1413,10 @@ def _adapt_inner(model, name: str, skp_path=None):
                     (placed, lay))
                 continue
             sub: list = []
-            sub_edges: list = []
+            sub_edges = SoftSegments()
             _collect(child, placed, by_id, attr_map, sub, 0, set(),
                      proto_ids, proto_uses, inh, image_uses, sub_edges,
-                     layer_uses=layer_uses, group_layer=lay)
+                     layer_uses=layer_uses, group_layer=lay, release=release_flat)
             if sub:
                 gp = {"name": getattr(child, "name", None) or name,
                       "faces": sub, "soft_edges": sub_edges,
@@ -1367,10 +1436,10 @@ def _adapt_inner(model, name: str, skp_path=None):
         child, placed, inh, lay = layer_uses[i]
         i += 1
         sub = []
-        sub_edges = []
+        sub_edges = SoftSegments()
         _collect(child, placed, by_id, attr_map, sub, 0, set(),
                  proto_ids, proto_uses, inh, image_uses, sub_edges,
-                 layer_uses=layer_uses, group_layer=lay)
+                 layer_uses=layer_uses, group_layer=lay, release=release_flat)
         if sub:
             groups.append({"name": getattr(child, "name", None) or name,
                            "faces": sub, "soft_edges": sub_edges,
@@ -1391,13 +1460,15 @@ def _adapt_inner(model, name: str, skp_path=None):
             # A cut-out turns to face the camera — unless it is stuck on a
             # face, like a logo on a device (#429): the file has no face-me
             # flag for images, SketchUp never turns one.
-            billboard = bool(tex and _image_has_cutout(tex)
-                             and not _rests_on_a_face(roots, by_id,
-                                                      faces[0][0]))
+            if image_flags is not None:
+                billboard = image_flags[_image_use_key(child, placed, inh)]
+            else:
+                billboard = bool(tex and _image_has_cutout(tex)
+                                 and not _rests_on_a_face(roots, by_id, faces[0][0]))
         else:
             faces = []
             _collect(child, placed, by_id, attr_map, faces, 0, set(),
-                     inherited=inh)
+                     inherited=inh, release=release_flat)
             billboard = True
         if not faces:
             continue
@@ -1417,6 +1488,15 @@ def _adapt_inner(model, name: str, skp_path=None):
     # done inside a component: the hedge in piscina.igz is 4480 + 5120 faces
     # placed 48 times, and it arrived as 230400 real ones, twenty-four times
     # over, for the element that is 89% of that model.
+    # Geometry stays available through image attachment tests. From here,
+    # only prototype extraction can read it. Count all inherited-material
+    # variants before releasing anything: a child may be flattened into
+    # several different prototypes, or shared by several parents.
+    consumer = None
+    if consume:
+        from formats.skp_consumption import PrototypeGeometry
+        consumer = PrototypeGeometry(by_id, proto_ids, proto_uses, roots, _MAX_DEPTH)
+
     protos: list = []
     index_of: dict = {}
 
@@ -1433,10 +1513,12 @@ def _adapt_inner(model, name: str, skp_path=None):
         idx = index_of[key] = len(protos)
         protos.append(None)
         local: list = []
-        local_edges: list = []
+        local_edges = SoftSegments()
         child_uses: dict = {}
         _collect(d, QMatrix4x4(), by_id, attr_map, local, 0, set(),
                  proto_ids, child_uses, inh, edges_out=local_edges)
+        if consumer is not None:
+            consumer.release(key)
         children: list = []
         for (cid, cinh), places in child_uses.items():
             ci = _build_proto(cid, cinh)
@@ -1567,4 +1649,6 @@ def parse(path, progress=None):
     openskp_compat.resolve_face_layers(model)   # tag ids → names (#700)
     if progress is not None:
         progress(0.6, "Building geometry…")
-    return _adapt(model, Path(path).stem, skp_path=path)
+    # This model is private to this parse. Direct _adapt callers keep the
+    # reusable-model default; only the owned parse hands its geometry over.
+    return _adapt(model, Path(path).stem, skp_path=path, consume=True)
