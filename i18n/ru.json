@@ -3010,5 +3010,10 @@
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Меняет угол обзора камеры, как объектив: шире — видно больше, уже — линии спокойнее.",
  "Field of view in degrees (10–120):": "Поле зрения в градусах (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "Поле зрения относится к перспективе; сначала переключитесь на перспективу.",
- "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: у каждой грани свой материал, поэтому ничего не изменилось — откройте объект и окрасьте грани"
+ "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: у каждой грани свой материал, поэтому ничего не изменилось — откройте объект и окрасьте грани",
+ "Group photos separately from model geometry": "Группируйте фотографии отдельно от геометрии модели",
+ "Make a component from photos separately from model geometry": "Создайте компонент из фотографий отдельно от геометрии модели",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "Эта группа содержит фотографию, а не редактируемую геометрию — разгруппируйте её, чтобы изменить изображение",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Угол изображения размещён — переместите указатель и щёлкните, чтобы задать размер, или введите ширину и нажмите Enter (Esc отменяет)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "Изображение размещено в естественном размере отображения — используйте Размер изображения…, чтобы задать точную ширину в модели"
 }

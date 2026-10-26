@@ -441,6 +441,9 @@ class Scene:
         # has just become the world's.
         from core.explode import rotate_offsets
         rotate_offsets(group, xform)
+        if getattr(group, "images", None):
+            group.images = [image.transformed(xform)
+                            for image in group.images]
         if group.mesh.vertices:
             from core.group import transformed_mesh
             group.mesh = transformed_mesh(group.mesh, xform)
@@ -726,7 +729,7 @@ class Scene:
         frame a dot (#627). Not cached: it runs once per command, over the
         selection only."""
         import numpy as np
-        from core.group import iter_placements
+        from core.group import placement_points
         from core.guide import Guide
         pts: list = []
 
@@ -737,18 +740,8 @@ class Scene:
             if isinstance(ent, Guide):        # before Edge: it has .a / .b
                 add(ent.point)
             elif hasattr(ent, "mesh"):        # Group / component instance
-                for g, m in iter_placements(ent):
-                    verts = g.mesh.vertices
-                    if not verts:
-                        continue
-                    arr = np.array([[v.position.x(), v.position.y(),
-                                     v.position.z()] for v in verts])
-                    if m is not None:
-                        d = m.data()          # column-major
-                        rot = np.array([[d[0], d[4], d[8]],
-                                        [d[1], d[5], d[9]],
-                                        [d[2], d[6], d[10]]])
-                        arr = arr @ rot.T + np.array([d[12], d[13], d[14]])
+                arr = placement_points(ent)
+                if len(arr):
                     pts.append(tuple(arr.min(axis=0)))
                     pts.append(tuple(arr.max(axis=0)))
             elif hasattr(ent, "vertices"):    # Face
@@ -819,6 +812,12 @@ class Scene:
         per_mesh: dict = {}
         from core.lazy_mesh import plan_of
         for g, m in self.placements():
+            for image in getattr(g, "images", None) or ():
+                corners = image.corners()
+                if m is not None:
+                    corners = [m.map(point) for point in corners]
+                for point in corners:
+                    absorb(point)
             key = id(g.mesh)
             arr = per_mesh.get(key)
             if arr is None:

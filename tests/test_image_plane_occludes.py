@@ -79,3 +79,45 @@ def test_a_box_below_an_opaque_image_does_not_paint_over_it(tmp_path):
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_a_grouped_photo_remains_visible_in_every_display_style(tmp_path):
+    from core.history import MakeImageGroupCommand
+    from core.image_plane import ImagePlane
+    from core.style import Style
+    from views.main_window import MainWindow
+
+    win = MainWindow()
+    try:
+        win.show()
+        _app.processEvents()
+        vp = win.viewport
+        if getattr(vp, "_gl", None) is None or not vp.isValid():
+            pytest.skip("no OpenGL context on this platform")
+        scene = vp.scene
+        V = QVector3D
+        pic = QImage(8, 8, QImage.Format_RGBA8888)
+        pic.fill(0xFF000000 | (PHOTO[0] << 16) | (PHOTO[1] << 8) | PHOTO[2])
+        path = tmp_path / "grouped-photo.png"
+        pic.save(str(path))
+        image = ImagePlane(str(path), V(0, 0, 0), V(10, 0, 0), V(0, 10, 0))
+        scene.image_planes.append(image)
+        vp.history.execute(MakeImageGroupCommand([image]))
+        vp.camera.set_view("iso")
+        vp.camera.fit_to(V(-2, -2, -1), V(12, 12, 1))
+
+        shares = {}
+        for mode in ("textures", "shaded", "hidden_line", "monochrome",
+                     "wireframe", "xray"):
+            scene.display_style = Style(name=mode, face_mode=mode)
+            scene.version += 1
+            for _ in range(3):
+                _app.processEvents()
+            shares[mode] = _photo_share(
+                vp.render_image(400, 300, overlays=False))
+        if shares["textures"] < 0.05:
+            pytest.skip("this GL context renders no textures")
+        assert all(share > 0.05 for share in shares.values()), shares
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

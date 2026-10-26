@@ -133,6 +133,31 @@ class ImageTool(Tool):
             text += "  (libre)"
         return (text, self.start_point + (u + v) * 0.5)
 
+    def frame_for_native_size(self, viewport, origin: QVector3D,
+                              pixel_width: int, pixel_height: int):
+        """Image-sized ``(u, v)`` vectors for a desktop drop.
+
+        Pixels have no model-unit meaning, so a dropped photo uses its native
+        *screen* size at the drop depth.  Very large images are fitted to 65%
+        of the viewport; their aspect ratio is always preserved.  ``None``
+        lets the caller fall back to interactive sizing when projection is
+        unavailable.
+        """
+        if pixel_width <= 0 or pixel_height <= 0:
+            return None
+        from tools.base import PlaneLock
+        au, av = self._axes()
+        scales = [PlaneLock.world_per_pixel(viewport, origin, axis)
+                  for axis in (au, av)]
+        scales = [scale for scale in scales if scale is not None]
+        if not scales:
+            return None
+        fit = min(1.0,
+                  0.65 * max(1, viewport.width()) / pixel_width,
+                  0.65 * max(1, viewport.height()) / pixel_height)
+        scale = min(scales) * fit
+        return au * (pixel_width * scale), av * (pixel_height * scale)
+
     # ---- Internals ----------------------------------------------------------
     def _axes(self) -> tuple[QVector3D, QVector3D]:
         """In-plane horizontal/vertical axes of the work plane; world X/Y on

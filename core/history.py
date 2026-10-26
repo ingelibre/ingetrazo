@@ -2018,6 +2018,59 @@ class AddImagePlaneCommand(Command):
         scene.version += 1
 
 
+class MakeImageGroupCommand(Command):
+    """Wrap imported photos in a group or component without texturing faces.
+
+    The image entities move from ``scene.image_planes`` into the container's
+    definition.  Keeping them as images is the semantic difference that makes
+    them draw in Shaded, Monochrome, Hidden line and Wireframe too.
+    """
+
+    def __init__(self, images, component: bool = False,
+                 name: str | None = None) -> None:
+        self.images = list(images)
+        self.component = bool(component)
+        self.name = name
+        self.group = None
+        self._indices: list[tuple[int, object]] = []
+
+    def do(self, scene) -> None:
+        from PySide6.QtGui import QMatrix4x4
+        if self.group is None:
+            default = ""
+            if len(self.images) == 1:
+                image = self.images[0]
+                default = image.name or _Path(image.path).stem
+            self.group = Group(Mesh(), name=self.name or default or None)
+            self.group.xform = QMatrix4x4()
+            self.group.component = self.component
+            self.group.images = self.images
+            layers = {getattr(image, "layer", None) for image in self.images}
+            if len(layers) == 1:
+                self.group.layer = next(iter(layers))
+        self._indices = sorted(
+            ((scene.image_planes.index(image), image)
+             for image in self.images if image in scene.image_planes),
+            key=lambda pair: pair[0])
+        for _index, image in self._indices:
+            scene.image_planes.remove(image)
+            scene.selection.discard(image)
+        if self.group not in scene.groups:
+            scene.groups.append(self.group)
+        scene.selection.clear()
+        scene.selection.add(self.group)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.group in scene.groups:
+            scene.groups.remove(self.group)
+        scene.selection.discard(self.group)
+        for index, image in self._indices:
+            scene.image_planes.insert(min(index, len(scene.image_planes)), image)
+        scene.selection = set(self.images)
+        scene.version += 1
+
+
 class DeleteImagePlanesCommand(Command):
     """Remove reference images (Delete / the Eraser). Positions are restored
     so undo puts each one back where it sat in the stacking order."""
@@ -3633,6 +3686,7 @@ class MakeUniqueCommand(Command):
         self._proto = None
         self._xform = None
         self._children = None
+        self._images = None
         self._axes = None
         self._component = True
 
@@ -3640,6 +3694,7 @@ class MakeUniqueCommand(Command):
         self._proto = self.group.mesh
         self._xform = self.group.xform
         self._children = self.group.children
+        self._images = self.group.images
         self._axes = self.group.axes
         self._component = self.group.component
         self._name = self.group.name
@@ -3655,6 +3710,7 @@ class MakeUniqueCommand(Command):
         self.group.mesh = self._proto
         self.group.xform = self._xform
         self.group.children = self._children or []
+        self.group.images = self._images or []
         self.group.axes = self._axes
         self.group.component = self._component
         self.group.name = self._name
@@ -3675,8 +3731,8 @@ class ReplaceComponentCommand(Command):
     Targets that already share ``source``'s definition, and anything that is
     not a component instance, are left alone."""
 
-    _SHARED = ("mesh", "children", "name", "axes", "component", "text3d",
-               "ifc", "ext", "billboard", "exploded")
+    _SHARED = ("mesh", "children", "images", "name", "axes", "component",
+               "text3d", "ifc", "ext", "billboard", "exploded")
 
     def __init__(self, targets, source) -> None:
         self.source = source
@@ -3698,6 +3754,7 @@ class ReplaceComponentCommand(Command):
             # inside any instance reaches all of them.
             g.children = [copy_group(c, _in_definition=True)
                           for c in (src.children or ())]
+            g.images = list(getattr(src, "images", None) or ())
             g.name = src.name
             g.axes = QMatrix4x4(src.axes) if src.axes is not None else None
             g.component = True
@@ -4243,6 +4300,7 @@ class ExplodeGroupCommand(Command):
         self.snapshot: Optional[dict] = None
         self.index: Optional[int] = None
         self._lifted: list = []   # (child, xform, mesh, material, axes, offset)
+        self._lifted_images: list = []
         self._selection = None
 
     def do(self, scene) -> None:
@@ -4306,14 +4364,23 @@ class ExplodeGroupCommand(Command):
             if c.material is None and paint:
                 c.material = {k: (dict(v) if isinstance(v, dict) else v)
                               for k, v in paint.items()}
+        self._lifted_images = [
+            image.transformed(P) if P is not None else image.copy()
+            for image in (getattr(g, "images", None) or ())]
+        scene.image_planes.extend(self._lifted_images)
         scene.groups.remove(g)
         scene.groups[self.index:self.index] = kids
         scene.selection.discard(g)
         if kids:
             scene.selection = set(kids)   # select what came out
+        elif self._lifted_images:
+            scene.selection = set(self._lifted_images)
         scene.version += 1
 
     def undo(self, scene) -> None:
+        for image in self._lifted_images:
+            if image in scene.image_planes:
+                scene.image_planes.remove(image)
         for c, xform, mesh, material, axes, offset in self._lifted:
             if c in scene.groups:
                 scene.groups.remove(c)

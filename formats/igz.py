@@ -675,6 +675,12 @@ def save_scene(scene, path: Path) -> dict:
                 entry["exploded"] = dict(g.exploded)
             if getattr(g, "explode_offset", None):
                 entry["explode_offset"] = list(g.explode_offset)
+            images = getattr(g, "images", None)
+            if images:
+                # Photos remain first-class image entities inside a group or
+                # component.  The nested ``texture`` keys also make the
+                # ordinary packer embed their source files in the .igz.
+                entry["images"] = [image.to_dict() for image in images]
             kids = getattr(g, "children", None)
             if kids:
                 entry["children"] = [_entry(c) for c in kids]
@@ -1270,6 +1276,10 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         off = raw.get("explode_offset")
         if isinstance(off, list) and len(off) == 3:
             group.explode_offset = tuple(float(v) for v in off)
+        from core.image_plane import ImagePlane
+        group.images = [ImagePlane.from_dict(image)
+                        for image in raw.get("images", [])
+                        if isinstance(image, dict)]
         if depth < 32:              # a corrupt document must not spin
             group.adopt(_group_from(c, depth + 1)
                         for c in raw.get("children", []) or [])

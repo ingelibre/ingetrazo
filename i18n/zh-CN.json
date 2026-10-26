@@ -3011,5 +3011,10 @@
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "像镜头一样改变相机的视角：越宽看到越多，越窄线条越平稳。",
  "Field of view in degrees (10–120):": "视野角度（10–120）：",
  "Field of view applies to perspective; switch to Perspective first.": "视野仅适用于透视；请先切换到透视。",
- "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}：每个面都有自己的材质，所以没有变化——请进入其中并为各个面上色"
+ "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}：每个面都有自己的材质，所以没有变化——请进入其中并为各个面上色",
+ "Group photos separately from model geometry": "将照片与模型几何体分开编组",
+ "Make a component from photos separately from model geometry": "将照片与模型几何体分开创建为组件",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "此组包含照片，而非可编辑的几何体——请炸开该组以编辑图像",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "已放置图像角点——移动指针并单击以设置大小，或输入宽度后按 Enter（Esc 取消）",
+ "Image placed at its natural display size — use Image size… for an exact model width": "图像已按自然显示大小放置——使用图像大小…可设置精确的模型宽度"
 }

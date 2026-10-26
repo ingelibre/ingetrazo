@@ -40,6 +40,7 @@ from core.history import (
     ExplodeGroupCommand,
     HealOverlapsCommand,
     MakeGroupCommand,
+    MakeImageGroupCommand,
     RebuildPlanarFacesCommand,
     SnapshotImport,
     SnapshotMutation,
@@ -3362,9 +3363,19 @@ class MainWindow(QMainWindow):
         if not self._can_make_here():
             return
         sel = self.viewport.scene.selection
+        from core.image_plane import ImagePlane
+        images = [image for image in sel if isinstance(image, ImagePlane)]
         faces = [f for f in sel if isinstance(f, Face)]
         edges = [e for e in sel if isinstance(e, Edge)]
         groups = [g for g in sel if isinstance(g, Group)]
+        if images:
+            if faces or edges or groups:
+                self.viewport.flash_status(tr(
+                    "Group photos separately from model geometry"), 4000)
+                return
+            self._execute_make(MakeImageGroupCommand(images))
+            self.viewport.update()
+            return
         if len(groups) == 1 and not (faces or edges):
             # One group (or component) alone: wrapping it in a container of
             # itself is a Russian doll with nothing inside (@pacaeiro,
@@ -3404,6 +3415,8 @@ class MainWindow(QMainWindow):
         if not self._can_make_here():
             return
         sel = self.viewport.scene.selection
+        from core.image_plane import ImagePlane
+        images = [image for image in sel if isinstance(image, ImagePlane)]
         faces = [f for f in sel if isinstance(f, Face)]
         edges = [e for e in sel if isinstance(e, Edge)]
         groups = [g for g in sel if isinstance(g, Group)
@@ -3416,6 +3429,27 @@ class MainWindow(QMainWindow):
         count = 1
         while tr("Component #{n}", n=count) in taken:
             count += 1
+        if images:
+            if faces or edges or groups:
+                self.viewport.flash_status(tr(
+                    "Make a component from photos separately from model "
+                    "geometry"), 4000)
+                return
+            suggested = (images[0].name or Path(images[0].path).stem
+                         if len(images) == 1 else
+                         tr("Component #{n}", n=count))
+            name, ok = _prompts.get_text(
+                self, tr("Make Component"), tr("Component name:"),
+                text=suggested or tr("Component #{n}", n=count))
+            if not ok:
+                return
+            self._execute_make(MakeImageGroupCommand(
+                images, component=True,
+                name=name.strip() or tr("Component #{n}", n=count)))
+            self.viewport.update()
+            self.statusBar().showMessage(tr(
+                "Component created â€” copies will share its definition"), 4000)
+            return
         if len(groups) > 1 or (groups and (faces or edges)):
             # Several groups, or groups and loose geometry: ONE component
             # holding them, each still a group inside (Marco, 24-09, with
@@ -4438,6 +4472,11 @@ class MainWindow(QMainWindow):
             act_lock.setCheckable(True)
             act_lock.setChecked(bool(images[0].locked))
             menu.addSeparator()
+            if not (has_mesh or has_group):
+                menu.addAction(tr("Make Group"), self._on_make_group)
+                menu.addAction(tr("Make Component…"),
+                               self._on_make_component)
+                menu.addSeparator()
 
         if has_geopath:
             menu.addAction(tr("Terrain profile"), self._on_terrain_profile)
@@ -7023,7 +7062,39 @@ class MainWindow(QMainWindow):
                "All files (*)"))
         if not path_str:
             return
-        path = Path(path_str)
+        self._start_image_import(Path(path_str))
+
+    @staticmethod
+    def image_path_from_mime(mime) -> Path | None:
+        """The first supported local image carried by a desktop drag.
+
+        Only actual local files are accepted.  Other URLs and model files
+        keep following their normal drag/drop route instead of being consumed
+        by the viewport.
+        """
+        if mime is None or not mime.hasUrls():
+            return None
+        suffixes = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff",
+                    ".webp"}
+        for url in mime.urls():
+            local = url.toLocalFile()
+            if not local:
+                continue
+            path = Path(local)
+            if path.suffix.lower() in suffixes and path.is_file():
+                return path
+        return None
+
+    def _start_image_import(self, path: Path,
+                            drop_pixel: tuple[float, float] | None = None) -> bool:
+        """Load ``path`` into the Image tool, optionally from a drop point.
+
+        A File-menu import waits for the first placement click.  A desktop
+        drop places the photo immediately at its native display size; if the
+        projection cannot provide a scale, the drop still becomes the first
+        corner of the ordinary interactive placement.
+        """
+        path = Path(path)
         from core.image_plane import image_aspect
         aspect, pw, ph = image_aspect(path)
         if pw <= 0 or ph <= 0:
@@ -7031,13 +7102,13 @@ class MainWindow(QMainWindow):
                 self, tr("Import image failed"),
                 tr("{name} is not an image this build can read.",
                    name=path.name))
-            return
+            return False
         from core.texture import cache_image
         try:
             cached = cache_image(path.read_bytes(), path.name, "imported")
         except OSError as exc:
             QMessageBox.critical(self, tr("Import image failed"), str(exc))
-            return
+            return False
 
         from tools.image import ImageTool
         tool = ImageTool()
@@ -7047,10 +7118,35 @@ class MainWindow(QMainWindow):
             action.setChecked(False)
         self._tool_label.setText(tr("Tool: {name}", name=tr("Image")))
         self._refresh_vcb()
-        self.viewport.flash_status(
-            tr("Click a corner and drag to size the image, or type a width "
-               "and press Enter (Esc cancels)"), 6000)
+        dropped = False
+        if drop_pixel is not None:
+            x, y = drop_pixel
+            world = self.viewport._world_from_pixel(round(x), round(y))
+            if world is not None:
+                tool.work_plane = getattr(
+                    self.viewport, "_last_work_plane", None)
+                frame = tool.frame_for_native_size(
+                    self.viewport, world, pw, ph)
+                if frame is not None:
+                    tool._commit(self.viewport, world, *frame)
+                    self.viewport.flash_status(tr(
+                        "Image placed at its natural display size — use "
+                        "Image size… for an exact model width"), 5000)
+                    return True
+                tool.start_point = QVector3D(world)
+                tool.hover_point = QVector3D(world)
+                dropped = True
+        if dropped:
+            self.viewport.flash_status(
+                tr("Image corner placed — move the pointer and click to set "
+                   "its size, or type a width and press Enter (Esc cancels)"),
+                7000)
+        else:
+            self.viewport.flash_status(
+                tr("Click a corner and drag to size the image, or type a width "
+                   "and press Enter (Esc cancels)"), 6000)
         self.viewport.update()
+        return True
 
     def _on_image_size(self) -> None:
         """Resize a placed reference image to a real-world width.

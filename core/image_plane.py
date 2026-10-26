@@ -117,6 +117,26 @@ class ImagePlane:
             return u, QVector3D(self.v)
         return u, self.v * ((width * self.aspect) / h)
 
+    def copy(self) -> "ImagePlane":
+        """An independent image entity with the same placement and settings."""
+        return ImagePlane(
+            self.path, self.origin, self.u, self.v, self.aspect, self.name,
+            self.opacity, self.layer, self.locked)
+
+    def transformed(self, matrix) -> "ImagePlane":
+        """A copy placed through ``matrix``.
+
+        Grouped photos keep their rectangle in the component definition and
+        use the container's matrix for their world placement.  Returning a
+        new entity is important when a component is exploded: changing the
+        shared definition would move the photo in every sibling instance.
+        """
+        image = self.copy()
+        image.origin = matrix.map(self.origin)
+        image.u = matrix.mapVector(self.u)
+        image.v = matrix.mapVector(self.v)
+        return image
+
     # ---- Serialisation ------------------------------------------------------
     def to_dict(self) -> dict:
         # The file goes under a ``"texture"`` sub-dict on purpose: ``igz``'s

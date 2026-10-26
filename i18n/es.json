@@ -3010,5 +3010,10 @@
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Cambia el ángulo de visión de la cámara, como un objetivo: más abierto abarca más, más cerrado deja las líneas tranquilas.",
  "Field of view in degrees (10–120):": "Campo de visión en grados (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "El campo de visión es de la perspectiva; cambie primero a Perspectiva.",
- "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: todas sus caras tienen material propio, así que no cambió nada; entre en él y pinte las caras"
+ "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: todas sus caras tienen material propio, así que no cambió nada; entre en él y pinte las caras",
+ "Group photos separately from model geometry": "Agrupe las fotos por separado de la geometría del modelo",
+ "Make a component from photos separately from model geometry": "Cree un componente con las fotos por separado de la geometría del modelo",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "Este grupo contiene una foto, no geometría editable — explótelo para editar la imagen",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Esquina de la imagen colocada — mueva el puntero y haga clic para definir su tamaño, o escriba un ancho y pulse Intro (Esc cancela)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "Imagen colocada a su tamaño de visualización natural — use Tamaño de imagen… para indicar un ancho exacto en el modelo"
 }

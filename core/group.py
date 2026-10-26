@@ -46,7 +46,7 @@ class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
                  "children", "owner", "context", "text3d", "hidden", "uid",
                  "material", "axes", "component", "exploded",
-                 "explode_offset", "ext", "locked")
+                 "explode_offset", "ext", "locked", "images")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -142,6 +142,12 @@ class Group:
         #: :meth:`is_component` (issue #90, @fafecm: «the parent group
         #: always becomes a component»).
         self.component = True
+        # Imported photos remain ImagePlane entities when wrapped in a group
+        # or component.  They are deliberately not converted to textured
+        # faces: display styles may suppress face textures, while a photo is
+        # visible in every style (including Wireframe), like SketchUp images.
+        # Coordinates are local to ``xform`` exactly like this group's mesh.
+        self.images: list = []
 
     def is_component(self) -> bool:
         """A component instance, as the user knows it — not merely a group
@@ -176,11 +182,17 @@ class Group:
         child geometry a second time."""
         if self.xform is None and not self.children:
             return
+        images = []
+        for group, matrix in iter_placements(self):
+            for image in getattr(group, "images", None) or ():
+                images.append(image.transformed(matrix)
+                              if matrix is not None else image.copy())
         frame = group_frame(self)
         self.mesh = world_mesh(self)
         self.xform = None
         self.axes = frame                   # baked, but it still faces its way
         self.children = []
+        self.images = images
 
     def make_unique(self) -> None:
         """Make Unique: this instance stops sharing with its siblings.
@@ -198,13 +210,22 @@ class Group:
         from PySide6.QtGui import QMatrix4x4
         if self.is_component():
             self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
+            self.images = [image.copy() for image in self.images]
             self.children = [_independent_copy(c)
                              for c in (self.children or ())]
+            return
+        if self.images and not self.children:
+            # A copied photo group stops sharing its definition, but keeps
+            # the placement matrix: all transform commands can continue to
+            # move the non-topological image in O(1).
+            self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
+            self.images = [image.copy() for image in self.images]
             return
         if not self.children:
             self.materialize()
             return
         self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
+        self.images = [image.copy() for image in self.images]
         self.children = [_independent_copy(c) for c in self.children]
         # Nothing shared any more: what is left is a group of groups.
         self.component = False
@@ -666,6 +687,10 @@ def copy_group(group, delta=None, _in_definition=False):
     g.component = getattr(group, "component", True)
     g.exploded = dict(group.exploded) if group.exploded else None
     g.explode_offset = group.explode_offset
+    # A component definition may share its photos; a copied ordinary group
+    # gets independent entities, just as it gets an independent mesh.
+    images = getattr(group, "images", None) or ()
+    g.images = (list(images) if share else [im.copy() for im in images])
     # Nested placements ride along untranslated: ``delta`` already moved the
     # parent, and a child's transform is relative to it.
     g.children = [copy_group(c, _in_definition=share)
@@ -682,6 +707,7 @@ def _independent_copy(group):
     if group.xform is not None:
         g.mesh = transformed_mesh(group.mesh, QMatrix4x4())
     g.uid = group.uid
+    g.images = [im.copy() for im in (getattr(group, "images", None) or ())]
     g.children = [_independent_copy(c) for c in (group.children or ())]
     return g
 
@@ -824,20 +850,34 @@ def placement_points(group, cache=None):
         cache = {}
     for g, m in iter_placements(group):
         verts = g.mesh.vertices
-        if not verts:
-            continue
-        arr = cache.get(id(g.mesh))
-        if arr is None:
-            arr = cache[id(g.mesh)] = np.array(
-                [[v.position.x(), v.position.y(), v.position.z()]
-                 for v in verts], dtype=np.float64)
-        if m is not None:
-            d = m.data()                      # column-major
-            rot = np.array([[d[0], d[4], d[8]],
-                            [d[1], d[5], d[9]],
-                            [d[2], d[6], d[10]]])
-            arr = arr @ rot.T + np.array([d[12], d[13], d[14]])
-        out.append(arr)
+        if verts:
+            arr = cache.get(id(g.mesh))
+            if arr is None:
+                arr = cache[id(g.mesh)] = np.array(
+                    [[v.position.x(), v.position.y(), v.position.z()]
+                     for v in verts], dtype=np.float64)
+            if m is not None:
+                d = m.data()                      # column-major
+                rot = np.array([[d[0], d[4], d[8]],
+                                [d[1], d[5], d[9]],
+                                [d[2], d[6], d[10]]])
+                arr = arr @ rot.T + np.array([d[12], d[13], d[14]])
+            out.append(arr)
+        # A photo-only container has no topology vertices, but its four
+        # corners still define the selection box and Zoom Selection bounds.
+        images = getattr(g, "images", None) or ()
+        if images:
+            ip = np.array(
+                [[p.x(), p.y(), p.z()]
+                 for image in images for p in image.corners()],
+                dtype=np.float64)
+            if m is not None:
+                d = m.data()
+                rot = np.array([[d[0], d[4], d[8]],
+                                [d[1], d[5], d[9]],
+                                [d[2], d[6], d[10]]])
+                ip = ip @ rot.T + np.array([d[12], d[13], d[14]])
+            out.append(ip)
     return np.concatenate(out) if out else np.empty((0, 3))
 
 
