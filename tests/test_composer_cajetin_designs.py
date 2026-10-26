@@ -203,7 +203,7 @@ def test_title_block_templates_save_apply_and_default(monkeypatch, tmp_path):
         assert (c2.corner, c2.radius_mm, c2.w_mm) == ("chamfer", 4.0, 140.0)
         assert (c2.x_mm, c2.y_mm) == pos           # stays where it was
         comp.history.undo()
-        assert c2.corner == "square" and c2.campos[0][0] == "PROYECTO"
+        assert c2.corner == "square" and c2.campos[0][0] == "PROJECT"
 
         comp.set_default_cajetin_template("Municipal")
         third = Composicion(name="L3")
@@ -213,7 +213,7 @@ def test_title_block_templates_save_apply_and_default(monkeypatch, tmp_path):
         c3 = third.cajetin
         assert c3.corner == "chamfer" and c3.w_mm == 140.0
         assert c3.campos[0] == ["OBRA", "Pileta"]
-        assert any(r[0] == "FECHA" and r[1] for r in c3.campos)
+        assert any(r[0] == "DATE" and r[1] for r in c3.campos)
         pw, ph = third.page_size_mm()
         m = third.margin_mm
         assert abs(c3.x_mm - (pw - m - 140.0)) < 1e-6   # docked with its size

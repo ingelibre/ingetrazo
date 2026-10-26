@@ -698,6 +698,9 @@ def save_scene(scene, path: Path) -> dict:
     comps = getattr(scene, "compositions", None)
     if comps:
         payload["compositions"] = [c.to_dict() for c in comps]
+    sheet_folders = getattr(scene, "sheet_folders", None)
+    if sheet_folders:
+        payload["sheet_folders"] = [f.to_dict() for f in sheet_folders]
     dims = getattr(scene, "dimensions", None)
     if dims:
         payload["dimensions"] = [
@@ -1212,6 +1215,14 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             import logging
             logging.getLogger(__name__).warning(
                 "sheet %r skipped: %s", r.get("name", "?"), exc)
+    # The sheet explorer's folders. A file from before them has none: every
+    # sheet at the top. repair() mends a damaged tree (a missing folder or
+    # parent, a cycle, a duplicate id) so the file opens anyway.
+    from core.sheet_folders import SheetFolder, repair
+    scene.sheet_folders = [SheetFolder.from_dict(r)
+                           for r in payload.get("sheet_folders", []) or []
+                           if isinstance(r, dict)]
+    repair(scene)
     proto_meshes: list = []
     import time as _time
     raw_protos = payload.get("protos", [])

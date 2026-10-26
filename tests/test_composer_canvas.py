@@ -538,14 +538,14 @@ class TestShapesAndCajetin:
         c = Cajetin(**{"x_mm": 1.0, "y_mm": 2.0, "w_mm": 180.0,
                        "h_mm": 33.0, "proyecto": "Plaza", "autor": "Marco",
                        "fecha": "", "escala": "1:100", "lamina": "L-01"})
-        assert ["PROYECTO", "Plaza"] in c.campos
-        assert ["ESCALA", "1:100"] in c.campos
+        assert ["PROJECT", "Plaza"] in c.campos
+        assert ["SCALE", "1:100"] in c.campos
         assert len(c.campos) == 5
 
     def test_cajetin_set_field_and_new_rows(self):
         c = Cajetin()
         c.set_field("LÁMINA", "L-07")
-        assert ["LÁMINA", "L-07"] in c.campos
+        assert ["SHEET", "L-07"] in c.campos
         c.set_field("DISTRITO", "Yanque")          # a NEW custom row
         assert c.campos[-1] == ["DISTRITO", "Yanque"]
         from dataclasses import asdict

@@ -24,6 +24,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDateEdit,
@@ -4034,6 +4035,48 @@ class LayersPanel(QWidget):
 _SCENE_ALWAYS_BUMP = os.environ.get("INGETRAZO_SCENE_ALWAYS_BUMP", "") == "1"
 
 
+def mark_row(item, on: bool, column: int = 0) -> None:
+    """A row marked as related to the current one elsewhere — a scene and
+    the views that show it: a soft accent behind it, and ``UserRole + 1``
+    set. Works on list and tree rows alike."""
+    from PySide6.QtGui import QBrush, QColor
+    from PySide6.QtWidgets import QApplication, QTreeWidgetItem
+    brush = QBrush()
+    if on:
+        tint = QColor(QApplication.palette().highlight().color())
+        tint.setAlpha(60)
+        brush = QBrush(tint)
+    if isinstance(item, QTreeWidgetItem):
+        item.setBackground(column, brush)
+        item.setData(column, Qt.UserRole + 1, bool(on))
+    else:
+        item.setBackground(brush)
+        item.setData(Qt.UserRole + 1, bool(on))
+
+
+class _SceneList(QListWidget):
+    """The compact Scenes list: scenes drag out by name — what a sheet (in
+    the sheet explorer) and the composer's page take."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragOnly)
+        self.setDefaultDropAction(Qt.CopyAction)
+
+    def mimeTypes(self):
+        from views.composer import SCENE_MIME
+        return [SCENE_MIME]
+
+    def mimeData(self, items):
+        from PySide6.QtCore import QMimeData
+        from views.composer import SCENE_MIME
+        data = QMimeData()
+        data.setData(SCENE_MIME,
+                     "\n".join(it.text() for it in items).encode("utf-8"))
+        return data
+
+
 class ScenesPanel(QWidget):
     """Saved views — "Scenes": named camera + layer-visibility
     snapshots. Double-click recalls one; the buttons capture the current
@@ -4041,30 +4084,57 @@ class ScenesPanel(QWidget):
     layers this is the '2D that emerges' workflow bottled: "Planta" = top
     camera + parallel + plan layers, one click away."""
 
-    def __init__(self, window) -> None:
+    def __init__(self, window, compact: bool = False, on_activate=None,
+                 icon_for=None) -> None:
+        """``compact``: just the list of scenes — no hint, no buttons, no
+        renaming or deleting, and the list scrolls in the space it is given
+        instead of growing to every row: the composer's Sheets page, where
+        scenes are picked up and dropped on sheets (they are made and
+        changed here, in the full panel). A compact list drags its scenes
+        out by name.
+
+        ``on_activate(view)`` replaces what a double-click does (the
+        composer places the scene on the open sheet); ``icon_for(name)``
+        gives each scene a picture, drawn one at a time while the list is on
+        screen."""
         super().__init__()
-        from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget,
-                                       QPushButton, QVBoxLayout)
+        from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton,
+                                       QVBoxLayout)
         self._window = window
         self._updating = False
+        self._compact = bool(compact)
+        self._activate_hook = on_activate
+        self._icon_for = icon_for
+        self._icon_queue: list = []
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 6, 8, 8)
-        hint = QLabel(tr("Double-click a scene to show it"))
-        hint.setStyleSheet("color: gray;")
-        lay.addWidget(hint)
-        self.list = QListWidget()
+        if not self._compact:
+            hint = QLabel(tr("Double-click a scene to show it"))
+            hint.setStyleSheet("color: gray;")
+            lay.addWidget(hint)
+        self.list = _SceneList() if self._compact else QListWidget()
+        if icon_for is not None:
+            from PySide6.QtCore import QSize
+            self.list.setIconSize(QSize(48, 32))
         # Ctrl/Shift+click picks several scenes; − or Delete removes them
         # all in one undo step (#280).
         self.list.setSelectionMode(QListWidget.ExtendedSelection)
         self.list.itemDoubleClicked.connect(self._on_activate)
         self.list.itemChanged.connect(self._on_item_changed)
+        lay.addWidget(self.list, 1)
+        if self._compact:
+            self.list.setToolTip(tr(
+                "Drag a scene onto a sheet. Double-click places it on the "
+                "open sheet.") if on_activate is not None else tr(
+                "Drag a scene onto a sheet. Double-click shows it."))
+            self.refresh()
+            return
         from PySide6.QtGui import QAction, QKeySequence
         delete = QAction(self.list)
         delete.setShortcut(QKeySequence.Delete)
         delete.setShortcutContext(Qt.WidgetShortcut)
         delete.triggered.connect(self._on_delete)
         self.list.addAction(delete)
-        lay.addWidget(self.list)
         row = QHBoxLayout()
         add_btn = QPushButton(tr("+ Scene"))
         add_btn.setToolTip(tr("Save the current view and layer visibility"))
@@ -4088,20 +4158,99 @@ class ScenesPanel(QWidget):
     # ---- Model → view --------------------------------------------------------
     def refresh(self) -> None:
         from PySide6.QtWidgets import QListWidgetItem
+        views = list(self._scene().saved_views)
+        if self._compact:
+            # Rebuilt only when the scenes changed: every edit of the model
+            # calls here, and a rebuild throws the pictures away.
+            shape = tuple((id(v), v.name) for v in views)
+            if shape == getattr(self, "_shape", None):
+                return
+            self._shape = shape
         self._updating = True
         self.list.clear()
         for view in self._scene().saved_views:
             item = QListWidgetItem(view.name)
             item.setData(Qt.UserRole, view)
-            item.setFlags(item.flags() | Qt.ItemIsEditable)
+            if not self._compact:           # the compact list only shows
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
             self.list.addItem(item)
-        fit_rows(self.list)
+        if not self._compact:
+            fit_rows(self.list)
         self._updating = False
+        self._queue_icons()
+
+    # ---- Pictures (icon_for) -------------------------------------------------
+    def showEvent(self, ev) -> None:
+        super().showEvent(ev)
+        self._queue_icons()
+
+    def _queue_icons(self) -> None:
+        """The scenes' pictures, one at a time from the event loop — a
+        render each, so the list shows at once and fills in. Queued by NAME:
+        a render can refresh the list, and the row is then another one.
+        Only while on screen: a hidden list renders nothing."""
+        if self._icon_for is None or not self.isVisible():
+            return
+        from PySide6.QtCore import QTimer
+        # Only the scenes still without a picture.
+        self._icon_queue = [self.list.item(i).text()
+                            for i in range(self.list.count())
+                            if self.list.item(i).icon().isNull()]
+        if self._icon_queue:
+            QTimer.singleShot(0, self, self._next_icon)
+
+    def _next_icon(self) -> None:
+        from shiboken6 import isValid
+        if not self._icon_queue or not isValid(self):
+            return
+        if not self.isVisible():
+            # Off screen since it was queued (its window closing): a render
+            # now would go through a view that may be on its way out.
+            self._icon_queue = []
+            return
+        name = self._icon_queue.pop(0)
+        icon = self._icon_for(name)
+        item = next((self.list.item(i) for i in range(self.list.count())
+                     if self.list.item(i).text() == name), None)
+        if icon is not None and item is not None:
+            # A new icon is an item change to Qt, not a rename: unguarded,
+            # it would go through _on_item_changed, touch the document and
+            # rebuild the list — which queued the pictures again.
+            self._updating = True
+            try:
+                item.setIcon(icon)
+            finally:
+                self._updating = False
+        if self._icon_queue:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(20, self, self._next_icon)
+
+    def mark(self, name) -> list:
+        """Mark the scene called ``name`` (``None``: none) — a view of it
+        is the current row of the sheet explorer. Returns the marked
+        rows."""
+        out = []
+        # A mark is an item change to Qt: unguarded it read as a rename,
+        # which rebuilt the list under the row being marked.
+        self._updating = True
+        try:
+            for i in range(self.list.count()):
+                item = self.list.item(i)
+                on = name is not None and item.text() == name
+                mark_row(item, on)
+                if on:
+                    out.append(item)
+        finally:
+            self._updating = False
+        return out
 
     # ---- View → model --------------------------------------------------------
     def _on_activate(self, item) -> None:
         view = item.data(Qt.UserRole)
         if view is None:
+            return
+        if self._activate_hook is not None:
+            self._activate_hook(view)
             return
         scene = self._scene()
         from core.saved_views import shown_state

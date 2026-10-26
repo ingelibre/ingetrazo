@@ -139,8 +139,8 @@ def test_movable_scale_label_is_a_bound_text_that_follows_its_frame(monkeypatch,
         label = comp.add_scale_label(frame)
         assert label in comp.comp.texts and label.frame_uid == frame.uid
         comp._set_field_context(comp.comp)
-        assert expand_fields(label.text, label.frame_uid) == "ESC. 1:40"
-        assert expand_fields(label.text) == "ESC. 1:100"     # unbound → main
+        assert expand_fields(label.text, label.frame_uid) == "SCALE 1:40"
+        assert expand_fields(label.text) == "SCALE 1:100"     # unbound → main
         # The frame moves 10 mm right and 5 mm down: the label follows,
         # one undo step brings both back.
         x0, y0 = label.x_mm, label.y_mm

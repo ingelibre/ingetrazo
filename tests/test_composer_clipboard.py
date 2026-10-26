@@ -173,7 +173,7 @@ def test_the_title_block_copies_to_another_sheet_and_replaces_its_own():
     assert composer.comp is second and second.cajetin is None
     composer.paste_clipboard()
     assert second.cajetin is not None and second.cajetin is not first.cajetin
-    assert dict(second.cajetin.campos)["PROYECTO"] == "Plaza Yanque"
+    assert dict(second.cajetin.campos)["PROJECT"] == "Plaza Yanque"
     assert (second.cajetin.x_mm, second.cajetin.y_mm) == (100.0, 150.0)
     assert composer.history.undo() and second.cajetin is None
-    assert dict(first.cajetin.campos)["PROYECTO"] == "Plaza Yanque"   # untouched
+    assert dict(first.cajetin.campos)["PROJECT"] == "Plaza Yanque"   # untouched

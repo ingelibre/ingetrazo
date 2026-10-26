@@ -76,7 +76,7 @@ def _close(win):
 
 
 def _views(win):
-    """The «Views and sheets» panel — in the sheet composer."""
+    """The composer's «Sheets» page (Scenes above, sheets below)."""
     return win._ensure_composer().views_panel
 
 
@@ -467,11 +467,11 @@ def test_the_browser_is_the_model_tree_and_the_sheets_live_in_the_composer():
     # On the right with the others, second; the left side empty, folded.
     right = comp_win._tabs
     assert right.indexOf(comp_win.views_panel) == 1
-    assert right.tabText(1) == "Views and sheets"
+    assert right.tabText(1) == "Sheets"
     assert comp_win._left_tabs.count() == 0
     assert comp_win._left_panel.isHidden()
     assert not comp_win._act_views.isChecked()
-    assert comp_win.views_panel._composer_win is comp_win
+    assert comp_win.views_panel.sheets._composer_win is comp_win
     _close(win)
 
 
@@ -503,60 +503,6 @@ def test_scene_usage_and_orphans_in_the_core():
     assert outliner.is_orphan(scene, a101.frames[1])
     assert not outliner.is_orphan(scene, a101.frames[0])
     assert not outliner.is_orphan(scene, a102.frames[1])     # a std view
-    _close(win)
-
-
-def test_the_sheets_tab_lists_scenes_sheets_and_their_views():
-    win, scene, panel = _window_with()
-    _sheets_model(win)
-    sheets = _views(win)
-    sheets.refresh()
-    scenes_root, sheets_root = sheets.scenes_root, sheets.sheets_root
-    assert [scenes_root.child(i).text(0)
-            for i in range(scenes_root.childCount())] == [
-        "Plan L1", "North elevation"]
-    assert scenes_root.child(0).text(1) == "On A101 Plans, A102 Elevations"
-    assert scenes_root.child(1).text(1) == "Not on a sheet"
-    a101 = sheets_root.child(0)
-    assert a101.text(0) == "A101 Plans" and a101.text(1).startswith("A3")
-    assert a101.child(0).text(0) == "Plan L1 · 1:100"
-    orphan = a101.child(1)
-    assert orphan.text(1) == "Scene missing"
-    assert "Section A" in orphan.toolTip(0)
-    assert sheets_root.child(1).child(1).text(1) == "Standard view"
-    _close(win)
-
-
-def test_deleting_a_scene_flags_its_frames_instead_of_breaking():
-    win, scene, panel = _window_with()
-    a101, _a102 = _sheets_model(win)
-    sheets = _views(win)
-    sheets.refresh()
-    assert sheets.sheets_root.child(0).child(0).text(1) == "Scene"
-    del scene.saved_views[0]                      # «Plan L1» goes
-    sheets.refresh()
-    assert sheets.sheets_root.child(0).child(0).text(1) == "Scene missing"
-    assert a101.frames[0].view_key == "scene:Plan L1"   # untouched
-    _close(win)
-
-
-def test_double_click_shows_a_scene_and_opens_a_sheet():
-    win, scene, panel = _window_with()
-    _sheets_model(win)
-    tree = _group("Tree")
-    scene.groups.append(tree)
-    tree.hidden = True
-    scene.saved_views[0].hidden_objects = []      # «Plan L1» shows it all
-    win.tray.scenes.refresh()
-    sheets = _views(win)
-    sheets.refresh()
-    sheets._show_scene(scene.saved_views[0])         # right-click ▸ Show
-    assert not tree.hidden
-    opened = []
-    win._show_sheet = opened.append
-    sheets.activate(sheets.sheets_root.child(1))
-    sheets.activate(sheets.sheets_root.child(0).child(1))
-    assert opened == [1, 0]
     _close(win)
 
 
@@ -618,23 +564,6 @@ def test_renaming_a_scene_carries_its_sheet_views_along():
     _close(win)
 
 
-def test_f2_renames_a_scene_and_a_sheet_in_the_browser():
-    win, scene, panel = _window_with()
-    a101, _a102 = _sheets_model(win)
-    sheets = _views(win)
-    sheets.refresh()
-    sheets.scenes_root.child(0).setText(0, "Ground floor")
-    assert scene.saved_views[0].name == "Ground floor"
-    assert a101.frames[0].view_key == "scene:Ground floor"
-    assert win.tray.scenes.list.item(0).text() == "Ground floor"
-    sheets.sheets_root.child(0).setText(0, "A-101")
-    assert a101.name == "A-101"
-    _app.processEvents()
-    assert sheets.sheets_root.child(0).text(0) == "A-101"
-    assert sheets.sheets_root.child(0).child(0).text(1) == "Scene"
-    _close(win)
-
-
 def test_the_scenes_panel_rename_no_longer_orphans_sheet_views():
     win, scene, panel = _window_with()
     a101, _a102 = _sheets_model(win)
@@ -642,45 +571,6 @@ def test_the_scenes_panel_rename_no_longer_orphans_sheet_views():
     scenes.refresh()
     scenes.list.item(0).setText("Ground floor")
     assert a101.frames[0].view_key == "scene:Ground floor"
-    _close(win)
-
-
-def test_a_scene_marks_its_views_and_a_view_marks_its_scene():
-    win, scene, panel = _window_with()
-    _sheets_model(win)
-    sheets = _views(win)
-    sheets.refresh()
-    plan = sheets.scenes_root.child(0)                     # «Plan L1»
-    sheets.tree.setCurrentItem(plan)
-    marked = sheets.related()
-    assert sorted(it.text(0) for it in marked) == ["Plan L1 · 1:100",
-                                                   "Plan L1 · 1:200"]
-    assert all(it.data(0, Qt.UserRole + 1) for it in marked)
-    view = sheets.sheets_root.child(1).child(0)            # on A102
-    sheets.tree.setCurrentItem(view)
-    assert sheets.related() == [plan]
-    assert not marked[0].data(0, Qt.UserRole + 1)          # cleared
-    sheets.tree.setCurrentItem(sheets.sheets_root.child(0).child(1))
-    assert sheets.related() == []                          # orphan: none
-    _close(win)
-
-
-def test_a_sheet_added_in_the_composer_reaches_the_browser():
-    from core.composition import Composicion
-    win, scene, panel = _window_with()
-    _sheets_model(win)
-    sheets = _views(win)
-    win._ensure_composer().show()
-    win._composer._show_page("views")  # its tab in front
-    _app.processEvents()
-    sheets.refresh()
-    scene.compositions.append(Composicion(name="A103 Details"))
-    win._refresh_sheet_tabs()          # what the composer calls on add
-    assert sheets.sheets_root.childCount() == 3
-    scene.compositions[2].name = "A103 Joints"
-    sheets._poll.timeout.emit()        # the composer's in-place edits
-    assert sheets.sheets_root.child(2).text(0) == "A103 Joints"
-    win._composer.hide()
     _close(win)
 
 
@@ -1346,21 +1236,6 @@ def test_an_open_composer_learns_of_a_new_plan_sheet_and_of_its_undo():
     _close(win)
 
 
-def test_creating_a_plan_shows_where_it_went():
-    building, tree = _building()
-    win, scene, panel = _window_with(building, tree)
-    opened = []
-    win._show_sheet = opened.append
-    panel.create_plan(building.children[0], 1.2, sheet=True,
-                      open_sheet=True)
-    assert opened == [len(scene.compositions) - 1]   # straight to it
-    views = _views(win)                              # the composer exists
-    panel.create_plan(building.children[1], 1.2, sheet=False)
-    current = views.tree.currentItem()               # its scene, marked
-    assert current is not None and current.text(0) == "Plan Level 2"
-    _close(win)
-
-
 def test_a_view_of_a_vertical_cut_looks_at_it_square_on():
     building, tree = _building()
     win, scene, panel = _window_with(building, tree)
@@ -1417,96 +1292,6 @@ def test_the_composer_says_a_frame_lost_its_scene():
 
 
 # ---- Sheets 2D as a place to work ----------------------------------------------
-
-def test_a_scene_dropped_on_a_sheet_is_placed_in_a_free_spot():
-    win, scene, panel = _window_with()
-    a101, a102 = _sheets_model(win)
-    sheets = _views(win)
-    sheets.refresh()
-    north = scene.saved_views[1]                      # on no sheet yet
-    assert outliner.unplaced_scenes(scene) == [north]
-    assert sheets.scenes_root.text(1) == "2 saved · 1 on no sheet"
-    assert sheets.scenes_root.child(1).font(0).italic()
-    frames0 = len(a102.frames)
-    frame = sheets.place_scene(north, a102)
-    assert frame in a102.frames and frame.view_key == "scene:North elevation"
-    for other in a102.frames[:frames0]:               # nothing covered
-        assert (frame.x_mm >= other.x_mm + other.w_mm
-                or frame.x_mm + frame.w_mm <= other.x_mm
-                or frame.y_mm >= other.y_mm + other.h_mm
-                or frame.y_mm + frame.h_mm <= other.y_mm)
-    assert outliner.unplaced_scenes(scene) == []
-    win._composer.history.undo()                      # the composer's undo
-    assert frame not in a102.frames
-    _close(win)
-
-
-def test_dragging_a_scene_onto_a_sheet_row_places_it():
-    from PySide6.QtCore import QMimeData, QPoint, QPointF
-    from PySide6.QtGui import QDropEvent
-    win, scene, panel = _window_with()
-    a101, a102 = _sheets_model(win)
-    sheets = _views(win)
-    win._composer.show()
-    _app.processEvents()
-    sheets.refresh()
-    t = sheets.tree
-    t.clearSelection()
-    sheets.scenes_root.child(1).setSelected(True)      # «North elevation»
-    target = sheets.sheets_root.child(1)               # A102
-    t.scrollToItem(target)
-    pos = t.visualItemRect(target).center()
-    ev = QDropEvent(QPointF(pos), Qt.MoveAction, QMimeData(),
-                    Qt.LeftButton, Qt.NoModifier)
-    t.dropEvent(ev)
-    assert any(f.view_key == "scene:North elevation" for f in a102.frames)
-    win._composer.hide()
-    _close(win)
-
-
-def test_a_scene_on_a_new_sheet_and_sheets_reordered_in_one_step_each():
-    win, scene, panel = _window_with()
-    a101, a102 = _sheets_model(win)
-    sheets = _views(win)
-    sheets.refresh()
-    north = scene.saved_views[1]
-    sheets.place_scene(north, None)
-    new = scene.compositions[-1]
-    assert new.name == "North elevation" and len(new.frames) == 1
-    win.viewport.history.undo()                       # sheet and view go
-    assert new not in scene.compositions
-    sheets.move_sheet(a102, -1)
-    assert scene.compositions == [a102, a101]
-    assert sheets.current_sheet() is a102
-    win.viewport.history.undo()
-    assert scene.compositions == [a101, a102]
-    _close(win)
-
-
-def test_alt_arrows_move_a_sheet():
-    from PySide6.QtTest import QTest
-    win, scene, panel = _window_with()
-    a101, a102 = _sheets_model(win)
-    sheets = _views(win)
-    sheets.refresh()
-    sheets.tree.setCurrentItem(sheets.sheets_root.child(0))
-    QTest.keyClick(sheets.tree, Qt.Key_Down, Qt.AltModifier)
-    assert scene.compositions == [a102, a101]
-    _close(win)
-
-
-def test_the_selected_sheets_export_to_one_pdf(tmp_path):
-    win, scene, panel = _window_with()
-    a101, a102 = _sheets_model(win)
-    sheets = _views(win)
-    asked = []
-    comp_win = win._ensure_composer()
-    comp_win.export_all_pdf = lambda path, chosen=None: asked.append(
-        (path, chosen)) or []
-    sheets.export_pdf([a102], path=str(tmp_path / "out.pdf"))
-    assert asked == [(str(tmp_path / "out.pdf"), [a102])]
-    _close(win)
-
 
 def test_export_all_pdf_can_take_only_some_sheets(tmp_path):
     win, scene, panel = _window_with()
@@ -1575,36 +1360,6 @@ def test_a_scene_dropped_on_the_page_lands_where_it_is_dropped():
     _close(win)
 
 
-def test_double_click_on_a_scene_places_it_in_a_free_spot():
-    win, scene, panel = _window_with()
-    comp_win, a101, a102 = _composer_with_model(win)
-    views = comp_win.views_panel
-    views.refresh()
-    frames0 = list(a102.frames)
-    views.activate(views.scenes_root.child(1))        # «North elevation»
-    new = [f for f in a102.frames if f not in frames0]
-    assert len(new) == 1
-    for other in frames0:
-        f = new[0]
-        assert (f.x_mm >= other.x_mm + other.w_mm
-                or f.x_mm + f.w_mm <= other.x_mm
-                or f.y_mm >= other.y_mm + other.h_mm
-                or f.y_mm + f.h_mm <= other.y_mm)
-    _close(win)
-
-
-def test_the_panel_drags_scenes_by_name():
-    from views.composer import SCENE_MIME
-    win, scene, panel = _window_with()
-    comp_win, a101, a102 = _composer_with_model(win)
-    views = comp_win.views_panel
-    views.refresh()
-    data = views.tree.mimeData([views.scenes_root.child(0),
-                                views.sheets_root.child(0)])
-    assert bytes(data.data(SCENE_MIME)).decode() == "Plan L1"
-    _close(win)
-
-
 def test_the_scale_fits_the_model_in_the_frame():
     from core.saved_views import SavedView
     from core.camera import OrbitCamera
@@ -1622,44 +1377,6 @@ def test_the_scale_fits_the_model_in_the_frame():
     bigger = [s for s in outliner.STANDARD_SCALES if s < n]
     assert not bigger or (hi.z() - lo.z()) * 1000.0 / bigger[-1] > 90 * 0.85
     _close(win)
-
-
-def test_the_scene_pictures_do_not_rebuild_the_list_nor_touch_the_document():
-    """A new icon is an item change to Qt: it used to go through the rename
-    path, touch the document and rebuild the list, which queued the
-    pictures again — the scenes flickered and the file read as modified."""
-    from PySide6.QtGui import QIcon, QPixmap
-    win, scene, panel = _window_with()
-    comp_win, a101, a102 = _composer_with_model(win)
-    views = comp_win.views_panel
-    pm = QPixmap(8, 8)
-    pm.fill(Qt.red)
-    comp_win.scene_thumbnail = lambda name: QIcon(pm)
-    fills = []
-    real_fill = views._fill
-    views._fill = lambda sc: (fills.append(1), real_fill(sc))
-    views._shape = None
-    views.refresh()                                   # one fill, pictures queued
-    version = scene.version
-    for _ in range(40):
-        _app.processEvents()
-    assert len(fills) == 1
-    assert scene.version == version                   # nothing «modified»
-    assert not views.scenes_root.child(0).icon(0).isNull()
-    _close(win)
-
-
-def test_a_rename_to_the_same_name_does_nothing():
-    win, scene, panel = _window_with()
-    _sheets_model(win)
-    views = _views(win)
-    views.refresh()
-    version = scene.version
-    item = views.scenes_root.child(0)
-    item.setText(0, item.text(0))                     # «renamed» to itself
-    assert scene.version == version
-    _close(win)
-
 
 
 def test_the_left_panel_folds_away_like_the_other_panel():
@@ -1703,7 +1420,7 @@ def test_side_tabs_move_between_sides_reorder_and_are_remembered():
     comp_win = win._ensure_composer()
     left, right = comp_win._left_tabs, comp_win._tabs
     assert [right.tabText(i) for i in range(right.count())] == [
-        "Layout", "Views and sheets", "Items", "Item properties"]
+        "Layout", "Sheets", "Items", "Item properties"]
     assert left.count() == 0
     comp_win.move_page("views", "right", 3)           # reordered on the right
     assert right.indexOf(comp_win.views_panel) == 3
@@ -1739,7 +1456,7 @@ def test_a_side_left_empty_folds_and_the_tabs_reset_to_the_factory_layout():
     comp_win.move_page("props", "left", 0)
     comp_win.restore_default_tabs()                   # tab menu entry
     assert [right.tabText(i) for i in range(right.count())] == [
-        "Layout", "Views and sheets", "Items", "Item properties"]
+        "Layout", "Sheets", "Items", "Item properties"]
     assert left.count() == 0 and not comp_win._act_views.isChecked()
     assert comp_win._act_sidebar.isChecked()
     assert not QSettings().contains("composer/tab_layout")

@@ -270,7 +270,8 @@ def view_title_texts(frame: MarcoVista) -> dict:
         "subtitle": ex(getattr(frame, "title_subtitle", "")),
         "scale": ("" if not getattr(frame, "title_scale", True)
                   else tr("NO SCALE") if persp
-                  else "ESC. " + format_scale(frame.scale_n)),
+                  else tr("SCALE {escala}").replace(
+                      "{escala}", format_scale(frame.scale_n))),
         "number": ex(getattr(frame, "title_number", "")),
         "sheet": ex(getattr(frame, "title_sheet", "")),
     }
@@ -2110,14 +2111,15 @@ def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
     heavy.setWidthF(c.border_mm)
     light = QPen(line_color)
     light.setWidthF(c.line_mm)
-    campos = c.campos or [[label, getattr(c, attr)]
-                          for label, attr in Cajetin.FIELDS]
-    # Dynamic fields in the values; an empty ESCALA row reads the sheet's
-    # main frame by itself (the title block that never lies about scale).
+    campos = c.campos or c.default_rows()
+    # Dynamic fields in the values; an empty scale row (in whichever
+    # language it is labelled) reads the sheet's main frame by itself —
+    # the title block that never lies about scale.
+    scale_labels = Cajetin.field_labels("escala")
     expanded = []
     for label, value in campos:
         v = expand_fields(str(value or ""))
-        if not v and str(label).strip().lower() in ("escala", "scale"):
+        if not v and str(label).strip().upper() in scale_labels:
             v = expand_fields("{escala}")
         expanded.append([label, v])
     campos = expanded
@@ -5569,10 +5571,13 @@ class ComposerWindow(QMainWindow):
         # «Views and sheets» on the left, the page in the middle, the
         # properties on the right: the two side panels fold away the same
         # way, each with its handle on the splitter line and its key.
-        from views.outliner import SheetsPanel
-        self.views_panel = SheetsPanel(main_window, composer=self)
+        # The same Scenes-above-Sheets page as the main window's Sheets tab
+        # (views/sheet_browser.py). Its key stays «views», so a side and
+        # place the user gave it are kept.
+        from views.sheet_browser import SheetsTab
+        self.views_panel = SheetsTab(main_window, composer=self)
         self._pages["views"] = self.views_panel
-        self._page_titles["views"] = tr("Views and sheets")
+        self._page_titles["views"] = tr("Sheets")
         self._left_tabs = _PanelTabs(self, "left")
         left = QWidget()
         left_lay = QVBoxLayout(left)
@@ -8698,13 +8703,14 @@ class ComposerWindow(QMainWindow):
 
     def add_scale_label(self, frame) -> TextoItem:
         """A movable scale label for *frame*: a bound text block under its
-        bottom-right corner, "ESC. {escala}", bold."""
+        bottom-right corner, «SCALE {escala}» in the interface's language,
+        bold."""
         import uuid
         if not frame.uid:
             frame.uid = uuid.uuid4().hex
         item = TextoItem(x_mm=frame.x_mm + frame.w_mm - 40.0,
                          y_mm=frame.y_mm + frame.h_mm + 1.5, w_mm=40.0,
-                         text="ESC. {escala}", size_pt=10.0, bold=True,
+                         text=tr("SCALE {escala}"), size_pt=10.0, bold=True,
                          align="right", frame_uid=frame.uid, follow=True)
         item.z = self._next_z()
         self._pending_sel = item
@@ -10327,10 +10333,10 @@ class ComposerWindow(QMainWindow):
             pw, ph = self.comp.page_size_mm()      # keep it docked
             m = self.comp.margin_mm
             c.x_mm, c.y_mm = pw - m - c.w_mm, ph - m - c.h_mm
-        c.set_field("FECHA", datetime.date.today().strftime("%d/%m/%Y"))
+        c.set_field("fecha", datetime.date.today().strftime("%d/%m/%Y"))
         if self.comp.frames:
             f = self.comp.frames[0]
-            c.set_field("ESCALA", f"1:{f.scale_n:g}")
+            c.set_field("escala", f"1:{f.scale_n:g}")
         c.z = self._next_z()
         self.history.execute(AddItemCommand(self.comp, c))
 
@@ -12531,17 +12537,26 @@ class ComposerWindow(QMainWindow):
     def _on_renumber(self) -> None:
         for i, comp in enumerate(self._scene().compositions):
             if comp.cajetin is not None:
-                comp.cajetin.set_field("LÁMINA", f"L-{i + 1:02d}")
+                comp.cajetin.set_field("lamina", f"L-{i + 1:02d}")
         self._mark_dirty()
         self._rebuild_canvas()
 
     def _on_export_all(self) -> None:
+        """Export all: the sheets marked for printing in the sheet
+        explorer, in its order — the same set its Export all and Print all
+        take."""
+        from core.sheet_folders import printed_sheets
+        sheets = printed_sheets(self._scene())
+        if not sheets:
+            self.statusBar().showMessage(
+                tr("No sheet is marked for printing"), 4000)
+            return
         path, _ = file_dialogs.getSaveFileName(
-            self, tr("Export all sheets (PDF)…"), "laminas.pdf",
+            self, tr("Export all sheets (PDF)…"), self.default_pdf_path(),
             "PDF (*.pdf)")
         if not path:
             return
-        troubled = self.export_all_pdf(path)
+        troubled = self.export_all_pdf(path, sheets)
         if troubled:
             self.statusBar().showMessage(
                 tr("Exported {name} — but a view would not render on {sheets}",
@@ -12577,10 +12592,20 @@ class ComposerWindow(QMainWindow):
             tr("Exported {n} lines to {name}", n=n, name=path), 5000)
 
     # ---- export --------------------------------------------------------------
+    def default_pdf_path(self) -> str:
+        """Where a PDF export is offered to go: named after the project,
+        beside it («Casa.igz» → «Casa.pdf»); ``sheets.pdf`` for a document
+        never saved."""
+        current = getattr(self._window, "_current_path", None)
+        if current:
+            from pathlib import Path
+            return str(Path(current).with_suffix(".pdf"))
+        return "sheets.pdf"
+
     def _on_export_pdf(self) -> None:
         self.refresh_all_frames()
         path, _ = file_dialogs.getSaveFileName(
-            self, tr("Export PDF…"), "lamina.pdf", "PDF (*.pdf)")
+            self, tr("Export PDF…"), self.default_pdf_path(), "PDF (*.pdf)")
         if not path:
             return
         self.export_pdf(path)
@@ -12732,6 +12757,12 @@ class ComposerWindow(QMainWindow):
             comps = [c for c in comps if id(c) in wanted]
         writer = QPdfWriter(path)
         writer.setResolution(RENDER_DPI)
+        return self._paint_atlas(writer, comps, RENDER_DPI)
+
+    def _paint_atlas(self, device, comps, dpi) -> list:
+        """Paint ``comps`` on ``device`` (a PDF writer or a printer), one
+        page each at its own paper size and orientation. Returns the names
+        of the sheets where a frame would not render."""
         painter = None
         troubled: list = []
         try:
@@ -12749,21 +12780,61 @@ class ComposerWindow(QMainWindow):
                             troubled.append(comp.name)
                     finally:
                         self.comp = saved
-                writer.setPageSize(QPageSize(getattr(QPageSize, comp.paper)))
-                writer.setPageOrientation(
+                device.setPageSize(QPageSize(getattr(QPageSize, comp.paper)))
+                device.setPageOrientation(
                     QPageLayout.Landscape if comp.landscape
                     else QPageLayout.Portrait)
                 if painter is None:
-                    painter = QPainter(writer)
+                    painter = QPainter(device)
                 else:
-                    writer.newPage()
+                    device.newPage()
                 painter.resetTransform()
-                painter.scale(RENDER_DPI / 25.4, RENDER_DPI / 25.4)
+                painter.scale(dpi / 25.4, dpi / 25.4)
                 self._paint_sheet(painter, comp)
         finally:
             if painter is not None:
                 painter.end()
         return troubled
+
+    def print_sheets(self, sheets, parent=None, printer=None) -> bool:
+        """Print ``sheets`` — the printer dialog once, then one page per
+        sheet at its own paper size and orientation, as the PDF atlas lays
+        them out. ``printer`` skips the dialog (tests print to a PDF file).
+        Without Qt's print module it says so and points at Export all,
+        which gives the same pages. True if anything went to print."""
+        sheets = [c for c in sheets if c in self._scene().compositions]
+        if not sheets:
+            return False
+        mod = self.print_support()
+        if mod is None and printer is None:
+            QMessageBox.information(
+                parent or self, tr("Print all…"),
+                tr("This build of IngeTrazo has no printing support "
+                   "(Qt's print module is missing), so the sheets cannot "
+                   "be printed from here.\n\nExport all (PDF) gives you "
+                   "the same sheets, each at its exact paper size, ready "
+                   "to print."))
+            return False
+        if printer is None:
+            from PySide6.QtGui import QPageLayout, QPageSize
+            printer = mod.QPrinter(mod.QPrinter.HighResolution)
+            printer.setFullPage(True)     # the sheets carry their margins
+            first = sheets[0]
+            printer.setPageSize(QPageSize(getattr(QPageSize, first.paper)))
+            printer.setPageOrientation(
+                QPageLayout.Landscape if first.landscape
+                else QPageLayout.Portrait)
+            dlg = mod.QPrintDialog(printer, parent or self)
+            dlg.setWindowTitle(tr("Print all…"))
+            if not dlg.exec():                   # cancelled
+                return False
+        dpi = float(printer.resolution() or RENDER_DPI)
+        troubled = self._paint_atlas(printer, sheets, dpi)
+        if troubled:
+            self.statusBar().showMessage(
+                tr("Printed — but a view would not render on {sheets}",
+                   sheets=", ".join(troubled)), 10000)
+        return True
 
     def _set_field_context(self, comp) -> None:
         comps = list(getattr(self._scene(), "compositions", []) or [])
