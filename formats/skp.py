@@ -48,7 +48,11 @@ def detect_format(path) -> str:
     * ``"unknown"`` — not recognisably a ``.skp`` file / unreadable.
     """
     try:
-        head = Path(path).read_bytes()[:64]
+        # The first 64 bytes only: read_bytes() pulled the whole file into
+        # memory to look at them — 442 MB for a big model, before the
+        # import had even started.
+        with open(path, "rb") as fh:
+            head = fh.read(64)
     except OSError:
         return "unknown"
     if head[:4] == b"PK\x03\x04":
@@ -111,7 +115,11 @@ def parse_skp(path, progress=None) -> dict:
     """Parse ``path`` with the first pure backend that produces geometry, and
     return its payload. Raises :class:`NeedsConverter` when no pure backend can
     read the file (unrecognised format, parser error, or an empty parse) — the
-    caller reports the file as unreadable. Touches no ``Scene``."""
+    caller reports the file as unreadable. Touches no ``Scene``.
+
+    The returned payload owns its geometry: ``apply_payload`` releases each
+    group after building it. Pass ``consume=False`` to ``apply_payload`` if
+    the caller needs to retain/reapply the parsed data."""
     path = Path(path)
     fmt = detect_format(path)
     for backend in _BACKENDS:
@@ -126,11 +134,12 @@ def parse_skp(path, progress=None) -> dict:
         # reading that as "empty parse" reported it as unreadable.
         if payload and (payload.get("groups") or payload.get("protos")
                         or payload.get("empty")):
+            payload["_consume_geometry"] = True
             return payload
     raise NeedsConverter(path, fmt)
 
 
-def apply_payload(scene, payload, progress=None) -> str:
+def apply_payload(scene, payload, progress=None, *, consume: bool | None = None) -> str:
     """Add a parsed payload's geometry to ``scene`` as reference groups (an
     isolated ``Mesh`` per group, like the big-DAE import). Runs the same
     clean-up the DAE reference import does — coplanar fusion (merges the raw
@@ -144,7 +153,14 @@ def apply_payload(scene, payload, progress=None) -> str:
     stage ran for minutes without returning to the event loop, and Windows
     marked the window "Not Responding" (#787). It is only called while no
     half-built group is in the scene — inside a mesh not yet added, or
-    between whole groups."""
+    between whole groups.
+
+    ``consume=None`` uses the ownership marker set by ``parse_skp``; ordinary
+    caller-built payloads remain reusable. ``consume=True`` drops each part's
+    geometry after building it, then its placement records after placement.
+    A consumed payload must be parsed again to retry after a failed import.
+    SnapshotImport redo restores the built groups, without reading the payload.
+    ``consume=False`` retains the input geometry explicitly."""
     import gc
     from PySide6.QtGui import QVector3D
     from core.group import Group
@@ -159,13 +175,57 @@ def apply_payload(scene, payload, progress=None) -> str:
     _gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        return _apply_payload_inner(scene, payload, progress)
+        if consume is None:
+            consume = payload.get("_consume_geometry", False)
+        return _apply_payload_inner(scene, payload, progress, consume=consume)
     finally:
         if _gc_was_enabled:
             gc.enable()
 
 
-def _apply_payload_inner(scene, payload, progress=None) -> str:
+def _soften_bulk_edges(mesh, vertices, edge_map, segments, tick):
+    """Use the weld's vertices and face pass's edge index for display flags.
+
+    Exact stored positions need no second weld lookup. Other endpoints
+    (including points welded across cell boundaries) use the final registry:
+    a point's vertex during construction is not necessarily what vertex_at
+    returns after a later point has claimed its cell. Cache those lookups too.
+    """
+    from PySide6.QtGui import QVector3D
+
+    point_ids = {v.position.toTuple(): i for i, v in enumerate(vertices)}
+    vertex_ids = None
+    missing = object()
+
+    def resolve(point):
+        nonlocal vertex_ids
+        vertex = mesh.vertex_at(QVector3D(*point))
+        if vertex_ids is None:
+            vertex_ids = {v: i for i, v in enumerate(vertices)}
+        index = vertex_ids.get(vertex)
+        point_ids[point] = index
+        return index
+
+    count = len(vertices)
+    for k, (a, b) in enumerate(segments):
+        if not k & 4095:
+            tick()
+        a, b = tuple(a), tuple(b)
+        ia = point_ids.get(a, missing)
+        ib = point_ids.get(b, missing)
+        if ia is missing:
+            ia = resolve(a)
+        if ib is missing:
+            ib = resolve(b)
+        if ia is None or ib is None or ia == ib:
+            continue
+        key = ia * count + ib if ia <= ib else ib * count + ia
+        edge = edge_map.get(key)
+        if edge is not None:
+            edge.soft = True
+
+
+def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str:
     import time
     from PySide6.QtGui import QVector3D
     from core.group import Group
@@ -175,6 +235,25 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
 
     groups = payload.get("groups", []) or []
     protos = payload.get("protos", []) or []
+    remaining = {}
+    if consume:
+        for parts in (groups, protos):
+            for part in parts:
+                key = id(part)
+                remaining[key] = remaining.get(key, 0) + 1
+
+    def _release(part):
+        if not consume:
+            return
+        key = id(part)
+        remaining[key] -= 1
+        if remaining[key]:
+            return
+        del remaining[key]
+        # Replace references; never clear lists another part may share.
+        part["faces"] = []
+        part.pop("soft_edges", None)
+
     n_parts = max(1, len(groups) + 2 * len(protos))
     done = [0, 0.0]               # parts built, time of the last report
 
@@ -207,9 +286,10 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
             # edges visible (glass mullions, beam/column lines), so fusing them
             # dissolved real user lines. Built in one vectorized bulk pass —
             # the per-face add_face welding dominated big imports.
-            import numpy as np
             from core.topology import _maximal_holes
-            flat: list = []
+            from formats.skp_coordinates import flatten_rings
+            flat_rings: list = []
+            corner_count = 0
             ring_sizes: list = []
             ring_counts: list = []
             attrs_list: list = []
@@ -225,21 +305,23 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
                 ring_counts.append(len(rings))
                 for r in rings:
                     ring_sizes.append(len(r))
-                    if r and hasattr(r[0], "x"):   # QVector3D payload corners
-                        flat.extend(p.toTuple() for p in r)
-                    else:
-                        flat.extend(r)
+                    flat_rings.append(r)
+                    corner_count += len(r)
                 attrs_list.append(attrs)
+            bulk = None
             if ring_counts:
-                if len(flat) >= 1024:          # corners; bulk wins above ~700
-                    mesh.add_faces_bulk(
-                        np.array(flat, dtype=np.float64).reshape(-1, 3),
-                        ring_sizes, ring_counts, attrs_list)
+                if corner_count >= 1024:          # corners; bulk wins above ~700
+                    vertices, inverse = mesh.bulk_weld(
+                        flatten_rings(flat_rings, corner_count))
+                    edge_map = {}
+                    mesh.add_faces_welded(vertices, inverse, ring_sizes,
+                                          ring_counts, attrs_list, edge_map=edge_map)
+                    bulk = vertices, edge_map
                 else:
                     # Small group: the bulk pass's fixed NumPy cost loses to
                     # the plain per-face walk (a file with a thousand small
                     # groups pays that fixed cost a thousand times).
-                    corners = [QVector3D(p[0], p[1], p[2]) for p in flat]
+                    corners = [_q(p) for ring in flat_rings for p in ring]
                     ci = 0
                     ri = 0
                     for fi, nr in enumerate(ring_counts):
@@ -255,7 +337,9 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
                             continue
                         if attrs_list[fi]:
                             face.attrs.update(attrs_list[fi])
-            if soft_edges:
+            if soft_edges and bulk is not None:
+                _soften_bulk_edges(mesh, *bulk, soft_edges, _tick)
+            elif soft_edges:
                 # Soften through the WELD itself: resolve each flagged
                 # segment's endpoints to their shared vertices and mark that
                 # edge — the weld tolerance is the matching tolerance, so
@@ -392,6 +476,7 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
     for gp in groups:
         _tick(1)
         mesh = _build_mesh(gp["faces"], gp.get("soft_edges"))
+        _release(gp)
         if mesh.faces:
             g = Group(mesh, name=gp.get("name"))
             if gp.get("layer"):
@@ -421,6 +506,7 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
     for pr in protos:
         _tick(1)
         proto_meshes.append(_build_mesh(pr["faces"], pr.get("soft_edges")))
+        _release(pr)
 
     def _place(idx, xf, layer=None, depth=0):
         pr = protos[idx]
@@ -442,6 +528,10 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
         for i, xf in enumerate(pr.get("instances", []) or []):
             g = _place(idx, xf, layers[i] if i < len(layers) else None)
             scene.groups.append(g)
+    if consume:
+        # Names/children/instances stay available until every placement exists.
+        payload["groups"] = []
+        payload["protos"] = []
     back = payload.get("back_color")
     if back and getattr(scene, "back_face_color", None) is None:
         # Adopt the file's style back-face colour so unpainted faces seen

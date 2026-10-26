@@ -115,14 +115,20 @@ def _texture_entries(node):
     materials, back-side materials (``attrs["back"]``), and whatever nests one
     later. Walking the JSON keeps this honest as the schema grows: a new place
     to hang a texture is embedded without touching this module. Coordinate
-    blocks (:data:`_TEXTURE_WALK_SKIP`) and leaf value lists are skipped —
-    they are the bulk of the document and can never carry a texture."""
+    blocks (:data:`_TEXTURE_WALK_SKIP`) and leaf values are skipped before
+    recursing: entering a generator for every colour, offset and scalar
+    dominates the walk on documents with many small JSON meshes."""
     if isinstance(node, dict):
         for key, value in node.items():
             if key == "texture" and isinstance(value, dict):
                 yield value
             elif key not in _TEXTURE_WALK_SKIP:
-                yield from _texture_entries(value)
+                if isinstance(value, dict):
+                    yield from _texture_entries(value)
+                elif (isinstance(value, list) and value
+                      and isinstance(value[0], (dict, list))):
+                    for child in value:
+                        yield from _texture_entries(child)
     elif isinstance(node, list):
         if node and not isinstance(node[0], (dict, list)):
             return                       # a leaf value list (colour, offsets)
@@ -130,7 +136,7 @@ def _texture_entries(node):
             yield from _texture_entries(value)
 
 
-def _pack_textures(payload) -> tuple[dict, int]:
+def _pack_textures(payload, *, blobs=None, resolved=None) -> tuple[dict, int]:
     """Rewrite the payload's texture entries in place for storage inside the
     container: ``"path"`` (a machine-local absolute path) → ``"embed"`` (an
     archive member name). Returns ``({member name: image bytes}, missing)``,
@@ -140,8 +146,8 @@ def _pack_textures(payload) -> tuple[dict, int]:
     import hashlib
     from core.texture import is_image_file, texture_file_name
 
-    blobs: dict = {}
-    resolved: dict = {}          # source path → member name ("" = unreadable)
+    blobs = {} if blobs is None else blobs
+    resolved = {} if resolved is None else resolved  # source → member ("" = unreadable)
     missing = 0
     def _member_for(src):
         nonlocal missing
@@ -247,30 +253,33 @@ def _face_attrs_json(f) -> dict:
     """Everything a face stores besides its loops — the part a format-3
     geometry block keeps as JSON, in a table shared by equal faces."""
     entry: dict = {}
+    # One lookup of the attrs dict, not one per key: this runs once per
+    # face, millions of times on a big save.
+    get = getattr(f, "attrs", {}).get
     # Material colour (the Paint tool), written only when set.
-    color = getattr(f, "attrs", {}).get("color")
+    color = get("color")
     if color is not None:
         entry["color"] = list(color)
-    texture = getattr(f, "attrs", {}).get("texture")
+    texture = get("texture")
     if texture is not None:
         entry["texture"] = dict(texture)
-    layer = getattr(f, "attrs", {}).get("layer")
+    layer = get("layer")
     if layer is not None:
         entry["layer"] = layer
-    ifc = getattr(f, "attrs", {}).get("ifc")
+    ifc = get("ifc")
     if ifc is not None:
         entry["ifc"] = dict(ifc)
-    opacity = getattr(f, "attrs", {}).get("opacity")
+    opacity = get("opacity")
     if opacity is not None:
         entry["opacity"] = float(opacity)
-    if getattr(f, "attrs", {}).get("hidden"):
+    if get("hidden"):
         entry["hidden"] = True          # Hide on a face
     # Material identity (core.materials): the registry name this face was
     # painted with. Written only when present; older readers ignore it.
-    mat = getattr(f, "attrs", {}).get("mat")
+    mat = get("mat")
     if mat:
         entry["mat"] = mat
-    back = getattr(f, "attrs", {}).get("back")
+    back = get("back")
     if isinstance(back, dict):
         # Deep-copy the nested texture: _pack_textures rewrites the entries it
         # finds, and it must never reach into the live scene's attrs.
@@ -282,6 +291,13 @@ def _face_attrs_json(f) -> dict:
         # both sides becomes). Absent = the style's default back.
         entry["back"] = True
     return entry
+
+
+#: The key equal face attributes share in a format-3 attribute table: the
+#: entry as compact, key-sorted JSON. One encoder for the whole save —
+#: json.dumps builds a fresh one per call, a quarter of the key's cost on
+#: two million faces.
+_attrs_key = json.JSONEncoder(sort_keys=True, separators=(",", ":")).encode
 
 
 def _edge_json(e) -> dict:
@@ -391,8 +407,10 @@ def _pack_geometry(mesh, sink: dict) -> dict:
     ring_sizes: list = []
     ring_counts: list = []
     face_attr: list = []
-    table: list = []
-    table_index: dict = {}
+    from formats.igz_attributes import AttributeTable
+    attributes = AttributeTable(_face_attrs_json, json.JSONEncoder(
+        sort_keys=True, separators=(",", ":")).encode)
+    table = attributes.entries
     for f in mesh.faces:
         loop = f.loop
         holes = f.hole_loops or ()
@@ -406,19 +424,10 @@ def _pack_geometry(mesh, sink: dict) -> dict:
         for h in holes:
             ring_sizes.append(len(h))
             corners.extend(h)
-        attrs = _face_attrs_json(f) if f.attrs else None
-        if attrs:
-            key = json.dumps(attrs, sort_keys=True, separators=(",", ":"))
-            k = table_index.get(key)
-            if k is None:
-                k = table_index[key] = len(table)
-                table.append(attrs)
-            face_attr.append(k)
-        else:
-            face_attr.append(-1)
+        face_attr.append(attributes.add(f))
 
     # Number the vertex objects by first appearance.
-    ids = np.fromiter((id(v) for v in corners), dtype=np.uint64,
+    ids = np.fromiter(map(id, corners), dtype=np.uint64,
                       count=len(corners))
     _u, first, inverse = np.unique(ids, return_index=True,
                                    return_inverse=True)
@@ -551,7 +560,7 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
             js = _face_attrs_json(SimpleNamespace(attrs=attrs)) \
                 if attrs else None
             if js:
-                key = json.dumps(js, sort_keys=True, separators=(",", ":"))
+                key = _attrs_key(js)
                 t = table_index.get(key)
                 if t is None:
                     t = table_index[key] = len(table)
@@ -596,13 +605,51 @@ def save_scene(scene, path: Path) -> dict:
     """Write ``scene`` to ``path``. Returns ``{"embedded", "missing"}``: how
     many texture images were packed into the document, and how many could not
     be read (those keep pointing at their original path)."""
+    import gc
+
+    # Mass object construction ahead, as in load_into and
+    # formats.skp.apply_payload: the document tree of a big model is tens of
+    # millions of small containers made in one go, and the generational GC
+    # re-scanning that growing heap took 15 of the 36 s a 2.5 M-face model
+    # needed to save. Collection is merely deferred: whatever cycles the
+    # save leaves are reclaimed once it is re-enabled.
+    _gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        return _save_scene_inner(scene, path)
+    finally:
+        if _gc_was_enabled:
+            gc.enable()
+
+
+def _save_scene_inner(scene, path: Path) -> dict:
+    large = _live_element_count(scene) > _LARGE_DOCUMENT
+    if large:
+        from formats.igz_stream import SaveStream
+        with SaveStream() as stream:
+            return _save_document(scene, path, large=True, stream=stream)
+    return _save_document(scene, path, large=False)
+
+
+def _save_document(scene, path, *, large, stream=None):
     # Accept a Scene or a bare Mesh (the M1 read-compat path feeds a Mesh).
     mesh = scene.mesh if hasattr(scene, "mesh") else scene
     # Decided BEFORE anything is serialized: a large document writes its
     # big meshes as binary blocks (format 3) and never builds their JSON.
-    large = _live_element_count(scene) > _LARGE_DOCUMENT
-    geom: dict | None = {} if large else None
-    payload = _mesh_json(mesh, geom)
+    geom = stream if large else None
+
+    def mesh_json(mesh):
+        block = _mesh_json(mesh, geom)
+        if stream is not None:
+            _, missing = _pack_textures(block, blobs=stream.blobs, resolved=stream.resolved)
+            stream.missing += missing
+            try:
+                block = {key: stream.json(value) for key, value in block.items()}
+            except ValueError:
+                raise NonFiniteDocumentError(_non_finite_where(block)) from None
+        return block
+
+    payload = mesh_json(mesh)
     groups = getattr(scene, "groups", None)
     kept = getattr(scene, "kept_components", None)
     if groups or kept:
@@ -620,7 +667,7 @@ def save_scene(scene, path: Path) -> dict:
                 if idx is None:
                     idx = proto_index[id(g.mesh)] = len(protos)
                     protos.append(None)          # reserve: recursion is depth
-                    protos[idx] = _mesh_json(g.mesh, geom)
+                    protos[idx] = mesh_json(g.mesh)
                 entry = {"proto": idx,
                          "xform": [float(x) for x in xf.data()]}
                 # Group or component (issue #90): a group of groups and a
@@ -629,7 +676,7 @@ def save_scene(scene, path: Path) -> dict:
                 # the reader tells apart its own way. Older readers ignore it.
                 entry["component"] = bool(getattr(g, "component", True))
             else:
-                entry = _mesh_json(g.mesh, geom)
+                entry = mesh_json(g.mesh)
             # The name — never written until 2026-09-11, so every reopened
             # document renumbered its groups and a "Pérgola" came back as
             # "Group 7". Older readers ignore the key.
@@ -808,7 +855,11 @@ def save_scene(scene, path: Path) -> dict:
     # Images ride INSIDE the document (see the module docstring). Only a scene
     # that actually has textures pays for the container; everything else stays
     # plain JSON at format 1, readable by older builds.
-    blobs, missing = _pack_textures(payload)
+    if stream is None:
+        blobs, missing = _pack_textures(payload)
+    else:
+        blobs, missing = _pack_textures(payload, blobs=stream.blobs, resolved=stream.resolved)
+        missing += stream.missing
     # The photogrammetric survey (Track G, G6) rides inside the document too,
     # for the same reason the textures do: a reference mesh that lives in a
     # folder next to the .igz is one move away from being lost.
@@ -826,7 +877,7 @@ def save_scene(scene, path: Path) -> dict:
     }
     try:
         if large:
-            doc = json.dumps(data, separators=(",", ":"), allow_nan=False)
+            doc = stream.document(data)
         else:
             doc = json.dumps(data, indent=2, allow_nan=False)
     except ValueError:
@@ -837,7 +888,10 @@ def save_scene(scene, path: Path) -> dict:
     if blobs or geom:
         _write_container(path, doc, blobs, fast=large, deflated=geom)
     else:
-        _write_atomic(path, doc.encode("utf-8"))
+        if stream is None:
+            _write_atomic(path, doc.encode("utf-8"))
+        else:
+            _write_stream_atomic(path, doc.chunks())
     return {"embedded": len(blobs), "missing": missing}
 
 
@@ -910,24 +964,50 @@ def _write_container(path: Path, doc: str, blobs: dict,
     are already compressed — deflating them again costs time for nothing).
     ``fast`` deflates at level 1 (see ``_LARGE_DOCUMENT``). ``deflated``
     holds members compressed like the document — the geometry blocks."""
-    import io
     import zipfile
+    from formats.igz_stream import Fragment
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        info = zipfile.ZipInfo(_DOC_ENTRY, date_time=_ZIP_EPOCH)
-        info.compress_type = zipfile.ZIP_DEFLATED
-        zf.writestr(info, doc, compresslevel=1 if fast else None)
-        for member in sorted(deflated or ()):
-            info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            zf.writestr(info, deflated[member],
-                        compresslevel=1 if fast else None)
-        for member in sorted(blobs):
-            info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
-            info.compress_type = zipfile.ZIP_STORED
-            zf.writestr(info, blobs[member])
-    _write_atomic(path, buf.getvalue())
+    tmp = path.with_name(path.name + ".part")
+    try:
+        with zipfile.ZipFile(tmp, "w") as zf:
+            def write(member, data, compression):
+                info = zipfile.ZipInfo(member, date_time=_ZIP_EPOCH)
+                info.compress_type = compression
+                if isinstance(data, Fragment):
+                    # Match writestr's headers, including its known size and
+                    # Unix file permissions. A seekable archive needs no data
+                    # descriptor and deflate is independent of write boundaries.
+                    info.file_size = data.size
+                    info.external_attr = 0o600 << 16
+                    info._compresslevel = 1 if fast else None
+                    with zf.open(info, "w") as dest:
+                        for chunk in data.chunks():
+                            dest.write(chunk)
+                else:
+                    zf.writestr(info, data, compresslevel=1 if fast else None)
+
+            write(_DOC_ENTRY, doc, zipfile.ZIP_DEFLATED)
+            for member in sorted(deflated or ()):
+                write(member, deflated[member], zipfile.ZIP_DEFLATED)
+            for member in sorted(blobs):
+                write(member, blobs[member], zipfile.ZIP_STORED)
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _write_stream_atomic(path, chunks):
+    """The same atomic replacement for a large, untextured JSON document."""
+    tmp = path.with_name(path.name + ".part")
+    try:
+        with tmp.open("wb") as dest:
+            for chunk in chunks:
+                dest.write(chunk)
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _parse_json(text, pump=None):

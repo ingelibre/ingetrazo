@@ -57,6 +57,52 @@ def _key(p: QVector3D) -> tuple[int, int, int]:
             round(z * _KEY_SCALE))
 
 
+def _weld_candidates(keys):
+    """Which distinct cells touch another cell in the batch (26 neighbours).
+
+    Compress each axis, keeping a gap of two for every gap larger than one:
+    adjacency is unchanged, but the packed keys fit in int64 for far larger
+    coordinate ranges. Two padding cells prevent carries between axes from
+    looking like neighbours. Each positive offset finds both ends of a pair,
+    so thirteen integer searches replace twenty-six three-axis searches.
+    """
+    import numpy as np
+
+    candidate = np.zeros(len(keys), dtype=bool)
+    if len(keys) < 2:
+        return candidate
+    codes, spans = [], []
+    for axis in keys.T:
+        values, inverse = np.unique(axis, return_inverse=True)
+        steps = np.ones(len(values), dtype=np.int64)
+        steps[0] = 0
+        steps[1:] += np.diff(values) != 1
+        ranks = steps.cumsum()
+        codes.append(ranks[inverse])
+        spans.append(int(ranks[-1]) + 3)
+    nx, ny, nz = spans
+    if nx * ny * nz > np.iinfo(np.int64).max:
+        # An exceptionally large batch: use unbounded integers, never wrap
+        # a packed key and change the set (and thus the vertex order).
+        codes = [c.astype(object) for c in codes]
+    packed = (codes[0] * ny + codes[1]) * nz + codes[2]
+    order = np.argsort(packed)
+    ordered = packed[order]
+    for dx in (0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                offset = (dx * ny + dy) * nz + dz
+                if offset <= 0:
+                    continue
+                indices = np.searchsorted(ordered, ordered + offset)
+                src = np.flatnonzero(indices < len(ordered))
+                dst = indices[src]
+                hit = ordered[dst] == ordered[src] + offset
+                candidate[order[src[hit]]] = True
+                candidate[order[dst[hit]]] = True
+    return candidate
+
+
 class Vertex:
     """A shared point in the mesh.
 
@@ -621,8 +667,10 @@ class Mesh:
         if not len(pos):
             return [], np.empty(0, dtype=np.int64)
         keys = np.round(pos * _KEY_SCALE).astype(np.int64)
-        view = np.ascontiguousarray(keys).view(
-            [("x", "<i8"), ("y", "<i8"), ("z", "<i8")]).reshape(-1)
+        # Byte records group equal int64 triples without the field-by-field
+        # structured sort. Only equality matters: first occurrence restores
+        # the cell order below, regardless of the byte sort's ordering.
+        view = np.ascontiguousarray(keys).view("V24").reshape(-1)
         uview, first, inverse = np.unique(
             view, return_index=True, return_inverse=True)
         order = np.argsort(first, kind="stable")
@@ -632,39 +680,7 @@ class Mesh:
         first = first[order]
         ukeys = keys[first]                    # unique cells, creation order
         nu = len(first)
-        # Which unique cells have a neighbouring cell in the batch? Dense
-        # per-axis ranks make the 26 membership tests plain int64
-        # searchsorted (structured-dtype searchsorted is far slower).
-        ax = [np.unique(ukeys[:, c]) for c in range(3)]
-        nx, ny, nz = (len(a) + 2 for a in ax)  # +2: room for absent ±1 ranks
-        def _pack(k3):
-            out = np.empty(len(k3), dtype=np.int64)
-            ok = np.ones(len(k3), dtype=bool)
-            acc = np.zeros(len(k3), dtype=np.int64)
-            for c, n in ((0, nx), (1, ny), (2, nz)):
-                i = np.searchsorted(ax[c], k3[:, c])
-                good = (i < len(ax[c]))
-                i_clip = np.minimum(i, len(ax[c]) - 1)
-                good &= ax[c][i_clip] == k3[:, c]
-                ok &= good
-                acc = acc * n + i_clip
-            out[:] = acc
-            return out, ok
-        upacked, _ = _pack(ukeys)
-        usorted = np.sort(upacked)
-        candidate = np.zeros(nu, dtype=bool)
-        offs = [(dx, dy, dz)
-                for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
-                if (dx, dy, dz) != (0, 0, 0)]
-        shifted = np.empty_like(ukeys)
-        for d in offs:
-            shifted[:, 0] = ukeys[:, 0] + d[0]
-            shifted[:, 1] = ukeys[:, 1] + d[1]
-            shifted[:, 2] = ukeys[:, 2] + d[2]
-            q, ok = _pack(shifted)
-            i = np.searchsorted(usorted, q)
-            i_clip = np.minimum(i, nu - 1)
-            candidate |= ok & (usorted[i_clip] == q)
+        candidate = _weld_candidates(ukeys)
         if self._registry:
             # Pre-existing vertices can also satisfy a probe: any batch cell
             # whose 3×3×3 neighbourhood touches a registered cell is a

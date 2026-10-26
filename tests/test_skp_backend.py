@@ -37,6 +37,25 @@ def test_detect_format_unknown_for_non_skp(tmp_path):
     assert skp_format.detect_format(tmp_path / "missing.skp") == "unknown"
 
 
+def test_detect_format_reads_only_the_head(tmp_path, monkeypatch):
+    """Detection must not pull the whole file into memory (442 MB for a
+    big model) to look at its first bytes: read_bytes is never called,
+    and the answer is the same for a file far longer than the head."""
+    def whole_file(self):
+        raise AssertionError("detect_format read the whole file")
+    monkeypatch.setattr(Path, "read_bytes", whole_file)
+    p = tmp_path / "big.skp"
+    p.write_bytes(_skp_header_bytes() + b"\x00" * (1 << 20))
+    assert skp_format.detect_format(p) == "skp"
+    z = tmp_path / "zipped.skp"
+    z.write_bytes(b"PK\x03\x04" + b"\x00" * 200)
+    assert skp_format.detect_format(z) == "skp"
+    other = tmp_path / "other.skp"
+    other.write_bytes(b"\x00" * 200)
+    assert skp_format.detect_format(other) == "unknown"
+    assert skp_format.detect_format(tmp_path) == "unknown"     # a folder
+
+
 def test_unrecognised_file_needs_converter(tmp_path):
     p = tmp_path / "x.skp"
     p.write_bytes(b"garbage")
@@ -493,10 +512,12 @@ def test_openskp_adapter_bakes_positioned_texture_uvs(tmp_path):
         assert v == pytest.approx(ve, abs=2e-3)
 
 
-def test_openskp_adapter_image_entities_become_billboards(tmp_path):
+def test_openskp_adapter_image_entities_stay_static(tmp_path):
     # A def with is_image=True (upstream PR openskp#8) placed by an instance
-    # becomes its OWN group; a cutout texture (real alpha) marks it as a
-    # face-me billboard, an opaque photo stays a static panel.
+    # becomes its OWN group and keeps the orientation the file gives it,
+    # cut-out or not: SketchUp never turns an Image toward the camera
+    # (plans and elevations are placed as transparent Images). Face-me
+    # comes from the component flag only, see the test below.
     from PySide6.QtGui import QImage
 
     cutout = tmp_path / "toro.png"
@@ -535,22 +556,22 @@ def test_openskp_adapter_image_entities_become_billboards(tmp_path):
     payload = skp_openskp._adapt(model, "m", skp_path=skp)
 
     by_name = {g["name"]: g for g in payload["groups"]}
-    assert by_name["imagen#1"]["billboard"] is True     # cutout -> face-me
+    assert by_name["imagen#1"]["billboard"] is False    # cutout -> static too
     assert by_name["imagen#2"]["billboard"] is False    # opaque -> static
 
     scene = Scene()
     skp_format.apply_payload(scene, payload)
     bb = {g.name: g.billboard for g in scene.groups}
-    assert bb["imagen#1"] == "mesh"
+    assert bb["imagen#1"] is False
     assert bb["imagen#2"] is False
 
 
 def test_a_cutout_image_stuck_on_a_face_stays_put(tmp_path):
     # #429 (audioinnovation.skp): logos with transparency glued to a device
-    # turned to face the camera — the file has no face-me flag for images,
-    # the cutout guess did it. Lying on a face (here a face of ANOTHER
-    # component, as in that file, 0.5 mm off it) keeps one static; a cutout
-    # standing free — the plaza's bull — still turns.
+    # turned to face the camera while the cutout guess stood in for the
+    # (then undecoded) face-me flag. Images never turn now, glued (here a
+    # face of ANOTHER component, 0.5 mm off it) or standing free like the
+    # plaza's bull — SketchUp keeps both exactly where they were placed.
     from PySide6.QtGui import QImage
 
     cutout = tmp_path / "logo.png"
@@ -588,7 +609,7 @@ def test_a_cutout_image_stuck_on_a_face_stays_put(tmp_path):
 
     by_name = {g["name"]: g for g in payload["groups"]}
     assert by_name["logo"]["billboard"] is False        # glued -> static
-    assert by_name["toro"]["billboard"] is True         # free -> face-me
+    assert by_name["toro"]["billboard"] is False        # free -> static too
 
 
 def test_openskp_adapter_default_mapping_is_local(tmp_path):
@@ -869,6 +890,32 @@ def test_a_faces_own_tag_arrives_by_name_not_by_its_id(tmp_path):
                     for f in g.mesh.faces)
     assert layers == ["None", "Roof"]
     assert "Roof" in [ly.name for ly in scene.layers]
+
+
+def test_installed_openskp_shared_edge_keeps_both_face_rings(tmp_path):
+    """Exercise the pinned parser's real coedges, including a reversed edge."""
+    openskp = pytest.importorskip("openskp")
+    create = pytest.importorskip("openskp.create")
+    builder = create.SkpBuilder()
+    with builder.add_component_definition("Square") as square:
+        square.add_face([(0, 0, 0), (10, 0, 0), (10, 10, 0)])
+        square.add_face([(0, 0, 0), (10, 10, 0), (0, 10, 0)])
+    builder.add_instance(square)
+    path = tmp_path / "shared-edge.skp"
+    builder.save(str(path))
+    model = openskp.SkpFile.open(path).parse()
+    definition = next(d for d in model.definitions.values() if d.name == "Square")
+    assert len(definition.faces) == 2
+    uses = {}
+    for face in definition.faces.values():
+        for edge_id, sense in face.loops[0]:
+            uses.setdefault(edge_id, []).append(sense)
+        ring = skp_openskp._ring_raw(definition, face.loops[0])
+        assert ring is not None and len(set(ring)) == 3
+        twice_area = sum(a[0] * b[1] - b[0] * a[1]
+                         for a, b in zip(ring, ring[1:] + ring[:1]))
+        assert twice_area == pytest.approx(100.0)
+    assert any(set(senses) == {-1, 1} for senses in uses.values())
 
 
 def test_resolve_face_layers_leaves_names_and_drops_the_default_tag():
@@ -1183,3 +1230,37 @@ def test_openskp_adapter_an_extracted_part_keeps_its_own_tag(monkeypatch):
         NS(definitions={0: root, 5: container, 8: person}), "m")
     groups = {gp["name"]: gp for gp in payload["groups"]}
     assert groups["Susan"].get("layer") == "Gente"
+
+
+def _outer_normal_z(face_entry):
+    outer = face_entry[0]
+    p = [[float(c) for c in (q[0], q[1], q[2])] for q in outer[:3]]
+    ax, ay = p[1][0] - p[0][0], p[1][1] - p[0][1]
+    bx, by = p[2][0] - p[0][0], p[2][1] - p[0][1]
+    return ax * by - ay * bx
+
+
+def test_a_mirrored_instance_flattened_keeps_its_face_pointing_out():
+    # A single use is flattened into its group. The triangle faces +Z; a
+    # placement mirrored in X (negative determinant) reflects its corners,
+    # which alone would turn the loop clockwise, i.e. the face inside out.
+    # The adapter reverses the loop so the mirrored copy still faces +Z,
+    # the way SketchUp shows it (a mirror does not flip a face's front).
+    plain = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
+    mirror = [-1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
+    for matrix, label in ((plain, "plain"), (mirror, "mirror")):
+        # The wing is placed once inside a component, so it is flattened
+        # into that component's geometry (a prototype or a group).
+        child = NS(ref_idx=5, material_id=None, matrix=matrix)
+        parent = _fake_definition(id=6, name="parent", verts={}, edges={},
+                                  faces={}, instances=[child])
+        top = NS(ref_idx=6, material_id=None, matrix=plain)
+        root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                                faces={}, instances=[top])
+        model = NS(definitions={0: root, 5: _tri_def(5, "wing"), 6: parent},
+                   materials_by_id={})
+        payload = skp_openskp._adapt(model, "m")
+        faces = [f for g in payload["groups"] for f in g.get("faces", [])]
+        faces += [f for p in payload.get("protos", []) for f in p.get("faces", [])]
+        assert len(faces) == 1, label
+        assert _outer_normal_z(faces[0]) > 0, label

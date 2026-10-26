@@ -33,14 +33,63 @@ later refinement). Both joins are guarded, so PyPI 0.2.0 still imports (uncolour
 """
 from __future__ import annotations
 
+from collections import OrderedDict
+from contextvars import ContextVar
 from pathlib import Path
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
 
 from core.texture import fit_uv_affine, projection_basis
+from formats.skp_consumption import SoftSegments
+from formats.skp_coordinates import PointRows as _PointRows
 
 _INCH = 0.0254          # .skp internal unit → metres
 _MAX_DEPTH = 32         # guard against pathological instance nesting
+_GEOMETRY_CACHE_BYTES = 64 * 1024 * 1024
+_geometry_cache = ContextVar("skp_geometry_cache", default=None)
+
+
+class _GeometryCache:
+    """Bound adapter-owned derived geometry for one adaptation.
+
+    Eviction drops only our cached reference; callers currently reading the
+    geometry keep their local references. Raw definition geometry is untouched.
+    """
+
+    def __init__(self, limit):
+        self.limit = limit
+        self.entries = OrderedDict()
+        self.size = 0
+
+    def remember(self, definition, attribute, value, size):
+        key = (id(definition), attribute)
+        previous = self.entries.pop(key, None)
+        if previous is not None:
+            self.size -= previous[3]
+        self.entries[key] = (definition, attribute, value, size)
+        self.size += size
+        while self.size > self.limit:
+            self._evict()
+
+    def _evict(self):
+        _key, (definition, attribute, value, size) = self.entries.popitem(last=False)
+        self.size -= size
+        if getattr(definition, attribute, None) is value:
+            delattr(definition, attribute)
+
+    def clear(self):
+        while self.entries:
+            self._evict()
+
+
+def _remember_geometry(definition, attribute, value, size):
+    try:
+        setattr(definition, attribute, value)
+    except AttributeError:  # __slots__ definition: skip the cache
+        return
+    cache = _geometry_cache.get()
+    if cache is not None:
+        cache.remember(definition, attribute, value, size)
 
 
 def _ring_raw(defn, loop):
@@ -144,6 +193,42 @@ from core.texture import hls_to_rgb as _hls_to_rgb  # noqa: E402,F401
 from core.texture import rgb_to_hls as _rgb_to_hls  # noqa: E402,F401
 
 
+# Keep only compressed results, not source images or full-resolution arrays.
+# Imports may run in workers; protect accounting, not the expensive transform.
+from collections import OrderedDict  # noqa: E402
+from threading import Lock  # noqa: E402
+
+_COLORIZE_CACHE_LIMIT = 32 * 1024 * 1024
+_colorize_cache = OrderedDict()
+_colorize_cache_lock = Lock()
+
+
+def _cached_colorize(data, color, ctype):
+    """Reuse exact colourized bytes across materials and repeated imports."""
+    import hashlib
+
+    try:
+        key = (hashlib.sha256(data).digest(), tuple(color[:3]), ctype)
+        with _colorize_cache_lock:
+            cached = _colorize_cache.get(key)
+            if cached is not None:
+                _colorize_cache.move_to_end(key)
+                return cached
+    except (TypeError, ValueError):
+        return _colorize_image(data, color, ctype)
+    result = _colorize_image(data, color, ctype)
+    # The transform returns its input on failure. Retrying must remain possible.
+    if result is not data and len(result) <= _COLORIZE_CACHE_LIMIT:
+        with _colorize_cache_lock:
+            _colorize_cache[key] = result
+            _colorize_cache.move_to_end(key)
+            size = sum(len(value) for value in _colorize_cache.values())
+            while size > _COLORIZE_CACHE_LIMIT or len(_colorize_cache) > 128:
+                _, removed = _colorize_cache.popitem(last=False)
+                size -= len(removed)
+    return result
+
+
 def _needs_tint(data, declared_rgb) -> bool:
     """Whether a colourized-flagged texture actually needs re-tinting: only
     when the declared material colour differs from the image's (alpha-
@@ -245,7 +330,7 @@ def _material_attrs(model, skp_path):
                 # guard skips materials whose declared colour already IS the
                 # image average (the legacy colourized flag is greedy —
                 # e.g. geolocation snapshots would go greyscale otherwise).
-                data = _colorize_image(
+                data = _cached_colorize(
                     data, getattr(mat, "color", (128, 128, 128)),
                     getattr(mat, "colorize_type", 0))
                 safe = f"{mid}_{safe or 'material.png'}"
@@ -411,16 +496,17 @@ def _defn_geom(defn):
         meta.append((face, s0, s1, hs))
     pos_m = np.asarray(flat, dtype=np.float64).reshape(-1, 3) * _INCH
     geom = (pos_m, flat, meta)
-    try:
-        defn._geom = geom
-    except AttributeError:          # __slots__ definition: skip the cache
-        pass
+    # Estimate Python tuple/list metadata conservatively without traversing
+    # every coordinate again. Float objects themselves belong to the source.
+    size = pos_m.nbytes + 96 * len(flat) + 256 * len(meta)
+    size += 128 * sum(len(item[3]) for item in meta)
+    _remember_geometry(defn, "_geom", geom, size)
     return geom
 
 
 def _world_points(pos_m, xform):
     """``pos_m`` (local metres) transformed by the QMatrix4x4 ``xform``, as a
-    list of ``[x, y, z]`` lists. Float32-quantized so the payload carries the
+    sequence of ``[x, y, z]`` rows. Float32-quantized so the payload carries the
     same values a ``Vertex`` will store — welding and soft-edge matching key
     on those."""
     import numpy as np
@@ -429,7 +515,7 @@ def _world_points(pos_m, xform):
     else:
         m = np.array(xform.data(), dtype=np.float64).reshape(4, 4, order="F")
         world = pos_m @ m[:3, :3].T + m[:3, 3]
-    return world.astype(np.float32).astype(np.float64).tolist()
+    return _PointRows(world.astype(np.float32))
 
 
 def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
@@ -544,13 +630,6 @@ def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
     return (outer, holes, attrs)
 
 
-def _image_has_cutout(path) -> bool:
-    """See :func:`core.texture.image_has_cutout` — one test for the import,
-    the renderer's back-side rule and the exporter."""
-    from core.texture import image_has_cutout
-    return image_has_cutout(path)
-
-
 def _image_quad_faces(child, placed, attr_map, inherited):
     """Payload faces for an Image entity's quad, with whole-picture UVs.
 
@@ -584,117 +663,6 @@ def _image_quad_faces(child, placed, attr_map, inherited):
     return faces
 
 
-# How close an image may lie to a face and still count as stuck on it: the
-# logos of #429 sit 0–1.5 mm off their faces, the plaza's free-standing bull
-# and statue 8 m and 19 cm from anything parallel.
-_GLUE_TOL = 0.01
-
-
-def _face_boxes(defn):
-    """Per-face local bounding boxes of ``defn`` (metres), cached: ``(lo,
-    hi)`` arrays of shape ``(F, 3)`` in the order of ``_defn_geom``'s
-    metadata. Holes lie inside their outer ring, so a face's corners — holes
-    included — are one contiguous run and one ``reduceat`` boxes them all."""
-    boxes = getattr(defn, "_face_boxes", None)
-    if boxes is not None:
-        return boxes
-    import numpy as np
-    pos_m, _raw, meta = _defn_geom(defn)
-    if not meta:
-        boxes = (np.empty((0, 3)), np.empty((0, 3)))
-    else:
-        starts = np.fromiter((m[1] for m in meta), dtype=np.intp,
-                             count=len(meta))
-        boxes = (np.minimum.reduceat(pos_m, starts, axis=0),
-                 np.maximum.reduceat(pos_m, starts, axis=0))
-    try:
-        defn._face_boxes = boxes
-    except AttributeError:
-        pass
-    return boxes
-
-
-def _rests_on_a_face(roots, by_id, quad) -> bool:
-    """Whether the image quad ``quad`` (world ``QVector3D`` corners) lies ON
-    a face of the model: parallel to it, within ``_GLUE_TOL``, with its
-    centre over the face. That is a logo or a sign stuck to a surface, which
-    must stay put (#429); a cut-out standing free — the plaza's bull and
-    statue — is the one turned to face the camera.
-
-    Walks the placement tree in NumPy: each definition's face boxes are
-    tested against the image centre in that definition's own frame, and only
-    the few faces whose box holds it get the exact plane test."""
-    import numpy as np
-    q = np.array([[p.x(), p.y(), p.z()] for p in quad], dtype=np.float64)
-    if len(q) < 3:
-        return False
-    centre = q.mean(axis=0)
-    n = np.zeros(3)
-    for i in range(len(q)):
-        n += np.cross(q[i], q[(i + 1) % len(q)])
-    if np.linalg.norm(n) < 1e-12:
-        return False
-    n /= np.linalg.norm(n)
-
-    def on_face(world):
-        fn = np.zeros(3)
-        for i in range(len(world)):
-            fn += np.cross(world[i], world[(i + 1) % len(world)])
-        ln = np.linalg.norm(fn)
-        if ln < 1e-12:
-            return False
-        fn /= ln
-        if abs(abs(fn @ n) - 1.0) > 1e-3:
-            return False
-        if abs((centre - world[0]) @ fn) > _GLUE_TOL:
-            return False
-        # The centre over the face: even-odd in the face's own plane.
-        a = np.cross(fn, [1.0, 0.0, 0.0] if abs(fn[0]) < 0.9
-                     else [0.0, 1.0, 0.0])
-        a /= np.linalg.norm(a)
-        b = np.cross(fn, a)
-        uv = np.stack([(world - centre) @ a, (world - centre) @ b], axis=1)
-        inside = False
-        for i in range(len(uv)):
-            (x0, y0), (x1, y1) = uv[i], uv[i - 1]
-            if (y0 > 0) != (y1 > 0) and 0 < x0 + (x1 - x0) * (-y0) / (y1 - y0):
-                inside = not inside
-        return inside
-
-    def walk(defn, m, depth, stack):
-        if depth > _MAX_DEPTH or id(defn) in stack:
-            return False
-        stack = stack | {id(defn)}
-        lo, hi = _face_boxes(defn)
-        if len(lo):
-            inv = np.linalg.inv(m)
-            c = inv[:3, :3] @ centre + inv[:3, 3]
-            # The tolerance in this frame: a scaled-down copy needs more.
-            s = min(np.linalg.norm(m[:3, :3], axis=0).min(), 1.0) or 1.0
-            tol = _GLUE_TOL / s
-            hit = np.nonzero(np.all((lo - tol <= c) & (c <= hi + tol),
-                                    axis=1))[0]
-            if len(hit):
-                pos_m, _raw, meta = _defn_geom(defn)
-                for k in hit:
-                    _f, s0, s1, _hs = meta[k]
-                    world = pos_m[s0:s1] @ m[:3, :3].T + m[:3, 3]
-                    if on_face(world):
-                        return True
-        for ins in getattr(defn, "instances", []):
-            child = by_id.get(getattr(ins, "ref_idx", None))
-            if child is None or getattr(child, "is_image", False) or \
-                    getattr(child, "always_faces_camera", False):
-                continue
-            cm = np.array(_matrix(ins.matrix).data(),
-                          dtype=np.float64).reshape(4, 4, order="F")
-            if walk(child, m @ cm, depth + 1, stack):
-                return True
-        return False
-
-    return any(walk(r, np.eye(4), 0, frozenset()) for r in roots)
-
-
 def _soft_edge_segments(defn, xform, out) -> None:
     """Append the transformed endpoint pairs of ``defn``'s soft/smooth/
     hidden edges to ``out`` — the file's own edge-display flags, used by
@@ -719,11 +687,18 @@ def _soft_edge_segments(defn, xform, out) -> None:
             pairs.append((va.x, va.y, va.z))
             pairs.append((vb.x, vb.y, vb.z))
         arr = np.asarray(pairs, dtype=np.float64).reshape(-1, 3) * _INCH
-        try:
-            defn._soft_arr = arr
-        except AttributeError:      # __slots__ definition: just skip the cache
-            pass
+        _remember_geometry(defn, "_soft_arr", arr, arr.nbytes)
     if not len(arr):
+        return
+    if isinstance(out, SoftSegments):
+        # Same arithmetic and final quantization as _world_points, without
+        # expanding the endpoint array into millions of Python floats.
+        if xform.isIdentity():
+            world = arr
+        else:
+            m = np.array(xform.data(), dtype=np.float64).reshape(4, 4, order="F")
+            world = arr @ m[:3, :3].T + m[:3, 3]
+        out.add(world.astype(np.float32))
         return
     wl = _world_points(arr, xform)
     for i in range(0, len(wl), 2):
@@ -735,7 +710,7 @@ def _soft_edge_segments(defn, xform, out) -> None:
 def _collect(defn, xform, by_id, attr_map, out, depth, stack,
              proto_ids=frozenset(), proto_uses=None, inherited=None,
              image_uses=None, edges_out=None, layer=None,
-             layer_uses=None, group_layer=None) -> None:
+             layer_uses=None, group_layer=None, release=None) -> None:
     """Append ``(outer, holes, attrs)`` faces for ``defn`` (transformed by
     ``xform``) and, recursively, for every definition its instances place.
 
@@ -765,13 +740,29 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
     pos_m, raw_l, meta = _defn_geom(defn)
     if meta:
         wl = _world_points(pos_m, xform)
+        # A mirrored placement (negative determinant) turns every loop the
+        # other way round once its corners are in world space: left as is,
+        # the flattened copy renders inside out, back faces where the front
+        # ones were. Reverse the loops so the face keeps pointing the way
+        # the file's instance pointed. Attributes are per face (the texture
+        # fit is a world→UV affine), so the order of the corners is all
+        # that changes. Prototype placements keep their local geometry and
+        # the renderer flips the winding per instance instead.
+        mirrored = xform.determinant() < 0.0
         for face, s0, s1, hs in meta:
             entry = _face_entry(face, wl, raw_l, s0, s1, hs, attr_map,
                                 inherited, layer)
             if entry is not None:
+                if mirrored:
+                    outer, holes, attrs = entry
+                    entry = (outer[::-1], [h[::-1] for h in holes], attrs)
                 out.append(entry)
     if edges_out is not None:
         _soft_edge_segments(defn, xform, edges_out)
+    if release is not None:
+        release(defn)
+        # No raw face/flattening locals need to survive child recursion.
+        del pos_m, raw_l, meta
     for ins in getattr(defn, "instances", []):
         rid = getattr(ins, "ref_idx", None)
         child = by_id.get(rid)
@@ -786,9 +777,9 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
         cid = getattr(child, "id", None)
         if getattr(child, "is_image", False):
             if image_uses is not None:
-                # An Image entity (photo placed as an object): pulled out of
-                # its parent so it can become its own group — cutout images
-                # turn to face the camera (billboard), like the DAE import.
+                # An Image entity (photo or plan placed as an object):
+                # pulled out of its parent so it can become its own static
+                # group.
                 image_uses.append((child, placed, child_inherited,
                                    out_layer))
             else:
@@ -813,7 +804,7 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
             continue
         _collect(child, placed, by_id, attr_map, out, depth + 1, stack,
                  proto_ids, proto_uses, child_inherited, image_uses,
-                 edges_out, child_layer, layer_uses, group_layer)
+                 edges_out, child_layer, layer_uses, group_layer, release)
 
 
 def _subtree_polys(defn, by_id, memo, stack) -> int:
@@ -1036,7 +1027,28 @@ def _is_empty_model(model, skp_path, legacy_era: bool) -> bool:
     return bool((px == px[0]).all())
 
 
-def _adapt(model, name: str, skp_path=None):
+def _adapt(model, name: str, skp_path=None, *, consume=False):
+    """Adapt with a bounded temporary geometry cache, including on failure."""
+    import gc
+
+    enabled = gc.isenabled()
+    cache = _GeometryCache(_GEOMETRY_CACHE_BYTES)
+    token = _geometry_cache.set(cache)
+    gc.disable()
+    try:
+        if consume:
+            return _adapt_inner(model, name, skp_path, consume=True)
+        return _adapt_inner(model, name, skp_path)
+    finally:
+        try:
+            cache.clear()
+            _geometry_cache.reset(token)
+        finally:
+            if enabled:
+                gc.enable()
+
+
+def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
     """An ``SkpModel`` → a payload ``{"backend", "groups", "protos"}`` or
     ``None`` when it yields no geometry (the seam reports it as unreadable).
 
@@ -1052,6 +1064,9 @@ def _adapt(model, name: str, skp_path=None):
     Definitions with faces that nothing instances are library entries not
     placed in the model — they are not part of the visible model, so we skip
     them.
+    ``consume=True`` transfers raw geometry ownership to this adaptation.
+    Geometry is discarded after its last prototype use; a failed consumed
+    adaptation must be reparsed. The default leaves caller models reusable.
     ``skp_path`` anchors where extracted texture images land; the material
     joins are guarded so PyPI 0.2.0 still imports (uncoloured)."""
     from formats.dae import _INST_MIN_POLYS, _INST_MIN_SAVED
@@ -1178,6 +1193,13 @@ def _adapt(model, name: str, skp_path=None):
                 continue
             proto_ids.add(child.id)
 
+    release_flat = None
+    if consume:
+        from formats.skp_consumption import FlatGeometry
+        flat = FlatGeometry(by_id, proto_ids, uses, roots, _MAX_DEPTH)
+        if flat.remaining:
+            release_flat = flat.release
+
     groups: list = []
     proto_uses: dict = {}
     image_uses: list = []
@@ -1194,7 +1216,7 @@ def _adapt(model, name: str, skp_path=None):
                 if entry is not None:
                     loose.append(entry)
         if loose:
-            loose_edges: list = []
+            loose_edges = SoftSegments()
             _soft_edge_segments(r, ident, loose_edges)
             groups.append({"name": name, "faces": loose,
                            "soft_edges": loose_edges})
@@ -1217,10 +1239,10 @@ def _adapt(model, name: str, skp_path=None):
                     (placed, lay))
                 continue
             sub: list = []
-            sub_edges: list = []
+            sub_edges = SoftSegments()
             _collect(child, placed, by_id, attr_map, sub, 0, set(),
                      proto_ids, proto_uses, inh, image_uses, sub_edges,
-                     layer_uses=layer_uses, group_layer=lay)
+                     layer_uses=layer_uses, group_layer=lay, release=release_flat)
             if sub:
                 gp = {"name": getattr(child, "name", None) or name,
                       "faces": sub, "soft_edges": sub_edges,
@@ -1240,37 +1262,35 @@ def _adapt(model, name: str, skp_path=None):
         child, placed, inh, lay = layer_uses[i]
         i += 1
         sub = []
-        sub_edges = []
+        sub_edges = SoftSegments()
         _collect(child, placed, by_id, attr_map, sub, 0, set(),
                  proto_ids, proto_uses, inh, image_uses, sub_edges,
-                 layer_uses=layer_uses, group_layer=lay)
+                 layer_uses=layer_uses, group_layer=lay, release=release_flat)
         if sub:
             groups.append({"name": getattr(child, "name", None) or name,
                            "faces": sub, "soft_edges": sub_edges,
                            "layer": lay,
                            "axes": [float(x) for x in placed.data()]})
 
-    # Image entities → their own groups; cutout images (real alpha) become
-    # face-me billboards that turn toward the camera, opaque photos stay
-    # static panels — same rule as the DAE face-me import. An image quad
-    # always shows the WHOLE picture once (see _image_quad_faces). An
-    # "always faces camera" component (Susan) flattens its whole subtree
-    # into one billboard group — the flag decides, no heuristic needed.
+    # Image entities → their own groups, static panels exactly where the
+    # file places them: SketchUp never turns an Image toward the camera
+    # (reference plans, scanned drawings and photos are placed as Images
+    # precisely because they must keep their orientation). An image quad
+    # always shows the WHOLE picture once (see _image_quad_faces). Face-me
+    # behaviour comes from the "always faces camera" component flag alone:
+    # such a component (Susan) flattens its whole subtree into one
+    # billboard group. Until that flag was decoded, cut-out images (real
+    # alpha) stood in for face-me components; that heuristic also turned
+    # transparent plans and elevations into billboards (#429 covered only
+    # the glued case), so it is gone.
     for child, placed, inh, lay in image_uses:
         if getattr(child, "is_image", False):
             faces = _image_quad_faces(child, placed, attr_map, inh)
-            tex = next((a["texture"]["path"] for _o, _h, a in faces
-                        if a and "texture" in a), None)
-            # A cut-out turns to face the camera — unless it is stuck on a
-            # face, like a logo on a device (#429): the file has no face-me
-            # flag for images, SketchUp never turns one.
-            billboard = bool(tex and _image_has_cutout(tex)
-                             and not _rests_on_a_face(roots, by_id,
-                                                      faces[0][0]))
+            billboard = False
         else:
             faces = []
             _collect(child, placed, by_id, attr_map, faces, 0, set(),
-                     inherited=inh)
+                     inherited=inh, release=release_flat)
             billboard = True
         if not faces:
             continue
@@ -1290,6 +1310,15 @@ def _adapt(model, name: str, skp_path=None):
     # done inside a component: the hedge in piscina.igz is 4480 + 5120 faces
     # placed 48 times, and it arrived as 230400 real ones, twenty-four times
     # over, for the element that is 89% of that model.
+    # From here, only prototype extraction can read the geometry. Count all
+    # inherited-material
+    # variants before releasing anything: a child may be flattened into
+    # several different prototypes, or shared by several parents.
+    consumer = None
+    if consume:
+        from formats.skp_consumption import PrototypeGeometry
+        consumer = PrototypeGeometry(by_id, proto_ids, proto_uses, roots, _MAX_DEPTH)
+
     protos: list = []
     index_of: dict = {}
 
@@ -1306,10 +1335,12 @@ def _adapt(model, name: str, skp_path=None):
         idx = index_of[key] = len(protos)
         protos.append(None)
         local: list = []
-        local_edges: list = []
+        local_edges = SoftSegments()
         child_uses: dict = {}
         _collect(d, QMatrix4x4(), by_id, attr_map, local, 0, set(),
                  proto_ids, child_uses, inh, edges_out=local_edges)
+        if consumer is not None:
+            consumer.release(key)
         children: list = []
         for (cid, cinh), places in child_uses.items():
             ci = _build_proto(cid, cinh)
@@ -1342,6 +1373,10 @@ def _adapt(model, name: str, skp_path=None):
     # holds nothing but one placement — and a wholly empty entry simply
     # places nothing.
     protos = _merge_equal_protos(protos)
+    # Recursive helpers keep their closure cells alive until cyclic GC.
+    # Drop this private index now: applying the payload disables GC while
+    # constructing the scene, and must not retain the raw model alongside it.
+    by_id.clear()
 
     payload = {"backend": "openskp", "groups": groups, "protos": protos}
     if not groups and not any(e["faces"] or e["children"] for e in protos):
@@ -1432,8 +1467,33 @@ def parse(path, progress=None):
     openskp_compat.apply()          # fixes still waiting upstream
     if progress is not None:
         progress(0.1, "Parsing .skp (OpenSKP)…")
-    model = openskp.SkpFile.open(str(path)).parse()
-    openskp_compat.resolve_face_layers(model)   # tag ids → names (#700)
+    model = _parse_raw(openskp, openskp_compat, path)
     if progress is not None:
         progress(0.6, "Building geometry…")
-    return _adapt(model, Path(path).stem, skp_path=path)
+    # This model is private to this parse. Direct _adapt callers keep the
+    # reusable-model default; only the owned parse hands its geometry over.
+    return _adapt(model, Path(path).stem, skp_path=path, consume=True)
+
+
+def _parse_raw(openskp, openskp_compat, path):
+    """Run OpenSKP's eager parse with the cyclic garbage collector paused.
+
+    The parse builds tens of millions of small objects (vertices, edges, loops,
+    faces) that are all kept alive by the model, so every automatic generation
+    scan walks a growing graph and frees nothing. Reference counting still
+    runs; only the automatic cyclic scans are deferred until the parse returns,
+    and the caller's collector state is restored on every exit. Peak memory is
+    unchanged because nothing built here is garbage before the model exists.
+    Space_AsBuilt_Track.skp (442 MB): raw parse 95.9 s -> 61.8 s on the same
+    interpreter, max RSS 8.24 -> 8.51 GB.
+    """
+    import gc
+    enabled = gc.isenabled()
+    gc.disable()
+    try:
+        model = openskp.SkpFile.open(str(path)).parse()
+        openskp_compat.resolve_face_layers(model)   # tag ids → names (#700)
+    finally:
+        if enabled:
+            gc.enable()
+    return model

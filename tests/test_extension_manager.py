@@ -482,8 +482,11 @@ def test_long_author_tags_and_license_wrap_within_preview_width(
         "author": "A very long extension author name that should wrap "
                   "rather than push the card layout",
         "license": "A long custom license name that should wrap below tags",
+        # Enough chips that they cannot share one 256 px row on any
+        # platform's font metrics (three fit on one row on macOS).
         "tags": ("architecture-and-urban-planning",
-                 "productivity-workflow", "data-import-export"),
+                 "productivity-workflow", "data-import-export",
+                 "structural-engineering", "quantity-takeoff"),
     })
     from views import extension_manager_dialog as dialog_module
     _stub_catalog(monkeypatch, dialog_module, [extension])
