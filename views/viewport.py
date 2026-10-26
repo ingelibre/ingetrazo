@@ -591,10 +591,10 @@ class _GlTape:
         if native is not None:
             if self.arrays is None:
                 import numpy as np
-                self.arrays = (np.asarray(self.ops, dtype=np.int64)
-                               .reshape(-1, 5),
-                               np.asarray(self.vals, dtype=np.float32)
-                               .reshape(-1, 4))
+                from views.gl_commands import compact_tape
+                self.arrays = compact_tape(
+                    np.asarray(self.ops, dtype=np.int64).reshape(-1, 5),
+                    np.asarray(self.vals, dtype=np.float32).reshape(-1, 4))
             native.run(*self.arrays)
             return
         for fn, args in self.calls:
