@@ -169,6 +169,27 @@ class PreferencesDialog(QDialog):
                                       != "0")
         form.addRow("", self._invert_orbit)
 
+        self._navigation_feedback = QCheckBox(tr(
+            "Simplify edges while moving the camera (large models)"))
+        self._navigation_feedback.setChecked(
+            str(st.value("display/navigation_feedback", "0")) == "1")
+        self._navigation_feedback.setToolTip(tr(
+            "Temporarily hides edges and profiles during camera motion. "
+            "The complete view returns when motion stops. Wireframe and "
+            "image exports keep every line. Off by default."))
+        form.addRow("", self._navigation_feedback)
+        self._navigation_edge_lod = QSpinBox()
+        self._navigation_edge_lod.setRange(0, 1000)
+        self._navigation_edge_lod.setSpecialValueText(tr("Hide all edges"))
+        self._navigation_edge_lod.setSuffix(tr(" px"))
+        self._navigation_edge_lod.setValue(int(st.value(
+            "display/navigation_edge_lod_px", 0)))
+        self._navigation_edge_lod.setToolTip(tr(
+            "During camera motion, hide edges of objects smaller than this "
+            "many screen pixels. Zero hides all edges. Applies only when "
+            "camera feedback is enabled."))
+        form.addRow(tr("Motion edge threshold"), self._navigation_edge_lod)
+
         from tools.walkthrough import look_sensitivity
         self._look_sens = QSpinBox()
         self._look_sens.setRange(1, 100)
@@ -684,6 +705,12 @@ class PreferencesDialog(QDialog):
         st.setValue("nav/invert_orbit_y",
                     "1" if self._invert_orbit.isChecked() else "0")
         self._window.viewport._invert_orbit_y = self._invert_orbit.isChecked()
+
+        feedback = self._navigation_feedback.isChecked()
+        st.setValue("display/navigation_feedback", "1" if feedback else "0")
+        self._window.viewport._navigation_edge_lod_px = self._navigation_edge_lod.value()
+        st.setValue("display/navigation_edge_lod_px", self._navigation_edge_lod.value())
+        self._window.viewport.set_navigation_feedback(feedback)
 
         # First Person reads it on every look move: nothing to push.
         st.setValue("walk/look_sensitivity", int(self._look_sens.value()))

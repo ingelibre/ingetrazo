@@ -1636,6 +1636,12 @@ class Viewport(QOpenGLWidget):
         self.scene.hide_similar_components = _load_hide_similar()
         self._invert_wheel = _load_invert_wheel()
         self._invert_orbit_y = _load_invert_orbit_y()
+        from PySide6.QtCore import QSettings
+        self._navigation_feedback = str(QSettings().value(
+            "display/navigation_feedback", "0")) == "1"
+        self._navigation_feedback_active = False
+        self._navigation_edge_lod_px = max(0, int(QSettings().value(
+            "display/navigation_edge_lod_px", 0)))
         self._msaa = _load_msaa()
 
         # Hover highlight (Select tool). Not version-tracked — it changes with
@@ -2003,6 +2009,51 @@ class Viewport(QOpenGLWidget):
             self._shown_projection = mode
             self.projectionChanged.emit(mode)
 
+    def set_navigation_feedback(self, enabled: bool) -> None:
+        """Opt-in edge-free camera feedback; never affects image exports."""
+        if bool(enabled) != self._navigation_feedback:
+            self._navigation_feedback_camera = None
+        self._navigation_feedback = bool(enabled)
+        if not enabled:
+            self._finish_navigation_feedback()
+
+    def _finish_navigation_feedback(self) -> None:
+        timer = getattr(self, "_navigation_feedback_timer", None)
+        if timer is not None:
+            timer.stop()
+        if not getattr(self, "_navigation_feedback_active", False):
+            return
+        self._navigation_feedback_active = False
+        # Derive the final camera's profiles now, without the normal moving-
+        # camera silhouette throttle borrowing the last view's outline.
+        # Keep an already exact outline when the camera returned to it.
+        cam = getattr(self, "_navigation_feedback_camera", None)
+        key = (_content_ver(self), id(self.scene.mesh))
+        last = getattr(self, "_sil_last", None)
+        if last is None or len(last) < 4 or last[3] != self._sil_inputs(key, cam):
+            self._sil_last = None
+        self._sil_cam = getattr(self, "_navigation_feedback_camera", None)
+        self._sil_cam_t = 0.0
+        self.update()
+
+    def _navigation_feedback_frame(self, mvp) -> bool:
+        if (not getattr(self, "_navigation_feedback", False)
+                or self._export_size is not None):
+            return False
+        camera = tuple(mvp.data())
+        previous = getattr(self, "_navigation_feedback_camera", None)
+        self._navigation_feedback_camera = camera
+        if previous is not None and previous != camera:
+            from PySide6.QtCore import QTimer
+            timer = getattr(self, "_navigation_feedback_timer", None)
+            if timer is None:
+                timer = self._navigation_feedback_timer = QTimer(self)
+                timer.setSingleShot(True)
+                timer.timeout.connect(self._finish_navigation_feedback)
+            self._navigation_feedback_active = True
+            timer.start(150)
+        return self._navigation_feedback_active
+
     def paintGL(self) -> None:
         self._tick = getattr(self, "_tick", 0) + 1     # a new epoch memo
         self._depth_clean = None          # see the read-back at the end
@@ -2063,6 +2114,7 @@ class Viewport(QOpenGLWidget):
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
         # Frustum planes for chunk culling — also consumed by the
         # silhouette pass (skip whole chunks that are off screen).
+        self._frame_feedback = self._navigation_feedback_frame(mvp)
         self._frame_planes = self._frustum_planes(mvp)
         # P0 frame telemetry: coarse per-section CPU times, logged with the
         # cull counters when the frame is slow (INGETRAZO_PERF=1).
@@ -2322,7 +2374,8 @@ class Viewport(QOpenGLWidget):
             face_spans, culled_fv = [(0, self._faces_count)], 0
         espans = getattr(self, "_edge_spans", None)
         if espans:
-            edge_spans, culled_ev = self._visible_spans(espans, planes, split_e)
+            edge_spans, culled_ev = self._visible_spans(
+                self._navigation_edge_spans(espans), planes, split_e)
         else:
             edge_spans, culled_ev = [(0, self._edges_count)], 0
         self._frame_edge_spans = edge_spans
@@ -2714,7 +2767,8 @@ class Viewport(QOpenGLWidget):
         self._set_section_clip(True)
         if _PERF:
             self._gpu_timings.begin("edges")
-        show_edges = style.edges or mode == "wireframe"
+        show_edges = mode == "wireframe" or (style.edges and (
+            not self._frame_feedback or self._navigation_edge_lod_px > 0))
         ec = style.edge_color
         # Line weight for sheet renders: a GL line is one pixel whatever
         # the DPI (core-profile Mesa clamps glLineWidth), and one pixel at
@@ -2791,7 +2845,8 @@ class Viewport(QOpenGLWidget):
         # Profile (silhouette) edges: soft seams of a curved surface are hidden,
         # except where the surface turns away from the viewer — the cylinder's
         # outline. View-dependent, so rebuilt every frame.
-        if show_edges and style.profiles:
+        if show_edges and style.profiles and (
+                not self._frame_feedback or mode == "wireframe"):
             sil_count = self._upload_silhouette_edges()
             if sil_count > 0:
                 self._set_color(ec[0], ec[1], ec[2], 1.0)
@@ -2956,7 +3011,8 @@ class Viewport(QOpenGLWidget):
         versions (a selection bumps it), every buffer sent to the GPU since
         (``_gpu_epoch``), the style, the open group, the guides, the
         textures loaded, the shadow map."""
-        if not _FRAME_CACHE or self._export_size is not None:
+        if (not _FRAME_CACHE or self._export_size is not None
+                or getattr(self, "_frame_feedback", False)):
             return None
         sc = self.scene
         if (mode == "xray" or getattr(style, "back_edges", False)
@@ -4678,10 +4734,57 @@ class Viewport(QOpenGLWidget):
         self._gl_replay_memo = (ctx, replay)
         return replay
 
+    def _navigation_edge_floor(self):
+        if (getattr(self, "_frame_feedback", False)
+                and self._effective_style().face_mode != "wireframe"):
+            return getattr(self, "_navigation_edge_lod_px", 0)
+        return 0
+
+    def _navigation_edge_spans(self, spans):
+        """Only motion LOD filters; unknown bounds and loose edges stay."""
+        import numpy as np
+        floor = self._navigation_edge_floor()
+        if not floor:
+            return spans
+        boxes = [bb if bb is not None else ((-np.inf,) * 3, (np.inf,) * 3)
+                 for bb, start, count in spans]
+        lo, hi = np.asarray(boxes).transpose(1, 0, 2)
+        ctr, rad = self._bounding_spheres(lo, hi)
+        small = self._spheres_below_a_pixel(ctr, rad, floor)
+        return [span for span, skip in zip(spans, small) if not skip]
+
+    def _navigation_edge_batches(self, by_proto):
+        import numpy as np
+        floor = self._navigation_edge_floor()
+        pool = getattr(self, "_inst_pool", None)
+        if not floor or pool is None:
+            return by_proto
+        small = self._instances_below_a_pixel(pool, floor / self._INST_MIN_PX)
+        memo = getattr(self, "_navigation_edge_memo", None)
+        if (memo is not None and memo[0] is by_proto
+                and np.array_equal(memo[1], small)):
+            return memo[2]
+        out = {}
+        for key, (mesh, paint, groups, mirrored) in by_proto.items():
+            if not isinstance(groups, _InstanceBatch):
+                out[key] = (mesh, paint, groups, mirrored)
+                continue
+            keep = ~small[groups.idx]
+            if keep.all():
+                out[key] = (mesh, paint, groups, mirrored)
+            elif keep.any():
+                batch = _InstanceBatch(g for g, yes in zip(groups, keep) if yes)
+                batch.idx = groups.idx[keep]
+                batch.mats = groups.mats
+                out[key] = (mesh, paint, batch, mirrored)
+        self._navigation_edge_memo = (by_proto, small, out)
+        return out
+
     def _draw_instanced_edges(self) -> None:
         by_proto = getattr(self, "_frame_instanced", None)
         if not by_proto:
             return
+        by_proto = self._navigation_edge_batches(by_proto)
         extra = self.context().extraFunctions()
         if _lean_instanced():
             self._draw_instanced_edges_lean(by_proto, extra)
@@ -16715,6 +16818,7 @@ class Viewport(QOpenGLWidget):
             self._end_look()
             return
         if ev.button() == Qt.MiddleButton:
+            self._finish_navigation_feedback()
             self._last_pos = None
             self._orbit_pivot = None
             self._pan_mode = False
@@ -16736,6 +16840,7 @@ class Viewport(QOpenGLWidget):
             return
 
         if ev.button() == Qt.LeftButton and self.nav_mode is not None:
+            self._finish_navigation_feedback()
             self._last_pos = None
             self._orbit_pivot = None
             self._pan_mode = False
