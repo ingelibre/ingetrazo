@@ -2053,6 +2053,66 @@ class Viewport(QOpenGLWidget):
             self._navigation_feedback_active = True
             timer.start(150)
         return self._navigation_feedback_active
+    def _fit_scene_depth(self):
+        """Reuse the renderer's placement boxes, once per content epoch.
+
+        Ancillary layers and live previews may extend beyond model bounds;
+        until they supply conservative boxes, retain the original range.
+        """
+        import numpy as np
+        self.camera._depth_range = None
+        if (not self.camera.perspective
+                or self.scene.edit_group is not None
+                or getattr(self, "_preview_groups", None)
+                or getattr(self, "_frozen_cache_version", None) is not None
+                or self._base_map_showing() or self._terrain_showing()
+                or self._photo_showing()
+                or getattr(self.scene, "guides", None)
+                or getattr(self.scene.shadows, "enabled", False)):
+            return
+        key = (self._placements_epoch(), _content_ver(self), id(self.scene.mesh))
+        memo = getattr(self, "_depth_boxes", None)
+        if memo is None or memo[0] != key:
+            boxes = []
+            for g in self._placements():
+                if not self.scene.entity_visible(g):
+                    continue
+                if getattr(g, "billboard", False):
+                    verts = self._billboard_mesh(g).vertices
+                    if verts:
+                        a = np.asarray([v.position.toTuple() for v in verts])
+                        lo, hi = a.min(axis=0), a.max(axis=0)
+                        ctr = (lo + hi) * .5
+                        radius = np.linalg.norm(hi[:2] - lo[:2]) * .5
+                        boxes.append(((ctr[0]-radius, ctr[1]-radius, lo[2]),
+                                      (ctr[0]+radius, ctr[1]+radius, hi[2])))
+                    continue
+                box = (self._placement_bbox(g) if g.xform is not None
+                       else self._group_chunk(g).get("bbox"))
+                if box is None:
+                    from core.lazy_mesh import entity_count
+                    if entity_count(g.mesh) == 0:
+                        continue  # empty containers do not constrain depth
+                    # Cache a conservative refusal too: otherwise one
+                    # unknown box repeats the entire placement walk on
+                    # every camera frame (about 90 ms on a large model).
+                    self._depth_boxes = (key, None, None)
+                    return
+                boxes.append(box)
+            # Loose/edit geometry has no placement box; preserve its bounds
+            # without materialising any deferred component prototypes.
+            points = [v.position.toTuple() for v in self.scene.mesh.vertices]
+            if points:
+                a = np.asarray(points)
+                boxes.append((a.min(axis=0), a.max(axis=0)))
+            for im in getattr(self.scene, "image_planes", ()):
+                if self.scene.entity_visible(im):
+                    a = np.asarray([p.toTuple() for p in im.corners()])
+                    boxes.append((a.min(axis=0), a.max(axis=0)))
+            a = np.asarray(boxes, dtype=float).reshape(-1, 2, 3)
+            memo = self._depth_boxes = (key, a[:, 0], a[:, 1])
+        if memo[1] is not None:
+            self.camera.fit_depth_range(memo[1], memo[2])
 
     def paintGL(self) -> None:
         self._tick = getattr(self, "_tick", 0) + 1     # a new epoch memo
@@ -2111,6 +2171,7 @@ class Viewport(QOpenGLWidget):
         self._gl.glClearColor(bg[0], bg[1], bg[2], 1.0)
         self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
+        self._fit_scene_depth()
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
         # Frustum planes for chunk culling — also consumed by the
         # silhouette pass (skip whole chunks that are off screen).
@@ -2762,7 +2823,7 @@ class Viewport(QOpenGLWidget):
         self._draw_groups_preview(mvp)
         self._draw_hidden_ghosts(mvp)
 
-        self._draw_scaffold(mvp, w, h)
+        self._draw_scaffold_depth(mvp, w, h)
 
         self._set_section_clip(True)
         if _PERF:
@@ -2881,6 +2942,18 @@ class Viewport(QOpenGLWidget):
             self._hover_edges_vao.release()
         self._set_section_clip(False)
         self._draw_section_cut_edges()   # ON the plane — drawn unclipped
+
+    def _draw_scaffold_depth(self, mvp, w, h):
+        # Axes extend beyond model bounds. Keep their projected lines while
+        # clamping their depth to the fitted range (no geometry is clamped).
+        fitted = self.camera._fitted_depth_range() is not None
+        if fitted:
+            self._gl.glEnable(0x864F)  # GL_DEPTH_CLAMP, core since GL 3.2
+        try:
+            self._draw_scaffold(mvp, w, h)
+        finally:
+            if fitted:
+                self._gl.glDisable(0x864F)
 
     def _draw_scaffold(self, mvp, w, h) -> None:
         """The axes, the guides and the dashed box of the group being
@@ -3121,7 +3194,7 @@ class Viewport(QOpenGLWidget):
                 self._gl.glStencilFunc(GL_EQUAL, 1, 0xFF)
                 self._gl.glStencilMask(0x00)
                 self._gl.glDepthFunc(GL_LESS)
-                self._draw_scaffold(mvp, w, h)
+                self._draw_scaffold_depth(mvp, w, h)
                 self._program.setUniformValue(self._loc_mvp, mvp)
                 self._gl.glDepthFunc(GL_LEQUAL)
                 self._gl.glStencilMask(0xFF)
@@ -9824,7 +9897,9 @@ class Viewport(QOpenGLWidget):
         h = max(self.height(), 1)
         ndc_x = 2.0 * x / w - 1.0
         ndc_y = 1.0 - 2.0 * y / h
-        mvp = self.camera.projection_matrix() * self.camera.view_matrix()
+        projection = getattr(self.camera, "picking_projection_matrix",
+                             self.camera.projection_matrix)
+        mvp = projection() * self.camera.view_matrix()
         inv, ok = mvp.inverted()
         if not ok:
             return None, None

@@ -115,4 +115,3 @@ def test_compacted_tape_cocoa_exact_rgb32(monkeypatch, tmp_path, context):
                 assert frames[0] == frames[1], (mode, view)
     finally:
         win._saved_content = vp.scene.content_version; win.close()
-
