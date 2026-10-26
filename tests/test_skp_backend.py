@@ -1230,3 +1230,37 @@ def test_openskp_adapter_an_extracted_part_keeps_its_own_tag(monkeypatch):
         NS(definitions={0: root, 5: container, 8: person}), "m")
     groups = {gp["name"]: gp for gp in payload["groups"]}
     assert groups["Susan"].get("layer") == "Gente"
+
+
+def _outer_normal_z(face_entry):
+    outer = face_entry[0]
+    p = [[float(c) for c in (q[0], q[1], q[2])] for q in outer[:3]]
+    ax, ay = p[1][0] - p[0][0], p[1][1] - p[0][1]
+    bx, by = p[2][0] - p[0][0], p[2][1] - p[0][1]
+    return ax * by - ay * bx
+
+
+def test_a_mirrored_instance_flattened_keeps_its_face_pointing_out():
+    # A single use is flattened into its group. The triangle faces +Z; a
+    # placement mirrored in X (negative determinant) reflects its corners,
+    # which alone would turn the loop clockwise, i.e. the face inside out.
+    # The adapter reverses the loop so the mirrored copy still faces +Z,
+    # the way SketchUp shows it (a mirror does not flip a face's front).
+    plain = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
+    mirror = [-1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
+    for matrix, label in ((plain, "plain"), (mirror, "mirror")):
+        # The wing is placed once inside a component, so it is flattened
+        # into that component's geometry (a prototype or a group).
+        child = NS(ref_idx=5, material_id=None, matrix=matrix)
+        parent = _fake_definition(id=6, name="parent", verts={}, edges={},
+                                  faces={}, instances=[child])
+        top = NS(ref_idx=6, material_id=None, matrix=plain)
+        root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                                faces={}, instances=[top])
+        model = NS(definitions={0: root, 5: _tri_def(5, "wing"), 6: parent},
+                   materials_by_id={})
+        payload = skp_openskp._adapt(model, "m")
+        faces = [f for g in payload["groups"] for f in g.get("faces", [])]
+        faces += [f for p in payload.get("protos", []) for f in p.get("faces", [])]
+        assert len(faces) == 1, label
+        assert _outer_normal_z(faces[0]) > 0, label

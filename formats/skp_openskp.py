@@ -740,10 +740,22 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
     pos_m, raw_l, meta = _defn_geom(defn)
     if meta:
         wl = _world_points(pos_m, xform)
+        # A mirrored placement (negative determinant) turns every loop the
+        # other way round once its corners are in world space: left as is,
+        # the flattened copy renders inside out, back faces where the front
+        # ones were. Reverse the loops so the face keeps pointing the way
+        # the file's instance pointed. Attributes are per face (the texture
+        # fit is a world→UV affine), so the order of the corners is all
+        # that changes. Prototype placements keep their local geometry and
+        # the renderer flips the winding per instance instead.
+        mirrored = xform.determinant() < 0.0
         for face, s0, s1, hs in meta:
             entry = _face_entry(face, wl, raw_l, s0, s1, hs, attr_map,
                                 inherited, layer)
             if entry is not None:
+                if mirrored:
+                    outer, holes, attrs = entry
+                    entry = (outer[::-1], [h[::-1] for h in holes], attrs)
                 out.append(entry)
     if edges_out is not None:
         _soft_edge_segments(defn, xform, edges_out)
