@@ -1033,6 +1033,9 @@ class _Tree(QTreeWidget):
             if key == Qt.Key_Space:
                 self._panel.toggle_hidden()
                 return
+            if key == Qt.Key_Delete and not ev.isAutoRepeat():
+                self._panel.delete_groups()
+                return
             if key in (Qt.Key_Return, Qt.Key_Enter):
                 item = self.currentItem()
                 if item is not None:
@@ -2334,6 +2337,55 @@ class OutlinerPanel(QWidget):
         self._window.viewport.update()
         self.refresh()
 
+    def delete_groups(self, groups=None) -> bool:
+        """Delete the rows — each group with every group it holds — as ONE
+        undoable step, as Delete does on the view's selection. A row picked
+        inside another picked row goes with it. Locked rows (or rows inside
+        a locked group) are refused, as the view cannot pick them either.
+        True if anything was deleted."""
+        from core.history import CompoundCommand, DeleteGroupCommand
+        if groups is None:
+            groups = self._selected_groups()
+            current = self._group_of(self.tree.currentItem())
+            if not groups and current is not None:
+                groups = [current]
+        scene = self._scene()
+        doomed = outliner.topmost(scene.groups, list(groups))
+        if not doomed:
+            return False
+        up = outliner.parents(scene.groups)
+
+        def locked(g) -> bool:
+            while g is not None:
+                if getattr(g, "locked", False):
+                    return True
+                g = up.get(id(g))
+            return False
+
+        if any(locked(g) for g in doomed):
+            self._window.viewport.flash_status(
+                tr("A locked group cannot be deleted: unlock it first"), 3500)
+            return False
+        # A deleted group must not stay open for editing (nor anything
+        # inside it): back to the model first, as a click outside would.
+        gone = {id(g) for g in doomed}
+
+        def inside_doomed(g) -> bool:
+            while g is not None:
+                if id(g) in gone:
+                    return True
+                g = up.get(id(g))
+            return False
+
+        if any(inside_doomed(g) for g in outliner.open_path(scene)):
+            self._window.viewport.end_group_edit()
+        cmds = [DeleteGroupCommand(g) for g in doomed]
+        self._window.viewport.history.execute(
+            cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
+        self._window.viewport.update()
+        self.refresh()
+        return True
+
     def _update_rename_button(self) -> None:
         b = getattr(self, "_rename_btn", None)
         if b is not None:
@@ -3454,6 +3506,8 @@ class OutlinerPanel(QWidget):
                            lambda: self.toggle_locked(targets))
             menu.addAction(tr("Open for editing"),
                            lambda: self.open_item(item))
+            menu.addAction(tr("Delete"), lambda: QTimer.singleShot(
+                0, lambda: self.delete_groups(targets)))
             # Make Group / Make Component from here, as from the view's
             # right-click (#561, @BastelBaus); inside an open group what
             # they make goes into it (#490).
