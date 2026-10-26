@@ -18,14 +18,14 @@ from core import lazy_mesh
 from core import mesh as M
 from core.scene import Scene
 from formats import igz
-from tests.test_deferred_mesh import _meshes, _random_scene
+from tests.test_deferred_mesh import _enable_lazy, _meshes, _random_scene
 
 
 @pytest.fixture
 def binary(monkeypatch):
     monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 0)
     monkeypatch.setattr(igz, "_BULK_MIN", 1)
-    monkeypatch.setattr(_native, "wanted", lambda: True)
+    _enable_lazy(monkeypatch)
 
 
 def _compare(plan, m):

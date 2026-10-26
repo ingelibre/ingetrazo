@@ -138,6 +138,18 @@ def fingerprint(mesh, plan, table, face_attr):
             soft, hid)
 
 
+def _dot_rows(a, b):
+    """Broadcast Qt float32 dot products, including Apple Clang's FMA order."""
+    a, b = np.broadcast_arrays(a, b)
+    if _native.qt_hypot() == "libc++":
+        values = _native.native.qt_dot_rows(
+            np.ascontiguousarray(a, dtype=np.float32).reshape(-1, 3),
+            np.ascontiguousarray(b, dtype=np.float32).reshape(-1, 3),
+            "libc++")
+        return values.reshape(a.shape[:-1])
+    return (a[..., 0] * b[..., 0] + a[..., 1] * b[..., 1]) + a[..., 2] * b[..., 2]
+
+
 def shade_factors(vp, vecs):
     """``vp._shade_factor`` of each row of ``vecs`` (N,3) float32 — Qt's
     normalized() from the kernel, the float32 dot with the light, then the
@@ -147,8 +159,8 @@ def shade_factors(vp, vecs):
         return np.zeros(0)
     ln, unit, _u, _v = _native.native.qt_vector_probe(
         np.ascontiguousarray(vecs, dtype=np.float32), _native.qt_hypot())
-    lx, ly, lz = (np.float32(c) for c in vp._LIGHT.toTuple())
-    d = np.abs((unit[:, 0] * lx + unit[:, 1] * ly) + unit[:, 2] * lz)
+    light = np.asarray(vp._LIGHT.toTuple(), dtype=np.float32)
+    d = np.abs(_dot_rows(unit, light))
     f = np.rint((0.62 + 0.38 * d.astype(np.float64)) * 32.0) / 32.0
     return np.where(ln.astype(np.float64) < 1e-9, 0.84375, f)
 
@@ -344,11 +356,9 @@ def bake(vp, mesh, paint, msig, vkey, uid):
             mi = tm[rows]
             P = tpb[rows]
             g = gu[mi][:, None, :]
-            du = (P[:, :, 0] * g[:, :, 0] + P[:, :, 1] * g[:, :, 1]) \
-                + P[:, :, 2] * g[:, :, 2]
+            du = _dot_rows(P, g)
             g = gv[mi][:, None, :]
-            dv = (P[:, :, 0] * g[:, :, 0] + P[:, :, 1] * g[:, :, 1]) \
-                + P[:, :, 2] * g[:, :, 2]
+            dv = _dot_rows(P, g)
             uv[rows, :, 0] = (du.astype(np.float64)
                               + cu[mi][:, None]).astype(np.float32)
             uv[rows, :, 1] = (dv.astype(np.float64)

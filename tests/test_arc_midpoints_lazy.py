@@ -10,19 +10,19 @@ import math
 import pytest
 from PySide6.QtGui import QVector3D as V
 
-import core._native as _native
 from core import mesh as M
 from core.group import Group
 from core.scene import Scene
 from formats import igz
 from views.viewport import Viewport
+from tests.test_deferred_mesh import _enable_lazy
 
 
 @pytest.fixture
 def lazy(monkeypatch):
     monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 0)
     monkeypatch.setattr(igz, "_BULK_MIN", 1)
-    monkeypatch.setattr(_native, "wanted", lambda: True)
+    _enable_lazy(monkeypatch)
 
 
 def _arcs(m, cid, cx, r, n, sweep):

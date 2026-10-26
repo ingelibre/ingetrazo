@@ -18,9 +18,11 @@ pub const CULL_FACE: i64 = 7;
 pub const FRONT_FACE: i64 = 8;
 pub const ACTIVE_TEXTURE: i64 = 9;
 pub const BIND_TEXTURE: i64 = 10;
-pub const N_FUNCS: usize = 11;
+pub const DRAW_ELEMENTS_INSTANCED: i64 = 11;
+pub const N_FUNCS: usize = 12;
 
 type FnDrawArraysInstanced = extern "system" fn(u32, i32, i32, i32);
+type FnDrawElementsInstanced = extern "system" fn(u32, i32, u32, *const std::ffi::c_void, i32);
 type FnU32 = extern "system" fn(u32);
 type FnUniform1i = extern "system" fn(i32, i32);
 type FnUniform1f = extern "system" fn(i32, f32);
@@ -32,13 +34,14 @@ pub struct Tape {
 }
 
 impl Tape {
-    /// `addrs`: the entry points, in opcode order; none may be null.
+    /// `addrs`: eleven legacy entry points, optionally followed by indexed
+    /// drawing, in opcode order; supplied addresses may not be null.
     pub fn new(addrs: &[usize]) -> Option<Tape> {
-        if addrs.len() != N_FUNCS || addrs.iter().any(|&a| a == 0) {
+        if !(addrs.len() == 11 || addrs.len() == N_FUNCS) || addrs.iter().any(|&a| a == 0) {
             return None;
         }
         let mut f = [0usize; N_FUNCS];
-        f.copy_from_slice(addrs);
+        f[..addrs.len()].copy_from_slice(addrs);
         Some(Tape { f })
     }
 
@@ -57,6 +60,11 @@ impl Tape {
                 DRAW_ARRAYS_INSTANCED => {
                     let g: FnDrawArraysInstanced = std::mem::transmute(f[0]);
                     g(op[1] as u32, op[2] as i32, op[3] as i32, op[4] as i32)
+                }
+                DRAW_ELEMENTS_INSTANCED if f[11] != 0 => {
+                    let g: FnDrawElementsInstanced = std::mem::transmute(f[11]);
+                    g(op[1] as u32, op[2] as i32, 0x1405,
+                      op[3] as usize as *const std::ffi::c_void, op[4] as i32)
                 }
                 BIND_VERTEX_ARRAY => {
                     let g: FnU32 = std::mem::transmute(f[1]);

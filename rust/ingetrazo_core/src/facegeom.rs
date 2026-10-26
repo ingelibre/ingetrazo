@@ -15,6 +15,8 @@
 pub enum Hypot {
     /// libstdc++ (`std::__hypot3`): scale by the largest component.
     LibStdCxx,
+    /// Apple libc++ with Clang's float32 FMA contraction (arm64 Qt).
+    LibCxx,
 }
 
 #[derive(Clone, Copy)]
@@ -34,11 +36,21 @@ impl V3 {
         V3(self.0 / s, self.1 / s, self.2 / s)
     }
     #[inline]
-    fn dot(self, o: V3) -> f32 {
+    pub fn dot(self, o: V3, h: Hypot) -> f32 {
+        if h == Hypot::LibCxx {
+            return self.2.mul_add(o.2, self.0.mul_add(o.0, self.1 * o.1));
+        }
         self.0 * o.0 + self.1 * o.1 + self.2 * o.2
     }
     #[inline]
-    fn cross(self, o: V3) -> V3 {
+    fn cross(self, o: V3, h: Hypot) -> V3 {
+        if h == Hypot::LibCxx {
+            return V3(
+                self.1.mul_add(o.2, -(self.2 * o.1)),
+                self.2.mul_add(o.0, -(self.0 * o.2)),
+                self.0.mul_add(o.1, -(self.1 * o.0)),
+            );
+        }
         V3(
             self.1 * o.2 - self.2 * o.1,
             self.2 * o.0 - self.0 * o.2,
@@ -50,6 +62,17 @@ impl V3 {
 #[inline]
 pub fn length(v: V3, h: Hypot) -> f32 {
     match h {
+        Hypot::LibCxx => {
+            // Older libc++ <cmath> uses sqrt(x*x + y*y + z*z), all in f32,
+            // without scaling (including its overflow/underflow behaviour).
+            // Apple Clang contracts it as y*y, fma(x,x,y*y), fma(z,z,previous).
+            // Explicit mul_add preserves those round-once operations in Rust.
+            // Newer libc++ headers scale extreme inputs; this variant matches
+            // the arm64 PySide6 6.11 wheel, not every libc++ build. The Qt probe
+            // remains the gate for builds with different arithmetic.
+            let V3(x, y, z) = v;
+            z.mul_add(z, x.mul_add(x, y * y)).sqrt()
+        }
         Hypot::LibStdCxx => {
             let (x, y, z) = (v.0.abs(), v.1.abs(), v.2.abs());
             let a = if x < y {
@@ -91,13 +114,13 @@ pub fn normalized(v: V3, h: Hypot) -> V3 {
 pub fn plane_axes(normal: V3, h: Hypot) -> (V3, V3) {
     let n = normalized(normal, h);
     let mut r = V3(1.0, 0.0, 0.0);
-    let mut u = r.sub(n.mul(r.dot(n)));
+    let mut u = r.sub(n.mul(r.dot(n, h)));
     if (length(u, h) as f64) < 0.1 {
         r = V3(0.0, 1.0, 0.0);
-        u = r.sub(n.mul(r.dot(n)));
+        u = r.sub(n.mul(r.dot(n, h)));
     }
     let u = normalized(u, h);
-    let v = normalized(n.cross(u), h);
+    let v = normalized(n.cross(u, h), h);
     (u, v)
 }
 
@@ -604,7 +627,7 @@ fn triangles(pos: &[V3], rings: &[&[u32]], normal: V3, h: Hypot) -> Vec<[u32; 3]
     let origin = pos[outer[0] as usize];
     let proj = |i: u32| {
         let rel = pos[i as usize].sub(origin);
-        (rel.dot(u) as f64, rel.dot(v) as f64)
+        (rel.dot(u, h) as f64, rel.dot(v, h) as f64)
     };
     let mut tris = Vec::new();
     if holes.is_empty() {
@@ -666,4 +689,30 @@ pub fn face_geometry(pos: &[V3], rings: &[&[u32]], h: Hypot, compensated: bool) 
         && unit.2.to_bits() == normal.2.to_bits();
     let tris_unit = if same { None } else { Some(triangles(pos, rings, unit, h)) };
     FaceGeom { normal, ln, centroid: Some(centroid), tris, unit, tris_unit }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::{length, Hypot, V3};
+
+    #[test]
+    fn libcxx_matches_arm64_qt_bits() {
+        // QVector3D::length() in the macOS arm64 PySide6 6.11.2 wheel.
+        // The first two distinguish fused arithmetic from f32/f64 sums;
+        // the extremes distinguish the older unscaled libc++ implementation.
+        let cases = [
+            ([0xbf85802d, 0x3dfb2989, 0xbdbf4792], 0x3f86f375),
+            ([0x3f2469ae, 0x3f9ce7e8, 0xbea43c7d], 0x3fb5d537),
+            ([0x3f800000, 0x40000000, 0x40400000], 0x406f7751),
+            ([0, 0x80000000, 0], 0),
+            ([0x7149f2ca, 0xf1c9f2ca, 0x72177617], 0x7f800000),
+            ([0x0da24260, 0x8e224260, 0x0e736390], 0),
+            ([1, 1, 1], 0),
+        ];
+        for (input, expected) in cases {
+            let [x, y, z] = input.map(f32::from_bits);
+            assert_eq!(length(V3(x, y, z), Hypot::LibCxx).to_bits(), expected);
+        }
+    }
 }

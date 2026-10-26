@@ -64,6 +64,7 @@ class OrbitCamera:
         self.aspect = 1.0
         self.znear = 0.1
         self.zfar = 10000.0
+        self._depth_range = None
         self.perspective = True
         #: Two-Point Perspective: vertical lines stay vertical
         #: (José Castro Basso, FADU–UDELAR, for teaching architectural
@@ -208,6 +209,9 @@ class OrbitCamera:
         at any working distance, stepping back with the camera when you come
         right up to something — otherwise the near plane itself is what
         stops you — but never closer than :data:`NEAR_FLOOR`."""
+        fitted = self._fitted_depth_range()
+        if fitted is not None:
+            return fitted[0]
         return min(self.znear, max(self.distance * 0.02, NEAR_FLOOR))
 
     def min_distance(self, at: QVector3D | None = None) -> float:
@@ -223,7 +227,78 @@ class OrbitCamera:
     def far_plane(self) -> float:
         """The far clipping distance: ``zfar`` at any working distance,
         growing with the orbit distance when zoomed far out (#340)."""
+        fitted = self._fitted_depth_range()
+        if fitted is not None:
+            return fitted[1]
         return max(self.zfar, self.distance * FAR_PER_DISTANCE)
+
+    def picking_projection_matrix(self):
+        """Keep editing rays byte-for-byte stable as drawing depth improves.
+
+        Ray construction historically inverts the original near/far matrix.
+        Changing that matrix changes float32 rounding of the ray itself,
+        even though its ideal direction is independent of clipping planes.
+        Depth-buffer unprojection must still use the fitted drawing matrix.
+        No Qt events or callbacks run during this synchronous calculation.
+        """
+        fitted = self._depth_range
+        self._depth_range = None
+        try:
+            return self.projection_matrix()
+        finally:
+            self._depth_range = fitted
+
+    def _depth_view_key(self):
+        return (tuple(self.view_matrix().data()), self.fov_deg, self.aspect,
+                self.perspective, self.two_point, self.znear, self.zfar)
+
+    def _fitted_depth_range(self):
+        fitted = self._depth_range
+        if fitted is not None and fitted[0] == self._depth_view_key():
+            return fitted[1:]
+        return None
+
+    def fit_depth_range(self, lo, hi) -> None:
+        """Fit perspective depth to conservative world-space drawing boxes.
+
+        Unknown bounds invalidate the fit. Boxes crossing the eye retain
+        the close-up floor; a five-percent margin tolerates float32 bounds.
+        The four side planes alone select boxes: using the old near/far
+        planes here would permanently exclude geometry we want to recover.
+        Orthographic projection keeps its established symmetric range.
+        """
+        import numpy as np
+        self._depth_range = None
+        if not self.perspective or len(lo) == 0:
+            return
+        lo, hi = np.asarray(lo), np.asarray(hi)
+        if not (np.isfinite(lo).all() and np.isfinite(hi).all()):
+            return
+        view = np.asarray(self.view_matrix().data()).reshape(4, 4, order="F")
+        m = np.asarray((self.projection_matrix() * self.view_matrix()).data()).reshape(4, 4, order="F")
+        keep = np.ones(len(lo), bool)
+        for pl in (m[3]+m[0], m[3]-m[0], m[3]+m[1], m[3]-m[1]):
+            px = hi[:, 0] if pl[0] >= 0 else lo[:, 0]
+            py = hi[:, 1] if pl[1] >= 0 else lo[:, 1]
+            pz = hi[:, 2] if pl[2] >= 0 else lo[:, 2]
+            keep &= ((px * pl[0] + py * pl[1]) + pz * pl[2]) + pl[3] >= 0
+        direction, offset = -view[2, :3], -view[2, 3]
+        nx, ny, nz = direction
+        lx, hx = (lo[:, 0], hi[:, 0]) if nx >= 0 else (hi[:, 0], lo[:, 0])
+        ly, hy = (lo[:, 1], hi[:, 1]) if ny >= 0 else (hi[:, 1], lo[:, 1])
+        lz, hz = (lo[:, 2], hi[:, 2]) if nz >= 0 else (hi[:, 2], lo[:, 2])
+        near = ((lx * nx + ly * ny) + lz * nz) + offset
+        far = ((hx * nx + hy * ny) + hz * nz) + offset
+        keep &= far > NEAR_FLOOR
+        if not keep.any():
+            return
+        n = max(NEAR_FLOOR, float(near[keep].min()) * 0.95)
+        # A coarse box crossing the eye cannot certify a safer near
+        # plane. Do not make distant precision WORSE than the old camera.
+        if n <= self.near_plane():
+            return
+        f = max(n + NEAR_FLOOR, float(far[keep].max()) * 1.05)
+        self._depth_range = (self._depth_view_key(), n, f)
 
     # ---- Navigation ---------------------------------------------------------
     def orbit(self, dx_pixels: float, dy_pixels: float, viewport_h: int) -> None:

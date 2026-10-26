@@ -48,6 +48,9 @@ class _Win(QWidget):
             def set_edit_rest_mode(self, mode):
                 self.edit_rest_mode = mode
 
+            def set_navigation_feedback(self, enabled):
+                self.navigation_feedback = enabled
+
         self.viewport = _VP()
         self._rest_actions = {}
 
@@ -196,3 +199,14 @@ def test_the_3d_mouse_page_shows_the_device_live(settings_file, monkeypatch):
     dlg.reject()
     dev.raw.emit((0, 0, 0, 0, 0, 0))             # closed: no longer listens
     assert "Y  -340" in dlg._ndof_raw.text()
+
+
+def test_navigation_feedback_is_opt_in_and_applies_on_ok(settings_file):
+    win = _Win()
+    dlg = PreferencesDialog(win)
+    assert not dlg._navigation_feedback.isChecked()
+    dlg._navigation_feedback.setChecked(True)
+    dlg.accept()
+    assert _fresh(settings_file).value("display/navigation_feedback") == "1"
+    assert win.viewport.navigation_feedback is True
+    dlg.close(); win.close()

@@ -26,8 +26,19 @@ def binary(monkeypatch):
     monkeypatch.setattr(igz, "_BULK_MIN", 1)
 
 
+def _enable_lazy(monkeypatch):
+    """Exercise deferred readers even on a build without the optional kernels."""
+    native = _native.native
+    monkeypatch.setattr(_native, "native", native)
+    monkeypatch.setattr(_native, "available", lambda: native or object())
+    monkeypatch.setattr(_native, "wanted", lambda: True)
+
+
 def _open(monkeypatch, path, lazy):
-    monkeypatch.setattr(_native, "wanted", lambda: lazy)
+    if lazy:
+        _enable_lazy(monkeypatch)
+    else:
+        monkeypatch.setattr(_native, "wanted", lambda: False)
     scene = Scene()
     igz.load_into(scene, path)
     return scene
@@ -111,14 +122,22 @@ def test_built_on_touch_is_the_eager_mesh(binary, monkeypatch, tmp_path,
     assert _canonical(lazy) == _canonical(eager)
 
 
+def _a_corner(m) -> V:
+    """A position holding a vertex of ``m``, read without building it."""
+    from core.lazy_mesh import plan_of
+    plan = plan_of(m)
+    return V(*plan.pos[0]) if plan is not None else \
+        V(m.vertices[0].position)
+
+
 def test_any_first_touch_builds_it(binary, monkeypatch, tmp_path):
-    """Whatever touches a deferred mesh first — a read, a lookup, a copy,
-    an edit — it is built before, so the result is the eager mesh's with
-    the same touch."""
+    """Whatever touches a deferred mesh first — a read, a lookup of a
+    vertex it holds, a copy, an edit — it is built before, so the result
+    is the eager mesh's with the same touch."""
     path = tmp_path / "doc.igz"
     igz.save_scene(_random_scene(random.Random(9)), path)
     touches = (lambda m: m.vertices, lambda m: m.edges, lambda m: m.faces,
-               lambda m: m.vertex_at(V(0, 0, 0)),
+               lambda m: m.vertex_at(_a_corner(m)),
                lambda m: m.vertex(V(0, 0, 0)), lambda m: copy.deepcopy(m),
                lambda m: m.add_edge(V(90, 0, 0), V(91, 0, 0)))
     for touch in touches:
@@ -130,6 +149,59 @@ def test_any_first_touch_builds_it(binary, monkeypatch, tmp_path):
                 assert type(m) is M.Mesh
             out.append(_canonical(scene))
         assert out[0] == out[1], touch
+
+
+def test_a_lookup_that_misses_builds_nothing(binary, monkeypatch, tmp_path):
+    """vertex_at answers like the eager mesh at every distance from a
+    vertex — and a position no document point comes near leaves the mesh
+    deferred: a definite miss needs no objects to be sure of."""
+    path = tmp_path / "doc.igz"
+    igz.save_scene(_random_scene(random.Random(5)), path)
+    eager = list(_meshes(_open(monkeypatch, path, False)))
+    k = next(i for i, m in enumerate(_meshes(_open(monkeypatch, path, True)))
+             if type(m) is M.DeferredMesh)
+    corner = V(eager[k].vertices[3].position)
+    # On the vertex, within the weld, just outside it, and nowhere near.
+    for off in (0.0, 5e-5, 1.5e-4, 3e-4, 1e-3, 1e3):
+        m = list(_meshes(_open(monkeypatch, path, True)))[k]
+        q = corner + V(off, 0, 0)
+        want = eager[k].vertex_at(q)
+        got = m.vertex_at(q)
+        assert (got is None) == (want is None), off
+        if want is not None:
+            assert got.position == want.position
+            assert type(m) is M.Mesh
+        if off >= 3e-4:                     # no document point within reach
+            assert type(m) is M.DeferredMesh, off
+
+
+def test_a_dimension_in_the_document_builds_only_its_mesh(
+        binary, monkeypatch, tmp_path):
+    """Opening a document binds its dimensions, and an anchor probes every
+    placement with vertex_at: that built every lazy mesh of a 20 000-group
+    model over ONE dimension. Only the mesh holding the vertex is built,
+    and the anchor is the eager one."""
+    from core.dimension import Dimension
+    scene = _random_scene(random.Random(7))
+    far = scene.groups[-1].mesh                 # the classic group
+    far.add_face([V(100, 100, 0), V(102, 100, 0), V(102, 101, 0),
+                  V(100, 101, 0)])
+    scene.dimensions.append(Dimension(V(100, 100, 0), V(102, 100, 0),
+                                      V(0, -1, 0)))
+    path = tmp_path / "doc.igz"
+    igz.save_scene(scene, path)
+    eager = _open(monkeypatch, path, False)
+    lazy = _open(monkeypatch, path, True)
+    meshes = list(_meshes(lazy))
+    built = [m for m in meshes if type(m) is M.Mesh]
+    assert built == [lazy.groups[-1].mesh]
+    assert len(meshes) > 2
+    dim_e, dim_l = eager.dimensions[0], lazy.dimensions[0]
+    assert dim_l.anchor_a is not None and dim_l.anchor_b is not None
+    assert dim_l.anchor_a.mesh is lazy.groups[-1].mesh
+    assert dim_e.anchor_a.mesh is eager.groups[-1].mesh
+    assert (dim_l.a, dim_l.b) == (dim_e.a, dim_e.b)
+    assert _canonical(lazy) == _canonical(eager)
 
 
 def test_a_deep_copy_is_its_own_mesh(binary, monkeypatch, tmp_path):
@@ -315,3 +387,69 @@ def test_a_json_mesh_builds_after_the_document_is_released(
     igz._release_in_steps(trees[0], lambda: None)       # as the window does
     assert real is igz._load_into_inner
     assert _canonical(lazy) == _canonical(eager)
+
+
+@pytest.mark.parametrize("storage", ["binary", "json-walk", "json-bulk"])
+@pytest.mark.parametrize("env,preference,loadable", [
+    ("1", "0", False), (None, "1", False),
+    ("0", "1", True), ("1", "0", True),
+])
+def test_deferred_loading_requires_a_loaded_engine(
+        monkeypatch, tmp_path, storage, env, preference, loadable):
+    """An enabled but missing/broken module must use the eager reader.
+
+    The environment still overrides Preferences, including after another
+    test has resolved the session's native value to None.
+    """
+    from core import general_settings
+
+    monkeypatch.setattr(igz, "_LARGE_DOCUMENT",
+                        0 if storage == "binary" else 10 ** 12)
+    monkeypatch.setattr(igz, "_BULK_MIN", 10 ** 12 if storage == "json-walk" else 1)
+    monkeypatch.setattr(general_settings, "value", lambda *a: preference)
+    monkeypatch.setattr(_native, "_module", object() if loadable else None)
+    monkeypatch.setattr(_native, "native", None)
+    monkeypatch.setenv("INGETRAZO_RUST", "0")
+    path = tmp_path / "source.igz"
+    igz.save_scene(_painted_scene(2, tmp_path), path)
+    eager = Scene()
+    igz.load_into(eager, path)
+    if env is None:
+        monkeypatch.delenv("INGETRAZO_RUST")
+    else:
+        monkeypatch.setenv("INGETRAZO_RUST", env)
+    opened = Scene()
+    igz.load_into(opened, path)
+    deferred = loadable and env != "0"
+    assert all((type(m) is M.DeferredMesh) == deferred for m in _meshes(opened))
+    assert _canonical(opened) == _canonical(eager)
+    before, after = tmp_path / "eager.igz", tmp_path / "opened.igz"
+    igz.save_scene(eager, before)
+    igz.save_scene(opened, after)
+    assert before.read_bytes() == after.read_bytes()
+
+
+def test_materializing_releases_cached_face_geometry():
+    """The array bake's cache belongs only to the deferred representation."""
+    import weakref
+    import numpy as np
+
+    def build(mesh):
+        mesh.add_face([V(0, 0, 0), V(1, 0, 0), V(0, 1, 0)])
+
+    expected = M.Mesh()
+    build(expected)
+    mesh = M.Mesh()
+    assert M.DeferredMesh.defer(mesh, build, 1)
+    geometry = np.zeros((3, 3), dtype=np.float32)
+    retained = weakref.ref(geometry)
+    mesh.__dict__["_deferred_geom"] = (geometry,)
+    del geometry
+    assert retained() is not None
+    assert len(mesh.faces) == 1
+    assert type(mesh) is M.Mesh
+    assert "_deferred_geom" not in mesh.__dict__
+    assert retained() is None
+    assert [v.position.toTuple() for v in mesh.vertices] == \
+        [v.position.toTuple() for v in expected.vertices]
+    assert igz._mesh_json(mesh) == igz._mesh_json(expected)

@@ -289,6 +289,45 @@ def plan_of(mesh) -> Plan | None:
     return hit
 
 
+#: How far (per axis) a document point may sit from a queried position
+#: and still be the vertex :meth:`Mesh.vertex_at` would find: the weld cell
+#: is one unit of ``_KEY_DECIMALS`` wide and the boundary probe accepts a
+#: neighbour within that same distance — twice it leaves room to spare.
+_NEAR = 2.0 * 10.0 ** -_mesh._KEY_DECIMALS
+
+
+def has_vertex_near(mesh, position) -> bool:
+    """Whether a still-deferred ``mesh`` MAY hold a vertex :meth:`Mesh.vertex_at`
+    would find at ``position`` (a QVector3D in the mesh's coordinates).
+
+    Every vertex the build makes sits exactly at one of the document's
+    points (as float32, what a Vertex holds), so a position no point comes
+    within :data:`_NEAR` of has no vertex either — answered from the
+    arrays, nothing built. ``True`` means «maybe»: build and look. The
+    points' box is kept on the mesh, so the thousands of placements a
+    dimension probes cost a comparison each, not a scan."""
+    d = mesh.__dict__
+    src = d.get("_deferred_source")
+    if src is None:
+        return True                     # built meanwhile: the registry knows
+    q = np.array(position.toTuple(), dtype=np.float64)
+    box = d.get("_deferred_bbox")
+    pos = None
+    if box is None:
+        pos = np.asarray(src["pos"], dtype=np.float32)
+        if not len(pos):
+            return False
+        box = d["_deferred_bbox"] = (pos.min(axis=0).astype(np.float64),
+                                     pos.max(axis=0).astype(np.float64))
+    lo, hi = box
+    if (q < lo - _NEAR).any() or (q > hi + _NEAR).any():
+        return False
+    if pos is None:
+        pos = np.asarray(src["pos"], dtype=np.float32)
+    near = np.abs(pos.astype(np.float64) - q) <= _NEAR
+    return bool(near.all(axis=1).any())
+
+
 def entity_count(mesh) -> int:
     """``len(mesh.faces) + len(mesh.edges)``, a lazy mesh left unbuilt."""
     plan = plan_of(mesh)

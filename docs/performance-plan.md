@@ -51,9 +51,19 @@ numbers in the commit message, like the marathon did.
 ## Phases
 
 ### P0 — Frame telemetry (the microscope) — DONE 2026-08-25 (`4a9de47`)
-GL timer queries + per-pass timings (faces / edges / silhouettes /
-overlay / blit) and an input-to-paint latency stamp, behind a perf HUD
-toggle. The perf log gains `frame gl=..ms ovl=..ms py=..ms lat=..ms`.
+CPU frame sections and input-to-paint latency stamps are available with
+`INGETRAZO_PERF=1`. GPU timer queries now add `gpu_pass` records for faces,
+edges, silhouettes, overlay, blit and depth readback, plus setup and previews.
+`INGETRAZO_PERF_LOG` selects the output file. Each record includes the originating
+frame number, `gpu_ms` (GL_TIME_ELAPSED) and `cpu_ms` (submission/wait time).
+Completed queries are collected on later paints without waiting; an overloaded
+bounded query pool emits `gpu_dropped`. The last pending samples may be lost when
+closing the viewport. No query objects or calls are made with telemetry off.
+
+GPU elapsed time includes gaps in command submission; it is not a hardware
+utilisation counter. In particular, CPU depth-readback time includes earlier
+GPU work and must not be reported as transfer time. Existing `frame` and
+`paintGL` records remain CPU measurements. A visible perf HUD is still pending.
 *Gate: we can name the top 3 costs of any janky frame in one look.*
 
 ### P1 — Frustum culling per chunk (draw less) — DONE 2026-08-25 (`4a9de47`)
