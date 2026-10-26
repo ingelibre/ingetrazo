@@ -533,6 +533,7 @@ class _GlTape:
 
     DRAW, VAO, U1I, U1F, U4F, ENABLE, DISABLE, CULL, FRONT, ACTIVE, TEX = \
         range(11)
+    DRAW_INDEXED = 11
 
     def __init__(self):
         self.calls: list = []
@@ -551,6 +552,11 @@ class _GlTape:
     def draw(self, fn, mode, first, count, n):
         self.call(fn, mode, first, count, n)
         self._op(self.DRAW, (mode, first, count, n))
+
+    def draw_indexed(self, fn, mode, first, count, n):
+        from shiboken6 import VoidPtr
+        self.call(fn, mode, count, 0x1405, VoidPtr(first * 4), n)
+        self._op(self.DRAW_INDEXED, (mode, count, first * 4, n))
 
     def bind_vao(self, vao):
         self.call(vao.bind)
@@ -613,7 +619,7 @@ def _callable_proc(addr: int) -> bool:
 _TAPE_FUNCS = (b"glDrawArraysInstanced", b"glBindVertexArray",
                b"glUniform1i", b"glUniform1f", b"glUniform4f", b"glEnable",
                b"glDisable", b"glCullFace", b"glFrontFace",
-               b"glActiveTexture", b"glBindTexture")
+               b"glActiveTexture", b"glBindTexture", b"glDrawElementsInstanced")
 
 
 class _InstanceBatch(list):
@@ -4075,17 +4081,27 @@ class Viewport(QOpenGLWidget):
             # edit of a component, for the whole session.
             self._destroy_proto_draw_entry(entry)
 
-        def static_vbo(raw):
-            vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+        def static_vbo(raw, kind=QOpenGLBuffer.VertexBuffer):
+            temporary = None
+            if kind == QOpenGLBuffer.IndexBuffer:
+                # A core context requires a VAO even for allocating an EBO.
+                temporary = QOpenGLVertexArrayObject()
+                temporary.create()
+                temporary.bind()
+            vbo = QOpenGLBuffer(kind)
             vbo.setUsagePattern(QOpenGLBuffer.StaticDraw)
             vbo.create()
             vbo.bind()
             vbo.allocate(raw or b"\0" * 4, max(len(raw), 4))
             vbo.release()
+            if temporary is not None:
+                temporary.release()
+                temporary.destroy()
             return vbo
 
         self._program.bind()
-        vcol_raw = base["vcol"]
+        from views.vertex_index import index_vertices
+        vcol_raw, vcol_index = index_vertices(base["vcol"], 24)
         edges_raw = base["edges"]
         dback_raw = base.get("dback", b"")
         # textures: pos(3)+uv(2), one run per (path, shade)
@@ -4097,14 +4113,17 @@ class Viewport(QOpenGLWidget):
             n = len(raw) // 20
             tex_runs.append((tkey, start, n))
             start += n
+        tex_raw, tex_index = index_vertices(b"".join(tex_parts), 20)
         entry = {"key": key,
                  "vcol_vbo": static_vbo(vcol_raw),
-                 "vcol_count": len(vcol_raw) // 24,
+                 "vcol_index_vbo": static_vbo(vcol_index, QOpenGLBuffer.IndexBuffer) if vcol_index else None,
+                 "tex_index_vbo": static_vbo(tex_index, QOpenGLBuffer.IndexBuffer) if tex_index else None,
+                 "vcol_count": len(base["vcol"]) // 24,
                  "edges_vbo": static_vbo(edges_raw),
                  "edge_count": len(edges_raw) // 12,
                  "dback_vbo": static_vbo(dback_raw),
                  "dback_count": len(dback_raw) // 12,
-                 "tex_vbo": static_vbo(b"".join(tex_parts)),
+                 "tex_vbo": static_vbo(tex_raw),
                  "tex_runs": tex_runs}
         entry.update(self._wire_proto_vaos(entry))
         # The main program stays BOUND. This is built mid-frame, from a pass
@@ -4141,7 +4160,7 @@ class Viewport(QOpenGLWidget):
                 extra.glVertexAttribDivisor(loc, 1)
             mat_vbo.release()
 
-        def vao(vbo, attrs, stride):
+        def vao(vbo, attrs, stride, index=None):
             v = QOpenGLVertexArrayObject(self)
             v.create()
             v.bind()
@@ -4152,6 +4171,8 @@ class Viewport(QOpenGLWidget):
                                                  stride)
             vbo.release()
             wire_matrix()
+            if index is not None:
+                index.bind()  # element buffer belongs to this VAO
             v.release()
             return v
         pos = (self._loc_pos, 0, 3)
@@ -4159,11 +4180,13 @@ class Viewport(QOpenGLWidget):
                 # vcol: pos(3)+rgb(3); edges, default-back tint: pos(3);
                 # textures: pos(3)+uv(2)
                 "vcol_vao": vao(statics["vcol_vbo"],
-                                (pos, (self._loc_vcolor, 12, 3)), 24),
+                                (pos, (self._loc_vcolor, 12, 3)), 24,
+                                statics.get("vcol_index_vbo")),
                 "edges_vao": vao(statics["edges_vbo"], (pos,), 12),
                 "dback_vao": vao(statics["dback_vbo"], (pos,), 12),
                 "tex_vao": vao(statics["tex_vbo"],
-                               (pos, (self._loc_uv, 12, 2)), 20)}
+                               (pos, (self._loc_uv, 12, 2)), 20,
+                               statics.get("tex_index_vbo"))}
 
     def _proto_view(self, entry, mirrored: bool) -> dict:
         """The draw entry a batch of ``mirrored`` placements uses: the
@@ -4201,7 +4224,7 @@ class Viewport(QOpenGLWidget):
                 except (RuntimeError, AttributeError):
                     pass
         for k, obj in entry.items():
-            if k.endswith("_vao") or k.endswith("_vbo"):
+            if obj is not None and (k.endswith("_vao") or k.endswith("_vbo")):
                 try:
                     obj.destroy()
                     if k.endswith("_vao"):
@@ -4271,6 +4294,20 @@ class Viewport(QOpenGLWidget):
         if self._edit_rest_mode != "fade":
             return [(groups, 0.0)]
         return [(fuera, EDIT_REST_FADE), (dentro, 0.0)]
+
+    @staticmethod
+    def _draw_proto_faces(entry, kind, extra, first, count, n, tape=None):
+        if entry.get(kind + "_index_vbo") is not None:
+            fn = extra.glDrawElementsInstanced
+            if tape is not None:
+                tape.draw_indexed(fn, GL_TRIANGLES, first, count, n)
+            else:
+                from shiboken6 import VoidPtr
+                fn(GL_TRIANGLES, count, 0x1405, VoidPtr(first * 4), n)
+        elif tape is not None:
+            tape.draw(extra.glDrawArraysInstanced, GL_TRIANGLES, first, count, n)
+        else:
+            extra.glDrawArraysInstanced(GL_TRIANGLES, first, count, n)
 
     def _draw_instanced_faces_lean(self, by_proto, mode, extra) -> None:
         """The instanced faces pass of the shaded and textured styles: the
@@ -4366,7 +4403,7 @@ class Viewport(QOpenGLWidget):
                         state["back"] = True
                     bound = entry["vcol_vao"]
                     tape.bind_vao(bound)
-                    tape.draw(draw, GL_TRIANGLES, 0, entry["vcol_count"], n)
+                    self._draw_proto_faces(entry, "vcol", extra, 0, entry["vcol_count"], n, tape)
                 if entry["tex_runs"]:
                     need("cull", False, set_cull)
                     need("vcol", 0, set_vcol)
@@ -4378,7 +4415,7 @@ class Viewport(QOpenGLWidget):
                             need("shade", float(shade), set_shade)
                             set_color(r, g, b)
                             state["back"] = False
-                            tape.draw(draw, GL_TRIANGLES, s0, cnt, n)
+                            self._draw_proto_faces(entry, "tex", extra, s0, cnt, n, tape)
                     else:
                         need("tex", 1, set_tex)
                         for (path, shade), s0, cnt in entry["tex_runs"]:
@@ -4389,7 +4426,7 @@ class Viewport(QOpenGLWidget):
                             need("cut", 1 if getattr(tex, "_cutout", False)
                                  else 0, set_cut)
                             tape.tex_bind(tex, 0)
-                            tape.draw(draw, GL_TRIANGLES, s0, cnt, n)
+                            self._draw_proto_faces(entry, "tex", extra, s0, cnt, n, tape)
                             tape.tex_release(tex, 0)
                         need("cut", 0, set_cut)
                         need("tex", 0, set_tex)
@@ -4452,8 +4489,7 @@ class Viewport(QOpenGLWidget):
                         self._program.setUniformValue(self._loc_use_vcolor, 1)
                         self._set_back_face_color()
                     entry["vcol_vao"].bind()
-                    extra.glDrawArraysInstanced(
-                        GL_TRIANGLES, 0, entry["vcol_count"], n)
+                    self._draw_proto_faces(entry, "vcol", extra, 0, entry["vcol_count"], n)
                     entry["vcol_vao"].release()
                     self._program.setUniformValue(self._loc_use_vcolor, 0)
                 if entry["tex_runs"]:
@@ -4462,7 +4498,7 @@ class Viewport(QOpenGLWidget):
                         self._set_color(fr[0], fr[1], fr[2], 1.0)
                         entry["tex_vao"].bind()
                         for _tk, s0, cnt in entry["tex_runs"]:
-                            extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                            self._draw_proto_faces(entry, "tex", extra, s0, cnt, n)
                         entry["tex_vao"].release()
                     elif mode == "shaded":
                         entry["tex_vao"].bind()
@@ -4471,7 +4507,7 @@ class Viewport(QOpenGLWidget):
                             self._program.setUniformValue1f(
                                 self._loc_shade, float(shade))
                             self._set_color(r, g, b, 1.0)
-                            extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                            self._draw_proto_faces(entry, "tex", extra, s0, cnt, n)
                         entry["tex_vao"].release()
                         self._program.setUniformValue1f(self._loc_shade, 1.0)
                     else:            # textures / xray
@@ -4487,7 +4523,7 @@ class Viewport(QOpenGLWidget):
                                 self._loc_hard_cutout,
                                 1 if getattr(tex, "_cutout", False) else 0)
                             tex.bind(0)
-                            extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                            self._draw_proto_faces(entry, "tex", extra, s0, cnt, n)
                             tex.release(0)
                         entry["tex_vao"].release()
                         self._program.setUniformValue(self._loc_hard_cutout, 0)
@@ -4524,13 +4560,12 @@ class Viewport(QOpenGLWidget):
             n = self._update_inst_matrices(entry, groups)
             if entry["vcol_count"]:
                 entry["vcol_vao"].bind()
-                extra.glDrawArraysInstanced(
-                    GL_TRIANGLES, 0, entry["vcol_count"], n)
+                self._draw_proto_faces(entry, "vcol", extra, 0, entry["vcol_count"], n)
                 entry["vcol_vao"].release()
             if entry["tex_runs"]:
                 entry["tex_vao"].bind()
                 for _tk, s0, cnt in entry["tex_runs"]:
-                    extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                    self._draw_proto_faces(entry, "tex", extra, s0, cnt, n)
                 entry["tex_vao"].release()
 
     def _draw_back_edges(self, color, w: int, h: int) -> None:
@@ -5865,8 +5900,7 @@ class Viewport(QOpenGLWidget):
             prog.bind()                # entry building binds the main program
             if entry["vcol_count"]:
                 entry["vcol_vao"].bind()
-                extra.glDrawArraysInstanced(
-                    GL_TRIANGLES, 0, entry["vcol_count"], n)
+                self._draw_proto_faces(entry, "vcol", extra, 0, entry["vcol_count"], n)
                 entry["vcol_vao"].release()
             if entry["tex_runs"]:
                 # Alpha-cutout casting for instances too — the hedge's
@@ -5878,11 +5912,11 @@ class Viewport(QOpenGLWidget):
                     if tex is not None:
                         prog.setUniformValue(self._loc_d_use_tex, 1)
                         tex.bind(0)
-                        extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                        self._draw_proto_faces(entry, "tex", extra, s0, cnt, n)
                         tex.release(0)
                     else:
                         prog.setUniformValue(self._loc_d_use_tex, 0)
-                        extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
+                        self._draw_proto_faces(entry, "tex", extra, s0, cnt, n)
                 prog.setUniformValue(self._loc_d_use_tex, 0)
                 entry["tex_vao"].release()
         # Billboard people cast their SILHOUETTE, as a quad turned toward
