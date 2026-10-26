@@ -1766,6 +1766,9 @@ class Viewport(QOpenGLWidget):
         self._forget_context_objects()
         self._gl = QOpenGLFunctions(self.context())
         self._gl.initializeOpenGLFunctions()
+        if _PERF:
+            from views.gl_timing import GpuTimings
+            self._gpu_timings = GpuTimings(_plog)
         # Who is drawing: the GPU driver or a software rasteriser. Recorded
         # for Help ▸ About, written to the log folder, and announced to the
         # main window so a CPU-drawn viewport says so before anyone wonders
@@ -2002,6 +2005,9 @@ class Viewport(QOpenGLWidget):
         if self._gl is None or self._program is None:
             return
         _pt0 = _time_mod.perf_counter() if _PERF else 0.0
+        if _PERF:
+            self._gpu_timings.frame(self._tick)
+            self._gpu_timings.begin("setup")
 
         # Render the 3D scene into our own FBO (which has a real depth buffer)
         # then blit the colour to the widget's default framebuffer. Sizes are
@@ -2185,6 +2191,8 @@ class Viewport(QOpenGLWidget):
             self._gl.glEnable(GL_DEPTH_TEST)
 
         self._program.release()
+        if _PERF:
+            self._gpu_timings.end()
 
         if self._export_size is not None:
             # Hi-res export: the scene stays in the FBO for render_image to
@@ -2210,10 +2218,17 @@ class Viewport(QOpenGLWidget):
         if not kept:
             self._depth_snap = None
             if self._annotations_need_depth():
+                if _PERF:
+                    self._gpu_timings.begin("depth_readback")
                 self._capture_depth(w, h)
+                if _PERF:
+                    self._gpu_timings.end()
         # What the scene FBO now holds: the depth under the cursor can be
         # read from it while the camera stays here (``_depth_world_at``).
         self._painted_view = (tuple(mvp.data()), w, h)
+
+        if _PERF:
+            self._gpu_timings.begin("blit")
 
         # Blit colour from our scene FBO to the widget's default framebuffer.
         # We can't use QOpenGLFramebufferObject.blitFramebuffer(None, src) here
@@ -2232,11 +2247,13 @@ class Viewport(QOpenGLWidget):
             _plog("paintGL.gl+blit",
                   (_time_mod.perf_counter() - _pt0) * 1000.0, floor=30.0)
             _ov0 = _time_mod.perf_counter()
+            self._gpu_timings.begin("overlay")
 
         # 2D overlays on top of the OpenGL framebuffer.
         self._draw_overlay()
 
         if _PERF:
+            self._gpu_timings.end()
             _plog("paintGL.overlay",
                   (_time_mod.perf_counter() - _ov0) * 1000.0, floor=30.0)
             _dt = (_time_mod.perf_counter() - _pt0) * 1000.0
@@ -2273,6 +2290,8 @@ class Viewport(QOpenGLWidget):
         # Frustum culling (P1): the consolidated VBOs carry per-chunk draw
         # spans; only spans whose chunk AABB touches the frustum are
         # submitted. Conservative — a missing bbox always draws.
+        if _PERF:
+            self._gpu_timings.begin("faces")
         planes = self._frame_planes
         # Inside a group with the context faded, the buffers hold the
         # surroundings first and the edited group last; the split keeps the
@@ -2673,6 +2692,8 @@ class Viewport(QOpenGLWidget):
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
         _fmark("faces")
+        if _PERF:
+            self._gpu_timings.begin("previews_axes")
         # Shaded solid preview (Push/Pull box forming as you drag). Drawn after
         # the persistent faces, depth-tested so it occludes geometry behind it
         # and reads as a real solid; its wireframe goes on top via the rubber
@@ -2685,6 +2706,8 @@ class Viewport(QOpenGLWidget):
         self._draw_scaffold(mvp, w, h)
 
         self._set_section_clip(True)
+        if _PERF:
+            self._gpu_timings.begin("edges")
         show_edges = style.edges or mode == "wireframe"
         ec = style.edge_color
         # Line weight for sheet renders: a GL line is one pixel whatever
@@ -2756,6 +2779,9 @@ class Viewport(QOpenGLWidget):
         if len(_jit_e) > 1:
             self._program.setUniformValue(self._loc_mvp, mvp)
 
+        if _PERF:
+            self._gpu_timings.begin("silhouettes")
+
         # Profile (silhouette) edges: soft seams of a curved surface are hidden,
         # except where the surface turns away from the viewer — the cylinder's
         # outline. View-dependent, so rebuilt every frame.
@@ -2773,6 +2799,8 @@ class Viewport(QOpenGLWidget):
                 if len(_jit_p) > 1:
                     self._program.setUniformValue(self._loc_mvp, mvp)
         _fmark("edges")
+        if _PERF:
+            self._gpu_timings.begin("selection_preview")
 
         # Selected edges (drawn on top, highlighted) — never in an export
         if self._selected_count > 0 and self._export_size is None:
@@ -5227,6 +5255,9 @@ class Viewport(QOpenGLWidget):
         self._forget_frame_records()
         self.makeCurrent()
         try:
+            timing = getattr(self, "_gpu_timings", None)
+            if timing is not None:
+                timing.destroy()
             cache = getattr(self, "_tex_cache", None)
             if cache:
                 for tex in cache.values():
