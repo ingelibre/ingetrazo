@@ -594,7 +594,25 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
             return []
         scope = [f for f in mesh.faces if comp_of[f] in live_comps]
 
-    boundary = dict(all_tris)
+    # Start with the likely partitions already peeled off: a face whose every
+    # edge is shared by three or more faces (a kept Ctrl-push base standing
+    # on its belt). Two such slabs in a row hide each other otherwise — a
+    # ray from one crosses the other, reads it as a wall of the solid, and
+    # neither is ever taken for interior; the second one was then flipped
+    # and the next push refused («rompería el sólido»). A face peeled here
+    # that is really boundary reads outward/inward in the first round and
+    # goes back, so the fixpoint below still has the last word.
+    touches_manifold = set()
+    edge_count: dict = {}
+    for e in mesh.edges:
+        for f in e.faces:
+            edge_count[f] = edge_count.get(f, 0) + 1
+            if len(e.faces) < 3:
+                touches_manifold.add(f)
+    in_scope = set(scope)
+    seeds = {f for f in in_scope
+             if f in all_tris and edge_count.get(f) and f not in touches_manifold}
+    boundary = {f: t for f, t in all_tris.items() if f not in seeds}
     for _ in range(4):
         rng = random.Random(seed)
         base_by_comp = _boundary_base(set(boundary))
