@@ -9689,9 +9689,19 @@ class Viewport(QOpenGLWidget):
             "Drawing plane locked: {plane}", plane=PLANE_LOCK_NAMES[axis]))
 
     def _draw_inference_label(self, painter: QPainter) -> None:
-        """Show 'On Red Axis' style label when soft inference is active."""
+        """Show 'On Red Axis' style label when an axis inference is active.
+
+        The soft cue offers Shift; the magnetic lock (``kind == "axis"``,
+        reached here only when no explicit arrow lock is held) is already
+        committed, so it reads without the Shift offer (#962)."""
         snap = self.last_snap
-        if snap is None or snap.kind != "axis_inference":
+        if snap is None:
+            return
+        if snap.kind == "axis_inference":
+            suffix = " (hold Shift to lock)"
+        elif snap.kind == "axis":
+            suffix = ""
+        else:
             return
         names = {"x": "Red", "y": "Green", "z": "Blue"}
         name = names.get(snap.axis or "", "?")
@@ -9701,7 +9711,7 @@ class Viewport(QOpenGLWidget):
         font.setItalic(True)
         painter.setFont(font)
         painter.setPen(QPen(QColor.fromRgbF(r, g, b, 0.95)))
-        painter.drawText(QPointF(14, 44), f"On {name} Axis (hold Shift to lock)")
+        painter.drawText(QPointF(14, 44), f"On {name} Axis{suffix}")
 
     def _draw_reference_label(self, painter: QPainter) -> None:
         if self.reference_mode is None or self.reference_edge is None:
