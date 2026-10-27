@@ -14114,6 +14114,14 @@ class Viewport(QOpenGLWidget):
             if pc is not None and (hint is None or hint(ref, pc) > 0.0):
                 near.append(_SnapEdge(QVector3D(ref[0]), QVector3D(ref[0]),
                                       center=True))
+        # 10/Oct/26 added BastelBaus: add snapping to dimension edges.
+        # Added before the early return below (a scene with only dimensions
+        # must still snap to them) and before the cut filter (a dimension
+        # the section hides must not attract snaps).
+        for dim in getattr(self.scene, "dimensions", None) or []:
+            if not self.scene.entity_selectable(dim):
+                continue
+            near.append(_SnapEdge(*dim.line_points()))
         sp = _active_cut(self.scene)
         if sp is not None:
             # What the cut hides must not attract snaps: drop

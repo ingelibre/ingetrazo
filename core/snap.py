@@ -37,6 +37,7 @@ from typing import Callable, Optional
 
 from PySide6.QtGui import QVector3D
 
+from .geometry import Edge
 
 # Colors used by the rubber band and the 2D snap indicator. RGB floats [0, 1].
 COLOR_ENDPOINT = (0.16, 0.62, 0.36)
@@ -106,6 +107,9 @@ class SnapResult:
     #: snaps to a corner on that line — locked to red, the line stays red
     #: (#711, BastelBaus: «keep line color»).
     lock_color: Optional[tuple[float, float, float]] = None
+    # 17.10.26 BasteBaus: stores an edge if snapped to an edge to be used in 
+    #                     dimension tool do directly create a dimension on an edge
+    edge: Optional[Edge] = None
 
 
 # ---- Helpers ---------------------------------------------------------------
@@ -1966,7 +1970,12 @@ def compute_snap(
         if getattr(edge, "guide", False):
             return SnapResult(on_pt, "on_line", COLOR_ON_EDGE)   # a guide line
         return SnapResult(on_pt, "on_edge", COLOR_ON_EDGE,
-                          context=getattr(edge, "context", None))
+                          context=getattr(edge, "context", None),
+                          edge=edge)
+                          # 17.10.26 Bastelbaus: added edge which is used on dimension tool
+                          #                      to directly create a dimension by clickling
+                          #                      on an edge
+
 
     # 7c. Where the face under the cursor meets another face with no edge
     #     between them — a box sunk into the floor, a beam through a wall
