@@ -59,7 +59,6 @@ from core.mesh import Edge, Face
 from core.bim import face_net_area
 from core.group import Group
 from core.dimension import Dimension
-from core.textlabel import TextLabel
 from georef.datum import SceneDatum
 from georef.geopath import GeoPath
 from georef.tiles import DEFAULT_SOURCE_ID, PRESETS, TileLayer, custom_source
@@ -3538,11 +3537,6 @@ class ShadowsPanel(QWidget):
         self._window.viewport.update()
 
 
-#: What a layer can be assigned to (faces, edges, objects and annotations
-#: alike are tagged).
-_TAGGABLE = (Face, Edge, Group, Dimension, TextLabel)
-
-
 class EntityInfoPanel(QWidget):
     """Facts about the current selection, plus the one thing an Entity
     Info panel lets you CHANGE here: the layer (its Tag field). Rafael
@@ -3639,8 +3633,8 @@ class EntityInfoPanel(QWidget):
 
     # ---- Layer field --------------------------------------------------------
     def _refresh_layer(self, sel: list) -> None:
-        from core.layers import layer_of
-        tagged = [e for e in sel if isinstance(e, _TAGGABLE)]
+        from core.layers import is_taggable, layer_of
+        tagged = [e for e in sel if is_taggable(e)]
         show = bool(tagged)
         self._layer_caption.setVisible(show)
         self._layer_box.setVisible(show)
@@ -3673,10 +3667,10 @@ class EntityInfoPanel(QWidget):
         if not name:
             return
         from core.history import AssignLayerCommand
-        from core.layers import layer_of
+        from core.layers import is_taggable, layer_of
         scene = self._window.viewport.scene
         targets = [e for e in scene.selection
-                   if isinstance(e, _TAGGABLE) and layer_of(e) != name]
+                   if is_taggable(e) and layer_of(e) != name]
         if not targets:
             return
         self._window.viewport.history.execute(AssignLayerCommand(targets, name))
@@ -4058,6 +4052,7 @@ class LayersPanel(QWidget):
         nothing in silence, which is how it read as broken («Asignar
         selección funcionó a la segunda», Rafael, 2026-09-16)."""
         from core.history import AssignLayerCommand
+        from core.layers import is_taggable
         scene = self._scene()
         item = self.tree.currentItem()
         if item is None:
@@ -4067,8 +4062,7 @@ class LayersPanel(QWidget):
         name = item.data(0, Qt.UserRole)
         # Annotations are tagged too: a "Anotaciones" layer a
         # scene hides gives a clean plan without duplicating the model.
-        targets = [ent for ent in scene.selection
-                   if isinstance(ent, (Face, Edge, Group, Dimension, TextLabel))]
+        targets = [ent for ent in scene.selection if is_taggable(ent)]
         if not targets:
             self._window.statusBar().showMessage(
                 tr("Select something in the model first, then Assign."), 3000)
