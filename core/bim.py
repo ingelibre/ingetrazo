@@ -137,9 +137,19 @@ def _group_signature(g) -> tuple:
     return (id(g), tag, tuple(parts))
 
 
+def object_faces(obj: dict) -> list:
+    """The world-space faces a :func:`collect_objects` entry is measured
+    and exported from: the tagged loose faces, or the tagged group's mesh
+    with its placement and nested placements applied."""
+    faces = obj.get("faces")
+    return faces if faces is not None else obj["world_faces"]
+
+
 def collect_objects(scene, memo: dict | None = None) -> list[dict]:
     """Every tagged BIM object in the document, with live quantities:
-    ``{"key", "class", "name", "area", "volume" (or None), "faces" | "group"}``.
+    ``{"key", "class", "name", "area", "volume" (or None), "faces" | "group"}``
+    — a group entry also carries ``"world_faces"``; read either through
+    :func:`object_faces`.
     Loose-face objects group by tag id; each tagged group is one object.
 
     ``memo`` (a dict the caller keeps between calls) reuses a tagged
@@ -190,6 +200,7 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
             "area": face_set_area(faces),
             "volume": face_set_volume(faces),
             "group": g,
+            "world_faces": faces,
         }
         if memo is not None:
             memo[sig] = obj
@@ -404,10 +415,8 @@ def quantities_csv(scene) -> str:
     door und); area/volume stay as the raw shell numbers."""
     lines = ["class,name,metrado,unit,area_m2,volume_m3"]
     for obj in collect_objects(scene):
-        faces = obj.get("faces")
-        if faces is None:
-            faces = list(obj["group"].mesh.faces)
-        _, _, (metrado, unit) = class_quantities(obj["class"], faces)
+        _, _, (metrado, unit) = class_quantities(obj["class"],
+                                                 object_faces(obj))
         met = "" if metrado is None else f"{metrado:.4f}"
         vol = "" if obj["volume"] is None else f"{obj['volume']:.4f}"
         name = (obj["name"] or "").replace('"', "'")

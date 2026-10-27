@@ -64,6 +64,15 @@ jobs:
           python -m pip install --quiet -r requirements.txt
           python -c "import PySide6, numpy, openskp, openskp.legacy; print('deps OK')"
 
+      - name: Test-only dependencies
+        # ifcopenshell is the independent IFC reader the export is validated
+        # against (tests/test_ifc_validation.py). Test-only, never in
+        # requirements.txt, and excluded from the frozen app (ingetrazo.spec);
+        # pinned so a new release can't turn the gate red on its own.
+        run: |
+          python -m pip install --quiet ifcopenshell==0.8.5
+          python -c "import ifcopenshell; print('ifcopenshell', ifcopenshell.version)"
+
       - name: Tests
         # The slow marker is long fuzz sweeps; the PR gate is the fast set,
         # same as the release gate. Offscreen so no test can accidentally
