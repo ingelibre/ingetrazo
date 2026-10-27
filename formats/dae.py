@@ -26,6 +26,8 @@ from pathlib import Path
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
 
+from formats.meshexport import export_triangles
+
 _NS = "{http://www.collada.org/2005/11/COLLADASchema}"
 
 def _add_fused(mesh, fused) -> None:
@@ -74,78 +76,364 @@ def _xml_escape(s: str) -> str:
             .replace('"', "&quot;"))
 
 
-def save_dae(scene, path, project_name: str = "IngeTrazo model") -> None:
-    """Write the scene as a COLLADA (``.dae``) file at ``path``, with a sibling
-    folder of texture images copied next to it.
+#: Marks a file written by :func:`save_dae`, whose node tree maps one to one
+#: onto IngeTrazo's groups and components (see :func:`_load_structured`).
+_STRUCTURED_PROFILE = "IngeTrazo"
 
-    COLLADA is imported natively by most modellers, so this is the "open it
-    back elsewhere" bridge. Written Z-up (``<up_axis>Z_UP</up_axis>``) in metres.
-    Solid ``Face.attrs["color"]`` become lambert diffuse colours; textured faces
-    become ``<texture>`` effects with the image copied beside the ``.dae`` (same
-    as the OBJ exporter — send the file *and* the folder together, or use GLB to
-    avoid the split). When the scene is georeferenced, the model's location
-    rides in the standard ``<asset><coverage><geographic_location>`` — the right
-    place for it, so a sun/shadow study keeps the site.
+
+def _ncname(text: str) -> str:
+    """``text`` as an XML NCName — what COLLADA's ``name`` attributes must
+    be. Common importers validate against the schema by default, and a
+    group called «Muro 1» would fail it: spaces and symbols become ``_``."""
+    out = "".join(c if c.isalnum() or c in "_-." else "_" for c in str(text))
+    if not out or not (out[0].isalpha() or out[0] == "_"):
+        out = "_" + out
+    return out
+
+
+def _convex(pts, normal) -> bool:
+    """Whether the polygon turns the same way, and really turns, at every
+    corner. Many COLLADA readers fan-triangulate a ``<polylist>`` from its
+    first vertex, which is only right for strictly convex polygons: a
+    concave face would fold, and a corner on a straight edge (a point along
+    a mitred or subdivided edge) makes zero-area slivers that other
+    programs refuse (#314). Those faces go out as triangles instead."""
+    from PySide6.QtGui import QVector3D
+    n = len(pts)
+    for i in range(n):
+        a, b, c = pts[i - 1], pts[i], pts[(i + 1) % n]
+        # Twice the corner triangle's signed area; below 2 × 0.001 mm² the
+        # corner is straight (meshexport's _MIN_TRI_AREA).
+        if QVector3D.dotProduct(QVector3D.crossProduct(b - a, c - b),
+                                normal) < 2e-9:
+            return False
+    return True
+
+
+def _matrix_text(m) -> str:
+    """A QMatrix4x4 as COLLADA's row-major ``<matrix>`` text."""
+    rows = []
+    for r in range(4):
+        v = m.row(r)
+        rows.extend((v.x(), v.y(), v.z(), v.w()))
+    return " ".join(f"{c:.9g}" for c in rows)
+
+
+def save_dae(scene, path, project_name: str = "IngeTrazo model") -> None:
+    """Write the scene as a COLLADA (``.dae``) file at ``path``, with its
+    texture images copied next to it.
+
+    COLLADA is imported natively by most modellers, so this is the bridge to
+    them, and it keeps the model's STRUCTURE, not just a triangle
+    soup:
+
+    - every group is a ``<node>`` with its name, its tag (the node's
+      ``layer`` attribute) and its own geometry;
+    - a component is ONE definition in ``library_nodes`` and every copy an
+      ``<instance_node>`` with its placement matrix — importers bring that in
+      as a component with its instances;
+    - nested groups/components stay nested;
+    - convex faces are real polygons (``<polylist>``), so they arrive
+      without triangulation diagonals; a face with holes (which polylist
+      cannot hold) or a concave one (which many readers fan-triangulate
+      wrongly) goes out as triangles, and an importer's «merge coplanar faces»
+      option — or IngeTrazo's own importer — welds it back;
+    - edges that bound no face (lines drawn on their own) go as ``<lines>``;
+    - materials keep their registry name (``Concreto_visto``), colour and
+      texture (the image is copied beside the ``.dae``: send both).
+
+    Written Z-up in metres. When the scene is georeferenced, the location
+    rides in ``<asset><coverage><geographic_location>``. Hidden objects,
+    hidden faces and objects on hidden tags are left out, as in every other
+    exporter; a face-me figure goes out as it stands now. Dimensions, texts, section planes and sheets have no COLLADA
+    equivalent and are not exported.
     """
     import shutil
     from datetime import datetime, timezone
 
-    from .meshexport import collect_geometry, export_names, geolocation
+    from core.group import effective_material
+    from core.materials import effective_attrs
+    from core.texture import affine_uv, is_image_file, planar_uv
+    from .meshexport import (_DEFAULT_COLOR, SmoothNormals, export_names,
+                             geolocation, material_key)
 
     path = Path(path)
-    materials_in, prims = collect_geometry(scene)
-    mat_names = export_names(materials_in)
-    keys = list(prims.keys())
+    materials: dict = {}          # key -> {"color", "map", "src", "mat"}
+    mat_index: dict = {}          # key -> "matN"
+    geometries: list[str] = []
+    geom_cache: dict = {}         # (id(mesh), paint) -> (geom_id, [(key, textured)])
+    comp_defs: list[str] = []
+    comp_cache: dict = {}         # signature -> comp_id
+    counter = {"geom": 0, "node": 0, "comp": 0}
+    # Curved surfaces go out smooth (#131): each corner carries the normal of
+    # the surface there, summed over the faces its soft edges join.
+    smoother = SmoothNormals()
 
-    # Deduplicated shared sources for the single <geometry>.
-    positions: list[tuple] = []
-    normals: list[tuple] = []
-    uvs: list[tuple] = []
-    pidx: dict[tuple, int] = {}
-    nidx: dict[tuple, int] = {}
-    uidx: dict[tuple, int] = {}
+    def paint_key(paint):
+        """A container's paint as a key: copies painted alike share a mesh."""
+        if not paint:
+            return None
+        return repr(sorted(paint.items())) if isinstance(paint, dict) else repr(paint)
 
-    def _pi(p) -> int:
-        key = (round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
-        i = pidx.get(key)
-        if i is None:
-            i = pidx[key] = len(positions)
-            positions.append((p.x(), p.y(), p.z()))
-        return i
+    def mat_id(key, info) -> str:
+        if key not in mat_index:
+            mat_index[key] = f"mat{len(mat_index)}"
+            materials[key] = info
+        elif info.get("mat") and not materials[key].get("mat"):
+            materials[key]["mat"] = info["mat"]
+        return mat_index[key]
 
-    def _ni(n) -> int:
-        key = (round(n.x(), 5), round(n.y(), 5), round(n.z(), 5))
-        i = nidx.get(key)
-        if i is None:
-            i = nidx[key] = len(normals)
-            normals.append((n.x(), n.y(), n.z()))
-        return i
+    def face_key(attrs):
+        """``(key, info, texture)`` for a face showing ``attrs``. The key is
+        meshexport's: two named materials that look alike stay two (#794)."""
+        tex = attrs.get("texture")
+        key = material_key(attrs, with_opacity=False)
+        if key[0] == "tex":
+            src = Path(tex["path"])
+            info = {"color": (1.0, 1.0, 1.0), "map": src.name, "src": src}
+        else:
+            info = {"color": tuple(attrs.get("color") or _DEFAULT_COLOR), "map": None}
+        if attrs.get("mat"):
+            info["mat"] = attrs["mat"]
+        return key, info, tex if key[0] == "tex" else None
 
-    def _ui(uv) -> int:
-        key = (round(uv[0], 6), round(uv[1], 6))
-        i = uidx.get(key)
-        if i is None:
-            i = uidx[key] = len(uvs)
-            uvs.append((uv[0], uv[1]))
-        return i
+    def face_uvs(face, tex, pts):
+        uvw = tex.get("uvw")
+        if uvw:
+            return affine_uv(uvw, pts)
+        return planar_uv(face.normal(), pts, tex.get("sw", 1.0) or 1.0,
+                         tex.get("sh", 1.0) or 1.0, float(tex.get("rot", 0.0)))
 
-    # Per-material triangle index lists → the <p> of each <triangles>.
-    tri_groups: list[tuple[tuple, bool, list]] = []
-    for key in keys:
-        textured = key[0] == "tex"
-        p_tokens: list[str] = []
-        for _flat, verts in prims[key]:
-            for pos, uv, normal in verts:
-                p_tokens.append(str(_pi(pos)))
-                p_tokens.append(str(_ni(normal)))   # smooth across soft edges
-                if textured:
-                    p_tokens.append(str(_ui(uv)))
-        tri_groups.append((key, textured, p_tokens))
+    def geometry(mesh, name: str, paint=None):
+        """``(geom_id, bindings)`` for ``mesh`` (written once per mesh and
+        container paint), or ``None`` when nothing of it is visible. Faces
+        that wear the default material show the container's ``paint``, as
+        in the viewport (#794)."""
+        ckey = (id(mesh), paint_key(paint))
+        cached = geom_cache.get(ckey)
+        if cached is not None:
+            return cached
+        positions: list = []
+        pidx: dict = {}
+        normals: list = []
+        nidx: dict = {}
+        uvs: list = []
+        uidx: dict = {}
+
+        def nj(v) -> int:
+            k = (round(v.x(), 6), round(v.y(), 6), round(v.z(), 6))
+            i = nidx.get(k)
+            if i is None:
+                i = nidx[k] = len(normals)
+                normals.append(k)
+            return i
+
+        def pi(p) -> int:
+            k = (round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
+            i = pidx.get(k)
+            if i is None:
+                i = pidx[k] = len(positions)
+                positions.append(k)
+            return i
+
+        def ui(uv) -> int:
+            k = (round(uv[0], 6), round(uv[1], 6))
+            i = uidx.get(k)
+            if i is None:
+                i = uidx[k] = len(uvs)
+                uvs.append(k)
+            return i
+
+        # key -> {"poly": (vcounts, tokens), "tri": tokens}
+        prims: dict = {}
+        for face in mesh.faces:
+            if not scene.entity_visible(face) or len(face.loop) < 3:
+                continue
+            attrs = (effective_attrs(face.attrs, paint) or {}) if paint else face.attrs
+            key, info, tex = face_key(attrs)
+            mat_id(key, info)
+            n = smoother.flat(face)
+            corners = smoother.corners(face)
+            flat_i = nj(n)
+
+            def ni_at(p):
+                c = corners.get(p.toTuple())
+                return nj(c) if c is not None else flat_i
+            slot = prims.setdefault(key, {"vc": [], "poly": [], "tri": [],
+                                          "runs": []})
+            if face.hole_loops or not _convex(face.vertices, n):
+                tris_of_face = list(export_triangles(face))
+                slot["runs"].append(len(tris_of_face))
+                for tri in tris_of_face:
+                    pts = list(tri)
+                    uv = face_uvs(face, tex, pts) if tex is not None else None
+                    for k, p in enumerate(pts):
+                        slot["tri"] += [pi(p), ni_at(p)] + ([ui(uv[k])] if uv else [])
+            else:
+                pts = face.vertices
+                uv = face_uvs(face, tex, pts) if tex is not None else None
+                slot["vc"].append(len(pts))
+                for k, p in enumerate(pts):
+                    slot["poly"] += [pi(p), ni_at(p)] + ([ui(uv[k])] if uv else [])
+        lines: list = []
+        soft: list = []
+        for e in mesh.edges:
+            if e.faces:
+                if e.soft and len(e.faces) == 2:
+                    soft.append((e.a, e.b))
+                continue
+            if scene.entity_visible(e):
+                lines += [pi(e.a), pi(e.b)]
+        if not prims and not lines:
+            geom_cache[ckey] = None
+            return None
+
+        gid = f"geom{counter['geom']}"
+        counter["geom"] += 1
+        out: list[str] = [f'<geometry id="{gid}" name="{_xml_escape(_ncname(name))}"><mesh>']
+
+        def source(sid, data, params):
+            flat = " ".join(f"{c:.6f}" for t in data for c in t)
+            out.append(
+                f'<source id="{gid}-{sid}"><float_array id="{gid}-{sid}-array" '
+                f'count="{len(data) * len(params)}">{flat}</float_array>'
+                f'<technique_common><accessor source="#{gid}-{sid}-array" '
+                f'count="{len(data)}" stride="{len(params)}">'
+                + "".join(f'<param name="{p}" type="float"/>' for p in params)
+                + "</accessor></technique_common></source>")
+
+        source("pos", positions, "XYZ")
+        if normals:
+            source("nrm", normals, "XYZ")
+        if uvs:
+            source("uv", uvs, "ST")
+        out.append(f'<vertices id="{gid}-vtx">'
+                   f'<input semantic="POSITION" source="#{gid}-pos"/></vertices>')
+        bindings = []
+        for key, slot in prims.items():
+            textured = key[0] == "tex"
+            sym = mat_index[key]
+            bindings.append((sym, textured))
+            inputs = (f'<input semantic="VERTEX" source="#{gid}-vtx" offset="0"/>'
+                      f'<input semantic="NORMAL" source="#{gid}-nrm" offset="1"/>'
+                      + (f'<input semantic="TEXCOORD" source="#{gid}-uv" '
+                         'offset="2" set="0"/>' if textured else ""))
+            stride = 3 if textured else 2
+            if slot["vc"]:
+                out.append(f'<polylist material="{sym}" count="{len(slot["vc"])}">'
+                           + inputs + "<vcount>"
+                           + " ".join(map(str, slot["vc"])) + "</vcount><p>"
+                           + " ".join(map(str, slot["poly"])) + "</p></polylist>")
+            if slot["tri"]:
+                count = len(slot["tri"]) // (3 * stride)
+                out.append(f'<triangles material="{sym}" count="{count}">'
+                           + inputs + "<p>" + " ".join(map(str, slot["tri"]))
+                           + "</p></triangles>")
+        if lines:
+            out.append(f'<lines count="{len(lines) // 2}">'
+                       f'<input semantic="VERTEX" source="#{gid}-vtx" offset="0"/>'
+                       "<p>" + " ".join(map(str, lines)) + "</p></lines>")
+        # Which edges are soft (smoothed): other importers re-smooth on their own;
+        # IngeTrazo's importer restores them exactly from here.
+        soft_idx = [(pidx.get((round(a.x(), 6), round(a.y(), 6), round(a.z(), 6))),
+                     pidx.get((round(b.x(), 6), round(b.y(), 6), round(b.z(), 6))))
+                    for a, b in soft]
+        soft_idx = [f"{i} {j}" for i, j in soft_idx if i is not None and j is not None]
+        # How many consecutive triangles make each original face, per
+        # material: IngeTrazo's importer rebuilds those faces exactly.
+        runs = [(mat_index[k], sl["runs"]) for k, sl in prims.items() if sl["runs"]]
+        if soft_idx or runs:
+            out.append(f'<extra><technique profile="{_STRUCTURED_PROFILE}">'
+                       + (f"<soft>{' '.join(soft_idx)}</soft>" if soft_idx else "")
+                       + "".join(f'<faces material="{sym}">{" ".join(map(str, r))}</faces>'
+                                 for sym, r in runs)
+                       + "</technique></extra>")
+        out.append("</mesh></geometry>")
+        geometries.append("".join(out))
+        geom_cache[ckey] = (gid, bindings)
+        return geom_cache[ckey]
+
+    def instance_geometry(mesh, name: str, paint=None) -> str:
+        g = geometry(mesh, name, paint)
+        if g is None:
+            return ""
+        gid, bindings = g
+        if not bindings:                 # lines only: nothing to bind
+            return f'<instance_geometry url="#{gid}"/>'
+        parts = [f'<instance_geometry url="#{gid}"><bind_material><technique_common>']
+        for sym, textured in bindings:
+            parts.append(f'<instance_material symbol="{sym}" target="#{sym}">')
+            if textured:
+                parts.append('<bind_vertex_input semantic="UVSET0" '
+                             'input_semantic="TEXCOORD" input_set="0"/>')
+            parts.append("</instance_material>")
+        parts.append("</technique_common></bind_material></instance_geometry>")
+        return "".join(parts)
+
+    def visible(g) -> bool:
+        return scene.entity_visible(g)
+
+    def signature(g):
+        """What makes two component instances copies of ONE definition: the
+        shared prototype mesh and, recursively, the same nested placements."""
+        kids = tuple((signature(c), _matrix_text(c.xform) if c.xform is not None
+                      else None) for c in (g.children or ()) if visible(c))
+        return (id(g.mesh), paint_key(effective_material(g)), kids)
+
+    def body(g) -> str:
+        """The contents of a group's node: its geometry and nested nodes."""
+        return instance_geometry(g.mesh, g.name, effective_material(g)) + "".join(
+            node(c) for c in (g.children or ()) if visible(c))
+
+    def definition(g) -> str:
+        sig = signature(g)
+        cid = comp_cache.get(sig)
+        if cid is None:
+            cid = f"comp{counter['comp']}"
+            counter["comp"] += 1
+            comp_cache[sig] = cid
+            comp_defs.append(f'<node id="{cid}" name="{_xml_escape(_ncname(g.name))}">'
+                             + body(g) + extra(g.name, None) + "</node>")
+        return cid
+
+    def extra(name, layer, billboard=None) -> str:
+        """The exact name and tag, which the schema-safe attributes mangle,
+        and whether a group turns to face the camera (other programs get it as
+        it stands), for IngeTrazo's importer (other readers skip <extra>)."""
+        return (f'<extra><technique profile="{_STRUCTURED_PROFILE}">'
+                f"<name>{_xml_escape(str(name))}</name>"
+                + (f"<layer>{_xml_escape(str(layer))}</layer>" if layer else "")
+                + (f"<billboard>{_xml_escape(str(billboard))}</billboard>"
+                   if billboard else "")
+                + "</technique></extra>")
+
+    def node(g) -> str:
+        nid = f"node{counter['node']}"
+        counter["node"] += 1
+        layer = getattr(g, "layer", None)
+        head = f'<node id="{nid}" name="{_xml_escape(_ncname(g.name))}"'
+        if layer:
+            head += f' layer="{_xml_escape(_ncname(layer))}"'
+        tail = extra(g.name, layer, getattr(g, "billboard", None)) + "</node>"
+        head += ">"
+        if g.xform is not None:
+            head += f"<matrix>{_matrix_text(g.xform)}</matrix>"
+        if g.is_component():
+            return head + f'<instance_node url="#{definition(g)}"/>' + tail
+        return head + body(g) + tail
+
+    scene_nodes: list[str] = []
+    loose = instance_geometry(scene.loose_mesh if hasattr(scene, "loose_mesh")
+                              else scene.mesh, project_name)
+    if loose:
+        scene_nodes.append(f'<node id="loose" name="{_xml_escape(_ncname(project_name))}">'
+                           + loose + "</node>")
+    for g in getattr(scene, "groups", []):
+        if visible(g):
+            scene_nodes.append(node(g))
 
     # Copy texture images next to the .dae so <init_from> resolves.
-    from core.texture import is_image_file
-    for key in keys:
-        info = materials_in[key]
+    for key, info in materials.items():
         if info.get("map"):
             dst = path.parent / info["map"]
             try:
@@ -155,6 +443,7 @@ def save_dae(scene, path, project_name: str = "IngeTrazo model") -> None:
             except Exception:  # noqa: BLE001 — best-effort; export still valid
                 pass
 
+    names = export_names(materials)
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     out: list[str] = []
     out.append('<?xml version="1.0" encoding="utf-8"?>')
@@ -176,107 +465,67 @@ def save_dae(scene, path, project_name: str = "IngeTrazo model") -> None:
     out.append("<up_axis>Z_UP</up_axis>")
     out.append("</asset>")
 
-    # library_images / library_effects / library_materials. COLLADA 1.4.1
-    # wants at least one <image> inside <library_images>, and strict
-    # importers refuse the empty element — leave it out when nothing is
-    # textured.
-    images = [f'<image id="img{i}" name="img{i}">'
-              f"<init_from>{_xml_escape(materials_in[key]['map'])}</init_from>"
-              "</image>"
-              for i, key in enumerate(keys) if materials_in[key].get("map")]
+    # The schema wants every library non-empty: an empty one is left out.
+    images = [(mat_index[k], i["map"]) for k, i in materials.items() if i.get("map")]
     if images:
         out.append("<library_images>")
-        out.extend(images)
+        for mid, fname in images:
+            out.append(f'<image id="{mid}-img" name="{mid}-img">'
+                       f"<init_from>{_xml_escape(fname)}</init_from></image>")
         out.append("</library_images>")
 
-    out.append("<library_effects>")
-    for i, key in enumerate(keys):
-        info = materials_in[key]
-        out.append(f'<effect id="eff{i}"><profile_COMMON>')
+    if materials:
+        out.append("<library_effects>")
+    for key, info in materials.items():
+        mid = mat_index[key]
+        out.append(f'<effect id="{mid}-fx"><profile_COMMON>')
         if info.get("map"):
-            out.append(f'<newparam sid="surf{i}"><surface type="2D">'
-                       f"<init_from>img{i}</init_from></surface></newparam>")
-            out.append(f'<newparam sid="samp{i}"><sampler2D>'
-                       f"<source>surf{i}</source></sampler2D></newparam>")
+            out.append(f'<newparam sid="{mid}-surf"><surface type="2D">'
+                       f"<init_from>{mid}-img</init_from></surface></newparam>")
+            out.append(f'<newparam sid="{mid}-samp"><sampler2D>'
+                       f"<source>{mid}-surf</source></sampler2D></newparam>")
             out.append('<technique sid="common"><lambert><diffuse>'
-                       f'<texture texture="samp{i}" texcoord="UVSET0"/>'
+                       f'<texture texture="{mid}-samp" texcoord="UVSET0"/>'
                        "</diffuse></lambert></technique>")
         else:
-            r, g, b = info["color"]
+            r, g, b = info["color"][:3]
             out.append('<technique sid="common"><lambert><diffuse>'
                        f"<color>{r:.4f} {g:.4f} {b:.4f} 1</color>"
                        "</diffuse></lambert></technique>")
         out.append("</profile_COMMON></effect>")
-    out.append("</library_effects>")
+    if materials:
+        out.append("</library_effects>")
+        out.append("<library_materials>")
+        for key in materials:
+            mid = mat_index[key]
+            orig = materials[key].get("mat")
+            out.append(f'<material id="{mid}" name="{_xml_escape(_ncname(names[key]))}">'
+                       f'<instance_effect url="#{mid}-fx"/>'
+                       + (f'<extra><technique profile="{_STRUCTURED_PROFILE}">'
+                          f"<name>{_xml_escape(str(orig))}</name></technique></extra>"
+                          if orig else "") + "</material>")
+        out.append("</library_materials>")
 
-    out.append("<library_materials>")
-    for i in range(len(keys)):
-        out.append(f'<material id="mat{i}" name="{mat_names[keys[i]]}">'
-                   f'<instance_effect url="#eff{i}"/></material>')
-    out.append("</library_materials>")
-
-    # library_geometries — one geometry, shared sources, one <triangles>/material
-    out.append("<library_geometries>")
-    out.append('<geometry id="geom0" name="IngeTrazo"><mesh>')
-    pos_floats = " ".join(f"{c:.6f}" for xyz in positions for c in xyz)
-    out.append(f'<source id="geom0-pos"><float_array id="geom0-pos-array" '
-               f'count="{len(positions) * 3}">{pos_floats}</float_array>'
-               '<technique_common><accessor source="#geom0-pos-array" '
-               f'count="{len(positions)}" stride="3">'
-               '<param name="X" type="float"/><param name="Y" type="float"/>'
-               '<param name="Z" type="float"/></accessor></technique_common>'
-               "</source>")
-    nrm_floats = " ".join(f"{c:.5f}" for xyz in normals for c in xyz)
-    out.append(f'<source id="geom0-nrm"><float_array id="geom0-nrm-array" '
-               f'count="{len(normals) * 3}">{nrm_floats}</float_array>'
-               '<technique_common><accessor source="#geom0-nrm-array" '
-               f'count="{len(normals)}" stride="3">'
-               '<param name="X" type="float"/><param name="Y" type="float"/>'
-               '<param name="Z" type="float"/></accessor></technique_common>'
-               "</source>")
-    if uvs:
-        uv_floats = " ".join(f"{c:.6f}" for st in uvs for c in st)
-        out.append(f'<source id="geom0-uv"><float_array id="geom0-uv-array" '
-                   f'count="{len(uvs) * 2}">{uv_floats}</float_array>'
-                   '<technique_common><accessor source="#geom0-uv-array" '
-                   f'count="{len(uvs)}" stride="2">'
-                   '<param name="S" type="float"/><param name="T" type="float"/>'
-                   "</accessor></technique_common></source>")
-    out.append('<vertices id="geom0-vertices">'
-               '<input semantic="POSITION" source="#geom0-pos"/></vertices>')
-    for i, (key, textured, p_tokens) in enumerate(tri_groups):
-        stride = 3 if textured else 2
-        count = len(p_tokens) // (3 * stride)
-        out.append(f'<triangles material="sym{i}" count="{count}">')
-        out.append('<input semantic="VERTEX" source="#geom0-vertices" offset="0"/>')
-        out.append('<input semantic="NORMAL" source="#geom0-nrm" offset="1"/>')
-        if textured:
-            out.append('<input semantic="TEXCOORD" source="#geom0-uv" '
-                       'offset="2" set="0"/>')
-        out.append("<p>" + " ".join(p_tokens) + "</p>")
-        out.append("</triangles>")
-    out.append("</mesh></geometry>")
-    out.append("</library_geometries>")
+    if geometries:
+        out.append("<library_geometries>")
+        out.extend(geometries)
+        out.append("</library_geometries>")
+    if comp_defs:
+        out.append("<library_nodes>")
+        out.extend(comp_defs)
+        out.append("</library_nodes>")
 
     # visual_scene — geometry MUST sit inside a <node> or importers skip it.
-    out.append("<library_visual_scenes>")
-    out.append('<visual_scene id="scene"><node id="model" '
-               f'name="{_xml_escape(project_name)}">')
-    out.append('<instance_geometry url="#geom0"><bind_material>'
-               "<technique_common>")
-    for i, (key, textured, _p) in enumerate(tri_groups):
-        gi = keys.index(key)
-        out.append(f'<instance_material symbol="sym{i}" target="#mat{gi}">')
-        if textured:
-            out.append('<bind_vertex_input semantic="UVSET0" '
-                       'input_semantic="TEXCOORD" input_set="0"/>')
-        out.append("</instance_material>")
-    out.append("</technique_common></bind_material></instance_geometry>")
-    out.append("</node></visual_scene></library_visual_scenes>")
+    out.append('<library_visual_scenes><visual_scene id="scene" '
+               f'name="{_xml_escape(_ncname(project_name))}">')
+    out.extend(scene_nodes)
+    out.append("</visual_scene></library_visual_scenes>")
     out.append('<scene><instance_visual_scene url="#scene"/></scene>')
+    out.append(f'<extra><technique profile="{_STRUCTURED_PROFILE}">'
+               "<structure>1</structure></technique></extra>")
     out.append("</COLLADA>")
 
-    Path(path).write_text("\n".join(out), encoding="utf-8")
+    path.write_text("\n".join(out), encoding="utf-8")
 
 
 class _Dae:
@@ -1284,6 +1533,268 @@ def _adopt_geolocation(scene, root) -> None:
     scene.georef = SceneDatum(lat, lon, alt)
 
 
+def _own_extra(el, tag: str):
+    """Text of ``<extra><technique profile="IngeTrazo"><tag>`` directly
+    under ``el``, or ``None``."""
+    for ex in el.findall(f"{_NS}extra"):
+        for tq in ex.findall(f"{_NS}technique"):
+            if tq.get("profile") == _STRUCTURED_PROFILE:
+                found = tq.find(f"{_NS}{tag}")
+                if found is not None:
+                    return found.text or ""
+    return None
+
+
+def _is_structured(root) -> bool:
+    """A file :func:`save_dae` wrote: its node tree IS the model's."""
+    return _own_extra(root, "structure") is not None
+
+
+def _load_structured(scene, dae: _Dae, root, tick) -> None:
+    """Rebuild a :func:`save_dae` file as it was: one Group per node with
+    its name and tag, components as shared prototypes placed by matrix,
+    nested placements nested, faces as written (only triangulated faces are
+    welded back), soft edges and registry materials restored."""
+    from core.group import Group, reserve_group_names
+    from core.layers import Layer
+    from core.materials import Material, register
+    from core.mesh import Mesh
+    from formats.fuse import fuse_coplanar_loops
+
+    zm = dae.zup_matrix()
+    zm_inv = zm.inverted()[0]
+    if getattr(scene, "materials", None) is None:
+        scene.materials = {}
+    mat_names: dict = {}             # material element id -> registry name
+    meshes: dict = {}                # geometry element id -> Mesh
+    names: list = []
+
+    def material_name(mat_el, color, path):
+        key = id(mat_el)
+        if key in mat_names:
+            return mat_names[key]
+        name = _own_extra(mat_el, "name")
+        final = None
+        if name:
+            tex = {"path": path} if path else None
+            final = register(scene.materials, Material(
+                name, tuple(color[:3]) if color is not None and not path else None,
+                tex))
+        mat_names[key] = final
+        return final
+
+    def build(geom_el, inst_el) -> Mesh:
+        cached = meshes.get(id(geom_el))
+        if cached is not None:
+            return cached
+        mesh = Mesh()
+        mesh_el = geom_el.find(f"{_NS}mesh")
+        if mesh_el is None:
+            meshes[id(geom_el)] = mesh
+            return mesh
+        positions = [dae.to_zup(p) for p in _positions(dae, mesh_el)]
+        mats = _material_map(dae, inst_el)
+        targets = {im.get("symbol"): dae.ref(im.get("target"))
+                   for im in inst_el.iter(f"{_NS}instance_material")}
+        tris: list = []
+        runs: dict = {}
+        for ex in mesh_el.findall(f"{_NS}extra"):
+            for tq in ex.findall(f"{_NS}technique"):
+                if tq.get("profile") == _STRUCTURED_PROFILE:
+                    for fe in tq.findall(f"{_NS}faces"):
+                        runs[fe.get("material")] = _ints(fe.text or "")
+        for prim in mesh_el:
+            kind = _tag(prim)
+            if kind == "lines":
+                p = prim.find(f"{_NS}p")
+                idx = _ints(p.text) if p is not None and p.text else []
+                for i in range(0, len(idx) - 1, 2):
+                    try:
+                        mesh.add_edge(positions[idx[i]], positions[idx[i + 1]])
+                    except Exception:  # noqa: BLE001 — degenerate segment
+                        pass
+                continue
+            if kind not in ("triangles", "polylist", "polygons"):
+                continue
+            sym = prim.get("material")
+            mat = mats.get(sym) or {}
+            color, path = mat.get("color"), mat.get("path")
+            uvpts = _prim_uvs(dae, prim) if path is not None else []
+            mname = (material_name(targets[sym], color, path)
+                     if targets.get(sym) is not None else None)
+            loops = _prim_loops(prim, positions, uv_count=len(uvpts))
+            if kind == "triangles" and runs.get(sym) and \
+                    sum(runs[sym]) == len(loops):
+                start = 0
+                for count in runs[sym]:
+                    chunk = loops[start:start + count]
+                    start += count
+                    pts = [positions[i] for lp, _ul in chunk for i in lp]
+                    uvl = ([uvpts[i] for _lp, ul in chunk for i in ul]
+                           if path is not None and all(ul is not None for _lp, ul in chunk)
+                           else None)
+                    attrs = _face_attrs(pts, color,
+                                        (path, uvl) if uvl is not None else None) or {}
+                    attrs.pop("back", None)
+                    if mname:
+                        attrs["mat"] = mname
+                    rings = _boundary_rings([[positions[i] for i in lp]
+                                             for lp, _ul in chunk])
+                    try:
+                        if rings is None:
+                            raise ValueError("no clean boundary")
+                        f = mesh.add_face(rings[0], rings[1:] or None)
+                        f.attrs.update(attrs)
+                    except Exception:  # noqa: BLE001 — keep the pieces
+                        tris.extend(([positions[i] for i in lp], dict(attrs))
+                                    for lp, _ul in chunk)
+                continue
+            for lp, ul in loops:
+                pts = [positions[i] for i in lp]
+                tex = ((path, [uvpts[i] for i in ul])
+                       if ul is not None and path is not None else None)
+                attrs = _face_attrs(pts, color, tex) or {}
+                attrs.pop("back", None)          # a side, as it was drawn
+                if mname:
+                    attrs["mat"] = mname
+                if kind == "triangles":
+                    tris.append((pts, attrs))
+                    continue
+                try:
+                    f = mesh.add_face(pts)
+                    f.attrs.update(attrs)
+                except Exception:  # noqa: BLE001 — degenerate polygon
+                    pass
+        if tris:
+            _add_fused(mesh, fuse_coplanar_loops(tris))
+        soft = _own_extra(mesh_el, "soft")
+        if soft:
+            idx = _ints(soft)
+            wanted = {frozenset((_pkey(positions[idx[i]]), _pkey(positions[idx[i + 1]])))
+                      for i in range(0, len(idx) - 1, 2)}
+            for e in mesh.edges:
+                if frozenset((_pkey(e.a), _pkey(e.b))) in wanted:
+                    e.soft = True
+        meshes[id(geom_el)] = mesh
+        return mesh
+
+    def node_mesh(node_el) -> Mesh:
+        for el in node_el:
+            if _tag(el) == "instance_geometry":
+                geom = dae.ref(el.get("url"))
+                if geom is not None:
+                    return build(geom, el)
+        return Mesh()
+
+    def placed(node_el) -> "QMatrix4x4 | None":
+        if node_el.find(f"{_NS}matrix") is None:
+            return None
+        return zm * _node_matrix(node_el) * zm_inv
+
+    def group_from(node_el, depth: int = 0) -> Group:
+        name = _own_extra(node_el, "name") or _node_label(node_el)
+        names.append(name)
+        inst = node_el.find(f"{_NS}instance_node")
+        target = dae.ref(inst.get("url")) if inst is not None else None
+        body = target if target is not None else node_el
+        g = Group(node_mesh(body), name=name)
+        g.xform = placed(node_el)
+        layer = _own_extra(node_el, "layer")
+        if layer:
+            g.layer = layer
+            if all(ly.name != layer for ly in scene.layers):
+                scene.layers.append(Layer(layer))
+        if depth < 32:
+            kids = [group_from(c, depth + 1)
+                    for c in body.findall(f"{_NS}node")]
+            for k in kids:
+                if k.xform is None:
+                    k.xform = QMatrix4x4()
+            if kids:
+                g.adopt(kids)
+        g.component = target is not None
+        bb = _own_extra(node_el, "billboard")
+        if bb:
+            g.billboard = "mesh" if bb == "mesh" else True
+        return g
+
+    top = [n for vs in root.iter(f"{_NS}visual_scene")
+           for n in vs.findall(f"{_NS}node")]
+    for i, nd in enumerate(top):
+        tick(0.1 + 0.85 * i / max(1, len(top)), "Building the model…")
+        if nd.get("id") == "loose":
+            src = node_mesh(nd)
+            dst = scene.mesh
+            for f in src.faces:
+                try:
+                    nf = dst.add_face(f.vertices, f.holes or None)
+                    nf.attrs.update(f.attrs)
+                except Exception:  # noqa: BLE001
+                    continue
+            for e in src.edges:
+                try:
+                    dst.add_edge(e.a, e.b).soft = e.soft
+                except Exception:  # noqa: BLE001
+                    continue
+            continue
+        scene.groups.append(group_from(nd))
+    if names:
+        reserve_group_names(names)
+    scene.version += 1
+    tick(1.0, "Done")
+
+
+def _boundary_rings(triangles):
+    """The outline of a face given as triangles: ``[outer, *holes]`` as
+    point lists (outer = the ring of largest area), or ``None`` when the
+    boundary does not close into simple rings."""
+    from PySide6.QtGui import QVector3D
+    pos: dict = {}
+    directed: set = set()
+    for tri in triangles:
+        keys = []
+        for p in tri:
+            k = _pkey(p)
+            pos.setdefault(k, p)
+            keys.append(k)
+        for i in range(3):
+            a, b = keys[i], keys[(i + 1) % 3]
+            if a != b:
+                directed.add((a, b))
+    nxt: dict = {}
+    for a, b in directed:
+        if (b, a) in directed:
+            continue                      # interior edge
+        if a in nxt:
+            return None                   # pinched outline: not simple
+        nxt[a] = b
+    rings = []
+    while nxt:
+        start = next(iter(nxt))
+        ring = [start]
+        cur = nxt.pop(start)
+        while cur != start:
+            if cur not in nxt or len(ring) > 100000:
+                return None
+            ring.append(cur)
+            cur = nxt.pop(cur)
+        rings.append([pos[k] for k in ring])
+    if not rings:
+        return None
+
+    def area(r):
+        acc = QVector3D()
+        for i in range(len(r)):
+            acc += QVector3D.crossProduct(r[i], r[(i + 1) % len(r)])
+        return acc.length()
+    rings.sort(key=area, reverse=True)
+    return rings
+
+
+def _pkey(p) -> tuple:
+    return (round(p.x(), 5), round(p.y(), 5), round(p.z(), 5))
+
+
 def _add_lines(mesh, dae: _Dae, lines: list) -> None:
     """Add the file's loose lines to ``mesh`` (Z-up). Only the small,
     editable import takes them: in the reference import (big files) an
@@ -1341,6 +1852,9 @@ def _load_dae_inner(scene, path, progress=None):
     offset = _recenter_dom(root)
     dae = _Dae(root, base_dir=Path(path).parent)
     _adopt_geolocation(scene, root)
+    if _is_structured(root):
+        _load_structured(scene, dae, root, tick)
+        return offset
     top_nodes: list = []
     for vs in root.iter(f"{_NS}visual_scene"):
         top_nodes.extend(vs.findall(f"{_NS}node"))
