@@ -19,30 +19,34 @@ the app + an MCP process outside), with three legs up:
   broken solid are refused by the engine itself.
 
 Protocol (framed for the bridge, not for humans): newline-delimited JSON on
-127.0.0.1:4763 (``INGETRAZO_AI_PORT`` overrides). Request
-``{"id": n, "tool": name, "args": {...}}`` → reply ``{"id": n, "ok": bool,
-"result": ... | "error": str}``. One client at a time; everything the tools
-touch runs on the Qt MAIN thread (queued-signal relay to a bound method —
-the documented PySide6 threading gotcha).
+an automatically assigned loopback port (``INGETRAZO_AI_PORT`` can pin it).
+Each enabled window publishes its own discovery record. ``list_documents``
+returns live metadata; other requests must carry both ``instance_id`` and
+``document_id`` alongside ``id``, ``tool`` and ``args``. Everything the tools
+touch runs on the Qt MAIN thread through a queued-signal relay.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
+import shlex
 import socket
+import subprocess
 import sys
-import tempfile
 import threading
+import uuid
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QBuffer, QCoreApplication, QIODevice, QObject, Qt, Signal
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit,
                                QPushButton, QVBoxLayout, QWidget)
 
+from core import ai_discovery
 from core.i18n import tr
 from views.fold_section import FoldSection, narrow
 
-DEFAULT_PORT = 4763
+DEFAULT_PORT = 0
 _REFUSED = b'{"id": null, "ok": false, "error": "not a bridge request; closing"}\n'
 
 
@@ -59,49 +63,94 @@ class _Bridge(QObject):
     def __init__(self, viewport) -> None:
         super().__init__(viewport)
         self._viewport = viewport
+        self.instance_id = uuid.uuid4().hex
         self._server: socket.socket | None = None
+        self._connection: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._lock = threading.Lock()
+        self._pending_job: dict | None = None
+        self._registration: Path | None = None
         self._scope: dict = {"__name__": "__ai__"}
+        self._scope_document_id: str | None = None
         self.port: int | None = None
         # Queued to a BOUND method of this main-thread QObject — connecting a
         # lambda would run the slot on the worker thread (CLAUDE.md gotcha).
         self._dispatch.connect(self._run_on_main, Qt.QueuedConnection)
+        QCoreApplication.instance().aboutToQuit.connect(self.stop)
 
     # ---- Lifecycle ----------------------------------------------------------
     def start(self) -> int:
+        if self.running:
+            return self.port
         port = int(os.environ.get("INGETRAZO_AI_PORT", DEFAULT_PORT))
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind(("127.0.0.1", port))
-        srv.listen(1)
-        srv.settimeout(0.5)
-        self._server = srv
-        self.port = srv.getsockname()[1]
-        self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._serve, name="ingetrazo-ai-bridge", daemon=True)
-        self._thread.start()
-        return self.port
+        registration = None
+        try:
+            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            srv.bind(("127.0.0.1", port))
+            srv.listen(1)
+            srv.settimeout(0.5)
+            port = srv.getsockname()[1]
+            registration = ai_discovery.register(self.instance_id, port)
+            self._server = srv
+            self.port = port
+            self._registration = registration
+            self._stop = threading.Event()
+            self._thread = threading.Thread(
+                target=self._serve, args=(srv, self._stop),
+                name="ingetrazo-ai-bridge", daemon=True)
+            self._thread.start()
+        except Exception:
+            self._stop.set()
+            self._thread = None
+            self._server = None
+            self.port = None
+            self._registration = None
+            srv.close()
+            if registration is not None:
+                registration.unlink(missing_ok=True)
+            raise
+        return port
+
+    @staticmethod
+    def _close_socket(sock: socket.socket | None) -> None:
+        if sock is not None:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            sock.close()
 
     def stop(self) -> None:
         self._stop.set()
-        if self._server is not None:
-            try:
-                self._server.close()
-            except OSError:
-                pass
-            self._server = None
+        server, self._server = self._server, None
         self.port = None
+        registration, self._registration = self._registration, None
+        try:
+            if registration is not None:
+                registration.unlink(missing_ok=True)
+        finally:
+            with self._lock:
+                connection = self._connection
+                job = self._pending_job
+                if job is not None:
+                    job["reply"] = {"id": job["req"].get("id"), "ok": False,
+                                    "error": "AI bridge stopped; enable it and call list_documents."}
+                    job["done"].set()
+            self._close_socket(connection)
+            self._close_socket(server)
+            thread, self._thread = self._thread, None
+            if thread is not None and thread is not threading.current_thread():
+                thread.join()
 
     @property
     def running(self) -> bool:
-        return self._server is not None
+        return self._server is not None and not self._stop.is_set()
 
     # ---- Worker side ---------------------------------------------------------
-    def _serve(self) -> None:
-        srv = self._server
-        while not self._stop.is_set() and srv is not None:
+    def _serve(self, srv: socket.socket, stop: threading.Event) -> None:
+        while not stop.is_set():
             try:
                 conn, _addr = srv.accept()
             except socket.timeout:
@@ -110,22 +159,31 @@ class _Bridge(QObject):
                 return
             with conn:
                 conn.settimeout(0.5)
-                buf = b""
-                while not self._stop.is_set():
-                    try:
-                        chunk = conn.recv(65536)
-                    except socket.timeout:
-                        continue
-                    except OSError:
-                        break
-                    if not chunk:
-                        break
-                    buf += chunk
-                    if not self._drain(conn, buf):
-                        break
-                    buf = buf[buf.rfind(b"\n") + 1:]
+                with self._lock:
+                    if stop.is_set():
+                        return
+                    self._connection = conn
+                try:
+                    buf = b""
+                    while not stop.is_set():
+                        try:
+                            chunk = conn.recv(65536)
+                        except socket.timeout:
+                            continue
+                        except OSError:
+                            break
+                        if not chunk:
+                            break
+                        buf += chunk
+                        if not self._drain(conn, buf, stop):
+                            break
+                        buf = buf[buf.rfind(b"\n") + 1:]
+                finally:
+                    with self._lock:
+                        if self._connection is conn:
+                            self._connection = None
 
-    def _drain(self, conn, buf: bytes) -> bool:
+    def _drain(self, conn, buf: bytes, stop: threading.Event) -> bool:
         """Answer every complete line in ``buf``. False when the connection
         must close: a line that is not a JSON request ends it, and nothing
         after it runs.
@@ -142,7 +200,7 @@ class _Bridge(QObject):
         for line in lines:
             if not line.strip():
                 continue
-            reply = self._handle_line(line)
+            reply = self._handle_line(line, stop)
             try:
                 conn.sendall(reply if reply is not None else _REFUSED)
             except OSError:
@@ -151,7 +209,7 @@ class _Bridge(QObject):
                 return False
         return True
 
-    def _handle_line(self, line: bytes) -> bytes | None:
+    def _handle_line(self, line: bytes, stop: threading.Event) -> bytes | None:
         """The reply to one request line, or None if it is not a request."""
         try:
             req = json.loads(line)
@@ -159,19 +217,46 @@ class _Bridge(QObject):
             return None
         if not isinstance(req, dict):
             return None
-        job = {"req": req, "done": threading.Event(), "reply": None}
-        self._dispatch.emit(job)
-        job["done"].wait(timeout=120.0)
-        reply = job["reply"] or {"id": req.get("id"), "ok": False,
-                                 "error": "timed out on the UI thread"}
+        job = {"req": req, "done": threading.Event(), "reply": None,
+               "stop": stop}
+        with self._lock:
+            if stop.is_set():
+                return None
+            self._pending_job = job
+        try:
+            self._dispatch.emit(job)
+            if not job["done"].wait(timeout=180.0):
+                job["done"].set()  # An expired queued request must never run later.
+            reply = job["reply"] or {"id": req.get("id"), "ok": False,
+                                     "error": "timed out on the UI thread"}
+        finally:
+            with self._lock:
+                if self._pending_job is job:
+                    self._pending_job = None
         return (json.dumps(reply) + "\n").encode()
 
     # ---- Main-thread side ----------------------------------------------------
     def _run_on_main(self, job: dict) -> None:
         req = job["req"]
+        if job["done"].is_set():
+            return
         tool = req.get("tool", "")
         args = req.get("args") or {}
         try:
+            if (not self.running or job["stop"] is not self._stop
+                    or job["stop"].is_set()):
+                raise RuntimeError("AI bridge stopped; enable it and call list_documents.")
+            if not self._viewport.updatesEnabled():
+                raise RuntimeError("Document replacement in progress; call list_documents again.")
+            if ("instance_id" in req
+                    and req["instance_id"] != self.instance_id):
+                raise ValueError("Stale instance_id; call list_documents.")
+            document_id = self._document_id()
+            if tool != "list_documents":
+                if req.get("instance_id") != self.instance_id:
+                    raise ValueError("instance_id is required; call list_documents.")
+                if req.get("document_id") != document_id:
+                    raise ValueError("Missing or stale document_id; call list_documents.")
             handler = getattr(self, f"_tool_{tool}", None)
             if handler is None:
                 raise ValueError(f"unknown tool {tool!r}")
@@ -184,6 +269,35 @@ class _Bridge(QObject):
             job["done"].set()
 
     # ---- Tools ---------------------------------------------------------------
+    def _document_id(self) -> str:
+        document_id = f"{self.instance_id}:{self._viewport.scene.document_id}"
+        if document_id != self._scope_document_id:
+            self._scope = {"__name__": "__ai__"}
+            self._scope_document_id = document_id
+        return document_id
+
+    def _tool_list_documents(self) -> dict:
+        window = self._viewport.window()
+        workspace = getattr(window, "_workspace", None)
+        path = None if workspace is not None else getattr(window, "_current_path", None)
+        if workspace is not None:
+            name = workspace.title()
+        elif path is not None:
+            path = Path(path).resolve()
+            name = path.name
+        else:
+            name = getattr(window, "_import_name", None) or tr("Untitled")
+        return {"documents": [{
+            "document_id": self._document_id(),
+            "instance_id": self.instance_id,
+            "pid": os.getpid(),
+            "name": name,
+            "path": str(path) if path is not None else None,
+            "title": window.windowTitle(),
+            "dirty": window._is_dirty(),
+            "revision": self._viewport.scene.content_version,
+        }]}
+
     def _tool_run_python(self, code: str = "") -> dict:
         """Execute ``code`` via the shared transactional executor (core.ai):
         one undoable step, whole-rollback on error, no undo entry when
@@ -217,11 +331,16 @@ class _Bridge(QObject):
         width = max(64, min(int(width), 4096))
         height = max(64, min(int(height), 4096))
         image = self._viewport.render_image(width, height)
-        out_dir = Path(tempfile.gettempdir()) / "ingetrazo-ai"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out = out_dir / "viewport.png"
-        image.save(str(out))
-        return {"path": str(out), "width": width, "height": height}
+        buffer = QBuffer()
+        buffer.open(QIODevice.WriteOnly)
+        try:
+            if not image.save(buffer, "PNG"):
+                raise RuntimeError("Could not encode the viewport screenshot as PNG.")
+            data = base64.b64encode(bytes(buffer.data())).decode("ascii")
+        finally:
+            buffer.close()
+        return {"data": data, "mimeType": "image/png",
+                "width": image.width(), "height": image.height()}
 
     def _tool_undo(self) -> dict:
         ok = self._viewport.history.undo()
@@ -303,8 +422,25 @@ def connect_instructions(port: int, platform: str | None = None, **kw) -> str:
     the bridge is up: Claude Code's one-liner, the JSON every other MCP
     client takes, and where each of them reads it."""
     cmd = mcp_command(platform, **kw)
-    quoted = " ".join(f'"{c}"' if " " in c else c for c in cmd)
-    config = {"mcpServers": {"ingetrazo": {"command": cmd[0], "args": cmd[1:]}}}
+    env = kw.get("env")
+    env = os.environ if env is None else env
+    client_env = {}
+    if env.get("INGETRAZO_AI_REGISTRY"):
+        client_env["INGETRAZO_AI_REGISTRY"] = str(
+            Path(env["INGETRAZO_AI_REGISTRY"]).expanduser().resolve())
+    pinned_port = env.get("INGETRAZO_AI_PORT")
+    if pinned_port and int(pinned_port) != 0:
+        client_env["INGETRAZO_AI_HOST"] = env.get("INGETRAZO_AI_HOST", "127.0.0.1")
+        client_env["INGETRAZO_AI_PORT"] = pinned_port
+    windows = (platform or sys.platform).startswith("win")
+    quote = (lambda value: subprocess.list2cmdline([value])) if windows else shlex.quote
+    quoted = " ".join(quote(c) for c in cmd)
+    env_options = "".join(
+        f" --env {quote(f'{key}={value}')}" for key, value in client_env.items())
+    server = {"command": cmd[0], "args": cmd[1:]}
+    if client_env:
+        server["env"] = client_env
+    config = {"mcpServers": {"ingetrazo": server}}
     others = "\n".join(f"    {name}: {path}" for name, path in OTHER_CLIENTS)
     return (
         tr("The AI bridge is listening on 127.0.0.1:{port}. Connect ANY MCP "
@@ -312,15 +448,16 @@ def connect_instructions(port: int, platform: str | None = None, **kw) -> str:
            "Cursor, VS Code, Windsurf, Antigravity CLI, Codex CLI…", port=port)
         + "\n\n"
         + tr("Claude Code (in a terminal):") + "\n"
-        + f"    claude mcp add ingetrazo -- {quoted}\n\n"
+        + f"    claude mcp add ingetrazo{env_options} -- {quoted}\n\n"
         + tr("Antigravity CLI (Google; in a terminal):") + "\n"
-        + f"    agy mcp add ingetrazo -- {quoted}\n\n"
+        + f"    agy mcp add ingetrazo{env_options} -- {quoted}\n\n"
         + tr("Claude Desktop: add this to {path} and restart Claude Desktop:",
              path=desktop_config_path(platform)) + "\n"
         + json.dumps(config, indent=2) + "\n\n"
         + tr("Other clients take the same block in their own file:") + "\n"
         + others + "\n\n"
-        + tr("Keep IngeTrazo open with the bridge on; the tools answer only while it runs.")
+        + tr("Keep IngeTrazo open with the bridge on. Call list_documents to discover "
+             "enabled windows, then choose the document_id for every document tool.")
     )
 
 
@@ -383,7 +520,6 @@ class BridgeSection(QWidget):
                 "AI bridge could not start: {err}", err=str(exc)))
             self._refresh(error=str(exc))
             return False
-        self._port = port
         self._viewport.flash_status(tr(
             "AI bridge listening on 127.0.0.1:{port}", port=port), 8000)
         self._refresh()
@@ -408,11 +544,16 @@ class BridgeSection(QWidget):
         self._copy.setVisible(on)
         self._text.setVisible(on)
         if on:
-            port = getattr(self, "_port", DEFAULT_PORT)
+            bridge = self._viewport.window()._ai_bridge
+            port = bridge.port
             self._status.setText(tr(
                 "Listening on 127.0.0.1:{port} — connect your MCP client "
                 "with the lines below.", port=port))
-            self._text.setPlainText(connect_instructions(port))
+            # Use the published location, not a relative override interpreted
+            # against a later working directory (or the MCP client's cwd).
+            env = dict(os.environ,
+                       INGETRAZO_AI_REGISTRY=str(bridge._registration.parent))
+            self._text.setPlainText(connect_instructions(port, env=env))
         elif error:
             self._status.setText(tr(
                 "AI bridge could not start: {err}", err=error))
