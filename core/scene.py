@@ -254,14 +254,32 @@ class Scene:
 
     @staticmethod
     def _face_hidden(entity) -> bool:
-        """Hide on a face: ``attrs["hidden"]``."""
+        """Hide in an ``attrs`` dict: a face's ``attrs["hidden"]``."""
         attrs = getattr(entity, "attrs", None)
         return bool(attrs and attrs.get("hidden"))
 
+    @staticmethod
+    def _annotation_hidden(entity) -> bool:
+        """Hide on a non-geometry scene entity (#272): a dimension, a
+        text label, an image plane and a guide carry a plain ``hidden``
+        flag, like an object's. The kinds are named rather than the
+        attribute duck-typed: an edge's same-named flag has narrower
+        semantics (it stays in the topology, its draw passes skip it)
+        and a section plane's means something else again, so neither
+        may answer here."""
+        if not getattr(entity, "hidden", False):
+            return False
+        from core.dimension import Dimension
+        from core.guide import Guide
+        from core.image_plane import ImagePlane
+        from core.textlabel import TextLabel
+        return isinstance(entity, (Dimension, TextLabel, ImagePlane, Guide))
+
     def entity_hidden(self, entity) -> bool:
-        """Hidden by Hide (object or face) — regardless of the layer, and of
-        whether the hidden-things view is on."""
-        return self._object_hidden(entity) or self._face_hidden(entity)
+        """Hidden by Hide (object, face or annotation) — regardless of
+        the layer, and of whether the hidden-things view is on."""
+        return (self._object_hidden(entity) or self._face_hidden(entity)
+                or self._annotation_hidden(entity))
 
     def entity_visible(self, entity) -> bool:
         # A hidden thing is gone from every consumer that asks this —

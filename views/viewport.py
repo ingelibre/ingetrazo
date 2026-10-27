@@ -2876,19 +2876,24 @@ class Viewport(QOpenGLWidget):
             # selection; a hover repaint reuses them and their upload (#816).
             v3 = lambda v: (None if v is None
                             else (v.x(), v.y(), v.z()))  # noqa: E731
+            # A hidden guide (#272) is not drawn, like any hidden entity;
+            # the other annotations are already gated by entity_visible
+            # in their own passes.
+            guides = [g for g in self.scene.guides
+                      if self.scene.entity_visible(g)]
             key = (dist, v3(self.camera.target), v3(eye),
                    tuple((id(g), v3(g.point), v3(getattr(g, "direction",
                                                          None)),
                           v3(getattr(g, "origin", None)))
-                         for g in self.scene.guides),
+                         for g in guides),
                    tuple(g in self.scene.selection
-                         for g in self.scene.guides))
+                         for g in guides))
             cached = getattr(self, "_guides_cache", None)
             if cached is not None and cached[0] == key:
                 g_spans = cached[1]
             else:
                 g_coords, g_spans = _guide_vertices(
-                    self.scene.guides, dist * 0.03, self.scene.selection,
+                    guides, dist * 0.03, self.scene.selection,
                     centre=self.camera.target, reach=dist * 15.0,
                     # Parallel: one scale at every depth, nothing to adjust.
                     eye=eye)

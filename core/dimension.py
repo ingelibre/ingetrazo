@@ -222,6 +222,10 @@ class Dimension:
         #: ``None`` shows the measured value, and ``<>`` inside the text
         #: stands for it.
         self.text = text
+        #: Hidden by Hide (#272): a plain flag, like an object's — a
+        #: dimension is not geometry, so it cannot borrow a face's
+        #: ``attrs`` (``core.layers`` reads a layer out of that dict).
+        self.hidden: bool = False
         self.anchor_a: VertexAnchor | None = None
         self.anchor_b: VertexAnchor | None = None
         #: Every hold each endpoint has had, oldest first (see _live).
