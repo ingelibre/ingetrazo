@@ -40,6 +40,10 @@ class Guide:
         #: hidden layer hides its guides — drawn, snapped and picked no
         #: more — like the dimensions and texts on it.
         self.layer = layer
+        #: Hidden by Hide (#272): a plain flag, like an object's — a
+        #: guide is not geometry, so it cannot borrow a face's
+        #: ``attrs`` (``core.layers`` reads a layer out of that dict).
+        self.hidden: bool = False
 
     @property
     def is_line(self) -> bool:
@@ -81,16 +85,20 @@ class Guide:
                                self.origin.z()]
         if self.layer:
             entry["layer"] = self.layer
+        if self.hidden:
+            entry["hidden"] = True
         return entry
 
     @classmethod
     def from_dict(cls, data: dict) -> "Guide":
         d = data.get("direction")
         o = data.get("origin")
-        return cls(QVector3D(*data["point"]),
-                   QVector3D(*d) if d else None,
-                   QVector3D(*o) if o else None,
-                   layer=data.get("layer") or None)
+        guide = cls(QVector3D(*data["point"]),
+                    QVector3D(*d) if d else None,
+                    QVector3D(*o) if o else None,
+                    layer=data.get("layer") or None)
+        guide.hidden = bool(data.get("hidden"))
+        return guide
 
 
 class GuideCircle:

@@ -21,6 +21,10 @@ class TextLabel:
     text: str
     #: Layer (tag) the label lives on; ``None`` = default layer.
     layer: str | None = None
+    #: Hidden by Hide (#272): a plain flag, like an object's — a label
+    #: is not geometry, so it cannot borrow a face's ``attrs``
+    #: (``core.layers`` reads a layer out of that dict).
+    hidden: bool = False
 
     def position(self) -> QVector3D:
         """Where the label text floats (anchor + offset)."""
@@ -33,6 +37,7 @@ class TextLabel:
             "offset": [self.offset.x(), self.offset.y(), self.offset.z()],
             "text": self.text,
             **({"layer": self.layer} if self.layer else {}),
+            **({"hidden": True} if self.hidden else {}),
         }
 
     @classmethod
@@ -40,4 +45,5 @@ class TextLabel:
         return cls(QVector3D(*data.get("anchor", [0, 0, 0])),
                    QVector3D(*data.get("offset", [0, 0, 0])),
                    data.get("text", ""),
-                   layer=data.get("layer") or None)
+                   layer=data.get("layer") or None,
+                   hidden=bool(data.get("hidden")))

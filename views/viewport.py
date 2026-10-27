@@ -3863,6 +3863,9 @@ class Viewport(QOpenGLWidget):
             # selection; a hover repaint reuses them and their upload (#816).
             v3 = lambda v: (None if v is None
                             else (v.x(), v.y(), v.z()))  # noqa: E731
+            # on_screen comes from shown_guides(), which gates on
+            # entity_visible: a hidden guide (#272) is not drawn, like
+            # any hidden entity.
             key = (dist, v3(self.camera.target), v3(eye),
                    tuple((id(g), v3(g.point), v3(getattr(g, "direction",
                                                          None)),
