@@ -5294,7 +5294,10 @@ class MainWindow(QMainWindow):
         self._refresh_sheet_tabs()
 
     def _on_standard_view(self, key: str) -> None:
-        self.viewport.camera.set_view(key)
+        if key == "iso":
+            self.viewport.camera.snap_iso()
+        else:
+            self.viewport.camera.set_view(key)
         self.viewport.update()
 
     def _on_terrain_profile(self) -> None:

@@ -540,8 +540,42 @@ class OrbitCamera:
         "iso":    (math.radians(-45.0), math.radians(30.0)),
     }
 
+    #: The four diagonal yaws of the eight isometric views (four above,
+    #: four below). -45° comes first so it wins the ties — the classic corner.
+    _ISO_YAWS = (-45.0, 45.0, 135.0, 225.0)
+    _ISO_PITCH_DEG = 30.0
+
     def set_view(self, name: str) -> None:
         preset = self._STANDARD_VIEWS.get(name)
         if preset is None:
             return
         self.yaw, self.pitch = preset
+
+    def snap_iso(self) -> None:
+        """Snap to the isometric orientation nearest the current camera pose.
+
+        The static ``"iso"`` preset is one fixed corner, so the command
+        always swung the camera there no matter where it was. The eight
+        isometric views (four diagonal yaws, seen from above or below)
+        are the same picture from different corners; the command now
+        lands on whichever one the camera already points nearest to, so
+        the swing is the shortest available. ``set_view("iso")`` stays
+        the deterministic corner for sheets and scripts.
+        """
+        f = self.forward()
+        best_yaw = math.radians(self._ISO_YAWS[0])
+        best_pitch = math.radians(self._ISO_PITCH_DEG)
+        best_dot = -2.0
+        for sign in (1.0, -1.0):
+            pitch = sign * math.radians(self._ISO_PITCH_DEG)
+            cp = math.cos(pitch)
+            sp = math.sin(pitch)
+            for yaw_deg in self._ISO_YAWS:
+                yaw = math.radians(yaw_deg)
+                # The direction the camera looks from that corner.
+                d = QVector3D(-cp * math.cos(yaw), -cp * math.sin(yaw), -sp)
+                dot = QVector3D.dotProduct(f, d)
+                if dot > best_dot:
+                    best_dot = dot
+                    best_yaw, best_pitch = yaw, pitch
+        self.yaw, self.pitch = best_yaw, best_pitch
