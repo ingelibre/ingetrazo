@@ -719,7 +719,8 @@ def save_scene(scene, path: Path) -> dict:
              "offset": [d.offset.x(), d.offset.y(), d.offset.z()],
              **({"axis": d.axis} if getattr(d, "axis", None) else {}),
              **({"layer": d.layer} if getattr(d, "layer", None) else {}),
-             **({"text": d.text} if getattr(d, "text", None) else {})}
+             **({"text": d.text} if getattr(d, "text", None) else {}),
+             **({"hidden": True} if getattr(d, "hidden", False) else {})}
             for d in dims
         ]
     mats = getattr(scene, "materials", None)
@@ -1325,6 +1326,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             QVector3D(*raw["a"]), QVector3D(*raw["b"]),
             QVector3D(*raw["offset"]), layer=raw.get("layer") or None,
             text=raw.get("text") or None, axis=raw.get("axis") or None)
+        if raw.get("hidden"):
+            dim.hidden = True
         dim.bind(scene)         # the vertex at that spot is the one snapped to
         scene.dimensions.append(dim)
 

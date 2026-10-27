@@ -38,7 +38,7 @@ class ImagePlane:
     """A rectangular reference image placed in the model."""
 
     __slots__ = ("path", "origin", "u", "v", "aspect", "name",
-                 "opacity", "layer", "locked")
+                 "opacity", "layer", "locked", "hidden")
 
     def __init__(self, path: str, origin: QVector3D, u: QVector3D,
                  v: QVector3D, aspect: float = 1.0, name: str = "",
@@ -53,6 +53,10 @@ class ImagePlane:
         self.opacity = float(opacity)
         self.layer = layer
         self.locked = bool(locked)
+        #: Hidden by Hide (#272): a plain flag, like an object's — an
+        #: image is not geometry, so it cannot borrow a face's
+        #: ``attrs`` (``core.layers`` reads a layer out of that dict).
+        self.hidden: bool = False
 
     # ---- Geometry -----------------------------------------------------------
     def corners(self) -> list[QVector3D]:
@@ -141,6 +145,8 @@ class ImagePlane:
             entry["layer"] = None
         if self.locked:
             entry["locked"] = True
+        if self.hidden:
+            entry["hidden"] = True
         return entry
 
     @classmethod
@@ -148,7 +154,7 @@ class ImagePlane:
         tex = raw.get("texture")
         path = (tex.get("path", "") if isinstance(tex, dict)
                 else raw.get("path", ""))
-        return cls(
+        image = cls(
             path,
             QVector3D(*raw["origin"]),
             QVector3D(*raw["u"]),
@@ -159,6 +165,8 @@ class ImagePlane:
             layer=raw.get("layer", IMAGE_LAYER),
             locked=bool(raw.get("locked", False)),
         )
+        image.hidden = bool(raw.get("hidden"))
+        return image
 
 
 def image_aspect(path) -> tuple[float, int, int]:

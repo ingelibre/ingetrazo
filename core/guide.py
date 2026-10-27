@@ -35,6 +35,10 @@ class Guide:
         self.origin = (QVector3D(origin)
                        if origin is not None and self.direction is None
                        else None)
+        #: Hidden by Hide (#272): a plain flag, like an object's — a
+        #: guide is not geometry, so it cannot borrow a face's
+        #: ``attrs`` (``core.layers`` reads a layer out of that dict).
+        self.hidden: bool = False
 
     @property
     def is_line(self) -> bool:
@@ -74,12 +78,16 @@ class Guide:
         if self.origin is not None:
             entry["origin"] = [self.origin.x(), self.origin.y(),
                                self.origin.z()]
+        if self.hidden:
+            entry["hidden"] = True
         return entry
 
     @classmethod
     def from_dict(cls, data: dict) -> "Guide":
         d = data.get("direction")
         o = data.get("origin")
-        return cls(QVector3D(*data["point"]),
-                   QVector3D(*d) if d else None,
-                   QVector3D(*o) if o else None)
+        guide = cls(QVector3D(*data["point"]),
+                    QVector3D(*d) if d else None,
+                    QVector3D(*o) if o else None)
+        guide.hidden = bool(data.get("hidden"))
+        return guide

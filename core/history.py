@@ -981,7 +981,11 @@ class HideCommand(Command):
 
     An OBJECT (group or component, ``Group.hidden``) and a FACE
     (``attrs["hidden"]``) disappear from every consumer that asks
-    ``Scene.entity_visible``: render, pick, snap, bounds, export; an
+    ``Scene.entity_visible``: render, pick, snap, bounds, export. The
+    non-geometry scene entities — a dimension, a text label, an image
+    plane, a guide (#272) — hide the same way through a plain
+    ``hidden`` flag of their own, which is what lets an isolate
+    command reach them; an
     object's nested placements go with it, and a group's chunk leaves its
     hidden faces out. A hidden EDGE stays in the topology (its faces keep
     their boundary) but draws neither as a line nor as a profile /
