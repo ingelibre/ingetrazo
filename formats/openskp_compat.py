@@ -21,9 +21,28 @@ A roof tagged "Roof" landed on a layer called 11, so hiding "Roof" left it
 on screen. The table is kept from the parse and :func:`resolve_face_layers`
 turns the ids into names.
 
-Both patches are detected by BEHAVIOUR, not by version: once the upstream
-reader carries ``_connection_paths`` the first is left alone, and the
-second only touches a face layer that is still a number.
+**Annotations carrying their anchor in full** (a .skp of the 2017
+version). MFC writes an object in full the first time anything points
+at it, so a dimension or leader text anchored to a vertex the stream has not
+reached yet carries that ``CVertex`` inline. The dimension reader refused a
+new object as a connection point; the text reader skipped it by scanning for
+the string delimiter, so its store index went unallocated, every later
+reference landed one slot off (edges on edges, a class ref on a dimension)
+and the file did not open — silently, as :func:`formats.skp.parse_skp`
+reports any parser error as "unreadable". The text delimiter's last byte is
+also 0 on some texts, not only 1.
+
+**A definition list that ends before its count.** Edges first written in a
+face come back as entity-list back-refs; right after a text, the text
+reader takes them as leader attachments, and the list then reads its
+definition's tail as items. The tail's signature now ends a definition list
+whatever was counted (upstream checked it only after a "burn").
+
+All patches are detected by BEHAVIOUR, not by version: once the upstream
+reader carries ``_connection_paths`` the first is left alone, the second
+only touches a face layer that is still a number, and the last two step
+aside once the text reader no longer scans for the delimiter and the list
+reader no longer ties the tail check to burns.
 """
 from __future__ import annotations
 
@@ -46,7 +65,9 @@ def apply() -> bool:
         return False
     _applied = True
     layers = _keep_layer_table()
-    return _fix_legacy_dimensions(L) or layers
+    texts = _fix_anchored_texts(L)
+    lists = _fix_definition_list_end(L)
+    return _fix_legacy_dimensions(L) or layers or texts or lists
 
 
 def _keep_layer_table() -> bool:
@@ -101,12 +122,7 @@ def _fix_legacy_dimensions(L) -> bool:
         # MFC writes an object in full the first time anything points at it:
         # a dimension serialized before the group it is anchored in carries
         # that whole group here. Read it like any object then.
-        tag = r.peek_u16()
-        new = tag == 0xFFFF or (tag != 0x7FFF and tag & 0x8000)
-        if tag == 0x7FFF:
-            big = struct.unpack_from('<I', r.data, r.pos + 2)[0]
-            new = bool(big & 0x80000000)
-        if new:
+        if _is_new_object(r, r.pos):
             slot, _name, _value = ar.read_object(r)
             return slot
         return L._entity_ref(ar, r)
@@ -128,10 +144,13 @@ def _fix_legacy_dimensions(L) -> bool:
         text = r.utf16()
         ar.read_object(r, expect='CSkFont')
         b37 = r.raw(37)
-        c1 = L._entity_ref(ar, r)
+        # The connection point itself can be new too: a dimension inside a
+        # component, anchored to a vertex the stream has not reached yet,
+        # carries that CVertex in full (seen on a .skp of the 2017 version).
+        c1 = _path_ref(ar, r)
         path1 = _connection_paths(ar, r)
         b32 = r.raw(32)
-        c2 = L._entity_ref(ar, r)
+        c2 = _path_ref(ar, r)
         path2 = _connection_paths(ar, r)
         b72 = r.raw(72)
         offset = struct.unpack_from('<d', b72, 52)[0]
@@ -148,4 +167,121 @@ def _fix_legacy_dimensions(L) -> bool:
     L._connection_paths = _connection_paths
     L._read_dimlinear = _read_dimlinear
     L._READERS['CDimensionLinear'] = _read_dimlinear
+    return True
+
+
+def _is_new_object(r, pos) -> bool:
+    """Whether the MFC tag at ``pos`` starts an object written in full (a
+    new class, a class ref, or the escaped form of one)."""
+    tag = struct.unpack_from('<H', r.data, pos)[0]
+    if tag == 0x7FFF:
+        return bool(struct.unpack_from('<I', r.data, pos + 2)[0] & 0x80000000)
+    return tag == 0xFFFF or bool(tag & 0x8000)
+
+
+#: The connection block ahead of an annotation's anchor ref:
+#: [u32 type][u32 4][point3d]; type 1 = free point, 2 = anchored.
+_CONNECTION = (b'\x01\x00\x00\x00\x04\x00\x00\x00',
+               b'\x02\x00\x00\x00\x04\x00\x00\x00')
+
+
+def _fix_anchored_texts(L) -> bool:
+    # co_names, not the source: a frozen build ships no .py to read
+    original = getattr(L, "_read_text", None)
+    if (original is None or getattr(original, "_reads_anchors", False)
+            or "_STR_MARKER" not in original.__code__.co_names):
+        return False
+
+    def _read_text(ar, r):
+        L._preamble(ar, r)
+        db = L._drawbase(ar, r)
+        ar.read_object(r, expect='CSkFont')
+        start = r.pos
+        window = r.data[start:start + 512]
+        hits = [i for i in (window.find(c) for c in _CONNECTION) if i >= 0]
+        conn = start + min(hits) if hits else None
+        after_ref = conn + 34 if conn is not None else None
+        if conn is not None and _is_new_object(r, conn + 32):
+            r.raw(conn + 32 - r.pos)
+            ar.read_object(r)
+            after_ref = r.pos
+        # variable-length variant middle, delimited by an 11-byte block
+        # `01 00 00 00 ?? 00 03 00 00 00 ??` right before the text string
+        p = r.pos
+        while True:
+            idx = r.data.find(L._STR_MARKER, p, r.pos + 512)
+            if idx < 0:
+                raise L.LegacyParseError(f"text delimiter not found {r.ctx()}")
+            blk = r.data[idx - 11:idx]
+            arrow = struct.unpack_from('<I', blk, 6)[0]
+            if (blk[:4] == b'\x01\x00\x00\x00'
+                    and arrow <= 8 and blk[10] in (0, 1)):
+                break
+            p = idx + 3
+        point = None
+        label = None
+        if conn is not None and conn + 32 <= idx:
+            if r.data[conn] == 1:
+                point = struct.unpack_from('<3d', r.data, conn + 8)
+            # placement tail: [10B ref paths][point3d LABEL]...;
+            # all-zero label = screen text
+            lo = after_ref + 10
+            if lo + 24 <= idx:
+                lp = struct.unpack_from('<3d', r.data, lo)
+                if any(abs(c) > 1e-12 for c in lp):
+                    label = lp
+        r.raw(idx - r.pos)
+        text = r.utf16()
+        r.raw(5)
+        attach = []
+        while r.peek(2) == b'\xff\x7f':
+            val = struct.unpack_from('<I', r.data, r.pos + 2)[0]
+            if val & 0x80000000:
+                break                    # new-object tag — the next entity
+            r.raw(6)
+            attach.append(val)
+        return {'k': 'text', 'text': text, 'db': db, 'attach': attach,
+                'p': point, 'lp': label}
+
+    _read_text._reads_anchors = True
+    L._read_text = _read_text
+    L._READERS['CText'] = _read_text
+    return True
+
+
+def _fix_definition_list_end(L) -> bool:
+    original = getattr(L, "_read_entity_list_inner", None)
+    if (original is None or getattr(original, "_ends_at_tail", False)
+            or "burn_stack" not in original.__code__.co_names):
+        return False
+
+    def _read_entity_list_inner(ar, r, count, owner, ents):
+        while len(ents) < count:
+            p = r.pos
+            if (owner == 'def'
+                    and struct.unpack_from('<I', r.data, p)[0] == 0
+                    and r.data[p + 22:p + 25] == L._STR_MARKER):
+                # the definition tail (nrel=0 + pad + 16-byte GUID + name
+                # marker at +22): the list's REAL end, whatever was counted
+                break
+            prev_flag = ar.in_entity_list
+            ar.in_entity_list = True
+            try:
+                s, n, v = ar.read_object(r)
+            except L.LegacyParseError:
+                if owner == 'root':
+                    # over-declared root counts run into the document tail
+                    r.pos = p
+                    break
+                if owner == 'def' and ar.burn_stack and ar.burn_stack[-1]:
+                    r.pos = p
+                    break
+                raise
+            finally:
+                ar.in_entity_list = prev_flag
+            ents.append((s, n, v))
+        return ents
+
+    _read_entity_list_inner._ends_at_tail = True
+    L._read_entity_list_inner = _read_entity_list_inner
     return True

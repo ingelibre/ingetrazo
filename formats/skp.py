@@ -30,10 +30,12 @@ class NeedsConverter(Exception):
     historical: it once meant "use the external converter".) Carries the
     path and detected format."""
 
-    def __init__(self, path, fmt: str) -> None:
-        super().__init__(f"No pure SKP backend for {path} (format={fmt})")
+    def __init__(self, path, fmt: str, reason: str = "") -> None:
+        msg = f"No pure SKP backend for {path} (format={fmt})"
+        super().__init__(f"{msg}: {reason}" if reason else msg)
         self.path = Path(path)
         self.format = fmt
+        self.reason = reason
 
 
 def detect_format(path) -> str:
@@ -114,12 +116,19 @@ def parse_skp(path, progress=None) -> dict:
     caller reports the file as unreadable. Touches no ``Scene``."""
     path = Path(path)
     fmt = detect_format(path)
+    error = None
     for backend in _BACKENDS:
         if not (backend.available() and backend.supports(fmt)):
             continue
         try:
             payload = backend.parse(path, progress=progress)
-        except Exception:  # noqa: BLE001 — a parser that chokes → try next / fall back
+        except Exception as exc:  # noqa: BLE001 — a parser that chokes → try next / fall back
+            # NEVER silent: the UI only says "could not read", so the
+            # parser's own words are the one clue to why.
+            import sys
+            print(f"IngeTrazo: {backend.name} could not read {path.name}: "
+                  f"{exc}", file=sys.stderr)
+            error = exc
             payload = None
         # Protos count as geometry: a file whose whole content is
         # components placed once yields no plain groups at all, and
@@ -127,7 +136,7 @@ def parse_skp(path, progress=None) -> dict:
         if payload and (payload.get("groups") or payload.get("protos")
                         or payload.get("empty")):
             return payload
-    raise NeedsConverter(path, fmt)
+    raise NeedsConverter(path, fmt, str(error or "")) from error
 
 
 def apply_payload(scene, payload, progress=None) -> str:
