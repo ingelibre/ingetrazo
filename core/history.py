@@ -3229,6 +3229,7 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
     # Faces swallowed by a merge are skipped; scans repeat until one merges
     # nothing, so a region that only becomes connected after a merge still
     # fuses.
+    failed: set = set()        # components already found not to merge
     while True:
         merged = False
         ncache: dict = {}
@@ -3243,8 +3244,14 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
             if len(comp) < 2:
                 continue
             if new_faces is not None and not (comp & new_faces):
+                done |= comp             # none of it is ours: leave it all
                 continue
+            key = frozenset(comp)
+            if key in failed:
+                continue                 # found again from another face
             region = mesh.dissolve_coplanar_region(comp)
+            if region is None:
+                failed.add(key)
             if region is not None:
                 alive -= comp
                 alive.add(region)
@@ -3320,7 +3327,7 @@ def _coplanar_component(mesh, f0, seedkeys: set,
                     # Coplanar regardless of winding sign — a push/pull can leave
                     # a fragment wound the opposite way (a prism floor cap +Z vs a
                     # bump strip -Z); same surface, so it belongs to the region.
-                    if abs(QVector3D.dotProduct(n0, g.normal())) > 0.999:
+                    if abs(QVector3D.dotProduct(n0, nrm(g))) > 0.999:
                         comp.add(g)
                         stack.append(g)
     return comp
