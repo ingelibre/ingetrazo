@@ -414,3 +414,22 @@ def test_a_plain_3d_polyline_stays_linework(tmp_path):
     scene, _ = _load(tmp_path, doc)
     m = scene.groups[0].mesh
     assert len(m.faces) == 0 and len(m.edges) == 2
+
+
+def test_touching_polyface_parts_keep_their_own_faces(tmp_path):
+    """Each POLYFACE is a part: it is merged on its own, so two boxes side by
+    side on one layer keep two tops (and a big layer of curved parts merges
+    in linear time instead of quadratic)."""
+    doc = _doc()
+    msp = doc.modelspace()
+    for dx in (0.0, 3.0):                    # second box flush against the first
+        pf = msp.add_polyface()
+        pf.append_faces([[(x + dx, y, z) for x, y, z in (_BOX_V[i] for i in f)]
+                         for f in _BOX_F])
+        pf.optimize()
+    scene, _ = _load(tmp_path, doc)
+    tops = [f for f in scene.groups[0].mesh.faces
+            if abs(f.normal().normalized().z()) > 0.99
+            and min(v.position.z() for v in f.loop) > 0.5]
+    assert len(tops) == 2 and all(abs(f.area() - 6.0) < 1e-6 for f in tops)
+

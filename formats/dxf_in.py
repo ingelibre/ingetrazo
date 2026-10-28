@@ -266,11 +266,12 @@ def _entity_face(e):
 class _Bucket:
     """Linework + faces collected for one destination mesh."""
 
-    __slots__ = ("runs", "faces")
+    __slots__ = ("runs", "faces", "meshes")
 
     def __init__(self) -> None:
         self.runs: list = []                # (point_run, curved)
         self.faces: list = []               # point loops
+        self.meshes: list = []              # one list of point loops per mesh entity
 
 
 def _scan(space, sagitta, skipped, counter, per_layer, depth=0):
@@ -302,7 +303,7 @@ def _bucket_one(e, layer, sagitta, skipped, counter, per_layer) -> None:
     if loops is not None:
         if loops:
             counter[0] += 1
-            per_layer.setdefault(layer, _Bucket()).faces.extend(loops)
+            per_layer.setdefault(layer, _Bucket()).meshes.append(loops)
         return
     loop = _entity_face(e)
     if loop is not None:
@@ -349,6 +350,8 @@ def _build_mesh(bucket: _Bucket, scale: float, offset) -> "Mesh":
         vobjs, ids = mesh.bulk_weld(np.array(pts, dtype=np.float64))
         mesh.add_edges_welded(vobjs, np.asarray(ids)[ia],
                               np.asarray(ids)[ib], flags=flags)
+    if bucket.meshes:
+        _add_mesh_entities(mesh, bucket.meshes, scale, offset)
     if bucket.faces:
         from core.history import run_stitch
         from core.topology import _key
@@ -372,6 +375,49 @@ def _build_mesh(bucket: _Bucket, scale: float, offset) -> "Mesh":
             except Exception:
                 pass                        # merge is a nicety, never fatal
     return mesh
+
+
+def _add_mesh_entities(mesh, entities, scale: float, offset) -> None:
+    """Add the faces of each mesh entity (a POLYFACE / MESH: one part as the
+    CAD program wrote it) to ``mesh``, each stitched and coplanar-merged on
+    its own in a scratch mesh first.
+
+    Merging part by part keeps every merge small: a whole layer of curved
+    parts (balusters, handrails: thousands of facets each) merged in the one
+    destination mesh is quadratic in the number of faces — minutes, or a
+    crash, on a real stair — while each part alone takes milliseconds. It is
+    also the right scope: two parts that touch never fuse their faces."""
+    from core.history import run_stitch
+    from core.mesh import Mesh
+    from core.topology import _key
+
+    for loops in entities:
+        part = Mesh()
+        added, seed = [], set()
+        for loop in loops:
+            corners = [QVector3D(p.x * scale - offset[0],
+                                 p.y * scale - offset[1],
+                                 p.z * scale - offset[2]) for p in loop]
+            try:
+                f = part.add_face(corners)
+            except Exception:
+                continue                    # degenerate sliver: only itself
+            if f is not None:
+                added.append(f)
+                seed.update(_key(c) for c in corners)
+        if not added:
+            continue
+        try:
+            run_stitch(part, seed, set(added), coplanar_merge=True)
+        except Exception:
+            pass                            # merge is a nicety, never fatal
+        for f in part.faces:
+            try:
+                mesh.add_face([v.position for v in f.loop],
+                              [[v.position for v in h] for h in f.hole_loops]
+                              or None)
+            except Exception:
+                continue
 
 
 def _fold_xform(m44, scale: float, offset) -> QMatrix4x4:
@@ -442,7 +488,8 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
         proto_buckets[block_name] = {"0": bucket}
 
     if not per_layer and not any(
-            b["0"].runs or b["0"].faces for b in proto_buckets.values()):
+            b["0"].runs or b["0"].faces or b["0"].meshes
+            for b in proto_buckets.values()):
         raise ValueError("no importable geometry (lines, polylines, arcs, "
                          "circles, ellipses, splines or faces) in the "
                          "model space")
@@ -463,7 +510,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
         for run, _c in bucket.runs:
             for p in run:
                 absorb(p.x * scale, p.y * scale, p.z * scale)
-        for loop in bucket.faces:
+        for loop in bucket.faces + [l for m in bucket.meshes for l in m]:
             for p in loop:
                 absorb(p.x * scale, p.y * scale, p.z * scale)
     for _bname, m, _layer in placements:
