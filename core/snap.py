@@ -2136,8 +2136,18 @@ def compute_snap(
     #     so the exact crossing wins, but below every endpoint and lock.
     inter = _intersection_snap(cx, cy, scene, world_to_pixel, et, is_occluded,
                                are_occluded, candidate_world)
-    if inter is not None and axis_engaged is None:
-        return inter
+    if inter is not None:
+        if axis_engaged is None:
+            return inter
+        # The intersection is a POINT snap and must keep beating the engaged
+        # axis (as endpoint/close do) — but only while it lies ON that axis,
+        # so it never pulls the point off the lock line. Two guide circles
+        # side by side cross twice on the line through their centres: that
+        # chord lines up with an axis, and without this the axis magnet stole
+        # the second crossing from a line started at the first (#238).
+        if start_point is not None and _vertex_on_line(
+                inter.point, start_point, _AXIS_VECTORS[axis_engaged]):
+            return inter
 
     # 6. Midpoint + origin.
     best = None

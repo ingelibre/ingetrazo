@@ -172,6 +172,32 @@ def test_compute_snap_lands_on_a_circle_circle_intersection():
     assert (snap.point - top).length() < 1e-4
 
 
+def test_a_line_started_at_one_crossing_detects_the_other():
+    """Two circles side by side cross on a chord that lines up with an axis:
+    the SECOND crossing must still read as an intersection, not be stolen by
+    the axis magnet the drag is engaged on (#238)."""
+    import math
+    from types import SimpleNamespace
+    from core.snap import compute_snap
+    n = V(0, 0, 1)
+    c1 = GuideCircle(V(0, 0, 0), n, 1.0)
+    c2 = GuideCircle(V(1, 0, 0), n, 1.0)
+    A = V(0.5, math.sqrt(3.0) / 2.0, 0.0)   # the first crossing
+    B = V(0.5, -math.sqrt(3.0) / 2.0, 0.0)  # the second, vertically below
+
+    def w2p(p):
+        return (p.x() * 100.0, p.y() * 100.0)
+
+    snap = compute_snap(
+        candidate_world=B, candidate_pixel=w2p(B),
+        scene=SimpleNamespace(edges=[], circles=[c1, c2]), world_to_pixel=w2p,
+        threshold_px=9.0, edge_threshold_px=14.0, start_point=A,
+        project_onto_line=lambda s, d: s + d * V.dotProduct(B - s, d),
+        magnetic_axis_deg=3.0)
+    assert snap.kind == "intersection"
+    assert (snap.point - B).length() < 1e-6
+
+
 def test_circle_tool_ctrl_toggles_guide_mode_and_draws_a_guide():
     from PySide6.QtCore import QPointF, Qt
     from tools.base import ToolContext
