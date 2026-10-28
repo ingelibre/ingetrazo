@@ -308,10 +308,18 @@ class SelectTool(Tool):
         if entity is None:
             if viewport.scene.edit_group is not None and mode == "replace" \
                     and not viewport.scene.selection:
-                # Click outside: step out ONE level, so a click outside a
-                # nested group leaves you in its parent, not in the model.
-                viewport.end_one_group_edit()
-                return
+                # The dotted edit box, not the occupied faces, is the context
+                # boundary. Irregular geometry and the deliberate gutter
+                # around a cube leave empty pixels INSIDE that frame; those
+                # pixels must not throw the user out of the group. Beyond the
+                # projected box, step out ONE level so a nested edit leaves
+                # you in its parent, not directly in the model.
+                contains = getattr(viewport,
+                                   "edit_group_box_contains_pixel", None)
+                if not callable(contains) or not contains(
+                        ctx.screen.x(), ctx.screen.y()):
+                    viewport.end_one_group_edit()
+                    return
             if mode == "replace":
                 viewport.scene.clear_selection()
         else:

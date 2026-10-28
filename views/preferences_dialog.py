@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSlider,
     QSpinBox,
     QTabWidget,
     QLabel,
@@ -112,6 +113,36 @@ class PreferencesDialog(QDialog):
         self._rest.setCurrentIndex(max(0, self._rest.findData(
             window.viewport.edit_rest_mode)))
         form.addRow(tr("Rest of model while editing:"), self._rest)
+
+        # A colour wash rather than translucent geometry: the surroundings
+        # keep hiding what is behind them while the open group remains at
+        # full strength.
+        fade_row = QHBoxLayout()
+        self._rest_fade = QSlider(Qt.Horizontal)
+        self._rest_fade.setRange(0, 100)
+        current_fade = getattr(window.viewport, "edit_rest_fade", 0.75)
+        try:
+            current_fade = float(current_fade)
+        except (TypeError, ValueError):
+            # Lightweight viewport stand-ins used by embedders/tests may
+            # provide only generic callable attributes.
+            current_fade = 0.75
+        self._rest_fade.setValue(round(current_fade * 100))
+        from views.tray import style_slider
+        style_slider(self._rest_fade)
+        self._rest_fade.setToolTip(tr(
+            "How strongly the rest of the model is washed toward grey while "
+            "a group or component is open."))
+        self._rest_fade_value = QLabel()
+        self._rest_fade_value.setMinimumWidth(42)
+        fade_row.addWidget(self._rest_fade, 1)
+        fade_row.addWidget(self._rest_fade_value)
+        form.addRow(tr("Fade intensity:"), fade_row)
+        self._rest_fade.valueChanged.connect(
+            self._sync_rest_fade_controls)
+        self._rest.currentIndexChanged.connect(
+            self._sync_rest_fade_controls)
+        self._sync_rest_fade_controls()
 
         row = QHBoxLayout()
         self._autosave = QCheckBox(tr("Auto-save every"))
@@ -599,6 +630,11 @@ class PreferencesDialog(QDialog):
     def _units_for_new_toggled(self, _checked: bool) -> None:
         self._units_for_new_explicit = True
 
+    def _sync_rest_fade_controls(self, _value=None) -> None:
+        """Keep the percentage legible and disable it outside Fade mode."""
+        self._rest_fade_value.setText(f"{self._rest_fade.value()} %")
+        self._rest_fade.setEnabled(self._rest.currentData() == "fade")
+
     def accept(self) -> None:  # noqa: D102 — QDialog override
         st = QSettings()
 
@@ -656,6 +692,11 @@ class PreferencesDialog(QDialog):
 
         # Rest-of-model mode: through the viewport (it persists the setting),
         # then the Camera menu checkmark follows.
+        fade = self._rest_fade.value() / 100.0
+        set_fade = getattr(self._window.viewport,
+                           "set_edit_rest_fade", None)
+        if callable(set_fade):
+            set_fade(fade)
         mode = self._rest.currentData()
         if mode != self._window.viewport.edit_rest_mode:
             self._window.viewport.set_edit_rest_mode(mode)

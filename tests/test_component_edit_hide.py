@@ -113,6 +113,30 @@ def test_hide_rest_toggles_back_to_the_previous_mode():
         win.close()
 
 
+def test_fade_slider_applies_immediately_and_follows_the_viewport():
+    win = _window()
+    vp = win.viewport
+    assert callable(vp._edit_rest_fade), (
+        "the configurable strength must not shadow the per-entity fade method")
+    before_mode = vp.edit_rest_mode
+    before = vp.edit_rest_fade
+    try:
+        vp.set_edit_rest_mode("fade")
+        win._sync_component_edit_menu()
+        assert win._rest_fade_slider.isEnabled()
+        win._rest_fade_slider.setValue(38)
+        assert abs(vp.edit_rest_fade - 0.38) < 1e-9
+        assert win._rest_fade_value.text() == "38 %"
+        vp.set_edit_rest_mode("hide")
+        win._sync_component_edit_menu()
+        assert not win._rest_fade_slider.isEnabled()
+    finally:
+        vp.set_edit_rest_mode(before_mode)
+        vp.set_edit_rest_fade(before)
+        win._saved_version = vp.scene.version
+        win.close()
+
+
 def test_hide_similar_action_flips_the_scene_flag():
     win = _window()
     vp = win.viewport

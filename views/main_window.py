@@ -18,14 +18,17 @@ from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QVector3D
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
     QStatusBar,
+    QSlider,
     QTabBar,
     QToolBar,
     QWidget,
+    QWidgetAction,
 )
 
 from core import general_settings as _gs
@@ -79,7 +82,7 @@ from tools.section import SectionPlaneTool
 from tools.pushpull import PushPullTool
 from tools.rectangle import RectangleTool
 from tools.select import SelectTool
-from views.tray import BimTray, GeorefTray, Tray
+from views.tray import BimTray, GeorefTray, Tray, style_slider
 from views.icons import tool_icon
 from views.viewport import Viewport
 
@@ -1570,6 +1573,30 @@ class MainWindow(QMainWindow):
                 lambda _c=False, k=key: self.viewport.set_edit_rest_mode(k))
             rest_menu.addAction(act)
             self._rest_actions[key] = act
+
+        # A live control next to the three coarse modes. It changes the grey
+        # wash only; Hide remains a separate, truly omitted render path.
+        rest_menu.addSeparator()
+        self._rest_fade_widget = QWidget(rest_menu)
+        fade_layout = QHBoxLayout(self._rest_fade_widget)
+        fade_layout.setContentsMargins(12, 4, 12, 6)
+        fade_layout.addWidget(QLabel(tr("Fade intensity:")))
+        self._rest_fade_slider = QSlider(Qt.Horizontal)
+        self._rest_fade_slider.setRange(0, 100)
+        self._rest_fade_slider.setFixedWidth(140)
+        style_slider(self._rest_fade_slider)
+        self._rest_fade_slider.setToolTip(tr(
+            "How strongly the rest of the model is washed toward grey while "
+            "a group or component is open."))
+        self._rest_fade_value = QLabel()
+        self._rest_fade_value.setMinimumWidth(42)
+        fade_layout.addWidget(self._rest_fade_slider)
+        fade_layout.addWidget(self._rest_fade_value)
+        self._rest_fade_slider.valueChanged.connect(
+            self._on_edit_rest_fade_changed)
+        fade_action = QWidgetAction(rest_menu)
+        fade_action.setDefaultWidget(self._rest_fade_widget)
+        rest_menu.addAction(fade_action)
 
         # Camera ▸ Component Edit, with keys of their own: Alt+Q
         # toggles the rest of the model between hidden and the mode it had
@@ -4120,8 +4147,19 @@ class MainWindow(QMainWindow):
         act = self._rest_actions.get(mode)
         if act is not None:
             act.setChecked(True)
+        fade = round(self.viewport.edit_rest_fade * 100)
+        self._rest_fade_slider.blockSignals(True)
+        self._rest_fade_slider.setValue(fade)
+        self._rest_fade_slider.setEnabled(mode == "fade")
+        self._rest_fade_slider.blockSignals(False)
+        self._rest_fade_value.setText(f"{fade} %")
         self._act_hide_similar.setChecked(bool(getattr(
             self.viewport.scene, "hide_similar_components", False)))
+
+    def _on_edit_rest_fade_changed(self, value: int) -> None:
+        """Apply the Camera-menu fade slider immediately and persist it."""
+        self._rest_fade_value.setText(f"{value} %")
+        self.viewport.set_edit_rest_fade(value / 100.0)
 
     def _on_toggle_hide_rest(self, _checked: bool = False) -> None:
         """Hide Rest of Model (Alt+Q). Reads the viewport, not

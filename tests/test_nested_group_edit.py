@@ -260,12 +260,13 @@ def test_las_instancias_tambien_se_atenuan():
     dibujándose a plena luz — y agrupar la plaza convirtió a sus hijos en
     justo eso.
     """
-    from views.viewport import Viewport, EDIT_REST_FADE
+    from views.viewport import Viewport
     scene, padre, h1, h2 = _plaza()
     suelto = Group(_cuadrado(Mesh(), 20.0), name="Otro")
     scene.groups.append(suelto)
     vp = _visor(scene)
     vp._edit_rest_mode = "fade"
+    vp._edit_rest_fade_strength = 0.37
     _VP._instanced_batches = Viewport._instanced_batches
 
     assert vp._instanced_batches([h1, suelto]) == [([h1, suelto], 0.0)], (
@@ -274,7 +275,7 @@ def test_las_instancias_tambien_se_atenuan():
     scene.begin_group_edit(padre)
     hijos = [g for g in vp._placements() if getattr(g, "context", None) is padre]
     lotes = vp._instanced_batches(hijos + [suelto])
-    assert lotes[0] == ([suelto], EDIT_REST_FADE), "lo de fuera, atenuado"
+    assert lotes[0] == ([suelto], 0.37), "lo de fuera, atenuado"
     assert lotes[1] == (hijos, 0.0), "lo de dentro, a plena luz"
 
     vp._edit_rest_mode = "hide"
