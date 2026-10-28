@@ -276,22 +276,40 @@ def rotation_grips(obb, eye: QVector3D) -> list:
     return out
 
 
+def _loop_key(points) -> frozenset:
+    """A loop's corners, whatever its start and winding."""
+    return frozenset((round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
+                     for p in points)
+
+
 class _PlannedWhenRun(Command):
     """Drawn edges planned when the command RUNS, not when it is built:
     by then the copied faces before it in the same compound are in the
     model, so the Line tool's planner splits the faces the edges land on
     without laying another face over the copied ones (#379). Redo
-    replays the same plan."""
+    replays the same plan.
 
-    def __init__(self, segments) -> None:
+    ``open_loops`` are the copied faces' holes: the planner closes every
+    loop it traces, and a hole's rim is one, so a frame copied with its
+    opening came out with the opening faced over on both sides. A copy
+    keeps open what the original had open."""
+
+    def __init__(self, segments, open_loops=()) -> None:
         self._segments = list(segments)
+        self._open = set(open_loops)
         self._cmd = None
 
     def do(self, scene) -> None:
         if self._cmd is None:
             from core.edits import build_add_edges
+            from core.history import SnapshotCompound
             self._cmd = build_add_edges(scene, self._segments,
                                         detect_faces=True)
+            if self._open and isinstance(self._cmd, SnapshotCompound):
+                self._cmd.inner = [
+                    c for c in self._cmd.inner
+                    if not (isinstance(c, AddFaceCommand)
+                            and _loop_key(c.vertices) in self._open)]
         self._cmd.do(scene)
 
     def undo(self, scene) -> None:
@@ -941,6 +959,7 @@ class MoveTool(Tool):
             cmds: list = []
             plain: list = []
             bound: list = []
+            open_loops: set = set()
             for d in deltas:
                 m = QMatrix4x4()
                 m.translate(d)
@@ -949,6 +968,8 @@ class MoveTool(Tool):
                 for g in guides:
                     cmds.append(AddGuideCommand(copied_guide(g, m)))
                 for f in faces:
+                    for h in f.holes:
+                        open_loops.add(_loop_key([v + d for v in h]))
                     cmds.append(AddFaceCommand(
                         [v + d for v in f.vertices],
                         holes=[[v + d for v in h] for h in f.holes] or None,
@@ -980,7 +1001,7 @@ class MoveTool(Tool):
                 # way they never split the face they land on — the edge of
                 # a piece copied 1 cm down left its neighbour's face whole
                 # (#379, after #177).
-                cmds.append(_PlannedWhenRun(bound))
+                cmds.append(_PlannedWhenRun(bound, open_loops))
             if not cmds:
                 return None
             return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
