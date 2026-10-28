@@ -793,6 +793,9 @@ class MainWindow(QMainWindow):
         self.project_browser = ProjectBrowser(self)
         from views.layers_panel import LayersDock
         self.layers_dock = LayersDock(self)
+        # The Browser ordering by layer lists them as the Layers tab does.
+        self.layers_dock.panel.orderChanged.connect(
+            self.project_browser.outliner.on_layer_order_changed)
         self._lay_out_trays()
         # The trays are tabbed: the tab bar already names the active panel,
         # so each dock's own title bar would say the same thing right above

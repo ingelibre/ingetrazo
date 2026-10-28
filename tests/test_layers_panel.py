@@ -1134,6 +1134,7 @@ def test_the_funnels_quick_filters(win):
         assert _shown(panel) == sorted(names), key
     scene.select([g])
     win.viewport.notify_scene_changed()             # follows the selection
+    _app.processEvents()                            # the rebuild is deferred
     assert _shown(panel) == ["Usada"]
 
 
@@ -2136,6 +2137,7 @@ def test_an_edit_of_the_model_does_not_rebuild_the_rows(win):
     assert panel._counts.get("Muros") == 1
     scene.layer("Muros").color = (1.0, 0.0, 0.0)
     win.viewport.notify_scene_changed()
+    _app.processEvents()                        # the deferred turn
     assert panel.tree.topLevelItem(0) is not first      # a layer changed
 
 
@@ -2151,3 +2153,91 @@ def test_behind_another_tab_the_panel_waits_until_shown(win):
     win.layers_dock.show()
     _app.processEvents()
     assert "Nueva" in _shown(panel)
+# ---- The rebuild waits for the event loop -----------------------------------
+
+def _count_rebuilds(panel):
+    """The panel's rebuild, counted. The deferred timer binds the spy, so a
+    pending one is dropped first."""
+    calls = []
+    real = panel.refresh
+    if getattr(panel, "_refresh_timer", None) is not None:
+        panel._refresh_timer.stop()
+
+    def spy():
+        calls.append(1)
+        real()
+    panel._refresh_timer = None
+    panel.refresh = spy
+    return calls, real
+
+
+def _stop_counting(panel, real):
+    timer = getattr(panel, "_refresh_timer", None)
+    if timer is not None:
+        timer.stop()
+    panel._refresh_timer = None                 # the next one binds the real
+    panel.refresh = real
+
+
+def test_a_scene_change_rebuilds_after_the_event_loop_not_inside_it(win):
+    """``sceneVersionChanged`` reaches the panel from inside ``paintGL``
+    (``_sync_edges``) and from the Layers toolbar's list while Qt is still
+    closing it: clearing the rows there was an access violation. The burst
+    of changes pays one rebuild, on the next turn."""
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    scene.layers += [Layer("Nueva")]        # a change the rows must follow
+    calls, real = _count_rebuilds(panel)
+    try:
+        win.viewport.notify_scene_changed()
+        win.viewport.notify_scene_changed()
+        win.viewport.notify_scene_changed()
+        assert calls == []                  # not from inside paint nor a signal
+        _app.processEvents()
+        assert len(calls) == 1              # one rebuild for the burst
+    finally:
+        _stop_counting(panel, real)
+
+
+def test_an_assign_layer_from_the_bar_rebuilds_only_after_the_list_closes(win):
+    """Picking a layer in the toolbar's list with groups selected is the
+    reported crash: the list rebuilt itself inside its own ``activated``.
+    The command lands at once, the rows follow once the loop is back."""
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    scene.layers += [Layer("A"), Layer("B")]
+    g = Group(Mesh(), name="g")
+    g.layer = "A"
+    scene.groups.append(g)
+    panel.refresh()
+    combo = win.layers_toolbar.combo
+    scene.select([g])
+    combo.refresh()
+    calls, real = _count_rebuilds(panel)
+    try:
+        i = combo.findText("B")
+        combo.setCurrentIndex(i)
+        combo.activated.emit(i)
+        assert layer_of(g) == "B"           # the command landed
+        assert calls == []                  # the list was still closing
+        _app.processEvents()
+        # The layers are the ones drawn: the next turn may only mark the
+        # selection and recount, without clearing the rows.
+        assert len(calls) <= 1
+        assert "B" in _shown(panel)         # and the rows follow
+    finally:
+        _stop_counting(panel, real)
+
+
+def test_a_new_layer_keeps_its_name_editor_open(win):
+    """The row whose name is being typed must not be rebuilt under the
+    editor: the panel announces the change first, then rebuilds — the
+    deferred rebuild it armed is the one it just did."""
+    from PySide6.QtWidgets import QAbstractItemView
+    panel = win.layers_dock.panel
+    win.layers_dock.raise_()
+    _app.processEvents()
+    name = panel.add_layer()
+    _app.processEvents()
+    assert panel.tree.state() == QAbstractItemView.EditingState
+    assert panel.tree.currentItem().text(0) == name

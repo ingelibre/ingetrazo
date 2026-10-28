@@ -124,39 +124,31 @@ def _shows(button, key):
             and button.icon().cacheKey() == node_icon(key).cacheKey())
 
 
-# --- Isolate and Show all: one button -----------------------------------------
+# --- Isolate: the row's target and the menu ---------------------------------
 
-def test_one_button_isolates_then_shows_it_all():
-    from core.i18n import tr
+def test_isolating_keeps_one_row_in_view_then_shows_it_all():
     win, scene, panel, (edificio, inner, casa, muro) = _setup()
     try:
-        b = panel._isolate_btn
-        assert not b.isChecked() and _shows(b, "isolate")
-        assert b.toolTip() == tr(
-            "Isolate: hide everything but the selected groups")
         root = panel.tree.topLevelItem(0)
         panel.tree.setCurrentItem(root.child(1))           # «Casa»
-        b.click()                                          # isolate
+        panel.isolate()
         assert not casa.hidden and edificio.hidden and muro.hidden
-        assert b.isChecked() and _shows(b, "isolate_on")
-        assert b.toolTip() == tr("Exit isolation: show again what Isolate "
-                                 "hid")
-        b.click()                                          # exit isolation
+        assert panel._isolated_now()
+        panel.exit_isolation()
         assert not any(g.hidden for g in (edificio, casa, muro))
-        assert not b.isChecked() and _shows(b, "isolate")
+        assert not panel._isolated_now()
     finally:
         _close(win)
 
 
-def test_something_hidden_by_hand_is_not_the_buttons_business():
-    """Hidden by hand, it stays ◎: the button is for isolating only."""
+def test_something_hidden_by_hand_is_not_an_isolation():
+    """Hidden by hand, it stays hidden: only Isolate remembers what it hid."""
     win, scene, panel, (edificio, inner, casa, muro) = _setup()
     try:
         muro.hidden = True
         scene.version += 1
         panel.refresh()
-        assert not panel._isolate_btn.isChecked()
-        assert _shows(panel._isolate_btn, "isolate")
+        assert not panel._isolated_now()
     finally:
         _close(win)
 
@@ -169,14 +161,13 @@ def test_leaving_the_isolation_keeps_what_was_hidden_by_hand():
         panel.refresh()
         root = panel.tree.topLevelItem(0)
         panel.tree.setCurrentItem(root.child(1))           # «Casa»
-        b = panel._isolate_btn
-        b.click()                                          # isolate
+        panel.isolate()
         assert edificio.hidden and muro.hidden and not casa.hidden
-        assert b.isChecked()
-        b.click()                                          # exit
+        assert panel._isolated_now()
+        panel.exit_isolation()
         assert not edificio.hidden and not casa.hidden
         assert muro.hidden                                 # as it was
-        assert not b.isChecked()
+        assert not panel._isolated_now()
     finally:
         _close(win)
 
@@ -186,12 +177,12 @@ def test_undoing_the_isolation_ends_it():
     try:
         root = panel.tree.topLevelItem(0)
         panel.tree.setCurrentItem(root.child(1))
-        panel._isolate_btn.click()
-        assert panel._isolate_btn.isChecked()
+        panel.isolate()
+        assert panel._isolated_now()
         win.viewport.history.undo()
         panel.refresh()
         assert not edificio.hidden and not muro.hidden
-        assert not panel._isolate_btn.isChecked()
+        assert not panel._isolated_now()
     finally:
         _close(win)
 
@@ -206,7 +197,7 @@ def test_the_menu_offers_exit_and_the_way_out_of_everything():
         panel.refresh()
         root = panel.tree.topLevelItem(0)
         panel.tree.setCurrentItem(root.child(1))
-        panel._isolate_btn.click()
+        panel.isolate()
         texts = []
 
         def read():
@@ -224,7 +215,7 @@ def test_the_menu_offers_exit_and_the_way_out_of_everything():
         assert tr("Show all groups") not in texts
         panel.show_all()                       # the way out of everything
         assert not any(g.hidden for g in (edificio, inner, casa, muro))
-        assert not panel._isolate_btn.isChecked()
+        assert not panel._isolated_now()
     finally:
         _close(win)
 
@@ -236,9 +227,9 @@ def test_isolating_with_nothing_selected_says_so():
         win.viewport.flash_status = lambda text, *a, **k: said.append(text)
         panel.tree.clearSelection()
         scene.selection.clear()
-        panel._isolate_btn.click()
+        panel.isolate()
         assert said and not any(g.hidden for g in (edificio, casa, muro))
-        assert not panel._isolate_btn.isChecked()
+        assert not panel._isolated_now()
     finally:
         _close(win)
 
@@ -252,14 +243,14 @@ def test_one_button_expands_everything_then_collapses_it():
         b = panel._expand_btn
         item = panel._items[id(edificio)]
         item.setExpanded(False)
-        assert _shows(b, "expand_all") and b.toolTip() == tr("Expand all")
+        assert _shows(b, "layers_expand") and b.toolTip() == tr("Expand all")
         b.click()
         assert item.isExpanded()
-        assert _shows(b, "collapse_all") and b.toolTip() == tr("Collapse all")
+        assert _shows(b, "layers_collapse") and b.toolTip() == tr("Collapse all")
         b.click()
         assert not item.isExpanded()
         assert panel.tree.topLevelItem(0).isExpanded()   # the document row
-        assert _shows(b, "expand_all")
+        assert _shows(b, "layers_expand")
     finally:
         _close(win)
 
@@ -269,8 +260,8 @@ def test_unfolding_by_hand_turns_it_into_collapse_all():
     try:
         item = panel._items[id(edificio)]
         item.setExpanded(False)
-        assert _shows(panel._expand_btn, "expand_all")
+        assert _shows(panel._expand_btn, "layers_expand")
         item.setExpanded(True)                  # the arrow, by hand
-        assert _shows(panel._expand_btn, "collapse_all")
+        assert _shows(panel._expand_btn, "layers_collapse")
     finally:
         _close(win)

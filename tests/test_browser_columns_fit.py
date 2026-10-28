@@ -7,8 +7,9 @@ to appear at all. Turning one on makes room for it (Name first) and scrolls
 to it; turning it off gives the room back."""
 from __future__ import annotations
 
-from views.outliner import (COL_COPIES, COL_IFC, COL_LAYER, COL_MATERIAL,
-                            COL_NAME, COL_TYPE)
+from views.outliner import (COL_COPIES, COL_EYE, COL_IFC, COL_ISOLATE,
+                            COL_LAYER, COL_LOCK, COL_MATERIAL, COL_NAME,
+                            COL_TYPE)
 
 
 def _panel():
@@ -97,11 +98,12 @@ def _visual(panel):
 
 
 def test_the_eye_and_the_padlock_come_before_the_name():
-    from views.outliner import COL_EYE, COL_LOCK
+    from views.outliner import COL_EYE, COL_ISOLATE, COL_LOCK
     win, panel = _panel()
     try:
-        assert _visual(panel)[:5] == [COL_EYE, COL_LOCK, COL_NAME, COL_TYPE,
-                                      COL_LAYER]
+        # Copies (off until turned on) right after Layer, to be read there.
+        assert _visual(panel)[:7] == [COL_EYE, COL_LOCK, COL_ISOLATE, COL_NAME,
+                                      COL_TYPE, COL_LAYER, COL_COPIES]
         assert panel.tree.treePosition() == COL_NAME   # branches on names
     finally:
         _close(win, panel)
@@ -394,3 +396,169 @@ def test_widths_set_by_hand_grow_too_and_come_back_to_the_users():
         assert again[COL_TYPE] == 60                 # the user's again
     finally:
         _close(win, panel)
+
+
+# --- the columns menu: the Layers tab's way ----------------------------------
+
+def test_the_columns_menu_stays_open_and_shows_all():
+    from PySide6.QtCore import QPoint, QSettings, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+    from views.outliner import OPTIONAL_COLUMNS
+    win, panel = _panel()
+    try:
+        QSettings().setValue("browser/model_hidden_columns",
+                             ",".join(str(c) for c in
+                                      (COL_MATERIAL, COL_COPIES, COL_IFC)))
+        panel._apply_column_choice()
+        menu = panel._columns_menu()
+        menu.popup(QPoint(100, 100))
+        QApplication.processEvents()
+        acts = {a.text(): a for a in menu.actions() if a.text()}
+
+        def click(text):
+            r = menu.actionGeometry(acts[text])
+            QTest.mouseClick(menu, Qt.LeftButton, Qt.NoModifier, r.center())
+            QApplication.processEvents()
+
+        click("Material")
+        click("IFC class")               # a second switch: it stays open
+        assert menu.isVisible()
+        assert not panel.tree.isColumnHidden(COL_MATERIAL)
+        assert not panel.tree.isColumnHidden(COL_IFC)
+        assert panel._columns_button.text() == "+1"  # only Copies left
+        click("Show all columns")
+        assert menu.isVisible()
+        assert not any(panel.tree.isColumnHidden(c) for c, _l, _s
+                       in OPTIONAL_COLUMNS)
+        assert all(a.isChecked() for a in acts.values() if a.isCheckable())
+        menu.close()
+        assert panel._columns_button.text() == "⋮"
+    finally:
+        _close(win, panel)
+
+
+def test_default_columns_puts_the_daily_set_back():
+    from PySide6.QtCore import QSettings
+    win, panel = _panel()
+    try:
+        QSettings().setValue("browser/model_hidden_columns", "")   # all on
+        panel._apply_column_choice()
+        menu = panel._columns_menu()
+        next(a for a in menu.actions() if a.text() == "Default columns").trigger()
+        assert panel._hidden_columns() == {COL_MATERIAL, COL_COPIES, COL_IFC}
+        assert not panel.tree.isColumnHidden(COL_TYPE)
+        assert not panel.tree.isColumnHidden(COL_LAYER)
+        assert panel.tree.isColumnHidden(COL_MATERIAL)
+        assert panel._columns_button.text() == "+3"
+    finally:
+        _close(win, panel)
+
+
+def _copies_model(win, panel):
+    """Three copies of a component and a plain group."""
+    from PySide6.QtGui import QMatrix4x4, QVector3D
+    from core.group import Group
+    from core.mesh import Mesh
+    mesh = Mesh()
+    mesh.add_face([QVector3D(0, 0, 0), QVector3D(1, 0, 0),
+                   QVector3D(1, 1, 0), QVector3D(0, 1, 0)])
+    copies = []
+    for _ in range(3):
+        g = Group(mesh, name="Chair")
+        g.component = True
+        g.xform = QMatrix4x4()
+        copies.append(g)
+    plain = Group(Mesh(), name="Wall")
+    scene = win.viewport.scene
+    scene.groups[:] = copies + [plain]
+    scene.version += 1
+    panel.refresh()
+    return copies, plain
+
+
+def test_copies_turned_on_sit_after_the_layer_and_read_the_count():
+    """Past Type and Layer, the Copies column landed beyond the right edge
+    of a sidebar-wide panel — on again after a restart, out of view. Turned
+    on, it sits right after Layer, in view with the names, and stays there.
+    It starts off: the daily set does not change."""
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+    QSettings().remove("browser/model_hidden_columns")   # never chosen
+    # An order saved before: Copies past Type, Layer and Material.
+    QSettings().setValue("browser/model_column_order", ",".join(str(c) for c in (
+        COL_EYE, COL_LOCK, COL_ISOLATE, COL_NAME, COL_TYPE, COL_LAYER,
+        COL_MATERIAL, COL_COPIES, COL_IFC)))
+    win, panel = _panel()
+    try:
+        _sized(panel, 439)                    # the factory tray's width
+        assert panel.tree.isColumnHidden(COL_COPIES)     # off by default
+        copies, plain = _copies_model(win, panel)
+        panel.set_column_shown(COL_COPIES, True)
+        for _ in range(5):
+            QApplication.processEvents()
+        head = panel.tree.header()
+        assert head.visualIndex(COL_COPIES) == head.visualIndex(COL_LAYER) + 1
+        assert _in_view(panel, COL_COPIES)
+        assert panel.tree.horizontalScrollBar().value() == 0   # names too
+        assert [panel._items[id(g)].text(COL_COPIES) for g in copies] == \
+            ["3", "3", "3"]
+        assert panel._items[id(plain)].text(COL_COPIES) == ""
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+    # The next start keeps it there, in view.
+    win, panel = _panel()
+    try:
+        _sized(panel, 439)
+        copies, _plain = _copies_model(win, panel)
+        head = panel.tree.header()
+        assert not panel.tree.isColumnHidden(COL_COPIES)
+        assert head.visualIndex(COL_COPIES) == head.visualIndex(COL_LAYER) + 1
+        assert _in_view(panel, COL_COPIES)
+        assert panel._items[id(copies[0])].text(COL_COPIES) == "3"
+    finally:
+        _close(win, panel)
+        QSettings().remove("browser/model_column_order")
+
+
+def test_copies_already_on_in_the_old_factory_order_open_after_the_layer():
+    """Turned on before Copies moved: the order saved is the old factory
+    one, never touched by hand, so it opens in the new one. An order the
+    user made is theirs and stays."""
+    from PySide6.QtCore import QSettings
+    old = (COL_EYE, COL_LOCK, COL_ISOLATE, COL_NAME, COL_TYPE, COL_LAYER,
+           COL_MATERIAL, COL_COPIES, COL_IFC)
+    QSettings().setValue("browser/model_hidden_columns",
+                         f"{COL_MATERIAL},{COL_IFC}")      # Copies on
+    QSettings().setValue("browser/model_column_order",
+                         ",".join(str(c) for c in old))
+    win, panel = _panel()
+    try:
+        head = panel.tree.header()
+        assert head.visualIndex(COL_COPIES) == head.visualIndex(COL_LAYER) + 1
+    finally:
+        _close(win, panel)
+    mine = (COL_EYE, COL_LOCK, COL_ISOLATE, COL_NAME, COL_LAYER, COL_TYPE,
+            COL_MATERIAL, COL_COPIES, COL_IFC)              # Layer moved
+    QSettings().setValue("browser/model_column_order",
+                         ",".join(str(c) for c in mine))
+    win, panel = _panel()
+    try:
+        assert _visual(panel) == list(mine)
+    finally:
+        _close(win, panel)
+        QSettings().remove("browser/model_column_order")
+
+
+def test_the_columns_menu_reads_show_all_switches_then_defaults():
+    from views.outliner import OPTIONAL_COLUMNS
+    win, panel = _panel()
+    try:
+        texts = [a.text() for a in panel._columns_menu().actions() if a.text()]
+        assert texts[0] == "Show all columns"
+        assert texts[1:-1] == [label for _c, label, _shown in OPTIONAL_COLUMNS]
+        assert texts[-1] == "Default columns"        # nothing after it
+    finally:
+        _close(win, panel)
+

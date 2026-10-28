@@ -51,10 +51,16 @@ from core import outliner
 from core.group import Group
 from core.i18n import tr
 from core.section import SectionPlane
+from views.layers_toolbar import isolate_icon
+from views.side_tree import SideTree, StayOpenMenu, _HeaderButton
 
 # Model tab columns.
 (COL_NAME, COL_EYE, COL_LOCK, COL_TYPE, COL_LAYER, COL_MATERIAL, COL_COPIES,
  COL_IFC) = range(8)
+#: The isolate target. It sits after the padlock on screen (COLUMN_ORDER)
+#: but is numbered last, so the columns before it and the rows' state
+#: tuples keep the order they had.
+COL_ISOLATE = 8
 #: Columns the header's right-click shows or hides, and which start shown.
 OPTIONAL_COLUMNS = ((COL_TYPE, "Type", True), (COL_LAYER, "Layer", True),
                     (COL_MATERIAL, "Material", False),
@@ -245,9 +251,15 @@ def _draw(key: str):
     return QIcon(pm)
 
 
-def _faded(icon: QIcon, size: int = 16) -> QIcon:
+#: The size every mark of a row is drawn at (eye, padlock, target): the
+#: same in the Browser and in the Layers tab.
+MARK_SIZE = 18
+
+
+def _faded(icon: QIcon, size: int = MARK_SIZE) -> QIcon:
     """``icon`` at 40 %: the eye or padlock a row inherits from a group
-    around it — closed, but not its own."""
+    around it — closed, but not its own — at the row's own size, only
+    fainter (16 px made an inherited mark smaller than its neighbours)."""
     src = icon.pixmap(size, size)
     pm = QPixmap(src.size())
     pm.setDevicePixelRatio(src.devicePixelRatio())
@@ -257,6 +269,14 @@ def _faded(icon: QIcon, size: int = 16) -> QIcon:
     p.drawPixmap(0, 0, src)
     p.end()
     return QIcon(pm)
+
+
+def mark_icon(key: str, inherited: bool = False) -> QIcon:
+    """A row's mark — ``eye``, ``eye_off``, ``lock``, ``lock_open``,
+    ``isolate``… — as the two side trees draw it: same drawing, same size,
+    and faded when the state comes from the group around it."""
+    icon = node_icon(key)
+    return _faded(icon) if inherited else icon
 
 
 def inherited_states(groups) -> dict:
@@ -280,7 +300,12 @@ def node_icon(key: str) -> QIcon:
     ``image``, ``text``, ``document``, ``scene``, ``sheet``, ``frame``,
     ``eye``, ``eye_off``, ``warning``."""
     if key not in _ICONS:
-        if key in ("image", "text", "sections"):
+        if key.startswith("layers_"):
+            # The Layers bar's icons (views/icons.py): the two trees draw
+            # the same buttons with the same set.
+            from views.icons import tool_icon
+            _ICONS[key] = tool_icon(key)
+        elif key in ("image", "text", "sections"):
             from views.icons import tool_icon
             _ICONS[key] = tool_icon({"image": "image", "text": "text3d",
                                      "sections": "section_planes"}[key])
@@ -356,90 +381,6 @@ def _tool_button(text: str, tip: str, slot) -> QToolButton:
 
 
 # ---- Model 3D ------------------------------------------------------------------
-
-class _HeaderButton(QToolButton):
-    """The columns button, in a strip of its own at the tree's right edge,
-    level with the header: the columns scroll, stretch and move under the
-    header beside it, and it stays put. Drawn as a header section — the
-    same face as the columns, after the header's own last line — so it
-    reads as part of the header, not as a stray number on the first row."""
-
-    def paintEvent(self, _ev) -> None:          # noqa: N802 — Qt override
-        from PySide6.QtWidgets import QStyleOptionHeader
-        opt = QStyleOptionHeader()
-        opt.initFrom(self)
-        opt.rect = self.rect()
-        opt.orientation = Qt.Horizontal
-        opt.position = QStyleOptionHeader.End
-        opt.text = self.text()
-        opt.textAlignment = Qt.AlignCenter
-        if self.isDown():
-            opt.state |= QStyle.State_Sunken
-        else:
-            opt.state |= QStyle.State_Raised
-        if self.underMouse():
-            opt.state |= QStyle.State_MouseOver
-        p = QPainter(self)
-        p.setFont(self.font())
-        self.style().drawControl(QStyle.CE_Header, opt, p, self)
-        # The line before it. The header's last column draws none on its
-        # right (the style leaves the end of a header open), so the style
-        # draws it here: a section beside this one, its right edge — the
-        # separator every other column has — 1 px inside this button, the
-        # rest clipped away. 2 px of clip: at 125 % display scaling one
-        # logical pixel falls between device pixels and the line vanished.
-        r = self.rect()
-        edge = QStyleOptionHeader()
-        edge.initFrom(self)
-        edge.orientation = Qt.Horizontal
-        edge.position = QStyleOptionHeader.Middle
-        edge.state |= QStyle.State_Raised
-        edge.rect = r.translated(-r.width() + 2, 0)
-        p.setClipRect(0, 0, 2, r.height())
-        self.style().drawControl(QStyle.CE_HeaderSection, edge, p, self)
-        p.end()
-
-
-class _StripFiller(QWidget):
-    """The strip kept at the tree's right for the columns button, below the
-    button: painted as the rows beside it — their tone, alternate or not,
-    and the selection's — so it reads as their end, not as a lighter band
-    (the frame behind it shows the window's colour)."""
-
-    def __init__(self, tree) -> None:
-        super().__init__(tree)
-        self._tree = tree
-
-    def paintEvent(self, _ev) -> None:          # noqa: N802 — Qt override
-        from PySide6.QtCore import QPoint
-        tree = self._tree
-        pal = tree.palette()
-        p = QPainter(self)
-        p.fillRect(self.rect(), pal.color(QPalette.Base))
-        vp = tree.viewport()
-        y = 0
-        odd = None
-        while y < vp.height():
-            index = tree.indexAt(QPoint(1, y))
-            if not index.isValid():
-                break
-            rect = tree.visualRect(index)
-            if rect.height() <= 0:
-                break
-            # The first row's parity once, then every row flips it.
-            odd = tree.row_parity(index) if odd is None else not odd
-            item = tree.itemFromIndex(index)
-            if item is not None and item.isSelected():
-                colour = pal.color(QPalette.Highlight)
-            elif tree.alternatingRowColors() and odd:
-                colour = pal.color(QPalette.AlternateBase)
-            else:
-                colour = None
-            if colour is not None:
-                p.fillRect(0, rect.top(), self.width(), rect.height(), colour)
-            y = rect.bottom() + 1
-        p.end()
-
 
 def library_catalog() -> list:
     """The material library the Materials tab offers, as ``[(category,
@@ -894,82 +835,36 @@ class _MaterialCellDelegate(QStyledItemDelegate):
 _GROUP_ROLE_FLAG = Qt.UserRole + 7
 
 
-class _Tree(QTreeWidget):
-    """The tree, with the keyboard of an outliner: Space shows or hides the
-    selected rows, Enter opens the current one, Esc steps out one level,
-    Tab puts the selection into the group above it and Shift+Tab takes it
-    out one level. Rows dragged onto a group go into it; dropped between
-    rows, they go beside them."""
+class _Tree(SideTree):
+    """The Browser's tree, with the keyboard of an outliner: Space shows
+    or hides the selected rows, Enter opens the current one, Esc steps out
+    one level, Tab puts the selection into the group above it and Shift+Tab
+    takes it out one level. A drag carries every selected row, stacked and
+    see-through, and outlines the group it would go into — or the row it
+    would stand beside — as the Layers tab does."""
 
-    def __init__(self, panel) -> None:
-        super().__init__()
-        self._panel = panel
-        #: Width of the strip kept free at the right for the columns button.
-        self.button_strip = 0
-        self._filler = _StripFiller(self)
-        self._filler.hide()
-        # It repaints with the rows: scrolled, expanded, selected.
-        self.viewport().installEventFilter(self)
-        self.setDragEnabled(True)
-        self.setAcceptDrops(True)
-        self.setDropIndicatorShown(True)
-        self.setDragDropMode(QAbstractItemView.InternalMove)
+    #: A press on one of these acts at once and is kept from the selection:
+    #: the rows stay as selected as they were, so the eye of one of several
+    #: selected rows hides them all (as the material panel paints them all).
+    CELLS = (COL_EYE, COL_LOCK, COL_ISOLATE)
 
-    def updateGeometries(self) -> None:          # noqa: N802 — Qt override
-        """Qt lays the header over the whole viewport and sets the margins
-        for it; a strip is then kept at the right for the columns button,
-        with the header (and the rows) one strip narrower."""
-        super().updateGeometries()
-        m = self.viewportMargins()
-        if m.right() != self.button_strip:
-            self.setViewportMargins(m.left(), m.top(), self.button_strip,
-                                    m.bottom())
-        vg = self.viewport().geometry()
-        head = self.header()
-        if not head.isHidden():
-            head.setGeometry(vg.left(), vg.top() - m.top(), vg.width(),
-                             m.top())
-        b = getattr(self._panel, "_columns_button", None)
-        if b is not None:
-            g = head.geometry()
-            b.setGeometry(g.right() + 1, g.top(), b.width(), g.height())
-        self._filler.setGeometry(vg.right() + 1, vg.top(), self.button_strip,
-                                 vg.height())
-        self._filler.setVisible(self.button_strip > 0)
+    #: Delete removes the picked rows (groups, components, section planes),
+    #: as in the Layers tab; Ctrl+Z brings them back.
+    DELETE_KEY = True
 
-    def row_parity(self, index) -> bool:
-        """Whether the row of ``index`` is one the tree paints in the
-        alternate tone: every other row shown, counted from the top. For
-        the first row on screen, scrolling by rows already counts them."""
-        if (self.verticalScrollMode() == QAbstractItemView.ScrollPerItem
-                and index == self.indexAt(self.viewport().rect().topLeft())):
-            return bool(self.verticalScrollBar().value() % 2)
-        n = 0
-        above = self.indexAbove(index)
-        while above.isValid():
-            n += 1
-            above = self.indexAbove(above)
-        return bool(n % 2)
-
-    def eventFilter(self, obj, ev) -> bool:
-        from PySide6.QtCore import QEvent
-        if obj is self.viewport() and ev.type() == QEvent.Paint:
-            self._filler.update()
-        return super().eventFilter(obj, ev)
+    #: The thin band at the top edge of a row that means «beside it, at its
+    #: level»; anywhere else on a group's row means «into it». A narrow
+    #: band, because dropping ON a group is what nesting looks like: half
+    #: the row used to read as «beside», and nesting seemed to work only
+    #: with rows that already sat inside another group — beside one of
+    #: those lands inside its parent.
+    BESIDE_BAND = 0.18
 
     def mousePressEvent(self, ev) -> None:      # noqa: N802 — Qt override
-        """A press on the eye, the padlock or a Material cell's ▾ acts at
-        once and is kept from the selection: the rows stay as selected as
-        they were, so the eye of one of several selected rows hides them
-        all (as the material panel paints them all). Before, the press
-        selected that one row first, and only it was hidden."""
+        """A press on a Material cell's ▾ opens the material list at once,
+        also without touching the selection."""
         if ev.button() == Qt.LeftButton:
             index = self.indexAt(ev.position().toPoint())
-            if index.isValid() and index.column() in (COL_EYE, COL_LOCK):
-                self._panel._on_item_clicked(self.itemFromIndex(index),
-                                             index.column())
-                ev.accept()
-                return
             if (index.isValid() and index.column() == COL_MATERIAL
                     and index.data(_GROUP_ROLE_FLAG)):
                 cell = self.visualRect(index)
@@ -1001,23 +896,6 @@ class _Tree(QTreeWidget):
             return True
         return super().event(ev)
 
-    def dropEvent(self, ev) -> None:
-        """Re-nest through the panel — one undoable command — and never let
-        Qt move the rows itself: the tree follows the model, not the other
-        way round."""
-        item = self.itemAt(ev.position().toPoint())
-        if item is not None and \
-                self.dropIndicatorPosition() != QAbstractItemView.OnItem:
-            item = item.parent()            # between rows: beside them
-        ev.setDropAction(Qt.IgnoreAction)
-        ev.accept()
-        sections = self._panel._sec_root
-        if item is not None and sections is not None and (
-                item is sections or item.parent() is sections):
-            return                          # planes are not containers
-        self._panel.reparent(self._panel._selected_groups(),
-                             self._panel._group_of(item))
-
     def keyPressEvent(self, ev) -> None:
         if self.state() != QAbstractItemView.EditingState:
             key = ev.key()
@@ -1043,6 +921,91 @@ class _Tree(QTreeWidget):
                 return
         super().keyPressEvent(ev)
 
+    def mouseDoubleClickEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        """A double click on a layer heading selects its objects, and only
+        that: the heading does not also fold, as Qt's own double click
+        would have it."""
+        pos = ev.position().toPoint()
+        head = self._panel._head_of(self.itemAt(pos))
+        if (head is not None and ev.button() == Qt.LeftButton
+                and self.columnAt(pos.x()) not in self.CELLS):
+            self._panel.select_head(head)
+            ev.accept()
+            return
+        super().mouseDoubleClickEvent(ev)
+
+    # ---- Dragging --------------------------------------------------------
+    def drag_rows(self):
+        """Only groups drag: the document's row, the section planes and
+        their folder stay where they are."""
+        return [it for it in super().drag_rows()
+                if self._panel._group_of(it) is not None]
+
+    def drop_target(self, pos):
+        """The group a drop at `pos` goes into — anywhere on its row, the
+        thin band at the top edge aside, which stands the row beside it —
+        or, on a row that is not a group, the row it stands beside. Nothing:
+        the model's top level."""
+        item = self.itemAt(pos)
+        if item is None or self._panel._head_of(item) is not None:
+            return None             # a layer heading: the model's top level
+        group = self._panel._group_of(item)
+        if (group is None or item is self._panel._sec_root
+                or self._panel._plane_of(item) is not None):
+            return ("beside", item)
+        rect = self.visualItemRect(item)
+        rel = ((pos.y() - rect.top()) / rect.height()
+               if rect.height() > 0 else 1.0)
+        return ("beside", item) if rel < self.BESIDE_BAND else ("into", item)
+
+    def drop_items(self, token):
+        """The rows the outline covers: a group and what it shows inside,
+        or the single row a drop stands beside."""
+        kind, item = token
+        if kind != "into":
+            return [item]
+        items = [item]
+        stack = [item]
+        while stack:
+            node = stack.pop()
+            if not node.isExpanded():
+                continue
+            for i in range(node.childCount()):
+                child = node.child(i)
+                if child.isHidden():
+                    continue
+                items.append(child)
+                stack.append(child)
+        return items
+
+    def drop_text(self, token) -> str:
+        if token is None:
+            return tr("At the top level")
+        kind, item = token
+        group = self._panel._group_of(item)
+        name = ((group.name or tr("Unnamed group")) if group is not None
+                else item.text(COL_NAME))
+        return (tr("Into «{name}»", name=name) if kind == "into"
+                else tr("Beside «{name}»", name=name))
+
+    def apply_drop(self, token, rows) -> None:
+        """Re-nest through the panel — one undoable command — and never
+        let Qt move the rows itself: the tree follows the model, not the
+        other way round."""
+        sections = self._panel._sec_root
+        if token is None:
+            target = None
+        else:
+            kind, item = token
+            if item is None or (sections is not None and (
+                    item is sections or item.parent() is sections)):
+                return                      # planes are not containers
+            target = item if kind == "into" else item.parent()
+        picked = [g for g in (self._panel._group_of(it) for it in rows)
+                  if g is not None]
+        self._panel.reparent(picked or self._panel._selected_groups(),
+                             self._panel._group_of(target))
+
 
 class OutlinerPanel(QWidget):
     """The model's tree of groups and components (the Model 3D tab)."""
@@ -1062,50 +1025,72 @@ class OutlinerPanel(QWidget):
         #: deselected at once, the view having nothing to select. Dropped
         #: when the selection changes anywhere else.
         self._tree_only: set = set()
+        #: What Isolate left in view and what it hid, to say «alone» on the
+        #: target of those rows and to undo exactly that on the way out.
+        self._isolated: list = []
+        self._kept: list = []
         self._shown_path: tuple = ()
         self._query = ""
+        #: The funnel's quick filter and whether it is inverted: seen in
+        #: the rows, never written to the document.
+        self.state_filter = "all"
+        self.invert_filter = False
         self._kind_providers: tuple = ()
         self._root = None
         self._sec_root = None               # the «Section planes» folder
         self._sec_items: dict = {}          # id(plane) -> its row
         self._sec_state: dict = {}
         self._sec_shape = None
+        #: Ordering by layer: ``(kind, name)`` -> the heading row of a layer
+        #: or a layer folder, and the headings folded by hand — remembered
+        #: while the document stays open, as the rows' own branches.
+        self._heads: dict = {}
+        self._heads_closed: set = set()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
         lay.setSpacing(4)
         bar = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText(tr("Filter by name, type or layer…"))
+        self.search.setPlaceholderText(tr(
+            "Filter by name, type or layer… (* and ? work)"))
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._on_filter)
         bar.addWidget(self.search, 1)
-        # Isolate and Show all in one button, as they undo each other:
-        # with nothing hidden it isolates the selection; with anything
-        # hidden (isolated, or hidden by hand) it shows it all, pressed.
+        # The funnel: the Layers tab's quick filters, for rows instead of
+        # layers. Same icon and the same filled state when it narrows.
+        self.filter_btn = _tool_button("", tr("Filter rows"),
+                                       self._open_filter_menu)
+        self.filter_btn.setIcon(node_icon("layers_filter"))
+        bar.addWidget(self.filter_btn)
+        self._show_filter_state()
         # Rename: one row in place, several rows at once (Rename selected).
         self._rename_btn = _tool_button("", tr(
             "Rename (F2): several selected rows at once — a name and a "
             "number, find and replace, a prefix or a suffix; one row in "
             "place; nothing selected: every row the filter shows"),
             self._rename_picked)
-        self._rename_btn.setIcon(node_icon("rename"))
+        self._rename_btn.setIcon(node_icon("layers_rename"))
         bar.addWidget(self._rename_btn)
-        self._isolate_btn = _tool_button("", "", self._isolate_or_show)
-        self._isolate_btn.setCheckable(True)
-        bar.addWidget(self._isolate_btn)
-        self._update_isolate_button()
         # Expand all and Collapse all in one button too: ⊞ while a branch
         # is folded, ⊟ once everything is open.
         self._expand_btn = _tool_button("", tr("Expand all"),
                                         self._expand_or_collapse)
-        self._expand_btn.setIcon(node_icon("expand_all"))
+        self._expand_btn.setIcon(node_icon("layers_expand"))
         bar.addWidget(self._expand_btn)
+        # Order: the document's, by layer or by name. A way of reading the
+        # tree — the model is left as it is, so drag, rename and isolate go
+        # on working on the same groups.
+        self._order_btn = _tool_button("", tr(
+            "Order the rows: as the model holds them, by layer or by name"),
+            self._open_order_menu)
+        self._order_btn.setIcon(node_icon("layers_order"))
+        bar.addWidget(self._order_btn)
         lay.addLayout(bar)
         self.tree = _Tree(self)
-        self.tree.setColumnCount(8)
+        self.tree.setColumnCount(9)
         self.tree.setHeaderLabels([tr("Name"), "", "", tr("Type"),
                                    tr("Layer"), tr("Material"), tr("Copies"),
-                                   tr("IFC class")])
+                                   tr("IFC class"), ""])
         head = self.tree.header()
         # The Name column is the user's to size — drag its edge in the
         # header; the width is remembered. The last column takes the rest.
@@ -1119,6 +1104,8 @@ class OutlinerPanel(QWidget):
         head.resizeSection(COL_EYE, 26)
         head.setSectionResizeMode(COL_LOCK, QHeaderView.Fixed)
         head.resizeSection(COL_LOCK, 26)
+        head.setSectionResizeMode(COL_ISOLATE, QHeaderView.Fixed)
+        head.resizeSection(COL_ISOLATE, 26)
         head.setSectionResizeMode(COL_TYPE, QHeaderView.Interactive)
         head.resizeSection(COL_TYPE, 110)
         head.setSectionResizeMode(COL_LAYER, QHeaderView.Interactive)
@@ -1151,10 +1138,10 @@ class OutlinerPanel(QWidget):
         self.tree.horizontalScrollBar().valueChanged.connect(
             lambda _v: self._place_columns_button())
         self._apply_column_choice()
-        # The eye and the padlock come first, before the name; the tree's
-        # branches stay on the Name column wherever it sits. The columns
-        # can be dragged to another order, which is remembered; Window ▸
-        # Panels ▸ Restore default panels puts them back.
+        # The eye, the padlock and the target come first, before the name;
+        # the tree's branches stay on the Name column wherever it sits. The
+        # columns can be dragged to another order, which is remembered;
+        # Window ▸ Panels ▸ Restore default panels puts them back.
         self.tree.setTreePosition(COL_NAME)
         self._material_delegate = _MaterialCellDelegate(self.tree)
         self.tree.setItemDelegateForColumn(COL_MATERIAL,
@@ -1176,6 +1163,10 @@ class OutlinerPanel(QWidget):
         self.tree.headerItem().setToolTip(COL_LOCK, tr(
             "Locked: drawn, but it cannot be picked, selected or opened — "
             "click to lock everything, or to unlock it all again"))
+        self.tree.headerItem().setIcon(COL_ISOLATE, isolate_icon(False))
+        self.tree.headerItem().setToolTip(COL_ISOLATE, tr(
+            "Isolate — a row's target shows only that group, a second click "
+            "shows back what it hid; click here to end the isolation"))
         # The eye's and the padlock's own headers act on the whole model.
         head.setSectionsClickable(True)
         head.sectionClicked.connect(self._on_header_clicked)
@@ -1192,8 +1183,9 @@ class OutlinerPanel(QWidget):
         self.tree.setToolTip(tr(
             "Click to select in the model; double-click or Enter opens the "
             "group. The eye (or Space) shows or hides, the padlock locks; "
-            "F2 renames; Esc steps out one level. Drag rows onto a group, "
-            "or press Tab / Shift+Tab, to move them in or out of it."))
+            "F2 renames; Delete removes the picked rows; Esc steps out one "
+            "level. Drag rows onto a group, or press Tab / Shift+Tab, to "
+            "move them in or out of it."))
         self.tree.itemSelectionChanged.connect(self._on_tree_selection)
         self.tree.itemSelectionChanged.connect(self._update_rename_button)
         self.tree.itemClicked.connect(self._on_item_clicked)
@@ -1281,16 +1273,19 @@ class OutlinerPanel(QWidget):
         if self.tree.state() == QAbstractItemView.EditingState:
             return                      # a rename in progress: leave it be
         self._stale = False
-        self._update_isolate_button()
+        # The rows Isolate left in view on their own: read once, not once
+        # per row (a walk of the model per row would cost a big document).
+        self._alone_ids = {id(g) for g in self._alone_now()}
         self._kind_providers = tuple(
             getattr(self._window, "_outliner_kinds", None) or ())
         scene = self._scene()
-        shape = outliner.structure(scene.groups)
+        shape = self._rows_shape(scene)
+        struct = outliner.structure(scene.groups)
         # A click changes the view, not the rows: with the content and the
         # open path as they were, every row reads as it did (21 406 rows
         # read again after each click on the plant of #158, ~0.15 s).
         rows_key = (getattr(scene, "content_version", None), id(scene),
-                    shape, tuple(id(g) for g in outliner.open_path(scene)),
+                    struct, tuple(id(g) for g in outliner.open_path(scene)),
                     self._kind_providers, self._document_name())
         old_key = getattr(self, "_rows_key", None)
         hist = getattr(self._window.viewport, "history", None)
@@ -1322,10 +1317,14 @@ class OutlinerPanel(QWidget):
                     == rows_key[0])
         patched = False
         if shape != self._shape:
-            patched = groups_only and self._patch_rows(scene, shape)
+            order_same = (self._shape is not None
+                          and shape[1:] == self._shape[1:])
+            patched = (groups_only and order_same and not self._heads
+                       and self._patch_rows(scene, struct))
             if not patched:
                 self._rebuild(scene)
             self._shape = shape
+            self._struct_shape = struct
         # Nor does a Move (History.rows_cv) — unless an extension's kind
         # adds properties to the rows, which may well be sizes.
         moved_only = (old_key is not None and not self._kind_providers
@@ -1343,7 +1342,8 @@ class OutlinerPanel(QWidget):
                 hist.groups_cv["rows"] = rows_key[0]
         self._rows_key = rows_key
         self._sync_sections(scene)
-        if self._query:
+        self._paint_heads(scene)
+        if self._filters_active():
             self._apply_filter()
         self._sync_selection(scene)
         self._empty.setVisible(not self._items)
@@ -1374,11 +1374,13 @@ class OutlinerPanel(QWidget):
         self._rows_key = None
         self._root = None
         self._shape = None
+        self._heads = {}
+        self._heads_closed = set()
 
     def _update_summary(self) -> None:
         """The footer: what the model holds, or what the filter found."""
         total = len(self._state)
-        if self._query:
+        if self._filters_active():
             text = tr("{shown} of {total} match", shown=self._matches,
                       total=total)
         else:
@@ -1398,6 +1400,11 @@ class OutlinerPanel(QWidget):
         expanded = {self._groups[key].uid
                     for key, item in self._items.items() if item.isExpanded()}
         expanded |= self.__dict__.pop("_kept_expanded", set())
+        for key, item in self._heads.items():
+            if item.isExpanded():
+                self._heads_closed.discard(key)
+            else:
+                self._heads_closed.add(key)
         scroll = self.tree.verticalScrollBar().value()
         counts = self._counts = outliner.instance_counts(scene.groups)
         opened = {id(g) for g in outliner.open_path(scene)}
@@ -1415,9 +1422,10 @@ class OutlinerPanel(QWidget):
             font.setBold(True)
             root.setFont(COL_NAME, font)
             self.tree.addTopLevelItem(root)
+            self._heads = self._make_heads(scene, root)
             editable = Qt.ItemIsEditable
             around = inherited_states(scene.groups)
-            for g, parent, _depth in outliner.walk(scene.groups):
+            for g, parent, _depth in self._display_walk(scene):
                 key = id(g)
                 state = self._row_state(g, counts, opened,
                                         around.get(key, (None, None)))
@@ -1427,12 +1435,17 @@ class OutlinerPanel(QWidget):
                 item.setData(COL_NAME, Qt.UserRole, g)
                 item.setFlags(item.flags() | editable)
                 self._paint(item, None, state)
-                (root if parent is None
-                 else self._items[id(parent)]).addChild(item)
+                if parent is not None:
+                    holder = self._items[id(parent)]
+                else:
+                    holder = self._heads.get(("layer", state[2]), root)
+                holder.addChild(item)
                 self._items[key] = item
                 self._groups[key] = g
                 self._state[key] = state
             root.setExpanded(True)
+            for key, head in self._heads.items():
+                head.setExpanded(key not in self._heads_closed)
             sec = self._sec_root = QTreeWidgetItem(["", "", "", "", ""])
             sec.setIcon(COL_NAME, node_icon("sections"))
             sec.setFlags(Qt.ItemIsEnabled)
@@ -1461,7 +1474,7 @@ class OutlinerPanel(QWidget):
         its parent and its order (``False`` otherwise, nothing touched).
         Making all 21 406 rows again after a Delete or a Paste on the plant
         of #158 took ~0.8 s; this, the rows that changed."""
-        old = self._shape
+        old = getattr(self, "_struct_shape", None)
         if old is None or self._root is None:
             return False
         was = {k for k, _p in old}
@@ -1562,9 +1575,10 @@ class OutlinerPanel(QWidget):
     def _row_state(self, g, counts, opened, inherited=(None, None)) -> tuple:
         """Everything a row shows: ``(name, type, layer, kind, hidden,
         open, locked, material, copies, IFC class, properties, hidden by,
-        locked by)`` — compared as one tuple, so an unchanged row costs no
-        Qt call at all. The last two name the group around it that hides
-        or locks it (``""`` when none)."""
+        locked by, alone)`` — compared as one tuple, so an unchanged row
+        costs no Qt call at all. The three last name the group around it
+        that hides or locks it (``""`` when none) and whether Isolate left
+        it in view on its own."""
         custom = outliner.custom_kind(g, self._providers())
         props = "\n".join(f"{k}: {v}" for k, v in custom["props"]) \
             if custom else ""
@@ -1579,7 +1593,8 @@ class OutlinerPanel(QWidget):
                 (inherited[0].name or tr("Unnamed group"))
                 if inherited[0] is not None else "",
                 (inherited[1].name or tr("Unnamed group"))
-                if inherited[1] is not None else "")
+                if inherited[1] is not None else "",
+                id(g) in getattr(self, "_alone_ids", ()))
 
     def _paint(self, item, old, new) -> None:
         """Bring ``item`` from the ``old`` state (``None``: just made, texts
@@ -1608,15 +1623,15 @@ class OutlinerPanel(QWidget):
         if old is None or old[4] != hidden or old[11] != hidden_by:
             item.setData(COL_EYE, Qt.UserRole, hidden)
             if hidden:
-                item.setIcon(COL_EYE, node_icon("eye_off"))
+                item.setIcon(COL_EYE, mark_icon("eye_off"))
                 item.setToolTip(COL_EYE, "")
             elif hidden_by:
                 # Hidden by the group around it: closed, faded, not its own.
-                item.setIcon(COL_EYE, _faded(node_icon("eye_off")))
+                item.setIcon(COL_EYE, mark_icon("eye_off", inherited=True))
                 item.setToolTip(COL_EYE, tr("Hidden by «{name}»",
                                             name=hidden_by))
             else:
-                item.setIcon(COL_EYE, node_icon("eye"))
+                item.setIcon(COL_EYE, mark_icon("eye"))
                 item.setToolTip(COL_EYE, "")
             grey = hidden or bool(hidden_by)
             if grey or old is not None:
@@ -1631,15 +1646,23 @@ class OutlinerPanel(QWidget):
         if old is None or old[6] != locked or old[12] != locked_by:
             item.setData(COL_LOCK, Qt.UserRole, locked)
             if locked:
-                item.setIcon(COL_LOCK, node_icon("lock"))
+                item.setIcon(COL_LOCK, mark_icon("lock"))
                 item.setToolTip(COL_LOCK, "")
             elif locked_by:
-                item.setIcon(COL_LOCK, _faded(node_icon("lock")))
+                item.setIcon(COL_LOCK, mark_icon("lock", inherited=True))
                 item.setToolTip(COL_LOCK, tr("Locked by «{name}»",
                                              name=locked_by))
             else:
-                item.setIcon(COL_LOCK, node_icon("lock_open"))
+                item.setIcon(COL_LOCK, mark_icon("lock_open"))
                 item.setToolTip(COL_LOCK, "")
+        alone = new[13]
+        if old is None or old[13] != alone:
+            # The Layers tab's own mark, so a target reads the same in
+            # both lists: faint when idle, solid when the row is alone.
+            item.setIcon(COL_ISOLATE, isolate_icon(alone))
+            item.setToolTip(COL_ISOLATE, tr(
+                "Shown alone — click to show back what Isolate hid") if alone
+                else tr("Isolate: show only this group"))
 
     def _update_rows(self, scene) -> None:
         counts = self._counts = outliner.instance_counts(scene.groups)
@@ -1730,44 +1753,411 @@ class OutlinerPanel(QWidget):
         self._shown_selection = chosen
 
     # ---- Filter --------------------------------------------------------------
+    #: The funnel's quick filters, in menu order: (key, label).
+    STATE_FILTERS = (
+        ("all", "All rows"),
+        ("visible", "Visible rows"),
+        ("hidden", "Hidden rows"),
+        ("locked", "Locked rows"),
+        ("selection", "Rows of the selection"),
+        ("components", "Components"),
+        ("images", "Images"),
+        ("sections", "Section planes"),
+    )
+
     def _on_filter(self, text: str) -> None:
         self._query = text.strip().casefold()
         self._apply_filter()
         self._update_summary()
 
+    def _filters_active(self) -> bool:
+        """Whether anything narrows the rows: the search, the funnel, or
+        its inversion."""
+        return bool(self._query) or self.state_filter != "all" \
+            or self.invert_filter
+
+    def set_state_filter(self, key: str) -> None:
+        """The funnel's quick filter — ``all``, ``visible``, ``hidden``,
+        ``locked``, ``selection``, ``components``, ``images`` or
+        ``sections`` (the section planes alone) — combined with the search
+        text."""
+        self.state_filter = key if key in dict(self.STATE_FILTERS) else "all"
+        self._show_filter_state()
+        self._apply_filter()
+        self._update_summary()
+
+    def set_invert_filter(self, on: bool) -> None:
+        self.invert_filter = bool(on)
+        self._show_filter_state()
+        self._apply_filter()
+        self._update_summary()
+
+    def _state_label(self, key: str) -> str:
+        return dict(self.STATE_FILTERS).get(key, "All rows")
+
+    def _show_filter_state(self) -> None:
+        """The funnel fills when a filter narrows the list, and its tooltip
+        names it — the Layers tab's own mark."""
+        on = self.state_filter != "all" or self.invert_filter
+        self.filter_btn.setIcon(node_icon(
+            "layers_filter_on" if on else "layers_filter"))
+        tip = tr("Filter: {name}", name=tr(self._state_label(
+            self.state_filter)))
+        if self.invert_filter:
+            tip += " · " + tr("inverted")
+        self.filter_btn.setToolTip(tip)
+
+    def _open_filter_menu(self) -> None:
+        from PySide6.QtGui import QActionGroup
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self.filter_btn)
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        for key, label in self.STATE_FILTERS:
+            act = menu.addAction(tr(label))
+            act.setCheckable(True)
+            act.setChecked(self.state_filter == key)
+            group.addAction(act)
+            act.triggered.connect(lambda _c=False, k=key:
+                                  self.set_state_filter(k))
+        menu.addSeparator()
+        inv = menu.addAction(tr("Invert filter"))
+        inv.setCheckable(True)
+        inv.setChecked(self.invert_filter)
+        inv.setStatusTip(tr("Show the rows the filter leaves out."))
+        inv.toggled.connect(self.set_invert_filter)
+        menu.exec(self.filter_btn.mapToGlobal(
+            self.filter_btn.rect().bottomLeft()))
+
+    def _row_passes_state(self, group) -> bool:
+        """Whether a row passes the funnel's quick filter. Hidden and
+        locked count as the row shows them: its own mark, or the one it
+        inherits from a group around it. A layer's visibility is not the
+        row's eye, so it is not read here."""
+        key = self.state_filter
+        if key == "all":
+            return True
+        state = self._state.get(id(group))
+        if state is None:
+            return False
+        if key == "visible":
+            return not state[4] and not state[11]
+        if key == "hidden":
+            return bool(state[4] or state[11])
+        if key == "locked":
+            return bool(state[6] or state[12])
+        if key == "selection":
+            return group in self._scene().selection
+        if key == "components":
+            return group.is_component()
+        if key == "images":
+            return outliner.kind(group) == "image"
+        if key == "sections":
+            return False                    # the section planes alone
+        return True
+
+    def _plane_passes_state(self, plane) -> bool:
+        """The section planes' side of the funnel: they can be visible or
+        hidden and selected, and «Section planes» shows them alone; they are
+        never locked, components or images."""
+        key = self.state_filter
+        if key in ("all", "sections"):
+            return True
+        scene = self._scene()
+        shown = (not getattr(plane, "hidden", False)
+                 and scene.entity_visible(plane))
+        if key == "visible":
+            return shown
+        if key == "hidden":
+            return not shown
+        if key == "selection":
+            return plane in scene.selection
+        return False
+
     def _apply_filter(self) -> None:
-        """Hide the rows the filter leaves out — no rebuild: a filter typed
-        letter by letter over thousands of rows only flips their flag."""
+        """Hide the rows the search and the funnel leave out — no rebuild:
+        a filter typed letter by letter over thousands of rows only flips
+        their flag. The containers on the way to a match stay, and unfold
+        to reveal it."""
         self._filter_sections()
-        if not self._query:
+        if not self._filters_active():
             self._matches = len(self._items)
             for item in self._items.values():
                 if item.isHidden():
                     item.setHidden(False)
+            self._filter_heads()
             return
         scene = self._scene()
         counts = outliner.instance_counts(scene.groups)
         keep, hit = outliner.filter_keep(
             scene.groups, self._query,
-            lambda g: self._type_text(g, counts))
+            lambda g: self._type_text(g, counts),
+            self._row_passes_state, self.invert_filter)
         self._matches = len(hit)
         for key, item in self._items.items():
             item.setHidden(key not in keep)
             if key in keep and key not in hit:
                 item.setExpanded(True)
+        self._filter_heads()
+
+    def _filter_heads(self) -> None:
+        """A layer or folder heading shows while a row under it does: the
+        filter leaves no empty heading behind. Inner headings come after
+        their folder's, so they are settled first walking backwards."""
+        for item in reversed(list(self._heads.values())):
+            shown = any(not item.child(i).isHidden()
+                        for i in range(item.childCount()))
+            if item.isHidden() == shown:
+                item.setHidden(not shown)
+
+    # ---- Order ---------------------------------------------------------------
+    #: QSettings key of the rows' order: the document's, by layer or by name.
+    ORDER_KEY = "browser/order"
+
+    @property
+    def order_by(self) -> str:
+        from PySide6.QtCore import QSettings
+        v = str(QSettings().value(self.ORDER_KEY, "document") or "document")
+        return v if v in dict(self.ORDERS) else "document"
+
+    def set_order_by(self, how: str) -> None:
+        """Order the rows as the model holds them, by layer or by name —
+        siblings only: a group stays inside its parent. A way of reading
+        the tree, remembered between sessions; the model is left as it
+        is."""
+        from PySide6.QtCore import QSettings
+        how = how if how in dict(self.ORDERS) else "document"
+        if how == self.order_by:
+            return
+        QSettings().setValue(self.ORDER_KEY, how)
+        self._shape = None              # the same rows, in another order
+        self.refresh()
+
+    #: The ways to order the rows, in menu order: (key, label).
+    ORDERS = (("document", "Document order"),
+              ("layer", "Order by layer"),
+              ("name", "Order by name"))
+
+    def _fill_order_actions(self, menu) -> None:
+        from PySide6.QtGui import QActionGroup
+        group = QActionGroup(menu)
+        for key, label in self.ORDERS:
+            act = menu.addAction(tr(label))
+            act.setCheckable(True)
+            act.setChecked(self.order_by == key)
+            # A choice, not a switch: the menu closes on it even when it is
+            # one of the ones that stay open for the columns.
+            act.setProperty("close", True)
+            group.addAction(act)
+            act.triggered.connect(lambda _c=False, k=key: self.set_order_by(k))
+
+    def _open_order_menu(self) -> None:
+        from PySide6.QtWidgets import QMenu
+        b = self._order_btn
+        menu = QMenu(b)
+        self._fill_order_actions(menu)
+        menu.exec(b.mapToGlobal(b.rect().bottomLeft()))
+
+    def _layer_outline(self, scene) -> list:
+        """The layers and their folders as the Layers tab lists them now —
+        its sort and its folders — or, without the tab, in the order they
+        were made: ``(kind, name, depth)``."""
+        dock = getattr(self._window, "layers_dock", None)
+        panel = getattr(dock, "panel", None)
+        if panel is not None and hasattr(panel, "display_outline"):
+            # Behind another tab the Layers list waits to be shown: a layer
+            # made or filed since is read in its place, not guessed at.
+            # Never under a name being typed there.
+            if (getattr(panel, "_drawn_signature", None) != panel._signature()
+                    and panel.tree.state()
+                    != QAbstractItemView.EditingState):
+                self._reading_outline = True
+                try:
+                    panel.refresh()
+                finally:
+                    self._reading_outline = False
+            outline = panel.display_outline()
+            # A layer the tab has not listed yet (it waits to be shown):
+            # after the ones it lists, in the order they were made.
+            listed = {n for k, n, _d in outline if k == "layer"}
+            return outline + [row for row in outliner.layer_outline(scene)
+                              if row[0] == "layer" and row[1] not in listed]
+        return outliner.layer_outline(scene)
+
+    def _layer_rank(self, scene) -> dict:
+        """``{layer name: place}`` in the Layers tab's order: a group's
+        children sort by it."""
+        return outliner.outline_rank(self._layer_outline(scene))
+
+    def _display_walk(self, scene) -> list:
+        """The rows' groups in the order they show: the document's, each
+        container's children by layer (in the Layers tab's own order), or
+        by name with the numbers read as numbers."""
+        if self.order_by == "name":
+            return outliner.walk_by_name(scene.groups)
+        if self.order_by != "layer":
+            return outliner.walk(scene.groups)
+        return outliner.walk_by_layer(scene.groups, self._layer_rank(scene))
+
+    def _rows_shape(self, scene) -> tuple:
+        """What tells whether the rows are the right ones in the right
+        order: the model's shape and, ordering by layer, each row's layer
+        and the order the layers are in (a layer filed into another folder,
+        or the Layers tab sorted another way, moves the rows without
+        changing any of their layers); ordering by name, the names (a
+        renamed row moves to its place)."""
+        shape = outliner.structure(scene.groups)
+        if self.order_by == "name":
+            return (shape, "name",
+                    tuple((id(g), g.name or "")
+                          for g, _p, _d in outliner.walk(scene.groups)))
+        if self.order_by != "layer":
+            return (shape, False)
+        return (shape, True,
+                tuple((id(g), outliner.layer_name(g))
+                      for g, _p, _d in outliner.walk(scene.groups)),
+                tuple(self._layer_outline(scene)))
+
+    def _make_heads(self, scene, root) -> dict:
+        """Ordering by layer, a heading row under the document's for every
+        layer a top-level group is on, inside the headings of its folders —
+        each folds and unfolds on its own. Not groups: they never drag,
+        select or rename, and nothing of them reaches the model. Ordering
+        as the document holds them: none."""
+        if self.order_by != "layer":
+            return {}
+        from collections import Counter
+        from core import layers as L
+        from views.layers_panel import layer_swatch
+        on_layer = Counter(outliner.layer_name(g) for g in scene.groups)
+        heads: dict = {}
+        tip = tr("Double-click to select its objects in the model")
+        for kind, name, parent in outliner.layer_headings(
+                self._layer_outline(scene), set(on_layer)):
+            if kind == "folder":
+                count = sum(on_layer[n] for n in L.layers_in_folder(scene, name))
+            else:
+                count = on_layer[name]
+            # The count of top-level objects, seen without unfolding.
+            item = QTreeWidgetItem([f"{name} · {count}"])
+            item.setData(COL_NAME, Qt.UserRole, ("heading", kind, name))
+            item.setFlags(Qt.ItemIsEnabled)
+            item.setToolTip(COL_NAME, tip)
+            if kind == "folder":
+                item.setIcon(COL_NAME, node_icon("folder"))
+                item.setText(COL_TYPE, tr("Folder"))
+            else:
+                item.setIcon(COL_NAME, layer_swatch(scene.layer(name)))
+                item.setText(COL_TYPE, tr("Layer"))
+            heads.get(("folder", parent), root).addChild(item)
+            heads[(kind, name)] = item
+        self._head_marks = {}
+        return heads
+
+    def _head_layers(self, head) -> list:
+        """The layers a heading stands for: its own, or every layer in the
+        folder (and the folders inside it) — the ones the model has."""
+        from core import layers as L
+        kind, name = head
+        scene = self._scene()
+        names = (L.layers_in_folder(scene, name) if kind == "folder"
+                 else [name])
+        return [n for n in names if scene.layer(n) is not None]
+
+    def _paint_heads(self, scene) -> None:
+        """The eye and the padlock of every heading, as the Layers tab
+        shows them: closed when every layer under it is hidden, locked when
+        every one is locked. Read on each refresh — a layer shown or locked
+        does not rebuild the rows — and written only when it changed."""
+        marks = getattr(self, "_head_marks", None)
+        if marks is None:
+            marks = self._head_marks = {}
+        for head, item in self._heads.items():
+            layers = [scene.layer(n) for n in self._head_layers(head)]
+            hidden = bool(layers) and not any(ly.visible for ly in layers)
+            locked = bool(layers) and all(ly.locked for ly in layers)
+            if marks.get(head) == (hidden, locked):
+                continue
+            marks[head] = (hidden, locked)
+            item.setIcon(COL_EYE, mark_icon("eye_off" if hidden else "eye"))
+            item.setIcon(COL_LOCK, mark_icon("lock" if locked
+                                             else "lock_open"))
+            item.setForeground(COL_NAME, self.tree.palette().brush(
+                QPalette.PlaceholderText if hidden else QPalette.Text))
+
+    def toggle_head(self, head, column) -> None:
+        """The eye or the padlock of a heading: the layers under it shown or
+        hidden, locked or unlocked — through the Layers tab, so it is the
+        same change as there, «Previous layer state» bringing it back."""
+        names = self._head_layers(head)
+        panel = getattr(getattr(self._window, "layers_dock", None),
+                        "panel", None)
+        if not names or panel is None:
+            return
+        scene = self._scene()
+        if column == COL_EYE:
+            panel.set_visible(names, not any(scene.layer(n).visible
+                                             for n in names))
+        else:
+            panel.set_locked(names, not all(scene.layer(n).locked
+                                            for n in names))
+        self.refresh()
+
+    def select_head(self, head) -> None:
+        """Double-click on a heading: its objects selected in the model —
+        the top-level groups on its layers, the ones the view can take
+        (hidden or locked ones stay picked here only)."""
+        names = set(self._head_layers(head)) | (
+            {head[1]} if head[0] == "layer" else set())
+        scene = self._scene()
+        groups = [g for g in scene.groups if outliner.layer_name(g) in names]
+        if not groups or not self._open_to([]):
+            return
+        picks = [g for g in groups if scene.entity_selectable(g)]
+        self._tree_only = {id(g) for g in groups if g not in picks}
+        scene.selection.clear()
+        scene.selection.update(picks)
+        # Picked here, in sight: the refresh keeps the rows the view could
+        # not take and does not scroll; the heading opens on them.
+        self._shown_selection = tuple(id(g) for g in picks)
+        item = self._heads.get(head)
+        if item is not None:
+            item.setExpanded(True)
+        scene.bump_view()
+        self._window.viewport.update()
+        self.refresh()
+
+    def _head_of(self, item):
+        """``(kind, name)`` of a layer or folder heading row, else None."""
+        data = item.data(COL_NAME, Qt.UserRole) if item is not None else None
+        if isinstance(data, tuple) and len(data) == 3 \
+                and data[0] == "heading":
+            return data[1], data[2]
+        return None
+
+    def on_layer_order_changed(self) -> None:
+        """The Layers tab lists its layers in another order: ordering by
+        layer, the headings and the rows follow it."""
+        if self.order_by != "layer" or getattr(self, "_reading_outline", False):
+            return                  # read by this very refresh
+        if not self.isVisible():
+            self._stale = True
+            return
+        self.refresh()
 
     def _all_expanded(self) -> bool:
-        """Whether every row that holds others is unfolded."""
-        return all(item.isExpanded()
-                   for item in (getattr(self, "_items", None) or {}).values()
-                   if item.childCount())
+        """Whether every row that holds others is unfolded — the layer
+        headings too."""
+        rows = list((getattr(self, "_items", None) or {}).values())
+        rows += list((getattr(self, "_heads", None) or {}).values())
+        return all(item.isExpanded() for item in rows if item.childCount())
 
     def _update_expand_button(self) -> None:
         b = getattr(self, "_expand_btn", None)
         if b is None or getattr(self, "tree", None) is None:
             return
         open_ = self._all_expanded()
-        b.setIcon(node_icon("collapse_all" if open_ else "expand_all"))
+        b.setIcon(node_icon("layers_collapse" if open_ else "layers_expand"))
         b.setToolTip(tr("Collapse all") if open_ else tr("Expand all"))
 
     def _expand_or_collapse(self) -> None:
@@ -1874,14 +2264,20 @@ class OutlinerPanel(QWidget):
             self._updating = False
 
     def _filter_sections(self) -> None:
+        """The section planes follow the same search and funnel as the
+        groups; the folder shows only when one of its rows does."""
         sec = self._sec_root
         if sec is None:
             return
         any_shown = False
         for i in range(sec.childCount()):
             item = sec.child(i)
-            show = not self._query or self._query in item.text(
-                COL_NAME).casefold()
+            plane = self._plane_of(item)
+            show = True
+            if plane is not None:
+                show = (outliner.text_matches(plane.name or "", self._query)
+                        and self._plane_passes_state(plane))
+                show = show != self.invert_filter
             item.setHidden(not show)
             any_shown = any_shown or show
         sec.setHidden(sec.childCount() == 0 or not any_shown)
@@ -2180,6 +2576,18 @@ class OutlinerPanel(QWidget):
         return popup
 
     def _on_item_clicked(self, item, column) -> None:
+        head = self._head_of(item)
+        if head is not None:
+            if column in (COL_EYE, COL_LOCK):
+                self.toggle_head(head, column)
+            return
+        if column == COL_ISOLATE:
+            group = self._group_of(item)
+            if group is None:
+                return
+            selected = self._selected_groups()
+            self.toggle_isolated(selected if group in selected else [group])
+            return
         if column == COL_LAYER and item.data(COL_LAYER, Qt.UserRole) \
                 is not None and (item is self._sec_root
                                  or self._plane_of(item) is not None):
@@ -2225,13 +2633,24 @@ class OutlinerPanel(QWidget):
         else:
             self.toggle_locked(targets)
 
+    def cell_clicked(self, item, column) -> None:
+        """A press on one of the tree's cells — the eye, the padlock or the
+        target: the panel answers it, and the selection is left as it was,
+        so it acts on every selected row."""
+        self._on_item_clicked(item, column)
+
     def _on_double_clicked(self, item, column) -> None:
-        if column not in (COL_EYE, COL_LOCK):
+        if column not in (COL_EYE, COL_LOCK, COL_ISOLATE):
             self.open_item(item)
 
     def open_item(self, item) -> None:
         """Open the row's group for editing — double-click or Enter. On a
-        section plane: it cuts, or stops cutting."""
+        section plane: it cuts, or stops cutting. On a layer heading: its
+        objects selected in the model."""
+        head = self._head_of(item)
+        if head is not None:
+            self.select_head(head)
+            return
         plane = self._plane_of(item)
         if plane is not None:
             self._toggle_section(plane, COL_LOCK)
@@ -2344,11 +2763,12 @@ class OutlinerPanel(QWidget):
         rows it matches (not the groups shown only to hold them)."""
         scene = self._scene()
         hit = None
-        if self._query:
+        if self._filters_active():
             counts = outliner.instance_counts(scene.groups)
             _keep, hit = outliner.filter_keep(
                 scene.groups, self._query,
-                lambda g: self._type_text(g, counts))
+                lambda g: self._type_text(g, counts),
+                self._row_passes_state, self.invert_filter)
         return [g for g, _p, _d in outliner.walk(scene.groups)
                 if id(g) in self._items and (hit is None or id(g) in hit)]
 
@@ -2561,6 +2981,66 @@ class OutlinerPanel(QWidget):
             self.tree.scrollToItem(first)
         return True
 
+    def delete_row(self) -> None:
+        """Delete the rows picked in the tree: what the Delete key runs
+        (see :meth:`delete_rows`). The current row when none is picked."""
+        rows = self.tree.selectedItems()
+        if not rows:
+            current = self.tree.currentItem()
+            rows = [current] if current is not None else []
+        self.delete_rows(rows)
+
+    def delete_rows(self, rows) -> None:
+        """Remove the groups, components and section planes of ``rows`` —
+        one undoable step, so Ctrl+Z brings them back where they were.
+        A group takes what it holds with it; picking a group and one of
+        its parts deletes it once."""
+        groups: list = []
+        planes: list = []
+        seen: set = set()
+        for item in rows:
+            group = self._group_of(item)
+            if group is not None:
+                if id(group) not in seen:
+                    seen.add(id(group))
+                    groups.append(group)
+                continue
+            plane = self._plane_of(item)
+            if plane is not None and id(plane) not in seen:
+                seen.add(id(plane))
+                planes.append(plane)
+        self.delete_parts(groups, planes)
+
+    def delete_parts(self, groups=(), planes=()) -> None:
+        """Remove these groups, components and section planes as one
+        undoable step. The menu says what to remove before opening it, so
+        it comes here with the objects themselves, not their rows: the
+        tree may have been rebuilt since."""
+        from core.history import (CompoundCommand, DeleteGroupCommand,
+                                  DeleteSectionPlanesCommand)
+        scene = self._scene()
+        # A part picked with the group around it travels with the group.
+        moving = outliner.topmost(scene.groups, [g for g in groups
+                                                 if g is not None])
+        planes = [p for p in planes if p is not None]
+        cmds = [DeleteGroupCommand(g) for g in moving]
+        if planes:
+            cmds.append(DeleteSectionPlanesCommand(planes))
+        if not cmds:
+            return
+        viewport = self._window.viewport
+        viewport.history.execute(
+            cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
+        # Isolate must not remember what is gone: it would count as
+        # isolated for ever, with nothing to bring back.
+        gone = {id(g) for g in moving}
+        self._isolated = [g for g in self._isolated if id(g) not in gone]
+        self._kept = [g for g in self._kept if id(g) not in gone]
+        self._tree_only -= gone
+        self.refresh()
+        viewport.update()
+        viewport.notify_scene_changed()
+
     def indent(self) -> None:
         """Tab: into the group just above, at the same level."""
         current = self.tree.currentItem()
@@ -2593,19 +3073,26 @@ class OutlinerPanel(QWidget):
                       path[-2] if len(path) > 1 else None)
 
     # ---- Columns ---------------------------------------------------------
-    #: Columns of a fixed width: the eye and the padlock.
-    _FIXED = (COL_EYE, COL_LOCK)
+    #: Columns of a fixed width: the eye, the padlock and the target.
+    _FIXED = (COL_EYE, COL_LOCK, COL_ISOLATE)
 
     #: The step, in pixels, from one level of nesting to the next.
     INDENT = 12
 
-    #: The factory order, left to right: the eye and the padlock first.
-    COLUMN_ORDER = (COL_EYE, COL_LOCK, COL_NAME, COL_TYPE, COL_LAYER,
-                    COL_MATERIAL, COL_COPIES, COL_IFC)
+    #: The factory order, left to right: the eye, the padlock and the
+    #: target first, as in the Layers tab. Copies right after Layer: a
+    #: short number — past Material it sat beyond the right edge of a
+    #: sidebar-wide panel.
+    COLUMN_ORDER = (COL_EYE, COL_LOCK, COL_ISOLATE, COL_NAME, COL_TYPE,
+                    COL_LAYER, COL_COPIES, COL_MATERIAL, COL_IFC)
+    #: The factory order before Copies moved next to Layer: saved as it
+    #: was (no column ever moved by hand), it reads as the new one.
+    _OLD_COLUMN_ORDER = (COL_EYE, COL_LOCK, COL_ISOLATE, COL_NAME, COL_TYPE,
+                         COL_LAYER, COL_MATERIAL, COL_COPIES, COL_IFC)
     #: The factory widths.
     COLUMN_WIDTHS = {COL_NAME: 200, COL_EYE: 26, COL_LOCK: 26,
-                     COL_TYPE: 110, COL_LAYER: 80, COL_MATERIAL: 100,
-                     COL_COPIES: 60, COL_IFC: 110}
+                     COL_ISOLATE: 26, COL_TYPE: 110, COL_LAYER: 80,
+                     COL_MATERIAL: 100, COL_COPIES: 60, COL_IFC: 110}
 
     def _column_order(self) -> list:
         """The order the user left the columns in, or the factory one."""
@@ -2617,7 +3104,8 @@ class OutlinerPanel(QWidget):
             order = [int(x) for x in raw or ()]
         except (TypeError, ValueError):
             order = []
-        if sorted(order) != sorted(self.COLUMN_ORDER):
+        if (sorted(order) != sorted(self.COLUMN_ORDER)
+                or tuple(order) == self._OLD_COLUMN_ORDER):
             return list(self.COLUMN_ORDER)
         return order
 
@@ -2639,12 +3127,14 @@ class OutlinerPanel(QWidget):
 
     def reset_columns(self) -> None:
         """Window ▸ Panels ▸ Restore default panels, for the Browser: the
-        factory order (the eye and the padlock first), the factory columns
-        shown and their widths; the choices remembered are forgotten."""
+        factory order (the eye, the padlock and the target first), the
+        factory columns shown and their widths; the choices remembered are
+        forgotten."""
         from PySide6.QtCore import QSettings
         st = QSettings()
         for key in ("browser/model_column_order",
-                    "browser/model_hidden_columns", "browser/model_columns"):
+                    "browser/model_hidden_columns", "browser/model_columns",
+                    self.ORDER_KEY):
             st.remove(key)
         # Following the panel from here on — before the columns move or
         # hide, or the header's saver keeps the widths being dropped.
@@ -2656,6 +3146,8 @@ class OutlinerPanel(QWidget):
         self._widths_before = None
         self._fit_columns()
         self.tree.horizontalScrollBar().setValue(0)
+        self._shape = None                  # the rows, as the model holds them
+        self.refresh()
 
     def _set_width(self, col: int, width: int) -> None:
         """Resize a column as the program, not the user: not remembered,
@@ -2730,8 +3222,8 @@ class OutlinerPanel(QWidget):
         shown = [c for c in range(head.count()) if not head.isSectionHidden(c)]
         # The one that takes what room is left: the last.
         last = max(shown, key=head.visualIndex)
-        # The eye and the padlock are fixed: their real size (the style's
-        # minimum section can be wider than the 26 px asked).
+        # The eye, the padlock and the target are fixed: their real size
+        # (the style's minimum section can be wider than the 26 px asked).
         widths = {c: (head.sectionSize(c) if c in self._FIXED
                       else self.COLUMN_WIDTHS.get(c, head.sectionSize(c)))
                   for c in shown}
@@ -2748,7 +3240,7 @@ class OutlinerPanel(QWidget):
                 give = min(over, max(0, widths[c] - floor))
                 widths[c] -= give
                 over -= give
-        # Still over: the floors above assume the eye and the padlock take
+        # Still over: the floors above assume the three marks take
         # 26 px, and a style whose narrowest section is wider (38 px with
         # Fusion here) leaves 13 px of scroll bar with every column on —
         # the short columns go down to 40 px, still a readable «…».
@@ -2869,6 +3361,16 @@ class OutlinerPanel(QWidget):
         (hidden.discard if shown else hidden.add)(col)
         QSettings().setValue("browser/model_hidden_columns",
                              ",".join(str(c) for c in sorted(hidden)) or ",")
+        if shown and col == COL_COPIES:
+            # Turned on to be read: right after Layer, wherever an older
+            # order left it (past Material, out of view).
+            head = self.tree.header()
+            to = head.visualIndex(COL_LAYER) + 1
+            if head.visualIndex(COL_COPIES) != to:
+                head.moveSection(head.visualIndex(COL_COPIES),
+                                 to if head.visualIndex(COL_COPIES) > to
+                                 else to - 1)
+                self._save_column_order()
         self._apply_column_choice()
         self._place_columns_button()
         if self._auto_fit:
@@ -2967,19 +3469,44 @@ class OutlinerPanel(QWidget):
         self._scroll_to_column(COL_NAME)
 
     def _columns_menu(self):
-        """Which columns show: the header's right-click and its button."""
-        from PySide6.QtWidgets import QMenu
-        menu = QMenu(self)
+        """Which columns show — the Layers tab's way: the menu stays open
+        while columns are switched, so Material, Copies and IFC class are
+        turned on in one go; «Show all columns» turns every one on and
+        «Default columns» puts back the ones that start shown."""
+        menu = StayOpenMenu(self)
         hidden = self._hidden_columns()
+        show_all = menu.addAction(tr("Show all columns"))
+        show_all.setProperty("keep_open", True)
+        menu.addSeparator()
+        switches = []
         for col, label, _shown in OPTIONAL_COLUMNS:
-            act = menu.addAction(tr(label), lambda c=col, on=col in hidden:
-                                 self.set_column_shown(c, on))
+            act = menu.addAction(tr(label))
             act.setCheckable(True)
             act.setChecked(col not in hidden)
+            act.toggled.connect(lambda on, c=col: self.set_column_shown(c, on))
+            switches.append(act)
+        # Back to the starting point: last, apart, as a «reset» goes.
+        menu.addSeparator()
+        defaults = menu.addAction(tr("Default columns"))
+        defaults.setProperty("keep_open", True)
+
+        def all_on() -> None:
+            for act in switches:
+                act.setChecked(True)             # each switch applies itself
+
+        def back_to_defaults() -> None:
+            for (_col, _label, shown), act in zip(OPTIONAL_COLUMNS, switches):
+                act.setChecked(shown)
+        show_all.triggered.connect(all_on)
+        defaults.triggered.connect(back_to_defaults)
         return menu
 
     def _on_header_menu(self, pos) -> None:
-        self._columns_menu().exec(self.tree.header().mapToGlobal(pos))
+        """Every column there is to show, and how the rows are ordered."""
+        menu = self._columns_menu()
+        menu.addSeparator()
+        self._fill_order_actions(menu)
+        menu.exec(self.tree.header().mapToGlobal(pos))
 
     def _on_columns_button(self) -> None:
         b = self._columns_button
@@ -3305,30 +3832,22 @@ class OutlinerPanel(QWidget):
         """The groups Isolate hid that are hidden still — what leaving the
         isolation brings back. Empty: not isolated (left, undone, or each
         one shown by hand since)."""
+        remembered = [g for g in getattr(self, "_isolated", None) or ()
+                      if g.hidden]
+        if not remembered:
+            return []                   # the walk below is not cheap
         live = {id(g) for g, _p, _d in outliner.walk(self._scene().groups)}
-        return [g for g in getattr(self, "_isolated", None) or ()
-                if g.hidden and id(g) in live]
+        return [g for g in remembered if id(g) in live]
 
-    def _update_isolate_button(self) -> None:
-        """◎ «Isolate» — or ◉ pressed, «Exit isolation», while isolated.
-        Only isolation turns it: what was hidden by hand is not its
-        business, and stays hidden when the isolation ends."""
-        b = getattr(self, "_isolate_btn", None)
-        if b is None:
-            return
-        isolated = bool(self._isolated_now())
-        b.setChecked(isolated)
-        b.setIcon(node_icon("isolate_on" if isolated else "isolate"))
-        b.setToolTip(tr("Exit isolation: show again what Isolate hid")
-                     if isolated else
-                     tr("Isolate: hide everything but the selected groups"))
-
-    def _isolate_or_show(self) -> None:
-        if self._isolated_now():
-            self.exit_isolation()
-        else:
-            self.isolate()
-        self._update_isolate_button()
+    def _alone_now(self) -> list:
+        """The groups the target column shows as alone: the ones Isolate
+        kept in view, still visible. Empty when the isolation ended (left,
+        undone, or each one shown by hand since)."""
+        if not self._isolated_now():
+            return []
+        live = {id(g) for g, _p, _d in outliner.walk(self._scene().groups)}
+        return [g for g in getattr(self, "_kept", None) or ()
+                if not g.hidden and id(g) in live]
 
     def exit_isolation(self) -> None:
         """Show again exactly what Isolate hid — one undoable step; what
@@ -3336,6 +3855,7 @@ class OutlinerPanel(QWidget):
         from core.history import HideCommand
         back = self._isolated_now()
         self._isolated = []
+        self._kept = []
         if back:
             self._window.viewport.history.execute(HideCommand(back,
                                                               hidden=False))
@@ -3346,11 +3866,19 @@ class OutlinerPanel(QWidget):
         """Hide every group but the selected ones and those holding them —
         one undoable step; Exit isolation (or undo) brings them back.
         Loose geometry, dimensions and texts stay (#272)."""
-        from core.history import HideCommand
         keep = self._isolate_targets()
         if not keep:
             self._window.viewport.flash_status(tr(
                 "Select the groups to keep in view first"), 3000)
+            return
+        self.isolate_groups(keep)
+
+    def isolate_groups(self, keep) -> None:
+        """``isolate`` for the groups given — the row's target keeps just
+        its own group in view, without touching the selection."""
+        from core.history import HideCommand
+        keep = [g for g in keep if g is not None]
+        if not keep:
             return
         hide = outliner.isolate_hides(self._scene().groups, keep)
         if hide:
@@ -3358,16 +3886,37 @@ class OutlinerPanel(QWidget):
                                                               hidden=True))
             # Remembered, to give back exactly these when leaving it (an
             # isolation inside an isolation adds to it).
-            self._isolated = self._isolated_now() + [
-                g for g in hide if g not in self._isolated_now()]
+            before = self._isolated_now()
+            self._isolated = before + [g for g in hide if g not in before]
+            self._kept = list(keep)
             self._window.viewport.update()
         self.refresh()
 
+    def toggle_isolated(self, groups) -> None:
+        """The row's target: show only ``groups``, or — the second click,
+        or a click while they are what Isolate left — bring back what it
+        hid."""
+        groups = [g for g in groups if g is not None]
+        if not groups:
+            return
+        alone = self._alone_now()
+        if any(any(g is a for a in alone) for g in groups):
+            self.exit_isolation()
+        else:
+            self.isolate_groups(groups)
+
     def _on_header_clicked(self, col: int) -> None:
         """The eye's header hides everything, or shows it all again when
-        something is hidden; the padlock's locks or unlocks it all. On the
-        model's top-level groups: what they hold follows, faded, and keeps
-        its own state — a group locked on purpose inside stays locked."""
+        something is hidden; the padlock's locks or unlocks it all; the
+        target's ends the isolation. On the model's top-level groups: what
+        they hold follows, faded, and keeps its own state — a group locked
+        on purpose inside stays locked."""
+        if col == COL_ISOLATE:
+            if self._isolated_now():
+                self.exit_isolation()
+            else:
+                self.isolate()
+            return
         tops = list(self._scene().groups)
         if not tops:
             return
@@ -3383,6 +3932,7 @@ class OutlinerPanel(QWidget):
         hidden = [g for g, _p, _d in outliner.walk(self._scene().groups)
                   if g.hidden]
         self._isolated = []
+        self._kept = []
         if hidden:
             self._window.viewport.history.execute(HideCommand(hidden,
                                                               hidden=False))
@@ -3417,6 +3967,9 @@ class OutlinerPanel(QWidget):
             menu.addAction(tr("Create view of this cut…"),
                            lambda: QTimer.singleShot(
                                0, lambda: self.ask_cut_view(plane)))
+            menu.addSeparator()
+            menu.addAction(tr("Delete"), lambda: QTimer.singleShot(
+                0, lambda: self.delete_parts(planes=[plane])))
             menu.addSeparator()
             current = outliner.section_mode(plane)
             for mode in ("both", "cut", "frame", "off"):
@@ -3507,6 +4060,11 @@ class OutlinerPanel(QWidget):
             menu.addAction(tr("Create plan of this group…"),
                            lambda: QTimer.singleShot(
                                0, lambda: self.ask_plan(group)))
+            # Last, apart: it takes what it holds with it (Ctrl+Z brings
+            # it back), and on several selected rows it takes them all.
+            menu.addSeparator()
+            menu.addAction(tr("Delete"), lambda: QTimer.singleShot(
+                0, lambda: self.delete_parts(targets)))
         if self._scene().edit_group is not None:
             menu.addAction(tr("Close group"), self.step_out)
         if self._scene().selection:

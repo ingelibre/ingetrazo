@@ -325,6 +325,42 @@ def layers_in_folder(scene, name: str) -> list[str]:
     return [ly.name for ly in scene.layers if ly.folder in folders]
 
 
+def ordered_names(scene) -> list[str]:
+    """The layer names in the order the Layers tab lists them with «Sort by
+    order created», folders unfolded: the default layer first, then each
+    folder and every layer out of one as they were made — folders before
+    layers, as the tab ranks them — with what a folder holds inside it, its
+    subfolders first.
+
+    Ordering the Browser by layer follows this list, so the rows on the
+    layers of a folder stay together, in the folder's place. The model is
+    not touched: this is how the tab reads it."""
+    layers = list(getattr(scene, "layers", None) or ())
+    folders = folders_of(scene)
+    place = {ly.name: i for i, ly in enumerate(layers)}
+    folder_place = {f: i for i, f in enumerate(folders)}
+
+    def made(names, places) -> list[str]:
+        return sorted(names, key=places.__getitem__)
+
+    held: dict = {}
+    for ly in layers:
+        if ly.name != DEFAULT_LAYER:
+            held.setdefault(ly.folder, []).append(ly.name)
+    below: dict = {}
+    for f in folders:
+        below.setdefault(folder_parent(scene, f), []).append(f)
+
+    def block(folder, out) -> None:
+        for f in made(below.get(folder, ()), folder_place):
+            block(f, out)          # what a subfolder holds comes before it
+        out.extend(made(held.get(folder, ()), place))
+
+    out = [DEFAULT_LAYER] if DEFAULT_LAYER in place else []
+    block(None, out)
+    return out
+
+
 def add_folder(scene, base: str, parent: str | None = None) -> str:
     """A new, empty folder at the end of the list — inside ``parent``
     when given; returns its name."""

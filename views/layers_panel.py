@@ -16,18 +16,20 @@ is one undo step (core.history.DeleteLayerCommand).
 from __future__ import annotations
 
 from PySide6.QtCore import (QItemSelectionModel, QPoint, QPointF, QRectF, Qt,
-                            QTimer)
+                            QTimer, Signal)
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtGui import QBrush
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDockWidget,
                                QHBoxLayout, QHeaderView, QLineEdit, QMenu,
                                QMessageBox, QStyledItemDelegate,
                                QToolButton, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget)
+                               QTreeWidgetItemIterator, QVBoxLayout, QWidget)
 
 from core import layers as L
 from core.i18n import tr
-from views.outliner import _HeaderButton, _StripFiller, node_icon
+from core.outliner import natural_key  # noqa: F401 — the Browser's too
+from views.outliner import node_icon
+from views.side_tree import SideTree, StayOpenMenu, _HeaderButton
 
 (COL_NAME, COL_ACTIVE, COL_EYE, COL_LOCK, COL_COLOR, COL_COUNT,
  COL_ISOLATE, COL_LINETYPE, COL_WEIGHT, COL_OPACITY, COL_PRINT) = range(11)
@@ -54,13 +56,6 @@ def _submenu(menu, title):
     sub = QMenu(title, menu)
     menu.addMenu(sub)
     return sub
-
-def natural_key(text: str) -> tuple:
-    """Sort key that reads the numbers in a name as numbers: «Capa 2»
-    before «Capa 10», «Planta 9» before «Planta 12»."""
-    import re
-    return tuple((0, int(part), "") if part.isdigit() else (1, 0, part)
-                 for part in re.split(r"(\d+)", text.casefold()) if part)
 
 
 def _pencil_icon(on: bool) -> QIcon:
@@ -267,34 +262,6 @@ def global_rect(widget, rect=None):
     return QRect(widget.mapToGlobal(r.topLeft()), r.size())
 
 
-class _StayOpenMenu(QMenu):
-    """A menu of switches that stays open while they are flipped — several
-    columns on or off in one go — and closes on a click outside or Esc.
-    An entry with the ``keep_open`` property set stays open too."""
-
-    @staticmethod
-    def _stays(action) -> bool:
-        return (action is not None and action.isEnabled()
-                and (action.isCheckable() or bool(action.property("keep_open"))))
-
-    def mouseReleaseEvent(self, event) -> None:
-        action = self.actionAt(event.position().toPoint())
-        if self._stays(action):
-            action.trigger()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-    def keyPressEvent(self, event) -> None:
-        action = self.activeAction()
-        if (event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space)
-                and self._stays(action)):
-            action.trigger()
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
-
 def line_pen(key: str, ink, width: float, px_per_mm: float) -> QPen:
     """A pen in the dash pattern of line type ``key`` (millimetres on paper
     shown at ``px_per_mm`` screen pixels each)."""
@@ -445,147 +412,24 @@ class _LineDelegate(QStyledItemDelegate):
         painter.restore()
 
 
-class _LayerTree(QTreeWidget):
+class _LayerTree(SideTree):
     """The layer tree, taking drops of its own rows: what is dragged goes
     into the folder dropped on — the folder of the layer dropped on, or out
     of any folder on the empty space. Qt never moves a row by itself here:
     the document changes and the tree is rebuilt from it."""
 
-    def __init__(self, panel) -> None:
-        super().__init__()
-        self._panel = panel
-        #: Width of the strip kept free at the right for the columns button.
-        self.button_strip = 0
-        self._filler = _StripFiller(self)
-        self._filler.hide()
-        self.viewport().installEventFilter(self)    # the strip repaints too
-        self.setDragEnabled(True)
-        self.setAcceptDrops(True)
-        self.viewport().setAcceptDrops(True)
-        # Qt's line between rows says «between these two», which a drop
-        # here never means: the folder it files into is outlined instead.
-        self.setDropIndicatorShown(False)
-        self.setDragDropMode(QAbstractItemView.InternalMove)
-        # Hovering a folded folder while dragging unfolds it.
-        self.setAutoExpandDelay(600)
-        #: While a drag is over the tree: ``(folder,)`` — the folder a drop
-        #: would file into (``None``: out of any folder); else ``None``.
-        self.drop_hint: tuple | None = None
-
     #: The cells a press acts on directly, as in the Browser: the row's
     #: selection is left as it is, so a click on the eye of one of several
     #: selected rows acts on all of them.
-    _CELLS = (COL_ACTIVE, COL_EYE, COL_LOCK, COL_ISOLATE, COL_COLOR,
-              COL_LINETYPE, COL_WEIGHT, COL_OPACITY, COL_PRINT)
+    CELLS = (COL_ACTIVE, COL_EYE, COL_LOCK, COL_ISOLATE, COL_COLOR,
+             COL_LINETYPE, COL_WEIGHT, COL_OPACITY, COL_PRINT)
 
-    #: A press on one of the cells is the panel's until the button is let
-    #: go: Qt never saw it, so a move with the button held would draw a
-    #: selection box from wherever Qt's last press was — a few pixels of
-    #: wobble while clicking an eye selected a run of layers.
-    _cell_press = False
-
-    def _cell_click(self, event) -> bool:
-        """Act on a plain left click on one of :attr:`_CELLS`; whether it
-        was one (and so taken)."""
-        if (event.button() != Qt.LeftButton
-                or event.modifiers() & (Qt.ControlModifier
-                                        | Qt.ShiftModifier)):
-            return False
-        pos = event.position().toPoint()
-        item = self.itemAt(pos)
-        col = self.columnAt(pos.x())
-        if item is None or col not in self._CELLS:
-            return False
-        key = self._panel._key(item)
-        targets = self._panel._targets(item)
-        event.accept()
-        self._cell_press = True
-        QTimer.singleShot(0, lambda: self._panel.click_cell(
-            key, col, targets))
-        return True
-
-    def mousePressEvent(self, event) -> None:
-        if not self._cell_click(event):
-            super().mousePressEvent(event)
-
-    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 — Qt override
-        # Two quick clicks on an eye are two clicks (off and on again), not
-        # a double click for the list to select or rename the row with.
-        if not self._cell_click(event):
-            super().mouseDoubleClickEvent(event)
-
-    def mouseMoveEvent(self, event) -> None:         # noqa: N802 — Qt override
-        if self._cell_press:
-            event.accept()
-            return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event) -> None:      # noqa: N802 — Qt override
-        if self._cell_press:
-            self._cell_press = False
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-    def updateGeometries(self) -> None:
-        """Qt lays the header over the whole viewport; a strip is then kept
-        at the right for the columns button, header and rows one strip
-        narrower — the Browser's layout."""
-        super().updateGeometries()
-        m = self.viewportMargins()
-        if m.right() != self.button_strip:
-            self.setViewportMargins(m.left(), m.top(), self.button_strip,
-                                    m.bottom())
-        vg = self.viewport().geometry()
-        head = self.header()
-        if not head.isHidden():
-            head.setGeometry(vg.left(), vg.top() - m.top(), vg.width(),
-                             m.top())
-        b = getattr(self._panel, "columns_button", None)
-        if b is not None:
-            g = head.geometry()
-            b.setGeometry(g.right() + 1, g.top(), b.width(), g.height())
-        self._filler.setGeometry(vg.right() + 1, vg.top(), self.button_strip,
-                                 vg.height())
-        self._filler.setVisible(self.button_strip > 0)
-
-    def row_parity(self, index) -> bool:
-        """Whether the row of ``index`` is painted in the alternate tone."""
-        n = 0
-        above = self.indexAbove(index)
-        while above.isValid():
-            n += 1
-            above = self.indexAbove(above)
-        return bool(n % 2)
-
-    def eventFilter(self, obj, ev) -> bool:
-        from PySide6.QtCore import QEvent
-        if obj is self.viewport() and ev.type() == QEvent.Paint:
-            self._filler.update()
-        return super().eventFilter(obj, ev)
-
-    def _is_delete(self, event) -> bool:
-        return (event.key() in (Qt.Key_Delete, Qt.Key_Backspace)
-                and self.state() != QAbstractItemView.EditingState)
-
-    def event(self, event) -> bool:
-        # Delete belongs to the list while it has the focus, not to a
-        # window shortcut.
-        from PySide6.QtCore import QEvent
-        if event.type() == QEvent.ShortcutOverride and self._is_delete(event):
-            event.accept()
-            return True
-        return super().event(event)
-
-    def keyPressEvent(self, event) -> None:
-        if self._is_delete(event):
-            event.accept()
-            self._panel._on_delete()
-            return
-        super().keyPressEvent(event)
+    #: Delete belongs to the list while it has the focus, not to a window
+    #: shortcut.
+    DELETE_KEY = True
 
     def target_folder(self, pos) -> str | None:
-        """The folder a drop at ``pos`` (viewport coordinates) files into."""
+        """The folder a drop at `pos` (viewport coordinates) files into."""
         item = self.itemAt(pos)
         if item is None:
             return None
@@ -595,94 +439,12 @@ class _LayerTree(QTreeWidget):
         parent = item.parent()
         return self._panel._key(parent)[1] if parent is not None else None
 
-    #: How see-through the dragged rows are, and how many are drawn before
-    #: the rest is only counted.
-    DRAG_OPACITY = 0.55
-    DRAG_ROWS = 6
-
-    def drag_pixmap(self):
-        """The rows being dragged, as they look in the list, stacked with
-        no gaps between them (however far apart they sit) and see-through,
-        so the folders under the pointer still show. ``(pixmap, rows)``."""
-        from PySide6.QtCore import QRect
-        from PySide6.QtWidgets import QApplication
-        vp = self.viewport()
-        rows = [it for it in self.selectedItems()
-                if self.visualItemRect(it).isValid()]
-        rows.sort(key=lambda it: self.visualItemRect(it).top())
-        shown = rows[:self.DRAG_ROWS]
-        if not shown:
-            return QPixmap(), []
-        width = vp.width()
-        heights = [self.visualItemRect(it).height() for it in shown]
-        extra = len(rows) - len(shown)
-        foot = heights[0] if extra else 0
-        dpr = vp.devicePixelRatioF()
-        pm = QPixmap(round(width * dpr), round((sum(heights) + foot) * dpr))
-        pm.setDevicePixelRatio(dpr)
-        pm.fill(Qt.transparent)
-        p = QPainter(pm)
-        p.setOpacity(self.DRAG_OPACITY)
-        y = 0
-        for it, h in zip(shown, heights):
-            r = self.visualItemRect(it)
-            p.drawPixmap(0, y, vp.grab(QRect(0, r.top(), width, h)))
-            y += h
-        p.setOpacity(1.0)
-        accent = QColor(QApplication.palette().highlight().color())
-        if extra:
-            p.setPen(QApplication.palette().text().color())
-            p.drawText(QRectF(0, y, width, foot), Qt.AlignCenter,
-                       tr("+{n} more", n=extra))
-        p.setPen(QPen(accent, 1.5))
-        p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(QRectF(0.75, 0.75, width - 1.5, y + foot - 1.5),
-                          3, 3)
-        p.end()
-        return pm, rows
-
-    def startDrag(self, actions) -> None:
-        from PySide6.QtGui import QCursor, QDrag
-        pm, rows = self.drag_pixmap()
-        if not rows:
-            return
-        drag = QDrag(self)
-        drag.setMimeData(self.mimeData(rows))
-        drag.setPixmap(pm)
-        # Held where it was picked up: the pointer stays on the row it
-        # pressed, within the first row's height.
-        at = self.viewport().mapFromGlobal(QCursor.pos())
-        first = self.visualItemRect(rows[0])
-        drag.setHotSpot(QPoint(max(0, min(at.x(), first.width() - 1)),
-                               max(0, min(at.y() - first.top(),
-                                          first.height() - 1))))
-        drag.exec(Qt.MoveAction)
-        self._clear_hint()
-
-    def dragMoveEvent(self, event) -> None:
-        if event.source() is self:
-            super().dragMoveEvent(event)             # auto-scroll, unfold
-            event.setDropAction(Qt.MoveAction)
-            event.accept()
-            hint = (self.target_folder(event.position().toPoint()),)
-            if hint != self.drop_hint:
-                self.drop_hint = hint
-                self.viewport().update()
-        else:
-            event.ignore()
-
-    def dragLeaveEvent(self, event) -> None:
-        super().dragLeaveEvent(event)
-        self._clear_hint()
-
-    def _clear_hint(self) -> None:
-        if self.drop_hint is not None:
-            self.drop_hint = None
-            self.viewport().update()
+    # ---- Where a drop lands ----------------------------------------------
+    def drop_target(self, pos):
+        return self.target_folder(pos)
 
     def folder_item(self, name: str):
-        """The row of folder ``name``, or None."""
-        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        """The row of folder `name`, or None."""
         it = QTreeWidgetItemIterator(self)
         while it.value() is not None:
             item = it.value()
@@ -691,18 +453,13 @@ class _LayerTree(QTreeWidget):
             it += 1
         return None
 
-    def drop_rect(self, folder: str | None):
-        """Where the drop lands, in viewport coordinates: the folder's row
-        and every row shown inside it, full width; the whole list for «out
-        of any folder»."""
-        from PySide6.QtCore import QRect
-        vp = self.viewport().rect()
-        if folder is None:
-            return vp
+    def drop_items(self, folder):
+        """The folder's row and every row shown inside it; none for the
+        empty space (the whole list, out of any folder)."""
         item = self.folder_item(folder)
         if item is None:
-            return QRect()
-        rect = self.visualItemRect(item)
+            return []
+        items = [item]
         stack = [item]
         while stack:
             node = stack.pop()
@@ -712,66 +469,31 @@ class _LayerTree(QTreeWidget):
                 child = node.child(i)
                 if child.isHidden():
                     continue
-                r = self.visualItemRect(child)
-                if r.isValid():
-                    rect = rect.united(r)
+                items.append(child)
                 stack.append(child)
-        return QRect(vp.left(), rect.top(), vp.width(), rect.height())
+        return items
 
-    def paintEvent(self, event) -> None:
-        super().paintEvent(event)
-        if self.drop_hint is None:
-            return
-        from PySide6.QtWidgets import QApplication
-        folder = self.drop_hint[0]
-        accent = QColor(QApplication.palette().highlight().color())
-        p = QPainter(self.viewport())
-        p.setRenderHint(QPainter.Antialiasing)
-        rect = self.drop_rect(folder)
-        if rect.isValid():
-            tint = QColor(accent)
-            tint.setAlpha(45)
-            p.setBrush(tint)
-            p.setPen(QPen(accent, 2.0))
-            p.drawRoundedRect(QRectF(rect).adjusted(1.5, 1.5, -1.5, -1.5),
-                              4, 4)
-        # Said in words too, at the foot of the list: with folders inside
-        # folders the outline alone can leave a doubt.
-        text = (tr("Into «{folder}»", folder=folder) if folder is not None
+    def drop_text(self, folder) -> str:
+        return (tr("Into «{folder}»", folder=folder) if folder is not None
                 else tr("Out of any folder"))
-        fm = p.fontMetrics()
-        vp = self.viewport().rect()
-        w = fm.horizontalAdvance(text) + 16
-        h = fm.height() + 6
-        pill = QRectF(vp.right() - w - 6, vp.bottom() - h - 6, w, h)
-        p.setPen(Qt.NoPen)
-        p.setBrush(accent)
-        p.drawRoundedRect(pill, h / 2, h / 2)
-        p.setPen(QApplication.palette().highlightedText().color())
-        p.drawText(pill, Qt.AlignCenter, text)
-        p.end()
 
-    def dropEvent(self, event) -> None:
-        self._clear_hint()
-        if event.source() is not self:
-            event.ignore()
-            return
-        folder = self.target_folder(event.position().toPoint())
-        rows = [self._panel._key(it) for it in self.selectedItems()]
-        # Accepted, but as nothing for Qt to do: the panel files the rows
-        # in the document and rebuilds the tree from it.
-        event.setDropAction(Qt.IgnoreAction)
-        event.accept()
-        QTimer.singleShot(0, lambda: self._panel.drop_rows(rows, folder))
+    def apply_drop(self, folder, rows) -> None:
+        self._panel.drop_rows([self._panel._key(it) for it in rows], folder)
 
 
 class LayersPanel(QWidget):
     """The layer tree, its filter and its buttons. See the module doc."""
 
+    #: The rows now list the layers and folders in another order (a sort,
+    #: a layer made, filed or renamed): the Browser ordering by layer
+    #: follows it.
+    orderChanged = Signal()
+
     def __init__(self, window) -> None:
         super().__init__()
         self._window = window
         self._updating = False
+        self._told_outline = None
         self._collapsed: set[str] = set()
         self._counts: dict[str, int] = {}
         self._counted_version = None
@@ -983,6 +705,10 @@ class LayersPanel(QWidget):
         """Rebuild the tree from the document, keeping the selection, the
         folded folders and the filter; the counts follow a moment later
         (one walk of the model, not one per edit)."""
+        # This rebuild covers whatever the deferred one was waiting for.
+        timer = getattr(self, "_refresh_timer", None)
+        if timer is not None and timer.isActive():
+            timer.stop()
         scene = self._scene()
         selected = {self._key(it) for it in self.tree.selectedItems()}
         current = self.tree.currentItem()
@@ -1039,6 +765,30 @@ class LayersPanel(QWidget):
         self._updating = False
         self._drawn_signature = self._signature()
         self._count_timer.start(300)
+        self._tell_order()
+
+    def display_outline(self) -> list:
+        """``(kind, name, depth)`` of every row — ``kind`` ``"folder"`` or
+        ``"layer"`` — in the order the tab lists them now, a folder before
+        what it holds, folded or filtered out alike."""
+        out = []
+
+        def walk(item, depth) -> None:
+            kind, name = self._key(item)
+            out.append((kind, name, depth))
+            for c in self._children(item):
+                walk(c, depth + 1)
+
+        for i in range(self.tree.topLevelItemCount()):
+            walk(self.tree.topLevelItem(i), 0)
+        return out
+
+    def _tell_order(self) -> None:
+        """Announce a new order of the rows — once, not on every rebuild."""
+        outline = tuple(self.display_outline())
+        if outline != self._told_outline:
+            self._told_outline = outline
+            self.orderChanged.emit()
 
     #: Column order on screen (logical columns), and the indent per level —
     #: the Browser's.
@@ -1072,6 +822,7 @@ class LayersPanel(QWidget):
                  else Qt.AscendingOrder)
         self._sort = (col, order)
         self.tree.sortItems(col, order)
+        self._tell_order()
 
     # ---- Isolate (the target column) -------------------------------------------
     def _isolated_now(self) -> list[str]:
@@ -1461,9 +1212,12 @@ class LayersPanel(QWidget):
     def _touch(self, rebuild: bool = True) -> None:
         scene = self._scene()
         scene.version += 1
+        # Announce first: the listeners' rebuild is deferred, and the one
+        # below covers it (``refresh`` drops a pending one) — the row whose
+        # name is about to be typed must not be rebuilt under the editor.
+        self._window.viewport.notify_scene_changed()
         if rebuild:
             self.refresh()
-        self._window.viewport.notify_scene_changed()
 
     def _released(self, released: bool) -> None:
         if released:
@@ -1473,8 +1227,15 @@ class LayersPanel(QWidget):
 
     def _on_item_clicked(self, item, column) -> None:
         """A click on one of the cells, for code and tests: the tree itself
-        acts on the press (:meth:`_LayerTree.mousePressEvent`). The action
+        acts on the press (:class:`views.side_tree.SideTree`). The action
         runs once Qt is done: it rebuilds the tree."""
+        self.cell_clicked(item, column)
+
+    def cell_clicked(self, item, column) -> None:
+        """A press on one of the tree's cells — the eye, the padlock or the
+        target: the panel answers it, and the selection is left as it was,
+        so it acts on every selected row. The row and its targets are read
+        now: the action rebuilds the tree, and the item would be gone."""
         if self._updating or column == COL_NAME or column == COL_COUNT:
             return
         key, targets = self._key(item), self._targets(item)
@@ -1635,7 +1396,7 @@ class LayersPanel(QWidget):
         """Which columns show. It stays open while columns are switched —
         several in one go; «Show all columns» turns every one on and
         «Default columns» puts the daily set back."""
-        menu = _StayOpenMenu(self)
+        menu = StayOpenMenu(self)
         hidden = self.hidden_columns()
         show_all = menu.addAction(tr("Show all columns"))
         show_all.setProperty("keep_open", True)
@@ -1957,6 +1718,11 @@ class LayersPanel(QWidget):
                                     tr("Folder name:"))
         if ok and name.strip():
             self.move_to_folder(names, name.strip())
+
+    def delete_row(self) -> None:
+        """Delete the current row: what the list's Delete key does (see
+        :meth:`_on_delete`)."""
+        self._on_delete()
 
     def _on_delete(self) -> None:
         """Delete the highlighted layer — one undo step, so Ctrl+Z brings
@@ -2354,22 +2120,36 @@ class LayersPanel(QWidget):
 
     # ---- The window's scene-changed signal -------------------------------------
     def on_scene_changed(self) -> None:
-        """Refreshed now when on screen, on showing otherwise — like the
-        Browser and the components tray. Behind another tab, rebuilding the
-        rows was 7 ms of every edit on plaza, and the counts that follow
-        walk the whole model: 0.15 s of every edit on the plant of #158
-        (release_check 0.5.11). A window not shown yet (scripts, tests)
+        """The window's per-change call: rebuild once the event loop is
+        back — never from inside a paint nor from a drop-down's own signal.
+
+        ``sceneVersionChanged`` reaches here from ``_sync_edges``, that is,
+        in the middle of ``paintGL``, and from the Layers toolbar's list
+        while Qt is still closing it (handing a layer to the groups).
+        Clearing and sorting the tree there was an access violation: the
+        rows are rebuilt on the next turn instead, a burst of changes
+        paying one rebuild. A window not shown yet (scripts, tests)
         refreshes at once, as before."""
         if self.tree.state() == QAbstractItemView.EditingState:
             return                          # never under an open name editor
         if self._window.isVisible() and not self.isVisible():
             self._stale = True
             return
+        timer = getattr(self, "_refresh_timer", None)
+        if timer is None:
+            from PySide6.QtCore import QTimer
+            timer = self._refresh_timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._refresh_after_change)
+        timer.start(0)
+
+    def _refresh_after_change(self) -> None:
+        """What the next turn does: only the selection's mark and, after a
+        change of the model, the counts — the filter too: «Selection» shows
+        the layers of what is picked — when the rows are what they were;
+        otherwise the tree is rebuilt."""
         if (self._signature() == getattr(self, "_drawn_signature", None)
                 and self.tree.topLevelItemCount()):
-            # The rows are what they were: only the selection's mark and,
-            # after a change of the model, the counts follow. The filter
-            # too: «Selection» shows the layers of what is picked.
             self._mark_selection()
             self._apply_filter()
             if self._scene().content_version != self._counted_version:
