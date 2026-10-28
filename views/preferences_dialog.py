@@ -42,7 +42,9 @@ from PySide6.QtWidgets import (
 from core import _native
 from core import general_settings as _gs
 from core.i18n import LANGUAGE_NAMES as _LANGUAGE_NAMES
-from core.i18n import available_languages, current_language, tr
+from core.i18n import SYSTEM as SYSTEM_LANGUAGE
+from core.i18n import (available_languages, current_language,
+                       resolve_language, tr)
 
 
 #: The import dialogs' unit vocabularies (must match the dialogs in
@@ -72,9 +74,10 @@ class PreferencesDialog(QDialog):
         general = QWidget()
         form = QFormLayout(general)
         self._lang = QComboBox()
+        self._lang.addItem(tr("Same as the system"), SYSTEM_LANGUAGE)
         for code in available_languages():
             self._lang.addItem(_LANGUAGE_NAMES.get(code, code), code)
-        pending = str(st.value("language") or current_language())
+        pending = str(st.value("language") or SYSTEM_LANGUAGE)
         self._lang.setCurrentIndex(max(0, self._lang.findData(pending)))
         form.addRow(tr("Language:"), self._lang)
 
@@ -627,14 +630,16 @@ class PreferencesDialog(QDialog):
 
         # Language: same contract as the menu (persists; applies on restart).
         # Reverting a still-pending change back to the running language just
-        # rewrites the stored value — no restart note for a no-op.
+        # rewrites the stored value — no restart note for a no-op (nor for
+        # "Same as the system" when the system's is the running language).
         code = self._lang.currentData()
-        saved = str(st.value("language") or current_language())
+        saved = str(st.value("language") or SYSTEM_LANGUAGE)
         if code != saved:
             st.setValue("language", code)
-            if code != current_language():
+            lang = resolve_language(code)
+            if lang != current_language():
                 from core.i18n import set_language
-                set_language(code)
+                set_language(lang)
                 QMessageBox.information(
                     self, tr("Language changed"),
                     tr("Restart IngeTrazo to apply the new language."))

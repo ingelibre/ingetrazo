@@ -29,8 +29,8 @@ from PySide6.QtWidgets import (
 )
 
 from core import general_settings as _gs
-from core.i18n import (LANGUAGE_NAMES, available_languages, current_language,
-                       set_language, tr)
+from core.i18n import (LANGUAGE_NAMES, SYSTEM, available_languages,
+                       current_language, resolve_language, set_language, tr)
 from views.theme import style as theme_style
 from core.units import fmt_pair
 from views.filedialogs import file_dialogs
@@ -1827,16 +1827,22 @@ class MainWindow(QMainWindow):
         lang_menu = parent_menu.addMenu(tr("Language"))
         group = QActionGroup(self)
         group.setExclusive(True)
-        for code in available_languages():
-            action = QAction(self._LANGUAGE_NAMES.get(code, code), self)
+        chosen = str(QSettings().value("language") or SYSTEM)
+        for code in [SYSTEM] + available_languages():
+            if code == SYSTEM:
+                action = QAction(tr("Same as the system"), self)
+            else:
+                action = QAction(self._LANGUAGE_NAMES.get(code, code), self)
             action.setStatusTip(tr(
                 "Show the menus and messages in this language, from the "
                 "next start."))
             action.setCheckable(True)
-            action.setChecked(code == current_language())
+            action.setChecked(code == chosen)
             action.triggered.connect(lambda _checked, c=code: self._on_set_language(c))
             group.addAction(action)
             lang_menu.addAction(action)
+            if code == SYSTEM:
+                lang_menu.addSeparator()
 
     # ---- Sidebar strip (LibreOffice-style) ---------------------------------
     #: Trays that start closed until the user opens them (Window ▸
@@ -2714,11 +2720,18 @@ class MainWindow(QMainWindow):
         dlg.deleteLater()
 
     def _on_set_language(self, code: str) -> None:
-        """Persist the chosen UI language (applied on next start)."""
-        if code == current_language():
+        """Persist the chosen UI language (applied on next start).
+
+        ``code`` may be :data:`SYSTEM`; switching between it and the
+        language it resolves to is saved without a restart note."""
+        st = QSettings()
+        if code == str(st.value("language") or SYSTEM):
             return
-        QSettings().setValue("language", code)
-        set_language(code)
+        st.setValue("language", code)
+        lang = resolve_language(code)
+        if lang == current_language():
+            return
+        set_language(lang)
         QMessageBox.information(
             self,
             tr("Language changed"),

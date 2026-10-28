@@ -38,7 +38,7 @@ elif sys.stderr is not None:
 # if the ghost bothers you: run with QT_QPA_PLATFORM=xcb. Re-test the ghost
 # when Mutter/Qt update; no app-side workaround cured it (see CLAUDE.md).
 
-from PySide6.QtCore import (QEvent, QLibraryInfo, QLocale, QSettings, Qt,
+from PySide6.QtCore import (QEvent, QLibraryInfo, QSettings, Qt,
                             QTranslator)
 from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtWidgets import QApplication
@@ -47,7 +47,7 @@ from core import i18n
 
 
 def _init_language() -> None:
-    """Load the saved UI language, or default to the system locale.
+    """Load the saved UI language, or follow the system's.
 
     Reads the persisted choice from :class:`QSettings`; on first run, falls back
     to Spanish when the OS locale is Spanish, Brazilian Portuguese when it is

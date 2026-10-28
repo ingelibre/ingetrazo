@@ -33,6 +33,10 @@ LANGUAGE_NAMES = {"en": "English", "es": "Español",
                   "lo": "ລາວ", "th": "ไทย",
                   "ja": "日本語", "ko": "한국어"}
 
+#: The saved choice that follows the operating system's language (#818);
+#: also what an unset choice means.
+SYSTEM = "system"
+
 _catalog: dict[str, str] = {}
 _lang = "en"
 
@@ -50,6 +54,36 @@ def available_languages() -> list[str]:
         return ["en"]
     return sorted(p.stem for p in _I18N_DIR.glob("*.json")
                   if p.stem not in HIDDEN_LANGUAGES)
+
+
+def language_for_locales(locales) -> str:
+    """The catalog that best serves ``locales`` — the system's UI
+    languages, most preferred first (``["pt-PT", "en-US"]``).
+
+    An exact tag wins, else the same base language: Portuguese from
+    Portugal reads the Brazilian catalog, ``zh-Hans-CN`` the simplified
+    Chinese one. The first locale with any match decides, so an English
+    system stays English; nothing matching at all means English."""
+    have = available_languages()
+    by_tag = {code.lower(): code for code in have}
+    by_base: dict[str, str] = {}
+    for code in have:
+        by_base.setdefault(code.lower().split("-")[0], code)
+    for name in locales:
+        tag = str(name).replace("_", "-").lower()
+        found = by_tag.get(tag) or by_base.get(tag.split("-")[0])
+        if found:
+            return found
+    return "en"
+
+
+def resolve_language(choice: str | None) -> str:
+    """The language code a saved ``choice`` runs in: itself, or for
+    :data:`SYSTEM` (or no choice yet) the operating system's."""
+    if choice and str(choice) != SYSTEM:
+        return str(choice)
+    from PySide6.QtCore import QLocale
+    return language_for_locales(QLocale.system().uiLanguages())
 
 
 def set_language(lang: str) -> None:
