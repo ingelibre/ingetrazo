@@ -6064,6 +6064,8 @@ class MainWindow(QMainWindow):
         recent = [x for x in self._recent_paths() if x != key]
         recent.insert(0, key)
         QSettings().setValue("recent_files", recent[: self._RECENT_MAX])
+        from core.windows_recent import add_recent_document
+        add_recent_document(path)
 
     def _fill_recent_menu(self) -> None:
         menu = self._recent_menu
@@ -6993,6 +6995,8 @@ class MainWindow(QMainWindow):
                 self.viewport.update()
                 self._import_name = skp.name
                 self._update_title()
+                from core.windows_recent import add_recent_document
+                add_recent_document(skp)
                 if payload.get("empty"):
                     # A template or blank file (#103): say so, or an empty
                     # viewport reads as a failed import.

@@ -15,6 +15,7 @@
 #define MyAppPublisher "Ing. Marco Sumari Tellez"
 #define MyAppURL "https://ingetrazo.com"
 #define MyAppExeName "ingetrazo.exe"
+#define MyAppUserModelID "IngeTrazo.IngeTrazo"
 
 ; MyAppVersion is injected from the build command with /DMyAppVersion=X.Y.Z
 #ifndef MyAppVersion
@@ -127,9 +128,10 @@ Source: "..\resources\icons\mimetypes\ingetrazo-skp.ico"; DestDir: "{app}"; \
     Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; \
+    AppUserModelID: "{#MyAppUserModelID}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; \
-    Tasks: desktopicon
+    Tasks: desktopicon; AppUserModelID: "{#MyAppUserModelID}"
 
 [Registry]
 ; ── Hybrid laptops (Intel + NVIDIA/AMD): run on the discrete GPU ─────────────
@@ -147,6 +149,8 @@ Root: HKA; Subkey: "Software\Classes\.igz"; ValueType: string; \
     ValueData: "IngeTrazo.Document"; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document"; ValueType: string; \
     ValueData: "{cm:IgzDocument}"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document"; ValueType: string; \
+    ValueName: "AppUserModelID"; ValueData: "{#MyAppUserModelID}"
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\DefaultIcon"; \
     ValueType: string; ValueData: "{app}\ingetrazo-igz.ico,0"
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\shell\open\command"; \
@@ -161,6 +165,8 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\shell\open\command"; \
 ; effect if the user later chooses IngeTrazo as the default for these files.
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae"; ValueType: string; \
     ValueData: "{cm:DaeModel}"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae"; ValueType: string; \
+    ValueName: "AppUserModelID"; ValueData: "{#MyAppUserModelID}"
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae\DefaultIcon"; \
     ValueType: string; ValueData: "{app}\ingetrazo-dae.ico,0"
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae\shell\open\command"; \
@@ -171,6 +177,8 @@ Root: HKA; Subkey: "Software\Classes\.dae\OpenWithProgids"; \
 
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp"; ValueType: string; \
     ValueData: "{cm:SkpModel}"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp"; ValueType: string; \
+    ValueName: "AppUserModelID"; ValueData: "{#MyAppUserModelID}"
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp\DefaultIcon"; \
     ValueType: string; ValueData: "{app}\ingetrazo-skp.ico,0"
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp\shell\open\command"; \

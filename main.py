@@ -453,6 +453,9 @@ def main() -> int:
         return _self_check()
     if "--mcp" in sys.argv[1:]:
         return _run_mcp_server()
+    # Identify the taskbar group before Qt creates windows or file dialogs.
+    from core import windows_recent
+    windows_recent.initialize()
     # Hang autopsy (Linux): `kill -USR1 <pid>` dumps every thread's Python
     # stack to stderr, so a frozen main loop names its exact line without a
     # debugger or elevated ptrace. No-op where SIGUSR1 doesn't exist.
