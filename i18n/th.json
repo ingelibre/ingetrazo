@@ -779,7 +779,7 @@
  "Linus Torvalds (1.75 m)": "Linus Torvalds (1.75 ม.)",
  "List the models your key can use": "แสดงรายการโมเดลที่คีย์ของคุณสามารถใช้งานได้",
  "Little stones": "หินก้อนเล็ก",
- "Live objects: scene, mesh, viewport, window, selection, groups, layers. Changes are undoable (Ctrl+Z).": "วัตถุสด: ฉาก, เมช, ช่องมุมมอง, หน้าต่าง, การเลือก, กลุ่ม, เลเยอร์ การเปลี่ยนแปลงสามารถยกเลิกได้ (Ctrl+Z)",
+ "Live objects: scene, mesh, viewport, window, selection, groups, layers. Changes are undoable (Ctrl+Z).": "Live objects: scene, mesh, viewport, window, selection, groups, layers. การเปลี่ยนแปลงสามารถยกเลิกได้ (Ctrl+Z)",
  "Living room": "ห้องรับแขก",
  "Loading terrain…": "กำลังโหลดภูมิประเทศ…",
  "Local models — install from <a href='{url}'>{url}</a>": "โมเดลในเครื่อง — ติดตั้งได้จาก <a href='{url}'>{url}</a>",
