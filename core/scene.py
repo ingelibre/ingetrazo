@@ -575,16 +575,26 @@ class Scene:
         Face-me billboards are left out (they are drawn per frame, not from
         their mesh). Consumers that used to walk ``self.groups`` and read
         ``g.mesh`` want this — otherwise the geometry a component places
-        inside itself is simply invisible to them."""
-        from core.group import iter_placements
+        inside itself is simply invisible to them.
+
+        A nested placement that is not visible takes its subtree along, as
+        a hidden top-level group always did: a group on a hidden tag two
+        levels down left its own children on screen."""
+        def walk(pg, base):
+            m = getattr(pg, "xform", None)
+            if base is not None:
+                m = base if m is None else base * m
+            yield pg, m
+            for child in getattr(pg, "children", None) or ():
+                if getattr(child, "billboard", False) \
+                        or not self.entity_visible(child):
+                    continue
+                yield from walk(child, m)
+
         for g in self.groups:
             if not self.entity_visible(g) or getattr(g, "billboard", False):
                 continue
-            for pg, m in iter_placements(g):
-                if pg is not g and (getattr(pg, "billboard", False)
-                                    or not self.entity_visible(pg)):
-                    continue
-                yield pg, m
+            yield from walk(g, None)
 
     def render_edges(self):
         for e in self.loose_mesh.edges:

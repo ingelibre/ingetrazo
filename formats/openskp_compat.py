@@ -21,7 +21,12 @@ A roof tagged "Roof" landed on a layer called 11, so hiding "Roof" left it
 on screen. The table is kept from the parse and :func:`resolve_face_layers`
 turns the ids into names.
 
-Both patches are detected by BEHAVIOUR, not by version: once the upstream
+**Groups arrive as components.** The classic reader reads a ``CGroup``
+and a ``CComponentInstance`` alike and keeps no trace of which it was. The
+definitions placed through a ``CGroup`` are noted during the parse
+(:func:`group_definitions`) so the import makes them groups again.
+
+The patches are detected by BEHAVIOUR, not by version: once the upstream
 reader carries ``_connection_paths`` the first is left alone, and the
 second only touches a face layer that is still a number.
 """
@@ -46,7 +51,44 @@ def apply() -> bool:
         return False
     _applied = True
     layers = _keep_layer_table()
-    return _fix_legacy_dimensions(L) or layers
+    groups = _note_legacy_groups(L)
+    return _fix_legacy_dimensions(L) or layers or groups
+
+
+def _note_legacy_groups(L) -> bool:
+    """Remember which definitions a classic (pre-2021) file places through a
+    ``CGroup`` — a SketchUp GROUP — rather than a ``CComponentInstance``.
+    The reader reads both the same way and the model it builds keeps no
+    trace of which it was, so a group arrived as a component. The ids land
+    in a per-thread set, reset before each parse (see
+    :func:`reset_group_definitions`)."""
+    readers = getattr(L, "_READERS", None)
+    original = (readers or {}).get("CGroup")
+    if original is None or getattr(original, "_notes_groups", False):
+        return False
+
+    def read_group(ar, r):
+        rec = original(ar, r)
+        if isinstance(rec, dict) and rec.get("def") is not None:
+            if not hasattr(_parse_tables, "groups"):
+                _parse_tables.groups = set()
+            _parse_tables.groups.add(rec["def"])
+        return rec
+
+    read_group._notes_groups = True
+    readers["CGroup"] = read_group
+    return True
+
+
+def group_definitions() -> set:
+    """The definition ids the last parse on this thread placed as GROUPS
+    (classic files only; a 2021+ file yields an empty set)."""
+    return set(getattr(_parse_tables, "groups", None) or ())
+
+
+def reset_group_definitions() -> None:
+    """Forget the groups of the previous parse — call before parsing."""
+    _parse_tables.groups = set()
 
 
 def _keep_layer_table() -> bool:

@@ -3776,7 +3776,8 @@ class Viewport(QOpenGLWidget):
 
         ctx = self.scene.edit_group
 
-        def walk(node, world, dentro=None, hidden=False):
+        def walk(node, world, dentro=None, hidden=False, forced=forced,
+                 inherited=None):
             """``dentro`` = the first-level child of the open context this
             subtree hangs from, or ``None`` outside it.
 
@@ -3801,10 +3802,12 @@ class Viewport(QOpenGLWidget):
                 tops[id(proxy)] = id(group)
                 proxy.mesh = child.mesh
                 # A nested entity with no tag of its own inherits the
-                # parent's (the .skp convention); and when the parent's tag is hidden or
-                # locked the whole instance goes with it, whatever its
-                # children are tagged.
-                proxy.layer = forced or child.layer or node.layer
+                # nearest tag above it (the .skp convention); and when a tag
+                # above is hidden or locked the whole instance goes with it,
+                # whatever its children are tagged — at ANY depth, not only
+                # below the top-level object: a hidden group two levels down
+                # left its own children on screen.
+                proxy.layer = forced or child.layer or inherited or node.layer
                 proxy.billboard = child.billboard
                 # Hide on an object takes its whole subtree along, and a
                 # hidden child stays hidden inside a visible parent.
@@ -3825,9 +3828,14 @@ class Viewport(QOpenGLWidget):
                 proxy.xform = m
                 out.append(proxy)
                 if child.children:
+                    kid_forced = forced
+                    if kid_forced is None and proxy.layer:
+                        k_vis, k_locked = self.scene._layer_state(proxy)
+                        if not k_vis or k_locked:
+                            kid_forced = proxy.layer
                     walk(child, m,
                          child if (ctx is not None and node is ctx) else dentro,
-                         proxy.hidden)
+                         proxy.hidden, kid_forced, proxy.layer)
 
         walk(group, getattr(group, "xform", None), hidden=bool(group.hidden))
         return out
