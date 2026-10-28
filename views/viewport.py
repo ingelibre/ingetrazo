@@ -1221,6 +1221,53 @@ def shown_guides(scene) -> list:
     return [g for g in guides if visible(g)]
 
 
+#: Fewest dashes a guide circle is ever cut into: below this a circle too
+#: small for the camera's dash spacing would collapse into a single dash
+#: and stop reading as a dashed circle.
+_MIN_CIRCLE_DASHES = 12
+
+
+def _circle_guide_dashes(g, spacing: float, eye=None,
+                         base_dist: float = 0.0) -> list:
+    """World-space dashes along one guide circle, as a flat
+    ``[x,y,z, x,y,z, …]`` float list for the GL vertex stream.
+
+    The circle is analytic; only this display tessellation is polygonal,
+    and only into the few chords that keep a dash reading round on screen.
+    The dash period follows the camera's spacing like a guide line, but a
+    circle too small for that spacing gets proportionally smaller dashes
+    (never fewer than ``_MIN_CIRCLE_DASHES``) so it stays visibly dashed.
+    """
+    r = float(g.radius)
+    if r <= 0.0:
+        return []
+    from core.axes import plane_axes
+    u, v = plane_axes(g.normal)
+    k = 1.0
+    if eye is not None and base_dist > 0.0:
+        k = max(1.0, (QVector3D(g.center) - QVector3D(eye)).length()
+                / base_dist)
+    sp = max(float(spacing), 1e-6) * k
+    circ = 2.0 * math.pi * r
+    n = min(max(int(circ / sp), _MIN_CIRCLE_DASHES), 4000)
+    # Half of each angular period is drawn, half is a gap — the same 1:1
+    # dash/gap ratio the guide lines use.
+    dash_angle = math.pi / n
+    chords = max(1, int(math.ceil(dash_angle / 0.15)))
+    out: list = []
+    c = QVector3D(g.center)
+    for i in range(n):
+        t0 = 2.0 * math.pi * i / n
+        step = dash_angle / chords
+        for j in range(chords):
+            a0 = t0 + step * j
+            a1 = a0 + step
+            pa = c + u * (r * math.cos(a0)) + v * (r * math.sin(a0))
+            pb = c + u * (r * math.cos(a1)) + v * (r * math.sin(a1))
+            out.extend([pa.x(), pa.y(), pa.z(), pb.x(), pb.y(), pb.z()])
+    return out
+
+
 def _guide_vertices(guides, spacing: float, selection=(), centre=None,
                     reach: float = 0.0, eye=None):
     """Guides as world-space DASHES for the GL pass, so they are hidden by
@@ -1269,6 +1316,15 @@ def _guide_vertices(guides, spacing: float, selection=(), centre=None,
     base_dist = ((QVector3D(eye) - origin).length()
                  if eye is not None else 0.0)
     for g in guides or ():
+        if getattr(g, "is_circle", False):
+            flat = _circle_guide_dashes(g, spacing, eye, base_dist)
+            if flat:
+                start = len(coords) // 3
+                coords.extend(flat)
+                count = len(coords) // 3 - start
+                if count:
+                    spans.append((start, count, id(g) in sel))
+            continue
         if not getattr(g, "is_line", False):
             # A guide POINT measured from a vertex draws its guide SEGMENT
             # (Rafael, Revisión 3): finite, dashed the same way, from the
@@ -1599,10 +1655,12 @@ class Viewport(QOpenGLWidget):
         "endpoint": "Endpoint",
         "midpoint": "Midpoint",
         "arc_midpoint": "Arc midpoint",
+        "quadrant": "Quadrant",
         "component_origin": "Component origin",
         "on_line": "On line",
+        "on_circle": "On circle",
         "on_axis": "On axis",
-        "tangent": "Tangent at vertex",
+        "tangent": "Tangent",
         "on_edge": "On edge",
         "on_face": "On face",
         "origin": "Origin",
@@ -8892,8 +8950,8 @@ class Viewport(QOpenGLWidget):
             painter.drawEllipse(QPointF(px, py), 6.5, 6.5)
         elif snap.kind in ("endpoint", "origin", "component_origin", "on_edge",
                            "on_axis", "intersection_edge", "intersection_face",
-                           "on_line", "extension", "from_point", "aligned",
-                           "tangent"):
+                           "on_line", "on_circle", "extension", "from_point",
+                           "aligned", "tangent"):
             rect = QRectF(px - 7, py - 7, 14, 14)
             painter.setPen(halo)
             painter.setBrush(Qt.NoBrush)
@@ -8901,7 +8959,7 @@ class Viewport(QOpenGLWidget):
             painter.setPen(mark)
             painter.setBrush(QColor.fromRgbF(r, g, b, 0.30))
             painter.drawRect(rect)
-        elif snap.kind in ("midpoint", "arc_midpoint"):
+        elif snap.kind in ("midpoint", "arc_midpoint", "quadrant"):
             # Cyan diamond.
             diamond = QPolygonF([
                 QPointF(px, py - 9), QPointF(px + 9, py),
@@ -9480,7 +9538,7 @@ class Viewport(QOpenGLWidget):
         sel_pen.setDashPattern([14.0, 10.0])
         selection = self.scene.selection
         for g in guides:
-            if g.is_line:
+            if g.is_line or getattr(g, "is_circle", False):
                 continue
             painter.setPen(sel_pen if g in selection else pen)
             q = self._world_to_pixel(g.point)
@@ -14507,12 +14565,16 @@ class Viewport(QOpenGLWidget):
         # used to kill on-line snapping in ordinary 3D views); guide POINTS
         # snap as degenerate pseudo-edges, exactly like survey points.
         lines = []
+        circles = []
         # Guides that Move is dragging pass through the cursor: left out,
         # or the cursor locks onto its own guide (#627).
         moving = getattr(self.active_tool, "moving_guide_ids", None)
         moving = moving() if callable(moving) else ()
         for g in shown_guides(self.scene):
             if id(g) in moving:
+                continue
+            if getattr(g, "is_circle", False):
+                circles.append(g)   # rim is resolved in compute_snap; centre below
                 continue
             if g.is_line:
                 seg = self._guide_snap_segment(g)
@@ -14561,6 +14623,11 @@ class Viewport(QOpenGLWidget):
             if pc is not None and (hint is None or hint(ref, pc) > 0.0):
                 near.append(_SnapEdge(QVector3D(ref[0]), QVector3D(ref[0]),
                                       center=True))
+        # A guide circle's centre is a permanent snap target, like the centre
+        # of a visited mesh circle (the rim is resolved in compute_snap).
+        for c in circles:
+            near.append(_SnapEdge(QVector3D(c.center), QVector3D(c.center),
+                                  center=True))
         sp = _active_cut(self.scene)
         if sp is not None:
             # What the cut hides must not attract snaps: drop
@@ -14576,8 +14643,8 @@ class Viewport(QOpenGLWidget):
                                   QVector3D(gp.position)))
         big = (px is not None
                and len(self.scene.edges) > _LOOSE_SNAP_CAP)
-        if not lines and not near and sp is None and not big and excl is None \
-                and not _snap_dropped_loose(self):
+        if not lines and not near and not circles and sp is None \
+                and not big and excl is None and not _snap_dropped_loose(self):
             return self.scene
         if big:
             # Only the edges near the cursor are considered, so ask each one
@@ -14595,7 +14662,7 @@ class Viewport(QOpenGLWidget):
         if sp is not None:
             loose = [e for e in loose if _kept(e)]
         from types import SimpleNamespace
-        return SimpleNamespace(edges=loose + lines + near)
+        return SimpleNamespace(edges=loose + lines + near, circles=circles)
 
     def _group_obb(self, group):
         """``(frame, lo, hi)`` of the group in its OWN axes, cached on its
@@ -14952,6 +15019,25 @@ class Viewport(QOpenGLWidget):
     def _shown_guides(self) -> list:
         return shown_guides(self.scene)
 
+    def _circle_pick_distance(self, g, screen_x: float, screen_y: float):
+        """Screen distance from the cursor to a guide circle's rim, or None
+        when it cannot be projected. Sampling is display-only; the stored
+        circle stays analytic."""
+        pts = []
+        for p in g.sample_points(64):
+            px = self._world_to_pixel(p)
+            if px is None:
+                return None            # part of the circle is behind the eye
+            pts.append(px)
+        best = float("inf")
+        n = len(pts)
+        for i in range(n):
+            d = _point_to_segment_distance_2d((screen_x, screen_y),
+                                              pts[i], pts[(i + 1) % n])
+            if d < best:
+                best = d
+        return best
+
     def pick_guide(self, screen_x: float, screen_y: float):
         """Return the construction guide nearest the cursor within the pick
         threshold, or ``None`` (for the Eraser). One on a hidden or
@@ -14963,6 +15049,12 @@ class Viewport(QOpenGLWidget):
             return None
         best, best_d = None, self.pick_threshold_px
         for g in guides:
+            if getattr(g, "is_circle", False):
+                d = self._circle_pick_distance(g, screen_x, screen_y)
+                if d is not None and d < best_d:
+                    best_d = d
+                    best = g
+                continue
             seg = self._clip_segment_front(*g.segment())
             if seg is None:
                 continue
