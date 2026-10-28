@@ -40,6 +40,7 @@ from typing import Callable, Optional
 
 from PySide6.QtGui import QVector3D
 
+from .geometry import Edge
 
 # Colors used by the rubber band and the 2D snap indicator. RGB floats [0, 1].
 COLOR_ENDPOINT = (0.16, 0.62, 0.36)
@@ -106,6 +107,12 @@ class SnapResult:
     #: The ScreenTip's own words, already translated — what an extension's
     #: inference says («Level PA»); wins over the kind's built-in label.
     label: Optional[str] = None
+    # 17.10.26 BasteBaus: stores an edge if snapped to an edge to be used in 
+    #                     dimension tool do directly create a dimension on an edge
+    edge: Optional[Edge] = None
+    # 17.10.26 BasteBaus: stores an point from which was snapped to be used in 
+    #                     dimension tool if snapping to points not on the dimension line
+    from_point: Optional[QVector3D] = None
     #: The colour of the lock the point was found under (an arrow-key or
     #: Shift axis, a reference): the draw line keeps it while the point
     #: snaps to a corner on that line — locked to red, the line stays red
@@ -1120,14 +1127,23 @@ def _from_point_snap(
     # when it does not: a guide across the axes painted blue read as «along
     # blue» (#711).
     guide_color = None
+    dim_axis = None
     if kind == "from_point":
         gdn = (foot - ref).normalized()
         gaxis = max(_AXIS_VECTORS,
                     key=lambda k: abs(QVector3D.dotProduct(gdn, _AXIS_VECTORS[k])))
+
+        # 17.10.26 BastelBaus: dimension of snap to be forwarded when creating
+        #                      Dimension along one axis
+        dim_axis = max(_AXIS_VECTORS,
+                    key=lambda k: abs(QVector3D.dotProduct(line_dir, _AXIS_VECTORS[k]))) if line_dir is not None else None
+        # todo: is it line_dir or draw_dir ??
+
         along = abs(QVector3D.dotProduct(gdn, _AXIS_VECTORS[gaxis]))
         guide_color = AXIS_COLORS[gaxis] if along > 0.999 else COLOR_EXTENSION
     return SnapResult(foot, kind, color, guide=(ref, foot),
-                      guide_color=guide_color)
+                      guide_color=guide_color, 
+                      axis=dim_axis)
 
 
 def _through_point_snap(
@@ -1588,6 +1604,11 @@ def compute_snap(
             project_onto_line, hover_lock_edge, hover_lock_plane,
         )
         if hit is not None:
+            # 20.10.26 BastelBaus, overwrite the snap
+            #          since it is still a fix axis snap, for 
+            #          example when creating the dimensions!
+            hit.axis = axis_lock      
+            hit.kind = "axis"      
             hit.lock_color = AXIS_COLORS[axis_lock]
             return hit
         return SnapResult(locked, "axis", AXIS_COLORS[axis_lock], axis=axis_lock)
@@ -2059,7 +2080,12 @@ def compute_snap(
         if getattr(edge, "guide", False):
             return SnapResult(on_pt, "on_line", COLOR_ON_EDGE)   # a guide line
         return SnapResult(on_pt, "on_edge", COLOR_ON_EDGE,
-                          context=getattr(edge, "context", None))
+                          context=getattr(edge, "context", None),
+                          edge=edge)
+                          # 17.10.26 Bastelbaus: added edge which is used on dimension tool
+                          #                      to directly create a dimension by clickling
+                          #                      on an edge
+
 
     # 7c. Where the face under the cursor meets another face with no edge
     #     between them — a box sunk into the floor, a beam through a wall
