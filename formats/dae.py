@@ -59,6 +59,50 @@ def _tag(el) -> str:
     return el.tag.rsplit("}", 1)[-1]
 
 
+# A node placed through <instance_node> brings its whole subtree, and a
+# library node may place the next one twice: each level doubles the copies,
+# so a 3 KB file asked for 2^32 placements and the import never ended (17
+# levels already took 20 s). Real models stay far below: the Yanque
+# examples place about 60 nodes, a city exported from SketchUp some
+# hundreds of thousands.
+_MAX_PLACEMENTS = 1_000_000
+
+
+def _placements(root) -> int:
+    """How many nodes the scene places once every ``instance_node`` is
+    expanded, counted per library node (linear in the file, not in the
+    copies) and with the same depth limit as the walks that bake them."""
+    by_id = {el.get("id"): el for el in root.iter() if el.get("id")}
+    memo: dict = {}
+
+    def count(node, depth):
+        if depth > 32:
+            return 0
+        key = (id(node), depth)
+        if key not in memo:
+            n = 1
+            for el in node:
+                t = _tag(el)
+                if t == "node":
+                    n += count(el, depth)
+                elif t == "instance_node":
+                    target = by_id.get((el.get("url") or "").lstrip("#"))
+                    if target is not None:
+                        n += count(target, depth + 1)
+                if n > _MAX_PLACEMENTS:
+                    break
+            memo[key] = n
+        return memo[key]
+
+    total = 0
+    for vs in root.iter(f"{_NS}visual_scene"):
+        for node in vs.findall(f"{_NS}node"):
+            total += count(node, 0)
+            if total > _MAX_PLACEMENTS:
+                return total
+    return total
+
+
 def _floats(text) -> list[float]:
     return [float(t) for t in (text or "").split()]
 
@@ -1416,6 +1460,11 @@ def _load_dae_inner(scene, path, progress=None):
 
     tick(0.02, "Reading file…")
     root = ET.parse(Path(path)).getroot()
+    if _placements(root) > _MAX_PLACEMENTS:
+        raise ValueError(
+            "The COLLADA file places its components more than "
+            f"{_MAX_PLACEMENTS:,} times (components inside components, "
+            "each placed again): it looks malformed, so it is not imported.")
     # Survey coordinates come out of the document first, in double
     # precision, before anything below turns them single precision.
     offset = _recenter_dom(root)
