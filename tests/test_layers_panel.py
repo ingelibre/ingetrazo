@@ -1193,6 +1193,33 @@ def test_active_column_and_new_layer_option(win, monkeypatch):
     assert L.active_layer(scene) == name
 
 
+def test_active_pencil_follows_the_chosen_accent(win):
+    from views import theme
+
+    panel = win.layers_dock.panel
+    item = panel.item_for(DEFAULT_LAYER)
+
+    def has(icon, colour):
+        image = icon.pixmap(18, 18).toImage()
+        return any(
+            image.pixelColor(x, y).alpha() > 200
+            and abs(image.pixelColor(x, y).red() - colour.red()) < 12
+            and abs(image.pixelColor(x, y).green() - colour.green()) < 12
+            and abs(image.pixelColor(x, y).blue() - colour.blue()) < 12
+            for y in range(image.height()) for x in range(image.width())
+        )
+
+    blue = theme.accent_color("blue")
+    try:
+        theme.save_accent("blue")
+        theme.apply_accent(_app)
+        assert has(item.icon(1), blue)                       # COL_ACTIVE
+        assert has(panel.tree.headerItem().icon(1), blue)
+    finally:
+        theme.save_accent(theme.ORANGE)
+        theme.apply_accent(_app)
+
+
 def test_colour_by_layer_button_sets_the_style(win):
     panel = win.layers_dock.panel
     scene = win.viewport.scene

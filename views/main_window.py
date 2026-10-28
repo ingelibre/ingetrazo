@@ -1182,6 +1182,9 @@ class MainWindow(QMainWindow):
         icons in the previous theme's ink — they were baked at build time."""
         for action, key in getattr(self, "_icon_actions", []):
             action.setIcon(tool_icon(key))
+        layers = getattr(getattr(self, "layers_dock", None), "panel", None)
+        if layers is not None:
+            layers.refresh_pencil_icons()
 
     def changeEvent(self, event) -> None:
         # Qt posts these when the OS/Qt theme (palette) flips at runtime.

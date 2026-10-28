@@ -65,10 +65,11 @@ def natural_key(text: str) -> tuple:
 
 def _pencil_icon(on: bool) -> QIcon:
     """The active layer's mark: the toolbar's «Make active» pencil, drawn
-    solid on the active row and as a faint outline on the others (where
-    clicking makes it active)."""
+    in the chosen accent on the active row and as a faint outline on the
+    others (where clicking makes it active)."""
     from PySide6.QtWidgets import QApplication
     from views.icons import pencil_glyph
+    from views.theme import accent_color
     ink = QApplication.palette().text().color()
     pm = QPixmap(18, 18)
     pm.fill(Qt.transparent)
@@ -81,7 +82,7 @@ def _pencil_icon(on: bool) -> QIcon:
     p.translate(-27, -25.5)
     if on:
         pen = QPen(ink, 1.6 / k)
-        p.setBrush(QApplication.palette().base().color())
+        p.setBrush(accent_color())
     else:
         faint = QColor(ink)
         faint.setAlpha(80)
@@ -1039,6 +1040,15 @@ class LayersPanel(QWidget):
         self._updating = False
         self._drawn_signature = self._signature()
         self._count_timer.start(300)
+
+    def refresh_pencil_icons(self) -> None:
+        """Repaint the active marks after the theme or accent changes."""
+        self.tree.headerItem().setIcon(COL_ACTIVE, _pencil_icon(True))
+        active = L.active_layer(self._scene())
+        for item in self._all_items():
+            kind, name = self._key(item)
+            if kind == KIND_LAYER:
+                item.setIcon(COL_ACTIVE, _pencil_icon(name == active))
 
     #: Column order on screen (logical columns), and the indent per level —
     #: the Browser's.
