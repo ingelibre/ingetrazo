@@ -1,3 +1,11 @@
 {
-  "_comment": "English is the source language: keys ARE the English strings, so this identity map stays empty. Translations live in es.json and future <lang>.json files."
+ "_comment": "English is the source language: keys ARE the English strings, so this identity map stays empty. Translations live in es.json and future <lang>.json files.",
+ "Saving {name}…": "Saving {name}…",
+ "Saved {name}.": "Saved {name}.",
+ "Saved {name} — {n} texture(s) packed into the document.": "Saved {name} — {n} texture(s) packed into the document.",
+ "Exporting {name}…": "Exporting {name}…",
+ "Serializing geometry…": "Serializing geometry…",
+ "Packing textures…": "Packing textures…",
+ "Writing file…": "Writing file…",
+ "Saved": "Saved"
 }
