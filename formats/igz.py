@@ -605,10 +605,12 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
     return _write_geometry(arrays, table, layer_table, sink)
 
 
-def save_scene(scene, path: Path) -> dict:
+def save_scene(scene, path: Path, progress=None) -> dict:
     """Write ``scene`` to ``path``. Returns ``{"embedded", "missing"}``: how
     many texture images were packed into the document, and how many could not
     be read (those keep pointing at their original path)."""
+    if progress:
+        progress(0.1, "Serializing geometry…")
     # Accept a Scene or a bare Mesh (the M1 read-compat path feeds a Mesh).
     mesh = scene.mesh if hasattr(scene, "mesh") else scene
     # Decided BEFORE anything is serialized: a large document writes its
@@ -834,6 +836,8 @@ def save_scene(scene, path: Path) -> dict:
     # Images ride INSIDE the document (see the module docstring). Only a scene
     # that actually has textures pays for the container; everything else stays
     # plain JSON at format 1, readable by older builds.
+    if progress:
+        progress(0.6, "Packing textures…")
     blobs, missing = _pack_textures(payload)
     # The photogrammetric survey (Track G, G6) rides inside the document too,
     # for the same reason the textures do: a reference mesh that lives in a
@@ -850,6 +854,8 @@ def save_scene(scene, path: Path) -> dict:
         "app_version": __version__,
         "scene": payload,
     }
+    if progress:
+        progress(0.8, "Writing file…")
     try:
         if large:
             doc = json.dumps(data, separators=(",", ":"), allow_nan=False)
@@ -864,6 +870,8 @@ def save_scene(scene, path: Path) -> dict:
         _write_container(path, doc, blobs, fast=large, deflated=geom)
     else:
         _write_atomic(path, doc.encode("utf-8"))
+    if progress:
+        progress(1.0, "Saved")
     return {"embedded": len(blobs), "missing": missing}
 
 

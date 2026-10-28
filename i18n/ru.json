@@ -1110,7 +1110,6 @@
  "Save this title block as a template…": "Сохранить основную надпись как шаблон…",
  "Saved views": "Сохраненные виды",
  "Saved with missing textures": "Сохранено с отсутствующими текстурами",
- "Saved — {n} texture(s) packed into the document.": "Сохранено — {n} текстур(ы) упаковано в документ.",
  "Scale": "Масштаб",
  "Scale Uniformly: off": "Равномерный масштаб: выкл",
  "Scale Uniformly: on": "Равномерный масштаб: вкл",
@@ -3189,5 +3188,13 @@
  "Texts": "Тексты",
  "Tool cursor:": "Курсор инструмента:",
  "The tool's icon": "Значок инструмента",
- "Crosshair": "Перекрестие"
+ "Crosshair": "Перекрестие",
+ "Saving {name}…": "Сохранение {name}…",
+ "Saved {name}.": "Сохранено {name}.",
+ "Saved {name} — {n} texture(s) packed into the document.": "Сохранено {name} — {n} текстур(ы) упаковано в документ.",
+ "Exporting {name}…": "Экспорт {name}…",
+ "Serializing geometry…": "Сериализация геометрии…",
+ "Packing textures…": "Упаковка текстур…",
+ "Writing file…": "Запись файла…",
+ "Saved": "Сохранено"
 }
