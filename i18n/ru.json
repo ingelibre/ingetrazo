@@ -3189,5 +3189,11 @@
  "Texts": "Тексты",
  "Tool cursor:": "Курсор инструмента:",
  "The tool's icon": "Значок инструмента",
- "Crosshair": "Перекрестие"
+ "Crosshair": "Перекрестие",
+ "Using {var} from the environment": "Используется {var} из окружения",
+ "{var} is set in the environment — choose {name} as the provider to use it": "{var} задана в окружении — выберите {name} как провайдера, чтобы использовать её",
+ " Or define {var} in the environment and restart IngeTrazo.": " Или задайте {var} в окружении и перезапустите IngeTrazo.",
+ " The key came from the {var} environment variable.": " Ключ взят из переменной окружения {var}.",
+ "empty = {var} from the environment": "пусто = {var} из окружения",
+ "paste your {name} key": "вставьте ключ {name}"
 }

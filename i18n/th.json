@@ -3192,5 +3192,11 @@
  "{n} scenes updated": "อัปเดต {n} ฉากแล้ว",
  "Tool cursor:": "เคอร์เซอร์เครื่องมือ:",
  "The tool's icon": "ไอคอนของเครื่องมือ",
- "Crosshair": "กากบาท"
+ "Crosshair": "กากบาท",
+ "Using {var} from the environment": "กำลังใช้ {var} จากสภาพแวดล้อม",
+ "{var} is set in the environment — choose {name} as the provider to use it": "{var} ถูกตั้งค่าไว้ในสภาพแวดล้อม — เลือก {name} เป็นผู้ให้บริการเพื่อใช้งาน",
+ " Or define {var} in the environment and restart IngeTrazo.": " หรือกำหนด {var} ในสภาพแวดล้อมแล้วเริ่ม IngeTrazo ใหม่",
+ " The key came from the {var} environment variable.": " คีย์มาจากตัวแปรสภาพแวดล้อม {var}",
+ "empty = {var} from the environment": "ว่าง = {var} จากสภาพแวดล้อม",
+ "paste your {name} key": "วางคีย์ {name} ของคุณ"
 }

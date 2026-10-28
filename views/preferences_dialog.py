@@ -367,6 +367,13 @@ class PreferencesDialog(QDialog):
         self._api_key.setEchoMode(QLineEdit.Password)
         self._api_key.setPlaceholderText(tr("empty = local AI (Ollama, LM Studio)"))
         form.addRow(tr("API key:"), self._api_key)
+        # The same note as the AI tab: a key the environment lends (#998).
+        self._key_env = QLabel("")
+        self._key_env.setWordWrap(True)
+        form.addRow("", self._key_env)
+        self._provider.currentIndexChanged.connect(self._refresh_key_env)
+        self._api_key.textChanged.connect(self._refresh_key_env)
+        self._refresh_key_env()
 
         self._model = QLineEdit(str(st.value("ia/modelo", "") or ""))
         self._model.setPlaceholderText(tr("model (default per provider)"))
@@ -437,6 +444,18 @@ class PreferencesDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _refresh_key_env(self, *_args) -> None:
+        try:
+            from plugins.ai_assistant import env_key_note, key_placeholder
+            self._api_key.setPlaceholderText(
+                key_placeholder(self._provider.currentData()))
+            note = env_key_note(self._provider.currentData(),
+                                self._api_key.text().strip())
+        except Exception:           # noqa: BLE001 — a note, not the dialog
+            note = ""
+        self._key_env.setText(note)
+        self._key_env.setVisible(bool(note))
 
     def _drop_ndof_monitor(self, _result=0) -> None:
         from views.ndof_input import shared_input

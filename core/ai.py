@@ -21,6 +21,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import os
 import sys
 import re
 import traceback
@@ -740,6 +741,32 @@ PROVIDER_INFO = {
     "ollama": ("Local / OpenAI-compatible (Ollama, LM Studio…)",
                "https://ollama.com/download"),
 }
+
+
+#: The environment variables each hosted provider's own tools read, first
+#: one wins (#998): a user who keeps ``ANTHROPIC_API_KEY`` in the
+#: environment should not have to paste it again. Google's SDKs accept
+#: both ``GEMINI_API_KEY`` and ``GOOGLE_API_KEY``.
+ENV_KEYS = {
+    "groq": ("GROQ_API_KEY",),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
+}
+
+
+def env_key(provider: str, environ=None) -> tuple[str, str] | None:
+    """``(variable, key)`` for the first of ``provider``'s variables set
+    to something other than blanks, or None. Read only, never saved: the
+    environment stays the user's place for it."""
+    env = os.environ if environ is None else environ
+    for var in ENV_KEYS.get(provider, ()):
+        value = (env.get(var) or "").strip()
+        if value:
+            return var, value
+    return None
 
 
 def _local_base(url: str) -> str:

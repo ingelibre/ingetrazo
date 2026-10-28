@@ -3196,5 +3196,11 @@
  "Texts": "Textos",
  "Tool cursor:": "Cursor da ferramenta:",
  "The tool's icon": "O ícone da ferramenta",
- "Crosshair": "Cruz"
+ "Crosshair": "Cruz",
+ "Using {var} from the environment": "Usando {var} do ambiente",
+ "{var} is set in the environment — choose {name} as the provider to use it": "{var} está definida no ambiente — escolha {name} como provedor para usá-la",
+ " Or define {var} in the environment and restart IngeTrazo.": " Ou defina {var} no ambiente e reinicie o IngeTrazo.",
+ " The key came from the {var} environment variable.": " A chave veio da variável de ambiente {var}.",
+ "empty = {var} from the environment": "vazio = {var} do ambiente",
+ "paste your {name} key": "cole sua chave do {name}"
 }

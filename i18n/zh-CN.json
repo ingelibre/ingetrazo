@@ -3190,5 +3190,11 @@
  "Texts": "文字",
  "Tool cursor:": "工具光标：",
  "The tool's icon": "工具图标",
- "Crosshair": "十字线"
+ "Crosshair": "十字线",
+ "Using {var} from the environment": "正在使用环境变量 {var}",
+ "{var} is set in the environment — choose {name} as the provider to use it": "环境中已设置 {var} — 在“提供商”中选择 {name} 即可使用",
+ " Or define {var} in the environment and restart IngeTrazo.": " 或者在环境中设置 {var} 并重启 IngeTrazo。",
+ " The key came from the {var} environment variable.": " 该密钥来自环境变量 {var}。",
+ "empty = {var} from the environment": "留空 = 使用环境变量 {var}",
+ "paste your {name} key": "粘贴你的 {name} 密钥"
 }

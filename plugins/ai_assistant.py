@@ -13,13 +13,16 @@ live viewport screenshot, so it SEES what it built and iterates.
 Providers follow the IngePresupuestos convention the user already knows:
 paste ONE API key and the provider is detected by its prefix (gsk_ → Groq,
 sk-ant- → Anthropic, AIza → Gemini, sk-or- → OpenRouter, sk- → OpenAI), or
-leave it empty for a local Ollama. Model name and Ollama URL are editable;
+leave it empty for a local Ollama. A provider picked by name with the field
+empty uses its usual variable (``ANTHROPIC_API_KEY``…, ``core.ai.ENV_KEYS``)
+without saving it (#998). Model name and Ollama URL are editable;
 everything persists in QSettings. Network calls run on a worker thread —
 the recipes always execute on the Qt main thread.
 """
 from __future__ import annotations
 
 import base64
+import html
 import threading
 
 from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt, Signal
@@ -42,7 +45,7 @@ from PySide6.QtWidgets import (
 from core import ai, ai_recipes
 from core.i18n import tr
 from views.filedialogs import file_dialogs
-from views.fold_section import FoldSection, narrow, wrapping_form
+from views.fold_section import FoldSection, WrapLabel, narrow, wrapping_form
 
 MAX_ROUNDS = 12
 
@@ -198,9 +201,12 @@ class AsistentePanel(QWidget):
         self._key.editingFinished.connect(self._save_settings)
         form.addRow(tr("API key:"), self._key)
 
-        self._key_link = QLabel("")
+        # The provider's key page, and above it, when the field is empty
+        # and the provider's variable is set, where the key comes from
+        # (#998) — one label, not a row more: the AI tab is the tallest of
+        # the tray, and a taller one grows a short window.
+        self._key_link = WrapLabel("")
         self._key_link.setOpenExternalLinks(True)
-        self._key_link.setWordWrap(True)
         form.addRow(self._key_link)
 
         self._model = QComboBox()
@@ -385,20 +391,38 @@ class AsistentePanel(QWidget):
         provider = self._effective_provider()
         label, url = ai.PROVIDER_INFO[provider]
         if provider == "ollama":
-            self._key_link.setText(tr(
+            link = tr(
                 "Local models — install from <a href='{url}'>{url}</a>",
-                url=url))
+                url=url)
         else:
-            self._key_link.setText(tr(
+            link = tr(
                 "{name} — get your key at <a href='{url}'>{url}</a>",
-                name=label, url=url))
+                name=label, url=url)
+        note = env_key_note(self._provider.currentData(),
+                            self._key.text().strip())
+        self._key_link.setText(
+            f"{html.escape(note)}<br>{link}" if note else link)
         self._model.lineEdit().setPlaceholderText(
             ai.DEFAULT_MODELS[provider])
         self._ollama.setVisible(provider == "ollama")
         self._ollama_label.setVisible(provider == "ollama")
+        self._key.setPlaceholderText(
+            key_placeholder(self._provider.currentData()))
+
+    def _env_key(self) -> tuple[str, str] | None:
+        """``(variable, key)`` the environment lends when the field is
+        empty (#998). Only for a provider picked by name: on Auto an empty
+        field means the local server, and an ``OPENAI_API_KEY`` exported
+        for some other program must not send the chat to the cloud."""
+        if self._key.text().strip():
+            return None
+        return ai.env_key(self._effective_provider())
 
     def _config(self) -> tuple[str, str, str, str]:
         key = self._key.text().strip()
+        if not key:
+            env = self._env_key()
+            key = env[1] if env else ""
         provider = self._effective_provider()
         model = (self._model.currentText().strip()
                  or ai.DEFAULT_MODELS[provider])
@@ -434,12 +458,17 @@ class AsistentePanel(QWidget):
         if key or provider == "ollama":
             return None
         label, url = ai.PROVIDER_INFO[provider]
-        return tr(
+        hint = tr(
             "{name} needs an API key — the quota is free, the key is not "
             "optional. Create one at {url} (the link under the key field "
             "opens it) and paste it in the \"API key\" field — it is saved "
             "in your user profile, never in the document.", name=label,
             url=url)
+        env_vars = ai.ENV_KEYS.get(provider)
+        if env_vars:
+            hint += tr(" Or define {var} in the environment and restart "
+                       "IngeTrazo.", var=env_vars[0])
+        return hint
 
     @staticmethod
     def _bad_key_hint(provider: str, err: str) -> str | None:
@@ -643,6 +672,10 @@ class AsistentePanel(QWidget):
                 bad = self._bad_key_hint(self._effective_provider(),
                                          str(msg.get("msg")))
                 if bad is not None:
+                    env = self._env_key()
+                    if env:            # nothing in the field to look at
+                        bad += tr(" The key came from the {var} "
+                                  "environment variable.", var=env[0])
                     self._append(bad, "err")
                 if "model_not_found" in str(msg.get("msg")):
                     self._append(tr(
@@ -775,6 +808,39 @@ class AsistentePanel(QWidget):
             return base64.b64encode(bytes(buf.data())).decode()
         except Exception:  # noqa: BLE001 — vision is best-effort
             return None
+
+
+def key_placeholder(chosen, environ=None) -> str:
+    """What an empty key field means for the provider combo's data: the
+    local server only on Auto and Local — with Anthropic picked, «empty =
+    local AI» was wrong (#998 review)."""
+    if not chosen or chosen in ("auto", "ollama"):
+        return tr("empty = local AI (Ollama, LM Studio)")
+    env = ai.env_key(chosen, environ)
+    if env:
+        return tr("empty = {var} from the environment", var=env[0])
+    return tr("paste your {name} key", name=ai.PROVIDER_INFO[chosen][0])
+
+
+def env_key_note(chosen, key: str, environ=None) -> str:
+    """The line under an EMPTY key field when the environment has a key
+    (#998), "" otherwise. ``chosen`` is the provider combo's data: a
+    provider by name uses its variable; on Auto the field stays the local
+    server, so the note only says which provider to pick. Shared with the
+    Preferences dialog."""
+    if key:
+        return ""
+    if chosen and chosen != "auto":
+        env = ai.env_key(chosen, environ)
+        return (tr("Using {var} from the environment", var=env[0])
+                if env else "")
+    for prov in ai.PROVIDERS:
+        env = ai.env_key(prov, environ)
+        if env:
+            return tr("{var} is set in the environment — choose {name} as "
+                      "the provider to use it", var=env[0],
+                      name=ai.PROVIDER_INFO[prov][0])
+    return ""
 
 
 def _esc(text: str) -> str:

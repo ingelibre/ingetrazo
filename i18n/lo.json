@@ -3192,5 +3192,11 @@
 "{n} scenes updated": "ອັບເດດ {n} ສາກແລ້ວ",
 "Tool cursor:": "ເຄີເຊີເຄື່ອງມື:",
 "The tool's icon": "ໄອຄອນຂອງເຄື່ອງມື",
-"Crosshair": "ເຄື່ອງໝາຍບວກ"
+"Crosshair": "ເຄື່ອງໝາຍບວກ",
+"Using {var} from the environment": "ກຳລັງໃຊ້ {var} ຈາກສະພາບແວດລ້ອມ",
+"{var} is set in the environment — choose {name} as the provider to use it": "{var} ຖືກຕັ້ງໄວ້ໃນສະພາບແວດລ້ອມ — ເລືອກ {name} ເປັນຜູ້ໃຫ້ບໍລິການເພື່ອໃຊ້ມັນ",
+" Or define {var} in the environment and restart IngeTrazo.": " ຫຼື ກຳນົດ {var} ໃນສະພາບແວດລ້ອມ ແລ້ວເປີດ IngeTrazo ຄືນໃໝ່.",
+" The key came from the {var} environment variable.": " ກະແຈມາຈາກຕົວແປສະພາບແວດລ້ອມ {var}.",
+"empty = {var} from the environment": "ວ່າງ = {var} ຈາກສະພາບແວດລ້ອມ",
+"paste your {name} key": "ວາງກະແຈ {name} ຂອງທ່ານ"
 }

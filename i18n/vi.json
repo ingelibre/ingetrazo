@@ -3216,5 +3216,11 @@
   "{n} scenes updated": "Đã cập nhật {n} cảnh",
   "Tool cursor:": "Con trỏ công cụ:",
   "The tool's icon": "Biểu tượng của công cụ",
-  "Crosshair": "Dấu chữ thập"
+  "Crosshair": "Dấu chữ thập",
+  "Using {var} from the environment": "Đang dùng {var} từ biến môi trường",
+  "{var} is set in the environment — choose {name} as the provider to use it": "{var} đã được đặt trong môi trường — chọn {name} làm nhà cung cấp để dùng nó",
+  " Or define {var} in the environment and restart IngeTrazo.": " Hoặc đặt {var} trong môi trường rồi khởi động lại IngeTrazo.",
+  " The key came from the {var} environment variable.": " Khóa được lấy từ biến môi trường {var}.",
+  "empty = {var} from the environment": "để trống = {var} từ biến môi trường",
+  "paste your {name} key": "dán khóa {name} của bạn"
 }

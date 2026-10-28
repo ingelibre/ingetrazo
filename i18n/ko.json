@@ -3189,5 +3189,11 @@
  "{n} scenes updated": "장면 {n}개 업데이트됨",
  "Tool cursor:": "도구 커서:",
  "The tool's icon": "도구 아이콘",
- "Crosshair": "십자선"
+ "Crosshair": "십자선",
+ "Using {var} from the environment": "환경 변수 {var}을(를) 사용 중",
+ "{var} is set in the environment — choose {name} as the provider to use it": "환경에 {var}이(가) 설정되어 있습니다 — 사용하려면 공급자로 {name}을(를) 선택하세요",
+ " Or define {var} in the environment and restart IngeTrazo.": " 또는 환경 변수 {var}을(를) 설정하고 IngeTrazo를 다시 시작하세요.",
+ " The key came from the {var} environment variable.": " 키는 환경 변수 {var}에서 가져왔습니다.",
+ "empty = {var} from the environment": "비워 두면 = 환경 변수 {var}",
+ "paste your {name} key": "{name} 키를 붙여 넣으세요"
 }

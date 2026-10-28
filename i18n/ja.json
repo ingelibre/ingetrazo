@@ -3189,5 +3189,11 @@
   "{n} scenes updated": "{n} 個のシーンを更新しました",
   "Tool cursor:": "ツールのカーソル:",
   "The tool's icon": "ツールのアイコン",
-  "Crosshair": "十字カーソル"
+  "Crosshair": "十字カーソル",
+  "Using {var} from the environment": "環境変数 {var} を使用しています",
+  "{var} is set in the environment — choose {name} as the provider to use it": "{var} が環境に設定されています — 使うにはプロバイダーで {name} を選んでください",
+  " Or define {var} in the environment and restart IngeTrazo.": " または環境変数 {var} を設定して IngeTrazo を再起動してください。",
+  " The key came from the {var} environment variable.": " キーは環境変数 {var} から読み込まれました。",
+  "empty = {var} from the environment": "空欄 = 環境変数 {var}",
+  "paste your {name} key": "{name} のキーを貼り付けてください"
 }

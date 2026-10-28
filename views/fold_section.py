@@ -7,8 +7,8 @@ and cut-off buttons with room to spare). Shared by the Render and AI tabs."""
 from __future__ import annotations
 
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtWidgets import (QComboBox, QFormLayout, QFrame, QSizePolicy,
-                               QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFormLayout, QFrame, QLabel,
+                               QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
 
 class FoldSection(QWidget):
@@ -63,6 +63,36 @@ def narrow(*widgets) -> None:
         else:
             w.setSizePolicy(QSizePolicy.Ignored, w.sizePolicy().verticalPolicy())
             w.setMinimumWidth(40)
+
+
+class WrapLabel(QLabel):
+    """A word-wrapped label that asks for every line it wraps to.
+
+    The tray's dock does not ask its panel for height-for-width, so a
+    section was laid out with the label's ONE-line hint and the wrapped
+    second line was cut in half (the key link of the AI tab in Korean,
+    #998 review). The hint now carries the wrapped height at the current
+    width. A hint, not a minimum: while Restore default panels stacks the
+    trays the panel is briefly very narrow, and a minimum for that width
+    grew the window and kept it grown."""
+
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__(text, parent)
+        self.setWordWrap(True)
+        self._hint_width = -1
+
+    def sizeHint(self):  # noqa: N802 — Qt override
+        hint = super().sizeHint()
+        need = self.heightForWidth(self.width()) if self.text() else 0
+        if need > hint.height():
+            hint.setHeight(need)
+        return hint
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 — Qt override
+        super().resizeEvent(event)
+        if self.width() != self._hint_width:
+            self._hint_width = self.width()
+            self.updateGeometry()
 
 
 def wrapping_form(parent) -> QFormLayout:
