@@ -65,17 +65,22 @@ OPTIONAL_COLUMNS = ((COL_TYPE, "Type", True), (COL_LAYER, "Layer", True),
 def _paint_icon(paint: dict, size: int = 16) -> QIcon:
     """A small swatch of a paint for a menu: the texture's image when it
     can be read, its colour otherwise."""
-    pix = QPixmap(size, size)
+    raw_opacity = paint.get("opacity")
+    opacity = (1.0 if raw_opacity is None else
+               min(1.0, max(0.0, float(raw_opacity))))
     tex = paint.get("texture") or {}
     path = tex.get("path")
     if path:
-        img = QPixmap(str(path))
-        if not img.isNull():
-            return QIcon(img.scaled(size, size))
+        # Share the Materials panel's diagonal opacity preview and large-file
+        # reader, so the same material looks the same in every menu.
+        from views.tray import _texture_pixmap
+        texture = _texture_pixmap(path, size, opacity)
+        if texture is not None:
+            return QIcon(texture)
     col = paint.get("color") or tex.get("tint") or (0.6, 0.6, 0.6)
-    pix.fill(QColor.fromRgbF(*[max(0.0, min(1.0, float(c)))
-                               for c in list(col)[:3]]))
-    return QIcon(pix)
+    rgb = [max(0.0, min(1.0, float(c))) for c in list(col)[:3]]
+    from views.tray import _color_pixmap
+    return QIcon(_color_pixmap(rgb, size, opacity))
 
 
 def open_to(viewport, path) -> bool:
@@ -479,8 +484,10 @@ def library_catalog() -> list:
                          "mat": label}
                 if item.get("opacity") is not None:
                     paint["opacity"] = float(item["opacity"])
-                entries.append((label, paint,
-                                lambda pa=path: _tray._texture_pixmap(pa)))
+                entries.append((
+                    label, paint,
+                    lambda pa=path, op=item.get("opacity"):
+                    _tray._texture_pixmap(pa, opacity=op)))
             if entries:
                 out.append((tr(names.get(cat["id"], cat["id"])), entries))
     loose = sorted(_tray._TEX_DIR.glob("*.png"))
@@ -811,9 +818,11 @@ class MaterialPopup(QFrame):
         document (listed in the Materials tab), otherwise a plain colour."""
         from views import prompts
         from views.color_dialog import get_color
+        from PySide6.QtWidgets import QColorDialog
         self.hide()                     # the dialogs take the stage
-        colour = get_color(QColor(200, 200, 200), self.parentWidget(),
-                           tr("New color…"))
+        colour = get_color(
+            QColor(200, 200, 200), self.parentWidget(), tr("New color…"),
+            options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if not colour.isValid():
             self.close()
             return
@@ -823,6 +832,8 @@ class MaterialPopup(QFrame):
         if not ok:
             return
         paint = {"color": [colour.redF(), colour.greenF(), colour.blueF()]}
+        if colour.alphaF() < 0.99995:
+            paint["opacity"] = colour.alphaF()
         if name.strip():
             paint["mat"] = name.strip()
         self._apply(paint)

@@ -25,6 +25,7 @@ from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QDateEdit,
     QDockWidget,
@@ -74,6 +75,9 @@ _TEX_DIR = app_root() / "resources" / "textures"
 #: "Beige" or "Cream" would collide with strings that mean something else.
 _RAL_FILE = app_root() / "resources" / "colors" / "ral.json"
 _SWATCH = 44  # swatch pixel size
+#: ``_recolour_active``'s marker for "keep the material's present opacity";
+#: ``None`` is meaningful there — it means make the picked colour opaque.
+_KEEP_OPACITY = object()
 
 
 def _ral_rgb(name: str):
@@ -207,10 +211,32 @@ def fit_rows(view, min_rows: int = 3, max_rows: int | None = None) -> None:
     view.setFixedHeight(h)
 
 
-def _color_pixmap(rgb, size=_SWATCH) -> QPixmap:
+def _normal_opacity(value):
+    """Material opacity in the attrs convention: ``None`` means opaque."""
+    if value is None:
+        return None
+    opacity = min(1.0, max(0.0, float(value)))
+    return None if opacity >= 0.99995 else opacity
+
+
+def _picker_color(rgb, opacity=None) -> QColor:
+    """An RGB material colour as QColor, carrying its separate opacity."""
+    opacity = _normal_opacity(opacity)
+    return QColor.fromRgbF(*rgb[:3], 1.0 if opacity is None else opacity)
+
+
+def _picked_opacity(color: QColor):
+    """The alpha picked in QColorDialog, in the material attrs convention."""
+    return _normal_opacity(color.alphaF())
+
+
+def _color_pixmap(rgb, size=_SWATCH, opacity=None) -> QPixmap:
     pm = QPixmap(size, size)
-    pm.fill(QColor.fromRgbF(*rgb))
-    return pm
+    pm.fill(QColor.fromRgbF(*rgb[:3]))
+    opacity = _normal_opacity(opacity)
+    if opacity is None:
+        return pm
+    return _translucent_paint_pixmap(pm, opacity)
 
 
 def _default_pixmap(size=_SWATCH) -> QPixmap:
@@ -243,7 +269,7 @@ def _file_stamp(path):
     return st.st_mtime_ns, st.st_size
 
 
-def _texture_pixmap(path, size=_SWATCH) -> QPixmap | None:
+def _texture_pixmap(path, size=_SWATCH, opacity=None) -> QPixmap | None:
     """A swatch of the image at *path*. Read with the allocation limit off:
     ``QImage(path)`` refuses anything over Qt's 256 MB default, so a big
     texture (a packaging artwork, #460) painted fine — the viewport lifts
@@ -259,13 +285,56 @@ def _texture_pixmap(path, size=_SWATCH) -> QPixmap | None:
     except OSError:
         key = None
     if key is not None and key in _texture_swatches:
-        return _texture_swatches[key]
-    pm = _read_texture_pixmap(path, size)
-    if key is not None:
-        if len(_texture_swatches) > 512:
-            _texture_swatches.clear()
-        _texture_swatches[key] = pm
-    return pm
+        pm = _texture_swatches[key]
+    else:
+        pm = _read_texture_pixmap(path, size)
+        if key is not None:
+            if len(_texture_swatches) > 512:
+                _texture_swatches.clear()
+            _texture_swatches[key] = pm
+    if pm is None:
+        return None
+    opacity = _normal_opacity(opacity)
+    if opacity is None:
+        return pm
+    return _translucent_paint_pixmap(pm, opacity)
+
+
+def _translucent_paint_pixmap(paint: QPixmap, opacity: float) -> QPixmap:
+    """Split a colour or texture between opaque and translucent previews."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QPainter, QPainterPath, QPen
+    from PySide6.QtWidgets import QApplication
+
+    result = QPixmap(paint.size())
+    result.fill(Qt.transparent)
+    p = QPainter(result)
+    p.drawPixmap(0, 0, paint)                   # opaque lower-right half
+
+    width, height = result.width(), result.height()
+    translucent = QPainterPath()
+    translucent.moveTo(QPointF(0, 0))
+    translucent.lineTo(QPointF(width, 0))
+    translucent.lineTo(QPointF(0, height))
+    translucent.closeSubpath()
+    p.setClipPath(translucent)
+    p.fillRect(result.rect(), QColor(255, 255, 255))
+    cell = max(3, min(width, height) // 7)
+    dark = QColor(190, 190, 190)
+    for y in range(0, height, cell):
+        for x in range(0, width, cell):
+            if (x // cell + y // cell) % 2:
+                p.fillRect(x, y, min(cell, width - x),
+                           min(cell, height - y), dark)
+    p.setOpacity(opacity)
+    p.drawPixmap(0, 0, paint)
+    p.setOpacity(1.0)
+    p.setClipping(False)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    p.setPen(QPen(QApplication.palette().text().color(), 1.0))
+    p.drawLine(QPointF(0, height), QPointF(width, 0))
+    p.end()
+    return result
 
 
 def _read_texture_pixmap(path, size) -> QPixmap | None:
@@ -2289,7 +2358,7 @@ class MaterialsPanel(QWidget):
             row = 0
             for item in items:
                 path = _TEX_DIR / "library" / item["file"]
-                pm = _texture_pixmap(path)
+                pm = _texture_pixmap(path, opacity=item.get("opacity"))
                 if pm is None:
                     continue
                 b = _swatch_button(pm, tr(item["name"]))
@@ -2406,7 +2475,7 @@ class MaterialsPanel(QWidget):
                 path = tex.get("path") if tex else None
                 col = attrs.get("color")
                 k = (attrs.get("mat"), path,
-                     attrs.get("opacity") if path else None,
+                     attrs.get("opacity"),
                      None if path or col is None else tuple(col))
                 if k not in keys:
                     keys.add(k)
@@ -2450,9 +2519,11 @@ class MaterialsPanel(QWidget):
             else:
                 col = attrs.get("color")
                 if col is not None:
-                    colors[tuple(col)] = col
+                    opacity = _normal_opacity(attrs.get("opacity"))
+                    key = (tuple(col), opacity)
+                    colors[key] = col
                     if mat:
-                        names.setdefault(("c", tuple(col)), mat)
+                        names.setdefault(("c", key), mat)
         # The same swatches as on screen (a Delete, a Paste that brought no
         # new paint): they stay — laying out a hundred buttons again took
         # ~0.2 s on the plant of #158.
@@ -2472,14 +2543,17 @@ class MaterialsPanel(QWidget):
                 w.setParent(None)
                 w.deleteLater()
         i = 0
-        for col in colors.values():
+        for key, col in colors.items():
             # A named material shows its NAME (the registry identity the
             # .skp import now preserves); an anonymous paint stays "Color".
-            name = names.get(("c", tuple(col)))
+            _rgb, opacity = key
+            name = names.get(("c", key))
             label = name or tr("Color")
-            b = _swatch_button(_color_pixmap(tuple(col)), label)
-            b.clicked.connect(lambda _=False, c=tuple(col), n=name:
-                              self._apply_color(c, name=n))
+            b = _swatch_button(
+                _color_pixmap(tuple(col), opacity=opacity), label)
+            b.clicked.connect(lambda _=False, c=tuple(col), n=name,
+                              o=opacity:
+                              self._apply_color(c, name=n, opacity=o))
             if name:
                 # Slice (b): edit the material once, restamp every face
                 # that wears it — right-click the swatch; and its finish
@@ -2491,7 +2565,7 @@ class MaterialsPanel(QWidget):
             self._in_model_grid.addWidget(b, i // self.COLS, i % self.COLS)
             i += 1
         for path, tex in textures.items():
-            pm = _texture_pixmap(path)
+            pm = _texture_pixmap(path, opacity=opacities.get(path))
             if pm is None:
                 continue
             t_name = names.get(("t", path))
@@ -2515,13 +2589,17 @@ class MaterialsPanel(QWidget):
             QTimer.singleShot(0, lambda b=bar, v=keep: b.setValue(v))
 
     # ---- Apply / add --------------------------------------------------------
-    def _apply_color(self, rgb, name: str | None = None) -> None:
+    def _apply_color(self, rgb, name: str | None = None,
+                     opacity=None) -> None:
+        opacity = _normal_opacity(opacity)
         PaintTool.current_is_default = False
         PaintTool.current_color = tuple(rgb)
         PaintTool.current_texture = None
-        PaintTool.current_opacity = None
         PaintTool.current_material = self._material_for(
-            name, color=tuple(rgb))
+            name, color=tuple(rgb), opacity=opacity)
+        PaintTool.current_opacity = _normal_opacity(
+            PaintTool.current_material.opacity
+            if PaintTool.current_material is not None else opacity)
         self._window._activate_tool("paint")
         self._refresh_preview()
 
@@ -2586,14 +2664,15 @@ class MaterialsPanel(QWidget):
         base = (existing.color if existing and existing.color
                 else tuple(current_rgb))
         chosen = get_color(
-            QColor.fromRgbF(*base[:3]), self,
-            tr("Edit material: {name}", name=name))
+            _picker_color(base, existing.opacity if existing else None), self,
+            tr("Edit material: {name}", name=name),
+            options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if not chosen.isValid():
             return
         rgb = (chosen.redF(), chosen.greenF(), chosen.blueF())
         new_mat = Material(
             self._recoloured_name(name, rgb), color=rgb,
-            opacity=existing.opacity if existing else None,
+            opacity=_picked_opacity(chosen),
             finish=existing.finish if existing else None)
         self._restamp(name, new_mat)
 
@@ -2631,6 +2710,7 @@ class MaterialsPanel(QWidget):
         active = PaintTool.current_material
         if active is not None and active.name == old_name:
             PaintTool.current_material = new_mat
+            PaintTool.current_opacity = _normal_opacity(new_mat.opacity)
             if new_mat.color is not None and not PaintTool.current_texture:
                 PaintTool.current_color = tuple(new_mat.color)
         recent = rename_recent(PaintTool.recent, old_name,
@@ -2706,11 +2786,15 @@ class MaterialsPanel(QWidget):
         """The colour button of «Active:»."""
         if PaintTool.current_is_default or PaintTool.current_texture:
             return
-        chosen = get_color(QColor.fromRgbF(*PaintTool.current_color[:3]),
-                           self, tr("Colour"))
+        chosen = get_color(
+            _picker_color(PaintTool.current_color,
+                          PaintTool.current_opacity),
+            self, tr("Colour"),
+            options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if chosen.isValid():
             self._recolour_active(
-                (chosen.redF(), chosen.greenF(), chosen.blueF()))
+                (chosen.redF(), chosen.greenF(), chosen.blueF()),
+                opacity=_picked_opacity(chosen))
             self._refresh_preview()
 
     def _material_for(self, name, color=None, texture=None, opacity=None):
@@ -2770,13 +2854,19 @@ class MaterialsPanel(QWidget):
         if colour_only and self._tint is None and \
                 not PaintTool.current_is_default:
             base = PaintTool.current_color
-        chosen = get_color(
-            QColor.fromRgbF(*base[:3]), self,
-            tr("Colour") if colour_only else tr("Tint the texture"))
+        if colour_only:
+            chosen = get_color(
+                _picker_color(base, PaintTool.current_opacity), self,
+                tr("Colour"),
+                options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
+        else:
+            chosen = get_color(QColor.fromRgbF(*base[:3]), self,
+                               tr("Tint the texture"))
         if not chosen.isValid():
             return
         rgb = (chosen.redF(), chosen.greenF(), chosen.blueF())
-        if colour_only and self._recolour_active(rgb):
+        if colour_only and self._recolour_active(
+                rgb, opacity=_picked_opacity(chosen)):
             # A plain colour changes at once: nothing to tint, no Apply.
             self._refresh_preview()
             return
@@ -2838,11 +2928,12 @@ class MaterialsPanel(QWidget):
                     2500)
         self._refresh_preview()
 
-    def _recolour_active(self, rgb) -> bool:
+    def _recolour_active(self, rgb, opacity=_KEEP_OPACITY) -> bool:
         """Give the active plain colour ``rgb``: a named material is edited
         and restamped on every face and group that wears it (one undo
         step); an anonymous colour becomes the colour to paint next.
-        False when there is no colour to change."""
+        ``opacity`` changes its translucency when supplied; omitted keeps
+        the current value. False when there is no colour to change."""
         if rgb is None or PaintTool.current_is_default:
             return False
         rgb = tuple(float(c) for c in rgb[:3])
@@ -2851,18 +2942,23 @@ class MaterialsPanel(QWidget):
         if mat is not None and mat.name in scene.materials:
             from core.materials import Material
             old = scene.materials[mat.name]
+            new_opacity = (old.opacity if opacity is _KEEP_OPACITY
+                           else _normal_opacity(opacity))
             new_mat = Material(self._recoloured_name(mat.name, rgb),
-                               color=rgb, opacity=old.opacity,
+                               color=rgb, opacity=new_opacity,
                                finish=old.finish)
             if self._restamp(mat.name, new_mat):
                 PaintTool.current_material = new_mat
                 PaintTool.current_color = rgb
             return True
         PaintTool.current_color = rgb
+        if opacity is not _KEEP_OPACITY:
+            PaintTool.current_opacity = _normal_opacity(opacity)
         if mat is not None:
             from core.materials import Material
             PaintTool.current_material = Material(
-                self._recoloured_name(mat.name, rgb), color=rgb)
+                self._recoloured_name(mat.name, rgb), color=rgb,
+                opacity=PaintTool.current_opacity, finish=mat.finish)
         self._window.statusBar().showMessage(
             tr("Active colour changed — click faces to paint it"), 3000)
         return True
@@ -2886,7 +2982,10 @@ class MaterialsPanel(QWidget):
 
     def _add_color(self) -> None:
         r, g, b = PaintTool.current_color
-        chosen = get_color(QColor.fromRgbF(r, g, b), self, tr("Color"))
+        chosen = get_color(
+            _picker_color((r, g, b), PaintTool.current_opacity), self,
+            tr("Color"),
+            options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if chosen.isValid():
             # Optional identity: a named colour becomes a registry material
             # (registered on first paint) and shows in per-material takeoffs.
@@ -2894,7 +2993,8 @@ class MaterialsPanel(QWidget):
                 self, tr("Color"), tr("Material name (optional):"))
             self._apply_color(
                 (chosen.redF(), chosen.greenF(), chosen.blueF()),
-                name=name.strip() if ok and name.strip() else None)
+                name=name.strip() if ok and name.strip() else None,
+                opacity=_picked_opacity(chosen))
 
     def _add_texture(self) -> None:
         path_str, _ = file_dialogs.getOpenFileName(
@@ -2926,8 +3026,11 @@ class MaterialsPanel(QWidget):
                 w.deleteLater()
         for entry in PaintTool.recent:
             tex = entry.get("texture")
-            pm = (_texture_pixmap(tex["path"]) if tex
-                  else _color_pixmap(tuple(entry.get("color") or (1, 1, 1))))
+            pm = (_texture_pixmap(tex["path"], opacity=entry.get("opacity"))
+                  if tex
+                  else _color_pixmap(
+                      tuple(entry.get("color") or (1, 1, 1)),
+                      opacity=entry.get("opacity")))
             if pm is None:
                 continue
             label = entry.get("mat") or (
@@ -2992,10 +3095,13 @@ class MaterialsPanel(QWidget):
         plain = not default and not PaintTool.current_texture
         self._color_btn.setVisible(plain)
         if plain:
-            r, g, b = (int(round(c * 255))
-                       for c in PaintTool.current_color[:3])
+            size = max(8, self._color_btn.width() - 6)
+            pm = _color_pixmap(PaintTool.current_color, size,
+                               PaintTool.current_opacity)
+            self._color_btn.setIcon(QIcon(pm))
+            self._color_btn.setIconSize(pm.size())
             self._color_btn.setStyleSheet(
-                f"background: rgb({r},{g},{b}); border: 1px solid #555;")
+                "QPushButton { padding:0; border:1px solid #555; }")
 
     def _refresh_preview(self) -> None:
         self._refresh_name_bar()
@@ -3005,11 +3111,13 @@ class MaterialsPanel(QWidget):
             return
         self._preview.setToolTip("")
         if PaintTool.current_texture is not None:
-            pm = _texture_pixmap(PaintTool.current_texture["path"])
+            pm = _texture_pixmap(PaintTool.current_texture["path"],
+                                 opacity=PaintTool.current_opacity)
             if pm is not None:
                 self._preview.setPixmap(pm)
                 return
-        self._preview.setPixmap(_color_pixmap(PaintTool.current_color))
+        self._preview.setPixmap(_color_pixmap(
+            PaintTool.current_color, opacity=PaintTool.current_opacity))
 
 
 _RECENT_KEY = "paint/recent_materials"

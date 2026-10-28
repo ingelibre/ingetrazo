@@ -69,10 +69,13 @@ LOCKED_FADE = 0.55
 class Layer:
     """A named tag with display state.
 
-    ``color`` is an RGB tuple (0–1) or ``None`` for the automatic one (see
-    :func:`layer_color`); ``folder`` is the name of the folder the layer is
-    filed under in the Layers panel, or ``None``. A folder only organises the
-    list: entities still carry the layer's name and nothing else."""
+    ``color`` is an RGB or RGBA tuple (0–1), or ``None`` for the automatic
+    one (see :func:`layer_color`). Its alpha belongs to Colour by layer; it
+    is deliberately separate from :attr:`opacity`, which affects the whole
+    layer whatever face style is active. ``folder`` is the name of the
+    folder the layer is filed under in the Layers panel, or ``None``. A
+    folder only organises the list: entities still carry the layer's name
+    and nothing else."""
 
     def __init__(self, name: str, visible: bool = True,
                  locked: bool = False, color=None,
@@ -103,7 +106,13 @@ class Layer:
         if self.locked:
             entry["locked"] = True
         if self.color is not None:
-            entry["color"] = [round(float(c), 4) for c in self.color[:3]]
+            # RGB stays exactly the 0.5.11 representation. A fourth value is
+            # optional, so older builds simply ignore it and keep the colour
+            # (opaque) instead of refusing the document.
+            channels = 4 if len(self.color) > 3 \
+                and float(self.color[3]) < 0.99995 else 3
+            entry["color"] = [round(float(c), 4)
+                              for c in self.color[:channels]]
         if self.folder:
             entry["folder"] = self.folder
         if self.linetype != "continuous":
@@ -131,9 +140,19 @@ class Layer:
             color = None
         else:
             try:
-                color = tuple(min(1.0, max(0.0, float(c))) for c in color[:3])
+                rgb = tuple(min(1.0, max(0.0, float(c)))
+                            for c in color[:3])
             except (TypeError, ValueError):
                 color = None
+            else:
+                # A malformed optional alpha must not throw away a valid
+                # colour written by another program.
+                try:
+                    alpha = (min(1.0, max(0.0, float(color[3])))
+                             if len(color) > 3 else 1.0)
+                except (TypeError, ValueError):
+                    alpha = 1.0
+                color = rgb + ((alpha,) if alpha < 0.99995 else ())
         folder = raw.get("folder")
         weight = raw.get("lineweight")
         try:
@@ -170,6 +189,32 @@ def layer_color(layer) -> tuple:
     return PALETTE[zlib.crc32(layer.name.encode("utf-8")) % len(PALETTE)]
 
 
+def layer_rgba(layer) -> tuple:
+    """The layer colour with its Colour-by-layer alpha.
+
+    :func:`layer_color` intentionally remains RGB: sheet pens and the R12
+    DXF palette have no alpha channel, and keeping that boundary also makes
+    the new document value harmless to existing exporters. Only a colour
+    explicitly picked with transparency can have an alpha below one;
+    automatic colours are opaque.
+    """
+    rgb = layer_color(layer)
+    alpha = 1.0
+    color = getattr(layer, "color", None) if layer is not None else None
+    if color is not None and len(color) > 3:
+        try:
+            alpha = min(1.0, max(0.0, float(color[3])))
+        except (TypeError, ValueError):
+            pass
+    return (*rgb, alpha)
+
+
+def _layer_paint_color(layer) -> tuple:
+    """RGB as before when opaque; RGBA only when alpha carries meaning."""
+    rgba = layer_rgba(layer)
+    return rgba if rgba[3] < 0.99995 else rgba[:3]
+
+
 def object_layer(group) -> str:
     """The layer an object's insides take their colour from: its own, else
     the top-level object's it belongs to (a nested piece of a component on
@@ -183,9 +228,11 @@ def object_layer(group) -> str:
 
 def layer_paint(scene, group=None) -> dict:
     """The container paint Colour by layer bakes ``group`` with (see
-    ``core.materials.effective_attrs``): every layer's colour by name, and
-    the object's own layer colour for the faces that carry none."""
-    table = {ly.name: layer_color(ly) for ly in getattr(scene, "layers", ())}
+    ``core.materials.effective_attrs``): every layer's RGB/RGBA colour by
+    name, and the object's own layer colour for the faces that carry none.
+    Opaque entries remain RGB so existing paint signatures do not change."""
+    table = {ly.name: _layer_paint_color(ly)
+             for ly in getattr(scene, "layers", ())}
     color = table.get(object_layer(group), DEFAULT_LAYER_COLOR)
     return {"by_layer": table, "color": color}
 

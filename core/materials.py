@@ -184,13 +184,21 @@ def effective_attrs(attrs, material):
         return merged
     if material and material.get("by_layer") is not None:
         own = (attrs or {}).get("layer")
-        rgb = material["by_layer"].get(own) if own else None
-        if rgb is None:
-            rgb = material.get("color")
+        rgba = material["by_layer"].get(own) if own else None
+        if rgba is None:
+            rgba = material.get("color")
         merged = dict(attrs or {})
         for key in ("texture", "mat"):
             merged.pop(key, None)
-        merged["color"] = tuple(rgb) if rgb is not None else None
+        merged["color"] = tuple(rgba[:3]) if rgba is not None else None
+        # The picked colour's alpha is meaningful only in Colour by layer.
+        # Keep it independent of the layer-wide opacity (the layer_fx block
+        # above), while respecting a face/material that is already clearer.
+        if rgba is not None and len(rgba) > 3:
+            alpha = min(1.0, max(0.0, float(rgba[3])))
+            if alpha < 1.0:
+                merged["opacity"] = min(
+                    float(merged.get("opacity", 1.0)), alpha)
         merged["back"] = True
         return merged
     if not material or has_own_material(attrs):

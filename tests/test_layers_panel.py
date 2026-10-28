@@ -51,6 +51,20 @@ def test_layer_round_trips_every_field_and_drops_defaults():
     assert Layer("Plain").to_dict() == {"name": "Plain"}
 
 
+def test_layer_colour_alpha_is_optional_clamped_and_backwards_compatible():
+    raw = Layer("Glass", color=(0.2, 0.4, 0.6, 0.35)).to_dict()
+    assert raw["color"] == [0.2, 0.4, 0.6, 0.35]
+    assert Layer.from_dict(raw).color == pytest.approx((0.2, 0.4, 0.6, 0.35))
+    # Opaque is still the original three-channel representation.
+    assert Layer("Solid", color=(0.2, 0.4, 0.6, 1.0)).to_dict()["color"] \
+        == [0.2, 0.4, 0.6]
+    assert Layer.from_dict({"name": "X", "color": [2, -1, 0.5, -2]}).color \
+        == (1.0, 0.0, 0.5, 0.0)
+    assert Layer.from_dict(
+        {"name": "X", "color": [0.2, 0.4, 0.6, "bad"]}).color \
+        == pytest.approx((0.2, 0.4, 0.6))
+
+
 @pytest.mark.parametrize("raw", [
     {"name": "X", "color": "red"}, {"name": "X", "color": [1, 2]},
     {"name": "X", "linetype": "zigzag"}, {"name": "X", "lineweight": "thick"},
@@ -67,12 +81,15 @@ def test_automatic_colour_is_stable_and_the_default_is_white():
     a = L.layer_color(Layer("Estructura"))
     assert a == L.layer_color(Layer("Estructura")) and a in L.PALETTE
     assert L.layer_color(Layer("E", color=(1, 0, 0))) == (1, 0, 0)
+    assert L.layer_rgba(Layer("E", color=(1, 0, 0, 0.25))) == \
+        (1, 0, 0, 0.25)
+    assert L.layer_rgba(Layer("Estructura"))[3] == 1.0
 
 
 def test_igz_keeps_active_layer_folders_and_looks(tmp_path):
     from formats import igz
     scene = Scene()
-    scene.layers += [Layer("Muros", color=(0.1, 0.2, 0.3), folder="Arq",
+    scene.layers += [Layer("Muros", color=(0.1, 0.2, 0.3, 0.4), folder="Arq",
                            linetype="dashed", lineweight=0.5, opacity=0.75)]
     scene.layer_folders = ["Arq", "Vacía"]
     scene.active_layer = "Muros"
@@ -84,6 +101,7 @@ def test_igz_keeps_active_layer_folders_and_looks(tmp_path):
     ly = other.layer("Muros")
     assert other.active_layer == "Muros"
     assert other.layer_folders == ["Arq", "Vacía"]
+    assert ly.color == pytest.approx((0.1, 0.2, 0.3, 0.4))
     assert (ly.folder, ly.linetype, ly.lineweight, ly.opacity) == (
         "Arq", "dashed", 0.5, 0.75)
     # …and a document without them leaves nothing behind (#602).
@@ -312,7 +330,8 @@ def test_effective_attrs_by_layer_and_layer_look():
     scene = Scene()
     scene.layers += [Layer("A", color=(1, 0, 0)),
                      Layer("B", color=(0, 0, 1), opacity=0.5),
-                     Layer("C", locked=True)]
+                     Layer("C", locked=True),
+                     Layer("D", color=(0.2, 0.4, 0.6, 0.25), opacity=0.75)]
     g = Group(Mesh(), name="g")
     g.layer = "A"
     paint = L.layer_paint(scene, g)
@@ -322,8 +341,13 @@ def test_effective_attrs_by_layer_and_layer_look():
     assert effective_attrs({"layer": "B"}, paint)["color"] == (0, 0, 1)
     look = L.layer_look(scene, g, paint)
     assert effective_attrs({"layer": "B"}, look)["opacity"] == 0.5
-    # Locked, over the face's own material (Colour by layer off).
+    # Colour alpha applies only to Colour by layer. Layer opacity is a
+    # separate whole-layer effect and still applies without it.
+    assert effective_attrs({"layer": "D"}, paint)["opacity"] == 0.25
+    assert effective_attrs({"layer": "D"}, look)["opacity"] == 0.25
     plain_look = L.layer_look(scene, g, None)
+    assert effective_attrs({"layer": "D"}, plain_look)["opacity"] == 0.75
+    # Locked, over the face's own material (Colour by layer off).
     faded = effective_attrs({"layer": "C", "color": (0.0, 0.0, 0.0)},
                             plain_look)
     assert faded["color"] == pytest.approx((L.LOCKED_FADE,) * 3)
@@ -389,6 +413,11 @@ def test_the_group_bake_takes_the_layer_colour_and_comes_back():
     scene.display_style.color_by_layer = True
     scene.version += 1
     assert _vcol_colours(vp._group_chunk(g)) == {shaded((1.0, 0.0, 0.0))}
+    scene.layer("Rojo").color = (1.0, 0.0, 0.0, 0.25)
+    scene.version += 1
+    alpha_entry = vp._group_chunk(g)
+    assert not len(np.frombuffer(bytes(alpha_entry["vcol"]), dtype=np.float32))
+    assert (0.25, 0) in alpha_entry["tcol"]
     scene.display_style.color_by_layer = False
     scene.layer("Rojo").locked = True
     scene.version += 1
@@ -471,6 +500,9 @@ def test_line_styles_and_wanted():
     plain = Scene()
     plain.layers.append(Layer("X"))
     assert not L.layer_lines_wanted(plain)
+    plain.layer("X").color = (0.2, 0.4, 0.6, 0.25)
+    # Sheet/DXF line colour stays RGB: R12 has no transparency channel.
+    assert L.line_styles(plain, colored=True)["X"][0] == (0.2, 0.4, 0.6)
 
 
 def test_dxf_writes_each_layer_with_its_linetype_and_colour(tmp_path):
@@ -1090,6 +1122,28 @@ def test_several_selected_rows_take_one_colour_and_one_look(win,
     assert scene.layer("A").color is None and scene.layer("B").color is None
 
 
+def test_layer_picker_offers_and_keeps_colour_alpha(win, monkeypatch):
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QColorDialog
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    scene.layers.append(Layer("Glass", color=(0.1, 0.2, 0.3, 0.4)))
+    seen = {}
+
+    def pick(*args, **kwargs):
+        seen["initial"] = args[0]
+        seen["options"] = kwargs["options"]
+        return QColor.fromRgbF(0.6, 0.4, 0.2, 0.25)
+
+    monkeypatch.setattr("views.color_dialog.get_color", pick)
+    panel.pick_color(["Glass"])
+    assert seen["initial"].alphaF() == pytest.approx(0.4, abs=0.01)
+    assert seen["options"] & \
+        QColorDialog.ColorDialogOption.ShowAlphaChannel
+    assert scene.layer("Glass").color == pytest.approx((0.6, 0.4, 0.2, 0.25),
+                                                        abs=0.01)
+
+
 def _shown(panel):
     return sorted(panel._key(it)[1] for it in panel._all_items()
                   if panel._key(it)[0] == "layer" and not it.isHidden())
@@ -1308,6 +1362,19 @@ def test_the_default_layer_without_a_colour_shows_a_none_swatch():
     assert img(layer_swatch(zero)) == img(swatch_icon((0.2, 0.4, 0.6)))
     other = Layer("Muros")
     assert img(layer_swatch(other)) == img(swatch_icon(L.layer_color(other)))
+
+
+def test_a_translucent_colour_swatch_is_split_diagonally():
+    from views.layers_panel import layer_swatch
+    image = layer_swatch(
+        Layer("Glass", color=(1.0, 0.0, 0.0, 0.25))).pixmap(18, 18).toImage()
+    transparent_half = image.pixelColor(5, 5)
+    opaque_half = image.pixelColor(13, 13)
+    # Above the rising diagonal: red blended over the checkerboard. Below:
+    # the same colour opaque. The diagonal itself is drawn in UI ink.
+    assert transparent_half.green() > 20
+    assert opaque_half.red() > 220 and opaque_half.green() < 20
+    assert image.pixelColor(9, 9) != transparent_half
 
 
 def test_back_in_the_drawing_the_picked_rows_let_go(win):

@@ -129,15 +129,63 @@ def printer_icon(on: bool) -> QIcon:
     return QIcon(pm)
 
 
-def swatch_icon(rgb) -> QIcon:
+def swatch_icon(rgba) -> QIcon:
+    """A layer colour swatch.
+
+    Opaque colours keep the plain 0.5.11 tile. A translucent colour is
+    split diagonally: opaque below the diagonal, its real alpha over a
+    checkerboard above it. This makes colour alpha visible without
+    confusing it with the separate layer-opacity column.
+    """
+    rgb = tuple(rgba[:3])
+    alpha = (min(1.0, max(0.0, float(rgba[3])))
+             if len(rgba) > 3 else 1.0)
     pm = QPixmap(18, 18)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     from PySide6.QtWidgets import QApplication
-    p.setPen(QPen(QApplication.palette().text().color(), 1.0))
-    p.setBrush(QColor.fromRgbF(*rgb[:3]))
-    p.drawRoundedRect(QRectF(2.5, 3.5, 13, 11), 2, 2)
+    ink = QApplication.palette().text().color()
+    box = QRectF(2.5, 3.5, 13, 11)
+    if alpha >= 0.99995:
+        p.setPen(QPen(ink, 1.0))
+        p.setBrush(QColor.fromRgbF(*rgb))
+        p.drawRoundedRect(box, 2, 2)
+        p.end()
+        return QIcon(pm)
+
+    from PySide6.QtGui import QPainterPath
+    rounded = QPainterPath()
+    rounded.addRoundedRect(box, 2, 2)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor.fromRgbF(*rgb))
+    p.drawPath(rounded)                         # opaque lower-right half
+
+    translucent = QPainterPath()
+    translucent.moveTo(box.topLeft())
+    translucent.lineTo(box.topRight())
+    translucent.lineTo(box.bottomLeft())
+    translucent.closeSubpath()
+    p.setClipPath(rounded.intersected(translucent))
+    p.fillRect(box, QColor(255, 255, 255))
+    cell = 3.0
+    dark = QColor(190, 190, 190)
+    y = box.top()
+    row = 0
+    while y < box.bottom():
+        x = box.left() + (cell if row % 2 else 0.0)
+        while x < box.right():
+            p.fillRect(QRectF(x, y, min(cell, box.right() - x),
+                              min(cell, box.bottom() - y)), dark)
+            x += 2 * cell
+        y += cell
+        row += 1
+    p.fillRect(box, QColor.fromRgbF(*rgb, alpha))
+    p.setClipping(False)
+    p.setPen(QPen(ink, 1.0))
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(box.bottomLeft(), box.topRight())
+    p.drawRoundedRect(box, 2, 2)
     p.end()
     return QIcon(pm)
 
@@ -165,7 +213,7 @@ def layer_swatch(ly) -> QIcon:
     crossed by a red slash from the top-left corner to the bottom-right —
     the usual «none» mark."""
     if ly is None or ly.color is not None or ly.name != L.DEFAULT_LAYER:
-        return swatch_icon(L.layer_color(ly))
+        return swatch_icon(L.layer_rgba(ly))
     from PySide6.QtGui import QPainterPath
     from PySide6.QtWidgets import QApplication
     pal = QApplication.palette()
@@ -1766,21 +1814,35 @@ class LayersPanel(QWidget):
         layers = [scene.layer(n) for n in names if scene.layer(n)]
         if not layers:
             return
-        color = get_color(QColor.fromRgbF(*L.layer_color(layers[0])), self,
-                          tr("Layer colour"))
+        from PySide6.QtWidgets import QColorDialog
+        color = get_color(
+            QColor.fromRgbF(*L.layer_rgba(layers[0])), self,
+            tr("Layer colour"),
+            options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if not color.isValid():
             return
-        self.set_color(names, (color.redF(), color.greenF(), color.blueF()))
+        self.set_color(names, (color.redF(), color.greenF(), color.blueF(),
+                               color.alphaF()))
 
-    def set_color(self, names, rgb) -> None:
-        """The colour of the layers ``names`` (``None``: automatic)."""
+    def set_color(self, names, rgba) -> None:
+        """The colour of the layers ``names`` (``None``: automatic).
+
+        Opaque picks stay RGB on disk for compact backwards compatibility;
+        only an actually translucent pick carries the optional alpha.
+        """
         names = [names] if isinstance(names, str) else list(names)
         scene = self._scene()
+        color = None
+        if rgba:
+            values = tuple(min(1.0, max(0.0, float(c))) for c in rgba[:4])
+            if len(values) >= 3:
+                color = values[:3]
+                if len(values) > 3 and values[3] < 0.99995:
+                    color += (values[3],)
         for name in names:
             ly = scene.layer(name)
             if ly is not None:
-                ly.color = (tuple(float(c) for c in rgb[:3]) if rgb
-                            else None)
+                ly.color = color
         self._dirty_paint()
         self._touch()
 
