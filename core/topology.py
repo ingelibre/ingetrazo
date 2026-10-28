@@ -1522,7 +1522,7 @@ def sweep_tjunctions(mesh, seedkeys=None) -> None:
         # ``mesh.vertices`` in order, and which vertex splits first must not
         # depend on the x-sort. ``len(verts)`` is the "none" sentinel so
         # ``np.minimum.at`` can reduce into it.
-        best = np.full(len(edges), len(verts), dtype=np.int64)
+        hit_e, hit_v, hit_t = [], [], []
         cum = np.cumsum(counts)
         p0 = 0
         while p0 < len(pick):
@@ -1562,14 +1562,83 @@ def sweep_tjunctions(mesh, seedkeys=None) -> None:
             d = rel - seg * t[:, None]
             ok &= np.einsum("ij,ij->i", d, d) < tol2
             if ok.any():
-                np.minimum.at(best, eidx[ok], vidx[ok])
-        hits = np.flatnonzero(best < len(verts))
-        if not len(hits):
+                hit_e.append(eidx[ok])
+                hit_v.append(vidx[ok])
+                hit_t.append(t[ok])
+        if not hit_e:
             break
-        for i in hits:
-            # Only the split edge is removed and only existing vertices are
-            # reused, so the sweep's arrays stay valid across these splits.
-            mesh.split_edge_at(edges[int(i)], verts[int(best[int(i)])])
+        he = np.concatenate(hit_e)
+        hv = np.concatenate(hit_v)
+        ht = np.concatenate(hit_t)
+        # Split each edge at ALL the vertices lying on it in this one round,
+        # walking from its first end. One split per edge per round made a
+        # long edge run past N vertices (a stair stringer's edge beside a
+        # finely triangulated tread line) cost N full rounds — the arrays
+        # rebuilt each time — which hung the import of real stair models.
+        # Sorting by edge then by position along it keeps the order
+        # deterministic; each split hands back the far sub-edge, which is
+        # where the next vertex lies.
+        o = np.lexsort((hv, ht, he))
+        he, hv, ht = he[o], hv[o], ht[o]
+        work = []
+
+        def split_chain(e, vis):
+            last = None
+            for vi in vis:
+                if vi == last:
+                    continue             # the same vertex reached twice
+                if e not in e.v0.edges:
+                    break                # already split by another chain
+                rec = mesh.split_edge_at(e, verts[vi])
+                for k in ("e0", "e1"):
+                    if rec[k + "_new"]:
+                        work.append(rec[k])
+                e, last = rec["e1"], vi
+
+        cur, run = None, []
+        for i in range(len(he)):
+            ei = int(he[i])
+            if ei != cur:
+                if run:
+                    split_chain(edges[cur], run)
+                cur, run = ei, []
+            run.append(int(hv[i]))
+        if run:
+            split_chain(edges[cur], run)
+        # A split moves the edge's line by up to the weld tolerance, which can
+        # bring the next vertex of a nearly straight chain (a stringer edge
+        # beside its tread lines) within reach of the new sub-edge. Check the
+        # new sub-edges against the vertices right away — one small vectorised
+        # test each — instead of paying a whole round (every array rebuilt)
+        # per vertex of the chain. Vertices are never added, so ``vpos`` and
+        # ``vslot`` stay valid.
+        guard = 0
+        while work and guard < 100000:
+            guard += 1
+            e = work.pop()
+            if e not in e.v0.edges:
+                continue                 # split again since: not an edge any more
+            ia, ib = vslot.get(id(e.v0)), vslot.get(id(e.v1))
+            if ia is None or ib is None:
+                continue
+            a, b = vpos[ia], vpos[ib]
+            seg = b - a
+            l2 = float(seg @ seg)
+            if l2 <= tol2:
+                continue
+            lo3, hi3 = np.minimum(a, b) - _STITCH_TOL, np.maximum(a, b) + _STITCH_TOL
+            cand = np.flatnonzero(((vpos >= lo3) & (vpos <= hi3)).all(axis=1))
+            cand = cand[(cand != ia) & (cand != ib)]
+            if not len(cand):
+                continue
+            rel = vpos[cand] - a
+            t = rel @ seg / l2
+            tol_t = _STITCH_TOL / np.sqrt(l2)
+            d = rel - np.outer(t, seg)
+            ok = (t > tol_t) & (t < 1.0 - tol_t) & (np.einsum("ij,ij->i", d, d) < tol2)
+            if ok.any():
+                sel = np.lexsort((cand[ok], t[ok]))
+                split_chain(e, [int(c) for c in cand[ok][sel]])
 
 
 def resolve_tjunctions(mesh, max_iter: int = 1000) -> None:
