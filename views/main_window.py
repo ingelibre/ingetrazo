@@ -2789,6 +2789,13 @@ class MainWindow(QMainWindow):
         plugins, errors = discover_plugins()
         from core.extension_manager import extension_startup_state
         self._extension_startup_state = extension_startup_state()
+        # An extension whose setup() killed the previous launch (a
+        # segfault cannot be caught) is skipped this time and reported
+        # below like a load error, instead of taking every launch down
+        # with it (issue #306).
+        from core import extension_guard
+        crashed = extension_guard.note_crash()
+        crash_skip = set(extension_guard.crash_disabled())
 
         # Shortcuts the app already claimed (toolbar tools, menus — all built
         # before this menu): first come, first served. A plugin asking for a
@@ -2824,6 +2831,16 @@ class MainWindow(QMainWindow):
         for plug in list(plugins):
             if plug.setup is None:
                 continue
+            if plug.stem in crash_skip:
+                from core.extensions import PluginError
+                errors.append(PluginError(
+                    plug.stem, plug.path,
+                    "Disabled after it crashed the previous launch during "
+                    "setup (see core.extension_guard); re-enable it to "
+                    "try again."))
+                plugins.remove(plug)
+                continue
+            extension_guard.arm(plug.stem)
             try:
                 plug.setup(ExtensionApp(self, plug.stem))
             except Exception as exc:  # noqa: BLE001 — never break startup
@@ -2833,6 +2850,8 @@ class MainWindow(QMainWindow):
                     plug.stem, plug.path, f"{type(exc).__name__}: {exc}"))
                 plugins.remove(plug)
                 continue
+            finally:
+                extension_guard.disarm()
             if not plug.tools:
                 count += 1                  # a panel-only extension counts
         self._extension_load_errors = {
@@ -2871,6 +2890,12 @@ class MainWindow(QMainWindow):
             action.setEnabled(False)
             action.setToolTip(err.error)
             ext_menu.insertAction(anchor, action)
+
+        if crashed:
+            self.statusBar().showMessage(tr(
+                'Extension "{name}" crashed the previous launch during '
+                "setup and has been disabled; it can be re-enabled from "
+                "the Extensions manager.", name=crashed), 10000)
 
         if count == 0 and not errors:
             action = QAction(tr("(no plugins found)"), self)
