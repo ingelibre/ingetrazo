@@ -3216,5 +3216,7 @@
   "{n} scenes updated": "Đã cập nhật {n} cảnh",
   "Tool cursor:": "Con trỏ công cụ:",
   "The tool's icon": "Biểu tượng của công cụ",
-  "Crosshair": "Dấu chữ thập"
+  "Crosshair": "Dấu chữ thập",
+  "Restore defaults": "Khôi phục mặc định",
+  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Đưa các thiết lập của cửa sổ này về như khi cài IngeTrazo. Không có gì được lưu cho đến khi bạn nhấn OK. Ngôn ngữ, Trợ lý AI, phím tắt và đơn vị của tài liệu đang mở được giữ nguyên."
 }

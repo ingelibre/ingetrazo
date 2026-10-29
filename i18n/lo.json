@@ -3192,5 +3192,7 @@
 "{n} scenes updated": "ອັບເດດ {n} ສາກແລ້ວ",
 "Tool cursor:": "ເຄີເຊີເຄື່ອງມື:",
 "The tool's icon": "ໄອຄອນຂອງເຄື່ອງມື",
-"Crosshair": "ເຄື່ອງໝາຍບວກ"
+"Crosshair": "ເຄື່ອງໝາຍບວກ",
+  "Restore defaults": "ຄືນຄ່າເລີ່ມຕົ້ນ",
+  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "ຄືນການຕັ້ງຄ່າໃນໜ້າຕ່າງນີ້ເປັນຄ່າທີ່ມາກັບ IngeTrazo. ຈະບໍ່ມີການບັນທຶກຈົນກວ່າທ່ານຈະກົດ ຕົກລົງ. ພາສາ, ຜູ້ຊ່ວຍ AI, ປຸ່ມລັດ ແລະ ຫົວໜ່ວຍຂອງເອກະສານທີ່ເປີດຢູ່ຈະຄືເກົ່າ."
 }

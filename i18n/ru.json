@@ -3189,5 +3189,7 @@
  "Texts": "Тексты",
  "Tool cursor:": "Курсор инструмента:",
  "The tool's icon": "Значок инструмента",
- "Crosshair": "Перекрестие"
+ "Crosshair": "Перекрестие",
+ "Restore defaults": "Восстановить значения по умолчанию",
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений."
 }

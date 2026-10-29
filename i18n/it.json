@@ -3190,5 +3190,7 @@
  "Texts": "Testi",
  "Tool cursor:": "Cursore dello strumento:",
  "The tool's icon": "L'icona dello strumento",
- "Crosshair": "Mirino"
+ "Crosshair": "Mirino",
+ "Restore defaults": "Ripristina predefiniti",
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Riporta le impostazioni di questa finestra a come arriva IngeTrazo. Non viene salvato nulla finché non premi OK. La lingua, l'Assistente IA, le scorciatoie da tastiera e le unità del documento aperto restano come sono."
 }

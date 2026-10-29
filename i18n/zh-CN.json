@@ -3190,5 +3190,7 @@
  "Texts": "文字",
  "Tool cursor:": "工具光标：",
  "The tool's icon": "工具图标",
- "Crosshair": "十字线"
+ "Crosshair": "十字线",
+ "Restore defaults": "恢复默认值",
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。"
 }

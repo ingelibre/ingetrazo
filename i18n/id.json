@@ -3192,5 +3192,7 @@
  "Texts": "Teks",
  "Tool cursor:": "Kursor alat:",
  "The tool's icon": "Ikon alat",
- "Crosshair": "Tanda silang"
+ "Crosshair": "Tanda silang",
+ "Restore defaults": "Pulihkan bawaan",
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Mengembalikan pengaturan jendela ini seperti bawaan IngeTrazo. Tidak ada yang disimpan sampai Anda menekan OK. Bahasa, Asisten AI, pintasan keyboard, dan satuan dokumen yang terbuka tetap seperti semula."
 }

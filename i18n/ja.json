@@ -3189,5 +3189,7 @@
   "{n} scenes updated": "{n} 個のシーンを更新しました",
   "Tool cursor:": "ツールのカーソル:",
   "The tool's icon": "ツールのアイコン",
-  "Crosshair": "十字カーソル"
+  "Crosshair": "十字カーソル",
+  "Restore defaults": "既定値に戻す",
+  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "このウィンドウの設定を IngeTrazo の初期状態に戻します。OK を押すまで何も保存されません。言語、AI アシスタント、キーボードショートカット、開いている文書の単位はそのままです。"
 }

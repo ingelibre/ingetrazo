@@ -54,6 +54,11 @@ _DXF_UNITS = (("mm", "Millimetres"), ("cm", "Centimetres"), ("m", "Metres"),
 _REST_MODES = (("normal", "Show normally"), ("fade", "Fade"),
                ("hide", "Hide (fastest)"))
 _UNITS_FOR_NEW_KEY = "units/use_for_new_documents"
+_DEFAULTS_NOTE = (
+    "Puts the settings of this window back to how IngeTrazo comes. "
+    "Nothing is saved until you press OK. The language, the AI Assistant, "
+    "the keyboard shortcuts and the units of the open document stay as "
+    "they are.")
 
 
 class PreferencesDialog(QDialog):
@@ -436,6 +441,15 @@ class PreferencesDialog(QDialog):
                                    | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        # Back to how IngeTrazo comes: only the controls change, so OK
+        # saves it and Cancel still touches nothing.
+        self._defaults_btn = buttons.addButton(tr("Restore defaults"),
+                                               QDialogButtonBox.ResetRole)
+        # Never the default button: focused after a click it would take
+        # the highlight from OK, and Enter would restore again.
+        self._defaults_btn.setAutoDefault(False)
+        self._defaults_btn.setToolTip(tr(_DEFAULTS_NOTE))
+        self._defaults_btn.clicked.connect(self._ask_restore_defaults)
         layout.addWidget(buttons)
 
     def _drop_ndof_monitor(self, _result=0) -> None:
@@ -598,6 +612,69 @@ class PreferencesDialog(QDialog):
 
     def _units_for_new_toggled(self, _checked: bool) -> None:
         self._units_for_new_explicit = True
+
+    # ---- Restore defaults -------------------------------------------------
+
+    def _ask_restore_defaults(self) -> None:
+        answer = QMessageBox.question(
+            self, tr("Restore defaults"), tr(_DEFAULTS_NOTE),
+            QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Cancel)
+        if answer == QMessageBox.Ok:
+            self.restore_defaults()
+
+    def restore_defaults(self) -> None:
+        """Set every control to the value a fresh profile gets. Left alone:
+        the language (it has its own menu), the AI Assistant (a key and a
+        model are an account, not a taste), the keyboard shortcuts (their
+        page resets them) and the units, which belong to the document."""
+        from core import scale_figure as sf
+        from core.ndof import NdofSettings
+        from core.platform_choice import AUTO
+        from tools.walkthrough import DEFAULT_LOOK_SENSITIVITY
+        from views.icons import default_toolbar_icon_px
+        from views.theme import DARK, ORANGE
+
+        def pick(combo, data):
+            combo.setCurrentIndex(max(0, combo.findData(data)))
+
+        pick(self._theme, DARK)
+        pick(self._accent, ORANGE)
+        pick(self._rest, "fade")
+        self._autosave.setChecked(True)
+        self._autosave_min.setValue(5)
+        self._backup.setChecked(True)
+        self._undo_steps.setValue(200)
+        self._ask_section.setChecked(True)
+        self._scale_figure.setChecked(True)
+        pick(self._figure, sf.DEFAULT_PICK)
+        self._invert.setChecked(False)
+        self._invert_orbit.setChecked(False)
+        self._look_sens.setValue(DEFAULT_LOOK_SENSITIVITY)
+        pick(self._cursor_style, "tool")
+        pick(self._msaa, 4)
+        pick(self._icon_px, default_toolbar_icon_px())
+        pick(self._ext_menus, "auto")
+        pick(self._platform, AUTO)
+        if self._rust.isEnabled():
+            self._rust.setChecked(_native.DEFAULT == "1")
+
+        nd = NdofSettings()
+        self._ndof_on.setChecked(nd.enabled)
+        self._ndof_speed.setValue(int(round(nd.sensitivity * 100)))
+        for box in self._ndof_inv.values():
+            box.setChecked(False)
+        self._ndof_lock.setChecked(nd.lock_rotation)
+
+        pick(self._obj_unit, "m")
+        pick(self._dxf_unit, "mm")
+        pick(self._coord, "geo")
+
+        # Quietly: an explicit tick would copy this document's units over
+        # the ones new documents start with.
+        self._units_for_new.blockSignals(True)
+        self._units_for_new.setChecked(True)
+        self._units_for_new.blockSignals(False)
+        self._units_at_start.setChecked(True)
 
     def accept(self) -> None:  # noqa: D102 — QDialog override
         st = QSettings()

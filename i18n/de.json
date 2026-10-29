@@ -3189,5 +3189,7 @@
  "Texts": "Texte",
  "Tool cursor:": "Werkzeugcursor:",
  "The tool's icon": "Symbol des Werkzeugs",
- "Crosshair": "Fadenkreuz"
+ "Crosshair": "Fadenkreuz",
+ "Restore defaults": "Standardwerte wiederherstellen",
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Setzt die Einstellungen dieses Fensters auf den Auslieferungszustand von IngeTrazo zurück. Nichts wird gespeichert, bevor du auf OK drückst. Sprache, KI-Assistent, Tastenkürzel und die Einheiten des offenen Dokuments bleiben, wie sie sind."
 }

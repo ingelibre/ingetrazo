@@ -3196,5 +3196,7 @@
  "Texts": "Textos",
  "Tool cursor:": "Cursor da ferramenta:",
  "The tool's icon": "O ícone da ferramenta",
- "Crosshair": "Cruz"
+ "Crosshair": "Cruz",
+ "Restore defaults": "Restaurar padrões",
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Volta as configurações desta janela para como o IngeTrazo vem. Nada é salvo até você clicar em OK. O idioma, o Assistente de IA, os atalhos de teclado e as unidades do documento aberto ficam como estão."
 }

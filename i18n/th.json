@@ -3192,5 +3192,7 @@
  "{n} scenes updated": "อัปเดต {n} ฉากแล้ว",
  "Tool cursor:": "เคอร์เซอร์เครื่องมือ:",
  "The tool's icon": "ไอคอนของเครื่องมือ",
- "Crosshair": "กากบาท"
+ "Crosshair": "กากบาท",
+ "Restore defaults": "คืนค่าเริ่มต้น",
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม"
 }
