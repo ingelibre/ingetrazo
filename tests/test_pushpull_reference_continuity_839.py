@@ -75,8 +75,8 @@ def test_a_steady_inward_push_never_jumps_back_to_its_side_faces(box_drag):
     assert distances[-1] == pytest.approx(-2.0)
 
 
-@pytest.mark.parametrize("kind", ["vertex", "face", "edge", "origin",
-                                 "guide_point", "guide_line"])
+@pytest.mark.parametrize("kind", ["vertex", "face", "edge", "midpoint",
+                                 "origin", "guide_point", "guide_line"])
 def test_deliberate_reference_alignment_still_engages(box_drag, kind):
     vp, tool, _pixel = box_drag
     mesh = vp.scene.mesh
@@ -86,6 +86,9 @@ def test_deliberate_reference_alignment_still_engages(box_drag, kind):
     elif kind == "face":
         mesh.add_face([V(-2, -2, 3), V(2, -2, 3), V(2, 2, 3), V(-2, 2, 3)])
     elif kind == "edge":
+        vp._hover_edge = mesh.add_edge(V(-1, -1, 3), V(1, 1, 3))
+        point = (0.5, 0.5, 3)   # on the edge, clear of its midpoint
+    elif kind == "midpoint":
         vp._hover_edge = mesh.add_edge(V(-1, -1, 3), V(1, 1, 3))
     elif kind == "origin":
         point = (0, 0, 0)

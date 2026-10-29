@@ -1359,8 +1359,9 @@ class PushPullTool(Tool):
     def inference_marker(self):
         """Return ``(world_point, kind)`` for the marker the viewport draws
         when the distance inference is locked onto model geometry, or
-        ``None``. ``kind`` is ``"vertex"``, ``"edge"`` or ``"face"`` — drawn
-        and labelled like the endpoint / on-edge / on-face snaps."""
+        ``None``. ``kind`` is ``"vertex"``, ``"midpoint"``, ``"edge"`` or
+        ``"face"`` — drawn and labelled like the endpoint / midpoint /
+        on-edge / on-face snaps."""
         if not self.dragging or self._inference_point is None:
             return None
         return self._inference_point, self._inference_kind
@@ -1695,14 +1696,23 @@ class PushPullTool(Tool):
                 ab.normalized(), self._normal)) > 0.999)
             if (_key(a) not in exclude or _key(b) not in exclude) \
                     and ab.length() > 1e-9 and not along:
-                on = project(a, ab, sx, sy)
+                # The edge's MIDPOINT is a named snap like a corner: with the
+                # cursor near it (on screen) it locks to the exact middle,
+                # instead of the arbitrary point the projection would give
+                # (the "On edge" cue).
+                mid = (a + b) * 0.5
+                near_mid = False
+                mpix = vp._world_to_pixel(mid)
+                if mpix is not None:
+                    near_mid = (mpix[0] - sx) ** 2 + (mpix[1] - sy) ** 2 <= thr * thr
+                on = mid if near_mid else project(a, ab, sx, sy)
                 t = QVector3D.dotProduct(on - a, ab) / QVector3D.dotProduct(ab, ab)
                 on = a + ab * max(0.0, min(1.0, t))
                 dist = QVector3D.dotProduct(on - self._anchor, self._normal)
                 if abs(dist) >= _MIN_EXTRUDE \
                         and not self._reference_hidden(vp, on):
                     self._inference_point = on
-                    self._inference_kind = "edge"
+                    self._inference_kind = "midpoint" if near_mid else "edge"
                     return dist
 
         # No edge either: align to the face under the cursor (its plane).
