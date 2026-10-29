@@ -226,7 +226,7 @@ def test_circle_tool_ctrl_toggles_guide_mode_and_draws_a_guide():
     tool = CircleTool()
     tool.on_activate(st)
     assert tool._guide_mode is False
-    assert "guide circle" in tool.status_clause().lower()
+    assert "guide" in tool.status_clause().lower()
 
     # A clean Ctrl tap toggles into guide mode.
     assert tool.on_key(st, Qt.Key_Control, Qt.NoModifier) is True

@@ -51,7 +51,7 @@ def busy_plane(scene, new_points):
     return None
 from core.i18n import tr
 from core.axes import plane_axes  # drawing axes (#44)
-from tools.base import AxisMagnet, ctrl_clause, PlaneLock, Tool, ToolContext
+from tools.base import AxisMagnet, PlaneLock, Tool, ToolContext
 
 
 class _RadialTool(AxisMagnet, PlaneLock, Tool):
@@ -315,7 +315,8 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
     def status_clause(self) -> str:
         if not self._guide_capable:
             return ""
-        return ctrl_clause(self._guide_mode, "guide circle", "circle")
+        # Short on purpose: the clause rides the same line as a long hint.
+        return "Ctrl to " + tr("guide")
 
     def _toggle_guide(self, viewport, say: bool = True) -> None:
         self._guide_mode = not self._guide_mode
