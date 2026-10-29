@@ -16,6 +16,11 @@ Storage:
 - groups: ``group.ifc = {"class": ..., "name": ...}`` (the group IS the
   object; its isolated mesh gives exact quantities).
 
+Grouping never drops a tag: a tagged group nested in another, and tagged
+faces that went into a group's mesh, are objects wherever they sit in the
+tree, measured in world space. A tagged group is its geometry less what
+its tagged descendants claim, so nothing is counted twice.
+
 Quantities are computed honestly: any face set yields its AREA; VOLUME is
 reported only when the set is watertight on its own (every edge of the set
 bordered by exactly two faces of the set) — the guarantee the whole engine
@@ -40,22 +45,68 @@ IFC_CLASSES = [
 STEEL_DENSITY = 7850.0
 
 
+#: Bumped by :func:`tag_faces` and :func:`untag_faces`, which change a
+#: mesh's tags without the mesh's mutation serial knowing.
+_TAG_EPOCH = 0
+
+
+def _compose(base, m):
+    if m is None:
+        return base
+    return m if base is None else base * m
+
+
+def _placed_groups(groups, base=None):
+    """``(group, base)`` for every group down the tree, depth first, with
+    ``base`` the matrix its ancestors compose (``None`` while none of them
+    carries one)."""
+    for g in groups:
+        yield g, base
+        kids = getattr(g, "children", None)
+        if kids:
+            yield from _placed_groups(kids, _compose(base, getattr(g, "xform",
+                                                                   None)))
+
+
+def _group_meshes(scene):
+    """Every group mesh in the document, each once (copies share theirs)."""
+    seen: set = set()
+    for g, _base in _placed_groups(scene.groups):
+        if id(g.mesh) not in seen:
+            seen.add(id(g.mesh))
+            yield g.mesh
+
+
+def _holds_face_tags(mesh) -> bool:
+    """Whether any face of ``mesh`` is tagged — a lazy mesh answers from
+    the document it was read from, without being built."""
+    from core.mesh import face_attrs
+    return any(a.get("ifc") for a in face_attrs(mesh))
+
+
 def next_object_id(scene) -> int:
-    """A fresh BIM object id (max existing + 1)."""
+    """A fresh BIM object id (max existing + 1) — over the faces inside
+    groups too, so ungrouping them never merges two objects."""
+    from core.mesh import face_attrs
     top = 0
-    for f in scene.loose_mesh.faces:
-        tag = f.attrs.get("ifc")
-        if tag and isinstance(tag.get("id"), int):
-            top = max(top, tag["id"])
+    for mesh in (scene.loose_mesh, *_group_meshes(scene)):
+        for attrs in face_attrs(mesh):
+            tag = attrs.get("ifc")
+            if tag and isinstance(tag.get("id"), int):
+                top = max(top, tag["id"])
     return top + 1
 
 
 def tag_faces(faces, ifc_class: str, name: str, obj_id: int) -> None:
+    global _TAG_EPOCH
+    _TAG_EPOCH += 1
     for f in faces:
         f.attrs["ifc"] = {"id": obj_id, "class": ifc_class, "name": name}
 
 
 def untag_faces(faces) -> None:
+    global _TAG_EPOCH
+    _TAG_EPOCH += 1
     for f in faces:
         f.attrs.pop("ifc", None)
 
@@ -123,24 +174,94 @@ def face_set_volume(faces):
     return abs(total)
 
 
-def _group_signature(g) -> tuple:
-    """What a tagged group's quantities depend on: its tag and, for every
-    placement down its tree, the mesh, that mesh's mutation serial and the
-    composed matrix. Equal signatures measure the same."""
+def _group_signature(g, base=None) -> tuple:
+    """What a tagged group's quantities depend on: its tag, the matrix its
+    ancestors compose and, for every placement down its tree, the mesh,
+    that mesh's mutation serial, the composed matrix and whether it is
+    tagged (a tagged descendant is left out). Equal signatures measure the
+    same."""
     from core.group import iter_placements
     tag = tuple(sorted((k, repr(v)) for k, v in (g.ifc or {}).items()))
     parts = []
-    for placed, m in iter_placements(g):
+    for placed, m in iter_placements(g, base):
         mesh = placed.mesh
         parts.append((id(mesh), getattr(mesh, "_mut_serial", None),
-                      None if m is None else tuple(m.data())))
+                      None if m is None else tuple(m.data()),
+                      placed is not g and bool(getattr(placed, "ifc", None))))
     return (id(g), tag, tuple(parts))
+
+
+def _untagged_part(g):
+    """``g`` with its tagged descendants pruned — a stand-in
+    :func:`core.group.world_mesh` folds like the group itself."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        mesh=g.mesh, xform=getattr(g, "xform", None),
+        children=[_untagged_part(c) for c in getattr(g, "children", None)
+                  or () if not getattr(c, "ifc", None)])
+
+
+def _tagged_group_faces(g, base) -> list:
+    """A tagged group's world-space faces: its own geometry and that of
+    its nested placements, less the tagged ones (objects of their own)."""
+    if (base is None and getattr(g, "xform", None) is None
+            and not getattr(g, "children", None)):
+        return list(g.mesh.faces)
+    from types import SimpleNamespace
+
+    from core.group import world_mesh
+    from core.mesh import Mesh
+    part = _untagged_part(g)
+    if base is not None:
+        part = SimpleNamespace(mesh=Mesh(), xform=base, children=[part])
+    return list(world_mesh(part).faces)
+
+
+def _moved_faces(faces, m) -> list:
+    """``faces`` mapped through ``m`` into a mesh of their own, welded so a
+    closed set stays closed for :func:`face_set_volume`."""
+    from core.mesh import Mesh
+    out = Mesh()
+    moved = []
+    for f in faces:
+        nf = out.add_face([m.map(v) for v in f.vertices],
+                          [[m.map(v) for v in h] for h in f.holes] or None)
+        if nf is not None:
+            nf.attrs.update(f.attrs)
+            moved.append(nf)
+    return moved
+
+
+def _face_tags_in(mesh, memo, seen) -> dict:
+    """``{id: (tag, faces)}`` of the tagged faces of a group's ``mesh``.
+    With a ``memo``, a mesh known to hold none is not scanned again until
+    it or a tag changes — the takeoff refreshes on every edit."""
+    key = None
+    if memo is not None:
+        key = ("untagged", id(mesh), getattr(mesh, "_mut_serial", None),
+               _TAG_EPOCH)
+        seen.add(key)
+        if key in memo:
+            return {}
+    by_id: dict = {}
+    if _holds_face_tags(mesh):
+        for f in mesh.faces:
+            tag = f.attrs.get("ifc")
+            if tag:
+                by_id.setdefault(tag.get("id"), (tag, []))[1].append(f)
+    if key is not None and not by_id:
+        memo[key] = True
+    return by_id
 
 
 def collect_objects(scene, memo: dict | None = None) -> list[dict]:
     """Every tagged BIM object in the document, with live quantities:
     ``{"key", "class", "name", "area", "volume" (or None), "faces" | "group"}``.
-    Loose-face objects group by tag id; each tagged group is one object.
+    Loose-face objects group by tag id; each tagged group is one object, at
+    any depth of the tree. Tagged faces inside a group's mesh are one
+    object per group and tag id: ``"faces"`` (world space) plus ``"owner"``
+    (the group) and ``"tag_id"`` — a tagged group's own mesh is that group's
+    object, its face tags are not read twice.
 
     ``memo`` (a dict the caller keeps between calls) reuses a tagged
     group's object while its :func:`_group_signature` is unchanged, so an
@@ -163,13 +284,29 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
             "faces": faces,
         })
     seen = set()
-    for g in scene.groups:
+    for g, base in _placed_groups(scene.groups):
         tag = getattr(g, "ifc", None)
         if not tag:
+            m = _compose(base, getattr(g, "xform", None))
+            for obj_id, (ftag, faces) in sorted(
+                    _face_tags_in(g.mesh, memo, seen).items(),
+                    key=lambda kv: kv[0] or 0):
+                if m is not None:
+                    faces = _moved_faces(faces, m)
+                out.append({
+                    "key": ("group-faces", id(g), obj_id),
+                    "class": ftag.get("class", ""),
+                    "name": ftag.get("name", ""),
+                    "area": face_set_area(faces),
+                    "volume": face_set_volume(faces),
+                    "faces": faces,
+                    "owner": g,
+                    "tag_id": obj_id,
+                })
             continue
         sig = None
         if memo is not None:
-            sig = _group_signature(g)
+            sig = _group_signature(g, base)
             seen.add(sig)
             hit = memo.get(sig)
             if hit is not None and hit.get("group") is g:
@@ -177,12 +314,7 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
                 continue
         # Quantities are world-space, and a component's nested placements
         # are part of the object being measured.
-        if getattr(g, "xform", None) is not None or getattr(g, "children",
-                                                            None):
-            from core.group import world_mesh
-            faces = list(world_mesh(g).faces)
-        else:
-            faces = list(g.mesh.faces)
+        faces = _tagged_group_faces(g, base)
         obj = {
             "key": ("group", id(g)),
             "class": tag.get("class", ""),

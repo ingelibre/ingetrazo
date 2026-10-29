@@ -176,7 +176,8 @@ def style_slider(slider) -> None:
     slider.setMinimumHeight(20)
 
 
-def fit_rows(view, min_rows: int = 3, max_rows: int | None = None) -> None:
+def fit_rows(view, min_rows: int = 3, max_rows: int | None = None,
+             rows: int | None = None) -> None:
     """Grow a list / tree to show ALL its rows — no scroll bar of its own,
     so the only scrolling in a tray is the tray's (Marco, 2026-09-14: «no
     me gusta hacer scroll dentro del scroll»). Call after every refill;
@@ -185,10 +186,12 @@ def fit_rows(view, min_rows: int = 3, max_rows: int | None = None) -> None:
     ``max_rows`` caps that: past it the view stops growing and scrolls on
     its own — for the lists that get long, Layers and Components in the
     model (issue #55, @pacaeiro: «should have their own vertical scroll
-    bar»). Short lists keep the no-nested-scroll rule."""
+    bar»). Short lists keep the no-nested-scroll rule. ``rows`` overrides
+    the count — a tree passes the rows its open branches show."""
     from PySide6.QtWidgets import QAbstractItemView, QTreeView
-    model = view.model()
-    rows = model.rowCount() if model is not None else 0
+    if rows is None:
+        model = view.model()
+        rows = model.rowCount() if model is not None else 0
     capped = max_rows is not None and rows > max_rows
     view.setVerticalScrollBarPolicy(
         Qt.ScrollBarAsNeeded if capped else Qt.ScrollBarAlwaysOff)
@@ -4415,11 +4418,16 @@ class BimPanel(QWidget):
         self.tree.setColumnCount(4)
         self.tree.setHeaderLabels([tr("Class"), tr("Name"),
                                    tr("Takeoff"), tr("Vol m³")])
-        self.tree.setRootIsDecorated(False)
-        self.tree.setColumnWidth(0, 82)
+        # Rows sit in the groups that hold them, as the Browser shows them:
+        # a tagged group is the parent of what is tagged inside it.
+        self.tree.setRootIsDecorated(True)
+        self.tree.setIndentation(12)
+        self.tree.setColumnWidth(0, 110)
         self.tree.setColumnWidth(1, 90)
         self.tree.setColumnWidth(2, 64)
         self.tree.itemClicked.connect(self._on_pick_object)
+        self.tree.itemExpanded.connect(self._fit_tree)
+        self.tree.itemCollapsed.connect(self._fit_tree)
         lay.addWidget(self.tree)
 
         exp = QPushButton(tr("Export quantities CSV…"))
@@ -4428,10 +4436,26 @@ class BimPanel(QWidget):
         exp.clicked.connect(self._on_export_csv)
         lay.addWidget(exp)
         self._objects: list = []
+        self._containers: list = []
         self.refresh()
 
     def _scene(self):
         return self._window.viewport.scene
+
+    def _fit_tree(self, *_a) -> None:
+        """``fit_rows`` for the rows an open branch shows, not only the top."""
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        it = QTreeWidgetItemIterator(
+            self.tree, QTreeWidgetItemIterator.NotHidden)
+        rows = 0
+        while it.value() is not None:
+            item = it.value()
+            p = item.parent()
+            while p is not None and p.isExpanded():
+                p = p.parent()
+            rows += p is None
+            it += 1
+        fit_rows(self.tree, rows=rows)
 
     # ---- Actions -------------------------------------------------------------
     def _on_tag(self) -> None:
@@ -4488,19 +4512,63 @@ class BimPanel(QWidget):
         self.refresh()
 
     def _on_pick_object(self, item, _col) -> None:
-        """Clicking a row selects the object's geometry in the viewport."""
-        idx = self.tree.indexOfTopLevelItem(item)
-        if not (0 <= idx < len(self._objects)):
+        """Clicking a row selects the object's geometry in the viewport; a
+        group row selects that group."""
+        idx = item.data(0, Qt.UserRole)
+        if not isinstance(idx, int):
+            return
+        vp = self._window.viewport
+        scene = self._scene()
+        if idx < 0:
+            self._pick_container(self._containers[-idx - 1])
+            return
+        if idx >= len(self._objects):
             return
         obj = self._objects[idx]
-        scene = self._scene()
+        # A grouped object is selected where it sits: the groups around it
+        # open, as the Browser opens them to pick a nested row.
+        target = obj.get("group") or obj.get("owner")
+        if target is not None:
+            from core import outliner
+            from views.outliner import open_to
+            path = outliner.path_to(scene.groups, target)
+            if "owner" in obj and path is not None:
+                path = path + [target]
+            if path is None or not open_to(vp, path):
+                vp.flash_status(tr(
+                    "A group around it is hidden or locked: show or unlock "
+                    "it to select inside"), 3500)
+                return
         scene.selection.clear()
         if "group" in obj:
             scene.selection.add(obj["group"])
+        elif "owner" in obj:
+            # Opening a copy edits a world copy of its mesh: the faces are
+            # found again by their tag.
+            scene.selection.update(
+                f for f in scene.mesh.faces
+                if (f.attrs.get("ifc") or {}).get("id") == obj["tag_id"])
         else:
             scene.selection.update(obj["faces"])
         scene.bump_view()
-        self._window.viewport.update()
+        vp.update()
+
+    def _pick_container(self, g) -> None:
+        """Select an untagged group that holds tagged objects."""
+        from core import outliner
+        from views.outliner import open_to
+        vp = self._window.viewport
+        scene = self._scene()
+        path = outliner.path_to(scene.groups, g)
+        if path is None or not open_to(vp, path):
+            vp.flash_status(tr(
+                "A group around it is hidden or locked: show or unlock "
+                "it to select inside"), 3500)
+            return
+        scene.selection.clear()
+        scene.selection.add(g)
+        scene.bump_view()
+        vp.update()
 
     def _on_export_csv(self) -> None:
         from PySide6.QtWidgets import QFileDialog
@@ -4537,7 +4605,40 @@ class BimPanel(QWidget):
         memo = self.__dict__.setdefault("_takeoff_memo", {})
         self._objects = collect_objects(scene, memo)
         self.tree.clear()
-        for obj in self._objects:
+        self._containers = []
+        from core import outliner
+        up = outliner.parents(scene.groups)
+        # A tagged group's row is also the parent of what is tagged inside it.
+        tagged_rows: dict = {}
+        group_rows: dict = {}
+
+        def row_for(g):
+            """The row a group's tagged contents hang from (made on demand,
+            with the rows of the groups around it)."""
+            if g is None:
+                return None
+            row = tagged_rows.get(id(g)) or group_rows.get(id(g))
+            if row is not None:
+                return row
+            row = QTreeWidgetItem([g.name or (
+                tr("Component") if outliner.kind(g) == "component"
+                else tr("Group"))])
+            row.setData(0, Qt.UserRole, -len(self._containers) - 1)
+            self._containers.append(g)
+            font = row.font(0)
+            font.setItalic(True)
+            row.setFont(0, font)
+            row.setToolTip(0, tr("Group — click to select it"))
+            group_rows[id(g)] = row
+            parent = row_for(up.get(id(g)))
+            if parent is None:
+                self.tree.addTopLevelItem(row)
+            else:
+                parent.addChild(row)
+            row.setFirstColumnSpanned(True)
+            return row
+
+        for idx, obj in enumerate(self._objects):
             if "metrado" not in obj:
                 faces = obj.get("faces")
                 if faces is None:
@@ -4559,11 +4660,28 @@ class BimPanel(QWidget):
             item = QTreeWidgetItem([
                 obj["class"].removeprefix("Ifc"),
                 obj["name"], met, vol])
+            item.setData(0, Qt.UserRole, idx)
             if obj["volume"] is None:
                 item.setToolTip(3, tr(
                     "Not watertight on its own — no volume"))
-            self.tree.addTopLevelItem(item)
-        fit_rows(self.tree)
+            if "group" in obj:
+                g = obj["group"]
+                stale = group_rows.pop(id(g), None)
+                tagged_rows[id(g)] = item
+                if stale is not None:
+                    # Its contents came first: move them under the object row.
+                    item.addChildren(stale.takeChildren())
+                    (stale.parent() or self.tree.invisibleRootItem()
+                     ).removeChild(stale)
+                parent = row_for(up.get(id(g)))
+            else:
+                parent = row_for(obj.get("owner"))
+            if parent is None:
+                self.tree.addTopLevelItem(item)
+            else:
+                parent.addChild(item)
+        self.tree.expandAll()
+        self._fit_tree()
 
 
 class Tray(QDockWidget):
