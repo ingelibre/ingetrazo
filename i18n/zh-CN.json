@@ -1184,6 +1184,7 @@
  ", reduced {k}×": ", 缩小 {k}×",
  "Image opacity…": "图像不透明度…",
  "Unlock image “{name}”": "解锁图像 “{name}”",
+ "Unlock “{name}”": "解锁 “{name}”",
  "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "“{name}”没有旋转或移动。选择您旋转并拖放到场地上的模型。",
  "Delete image “{name}”": "删除图像 “{name}”",
  "Image unlocked: {name}": "图像已解锁: {name}",

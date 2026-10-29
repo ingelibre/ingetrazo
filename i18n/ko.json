@@ -1181,6 +1181,7 @@
  ", reduced {k}×": ", {k}× 축소",
  "Image opacity…": "이미지 불투명도…",
  "Unlock image “{name}”": "이미지 “{name}” 잠금 해제",
+ "Unlock “{name}”": "“{name}” 잠금 해제",
  "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "“{name}”은(는) 회전하거나 이동하지 않았습니다. 회전해서 현장으로 끌어다 놓은 모델을 선택하세요.",
  "Delete image “{name}”": "이미지 “{name}” 삭제",
  "Image unlocked: {name}": "이미지 잠금 해제됨: {name}",

@@ -1180,6 +1180,7 @@
  ", reduced {k}×": ", zmniejszono {k}×",
  "Image opacity…": "Nieprzezroczystość obrazu…",
  "Unlock image “{name}”": "Odblokuj obraz „{name}”",
+ "Unlock “{name}”": "Odblokuj „{name}”",
  "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "„{name}” nie jest obrócony ani przesunięty. Zaznacz model, który obrócono i przeciągnięto w miejsce projektu.",
  "Delete image “{name}”": "Usuń obraz „{name}”",
  "Image unlocked: {name}": "Obraz odblokowany: {name}",

@@ -1169,6 +1169,7 @@
   ", reduced {k}×": "、{k} 倍に縮小",
   "Image opacity…": "画像の不透明度…",
   "Unlock image “{name}”": "画像「{name}」のロックを解除",
+  "Unlock “{name}”": "「{name}」のロックを解除",
   "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "「{name}」は回転も移動もされていません。回転して敷地に移動したモデルを選択してください。",
   "Delete image “{name}”": "画像「{name}」を削除",
   "Image unlocked: {name}": "画像のロックを解除しました: {name}",

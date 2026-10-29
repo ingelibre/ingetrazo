@@ -5082,6 +5082,36 @@ class Viewport(QOpenGLWidget):
                 best, best_t = im, t
         return best
 
+    def pick_locked_group(self, screen_x: float, screen_y: float):
+        """The right-click's door back to a LOCKED group or component: the
+        one whose face is the front-most thing under the cursor (drawn,
+        its layer visible and unlocked), or ``None``. A locked group
+        refuses every click by design, so the context menu is the only
+        place left to offer Unlock (#782)."""
+        origin, direction = self._pixel_to_ray(screen_x, screen_y)
+        if origin is None or direction is None:
+            return None
+        import numpy as np
+        idx = self._pick_index(near=Viewport._ray_near(self, screen_x, screen_y))
+        if idx is None:
+            return None
+        hits = Viewport._face_hits(self, idx, origin, direction, "vis")
+        Viewport._drop_past_cut(self, hits, origin, direction)
+        if hits is None or not len(hits.t):
+            return None
+        i = int(np.argmin(hits.t))
+        if not np.isfinite(hits.t[i]):
+            return None
+        owner = hits.ent(i)[1]
+        for g in (owner, getattr(owner, "owner", None)):
+            if (g is not None and getattr(g, "locked", False)
+                    and hasattr(g, "children")):
+                visible, layer_locked = self.scene._layer_state(g)
+                if visible and not layer_locked                         and self.scene.entity_visible(g):
+                    return g
+                return None
+        return None
+
     def _draw_image_outlines(self, painter: QPainter) -> None:
         """Border of each reference image: faint normally, selection orange
         when picked, so an image lying flat on the ground is still findable.
@@ -13664,9 +13694,15 @@ class Viewport(QOpenGLWidget):
                 and cached[3] is nat):
             return cached[1]
         hits = Viewport._face_hits(self, idx, origin, direction, "sel")
+        Viewport._drop_past_cut(self, hits, origin, direction)
+        self._hover_hits_cache = (key, hits, idx, nat)
+        return hits
+
+    def _drop_past_cut(self, hits, origin, direction) -> None:
+        """Hits beyond the active cut are on clipped-away geometry: their
+        ``t`` becomes ``inf``, in place."""
         sp = _active_cut(self.scene)
         if sp is not None and hits is not None and len(hits.t):
-            # Hits beyond the active cut are on clipped-away geometry.
             import numpy as np
             o = np.array([origin.x(), origin.y(), origin.z()])
             d = np.array([direction.x(), direction.y(), direction.z()])
@@ -13675,8 +13711,6 @@ class Viewport(QOpenGLWidget):
             pts = o + d * hits.t[:, None]
             hidden = (pts @ n - c) > 1e-6
             hits.t = np.where(hidden, np.inf, hits.t)
-        self._hover_hits_cache = (key, hits, idx, nat)
-        return hits
 
     def edge_point_under_cursor(self, edge, screen_x: float, screen_y: float):
         """The world point of ``edge`` nearest the cursor (closest point of
@@ -16688,8 +16722,11 @@ class Viewport(QOpenGLWidget):
         # landed on geometry drawn over it (the plaza on its orthomosaic):
         # the menu is the only way back to Unlock / Delete for it.
         under = self.pick_locked_image_plane(x, y)
+        # A locked group the same way: it can no longer be selected, and
+        # its Unlock lives here (#782).
         win.show_viewport_context_menu(
-            ev.globalPos(), locked_image=under if under is not picked else None)
+            ev.globalPos(), locked_image=under if under is not picked else None,
+            locked_group=self.pick_locked_group(x, y))
 
     def mousePressEvent(self, ev) -> None:
         # A new gesture starts with the inferences back on: the Alt

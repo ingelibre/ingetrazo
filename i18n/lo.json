@@ -1182,6 +1182,7 @@
  ", reduced {k}×": ", ຫຼຸດລົງ {k}×",
  "Image opacity…": "ຄວາມໂປ່ງໃສຂອງຮູບພາບ…",
  "Unlock image “{name}”": "ປົດລັອກຮູບພາບ “{name}”",
+ "Unlock “{name}”": "ປົດລັອກ “{name}”",
  "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "“{name}” ບໍ່ໄດ້ຖືກໝຸນ ຫຼື ຍ້າຍ. ເລືອກໂມເດວທີ່ທ່ານໄດ້ໝຸນ ແລະ ລາກລົງໃນພື້ນທີ່.",
  "Delete image “{name}”": "ລຶບຮູບພາບ “{name}”",
  "Image unlocked: {name}": "ປົດລັອກຮູບພາບແລ້ວ: {name}",

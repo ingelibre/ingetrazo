@@ -1184,6 +1184,7 @@
  ", reduced {k}×": ", уменьшено в {k}×",
  "Image opacity…": "Непрозрачность изображения…",
  "Unlock image “{name}”": "Разблокировать изображение «{name}»",
+ "Unlock “{name}”": "Разблокировать «{name}»",
  "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "«{name}» не повернуто и не сдвинуто. Выберите модель, которую вы повернули и перетащили на площадку.",
  "Delete image “{name}”": "Удалить изображение «{name}»",
  "Image unlocked: {name}": "Изображение разблокировано: {name}",

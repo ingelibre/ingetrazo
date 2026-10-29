@@ -1180,6 +1180,7 @@
  ", reduced {k}×": ", réduit {k}×",
  "Image opacity…": "Opacité de l'image…",
  "Unlock image “{name}”": "Déverrouiller l'image « {name} »",
+ "Unlock “{name}”": "Déverrouiller « {name} »",
  "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "« {name} » n'est ni pivoté ni déplacé. Sélectionnez le modèle que vous avez pivoté et glissé sur le site.",
  "Delete image “{name}”": "Supprimer l'image « {name} »",
  "Image unlocked: {name}": "Image déverrouillée : {name}",

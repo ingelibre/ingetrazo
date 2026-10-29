@@ -1161,6 +1161,7 @@
  ", reduced {k}×": ", ridotto {k}×",
  "Image opacity…": "Opacità dell'immagine…",
  "Unlock image “{name}”": "Sblocca l'immagine “{name}”",
+ "Unlock “{name}”": "Sblocca “{name}”",
  "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "“{name}” non è ruotata né spostata. Seleziona il modello che hai ruotato e trascinato sul sito.",
  "Delete image “{name}”": "Elimina l'immagine “{name}”",
  "Image unlocked: {name}": "Immagine sbloccata: {name}",

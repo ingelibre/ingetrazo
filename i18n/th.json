@@ -1181,6 +1181,7 @@
  ", reduced {k}×": ", ลดขนาดลง {k} เท่า",
  "Image opacity…": "ความโปร่งแสงของรูปภาพ…",
  "Unlock image “{name}”": "ปลดล็อกรูปภาพ “{name}”",
+ "Unlock “{name}”": "ปลดล็อก “{name}”",
  "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "“{name}” ไม่ได้หมุนหรือย้าย เลือกโมเดลที่คุณหมุนและลากลงบนพื้นที่",
  "Delete image “{name}”": "ลบรูปภาพ “{name}”",
  "Image unlocked: {name}": "ปลดล็อกรูปภาพแล้ว: {name}",

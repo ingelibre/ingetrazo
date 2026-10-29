@@ -1162,6 +1162,7 @@
  ", reduced {k}×": ", diperkecil {k}×",
  "Image opacity…": "Opasitas gambar…",
  "Unlock image “{name}”": "Buka kunci gambar “{name}”",
+ "Unlock “{name}”": "Buka kunci “{name}”",
  "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "“{name}” tidak diputar atau dipindahkan. Pilih model yang Anda putar dan seret ke lokasi.",
  "Delete image “{name}”": "Hapus gambar “{name}”",
  "Image unlocked: {name}": "Kunci gambar dibuka: {name}",

@@ -1180,6 +1180,7 @@
  ", reduced {k}×": ", reduziert {k}×",
  "Image opacity…": "Bilddeckkraft…",
  "Unlock image “{name}”": "Bild „{name}“ entsperren",
+ "Unlock “{name}”": "„{name}“ entsperren",
  "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "„{name}“ ist nicht gedreht oder verschoben. Wähle das Modell aus, das du gedreht und auf das Grundstück gezogen hast.",
  "Delete image “{name}”": "Bild „{name}“ löschen",
  "Image unlocked: {name}": "Bild entsperrt: {name}",

@@ -1182,6 +1182,7 @@
   ", reduced {k}×": ", giảm {k}×",
   "Image opacity…": "Độ mờ của hình ảnh…",
   "Unlock image “{name}”": "Mở khóa hình ảnh “{name}”",
+  "Unlock “{name}”": "Mở khóa “{name}”",
   "“{name}” is not turned or moved. Select the model you turned and dragged onto the site.": "“{name}” không được xoay hoặc di chuyển. Chọn mô hình bạn đã quay và kéo vào trang web.",
   "Delete image “{name}”": "Xóa hình ảnh “{name}”",
   "Image unlocked: {name}": "Đã mở khóa hình ảnh: {name}",

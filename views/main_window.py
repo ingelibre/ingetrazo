@@ -4588,11 +4588,14 @@ class MainWindow(QMainWindow):
             return title
         return key.replace("_", " ").strip().capitalize() or tr("Extension")
 
-    def show_viewport_context_menu(self, global_pos, locked_image=None) -> None:
+    def show_viewport_context_menu(self, global_pos, locked_image=None,
+                                   locked_group=None) -> None:
         """Right-click menu, tailored to what's selected.
         ``locked_image``: a locked reference image under the cursor that the
         click did not select (geometry sat on top of it) — it gets its own
-        Unlock / Delete entries, or it could never be reached again."""
+        Unlock / Delete entries, or it could never be reached again.
+        ``locked_group``: a locked group or component under the cursor,
+        which no click can select — its Unlock entry (#782)."""
         from core.mesh import Edge, Face
         from core.dimension import Dimension
         from georef.geopath import GeoPath
@@ -4620,6 +4623,14 @@ class MainWindow(QMainWindow):
                            lambda im=locked_image: self._unlock_image(im))
             menu.addAction(tr("Delete image “{name}”", name=name),
                            lambda im=locked_image: self._delete_image(im))
+            menu.addSeparator()
+
+        if locked_group is not None and locked_group not in sel:
+            name = (getattr(locked_group, "name", "")
+                    or tr("Component" if locked_group.is_component()
+                          else "Group"))
+            menu.addAction(tr("Unlock “{name}”", name=name),
+                           lambda g=locked_group: self._unlock_group(g))
             menu.addSeparator()
 
         if sec_planes:
@@ -4780,6 +4791,10 @@ class MainWindow(QMainWindow):
             if len(groups) == 1 and len(sel) == 1:
                 menu.addAction(tr("Change Axes"),
                                lambda g=groups[0]: self._on_change_axes(g))
+            # Lock, the Browser's padlock from the model (#782): the
+            # selected groups in one undoable step.
+            menu.addAction(tr("Lock"),
+                           lambda gs=groups: self._lock_groups(gs))
             # The Solid Tools are offered on a selection of solids.
             from core.solids import is_solid
             solid = [e for e in sel if isinstance(e, Group) and is_solid(e)]
@@ -7499,6 +7514,32 @@ class MainWindow(QMainWindow):
         self.viewport.update()
         self.statusBar().showMessage(
             tr("Image unlocked: {name}", name=image.name), 3000)
+
+    def _lock_groups(self, groups) -> None:
+        """Lock the groups (the right-click's Lock): one undoable step,
+        leaving first the edit of any of them that is open — as the
+        Browser's padlock does."""
+        from core.history import LockCommand
+        from core import outliner
+        scene = self.viewport.scene
+        groups = [g for g in groups if not getattr(g, "locked", False)]
+        if not groups:
+            return
+        if any(g is scene.edit_group or g in outliner.open_path(scene)
+               for g in groups):
+            self.viewport.end_group_edit()
+        self.viewport.history.execute(LockCommand(groups, True))
+        self.viewport.update()
+
+    def _unlock_group(self, group) -> None:
+        """Unlock one group (from the right-click over it), one undoable
+        step, and select it, so the next click can move or open it."""
+        from core.history import LockCommand
+        scene = self.viewport.scene
+        self.viewport.history.execute(LockCommand([group], False))
+        if scene.entity_selectable(group):
+            scene.select([group])
+        self.viewport.update()
 
     def _delete_image(self, image) -> None:
         """Delete one reference image (from the right-click over it)."""
