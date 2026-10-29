@@ -3034,6 +3034,7 @@
  "Ambient occlusion": "Oklusi ambien",
  "Softly darkens where surfaces meet — corners, the foot of a wall, under a bench.": "Menggelapkan secara halus tempat permukaan bertemu: sudut, kaki dinding, di bawah bangku.",
  "Distance:": "Jarak:",
+ "Distance ({unit}):": "Jarak ({unit}):",
  "How far a surface still darkens its neighbour": "Sejauh mana sebuah permukaan masih menggelapkan permukaan di sebelahnya",
  "Intensity:": "Intensitas:",
  "Your graphics driver cannot draw ambient occlusion ({reason}).": "Driver grafis Anda tidak dapat menggambar oklusi ambien ({reason}).",

@@ -3010,6 +3010,7 @@
  "Computes the heavy parts (opening big files, hidden lines of the sheets, intersections, snapping) with the native engine, much faster on big models, with the same results. On by default: turn it off only if something looks different, and report it with the label rust-engine. Takes effect at the next start.": "คำนวณส่วนที่หนัก (เปิดไฟล์ขนาดใหญ่ เส้นที่ซ่อนของแผ่นงาน จุดตัด การสแนป) ด้วยเอนจินเนทีฟ เร็วกว่ามากกับโมเดลขนาดใหญ่ และได้ผลลัพธ์เหมือนเดิม เปิดไว้เป็นค่าเริ่มต้น: ปิดเฉพาะเมื่อเห็นว่ามีบางอย่างต่างไป และรายงานด้วยป้าย rust-engine มีผลเมื่อเริ่มโปรแกรมครั้งถัดไป",
  "Ctrl+Enter to accept": "Ctrl+Enter เพื่อยืนยัน",
  "Distance:": "ระยะ:",
+ "Distance ({unit}):": "ระยะ ({unit}):",
  "Field of View…": "มุมมองภาพ…",
  "Field of view applies to perspective; switch to Perspective first.": "มุมมองภาพใช้กับมุมมองแบบ Perspective; สลับเป็น Perspective ก่อน",
  "Field of view in degrees (10–120):": "มุมมองภาพเป็นองศา (10–120):",

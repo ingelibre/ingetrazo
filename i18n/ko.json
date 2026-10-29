@@ -3015,6 +3015,7 @@
  "Ambient occlusion": "앰비언트 오클루전",
  "Softly darkens where surfaces meet — corners, the foot of a wall, under a bench.": "표면이 만나는 곳(모서리, 벽의 밑동, 벤치 아래)을 부드럽게 어둡게 합니다.",
  "Distance:": "거리:",
+ "Distance ({unit}):": "거리 ({unit}):",
  "How far a surface still darkens its neighbour": "표면이 이웃한 표면을 어둡게 하는 최대 거리",
  "Intensity:": "강도:",
  "Your graphics driver cannot draw ambient occlusion ({reason}).": "그래픽 드라이버가 앰비언트 오클루전을 그릴 수 없습니다 ({reason}).",

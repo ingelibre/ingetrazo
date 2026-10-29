@@ -3038,6 +3038,7 @@
  "Ambient occlusion": "Oclusão de ambiente",
  "Softly darkens where surfaces meet — corners, the foot of a wall, under a bench.": "Escurece suavemente onde as superfícies se encontram: cantos, o pé de uma parede, sob um banco.",
  "Distance:": "Distância:",
+ "Distance ({unit}):": "Distância ({unit}):",
  "How far a surface still darkens its neighbour": "Até que distância uma superfície escurece a vizinha",
  "Intensity:": "Intensidade:",
  "Your graphics driver cannot draw ambient occlusion ({reason}).": "Seu driver gráfico não consegue desenhar a oclusão de ambiente ({reason}).",

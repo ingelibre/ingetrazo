@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from views import prompts as _prompts
 
+import math
 import os
 from pathlib import Path
 
@@ -3255,22 +3256,28 @@ class StylesPanel(QWidget):
 
         # Ambient occlusion (#954): off in every preset. The
         # two values only take edits while the switch is on.
-        from views.length_field import LengthSpinBox
-        from core.style import AO_DISTANCE_RANGE
         self._ao = QCheckBox(tr("Ambient occlusion"))
         self._ao.setToolTip(tr(
             "Softly darkens where surfaces meet — corners, the foot of a "
             "wall, under a bench."))
         self._ao.toggled.connect(self._apply_edits)
         grid.addWidget(self._ao, 10, 0, 1, 2)
-        self._ao_dist_lbl = QLabel(tr("Distance:"))
+        self._ao_dist_lbl = QLabel()             # its unit: _sync_ao_controls
         grid.addWidget(self._ao_dist_lbl, 11, 0)
-        self._ao_dist = LengthSpinBox(minimum=AO_DISTANCE_RANGE[0],
-                                      maximum=AO_DISTANCE_RANGE[1])
+        # A slider and its value, like the intensity below, on a log scale:
+        # a centimetre matters at the foot of a skirting board, ten metres
+        # between two buildings.
+        dist_row = QHBoxLayout()
+        self._ao_dist = QSlider(Qt.Horizontal)
+        self._ao_dist.setRange(0, self._AO_DIST_STEPS)
         self._ao_dist.setToolTip(tr(
             "How far a surface still darkens its neighbour"))
-        self._ao_dist.valueChanged.connect(self._apply_edits)
-        grid.addWidget(self._ao_dist, 11, 1)
+        self._ao_dist.valueChanged.connect(self._on_ao_dist_slider)
+        dist_row.addWidget(self._ao_dist, 1)
+        self._ao_dist_val = QLabel()
+        self._ao_dist_val.setMinimumWidth(28)
+        dist_row.addWidget(self._ao_dist_val)
+        grid.addLayout(dist_row, 11, 1)
         self._ao_int_lbl = QLabel(tr("Intensity:"))
         grid.addWidget(self._ao_int_lbl, 12, 0)
         int_row = QHBoxLayout()
@@ -3355,7 +3362,8 @@ class StylesPanel(QWidget):
             self._bg_c.setStyleSheet(self._css(style.background))
             self._fill_c.setStyleSheet(self._css(style.section_fill_color))
             self._ao.setChecked(getattr(style, "ambient_occlusion", False))
-            self._ao_dist.setValue(getattr(style, "ao_distance", 0.5))
+            self._ao_dist.setValue(
+                self._ao_dist_pos(getattr(style, "ao_distance", 0.5)))
             self._ao_int.setValue(round(getattr(style, "ao_intensity", 1.0)
                                         * 10))
             self._sync_ao_controls()
@@ -3385,22 +3393,66 @@ class StylesPanel(QWidget):
         style.sky = self._sky.isChecked()
         style.section_fill = self._fill.isChecked()
         style.ambient_occlusion = self._ao.isChecked()
-        style.ao_distance = self._ao_dist.value()
         style.ao_intensity = self._ao_int.value() / 10.0
         self._sync_ao_controls()
         self._window._sync_style_menu()
         self._window.viewport.update()
+
+    _AO_DIST_STEPS = 200
+
+    @classmethod
+    def _ao_dist_at(cls, pos: int) -> float:
+        """The distance a slider position stands for, rounded to what reads
+        well in the field: centimetres under a metre, tenths to ten metres,
+        whole metres beyond."""
+        from core.style import AO_DISTANCE_RANGE
+        lo, hi = AO_DISTANCE_RANGE
+        v = lo * (hi / lo) ** (pos / cls._AO_DIST_STEPS)
+        v = round(v, 2) if v < 1.0 else round(v, 1) if v < 10.0 else round(v)
+        return min(max(v, lo), hi)
+
+    @classmethod
+    def _ao_dist_pos(cls, value: float) -> int:
+        from core.style import AO_DISTANCE_RANGE
+        lo, hi = AO_DISTANCE_RANGE
+        value = min(max(value, lo), hi)
+        return round(math.log(value / lo) / math.log(hi / lo)
+                     * cls._AO_DIST_STEPS)
+
+    def _on_ao_dist_slider(self, pos: int) -> None:
+        # Only a drag writes the distance: a value from a file that sits
+        # between two slider steps is kept as it is until then.
+        style = self._style()
+        if style is None or self._updating:
+            return
+        style.ao_distance = self._ao_dist_at(pos)
+        self._apply_edits()
 
     def _sync_ao_controls(self) -> None:
         """The distance and intensity follow the switch; a graphics driver
         that refused the pass this session greys the switch with the
         reason, instead of a box that does nothing."""
         on = self._ao.isChecked()
-        for w in (self._ao_dist_lbl, self._ao_dist, self._ao_int_lbl,
-                  self._ao_int, self._ao_int_val):
+        for w in (self._ao_dist_lbl, self._ao_dist, self._ao_dist_val,
+                  self._ao_int_lbl, self._ao_int, self._ao_int_val):
             w.setEnabled(on)
-        from core.units import localized
-        self._ao_int_val.setText(localized(f"{self._ao_int.value() / 10.0:.1f}"))
+        # Both values read alike: a bare number, two decimals, the model's
+        # decimal mark; the distance's unit goes once, in its label.
+        from core import units
+        u = units.model_unit()
+        if u in ("in", "in-frac"):
+            symbol = "in"
+        elif u in ("ft", "ft-in", "ft-in-frac"):
+            symbol = "ft"
+        else:
+            row = units.UNITS.get(u)
+            symbol = row.symbol if row is not None else "m"
+        self._ao_dist_lbl.setText(tr("Distance ({unit}):", unit=symbol))
+        style = self._style()
+        dist = units.length_number(getattr(style, "ao_distance", 0.5), u)
+        self._ao_dist_val.setText(units.localized(f"{dist:.2f}"))
+        self._ao_int_val.setText(
+            units.localized(f"{self._ao_int.value() / 10.0:.2f}"))
         ao = getattr(self._window.viewport, "_ao", None)
         broken = getattr(ao, "broken", None)
         if broken:

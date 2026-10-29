@@ -3014,6 +3014,7 @@
   "Ambient occlusion": "ແສງເງົາຕົກກະທົບ Ambient Occlusion",
   "Softly darkens where surfaces meet — corners, the foot of a wall, under a bench.": "ສ້າງເງົາອ່ອນໆ ບ່ອນທີ່ພື້ນຜິວມາບັນຈົບກັນ — ຕາມມຸມ, ຕີນຝາ, ກ້ອງຕັ່ງ.",
   "Distance:": "ໄລຍະຫ່າງ:",
+  "Distance ({unit}):": "ໄລຍະຫ່າງ ({unit}):",
   "How far a surface still darkens its neighbour": "ໄລຍະຫ່າງທີ່ພື້ນຜິວຈະສ້າງເງົາບັງພື້ນຜິວໃກ້ຄຽງ",
   "Intensity:": "ຄວາມເຂັ້ມ:",
   "Your graphics driver cannot draw ambient occlusion ({reason}).": "ໄດຣເວີກຣາບຟິກຂອງທ່ານບໍ່ສາມາດສະແດງຜົນ Ambient Occlusion ໄດ້ ({reason}).",

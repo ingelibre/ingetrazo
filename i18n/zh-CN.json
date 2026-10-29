@@ -3032,6 +3032,7 @@
  "Ambient occlusion": "环境光遮蔽",
  "Softly darkens where surfaces meet — corners, the foot of a wall, under a bench.": "在表面相接处柔和地加深阴影：墙角、墙脚、长椅下方。",
  "Distance:": "距离：",
+ "Distance ({unit}):": "距离（{unit}）：",
  "How far a surface still darkens its neighbour": "一个表面在多远的距离内仍会使相邻表面变暗",
  "Intensity:": "强度：",
  "Your graphics driver cannot draw ambient occlusion ({reason}).": "您的显卡驱动无法绘制环境光遮蔽（{reason}）。",

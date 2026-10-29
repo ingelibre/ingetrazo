@@ -3041,6 +3041,7 @@
   "Ambient occlusion": "Bóng môi trường",
   "Softly darkens where surfaces meet — corners, the foot of a wall, under a bench.": "Tạo bóng mờ nhẹ tại nơi các bề mặt tiếp giáp — góc tường, chân tường, gầm ghế.",
   "Distance:": "Khoảng cách:",
+  "Distance ({unit}):": "Khoảng cách ({unit}):",
   "How far a surface still darkens its neighbour": "Phạm vi bề mặt tạo bóng mờ lên bề mặt lân cận",
   "Intensity:": "Cường độ:",
   "Your graphics driver cannot draw ambient occlusion ({reason}).": "Trình điều khiển đồ họa không thể hiển thị bóng môi trường ({reason}).",

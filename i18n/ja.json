@@ -3016,6 +3016,7 @@
   "Ambient occlusion": "アンビエントオクルージョン",
   "Softly darkens where surfaces meet — corners, the foot of a wall, under a bench.": "面が接する所をやわらかく暗くします — 隅、壁の足元、ベンチの下。",
   "Distance:": "距離：",
+  "Distance ({unit}):": "距離（{unit}）：",
   "How far a surface still darkens its neighbour": "面が隣の面を暗くする距離",
   "Intensity:": "強さ：",
   "Your graphics driver cannot draw ambient occlusion ({reason}).": "お使いのグラフィックドライバーではアンビエントオクルージョンを描画できません（{reason}）。",

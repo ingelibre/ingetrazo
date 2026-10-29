@@ -42,6 +42,7 @@ GL_DRAW_FRAMEBUFFER = 0x8CA9
 GL_DEPTH_STENCIL_ATTACHMENT = 0x821A
 GL_FRAMEBUFFER_COMPLETE = 0x8CD5
 GL_DEPTH_BUFFER_BIT = 0x00000100
+GL_COLOR_BUFFER_BIT = 0x00004000
 GL_DEPTH_TEST = 0x0B71
 GL_BLEND = 0x0BE2
 GL_ZERO = 0
@@ -64,6 +65,7 @@ REFUSALS_TO_GIVE_UP = 3
 #: 1 (the sun's shadow map).
 _UNIT_DEPTH = 4
 _UNIT_AO = 5
+_UNIT_COLOR = 6
 
 
 def _env_float(name: str, default: float) -> float:
@@ -210,8 +212,11 @@ class AmbientOcclusion:
                 break
         gl.glBindFramebuffer(GL_READ_FRAMEBUFFER, scene_fbo.handle())
         gl.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._depth_fbo.handle())
+        # The colour rides along into the target's own colour texture: the
+        # last pass reads how light each face is, for the light it bounces.
         extra.glBlitFramebuffer(0, 0, w, h, 0, 0, w, h,
-                                GL_DEPTH_BUFFER_BIT, GL_NEAREST)
+                                GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT,
+                                GL_NEAREST)
         if gl.glGetError() != GL_NO_ERROR:
             # One refused frame (the view resizing under a file being
             # opened) only skips that frame; a driver that keeps refusing
@@ -260,6 +265,14 @@ class AmbientOcclusion:
                           QVector2D(1.0 / hw, 1.0 / hh))
         p.setUniformValue(p.uniformLocation("u_inv_proj"), inv)
         p.setUniformValue1f(p.uniformLocation("u_radius"), r)
+        p.setUniformValue1f(p.uniformLocation("u_spread"), 1.0)
+        gl.glDrawArrays(GL_TRIANGLES, 0, 3)
+        # ...and once more, twice as wide, back into the occlusion target:
+        # the first pass cancels the rotation tile, this one spreads the
+        # gradient so a corner fades out softly instead of in a band.
+        self._ao_fbo.bind()
+        gl.glBindTexture(GL_TEXTURE_2D, self._blur_fbo.texture())
+        p.setUniformValue1f(p.uniformLocation("u_spread"), 2.0)
         gl.glDrawArrays(GL_TRIANGLES, 0, 3)
 
         # 4. Multiply onto the scene, full size.
@@ -277,7 +290,7 @@ class AmbientOcclusion:
         gl.glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP)
         p = self._progs["ao_apply.frag"]
         p.bind()
-        gl.glBindTexture(GL_TEXTURE_2D, self._blur_fbo.texture())
+        gl.glBindTexture(GL_TEXTURE_2D, self._ao_fbo.texture())
         p.setUniformValue1i(p.uniformLocation("u_ao"), _UNIT_AO)
         p.setUniformValue1i(p.uniformLocation("u_depth"), _UNIT_DEPTH)
         p.setUniformValue(p.uniformLocation("u_inv_proj"), inv)
@@ -285,7 +298,12 @@ class AmbientOcclusion:
         p.setUniformValue1f(p.uniformLocation("u_radius"), r)
         p.setUniformValue1f(p.uniformLocation("u_intensity"),
                             float(settings["intensity"]))
+        gl.glActiveTexture(GL_TEXTURE0 + _UNIT_COLOR)
+        gl.glBindTexture(GL_TEXTURE_2D, self._depth_fbo.texture())
+        p.setUniformValue1i(p.uniformLocation("u_color"), _UNIT_COLOR)
         gl.glDrawArrays(GL_TRIANGLES, 0, 3)
+        gl.glBindTexture(GL_TEXTURE_2D, 0)
+        gl.glActiveTexture(GL_TEXTURE0 + _UNIT_AO)
         self._vao.release()
 
         # Back to the face passes' state.

@@ -3023,6 +3023,7 @@
  "Ambient occlusion": "Фоновое затенение",
  "Softly darkens where surfaces meet — corners, the foot of a wall, under a bench.": "Мягко затемняет места, где сходятся поверхности: углы, основание стены, пространство под скамейкой.",
  "Distance:": "Расстояние:",
+ "Distance ({unit}):": "Расстояние ({unit}):",
  "How far a surface still darkens its neighbour": "На каком расстоянии поверхность ещё затемняет соседнюю",
  "Intensity:": "Интенсивность:",
  "Your graphics driver cannot draw ambient occlusion ({reason}).": "Ваш графический драйвер не может отрисовать фоновое затенение ({reason}).",
