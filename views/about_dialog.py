@@ -237,6 +237,9 @@ CONTRIBUTORS = [
     ("xcd-droid",
      "Reports on snapping, the Rectangle and pasting.",
      "https://github.com/xcd-droid"),
+    ("Oleksandr Bolotov",
+     "Ukrainian translation of the interface.",
+     "https://github.com/bolotov"),
 ]
 
 #: Roll speed: pixels per tick, and the tick.

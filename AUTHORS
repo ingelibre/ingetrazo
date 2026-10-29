@@ -362,6 +362,9 @@ xcd-droid  (github.com/xcd-droid)
     Reports on snapping (intersections, midpoints for dimensions), the
     Rectangle and pasting several copied objects.
 
+Oleksandr Bolotov (https://github.com/bolotov)
+    Ukrainian translation of the interface.
+
 ---
 
 IngeTrazo is free software under GPL-3.0-or-later (see LICENSE).
