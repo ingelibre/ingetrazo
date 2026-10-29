@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QVector3D
 
 from core.edits import build_add_edges
@@ -58,6 +59,8 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
 
     sides: int = 24
     vcb_label = "Radius"
+    #: Whether Ctrl toggles the guide-circle mode (only the Circle tool).
+    _guide_capable = False
 
     def vcb_caption(self) -> str:
         """'Sides' before the centre, 'Radius' after.
@@ -72,10 +75,14 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
         self.work_plane: tuple[QVector3D, QVector3D] | None = None
         self._viewport = None
         self._last = None      # (command, centre, first vertex, u, v)
+        #: Ctrl toggles between a circle FACE and an analytic guide circle.
+        self._guide_mode = False
+        self._ctrl_toggled = False
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
         self._reset()
+        self._guide_mode = False   # a fresh pick-up starts as a circle face
 
     def on_deactivate(self, viewport) -> None:
         self._reset()
@@ -88,6 +95,9 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
             self.start_point = ctx.world
             if self.work_plane is None:
                 self.work_plane = self.locked_work_plane(ctx.world)
+            return
+        if self._guide_capable and self._guide_mode:
+            self._commit_guide(ctx.viewport, ctx.world)
             return
         pts = self._points(self.start_point, ctx.world)
         if pts:
@@ -149,6 +159,9 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
         d = self.hover_point - self.start_point
         ang = math.atan2(QVector3D.dotProduct(d, v), QVector3D.dotProduct(d, u))
         rim = self.start_point + (u * math.cos(ang) + v * math.sin(ang)) * value
+        if self._guide_capable and self._guide_mode:
+            self._commit_guide(viewport, rim)
+            return True
         pts = self._points(self.start_point, rim)
         if pts:
             self._commit(viewport, pts)
@@ -164,6 +177,22 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
             return []
         if self.start_point is None:
             return self._cursor_preview()
+        if self._guide_capable and self._guide_mode:
+            # In guide mode the temporary circle IS the guide: it is drawn
+            # dashed by guide_preview_lines, never as a solid rubber band.
+            return []
+        pts = self._points(self.start_point, self.hover_point)
+        return [(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts))] \
+            if pts else []
+
+    def guide_preview_lines(self):
+        """The dashed rim of the guide circle the next click leaves (the
+        Circle tool with Ctrl held): the same analytic circle as the commit,
+        shown dashed like a real guide while it is still being drawn."""
+        if not (self._guide_capable and self._guide_mode):
+            return []
+        if self.start_point is None or self.hover_point is None:
+            return []
         pts = self._points(self.start_point, self.hover_point)
         return [(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts))] \
             if pts else []
@@ -266,7 +295,58 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
 
 
     def on_key(self, viewport, key: int, modifiers) -> bool:
+        if key == Qt.Key_Control and self._guide_capable:
+            self._toggle_guide(viewport)
+            self._ctrl_toggled = True
+            return True
         return self.plane_lock_key(viewport, key)
+
+    def on_key_release(self, viewport, key: int) -> bool:
+        # Toggled on the PRESS so the mode changes at once; a Ctrl that was
+        # part of a shortcut (Ctrl+Z…) takes it back on the release (#342).
+        if key != Qt.Key_Control or not self._ctrl_toggled:
+            return False
+        self._ctrl_toggled = False
+        tapped = getattr(viewport, "ctrl_tapped", None)
+        if callable(tapped) and not tapped():
+            self._toggle_guide(viewport, say=False)
+        return True
+
+    def status_clause(self) -> str:
+        if not self._guide_capable:
+            return ""
+        # Short on purpose: the clause rides the same line as a long hint.
+        return "Ctrl to " + tr("guide")
+
+    def _toggle_guide(self, viewport, say: bool = True) -> None:
+        self._guide_mode = not self._guide_mode
+        flash = getattr(viewport, "flash_status", None)
+        if say and callable(flash):
+            flash(tr("Guide circle") if self._guide_mode else tr("Circle"))
+        hint = getattr(viewport, "refresh_status_hint", None)
+        if callable(hint):
+            hint()
+        viewport.update()
+
+    def _commit_guide(self, viewport, rim: QVector3D) -> None:
+        """Create the analytic guide circle: centre + plane normal + radius."""
+        from core.guide import GuideCircle
+        from core.history import AddGuideCommand
+        u, v = self._axes()
+        d = rim - self.start_point
+        r = math.hypot(QVector3D.dotProduct(d, u), QVector3D.dotProduct(d, v))
+        if r < 1e-9:
+            return
+        guide = GuideCircle(QVector3D(self.start_point),
+                            self.drawing_plane()[1], r)
+        if not guide.is_finite():
+            return
+        viewport.history.execute(AddGuideCommand(guide))
+        from core.units import fmt_len
+        viewport.flash_status(
+            tr("Guide circle, radius {r}").format(r=fmt_len(r)), 3000)
+        self._reset()
+        viewport.update()
 
     def _reset(self) -> None:
         self.start_point = None
@@ -283,6 +363,7 @@ class CircleTool(_RadialTool):
     axis_source = True
     axis_source_empty_only = True
     sides = 24
+    _guide_capable = True
 
 
 class PolygonTool(_RadialTool):

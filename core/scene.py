@@ -764,15 +764,19 @@ class Scene:
         selection only."""
         import numpy as np
         from core.group import iter_placements
-        from core.guide import Guide
+        from core.guide import is_guide
         pts: list = []
 
         def add(p: QVector3D) -> None:
             pts.append((p.x(), p.y(), p.z()))
 
         for ent in self.selection:
-            if isinstance(ent, Guide):        # before Edge: it has .a / .b
-                add(ent.point)
+            if is_guide(ent):                # before Edge: it has .a / .b
+                if getattr(ent, "is_circle", False):
+                    for p in ent.sample_points(32):
+                        add(p)
+                else:
+                    add(ent.point)
             elif hasattr(ent, "mesh"):        # Group / component instance
                 for g, m in iter_placements(ent):
                     verts = g.mesh.vertices

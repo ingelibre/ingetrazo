@@ -1447,16 +1447,21 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     for raw in payload.get("text_labels", []):
         scene.text_labels.append(TextLabel.from_dict(raw))
 
-    from core.guide import Guide
+    from core.guide import guide_from_dict
     scene.guides.clear()
     for raw in payload.get("guides", []):
         # A guide at (nan, nan, nan) stalled every tool (#185): left out.
-        if not _finite_points(raw.get("point", ()),
-                              raw.get("direction") or (),
-                              raw.get("origin") or ()):
+        if raw.get("kind") == "circle":
+            finite = _finite_points(raw.get("center", ()),
+                                    raw.get("normal") or ())
+        else:
+            finite = _finite_points(raw.get("point", ()),
+                                    raw.get("direction") or (),
+                                    raw.get("origin") or ())
+        if not finite:
             _dropped_nonfinite[0] += 1
             continue
-        scene.guides.append(Guide.from_dict(raw))
+        scene.guides.append(guide_from_dict(raw))
     # What had to be left out, for the window to say so.
     scene.load_repairs = _dropped_nonfinite[0]
 

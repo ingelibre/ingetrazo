@@ -26,7 +26,7 @@ from core.dimension import Dimension
 from core.textlabel import TextLabel
 from core.group import Group
 from core.mesh import Edge, Face
-from core.guide import Guide
+from core.guide import is_guide
 from core.section import SectionPlane
 from core.history import (
     CompoundCommand,
@@ -552,6 +552,17 @@ class SelectTool(Tool):
                 if (pa is not None and pb is not None
                         and _seg_rect_overlap(pa, pb, rect)):
                     picked.append(g)
+            elif getattr(g, "is_circle", False):
+                # A finite circle: a window box takes it whole, a crossing
+                # box takes it when its rim passes through.
+                rim = [w2p(p) for p in g.sample_points(24)]
+                if any(p is None for p in rim):
+                    continue
+                if crossing:
+                    if any(_pt_in_rect(p, rect) for p in rim):
+                        picked.append(g)
+                elif all(_pt_in_rect(p, rect) for p in rim):
+                    picked.append(g)
             else:
                 p = w2p(g.point)
                 if p is not None and _pt_in_rect(p, rect):
@@ -618,7 +629,7 @@ def erase_entities(viewport, entities) -> bool:
     dims = [d for d in entities if isinstance(d, Dimension)]
     labels = [t for t in entities if isinstance(t, TextLabel)]
     paths = [p for p in entities if isinstance(p, GeoPath)]
-    guides = [g for g in entities if isinstance(g, Guide)]
+    guides = [g for g in entities if is_guide(g)]
     splanes = [p for p in entities if isinstance(p, SectionPlane)]
     commands = []
     if edges or faces:
