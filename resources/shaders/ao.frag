@@ -37,24 +37,30 @@ float tile_rotation(vec2 frag) {
 }
 
 void main() {
-    float d = texture(u_depth, v_uv).r;
+    // The half-size pass lands its fragment centres on the CORNERS of the
+    // full-size depth texels, where NEAREST sampling is ambiguous. Half a
+    // texel in lands on a real centre, so p and its neighbours come from
+    // one consistent grid (a corner sample made the reconstructed normal
+    // wobble and the face self-occlude in vertical bands, #989).
+    vec2 uv0 = v_uv + u_texel * 0.5;
+    float d = texture(u_depth, uv0).r;
     if (d >= 1.0) {             // sky / background: nothing to occlude
         fragColor = vec4(1.0);
         return;
     }
-    vec3 p = view_pos(v_uv, d);
+    vec3 p = view_pos(uv0, d);
     // The depth buffer's own step at this distance (24 bits, so centimetres
     // at a couple of hundred metres in perspective): below it a flat face
     // reads as a staircase, and the stairs as corners — far walls seen
     // square on came out black. The bias never drops under four steps.
-    float step = abs(view_pos(v_uv, min(d + 4.0 / 16777216.0, 1.0)).z - p.z);
+    float step = abs(view_pos(uv0, min(d + 4.0 / 16777216.0, 1.0)).z - p.z);
     float bias = max(u_bias, step);
     // Normal from the neighbour on the side with the smaller depth step, so
     // a silhouette does not bend the normal of the face in front.
-    vec3 r = view_at(v_uv + vec2(u_texel.x, 0.0)) - p;
-    vec3 l = p - view_at(v_uv - vec2(u_texel.x, 0.0));
-    vec3 t = view_at(v_uv + vec2(0.0, u_texel.y)) - p;
-    vec3 b = p - view_at(v_uv - vec2(0.0, u_texel.y));
+    vec3 r = view_at(uv0 + vec2(u_texel.x, 0.0)) - p;
+    vec3 l = p - view_at(uv0 - vec2(u_texel.x, 0.0));
+    vec3 t = view_at(uv0 + vec2(0.0, u_texel.y)) - p;
+    vec3 b = p - view_at(uv0 - vec2(0.0, u_texel.y));
     vec3 dx = abs(r.z) < abs(l.z) ? r : l;
     vec3 dy = abs(t.z) < abs(b.z) ? t : b;
     vec3 n = normalize(cross(dx, dy));

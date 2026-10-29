@@ -4,6 +4,17 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [Sin publicar]
+
+### Arreglado
+
+- **La oclusión ambiental ya no pinta bandas verticales** en caras planas
+  vistas de forma oblicua (#989): el pase a media resolución leía la
+  profundidad en las esquinas de los texeles y la normal reconstruida
+  oscilaba, así que la propia cara se auto-ocluía en franjas. Ahora la
+  lectura cae en el centro de un texel y la cara queda uniforme. Se notaba
+  sobre todo en Windows, con el bloque escalonado de la captura.
+
 ## [0.5.11] — 2026-10-27
 
 **Capas 2.0, la oclusión ambiental deja de ser experimental, sombras

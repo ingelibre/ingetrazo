@@ -2,12 +2,14 @@
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Ambient occlusion of the 3D view (#954): off, the picture is the one it
 always was; on, the foot of a box on a floor darkens and the open floor
-does not; the foliage mark rides the recorded instanced passes (the native
-replay gained glStencilFunc for it, in the same order on both sides).
+does not; a flat face seen obliquely gets no vertical bands (#989); the
+foliage mark rides the recorded instanced passes (the native replay gained
+glStencilFunc for it, in the same order on both sides).
 
 The rendering cases need a GL context; skipped where there is none."""
 from __future__ import annotations
 
+import math
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -90,10 +92,66 @@ def box_on_floor():
         win.close()
 
 
+@pytest.fixture
+def step_block():
+    """The report's step (#989): a slab with a wall set back on it. Seen
+    from an oblique camera, the wall's left face is a flat surface whose AO
+    used to come out in vertical bands."""
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        win.resize(900, 700)
+        win.show()
+        _app.processEvents()
+        vp = win.viewport
+        if getattr(vp, "_gl", None) is None or not vp.isValid():
+            pytest.skip("no OpenGL context on this platform")
+        V = QVector3D
+        scene = vp.scene
+
+        def box(x0, x1, y0, y1, z0, z1):
+            p = [V(x0, y0, z0), V(x1, y0, z0), V(x1, y1, z0),
+                 V(x0, y1, z0), V(x0, y0, z1), V(x1, y0, z1),
+                 V(x1, y1, z1), V(x0, y1, z1)]
+            for idx in ((4, 5, 6, 7), (0, 3, 2, 1), (0, 1, 5, 4),
+                        (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
+                scene.mesh.add_face([p[i] for i in idx])
+
+        box(-3, 3, -2, 2, 0, 2)
+        box(-3, 0, 0, 2, 2, 5)
+        scene.version += 1
+        vp.camera.set_view("iso")
+        vp.camera.yaw = math.radians(-135.0)
+        vp.camera.pitch = math.radians(20.0)
+        vp.camera.fit_to(V(-3.2, -2.2, 0), V(3.2, 2.2, 5.2))
+        for _ in range(5):
+            _app.processEvents()
+        # The export is 900x700; give the camera that aspect so the face's
+        # projected corners below land where the pixels do.
+        vp.camera.set_aspect(900, 700)
+        yield vp
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def _render(vp, monkeypatch, on: str) -> np.ndarray:
     monkeypatch.setenv("INGETRAZO_AO", on)
     monkeypatch.setenv("INGETRAZO_AO_RADIUS", "0.5")
     return _lum(vp.render_image(400, 300, overlays=False))
+
+
+def _render_at(vp, monkeypatch, on: str, w: int, h: int) -> np.ndarray:
+    monkeypatch.setenv("INGETRAZO_AO", on)
+    monkeypatch.setenv("INGETRAZO_AO_RADIUS", "0.5")
+    return _lum(vp.render_image(w, h, overlays=False))
+
+
+def _pixel(vp, p: QVector3D, w: int, h: int) -> tuple[float, float]:
+    """Where a world point lands in the exported image, in pixels."""
+    m = vp.camera.projection_matrix() * vp.camera.view_matrix()
+    q = m.map(p)
+    return ((q.x() * 0.5 + 0.5) * w, (1.0 - (q.y() * 0.5 + 0.5)) * h)
 
 
 def test_the_foot_of_a_box_darkens_and_the_open_floor_does_not(
@@ -116,6 +174,33 @@ def test_wireframe_has_none(box_on_floor, monkeypatch):
     vp.plano_style = "lineas"                   # the wireframe face mode
     assert np.array_equal(_render(vp, monkeypatch, "0"),
                           _render(vp, monkeypatch, "1"))
+
+
+def test_a_flat_face_seen_obliquely_gets_no_vertical_bands(
+        step_block, monkeypatch):
+    """#989: the half-size AO pass read the full-size depth at texel corners,
+    so a flat face's normal wobbled and the face self-occluded in bands."""
+    vp = step_block
+    off = _render_at(vp, monkeypatch, "0", 900, 700)
+    on = _render_at(vp, monkeypatch, "1", 900, 700)
+    if getattr(vp, "_ao", None) is not None and vp._ao.broken:
+        pytest.skip(f"this driver refuses the pass: {vp._ao.broken}")
+    darker = off - on
+    assert darker.max() > 5.0                  # the pass did something
+    # The upper wall's left face (x = -3): flat, vertical, seen obliquely.
+    V = QVector3D
+    corners = [V(-3, 0, 2), V(-3, 2, 2), V(-3, 2, 5), V(-3, 0, 5)]
+    pts = np.array([_pixel(vp, c, 900, 700) for c in corners])
+    x0, y0 = pts.min(axis=0)
+    x1, y1 = pts.max(axis=0)
+    # Inset well clear of the face's edges and of the corner darkening.
+    ix = (x1 - x0) * 0.28
+    iy = (y1 - y0) * 0.22
+    region = darker[int(y0 + iy):int(y1 - iy),
+                    int(x0 + ix):int(x1 - ix)]
+    assert region.size > 1000
+    # One flat face has ONE occlusion value; the bug swung it ~28 levels.
+    assert np.ptp(region) < 4.0, (region.min(), region.max(), region.mean())
 
 
 # ---- The style's switch (Styles panel) -------------------------------------
