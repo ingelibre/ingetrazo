@@ -118,11 +118,11 @@ def test_edit_command_relays_the_letters_where_the_text_stands():
     for k in g.children:
         assert k.xform == pose
     # ...so the new text stands at the same spot: rotated 90° about Z, its
-    # thickness (+Y local) runs along -X and its width along +Y (the left
+    # thickness (-Y local) runs along +X and its width along +Y (the left
     # bearing of the "H" at 25 cm tall is under 5 cm).
     pts = [m.map(v.position) if m is not None else v.position
            for gg, m in iter_placements(g) for v in gg.mesh.vertices]
-    assert abs(min(p.x() for p in pts) - (10.0 - 0.05)) < 1e-6
+    assert abs(min(p.x() for p in pts) - 10.0) < 1e-6
     assert abs(min(p.y() for p in pts) - 5.0) < 0.05
 
     history.undo()
@@ -197,6 +197,104 @@ def test_place_tool_previews_the_letter_outlines():
     tool = PlaceGroupTool(g, align_to_face=True)
     edges = sum(len(k.mesh.edges) for k in g.children)
     assert len(tool._segments) == edges and edges > 12
+
+
+def test_text3d_glued_to_a_floor_sits_fully_on_top():
+    """Regression: aligning a 3D text to a horizontal face planted the MIDDLE
+    of its thickness on the face, so text lying on a slab came out half sunk.
+    The back face must land on the face, the whole thickness proud of it."""
+    from core.group import placement_points
+    from tools.place_group import PlaceGroupTool
+
+    class Visor:
+        def __init__(self):
+            self.scene = Scene()
+            self.history = History(self.scene)
+
+        def update(self):
+            pass
+
+        def flash_status(self, *_a, **_k):
+            pass
+
+        def window(self):
+            return None
+
+    g = make_text_group(text_params("A", "Sans", height=0.25, thickness=0.05))
+    tool = PlaceGroupTool(g, align_to_face=True)
+    tool._face_normal = QVector3D(0, 0, 1)   # a floor facing up
+    tool.place_at(Visor(), QVector3D(10, 10, 0))
+    zs = placement_points(g)[:, 2]
+    assert abs(float(zs.min())) < 1e-9            # nothing dips below the floor
+    assert abs(float(zs.max()) - 0.05) < 1e-6     # the whole thickness stands up
+
+
+def test_text3d_stays_flush_after_editing_thickness():
+    """Editing the thickness re-lays the letters at the same frame, so the
+    point that must not move is the local origin. That origin is now the BACK
+    face, so a sign glued by its back keeps touching the face — only the front
+    advances — instead of sinking or floating off."""
+    from core.group import placement_points
+    from tools.place_group import PlaceGroupTool
+
+    class Visor:
+        def __init__(self):
+            self.scene = Scene()
+            self.history = History(self.scene)
+
+        def update(self):
+            pass
+
+        def flash_status(self, *_a, **_k):
+            pass
+
+        def window(self):
+            return None
+
+    visor = Visor()
+    g = make_text_group(text_params("A", "Sans", height=0.25, thickness=0.05))
+    tool = PlaceGroupTool(g, align_to_face=True)
+    tool._face_normal = QVector3D(0, 0, 1)   # a floor facing up
+    tool.place_at(visor, QVector3D(10, 10, 0))
+
+    visor.history.execute(EditText3DCommand(
+        g, text_params("A", "Sans", height=0.25, thickness=0.10)))
+
+    zs = placement_points(g)[:, 2]
+    assert abs(float(zs.min())) < 1e-9            # the back face stays on the floor
+    assert abs(float(zs.max()) - 0.10) < 1e-6     # the front moved out to the new depth
+
+
+def test_text3d_plants_from_its_back_face_upright():
+    """Consistency with the face glue: the insertion point is the BACK face in
+    both cases. Standing on the ground (no face hovered) the cursor holds the
+    back-bottom-centre, not the middle of the thickness."""
+    from core.group import placement_points
+    from tools.place_group import PlaceGroupTool
+
+    class Visor:
+        def __init__(self):
+            self.scene = Scene()
+            self.history = History(self.scene)
+
+        def update(self):
+            pass
+
+        def flash_status(self, *_a, **_k):
+            pass
+
+        def window(self):
+            return None
+
+    g = make_text_group(text_params("A", "Sans", height=0.25, thickness=0.05))
+    tool = PlaceGroupTool(g, align_to_face=True)
+    assert abs(tool._anchor.y()) < 1e-9            # the back face (y=0)
+    assert abs(tool._anchor.z()) < 1e-9            # the base
+
+    tool.place_at(Visor(), QVector3D(10, 10, 0))   # no face → upright
+    ys = placement_points(g)[:, 1]
+    assert abs(float(ys.max()) - 10.0) < 1e-9      # back sits at the cursor
+    assert abs(float(ys.min()) - (10.0 - 0.05)) < 1e-6   # front a depth forward
 
 
 # ---- Letters touched by hand -------------------------------------------------
