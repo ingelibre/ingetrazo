@@ -439,7 +439,7 @@ def _world_points(pos_m, xform):
 
 
 def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
-                inherited=None, layer=None):
+                inherited=None, layer=None, mirrored=False):
     """One payload face ``(outer, holes, attrs)`` for ``face``, its corners
     already transformed in ``wl`` (see :func:`_world_points`; ``raw_l`` keeps
     the same corners in local inches for the UV math). Bakes a positioned /
@@ -450,9 +450,17 @@ def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
 
     ``layer`` is the .skp layer (tag) of the nearest enclosing tagged
     instance — a face with no tag of its own carries it, so hiding the tag's
-    layer in IngeTrazo hides what the file marks as hidden."""
+    layer in IngeTrazo hides what the file marks as hidden.
+
+    ``mirrored`` says the corners in ``wl`` went through a placement with a
+    negative determinant (a component scaled by -1, #1045): that reverses the
+    winding, so the rings are walked backwards to keep the front where the
+    file has it."""
     raw = raw_l[s0:s1]
     outer = wl[s0:s1]
+    if mirrored:
+        raw = raw[::-1]
+        outer = outer[::-1]
     # Material precedence (the .skp rule): the face's OWN material wins —
     # front side first, then back side (flipping the face so the painted
     # side fronts, what "Reverse Faces + paint" produces) — and only a face
@@ -477,7 +485,7 @@ def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
     holes = []
     for ha, hb in holes_sl:
         h = wl[ha:hb]
-        if flipped:
+        if flipped != mirrored:
             h = h[::-1]
         holes.append(h)
     def _bake_uvs(entry, uv_matrix, projected=False):
@@ -771,9 +779,10 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
     pos_m, raw_l, meta = _defn_geom(defn)
     if meta:
         wl = _world_points(pos_m, xform)
+        mirrored = xform.determinant() < 0.0
         for face, s0, s1, hs in meta:
             entry = _face_entry(face, wl, raw_l, s0, s1, hs, attr_map,
-                                inherited, layer)
+                                inherited, layer, mirrored)
             if entry is not None:
                 out.append(entry)
     if edges_out is not None:
