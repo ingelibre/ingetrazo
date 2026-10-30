@@ -92,6 +92,25 @@ def test_inspection_leaves_no_undo_entry(console, win):
     assert history.redo()                           # redo still available
 
 
+def test_deleting_a_group_is_one_undo_step(console, win):
+    """A run that only removed a group looked unchanged (nothing added, the
+    loose mesh untouched), so it left no undo step and the group was gone
+    for good."""
+    from core.group import Group
+    from core.mesh import Mesh
+    scene = win.viewport.scene
+    history = win.viewport.history
+    scene.groups.append(Group(Mesh(), name="doomed"))
+    depth = len(history.undo_stack)
+
+    console._run_code("groups.remove(groups[-1])", "<test>")
+
+    assert all(g.name != "doomed" for g in scene.groups)
+    assert len(history.undo_stack) == depth + 1
+    assert history.undo()
+    assert scene.groups[-1].name == "doomed"
+
+
 def test_failing_script_rolls_back_whole(console, win):
     """PR #3 regression: an exception mid-script left the geometry created
     before the raise. One command = all-or-nothing."""

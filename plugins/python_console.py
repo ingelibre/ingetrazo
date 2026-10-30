@@ -302,10 +302,7 @@ class PythonConsoleDialog(QDialog):
         history.execute(cmd)
 
         if history.last_error is None:
-            unchanged = (cmd.before == cmd.after
-                         and not cmd.added_groups and not cmd.added_layers
-                         and not cmd.added_views and not cmd.added_dims
-                         and not cmd.added_texts and not cmd.added_sheets)
+            unchanged = not cmd.changed
             if (unchanged and history.undo_stack
                     and history.undo_stack[-1] is cmd):
                 history.undo_stack.pop()

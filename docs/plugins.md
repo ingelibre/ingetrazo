@@ -68,7 +68,9 @@ def on_activate(self, viewport):
 On failure, `SnapshotImport` restores the original membership and order of
 groups, layers, saved views, dimensions, text labels and sheets, including
 objects removed by the failed mutation. These collections are restored in
-place so existing scripting-scope references stay valid.
+place so existing scripting-scope references stay valid. On undo it takes
+away what the mutation added and puts back, in its old place, what it
+removed: replacing your own container group is one clean step.
 
 Useful, honest data points (what the app itself uses — see the bundled
 `plugins/model_info.py` for a worked example):

@@ -3353,28 +3353,44 @@ class SnapshotImport(Command):
     Sheets too: an agent asked for "a new sheet" appends a composition
     through ``run_python``, and untracked it was no step at all — the
     bridge said nothing changed, and its undo took the user's previous
-    edit instead (#694)."""
+    edit instead (#694).
+
+    And what the mutation removed: an extension that replaces its own
+    container group, or a console line that deletes one, lost that group
+    for good on undo, which only took the new one away."""
+
+    # Scene list -> (what the mutation added, what it removed). The removed
+    # entries are (index before the mutation, item), so undo puts each one
+    # back where it was.
+    _TRACKED = (
+        ("groups", "added_groups", "removed_groups"),
+        ("layers", "added_layers", "removed_layers"),
+        ("saved_views", "added_views", "removed_views"),
+        ("dimensions", "added_dims", "removed_dims"),
+        ("text_labels", "added_texts", "removed_texts"),
+        ("compositions", "added_sheets", "removed_sheets"),
+    )
 
     def __init__(self, mutate) -> None:
         self.mutate = mutate
         self.before: Optional[dict] = None
         self.after: Optional[dict] = None
-        self.added_groups: list = []
-        self.added_layers: list = []
-        self.added_views: list = []
-        self.added_dims: list = []
-        self.added_texts: list = []
-        self.added_sheets: list = []
+        for _, added, removed in self._TRACKED:
+            setattr(self, added, [])
+            setattr(self, removed, [])
+
+    @property
+    def changed(self) -> bool:
+        """Whether the run did anything undo would have to revert."""
+        return (self.before != self.after
+                or any(getattr(self, added) or getattr(self, removed)
+                       for _, added, removed in self._TRACKED))
 
     def do(self, scene) -> None:
         m = scene.mesh
         if self.after is None:
-            groups_before = list(scene.groups)
-            layers_before = list(scene.layers)
-            views_before = list(scene.saved_views)
-            dims_before = list(scene.dimensions)
-            texts_before = list(scene.text_labels)
-            sheets_before = list(scene.compositions)
+            lists_before = {name: list(getattr(scene, name))
+                            for name, _, _ in self._TRACKED}
             self.before = m.capture_state()
             try:
                 self.mutate(scene)
@@ -3382,70 +3398,44 @@ class SnapshotImport(Command):
                 # Restore membership and order, not only newly appended items:
                 # failed recipes may also remove or reorder existing objects.
                 # Slice assignment preserves references held by scripting scopes.
-                scene.groups[:] = groups_before
-                scene.layers[:] = layers_before
-                scene.saved_views[:] = views_before
-                scene.dimensions[:] = dims_before
-                scene.text_labels[:] = texts_before
-                scene.compositions[:] = sheets_before
+                for name, items in lists_before.items():
+                    getattr(scene, name)[:] = items
                 raise
             self.after = m.capture_state()
-            self.added_groups = [g for g in scene.groups
-                                 if g not in groups_before]
-            self.added_layers = [ly for ly in scene.layers
-                                 if ly not in layers_before]
-            self.added_views = [v for v in scene.saved_views
-                                if v not in views_before]
-            self.added_dims = [d for d in scene.dimensions
-                               if d not in dims_before]
-            self.added_texts = [t for t in scene.text_labels
-                                if t not in texts_before]
-            self.added_sheets = [c for c in scene.compositions
-                                 if c not in sheets_before]
+            for name, added, removed in self._TRACKED:
+                before, now = lists_before[name], getattr(scene, name)
+                setattr(self, added, [x for x in now if x not in before])
+                setattr(self, removed, [(i, x) for i, x in enumerate(before)
+                                        if x not in now])
         else:
             m.restore_state(self.after)
-            for g in self.added_groups:
-                if g not in scene.groups:
-                    scene.groups.append(g)
-            for ly in self.added_layers:
-                if ly not in scene.layers:
-                    scene.layers.append(ly)
-            for v in self.added_views:
-                if v not in scene.saved_views:
-                    scene.saved_views.append(v)
-            for d in self.added_dims:
-                if d not in scene.dimensions:
-                    scene.dimensions.append(d)
-            for t in self.added_texts:
-                if t not in scene.text_labels:
-                    scene.text_labels.append(t)
-            for c in self.added_sheets:
-                if c not in scene.compositions:
-                    scene.compositions.append(c)
+            for name, added, removed in self._TRACKED:
+                items = getattr(scene, name)
+                for _, x in getattr(self, removed):
+                    if x in items:
+                        items.remove(x)
+                    if name == "groups":
+                        scene.selection.discard(x)
+                for x in getattr(self, added):
+                    if x not in items:
+                        items.append(x)
         scene.version += 1
 
     def undo(self, scene) -> None:
         if self.before is not None:
             scene.mesh.restore_state(self.before)
-        for g in self.added_groups:
-            if g in scene.groups:
-                scene.groups.remove(g)
-            scene.selection.discard(g)
-        for ly in self.added_layers:
-            if ly in scene.layers:
-                scene.layers.remove(ly)
-        for v in self.added_views:
-            if v in scene.saved_views:
-                scene.saved_views.remove(v)
-        for d in self.added_dims:
-            if d in scene.dimensions:
-                scene.dimensions.remove(d)
-        for t in self.added_texts:
-            if t in scene.text_labels:
-                scene.text_labels.remove(t)
-        for c in self.added_sheets:
-            if c in scene.compositions:
-                scene.compositions.remove(c)
+        for name, added, removed in self._TRACKED:
+            items = getattr(scene, name)
+            for x in getattr(self, added):
+                if x in items:
+                    items.remove(x)
+                if name == "groups":
+                    scene.selection.discard(x)
+            # Ascending order of the old index, so each insert lands where
+            # the item was once the ones before it are back.
+            for i, x in getattr(self, removed):
+                if x not in items:
+                    items.insert(min(i, len(items)), x)
         scene.version += 1
 
 
