@@ -81,7 +81,19 @@ Useful, honest data points (what the app itself uses — see the bundled
 - BIM: `core.bim` (`tag_faces`, `tag_group`, `collect_objects`) — the same
   calls behind the BIM tray and the IFC export;
 - lengths for display: `scene.dimension_style` + the viewport's
-  `_format_dim_value`.
+  `_format_dim_value`;
+- location: `scene.georef` is `None` until the user sets one in the
+  Terrain tab; then a `georef.datum.SceneDatum` (`lat`, `lon`, `alt`,
+  `north`). `geodetic_to_local(lat, lon)` gives the model's local metres
+  (X east, Y north, Z up, already turned by the north angle; without `alt`,
+  Z = 0 on the reference plane), `local_to_geodetic(point)` goes back.
+  Read it when you need it rather than keeping it: moving the location or
+  "Straighten model on the map" replaces it;
+- terrain: `scene.terrain` is `None` until the user builds the 3D terrain,
+  and is rebuilt in the background as tiles arrive. Its
+  `height_at(x, y)` gives the ground Z at a local point, in the same
+  frame as the model, or `None` outside the captured area. It is display
+  only (never part of the mesh) and may be hidden (`visible`).
 
 ## Developing interactively
 
