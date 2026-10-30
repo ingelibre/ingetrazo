@@ -32,7 +32,7 @@ from typing import Optional
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QVector3D
 
-from core.snap import SnapResult, compute_snap
+from core.snap import COLOR_NONE, SnapResult, compute_snap
 
 
 def _no_snap_fast() -> bool:
@@ -243,6 +243,17 @@ class InferenceEngine:
         )
         snap = self._axis_source_cue(snap, px_x, px_y)
         snap = self._extension_snap(snap, px_x, px_y)
+        return self._limit_snap(snap, tool)
+
+    def _limit_snap(self, snap, tool):
+        """Enforce ``tool.allowed_snap_kinds``: a snap the tool does not
+        accept falls back to a plain point — no marker, nothing to snap to.
+        The Offset accepts only named model points, so the cursor-dependent
+        ``on_edge`` / ``on_face`` never reach it."""
+        allowed = getattr(tool, "allowed_snap_kinds", None)
+        if (allowed is not None and snap is not None
+                and snap.kind != "none" and snap.kind not in allowed):
+            return SnapResult(snap.point, "none", COLOR_NONE)
         return snap
 
     # ---- Post-processors (axis-source cue, extensions) ----------------------
