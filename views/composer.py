@@ -5571,6 +5571,16 @@ class _PanelTabs(QTabWidget):
         p.end()
 
 
+def bring_to_front(window) -> None:
+    """Show ``window``, out of the taskbar if minimised, and raise it —
+    ``show()`` alone leaves a minimised window where it is."""
+    if window.isMinimized():
+        window.setWindowState(window.windowState() & ~Qt.WindowMinimized)
+    window.show()
+    window.raise_()
+    window.activateWindow()
+
+
 class ComposerWindow(QMainWindow):
     """Page canvas on the left, composition manager + properties on the
     right. Compositions live in ``scene.compositions`` and persist in the
@@ -5592,7 +5602,13 @@ class ComposerWindow(QMainWindow):
         super().changeEvent(event)
 
     def __init__(self, main_window) -> None:
-        super().__init__(main_window)
+        # A window of its own, not one OWNED by the model window: an owned
+        # window has no taskbar button, always stays above the model and,
+        # under Windows, minimises to a stub over the model's bottom-left
+        # corner that cannot be moved. On its own it minimises to the
+        # taskbar, goes behind the model, Alt+Tabs and moves to another
+        # monitor as any program does. The model window closes it on quit.
+        super().__init__(None)
         self.setWindowFlag(Qt.Window, True)
         self._window = main_window
         from views.floating_toolbar import watch_toolbars
@@ -5647,8 +5663,12 @@ class ComposerWindow(QMainWindow):
             scene.compositions.append(comp)
         self.comp: Composicion = scene.compositions[0]
 
-        self.setWindowTitle(tr("Sheet composer"))
+        self.set_document_title(None)
         self.resize(1280, 840)
+        # Size, place, monitor and maximised as the user left them.
+        geometry = QSettings().value("composer/geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
         self.tool_mode = "select"
         self.canvas = QGraphicsScene(self)
         view = ComposerCanvasView(self.canvas, self)
@@ -8002,10 +8022,14 @@ class ComposerWindow(QMainWindow):
         comps = self._scene().compositions
         if 0 <= index < len(comps) and comps[index] is not self.comp:
             self.comp_combo.setCurrentIndex(index)     # → _on_comp_switched
-        self.show()
-        self.raise_()
-        self.activateWindow()
+        bring_to_front(self)
         self._refresh_sheet_tabs()
+
+    def set_document_title(self, name) -> None:
+        """«Sheet composer — <document>»: its taskbar button tells which
+        model's sheets it holds."""
+        title = tr("Sheet composer")
+        self.setWindowTitle(f"{title} — {name}" if name else title)
 
     def step_sheet(self, step: int) -> None:
         """The sheet ``step`` places before or after this one — no
@@ -8034,16 +8058,13 @@ class ComposerWindow(QMainWindow):
         needs a token GNOME does not always grant (Marco, 0.3.13 Flatpak:
         «quiero cambiar con los botones de abajo, no cambia»; and later,
         with a grace-period guess in place, «a veces no hace efecto, como
-        que tengo que hacer doble clic»); under Windows an owned window
-        always stays above its owner. So the hand-over does not guess: if
+        que tengo que hacer doble clic»). So the hand-over does not guess: if
         this window overlaps the model window it steps aside by hiding,
         at once, on every platform — a sheet tab in the model window
         brings it back exactly as it was. Side by side (two monitors)
         both stay."""
         win = self._window
-        win.show()
-        win.raise_()
-        win.activateWindow()
+        bring_to_front(win)
         self._refresh_sheet_tabs()
         if self._covers(win):
             self.hide()
@@ -13028,6 +13049,7 @@ class ComposerWindow(QMainWindow):
         st.setValue("composer/window_state",
                     clean if (self._act_clean_screen.isChecked()
                               and clean is not None) else self.saveState())
+        st.setValue("composer/geometry", self.saveGeometry())
         super().closeEvent(event)
 
     # ---- Window: sidebar handle + clean screen (as in the model window) ------

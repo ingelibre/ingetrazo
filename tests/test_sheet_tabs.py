@@ -243,9 +243,9 @@ def test_a_hint_or_a_hand_over_does_not_rebuild_the_tabs(monkeypatch):
 
 
 def test_model_tab_steps_the_composer_aside_when_it_overlaps_the_model_window(monkeypatch):
-    """The hand-over never guesses (Wayland may refuse to raise, Windows
-    keeps an owned window on top): overlapping, the composer hides at
-    once; side by side it stays; a sheet tab brings it back as it was."""
+    """The hand-over never guesses (Wayland may refuse to raise a
+    window): overlapping, the composer hides at once; side by side it
+    stays; a sheet tab brings it back as it was."""
     win = _window(monkeypatch)
     try:
         win.show()
