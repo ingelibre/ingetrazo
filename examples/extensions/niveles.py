@@ -95,8 +95,50 @@ def _sideways(viewport) -> bool:
     return abs(math.degrees(getattr(cam, "pitch", 0.0))) <= MAX_PITCH_DEG
 
 
+def _units():
+    """``core.units`` when the host has document units (0.5.8+), else None:
+    an older IngeTrazo keeps the metre labels and field it always had."""
+    try:
+        from core import units
+    except ImportError:
+        return None
+    return units if hasattr(units, "format_signed_level") else None
+
+
 def _fmt(z: float) -> str:
-    return f"{z:+.2f}".replace("+0.00", "±0.00")
+    """A level's height as a level mark, in the document's units: «+3.00»,
+    «±0.00» in metres (the text printed on every sheet), «+9'10"» in feet."""
+    units = _units()
+    if units is None:
+        return f"{z:+.2f}".replace("+0.00", "±0.00")
+    return units.localized(units.format_signed_level(
+        z, units.model_unit(), units.model_precision()))
+
+
+def _fmt_listed(z: float) -> str:
+    """:func:`_fmt` with the unit spelled out where the mark has none
+    (metres): the list in the panel has no sheet around it to say so."""
+    units = _units()
+    if units is None or units.model_unit() == "m":
+        return _fmt(z) + " m"
+    return _fmt(z)
+
+
+#: Floor-to-floor height offered for the second level, before there is a
+#: previous one to repeat.
+DEFAULT_STORY = 2.6
+
+
+def _next_height(levels) -> float:
+    """Where a new level goes: the first at ±0, then one floor-to-floor
+    above the highest, repeating the spacing of the two highest levels (so
+    10' stories keep coming at 10') or :data:`DEFAULT_STORY` before there
+    are two."""
+    zs = sorted(float(lv["z"]) for lv in levels)
+    if not zs:
+        return 0.0
+    step = zs[-1] - zs[-2] if len(zs) >= 2 else 0.0
+    return zs[-1] + (step if step > 1e-6 else DEFAULT_STORY)
 
 
 # ---- Panel ------------------------------------------------------------------------
@@ -108,11 +150,16 @@ class _LevelDialog(QDialog):
         form = QFormLayout(self)
         self.name = QLineEdit(name)
         form.addRow(_t("Name:"), self.name)
-        self.z = QDoubleSpinBox()
-        self.z.setRange(-1000.0, 1000.0)
-        self.z.setDecimals(2)
-        self.z.setSingleStep(0.10)
-        self.z.setSuffix(" m")
+        if _units() is not None:
+            # The height in the document's units; value() stays in metres.
+            from views.length_field import LengthSpinBox
+            self.z = LengthSpinBox(minimum=-1000.0, maximum=1000.0)
+        else:
+            self.z = QDoubleSpinBox()
+            self.z.setRange(-1000.0, 1000.0)
+            self.z.setDecimals(2)
+            self.z.setSingleStep(0.10)
+            self.z.setSuffix(" m")
         self.z.setValue(z)
         form.addRow(_t("Height:"), self.z)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -167,7 +214,7 @@ class LevelsPanel(QWidget):
         current = self.list.currentRow()
         self.list.clear()
         for lv in reversed(st["levels"]):          # the highest on top
-            self.list.addItem(QListWidgetItem(f"{lv['name']}   {_fmt(lv['z'])} m"))
+            self.list.addItem(QListWidgetItem(f"{lv['name']}   {_fmt_listed(lv['z'])}"))
         if 0 <= current < self.list.count():
             self.list.setCurrentRow(current)
 
@@ -188,9 +235,9 @@ class LevelsPanel(QWidget):
 
     def _add(self) -> None:
         st = _state(self.app)
-        top = max((lv["z"] for lv in st["levels"]), default=-2.6)
         dlg = _LevelDialog(self, _t("New level"),
-                           _t("Level {n}", n=len(st["levels"]) + 1), top + 2.6)
+                           _t("Level {n}", n=len(st["levels"]) + 1),
+                           _next_height(st["levels"]))
         if dlg.exec() != QDialog.Accepted or not dlg.name.text().strip():
             return
         st["levels"].append({"name": dlg.name.text().strip(),
