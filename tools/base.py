@@ -548,6 +548,19 @@ class Tool(ABC):
     # (Endpoint, On Edge, On Face, ...). Tools that only pick existing
     # geometry (Select, Push/Pull) set this False: no snap engine, no markers.
     uses_snap: bool = True
+    #: Whether the tool also takes the engine's SOFT inferences — the
+    #: encouraged points (pausing over a corner), their «level with» /
+    #: «from point» lines, the axis magnet. A tool that only reads the hard
+    #: point snaps sets this False: the dwell encouragement never runs, so
+    #: those directional cues are never produced. The Offset does.
+    allow_inferences: bool = True
+    #: The snap kinds a tool accepts from the engine; ``None`` accepts every
+    #: kind. A tool whose own operation only makes sense on certain snaps
+    #: sets this, and the engine then refuses the rest — the Offset only
+    #: takes NAMED model points (endpoint, midpoint, …): ``on_edge`` and
+    #: ``on_face`` follow the cursor and are not reliable snaps, so they are
+    #: dropped (no distance change, no marker) instead of being offered.
+    allowed_snap_kinds: frozenset | None = None
     # Tools that support a click-drag rubber-band box (Select). For these the
     # viewport defers the click to release: a tiny drag is a click (on_click),
     # a real drag is a box (on_box_select).

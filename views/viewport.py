@@ -17177,7 +17177,8 @@ class Viewport(QOpenGLWidget):
         if ctx is None:
             return
         self._note_snap(ctx.snap)
-        if self.active_tool.uses_snap:
+        if (self.active_tool.uses_snap
+                and getattr(self.active_tool, "allow_inferences", True)):
             # Encouraging: the point the snap already found — no extra pick
             # per hover. A circle's rim encourages its CENTRE (found by the
             # centre reference while the cursor is on the rim); on a face

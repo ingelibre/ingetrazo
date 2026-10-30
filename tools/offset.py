@@ -45,10 +45,24 @@ class OffsetTool(Tool):
     description = (
         "Draw a copy of a face's outline at an even distance inside "
         "or outside it — walls with thickness.")
-    uses_snap = False  # chooses its own boundary reference in the offset plane
+    uses_snap = True  # the drag distance snaps to named model points
+    allow_inferences = False  # no «from point» / «level with» lines while dragging
     vcb_label = "Offset"
     wireframe_color = (0.13, 0.17, 0.23, 1.0)
     wireframe_depth_tested = True
+
+    #: The snap kinds the Offset accepts (and the engine is restricted to,
+    #: ``Tool.allowed_snap_kinds``): named points of the model — a vertex
+    #: (endpoint), a midpoint, a centre, an intersection, the origin. The
+    #: offset is measured from the reference edge, so an edge's body
+    #: (``on_edge``), a face (``on_face``) and the engine's own directional
+    #: inferences neither set the distance nor show a marker: they follow the
+    #: cursor and are not reliable snaps.
+    allowed_snap_kinds = frozenset((
+        "endpoint", "midpoint", "arc_midpoint", "center", "origin",
+        "component_origin", "intersection", "intersection_edge",
+        "intersection_face",
+    ))
 
     def __init__(self) -> None:
         self.hovered_face: Face | None = None
@@ -103,7 +117,7 @@ class OffsetTool(Tool):
             self._update_hover_reference(viewport, ctx.screen.x(), ctx.screen.y())
             viewport.update()
             return
-        cursor = self._cursor_on_plane(viewport, ctx.screen.x(), ctx.screen.y())
+        cursor = self._drag_cursor(ctx)
         if cursor is not None and self._ref_point is not None:
             self.distance = QVector3D.dotProduct(cursor - self._ref_point, self._ref_inward)
         viewport.update()
@@ -133,6 +147,9 @@ class OffsetTool(Tool):
             viewport.set_hover(None)
             viewport.update()
             return
+        cursor = self._drag_cursor(ctx)
+        if cursor is not None and self._ref_point is not None:
+            self.distance = QVector3D.dotProduct(cursor - self._ref_point, self._ref_inward)
         if abs(self.distance) < 1e-6:
             return
         self._commit(viewport)
@@ -254,6 +271,15 @@ class OffsetTool(Tool):
         return offset_chain(self._loop, self._normal, self.distance)
 
     # ---- Internals ----------------------------------------------------------
+    def _drag_cursor(self, ctx) -> QVector3D | None:
+        """The world point the drag distance is measured from: the cursor's
+        snapped point when it names a model point (an endpoint, a midpoint,
+        …), else the ray cast onto the face's plane."""
+        snap = getattr(ctx, "snap", None)
+        if snap is not None and snap.kind in self.allowed_snap_kinds:
+            return QVector3D(snap.point)
+        return self._cursor_on_plane(ctx.viewport, ctx.screen.x(), ctx.screen.y())
+
     def _pick_reference(self, viewport, sx, sy) -> None:
         """Lock onto the boundary edge nearest the click; offset is measured as
         the cursor's perpendicular distance from it (so dragging across that edge
