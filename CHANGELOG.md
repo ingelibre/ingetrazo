@@ -4,6 +4,29 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+
+- Windows test workers exit after flushing reports without entering unsafe
+  native DLL teardown. The batch runner also rejects native faults reported
+  after a passing summary, including when the worker returns exit code zero.
+- Direction locks retain exact origin and collinear midpoint snaps, reject
+  hidden endpoints, select nearby visible points consistently, and preserve
+  center, arc-midpoint and component-origin labels and context.
+- Derived edge extensions, two-point alignments and uncaptured Shift axis
+  inferences respect a planar tool's face constraint. Explicit locks and real
+  point targets can still change the drawing plane deliberately.
+- Snap context near-ties remain consistent across half-pixel boundaries and
+  hidden nearer points. Long-segment lock intersections use double-precision
+  arithmetic, and visible edge portions remain snappable when one endpoint
+  passes behind the camera.
+
+### Performance
+
+- Skip general edge-pair intersection searches whose result cannot override an
+  engaged magnetic axis, while keeping exact axis-to-edge junction snaps.
+
 ## [0.5.11] — 2026-10-27
 
 **Capas 2.0, la oclusión ambiental deja de ser experimental, sombras
