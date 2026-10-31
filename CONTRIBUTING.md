@@ -22,6 +22,19 @@ python -m pytest -m "not slow"     # the fast suite (~3,100 tests, ~5 min; what 
 python -m pytest                   # everything (~3,900), including the slow fuzz sweeps
 ```
 
+For bounded memory usage, use the same file-batched runner as CI:
+
+```bash
+python scripts/pytest_batches.py -m "not slow" tests
+```
+
+On Windows, smaller batches reduce the number of Qt windows retained by each
+test process. For example, add `--batches 48` to that command. All selected
+tests still run. The test harness flushes reports and preserves pytest's exit
+status before terminating the Windows worker without native DLL teardown.
+The batch runner treats native fault reports as failures even if a worker
+returned exit code zero.
+
 **Every pull request runs the fast suite automatically** — your PR gets a
 green check or a red cross within a few minutes, no maintainer needed. New
 features should come with tests; bug fixes should come with a regression

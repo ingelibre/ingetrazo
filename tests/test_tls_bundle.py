@@ -182,7 +182,7 @@ def test_the_windows_build_ships_truststore():
     requirements.txt: without truststore there, the frozen app falls back
     to Python's own store and #783 comes back without a word."""
     root = Path(__file__).resolve().parent.parent
-    workflow = (root / ".github/workflows/build-windows.yml").read_text()
-    spec = (root / "ingetrazo.spec").read_text()
+    workflow = (root / ".github/workflows/build-windows.yml").read_text(encoding="utf-8")
+    spec = (root / "ingetrazo.spec").read_text(encoding="utf-8")
     assert "truststore" in workflow
     assert "'truststore'" in spec

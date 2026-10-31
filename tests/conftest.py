@@ -110,9 +110,10 @@ def pytest_unconfigure(config):
     test and then two batches segfaulted on exit («shared QObject was
     deleted directly»). Everything is reported by now; the status is
     pytest's own."""
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(_exit_status[0])
+    # On Windows even os._exit can crash while detaching native DLLs. Preserve
+    # pytest's result with a process-local termination after flushing reports.
+    from scripts.pytest_batches import exit_test_process
+    exit_test_process(_exit_status[0])
 
 
 @pytest.fixture(autouse=True, scope="session")
