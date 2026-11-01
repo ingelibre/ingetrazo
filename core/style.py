@@ -79,6 +79,10 @@ class Style:
     # .layer_color) instead of their material — the shaded, textured and
     # X-ray modes. Off in every preset; a scene remembers it with the style.
     color_by_layer: bool = False
+    # The layers' line types on their edges in the model too, not only on
+    # the sheets: dashed where the line type is, in its colour where it has
+    # one (a gas line yellow). On unless a style says otherwise.
+    model_linetypes: bool = True
 
     def to_dict(self) -> dict:
         out = {
@@ -103,6 +107,8 @@ class Style:
         }
         if self.color_by_layer:
             out["color_by_layer"] = True
+        if not self.model_linetypes:
+            out["model_linetypes"] = False
         return out
 
     @classmethod
@@ -134,6 +140,7 @@ class Style:
             ao_intensity=_clamped(raw.get("ao_intensity"), d.ao_intensity,
                                   AO_INTENSITY_RANGE),
             color_by_layer=bool(raw.get("color_by_layer", False)),
+            model_linetypes=raw.get("model_linetypes") is not False,
         )
 
     def copy(self) -> "Style":

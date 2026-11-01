@@ -15,6 +15,7 @@ from views import prompts as _prompts
 
 import datetime
 import math
+import re
 from typing import Optional
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QTimer
@@ -591,32 +592,155 @@ def _paint_annots_mm(painter: QPainter, frame: MarcoVista, annots) -> None:
 _VECTOR_INK = QColor(30, 36, 44)
 
 
-def dxf_groups_by_layer(drawing, view_layer: str, hidden_lines: bool) -> list:
+def grain_layers(scene) -> list:
+    """The layers whose timber is crossed where it is cut across its grain
+    (``Layer.hatch_cross``): for them a view measures how far each cut piece
+    runs through the plane."""
+    from core.hatches import WOOD
+    return [ly.name for ly in getattr(scene, "layers", ())
+            if getattr(ly, "hatch_cross", False)
+            and getattr(ly, "hatch", None) in WOOD]
+
+
+#: The scale a view exported without a sheet («File ▸ Export ▸ Current
+#: view as DXF») draws its hatches at: the usual one of a plan or a section
+#: with its materials.
+DXF_VIEW_SCALE = 50.0
+
+
+def dxf_cut_layers(scene, camera, scale_n: float = DXF_VIEW_SCALE, k=None,
+                   frame_scale: float = 1.0) -> tuple:
+    """The section cut of ``scene`` under ``camera`` (parallel) as a DXF
+    carries it, in MODEL units like the view's lines: ``(groups, solids)``
+    for formats.dxf_out.save_dxf_layers. ``groups``: one layer
+    «<layer>-TRAMA» per hatched model layer, in its colour (its hatch ink
+    when it has one), the pattern as a sheet at 1:``scale_n`` draws it, as
+    lines (R12 has no hatch entity: any CAD shows them as they are).
+    ``solids``: a layer's solid fill on «<layer>-TRAMA» and the ground under
+    its hatch on «<layer>-FONDO», in their colours, as SOLID strips drawn
+    under the lines. ``k`` — paper mm per model unit (a frame's; 1000 /
+    ``scale_n`` for metres); ``frame_scale`` the frame's own hatch size."""
+    import numpy as np
+    from core.hatches import fill_quads, hatch_lines
+    from core.hlr import hlr_drawing
+    from core.layers import (cut_hatch_forms, cut_hatches, hatch_ground_rgb,
+                             hatch_ink_rgb, layer_color)
+    hatches = cut_hatches(scene)
+    if not hatches:
+        return [], []
+    drawing = hlr_drawing(scene, camera, profiles=False, fills=True,
+                          layers=True, depth_layers=grain_layers(scene))
+    if drawing.loop_layers is None:
+        return [], []
+    scale_n = float(scale_n or DXF_VIEW_SCALE)
+    k = float(k) if k else 1000.0 / scale_n
+    # Paper mm, the paper's y down as on a sheet: the patterns keep the
+    # sheet's size, turn and phase.
+    forms = cut_hatch_forms(scene, scale_n)
+    cut = section_cut_kind(scene)
+    by_tag: dict = {}
+    depths = drawing.loop_depths or [None] * len(drawing.loops)
+    for ring, tag, d in zip(drawing.loops, drawing.loop_layers, depths):
+        if tag in hatches:
+            rings, ds = by_tag.setdefault(tag, ([], []))
+            rings.append([(float(x) * k, -float(y) * k) for x, y in ring])
+            ds.append(None if d is None else d * k)
+
+    def back(pts):
+        return tuple((x / k, -y / k) for x, y in pts)
+    groups, solids = [], []
+    for tag, (rings, ds) in by_tag.items():
+        ly = scene.layer(tag) if hasattr(scene, "layer") else None
+        colour = layer_color(ly) if ly is not None else None
+        ink = (hatch_ink_rgb(ly) if ly is not None else None) or colour
+        ground = hatch_ground_rgb(ly) if ly is not None else None
+        quads = None
+        if ground is not None or hatches[tag] == "solid":
+            # Strips in model units, the right way up again.
+            quads = [back((q[2], q[3], q[0], q[1])) for q in fill_quads(rings)]
+        if ground is not None:
+            solids.append((f"{tag}-FONDO", quads, ground))
+        if hatches[tag] == "solid":
+            solids.append((f"{tag}-TRAMA", quads, ink))
+            continue
+        lines = hatch_lines(hatches[tag], rings,
+                            dict(forms.get(tag, {}), cut=cut), frame_scale,
+                            ds)
+        if lines:
+            segs = np.array([(x0 / k, -y0 / k, x1 / k, -y1 / k)
+                             for x0, y0, x1, y1 in lines])
+            groups.append((f"{tag}-TRAMA", segs, "CONTINUOUS", ink))
+    return groups, solids
+
+
+def section_cut_kind(scene):
+    """What kind of cut a view of ``scene`` shows: ``"plan"`` (the active
+    section plane lies flat), ``"vertical"`` (it stands), ``None`` (no
+    section) — masonry is drawn one way in a plan, another in a section."""
+    plane = (scene.active_section() if hasattr(scene, "active_section")
+             else None)
+    if plane is None:
+        return None
+    return "plan" if abs(plane.normal.z()) >= 0.7 else "vertical"
+
+
+def dxf_groups_by_layer(drawing, view_layer: str, hidden_lines: bool,
+                        texts=None) -> list:
     """The DXF groups of a layer-tagged view drawing: one DXF layer per
     model layer — its name, its line type and its colour (the default
     layer keeps the CAD's own) — and its profiles beside it on
     «<layer>-PERFIL», so a plan's outlines stay on their layer and keep
-    their own pen; the cut and the hidden lines, which belong to no layer,
-    on the view's «-CORTE» and «-OCULTAS»."""
+    their own pen; the cut beside them too, on «<layer>-CORTE», continuous
+    in the layer's colour (a cut that belongs to no layer stays on the
+    view's «-CORTE»); the hidden lines, which belong to no layer, on the
+    view's «-OCULTAS». ``texts`` — a list — takes the words of the layers
+    whose line type writes some (GAS…), ``(layer, x, y, height, degrees,
+    text)`` in drawing units along their lines: R12 has no line type with
+    text, so they go as TEXT entities where a sheet at 1:100 puts them."""
     from core.hlr import KIND_CUT, KIND_HIDDEN, KIND_PROFILE
     from core.layers import DXF_LINETYPES
     styles = getattr(drawing, "styles", None) or {}
     k = drawing.kinds
     tags = drawing.layers
-    groups = [(f"{view_layer}-CORTE", drawing.segs[k == KIND_CUT])]
+    groups = [(f"{view_layer}-CORTE", drawing.segs[[
+        i for i in range(len(k)) if k[i] == KIND_CUT and not tags[i]]])]
     if hidden_lines:
         groups.append((f"{view_layer}-OCULTAS", drawing.segs[k == KIND_HIDDEN],
                        "DASHED"))
     by_tag: dict = {}
     for i in range(len(k)):
-        if k[i] in (KIND_CUT, KIND_HIDDEN):
+        if k[i] == KIND_HIDDEN or (k[i] == KIND_CUT and not tags[i]):
             continue
-        suffix = "-PERFIL" if k[i] == KIND_PROFILE else ""
+        suffix = ("-PERFIL" if k[i] == KIND_PROFILE
+                  else "-CORTE" if k[i] == KIND_CUT else "")
         by_tag.setdefault((tags[i] or view_layer, suffix), []).append(i)
     for (tag, suffix), ids in by_tag.items():
-        rgb, linetype, _w = styles.get(tag, (None, "continuous", None))
-        groups.append((tag + suffix, drawing.segs[ids],
-                       DXF_LINETYPES.get(linetype, "CONTINUOUS"), rgb))
+        style = styles.get(tag) or (None, "continuous")
+        rgb, linetype = style[0], style[1]
+        if suffix == "-CORTE":
+            linetype = "continuous"
+        if linetype in DXF_LINETYPES:
+            groups.append((tag + suffix, drawing.segs[ids],
+                           DXF_LINETYPES[linetype], rgb))
+            continue
+        # The document's own line type: declared in the file, by its name,
+        # its pattern in drawing units as the standard ones are (paper mm
+        # at 1:100 — the CAD's line type scale adapts it).
+        pattern = style[4] if len(style) > 4 else ()
+        name = re.sub(r"[^A-Za-z0-9_]+", "_",
+                      linetype.split(":", 1)[-1]).upper()[:31] or "OWN"
+        from core.layers import file_dashes
+        groups.append((tag + suffix, drawing.segs[ids], name, rgb,
+                       tuple(v * 0.1 for v in file_dashes(pattern))))
+        words = style[5] if len(style) > 5 else None
+        if texts is not None and words is not None and suffix != "-CORTE":
+            from core.layers import text_marks
+            spec = (words[0], words[1] * 0.1, words[2] * 0.1, words[3] * 0.1)
+            for x0, y0, x1, y1 in drawing.segs[ids]:
+                for x, y, angle in text_marks((float(x0), float(y0)),
+                                              (float(x1), float(y1)), spec):
+                    texts.append((tag + suffix, x, y, spec[1], angle,
+                                  words[0]))
     return groups
 
 
@@ -647,12 +771,20 @@ def vector_pens(frame: MarcoVista) -> dict:
 def _layer_pen(base: QPen, style, kind) -> QPen:
     """``base`` (the class pen) with a layer's own line on it: its colour,
     its weight and its dash pattern in paper millimetres. A hidden line
-    stays dashed and a cut keeps the cut's pen."""
+    stays dashed; a cut keeps the cut's pen — ink and continuous line —
+    with only the layer's cut weight on it, when it has one."""
     from core.hlr import KIND_CUT, KIND_HIDDEN
     from core.layers import LINETYPES
-    if style is None or kind == KIND_CUT:
+    if style is None:
         return base
-    rgb, linetype, weight = style
+    rgb, linetype, weight = style[:3]
+    if kind == KIND_CUT:
+        cut_weight = style[3] if len(style) > 3 else None
+        if cut_weight is None:
+            return base
+        pen = QPen(base)
+        pen.setWidthF(max(0.05, float(cut_weight)))
+        return pen
     pen = QPen(base)
     if rgb is not None:
         # A shade darker than the swatch: the mid tones read on paper.
@@ -660,7 +792,8 @@ def _layer_pen(base: QPen, style, kind) -> QPen:
     if weight is not None:
         pen.setWidthF(max(0.05, float(weight)))
     w = max(0.05, pen.widthF())
-    pattern = LINETYPES.get(linetype, ())
+    pattern = (style[4] if len(style) > 4 and style[4] is not None
+               else LINETYPES.get(linetype, ()))
     if kind == KIND_HIDDEN:
         pen.setDashPattern([1.5 / w, 0.8 / w])
     elif pattern:
@@ -679,8 +812,9 @@ def _paint_hlr_lines_mm(painter: QPainter, frame: MarcoVista, hlr,
     That is the drag pass — see ``_DRAG_SEG_BUDGET``; a printed or exported
     sheet never passes one.
 
-    ``styles`` — ``(tags, {layer: (rgb, linetype, weight)})`` from the
-    layer-tagged drawing — inks each layer's lines with its own pen."""
+    ``styles`` — ``(tags, {layer: (rgb, linetype, weight, cut weight)})``
+    from the layer-tagged drawing — inks each layer's lines with its own
+    pen."""
     import numpy as np
     from PySide6.QtCore import QLineF
     from core.hlr import KIND_CUT, KIND_EDGE, KIND_HIDDEN, KIND_PROFILE
@@ -712,24 +846,76 @@ def _paint_hlr_lines_mm(painter: QPainter, frame: MarcoVista, hlr,
                 for i in idx:
                     by_tag.setdefault(tags[i], []).append(i)
                 for tag, ids in by_tag.items():
+                    style = styles[1].get(tag)
+                    # The words of a line type (GAS…), on its edges only.
+                    words = (style[5] if style is not None and len(style) > 5
+                             and kind in (KIND_EDGE, KIND_PROFILE) else None)
                     groups.append((kind, segs[ids],
-                                   _layer_pen(pens[kind],
-                                              styles[1].get(tag), kind)))
+                                   _layer_pen(pens[kind], style, kind),
+                                   words))
     for group in groups:
         kind, rows = group[0], group[1]
         if not len(rows):
             continue
-        painter.setPen(group[2] if len(group) > 2 else pens[kind])
+        pen = group[2] if len(group) > 2 else pens[kind]
+        painter.setPen(pen)
         painter.drawLines([QLineF(float(x0), float(y0), float(x1), float(y1))
                            for x0, y0, x1, y1 in rows])
+        if len(group) > 3 and group[3] is not None:
+            from views.hatch_paint import paint_line_text
+            paint_line_text(painter, rows, group[3], pen.color())
 
 
-def _paint_cut_fills_mm(painter: QPainter, frame: MarcoVista, fills) -> None:
+def hatch_pen_mm(frame) -> float:
+    """The pen of a frame's hatch lines, in paper mm: its own, else 70 % of
+    the edges' pen — always the thin line of the drawing."""
+    own = float(getattr(frame, "pen_hatch_mm", 0.0) or 0.0)
+    if own > 0.0:
+        return max(0.03, own)
+    return max(0.03, 0.7 * float(getattr(frame, "pen_edge_mm", 0.18) or 0.18))
+
+
+def _paint_cut_fills_mm(painter: QPainter, frame: MarcoVista, fills,
+                        styles=None) -> None:
     """The poché: fill the closed section-cut rings (even-odd, so a hollow
-    wall stays hollow) solid or with 45° hatching, under the lines."""
+    wall stays hollow) solid or with 45° hatching, under the lines.
+
+    ``styles`` — one ``(QColor or None, pattern or None[, ground QColor or
+    None[, ink QColor or None]])`` per ring, in the order of ``fills`` —
+    fills each ring with its layer's colour and its layer's hatch pattern
+    (core.hatches) over the layer's solid ground, the pattern in the
+    layer's own ink; ``None`` in any place (and no list at all) is the
+    frame's own."""
     mode = getattr(frame, "cut_fill", "solid") or "solid"
     if not fills or mode == "none":
         return
+    if styles is not None and len(styles) == len(fills):
+        # One pass per look, each even-odd on its own: a hollow wall stays
+        # hollow, and the wall beside a door keeps its own fill.
+        by_look: dict = {}
+        for ring, style in zip(fills, styles):
+            look = (tuple(style or ()) + (None,) * 5)[:5]
+            key = tuple(c.name() if isinstance(c, QColor) else repr(c)
+                        if isinstance(c, dict) else c for c in look)
+            by_look.setdefault(key, (look, []))[1].append(ring)
+        for look, rings in by_look.values():
+            _fill_cut_rings(painter, frame, rings, *look)
+        return
+    _fill_cut_rings(painter, frame, fills, None)
+
+
+def _fill_cut_rings(painter: QPainter, frame: MarcoVista, fills,
+                    colour, hatch=None, ground=None, ink=None,
+                    form=None) -> None:
+    """Fill ``fills`` the frame's way (solid or hatched), in ``colour`` or,
+    with ``None``, the frame's fill colour — or with ``hatch``, the layer's
+    pattern: in the layer's colour over a pale ground of it when the frame
+    fills by layer, else in the frame's fill colour on the paper; over
+    ``ground``, the layer's own solid colour, and in ``ink``, the layer's
+    own ink, whenever it has them. ``form`` — ``{"angle", "scale",
+    "families"}`` (core.layers.cut_hatch_forms) — turns and sizes the
+    pattern, and draws an imported one."""
+    mode = getattr(frame, "cut_fill", "solid") or "solid"
     from PySide6.QtCore import QLineF
     from PySide6.QtGui import QPainterPath
     path = QPainterPath()
@@ -744,14 +930,113 @@ def _paint_cut_fills_mm(painter: QPainter, frame: MarcoVista, fills) -> None:
         path.closeSubpath()
     if path.isEmpty():
         return
-    color = QColor(getattr(frame, "cut_fill_color", "") or "#595e69")
+    color = (QColor(colour) if colour is not None
+             else QColor(getattr(frame, "cut_fill_color", "") or "#595e69"))
+    if hatch:
+        from views.hatch_paint import paint_hatch
+        ink_frame, pale = color, None
+        if colour is not None and hatch != "solid":
+            ink_frame = QColor.fromRgbF(*[c * 0.7
+                                          for c in color.getRgbF()[:3]])
+            pale = QColor.fromRgbF(*[c + (1.0 - c) * 0.82
+                                     for c in color.getRgbF()[:3]])
+        scale = max(0.2, float(getattr(frame, "cut_hatch_mm", 1.5)
+                               or 1.5) / 1.5)
+        form = form or {}
+        frame_scale = scale
+        scale *= float(form.get("scale", 1.0) or 1.0)
+        width = hatch_pen_mm(frame)
+        ink = ink if ink is not None else ink_frame
+        from core.hatches import COURSED, FITTED, PLACED, WOOD, paper_offset
+        if hatch in WOOD and form.get("cross") and form.get("cut"):
+            # Timber: a cross on each piece cut across its grain, the
+            # wood pattern on the rest.
+            from core.hatches import cut_across, fit_band
+            from views.hatch_paint import paint_fitted
+            n = float(form.get("scale_n", 100.0) or 100.0)
+            # The grain from the 3D piece when known (form["depth"], how
+            # far it runs through the plane), else from the cut's shape.
+            depth = form.get("depth")
+            across = [r for r in fills if cut_across(fit_band(r), n, depth)]
+            if across:
+                ids = {id(r) for r in across}
+                rest = [r for r in fills if id(r) not in ids]
+                cross_path = QPainterPath()
+                cross_path.setFillRule(Qt.OddEvenFill)
+                for ring in across:
+                    cross_path.moveTo(QPointF(float(ring[0][0]),
+                                              float(ring[0][1])))
+                    for q in ring[1:]:
+                        cross_path.lineTo(QPointF(float(q[0]), float(q[1])))
+                    cross_path.closeSubpath()
+                paint_fitted(painter, cross_path, across, "wood_cross", ink,
+                             width, 1.0,
+                             ground if ground is not None else pale)
+                if not rest:
+                    return
+                path = QPainterPath()
+                path.setFillRule(Qt.OddEvenFill)
+                for ring in rest:
+                    path.moveTo(QPointF(float(ring[0][0]),
+                                        float(ring[0][1])))
+                    for q in ring[1:]:
+                        path.lineTo(QPointF(float(q[0]), float(q[1])))
+                    path.closeSubpath()
+                fills = rest
+        if hatch in COURSED and form.get("cut") in ("plan", "vertical"):
+            # Masonry as it is built: in a plan, the top of a course brick
+            # by brick along each wall; in a vertical section, the courses
+            # split where their bricks meet. A piece that is no wall (a
+            # paved area, a wall cut along: its face) takes the pattern.
+            from core.hatches import joints_mode
+            from views.hatch_paint import paint_bond
+            mode = joints_mode(form.get("joints"),
+                               float(form.get("scale_n", 100.0) or 100.0))
+            under = ground if ground is not None else pale
+            if mode == "hatch":
+                # Too small a scale for bricks: the 45° hatch.
+                paint_hatch(painter, path, "diagonal", ink, width,
+                            frame_scale * float(form.get("hatch_scale", 1.0)
+                                                or 1.0), under)
+                return
+            if mode == "none":         # the outline only, on its ground
+                if under is not None:
+                    painter.fillPath(path, under)
+                return
+            rest = paint_bond(painter, path, fills, hatch, ink, width, under,
+                              dict(form, scale=scale, joints=mode))
+            if rest:
+                rest_path = QPainterPath()
+                rest_path.setFillRule(Qt.OddEvenFill)
+                for ring in rest:
+                    rest_path.moveTo(QPointF(float(ring[0][0]),
+                                             float(ring[0][1])))
+                    for q in ring[1:]:
+                        rest_path.lineTo(QPointF(float(q[0]), float(q[1])))
+                    rest_path.closeSubpath()
+                paint_hatch(painter, rest_path, hatch, ink, width, scale,
+                            None, float(form.get("angle", 0.0) or 0.0),
+                            form.get("families"), paper_offset(form))
+            return
+        if hatch in FITTED:
+            # Fitted to each piece: the symbol spans the layer's thickness.
+            from views.hatch_paint import paint_fitted
+            paint_fitted(painter, path, fills, hatch, ink, width,
+                         1.0 / max(0.2, float(form.get("scale", 1.0) or 1.0)),
+                         ground if ground is not None else pale)
+            return
+        paint_hatch(painter, path, hatch, ink, width, scale,
+                    ground if ground is not None else pale,
+                    float(form.get("angle", 0.0) or 0.0),
+                    form.get("families"),
+                    paper_offset(form) if hatch in PLACED else None)
+        return
     painter.save()
     if mode == "hatch":
         painter.setClipPath(path, Qt.IntersectClip)
         step = max(0.3, float(getattr(frame, "cut_hatch_mm", 1.5) or 1.5))
         pen = QPen(color)
-        pen.setWidthF(max(0.05, float(getattr(frame, "pen_edge_mm", 0.18)
-                                      or 0.18)))
+        pen.setWidthF(hatch_pen_mm(frame))
         painter.setPen(pen)
         br = path.boundingRect()
         # lines x + y = c, phase-locked to the frame so a moved frame keeps
@@ -825,7 +1110,7 @@ def paint_frame_mm(painter: QPainter, frame: MarcoVista,
                    image: Optional[QImage], hlr=None, annots=None,
                    screen: bool = False, kinds=None, fills=None,
                    budget=None, missing: Optional[str] = None,
-                   styles=None) -> None:
+                   styles=None, fill_styles=None) -> None:
     r = QRectF(0, 0, frame.w_mm, frame.h_mm)
     if missing is not None:
         # The frame names a scene the model no longer has. It used to
@@ -850,7 +1135,7 @@ def paint_frame_mm(painter: QPainter, frame: MarcoVista,
         if hlr is not None and len(hlr):
             painter.save()
             painter.setClipRect(r)
-            _paint_cut_fills_mm(painter, frame, fills)
+            _paint_cut_fills_mm(painter, frame, fills, fill_styles)
             _paint_hlr_lines_mm(painter, frame, hlr, kinds, budget, styles)
             painter.restore()
         else:
@@ -1156,7 +1441,32 @@ def paint_leyenda_mm(painter: QPainter, le: Leyenda) -> None:
         painter.setBrush(QBrush(fill))
         painter.setPen(QPen(QColor(30, 36, 44), 0.2))
         painter.drawRect(QRectF(2.2, y + 0.8, 4.0, 3.2))
-        pattern = LINETYPES.get(sw.get("linetype"), ())
+        hatch = sw.get("hatch")
+        if hatch:
+            # The layer's cut hatch over its colour, as on the cut.
+            from PySide6.QtGui import QPainterPath
+            from views.hatch_paint import paint_hatch
+            box = QPainterPath()
+            box.addRect(QRectF(2.2, y + 0.8, 4.0, 3.2))
+            under = sw.get("hatch_ground")
+            own = sw.get("hatch_color")
+            paint_hatch(painter, box, hatch,
+                        QColor.fromRgbF(*[float(c) for c in own[:3]])
+                        if isinstance(own, (list, tuple)) and len(own) >= 3
+                        else QColor(30, 36, 44), 0.12, 0.6,
+                        angle=float(sw.get("hatch_angle", 0.0) or 0.0),
+                        families=sw.get("hatch_families"),
+                        ground=(QColor.fromRgbF(*[float(c)
+                                                  for c in under[:3]])
+                                if isinstance(under, (list, tuple))
+                                and len(under) >= 3
+                                else QColor(255, 255, 255)
+                                if hatch != "solid" else None))
+            painter.setPen(QPen(QColor(30, 36, 44), 0.2))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(QRectF(2.2, y + 0.8, 4.0, 3.2))
+        pattern = (sw.get("pattern")
+                   or LINETYPES.get(sw.get("linetype"), ()))
         if pattern:
             # The layer's line type, drawn across the swatch.
             line = QPen(QColor(30, 36, 44), 0.25)
@@ -3071,7 +3381,8 @@ class FrameItem(_SheetItem):
                        fills=self.composer.hlr_fills.get(fid),
                        budget=_DRAG_SEG_BUDGET if self._dragging else None,
                        missing=self.composer.missing_scene(self.model),
-                       styles=self.composer.hlr_styles.get(fid))
+                       styles=self.composer.hlr_styles.get(fid),
+                       fill_styles=self.composer.hlr_fill_styles.get(fid))
         if self.composer.is_stale(self.model):
             _paint_stale_badge(painter, self.model)
         if self.composer.view_edit_item is self:
@@ -5714,6 +6025,7 @@ class ComposerWindow(QMainWindow):
         self.hlr_kinds: dict[int, object] = {}     # line class per segment
         self.hlr_fills: dict[int, object] = {}     # section-cut rings, mm
         self.hlr_styles: dict[int, object] = {}    # layer pens per segment
+        self.hlr_fill_styles: dict[int, object] = {}    # layer fill per ring
         self.snap_cache: dict[int, object] = {}   # frame → (page stamp, snap pts)
         self.circle_cache: dict[int, list] = {}   # frame → page-mm circles
         self.annot_cache: dict[int, list] = {}    # frame → model annotations
@@ -7047,6 +7359,13 @@ class ComposerWindow(QMainWindow):
             "Every other edge, between two visible faces."))
         _row(self._pen_rows, tr("Edges"), self.pen_edge_spin)
         self._pen_rows_raster.append(self._pen_rows[-1])
+        self.pen_hatch_spin = _pen_spin(0.0, tr(
+            "The lines of the cut's hatches, the same for every material — "
+            "Automatic: 70 % of the Edges pen."))
+        self.pen_hatch_spin.setRange(0.0, 1.0)
+        self.pen_hatch_spin.setSpecialValueText(tr("Automatic"))
+        self.pen_hatch_spin.setValue(0.0)
+        _row(self._pen_rows, tr("Hatches"), self.pen_hatch_spin)
         self.profiles_check = QCheckBox(tr("Draw profiles thicker"))
         self.profiles_check.setChecked(True)
         self.profiles_check.setToolTip(tr(
@@ -7081,6 +7400,14 @@ class ComposerWindow(QMainWindow):
             lambda: self._pick_item_color("cut_fill_color",
                                           self.cut_fill_btn))
         _row(self._pen_rows, tr("Fill colour"), self.cut_fill_btn)
+        self.cut_fill_layers_check = QCheckBox(
+            tr("Fill in each layer's colour"))
+        self.cut_fill_layers_check.setToolTip(tr(
+            "Each cut solid filled with the colour of its layer — walls, "
+            "slabs and joinery told apart; Layer 0 keeps the fill colour "
+            "(recomputes the view)."))
+        self.cut_fill_layers_check.toggled.connect(self._on_frame_pens)
+        _row(self._pen_rows, None, self.cut_fill_layers_check)
         self.cut_hatch_spin = QDoubleSpinBox()
         self.cut_hatch_spin.setRange(0.3, 10.0)
         self.cut_hatch_spin.setSingleStep(0.1)
@@ -8461,6 +8788,8 @@ class ComposerWindow(QMainWindow):
                     float(getattr(f, "pen_profile_mm", 0.35) or 0.35))
                 self.pen_edge_spin.setValue(
                     float(getattr(f, "pen_edge_mm", 0.18) or 0.18))
+                self.pen_hatch_spin.setValue(
+                    float(getattr(f, "pen_hatch_mm", 0.0) or 0.0))
                 self.profiles_check.setChecked(
                     bool(getattr(f, "profiles", True)))
                 self.hidden_check.setChecked(
@@ -8473,6 +8802,8 @@ class ComposerWindow(QMainWindow):
                 self.cut_fill_btn.setStyleSheet(
                     f"background: "
                     f"{getattr(f, 'cut_fill_color', '') or '#595e69'};")
+                self.cut_fill_layers_check.setChecked(
+                    bool(getattr(f, "cut_fill_by_layer", False)))
                 self.cut_hatch_spin.setValue(
                     float(getattr(f, "cut_hatch_mm", 1.5) or 1.5))
                 self._sync_vector_widgets(f)
@@ -8936,7 +9267,8 @@ class ComposerWindow(QMainWindow):
 
     def _frame_caches(self) -> tuple:
         return (self.render_cache, self.hlr_cache, self.hlr_kinds,
-                self.hlr_fills, self.hlr_styles, self.snap_cache,
+                self.hlr_fills, self.hlr_styles, self.hlr_fill_styles,
+                self.snap_cache,
                 self.circle_cache, self.annot_cache)
 
     def _forget_frame(self, frame) -> None:
@@ -9624,9 +9956,10 @@ class ComposerWindow(QMainWindow):
                      "title_style", "title_scale", "title_align",
                      "title_pos", "title_mm",
                      "pen_cut_mm", "pen_profile_mm", "pen_edge_mm",
+                     "pen_hatch_mm",
                      "profiles", "hidden_lines", "layer_colours",
                      "cut_fill",
-                     "cut_fill_color", "cut_hatch_mm"),
+                     "cut_fill_color", "cut_fill_by_layer", "cut_hatch_mm"),
         CotaRadialItem: ("text_mm", "decimals", "units", "show_unit", "ends",
                          "stroke_mm", "color", "text_color", "offset_mm",
                          "text_bg", "text_bg_opacity", "centre_mark"),
@@ -10882,9 +11215,10 @@ class ComposerWindow(QMainWindow):
         style; the edge and profile pens serve every style (a raster frame
         renders its lines that thick)."""
         on = frame.style == "vectorial"
-        for w in (self.pen_cut_spin, self.profiles_check, self.hidden_check,
+        for w in (self.pen_cut_spin, self.pen_hatch_spin,
+                  self.profiles_check, self.hidden_check,
                   self.cut_fill_combo, self.cut_fill_btn,
-                  self.cut_hatch_spin):
+                  self.cut_fill_layers_check, self.cut_hatch_spin):
             w.setEnabled(on)
         for w in (self.pen_profile_spin, self.pen_edge_spin):
             w.setEnabled(True)
@@ -10939,18 +11273,22 @@ class ComposerWindow(QMainWindow):
         m = item.model
         changes = {
             "pen_cut_mm": float(self.pen_cut_spin.value()),
+            "pen_hatch_mm": float(self.pen_hatch_spin.value()),
             "pen_profile_mm": float(self.pen_profile_spin.value()),
             "pen_edge_mm": float(self.pen_edge_spin.value()),
             "profiles": self.profiles_check.isChecked(),
             "hidden_lines": self.hidden_check.isChecked(),
             "layer_colours": self.layer_colours_check.isChecked(),
             "cut_fill": self.cut_fill_combo.currentData() or "solid",
+            "cut_fill_by_layer": self.cut_fill_layers_check.isChecked(),
             "cut_hatch_mm": float(self.cut_hatch_spin.value())}
         recompute = (changes["profiles"] != getattr(m, "profiles", True)
                      or changes["hidden_lines"] != getattr(m, "hidden_lines",
                                                            False)
                      or changes["layer_colours"] != getattr(m, "layer_colours",
                                                             False)
+                     or changes["cut_fill_by_layer"]
+                     != getattr(m, "cut_fill_by_layer", False)
                      or ((changes["cut_fill"] == "none")
                          != (getattr(m, "cut_fill", "solid") == "none")))
         # A raster frame bakes the edge / profile pens into its pixels.
@@ -12546,11 +12884,20 @@ class ComposerWindow(QMainWindow):
         from core.hlr import hlr_drawing
 
         def run():
-            from core.layers import (layer_lines_wanted, line_styles,
+            from core.layers import (cut_fill_colours, cut_hatch_forms,
+                                     cut_hatch_grounds,
+                                     cut_hatch_inks, cut_hatches,
+                                     layer_lines_wanted, line_styles,
                                      unprinted)
             vp = self._window.viewport
             coloured = bool(getattr(frame, "layer_colours", False))
-            by_layer = layer_lines_wanted(vp.scene) or coloured
+            filled = (getattr(frame, "cut_fill", "solid")
+                      or "solid") != "none"
+            fill_by_layer = (bool(getattr(frame, "cut_fill_by_layer", False))
+                             and filled)
+            hatches = cut_hatches(vp.scene) if filled else {}
+            by_layer = (layer_lines_wanted(vp.scene) or coloured
+                        or fill_by_layer or bool(hatches))
             # The shared geometry is collected once for every frame; with a
             # layer left out of the sheets this one is collected fresh,
             # without it.
@@ -12562,7 +12909,7 @@ class ComposerWindow(QMainWindow):
                 fills=(getattr(frame, "cut_fill", "solid") or "solid")
                 != "none",
                 hidden=bool(getattr(frame, "hidden_lines", False)),
-                layers=by_layer)
+                layers=by_layer, depth_layers=grain_layers(vp.scene))
             style = getattr(vp.scene, "display_style", None)
             self.hlr_styles[id(frame)] = (
                 (drawing.layers, line_styles(
@@ -12588,10 +12935,38 @@ class ComposerWindow(QMainWindow):
                 mm[:, 0] = (ring[:, 0] + half_w) * k
                 mm[:, 1] = (half_h - ring[:, 1]) * k
                 fills.append(mm)
+            looks = None
+            ring_layers = drawing.loop_layers
+            if (fill_by_layer or hatches) and ring_layers is not None:
+                table = cut_fill_colours(vp.scene) if fill_by_layer else {}
+                grounds = cut_hatch_grounds(vp.scene)
+                inks = cut_hatch_inks(vp.scene)
+                forms = cut_hatch_forms(vp.scene, float(frame.scale_n or 100.0))
+                # What kind of cut the frame shows: masonry is drawn one way
+                # in a plan and another in a vertical section.
+                cut = section_cut_kind(vp.scene)
+                forms = {tag: dict(f, cut=cut) for tag, f in forms.items()}
+
+                def qc(table, tag):
+                    return (QColor.fromRgbF(*table[tag][:3])
+                            if tag in table else None)
+
+                def form_of(i, tag):
+                    # Timber: how far this ring's piece runs through the
+                    # plane, paper mm — its grain, from the 3D piece.
+                    form = forms.get(tag)
+                    d = (drawing.loop_depths[i] if drawing.loop_depths
+                         else None)
+                    return form if d is None or form is None \
+                        else dict(form, depth=round(d * k, 4))
+                looks = [(qc(table, tag), hatches.get(tag),
+                          qc(grounds, tag), qc(inks, tag), form_of(i, tag))
+                         for i, tag in enumerate(ring_layers)]
             self._stale.discard(id(frame))
             self.hlr_cache[id(frame)] = out
             self.hlr_kinds[id(frame)] = drawing.kinds
             self.hlr_fills[id(frame)] = fills
+            self.hlr_fill_styles[id(frame)] = looks
             return out
 
         return self._with_frame_camera(frame, run)
@@ -12600,6 +12975,25 @@ class ComposerWindow(QMainWindow):
         """The frame's hidden-line view in MODEL units (metres, view
         plane) — what the DXF bridge to IngeCAD writes."""
         return self.model_view_drawing(frame).segs
+
+    def dxf_cut_layers(self, frame: MarcoVista) -> tuple:
+        """The cut hatches and fills of *frame*'s view for its DXF
+        (:func:`dxf_cut_layers`), drawn as the frame draws them. Nothing when
+        the frame fills nothing."""
+        from core.composition import model_height_for_frame
+        if (getattr(frame, "cut_fill", "solid") or "solid") == "none":
+            return [], []
+        scale_n = float(frame.scale_n or 100.0)
+        k = frame.h_mm / model_height_for_frame(frame.h_mm, scale_n)
+        frame_scale = max(0.2, float(getattr(frame, "cut_hatch_mm", 1.5)
+                                     or 1.5) / 1.5)
+        return self._with_frame_camera(frame, lambda: dxf_cut_layers(
+            self._window.viewport.scene, self._window.viewport.camera,
+            scale_n, k, frame_scale))
+
+    def dxf_hatch_groups(self, frame: MarcoVista) -> list:
+        """The line groups of :meth:`dxf_cut_layers` alone."""
+        return self.dxf_cut_layers(frame)[0]
 
     def model_view_drawing(self, frame: MarcoVista, for_dxf: bool = False):
         """The frame's classified line drawing (core.hlr.HlrDrawing) in
@@ -12837,10 +13231,12 @@ class ComposerWindow(QMainWindow):
         if drawing.layers is not None:
             # Each model layer as a DXF layer of its own, with its colour
             # and line type; the cut and the hidden lines keep theirs.
+            texts: list = []
             groups = dxf_groups_by_layer(drawing, layer,
                                          getattr(item.model, "hidden_lines",
-                                                 False))
-            n = save_dxf_layers(path, groups)
+                                                 False), texts)
+            lines, solids = self.dxf_cut_layers(item.model)
+            n = save_dxf_layers(path, groups + lines, solids, texts)
             self.statusBar().showMessage(
                 tr("Exported {n} lines to {name}", n=n, name=path), 5000)
             return
@@ -12853,7 +13249,8 @@ class ComposerWindow(QMainWindow):
         if getattr(item.model, "hidden_lines", False):
             groups.append((f"{layer}-OCULTAS", drawing.segs[k == KIND_HIDDEN],
                            "DASHED"))
-        n = save_dxf_layers(path, groups)
+        lines, solids = self.dxf_cut_layers(item.model)
+        n = save_dxf_layers(path, groups + lines, solids)
         self.statusBar().showMessage(
             tr("Exported {n} lines to {name}", n=n, name=path), 5000)
 
@@ -13065,7 +13462,8 @@ class ComposerWindow(QMainWindow):
                                kinds=self.hlr_kinds.get(id(m)),
                                fills=self.hlr_fills.get(id(m)),
                                missing=self.missing_scene(m),
-                               styles=self.hlr_styles.get(id(m)))
+                               styles=self.hlr_styles.get(id(m)),
+                               fill_styles=self.hlr_fill_styles.get(id(m)))
             elif isinstance(m, ImagenItem):
                 paint_image_mm(painter, m, self.image_cache(m.path))
             elif isinstance(m, TextoItem):
