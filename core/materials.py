@@ -199,7 +199,7 @@ def effective_attrs(attrs, material):
     for key in ("color", "texture", "opacity", "mat"):
         if key in material and material[key] is not None:
             merged[key] = material[key]
-    if not merged.get("back"):
+    if not merged.get("back") and not material.get("front_only"):
         merged["back"] = True            # both sides wear the container's
     return merged
 
@@ -222,7 +222,8 @@ def material_sig(material):
     return (tuple(material["color"]) if material.get("color") is not None else None,
             (tex.get("path"), tex.get("sw"), tex.get("sh"), tex.get("rot"))
             if isinstance(tex, dict) else None,
-            material.get("opacity"), material.get("mat"))
+            material.get("opacity"), material.get("mat"),
+            bool(material.get("front_only")))
 
 
 def free_name(base: str, taken) -> str:

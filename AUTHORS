@@ -44,6 +44,9 @@ reports and the work they carried); they also come first in Help ▸ About.
     And for 0.5.11: a locked line that finds where it crosses an edge or a
     face (#245), and Scale… with X, Y and Z for groups and components
     (#771).
+    And for 0.6.0: Iso snapping to the nearest isometric view (#995), 3D
+    text that no longer sinks into faces (#1057) and the Circle snapping to
+    the axes again (#962, #992).
 
 ★ Rafael García Rodríguez — "Rafael 3D" (youtube.com/@Rafa3D)
     Draftsman and 3D modelling reviewer.
@@ -118,6 +121,12 @@ dafrobozao <dafrobozao.93@gmail.com>  (github.com/dafrobozao)
     active material (#806); the "+" after the sidebar tabs (#797); whole
     circles after copy and explode (#812); and the faded rest of the model
     reaching images and face-me figures (#805).
+    For 0.6.0: the softer ambient occlusion with horizons and bounced light
+    (#1060, #1061) and no more vertical bands on grazing faces (#989, #991);
+    curved surfaces that shade round (#131, #809); the sheet composer in a
+    window of its own (#1068, #1069); the Browser that sorts, folds and
+    filters (#734, #1002); locking groups from the right-click (#782,
+    #1047); and Restore defaults in Preferences (#1052).
 
 José Castro Basso — FADU–UDELAR, Montevideo  (github.com/castrobasso)
     Architect and teacher of architectural representation. Two-point
@@ -139,6 +148,8 @@ liuandy  (github.com/liujvnes)
 deedend  (github.com/deedend)
     Italian translation of the interface (pull request #182, some
     2 110 strings): IngeTrazo's fifth language.
+    For 0.6.0: the 3D mouse with configurable axes and navigation profiles
+    (#581).
 
 Rainjalin  (github.com/Rainjalin)
     Indonesian translation of the interface (issue #216, some 2 230
@@ -228,15 +239,20 @@ RomanErshow  (github.com/RomanErshow)
 
 vandang890615  (github.com/vandang890615)
     Vietnamese translation of the interface.
+    Reviewed again for 0.6.0 (#1019).
 
 BoneNI  (github.com/bounkirdni-2025)
     Lao translation of the interface.
+    Offered again in 0.6.0, now that its marks compose on Windows (#850).
 
 Prida Takon  (github.com/PRIDA-TAKON)
     Thai translation of the interface.
+    For 0.6.0: the Python console names kept in English (#1023).
 
 ChangWoo Lee <ultracat.lcw@gmail.com>  (github.com/ultracat)
     Korean translation of the interface.
+    For 0.6.0: the AI key read from an environment variable when the field
+    is empty (#998, #1014).
 
 nonasige-ui  (github.com/nonasige-ui)
     Japanese translation of the interface.
@@ -249,6 +265,7 @@ Francis Rebouças  (github.com/francisreboucas)
     Push/Pull cutting a thin board with a corner (#710) and keeping a line
     between two paints (#649); a tape guide point keeping its dashed
     segment (#693).
+    For 0.6.0: «System language» as a choice of its own (#818, #875).
 
 pkoska  (github.com/pkoska)
     The location map that starts no download inside its paint (#327), no
@@ -264,6 +281,8 @@ pkoska  (github.com/pkoska)
     .skp thumbnails kept on Windows (#804, #905), the reason a .skp does
     not open in the log (#497, #907) and sheet fields in English and German
     (#899).
+    For 0.6.0: DWG conversion that no longer freezes the window, with a
+    Cancel button (#401, #904).
 
 Matt Van Horn  (github.com/mvanhorn)
     The AI Assistant no longer crashes in the Flatpak (#706).
@@ -276,9 +295,15 @@ Victor Crespo  (github.com/vicc3d)
     A confirmation before installing an unreviewed extension (#578).
     For 0.5.10: archives from outside that cannot unpack to all the memory
     there is, and «Change date and time…» opening the Shadows panel again.
+    For 0.6.0: COLLADA export that keeps groups, components and tags
+    (#966), Move copy keeping a copied face's hole open (#1027), undoing an
+    import bringing back what it removed (#1073) and DAE/glTF nodes placed
+    twice no longer multiplying the walk (#1001).
 
 APBureauEtude  (github.com/APBureauEtude)
     OBJ and MTL files read and written as UTF-8 on every platform (#523).
+    For 0.6.0: the active layer's pencil in the accent colour (#1018) and
+    a clearer view of where you are when editing a group (#947).
 
 SebWell  (github.com/SebWell)
     The macOS package no longer bundles the Linux dwg2dxf (#515).
@@ -329,6 +354,7 @@ Bogdan Demchenko  (github.com/hamzah1985)
     Offset showing its reference edge and start point (#843, #844), units
     that stay chosen after a restart (#883), an imported .skp framed in
     the view (#867) and a second water material for pools (#941).
+    For 0.6.0: Push/Pull snapping to edge midpoints (#863).
 
 Kone Venkatesh  (github.com/konevenkatesh)
     Fixes deep in the modelling core for 0.5.11: a window drawn against a
@@ -346,6 +372,9 @@ nicolasmarc  (github.com/nicolasmarc)
 
 BastelBaus  (github.com/BastelBaus)
     DAE imports that keep the file's groups, nested as in the file (#919).
+    For 0.6.0: .skp imports nested and named as in the file (#922, closes
+    #866), annotations with their anchor (#960), the BIM takeoff finding
+    tags inside groups (#1035) and Help ▸ Documentation (#1036).
 
 David  (github.com/Booshdag-io)
     The choice of tool cursor in Preferences: the tool's icon, the classic
@@ -361,6 +390,26 @@ SPMech  (github.com/SPMech)
 xcd-droid  (github.com/xcd-droid)
     Reports on snapping (intersections, midpoints for dimensions), the
     Rectangle and pasting several copied objects.
+
+Oleksandr Bolotov (https://github.com/bolotov)
+    Ukrainian translation of the interface.
+
+Amer Alhlhli (https://github.com/Alhlhli)
+    Arabic translation of the interface.
+    With it, IngeTrazo's first right-to-left interface (#1067).
+
+Nicolas Grossi  (github.com/changastyle)
+    The OpenCode Go provider and a readable AI chat with bubbles, photos, a
+    thinking bar and Stop (#814).
+
+Alexey Tkachenko  (github.com/alteralto)
+    Pieces of a .skp component scaled by −1 keep their front (#1045, #1065).
+
+Aashish — IngeTrazo Tutorials  (github.com/aashishzharbade-arch)
+    The IngeTrazo Tutorials channel on YouTube, which shows the program,
+    its extensions and its workflows, and nine extensions in the catalogue:
+    MultiView, Phasing Animator, Kitchen Maker, Display Scale, Taper,
+    Bevel, Curve Tools, Texture Library and Make Stair.
 
 ---
 

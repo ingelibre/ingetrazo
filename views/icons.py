@@ -1608,6 +1608,18 @@ def _layers_collapse(p, ink):
     _fold_arrows(p, ink, outward=False)
 
 
+def _layers_rename(p, ink):
+    """The layers' own pencil, alone and centred: rename. Drawn from the
+    same glyph as the Layers list's active mark, so one pencil means one
+    thing across the tray."""
+    p.save()
+    p.translate(24, 24)
+    p.scale(1.55, 1.55)
+    p.translate(-35.25, -33.75)          # the glyph's own centre
+    pencil_glyph(p)
+    p.restore()
+
+
 def _layers_templates(p, ink):
     # A sheet with a folded corner holding a list of coloured layers: a
     # layer set kept to be used again.
@@ -1623,6 +1635,21 @@ def _layers_templates(p, ink):
                       (35, QColor(90, 160, 90))):
         p.setBrush(_accent() if colour is None else colour)
         p.drawRoundedRect(QRectF(14, y, 20, 5), 1.5, 1.5)
+    p.restore()
+
+
+def _layers_order(p, ink):
+    """The sheets, as every layer button draws them, beside a down arrow:
+    the rows put in the layers' order."""
+    p.save()
+    _layer_sheets(p, ink, x=4, y=8, s=0.68, fill=True, count=3)
+    pen = QPen(ink, 3.0)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.drawLine(QPointF(36, 8), QPointF(36, 34))
+    p.drawPolyline(QPolygonF([QPointF(30, 28), QPointF(36, 35),
+                              QPointF(42, 28)]))
     p.restore()
 
 
@@ -2139,6 +2166,8 @@ _DRAW = {
     "layers_filter": _layers_filter, "layers_filter_on": _layers_filter_on,
     "layers_colour": _layers_colour,
     "layers_expand": _layers_expand, "layers_collapse": _layers_collapse,
+    "layers_rename": _layers_rename,
+    "layers_order": _layers_order,
     "layers_templates": _layers_templates,
     "section_planes": _section_planes, "section_cuts": _section_cuts,
     "section_fill": _section_fill,

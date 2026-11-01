@@ -29,6 +29,11 @@ from dataclasses import dataclass, field
 FACE_MODES = ("textures", "shaded", "hidden_line", "monochrome",
               "wireframe", "xray")
 
+#: The soft warm white of the faces that wear no material in the shaded
+#: modes — the matte cardstock of an architecture model. The style's Front
+#: color tints it (``views.viewport._front_tint``).
+DEFAULT_FACE_COLOR = (0.96, 0.95, 0.925)
+
 #: The classic default back-face blue-grey: a visible back face means "you are
 #: looking at the inside" (or at a genuinely inverted face).
 DEFAULT_BACK_COLOR = (0.62, 0.70, 0.78)
@@ -45,7 +50,9 @@ class Style:
     # (issue #234). Off in every preset.
     back_edges: bool = False
     edge_color: tuple = (0.13, 0.17, 0.23)
-    front_color: tuple = (1.0, 1.0, 1.0)     # hidden line / monochrome faces
+    # The faces' front colour: every face in Hidden line and Monochrome,
+    # and the faces wearing no material in the other modes (issue #776).
+    front_color: tuple = (1.0, 1.0, 1.0)
     # Back-face tint (Back color). ``None`` = automatic: the
     # document's adopted tint (``scene.back_face_color``, e.g. from an
     # imported .skp) or ``DEFAULT_BACK_COLOR``. A picked colour wins over

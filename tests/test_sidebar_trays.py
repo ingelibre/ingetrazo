@@ -271,7 +271,10 @@ def _over_the_view(win, handle):
     """``handle`` stacked above the viewport (later among the window's
     children): the viewport draws with OpenGL and hides what lies under."""
     kids = [c for c in win.children() if c.isWidgetType()]
-    return kids.index(handle) > kids.index(win.viewport)
+    view = win.viewport
+    while view.parent() is not win:       # inside the project tabs' area
+        view = view.parent()
+    return kids.index(handle) > kids.index(view)
 
 
 def test_reordering_the_panel_tabs_leaves_the_sidebar_handle_on_top(

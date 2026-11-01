@@ -25,7 +25,7 @@ from __future__ import annotations
 from PySide6.QtGui import QVector3D
 
 from core.history import run_stitch
-from core.mesh import Edge, Face
+from core.mesh import Edge, Face, turn_face_over
 from core.orient import orient_outward
 from core.sweep import _CURVE_FACET_COS, _wall, order_path_edges
 from core.topology import _key
@@ -392,5 +392,79 @@ def bridge(mesh, profiles) -> list[Face]:
         if _CURVE_FACET_COS < d < 0.99995:
             e.soft = True
     if new:
+        caps = [pr.face for pr in profiles
+                if pr.face is not None and pr.face in mesh.faces]
+        follow_neighbours(mesh, new, caps)
         orient_outward(mesh, only=new)
     return new
+
+
+def _edges_of(mesh, face):
+    for lp in (face.loop, *face.hole_loops):
+        n = len(lp)
+        for i in range(n):
+            e = mesh.find_edge(lp[i], lp[(i + 1) % n])
+            if e is not None:
+                yield e
+
+
+def _walks(face, va, vb) -> int:
+    """+1 when ``face`` walks the edge from ``va`` to ``vb``, -1 the other
+    way, 0 when it does not border it."""
+    for lp in (face.loop, *face.hole_loops):
+        n = len(lp)
+        for i in range(n):
+            if lp[i] is va and lp[(i + 1) % n] is vb:
+                return 1
+            if lp[i] is vb and lp[(i + 1) % n] is va:
+                return -1
+    return 0
+
+
+def follow_neighbours(mesh, new, caps=()) -> list:
+    """Turn the ``new`` faces so each winds like the face it was built
+    against: across a shared edge two faces of one surface walk it in
+    opposite directions. The bridged faces (``caps``) lead, then the new
+    faces already settled, then any other face already in the mesh; a face
+    that was there before is never turned. Returns the faces turned.
+
+    Only a closed solid has an outside for :func:`orient_outward` to find;
+    on an open surface (the usual model: walls, a roof, a terrain) the
+    sides came out wound by the order the profiles happened to be walked,
+    against their neighbours half the time (issue #1043)."""
+    from collections import deque
+    new_ids = {id(f) for f in new}
+    settled: set = set()
+    turned = []
+
+    def spread(queue) -> None:
+        while queue:
+            g = queue.popleft()
+            for e in _edges_of(mesh, g):
+                dg = _walks(g, e.v0, e.v1)
+                if dg == 0:
+                    continue
+                for f in e.faces:
+                    if id(f) not in new_ids or id(f) in settled:
+                        continue
+                    df = _walks(f, e.v0, e.v1)
+                    if df == dg:              # same way: f is turned over
+                        turn_face_over(f)
+                        turned.append(f)
+                    settled.add(id(f))
+                    queue.append(f)
+
+    spread(deque(caps))
+    if len(settled) < len(new_ids):
+        others = []
+        seen = set()
+        for f in new:
+            if id(f) in settled:
+                continue
+            for e in _edges_of(mesh, f):
+                for g in e.faces:
+                    if id(g) not in new_ids and id(g) not in seen:
+                        seen.add(id(g))
+                        others.append(g)
+        spread(deque(others))
+    return turned

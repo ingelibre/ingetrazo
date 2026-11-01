@@ -97,7 +97,15 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
         self.note_plane(ctx.viewport)
         self._viewport = ctx.viewport
         self.hover_point = ctx.world
-        self.wireframe_color = self.lock_color()
+        snap = ctx.snap
+        if (snap is not None and snap.kind == "axis"
+                and self.plane_lock is None and self.plane_ref is None):
+            # The radius is magnetised onto an axis: let the viewport draw the
+            # ring in the AXIS colour, not the plane's, so the lock is visible
+            # (#962). An explicit plane lock/ref keeps its own colour.
+            self.wireframe_color = None
+        else:
+            self.wireframe_color = self.lock_color()
         ctx.viewport.update()
 
     def on_segments_value(self, viewport, n: int) -> bool:

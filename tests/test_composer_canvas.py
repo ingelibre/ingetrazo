@@ -27,7 +27,8 @@ elif not isinstance(_inst, QApplication):
 
 from core.composition import (Cajetin, Composicion, CotaItem,   # noqa: E402
                               FormaItem, MarcoVista)
-from views.composer import ComposerCanvasView, ComposerWindow, _SheetItem   # noqa: E402
+from views.composer import (ComposerCanvasView, ComposerWindow,   # noqa: E402
+                            CotaCanvasItem, _SheetItem)
 
 
 class _StubComposer:
@@ -1208,3 +1209,67 @@ class TestLostMouseRelease:
                buttons=Qt.MiddleButton)
         _mouse(view, QEvent.MouseMove, 380, 360, buttons=Qt.NoButton)
         assert view.viewport().cursor().shape() == Qt.OpenHandCursor
+
+
+class TestReanchorByDraggingBack1053:
+    """A measured point dragged off the model lets the cota go (blue
+    handles); dragged back ONTO a point of the same view it anchors again
+    (#1053, @cescmari: «para volver a anclarla hay que colocarla de nuevo
+    sobre el punto» did not work — the drag did not even snap)."""
+
+    def _setup(self):
+        composer, frame = TestAnchoredEndToEnd._composer(self)
+        composer.tool_mode = "cota"
+        _pts, wpts = composer.frame_snap_points(frame)
+        pts, _w = composer.frame_snap_points(frame)
+        page = {tuple(round(c, 6) for c in w): (float(p[0]), float(p[1]))
+                for p, w in zip(pts, wpts)}
+        a, b = page[(0.0, 0.0, 0.0)], page[(6.0, 0.0, 0.0)]
+        composer.place_tool(a[0], a[1], b[0], b[1], sep_mm=6.0,
+                            anchors=(frame, (0.0, 0.0, 0.0),
+                                     (6.0, 0.0, 0.0)))
+        composer.tool_mode = "select"
+        composer._rebuild_canvas()
+        ct = composer.comp.cotas[0]
+        item = next(it for it in composer.canvas.items()
+                    if isinstance(it, CotaCanvasItem) and it.model is ct)
+        return composer, frame, ct, item, a, b
+
+    @staticmethod
+    def _drag_end(item, to_page):
+        from PySide6.QtWidgets import QGraphicsSceneMouseEvent
+        m = item.model
+
+        def ev(kind, local):
+            e = QGraphicsSceneMouseEvent(kind)
+            e.setPos(local)
+            e.setButton(Qt.LeftButton)
+            return e
+        start = QPointF(m.dx_mm, m.dy_mm)            # on the end's handle
+        item.mousePressEvent(ev(QEvent.GraphicsSceneMousePress, start))
+        assert item._resizing
+        local = QPointF(to_page[0] - m.x_mm, to_page[1] - m.y_mm)
+        item.mouseMoveEvent(ev(QEvent.GraphicsSceneMouseMove, local))
+        item.mouseReleaseEvent(ev(QEvent.GraphicsSceneMouseRelease, local))
+
+    def test_dragged_off_it_lets_go_and_back_on_it_anchors_again(self):
+        composer, frame, ct, item, a, b = self._setup()
+        assert ct.anchored
+        self._drag_end(item, (b[0] + 15.0, b[1] + 9.0))     # off the model
+        assert not ct.anchored
+        # Back next to its vertex (within the ~7 px snap): it lands ON it
+        # and holds the model again.
+        self._drag_end(item, (b[0] + 0.3, b[1] - 0.2))
+        assert ct.anchored and ct.anchor_uid == frame.uid
+        assert (ct.x_mm + ct.dx_mm, ct.y_mm + ct.dy_mm) == pytest.approx(b)
+        assert ct.a_world == pytest.approx([0.0, 0.0, 0.0])
+        assert ct.b_world == pytest.approx([6.0, 0.0, 0.0])
+        # …and it follows the wall again, the way #854 made it.
+        TestAnchoredEndToEnd._stretch(self, composer, 6.0, 8.0)
+        assert ct.label() == "8.00 m"
+
+    def test_a_drag_onto_nothing_stays_free(self):
+        composer, frame, ct, item, a, b = self._setup()
+        self._drag_end(item, (b[0] + 15.0, b[1] + 9.0))
+        self._drag_end(item, (b[0] + 25.0, b[1] + 19.0))
+        assert not ct.anchored

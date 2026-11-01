@@ -15,6 +15,9 @@ from views.main_window import MainWindow
 def window():
     win = MainWindow()
     win.viewport.scene.clear()
+    # Still an untouched drawing: an .skp opened from outside comes into
+    # it, not into a tab of its own (#1066).
+    win._saved_version = win.viewport.scene.version
     cam = win.viewport.camera
     cam.target = QVector3D(8.0, -23.0, 10.0)
     cam.distance = 0.19

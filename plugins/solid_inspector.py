@@ -629,7 +629,8 @@ def _section(title: str) -> QLabel:
 
 def _nav_button(arrow, tip: str) -> QToolButton:
     btn = QToolButton()
-    btn.setArrowType(arrow)
+    from views.rtl import set_arrow
+    set_arrow(btn, arrow)
     btn.setToolTip(tip)
     btn.setAutoRaise(True)
     btn.setFixedSize(30, 28)
@@ -661,9 +662,16 @@ class SolidInspectorPanel(QWidget):
     #: Below this width the list shows only Object and Status.
     WIDE = 560
 
+    @property
+    def _viewport(self):
+        """The viewport of the project in front (projects in tabs, #1066):
+        the one handed in at setup may be a tab in the back, or closed."""
+        return self._live_viewport()
+
     def __init__(self, viewport, parent=None) -> None:
         super().__init__(parent)
-        self._viewport = viewport
+        from views.documents import live_viewport
+        self._live_viewport = live_viewport(viewport)
         self._rows: list = []          # payload per table row
         #: The problem on screen: {"name", "index", "count", "item",
         #: "mesh", "matrix"} — or None.
