@@ -125,7 +125,8 @@ from core.group import Group, copy_group, world_mesh
 from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
-from core.style import DEFAULT_BACK_COLOR, effective_back_color
+from core.style import (DEFAULT_BACK_COLOR, DEFAULT_FACE_COLOR,
+                        effective_back_color)
 from core.materials import material_sig as _material_sig
 from core.snap import SnapResult, _AXIS_VECTORS
 from core.texture import face_uv_axes
@@ -231,6 +232,9 @@ GL_ALWAYS = 0x0207
 GL_EQUAL = 0x0202
 GL_KEEP = 0x1E00
 GL_REPLACE = 0x1E01
+#: Stencil bit the foliage cutouts leave, so the ambient occlusion (#954)
+#: skips the leaves: a crown of crossed cards reads as one dark corner.
+AO_FOLIAGE_BIT = 0x80
 GL_BLEND = 0x0BE2
 GL_SRC_ALPHA = 0x0302
 GL_ONE_MINUS_SRC_ALPHA = 0x0303
@@ -531,8 +535,8 @@ class _GlTape:
     replay runs the raw list natively when the engine is there, else the
     wrapper calls."""
 
-    DRAW, VAO, U1I, U1F, U4F, ENABLE, DISABLE, CULL, FRONT, ACTIVE, TEX = \
-        range(11)
+    DRAW, VAO, U1I, U1F, U4F, ENABLE, DISABLE, CULL, FRONT, ACTIVE, TEX, \
+        STENCIL = range(12)
 
     def __init__(self):
         self.calls: list = []
@@ -576,6 +580,10 @@ class _GlTape:
         self.call(fn, value)
         self._op(code, (value,))
 
+    def stencil_func(self, fn, func, ref, mask):
+        self.call(fn, func, ref, mask)
+        self._op(self.STENCIL, (func, ref, mask))
+
     def tex_bind(self, tex, unit):
         # QOpenGLTexture::bind(unit): active unit, then bind (not reset).
         self.call(tex.bind, unit)
@@ -613,7 +621,7 @@ def _callable_proc(addr: int) -> bool:
 _TAPE_FUNCS = (b"glDrawArraysInstanced", b"glBindVertexArray",
                b"glUniform1i", b"glUniform1f", b"glUniform4f", b"glEnable",
                b"glDisable", b"glCullFace", b"glFrontFace",
-               b"glActiveTexture", b"glBindTexture")
+               b"glActiveTexture", b"glBindTexture", b"glStencilFunc")
 
 
 class _InstanceBatch(list):
@@ -646,6 +654,93 @@ def _proto_wrapper(vp, mesh, paint=None):
     return w
 
 
+#: The face modes Colour by layer applies to: the ones that draw the
+#: per-vertex colour. Hidden line, monochrome and wireframe keep their own
+#: flat look.
+_BY_LAYER_MODES = ("textures", "shaded", "xray")
+
+
+def _layer_look_sig(scene) -> tuple:
+    """What of the layers changes the paint objects are drawn in: Colour by
+    layer, and each layer's colour and transparency — and the style's Front
+    color, which dresses the faces that wear no material."""
+    style = getattr(scene, "display_style", None)
+    by_layer = bool(getattr(style, "color_by_layer", False))
+    return (by_layer, getattr(style, "face_mode", None) if by_layer else None,
+            tuple((ly.name, ly.color, ly.opacity)
+                  for ly in getattr(scene, "layers", ())),
+            _front_tint(style))
+
+
+#: The face modes that draw the per-vertex colour, where the style's Front
+#: color reaches the default faces through their bake. Hidden line and
+#: Monochrome paint every face flat in it with a uniform instead.
+_VCOLOR_MODES = ("textures", "shaded", "xray")
+
+
+def _front_tint(style):
+    """The colour the faces wearing no material bake to under ``style``
+    when its Front color is not the stock white, else ``None`` (the
+    warm-white default, unchanged). The default is TINTED by the pick
+    rather than replaced, so the stock white keeps the stock look and a
+    picked colour shows as itself (issue #776: the Front color only
+    showed in Hidden line and Monochrome)."""
+    if style is None or getattr(style, "face_mode", None) not in _VCOLOR_MODES:
+        return None
+    front = tuple(float(c) for c in
+                  (getattr(style, "front_color", None) or (1.0, 1.0, 1.0))[:3])
+    if all(c >= 0.999 for c in front):
+        return None
+    from core.style import DEFAULT_FACE_COLOR
+    return tuple(round(d * c, 4) for d, c in zip(DEFAULT_FACE_COLOR, front))
+
+
+def _with_front_tint(paint, style):
+    """``paint`` with the style's Front color standing in for the default
+    material when there is no container paint: a front-only paint, so the
+    back faces keep the back tint."""
+    if paint:
+        return paint
+    tint = _front_tint(style)
+    if tint is None:
+        return paint
+    return {"color": tint, "front_only": True}
+
+
+def _paint_of(vp, group):
+    """The container paint faces are baked with: the object's own paint
+    (issue #47), or — with Colour by layer on — the layer colours
+    (core.layers.layer_paint). ``group`` None is the loose model; a
+    prototype stand-in (``_proto_wrapper``) already carries its paint.
+    Module-level, like ``_proto_wrapper``, so stub viewports reach it."""
+    from core.group import Group, effective_material
+    if group is not None and not isinstance(group, Group):
+        return effective_material(group)
+    scene = getattr(vp, "scene", None)
+    if scene is None or getattr(vp, "plano_style", None) is not None:
+        return effective_material(group)       # a sheet's technical look
+    style = (getattr(vp, "style_override", None)
+             or getattr(scene, "display_style", None))
+    by_layer = bool(getattr(style, "color_by_layer", False)
+                    and style.face_mode in _BY_LAYER_MODES)
+    from core.layers import layer_fx, layer_look, layer_paint, object_layer
+    from core.materials import material_sig
+    memo = getattr(vp, "_layer_paints", None)
+    if memo is None or memo[0] != scene.version:
+        memo = vp._layer_paints = (scene.version, {}, layer_fx(scene))
+    fx = memo[2]
+    if not by_layer and not fx:
+        return _with_front_tint(effective_material(group), style)
+    own = (None if by_layer
+           else _with_front_tint(effective_material(group), style))
+    key = (by_layer, object_layer(group), material_sig(own))
+    paint = memo[1].get(key)
+    if paint is None:
+        base = layer_paint(scene, group) if by_layer else own
+        paint = memo[1][key] = layer_look(scene, group, base, fx)
+    return paint
+
+
 def _cache_ver(vp):
     """The scene version the per-version caches key on — frozen during a
     groups-only transform preview (see Viewport.begin_groups_preview).
@@ -664,6 +759,76 @@ def _content_ver(vp):
         return ("frozen", frozen)
     sc = vp.scene
     return getattr(sc, "content_version", sc.version)
+
+
+def _plan_curved_edges(plan):
+    """The indices of a lazy plan's curve edges, in edge order (memoised
+    on the plan, which cannot change while the mesh stays lazy)."""
+    curved = plan.extra.get("curved_edges")
+    if curved is None:
+        import numpy as np
+        ids = plan.curve
+        # Most meshes have no curve at all: ``count`` tells in C.
+        curved = plan.extra["curved_edges"] = (
+            np.empty(0, dtype=np.int64) if ids.count(None) == len(ids)
+            else np.array([i for i, c in enumerate(ids) if c is not None],
+                          dtype=np.int64))
+    return curved
+
+
+def _lazy_edge_may_be_curve(mesh, a, b, tol=1e-3) -> bool:
+    """Whether the edge of ``mesh`` from ``a`` to ``b`` (its own space) may
+    be a curve's, asked of a still-lazy mesh's plan without building it.
+    False only when no edge with both ends within ``tol`` of the two points
+    — far wider than the weld lookups that find the real edge — carries a
+    curve; a built (or never lazy) mesh always answers True."""
+    from core.lazy_mesh import plan_of
+    plan = plan_of(mesh)
+    if plan is None:
+        return True
+    if not len(plan.edges):
+        return False
+    curved = _plan_curved_edges(plan)
+    if not len(curved):
+        return False
+    import numpy as np
+    ends = plan.edges[curved]
+    p0, p1 = plan.pos[ends[:, 0]], plan.pos[ends[:, 1]]
+    pa = np.array((a.x(), a.y(), a.z()))
+    pb = np.array((b.x(), b.y(), b.z()))
+
+    def near(p, q):
+        return (np.abs(p - q) <= tol).all(axis=1)
+    return bool(((near(p0, pa) & near(p1, pb))
+                 | (near(p0, pb) & near(p1, pa))).any())
+
+
+def _snap_dropped_loose(vp):
+    """Ids of the loose edges the inference must not land on, cached per scene
+    version. An EMPTY set means ``Viewport._snap_scene`` may hand the raw
+    scene over, with no list to build on a hover.
+
+    The engine walked the loose mesh as it is, so an edge hidden on its own —
+    Hide with the eraser, the seam of a smoothed surface, an edge on a hidden
+    layer — still offered its endpoints and its line. The cursor lit up on
+    geometry that draws nothing, and a line drawn to that spot cut the face
+    underneath at a point the user could not see: the "phantom corner" that
+    segmented a fresh face out of nowhere. Render, pick and ``bounds()``
+    already skip those edges; this asks the same rule
+    (:meth:`Scene.edge_snappable`) once per change instead of once per edge
+    per hover.
+
+    Module-level, like :func:`_cache_ver`, so the stub viewports in tests hit
+    it too."""
+    scene = vp.scene
+    key = (_cache_ver(vp), id(scene.mesh), len(scene.mesh.edges),
+           bool(getattr(scene, "show_hidden_geometry", False)))
+    memo = getattr(vp, "_loose_snap_drops_cache", None)
+    if memo is not None and memo[0] == key:
+        return memo[1]
+    drops = {id(e) for e in scene.edges if not scene.edge_snappable(e)}
+    vp._loose_snap_drops_cache = (key, drops)
+    return drops
 
 
 def _ctx_changed(vp, before):
@@ -955,12 +1120,21 @@ def _moller_trumbore(o, d, v0, e1, e2):
 #: ``normal`` draws it as always, ``fade`` washes it out behind the group
 #: being edited (the default), ``hide`` leaves it out of the frame.
 EDIT_REST_MODES = ("normal", "fade", "hide")
-#: How far the context is mixed TOWARD the background (0 = untouched, 1 =
-#: gone). It is a wash, not an opacity: the context keeps writing depth, so it
-#: still occludes itself and never turns the model into glass. Enough to place
-#: the group in its surroundings, faint enough that what you are editing reads
-#: as the subject.
+#: Default for how far the context is mixed TOWARD grey (0 = untouched, 1 =
+#: fully washed). It is a wash, not transparency: the context keeps writing
+#: depth, so it still occludes itself and never turns the model into glass.
+#: The user-adjustable value lives on :class:`Viewport`; this constant remains
+#: the default and the fallback for the small viewport stubs used by tools and
+#: tests.
 EDIT_REST_FADE = 0.75
+
+#: The edit box must sit clear of the geometry. A tight box disappears on a
+#: cuboid because every dotted segment lands exactly on a model edge. Keep a
+#: small screen-space gutter, allowed to grow a little with a large object but
+#: capped so a long beam does not acquire a huge empty envelope.
+EDIT_BOX_PAD_MIN_PX = 8.0
+EDIT_BOX_PAD_MAX_PX = 32.0
+EDIT_BOX_PAD_RATIO = 0.05
 
 
 def edit_fade_color(background) -> tuple:
@@ -1022,6 +1196,17 @@ def _load_edit_rest_mode() -> str:
     from PySide6.QtCore import QSettings
     mode = str(QSettings().value("display/edit_rest_mode", "fade"))
     return mode if mode in EDIT_REST_MODES else "fade"
+
+
+def _load_edit_rest_fade() -> float:
+    """Saved strength of the grey edit context, safely clamped to 0..1."""
+    from PySide6.QtCore import QSettings
+    try:
+        value = float(QSettings().value("display/edit_rest_fade",
+                                        EDIT_REST_FADE))
+    except (TypeError, ValueError):
+        value = EDIT_REST_FADE
+    return max(0.0, min(1.0, value))
 
 
 def _load_hide_similar() -> bool:
@@ -1123,6 +1308,67 @@ def _box_edge_vertices(corners):
                 continue
             coords.extend([a.x(), a.y(), a.z(), b.x(), b.y(), b.z()])
     return coords
+
+
+def shown_guides(scene) -> list:
+    """The guides on screen: the ones whose layer is visible (a guide is
+    scaffolding on a layer like any dimension, so switching the layer off
+    takes its guides off the screen and out of the snap). A function of the
+    scene, so the snap of a stand-in viewport (tests) asks it too."""
+    guides = getattr(scene, "guides", None) or ()
+    visible = getattr(scene, "entity_visible", None)
+    if visible is None:
+        return list(guides)
+    return [g for g in guides if visible(g)]
+
+
+def _point_in_screen_hull(x: float, y: float, points,
+                          tolerance_px: float = 1.5) -> bool:
+    """Whether a screen point lies in the convex hull of ``points``.
+
+    The projection of a 3D box is a convex polygon (usually a hexagon), not
+    its axis-aligned screen rectangle. Testing that hull makes the visible
+    dotted frame the honest boundary for leaving group edit: its empty corner
+    triangles do not silently count as inside. The small tolerance keeps a
+    click directly on a one-pixel dotted edge inside the context.
+    """
+    pts = sorted({(float(px), float(py)) for px, py in points
+                  if math.isfinite(px) and math.isfinite(py)})
+    if not pts:
+        return False
+
+    def cross(a, b, p):
+        return ((b[0] - a[0]) * (p[1] - a[1])
+                - (b[1] - a[1]) * (p[0] - a[0]))
+
+    def half(seq):
+        out = []
+        for p in seq:
+            while len(out) >= 2 and cross(out[-2], out[-1], p) <= 0.0:
+                out.pop()
+            out.append(p)
+        return out
+
+    if len(pts) == 1:
+        return math.hypot(x - pts[0][0], y - pts[0][1]) <= tolerance_px
+    lower, upper = half(pts), half(reversed(pts))
+    hull = lower[:-1] + upper[:-1]
+    if len(hull) == 2:
+        a, b = hull
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length2 = dx * dx + dy * dy
+        t = (0.0 if length2 <= 1e-12 else
+             max(0.0, min(1.0, ((x - a[0]) * dx + (y - a[1]) * dy)
+                              / length2)))
+        return math.hypot(x - (a[0] + t * dx),
+                          y - (a[1] + t * dy)) <= tolerance_px
+    point = (float(x), float(y))
+    for i, a in enumerate(hull):
+        b = hull[(i + 1) % len(hull)]
+        edge_len = math.hypot(b[0] - a[0], b[1] - a[1])
+        if cross(a, b, point) < -tolerance_px * max(edge_len, 1.0):
+            return False
+    return True
 
 
 def _guide_vertices(guides, spacing: float, selection=(), centre=None,
@@ -1455,6 +1701,54 @@ def _finite_point(p) -> bool:
     return p is not None and all(
         math.isfinite(c) for c in (p.x(), p.y(), p.z()))
 
+
+def _curved_faces(mesh) -> set:
+    """The faces of ``mesh`` on a curved surface: those a soft edge
+    joins to another face. Only these can have a smooth corner, so
+    every other face keeps its one flat colour and costs nothing."""
+    out: set = set()
+    for e in mesh.edges:
+        if getattr(e, "soft", False) and len(e.faces) > 1:
+            out.update(e.faces)
+    return out
+
+
+def _smooth_vcol(face, base, flat_rgb, smoother, tris, light) -> list:
+    """``pos(3) + rgb(3)`` floats of ``face``'s triangles (corners as
+    float tuples), each corner on a curved surface shaded against
+    ``light`` by the SURFACE's normal there
+    (:class:`formats.meshexport.SmoothNormals`, the one the exports
+    write) instead of the face's own: the vertex colours blend across
+    the triangles and a sphere reads round, not faceted (#131). Hard
+    edges split the surface, so a cylinder keeps its crease against its
+    caps.
+
+    Unquantised, unlike ``Viewport._shaded_color``: the face pass is one
+    draw call whatever its colours, and the 1/32 shade steps would show
+    as rings across a sphere. A corner whose surface normal IS the
+    face's (coplanar faces joined by a soft diagonal) keeps the flat
+    colour, so a flat patch never shows a seam against its neighbour."""
+    corners = smoother.corners(face)
+    flat = smoother.flat(face)
+    rgb_at: dict = {}
+    out: list = []
+    for tri in tris:
+        for p in tri:
+            rgb = rgb_at.get(p)
+            if rgb is None:
+                n = corners.get(p)
+                if n is None or QVector3D.dotProduct(n, flat) > 0.99999:
+                    rgb = flat_rgb
+                else:
+                    d = abs(QVector3D.dotProduct(n, light))
+                    s = 0.62 + 0.38 * d
+                    rgb = (min(1.0, base[0] * s), min(1.0, base[1] * s),
+                           min(1.0, base[2] * s))
+                rgb_at[p] = rgb
+            out.extend((*p, *rgb))
+    return out
+
+
 class Viewport(QOpenGLWidget):
     """OpenGL viewport with orbital camera, grid, XYZ axes, tools and snapping."""
 
@@ -1475,7 +1769,7 @@ class Viewport(QOpenGLWidget):
 
     # Soft warm white painted on faces with no material colour — like the matte
     # cardstock of an architecture model (a near-white default).
-    DEFAULT_FACE_COLOR = (0.96, 0.95, 0.925)
+    DEFAULT_FACE_COLOR = DEFAULT_FACE_COLOR
     # Fixed world light (from above, slightly front-right) for the subtle diffuse
     # face shading. World-fixed so shading is stable while orbiting.
     _LIGHT = QVector3D(0.35, 0.25, 1.0).normalized()
@@ -1496,7 +1790,8 @@ class Viewport(QOpenGLWidget):
     #: place along an edge or on a face).
     _ENCOURAGING_KINDS = frozenset((
         "endpoint", "midpoint", "arc_midpoint", "center", "component_origin",
-        "origin", "intersection", "close"))
+        "origin", "intersection", "intersection_edge", "intersection_face",
+        "close"))
 
     _SNAP_LABELS = {
         "endpoint": "Endpoint",
@@ -1511,6 +1806,8 @@ class Viewport(QOpenGLWidget):
         "origin": "Origin",
         "extension": "Extension",
         "intersection": "Intersection",
+        "intersection_edge": "Intersect with Edge",
+        "intersection_face": "Intersect with Face",
         "from_point": "From point",
         # The axis PLANE through an encouraged point cut by the face under
         # the cursor (rule 8e): "Level with point" when it is the horizontal
@@ -1524,6 +1821,10 @@ class Viewport(QOpenGLWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        # The model and its camera are the same in every language: a right-
+        # to-left interface (#1067) does not mirror what is drawn here.
+        from views.rtl import keep_ltr
+        keep_ltr(self)
         # Hidden-line removal needs a real depth buffer. setDefaultFormat() in
         # main.py is best-effort; many platforms ignore it for QOpenGLWidget
         # and hand us a 0-bit depth context. Forcing the format here is the
@@ -1648,6 +1949,9 @@ class Viewport(QOpenGLWidget):
         # entirely — on a heavy import that is also the fastest, since a
         # hidden group never reaches the VBOs. See `edit_rest_mode`.
         self._edit_rest_mode = _load_edit_rest_mode()
+        # Keep the user setting distinct from ``_edit_rest_fade(group)``,
+        # which computes the effective fade for image and billboard passes.
+        self._edit_rest_fade_strength = _load_edit_rest_fade()
         self.scene.hide_similar_components = _load_hide_similar()
         self._invert_wheel = _load_invert_wheel()
         self._invert_orbit_y = _load_invert_orbit_y()
@@ -1791,8 +2095,9 @@ class Viewport(QOpenGLWidget):
         # for Help ▸ About, written to the log folder, and announced to the
         # main window so a CPU-drawn viewport says so before anyone wonders
         # why orbiting crawls (a Windows box without a working driver).
-        from core.glinfo import read_gl_info, write_gl_report
+        from core.glinfo import meets_gl_requirement, read_gl_info, write_gl_report
         self.gl_info = read_gl_info(self._gl)
+        self.gl_info["supported"] = meets_gl_requirement(self.gl_info["version"])
         from PySide6.QtCore import QCoreApplication
         from PySide6.QtGui import QGuiApplication
         self.gl_info["platform"] = QGuiApplication.platformName()
@@ -1801,6 +2106,13 @@ class Viewport(QOpenGLWidget):
             self.gl_info["fallback"] = _app.property("gl_fallback") or ""
         write_gl_report(self.gl_info)
         self.glReady.emit(self.gl_info)
+        if not self.gl_info["supported"]:
+            # Below GL 3.3 the shaders cannot compile (issue #751). Make no
+            # GL object on this context, so none is freed on it at exit
+            # either; paintGL only clears, and the main window explains.
+            self._program = None              # a previous context's, if any
+            self._gl.glClearColor(0.93, 0.94, 0.96, 1.0)
+            return
         # GL cleanup has exactly one legal moment: the context's own farewell.
         # (initializeGL re-runs if the context is ever recreated; each context
         # gets its own connection, which is precisely what we want.)
@@ -1833,6 +2145,7 @@ class Viewport(QOpenGLWidget):
         # Instanced pass: re-shade the prototype's baked tones for the
         # rotation of each copy (#482), against the bake's own light.
         self._loc_reshade = self._program.uniformLocation("u_reshade")
+        self._loc_back_shade = self._program.uniformLocation("u_back_shade")
         self._program.bind()
         self._program.setUniformValue(self._loc_reshade, 0)
         self._program.setUniformValue(
@@ -1869,6 +2182,9 @@ class Viewport(QOpenGLWidget):
         self._shadow_fbo = None
         self._shadow_key = None
         self._shadow_vp = None
+        self._fine_shadow_fbo = None
+        self._fine_shadow_key = None
+        self._shadow_fit = None
 
         # Axes rebuilt per frame (dash spacing scales with zoom), so dynamic.
         self._axes_vao, self._axes_vbo = self._create_dynamic()
@@ -1902,7 +2218,7 @@ class Viewport(QOpenGLWidget):
     def resizeGL(self, w: int, h: int) -> None:
         # Qt passes framebuffer-pixel sizes here (already scaled by DPR), so
         # this is the authoritative source for FBO and viewport dimensions.
-        if self._gl is None:
+        if self._gl is None or self._program is None:
             return
         self._gl.glViewport(0, 0, w, h)
         self.camera.set_aspect(w, h)
@@ -1936,7 +2252,8 @@ class Viewport(QOpenGLWidget):
 
     def render_image(self, width_px: int, height_px: Optional[int] = None,
                      overlays: bool = True,
-                     annotations_only: bool = False) -> Optional["QImage"]:
+                     annotations_only: bool = False,
+                     sharp_shadows: bool = False) -> Optional["QImage"]:
         """Render the current view at ``width_px`` wide (height follows the
         viewport's aspect) and return it as a ``QImage`` — the hi-res 2D
         export. Reuses the exact ``paintGL`` pipeline against a temporary
@@ -1948,7 +2265,12 @@ class Viewport(QOpenGLWidget):
         their own aspect — the caller is responsible for pointing the camera
         and setting its aspect to match) and ``overlays=False``: the overlay
         painters are calibrated to the live widget's aspect and would land
-        misplaced under a composer camera."""
+        misplaced under a composer camera.
+
+        ``sharp_shadows`` (Export image, sheets): the sun's map is drawn
+        for this one picture at ``_SHADOW_EXPORT_SIZE`` instead of the view's
+        2048 — a plaza of 100 m gets 1.2 cm per texel instead of 5 cm — and
+        freed after it, so the view keeps its own map and its memory."""
         if self._gl is None or self._program is None:
             return None
         lw = max(self.width(), 1)
@@ -1961,13 +2283,24 @@ class Viewport(QOpenGLWidget):
 
         prev_fbo = self._scene_fbo
         prev_size = self._fbo_size
+        view_shadow = None
         self.makeCurrent()
         try:
             self._export_size = (width_px, height_px)
+            if sharp_shadows and self._sun_dir_now() is not None:
+                view_shadow = (self._shadow_fbo, self._shadow_key)
+                self._shadow_fbo = self._shadow_key = None
+                self._shadow_size = self._export_shadow_size()
             try:
                 self.paintGL()
                 image = self._scene_fbo.toImage()   # resolves MSAA itself
             finally:
+                if view_shadow is not None:
+                    # Freed here, with the context current; the view's own
+                    # map was never touched and is reused as it was.
+                    self._shadow_fbo = None
+                    self._shadow_fbo, self._shadow_key = view_shadow
+                    self._shadow_size = self._SHADOW_MAP_SIZE
                 self._export_size = None
                 # Drop the big export FBO (destroyed here, context current)
                 # and put the on-screen one back.
@@ -2015,13 +2348,54 @@ class Viewport(QOpenGLWidget):
             self._shown_projection = mode
             self.projectionChanged.emit(mode)
 
+    def _sync_depth_reach(self) -> None:
+        """Tell the camera what the view holds, for the depth range of a
+        parallel view (``OrbitCamera.parallel_depth``, issue #874): the
+        model's box, the reference images and figures, and the drawing
+        axes' origin. ``None`` — the old ±far range — while a base map or
+        a survey shows, whose extent the model's box does not know."""
+        cam = self.camera
+        if cam.perspective:
+            return                       # perspective does not read it
+        sc = self.scene
+        layer = getattr(sc, "tile_layer", None)
+        survey = getattr(sc, "photo_mesh", None)
+        if (layer is not None and getattr(layer, "visible", False)) \
+                or (survey is not None and getattr(survey, "visible", False)):
+            cam.depth_reach = None
+            return
+        from core import axes as _axes
+        lo, hi = sc.bounds()
+        pts = [_axes.ORIGIN]
+        if lo is not None:
+            pts += [lo, hi]
+        for im in getattr(sc, "image_planes", None) or ():
+            if sc.entity_visible(im):
+                pts.extend(im.corners())
+        for g in sc.groups:
+            if getattr(g, "billboard", False) and sc.entity_visible(g):
+                xf = g.xform
+                pts.append(QVector3D(xf.column(3).x(), xf.column(3).y(),
+                                     xf.column(3).z())
+                           if xf is not None else QVector3D())
+                pts.append(pts[-1] + QVector3D(0.0, 0.0, 3.0))
+        xs = [p.x() for p in pts]
+        ys = [p.y() for p in pts]
+        zs = [p.z() for p in pts]
+        a = QVector3D(min(xs), min(ys), min(zs))
+        b = QVector3D(max(xs), max(ys), max(zs))
+        cam.depth_reach = ((a + b) * 0.5, (b - a).length() * 0.5)
+
     def paintGL(self) -> None:
         self._tick = getattr(self, "_tick", 0) + 1     # a new epoch memo
         self._depth_clean = None          # see the read-back at the end
         self._sync_axes()
         self._sync_projection()
-        if self._gl is None or self._program is None:
+        if self._program is None:
+            if self._gl is not None:          # a context below GL 3.3
+                self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
             return
+        self._sync_depth_reach()
         _pt0 = _time_mod.perf_counter() if _PERF else 0.0
 
         # Render the 3D scene into our own FBO (which has a real depth buffer)
@@ -2067,7 +2441,17 @@ class Viewport(QOpenGLWidget):
         self._gl.glClearDepthf(1.0)
         bg = style.background
         self._gl.glClearColor(bg[0], bg[1], bg[2], 1.0)
-        self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT
+                         | GL_STENCIL_BUFFER_BIT)
+        # Foliage marking for the ambient occlusion: every opaque fragment
+        # that wins the depth test leaves its bit — set by a cutout, cleared
+        # by anything else (``_set_cutout``) — so the bit ends up saying
+        # whether the surface SEEN there is a leaf. The test always passes:
+        # colour and depth come out as ever. Off again at the occlusion.
+        self._gl.glEnable(GL_STENCIL_TEST)
+        self._gl.glStencilFunc(GL_ALWAYS, 0, 0xFF)
+        self._gl.glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE)
+        self._gl.glStencilMask(AO_FOLIAGE_BIT)
 
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
         # Frustum planes for chunk culling — also consumed by the
@@ -2133,6 +2517,12 @@ class Viewport(QOpenGLWidget):
         # Imported reference images (a scanned plan, a facade photo). Last of
         # the reference layers and before any model geometry: they are what
         # the user draws ON TOP of.
+        if self.scene.edit_group is not None:
+            # One colour for every faded pass (images, loose, grouped,
+            # instanced, face-me figures); set before the first of them.
+            self._program.setUniformValue(
+                self._loc_fade_color, QVector3D(*edit_fade_color(
+                    style.background)))
         self._draw_image_planes()
         _fmark("ground")
 
@@ -2147,7 +2537,7 @@ class Viewport(QOpenGLWidget):
         # camera-independent: orbit and zoom reuse it). The pass borrows the
         # FBO/program bindings; this block restores them and binds the map
         # on texture unit 1 for the geometry passes to sample.
-        self._frame_shadow = (self._ensure_shadow_map()
+        self._frame_shadow = (self._ensure_shadow_map(mvp)
                               if mode in ("textures", "shaded",
                                           "hidden_line", "monochrome")
                               else None)
@@ -2179,6 +2569,8 @@ class Viewport(QOpenGLWidget):
         _fmark("shadowmap")
 
         fc = self._frame_cache_key(mvp, w, h, style, mode)
+        settled = self._frame_cache_track(
+            fc[0] if fc is not None else tuple(mvp.data()))
         if fc is None:
             self._paint_static(mvp, w, h, style, mode, _fmark,
                                self._hover_entity)
@@ -2187,8 +2579,20 @@ class Viewport(QOpenGLWidget):
             # changed (a pointer move): see _frame_cache_key.
             if not self._frame_cache_restore(fc, w, h):
                 self._paint_static(mvp, w, h, style, mode, _fmark, None)
-                self._frame_cache_store(fc, w, h)
+                # Keep the picture only once the view has settled: while
+                # the camera moves, every frame's key is new, so the copy
+                # (~0.8 ms of an orbit frame, issue #944) was stored and
+                # never restored. The frame after the last camera move
+                # stores instead; a change that is not the camera (a
+                # selection, an edit) keeps the same MVP and stores at
+                # once, as before.
+                if settled:
+                    self._frame_cache_store(fc, w, h)
             self._paint_hover(mvp, w, h)
+        # The view at rest: measure what it shows for the fitted sun map
+        # (#958) — read from the depth the model just left, before the
+        # rubber band and the overlay draw over it.
+        self._settle_shadow_fit(mvp, w, h)
 
         # Rubber band preview. Loose drawing tools float it on top (depth test
         # off, so it never z-fights with coincident axes). Push/Pull's solid
@@ -2306,11 +2710,6 @@ class Viewport(QOpenGLWidget):
                   and getattr(self, "_edit_split_f", None) is not None)
         split_f = self._edit_split_f if fading else None
         split_e = self._edit_split_e if fading else None
-        if self.scene.edit_group is not None:
-            # One colour for every faded pass (loose, grouped, instanced).
-            self._program.setUniformValue(
-                self._loc_fade_color, QVector3D(*edit_fade_color(
-                    style.background)))
         spans = getattr(self, "_face_spans", None)
         if spans:
             face_spans, culled_fv = self._visible_spans(spans, planes, split_f)
@@ -2372,7 +2771,7 @@ class Viewport(QOpenGLWidget):
                 # model reads as haze, not as glass); then the group itself
                 # at full strength.
                 self._program.setUniformValue1f(self._loc_fade,
-                                                EDIT_REST_FADE)
+                                                self.edit_rest_fade)
                 for _vs, _vc in face_spans:
                     if _vs < split_f:
                         self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
@@ -2425,7 +2824,8 @@ class Viewport(QOpenGLWidget):
                 r, g, b = self._texture_avg_color(path)
                 self._program.setUniformValue1f(self._loc_shade, float(shade))
                 self._set_color(r, g, b, 1.0)
-                for fade, spans in ((EDIT_REST_FADE, vis), (0.0, subj)) \
+                for fade, spans in ((self.edit_rest_fade, vis),
+                                    (0.0, subj)) \
                         if fading else ((0.0, vis),):
                     if not spans:
                         continue
@@ -2458,11 +2858,10 @@ class Viewport(QOpenGLWidget):
                 if tex is None:
                     continue
                 self._program.setUniformValue1f(self._loc_shade, float(shade))
-                self._program.setUniformValue(
-                    self._loc_hard_cutout,
-                    1 if getattr(tex, "_cutout", False) else 0)
+                self._set_cutout(getattr(tex, "_cutout", False))
                 tex.bind(0)
-                for fade, spans in ((EDIT_REST_FADE, vis), (0.0, subj)) \
+                for fade, spans in ((self.edit_rest_fade, vis),
+                                    (0.0, subj)) \
                         if fading else ((0.0, vis),):
                     if not spans:
                         continue
@@ -2471,7 +2870,7 @@ class Viewport(QOpenGLWidget):
                         self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
                 tex.release(0)
             self._program.setUniformValue1f(self._loc_fade, 0.0)
-            self._program.setUniformValue(self._loc_hard_cutout, 0)
+            self._set_cutout(False)
             self._tex_faces_vao.release()
             if mode == "xray":
                 self._program.setUniformValue1f(self._loc_opacity, 1.0)
@@ -2505,13 +2904,14 @@ class Viewport(QOpenGLWidget):
             self._program.setUniformValue(self._loc_use_vcolor, 0)
             self._program.setUniformValue(self._loc_use_tex, 0)
             self._set_back_face_color()
+            self._program.setUniformValue(self._loc_back_shade, 1)
             self._dback_vao.bind()
             if split_db is None:
                 for _vs, _vc in db_draw:
                     self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
             else:
                 self._program.setUniformValue1f(self._loc_fade,
-                                                EDIT_REST_FADE)
+                                                self.edit_rest_fade)
                 for _vs, _vc in db_draw:
                     if _vs < split_db:
                         self._gl.glDrawArrays(GL_TRIANGLES, _vs, _vc)
@@ -2526,7 +2926,13 @@ class Viewport(QOpenGLWidget):
         # Instanced components (P2): eligible instances draw from their
         # prototype's local VBOs with per-instance matrices — the
         # consolidated passes above excluded them in _sync_edges.
+        # The instanced default backs shade the same way (the flag only
+        # speaks to back-facing fragments in the back colour; set for the
+        # whole call, which the recorded native replay sees too).
+        if mode in ("textures", "shaded") and not _NO_BACK_TINT:
+            self._program.setUniformValue(self._loc_back_shade, 1)
         self._draw_instanced_faces(mode, style)
+        self._program.setUniformValue(self._loc_back_shade, 0)
         # Shadows stop at the face passes: edges, overlays, previews and
         # billboards stay unlit (v1 scope).
         if getattr(self, "_frame_shadow", None) is not None:
@@ -2555,19 +2961,20 @@ class Viewport(QOpenGLWidget):
                     if tex is None:
                         continue
                     self._program.setUniformValue1f(self._loc_shade, float(shade))
-                    self._program.setUniformValue(
-                        self._loc_hard_cutout,
-                        1 if getattr(tex, "_cutout", False) else 0)
+                    self._set_cutout(getattr(tex, "_cutout", False))
                     tex.bind(0)
                     self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                     tex.release(0)
-                self._program.setUniformValue(self._loc_hard_cutout, 0)
+                self._set_cutout(False)
                 self._tex_faces_vao.release()
                 self._program.setUniformValue1f(self._loc_shade, 1.0)
                 self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_CULL_FACE)
 
         self._draw_section_fill(mode, style)
+        # Ambient occlusion (#954): onto the opaque faces only — the glass
+        # below, the billboards, highlights and every edge come after it.
+        self._apply_ambient_occlusion(w, h, mode, style)
 
         # Translucent material runs (.skp trans with useTrans): drawn
         # after everything opaque, blended, depth-tested but not depth-
@@ -2753,7 +3160,7 @@ class Viewport(QOpenGLWidget):
                     # surroundings, then the edited group's own edges at
                     # full strength.
                     self._program.setUniformValue1f(self._loc_fade,
-                                                    EDIT_REST_FADE)
+                                                    self.edit_rest_fade)
                     for _vs, _vc in _espans:
                         if _vs < split_e:
                             self._gl.glDrawArrays(GL_LINES, _vs, _vc)
@@ -2852,8 +3259,10 @@ class Viewport(QOpenGLWidget):
         # depth-write off (scaffolding must not cull anything), and none on
         # a plan sheet or a styled composer frame — a printed lámina does
         # not carry the scaffolding, and that is also how it behaved before.
-        if (self.plano_style is None and self.style_override is None
-                and getattr(self.scene, "guides", None)):
+        on_screen = (shown_guides(self.scene)
+                     if self.plano_style is None
+                     and self.style_override is None else [])
+        if on_screen:
             dist = max(float(self.camera.distance), 1e-3)
             eye = self.camera.eye() if self.camera.perspective else None
             # The dashes only change with the camera, the guides or the
@@ -2864,15 +3273,15 @@ class Viewport(QOpenGLWidget):
                    tuple((id(g), v3(g.point), v3(getattr(g, "direction",
                                                          None)),
                           v3(getattr(g, "origin", None)))
-                         for g in self.scene.guides),
+                         for g in on_screen),
                    tuple(g in self.scene.selection
-                         for g in self.scene.guides))
+                         for g in on_screen))
             cached = getattr(self, "_guides_cache", None)
             if cached is not None and cached[0] == key:
                 g_spans = cached[1]
             else:
                 g_coords, g_spans = _guide_vertices(
-                    self.scene.guides, dist * 0.03, self.scene.selection,
+                    on_screen, dist * 0.03, self.scene.selection,
                     centre=self.camera.target, reach=dist * 15.0,
                     # Parallel: one scale at every depth, nothing to adjust.
                     eye=eye)
@@ -2970,6 +3379,7 @@ class Viewport(QOpenGLWidget):
                 _content_ver(self), _cache_ver(self),
                 getattr(self, "_gpu_epoch", 0),
                 id(sc.edit_group), self._edit_rest_mode,
+                self.edit_rest_fade,
                 getattr(sc, "show_axes", True),
                 tuple((id(g), v3(g.point), v3(getattr(g, "direction", None)),
                        v3(getattr(g, "origin", None)), g in sc.selection)
@@ -2980,6 +3390,16 @@ class Viewport(QOpenGLWidget):
                 self._faces_count, self._edges_count, self._sel_faces_count,
                 self._selected_count, self.camera.fov_deg,
                 self.camera.perspective)
+
+    def _frame_cache_track(self, mvp_key) -> bool:
+        """Note this frame's view (``mvp_key``: the frame cache key's MVP
+        element, or the MVP itself when there is no key) and answer
+        whether it is the same as the last frame's — the view has
+        settled, so a picture kept now can be restored by the frames
+        after it. While the camera moves every frame's differs."""
+        prev = getattr(self, "_frame_cache_prev_mvp", None)
+        self._frame_cache_prev_mvp = mvp_key
+        return prev == mvp_key
 
     def _frame_cache_store(self, key, w, h) -> None:
         """Keep the scene FBO's colour and depth as the static passes left
@@ -3065,6 +3485,35 @@ class Viewport(QOpenGLWidget):
             self._gl.glDrawArrays(GL_LINES, 0, hover_count)
             self._hover_edges_vao.release()
             self._set_section_clip(False)
+
+    def _set_cutout(self, on) -> None:
+        """The foliage cutout switch of the face shader, and with it the
+        stencil mark the ambient occlusion skips (#954): the frame arms the
+        stencil (test always passing, ``AO_FOLIAGE_BIT`` writable) and only
+        the value a fragment leaves changes here."""
+        self._program.setUniformValue(self._loc_hard_cutout, 1 if on else 0)
+        self._gl.glStencilFunc(GL_ALWAYS, AO_FOLIAGE_BIT if on else 0, 0xFF)
+
+    def _apply_ambient_occlusion(self, w, h, mode, style=None) -> None:
+        """The ambient occlusion pass (#954, the style's switch)
+        over the faces the scene FBO holds. Wireframe and X-ray have no
+        opaque faces to darken."""
+        # The foliage marking ends with the opaque faces, AO or not.
+        self._gl.glDisable(GL_STENCIL_TEST)
+        self._gl.glStencilMask(0xFF)
+        from views import ambient_occlusion as _ao
+        settings = _ao.settings_for(style)
+        if settings is None or mode in ("wireframe", "xray"):
+            return
+        if getattr(self, "_ao", None) is None:
+            self._ao = _ao.AmbientOcclusion(self, SHADER_DIR)
+        if not self._ao.apply(self._gl, self.context().extraFunctions(),
+                              self._scene_fbo, w, h,
+                              self.camera.projection_matrix(), settings):
+            if self._ao.broken and not getattr(self, "_ao_warned", False):
+                self._ao_warned = True
+                print(f"[ambient occlusion] off: {self._ao.broken}")
+        self._program.bind()
 
     # ---- Setup helpers ------------------------------------------------------
     def _compile_program(self) -> QOpenGLShaderProgram:
@@ -3212,8 +3661,7 @@ class Viewport(QOpenGLWidget):
         # million faces baked one by one (issue #158). It draws instanced
         # now, in batches of its own under a clockwise front face
         # (``_front_face``).
-        from core.group import effective_material
-        paint = effective_material(g)
+        paint = _paint_of(self, g)
         # The answer is the prototype's (and its paint's), which the
         # placements epoch covers: once per prototype, not per placement
         # (64 000 calls per rebuild on the plant of #158, ~1.5 s an undo).
@@ -3279,6 +3727,7 @@ class Viewport(QOpenGLWidget):
                  bool(getattr(sc, "show_hidden_objects", False)),
                  bool(getattr(sc, "show_hidden_geometry", False)),
                  tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers),
+                 _layer_look_sig(sc),
                  len(sc.groups))
         live = getattr(self, "_frozen_cache_version", None) is None
         same = getattr(self, "_epoch_same", None)
@@ -3301,7 +3750,10 @@ class Viewport(QOpenGLWidget):
                        bool(getattr(sc, "show_hidden_geometry", False)),
                        # Hide Similar Components drops placements too.
                        bool(getattr(sc, "hide_similar_components", False)),
-                       tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers)]
+                       tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers),
+                       # Colour by layer and each layer's colour and
+                       # transparency change the paint a placement draws in.
+                       _layer_look_sig(sc)]
 
         loose = sc.mesh
 
@@ -3579,7 +4031,8 @@ class Viewport(QOpenGLWidget):
 
         ctx = self.scene.edit_group
 
-        def walk(node, world, dentro=None, hidden=False):
+        def walk(node, world, dentro=None, hidden=False, forced=forced,
+                 inherited=None):
             """``dentro`` = the first-level child of the open context this
             subtree hangs from, or ``None`` outside it.
 
@@ -3604,10 +4057,12 @@ class Viewport(QOpenGLWidget):
                 tops[id(proxy)] = id(group)
                 proxy.mesh = child.mesh
                 # A nested entity with no tag of its own inherits the
-                # parent's (the .skp convention); and when the parent's tag is hidden or
-                # locked the whole instance goes with it, whatever its
-                # children are tagged.
-                proxy.layer = forced or child.layer or node.layer
+                # nearest tag above it (the .skp convention); and when a tag
+                # above is hidden or locked the whole instance goes with it,
+                # whatever its children are tagged — at ANY depth, not only
+                # below the top-level object: a hidden group two levels down
+                # left its own children on screen.
+                proxy.layer = forced or child.layer or inherited or node.layer
                 proxy.billboard = child.billboard
                 # Hide on an object takes its whole subtree along, and a
                 # hidden child stays hidden inside a visible parent.
@@ -3628,9 +4083,14 @@ class Viewport(QOpenGLWidget):
                 proxy.xform = m
                 out.append(proxy)
                 if child.children:
+                    kid_forced = forced
+                    if kid_forced is None and proxy.layer:
+                        k_vis, k_locked = self.scene._layer_state(proxy)
+                        if not k_vis or k_locked:
+                            kid_forced = proxy.layer
                     walk(child, m,
                          child if (ctx is not None and node is ctx) else dentro,
-                         proxy.hidden)
+                         proxy.hidden, kid_forced, proxy.layer)
 
         walk(group, getattr(group, "xform", None), hidden=bool(group.hidden))
         return out
@@ -3642,7 +4102,6 @@ class Viewport(QOpenGLWidget):
         placements, long enough for the desktop to call IngeTrazo «not
         responding» (Marco, 01-10, #158). Pure NumPy, no GL needed."""
         import time
-        from core.group import effective_material
         groups = self._placements()
         n = max(1, len(groups))
         from views import array_bake
@@ -3654,10 +4113,10 @@ class Viewport(QOpenGLWidget):
                 continue
             try:
                 if getattr(g, "xform", None) is not None:
-                    key = (id(g.mesh), _material_sig(effective_material(g)))
+                    key = (id(g.mesh), _material_sig(_paint_of(self, g)))
                     if key not in done:
                         done.add(key)
-                        self._proto_base_chunk(g.mesh, effective_material(g))
+                        self._proto_base_chunk(g.mesh, _paint_of(self, g))
                     if not self._instanced_eligible(g):
                         self._group_chunk(g)
                 else:
@@ -3683,8 +4142,7 @@ class Viewport(QOpenGLWidget):
         bake: the silhouette pass asks for both for every placement at up
         to 12 Hz, and working them out in Python each time cost ~7 ms a
         pass on the plaza's 1 359 placements (release check, 30-09)."""
-        from core.group import effective_material
-        base = self._proto_base_chunk(g.mesh, effective_material(g))
+        base = self._proto_base_chunk(g.mesh, _paint_of(self, g))
         m = g.xform
         key = (base.get("uid"), tuple(m.data()))
         cache = getattr(self, "_placement_frames", None)
@@ -3831,7 +4289,6 @@ class Viewport(QOpenGLWidget):
         worked out again — the same pool, row for row, as one made afresh
         (a Delete or a Paste beside 21 406 placements, #158)."""
         import numpy as np
-        from core.group import effective_material
         kept = (self._epoch_kept_tops(old[0][0], key[0], ctx=True)
                 if old is not None else None)
         row = {}
@@ -3870,7 +4327,7 @@ class Viewport(QOpenGLWidget):
             # Which pool (prototype, container paint, mirror) it draws
             # in, and its matrix: fixed while the placements are, so
             # not worked out again per frame (#158: 21 406 placements).
-            paint = effective_material(g)
+            paint = _paint_of(self, g)
             mirrored = g.xform.determinant() < 0.0
             pk = (id(g.mesh), _material_sig(paint), mirrored)
             c = code_of.get(pk)
@@ -3964,21 +4421,39 @@ class Viewport(QOpenGLWidget):
     @staticmethod
     def _instances_in_frustum(lo, hi, planes, margin=0.0):
         """Mask of the boxes ``lo``/``hi`` not wholly outside one of the
-        frustum ``planes`` — moved ``margin`` world units outward."""
+        frustum ``planes`` — moved ``margin`` world units outward.
+
+        A box whose bounds are not finite is always kept: ±inf is what a
+        placement with no known extent is stored as, a NaN can creep into
+        a huge model's coordinates, and neither can be proven outside —
+        the rule ``_bounding_spheres`` and ``_visible_spans`` already
+        keep for unknown extents. Running the products on them anyway
+        multiplied inf by a zero plane component (``invalid value
+        encountered in multiply``, issue #952) and let the NaN comparison
+        drop the box."""
         import numpy as np
+        lo = np.asarray(lo)
+        hi = np.asarray(hi)
+        keep = np.ones(len(lo), dtype=bool)
+        finite = np.isfinite(lo).all(axis=1) & np.isfinite(hi).all(axis=1)
+        idx = np.flatnonzero(finite)
+        if not len(idx):
+            return keep
+        flo, fhi = lo[idx], hi[idx]
+        fkeep = np.ones(len(idx), dtype=bool)
         # Same p-vertex test as ``_aabb_visible``, all boxes at once — a
         # plane at a time on the box columns (the (planes, boxes, 3) array
         # it used to build was most of a frame's gather, #158); the same
         # products and sums, in the same order.
-        keep = np.ones(len(lo), dtype=bool)
         for pl in planes:
             nx, ny, nz, d = (float(c) for c in pl)
             if margin:
                 d += margin * (nx * nx + ny * ny + nz * nz) ** 0.5
-            px = hi[:, 0] if nx >= 0.0 else lo[:, 0]
-            py = hi[:, 1] if ny >= 0.0 else lo[:, 1]
-            pz = hi[:, 2] if nz >= 0.0 else lo[:, 2]
-            keep &= ((px * nx + py * ny) + pz * nz) + d >= 0.0
+            px = fhi[:, 0] if nx >= 0.0 else flo[:, 0]
+            py = fhi[:, 1] if ny >= 0.0 else flo[:, 1]
+            pz = fhi[:, 2] if nz >= 0.0 else flo[:, 2]
+            fkeep &= ((px * nx + py * ny) + pz * nz) + d >= 0.0
+        keep[idx] = fkeep
         return keep
 
     #: An instance whose bounding sphere spans less than this many
@@ -4263,7 +4738,9 @@ class Viewport(QOpenGLWidget):
             return [(dentro, 0.0)]
         if self._edit_rest_mode != "fade":
             return [(groups, 0.0)]
-        return [(fuera, EDIT_REST_FADE), (dentro, 0.0)]
+        fade = float(getattr(self, "_edit_rest_fade_strength",
+                             EDIT_REST_FADE))
+        return [(fuera, fade), (dentro, 0.0)]
 
     def _draw_instanced_faces_lean(self, by_proto, mode, extra) -> None:
         """The instanced faces pass of the shaded and textured styles: the
@@ -4284,7 +4761,7 @@ class Viewport(QOpenGLWidget):
         back_rgb = effective_back_color(
             getattr(self.scene, "display_style", None), self.scene)
         key = (mode, tuple(back_rgb), id(getattr(self, "_tex_cache", None)),
-               id(self._program))
+               id(self._program), self.edit_rest_fade)
         rec = getattr(self, "_lean_faces_rec", None)
         if (rec is not None and rec[0] == key and rec[1] is by_proto
                 and all(e.get("mat_batch") is b for e, b in rec[2])):
@@ -4322,6 +4799,9 @@ class Viewport(QOpenGLWidget):
 
         def set_cut(v):
             tape.uniform_i(prog, self._loc_hard_cutout, v)
+            # The foliage mark for the ambient occlusion (see _set_cutout).
+            tape.stencil_func(gl.glStencilFunc, GL_ALWAYS,
+                              AO_FOLIAGE_BIT if v else 0, 0xFF)
 
         def set_front(mirrored):
             tape.gl(gl.glFrontFace, tape.FRONT, GL_CW if mirrored else GL_CCW)
@@ -4476,14 +4956,12 @@ class Viewport(QOpenGLWidget):
                                 continue
                             self._program.setUniformValue1f(
                                 self._loc_shade, float(shade))
-                            self._program.setUniformValue(
-                                self._loc_hard_cutout,
-                                1 if getattr(tex, "_cutout", False) else 0)
+                            self._set_cutout(getattr(tex, "_cutout", False))
                             tex.bind(0)
                             extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
                             tex.release(0)
                         entry["tex_vao"].release()
-                        self._program.setUniformValue(self._loc_hard_cutout, 0)
+                        self._set_cutout(False)
                         self._program.setUniformValue1f(self._loc_shade, 1.0)
                         self._program.setUniformValue(self._loc_use_tex, 0)
                 if (entry.get("dback_count") and not _NO_BACK_TINT
@@ -4576,7 +5054,7 @@ class Viewport(QOpenGLWidget):
         changes, recorded and replayed while the batches stay (see
         :meth:`_draw_instanced_faces_lean`)."""
         prog = self._program
-        key = id(self._program)
+        key = (id(self._program), self.edit_rest_fade)
         rec = getattr(self, "_lean_edges_rec", None)
         if (rec is not None and rec[0] == key and rec[1] is by_proto
                 and all(e.get("mat_batch") is b for e, b in rec[2])):
@@ -4687,8 +5165,13 @@ class Viewport(QOpenGLWidget):
             if tex is None:
                 continue
             drawn.append((im, tex))
-        if not drawn:
+        # An image is never part of a group: inside one it is always the
+        # surroundings, and greys (or hides) with the rest of the model —
+        # it stayed in full colour on top of a grey model.
+        rest = self._edit_rest_fade(None)
+        if not drawn or rest is None:
             return
+        self._program.setUniformValue1f(self._loc_fade, rest)
         self._program.setUniformValue(self._loc_use_tex, 1)
         self._program.setUniformValue(self._loc_use_vcolor, 0)
         self._program.setUniformValue1f(self._loc_shade, 1.0)
@@ -4742,8 +5225,22 @@ class Viewport(QOpenGLWidget):
             if opaque:
                 self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
         self._program.setUniformValue1f(self._loc_opacity, 1.0)
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
         self._gl.glDepthMask(GL_TRUE)
         self._program.setUniformValue(self._loc_use_tex, 0)
+
+    def _edit_rest_fade(self, group):
+        """How a reference image (``group=None``) or a face-me figure is
+        drawn while a group is open: the fade to apply, or ``None`` to skip
+        it. These passes bypass the buffers that carry the edit split, so
+        the people and images kept their colours on a grey model."""
+        if self.scene.edit_group is None:
+            return 0.0
+        if group is not None and not self._draws_in_edit_context(group):
+            return 0.0
+        if self._edit_rest_mode == "hide":
+            return None
+        return self.edit_rest_fade if self._edit_rest_mode == "fade" else 0.0
 
     def image_plane_at(self, screen_x: float, screen_y: float,
                        selectable_only: bool = False):
@@ -4850,9 +5347,44 @@ class Viewport(QOpenGLWidget):
                 best, best_t = im, t
         return best
 
+    def pick_locked_group(self, screen_x: float, screen_y: float):
+        """The right-click's door back to a LOCKED group or component: the
+        one whose face is the front-most thing under the cursor (drawn,
+        its layer visible and unlocked), or ``None``. A locked group
+        refuses every click by design, so the context menu is the only
+        place left to offer Unlock (#782)."""
+        origin, direction = self._pixel_to_ray(screen_x, screen_y)
+        if origin is None or direction is None:
+            return None
+        import numpy as np
+        idx = self._pick_index(near=Viewport._ray_near(self, screen_x, screen_y))
+        if idx is None:
+            return None
+        hits = Viewport._face_hits(self, idx, origin, direction, "vis")
+        Viewport._drop_past_cut(self, hits, origin, direction)
+        if hits is None or not len(hits.t):
+            return None
+        i = int(np.argmin(hits.t))
+        if not np.isfinite(hits.t[i]):
+            return None
+        owner = hits.ent(i)[1]
+        for g in (owner, getattr(owner, "owner", None)):
+            if (g is not None and getattr(g, "locked", False)
+                    and hasattr(g, "children")):
+                visible, layer_locked = self.scene._layer_state(g)
+                if (visible and not layer_locked
+                        and self.scene.entity_visible(g)):
+                    return g
+                return None
+        return None
+
     def _draw_image_outlines(self, painter: QPainter) -> None:
         """Border of each reference image: faint normally, selection orange
-        when picked, so an image lying flat on the ground is still findable."""
+        when picked, so an image lying flat on the ground is still findable.
+        A LOCKED image shows it only while selected: it is a backdrop that
+        refuses clicks, and a scan's rectangle runs past the photo over its
+        transparent corners, so the faint dashes cut across the sky (Marco,
+        2026-10-27, the orthomosaic of playa Yanque)."""
         images = getattr(self.scene, "image_planes", None)
         if not images:
             return
@@ -4862,7 +5394,10 @@ class Viewport(QOpenGLWidget):
         for im in images:
             if not self.scene.entity_visible(im):
                 continue
-            painter.setPen(sel_pen if im in selection else pen)
+            picked = im in selection
+            if getattr(im, "locked", False) and not picked:
+                continue
+            painter.setPen(sel_pen if picked else pen)
             for a, b in im.border_edges():
                 seg = self._clip_segment_front(a, b)
                 if seg is None:
@@ -4960,10 +5495,9 @@ class Viewport(QOpenGLWidget):
         of ``face``, each picked against the paint that side shows — its
         material colour (or the open group's paint), the two-sided back
         paint, or the style's back-face tint."""
-        from core.group import effective_material
         from core.materials import effective_attrs
         attrs = effective_attrs(face.attrs,
-                                effective_material(self.scene.edit_group))
+                                _paint_of(self, self.scene.edit_group))
         tex = attrs.get("texture")
         if tex is not None and tex.get("path"):
             front = None                      # a texture: colour unknown
@@ -5130,7 +5664,8 @@ class Viewport(QOpenGLWidget):
                         # one's address met its entry — the scale figure
                         # «transported» into an opened file (issue #75).
                         "_billboard_world", "_placement_proxies",
-                        "_placement_tops", "_arc_mid_by_mesh")
+                        "_placement_tops", "_arc_mid_by_mesh",
+                        "_billboard_extents", "_figure_tokens")
 
     def reset_document_caches(self) -> None:
         """Forget the previous document's chunks at the document boundary.
@@ -5210,6 +5745,7 @@ class Viewport(QOpenGLWidget):
                 "_ghost_edges_vao", "_ghost_edges_vbo", "_ghost_vcol_vao",
                 "_ghost_vcol_vbo", "_ghost_tex_vao", "_ghost_tex_vbo",
                 "_depth_fbo", "_scene_fbo", "_shadow_fbo", "_depth_snap",
+                "_fine_shadow_fbo",
                 "_frame_cache_fbo", "_frame_cache")
 
     def _forget_context_objects(self) -> None:
@@ -5219,6 +5755,7 @@ class Viewport(QOpenGLWidget):
         for name in self._LAZY_GL:
             if getattr(self, name, None) is not None:
                 setattr(self, name, None)
+        self._frame_cache_prev_mvp = None   # the kept picture is forgotten
         self._fbo_size = (0, 0)
         if getattr(self, "_proto_draw", None):
             self._proto_draw = {}
@@ -5265,6 +5802,9 @@ class Viewport(QOpenGLWidget):
                 terrain.destroy()
                 self._terrain_texture = None
             self._release_photo_textures_unsafe()
+            if getattr(self, "_ao", None) is not None:
+                self._ao.release()
+                self._ao = None
         finally:
             self.doneCurrent()
 
@@ -5350,7 +5890,8 @@ class Viewport(QOpenGLWidget):
     def upload_terrain(self, terrain) -> None:
         """Build the terrain VBO (pos+uv) and its mosaic texture from a
         :class:`~georef.terrain.TerrainObject`."""
-        if terrain is None or not terrain.vertices or not terrain.triangles:
+        if (terrain is None or not terrain.vertices or not terrain.triangles
+                or self._program is None):        # no GL 3.3 to draw it
             self._terrain_count = 0
             return
         self.makeCurrent()
@@ -5436,7 +5977,7 @@ class Viewport(QOpenGLWidget):
         is slow enough that the caller does it off the GUI thread); anything
         missing simply draws untextured rather than blocking here.
         """
-        if mesh is None or mesh.triangle_count == 0:
+        if mesh is None or mesh.triangle_count == 0 or self._program is None:
             self.release_photo_textures()
             self._photo_count = 0
             self.update()
@@ -5661,6 +6202,19 @@ class Viewport(QOpenGLWidget):
 
     # ---- Sun shadows (core/sun.py) ------------------------------------------
     _SHADOW_MAP_SIZE = 2048
+    #: The map an exported picture draws with (``render_image``'s
+    #: ``sharp_shadows``): drawn once per picture, so its cost does not
+    #: matter the way the view's does. Capped by the driver's texture size.
+    _SHADOW_EXPORT_SIZE = 8192
+    _shadow_size = _SHADOW_MAP_SIZE
+
+    def _export_shadow_size(self) -> int:
+        try:
+            v = self._gl.glGetIntegerv(GL_MAX_TEXTURE_SIZE)
+            cap = int(v[0] if hasattr(v, "__len__") else v)
+        except (TypeError, ValueError, IndexError):
+            cap = self._SHADOW_MAP_SIZE
+        return max(self._SHADOW_MAP_SIZE, min(self._SHADOW_EXPORT_SIZE, cap))
     #: The .skp translucency rule: materials under 70 % opacity cast no
     #: shadow — the sun passes through glass.
     _SHADOW_OPACITY_MIN = 0.7
@@ -5699,10 +6253,30 @@ class Viewport(QOpenGLWidget):
         return (x, y, d[2])
 
     @staticmethod
-    def _light_vp(d, lo, hi):
+    def _light_vp(d, lo, hi, fit=None):
         """The sun's orthographic view-projection fitted around the model —
         and around the z=0 ground patch that receives. Ortho keeps the
-        packed depth linear."""
+        packed depth linear.
+
+        ``fit`` = ``(cx, cy, half)`` in the sun's view plane narrows the map
+        to that square (#958: what the settled view shows, see
+        ``_settle_shadow_fit``); along the sun it still spans the whole
+        model, so a caster off screen still throws its shadow in."""
+        view, r = Viewport._light_view(d, lo, hi)
+        proj = QMatrix4x4()
+        # Eye sits 2r from center; everything lives within r of it.
+        if fit is None:
+            proj.ortho(-r, r, -r, r, r * 0.5, r * 3.5)
+        else:
+            cx, cy, half = fit
+            proj.ortho(cx - half, cx + half, cy - half, cy + half,
+                       r * 0.5, r * 3.5)
+        return proj * view
+
+    @staticmethod
+    def _light_view(d, lo, hi):
+        """The sun's view matrix round the model, and the radius ``r`` of
+        the sphere the model and its ground patch fit in."""
         cx = (lo.x() + hi.x()) / 2.0
         cy = (lo.y() + hi.y()) / 2.0
         loz = min(lo.z(), 0.0)
@@ -5717,15 +6291,18 @@ class Viewport(QOpenGLWidget):
               else QVector3D(0.0, 1.0, 0.0))
         view = QMatrix4x4()
         view.lookAt(eye, center, up)
-        proj = QMatrix4x4()
-        # Eye sits 2r from center; everything lives within r of it.
-        proj.ortho(-r, r, -r, r, r * 0.5, r * 3.5)
-        return proj * view
+        return view, r
 
-    def _ensure_shadow_map(self):
+    def _ensure_shadow_map(self, mvp=None):
         """Build or reuse the packed-depth shadow map. Camera-independent:
         keyed by geometry version + sun + cut + bounds, so orbit and zoom
-        REUSE it — only an edit, the clock or the section rebuilds."""
+        REUSE it — only an edit, the clock or the section rebuilds.
+
+        Once the view has settled (``mvp`` the same as when
+        ``_settle_shadow_fit`` measured what it shows), a second map of the
+        same size spread over only that returns instead (#958): a plaza of
+        100 m seen from a bench goes from 5 cm to millimetres per texel.
+        The moment the camera moves the whole-model map is back."""
         d = self._sun_dir_now()
         self._frame_sun = d
         if d is None:
@@ -5756,28 +6333,138 @@ class Viewport(QOpenGLWidget):
         # died with «setUniformValue(15, None)». Marco, 2026-09-17,
         # exporting the sheets of Plaza Yanque to PDF.
         vp = self._light_vp(d, lo, hi)
+        fine = self._fine_shadow_map(d, lo, hi, key, mvp)
+        if fine is not None:
+            return fine
         if self._shadow_fbo is not None and self._shadow_key == key:
             self._shadow_vp = vp
             return self._shadow_fbo
         if self._shadow_fbo is None:
             fmt = QOpenGLFramebufferObjectFormat()
             fmt.setAttachment(QOpenGLFramebufferObject.CombinedDepthStencil)
-            self._shadow_fbo = QOpenGLFramebufferObject(
-                self._SHADOW_MAP_SIZE, self._SHADOW_MAP_SIZE, fmt)
+            size = self._shadow_size
+            self._shadow_fbo = QOpenGLFramebufferObject(size, size, fmt)
+            while not self._shadow_fbo.isValid() and size > self._SHADOW_MAP_SIZE:
+                size //= 2                   # a driver short of memory
+                self._shadow_fbo = QOpenGLFramebufferObject(size, size, fmt)
         self._render_shadow_map(vp)
         self._shadow_key = key
         self._shadow_vp = vp
         return self._shadow_fbo
 
-    def _render_shadow_map(self, light_vp) -> None:
+    #: How long the view must stay put before the fitted map is drawn (#958).
+    SHADOW_SETTLE_MS = 200
+
+    def _fine_shadow_map(self, d, lo, hi, key, mvp):
+        """The fitted map for this frame (#958), built on first use; None
+        while the view moves, in an export, or with nothing measured yet."""
+        fit = getattr(self, "_shadow_fit", None)
+        if (fit is None or mvp is None or self._export_size is not None
+                or fit[0] != (tuple(mvp.data()), key)):
+            return None
+        fkey = (key, fit[1])
+        vp = self._light_vp(d, lo, hi, fit[1])
+        fbo = getattr(self, "_fine_shadow_fbo", None)
+        if fbo is not None and getattr(self, "_fine_shadow_key", None) == fkey:
+            self._shadow_vp = vp
+            return fbo
+        if fbo is None:
+            fmt = QOpenGLFramebufferObjectFormat()
+            fmt.setAttachment(QOpenGLFramebufferObject.CombinedDepthStencil)
+            fbo = self._fine_shadow_fbo = QOpenGLFramebufferObject(
+                self._SHADOW_MAP_SIZE, self._SHADOW_MAP_SIZE, fmt)
+            if not fbo.isValid():
+                self._fine_shadow_fbo = None
+                return None
+        self._render_shadow_map(vp, fbo)
+        self._fine_shadow_key = fkey
+        self._shadow_vp = vp
+        return fbo
+
+    def _settle_shadow_fit(self, mvp, w, h) -> None:
+        """After a frame drawn with the whole-model map: once the view has
+        stayed put ``SHADOW_SETTLE_MS`` (no button held), read which
+        surfaces it shows from its depth and remember the square they span
+        in the sun's view plane; the next frame draws the fitted map over
+        it (#958). Any camera move, edit or clock change starts over."""
+        if self._export_size is not None or self._frame_shadow is None:
+            return
+        d = getattr(self, "_frame_sun", None)
+        lo, hi = self.scene.bounds()
+        if d is None or lo is None:
+            return
+        state = (tuple(mvp.data()), self._shadow_key)
+        fit = getattr(self, "_shadow_fit", None)
+        if fit is not None and fit[0] == state:
+            return                                  # already fitted
+        if getattr(self, "_shadow_settle_state", None) != state:
+            self._shadow_settle_state = state
+            self._shadow_settle_due = False
+            timer = getattr(self, "_shadow_settle_timer", None)
+            if timer is None:
+                timer = self._shadow_settle_timer = QTimer(self)
+                timer.setSingleShot(True)
+                timer.timeout.connect(self._shadow_settled)
+            timer.start(self.SHADOW_SETTLE_MS)
+            return
+        from PySide6.QtWidgets import QApplication
+        if (not getattr(self, "_shadow_settle_due", False)
+                or QApplication.mouseButtons() != Qt.NoButton):
+            return
+        self._shadow_settle_due = False
+        rect = self._visible_light_square(mvp, w, h, d, lo, hi)
+        self._scene_fbo.bind()
+        self._gl.glViewport(0, 0, w, h)
+        if rect is not None:
+            self._shadow_fit = (state, rect)
+            self.update()
+
+    def _shadow_settled(self) -> None:
+        self._shadow_settle_due = True
+        self.update()
+
+    def _visible_light_square(self, mvp, w, h, d, lo, hi):
+        """The square, in the sun's view plane, that the surfaces this frame
+        shows span — from its depth, every 8th pixel — with a margin; None
+        when the sky fills the view or it would not be smaller than the
+        whole-model map."""
+        import numpy as np
+        depth = self._read_scene_depth(w, h)
+        if depth is None:
+            return None
+        step = 8
+        z = depth[::step, ::step]
+        iy, ix = np.nonzero(z < 1.0)
+        if ix.size == 0:
+            return None
+        zz = z[iy, ix].astype(np.float64)
+        nx = (ix * step + 0.5) / w * 2.0 - 1.0
+        ny = (iy * step + 0.5) / h * 2.0 - 1.0
+        inv, ok = mvp.inverted()
+        if not ok:
+            return None
+        view, r = self._light_view(d, lo, hi)
+        m = np.array((view * inv).data(), dtype=np.float64).reshape(4, 4).T
+        clip = np.stack([nx, ny, zz * 2.0 - 1.0, np.ones_like(nx)])
+        p = m @ clip
+        px, py = p[0] / p[3], p[1] / p[3]
+        x0, x1, y0, y1 = px.min(), px.max(), py.min(), py.max()
+        # Margin: the gaps between sampled pixels, and the PCF kernel.
+        half = max(x1 - x0, y1 - y0) * 0.5 * 1.08 + 0.05
+        if half >= r * 0.9:
+            return None                 # the whole model: nothing to gain
+        return (round(float(x0 + x1) * 0.5, 4), round(float(y0 + y1) * 0.5, 4),
+                round(float(half), 4))
+
+    def _render_shadow_map(self, light_vp, fbo=None) -> None:
         """Depth-from-the-sun pass: every caster — the consolidated face
         VBOs plus ALL instanced components (no camera culling here: an
         off-screen tree still throws its shadow into the frame) — drawn
         with the depth program into the packed-depth FBO. The active
         section cut applies, so severed geometry does not cast. The caller
         restores the scene FBO/program bindings this pass borrows."""
-        size = self._SHADOW_MAP_SIZE
-        fbo = self._shadow_fbo
+        fbo = self._shadow_fbo if fbo is None else fbo
+        size = fbo.width()
         fbo.bind()
         self._gl.glViewport(0, 0, size, size)
         self._gl.glClearColor(1.0, 1.0, 1.0, 1.0)
@@ -6030,7 +6717,7 @@ class Viewport(QOpenGLWidget):
         self._preview_groups = set(map(id, groups))
         self._preview_epoch = getattr(self, "_preview_epoch", 0) + 1
         self._preview_offset = QVector3D(0.0, 0.0, 0.0)
-        if not self._preview_groups:
+        if not self._preview_groups or self._program is None:
             return
         self.makeCurrent()
         try:
@@ -6155,14 +6842,12 @@ class Viewport(QOpenGLWidget):
                 if tex is None:
                     continue
                 self._program.setUniformValue1f(self._loc_shade, float(shade))
-                self._program.setUniformValue(
-                    self._loc_hard_cutout,
-                    1 if getattr(tex, "_cutout", False) else 0)
+                self._set_cutout(getattr(tex, "_cutout", False))
                 tex.bind(0)
                 self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                 tex.release(0)
             self._program.setUniformValue1f(self._loc_shade, 1.0)
-            self._program.setUniformValue(self._loc_hard_cutout, 0)
+            self._set_cutout(False)
             self._pv_tex_vao.release()
             self._program.setUniformValue(self._loc_use_tex, 0)
         n = getattr(self, "_pv_edges_count", 0)
@@ -6338,6 +7023,60 @@ class Viewport(QOpenGLWidget):
                 face, face.triangulate(self._normal_of(face)))
         return hit[1]
 
+    #: A face this big (corners, holes included) is worth handing to the
+    #: native earcut ahead of ``_tris_of``.
+    NATIVE_TRIS_MIN_CORNERS = 64
+
+    def _seed_tris_native(self, faces) -> None:
+        """Fill ``_tris_of``'s memo for the big faces among ``faces`` in one
+        call to the engine's earcut (``face_geometry``: the same port, node
+        for node, triangulating with the same unit normal — its parity is
+        tests/test_face_geometry_native.py). A vector-art figure from an
+        imported file is faces with thousands of holes: the Python earcut
+        took ~40 s over the villa's 18 (issue #1006). Without the Rust
+        engine nothing happens and ``_tris_of`` works as always."""
+        import sys
+        import numpy as np
+        import core._native as _native
+        nat = _native.native
+        if nat is None or _native.qt_hypot() is None:
+            return
+        memo = getattr(self, "_tri_memo", None)
+        if memo is None or memo[0] != _cache_ver(self):
+            memo = self._tri_memo = (_cache_ver(self), {})
+        big = []
+        for f in faces:
+            if not hasattr(f, "loop") or len(f.loop) < 3:
+                continue
+            hit = memo[1].get(id(f))
+            if hit is not None and hit[0] is f:
+                continue
+            rings = [f.vertices] + [h for h in f.holes if len(h) >= 3]
+            if sum(len(r) for r in rings) >= self.NATIVE_TRIS_MIN_CORNERS:
+                big.append((f, rings))
+        if not big:
+            return
+        pts, sizes, counts = [], [], []
+        for _f, rings in big:
+            counts.append(len(rings))
+            for r in rings:
+                sizes.append(len(r))
+                pts.extend(r)
+        pos = np.array([(p.x(), p.y(), p.z()) for p in pts], np.float32)
+        try:
+            out = nat.face_geometry(
+                pos, np.arange(len(pts), dtype=np.int64),
+                np.asarray(sizes, np.int64), np.asarray(counts, np.int64),
+                _native.qt_hypot(), sys.version_info >= (3, 12))
+        except Exception:  # noqa: BLE001 — then the Python earcut
+            return
+        tris_u, tri_face_u = out[6], out[7]
+        per_face: list = [[] for _ in big]
+        for (a, b, c), fi in zip(tris_u.tolist(), tri_face_u.tolist()):
+            per_face[fi].append((pts[a], pts[b], pts[c]))
+        for (f, _rings), tris in zip(big, per_face):
+            memo[1][id(f)] = (f, tris)
+
     def _normal_of(self, face):
         """``face.normal()`` memoised per scene version (see _tris_of):
         the shading of every loose face recomputes the Newell normal 3-4
@@ -6484,8 +7223,18 @@ class Viewport(QOpenGLWidget):
         return total
 
     def _sync_edges(self) -> None:
-        if _cache_ver(self) == self._edges_version:
+        # The style's Front color bakes into the default faces without a
+        # version bump (a style edit is not a document edit): a new tint
+        # re-runs the sync, whose content key sees it through the
+        # placements epoch (``_layer_look_sig``).
+        tint = (None if getattr(self, "plano_style", None) is not None
+                else _front_tint(getattr(self, "style_override", None)
+                                 or getattr(self.scene, "display_style",
+                                            None)))
+        if _cache_ver(self) == self._edges_version \
+                and tint == getattr(self, "_edges_front_tint", None):
             return
+        self._edges_front_tint = tint
         _st0 = _time_mod.perf_counter() if _PERF else 0.0
 
         # The scene changed: purge hover/selection references to entities that
@@ -6512,9 +7261,17 @@ class Viewport(QOpenGLWidget):
                     return id(ent) in (alive_e if isinstance(ent, Edge)
                                        else alive_f)
             else:
+                # A mesh the experimental engine has not built yet holds no
+                # Edge/Face object, so nothing can be alive in it: asking it
+                # built every lazy group of the villa (~0.5 s) on the first
+                # click inside an opened group (issue #1006). The active
+                # mesh — where a selection inside a group lives — first.
+                act = self.scene.mesh
                 gmeshes = [g.mesh for g in self._placements()
                            if self.scene.entity_visible(g)
-                           and not getattr(g, "billboard", False)]
+                           and not getattr(g, "billboard", False)
+                           and "_deferred" not in g.mesh.__dict__]
+                gmeshes.sort(key=lambda gm: gm is not act)
 
                 # A hidden face/edge the hidden view shows is selectable,
                 # and a selection it took must not be dropped here: a
@@ -6762,9 +7519,15 @@ class Viewport(QOpenGLWidget):
 
         # Inside an open group its faces are the loose mesh, and the
         # group's own paint (issue #47) must still dress the default ones.
-        from core.group import effective_material as _eff_mat
         from core.materials import effective_attrs as _eff_attrs
-        ctx_paint = _eff_mat(self.scene.edit_group)
+        ctx_paint = _paint_of(self, self.scene.edit_group)
+        # Curved surfaces shade smooth (#131): the faces that can have a
+        # smooth corner, and one smoother for the whole pass so faces that
+        # share a vertex share its fan.
+        from formats.meshexport import SmoothNormals
+        curved_loose = (_curved_faces(self.scene.loose_mesh)
+                        if not hide_rest else set())
+        smoother = SmoothNormals()
 
         def bucket_face(face):
             if face in suppressed_faces:
@@ -6800,12 +7563,18 @@ class Viewport(QOpenGLWidget):
             # vertex, so the whole pass is ONE draw call.
             r, g, b = self._shaded_color(base, self._normal_of(face))
             buf = array("f")
-            for t0, t1, t2 in self._tris_of(face):
-                buf.extend([
-                    t0.x(), t0.y(), t0.z(), r, g, b,
-                    t1.x(), t1.y(), t1.z(), r, g, b,
-                    t2.x(), t2.y(), t2.z(), r, g, b,
-                ])
+            if face in curved_loose:
+                tris = [tuple(t.toTuple() for t in tri)
+                        for tri in self._tris_of(face)]
+                buf.extend(_smooth_vcol(face, base, (r, g, b), smoother,
+                                        tris, self._LIGHT))
+            else:
+                for t0, t1, t2 in self._tris_of(face):
+                    buf.extend([
+                        t0.x(), t0.y(), t0.z(), r, g, b,
+                        t1.x(), t1.y(), t1.z(), r, g, b,
+                        t2.x(), t2.y(), t2.z(), r, g, b,
+                    ])
             if op < 0.999:
                 tcol_runs.setdefault((round(op, 3), fcull),
                                      []).append(buf.tobytes())
@@ -6910,6 +7679,7 @@ class Viewport(QOpenGLWidget):
                 # it is hidden.
                 sink["vcol"], sink["tex"] = subj_vcol, subj_by_texture
                 sink["dback"] = subj_dback
+                curved_loose.update(_curved_faces(g.mesh))
                 for face in g.mesh.faces:
                     bucket_face(face)   # push/pull preview suppresses faces
                 sink["vcol"], sink["tex"] = vcol, by_texture
@@ -7117,7 +7887,8 @@ class Viewport(QOpenGLWidget):
                 tuple(sorted(getattr(self, "_preview_groups", None) or ())),
                 frozenset(map(id, sup)) if sup else None,
                 bool(getattr(sc, "show_hidden_objects", False)),
-                bool(getattr(sc, "show_hidden_geometry", False)))
+                bool(getattr(sc, "show_hidden_geometry", False)),
+                getattr(self, "_edges_front_tint", None))
 
     def _sync_selection_buffers(self) -> None:
         """The selection's highlight buffers (``_sync_edges``)."""
@@ -7249,6 +8020,47 @@ class Viewport(QOpenGLWidget):
             return cam.eye() - anchor
         return cam.eye() - cam.target
 
+    def _figure_token(self, group):
+        """What a face-me figure's cached data (placed mesh, extent, draw
+        arrays) depends on: its OWN mesh — the object and a content
+        fingerprint (coordinates, paint, counts) — and its matrix. Unlike
+        the model's content version it does not move when something ELSE
+        is drawn or painted, or when a group is opened or closed: keyed on
+        that version, every edit re-triangulated the
+        villa's 18 vector-art figures (~4 s per stroke, paint or Esc,
+        issue #1006). The coordinate walk (~3 ms for 9 000 vertices) is
+        paid only when the figure's own mesh was edited."""
+        memo = getattr(self, "_figure_tokens", None)
+        if memo is None:
+            memo = self._figure_tokens = {}
+        mesh = group.mesh
+        cv = _content_ver(self)
+        xf = getattr(group, "xform", None)
+        # The matrix is read every time: a placement can be moved in place
+        # without a version bump (the face-me quad of a moved copy).
+        xft = None if xf is None else tuple(xf.data())
+        hit = memo.get(id(group))
+        if hit is not None and hit[0] == cv and hit[1] is mesh \
+                and hit[2] is group and hit[3][1] == xft:
+            return hit[3]
+        # Geometry moves only through the mesh's mutation primitives, which
+        # bump its serial: while it holds, the coordinate walk is skipped
+        # and only the paint — which bypasses them — is re-read (17 faces).
+        # The serial is not in the token itself: the experimental engine
+        # builds a lazy mesh on first touch (drawing elsewhere does it),
+        # bumping the serial of a figure whose content did not change.
+        serial = getattr(mesh, "_mut_serial", None)
+        if (hit is not None and hit[1] is mesh and serial is not None
+                and hit[4] == serial):
+            geo = hit[5]
+        else:
+            geo = self._mesh_fingerprint(mesh)
+        token = (id(mesh), xft, geo, self._faces_paint_fp(mesh))
+        if len(memo) > 4096:
+            memo.clear()
+        memo[id(group)] = (cv, mesh, group, token, serial, geo)
+        return token
+
     def _billboard_mesh(self, group):
         """A billboard's mesh in WORLD space. A face-me placed INSIDE a
         component — the torito on the arch, brought in with the arch —
@@ -7262,7 +8074,7 @@ class Viewport(QOpenGLWidget):
         cache = getattr(self, "_billboard_world", None)
         if cache is None:
             cache = self._billboard_world = {}
-        key = (id(group.mesh), tuple(xf.data()), _cache_ver(self))
+        key = self._figure_token(group)
         hit = cache.get(id(group))
         if hit is not None and hit[0] == key:
             return hit[1]
@@ -7273,19 +8085,59 @@ class Viewport(QOpenGLWidget):
         cache[id(group)] = (key, placed)
         return placed
 
+    def _billboard_extent(self, group):
+        """(anchor, width, height, texture path) of a billboard as placed,
+        before any turn or drag preview — or ``None`` for an empty one.
+        Remembered per model content: a vector-art figure from an imported
+        file carries thousands of vertices, and the walk over them ran for
+        every figure on every click (38 figures, ~250 ms per click on the
+        villa of issue #1006)."""
+        key = self._figure_token(group)
+        cache = getattr(self, "_billboard_extents", None)
+        if cache is None:
+            cache = self._billboard_extents = {}
+        hit = cache.get(id(group))
+        if hit is not None and hit[0] == key:
+            return hit[1]
+        verts = self._billboard_mesh(group).vertices
+        if not verts:
+            ext = None
+        else:
+            xs = [v.position.x() for v in verts]
+            ys = [v.position.y() for v in verts]
+            zs = [v.position.z() for v in verts]
+            anchor = QVector3D((min(xs) + max(xs)) / 2,
+                               (min(ys) + max(ys)) / 2, min(zs))
+            # Planar width: hypot handles a sprite plane at any yaw (an
+            # imported face-me sits wherever its baked transform left it);
+            # an axis-aligned quad gives the same value as before.
+            w = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+            h = max(zs) - min(zs)
+            tex = None
+            for f in group.mesh.faces:
+                t = f.attrs.get("texture")
+                if t and t.get("path"):
+                    tex = t["path"]
+                    break
+            # tex may stay None for a vector-art face-me (solid-colour
+            # faces, e.g. a 2D person from an imported file): picking,
+            # outline and snap still need the quad; the legacy textured-quad
+            # render skips texture-less groups.
+            ext = (anchor, w, h, tex)
+        if len(cache) > 4096:
+            cache.clear()
+        cache[id(group)] = (key, ext)
+        return ext
+
     def _billboard_quad(self, group, face_dir=None):
         """The face-me quad of a billboard group, rotated around its vertical
         anchor axis to face the camera NOW (or ``face_dir`` when given).
         Returns (corners[4], tex_path) or ``None``. Shared by the render
         pass, picking and the shadow casters."""
-        verts = self._billboard_mesh(group).vertices
-        if not verts:
+        ext = self._billboard_extent(group)
+        if ext is None:
             return None
-        xs = [v.position.x() for v in verts]
-        ys = [v.position.y() for v in verts]
-        zs = [v.position.z() for v in verts]
-        anchor = QVector3D((min(xs) + max(xs)) / 2,
-                           (min(ys) + max(ys)) / 2, min(zs))
+        anchor, w, h, tex = ext
         # A billboard being Move/Rotate-dragged previews through THIS pass
         # (its raw mesh quad in the scratch VBOs showed the texture swimming
         # and ignored the face-me turn): carry the preview transform on the
@@ -7298,20 +8150,6 @@ class Viewport(QOpenGLWidget):
                 off = getattr(self, "_preview_offset", None)
                 if off is not None:
                     anchor = anchor + off
-        # Planar width: hypot handles a sprite plane at any yaw (an imported
-        # face-me sits wherever its baked transform left it); an axis-aligned
-        # quad gives the same value as before.
-        w = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
-        h = max(zs) - min(zs)
-        tex = None
-        for f in group.mesh.faces:
-            t = f.attrs.get("texture")
-            if t and t.get("path"):
-                tex = t["path"]
-                break
-        # tex may stay None for a vector-art face-me (solid-colour faces,
-        # e.g. a 2D person from a .skp file): picking/outline/snap still need the
-        # quad; the legacy textured-quad render skips texture-less groups.
         if w < 1e-9 or h < 1e-9:
             return None
         # Facing: the camera by default; the shadow pass passes the SUN so a
@@ -7352,6 +8190,10 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue(self._loc_hard_cutout, 1)
         self._billboard_vao.bind()
         for g in groups:
+            fade = self._edit_rest_fade(g)
+            if fade is None:
+                continue
+            self._program.setUniformValue1f(self._loc_fade, fade)
             if getattr(g, "billboard", False) == "mesh":
                 # Imported face-me silhouette: its REAL geometry (a cut
                 # outline, not a rectangle) turns toward the camera.
@@ -7380,6 +8222,7 @@ class Viewport(QOpenGLWidget):
                 # Selection cue: repaint with the highlight colour untextured.
                 pass
         self._billboard_vao.release()
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
         self._program.setUniformValue(self._loc_hard_cutout, 0)
         self._program.setUniformValue(self._loc_use_tex, 0)
 
@@ -7416,18 +8259,20 @@ class Viewport(QOpenGLWidget):
     def _faceme_base(self, g):
         """Cached base data of a mesh face-me billboard: interleaved pos+uv
         arrays per image, the vertical anchor axis and the horizontal base
-        normal. Rebuilt when the scene changes (sprites are tiny)."""
+        normal. Rebuilt when the MODEL changes, not on a click: a vector-art
+        figure from an imported file is faces with thousands of holes, and
+        triangulating the villa's 18 again after every selection was the
+        ~5 s per click of issue #1006."""
         cache = getattr(self, "_faceme_cache", None)
         if cache is None:
             cache = self._faceme_cache = {}
-        xf = getattr(g, "xform", None)
-        key = (self.scene.version, id(self.scene.mesh),
-               None if xf is None else tuple(xf.data()))
+        key = self._figure_token(g)
         cur = cache.get(id(g))
         if cur is not None and cur[0] == key:
             return cur[1]
         import numpy as np
         mesh = self._billboard_mesh(g)       # world space, matrix applied
+        self._seed_tris_native(mesh.faces)
         by_tex: dict = {}
         by_color: dict = {}      # rgb tuple -> interleaved pos+uv (uv unused)
         n0 = None
@@ -7787,7 +8632,6 @@ class Viewport(QOpenGLWidget):
         frame. ``(table, rest)``: ``rest`` are the placements it does not
         take (loose groups, face-me, a singular matrix)."""
         import numpy as np
-        from core.group import effective_material
         ids = tuple(map(id, groups))
         key = (self._placements_epoch(), ids)
         memo = getattr(self, "_sil_table", None)
@@ -7836,7 +8680,7 @@ class Viewport(QOpenGLWidget):
                     or getattr(g, "billboard", False):
                 rest.append(g)
                 continue
-            base = self._proto_base_chunk(g.mesh, effective_material(g))
+            base = self._proto_base_chunk(g.mesh, _paint_of(self, g))
             if base["soft_pts"] is None:
                 continue                      # nothing curved to outline
             box, inv = self._placement_frame(g)
@@ -8012,8 +8856,7 @@ class Viewport(QOpenGLWidget):
         profiles on, the 21 000 placements of issue #158 baked 14 million
         faces the instanced draw never needed."""
         import numpy as np
-        from core.group import effective_material
-        base = self._proto_base_chunk(g.mesh, effective_material(g))
+        base = self._proto_base_chunk(g.mesh, _paint_of(self, g))
         if base["soft_pts"] is None:
             return b""
         bb, inv = self._placement_frame(g)
@@ -8501,7 +9344,7 @@ class Viewport(QOpenGLWidget):
             painter.setBrush(QColor.fromRgbF(r, g, b, 0.85))
             painter.drawEllipse(QPointF(px, py), 6.5, 6.5)
         elif snap.kind in ("endpoint", "origin", "component_origin", "on_edge",
-                           "on_axis",
+                           "on_axis", "intersection_edge", "intersection_face",
                            "on_line", "extension", "from_point", "aligned",
                            "tangent"):
             rect = QRectF(px - 7, py - 7, 14, 14)
@@ -8576,7 +9419,50 @@ class Viewport(QOpenGLWidget):
         # In the group's OWN axes, like the selection cue: on a rotated
         # object a world-aligned box reads as skewed and wraps mostly air.
         from core.group import oriented_box_corners
-        return oriented_box_corners(*self._group_obb(group))
+        frame, lo, hi = self._group_obb(group)
+        tight = oriented_box_corners(frame, lo, hi)
+
+        # Size the gutter in screen pixels. This keeps the dotted cue clearly
+        # separate from a cuboid's solid edges at every useful zoom level,
+        # without making the box of a long object needlessly large.
+        projected = [p for p in (self._world_to_pixel(c) for c in tight)
+                     if p is not None]
+        extent_px = 0.0
+        if projected:
+            xs, ys = zip(*projected)
+            extent_px = max(max(xs) - min(xs), max(ys) - min(ys))
+        pad_px = min(EDIT_BOX_PAD_MAX_PX,
+                     max(EDIT_BOX_PAD_MIN_PX,
+                         extent_px * EDIT_BOX_PAD_RATIO))
+
+        centre = sum(tight[1:], QVector3D(tight[0])) / len(tight)
+        span = float(self.camera.distance)
+        if self.camera.perspective:
+            depth = QVector3D.dotProduct(
+                centre - self.camera.eye(), self.camera.forward())
+            if math.isfinite(depth) and depth > 1e-9:
+                span = depth
+        world_per_px = (2.0 * max(span, 1e-9)
+                        * math.tan(math.radians(self.camera.fov_deg) / 2.0)
+                        / max(self.height(), 1))
+        pad = pad_px * world_per_px
+        padded_lo = tuple(float(v) - pad for v in lo)
+        padded_hi = tuple(float(v) + pad for v in hi)
+        return oriented_box_corners(frame, padded_lo, padded_hi)
+
+    def edit_group_box_contains_pixel(self, x: float, y: float) -> bool:
+        """Whether ``(x, y)`` lies inside the visible dotted edit box.
+
+        This is the click boundary for stepping out of a group/component.
+        Geometry need not fill its box: clicking the deliberate empty margin,
+        or a hole in an irregular object, keeps the current edit context.
+        """
+        corners = self._edit_group_box_corners()
+        if corners is None:
+            return False
+        projected = [p for p in (self._world_to_pixel(c) for c in corners)
+                     if p is not None]
+        return _point_in_screen_hull(x, y, projected)
 
     # ---- Section planes ------------------------------------------------------
     def _set_section_clip(self, on: bool) -> None:
@@ -8627,7 +9513,8 @@ class Viewport(QOpenGLWidget):
             return
         selection = self.scene.selection
         for sp in planes:
-            if getattr(sp, "hidden", False):
+            if getattr(sp, "hidden", False) \
+                    or not self.scene.entity_visible(sp):
                 continue                    # its frame is off; a cut stays
             corners = self.section_plane_frame(sp)
             px = []
@@ -8712,7 +9599,8 @@ class Viewport(QOpenGLWidget):
             return None
         best, best_d = None, self.pick_threshold_px
         for sp in planes:
-            if getattr(sp, "hidden", False):
+            if getattr(sp, "hidden", False) \
+                    or not self.scene.entity_selectable(sp):
                 continue
             corners = self.section_plane_frame(sp)
             for i in range(4):
@@ -9079,7 +9967,7 @@ class Viewport(QOpenGLWidget):
         the depth buffer hides them behind geometry (issue #23). A cross is
         a screen-space mark a few pixels wide, not a line through the
         model, so it stays in the overlay where its size is in pixels."""
-        guides = getattr(self.scene, "guides", None)
+        guides = shown_guides(self.scene)
         if not guides:
             return
         pen = QPen(QColor(70, 90, 120), 1, Qt.DashLine)
@@ -9423,7 +10311,11 @@ class Viewport(QOpenGLWidget):
                     if self._occluded_on_screen(w):
                         continue
                     if ends == "tick":
-                        ox, oy = -uy * 4.0, ux * 4.0
+                        # 45° to the line, «/» on a horizontal one, as on
+                        # the sheet (composer.oblique_tick_angle); it was
+                        # square to the line, not oblique (#741)
+                        k = 4.0 * math.sqrt(0.5)
+                        ox, oy = (ux + uy) * k, (uy - ux) * k
                         painter.drawLine(QPointF(cx - ox, cy - oy),
                                          QPointF(cx + ox, cy + oy))
                     else:
@@ -9455,31 +10347,178 @@ class Viewport(QOpenGLWidget):
     @staticmethod
     def _format_dim_value(metres: float, style: dict) -> str:
         """Format a length (metres) per the dimension style: unit + precision
-        (see :mod:`core.units` — metric, decimal or fractional imperial)."""
+        (see :mod:`core.units` — metric, decimal or fractional imperial),
+        with or without the unit symbol (#374)."""
         from core.units import format_length
         return format_length(metres, style.get("units", "m"),
-                             int(style.get("decimals", 2)))
+                             int(style.get("decimals", 2)),
+                             bool(style.get("show_unit", True)))
+
+    #: Screen pixels between the occlusion samples of a long annotation
+    #: line (``_draw_occluded_segment``), and the most samples it takes.
+    _OCCLUSION_STEP_PX = 12.0
+    _OCCLUSION_MAX_SAMPLES = 128
+    #: Where a line goes behind something, its sample step is cut in this
+    #: many parts this many times: 1/64 of a step, under a pixel.
+    _OCCLUSION_SPLIT = 8
+    _OCCLUSION_ROUNDS = 2
 
     def _draw_occluded_segment(self, painter: QPainter, p3a: QVector3D,
                                p3b: QVector3D, samples: int = 16) -> None:
         """Draw the 3D segment ``p3a``–``p3b`` in screen space, skipping the
-        parts hidden behind solid geometry (CPU occlusion sample). A sub-segment
-        is drawn only when both its sampled ends are visible, so the line never
-        bleeds over the solid; the silhouette gap is sub-pixel at this density."""
-        prev_px = None
-        prev_vis = False
-        for i in range(samples + 1):
-            t = i / samples
-            w = p3a + (p3b - p3a) * t
-            px = self._world_to_pixel(w)
-            vis = px is not None and not self._occluded_on_screen(w)
-            if prev_px is not None and px is not None and prev_vis and vis:
-                painter.drawLine(QPointF(*prev_px), QPointF(*px))
-            prev_px, prev_vis = px, vis
+        parts hidden behind solid geometry (CPU occlusion sample).
+
+        The line is sampled about every ``_OCCLUSION_STEP_PX`` on screen (at
+        least ``samples`` steps), and where one sample is seen and the next
+        is not, the point where it goes behind is pinned by halving the
+        step — the line stops AT the silhouette. Drawing only the steps
+        whose both ends were seen cut it back a whole sixteenth at a time,
+        and the cut jumped from step to step as the view turned: the
+        dimensions clipped in and out behind other surfaces (issue #918).
+
+        The samples are projected and tested as one batch
+        (``_project_samples``): doing it point by point rebuilt the camera's
+        projection*view matrix for every sample — 432 rebuilds a frame for
+        eight dimensions — and ran a NumPy 3x3 reduction per sample (#439)."""
+        d = p3b - p3a
+
+        def at(ts):
+            return [p3a + d * t for t in ts]
+
+        mvp = self.camera.projection_matrix() * self.camera.view_matrix()
+        ea = self._world_to_pixel(p3a, mvp)
+        eb = self._world_to_pixel(p3b, mvp)
+        n = samples
+        if ea is not None and eb is not None:
+            span = math.hypot(eb[0] - ea[0], eb[1] - ea[1])
+            n = max(samples, min(self._OCCLUSION_MAX_SAMPLES,
+                                 int(span / self._OCCLUSION_STEP_PX)))
+        ts = [i / n for i in range(n + 1)]
+        res = self._project_samples(at(ts))
+        pxs = [px for px, _v in res]
+        vis = [px is not None and v for px, v in res]
+        # The steps that change from seen to hidden (or back): each is cut
+        # in ``_OCCLUSION_SPLIT`` and narrowed to the part where it flips,
+        # every cut step in one batch per round.
+        cuts = [i for i in range(n)
+                if pxs[i] is not None and pxs[i + 1] is not None
+                and vis[i] != vis[i + 1]]
+        edge: dict = {}
+        if cuts:
+            k = self._OCCLUSION_SPLIT
+            lo = {i: ts[i] for i in cuts}          # t on sample i's side
+            hi = {i: ts[i + 1] for i in cuts}
+            edge = {i: pxs[i] if vis[i] else pxs[i + 1] for i in cuts}
+            for _ in range(self._OCCLUSION_ROUNDS):
+                probe = [(i, lo[i] + (hi[i] - lo[i]) * j / k)
+                         for i in cuts for j in range(1, k)]
+                got = self._project_samples(at([t for _i, t in probe]))
+                for c, i in enumerate(cuts):
+                    row = got[c * (k - 1):(c + 1) * (k - 1)]
+                    tt = [t for _i, t in probe[c * (k - 1):(c + 1) * (k - 1)]]
+                    new_lo, new_hi = lo[i], hi[i]
+                    for (px, v), t in zip(row, tt):
+                        if (px is not None and v) == vis[i]:
+                            new_lo = t
+                            if vis[i]:
+                                edge[i] = px      # the last seen, so far
+                        else:
+                            new_hi = t
+                            if not vis[i]:
+                                edge[i] = px      # the first seen, so far
+                            break
+                    lo[i], hi[i] = new_lo, new_hi
+        for i in range(n):
+            a, b = pxs[i], pxs[i + 1]
+            if a is None or b is None:
+                continue
+            if vis[i] and vis[i + 1]:
+                painter.drawLine(QPointF(*a), QPointF(*b))
+            elif edge.get(i) is not None:
+                start = a if vis[i] else b
+                painter.drawLine(QPointF(*start), QPointF(*edge[i]))
+
+    def _project_samples(self, pts: list[QVector3D]):
+        """Project ``pts`` to screen pixels and test each one against the
+        frame's depth snapshot, as a single batch: the camera's MVP is built
+        once for the whole run, and the snapshot's 3x3 depth test runs as one
+        NumPy gather instead of a slice-and-max per point (#439).
+
+        The answers are the ones ``_world_to_pixel`` and
+        ``_occluded_on_screen`` give point by point — the live camera's
+        matrix for the pixel, the snapshot's own for the test, the same
+        tolerances — and without a snapshot (or NumPy) this defers to those
+        per-point paths. Returns a list of ``(pixel, visible)`` pairs, with
+        ``pixel`` None for a point behind the camera."""
+        mvp = self.camera.projection_matrix() * self.camera.view_matrix()
+        snap = getattr(self, "_depth_snap", None)
+        if snap is None:
+            return [(self._world_to_pixel(p, mvp),
+                     not self._occluded_on_screen(p)) for p in pts]
+        try:
+            import numpy as np
+        except Exception:  # noqa: BLE001 — never break the paint
+            return [(self._world_to_pixel(p, mvp),
+                     not self._occluded_on_screen(p)) for p in pts]
+        buf, smvp, inv, sw, sh, eye, fwd = snap
+
+        def rows(m):
+            return np.array([[m.row(r).x(), m.row(r).y(),
+                              m.row(r).z(), m.row(r).w()]
+                             for r in range(4)], dtype=np.float64)
+
+        p4 = np.array([(p.x(), p.y(), p.z(), 1.0) for p in pts],
+                      dtype=np.float64)
+        with np.errstate(all="ignore"):
+            # The pixel, with the live camera (as _world_to_pixel).
+            clip = p4 @ rows(mvp).T
+            cw = clip[:, 3]
+            ndc = clip[:, :2] / cw[:, None]
+            pxs = (ndc[:, 0] * 0.5 + 0.5) * self.width()
+            pys = (1.0 - (ndc[:, 1] * 0.5 + 0.5)) * self.height()
+            pixels = [None if c <= 0 else (float(x), float(y))
+                      for c, x, y in zip(cw, pxs, pys)]
+            # The occlusion test, with the snapshot's matrices (as
+            # _occluded_on_screen): untested points stay visible.
+            occluded = np.zeros(len(pts), dtype=bool)
+            c = p4 @ rows(smvp).T
+            w = c[:, 3]
+            nx = c[:, 0] / w
+            ny = c[:, 1] / w
+            ix = ((nx + 1.0) * 0.5 * sw).astype(np.int64)
+            iy = ((ny + 1.0) * 0.5 * sh).astype(np.int64)
+            live = (w > 1e-9) & (ix >= 0) & (ix < sw) & (iy >= 0) & (iy < sh)
+            if live.any():
+                # The FARTHEST depth of the 3x3 around each pixel: gathering
+                # with the indices clamped to the frame reads the edge
+                # pixels twice, which a max does not see — the same values
+                # the per-point clamped slice takes, without copying the
+                # frame to pad it.
+                gx, gy = ix[live], iy[live]
+                d = np.maximum.reduce(
+                    [buf[np.clip(gy + dy, 0, sh - 1),
+                         np.clip(gx + dx, 0, sw - 1)]
+                     for dy in (-1, 0, 1) for dx in (-1, 0, 1)]
+                ).astype(np.float64)
+                near = d < 1.0                       # else background
+                if near.any():
+                    idx = np.flatnonzero(live)[near]
+                    q = np.column_stack(
+                        [nx[idx], ny[idx], d[near] * 2.0 - 1.0,
+                         np.ones(len(idx))]) @ rows(inv).T
+                    qw = q[:, 3]
+                    ok = np.abs(qw) >= 1e-12
+                    surf = q[:, :3] / np.where(ok, qw, 1.0)[:, None]
+                    eye_a = np.array([eye.x(), eye.y(), eye.z()])
+                    fwd_a = np.array([fwd.x(), fwd.y(), fwd.z()])
+                    along_pt = (p4[idx, :3] - eye_a) @ fwd_a
+                    along_surf = (surf - eye_a) @ fwd_a
+                    tol = np.maximum(0.02, 0.003 * np.abs(along_pt))
+                    occluded[idx] = ok & (along_surf < along_pt - tol)
+        return [(px, not occ) for px, occ in zip(pixels, occluded)]
 
     def _draw_inference_marker(self, painter: QPainter) -> None:
-        """Green endpoint-style square where the active tool's distance
-        inference is engaged (Push/Pull snapping level with a corner or face)."""
+        """Snap cue where the active tool's distance inference is engaged."""
         tool = self.active_tool
         provider = getattr(tool, "inference_marker", None) if tool is not None else None
         if not callable(provider):
@@ -9491,9 +10530,10 @@ class Viewport(QOpenGLWidget):
         # The same colours and words as the snap markers: a corner is the
         # endpoint green, an edge the on-edge red, a face the on-face blue
         # — the classic cue says "On edge" while you push level with one.
-        from core.snap import (COLOR_ENDPOINT, COLOR_ON_EDGE, COLOR_ON_FACE,
-                               COLOR_ORIGIN)
+        from core.snap import (COLOR_ENDPOINT, COLOR_MIDPOINT, COLOR_ON_EDGE,
+                               COLOR_ON_FACE, COLOR_ORIGIN)
         palette = {
+            "midpoint": (COLOR_MIDPOINT, "midpoint"),
             "origin": (COLOR_ORIGIN, "origin"),
             "edge": (COLOR_ON_EDGE, "on_edge"),
             "face": (COLOR_ON_FACE, "on_face"),
@@ -9522,12 +10562,22 @@ class Viewport(QOpenGLWidget):
         if pixel is None:
             return
         px, py = pixel
+        diamond = QPolygonF([
+            QPointF(px, py - 9), QPointF(px + 9, py),
+            QPointF(px, py + 9), QPointF(px - 9, py),
+        ]) if kind == "midpoint" else None
         painter.setPen(QPen(QColor(255, 255, 255, 230), 4.0))
         painter.setBrush(Qt.NoBrush)
-        painter.drawRect(QRectF(px - 6, py - 6, 12, 12))
+        if diamond is not None:
+            painter.drawPolygon(diamond)
+        else:
+            painter.drawRect(QRectF(px - 6, py - 6, 12, 12))
         painter.setPen(QPen(color, 2.4))
         painter.setBrush(QColor.fromRgbF(*rgb, 0.30))
-        painter.drawRect(QRectF(px - 6, py - 6, 12, 12))
+        if diamond is not None:
+            painter.drawPolygon(diamond)
+        else:
+            painter.drawRect(QRectF(px - 6, py - 6, 12, 12))
         text = tr(self._SNAP_LABELS.get(label, ""))
         if text:
             font = QFont()
@@ -9642,9 +10692,19 @@ class Viewport(QOpenGLWidget):
             "Drawing plane locked: {plane}", plane=PLANE_LOCK_NAMES[axis]))
 
     def _draw_inference_label(self, painter: QPainter) -> None:
-        """Show 'On Red Axis' style label when soft inference is active."""
+        """Show 'On Red Axis' style label when an axis inference is active.
+
+        The soft cue offers Shift; the magnetic lock (``kind == "axis"``,
+        reached here only when no explicit arrow lock is held) is already
+        committed, so it reads without the Shift offer (#962)."""
         snap = self.last_snap
-        if snap is None or snap.kind != "axis_inference":
+        if snap is None:
+            return
+        if snap.kind == "axis_inference":
+            suffix = " (hold Shift to lock)"
+        elif snap.kind == "axis":
+            suffix = ""
+        else:
             return
         names = {"x": "Red", "y": "Green", "z": "Blue"}
         name = names.get(snap.axis or "", "?")
@@ -9654,7 +10714,7 @@ class Viewport(QOpenGLWidget):
         font.setItalic(True)
         painter.setFont(font)
         painter.setPen(QPen(QColor.fromRgbF(r, g, b, 0.95)))
-        painter.drawText(QPointF(14, 44), f"On {name} Axis (hold Shift to lock)")
+        painter.drawText(QPointF(14, 44), f"On {name} Axis{suffix}")
 
     def _draw_reference_label(self, painter: QPainter) -> None:
         if self.reference_mode is None or self.reference_edge is None:
@@ -10177,13 +11237,12 @@ class Viewport(QOpenGLWidget):
             return best
         tmin = t[k].min()
         k = k[t[k] == tmin]
-        from core.group import effective_material
         groups = self._pick_lazy_table()[0]
         lazy_pos = self._pick_cands_memo[3]
         win = None
         for i, r in zip(pl[k].tolist(), tr[k].tolist()):
             g = groups[i]
-            base = self._proto_base_chunk(g.mesh, effective_material(g))
+            base = self._proto_base_chunk(g.mesh, _paint_of(self, g))
             j = int(base["tri_ent"][r])
             key = (lazy_pos[id(g)][0], j)
             if win is None or key < win[0]:
@@ -10590,9 +11649,16 @@ class Viewport(QOpenGLWidget):
             return ((ndc_x * 0.5 + 0.5) * w, (1.0 - (ndc_y * 0.5 + 0.5)) * h)
         return world_to_pixel
 
-    def _world_to_pixel(self, world: QVector3D) -> Optional[tuple[float, float]]:
-        """World point → screen pixel (or None if behind the camera)."""
-        mvp = self.camera.projection_matrix() * self.camera.view_matrix()
+    def _world_to_pixel(self, world: QVector3D,
+                        mvp: Optional[QMatrix4x4] = None
+                        ) -> Optional[tuple[float, float]]:
+        """World point → screen pixel (or None if behind the camera).
+
+        ``mvp`` lets a caller projecting a run of points in one frame pass
+        the projection*view it already built instead of paying a rebuild —
+        two matrix builds and a multiply — for every point (#439)."""
+        if mvp is None:
+            mvp = self.camera.projection_matrix() * self.camera.view_matrix()
         clip = mvp.map(QVector4D(world.x(), world.y(), world.z(), 1.0))
         if clip.w() <= 0:
             return None
@@ -10613,6 +11679,29 @@ class Viewport(QOpenGLWidget):
         for v in mesh.vertices:
             p = v.position
             s += p.x() + p.y() * 1.000003 + p.z() * 1.000007
+        a = Viewport._faces_paint_fp(mesh)
+        soft = 0
+        hid = 0
+        for i, e in enumerate(mesh.edges):
+            if getattr(e, "soft", False):
+                soft += 1
+            if getattr(e, "hidden", False):
+                # Index-sensitive (not a count): Hide edge A + undo + hide
+                # edge B leaves the count equal while the baked edge VBO
+                # differs. Deterministic mix, no hash() — the disk digest
+                # reuses this term across runs.
+                hid ^= ((i + 1) * 2654435761) & 0xFFFFFFFF
+        fp = (len(mesh.vertices), len(mesh.edges), len(mesh.faces),
+              round(s, 4), a, soft, hid)
+        # Reverse Faces changes none of the above (#197): the mesh counts
+        # its flips, and only a flipped mesh carries the extra term.
+        wr = getattr(mesh, "_winding_rev", 0)
+        return fp + (("winding", wr),) if wr else fp
+
+    @staticmethod
+    def _faces_paint_fp(mesh) -> int:
+        """The paint term of :meth:`_mesh_fingerprint`: every face attr a
+        render bakes, mixed with the face's index."""
         a = 0
         for i, f in enumerate(mesh.faces):
             if f.attrs:
@@ -10635,23 +11724,7 @@ class Viewport(QOpenGLWidget):
                            f.attrs.get("opacity"),
                            repr(back) if back else None,
                            bool(f.attrs.get("hidden"))))
-        soft = 0
-        hid = 0
-        for i, e in enumerate(mesh.edges):
-            if getattr(e, "soft", False):
-                soft += 1
-            if getattr(e, "hidden", False):
-                # Index-sensitive (not a count): Hide edge A + undo + hide
-                # edge B leaves the count equal while the baked edge VBO
-                # differs. Deterministic mix, no hash() — the disk digest
-                # reuses this term across runs.
-                hid ^= ((i + 1) * 2654435761) & 0xFFFFFFFF
-        fp = (len(mesh.vertices), len(mesh.edges), len(mesh.faces),
-              round(s, 4), a, soft, hid)
-        # Reverse Faces changes none of the above (#197): the mesh counts
-        # its flips, and only a flipped mesh carries the extra term.
-        wr = getattr(mesh, "_winding_rev", 0)
-        return fp + (("winding", wr),) if wr else fp
+        return a
 
     def _group_fp(self, group):
         """Fingerprint of a group's mesh, memoised per scene version — the
@@ -10824,12 +11897,11 @@ class Viewport(QOpenGLWidget):
         the cached arrays instead of re-transforming."""
         import numpy as np
         mesh = group.mesh
-        from core.group import effective_material
         # A painted instance (issue #47) bakes its own variant of the
         # prototype: default faces in the container's paint. Unpainted
         # siblings keep sharing the plain bake.
         base = self._group_chunk(
-            _proto_wrapper(self, mesh, effective_material(group)))
+            _proto_wrapper(self, mesh, _paint_of(self, group)))
         xf = group.xform
         key = (base["uid"], tuple(xf.data()))
         cache = getattr(self, "_inst_chunks", None)
@@ -11085,9 +12157,8 @@ class Viewport(QOpenGLWidget):
         # The container's paint (issue #47) changes what default faces
         # bake to without touching the mesh, so no serial or sample can
         # notice it: it is part of the entry's identity instead.
-        from core.group import effective_material
         from core.materials import effective_attrs, material_sig
-        paint = effective_material(group)
+        paint = _paint_of(self, group)
         msig = material_sig(paint)
         if entry is not None and entry.get("msig") != msig:
             entry = None
@@ -11248,6 +12319,9 @@ class Viewport(QOpenGLWidget):
             if memo is None or len(memo) > 2 * len(mesh.faces) + 64:
                 memo = mesh.__dict__["_face_geom_memo"] = {}
             built = memo
+        from formats.meshexport import SmoothNormals
+        curved = _curved_faces(mesh)
+        smoother = SmoothNormals()
         for f in mesh.faces:
             if f.attrs.get("hidden"):
                 # Hide on a face: out of the chunk entirely — not
@@ -11299,14 +12373,17 @@ class Viewport(QOpenGLWidget):
                     dest = None
                 else:
                     dest = vcol
+                if f in curved:
+                    rows = _smooth_vcol(f, base, rgb, smoother, tri_list,
+                                        self._LIGHT)
+                else:
+                    rows = [x for t0, t1, t2 in tri_list
+                            for x in (*t0, r, g, b, *t1, r, g, b,
+                                      *t2, r, g, b)]
                 if dest is None:
-                    buf = array("f")
-                    for t0, t1, t2 in tri_list:
-                        buf.extend([*t0, r, g, b, *t1, r, g, b, *t2, r, g, b])
-                    fcull_vcol_parts.append(buf.tobytes())
-                    dest = array("f")   # discarded sink for the shared loop
-                for t0, t1, t2 in tri_list:
-                    dest.extend([*t0, r, g, b, *t1, r, g, b, *t2, r, g, b])
+                    fcull_vcol_parts.append(array("f", rows).tobytes())
+                else:
+                    dest.extend(rows)
             tris.extend(geom[6])
             tri_ent.extend([i] * len(tri_list))
             if tri_list and back_is_default(fattrs):
@@ -11477,6 +12554,11 @@ class Viewport(QOpenGLWidget):
             # Flipped this session (#197): never the digest of the same
             # mesh before the flip, which would serve its old winding.
             h.update(repr(fp[7]).encode())
+        if fp[5]:
+            # Soft edges shade smooth since #131: a chunk stored before
+            # bakes the curved surface flat. Only meshes with soft edges
+            # take the term, so the rest keep their digests.
+            h.update(b"smooth-shading")
         if fp[6]:
             # Hidden-edge term, only when some edge IS hidden: meshes without
             # any (the overwhelming majority) keep their pre-existing digests,
@@ -11821,7 +12903,6 @@ class Viewport(QOpenGLWidget):
         if memo is not None and memo[0] is table:
             return memo[1]
         import numpy as np
-        from core.group import effective_material
         groups = table[0]
         cache = getattr(self, "_inst_proto_cache", None) or {}
         keep: dict = {}
@@ -11834,7 +12915,7 @@ class Viewport(QOpenGLWidget):
             if k is None:
                 # Every placement of a mesh has the same triangles and hard
                 # edges, whatever its paint: one bake (the first one's).
-                base = self._proto_base_chunk(g.mesh, effective_material(g))
+                base = self._proto_base_chunk(g.mesh, _paint_of(self, g))
                 ckey = (base.get("uid"), base.get("rev"))
                 ip = cache.get(ckey)
                 if ip is None:
@@ -12764,6 +13845,7 @@ class Viewport(QOpenGLWidget):
         ea: list = []
         eb: list = []
         esel: list = []
+        esnap: list = []
         esoft: list = []
         for e in scene.edges:
             edges.append(e)
@@ -12778,6 +13860,13 @@ class Viewport(QOpenGLWidget):
                         and (not getattr(e, "hidden", False)
                              or bool(getattr(scene, "show_hidden_geometry",
                                              False))))
+            # Snapping is a different question from selecting: a locked
+            # edge is no target for a click and a fine target for a
+            # dimension, while an edge that draws nothing is neither. The
+            # same rule the snap scene applies (Scene.edge_snappable), kept
+            # here so the corner a from-point acquires cannot come from a
+            # line the user cannot see.
+            esnap.append(scene.edge_snappable(e))
 
         idx = SimpleNamespace(
             entities=entities,
@@ -12797,6 +13886,7 @@ class Viewport(QOpenGLWidget):
             edge_a=np.asarray(ea, dtype=np.float64) if edges else None,
             edge_b=np.asarray(eb, dtype=np.float64) if edges else None,
             edge_sel=np.asarray(esel, dtype=bool) if edges else None,
+            edge_snap=np.asarray(esnap, dtype=bool) if edges else None,
             edge_soft=np.asarray(esoft, dtype=bool) if edges else None,
             gedge_a=gedge_a,
             gedge_b=gedge_b,
@@ -13104,7 +14194,6 @@ class Viewport(QOpenGLWidget):
         may meet; which it meets, and where, is decided here by the pick
         index's own test."""
         import numpy as np
-        from core.group import effective_material
         iset, _snap, vis = nat
         rows = Viewport._lazy_sel_rows(self, nat) if which == "sel" else vis
         if not len(rows):
@@ -13129,7 +14218,7 @@ class Viewport(QOpenGLWidget):
             if base is None:
                 g = groups[i]
                 base = bases[i] = self._proto_base_chunk(
-                    g.mesh, effective_material(g))
+                    g.mesh, _paint_of(self, g))
             key = (i, int(base["tri_ent"][r]))
             if tt < best.get(key, float("inf")):
                 best[key] = tt
@@ -13173,9 +14262,15 @@ class Viewport(QOpenGLWidget):
                 and cached[3] is nat):
             return cached[1]
         hits = Viewport._face_hits(self, idx, origin, direction, "sel")
+        Viewport._drop_past_cut(self, hits, origin, direction)
+        self._hover_hits_cache = (key, hits, idx, nat)
+        return hits
+
+    def _drop_past_cut(self, hits, origin, direction) -> None:
+        """Hits beyond the active cut are on clipped-away geometry: their
+        ``t`` becomes ``inf``, in place."""
         sp = _active_cut(self.scene)
         if sp is not None and hits is not None and len(hits.t):
-            # Hits beyond the active cut are on clipped-away geometry.
             import numpy as np
             o = np.array([origin.x(), origin.y(), origin.z()])
             d = np.array([direction.x(), direction.y(), direction.z()])
@@ -13184,8 +14279,6 @@ class Viewport(QOpenGLWidget):
             pts = o + d * hits.t[:, None]
             hidden = (pts @ n - c) > 1e-6
             hits.t = np.where(hidden, np.inf, hits.t)
-        self._hover_hits_cache = (key, hits, idx, nat)
-        return hits
 
     def edge_point_under_cursor(self, edge, screen_x: float, screen_y: float):
         """The world point of ``edge`` nearest the cursor (closest point of
@@ -13922,10 +15015,12 @@ class Viewport(QOpenGLWidget):
         if plan is not None:
             # A lazy mesh: its curves from the planned edges, the same
             # chains in the same order, nothing built.
-            ab = plan.edges.tolist()
-            for i, cid in enumerate(plan.curve):
-                if cid is not None:
-                    by_curve.setdefault(cid, []).append(ab[i])
+            # (only the curve edges listed: listing all of them was
+            # most of the first hover over the plant of #158)
+            curved = _plan_curved_edges(plan)
+            ab = plan.edges[curved].tolist()
+            for k, i in enumerate(curved.tolist()):
+                by_curve.setdefault(plan.curve[i], []).append(ab[k])
         else:
             for e in mesh.edges:
                 cid = getattr(e, "curve", None)
@@ -14007,7 +15102,10 @@ class Viewport(QOpenGLWidget):
         pseudo-edges (``Guide.a/.b`` span the long segment), and — when the
         cursor position is given — the group edges near it plus the face-me
         billboard anchors, so drawing and dimensioning over an imported
-        reference model snaps to its corners and edges."""
+        reference model snaps to its corners and edges.
+
+        Loose edges the scene itself says are not there (hidden, or on a
+        hidden layer) are left out — see :func:`_snap_dropped_loose`."""
         # Guide lines are clipped to the part in front of the camera so the
         # snap engine gets projectable endpoints (an endpoint behind the eye
         # used to kill on-line snapping in ordinary 3D views); guide POINTS
@@ -14017,7 +15115,7 @@ class Viewport(QOpenGLWidget):
         # or the cursor locks onto its own guide (#627).
         moving = getattr(self.active_tool, "moving_guide_ids", None)
         moving = moving() if callable(moving) else ()
-        for g in getattr(self.scene, "guides", None) or []:
+        for g in shown_guides(self.scene):
             if id(g) in moving:
                 continue
             if g.is_line:
@@ -14082,13 +15180,20 @@ class Viewport(QOpenGLWidget):
                                   QVector3D(gp.position)))
         big = (px is not None
                and len(self.scene.edges) > _LOOSE_SNAP_CAP)
-        if not lines and not near and sp is None and not big and excl is None:
+        if not lines and not near and sp is None and not big and excl is None \
+                and not _snap_dropped_loose(self):
             return self.scene
         if big:
-            loose = self._nearby_loose_edges(px, py)
+            # Only the edges near the cursor are considered, so ask each one
+            # (dozens) rather than walking a mesh of 160k to build the drop
+            # set above.
+            loose = [e for e in self._nearby_loose_edges(px, py)
+                     if self.scene.edge_snappable(e)]
         else:
             loose = list(self.scene.edges)
-        loose = [e for e in loose if not getattr(e, "hidden", False)]
+            drops = _snap_dropped_loose(self)
+            if drops:
+                loose = [e for e in loose if id(e) not in drops]
         if excl is not None and excl[0]:
             loose = [e for e in loose if id(e) not in excl[0]]
         if sp is not None:
@@ -14158,9 +15263,16 @@ class Viewport(QOpenGLWidget):
             store = self._proto_pts_store = {}
         editing = self._editing_meshes()
         valid: dict = {}
+        from core.mesh import DeferredMesh
         for g, _m in iter_placements(group):
             mesh = g.mesh
-            if mesh is None or not mesh.vertices or id(mesh) in valid:
+            if mesh is None or id(mesh) in valid:
+                continue
+            # A lazy mesh still unbuilt was never edited (an edit builds
+            # it): its cached points stand, and asking for its vertices
+            # would build it -- the box over a big model built them all.
+            lazy = type(mesh) is DeferredMesh
+            if not lazy and not mesh.vertices:
                 continue
             hit = store.get(id(mesh))
             if hit is None:
@@ -14168,7 +15280,7 @@ class Viewport(QOpenGLWidget):
             serial, arr = hit
             if (id(mesh) in editing
                     or getattr(mesh, "_mut_serial", None) != serial
-                    or len(arr) != len(mesh.vertices)):
+                    or (not lazy and len(arr) != len(mesh.vertices))):
                 del store[id(mesh)]
                 continue
             valid[id(mesh)] = arr
@@ -14261,7 +15373,7 @@ class Viewport(QOpenGLWidget):
         g = pseudo.group
         mesh = getattr(g, "mesh", None)
         xf = getattr(g, "xform", None)
-        if mesh is None or not mesh.edges:
+        if mesh is None:
             return None
         inv = None
         if xf is not None:
@@ -14270,6 +15382,13 @@ class Viewport(QOpenGLWidget):
                 return None
         la = inv.map(pseudo.a) if inv is not None else pseudo.a
         lb = inv.map(pseudo.b) if inv is not None else pseudo.b
+        if not _lazy_edge_may_be_curve(mesh, la, lb):
+            # A lazy mesh with no curve edge where the lookups below could
+            # land: building it (~0.5 s for a big group of the plant of
+            # #158, on the hover that crosses into it) would answer None.
+            return None
+        if not mesh.edges:
+            return None
         # The mesh's own registry: two O(1) vertex lookups (tolerant, the
         # weld grid) and the edge between them by incidence. This used to
         # build a dict of EVERY edge of the group, keyed by rounded
@@ -14448,10 +15567,16 @@ class Viewport(QOpenGLWidget):
         return math.hypot(after[0] - before[0],
                           after[1] - before[1]) >= 0.5
 
+    def _shown_guides(self) -> list:
+        return shown_guides(self.scene)
+
     def pick_guide(self, screen_x: float, screen_y: float):
         """Return the construction guide nearest the cursor within the pick
-        threshold, or ``None`` (for the Eraser)."""
-        guides = getattr(self.scene, "guides", None)
+        threshold, or ``None`` (for the Eraser). One on a hidden or
+        locked layer is not there to pick."""
+        selectable = getattr(self.scene, "entity_selectable", None)
+        guides = [g for g in getattr(self.scene, "guides", None) or ()
+                  if selectable is None or selectable(g)]
         if not guides:
             return None
         best, best_d = None, self.pick_threshold_px
@@ -14527,6 +15652,16 @@ class Viewport(QOpenGLWidget):
         order = cand[np.argsort(d[cand])]
         if not len(order):
             return None
+        # A corner only an edge that draws nothing holds is not on screen:
+        # acquiring it as a from-point is how a phantom point gets into the
+        # next face (the same rule the snap scene applies to the edges).
+        snap_ok = None if n == 0 else getattr(idx, "edge_snap", None)
+        if snap_ok is not None:
+            order = np.asarray([i for i in order
+                                if i >= 2 * n or snap_ok[int(i) % n]],
+                               dtype=order.dtype)
+            if not len(order):
+                return None
         # The nearest one, alone first (usually the answer); then the
         # rest in batches of 8, 16, 32… sharing one occlusion pass, as the
         # snap engine reads its candidates. One ray per candidate, in turn,
@@ -14586,6 +15721,11 @@ class Viewport(QOpenGLWidget):
             lp = (ax, ay, bx, by, oka & okb)
         if lp is not None:
             ax, ay, bx, by, ok = lp
+            # Corners only an edge that draws nothing holds are not on
+            # screen (see pick_vertex).
+            snap_ok = getattr(idx, "edge_snap", None)
+            if snap_ok is not None:
+                ok = ok & snap_ok
             parts += [(ax, ay, ok, idx.edge_a), (bx, by, ok, idx.edge_b)]
         fx = getattr(idx, "gedge_fixed", None)
         m = fx[1] if fx is not None else 0
@@ -14765,13 +15905,11 @@ class Viewport(QOpenGLWidget):
         return bool(getattr(sc, "dimensions", None)
                     or getattr(sc, "text_labels", None))
 
-    def _capture_depth(self, w: int, h: int) -> None:
-        """Copy the frame's depth out of the (multisampled) scene FBO into a
-        single-sample one and read it back once. The overlay then answers
-        «is this point hidden?» with a lookup instead of a ray cast against
-        the whole model: a house from a 2018 .skp with 25 dimensions spent
-        2.8 s of every frame casting 1350 rays against 284 000 triangles
-        (Juan José Noriega's files, 26-09-2026); the read-back is ~8 ms."""
+    def _read_scene_depth(self, w: int, h: int):
+        """The frame's depth, copied out of the (multisampled) scene FBO
+        into a single-sample one and read back: an ``(h, w)`` float array,
+        or None when the driver refuses. Leaves the read framebuffer bound
+        to that copy; the caller rebinds what it draws into."""
         try:
             import numpy as np
             from PySide6.QtOpenGL import (QOpenGLFramebufferObject,
@@ -14791,7 +15929,19 @@ class Viewport(QOpenGLWidget):
             self._gl.glBindFramebuffer(GL_READ_FRAMEBUFFER, dfbo.handle())
             buf = np.empty((h, w), dtype=np.float32)
             self._gl.glReadPixels(0, 0, w, h, 0x1902, GL_FLOAT, buf)  # DEPTH
-        except Exception:  # noqa: BLE001 — fall back to rays, never break paint
+        except Exception:  # noqa: BLE001
+            return None
+        return buf
+
+    def _capture_depth(self, w: int, h: int) -> None:
+        """Copy the frame's depth out of the (multisampled) scene FBO into a
+        single-sample one and read it back once. The overlay then answers
+        «is this point hidden?» with a lookup instead of a ray cast against
+        the whole model: a house from a 2018 .skp with 25 dimensions spent
+        2.8 s of every frame casting 1350 rays against 284 000 triangles
+        (Juan José Noriega's files, 26-09-2026); the read-back is ~8 ms."""
+        buf = self._read_scene_depth(w, h)
+        if buf is None:             # fall back to rays, never break paint
             self._depth_snap = None
             return
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
@@ -15393,10 +16543,12 @@ class Viewport(QOpenGLWidget):
                 # A loose face clearly in FRONT hides the group: what the
                 # cursor shows is that face, and every caller asks for the
                 # group it can see (#276, #363, #378 — a loose box before
-                # a component could not be clicked). Coplanar faces keep
-                # the old answer.
+                # a component could not be clicked). A coplanar one too:
+                # a face drawn ON a group's face is the deliberate target,
+                # and with the group winning it could only be reached by
+                # hiding the group (#982).
                 eps = self._coplanar_eps(origin, direction, best[0])
-                if np.isfinite(loose_t) and loose_t < best[0] - eps:
+                if np.isfinite(loose_t) and loose_t <= best[0] + eps:
                     return None
                 return best[1]
         # Edge fallback (cursor over empty space, or a lines-only group):
@@ -15887,6 +17039,22 @@ class Viewport(QOpenGLWidget):
         self._edges_version = -1
         self.update()
 
+    @property
+    def edit_rest_fade(self) -> float:
+        """0..1 strength of the grey wash applied outside the edit context."""
+        return float(getattr(self, "_edit_rest_fade_strength",
+                             EDIT_REST_FADE))
+
+    def set_edit_rest_fade(self, strength: float) -> None:
+        """Set and persist the rest-of-model fade strength."""
+        strength = max(0.0, min(1.0, float(strength)))
+        if math.isclose(strength, self.edit_rest_fade, abs_tol=1e-9):
+            return
+        self._edit_rest_fade_strength = strength
+        from PySide6.QtCore import QSettings
+        QSettings().setValue("display/edit_rest_fade", strength)
+        self.update()
+
     def set_hide_similar_components(self, on: bool) -> None:
         """Hide Similar Components: the other instances of the
         component being edited leave the frame. Persisted like the rest
@@ -16156,8 +17324,11 @@ class Viewport(QOpenGLWidget):
         # landed on geometry drawn over it (the plaza on its orthomosaic):
         # the menu is the only way back to Unlock / Delete for it.
         under = self.pick_locked_image_plane(x, y)
+        # A locked group the same way: it can no longer be selected, and
+        # its Unlock lives here (#782).
         win.show_viewport_context_menu(
-            ev.globalPos(), locked_image=under if under is not picked else None)
+            ev.globalPos(), locked_image=under if under is not picked else None,
+            locked_group=self.pick_locked_group(x, y))
 
     def mousePressEvent(self, ev) -> None:
         # A new gesture starts with the inferences back on: the Alt

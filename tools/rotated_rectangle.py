@@ -66,6 +66,13 @@ class RotatedRectangleTool(AxisMagnet, PlaneLock, Tool):
         # is measured square off that edge, not from the corner.
         return self.base_point is None
 
+    @property
+    def diagonal_span(self) -> bool:
+        # For the width the span from the first corner to the cursor is a
+        # diagonal: read as a line, a thin rectangle collapsed onto it
+        # (#389, see ``compute_snap``).
+        return self.base_point is not None
+
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None   # first corner (drives plane)
         self.base_point: QVector3D | None = None     # second corner
@@ -417,6 +424,7 @@ class RotatedRectangleTool(AxisMagnet, PlaneLock, Tool):
     #: Everything else (the drawing plane, a face, an axis direction) only
     #: says where the cursor is, and is read on the protractor's plane.
     _POINT_SNAPS = frozenset({"endpoint", "midpoint", "intersection",
+                              "intersection_edge", "intersection_face",
                               "on_edge", "close", "origin", "center",
                               "centre", "on_line"})
 

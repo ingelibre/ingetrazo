@@ -383,6 +383,24 @@ class Mesh:
         """The existing vertex at ``position``, or ``None``."""
         return self._lookup(position)
 
+    def registers(self, v: Vertex) -> bool:
+        """Whether this mesh files ``v`` itself — by identity, not by what
+        stands at its position. A moved vertex that lands on another one
+        for a moment (a Move preview passing over a corner) waits in
+        ``_displaced`` while the other keeps the key: it is still this
+        mesh's vertex, and a dimension holding it must not let go (#563).
+        A vertex welded away or erased is filed nowhere."""
+        k = _key(v.position)
+        holder = self._registry.get(k)
+        if holder is v:
+            return True
+        waiting = self._displaced.get(k)
+        if waiting and any(w is v for w in waiting):
+            return True
+        if holder is None:
+            return self._probe_neighbours(k, v.position) is v
+        return False
+
     # ---- Edges --------------------------------------------------------------
     def find_edge(self, v0: Vertex, v1: Vertex) -> Optional[Edge]:
         """The edge between two vertices (either orientation), or ``None``.
@@ -445,11 +463,14 @@ class Mesh:
     def resplit_curves(self) -> None:
         """Re-partition curve ids into contiguous contours.
 
-        A curve breaks at any vertex where other geometry attaches (a non-curve
-        edge is incident) or where its own connectivity isn't a simple chain
-        (curve-degree ≠ 2). Each resulting chain keeps/gets its own id — so a
-        circle crossed by a square's edges selects as two separate arcs ('two
-        contours'). A pristine circle stays one curve."""
+        A curve breaks where its own connectivity isn't a simple chain
+        (curve-degree ≠ 2), or where other geometry attaches IN ITS PLANE (a
+        line crossing or touching the circle). Each resulting chain
+        keeps/gets its own id — so a circle crossed by a square's edges
+        selects as two separate arcs ('two contours'). A pristine circle
+        stays one curve, and so does the rim of a cylinder: its side seams
+        leave the circle's plane, and counting them broke the rim into one
+        curve per segment on every copy, explode or solid operation."""
         self._chunk_dirty = True
         self._mut_serial += 1
         global _CURVE_COUNTER
@@ -461,8 +482,27 @@ class Mesh:
             eset = set(edges)
 
             def is_break(v) -> bool:
-                cdeg = sum(1 for e in v.edges if e in eset)
-                return cdeg != 2 or len(v.edges) != cdeg
+                mine = [e for e in v.edges if e in eset]
+                if len(mine) != 2:
+                    return True
+                if len(v.edges) == 2:
+                    return False
+                p = v.position
+                a = mine[0].other(v).position - p
+                b = mine[1].other(v).position - p
+                n = QVector3D.crossProduct(a, b)
+                if n.length() <= 1e-6 * a.length() * b.length():
+                    return True              # straight through: no plane
+                n.normalize()
+                for e in v.edges:
+                    if e in eset:
+                        continue
+                    u = e.other(v).position - p
+                    length = u.length()
+                    if (length <= 1e-12
+                            or abs(QVector3D.dotProduct(u, n)) < 0.05 * length):
+                        return True
+                return False
 
             # Walk chains between break vertices; a break-free component is a
             # closed loop (one chain).
@@ -537,14 +577,38 @@ class Mesh:
         out was deleted and the leftovers were all the document had, so
         zoom-to-extents had nothing to find and could not bring him back.
 
+        The full sweep — this one plus the registry entries that point at
+        vertices the mesh no longer owns — is :meth:`purge_debris`.
+        """
+        return self.purge_debris()[0]
+
+    def purge_debris(self) -> tuple[int, int]:
+        """Deep clean: drop the vertices nothing holds and the position
+        entries that would hand one back. Returns
+        ``(vertices dropped, ghost entries dropped)``.
+
+        ``remove_face`` and ``remove_edge`` are deliberately additive — an
+        edge may border another face, a corner may be left standing as a
+        line — so whoever removes geometry that nothing else wants has to
+        say so. Erasing does (``prune_orphan_vertices``); grouping did not:
+        it carves faces and edges out of the loose mesh into a new container
+        and the corners only they used stayed behind, invisible and
+        unreferenced — eight of them for a whole box turned into a
+        component. Nothing draws them, ``bounds()`` ignores them and the
+        file format only stores what a face or an edge holds, so they die on
+        save; but for the rest of the session they stay in the position
+        registry, and the next thing drawn there welds to a ``Vertex`` the
+        mesh no longer lists.
+
+        That is the "ghost point" of the report: nothing draws it, nothing
+        picks it, and yet a new face drawn at the spot ends up cut through
+        it. The registry is therefore swept by IDENTITY, never by position
+        key: an entry whose vertex is not in ``self.vertices`` goes, and so
+        does a moved vertex still waiting in ``_displaced``.
+
         A face holds real ``Vertex`` objects in its loops, so "has no edges"
         is not enough on its own: the corners of a face with no free edges
         would go with it. Both are checked.
-
-        The position registry is cleaned by IDENTITY, in one pass. A vertex
-        that has been moved no longer hashes to the key it was filed under,
-        and a stale entry is worse than a stray vertex — the next point drawn
-        there would weld to an object that is no longer in the mesh.
         """
         used = set()
         for f in self.faces:
@@ -553,15 +617,26 @@ class Mesh:
             for hole in f.hole_loops:
                 for v in hole:
                     used.add(id(v))
-        doomed = {id(v) for v in self.vertices if not v.edges and id(v) not in used}
-        if not doomed:
-            return 0
-        self.vertices[:] = [v for v in self.vertices if id(v) not in doomed]
-        for k in [k for k, v in self._registry.items() if id(v) in doomed]:
+        doomed = {id(v) for v in self.vertices
+                  if not v.edges and id(v) not in used}
+        live = {id(v) for v in self.vertices if id(v) not in doomed}
+        ghosts = [k for k, v in self._registry.items() if id(v) not in live]
+        for k in list(self._displaced):
+            waiting = [v for v in self._displaced[k] if id(v) in live]
+            if waiting:
+                self._displaced[k] = waiting
+            else:
+                del self._displaced[k]
+        if not doomed and not ghosts:
+            return 0, 0
+        if doomed:
+            self.vertices[:] = [v for v in self.vertices
+                                if id(v) not in doomed]
+        for k in ghosts:
             del self._registry[k]
         self._chunk_dirty = True
         self._mut_serial += 1
-        return len(doomed)
+        return len(doomed), len(ghosts)
 
     def relink_vertices(self, vertices) -> None:
         """Re-attach vertices a previous :meth:`drop_orphan_vertices` took
@@ -1167,23 +1242,59 @@ class Mesh:
         special ``split_edge_in_faces`` pass plus the holes patch; here it falls
         straight out of shared connectivity. The new vertex lands collinearly,
         so faces stay flat until it is later moved (a gable ridge, a T-junction).
+
+        A face may walk the edge more than once: a slit (a line from its
+        outline to a hole, walked up and back) or a jamb two of its holes
+        share. The vertex goes into every use, and each half lists the face
+        once per use, as :meth:`add_face` lists it — the first use alone
+        left the others a segment with no edge.
         """
         v0, v1 = edge.v0, edge.v1
         mid = self.vertex(position)
         if mid is v0 or mid is v1:
             # position coincides with an endpoint → nothing to split
             return edge, edge
-        incident = list(edge.faces)
+        incident = list({id(f): f for f in edge.faces}.values())
         self.remove_edge(edge)
         e0 = self._link_edge(v0, mid)
         e1 = self._link_edge(mid, v1)
         for face in incident:
-            self._insert_into_face_loops(face, v0, v1, mid)
-            if face not in e0.faces:
-                e0.faces.append(face)
-            if face not in e1.faces:
-                e1.faces.append(face)
+            self._insert_at_every_use(face, v0, v1, mid)
+            for sub in (e0, e1):
+                missing = (self._uses(face, sub.v0, sub.v1)
+                           - sum(1 for f in sub.faces if f is face))
+                sub.faces.extend([face] * max(0, missing))
         return e0, e1
+
+    @staticmethod
+    def _insert_at_every_use(
+        face: Face, v0: Vertex, v1: Vertex, mid: Vertex
+    ) -> None:
+        """Insert ``mid`` into every ``v0``/``v1`` segment of the face: in the
+        outer loop and every hole, as many times as a loop walks it."""
+        for loop in (face.loop, *face.hole_loops):
+            i = 0
+            while i < len(loop):
+                j = (i + 1) % len(loop)
+                if (loop[i] is v0 and loop[j] is v1) or (
+                    loop[i] is v1 and loop[j] is v0
+                ):
+                    loop.insert(i + 1, mid)  # i+1 == len wraps to an append
+                    i += 2
+                else:
+                    i += 1
+
+    @staticmethod
+    def _uses(face: Face, a: Vertex, b: Vertex) -> int:
+        """How many segments of the face's loops run between ``a`` and ``b``."""
+        n = 0
+        for loop in (face.loop, *face.hole_loops):
+            m = len(loop)
+            for i in range(m):
+                p, q = loop[i], loop[(i + 1) % m]
+                if (p is a and q is b) or (p is b and q is a):
+                    n += 1
+        return n
 
     @staticmethod
     def _insert_into_face_loops(

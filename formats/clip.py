@@ -179,6 +179,29 @@ def foreign() -> dict | None:
     return decode(md.data(MIME).data())
 
 
+def own(current: dict | None, adopted_from=None) -> dict | None:
+    """The copy made in ANOTHER project of this window (projects in tabs,
+    #1066), as a clipboard of the project pasting it — or ``None`` when
+    the system clipboard holds ``current`` itself, the copy
+    ``adopted_from`` was made from, or no copy of this window.
+
+    The copy crosses through the same encoding as between windows, so
+    its materials, textures and component definitions become the pasting
+    project's own instead of objects shared with the other document."""
+    from PySide6.QtWidgets import QApplication
+    if QApplication.instance() is None:
+        return None
+    md = QApplication.clipboard().mimeData()
+    if not isinstance(md, ClipMime):
+        return None
+    if md.clip is current or md.clip is adopted_from or md.clip is None:
+        return None
+    data = md.retrieveData(MIME, None)
+    if data is None or not len(data):
+        return None
+    return decode(bytes(data.data()))
+
+
 def available() -> bool:
     """True when the system clipboard offers a model clipboard (this
     window's or another's) — for enabling Paste."""

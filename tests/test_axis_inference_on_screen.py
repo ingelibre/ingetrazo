@@ -150,7 +150,7 @@ def test_the_tools_that_ask_for_it():
     """Line (issue #31), then Move and the tape (issues #42 and #41,
     2026-09-20). The protractor does not: its arms live in the disc's
     plane, and a screen-found axis outside it is no arm. Nor does the
-    rectangle, a planar shape."""
+    rectangle, which carries no axis magnet at all."""
     from tools.line import LineTool
     from tools.move import MoveTool
     from tools.protractor import ProtractorBase

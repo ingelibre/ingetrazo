@@ -258,3 +258,49 @@ def test_a_preview_that_writes_depth_reads_it_again(win, monkeypatch):
         n = len(reads)
         vp._depth_world_at(vp.width() / 2.0, vp.height() / 2.0)
         assert len(reads) == n + 1, k
+
+
+# ---- Issue #944: the kept picture is stored once the view settles ---------
+
+def test_frame_cache_track_reports_a_settled_view():
+    # No GL needed: the settle decision itself, driven frame by frame.
+    from views.viewport import Viewport
+    vp = Viewport.__new__(Viewport)
+    assert vp._frame_cache_track((1.0, 0.0)) is False    # first frame
+    assert vp._frame_cache_track((1.0, 0.0)) is True     # same view again
+    assert vp._frame_cache_track((0.0, 1.0)) is False    # camera moved
+    assert vp._frame_cache_track((0.0, 2.0)) is False    # still moving
+    assert vp._frame_cache_track((0.0, 2.0)) is True     # settled
+
+
+def _one_paint(vp):
+    """Exactly one paint per camera step, as an orbit gets: ``_frame``
+    paints twice (the update, then the grab), and the second one already
+    sees a settled view."""
+    import views.viewport as V_
+    was, V_._FRAME_CACHE = V_._FRAME_CACHE, True
+    try:
+        return vp.grabFramebuffer()
+    finally:
+        V_._FRAME_CACHE = was
+
+
+def test_the_picture_is_kept_once_the_view_settles(win, monkeypatch):
+    w, vp = win
+    stores = []
+    real = type(vp)._frame_cache_store
+    monkeypatch.setattr(type(vp), "_frame_cache_store",
+                        lambda self, *a: (stores.append(1),
+                                          real(self, *a))[1])
+    vp.camera.set_view("iso")
+    vp.camera.fit_to(V(-7, -7, -1), V(7, 7, 4))
+    _frame(vp, True)                    # this view's first frame
+    kept = len(stores)
+    for view in ("top", "front", "iso", "top"):
+        vp.camera.set_view(view)        # an orbit: every frame moves
+        _one_paint(vp)
+    assert len(stores) == kept, "a moving view stored pictures it never reuses"
+    for _ in range(3):                  # the view stands still now
+        _one_paint(vp)
+    assert len(stores) == kept + 1, "the settled frame did not keep the picture"
+    assert vp._frame_cache is not None

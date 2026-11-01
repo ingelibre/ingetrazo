@@ -470,3 +470,30 @@ def test_context_menu_offers_unlock_and_delete_for_a_locked_image_underneath(mon
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_a_locked_image_draws_its_border_only_while_selected():
+    """A locked scan is a backdrop: its faint dashed border, which runs past
+    the photo over the transparent corners, stays hidden unless selected;
+    an unlocked image keeps it so it can be found and clicked."""
+    from types import SimpleNamespace
+
+    from views.viewport import Viewport
+
+    free, scan = _image("free.png"), _image("scan.png")
+    scan.locked = True
+    selection = set()
+    lines = []
+    painter = SimpleNamespace(setPen=lambda pen: None,
+                              drawLine=lambda a, b: lines.append(a))
+    vp = SimpleNamespace(
+        scene=SimpleNamespace(image_planes=[free, scan], selection=selection,
+                              entity_visible=lambda e: True),
+        _clip_segment_front=lambda a, b: (a, b),
+        _world_to_pixel=lambda p: (p.x(), p.y()))
+    Viewport._draw_image_outlines(vp, painter)
+    assert len(lines) == 4
+    selection.add(scan)
+    lines.clear()
+    Viewport._draw_image_outlines(vp, painter)
+    assert len(lines) == 8

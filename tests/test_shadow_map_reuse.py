@@ -84,3 +84,37 @@ def test_a_render_survives_the_same_off_on_sequence():
     finally:
         win._saved_version = vp.scene.version
         win.close()
+
+
+def test_an_exported_picture_draws_its_own_sharper_map_and_leaves_the_views():
+    """Export image and the sheets draw the sun's map for that one picture
+    at a finer size (the view's 2048 spreads a 100 m plaza over 5 cm per
+    texel); the view's own map, its key and its size come back untouched,
+    so the next frame on screen reuses it as before."""
+    win, vp = _viewport()
+    try:
+        vp.scene.shadows.enabled = True
+        vp.render_image(400, 300, overlays=False)
+        view_map, view_key = vp._shadow_fbo, vp._shadow_key
+        assert view_map is not None and view_map.width() == vp._SHADOW_MAP_SIZE
+        sizes = []
+        real = vp._render_shadow_map
+
+        def spy(light_vp):
+            sizes.append(vp._shadow_fbo.width())
+            return real(light_vp)
+
+        vp._render_shadow_map = spy
+        try:
+            assert vp.render_image(400, 300, overlays=False,
+                                   sharp_shadows=True) is not None
+            vp.render_image(400, 300, overlays=False)
+        finally:
+            del vp._render_shadow_map
+        assert sizes and sizes[0] > vp._SHADOW_MAP_SIZE   # one sharp map...
+        assert len(sizes) == 1                            # ...the view rebuilt none
+        assert vp._shadow_fbo is view_map and vp._shadow_key == view_key
+        assert vp._shadow_size == vp._SHADOW_MAP_SIZE
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()

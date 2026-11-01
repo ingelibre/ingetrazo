@@ -25,7 +25,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QVector3D
 
 from core.i18n import tr
-from core.history import SnapshotMutation
+from core.history import CommandRejected, SnapshotMutation
 from core.mesh import Edge, Face
 from core.sweep import (manual_path_extend, manual_path_start,
                         order_path_edges, orient_closed_path,
@@ -243,21 +243,23 @@ class FollowMeTool(Tool):
         self._commit(viewport, face, pts, closed)
 
     def _commit(self, viewport, face, path, closed) -> None:
-        result = {"ok": False}
+        failed = tr("Follow Me: could not sweep along that path "
+                    "(reversal or degenerate segment)")
 
         def mutate(scene):
-            result["ok"] = sweep_profile(scene.mesh, face, path, closed)
+            if not sweep_profile(scene.mesh, face, path, closed):
+                # Declined (degenerate path), mesh untouched: a no-op.
+                raise CommandRejected(failed)
 
         viewport.set_hover(None)
         self.hovered_face = None
-        viewport.history.execute(SnapshotMutation(mutate))
-        if not result["ok"]:
-            # The sweep declined (degenerate path); drop the no-op entry.
-            viewport.history.undo()
-            viewport.history.redo_stack.clear()
-            viewport.flash_status(tr(
-                "Follow Me: could not sweep along that path "
-                "(reversal or degenerate segment)"))
+        history = viewport.history
+        history.execute(SnapshotMutation(mutate))
+        if history.last_rejected or history.last_error:
+            # Declined or failed: History put the model back and recorded
+            # nothing. Never undo here — that would take the user's own
+            # previous step, and clear what they could redo.
+            viewport.flash_status(history.last_rejected or failed)
         else:
             viewport.scene.selection.clear()
         viewport.update()

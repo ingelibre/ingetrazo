@@ -245,6 +245,40 @@ class TestDefaultCajetin:
         assert caj.y_mm + caj.h_mm == pytest.approx(ph - 10.0)
 
 
+class TestFieldNames:
+    def test_english_and_german_names_expand_like_the_spanish_one(self):
+        from core.composition import expand_fields, set_field_context
+        c = Composicion(name="A-01")
+        c.cajetin = c.default_cajetin()
+        c.cajetin.proyecto = "Plaza"
+        set_field_context(comp=c, index=1, total=3)
+        try:
+            assert expand_fields("{proyecto} {project} {Projekt}") == \
+                "Plaza Plaza Plaza"
+            assert expand_fields("{hoja}/{total} {blatt}/{gesamt} "
+                                 "{page}/{total}") == "2/3 2/3 2/3"
+            assert expand_fields("{n} {otro}") == "{n} {otro}"
+        finally:
+            set_field_context()
+
+    def test_tooltips_name_the_fields_in_the_language_running(self):
+        from core.composition import local_field_names
+        from core.i18n import current_language, set_language
+        text = "Fields like {escala}, {lamina} and {n} expand."
+        before = current_language()
+        try:
+            set_language("de")
+            assert local_field_names(text) == \
+                "Fields like {massstab}, {plannr} and {n} expand."
+            set_language("en")
+            assert local_field_names(text) == \
+                "Fields like {scale}, {sheet} and {n} expand."
+            set_language("es")
+            assert local_field_names(text) == text
+        finally:
+            set_language(before)
+
+
 class TestIgzPersistence:
     def test_compositions_survive_the_igz_round_trip(self, tmp_path):
         from core.scene import Scene

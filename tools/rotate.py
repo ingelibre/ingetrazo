@@ -554,7 +554,7 @@ class RotateTool(ProtractorBase):
                             for g in groups)
                 if positions:
                     cmds.append(RotateVerticesCommand(
-                        positions, start, axis, deg))
+                        positions, start, axis, deg, carry_textures=True))
                 if splanes:
                     from core.history import RotateSectionPlanesCommand
                     cmds.append(RotateSectionPlanesCommand(
