@@ -89,7 +89,8 @@ def test_frame_annotations_flag_and_render_paths(monkeypatch):
         calls = []
         vp = win.viewport
 
-        def fake_render(w, h, overlays=True, annotations_only=False):
+        def fake_render(w, h, overlays=True, annotations_only=False,
+                        sharp_shadows=False):
             calls.append((overlays, annotations_only))
             return None
         monkeypatch.setattr(vp, "render_image", fake_render)

@@ -285,13 +285,13 @@ class Driver:
         """``n`` pixels that land on the model: centroids of random faces,
         projected, kept when on screen and in front."""
         import numpy as np
+        from core.mesh import face_count
         rng = random.Random(seed)
-        groups = [g for g in self.vp.scene.groups if g.mesh.faces]
+        groups = [g for g in self.vp.scene.groups if face_count(g.mesh)]
         cand = []
         for _ in range(n * 8):
             g = rng.choice(groups)
-            f = rng.choice(g.mesh.faces)
-            c = f.centroid()
+            c = _face_centroid(g.mesh, rng.randrange(face_count(g.mesh)))
             if g.xform is not None:
                 c = g.xform.map(c)
             cand.append((c.x(), c.y(), c.z()))
@@ -303,6 +303,30 @@ class Driver:
             pts += [(W * rng.uniform(0.3, 0.7), H * rng.uniform(0.3, 0.7))
                     for _ in range(n - len(pts))]
         return pts[:n]
+
+
+def _face_centroid(mesh, i):
+    """``mesh.faces[i].centroid()``, read from a lazy mesh's plan without
+    building it: picking the points built every mesh of a big document,
+    so its gestures ran on a model nobody opening it would have."""
+    from PySide6.QtGui import QVector3D
+    from core import lazy_mesh
+    plan = lazy_mesh.plan_of(mesh)
+    if plan is None:
+        return mesh.faces[i].centroid()
+    starts = plan.extra.get("_bench_starts")
+    if starts is None:
+        import numpy as np
+        ring0 = np.concatenate(([0], np.cumsum(plan.ring_counts)))
+        corner0 = np.concatenate(([0], np.cumsum(plan.ring_sizes)))
+        starts = plan.extra["_bench_starts"] = (ring0, corner0)
+    ring0, corner0 = starts
+    r = ring0[i]
+    loop = plan.corners[corner0[r]:corner0[r + 1]]
+    if not len(loop):
+        return QVector3D(0.0, 0.0, 0.0)
+    c = plan.pos[loop].mean(axis=0)
+    return QVector3D(float(c[0]), float(c[1]), float(c[2]))
 
 
 # ---- gestures ---------------------------------------------------------------
@@ -410,7 +434,8 @@ def g_undo(d, pts):
 def run_model(d, path, repeat):
     open_s, first_s = d.open(path)
     sc = d.vp.scene
-    faces = sum(len(g.mesh.faces) for g in sc.groups)
+    from core.mesh import face_count
+    faces = sum(face_count(g.mesh) for g in sc.groups)
     pts = d.model_points(60)
     out = {"document": Path(path).name, "faces_drawn": faces,
            "objects": len(sc.groups), "open_s": round(open_s, 2),

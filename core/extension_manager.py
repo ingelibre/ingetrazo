@@ -72,9 +72,11 @@ class CatalogSnapshot:
 
 
 def _get(url: str, limit: int) -> bytes:
+    from core.tls import https_context
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=TIMEOUT,
+                                    context=https_context()) as response:
             if not response.geturl().startswith("https://"):
                 raise ExtensionManagerError(
                     "The download redirected to a non-HTTPS address.")

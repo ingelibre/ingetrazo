@@ -86,7 +86,9 @@ def test_deliberate_reference_alignment_still_engages(box_drag, kind):
     elif kind == "face":
         mesh.add_face([V(-2, -2, 3), V(2, -2, 3), V(2, 2, 3), V(-2, 2, 3)])
     elif kind == "edge":
+        # A quarter of the edge: its middle (0, 0, 3) reads "midpoint".
         vp._hover_edge = mesh.add_edge(V(-1, -1, 3), V(1, 1, 3))
+        point = (0.5, 0.5, 3)
     elif kind == "origin":
         point = (0, 0, 0)
     elif kind == "guide_point":

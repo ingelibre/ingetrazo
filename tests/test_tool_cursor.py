@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Tool cursors: activating a tool turns the mouse pointer
-into the tool's icon (aim cross at the hotspot); Select keeps the arrow."""
+into the tool's icon; Offset has an arrow with a badge, Select keeps the arrow."""
 from __future__ import annotations
 
 import sys
@@ -37,6 +37,19 @@ def test_tool_cursor_builds_bitmap_with_hotspot():
     assert tool_cursor("zoom_window") is not None
 
 
+def test_offset_keeps_an_arrow_tip_with_its_icon_beside_it():
+    from views.icons import tool_cursor
+    cur = tool_cursor("offset")
+    assert cur.hotSpot().x() == cur.hotSpot().y() == 2
+    pm = cur.pixmap()
+    assert pm.deviceIndependentSize().width() == 32
+    image, dpr = pm.toImage(), pm.devicePixelRatio()
+    # The pointer occupies the upper-left; the tool badge is below-right.
+    assert image.pixelColor(round(3 * dpr), round(7 * dpr)).alpha() > 0
+    assert image.pixelColor(round(18 * dpr), round(18 * dpr)).alpha() > 0
+    assert tool_cursor("offset") is cur
+
+
 def test_activating_tools_swaps_the_viewport_cursor():
     from views.main_window import MainWindow
     win = MainWindow()
@@ -52,3 +65,22 @@ def test_activating_tools_swaps_the_viewport_cursor():
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_tool_cursor_respects_cursor_style_preference():
+    from core import general_settings as _gs
+    from views.icons import tool_cursor
+
+    try:
+        _gs.set_value("cursor_style", "tool")
+        cur_tool = tool_cursor("line")
+        assert cur_tool is not None and cur_tool.shape() == Qt.BitmapCursor
+
+        _gs.set_value("cursor_style", "crosshair")
+        cur_cross = tool_cursor("line")
+        assert cur_cross is not None and cur_cross.shape() == Qt.CrossCursor
+
+        _gs.set_value("cursor_style", "arrow")
+        assert tool_cursor("line") is None
+    finally:
+        _gs.set_value("cursor_style", "tool")

@@ -45,7 +45,7 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install PySide6==6.11.2 numpy "ezdxf>=1.4.4" "manifold3d>=3.5.3"
+          pip install PySide6==6.11.2 numpy "ezdxf>=1.4.4" "manifold3d>=3.5.3" "truststore>=0.10.5"
           # PyInstaller con el bootloader COMPILADO AQUÍ (MSVC del runner),
           # no el precompilado del wheel: ese binario lo comparten miles de
           # programas (y malware), y los antivirus lo tienen fichado — la

@@ -29,6 +29,11 @@ from dataclasses import dataclass, field
 FACE_MODES = ("textures", "shaded", "hidden_line", "monochrome",
               "wireframe", "xray")
 
+#: The soft warm white of the faces that wear no material in the shaded
+#: modes — the matte cardstock of an architecture model. The style's Front
+#: color tints it (``views.viewport._front_tint``).
+DEFAULT_FACE_COLOR = (0.96, 0.95, 0.925)
+
 #: The classic default back-face blue-grey: a visible back face means "you are
 #: looking at the inside" (or at a genuinely inverted face).
 DEFAULT_BACK_COLOR = (0.62, 0.70, 0.78)
@@ -45,7 +50,9 @@ class Style:
     # (issue #234). Off in every preset.
     back_edges: bool = False
     edge_color: tuple = (0.13, 0.17, 0.23)
-    front_color: tuple = (1.0, 1.0, 1.0)     # hidden line / monochrome faces
+    # The faces' front colour: every face in Hidden line and Monochrome,
+    # and the faces wearing no material in the other modes (issue #776).
+    front_color: tuple = (1.0, 1.0, 1.0)
     # Back-face tint (Back color). ``None`` = automatic: the
     # document's adopted tint (``scene.back_face_color``, e.g. from an
     # imported .skp) or ``DEFAULT_BACK_COLOR``. A picked colour wins over
@@ -62,9 +69,19 @@ class Style:
     # Lives in the STYLE, with the other modeling settings.
     section_fill: bool = True
     section_fill_color: tuple = (0.35, 0.37, 0.41)
+    # Ambient occlusion (#954): the soft darkening where
+    # surfaces meet. Off in every preset; the distance is in metres (how
+    # far a surface still darkens its neighbour), the intensity 0–2.
+    ambient_occlusion: bool = False
+    ao_distance: float = 0.5
+    ao_intensity: float = 1.0
+    # Colour by layer: faces draw in their layer's colour (core.layers
+    # .layer_color) instead of their material — the shaded, textured and
+    # X-ray modes. Off in every preset; a scene remembers it with the style.
+    color_by_layer: bool = False
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "name": self.name,
             "face_mode": self.face_mode,
             "edges": self.edges,
@@ -80,7 +97,13 @@ class Style:
             "ground_color": list(self.ground_color),
             "section_fill": self.section_fill,
             "section_fill_color": list(self.section_fill_color),
+            "ambient_occlusion": self.ambient_occlusion,
+            "ao_distance": self.ao_distance,
+            "ao_intensity": self.ao_intensity,
         }
+        if self.color_by_layer:
+            out["color_by_layer"] = True
+        return out
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Style":
@@ -104,10 +127,34 @@ class Style:
             section_fill=bool(raw.get("section_fill", d.section_fill)),
             section_fill_color=tuple(raw.get("section_fill_color",
                                              d.section_fill_color)),
+            ambient_occlusion=bool(raw.get("ambient_occlusion",
+                                           d.ambient_occlusion)),
+            ao_distance=_clamped(raw.get("ao_distance"), d.ao_distance,
+                                 AO_DISTANCE_RANGE),
+            ao_intensity=_clamped(raw.get("ao_intensity"), d.ao_intensity,
+                                  AO_INTENSITY_RANGE),
+            color_by_layer=bool(raw.get("color_by_layer", False)),
         )
 
     def copy(self) -> "Style":
         return Style.from_dict(self.to_dict())
+
+
+#: The ambient occlusion controls' ranges (metres; plain factor).
+AO_DISTANCE_RANGE = (0.01, 50.0)
+AO_INTENSITY_RANGE = (0.0, 2.0)
+
+
+def _clamped(raw, default: float, bounds: tuple) -> float:
+    """A number from a dict, kept in ``bounds``; anything malformed (a
+    hand-edited document) falls back to ``default``."""
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return default
+    if v != v:                                   # NaN
+        return default
+    return min(max(v, bounds[0]), bounds[1])
 
 
 def _opt_rgb(raw) -> tuple | None:

@@ -178,6 +178,41 @@ def _swept_by_push(neighbour: Face, push_normal: QVector3D) -> bool:
     return False
 
 
+_RIM_SNAP = 5e-4
+# How far apart a hand-drawn face's corners may stand, along its own normal,
+# and still be read as one flat face meeting the opposite wall (#1076).
+_OUT_OF_TRUE = 2e-3
+
+
+def _onto_rim(p: QVector3D, face: Face) -> QVector3D:
+    """``p`` laid on ``face``'s outline when it lands within ``_RIM_SNAP``
+    of it: a corner of the outline first, else the nearest point of an
+    outline edge. A door a hair out of true, pushed through its wall,
+    reaches the far side with its sill a hundredth of a millimetre above
+    the floor's edge: left there, the opening's foot made a sliver and an
+    edge with three faces instead of meeting the floor (#1076)."""
+    verts = face.vertices
+    near = min(verts, key=lambda v: (v - p).lengthSquared())
+    if (near - p).length() <= _RIM_SNAP:
+        return QVector3D(near)
+    best, best_d = p, _RIM_SNAP
+    m = len(verts)
+    for i in range(m):
+        a, b = verts[i], verts[(i + 1) % m]
+        ab = b - a
+        ll = ab.lengthSquared()
+        if ll < 1e-18:
+            continue
+        t = QVector3D.dotProduct(p - a, ab) / ll
+        if not 0.0 < t < 1.0:
+            continue
+        q = a + ab * t
+        d = (q - p).length()
+        if d < best_d:
+            best, best_d = q, d
+    return best
+
+
 def _corner_dragged(face: Face, rim: set, push_normal: QVector3D) -> bool:
     """Whether a prism-cap translate moving the ``rim`` positions along
     ``push_normal`` would bend ``face`` at one of them — any of its vertices
@@ -1359,8 +1394,8 @@ class PushPullTool(Tool):
     def inference_marker(self):
         """Return ``(world_point, kind)`` for the marker the viewport draws
         when the distance inference is locked onto model geometry, or
-        ``None``. ``kind`` is ``"vertex"``, ``"edge"`` or ``"face"`` — drawn
-        and labelled like the endpoint / on-edge / on-face snaps."""
+        ``None``. The kind selects the matching snap colour and label,
+        including the cyan midpoint cue."""
         if not self.dragging or self._inference_point is None:
             return None
         return self._inference_point, self._inference_kind
@@ -1423,6 +1458,14 @@ class PushPullTool(Tool):
             dist = QVector3D.dotProduct(anchor - g.centroid(), n)
             if dist <= 1e-6:
                 continue  # coplanar or on the outward side
+            # A blocker stands behind the WHOLE base. The wall a door is
+            # drawn on touches the door's own corners: with the door's top
+            # a fraction of a millimetre out of true towards the room, its
+            # centroid read the wall as a blocker 0.04 mm deep and the push
+            # into the wall did nothing (#1076).
+            if min(QVector3D.dotProduct(v - g.centroid(), n)
+                   for v in self.base_face.vertices) <= _STITCH_TOL:
+                continue
             back_loop = [v - n * dist for v in self.base_face.vertices]
             if loop_inside_face(g, back_loop):
                 continue  # a through-hole target, not a blocker
@@ -1565,9 +1608,9 @@ class PushPullTool(Tool):
         preview first, the vertex cache predates any stage, and a staged
         preview's own faces/edges are skipped), so the forming solid's moving
         points never feed back. A model **vertex** within the snap threshold
-        wins first (a precise corner); otherwise the **face** under the cursor
-        is used, projecting the ray∩plane hit onto the push axis (level with
-        where you point on it).
+        wins first (a precise corner), followed by a nearby edge's fixed
+        **midpoint**. Otherwise an edge or face under the cursor is used,
+        projecting its point onto the push axis (level with where you point).
         Records the engaged point in ``self._inference_point`` for the overlay
         marker. Returns ``None`` when nothing engages."""
         vp = ctx.viewport
@@ -1642,7 +1685,8 @@ class PushPullTool(Tool):
         # any vertex -- the nearest one on screen wins -- and a guide LINE
         # is tried right after, like an edge. They live in ``scene.guides``,
         # outside the mesh, so the vertex scan above never saw them.
-        guides = getattr(vp.scene, "guides", None) or []
+        from views.viewport import shown_guides
+        guides = shown_guides(vp.scene)
         for g in guides:
             if getattr(g, "direction", None) is not None:
                 continue
@@ -1668,6 +1712,12 @@ class PushPullTool(Tool):
             self._inference_point = best[2]
             self._inference_kind = best[3]
             return best[1]
+
+        midpoint = self._infer_edge_midpoint(vp, sx, sy, thr, exclude)
+        if midpoint is not None:
+            self._inference_point = midpoint
+            self._inference_kind = "midpoint"
+            return QVector3D.dotProduct(midpoint - self._anchor, self._normal)
 
         line_hit = self._infer_guide_line(vp, guides, sx, sy, thr)
         if line_hit is not None:
@@ -1735,6 +1785,45 @@ class PushPullTool(Tool):
         self._inference_point = None
         self._inference_kind = None
         return None
+
+    def _infer_edge_midpoint(self, vp, sx, sy, thr, exclude):
+        """A visible fixed midpoint within the normal point-snap radius.
+
+        Read nearby loose and placed edges in world space, excluding the
+        cap and staged edges. Spatial prefilters avoid walking every edge
+        of a large import. An edge parallel to the push axis still has a
+        precise midpoint, even though an arbitrary point along it is not a
+        useful distance reference.
+        """
+        edges = []
+        for name in ("_nearby_loose_edges", "_nearby_group_edges"):
+            nearby = getattr(vp, name, None)
+            if callable(nearby):
+                edges.extend(nearby(sx, sy, radius_px=thr))
+        hovered = getattr(vp, "_hover_edge", None)
+        if hovered is not None:
+            edges.append(hovered)
+        best = None
+        for edge in edges:
+            if edge in self._stage_new or getattr(edge, "guide", False):
+                continue
+            a, b = QVector3D(edge.a), QVector3D(edge.b)
+            if (a - b).lengthSquared() < 1e-18:
+                continue
+            if _key(a) in exclude or _key(b) in exclude:
+                # The moving cap's own edges, and the side edges of the
+                # solid being pushed (one end on the cap), are no reference
+                # — the same as its side faces since #839.
+                continue
+            point = (a + b) * 0.5
+            pixel = vp._world_to_pixel(point)
+            if pixel is None:
+                continue
+            dd = (pixel[0] - sx) ** 2 + (pixel[1] - sy) ** 2
+            if (dd <= thr * thr and (best is None or dd < best[0])
+                    and not self._reference_hidden(vp, point)):
+                best = (dd, point)
+        return None if best is None else best[1]
 
     @staticmethod
     def _borders_base(face, base_keys) -> bool:
@@ -2337,7 +2426,8 @@ class PushPullTool(Tool):
                 for lp in (*base_holes, *top_holes):
                     lp.reverse()
         if through is not None:
-            commands = self._through_commands(face, base, through)
+            commands = self._through_commands(face, base, through,
+                                              base_holes, faces)
         else:
             commands = self._extrude_commands(
                 face, base, top, base_holes, top_holes, count, attached
@@ -2628,31 +2718,72 @@ class PushPullTool(Tool):
             if abs(QVector3D.dotProduct(fn, g.normal().normalized())) < 0.999:
                 continue  # not parallel
             dist = QVector3D.dotProduct(g.centroid() - origin, push)
-            if dist <= 1e-4 or dist > abs(d) + 1e-4:
+            # How far each corner has to go to meet the far plane. A door a
+            # fraction of a millimetre out of true reaches it with three
+            # corners while its centroid is still short: pushed the wall's
+            # thickness, it stopped at the centroid's 1e-4 and left its cap
+            # on the far wall (#1076). Within _OUT_OF_TRUE the push meets
+            # the face as soon as any corner does.
+            reach = [QVector3D.dotProduct(g.centroid() - v, push)
+                     for v in face.vertices]
+            lo, hi = min(reach), max(reach)
+            if hi - lo > _OUT_OF_TRUE:
+                lo = hi = dist
+            if dist <= 1e-4 or lo > abs(d) + 1e-4:
                 continue  # coplanar / behind / farther than the push reaches
-            back_loop = [v + push * dist for v in face.vertices]
+            # Laid ON the far face's plane, not just carried ``dist`` along:
+            # a hand-drawn door 0.2 mm out of true (one corner off its
+            # plane) arrives that far off the opposite wall, outside every
+            # 1e-4 test below -- no hole, and the cap left almost flush on
+            # the wall wrecked the solid (#1076).
+            gn = g.normal().normalized()
+            gc = g.centroid()
+            back_loop = []
+            for v in face.vertices:
+                p = v + push * dist
+                back_loop.append(_onto_rim(
+                    p - gn * QVector3D.dotProduct(p - gc, gn), g))
             if loop_inside_face(g, back_loop):
                 if best is None or dist < best[0]:
                     best = (dist, g, back_loop, None)
                 continue
-            # Landing FLUSH on the far face with the opening on its rim — the
-            # corner piece left by a rounding arc pushed right through
-            # (Marco, 2026-09-15: «debería eliminarme ese triángulo»). Not a
-            # hole: the far face is trimmed to what
+            # Reaching the far face with the opening on its rim — the corner
+            # piece left by a rounding arc pushed right through (Marco,
+            # 2026-09-15: «debería eliminarme ese triángulo»), a door whose
+            # sill is the floor. Not a hole: the far face is trimmed to what
             # is left of it (the arc becomes its outline) and the cap goes.
-            if abs(dist - abs(d)) <= 1e-4:
-                remainder = subtract_loop_from_face(g, back_loop)
-                if remainder is not None and (best is None or dist < best[0]):
-                    best = (dist, g, back_loop, remainder)
+            # Pushed PAST the far face too, as a window's hole already was:
+            # flush-only sent a door dragged a hair beyond the wall down the
+            # blind-recess path, which poked the cap out the back and left
+            # edges with three faces (#1076). Past it only where the push
+            # leaves the material through that face (it faces along the
+            # push): a face looking back at the push belongs to something
+            # in front, which a push past it must not bite.
+            if (not lo - 1e-4 <= abs(d) <= hi + 1e-4
+                    and QVector3D.dotProduct(gn, push) <= 0):
+                continue
+            remainder = subtract_loop_from_face(g, back_loop)
+            if remainder is not None and (best is None or dist < best[0]):
+                best = (dist, g, back_loop, remainder)
         if best is None:
             return None
         return best[1], best[2], best[3]
 
-    def _through_commands(self, face, base, through) -> list:
+    def _through_commands(self, face, base, through, base_holes=(),
+                          faces=()) -> list:
         """Build the commands for a through-hole: punch the far face, join it to
-        the front opening with a tunnel, and sweep the dangling base edges."""
+        the front opening with a tunnel, and sweep the dangling base edges.
+
+        A ring (a face whose holes are filled by faces of their own, the
+        «islands») pushed right through carries each island down as a
+        block: walls along the hole and a bottom on the far face (#1083).
+        Without them the island hung open and the push topped out at the
+        far face, its bottom never punched."""
         far_face, back_loop, remainder = through
         count = len(base)
+        islands = (self._through_islands(face, base_holes, far_face,
+                                         back_loop, faces)
+                   if base_holes and remainder is None else [])
         commands: list = [
             DeleteFaceCommand(face),       # remove the pushed cap (window pane)
             DeleteFaceCommand(far_face),   # re-add the far face with a new hole
@@ -2682,8 +2813,84 @@ class PushPullTool(Tool):
             j = (i + 1) % count
             commands.append(AddFaceCommand(
                 [base[i], base[j], back_loop[j], back_loop[i]], auto=False))
+        for hole, back in islands:
+            m = len(hole)
+            for i in range(m):
+                commands.append(AddEdgeCommand(back[i], back[(i + 1) % m]))
+            for i in range(m):
+                commands.append(AddEdgeCommand(hole[i], back[i]))
+            for i in range(m):
+                j = (i + 1) % m
+                commands.append(AddFaceCommand(
+                    [hole[i], hole[j], back[j], back[i]], auto=False))
+            commands.append(AddFaceCommand(list(back), auto=False))
         commands.append(PruneOrphanEdgesCommand(list(base) + list(back_loop)))
         return commands
+
+    @staticmethod
+    def _through_islands(face, base_holes, far_face, back_loop, faces):
+        """``[(hole, back_hole)]`` for a ring pushed through: each hole of
+        ``face`` with its copy on the far face's plane — or ``[]`` (no
+        island geometry, the old behaviour) unless EVERY hole is filled by
+        a single hole-free face on the same plane (the island), so an
+        opening that already goes through (a window the ring frames) is
+        never capped."""
+        if not base_holes or len(back_loop) < 3:
+            return []
+        gn = far_face.normal().normalized()
+        gc = far_face.centroid()
+        # The push direction, from the opening's own sweep.
+        lead = back_loop[0] - face.vertices[0]
+        if lead.length() < 1e-9:
+            return []
+        push = lead.normalized()
+        den = QVector3D.dotProduct(push, gn)
+        if den < 1e-6:
+            # Only through the face the push LEAVES the material by (it
+            # faces along the push). An outward push that meets a face
+            # looking back at it -- the eye model's iris raised past the
+            # outer ring -- is not a ring carved through a slab.
+            return []
+        # The opening must land strictly INSIDE the far face, clear of its
+        # rim and of its holes: an iris raised to an outer ring's cap meets
+        # it along the cap's own hole, which is no slab to carve through.
+        def _clear(p) -> bool:
+            for lp in (far_face.vertices, *far_face.holes):
+                k = len(lp)
+                for i in range(k):
+                    a, b = lp[i], lp[(i + 1) % k]
+                    ab = b - a
+                    L2 = ab.lengthSquared()
+                    t = 0.0 if L2 < 1e-18 else max(0.0, min(
+                        1.0, QVector3D.dotProduct(p - a, ab) / L2))
+                    if (a + ab * t - p).length() < 1e-4:
+                        return False
+            return True
+        if not all(_clear(p) for p in back_loop):
+            return []
+        out = []
+        for hole in base_holes:
+            m = len(hole)
+            if m < 3:
+                return []
+            filled = None
+            for i in range(m):
+                kind, g = classify_push_edge(face, hole[i], hole[(i + 1) % m],
+                                             faces)
+                if kind != "coplanar" or g is None or g.holes \
+                        or (filled is not None and g is not filled):
+                    return []
+                filled = g
+            if filled is None or len(filled.vertices) != m:
+                return []
+            back = []
+            for p in hole:
+                t = QVector3D.dotProduct(gc - p, gn) / den
+                back.append(p + push * t)
+            if not loop_inside_face(far_face, back):
+                return []
+            out.append((list(hole), back))
+        return out
 
     def _reset(self) -> None:
         self.hovered_face = None

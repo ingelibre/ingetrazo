@@ -179,7 +179,7 @@ def test_a_download_says_who_it_is(monkeypatch, tmp_path):
         def __exit__(self, *a):
             return False
 
-    def fake_urlopen(req, timeout=None):
+    def fake_urlopen(req, timeout=None, context=None):
         seen["ua"] = req.get_header("User-agent")
         return _Resp()
 
