@@ -60,10 +60,11 @@ class Style:
     back_color: tuple | None = None
     background: tuple = (0.90, 0.91, 0.92)
     sky: bool = True
-    # The sky/ground backdrop tones (drawn when ``sky`` is on; with it off
-    # the flat ``background`` shows instead). Defaults match the viewport's
-    # historical constants, so old documents look identical.
+    # The sky/horizon/ground backdrop tones (drawn when ``sky`` is on; with it
+    # off the flat ``background`` shows instead). The white horizon preserves
+    # the viewport's historical haze, while making its tint style data.
     sky_color: tuple = (0.925, 0.935, 0.945)
+    horizon_color: tuple = (1.0, 1.0, 1.0)
     ground_color: tuple = (0.815, 0.820, 0.815)
     # Section Fill: paint the cut-through areas of solids.
     # Lives in the STYLE, with the other modeling settings.
@@ -94,6 +95,7 @@ class Style:
             "background": list(self.background),
             "sky": self.sky,
             "sky_color": list(self.sky_color),
+            "horizon_color": list(self.horizon_color),
             "ground_color": list(self.ground_color),
             "section_fill": self.section_fill,
             "section_fill_color": list(self.section_fill_color),
@@ -123,6 +125,7 @@ class Style:
             background=tuple(raw.get("background", d.background)),
             sky=bool(raw.get("sky", d.sky)),
             sky_color=tuple(raw.get("sky_color", d.sky_color)),
+            horizon_color=tuple(raw.get("horizon_color", d.horizon_color)),
             ground_color=tuple(raw.get("ground_color", d.ground_color)),
             section_fill=bool(raw.get("section_fill", d.section_fill)),
             section_fill_color=tuple(raw.get("section_fill_color",
