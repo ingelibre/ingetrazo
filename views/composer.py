@@ -3278,6 +3278,12 @@ class _SheetItem(QGraphicsItem):
         self._resizing = False
         self._set_drag_cache(False)
         super().mouseReleaseEvent(event)
+        # A click that did not move keeps only the clicked item selected
+        # (Qt clears the rest on release), which dropped the partners the
+        # press had just pulled in: a grouped item clicked alone looked
+        # ungrouped and was moved alone (#1042). Bring the group back.
+        if self.isSelected() and getattr(self.model, "group_id", ""):
+            self.composer.sync_group_selection(self)
         if self._press_state is None:
             return
         current = {k: getattr(self.model, k) for k in self._press_state}
@@ -4206,11 +4212,68 @@ class CotaCanvasItem(_SheetItem):
             return
         if self._resizing:
             self.prepareGeometryChange()
-            self.model.dx_mm = event.pos().x()
-            self.model.dy_mm = event.pos().y()
+            self.model.dx_mm, self.model.dy_mm = self._snap_end(event.pos())
             self.update()
             return
         super(_SheetItem, self).mouseMoveEvent(event)
+
+    def _snap_end(self, pos) -> tuple:
+        """The dragged measured point, snapped to the views' geometry the
+        way the cota tool snaps (~7 px on screen) — what lets a point
+        dragged off the model go back ON it and anchor again (#1053).
+        Remembers the hit for the release; item coordinates in and out."""
+        self._end_hit = None
+        snap = getattr(self.composer, "nearest_snap_point", None)
+        views = self.scene().views() if self.scene() is not None else []
+        if not callable(snap) or not views:
+            return pos.x(), pos.y()
+        thr = 7.0 / max(views[0].transform().m11(), 1e-6)
+        o = self.pos()
+        hit = snap(o.x() + pos.x(), o.y() + pos.y(), thr)
+        if hit is None or hit[3] is None:
+            return pos.x(), pos.y()
+        self._end_hit = hit
+        return hit[0] - o.x(), hit[1] - o.y()
+
+    def _reanchor(self) -> None:
+        """A measured point dragged back onto the model anchors the cota
+        again (#1053): the dragged end snapped to a view's geometry and the
+        other end sits on that same view's geometry too — the rule a new
+        cota is anchored by. Drawn as the green handles again."""
+        hit_b = getattr(self, "_end_hit", None)
+        self._end_hit = None
+        snap = getattr(self.composer, "nearest_snap_point", None)
+        if hit_b is None or not callable(snap):
+            return
+        m = self.model
+        frame = hit_b[3]
+        views = self.scene().views() if self.scene() is not None else []
+        thr = (7.0 / max(views[0].transform().m11(), 1e-6) if views
+               else 1e-3)
+        hit_a = snap(m.x_mm, m.y_mm, thr)        # the end left in place
+        if hit_a is None or hit_a[3] is not frame:
+            return
+        if (hit_a[0], hit_a[1]) != (m.x_mm, m.y_mm):
+            # onto its point, the dragged end staying where it snapped
+            bx, by = m.x_mm + m.dx_mm, m.y_mm + m.dy_mm
+            self.prepareGeometryChange()
+            m.x_mm, m.y_mm = hit_a[0], hit_a[1]
+            m.dx_mm, m.dy_mm = bx - m.x_mm, by - m.y_mm
+            self._nudging = True             # exact: no magnetic snap
+            try:
+                self.setPos(m.x_mm, m.y_mm)
+            finally:
+                self._nudging = False
+        if not frame.uid:
+            import uuid
+            frame.uid = uuid.uuid4().hex
+        m.anchor_uid = frame.uid
+        m.a_world = list(hit_a[2])
+        m.b_world = list(hit_b[2])
+        follow = getattr(self.composer, "_follow_anchor", None)
+        if callable(follow):
+            follow(m, "a_world")
+            follow(m, "b_world")
 
     def mousePressEvent(self, event) -> None:
         note = getattr(self.composer, "note_drag_start", None)
@@ -4254,6 +4317,8 @@ class CotaCanvasItem(_SheetItem):
                 self.model.anchor_uid = ""
                 self.model.a_world = None
                 self.model.b_world = None
+        if self._press_state is not None and self._resizing:
+            self._reanchor()
         super().mouseReleaseEvent(event)
 
     def _paint_selection(self, painter: QPainter) -> None:
@@ -5882,6 +5947,16 @@ class _PanelTabs(QTabWidget):
         p.end()
 
 
+def bring_to_front(window) -> None:
+    """Show ``window``, out of the taskbar if minimised, and raise it —
+    ``show()`` alone leaves a minimised window where it is."""
+    if window.isMinimized():
+        window.setWindowState(window.windowState() & ~Qt.WindowMinimized)
+    window.show()
+    window.raise_()
+    window.activateWindow()
+
+
 class ComposerWindow(QMainWindow):
     """Page canvas on the left, composition manager + properties on the
     right. Compositions live in ``scene.compositions`` and persist in the
@@ -5903,7 +5978,13 @@ class ComposerWindow(QMainWindow):
         super().changeEvent(event)
 
     def __init__(self, main_window) -> None:
-        super().__init__(main_window)
+        # A window of its own, not one OWNED by the model window: an owned
+        # window has no taskbar button, always stays above the model and,
+        # under Windows, minimises to a stub over the model's bottom-left
+        # corner that cannot be moved. On its own it minimises to the
+        # taskbar, goes behind the model, Alt+Tabs and moves to another
+        # monitor as any program does. The model window closes it on quit.
+        super().__init__(None)
         self.setWindowFlag(Qt.Window, True)
         self._window = main_window
         from views.floating_toolbar import watch_toolbars
@@ -5959,8 +6040,12 @@ class ComposerWindow(QMainWindow):
             scene.compositions.append(comp)
         self.comp: Composicion = scene.compositions[0]
 
-        self.setWindowTitle(tr("Sheet composer"))
+        self.set_document_title(None)
         self.resize(1280, 840)
+        # Size, place, monitor and maximised as the user left them.
+        geometry = QSettings().value("composer/geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
         self.tool_mode = "select"
         self.canvas = QGraphicsScene(self)
         view = ComposerCanvasView(self.canvas, self)
@@ -6888,6 +6973,10 @@ class ComposerWindow(QMainWindow):
         grid.addWidget(self.ruler_h, 0, 1)
         grid.addWidget(self.ruler_v, 1, 0)
         grid.addWidget(view, 1, 1)
+        # The sheet is a drawing: its rulers and canvas stay as they are in a
+        # right-to-left interface (#1067), the ruler on the left included.
+        from views.rtl import keep_ltr
+        keep_ltr(area)
         for bar in (view.horizontalScrollBar(), view.verticalScrollBar()):
             bar.valueChanged.connect(lambda *_a: self._refresh_rulers())
         return area
@@ -8329,10 +8418,14 @@ class ComposerWindow(QMainWindow):
         comps = self._scene().compositions
         if 0 <= index < len(comps) and comps[index] is not self.comp:
             self.comp_combo.setCurrentIndex(index)     # → _on_comp_switched
-        self.show()
-        self.raise_()
-        self.activateWindow()
+        bring_to_front(self)
         self._refresh_sheet_tabs()
+
+    def set_document_title(self, name) -> None:
+        """«Sheet composer — <document>»: its taskbar button tells which
+        model's sheets it holds."""
+        title = tr("Sheet composer")
+        self.setWindowTitle(f"{title} — {name}" if name else title)
 
     def step_sheet(self, step: int) -> None:
         """The sheet ``step`` places before or after this one — no
@@ -8361,16 +8454,13 @@ class ComposerWindow(QMainWindow):
         needs a token GNOME does not always grant (Marco, 0.3.13 Flatpak:
         «quiero cambiar con los botones de abajo, no cambia»; and later,
         with a grace-period guess in place, «a veces no hace efecto, como
-        que tengo que hacer doble clic»); under Windows an owned window
-        always stays above its owner. So the hand-over does not guess: if
+        que tengo que hacer doble clic»). So the hand-over does not guess: if
         this window overlaps the model window it steps aside by hiding,
         at once, on every platform — a sheet tab in the model window
         brings it back exactly as it was. Side by side (two monitors)
         both stay."""
         win = self._window
-        win.show()
-        win.raise_()
-        win.activateWindow()
+        bring_to_front(win)
         self._refresh_sheet_tabs()
         if self._covers(win):
             self.hide()
@@ -13426,6 +13516,7 @@ class ComposerWindow(QMainWindow):
         st.setValue("composer/window_state",
                     clean if (self._act_clean_screen.isChecked()
                               and clean is not None) else self.saveState())
+        st.setValue("composer/geometry", self.saveGeometry())
         super().closeEvent(event)
 
     # ---- Window: sidebar handle + clean screen (as in the model window) ------

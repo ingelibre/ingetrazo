@@ -40,7 +40,11 @@ def test_field_of_view_is_set_kept_and_reset(tmp_path):
         win._do_save(path)
         cam.fov_deg = 45.0
         win._saved_version = win.viewport.scene.version
-        assert win.open_path(path)
+        # A copy: the same file would only bring its tab back (#1066).
+        import shutil
+        shutil.copy(path, tmp_path / "copy.igz")
+        assert win.open_path(tmp_path / "copy.igz")
+        cam = win.viewport.camera
         assert cam.fov_deg == 70.0
         # Parallel has no angle: refused, nothing changes.
         cam.perspective = False

@@ -54,13 +54,20 @@ def test_open_restores_the_authors_view_and_new_resets_it(tmp_path):
         cam.yaw = -0.7
         cam.perspective = True
         win._saved_version = win.viewport.scene.version
-        assert win.open_path(path)
+        # The same file would only bring its tab to the front (#1066): open
+        # a copy, which comes in a tab of its own with its author's view.
+        import shutil
+        copy = tmp_path / "copy.igz"
+        shutil.copy(path, copy)
+        assert win.open_path(copy)
+        cam = win.viewport.camera
         assert (cam.target - QVector3D(12.0, -4.0, 1.5)).length() < 1e-6
         assert cam.distance == 33.0 and abs(cam.yaw - 1.1) < 1e-9
         assert cam.perspective is False
         # New: the default view, whatever the last document did.
         win._saved_version = win.viewport.scene.version
         win._on_new()
+        cam = win.viewport.camera
         assert cam.distance == 20.0 and cam.perspective is True
         assert abs(cam.yaw - math.radians(-45.0)) < 1e-9
         assert (cam.target - QVector3D(0, 0, 0)).length() < 1e-9

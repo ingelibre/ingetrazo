@@ -246,13 +246,16 @@ def test_the_panel_marks_the_selections_layer_and_not_the_active(win):
     L.set_active(scene, "B")
     scene.select([ga])
     win.viewport.notify_scene_changed()
+    _app.processEvents()                              # the rebuild is deferred
     assert _holds(panel) == ["A"]
     assert L.active_layer(scene) == "B"               # untouched
     scene.select([ga, gb])
     win.viewport.notify_scene_changed()
+    _app.processEvents()
     assert _holds(panel) == ["A", "B"]                # several: all of them
     scene.clear_selection()
     win.viewport.notify_scene_changed()
+    _app.processEvents()
     assert _holds(panel) == []
 
 
@@ -262,6 +265,7 @@ def test_a_folded_folder_carries_the_mark(win):
     L.move_to_folder(scene, ["A"], "Arq")
     scene.select([ga])
     win.viewport.notify_scene_changed()
+    _app.processEvents()                              # the rebuild is deferred
     folder = panel.item_for("Arq", "folder")
     assert _holds(panel) == ["A"]                     # open: the layer
     folder.setExpanded(False)
@@ -334,3 +338,39 @@ def test_layer_state_skips_layers_made_or_deleted_since():
     assert not scene.layer("A").visible
     assert not scene.layer("C").visible               # untouched
     assert scene.active_layer is None                  # B is gone
+
+
+def test_picking_a_layer_rebuilds_the_list_only_after_it_closes(win):
+    """The reported crash: with groups selected, picking their layer in the
+    toolbar's list cleared the list from inside its own ``activated``. The
+    command lands now; the rows follow on the next turn."""
+    scene, ga, gb = _doc(win)
+    bar = win.layers_toolbar
+    combo = bar.combo
+    L.set_active(scene, "A")
+    scene.select([ga, gb])
+    if getattr(bar, "_refresh_timer", None) is not None:
+        bar._refresh_timer.stop()
+    calls = []
+    real = combo.refresh
+
+    def spy():
+        calls.append(1)
+        real()
+    bar._refresh_timer = None                 # so the timer binds the spy
+    combo.refresh = spy
+    try:
+        real()
+        calls.clear()
+        _pick(combo, "B")
+        assert calls == []                    # never with the list closing
+        assert layer_of(ga) == layer_of(gb) == "B"
+        _app.processEvents()
+        assert calls                           # the list catches up after
+        assert combo.currentText() == "B"      # the selection's layer
+    finally:
+        timer = getattr(bar, "_refresh_timer", None)
+        if timer is not None:
+            timer.stop()
+        bar._refresh_timer = None
+        combo.refresh = real

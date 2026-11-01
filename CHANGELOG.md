@@ -4,6 +4,191 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.6.0] — 2026-11-01
+
+**Varios proyectos en pestañas en la misma ventana; IngeTrazo ya habla 17
+idiomas, los últimos el árabe (con la interfaz de derecha a izquierda) y el
+ucraniano; Empujar/Tirar que abre puertas y ventanas en muros reales, los .skp con sus grupos y componentes como en el
+archivo, superficies curvas que se ven redondas, oclusión ambiental más
+natural y más de cuarenta aportes de la comunidad.**
+
+### Añadido
+
+- **Proyectos en pestañas** (#1066): se abren varios proyectos en la misma
+  ventana, cada uno con su deshacer, sus láminas y su autoguardado.
+  Archivo ▸ Nuevo (Ctrl+N) o el «+» de la barra de pestañas abre una
+  pestaña nueva; un .igz abierto con doble clic desde el explorador de
+  archivos o arrastrado a la ventana llega como pestaña nueva (un .skp, en
+  cuanto la ventana termina de pintarse). Al pasar el ratón por una pestaña
+  de atrás se ve una vista previa. Al cerrar una pestaña su memoria vuelve
+  al sistema: cerrar el modelo SPR con plaza abierta en otra pestaña baja
+  a ~1 GB. Las extensiones siguen con la API 2 y las que cambian el
+  widget central siguen funcionando. *Cómo probarlo:* con un proyecto
+  abierto, Archivo ▸ Abrir otro .igz (o haz doble clic en uno desde el
+  explorador): llega como pestaña nueva; cambia con Ctrl+RePág/AvPág,
+  cierra con Ctrl+W.
+- **Árabe** (@Alhlhli, #1067) con la **interfaz de derecha a izquierda**:
+  menús, paneles, barras y diálogos se reflejan; la vista 3D, las láminas
+  y los campos de números siguen de izquierda a derecha. Los demás idiomas
+  no cambian. *Cómo probarlo:* Ventana ▸ Preferencias… ▸ Idioma ▸ العربية
+  y reinicia IngeTrazo.
+- **Ucraniano** (@bolotov, #1054). Con el árabe, el ucraniano y el lao, que vuelve a ofrecerse, IngeTrazo habla 17 idiomas. *Cómo probarlo:* Ventana ▸ Preferencias… ▸
+  Idioma, y reinicia.
+- **«Idioma del sistema»** como opción propia en Preferencias ▸ Idioma
+  (#818, @francisreboucas en #875): sigue al sistema también después de
+  haber elegido otro idioma. *Dónde:* Ventana ▸ Preferencias… ▸ Idioma ▸
+  «Igual que el sistema», la primera opción.
+- **El compositor de láminas en su propia ventana** (#1068,
+  @canalsecuario-blip en #1069): se saca de la barra de tareas y vuelve; ya
+  no queda un recuadro fijo tapando las pestañas al minimizarlo. *Cómo
+  probarlo:* Archivo ▸ Compositor de láminas…: se abre en una ventana
+  aparte, con su propio botón en la barra de tareas.
+- **Navegador que ordena, pliega y filtra** (#734, @canalsecuario-blip en
+  #1002): por capa con encabezados plegables o por nombre, y un embudo
+  para filtrar. *Dónde:* el panel Navegador, en la barra lateral: arriba
+  están el orden (por capa o por nombre) y el embudo.
+- **Bloquear y desbloquear grupos con clic derecho** sobre el modelo (#782,
+  @canalsecuario-blip en #1047). *Cómo probarlo:* clic derecho sobre un
+  grupo ▸ Bloquear; ya no se puede mover ni editar hasta Desbloquear.
+- **Restaurar valores predeterminados** en Preferencias
+  (@canalsecuario-blip, #1052), también los ejes del ratón 3D y la
+  intensidad del atenuado. *Dónde:* Ventana ▸ Preferencias…, botón
+  «Restablecer valores predeterminados» abajo; el idioma y la clave de
+  IA no se tocan.
+- **Ratón 3D (SpaceMouse) con ejes y perfiles configurables** (@deedend,
+  #581); el perfil por defecto mueve la vista como antes. *Dónde:*
+  Ventana ▸ Preferencias… ▸ pestaña Ratón 3D.
+- **Explotar imagen** (#687): clic derecho sobre una imagen importada la
+  convierte en un grupo con la foto como textura, en un solo deshacer; el
+  cuentagotas toma el color de la imagen. *Cómo probarlo:* Archivo ▸
+  Importar ▸ Imagen (PNG / JPG)…, colócala, clic derecho sobre ella ▸
+  Explotar imagen.
+- **Asistente de IA**: proveedor OpenCode Go y un chat legible con
+  burbujas, fotos, barra de «pensando» y botón Detener (@changastyle,
+  #814); la clave se puede leer de una variable de entorno cuando el campo
+  está vacío (#998, @ultracat en #1014; OpenCode Go lee también
+  `OPENCODE_API_KEY`). *Dónde:* Extensiones ▸ Asistente IA (Ctrl+Mayús+A);
+  el proveedor y la clave, en Ventana ▸ Preferencias… ▸ Asistente IA.
+- **Iso** salta a la vista isométrica más cercana (@pacaeiro, #995).
+  *Cómo probarlo:* gira la cámara hacia cualquier esquina del modelo y
+  pulsa Cámara ▸ Vistas estándar ▸ Isométrica (Ctrl+4): va a la
+  isométrica de esa esquina, no siempre a la misma.
+- **BIM**: el metrado encuentra etiquetas dentro de grupos y el panel
+  lista los objetos en los grupos que los contienen (@BastelBaus, #1035).
+  *Cómo probarlo:* etiqueta como muro algo que está dentro de un grupo y
+  mira el panel BIM.
+- **Ayuda ▸ Documentación** abre el manual en línea (@BastelBaus, #1036).
+- La capa activa muestra su lápiz con el color de acento (@APBureauEtude,
+  #1018), y al editar un grupo o componente se ve mejor dónde se está y
+  cómo salir (@APBureauEtude, #947). *Dónde:* el lápiz, en el panel Capas;
+  para lo segundo, doble clic en un grupo.
+
+### Cambiado
+
+- **Oclusión ambiental más suave y natural** (@canalsecuario-blip, #1060
+  en #1061): los rincones interiores ya no salen como barras casi negras.
+  El pase mide los horizontes de cada punto e integra el cielo visible con
+  peso coseno, la luz que rebotan las paredes aclara los rincones claros y
+  el peso de cada superficie baja con la distancia; un segundo desenfoque
+  deja el degradado liso. La Intensidad es lineal (1 es el valor físico) y
+  la Distancia tiene un deslizador de 1 cm a 50 m. *Cómo activarla:* en
+  el panel Estilos de la barra lateral, marca la casilla «Oclusión
+  ambiental» y mueve Distancia e Intensidad; se ve en los rincones, al pie
+  de los muros y bajo los muebles. Viene apagada en todos los estilos, y
+  se guarda con el estilo del documento.
+- **Las superficies curvas se ven redondas** y no facetadas (#131,
+  @canalsecuario-blip en #809): el sombreado se suaviza a través de las
+  aristas suaves. *Cómo probarlo:* no hay que activar nada; abre un
+  modelo con superficies curvas, o dibuja un círculo y empújalo hasta
+  hacer un cilindro: se ve liso, sin franjas.
+- **Importar .skp conserva la estructura del archivo**: grupos como grupos
+  y componentes como componentes (#1029), anidados y con sus nombres
+  (@BastelBaus en #922; cierra #866), las anotaciones con su ancla
+  (@BastelBaus en #960) y las líneas sueltas de una etiqueta oculta se
+  quedan fuera. Al abrir un .skp el Navegador puede mostrar muchos menos
+  objetos arriba: es la estructura que trae el archivo. *Cómo probarlo:*
+  Archivo ▸ Abrir un .skp y despliega el Navegador.
+- **Exportar COLLADA conserva grupos, componentes y etiquetas**
+  (@vicc3d, #966). *Dónde:* Archivo ▸ Exportar ▸ COLLADA (.dae)….
+
+### Arreglado
+
+- **Empujar/Tirar con puertas y ventanas en muros** (#1076, #1083): una
+  puerta empujada dentro del muro o a través de él deja el hueco limpio,
+  también si está un poco torcida o es un anillo. Los casos reales que
+  mandaron los usuarios quedan como pruebas de regresión.
+- **Explotar** un grupo cuyas caras caen sobre caras que ya estaban las
+  une, sin caras duplicadas (#721).
+- **Puente**: las caras nuevas quedan orientadas como las que une (#1043).
+- **Las cotas siguen a su vértice** cuando un movimiento pasa por encima
+  de otro vértice (#563).
+- **Empujar/Tirar se engancha al punto medio de las aristas** (#863 #964,
+  @hamzah1985 en #863), también las del sólido que se está empujando.
+- **Selección**: un círculo dibujado sobre la cara de un grupo se
+  selecciona con un clic y se empuja directo (#982); las esquinas, puntos
+  medios y caras de un grupo cerrado se enganchan desde fuera (#997); un
+  clic ya no reconstruye las figuras que miran a la cámara y la selección
+  en modelos con muchas de ellas es inmediata (#1006).
+- **Modelos enormes**: la caja de selección sobre un modelo de 5 millones
+  de caras ya no agota la memoria (más de 12 GB antes; ahora unos 4,7 s);
+  los puntos medios de arcos y la referencia de centro no construyen las
+  mallas diferidas (#942).
+- **Estilos**: el color frontal pinta las caras sin material en todos los
+  modos (#776); los dorsos toman la luz mate de los frentes (#873).
+- **Proyección paralela** sin zigzag en superficies lisas (#874); las
+  cotas y anotaciones tapadas por otras caras se cortan en la silueta sin
+  parpadear (#918).
+- **Compositor**: una cota arrastrada fuera del modelo se vuelve a anclar
+  al traerla a un vértice (#1053); un clic sobre un elemento agrupado
+  mantiene el grupo seleccionado (#1042).
+- **Texturas**: una cara suelta con textura que se mueve o gira entera se
+  lleva su imagen (#1034).
+- **Texto 3D** que ya no se hunde en las caras al colocarlo o editarlo
+  (@pacaeiro, #1057).
+- **Copiar con Mover** deja abierto el agujero de la cara copiada
+  (@vicc3d, #1027); deshacer una importación devuelve lo que se había
+  quitado (@vicc3d, #1073); importar DAE/glTF con un nodo repetido ya no
+  multiplica el recorrido (@vicc3d, #1001).
+- **.skp**: abren los archivos de 2019 con el registro de capa largo
+  (#157); las piezas de un componente con escala −1 conservan el frente
+  (#1045, @alteralto en #1065).
+- **DWG**: la conversión ya no congela la ventana y tiene botón Cancelar
+  (#401, @pkoska en #904); los planos con una presentación mal registrada
+  («'OF-01'») ya importan.
+- **Círculo**: vuelve a engancharse a los ejes (#962, @pacaeiro en #992).
+- **Puente de IA**: un diálogo abierto por el código del agente se cancela
+  en vez de bloquear la app (#694); probar la conexión con OpenAI usa
+  `max_completion_tokens` (#1032).
+- **Traducciones**: vietnamita revisado (@vandang890615, #1019 y
+  anteriores), tailandés con los nombres de la consola en inglés
+  (@PRIDA-TAKON, #1023); en árabe y vietnamita vuelve el espacio
+  entre un número y su unidad («2 decimales»).
+- **La oclusión ambiental ya no pinta bandas verticales** en caras planas
+  vistas de lado (#989, @canalsecuario-blip en #991).
+- **Lao en Windows** (#850): la interfaz usa una fuente con lao
+  (Leelawadee UI) y las vocales y tonos quedan sobre su consonante; el
+  lao vuelve a ofrecerse en Preferencias ▸ Idioma.
+
+### Gracias
+
+- A **Aashish** y su canal **IngeTrazo Tutorials** en YouTube
+  (@aashishzharbade-arch), que enseña el programa, sus extensiones y sus
+  flujos de trabajo, y que ha creado nueve extensiones del catálogo:
+  MultiView, Phasing Animator, Kitchen Maker, Display Scale, Taper, Bevel,
+  Curve Tools, Texture Library y Make Stair. Un ecosistema que le da vida
+  a IngeTrazo.
+- A todos los que aportaron código, traducciones, reportes y archivos de
+  prueba a esta versión, y en especial a Gabriel, Pedro, Rafael y Ahsan,
+  los pilares que dieron estructura al proyecto.
+
+### Problemas conocidos
+
+- Modelos de 5 millones de caras: abrir (~16 s), el primer movimiento con
+  Línea, algunos tirones y guardar siguen lentos (#1092).
+- Empujar/Tirar: una puerta torcida 1 mm empujada exactamente el grosor
+  del muro deja la tapa en la cara de atrás (#1094).
+- Copiar con Ctrl sobre una malla compleja grande no es exacto (#1087).
+
 ## [0.5.11] — 2026-10-27
 
 **Capas 2.0, la oclusión ambiental deja de ser experimental, sombras

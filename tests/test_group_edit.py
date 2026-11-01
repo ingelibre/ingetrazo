@@ -175,6 +175,10 @@ def test_billboard_group_round_trips_and_faces_camera(tmp_path):
     class _VpB:
         _faceme_dir = Viewport._faceme_dir     # perspective: toward the eye
         _billboard_mesh = Viewport._billboard_mesh   # the placed mesh
+        _billboard_extent = Viewport._billboard_extent
+        _figure_token = Viewport._figure_token
+        _mesh_fingerprint = staticmethod(Viewport._mesh_fingerprint)
+        _faces_paint_fp = staticmethod(Viewport._faces_paint_fp)
 
         def __init__(self, scene, eye):
             self.scene = scene

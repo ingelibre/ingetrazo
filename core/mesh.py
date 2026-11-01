@@ -383,6 +383,24 @@ class Mesh:
         """The existing vertex at ``position``, or ``None``."""
         return self._lookup(position)
 
+    def registers(self, v: Vertex) -> bool:
+        """Whether this mesh files ``v`` itself — by identity, not by what
+        stands at its position. A moved vertex that lands on another one
+        for a moment (a Move preview passing over a corner) waits in
+        ``_displaced`` while the other keeps the key: it is still this
+        mesh's vertex, and a dimension holding it must not let go (#563).
+        A vertex welded away or erased is filed nowhere."""
+        k = _key(v.position)
+        holder = self._registry.get(k)
+        if holder is v:
+            return True
+        waiting = self._displaced.get(k)
+        if waiting and any(w is v for w in waiting):
+            return True
+        if holder is None:
+            return self._probe_neighbours(k, v.position) is v
+        return False
+
     # ---- Edges --------------------------------------------------------------
     def find_edge(self, v0: Vertex, v1: Vertex) -> Optional[Edge]:
         """The edge between two vertices (either orientation), or ``None``.

@@ -149,6 +149,69 @@ def test_a_sheet_made_through_the_bridge_is_one_undoable_step(monkeypatch):
         win.close()
 
 
+def test_a_dialog_opened_by_the_agent_is_cancelled_not_waited_for(monkeypatch):
+    """#694: deleting a sheet asks Yes/No, and the last sheet says it must
+    stay — over the bridge nobody answers, so exec() held the UI thread for
+    good and the next call ran inside that dialog. Now the dialog is
+    cancelled at once, the reply names it, and nothing was deleted."""
+    import time
+    from plugins.ai_bridge import _Bridge
+    from views.main_window import MainWindow
+    monkeypatch.setenv("INGETRAZO_AI_PORT", "0")
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        bridge = _Bridge(vp)
+        bridge.start()
+        two = ("w = viewport.window()\n"
+               "w._show_new_sheet()\n"
+               "w._composer._on_comp_add()\n"
+               "print(len(scene.compositions))")
+        reply = _ask(bridge, "run_python", {"code": two})
+        assert reply["ok"] and reply["result"]["stdout"].strip() == "2"
+        t0 = time.monotonic()
+        reply = _ask(bridge, "run_python", {
+            "code": "viewport.window()._composer._on_comp_del()\n"
+                    "print(len(scene.compositions))"})
+        assert time.monotonic() - t0 < 5
+        result = reply["result"]
+        assert result["stdout"].strip() == "2"          # «No»: nothing deleted
+        assert any("Delete" in t for t in result["dialogs_cancelled"])
+        assert "cancelled" in result["stderr"]
+        # The bridge answers the next call as usual.
+        assert _ask(bridge, "query_model")["ok"]
+        bridge.stop()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        comp = getattr(win, "_composer", None)
+        if comp is not None:
+            comp.hide()
+        win.close()
+
+
+def test_a_call_arriving_inside_a_running_one_is_refused():
+    """A call delivered by an event loop nested in the previous one must
+    not run inside that one's undo step."""
+    import threading as _t
+    from plugins.ai_bridge import _Bridge
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        bridge = _Bridge(win.viewport)
+        bridge._busy = True
+        job = {"req": {"id": 7, "tool": "query_model"}, "done": _t.Event(),
+               "reply": None}
+        bridge._run_on_main(job)
+        assert job["done"].is_set() and job["reply"]["ok"] is False
+        assert "previous call" in job["reply"]["error"]
+        bridge._busy = False
+        bridge._run_on_main(job)
+        assert job["reply"]["ok"] is True
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def test_mcp_server_protocol_and_bridge_down_message(monkeypatch):
     import ingetrazo_mcp as mcp
     monkeypatch.setattr(mcp, "PORT", 1)            # nothing listens there

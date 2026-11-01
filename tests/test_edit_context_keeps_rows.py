@@ -230,6 +230,9 @@ def test_the_materials_panel_keeps_its_scan_across_a_group_opened_and_closed():
         try:
             start = colours()
             assert (0.2, 0.4, 0.8) in start
+            # The BIM takeoff looks for face tags in every group mesh once,
+            # then remembers the untagged ones: its first look is not ours.
+            win.bim_tray.on_scene_changed()
             read.clear()
             vp.begin_group_edit(room)
             assert colours() == start

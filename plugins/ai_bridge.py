@@ -35,7 +35,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit,
                                QPushButton, QVBoxLayout, QWidget)
 
@@ -44,6 +44,33 @@ from views.fold_section import FoldSection, narrow
 
 DEFAULT_PORT = 4763
 _REFUSED = b'{"id": null, "ok": false, "error": "not a bridge request; closing"}\n'
+
+
+class _NoDialogs(QObject):
+    """While an agent's code runs, nobody is at the screen to answer a
+    dialog it opens (#694): «Delete sheet» asks Yes/No, a sheet the
+    document cannot lose says so in a box. ``exec()`` then waited on the UI
+    thread for good — the agent got «timed out», the app looked hung, and
+    the next call ran INSIDE that dialog's event loop, nested in the first
+    call's undo step. Every dialog shown meanwhile is answered «Cancel» at
+    once (as Escape would) and named in the reply, so the agent knows."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.refused: list[str] = []
+
+    def eventFilter(self, obj, event):  # noqa: N802 — Qt override
+        if event.type() == QEvent.Show:
+            from PySide6.QtWidgets import QDialog, QMessageBox
+            if isinstance(obj, QDialog):
+                text = obj.windowTitle()
+                if isinstance(obj, QMessageBox) and obj.text():
+                    text = f"{text}: {obj.text()}" if text else obj.text()
+                self.refused.append(text or type(obj).__name__)
+                # Not from inside the Show: exec() only enters its loop
+                # after show() returns, and a reject before that is lost.
+                QTimer.singleShot(0, obj, obj.reject)
+        return False
 
 
 class _Bridge(QObject):
@@ -56,14 +83,24 @@ class _Bridge(QObject):
     # passes the PyObject by reference. (Cost us a hunt; now documented.)
     _dispatch = Signal(object)
 
+    @property
+    def _viewport(self):
+        """The viewport of the project in front (projects in tabs, #1066):
+        the one handed in at setup may be a tab in the back, or closed."""
+        return self._live_viewport()
+
     def __init__(self, viewport) -> None:
-        super().__init__(viewport)
-        self._viewport = viewport
+        # The window's, not the viewport's: a project tab closed must not
+        # take the bridge with it (#1066).
+        super().__init__(viewport.window() or viewport)
+        from views.documents import live_viewport
+        self._live_viewport = live_viewport(viewport)
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._scope: dict = {"__name__": "__ai__"}
         self.port: int | None = None
+        self._busy = False
         # Queued to a BOUND method of this main-thread QObject — connecting a
         # lambda would run the slot on the worker thread (CLAUDE.md gotcha).
         self._dispatch.connect(self._run_on_main, Qt.QueuedConnection)
@@ -171,16 +208,34 @@ class _Bridge(QObject):
         req = job["req"]
         tool = req.get("tool", "")
         args = req.get("args") or {}
+        if self._busy:
+            # A call delivered by an event loop nested in the previous one
+            # (something it ran is still waiting): never run inside it.
+            job["reply"] = {"id": req.get("id"), "ok": False, "error":
+                            "IngeTrazo is still running the previous call"}
+            job["done"].set()
+            return
+        self._busy = True
+        from PySide6.QtWidgets import QApplication
+        guard = _NoDialogs()
+        QApplication.instance().installEventFilter(guard)
         try:
             handler = getattr(self, f"_tool_{tool}", None)
             if handler is None:
                 raise ValueError(f"unknown tool {tool!r}")
             result = handler(**args)
+            if guard.refused and isinstance(result, dict):
+                result["dialogs_cancelled"] = list(guard.refused)
+                result["stderr"] = (result.get("stderr") or "") + "".join(
+                    f"A dialog nobody can answer over the bridge was "
+                    f"cancelled: {t!r}\n" for t in guard.refused)
             job["reply"] = {"id": req.get("id"), "ok": True, "result": result}
         except Exception as exc:  # noqa: BLE001 — reported to the agent
             job["reply"] = {"id": req.get("id"), "ok": False,
                             "error": f"{type(exc).__name__}: {exc}"}
         finally:
+            QApplication.instance().removeEventFilter(guard)
+            self._busy = False
             job["done"].set()
 
     # ---- Tools ---------------------------------------------------------------
@@ -338,9 +393,16 @@ class BridgeSection(QWidget):
     the exact lines to paste into the MCP client — the user who reached
     this is rarely the one who knows them by heart."""
 
+    @property
+    def _viewport(self):
+        """The viewport of the project in front (projects in tabs, #1066):
+        the one handed in at setup may be a tab in the back, or closed."""
+        return self._live_viewport()
+
     def __init__(self, viewport, parent=None) -> None:
         super().__init__(parent)
-        self._viewport = viewport
+        from views.documents import live_viewport
+        self._live_viewport = live_viewport(viewport)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 0, 4, 4)
         self.section = FoldSection(tr("AI bridge (MCP)"), "ia/open_bridge",
