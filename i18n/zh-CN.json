@@ -3275,5 +3275,18 @@
  "Front color — paints faces in Hidden line and Monochrome": "正面颜色 — 在隐藏线和单色模式下绘制面",
  "Distance ({unit}):": "距离（{unit}）：",
  "Restore defaults": "恢复默认值",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。"
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。",
+ "Search name or class… (* and ? work)": "搜索名称或类…（可用 * 和 ?）",
+ "Filter by IFC class": "按 IFC 类筛选",
+ "How the rows are structured": "行的组织方式",
+ "Group by group": "按组分组",
+ "Group by IFC class": "按 IFC 类分组",
+ "No grouping": "不分组",
+ "Export all CSV…": "全部导出为 CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "整个工程量计算表 — 连接到 IngePresupuestos 的桥梁",
+ "Export shown CSV…": "将显示的行导出为 CSV…",
+ "Only the objects the search and the class filter show": "仅搜索和类筛选所显示的对象",
+ "Filter by IFC class: {n} hidden": "按 IFC 类筛选：已隐藏 {n} 个",
+ "Show all classes": "显示所有类",
+ "(no BIM objects)": "（无 BIM 对象）"
 }

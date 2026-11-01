@@ -3301,5 +3301,18 @@
  "Front color — paints faces in Hidden line and Monochrome": "Màu mặt trước - vẽ các mặt trong Đường ẩn và Đơn sắc",
  "Restore defaults": "Khôi phục mặc định",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Đưa các thiết lập của cửa sổ này về như khi cài IngeTrazo. Không có gì được lưu cho đến khi bạn nhấn OK. Ngôn ngữ, Trợ lý AI, phím tắt và đơn vị của tài liệu đang mở được giữ nguyên.",
- "Distance ({unit}):": "Khoảng cách ({unit}):"
+ "Distance ({unit}):": "Khoảng cách ({unit}):",
+ "Search name or class… (* and ? work)": "Tìm tên hoặc lớp… (dùng được * và ?)",
+ "Filter by IFC class": "Lọc theo lớp đối tượng IFC",
+ "How the rows are structured": "Cách sắp xếp các hàng",
+ "Group by group": "Nhóm theo nhóm",
+ "Group by IFC class": "Nhóm theo lớp đối tượng IFC",
+ "No grouping": "Không nhóm",
+ "Export all CSV…": "Xuất tất cả ra CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "Toàn bộ bảng bóc tách khối lượng — cầu nối sang IngePresupuestos",
+ "Export shown CSV…": "Xuất các hàng đang hiển thị ra CSV…",
+ "Only the objects the search and the class filter show": "Chỉ các đối tượng mà tìm kiếm và bộ lọc lớp hiển thị",
+ "Filter by IFC class: {n} hidden": "Lọc theo lớp đối tượng IFC: ẩn {n}",
+ "Show all classes": "Hiện tất cả các lớp",
+ "(no BIM objects)": "(không có đối tượng BIM)"
 }

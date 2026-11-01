@@ -3275,5 +3275,18 @@
  "Front color — paints faces in Hidden line and Monochrome": "Colore frontale — colora le facce in Linee nascoste e Monocromatico",
  "Distance ({unit}):": "Distanza ({unit}):",
  "Restore defaults": "Ripristina predefiniti",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Riporta le impostazioni di questa finestra a come arriva IngeTrazo. Non viene salvato nulla finché non premi OK. La lingua, l'Assistente IA, le scorciatoie da tastiera e le unità del documento aperto restano come sono."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Riporta le impostazioni di questa finestra a come arriva IngeTrazo. Non viene salvato nulla finché non premi OK. La lingua, l'Assistente IA, le scorciatoie da tastiera e le unità del documento aperto restano come sono.",
+ "Search name or class… (* and ? work)": "Cerca nome o classe… (* e ? funzionano)",
+ "Filter by IFC class": "Filtra per classe IFC",
+ "How the rows are structured": "Come sono strutturate le righe",
+ "Group by group": "Raggruppa per gruppo",
+ "Group by IFC class": "Raggruppa per classe IFC",
+ "No grouping": "Nessun raggruppamento",
+ "Export all CSV…": "Esporta tutto in CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "L'intero foglio dei computi — il ponte verso IngePresupuestos",
+ "Export shown CSV…": "Esporta le righe visibili in CSV…",
+ "Only the objects the search and the class filter show": "Solo gli oggetti mostrati dalla ricerca e dal filtro di classe",
+ "Filter by IFC class: {n} hidden": "Filtra per classe IFC: {n} nascoste",
+ "Show all classes": "Mostra tutte le classi",
+ "(no BIM objects)": "(nessun oggetto BIM)"
 }

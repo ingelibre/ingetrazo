@@ -3274,5 +3274,18 @@
  "Front color — paints faces in Hidden line and Monochrome": "Цвет передней стороны — применяется для граней в режимах «Скрытые линии» и «Монохромный»",
  "Distance ({unit}):": "Расстояние ({unit}):",
  "Restore defaults": "Восстановить значения по умолчанию",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений.",
+ "Search name or class… (* and ? work)": "Поиск по имени или классу… (* и ? работают)",
+ "Filter by IFC class": "Фильтр по классу IFC",
+ "How the rows are structured": "Как организованы строки",
+ "Group by group": "Группировать по группам",
+ "Group by IFC class": "Группировать по классу IFC",
+ "No grouping": "Без группировки",
+ "Export all CSV…": "Экспортировать всё в CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "Вся спецификация — мост в IngePresupuestos",
+ "Export shown CSV…": "Экспортировать показанное в CSV…",
+ "Only the objects the search and the class filter show": "Только объекты, которые показывают поиск и фильтр классов",
+ "Filter by IFC class: {n} hidden": "Фильтр по классу IFC: скрыто {n}",
+ "Show all classes": "Показать все классы",
+ "(no BIM objects)": "(нет объектов BIM)"
 }
