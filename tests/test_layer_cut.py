@@ -2961,8 +2961,11 @@ def test_the_viewer_draws_each_layers_cut_weight_with_its_hatches():
 # ---- Where the pieces start ------------------------------------------------
 
 def _shifted(marks, dx, dy):
-    return sorted((round(x0 - dx, 6), round(y0 - dy, 6), round(x1 - dx, 6),
-                   round(y1 - dy, 6)) for x0, y0, x1, y1 in marks["lines"])
+    """The lines moved back by ``(dx, dy)``, sorted and flattened — one
+    list of numbers, which pytest.approx compares (it takes no nesting)."""
+    lines = sorted((round(x0 - dx, 6), round(y0 - dy, 6), round(x1 - dx, 6),
+                    round(y1 - dy, 6)) for x0, y0, x1, y1 in marks["lines"])
+    return [v for line in lines for v in line]
 
 
 def test_a_wall_starts_with_a_whole_brick_wherever_it_stands():
