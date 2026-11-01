@@ -3290,7 +3290,7 @@
  "Distance ({unit}):": "Відстань ({unit}):",
  "Restore defaults": "Відновити типові",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Повертає налаштування цього вікна до стандартних налаштувань IngeTrazo. Нічого не зберігається, доки ви не натиснете «Гаразд». Мова, Асистент ШІ, сполучення клавіш і одиниці відкритого документа залишаються без змін.",
- "Cut pen": "Перо розрізу",
+ "Cut pen": "Розріз",
  "Cut weight": "Товщина розрізу",
  "The sheet's cut pen": "Перо розрізу аркуша",
  "Cut weight in mm: the pen of the layer's section cut on the sheets (—: the sheet's cut pen) — click a row's to change it": "Товщина розрізу в мм: перо, яким розріз шару креслиться на аркушах (—: перо розрізу аркуша) — клацніть у рядку, щоб змінити",

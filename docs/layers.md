@@ -5,6 +5,10 @@ section plane, guide and reference image carries a layer, and with it you
 decide **what is seen**, **what can be touched**, **where new things go**
 and **how they come out on the sheets and in DXF**.
 
+How the cut of each layer — its pen, its hatch, its masonry — and its line
+types come out on the sheets, in the DXF and in the 3D view is told step by
+step, with pictures, in [Cut, hatches and line types](cut-and-hatches.md).
+
 Everything in this manual can be tried with the example document
 `examples/capas-prueba.igz` (see [Example document](#example-document)); its
 layer names are in Spanish, like the other examples.
@@ -162,7 +166,7 @@ geometry are not affected.
 
 They set how the layer's lines come out **on the sheets and in DXF**.
 
-![Line types](images/layers/menu-linetypes.png)
+![Line types](images/layers/line-type-panel.png)
 
 | Type | Usual use | DXF |
 |---|---|---|

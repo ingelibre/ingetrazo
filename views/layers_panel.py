@@ -2739,6 +2739,10 @@ class LayersPanel(QWidget):
                            (COL_OPACITY, 40), (COL_PRINT, 26),
                            (COL_COUNT, 44)):
             head.setSectionResizeMode(col, QHeaderView.Fixed)
+            if col == COL_CUT:
+                # Its title whole, in any language («Cut pen», «Corte»).
+                width = max(width, head.fontMetrics().horizontalAdvance(
+                    tr("Cut pen")) + 18)
             head.resizeSection(col, width)
         hi = self.tree.headerItem()
         self._header_icons()

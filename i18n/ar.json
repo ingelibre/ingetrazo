@@ -3310,7 +3310,7 @@
   "Distance ({unit}):": "المسافة ({unit}):",
   "Restore defaults": "استعادة الإعدادات الافتراضية",
   "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "يعيد إعدادات هذه النافذة إلى ما يأتي به IngeTrazo. لا يُحفظ شيء حتى تضغط موافق. تبقى اللغة ومساعد الذكاء الاصطناعي واختصارات لوحة المفاتيح ووحدات المستند المفتوح كما هي.",
-  "Cut pen": "قلم القطع",
+  "Cut pen": "القطع",
   "Cut weight": "سماكة القطع",
   "The sheet's cut pen": "قلم القطع في الورقة",
   "Cut weight in mm: the pen of the layer's section cut on the sheets (—: the sheet's cut pen) — click a row's to change it": "سماكة القطع بالملم: القلم الذي يُرسم به مقطع الطبقة في الأوراق (—: قلم القطع في الورقة) — انقر في صفّ لتغييره",
