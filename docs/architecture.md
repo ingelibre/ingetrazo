@@ -29,6 +29,14 @@ The 3D viewport uses **QOpenGLWidget** (PySide6) as the Qt-managed surface and *
 
 To be documented.
 
+## Snapping and inference
+
+`core/inference.py` owns the cursor's acquired references and direction locks;
+`core/snap.py` selects the target using world geometry, screen distances and
+the viewport's visibility callbacks. See [snapping contracts and regression
+coverage](snapping.md) for point priorities, face constraints, camera-edge
+recovery and the tests that protect them.
+
 ## Plugin system
 
 See [plugins.md](plugins.md).

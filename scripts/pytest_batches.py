@@ -22,9 +22,36 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import NoReturn
 
 _COUNT = re.compile(r"(\d+) (passed|failed|skipped|errors?|xfailed|xpassed|"
                     r"deselected|warnings?)")
+_NATIVE_FAULT = re.compile(
+    r"Windows fatal exception: (?:access violation|stack overflow|illegal instruction|"
+    r"integer divide by zero|code 0xc000(?:0005|00fd|001d|0409|0094))"
+    r"|Fatal Python error|Segmentation fault", re.IGNORECASE)
+
+
+def exit_test_process(status: int) -> NoReturn:
+    """Flush test reports and exit without unsafe Qt teardown on Windows."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        # The CRT exit path can still detach Qt DLLs after os._exit. End only
+        # this test process once pytest has written all reports and its status.
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        current = kernel.GetCurrentProcess
+        current.argtypes = []
+        current.restype = wintypes.HANDLE
+        terminate = kernel.TerminateProcess
+        terminate.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        terminate.restype = wintypes.BOOL
+        if not terminate(current(), status):
+            raise ctypes.WinError(ctypes.get_last_error())
+    os._exit(status)
 
 
 def main() -> int:
@@ -43,7 +70,8 @@ def main() -> int:
     env = dict(os.environ, QT_QPA_PLATFORM=os.environ.get(
         "QT_QPA_PLATFORM", "offscreen"))
     for i, chunk in enumerate(chunks, 1):
-        cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+        cmd = [sys.executable, "-X", "faulthandler", "-m", "pytest", "-q",
+               "-p", "no:cacheprovider"]
         if args.marker:
             cmd += ["-m", args.marker]
         # pytest writes UTF-8; text=True alone decodes with the locale's
@@ -57,8 +85,12 @@ def main() -> int:
             kind = {"error": "errors", "warning": "warnings"}.get(kind, kind)
             totals[kind] = totals.get(kind, 0) + int(num)
         # 0 ok, 1 failures (counted above), 5 nothing collected for -m.
-        if proc.returncode not in (0, 1, 5):
-            crashed.append(f"batch {i} (exit {proc.returncode})")
+        native_fault = _NATIVE_FAULT.search(proc.stdout + proc.stderr) is not None
+        if proc.returncode not in (0, 1, 5) or native_fault:
+            detail = f"exit {proc.returncode}"
+            if native_fault:
+                detail += "; native fault reported"
+            crashed.append(f"batch {i} ({detail})")
             sys.stderr.write(proc.stdout[-3000:] + proc.stderr[-3000:])
         elif proc.returncode == 1:
             # The failures' own report too: a test that fails once in a
@@ -77,8 +109,8 @@ def main() -> int:
              "deselected", "warnings")
     parts = [f"{totals[k]} {k}" for k in order if totals.get(k)]
     parts += [f"CRASHED: {c}" for c in crashed]
-    print(", ".join(parts) + f" in {time.monotonic() - t0:.0f}s "
-          f"({n} batches)")
+    elapsed = round(time.monotonic() - t0)
+    print(", ".join(parts) + f" in {elapsed}s ({n} batches)")
     return 1 if totals.get("failed") or totals.get("errors") or crashed \
         else 0
 
