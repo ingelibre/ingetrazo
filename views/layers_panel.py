@@ -2405,6 +2405,10 @@ class _LineSample(QWidget):
         self._hover = False
         self.setMouseTracking(True)
         self.setToolTip(action.text())
+        # A drawing: left to right in a mirrored interface too, or a line
+        # type's words (GAS) read backwards.
+        from views.rtl import keep_ltr
+        keep_ltr(self)
         w = 170                       # room for two repeats of a long dash
         if text:
             w = (self.LINE_END if (key is not None or swatch is not None)
