@@ -31,16 +31,31 @@ LANGUAGE_NAMES = {"en": "English", "es": "Español",
                   "id": "Bahasa Indonesia", "fr": "Français", "de": "Deutsch",
                   "pl": "Polski", "ru": "Русский", "vi": "Tiếng Việt",
                   "lo": "ລາວ", "th": "ไทย",
-                  "ja": "日本語", "ko": "한국어"}
+                  "ja": "日本語", "ko": "한국어", "uk": "Українська",
+                  "ar": "العربية"}
+
+#: Languages written from right to left: the whole interface is mirrored
+#: for them (see views/rtl.py). Arabic ships; the rest are ready for when
+#: their catalogue comes.
+RTL_LANGUAGES = frozenset({"ar", "he", "fa", "ur"})
+
+
+def is_rtl(lang: str | None) -> bool:
+    """Whether ``lang`` (``"ar"``, ``"fa-IR"``…) is written right to left."""
+    return str(lang or "").split("-")[0].split("_")[0].lower() in RTL_LANGUAGES
+
+
+#: The saved choice that follows the operating system's language (#818);
+#: also what an unset choice means.
+SYSTEM = "system"
 
 _catalog: dict[str, str] = {}
 _lang = "en"
 
 
-#: Catalogues that ship but are not offered yet. Lao (#850): on Windows the
-#: interface font has no Lao, and its vowel and tone marks were drawn apart
-#: from their consonants (Windows round 0.5.11); back once that is fixed.
-HIDDEN_LANGUAGES = frozenset({"lo"})
+#: Catalogues that ship but are not offered yet. Lao (#850) was here until
+#: its marks composed on Windows (views/script_fonts.py, round 0.6.0).
+HIDDEN_LANGUAGES: frozenset[str] = frozenset()
 
 
 def available_languages() -> list[str]:
@@ -50,6 +65,36 @@ def available_languages() -> list[str]:
         return ["en"]
     return sorted(p.stem for p in _I18N_DIR.glob("*.json")
                   if p.stem not in HIDDEN_LANGUAGES)
+
+
+def language_for_locales(locales) -> str:
+    """The catalog that best serves ``locales`` — the system's UI
+    languages, most preferred first (``["pt-PT", "en-US"]``).
+
+    An exact tag wins, else the same base language: Portuguese from
+    Portugal reads the Brazilian catalog, ``zh-Hans-CN`` the simplified
+    Chinese one. The first locale with any match decides, so an English
+    system stays English; nothing matching at all means English."""
+    have = available_languages()
+    by_tag = {code.lower(): code for code in have}
+    by_base: dict[str, str] = {}
+    for code in have:
+        by_base.setdefault(code.lower().split("-")[0], code)
+    for name in locales:
+        tag = str(name).replace("_", "-").lower()
+        found = by_tag.get(tag) or by_base.get(tag.split("-")[0])
+        if found:
+            return found
+    return "en"
+
+
+def resolve_language(choice: str | None) -> str:
+    """The language code a saved ``choice`` runs in: itself, or for
+    :data:`SYSTEM` (or no choice yet) the operating system's."""
+    if choice and str(choice) != SYSTEM:
+        return str(choice)
+    from PySide6.QtCore import QLocale
+    return language_for_locales(QLocale.system().uiLanguages())
 
 
 def set_language(lang: str) -> None:

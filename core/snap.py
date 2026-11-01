@@ -330,6 +330,8 @@ def _engaged_axis(
     project_onto_line,
     magnetic_axis_deg: Optional[float],
     screen_axis_px: Optional[float],
+    work_plane_normal: Optional[QVector3D] = None,
+    axis_in_plane: bool = False,
 ) -> Optional[str]:
     """Which axis the drag has taken command of, or ``None``.
 
@@ -364,6 +366,12 @@ def _engaged_axis(
             start_point, candidate_world, candidate_pixel,
             world_to_pixel, screen_axis_px,
         )
+        if axis is not None and axis_in_plane:
+            # A planar shape may not follow an axis its plane cannot hold:
+            # keep the screen detector's generous pixel capture for the
+            # plane's own two axes and let the world detector answer for
+            # the rest (#962).
+            axis = _axis_in_plane(axis, work_plane_normal)
         if axis is not None:
             reach = (candidate_world - start_point).length()
             locked = project_onto_line(start_point, _AXIS_VECTORS[axis])
@@ -1548,6 +1556,7 @@ def compute_snap(
         axis_engaged = _engaged_axis(
             line_start, candidate_world, candidate_pixel, world_to_pixel,
             project_onto_line, magnetic_axis_deg, screen_axis_px,
+            work_plane_normal, axis_in_plane,
         )
         if axis_in_plane:
             # A shape that lives in ONE plane can only be magnetised along

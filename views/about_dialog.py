@@ -45,7 +45,8 @@ CONTRIBUTORS = [
     ("Gabriel Rodríguez Arregin",
      "Architect. The units system, the Browser, Layers 2.0, the Solid "
      "Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, "
-     "cleaner exports and many everyday editing tools.",
+     "soft ambient occlusion, round curved surfaces, cleaner exports and "
+     "many everyday editing tools.",
      "https://github.com/canalsecuario-blip"),
     ("Félix Riestra",
      "The macOS package: IngeTrazo for Mac. Components that come apart "
@@ -73,7 +74,8 @@ CONTRIBUTORS = [
      "Simplified Chinese translation of the interface.",
      "https://github.com/liujvnes"),
     ("deedend",
-     "Italian translation of the interface.",
+     "Italian translation of the interface, and the 3D mouse's axes and "
+     "navigation profiles.",
      "https://github.com/deedend"),
     ("Rainjalin",
      "Indonesian translation of the interface.",
@@ -141,19 +143,22 @@ CONTRIBUTORS = [
      "Thai translation of the interface.",
      "https://github.com/PRIDA-TAKON"),
     ("ChangWoo Lee",
-     "Korean translation of the interface.",
+     "Korean translation of the interface, and the AI key from an "
+     "environment variable.",
      "https://github.com/ultracat"),
     ("nonasige-ui",
      "Japanese translation of the interface.",
      "https://github.com/nonasige-ui"),
     ("Francis Rebouças",
      "Sheet dimensions and level marks in the document's units, "
-     "dimensions that follow their object, and Push/Pull fixes.",
+     "dimensions that follow their object, Push/Pull fixes and the "
+     "«System language» choice.",
      "https://github.com/francisreboucas"),
     ("pkoska",
      "Fixes for the location map, Move's rotation grips, typed values, "
      "the Line tool, snapping, long thin rectangles, .skp thumbnails and "
-     "the extension manager's downloads on Windows.",
+     "the extension manager's downloads on Windows, and DWG conversion "
+     "with a Cancel button.",
      "https://github.com/pkoska"),
     ("Kone Venkatesh",
      "Fixes deep in the modelling core: windows cut at a box's corner, "
@@ -166,7 +171,8 @@ CONTRIBUTORS = [
      "DXF polyface and mesh entities imported as faces.",
      "https://github.com/nicolasmarc"),
     ("BastelBaus",
-     "DAE imports that keep the file's groups.",
+     "DAE and .skp imports that keep the file's groups, nested and named, "
+     "BIM tags inside groups and Help ▸ Documentation.",
      "https://github.com/BastelBaus"),
     ("David",
      "The choice of tool cursor: the tool's icon, a crosshair or an "
@@ -181,10 +187,13 @@ CONTRIBUTORS = [
      "https://github.com/luisfergromo"),
     ("Victor Crespo",
      "A confirmation before installing an extension nobody has reviewed, "
-     "and safer archives from outside.",
+     "safer archives from outside, COLLADA export with groups and tags, "
+     "and fixes for copies and undone imports.",
      "https://github.com/vicc3d"),
     ("APBureauEtude",
-     "OBJ and MTL files read and written as UTF-8 on every system.",
+     "OBJ and MTL files read and written as UTF-8 on every system, the "
+     "active layer's pencil in the accent colour and clearer group "
+     "editing.",
      "https://github.com/APBureauEtude"),
     ("SebWell",
      "A cleaner macOS package.",
@@ -226,7 +235,7 @@ CONTRIBUTORS = [
     ("Bogdan Demchenko",
      "Extension toolbars back in place at start-up, the Rectangle's "
      "preview, Measure from the line under the cursor, Offset's "
-     "reference and pool water.",
+     "reference, pool water and Push/Pull on edge midpoints.",
      "https://github.com/hamzah1985"),
     ("Alexis",
      "Ctrl+Enter in the leader-text dialog.",
@@ -237,6 +246,22 @@ CONTRIBUTORS = [
     ("xcd-droid",
      "Reports on snapping, the Rectangle and pasting.",
      "https://github.com/xcd-droid"),
+    ("Oleksandr Bolotov",
+     "Ukrainian translation of the interface.",
+     "https://github.com/bolotov"),
+    ("Amer Alhlhli",
+     "Arabic translation of the interface: the first right-to-left one.",
+     "https://github.com/Alhlhli"),
+    ("Nicolas Grossi",
+     "The OpenCode Go provider and a readable chat for the AI Assistant.",
+     "https://github.com/changastyle"),
+    ("Alexey Tkachenko",
+     ".skp components scaled by −1 that keep their front.",
+     "https://github.com/alteralto"),
+    ("Aashish — IngeTrazo Tutorials",
+     "The IngeTrazo Tutorials channel on YouTube, and nine extensions: "
+     "MultiView, Phasing Animator, Kitchen Maker, Taper and more.",
+     "https://github.com/aashishzharbade-arch"),
 ]
 
 #: Roll speed: pixels per tick, and the tick.
@@ -251,8 +276,17 @@ def _credits_html(people) -> str:
                else f"<b>{name}</b>")
         if name in STARRED:
             who = f"<span style='color:#e8a33d'>★</span> {who}"
-        rows.append(f"<p style='margin:0 0 10px 0'>{who}<br>{tr(role)}</p>")
+        rows.append(f"<p{_DIR()} style='margin:0 0 10px 0'>{who}<br>{tr(role)}</p>")
     return "".join(rows)
+
+
+def _DIR() -> str:  # noqa: N802
+    """A paragraph's direction attribute: rich text picks each paragraph's
+    direction from its first letter, and a credit starts with a Latin
+    name — right to left (#1067) it is said outright. Nothing left to
+    right."""
+    from views.rtl import is_rtl_ui
+    return " dir='rtl'" if is_rtl_ui() else ""
 
 
 class _Fade(QWidget):
@@ -440,6 +474,8 @@ class AboutDialog(QDialog):
         outer.addLayout(col, 1)
 
         def para(html: str) -> QLabel:
+            if _DIR():
+                html = f"<div{_DIR()}>{html}</div>"
             lab = QLabel(html, self)
             lab.setWordWrap(True)
             lab.setTextFormat(Qt.RichText)

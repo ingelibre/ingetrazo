@@ -75,6 +75,22 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.0" date="2026-11-01">
+      <description>
+        <p>Several projects in tabs in the same window; 17 languages, the
+        latest Arabic with a right-to-left interface and Ukrainian; Push/Pull
+        cuts doors and windows through real walls; .skp files import with
+        their groups and components; curved surfaces shade round; softer,
+        more natural ambient occlusion; and over forty community
+        contributions.</p>
+        <p xml:lang="es">Varios proyectos en pestañas en la misma ventana;
+        17 idiomas, los últimos el árabe con la interfaz de derecha a
+        izquierda y el ucraniano; Empujar/Tirar abre puertas y ventanas en muros reales; los
+        .skp llegan con sus grupos y componentes; las superficies curvas se
+        ven redondas; oclusión ambiental más suave y natural; y más de
+        cuarenta aportes de la comunidad.</p>
+      </description>
+    </release>
     <release version="0.5.11" date="2026-10-27">
       <description>
         <p>Layers 2.0 with their own tab, colour, line type and weight per

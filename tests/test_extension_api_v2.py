@@ -73,9 +73,13 @@ def _app_for(win, key="myext"):
     return ExtensionApp(win, key)
 
 
-def test_the_api_version_is_2():
+def test_the_api_version_stays_2():
+    # Projects in tabs (#1066) only add to version 2, and published
+    # extensions (loop_cut, vertex_editor) refuse anything but 1 or 2: a 3
+    # would turn them away although nothing they use changed.
     from views.extension_api import API_VERSION, ExtensionApp
     assert API_VERSION == 2 and ExtensionApp.api_version == 2
+    assert hasattr(ExtensionApp, "on_document_closed")
 
 
 # ---- panels -----------------------------------------------------------------------

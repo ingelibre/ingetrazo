@@ -304,6 +304,9 @@ def test_panel_delete_asks_when_the_layer_has_content(monkeypatch):
         win._on_undo()
         assert scene.layer("Muros") is not None
         assert layer_of(face) == "Muros"
+        # The panel rebuilds on the next turn of the event loop — never
+        # inside a paint nor a drop-down's own signal, where it crashed.
+        _app.processEvents()
         assert _item(panel.tree, "Muros") is not None   # the panel follows
     finally:
         win._saved_version = win.viewport.scene.version

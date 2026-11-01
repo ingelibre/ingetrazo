@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from views import prompts as _prompts
 
+import math
 import os
 from pathlib import Path
 
@@ -46,6 +47,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSpinBox,
+    QStyle,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -54,6 +56,7 @@ from PySide6.QtWidgets import (
 from views.color_dialog import get_color
 from core.i18n import tr
 from views.theme import style as theme_style
+from views.rtl import set_arrow
 from views.filedialogs import file_dialogs
 from core.mesh import Edge, Face
 from core.bim import face_net_area
@@ -123,7 +126,7 @@ class _Section(QWidget):
         self._btn.setCheckable(True)
         self._btn.setChecked(True)
         self._btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self._btn.setArrowType(Qt.DownArrow)
+        set_arrow(self._btn, Qt.DownArrow)
         # Clean, light header (QGIS-style): plain bold title on the panel
         # background with a subtle underline — no dark bar. Uses palette() roles
         # so it adapts to light and dark themes.
@@ -146,7 +149,7 @@ class _Section(QWidget):
 
     def _on_toggle(self, on: bool) -> None:
         self._content.setVisible(on)
-        self._btn.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
+        set_arrow(self._btn, Qt.DownArrow if on else Qt.RightArrow)
         key = getattr(self, "_key", None)
         if key is not None:
             from PySide6.QtCore import QSettings
@@ -176,7 +179,8 @@ def style_slider(slider) -> None:
     slider.setMinimumHeight(20)
 
 
-def fit_rows(view, min_rows: int = 3, max_rows: int | None = None) -> None:
+def fit_rows(view, min_rows: int = 3, max_rows: int | None = None,
+             rows: int | None = None) -> None:
     """Grow a list / tree to show ALL its rows — no scroll bar of its own,
     so the only scrolling in a tray is the tray's (Marco, 2026-09-14: «no
     me gusta hacer scroll dentro del scroll»). Call after every refill;
@@ -185,10 +189,12 @@ def fit_rows(view, min_rows: int = 3, max_rows: int | None = None) -> None:
     ``max_rows`` caps that: past it the view stops growing and scrolls on
     its own — for the lists that get long, Layers and Components in the
     model (issue #55, @pacaeiro: «should have their own vertical scroll
-    bar»). Short lists keep the no-nested-scroll rule."""
+    bar»). Short lists keep the no-nested-scroll rule. ``rows`` overrides
+    the count — a tree passes the rows its open branches show."""
     from PySide6.QtWidgets import QAbstractItemView, QTreeView
-    model = view.model()
-    rows = model.rowCount() if model is not None else 0
+    if rows is None:
+        model = view.model()
+        rows = model.rowCount() if model is not None else 0
     capped = max_rows is not None and rows > max_rows
     view.setVerticalScrollBarPolicy(
         Qt.ScrollBarAsNeeded if capped else Qt.ScrollBarAlwaysOff)
@@ -382,6 +388,11 @@ class FlowLayout(QLayout):
         y = rect.y() + m.top()
         right = rect.right() - m.right()
         row_h = 0
+        # Right to left (#1067) the rows fill from the right: Qt mirrors
+        # its own layouts, a custom one mirrors itself.
+        owner = self.parentWidget()
+        mirror = (not test_only and owner is not None
+                  and owner.isRightToLeft())
         for item in self._items:
             hint = item.sizeHint()
             if row_h and x + hint.width() - 1 > right:
@@ -389,7 +400,10 @@ class FlowLayout(QLayout):
                 y += row_h + self._spacing
                 row_h = 0
             if not test_only:
-                item.setGeometry(QRect(QPoint(x, y), hint))
+                geo = QRect(QPoint(x, y), hint)
+                if mirror:
+                    geo = QStyle.visualRect(Qt.RightToLeft, rect, geo)
+                item.setGeometry(geo)
             x += hint.width() + self._spacing
             row_h = max(row_h, hint.height())
         return y + row_h + m.bottom() - rect.y()
@@ -2005,6 +2019,12 @@ class MaterialsPanel(QWidget):
 
     COLS = 5
 
+    def showEvent(self, ev) -> None:
+        super().showEvent(ev)
+        if getattr(self, "_in_model_stale", False):
+            self._in_model_stale = False
+            self.refresh_in_model()
+
     def __init__(self, window) -> None:
         super().__init__()
         self._window = window
@@ -2068,7 +2088,7 @@ class MaterialsPanel(QWidget):
         self._edit_toggle = QToolButton()
         self._edit_toggle.setText(tr("Edit texture"))
         self._edit_toggle.setCheckable(True)
-        self._edit_toggle.setArrowType(Qt.RightArrow)
+        set_arrow(self._edit_toggle, Qt.RightArrow)
         self._edit_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self._edit_toggle.setStyleSheet(
             "QToolButton { border: none; padding: 2px; }"
@@ -2149,8 +2169,8 @@ class MaterialsPanel(QWidget):
 
         def _toggle_edit(on):
             self._edit_body.setVisible(on)
-            self._edit_toggle.setArrowType(Qt.DownArrow if on
-                                           else Qt.RightArrow)
+            set_arrow(self._edit_toggle, Qt.DownArrow if on
+                      else Qt.RightArrow)
             if on:
                 self._load_texture_fields()
 
@@ -2230,7 +2250,7 @@ class MaterialsPanel(QWidget):
             btn.setText(f"  {title}")
             btn.setCheckable(True)
             btn.setChecked(False)
-            btn.setArrowType(Qt.RightArrow)
+            set_arrow(btn, Qt.RightArrow)
             btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
             btn.setStyleSheet(
                 "QToolButton { border: none; padding: 4px 2px;"
@@ -2248,7 +2268,7 @@ class MaterialsPanel(QWidget):
                     fn, pending[0] = pending[0], None
                     fn(g)
                 w.setVisible(on)
-                b.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
+                set_arrow(b, Qt.DownArrow if on else Qt.RightArrow)
 
             btn.toggled.connect(toggle)
             root.addWidget(btn)
@@ -3220,7 +3240,8 @@ class StylesPanel(QWidget):
 
         grid.addWidget(QLabel(tr("Front color:")), 4, 0)
         self._front_c = self._swatch(
-            tr("Front color — paints faces in Hidden line and Monochrome"),
+            tr("Front color — paints the faces with no material (every "
+               "face in Hidden line and Monochrome)"),
             "front_color")
         grid.addWidget(self._front_c, 4, 1)
 
@@ -3255,22 +3276,28 @@ class StylesPanel(QWidget):
 
         # Ambient occlusion (#954): off in every preset. The
         # two values only take edits while the switch is on.
-        from views.length_field import LengthSpinBox
-        from core.style import AO_DISTANCE_RANGE
         self._ao = QCheckBox(tr("Ambient occlusion"))
         self._ao.setToolTip(tr(
             "Softly darkens where surfaces meet — corners, the foot of a "
             "wall, under a bench."))
         self._ao.toggled.connect(self._apply_edits)
         grid.addWidget(self._ao, 10, 0, 1, 2)
-        self._ao_dist_lbl = QLabel(tr("Distance:"))
+        self._ao_dist_lbl = QLabel()             # its unit: _sync_ao_controls
         grid.addWidget(self._ao_dist_lbl, 11, 0)
-        self._ao_dist = LengthSpinBox(minimum=AO_DISTANCE_RANGE[0],
-                                      maximum=AO_DISTANCE_RANGE[1])
+        # A slider and its value, like the intensity below, on a log scale:
+        # a centimetre matters at the foot of a skirting board, ten metres
+        # between two buildings.
+        dist_row = QHBoxLayout()
+        self._ao_dist = QSlider(Qt.Horizontal)
+        self._ao_dist.setRange(0, self._AO_DIST_STEPS)
         self._ao_dist.setToolTip(tr(
             "How far a surface still darkens its neighbour"))
-        self._ao_dist.valueChanged.connect(self._apply_edits)
-        grid.addWidget(self._ao_dist, 11, 1)
+        self._ao_dist.valueChanged.connect(self._on_ao_dist_slider)
+        dist_row.addWidget(self._ao_dist, 1)
+        self._ao_dist_val = QLabel()
+        self._ao_dist_val.setMinimumWidth(28)
+        dist_row.addWidget(self._ao_dist_val)
+        grid.addLayout(dist_row, 11, 1)
         self._ao_int_lbl = QLabel(tr("Intensity:"))
         grid.addWidget(self._ao_int_lbl, 12, 0)
         int_row = QHBoxLayout()
@@ -3355,7 +3382,8 @@ class StylesPanel(QWidget):
             self._bg_c.setStyleSheet(self._css(style.background))
             self._fill_c.setStyleSheet(self._css(style.section_fill_color))
             self._ao.setChecked(getattr(style, "ambient_occlusion", False))
-            self._ao_dist.setValue(getattr(style, "ao_distance", 0.5))
+            self._ao_dist.setValue(
+                self._ao_dist_pos(getattr(style, "ao_distance", 0.5)))
             self._ao_int.setValue(round(getattr(style, "ao_intensity", 1.0)
                                         * 10))
             self._sync_ao_controls()
@@ -3385,22 +3413,66 @@ class StylesPanel(QWidget):
         style.sky = self._sky.isChecked()
         style.section_fill = self._fill.isChecked()
         style.ambient_occlusion = self._ao.isChecked()
-        style.ao_distance = self._ao_dist.value()
         style.ao_intensity = self._ao_int.value() / 10.0
         self._sync_ao_controls()
         self._window._sync_style_menu()
         self._window.viewport.update()
+
+    _AO_DIST_STEPS = 200
+
+    @classmethod
+    def _ao_dist_at(cls, pos: int) -> float:
+        """The distance a slider position stands for, rounded to what reads
+        well in the field: centimetres under a metre, tenths to ten metres,
+        whole metres beyond."""
+        from core.style import AO_DISTANCE_RANGE
+        lo, hi = AO_DISTANCE_RANGE
+        v = lo * (hi / lo) ** (pos / cls._AO_DIST_STEPS)
+        v = round(v, 2) if v < 1.0 else round(v, 1) if v < 10.0 else round(v)
+        return min(max(v, lo), hi)
+
+    @classmethod
+    def _ao_dist_pos(cls, value: float) -> int:
+        from core.style import AO_DISTANCE_RANGE
+        lo, hi = AO_DISTANCE_RANGE
+        value = min(max(value, lo), hi)
+        return round(math.log(value / lo) / math.log(hi / lo)
+                     * cls._AO_DIST_STEPS)
+
+    def _on_ao_dist_slider(self, pos: int) -> None:
+        # Only a drag writes the distance: a value from a file that sits
+        # between two slider steps is kept as it is until then.
+        style = self._style()
+        if style is None or self._updating:
+            return
+        style.ao_distance = self._ao_dist_at(pos)
+        self._apply_edits()
 
     def _sync_ao_controls(self) -> None:
         """The distance and intensity follow the switch; a graphics driver
         that refused the pass this session greys the switch with the
         reason, instead of a box that does nothing."""
         on = self._ao.isChecked()
-        for w in (self._ao_dist_lbl, self._ao_dist, self._ao_int_lbl,
-                  self._ao_int, self._ao_int_val):
+        for w in (self._ao_dist_lbl, self._ao_dist, self._ao_dist_val,
+                  self._ao_int_lbl, self._ao_int, self._ao_int_val):
             w.setEnabled(on)
-        from core.units import localized
-        self._ao_int_val.setText(localized(f"{self._ao_int.value() / 10.0:.1f}"))
+        # Both values read alike: a bare number, two decimals, the model's
+        # decimal mark; the distance's unit goes once, in its label.
+        from core import units
+        u = units.model_unit()
+        if u in ("in", "in-frac"):
+            symbol = "in"
+        elif u in ("ft", "ft-in", "ft-in-frac"):
+            symbol = "ft"
+        else:
+            row = units.UNITS.get(u)
+            symbol = row.symbol if row is not None else "m"
+        self._ao_dist_lbl.setText(tr("Distance ({unit}):", unit=symbol))
+        style = self._style()
+        dist = units.length_number(getattr(style, "ao_distance", 0.5), u)
+        self._ao_dist_val.setText(units.localized(f"{dist:.2f}"))
+        self._ao_int_val.setText(
+            units.localized(f"{self._ao_int.value() / 10.0:.2f}"))
         ao = getattr(self._window.viewport, "_ao", None)
         broken = getattr(ao, "broken", None)
         if broken:
@@ -3437,9 +3509,8 @@ class StylesPanel(QWidget):
         if style is None:
             return None
         mode = style.face_mode
-        if attr == "front_color" and mode not in ("hidden_line", "monochrome"):
-            return tr("Front color saved — it paints faces in Hidden line "
-                      "and Monochrome modes.")
+        if attr == "front_color" and mode == "wireframe":
+            return tr("Front color saved — Wireframe draws no faces.")
         if attr == "back_color" and mode in ("hidden_line", "wireframe"):
             return tr("Back color saved — it paints back faces in Textures, "
                       "Shaded, Monochrome and X-ray modes.")
@@ -4415,11 +4486,16 @@ class BimPanel(QWidget):
         self.tree.setColumnCount(4)
         self.tree.setHeaderLabels([tr("Class"), tr("Name"),
                                    tr("Takeoff"), tr("Vol m³")])
-        self.tree.setRootIsDecorated(False)
-        self.tree.setColumnWidth(0, 82)
+        # Rows sit in the groups that hold them, as the Browser shows them:
+        # a tagged group is the parent of what is tagged inside it.
+        self.tree.setRootIsDecorated(True)
+        self.tree.setIndentation(12)
+        self.tree.setColumnWidth(0, 110)
         self.tree.setColumnWidth(1, 90)
         self.tree.setColumnWidth(2, 64)
         self.tree.itemClicked.connect(self._on_pick_object)
+        self.tree.itemExpanded.connect(self._fit_tree)
+        self.tree.itemCollapsed.connect(self._fit_tree)
         lay.addWidget(self.tree)
 
         exp = QPushButton(tr("Export quantities CSV…"))
@@ -4428,10 +4504,26 @@ class BimPanel(QWidget):
         exp.clicked.connect(self._on_export_csv)
         lay.addWidget(exp)
         self._objects: list = []
+        self._containers: list = []
         self.refresh()
 
     def _scene(self):
         return self._window.viewport.scene
+
+    def _fit_tree(self, *_a) -> None:
+        """``fit_rows`` for the rows an open branch shows, not only the top."""
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        it = QTreeWidgetItemIterator(
+            self.tree, QTreeWidgetItemIterator.NotHidden)
+        rows = 0
+        while it.value() is not None:
+            item = it.value()
+            p = item.parent()
+            while p is not None and p.isExpanded():
+                p = p.parent()
+            rows += p is None
+            it += 1
+        fit_rows(self.tree, rows=rows)
 
     # ---- Actions -------------------------------------------------------------
     def _on_tag(self) -> None:
@@ -4488,19 +4580,63 @@ class BimPanel(QWidget):
         self.refresh()
 
     def _on_pick_object(self, item, _col) -> None:
-        """Clicking a row selects the object's geometry in the viewport."""
-        idx = self.tree.indexOfTopLevelItem(item)
-        if not (0 <= idx < len(self._objects)):
+        """Clicking a row selects the object's geometry in the viewport; a
+        group row selects that group."""
+        idx = item.data(0, Qt.UserRole)
+        if not isinstance(idx, int):
+            return
+        vp = self._window.viewport
+        scene = self._scene()
+        if idx < 0:
+            self._pick_container(self._containers[-idx - 1])
+            return
+        if idx >= len(self._objects):
             return
         obj = self._objects[idx]
-        scene = self._scene()
+        # A grouped object is selected where it sits: the groups around it
+        # open, as the Browser opens them to pick a nested row.
+        target = obj.get("group") or obj.get("owner")
+        if target is not None:
+            from core import outliner
+            from views.outliner import open_to
+            path = outliner.path_to(scene.groups, target)
+            if "owner" in obj and path is not None:
+                path = path + [target]
+            if path is None or not open_to(vp, path):
+                vp.flash_status(tr(
+                    "A group around it is hidden or locked: show or unlock "
+                    "it to select inside"), 3500)
+                return
         scene.selection.clear()
         if "group" in obj:
             scene.selection.add(obj["group"])
+        elif "owner" in obj:
+            # Opening a copy edits a world copy of its mesh: the faces are
+            # found again by their tag.
+            scene.selection.update(
+                f for f in scene.mesh.faces
+                if (f.attrs.get("ifc") or {}).get("id") == obj["tag_id"])
         else:
             scene.selection.update(obj["faces"])
         scene.bump_view()
-        self._window.viewport.update()
+        vp.update()
+
+    def _pick_container(self, g) -> None:
+        """Select an untagged group that holds tagged objects."""
+        from core import outliner
+        from views.outliner import open_to
+        vp = self._window.viewport
+        scene = self._scene()
+        path = outliner.path_to(scene.groups, g)
+        if path is None or not open_to(vp, path):
+            vp.flash_status(tr(
+                "A group around it is hidden or locked: show or unlock "
+                "it to select inside"), 3500)
+            return
+        scene.selection.clear()
+        scene.selection.add(g)
+        scene.bump_view()
+        vp.update()
 
     def _on_export_csv(self) -> None:
         from PySide6.QtWidgets import QFileDialog
@@ -4533,11 +4669,60 @@ class BimPanel(QWidget):
         if key == getattr(self, "_takeoff_key", None):
             return
         self._takeoff_key = key
+        # Nothing tagged at the last takeoff, and only commands that keep
+        # every tag since (a Move, a Rotate): still nothing — without the
+        # walk of every group (26 ms per edit on the 21 406 of #158).
+        hist = getattr(self._window.viewport, "history", None)
+        if (hist is not None and not self._objects
+                and getattr(self, "_untagged_scene", None) == id(scene)
+                and hist.tags_cv == scene.content_version):
+            return
         # A memo per panel: an edit re-measures only the objects it touched.
         memo = self.__dict__.setdefault("_takeoff_memo", {})
         self._objects = collect_objects(scene, memo)
+        self._untagged_scene = None if self._objects else id(scene)
+        if hist is not None:
+            hist.tags_cv = scene.content_version
         self.tree.clear()
-        for obj in self._objects:
+        self._containers = []
+        if not self._objects:
+            # Nothing to hang from the groups: no map of the tree to build
+            # (6.5 ms on the 21 406 groups of #158).
+            self._fit_tree()
+            return
+        from core import outliner
+        up = outliner.parents(scene.groups)
+        # A tagged group's row is also the parent of what is tagged inside it.
+        tagged_rows: dict = {}
+        group_rows: dict = {}
+
+        def row_for(g):
+            """The row a group's tagged contents hang from (made on demand,
+            with the rows of the groups around it)."""
+            if g is None:
+                return None
+            row = tagged_rows.get(id(g)) or group_rows.get(id(g))
+            if row is not None:
+                return row
+            row = QTreeWidgetItem([g.name or (
+                tr("Component") if outliner.kind(g) == "component"
+                else tr("Group"))])
+            row.setData(0, Qt.UserRole, -len(self._containers) - 1)
+            self._containers.append(g)
+            font = row.font(0)
+            font.setItalic(True)
+            row.setFont(0, font)
+            row.setToolTip(0, tr("Group — click to select it"))
+            group_rows[id(g)] = row
+            parent = row_for(up.get(id(g)))
+            if parent is None:
+                self.tree.addTopLevelItem(row)
+            else:
+                parent.addChild(row)
+            row.setFirstColumnSpanned(True)
+            return row
+
+        for idx, obj in enumerate(self._objects):
             if "metrado" not in obj:
                 faces = obj.get("faces")
                 if faces is None:
@@ -4559,11 +4744,28 @@ class BimPanel(QWidget):
             item = QTreeWidgetItem([
                 obj["class"].removeprefix("Ifc"),
                 obj["name"], met, vol])
+            item.setData(0, Qt.UserRole, idx)
             if obj["volume"] is None:
                 item.setToolTip(3, tr(
                     "Not watertight on its own — no volume"))
-            self.tree.addTopLevelItem(item)
-        fit_rows(self.tree)
+            if "group" in obj:
+                g = obj["group"]
+                stale = group_rows.pop(id(g), None)
+                tagged_rows[id(g)] = item
+                if stale is not None:
+                    # Its contents came first: move them under the object row.
+                    item.addChildren(stale.takeChildren())
+                    (stale.parent() or self.tree.invisibleRootItem()
+                     ).removeChild(stale)
+                parent = row_for(up.get(id(g)))
+            else:
+                parent = row_for(obj.get("owner"))
+            if parent is None:
+                self.tree.addTopLevelItem(item)
+            else:
+                parent.addChild(item)
+        self.tree.expandAll()
+        self._fit_tree()
 
 
 class Tray(QDockWidget):
@@ -4613,6 +4815,13 @@ class Tray(QDockWidget):
         if (cv != getattr(self.materials, "_in_model_cv", None)
                 and cv != getattr(getattr(vp, "history", None),
                                   "paint_cv", None)):
+            if (self.materials._window.isVisible()
+                    and not self.materials.isVisible()):
+                # Its tab not shown: refreshed on showing, as the
+                # Components and Layers lists are (~0.15 s of every edit
+                # on the plant of #158, for swatches nobody sees).
+                self.materials._in_model_stale = True
+                return self._after_materials()
             timer = getattr(self, "_mat_refresh_timer", None)
             if timer is None:
                 from PySide6.QtCore import QTimer
@@ -4620,6 +4829,9 @@ class Tray(QDockWidget):
                 timer.setSingleShot(True)
                 timer.timeout.connect(self.materials.refresh_in_model)
             timer.start(300)
+        self._after_materials()
+
+    def _after_materials(self) -> None:
         self.scenes.refresh()
         self.components.on_scene_changed()
         self.parts.refresh()

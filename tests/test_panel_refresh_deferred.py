@@ -52,6 +52,22 @@ def test_a_hidden_components_list_waits_until_it_is_shown(win, monkeypatch):
     assert len(calls) == 1                       # caught up on showing
 
 
+def test_hidden_material_swatches_wait_until_shown(win, monkeypatch):
+    """Its tab not shown, the Materials panel scanned every face paint
+    after each edit anyway (~0.15 s on the plant of #158)."""
+    panel = win.tray.materials
+    panel.hide()
+    calls = _count_calls(monkeypatch, panel, "refresh_in_model")
+    for _ in range(3):
+        win.viewport.scene.version += 1          # three edits, tab hidden
+        win.tray.on_scene_changed()
+    timer = getattr(win.tray, "_mat_refresh_timer", None)
+    assert calls == [] and (timer is None or not timer.isActive())
+    panel.show()
+    _app.processEvents()
+    assert len(calls) == 1                       # caught up on showing
+
+
 def test_a_burst_of_edits_refreshes_the_visible_panels_once(win, monkeypatch):
     panel = win.tray.components
     outliner = win.project_browser.outliner

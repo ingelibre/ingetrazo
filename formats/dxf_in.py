@@ -42,6 +42,7 @@ DEFERRED, documented: nested block sharing (children placements), the
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
@@ -81,7 +82,23 @@ _MAX_INSERT_DEPTH = 8
 # ---- Reading ---------------------------------------------------------------
 def open_document(path: Path):
     """ezdxf's strict reader, falling back to its recover mode — real-world
-    DXF (LibreDWG conversions included) is often structurally bruised."""
+    DXF (LibreDWG conversions included) is often structurally bruised.
+
+    One bruise ezdxf does not survive on its own: a paper-space LAYOUT the
+    layout dictionary does not list (a 14 MB DWG of the Windows round 0.6.0,
+    layout «OF-01»). Linking MTEXT columns asks for the layout of their
+    owner, and the lookup ends in a bare KeyError where ezdxf only expects
+    its own DXFKeyError. The file is read again with that lookup answering
+    «no such layout», which ezdxf already handles (the block of the layout
+    is used instead)."""
+    try:
+        return _read_document(path)
+    except KeyError:
+        with _unlisted_layout_is_no_layout():
+            return _read_document(path)
+
+
+def _read_document(path: Path):
     import ezdxf
     from ezdxf import recover
 
@@ -90,6 +107,31 @@ def open_document(path: Path):
     except ezdxf.DXFStructureError:
         doc, _auditor = recover.readfile(str(path))
         return doc
+
+
+@contextmanager
+def _unlisted_layout_is_no_layout():
+    """While reading: a layout key whose LAYOUT is missing from the layout
+    dictionary raises ezdxf's DXFKeyError, not a bare KeyError."""
+    from ezdxf.lldxf.const import DXFKeyError
+    from ezdxf.layouts.layouts import Layouts
+
+    original = Layouts.get_layout_by_key
+
+    def get_layout_by_key(self, layout_key):
+        try:
+            return original(self, layout_key)
+        except KeyError as exc:
+            if isinstance(exc, DXFKeyError):
+                raise
+            raise DXFKeyError(f'Layout with key "{layout_key}" is not '
+                              f'listed') from exc
+
+    Layouts.get_layout_by_key = get_layout_by_key
+    try:
+        yield
+    finally:
+        Layouts.get_layout_by_key = original
 
 
 def read_unit_scale(path):
