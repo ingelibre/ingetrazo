@@ -109,11 +109,11 @@ def test_a_block_mixing_geometry_and_inserts_still_explodes(tmp_path):
     assert [g.name for g in scene.groups] == ["Mixed"]
 
 
-def test_many_triangle_pairs_merge_without_quadratic_restarts(tmp_path):
+def test_triangle_pairs_of_a_curved_strip_merge_back_into_quads(tmp_path):
     """A curved strip exported as triangle pairs (each facet = 2 triangles,
     no two facets coplanar), the shape of a CAD stair slab underside: each
-    facet merges back into one quad, in one scan per round instead of one
-    full rescan per merge."""
+    facet merges back into one quad. (The speed of that merge on big parts
+    is the stitch PR's business; the bound here only catches a hang.)"""
     doc = ezdxf.new("R2018")
     doc.header["$INSUNITS"] = 4
     b = doc.blocks.new("Paillasse")
