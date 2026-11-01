@@ -18,7 +18,8 @@ pub const CULL_FACE: i64 = 7;
 pub const FRONT_FACE: i64 = 8;
 pub const ACTIVE_TEXTURE: i64 = 9;
 pub const BIND_TEXTURE: i64 = 10;
-pub const N_FUNCS: usize = 11;
+pub const STENCIL_FUNC: i64 = 11;
+pub const N_FUNCS: usize = 12;
 
 type FnDrawArraysInstanced = extern "system" fn(u32, i32, i32, i32);
 type FnU32 = extern "system" fn(u32);
@@ -26,6 +27,7 @@ type FnUniform1i = extern "system" fn(i32, i32);
 type FnUniform1f = extern "system" fn(i32, f32);
 type FnUniform4f = extern "system" fn(i32, f32, f32, f32, f32);
 type FnBindTexture = extern "system" fn(u32, u32);
+type FnStencilFunc = extern "system" fn(u32, i32, u32);
 
 pub struct Tape {
     f: [usize; N_FUNCS],
@@ -81,6 +83,10 @@ impl Tape {
                 BIND_TEXTURE => {
                     let g: FnBindTexture = std::mem::transmute(f[10]);
                     g(op[1] as u32, op[2] as u32)
+                }
+                STENCIL_FUNC => {
+                    let g: FnStencilFunc = std::mem::transmute(f[11]);
+                    g(op[1] as u32, op[2] as i32, op[3] as u32)
                 }
                 _ => return Err(r),
             }

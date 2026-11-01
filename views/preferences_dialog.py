@@ -27,11 +27,14 @@ from PySide6.QtWidgets import (
     QDialog,
     QDoubleSpinBox,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
+    QInputDialog,
     QMessageBox,
     QPushButton,
+    QSlider,
     QSpinBox,
     QTabWidget,
     QLabel,
@@ -42,7 +45,9 @@ from PySide6.QtWidgets import (
 from core import _native
 from core import general_settings as _gs
 from core.i18n import LANGUAGE_NAMES as _LANGUAGE_NAMES
-from core.i18n import available_languages, current_language, tr
+from core.i18n import SYSTEM as SYSTEM_LANGUAGE
+from core.i18n import (available_languages, current_language,
+                       resolve_language, tr)
 
 
 #: The import dialogs' unit vocabularies (must match the dialogs in
@@ -53,6 +58,12 @@ _DXF_UNITS = (("mm", "Millimetres"), ("cm", "Centimetres"), ("m", "Metres"),
               ("in", "Inches"), ("ft", "Feet"))
 _REST_MODES = (("normal", "Show normally"), ("fade", "Fade"),
                ("hide", "Hide (fastest)"))
+_UNITS_FOR_NEW_KEY = "units/use_for_new_documents"
+_DEFAULTS_NOTE = (
+    "Puts the settings of this window back to how IngeTrazo comes. "
+    "Nothing is saved until you press OK. The language, the AI Assistant, "
+    "the keyboard shortcuts and the units of the open document stay as "
+    "they are.")
 
 
 class PreferencesDialog(QDialog):
@@ -71,9 +82,10 @@ class PreferencesDialog(QDialog):
         general = QWidget()
         form = QFormLayout(general)
         self._lang = QComboBox()
+        self._lang.addItem(tr("Same as the system"), SYSTEM_LANGUAGE)
         for code in available_languages():
             self._lang.addItem(_LANGUAGE_NAMES.get(code, code), code)
-        pending = str(st.value("language") or current_language())
+        pending = str(st.value("language") or SYSTEM_LANGUAGE)
         self._lang.setCurrentIndex(max(0, self._lang.findData(pending)))
         form.addRow(tr("Language:"), self._lang)
 
@@ -111,6 +123,36 @@ class PreferencesDialog(QDialog):
         self._rest.setCurrentIndex(max(0, self._rest.findData(
             window.viewport.edit_rest_mode)))
         form.addRow(tr("Rest of model while editing:"), self._rest)
+
+        # A colour wash rather than translucent geometry: the surroundings
+        # keep hiding what is behind them while the open group remains at
+        # full strength.
+        fade_row = QHBoxLayout()
+        self._rest_fade = QSlider(Qt.Horizontal)
+        self._rest_fade.setRange(0, 100)
+        current_fade = getattr(window.viewport, "edit_rest_fade", 0.75)
+        try:
+            current_fade = float(current_fade)
+        except (TypeError, ValueError):
+            # Lightweight viewport stand-ins used by embedders/tests may
+            # provide only generic callable attributes.
+            current_fade = 0.75
+        self._rest_fade.setValue(round(current_fade * 100))
+        from views.tray import style_slider
+        style_slider(self._rest_fade)
+        self._rest_fade.setToolTip(tr(
+            "How strongly the rest of the model is washed toward grey while "
+            "a group or component is open."))
+        self._rest_fade_value = QLabel()
+        self._rest_fade_value.setMinimumWidth(42)
+        fade_row.addWidget(self._rest_fade, 1)
+        fade_row.addWidget(self._rest_fade_value)
+        form.addRow(tr("Fade intensity:"), fade_row)
+        self._rest_fade.valueChanged.connect(
+            self._sync_rest_fade_controls)
+        self._rest.currentIndexChanged.connect(
+            self._sync_rest_fade_controls)
+        self._sync_rest_fade_controls()
 
         row = QHBoxLayout()
         self._autosave = QCheckBox(tr("Auto-save every"))
@@ -176,6 +218,16 @@ class PreferencesDialog(QDialog):
         self._look_sens.setToolTip(tr(
             "How fast a drag turns the head in First Person"))
         form.addRow(tr("Mouse-look sensitivity:"), self._look_sens)
+
+        # The pointer while a tool is active: its own icon (the default),
+        # or the classic crosshair or the plain arrow for who prefers them.
+        self._cursor_style = QComboBox()
+        for key, label in (("tool", "The tool's icon"),
+                           ("crosshair", "Crosshair"), ("arrow", "Arrow")):
+            self._cursor_style.addItem(tr(label), key)
+        self._cursor_style.setCurrentIndex(max(0, self._cursor_style.findData(
+            str(_gs.value("cursor_style", "tool", st)).lower())))
+        form.addRow(tr("Tool cursor:"), self._cursor_style)
 
         self._msaa = QComboBox()
         for n in (0, 2, 4, 8):
@@ -261,24 +313,8 @@ class PreferencesDialog(QDialog):
         self._ndof_speed.setSuffix(" %")
         self._ndof_speed.setValue(int(round(nd.sensitivity * 100)))
         form.addRow(tr("Speed:"), self._ndof_speed)
-        # One box per movement (issue #108, a SpaceMouse user: «a
-        # checkbox for each axis»); each shows what that axis does now,
-        # the old pair switches included.
-        self._ndof_inv = {}
-        for key, label, on in (
-                ("pan_x", tr("Invert pan left / right"),
-                 nd.invert_pan != nd.invert_pan_x),
-                ("pan_y", tr("Invert pan up / down"),
-                 nd.invert_pan != nd.invert_pan_y),
-                ("zoom", tr("Invert zoom"), nd.invert_zoom),
-                ("tilt", tr("Invert orbit up / down (tilt)"),
-                 nd.invert_rotate != nd.invert_tilt),
-                ("spin", tr("Invert orbit around (spin)"),
-                 nd.invert_rotate != nd.invert_spin)):
-            box = QCheckBox(label)
-            box.setChecked(on)
-            form.addRow("", box)
-            self._ndof_inv[key] = box
+        # Legacy inversion controls have been replaced by physical-axis controls.
+        # Preserve their effective values when upgrading an Original configuration.
         self._ndof_lock = QCheckBox(tr(
             "Pan and zoom only (no rotation — for drawing in plan)"))
         self._ndof_lock.setChecked(nd.lock_rotation)
@@ -310,6 +346,125 @@ class PreferencesDialog(QDialog):
             dev.motion.connect(self._show_ndof_read)
             # The device outlives the dialog: let go when it closes.
             self.finished.connect(self._drop_ndof_monitor)
+        # Six independent physical-axis assignments.
+        from core.ndof import AXES, ACTIONS, DEFAULT_MAPPING
+        self._ndof_loading = False
+        self._ndof_named = self._read_named_ndof_profiles()
+        self._ndof_selected_name = str(st.value("ndof/selected_profile", ""))
+        self._ndof_preset = QComboBox()
+        self._ndof_preset.addItem(tr("Original"), "original")
+        self._ndof_preset.addItem(tr("FreeCAD-style"), "freecad")
+        self._ndof_preset.addItem(tr("Custom"), "custom")
+        for name in sorted(self._ndof_named, key=str.casefold):
+            self._ndof_preset.addItem(name, "named:" + name)
+        selected = ("named:" + self._ndof_selected_name
+                    if self._ndof_selected_name in self._ndof_named
+                    else nd.mapping_preset)
+        self._ndof_preset.setCurrentIndex(max(0, self._ndof_preset.findData(selected)))
+        form.addRow(tr("Axis mapping preset:"), self._ndof_preset)
+        self._ndof_axes = {}
+        axis_labels = ("Move left / right", "Move up / down", "Push / pull",
+                       "Tilt forward / back", "Twist left / right",
+                       "Roll left / right")
+        action_labels = ("Pan X", "Pan Y", "Zoom", "Orbit X", "Orbit Y",
+                         "Disabled")
+        for axis, axis_label in zip(AXES, axis_labels):
+            row = QHBoxLayout()
+            action = QComboBox()
+            for key, label in zip(ACTIONS, action_labels):
+                action.addItem(tr(label), key)
+            action.setCurrentIndex(max(
+                0, action.findData(nd.axis_mapping.get(axis, DEFAULT_MAPPING[axis]))))
+            invert = QCheckBox(tr("Invert"))
+            invert.setChecked(nd.axis_inversion.get(axis, False))
+            speed = QSpinBox()
+            speed.setRange(25, 400)
+            speed.setSingleStep(25)
+            speed.setSuffix(" %")
+            speed.setValue(round(nd.axis_sensitivity.get(axis, 1.0) * 100))
+            row.addWidget(action)
+            row.addWidget(invert)
+            row.addWidget(speed)
+            form.addRow(tr(axis_label) + ":", row)
+            self._ndof_axes[axis] = (action, invert, speed)
+
+        # Do not lock axis widgets for any preset. Editing creates Custom.
+        # Block change handlers while loading a preset to prevent recursion.
+        def _preset_changed(_index):
+            from core.ndof import FREECAD_MAPPING, FREECAD_INVERSION
+            choice = self._ndof_preset.currentData()
+            if choice == "custom":
+                return
+            if choice == "original":
+                mapping = DEFAULT_MAPPING
+                inversion = {axis: False for axis in AXES}
+                speeds = {axis: 1.0 for axis in AXES}
+                global_speed = 1.0
+            elif choice == "freecad":
+                mapping = FREECAD_MAPPING
+                inversion = FREECAD_INVERSION
+                speeds = {axis: 1.0 for axis in AXES}
+                global_speed = 1.0
+            elif isinstance(choice, str) and choice.startswith("named:"):
+                profile = self._ndof_named.get(choice[6:])
+                if profile is None:
+                    return
+                mapping, inversion, speeds = (profile.axis_mapping,
+                                               profile.axis_inversion,
+                                               profile.axis_sensitivity)
+                global_speed = profile.sensitivity
+            else:
+                return
+            self._ndof_loading = True
+            try:
+                self._ndof_speed.setValue(round(global_speed * 100))
+                for axis, (action, invert, speed) in self._ndof_axes.items():
+                    action.setCurrentIndex(action.findData(mapping[axis]))
+                    invert.setChecked(inversion[axis])
+                    speed.setValue(round(speeds[axis] * 100))
+            finally:
+                self._ndof_loading = False
+
+        def _axis_edited(*_args):
+            if self._ndof_loading:
+                return
+            index = self._ndof_preset.findData("custom")
+            if self._ndof_preset.currentIndex() != index:
+                self._ndof_preset.blockSignals(True)
+                self._ndof_preset.setCurrentIndex(index)
+                self._ndof_preset.blockSignals(False)
+
+        self._ndof_preset.currentIndexChanged.connect(_preset_changed)
+        for action, invert, speed in self._ndof_axes.values():
+            action.currentIndexChanged.connect(_axis_edited)
+            invert.toggled.connect(_axis_edited)
+            speed.valueChanged.connect(_axis_edited)
+        self._ndof_speed.valueChanged.connect(_axis_edited)
+        # Respect saved values when opening the dialog; do not reapply the
+        # preset here, which could overwrite previously customised settings.
+        if nd.mapping_preset == "original":
+            legacy = {
+                "right": nd.invert_pan != nd.invert_pan_x,
+                "up": nd.invert_pan != nd.invert_pan_y,
+                "forward": nd.invert_zoom,
+                "tilt": nd.invert_rotate != nd.invert_tilt,
+                "spin": nd.invert_rotate != nd.invert_spin,
+                "roll": False,
+            }
+            self._ndof_loading = True
+            for axis, (_, invert, _) in self._ndof_axes.items():
+                invert.setChecked(legacy[axis])
+            self._ndof_loading = False
+        profile_buttons = QHBoxLayout()
+        self._ndof_load = QPushButton(tr("Load profile…"))
+        self._ndof_save = QPushButton(tr("Save profile…"))
+        self._ndof_reset = QPushButton(tr("Reset to defaults"))
+        for button in (self._ndof_load, self._ndof_save, self._ndof_reset):
+            profile_buttons.addWidget(button)
+        form.addRow("", profile_buttons)
+        self._ndof_load.clicked.connect(self._load_ndof_profile)
+        self._ndof_save.clicked.connect(self._save_ndof_profile)
+        self._ndof_reset.clicked.connect(self._reset_ndof_profile)
         tabs.addTab(mouse3d, tr("3D Mouse"))
 
         # ---- Import ---------------------------------------------------------
@@ -356,6 +511,13 @@ class PreferencesDialog(QDialog):
         self._api_key.setEchoMode(QLineEdit.Password)
         self._api_key.setPlaceholderText(tr("empty = local AI (Ollama, LM Studio)"))
         form.addRow(tr("API key:"), self._api_key)
+        # The same note as the AI tab: a key the environment lends (#998).
+        self._key_env = QLabel("")
+        self._key_env.setWordWrap(True)
+        form.addRow("", self._key_env)
+        self._provider.currentIndexChanged.connect(self._refresh_key_env)
+        self._api_key.textChanged.connect(self._refresh_key_env)
+        self._refresh_key_env()
 
         self._model = QLineEdit(str(st.value("ia/modelo", "") or ""))
         self._model.setPlaceholderText(tr("model (default per provider)"))
@@ -384,12 +546,15 @@ class PreferencesDialog(QDialog):
         # separator, preview): everything a readout is shown with. Its rows
         # and the ones below share one form, like the other pages.
         self._units_panel = UnitsPanel(current)
+        self._initial_units = self._units_panel.settings()
         form = self._units_panel.form
         # Issue #121: the choice used to live only in the open document, so
         # every new file went back to metres.
         self._units_for_new = QCheckBox(tr("Also use for new documents"))
         self._units_for_new.setChecked(
-            _units.new_document_units() == current)
+            str(st.value(_UNITS_FOR_NEW_KEY, "1")).lower() not in ("0", "false"))
+        self._units_for_new_explicit = False
+        self._units_for_new.toggled.connect(self._units_for_new_toggled)
         form.addRow("", self._units_for_new)
         from views.units_start_dialog import ask_at_start
         self._units_at_start = QCheckBox(tr("Ask which units to use at startup"))
@@ -422,7 +587,28 @@ class PreferencesDialog(QDialog):
                                    | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        # Back to how IngeTrazo comes: only the controls change, so OK
+        # saves it and Cancel still touches nothing.
+        self._defaults_btn = buttons.addButton(tr("Restore defaults"),
+                                               QDialogButtonBox.ResetRole)
+        # Never the default button: focused after a click it would take
+        # the highlight from OK, and Enter would restore again.
+        self._defaults_btn.setAutoDefault(False)
+        self._defaults_btn.setToolTip(tr(_DEFAULTS_NOTE))
+        self._defaults_btn.clicked.connect(self._ask_restore_defaults)
         layout.addWidget(buttons)
+
+    def _refresh_key_env(self, *_args) -> None:
+        try:
+            from plugins.ai_assistant import env_key_note, key_placeholder
+            self._api_key.setPlaceholderText(
+                key_placeholder(self._provider.currentData()))
+            note = env_key_note(self._provider.currentData(),
+                                self._api_key.text().strip())
+        except Exception:           # noqa: BLE001 — a note, not the dialog
+            note = ""
+        self._key_env.setText(note)
+        self._key_env.setVisible(bool(note))
 
     def _drop_ndof_monitor(self, _result=0) -> None:
         from views.ndof_input import shared_input
@@ -453,6 +639,87 @@ class PreferencesDialog(QDialog):
         """Open on the Keyboard shortcuts page with ``action`` picked."""
         self._tabs.setCurrentWidget(self._shortcuts)
         self._shortcuts.pick(action)
+
+    def _ndof_profile_from_ui(self):
+        from core.ndof import NdofSettings
+        from core.ndof_profiles import profile_from_dict, profile_to_dict
+        nd = NdofSettings(mapping_preset="custom")
+        nd.sensitivity = self._ndof_speed.value() / 100.0
+        for axis, (action, invert, speed) in self._ndof_axes.items():
+            nd.axis_mapping[axis] = action.currentData()
+            nd.axis_inversion[axis] = invert.isChecked()
+            nd.axis_sensitivity[axis] = speed.value() / 100.0
+        return profile_from_dict(profile_to_dict(nd))
+
+    @staticmethod
+    def _read_named_ndof_profiles():
+        import json
+        from core.ndof_profiles import profile_from_dict
+        raw = QSettings().value("ndof/named_profiles", "{}")
+        try:
+            parsed = json.loads(str(raw))
+            if not isinstance(parsed, dict):
+                return {}
+            return {name: profile_from_dict(data) for name, data in parsed.items()
+                    if isinstance(name, str) and 0 < len(name) <= 80}
+        except (ValueError, TypeError):
+            return {}
+
+    def _add_ndof_named_profile(self, name, profile):
+        self._ndof_named[name] = profile
+        key = "named:" + name
+        index = self._ndof_preset.findData(key)
+        if index < 0:
+            self._ndof_preset.addItem(name, key)
+            index = self._ndof_preset.findData(key)
+        self._ndof_preset.setCurrentIndex(index)
+
+    def _load_ndof_profile(self):
+        from pathlib import Path
+        from core.ndof_profiles import load_profile
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("Load SpaceMouse profile"), "", "JSON (*.json)")
+        if not path:
+            return
+        try:
+            profile = load_profile(path)
+        except (OSError, ValueError, UnicodeError) as exc:
+            QMessageBox.warning(self, tr("Invalid SpaceMouse profile"), str(exc))
+            return
+        name = Path(path).stem
+        if name in ("Original", "FreeCAD-style", "Custom"):
+            name += " (imported)"
+        self._add_ndof_named_profile(name, profile)
+
+    def _save_ndof_profile(self):
+        name, ok = QInputDialog.getText(
+            self, tr("Save SpaceMouse profile"), tr("Profile name:"))
+        if not ok:
+            return
+        name = name.strip()
+        if not name or len(name) > 80 or name in ("Original", "FreeCAD-style", "Custom"):
+            QMessageBox.warning(self, tr("Invalid profile name"),
+                                tr("Choose a different name (1–80 characters)."))
+            return
+        if name in self._ndof_named and QMessageBox.question(
+                self, tr("Replace profile?"),
+                tr("Replace the existing profile '{name}'?", name=name)) != QMessageBox.Yes:
+            return
+        self._add_ndof_named_profile(name, self._ndof_profile_from_ui())
+
+    def _reset_ndof_profile(self):
+        self._ndof_preset.setCurrentIndex(self._ndof_preset.findData("original"))
+        self._ndof_lock.setChecked(False)
+        # Explicitly reload even when Original is already selected.
+        if self._ndof_preset.currentData() == "original":
+            from core.ndof import DEFAULT_MAPPING
+            self._ndof_loading = True
+            self._ndof_speed.setValue(100)
+            for axis, (action, invert, speed) in self._ndof_axes.items():
+                action.setCurrentIndex(action.findData(DEFAULT_MAPPING[axis]))
+                invert.setChecked(False)
+                speed.setValue(100)
+            self._ndof_loading = False
 
     # ---- Apply --------------------------------------------------------------
     # ---- Scale figure of new documents (#655) ----------------------------
@@ -582,6 +849,87 @@ class PreferencesDialog(QDialog):
             st.setValue(sf.KEY_HEIGHT, round(self._figure_height.value(), 3))
             st.setValue(sf.KEY_NAME, self._figure_name.text().strip())
 
+    def _units_for_new_toggled(self, _checked: bool) -> None:
+        self._units_for_new_explicit = True
+
+    def _sync_rest_fade_controls(self, _value=None) -> None:
+        """Keep the percentage legible and disable it outside Fade mode."""
+        self._rest_fade_value.setText(f"{self._rest_fade.value()} %")
+        self._rest_fade.setEnabled(self._rest.currentData() == "fade")
+
+    def _viewports(self) -> list:
+        """Every project's viewport (one per tab, #1066): a view setting
+        reaches the tabs in the back too."""
+        every = getattr(self._window, "all_viewports", None)
+        if callable(every):
+            return every()
+        return [self._window.viewport]
+
+    # ---- Restore defaults -------------------------------------------------
+
+    def _ask_restore_defaults(self) -> None:
+        answer = QMessageBox.question(
+            self, tr("Restore defaults"), tr(_DEFAULTS_NOTE),
+            QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Cancel)
+        if answer == QMessageBox.Ok:
+            self.restore_defaults()
+
+    def restore_defaults(self) -> None:
+        """Set every control to the value a fresh profile gets. Left alone:
+        the language (it has its own menu), the AI Assistant (a key and a
+        model are an account, not a taste), the keyboard shortcuts (their
+        page resets them) and the units, which belong to the document."""
+        from core import scale_figure as sf
+        from core.ndof import NdofSettings
+        from core.platform_choice import AUTO
+        from tools.walkthrough import DEFAULT_LOOK_SENSITIVITY
+        from views.icons import default_toolbar_icon_px
+        from views.theme import DARK, ORANGE
+
+        def pick(combo, data):
+            combo.setCurrentIndex(max(0, combo.findData(data)))
+
+        pick(self._theme, DARK)
+        pick(self._accent, ORANGE)
+        pick(self._rest, "fade")
+        from views.viewport import EDIT_REST_FADE
+        self._rest_fade.setValue(round(EDIT_REST_FADE * 100))
+        self._autosave.setChecked(True)
+        self._autosave_min.setValue(5)
+        self._backup.setChecked(True)
+        self._undo_steps.setValue(200)
+        self._ask_section.setChecked(True)
+        self._scale_figure.setChecked(True)
+        pick(self._figure, sf.DEFAULT_PICK)
+        self._invert.setChecked(False)
+        self._invert_orbit.setChecked(False)
+        self._look_sens.setValue(DEFAULT_LOOK_SENSITIVITY)
+        pick(self._cursor_style, "tool")
+        pick(self._msaa, 4)
+        pick(self._icon_px, default_toolbar_icon_px())
+        pick(self._ext_menus, "auto")
+        pick(self._platform, AUTO)
+        if self._rust.isEnabled():
+            self._rust.setChecked(_native.DEFAULT == "1")
+
+        # The 3D Mouse page has its own reset (Original mapping, every axis
+        # at 100 %, nothing inverted); the saved named profiles stay.
+        nd = NdofSettings()
+        self._ndof_on.setChecked(nd.enabled)
+        self._reset_ndof_profile()
+        self._ndof_lock.setChecked(nd.lock_rotation)
+
+        pick(self._obj_unit, "m")
+        pick(self._dxf_unit, "mm")
+        pick(self._coord, "geo")
+
+        # Quietly: an explicit tick would copy this document's units over
+        # the ones new documents start with.
+        self._units_for_new.blockSignals(True)
+        self._units_for_new.setChecked(True)
+        self._units_for_new.blockSignals(False)
+        self._units_at_start.setChecked(True)
+
     def accept(self) -> None:  # noqa: D102 — QDialog override
         st = QSettings()
 
@@ -592,22 +940,34 @@ class PreferencesDialog(QDialog):
         if scene is not None and chosen != _units.model_units_of(scene):
             _units.apply_units(scene, chosen)
             scene.version += 1
-            self._window.viewport.update()
-        if self._units_for_new.isChecked():
-            _units.remember_new_document_units(chosen)
+            notify = getattr(self._window.viewport, "notify_scene_changed", None)
+            if callable(notify):
+                notify()
+            else:
+                self._window.viewport.update()
+        for_new = self._units_for_new.isChecked()
+        # The checkbox is a remembered preference, independent of the model.
+        # An unrelated edit must not copy this model's units over a newer
+        # default chosen in another window. Explicit opt-in copies them too.
+        if chosen != self._initial_units or self._units_for_new_explicit:
+            st.setValue(_UNITS_FOR_NEW_KEY, "1" if for_new else "0")
+            if for_new:
+                _units.remember_new_document_units(chosen)
         from views.units_start_dialog import set_ask_at_start
         set_ask_at_start(self._units_at_start.isChecked())
 
         # Language: same contract as the menu (persists; applies on restart).
         # Reverting a still-pending change back to the running language just
-        # rewrites the stored value — no restart note for a no-op.
+        # rewrites the stored value — no restart note for a no-op (nor for
+        # "Same as the system" when the system's is the running language).
         code = self._lang.currentData()
-        saved = str(st.value("language") or current_language())
+        saved = str(st.value("language") or SYSTEM_LANGUAGE)
         if code != saved:
             st.setValue("language", code)
-            if code != current_language():
+            lang = resolve_language(code)
+            if lang != current_language():
                 from core.i18n import set_language
-                set_language(code)
+                set_language(lang)
                 QMessageBox.information(
                     self, tr("Language changed"),
                     tr("Restart IngeTrazo to apply the new language."))
@@ -629,9 +989,17 @@ class PreferencesDialog(QDialog):
 
         # Rest-of-model mode: through the viewport (it persists the setting),
         # then the Camera menu checkmark follows.
+        # Every project's viewport, so a tab in the back follows too (#1066).
+        fade = self._rest_fade.value() / 100.0
         mode = self._rest.currentData()
-        if mode != self._window.viewport.edit_rest_mode:
-            self._window.viewport.set_edit_rest_mode(mode)
+        mode_changed = mode != self._window.viewport.edit_rest_mode
+        for v in self._viewports():
+            set_fade = getattr(v, "set_edit_rest_fade", None)
+            if callable(set_fade):
+                set_fade(fade)
+            if mode != v.edit_rest_mode:
+                v.set_edit_rest_mode(mode)
+        if mode_changed:
             act = getattr(self._window, "_rest_actions", {}).get(mode)
             if act is not None:
                 act.setChecked(True)
@@ -663,42 +1031,60 @@ class PreferencesDialog(QDialog):
 
         from core.ndof import NdofSettings
         from views.ndof_input import save_settings
-        inv = {k: b.isChecked() for k, b in self._ndof_inv.items()}
-        # Saved per axis; the old pair switches go back to off.
         nd = NdofSettings(enabled=self._ndof_on.isChecked(),
                           sensitivity=self._ndof_speed.value() / 100.0,
-                          invert_pan=False,
-                          invert_zoom=inv["zoom"],
-                          invert_rotate=False,
-                          invert_pan_x=inv["pan_x"],
-                          invert_pan_y=inv["pan_y"],
-                          invert_tilt=inv["tilt"],
-                          invert_spin=inv["spin"],
                           lock_rotation=self._ndof_lock.isChecked())
+        selected = self._ndof_preset.currentData()
+        # Named presets are materialised into Custom at runtime. Their name
+        # is stored separately so the dropdown restores on the next launch.
+        nd.mapping_preset = selected if selected in ("original", "freecad") else "custom"
+        # Original's legacy inversion is migrated into the new per-axis
+        # representation. Old QSettings inversion keys are cleared on save.
+        if selected == "original":
+            nd.mapping_preset = "custom"
+        for axis, (action, invert, speed) in self._ndof_axes.items():
+            nd.axis_mapping[axis] = action.currentData()
+            nd.axis_inversion[axis] = invert.isChecked()
+            nd.axis_sensitivity[axis] = speed.value() / 100.0
+        from core.ndof_profiles import profile_to_dict
+        import json
+        st.setValue("ndof/named_profiles", json.dumps({
+            name: profile_to_dict(profile)
+            for name, profile in self._ndof_named.items()}))
+        st.setValue("ndof/selected_profile", selected[6:]
+                    if isinstance(selected, str) and selected.startswith("named:")
+                    else "")
         save_settings(nd)                # every window reads it live
 
         st.setValue("nav/invert_wheel",
                     "1" if self._invert.isChecked() else "0")
-        self._window.viewport._invert_wheel = self._invert.isChecked()
+        viewports = self._viewports()
+        for v in viewports:
+            v._invert_wheel = self._invert.isChecked()
+        _gs.set_value("cursor_style", self._cursor_style.currentData(), st)
+        reapply = getattr(self._window.viewport, "_apply_tool_cursor", None)
+        if callable(reapply):
+            reapply()                  # the active tool's pointer at once
 
         st.setValue("nav/invert_orbit_y",
                     "1" if self._invert_orbit.isChecked() else "0")
-        self._window.viewport._invert_orbit_y = self._invert_orbit.isChecked()
+        for v in viewports:
+            v._invert_orbit_y = self._invert_orbit.isChecked()
 
         # First Person reads it on every look move: nothing to push.
         st.setValue("walk/look_sensitivity", int(self._look_sens.value()))
 
         msaa = self._msaa.currentData()
         st.setValue("display/msaa", msaa)
-        vp = self._window.viewport
-        if getattr(vp, "_msaa", None) != msaa:
-            vp._msaa = msaa
-            # Void the FBO size so the next paint rebuilds it at the new
-            # sample count (the rebuild happens with the context current).
-            vp._fbo_size = None
-            update = getattr(vp, "update", None)
-            if callable(update):
-                update()
+        for vp in viewports:
+            if getattr(vp, "_msaa", None) != msaa:
+                vp._msaa = msaa
+                # Void the FBO size so the next paint rebuilds it at the new
+                # sample count (the rebuild happens with the context current).
+                vp._fbo_size = None
+                update = getattr(vp, "update", None)
+                if callable(update):
+                    update()
 
         px = int(self._icon_px.currentData())
         from views.icons import toolbar_icon_px

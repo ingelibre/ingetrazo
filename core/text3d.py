@@ -18,8 +18,9 @@ Text…» reopens the dialog and :func:`rebuild_text_group` lays the letters
 out again in place (double-click keeps its usual meaning: it enters).
 
 The text STANDS UP by default: width along +X, height along +Z (base at
-z=0), thickness along +Y — so placing it with the component-placement tool
-plants the sign on the ground plane.
+z=0), thickness along -Y — the BACK face sits at y=0 (the local origin, the
+insertion point), so gluing the back to a face keeps the sign flush even
+after the thickness is re-edited.
 """
 from __future__ import annotations
 
@@ -145,12 +146,17 @@ def _group_rings(rings):
 def _solid_from_rings(rings, scale: float, y_min: float,
                       thickness: float) -> Mesh:
     """The extruded solid of ``rings`` (font units) at ``scale`` metres per
-    unit, its lowest point at ``y_min`` sitting on z=0."""
+    unit, its lowest point at ``y_min`` sitting on z=0 and its BACK face at
+    y=0 (the thickness grows toward -Y)."""
     mesh = Mesh()
 
     def V(x, y, side_y: float) -> QVector3D:
         # Font plane (x, up) → world: X = x, Z = up, Y = extrusion depth.
-        return QVector3D(x * scale, side_y, (y - y_min) * scale)
+        # The depth runs toward -Y so the BACK face lands on y=0: that is the
+        # local origin / insertion point, the one coordinate the re-edit keeps
+        # put, so a sign glued by its back stays flush when its thickness
+        # changes (only the front moves out).
+        return QVector3D(x * scale, side_y - thickness, (y - y_min) * scale)
 
     for outer, holes in _group_rings(rings):
         # Windings are set ANALYTICALLY — no orient_outward pass. Its parity
@@ -358,8 +364,28 @@ def text_frame(group):
     return QMatrix4x4()
 
 
+def _legacy_back(group) -> float:
+    """Where the BACK face of letters laid out the older way sits, in the
+    text's frame: those grew their thickness toward +Y from the front at
+    y=0, so the back is at y=+thickness. 0.0 for letters laid out the
+    current way (back at y=0, thickness toward -Y)."""
+    ys = [v.position.y() for k in (getattr(group, "children", None) or ())
+          for v in k.mesh.vertices]
+    if ys and min(ys) > -1e-9 and max(ys) > 1e-9:
+        return max(ys)
+    return 0.0
+
+
 def rebuild_text_group(group, params: dict) -> list:
     """The letters for ``params`` laid out where ``group``'s current letters
     are — the new ``children`` list, NOT yet assigned (the command that
-    swaps them keeps the old list for undo)."""
-    return _letter_groups(params, xform=text_frame(group))
+    swaps them keeps the old list for undo).
+
+    A text from an older document keeps its back face where it was: the
+    frame shifts by the old thickness, so re-editing it does not make the
+    sign jump off (or into) the face it hangs on."""
+    frame = text_frame(group)
+    back = _legacy_back(group)
+    if back:
+        frame.translate(0.0, back, 0.0)
+    return _letter_groups(params, xform=frame)

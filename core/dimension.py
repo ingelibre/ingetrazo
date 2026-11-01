@@ -72,7 +72,10 @@ class VertexAnchor:
         behind with the vertex in it, positions frozen for ever."""
         v = self.vertex
         try:
-            if self.mesh.vertex_at(v.position) is not v or not v.edges:
+            # By identity: looked up by POSITION, a vertex passing over
+            # another during a Move preview read as gone, and the
+            # dimension dropped it (#563).
+            if not v.edges or not self.mesh.registers(v):
                 return False
         except Exception:  # noqa: BLE001 — a mesh that cannot answer
             return False
@@ -87,6 +90,20 @@ class VertexAnchor:
             # old mesh would land a placement off (#621).
             return False
         return self.chain[0] in (getattr(scene, "groups", None) or ())
+
+    def last_position(self):
+        """Where the vertex stood when the hold died, in world
+        coordinates — a vertex welded into the one it landed on keeps
+        that very spot — or ``None`` when the hold's own mesh is no
+        longer the one its group shows (#621: the old placement would put
+        the point off)."""
+        if self.chain and self.mesh is not getattr(self.chain[-1], "mesh",
+                                                   None):
+            return None
+        v = self.vertex
+        m = self.matrix()
+        return m.map(QVector3D(v.position)) if m is not None \
+            else QVector3D(v.position)
 
     def position(self, scene=None):
         """The vertex's world position now — ``None`` once the hold is no
@@ -276,8 +293,7 @@ class Dimension:
         # again where the endpoint last was; freeze only when nothing
         # stands there any more.
         frozen = getattr(self, "_" + which)
-        again = (resolve_vertex_anchor(scene, frozen)
-                 if scene is not None else None)
+        again = self._resolve_again(which, scene)
         p = again.position(scene) if again is not None else None
         if p is None:
             setattr(self, "anchor_" + which, None)
@@ -285,6 +301,26 @@ class Dimension:
         self._hold(which, again)
         setattr(self, "_" + which, p)
         return p
+
+    def _resolve_again(self, which: str, scene):
+        """The vertex to hold now that every hold of the endpoint died.
+        First where the last hold's vertex died: a vertex welded into the
+        one it was moved onto keeps that spot, while the frozen position
+        may be older — read before the move — and another vertex may stand
+        there by now (#563). Then the frozen position, as before."""
+        if scene is None:
+            return None
+        holds = self._holds_of(which)
+        anchor = getattr(self, "anchor_" + which)
+        last = holds[-1] if holds else anchor
+        frozen = getattr(self, "_" + which)
+        if last is not None:
+            spot = last.last_position()
+            if spot is not None and (spot - frozen).lengthSquared() > 1e-12:
+                found = resolve_vertex_anchor(scene, spot)
+                if found is not None:
+                    return found
+        return resolve_vertex_anchor(scene, frozen)
 
     @property
     def a(self) -> QVector3D:
@@ -326,8 +362,7 @@ class Dimension:
                 continue
             if anchor is not None and anchor.alive(scene):
                 continue
-            self._hold(which, resolve_vertex_anchor(
-                scene, getattr(self, "_" + which)))
+            self._hold(which, self._resolve_again(which, scene))
 
     @property
     def anchored(self) -> bool:

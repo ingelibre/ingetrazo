@@ -152,6 +152,21 @@ class InferenceEngine:
                 self._acquired_face_normal = face_plane_world(
                     face, getattr(_g, "xform", None))[1]
 
+    def _hover_lock_plane(self, px: float, py: float):
+        """``(point, normal, ref)`` of the face under the cursor, or None:
+        what a direction lock meets as «constrained on plane». ``ref`` is the
+        cursor's own point on the face, where the dotted guide starts."""
+        vp = self.viewport
+        face, owner = vp.pick_face_placement(px, py)
+        if face is None:
+            return None
+        from core.snap import face_plane_world
+        p0, n = face_plane_world(face, getattr(owner, "xform", None))
+        ref = vp._world_from_pixel(px, py)
+        if ref is None or abs(QVector3D.dotProduct(ref - p0, n)) > 1e-3:
+            ref = p0
+        return (p0, n, ref)
+
     # ---- The snap search -----------------------------------------------------
     def snap(self, px_x: float, px_y: float,
              modifiers) -> Optional[SnapResult]:
@@ -176,6 +191,17 @@ class InferenceEngine:
         if tool is not None:
             chain_first = getattr(tool, "chain_first_point", None)
             start_pt = getattr(tool, "start_point", None)
+        # «Constrained on line / plane»: under a direction lock, the edge or
+        # face the cursor is over (an edge wins) hands the lock line its
+        # meeting point. Only paid for while a lock is actually holding.
+        lock_edge = lock_plane = None
+        locked = (self.axis_lock or self._shift_lock
+                  or (self.reference_edge is not None and self.reference_mode)
+                  or bool(modifiers & Qt.ShiftModifier))
+        if start_pt is not None and locked:
+            lock_edge = self._hover_edge
+            if lock_edge is None:
+                lock_plane = self._hover_lock_plane(px_x, px_y)
         snap = compute_snap(
             candidate_world=world_raw,
             candidate_pixel=(px_x, px_y),
@@ -194,6 +220,8 @@ class InferenceEngine:
             reference_mode=self.reference_mode,
             inference_angle_deg=vp.inference_angle_deg,
             is_occluded=vp._is_occluded,
+            hover_lock_edge=lock_edge,
+            hover_lock_plane=lock_plane,
             are_occluded=None if _no_snap_fast() else vp._occluded_many,
             face_under_cursor=vp._still_face_under(px_x, px_y),
             edge_threshold_px=vp.edge_snap_threshold_px,
@@ -206,6 +234,7 @@ class InferenceEngine:
             shift_lock_dir=self._shift_lock[0] if self._shift_lock else None,
             shift_lock_color=self._shift_lock[1] if self._shift_lock else None,
             linear_mode=vp.linear_inference_mode,
+            diagonal_span=bool(getattr(tool, "diagonal_span", False)),
             work_plane_normal=vp._work_plane_normal(),
             radial_arm=bool(getattr(tool, "radial_arm", False)),
             axis_in_plane=not _magnet_may_leave_plane(tool),
@@ -222,7 +251,8 @@ class InferenceEngine:
     #: name is the user's target, and the snap engine already ranked it.
     _NAMED_SNAPS = frozenset((
         "endpoint", "midpoint", "arc_midpoint", "center", "origin",
-        "component_origin", "intersection", "close", "on_edge"))
+        "component_origin", "intersection", "intersection_edge",
+        "intersection_face", "close", "on_edge"))
 
     def _axis_source_cue(self, snap, px_x: float, px_y: float):
         """Before its first click, a tool that reads the model axes as a

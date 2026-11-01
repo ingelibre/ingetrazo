@@ -3,11 +3,14 @@
 """COLLADA (.dae) import — documents as .skp modellers export them."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from core.orient import is_closed, signed_volume
 from core.scene import Scene
 from formats.dae import load_dae
 
 _NSDECL = 'xmlns="http://www.collada.org/2005/11/COLLADASchema"'
+DATA = Path(__file__).parent / "data"
 
 
 def _cube_dae(tmp_path, up="Z_UP", meter="1.0"):
@@ -516,3 +519,63 @@ def test_a_file_of_only_lines_still_opens_633(tmp_path):
     load_dae(scene, str(_lines_dae(tmp_path, with_face=False)))
     assert len(scene.mesh.faces) == 0
     assert len(_loose(scene)) == 3
+
+
+def _tree(g):
+    return (g.name, [_tree(c) for c in g.children])
+
+
+def test_nested_groups_keep_their_structure(tmp_path):
+    """A small model exported as groups of groups (SketchUp: «geometries»
+    holding «closed» — a circle and a rectangle — and «lines») comes back
+    as the same tree with the same names, each piece of geometry in its own
+    group, instead of melting into the loose mesh."""
+    from PySide6.QtGui import QVector3D
+    from core.group import group_frame, world_mesh
+
+    scene = Scene()
+    load_dae(scene, DATA / "test_export.dae")
+    assert not scene.mesh.faces and not scene.mesh.edges   # nothing loose
+    # The camera node holds nothing to draw: no empty group for it.
+    assert [_tree(g) for g in scene.groups] == [
+        ("geometries", [("closed", [("circle", []), ("rectangle", [])]),
+                        ("lines", [])])]
+    top = scene.groups[0]
+    closed, lines = top.children
+    circle, rectangle = closed.children
+    # Each group holds its own geometry, fused back from the triangles.
+    assert not top.mesh.faces and not closed.mesh.faces
+    assert len(circle.mesh.faces) == 1 and len(circle.mesh.edges) == 24
+    assert len(rectangle.mesh.faces) == 1
+    assert len(rectangle.mesh.faces[0].loop) == 4
+    assert not lines.mesh.faces and len(lines.mesh.edges) == 2
+    # Groups, not components; a container is an instance (adopt).
+    assert all(not g.is_component() for g in (top, closed, circle,
+                                                 rectangle, lines))
+    assert top.xform is not None and closed.xform is not None
+
+    # Geometry sits where the composed node matrices put it (inches → m):
+    # geometries (48.66452, 50.98068) + closed + rectangle (net zero).
+    inch = 0.0254
+    xs = [v.position.x() for v in rectangle.mesh.vertices]
+    ys = [v.position.y() for v in rectangle.mesh.vertices]
+    assert abs(min(xs) - 48.66452 * inch) < 1e-5
+    assert abs(max(xs) - (48.66452 + 46.85039) * inch) < 1e-5
+    assert abs(min(ys) - 50.98068 * inch) < 1e-5
+    # Each node's transform is the group's own axes.
+    def origin(g):
+        return group_frame(g).map(QVector3D(0, 0, 0))
+    o = origin(circle)
+    assert abs(o.x() - (48.66452 + 24.78157) * inch) < 1e-5
+    assert abs(o.y() - (50.98068 - 10.80987 + 107.0966) * inch) < 1e-5
+    o = origin(lines)
+    assert abs(o.x() - (48.66452 + 65.80767) * inch) < 1e-5
+    assert len(world_mesh(top).faces) == 2              # whole model
+
+    # The tree survives the .igz round-trip.
+    from formats import igz
+    out = tmp_path / "nested.igz"
+    igz.save_scene(scene, out)
+    scene2 = Scene()
+    igz.load_into(scene2, out)
+    assert [_tree(g) for g in scene2.groups] == [_tree(top)]

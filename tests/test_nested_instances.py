@@ -150,6 +150,25 @@ def test_hidden_owner_hides_its_nested_placements():
     assert not any(scene.entity_visible(g) for g in out)
 
 
+def test_a_hidden_tag_deeper_down_hides_that_subtree():
+    """Not only the top-level object's tag: a nested group on a hidden tag
+    takes its own children along, untagged or tagged otherwise — an
+    imported storey holds a title block on a hidden tag, and its pieces
+    stayed on screen."""
+    scene = Scene()
+    top, _ = _tree()
+    mid = top.children[0]
+    mid.layer = "oculta"
+    mid.children[1].layer = "visible"             # a differently tagged leaf
+    from core.layers import Layer
+    scene.layers.append(Layer("oculta", visible=False))
+    scene.layers.append(Layer("visible"))
+    scene.groups.append(top)
+    out = _VP(scene)._placements()
+    assert [scene.entity_visible(g) for g in out] == [True, False, False, False]
+    assert [g.name for g, _m in scene.placements()] == ["top"]
+
+
 def test_editing_into_a_nested_group_keeps_the_tree():
     """Entering a container does NOT bake it.
 

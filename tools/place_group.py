@@ -41,7 +41,8 @@ class PlaceGroupTool(Tool):
         # component axes, so the footings its author drew below grade stay
         # below grade instead of being lifted onto the ground.
         self._anchor = (QVector3D(anchor) if anchor is not None
-                        else self._base_center(group))
+                        else (self._back_center(group) if align_to_face
+                              else self._base_center(group)))
         self._offset = QVector3D(0.0, 0.0, 0.0)
         # 3D-text glue: when enabled, hovering a FACE re-orients
         # the group so its front (-Y) points along the face normal — a sign
@@ -111,6 +112,20 @@ class PlaceGroupTool(Tool):
         lo, hi = pts.min(axis=0), pts.max(axis=0)
         return QVector3D(float(lo[0] + hi[0]) / 2.0,
                          float(lo[1] + hi[1]) / 2.0,
+                         float(lo[2]))
+
+    @classmethod
+    def _back_center(cls, group) -> QVector3D:
+        """The back-bottom-centre a sign hangs from: centred across the width,
+        on the BACK face (max +Y) and the base (min Z) — the one point that
+        stays put when the thickness is re-edited, so the sign is planted and
+        glued by the same face."""
+        pts = cls._world_points(group)
+        if not len(pts):
+            return QVector3D(0.0, 0.0, 0.0)
+        lo, hi = pts.min(axis=0), pts.max(axis=0)
+        return QVector3D(float(lo[0] + hi[0]) / 2.0,
+                         float(hi[1]),
                          float(lo[2]))
 
     # ---- Lifecycle ----------------------------------------------------------

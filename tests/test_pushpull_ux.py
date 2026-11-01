@@ -1194,15 +1194,16 @@ class _EdgeInferViewport(_StubViewport):
 
     snap_threshold_px = 9.0
 
-    def __init__(self, scene, edge):
+    def __init__(self, scene, edge, scale=10.0):
         super().__init__(scene)
         self._hover_edge = edge
+        self._scale = scale
 
     def _world_to_pixel(self, world):
-        return (world.x() * 10.0, -world.z() * 10.0)
+        return (world.x() * self._scale, -world.z() * self._scale)
 
     def _project_to_lock_line(self, start, direction, px, py):
-        cursor = QVector3D(px / 10.0, start.y(), -py / 10.0)
+        cursor = QVector3D(px / self._scale, start.y(), -py / self._scale)
         d = direction.normalized()
         return start + d * QVector3D.dotProduct(cursor - start, d)
 
@@ -1238,14 +1239,15 @@ def test_hovering_an_edge_infers_distance_and_says_on_edge():
     tool._attached, tool._prism_cap = tool._classify_base(scene)
     tool._cap_positions = tool._cap_loop_positions(top)
 
-    vp = _EdgeInferViewport(scene, top_edge)
-    # Cursor at (7, ·, 5): the middle of the edge, 10 px from either corner.
-    ctx = ToolContext(viewport=vp, world=QVector3D(), screen=QPointF(70.0, -50.0),
+    vp = _EdgeInferViewport(scene, top_edge, scale=20.0)
+    # Cursor at (6.5, ·, 5): a quarter of the edge, 10 px from its corner
+    # and from its midpoint (which has its own cue, #863).
+    ctx = ToolContext(viewport=vp, world=QVector3D(), screen=QPointF(130.0, -100.0),
                       modifiers=Qt.NoModifier, snap=None)
     d = tool._infer_reference_distance(ctx)
     assert d is not None and abs(d - 2.0) < 1e-6
     pt, kind = tool.inference_marker()
-    assert kind == "edge" and abs(pt.z() - 5.0) < 1e-6 and abs(pt.x() - 7.0) < 1e-6
+    assert kind == "edge" and abs(pt.z() - 5.0) < 1e-6 and abs(pt.x() - 6.5) < 1e-6
 
 
 # ---- Tiny push: a commit click that does nothing says so ----------------------

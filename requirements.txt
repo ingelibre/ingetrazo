@@ -24,6 +24,9 @@ ezdxf>=1.4.4
 # Apache-2.0, the kernel of OpenSCAD and Blender's booleans; native wheels
 # for Linux x86_64/aarch64, Windows and macOS, cp310–cp314.
 manifold3d>=3.5.3
+# Python's HTTPS on Windows verifies through the system verifier (core/tls.py),
+# which fetches a root certificate the fresh installation lacks. MIT, pure Python.
+truststore>=0.10.5; sys_platform == "win32"
 
 # --- Development ---
 pytest>=8.0

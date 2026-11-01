@@ -888,6 +888,34 @@ def edges_along(mesh, segments) -> list:
             if any(on(e.a, a, b) and on(e.b, a, b) for a, b in segments)]
 
 
+# cos²(1e-4 rad): the most two normals may differ to be read as ONE plane
+# drawn a hair out of true (#1076: a door 0.2 mm off over 2 m, 7.5e-5).
+# An imported panel leaning 5e-4 next to an exact new face is two planes:
+# correcting it changed which pushes a broken bench model refused.
+_HAIR_COS2 = math.cos(1e-4) ** 2
+
+
+def _off_plane(face, origin, normal) -> float:
+    """The farthest any of ``face``'s vertices sits from the plane."""
+    return max(abs(QVector3D.dotProduct(v.position - origin, normal))
+               for lp in (face.loop, *face.hole_loops) for v in lp)
+
+
+def _drops_its_neighbour(f, nf, g) -> bool:
+    """Whether the plane read off the op's face ``f`` would leave part of
+    its bigger coplanar neighbour ``g`` off the plane, while ``g``'s own
+    normal through ``f`` keeps both on it: one plane drawn a hair out of
+    true, not two planes (#1076)."""
+    half = _ON_PLANE / 2
+    gn = g.normal().normalized()
+    if QVector3D.dotProduct(nf, gn) ** 2 < _HAIR_COS2:
+        return False                    # two planes, not one out of true
+    oc = f.centroid()
+    if _off_plane(g, oc, nf) <= half:
+        return False                    # the op's plane already holds it
+    return _off_plane(g, oc, gn) <= half and _off_plane(f, oc, gn) <= half
+
+
 def seam_planes(mesh, new_faces) -> list:
     """Representative ``(origin, normal)`` for each plane where one of this
     operation's ``new_faces`` ended up coplanar-edge-adjacent to another face —
@@ -896,7 +924,17 @@ def seam_planes(mesh, new_faces) -> list:
     flush with an old roof, or two fresh quads split at a T-junction. These are
     exactly the planes :func:`apply_rebuild` must recompute so the deterministic
     union dissolves them (the replacement for the winding-tolerant coplanar
-    merge of ``run_stitch`` phase 3)."""
+    merge of ``run_stitch`` phase 3).
+
+    The plane is read off the op's face unless that would leave part of
+    its bigger coplanar neighbour off the plane while the neighbour's own
+    normal holds both; then that normal is used (the origin stays on the
+    op's face). A push's new faces are small and inherit any tilt of the
+    pushed face (a door drawn 1 mm out of plumb sweeps a pocket floor that
+    leans 2e-5): read off that floor, the room's plane drifted past the
+    on-plane tolerance a few metres away, the far half of its outline fell
+    out of the arrangement, and the whole floor went as «not traced» --
+    the push refused, more often the bigger the model (#1076)."""
     seen: dict = {}
     for f in new_faces:
         if f not in mesh.faces:
@@ -914,6 +952,14 @@ def seam_planes(mesh, new_faces) -> list:
                     if abs(QVector3D.dotProduct(
                             nf, g.normal().normalized())) > 0.999:
                         key, origin, cn = plane_key(f.centroid(), nf)
-                        if key not in seen:
-                            seen[key] = (origin, cn)
-    return list(seen.values())
+                        if key in seen and seen[key][0]:
+                            continue        # already corrected from a big face
+                        if g.area() > f.area() and _drops_its_neighbour(
+                                f, nf, g):
+                            # Its normal, through the op's own face.
+                            _, origin, cn = plane_key(f.centroid(),
+                                                      g.normal())
+                            seen[key] = (True, origin, cn)
+                        elif key not in seen:
+                            seen[key] = (False, origin, cn)
+    return [(o, n) for _a, o, n in seen.values()]
