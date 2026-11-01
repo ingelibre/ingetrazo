@@ -4511,8 +4511,8 @@ class BimPanel(QWidget):
         lay.addLayout(row)
 
         # Tag, Untag and Tag as you draw on one row, the buttons slim: the
-        # takeoff below gets the height.
-        btns = QHBoxLayout()
+        # takeoff below gets the height. Wraps in a narrow tray.
+        btns = FlowLayout(spacing=4)
         tag_btn = QPushButton(tr("Tag selection"))
         tag_btn.setToolTip(tr(
             "Mark the selected faces / group as this IFC object"))
@@ -4535,7 +4535,6 @@ class BimPanel(QWidget):
         self.class_box.currentIndexChanged.connect(self._rearm_active)
         self.name_edit.editingFinished.connect(self._rearm_active)
         btns.addWidget(self.active_check)
-        btns.addStretch(1)
         lay.addLayout(btns)
 
         # Search, class filter and grouping: ways of reading the takeoff —
@@ -4580,7 +4579,7 @@ class BimPanel(QWidget):
         self.tree.itemCollapsed.connect(self._fit_tree)
         lay.addWidget(self.tree)
 
-        exp_row = QHBoxLayout()
+        exp_row = FlowLayout(spacing=4)      # wraps in a narrow tray
         exp = QPushButton(tr("Export all CSV…"))
         exp.setToolTip(tr(
             "The whole takeoff table — the bridge to IngePresupuestos"))
