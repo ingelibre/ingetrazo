@@ -278,22 +278,25 @@ def inherited_states(groups) -> dict:
 def node_icon(key: str) -> QIcon:
     """The icon for a row kind — ``group``, ``component``, ``ifc``,
     ``image``, ``text``, ``document``, ``scene``, ``sheet``, ``frame``,
-    ``eye``, ``eye_off``, ``warning``."""
-    if key not in _ICONS:
+    ``eye``, ``eye_off``, ``warning``. Kept per theme: drawn in the
+    palette's ink, an icon of the light theme is no icon of the dark one."""
+    key_ink = (key, _ink().rgba(), _accent().rgba())
+    if key_ink not in _ICONS:
         if key in ("image", "text", "sections"):
             from views.icons import tool_icon
-            _ICONS[key] = tool_icon({"image": "image", "text": "text3d",
-                                     "sections": "section_planes"}[key])
+            _ICONS[key_ink] = tool_icon({"image": "image", "text": "text3d",
+                                         "sections": "section_planes"}[key])
         elif key == "warning":
             from PySide6.QtWidgets import QApplication
-            _ICONS[key] = QApplication.style().standardIcon(
+            _ICONS[key_ink] = QApplication.style().standardIcon(
                 QStyle.SP_MessageBoxWarning)
         elif key == "folder":
             from PySide6.QtWidgets import QApplication
-            _ICONS[key] = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+            _ICONS[key_ink] = QApplication.style().standardIcon(
+                QStyle.SP_DirIcon)
         else:
-            _ICONS[key] = _draw(key)
-    return _ICONS[key]
+            _ICONS[key_ink] = _draw(key)
+    return _ICONS[key_ink]
 
 
 def fill_icon(color, on: bool) -> QIcon:
@@ -1887,7 +1890,8 @@ class OutlinerPanel(QWidget):
         sec.setHidden(sec.childCount() == 0 or not any_shown)
 
     _PATTERN_TEXT = {"solid": "Solid", "hatch": "Hatched 45°",
-                     "cross": "Cross-hatched", "none": "No fill"}
+                     "cross": "Cross-hatched", "none": "No fill",
+                     "layers": "Layers' hatches"}
 
     def set_plane_fill(self, plane, **changes) -> None:
         """Change this cut's own fill — ``pattern``, ``color``, ``spacing``;
@@ -1943,18 +1947,23 @@ class OutlinerPanel(QWidget):
         """The cut's own fill: pattern, colour, spacing, or the style's."""
         from PySide6.QtCore import QTimer
         sub = menu.addMenu(tr("Fill of this cut"))
+        sub.setToolTipsVisible(True)
         own = getattr(plane, "fill", None) or {}
         current = own.get("pattern")
         act = sub.addAction(tr("As the style"), lambda: self.set_plane_fill(
             plane, pattern=None))
         act.setCheckable(True)
         act.setChecked(current is None)
-        for pattern in ("solid", "hatch", "cross", "none"):
+        for pattern in ("solid", "hatch", "cross", "layers", "none"):
             act = sub.addAction(tr(self._PATTERN_TEXT[pattern]),
                                 lambda p=pattern: self.set_plane_fill(
                                     plane, pattern=p))
             act.setCheckable(True)
             act.setChecked(current == pattern)
+            if pattern == "layers":
+                act.setToolTip(tr(
+                    "Each layer's cut with the hatch the Layers panel gives "
+                    "it, as a sheet at 1:50 draws it"))
         sub.addSeparator()
         # Dialogs open once the menu has closed (see _fill_actions).
         sub.addAction(tr("Fill color of this cut…"), lambda: QTimer.singleShot(
