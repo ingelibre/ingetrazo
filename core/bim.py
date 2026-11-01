@@ -531,17 +531,43 @@ def class_quantities(ifc_class: str, faces):
     return QSET_NAMES.get(ifc_class, "BaseQuantities"), entries, (metrado, unit)
 
 
-def quantities_csv(scene) -> str:
-    """The takeoff table (metrado) as CSV — the pre-IFC bridge to
-    IngePresupuestos: model → budget quantities in one export. ``metrado``
-    is the per-class budget measure (wall face m², column m³, pile m,
-    door und); area/volume stay as the raw shell numbers."""
-    lines = ["class,name,metrado,unit,area_m2,volume_m3"]
-    for obj in collect_objects(scene):
+def object_matches(obj: dict, query: str = "",
+                   classes: set | None = None) -> bool:
+    """Whether a takeoff object passes the BIM panel's filters: its class
+    among ``classes`` (``None``: every class) and ``query`` (already
+    casefolded) in its name or its class — with ``*`` and ``?`` as
+    wildcards, as in the Browser."""
+    from core.outliner import text_matches
+    cls = obj.get("class", "")
+    if classes is not None and cls not in classes:
+        return False
+    if not query:
+        return True
+    return any(text_matches(t, query) for t in (
+        obj.get("name") or "", cls, cls.removeprefix("Ifc")))
+
+
+def object_metrado(obj: dict) -> tuple:
+    """``(metrado, unit)`` of a takeoff object — the class's budget
+    measure — kept on the object, so a memoised one reuses it."""
+    if "metrado" not in obj:
         faces = obj.get("faces")
         if faces is None:
             faces = list(obj["group"].mesh.faces)
-        _, _, (metrado, unit) = class_quantities(obj["class"], faces)
+        obj["metrado"] = class_quantities(obj["class"], faces)[2]
+    return obj["metrado"]
+
+
+def quantities_csv(scene, objects: list | None = None) -> str:
+    """The takeoff table (metrado) as CSV — the pre-IFC bridge to
+    IngePresupuestos: model → budget quantities in one export. ``metrado``
+    is the per-class budget measure (wall face m², column m³, pile m,
+    door und); area/volume stay as the raw shell numbers. ``objects``
+    (from :func:`collect_objects`) exports those alone — the rows the BIM
+    panel shows; ``None``: every object of the model."""
+    lines = ["class,name,metrado,unit,area_m2,volume_m3"]
+    for obj in collect_objects(scene) if objects is None else objects:
+        metrado, unit = object_metrado(obj)
         met = "" if metrado is None else f"{metrado:.4f}"
         vol = "" if obj["volume"] is None else f"{obj['volume']:.4f}"
         name = (obj["name"] or "").replace('"', "'")
