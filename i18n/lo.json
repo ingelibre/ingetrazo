@@ -3277,5 +3277,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "ສີດ້ານໜ້າ — ທາສີໜ້າພຽງໃນໂໝດເຊື່ອງເສັ້ນ ແລະ ຂາວດຳ",
  "Restore defaults": "ຄືນຄ່າເລີ່ມຕົ້ນ",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "ຄືນການຕັ້ງຄ່າໃນໜ້າຕ່າງນີ້ເປັນຄ່າທີ່ມາກັບ IngeTrazo. ຈະບໍ່ມີການບັນທຶກຈົນກວ່າທ່ານຈະກົດ ຕົກລົງ. ພາສາ, ຜູ້ຊ່ວຍ AI, ປຸ່ມລັດ ແລະ ຫົວໜ່ວຍຂອງເອກະສານທີ່ເປີດຢູ່ຈະຄືເກົ່າ.",
- "Distance ({unit}):": "ໄລຍະຫ່າງ ({unit}):"
+ "Distance ({unit}):": "ໄລຍະຫ່າງ ({unit}):",
+ "Add Scene": "ເພີ່ມສາກ",
+ "Update Scene": "ອັບເດດສາກ",
+ "Delete Scene": "ລຶບສາກ",
+ "Scene '{name}' added": "ເພີ່ມສາກ '{name}' ແລ້ວ",
+ "Select a scene in the Scenes panel first": "ເລືອກສາກໃນແຜງສາກກ່ອນ",
+ "Show Scene": "ສະແດງສາກ",
+ "Show the selected scene": "ສະແດງສາກທີ່ເລືອກ",
+ "Rename Scene…": "ປ່ຽນຊື່ສາກ…",
+ "Rename Scene": "ປ່ຽນຊື່ສາກ",
+ "Rename the selected scene": "ປ່ຽນຊື່ສາກທີ່ເລືອກ",
+ "Duplicate Scene": "ສຳເນົາສາກ",
+ "Make a copy of the selected scene": "ສ້າງສຳເນົາຂອງສາກທີ່ເລືອກ"
 }

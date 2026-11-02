@@ -3289,5 +3289,17 @@
  "Ukrainian translation of the interface.": "Переклад інтерфейсу українською.",
  "Distance ({unit}):": "Відстань ({unit}):",
  "Restore defaults": "Відновити типові",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Повертає налаштування цього вікна до стандартних налаштувань IngeTrazo. Нічого не зберігається, доки ви не натиснете «Гаразд». Мова, Асистент ШІ, сполучення клавіш і одиниці відкритого документа залишаються без змін."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Повертає налаштування цього вікна до стандартних налаштувань IngeTrazo. Нічого не зберігається, доки ви не натиснете «Гаразд». Мова, Асистент ШІ, сполучення клавіш і одиниці відкритого документа залишаються без змін.",
+ "Add Scene": "Додати сцену",
+ "Update Scene": "Оновити сцену",
+ "Delete Scene": "Видалити сцену",
+ "Scene '{name}' added": "Сцену '{name}' додано",
+ "Select a scene in the Scenes panel first": "Спочатку виберіть сцену на панелі «Сцени»",
+ "Show Scene": "Показати сцену",
+ "Show the selected scene": "Показати вибрану сцену",
+ "Rename Scene…": "Перейменувати сцену…",
+ "Rename Scene": "Перейменувати сцену",
+ "Rename the selected scene": "Перейменувати вибрану сцену",
+ "Duplicate Scene": "Дублювати сцену",
+ "Make a copy of the selected scene": "Створити копію вибраної сцени"
 }

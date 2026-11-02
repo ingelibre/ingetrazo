@@ -3277,5 +3277,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "สีด้านหน้า — ระบายพื้นผิวในโหมดซ่อนเส้นและโหมดสีเดียว",
  "Distance ({unit}):": "ระยะ ({unit}):",
  "Restore defaults": "คืนค่าเริ่มต้น",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม"
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม",
+ "Add Scene": "เพิ่มฉาก",
+ "Update Scene": "อัปเดตฉาก",
+ "Delete Scene": "ลบฉาก",
+ "Scene '{name}' added": "เพิ่มฉาก '{name}' แล้ว",
+ "Select a scene in the Scenes panel first": "เลือกฉากในแผงฉากก่อน",
+ "Show Scene": "แสดงฉาก",
+ "Show the selected scene": "แสดงฉากที่เลือก",
+ "Rename Scene…": "เปลี่ยนชื่อฉาก…",
+ "Rename Scene": "เปลี่ยนชื่อฉาก",
+ "Rename the selected scene": "เปลี่ยนชื่อฉากที่เลือก",
+ "Duplicate Scene": "ทำสำเนาฉาก",
+ "Make a copy of the selected scene": "สร้างสำเนาของฉากที่เลือก"
 }
