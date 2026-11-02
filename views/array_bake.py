@@ -360,8 +360,8 @@ def bake(vp, mesh, paint, msig, vkey, uid):
     # Colour backs: the bucket is the key's; the shade the unit normal's.
     cb = np.flatnonzero(is_drawn & np.isin(fkind_b, ["vcol", "tcol"]))
     if len(cb):
-        bases_b = np.array([e["back"][1] if e["back"] and e["back"][0] in
-                            ("vcol", "tcol") else (0.0, 0.0, 0.0)
+        bases_b = np.array([e["back"][1][:3] if e["back"] and e["back"][0]
+                            in ("vcol", "tcol") else (0.0, 0.0, 0.0)
                             for e in ent], dtype=np.float64)
         b_rgb[cb] = shaded_colors(bases_b[fk[cb]], shade_bv[cb])
         key_code = {}
@@ -450,7 +450,9 @@ def bake(vp, mesh, paint, msig, vkey, uid):
     f_rgb = np.zeros((nf, 3), dtype=np.float64)
     pf = np.flatnonzero(plain)
     if len(pf):
-        bases = np.array([e["base"] for e in ent], dtype=np.float64)
+        # RGB only: an imported colour may carry its alpha as a fourth
+        # value (opacity is its own attr), which the object bake ignores.
+        bases = np.array([e["base"][:3] for e in ent], dtype=np.float64)
         f_rgb[pf] = shaded_colors(bases[fk[pf]], shade_a[pf])
     ccode = np.full(nf, -1, dtype=np.int64)     # 0 vcol, 1 fvcol, 2+ tcol
     cnames = {}

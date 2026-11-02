@@ -46,11 +46,11 @@ jobs:
           grep -vE '^\s*pytest\b' requirements.txt > reqs.txt
           python -m pip install -r reqs.txt pyinstaller
 
-      # The EXPERIMENTAL Rust engine (rust/ingetrazo_core, Preferences ▸
-      # General; off by default), built for this runner's architecture.
+      # The Rust engine (rust/ingetrazo_core, Preferences ▸
+      # General; on by default since 0.5.10), built for this runner's architecture.
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Rust engine (experimental)
+      - name: Rust engine
         run: |
           python -m pip install maturin
           maturin build --release -m rust/ingetrazo_core/Cargo.toml -o "$RUNNER_TEMP/wheels"

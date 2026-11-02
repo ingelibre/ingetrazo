@@ -75,6 +75,68 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.0" date="2026-11-01">
+      <description>
+        <p>Several projects in tabs in the same window; 17 languages, the
+        latest Arabic with a right-to-left interface and Ukrainian; Push/Pull
+        cuts doors and windows through real walls; .skp files import with
+        their groups and components; curved surfaces shade round; softer,
+        more natural ambient occlusion; and over forty community
+        contributions.</p>
+        <p xml:lang="es">Varios proyectos en pestañas en la misma ventana;
+        17 idiomas, los últimos el árabe con la interfaz de derecha a
+        izquierda y el ucraniano; Empujar/Tirar abre puertas y ventanas en muros reales; los
+        .skp llegan con sus grupos y componentes; las superficies curvas se
+        ven redondas; oclusión ambiental más suave y natural; y más de
+        cuarenta aportes de la comunidad.</p>
+      </description>
+    </release>
+    <release version="0.5.11" date="2026-10-27">
+      <description>
+        <p>Layers 2.0 with their own tab, colour, line type and weight per
+        layer and printing per layer; ambient occlusion is no longer
+        experimental; sharp sun shadows in exported pictures, in sheets and
+        in a still view; Japanese, Korean, Vietnamese and Thai; the
+        extension manager downloads again on a fresh Windows; and over
+        thirty community contributions.</p>
+        <p xml:lang="es">Capas 2.0 con pestaña propia, color, tipo y grosor
+        de línea e impresión por capa; la oclusión ambiental deja de ser
+        experimental; sombras del sol nítidas en las imágenes exportadas,
+        en las láminas y con la vista quieta; japonés, coreano, vietnamita
+        y tailandés; el gestor de extensiones vuelve a descargar en un
+        Windows recién instalado; y más de treinta aportes de la
+        comunidad.</p>
+      </description>
+    </release>
+    <release version="0.5.10.1" date="2026-10-27">
+      <description>
+        <p>Fixes a data loss: a group or component painted whole with a
+        texture lost it on its second save. Experimental ambient occlusion
+        in the Styles panel (off by default), sun shadows without staircase
+        edges, and network folders no longer stop the file dialogs on
+        Windows.</p>
+        <p xml:lang="es">Arregla una pérdida de datos: un grupo o componente
+        pintado entero con una textura la perdía al segundo guardado.
+        Oclusión ambiental experimental en el panel Estilos (apagada por
+        defecto), sombras del sol sin escalones, y en Windows las carpetas
+        de red ya no bloquean los diálogos de archivos.</p>
+      </description>
+    </release>
+    <release version="0.5.10" date="2026-10-26">
+      <description>
+        <p>The Rust engine is now on by default, in this Flatpak too, with
+        the Python engine as a fallback; huge models no longer lag while
+        drawing, selecting, moving and undoing; a snap where two faces
+        cross; Camera, Axes to hide the world axes and Camera, Field of
+        View to set the lens; and about sixty fixes.</p>
+        <p xml:lang="es">El motor Rust viene activado por defecto, también
+        en este Flatpak, con el motor de Python de reserva; los modelos
+        enormes ya no dan tirones al dibujar, seleccionar, mover y
+        deshacer; enganche donde se cruzan dos caras; Cámara, Ejes para
+        ocultar los ejes del mundo y Cámara, Campo de visión para elegir la
+        lente; y unos sesenta arreglos.</p>
+      </description>
+    </release>
     <release version="0.5.9" date="2026-10-19">
       <description>
         <p>An experimental Rust engine (off by default) that makes hidden

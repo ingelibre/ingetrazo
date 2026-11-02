@@ -108,3 +108,77 @@ def test_the_line_tool_snaps_where_a_sunk_box_meets_the_floor():
     finally:
         win._saved_version = vp.scene.version
         win.close()
+
+
+def _sunk_copies_window():
+    """The sunk box as component copies along the floor, in the pick
+    index's lazy mode (the plant of #158)."""
+    from core.group import Group
+    from PySide6.QtGui import QMatrix4x4
+    win, vp = _sunk_box_window()
+    box = vp.scene.groups.pop()
+    for k in range(6):
+        g = Group(box.mesh, f"copy {k}")
+        m = QMatrix4x4()
+        m.translate(-3.0 + 1.5 * k, 3.0, 0.0)
+        g.xform = m
+        vp.scene.groups.append(g)
+    m = QMatrix4x4()
+    box.xform = m
+    vp.scene.groups.append(box)
+    vp.scene.version += 1
+    vp._PICK_LAZY_MIN_FACES = 1
+    return win, vp
+
+
+def test_the_crossing_is_found_with_lazy_placements():
+    win, vp = _sunk_copies_window()
+    try:
+        for on_line in (V(0.5, 0.0, 0.0), V(1.0, 0.5, 0.0)):
+            px = vp._world_to_pixel(on_line)
+            for dy in (0.0, -4.0, 4.0):
+                vp._pick_live = None
+                vp._pick_foot_keep = None
+                snap = vp._snap_at(px[0], px[1] + dy, Qt.NoModifier)
+                assert snap.kind == "intersection", (on_line, dy, snap.kind)
+                assert abs(snap.point.z()) < 1e-4
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
+def test_the_probes_either_side_are_baked_before_any_is_asked(monkeypatch):
+    # One at a time, each probe that met a new lazy placement rebuilt the
+    # index for the next (#158): all are baked first, then asked.
+    # The baking path (with the experimental engine nothing is baked).
+    import views.viewport as vpm
+    monkeypatch.setattr(vpm, "_LAZY_NATIVE", False)
+    win, vp = _sunk_copies_window()
+    try:
+        seq = []
+        real_mat, real_front = vp._pick_materialize, vp._front_face_at
+
+        def mat(near):
+            if isinstance(near, tuple) and near[0] == "px":
+                seq.append("bake")
+            return real_mat(near)
+
+        def front(x, y):
+            seq.append("ask")
+            return real_front(x, y)
+        px = vp._world_to_pixel(V(0.5, 0.0, 0.0))
+        vp._snap_at(px[0], px[1], Qt.NoModifier)         # warm the memos
+        monkeypatch.setattr(vp, "_pick_materialize", mat)
+        monkeypatch.setattr(vp, "_front_face_at", front)
+        vp._pick_live = None
+        seq.clear()
+        assert vp._face_crossing_point(px[0], px[1]) is not None
+        asks = [i for i, s in enumerate(seq) if s == "ask"]
+        bakes = [i for i, s in enumerate(seq[:asks[0]]) if s == "bake"]
+        assert asks and len(bakes) >= 2
+        # Each ask re-asks its own pixel through the index (nothing new):
+        # no probe is baked for the first time after the first ask.
+        assert seq.count("bake") - len(bakes) <= len(asks)
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()

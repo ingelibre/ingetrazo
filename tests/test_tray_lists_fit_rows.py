@@ -10,21 +10,15 @@ from PySide6.QtWidgets import QApplication
 _app = QApplication.instance() or QApplication([])
 
 
-def test_layers_and_scenes_lists_grow_with_their_rows():
+def test_scenes_and_components_lists_grow_with_their_rows():
+    """(The Layers list has a tab of its own now, beside the Browser, and
+    scrolls there like the Browser's tree.)"""
     from views.main_window import MainWindow
-    from core.layers import Layer
     win = MainWindow()
     try:
         tray = win.tray
-        for v in (tray.layers.tree, tray.scenes.list, tray.components._in_model):
+        for v in (tray.scenes.list, tray.components._in_model):
             assert v.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
-        h0 = tray.layers.tree.height()
-        scene = win.viewport.scene
-        for i in range(8):
-            scene.layers.append(Layer(name=f"capa {i}"))
-        tray.layers.refresh()
-        assert tray.layers.tree.height() > h0
-        assert tray.layers.tree.height() >= 9 * tray.layers.tree.sizeHintForRow(0)
         h_empty = tray.scenes.list.height()
         assert h_empty >= 3 * (tray.scenes.list.fontMetrics().height())  # min rows
     finally:

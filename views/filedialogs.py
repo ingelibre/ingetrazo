@@ -25,16 +25,27 @@ from PySide6.QtWidgets import QFileDialog
 _KEY = "files/last_dir"
 
 
+def _is_dir(path) -> bool:
+    """``Path.is_dir()`` that answers False instead of raising. On Windows
+    the Python we ship (3.12) raises for a network share that refuses the
+    login (WinError 1326): with the last folder on a share that was gone,
+    every Open/Save/Import/Export dialog died before showing (#948)."""
+    try:
+        return Path(str(path)).is_dir()
+    except (OSError, ValueError):
+        return False
+
+
 def last_dir(fallback: str | os.PathLike | None = None) -> str:
     """The folder to start a dialog in: the last one chosen, if it still
     exists; else *fallback*; else Documents; else home."""
     saved = QSettings().value(_KEY, "")
-    if saved and Path(str(saved)).is_dir():
+    if saved and _is_dir(saved):
         return str(saved)
-    if fallback and Path(fallback).is_dir():
+    if fallback and _is_dir(fallback):
         return str(fallback)
     docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
-    return docs if docs and Path(docs).is_dir() else str(Path.home())
+    return docs if docs and _is_dir(docs) else str(Path.home())
 
 
 def remember(path: str | os.PathLike | None) -> None:
@@ -42,8 +53,8 @@ def remember(path: str | os.PathLike | None) -> None:
     if not path:
         return
     p = Path(str(path))
-    folder = p if p.is_dir() else p.parent
-    if folder.is_dir():
+    folder = p if _is_dir(p) else p.parent
+    if _is_dir(folder):
         QSettings().setValue(_KEY, str(folder))
 
 
@@ -54,7 +65,7 @@ def start_in(directory: str | os.PathLike | None, fallback=None) -> str:
     if not d:
         return last_dir(fallback)
     head, _tail = os.path.split(d)
-    if head and Path(head).is_dir():
+    if head and _is_dir(head):
         return d                                     # the caller chose
     return os.path.join(last_dir(fallback), os.path.basename(d))
 
@@ -77,7 +88,7 @@ class file_dialogs:  # noqa: N801 — reads like QFileDialog at the call site
             path = getattr(w, "_current_path", None)
             if path is not None:
                 folder = Path(str(path)).parent
-                if folder.is_dir():
+                if _is_dir(folder):
                     return str(folder)
         return None
 

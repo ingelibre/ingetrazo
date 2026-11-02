@@ -190,20 +190,21 @@ def _window():
     return MainWindow()
 
 
-def _row(tree, name):
-    from PySide6.QtCore import Qt
-    return next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
-                if tree.topLevelItem(i).data(0, Qt.UserRole) == name)
+def _row(panel, name):
+    return panel.item_for(name)
 
 
-def test_deleting_a_layer_reassigns_faces_INSIDE_groups():
+def test_deleting_a_layer_reassigns_faces_INSIDE_groups(monkeypatch):
     """The − button walked scene.groups as a flat list, so geometry inside a
     group kept a tag pointing at a layer that no longer existed."""
+    from PySide6.QtWidgets import QMessageBox
     from core.layers import layer_of
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.Yes))
     win = _window()
     try:
         scene = win.viewport.scene
-        panel = win.tray.layers
+        panel = win.layers_dock.panel
         inner = Mesh()
         f = _quad(inner)
         deep = Mesh()
@@ -217,7 +218,7 @@ def test_deleting_a_layer_reassigns_faces_INSIDE_groups():
         assign_layer(f, "CANAL")
         assign_layer(g, "CANAL")
         panel.refresh()
-        panel.tree.setCurrentItem(_row(panel.tree, "CANAL"))
+        panel.tree.setCurrentItem(_row(panel, "CANAL"))
         panel._on_delete()
         assert scene.layer("CANAL") is None
         assert layer_of(f) == DEFAULT_LAYER
@@ -234,7 +235,7 @@ def test_the_purge_button_sweeps_and_ctrl_z_brings_them_back(monkeypatch):
     win = _window()
     try:
         scene = win.viewport.scene
-        panel = win.tray.layers
+        panel = win.layers_dock.panel
         for name in ("CVL_PUNTO", "BUZON", "Trees"):
             scene.layers.append(Layer(name))
         panel.refresh()

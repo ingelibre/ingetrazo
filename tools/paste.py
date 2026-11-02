@@ -45,6 +45,8 @@ class _PruneOnUndo(Command):
     group (which wraps its vertices) at the pasted size after Ctrl+Z. Redo
     puts them back before the geometry is relinked onto them."""
 
+    keeps_groups = True        # only vertices nothing uses
+
     def __init__(self) -> None:
         self._gone: list = []
 

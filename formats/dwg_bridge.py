@@ -30,6 +30,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
+from PySide6.QtCore import QEventLoop, QObject, QProcess, QTimer
+
 from core.paths import app_root
 
 _VENDOR_BIN = app_root() / "vendor" / "libredwg" / "bin"
@@ -40,7 +42,14 @@ _TIMEOUT = 300  # seconds; big real-world DWGs convert in well under this
 
 
 class DwgBridgeError(Exception):
-    """A DWG conversion failed or no converter is available."""
+    """A DWG conversion failed or no converter is available.
+
+    ``kind`` tells the caller what to say to the user: ``"unavailable"`` (no
+    converter), ``"failed"``, ``"timeout"`` or ``"cancelled"``."""
+
+    def __init__(self, message: str, kind: str = "failed") -> None:
+        super().__init__(message)
+        self.kind = kind
 
 
 #: Leading bytes of a native executable, per platform. The repository keeps
@@ -97,6 +106,16 @@ def have_dwg_support() -> bool:
     return find_dwg2dxf() is not None
 
 
+def _check_output(out_path: Path, returncode: object, log: str) -> None:
+    """LibreDWG often exits non-zero on recoverable warnings while still
+    writing a usable file — the output's existence is the real verdict."""
+    if not out_path.is_file() or out_path.stat().st_size == 0:
+        tail = log.strip().splitlines()[-3:]
+        raise DwgBridgeError(
+            "conversion produced no output: "
+            + (" | ".join(tail) or f"rc={returncode}"))
+
+
 def _run(cmd: list[str], out_path: Path) -> str:
     """Run the converter; return its stderr so callers can inspect warnings."""
     try:
@@ -114,14 +133,9 @@ def _run(cmd: list[str], out_path: Path) -> str:
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
-        raise DwgBridgeError(f"converter timed out: {' '.join(cmd)}") from exc
-    # LibreDWG often exits non-zero on recoverable warnings while still
-    # writing a usable file — the output's existence is the real verdict.
-    if not out_path.is_file() or out_path.stat().st_size == 0:
-        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
-        raise DwgBridgeError(
-            "conversion produced no output: "
-            + (" | ".join(tail) or f"rc={proc.returncode}"))
+        raise DwgBridgeError(f"converter timed out: {' '.join(cmd)}",
+                             "timeout") from exc
+    _check_output(out_path, proc.returncode, proc.stderr or proc.stdout or "")
     return proc.stderr or ""
 
 
@@ -231,8 +245,17 @@ def _dedupe_handles(dxf_path: Path) -> int:
     return len(collisions)
 
 
-def dwg_to_dxf(dwg_path: Path) -> Path:
-    """Convert a DWG to a temporary DXF; returns the DXF path.
+def _converter_command(tool: Path, dwg_path: Path, out_dxf: Path) -> list[str]:
+    return [str(tool), "-y", "-o", str(out_dxf), str(dwg_path)]
+
+
+def _repair_dxf(dxf_path: Path) -> None:
+    _strip_null_handles(dxf_path)
+    _dedupe_handles(dxf_path)
+
+
+def _new_output() -> tuple[Path, Path]:
+    """The converter and a fresh output path for it to write.
 
     The temp file lands in a fresh ASCII-only directory: satellite argv
     encoding is a known gotcha family (the former external
@@ -240,14 +263,114 @@ def dwg_to_dxf(dwg_path: Path) -> Path:
     name carries accents."""
     tool = find_dwg2dxf()
     if tool is None:
-        raise DwgBridgeError("LibreDWG (dwg2dxf) is not available")
-    dwg_path = Path(dwg_path)
+        raise DwgBridgeError("LibreDWG (dwg2dxf) is not available",
+                             "unavailable")
     out_dir = Path(tempfile.mkdtemp(prefix="ingetrazo-dwg-"))
-    out_dxf = out_dir / "converted.dxf"
-    _run([str(tool), "-y", "-o", str(out_dxf), str(dwg_path)], out_dxf)
-    _strip_null_handles(out_dxf)
-    _dedupe_handles(out_dxf)
+    return tool, out_dir / "converted.dxf"
+
+
+def dwg_to_dxf(dwg_path: Path) -> Path:
+    """Convert a DWG to a temporary DXF; returns the DXF path.
+
+    Blocks the calling thread: the path for scripts and headless callers.
+    The window uses :class:`DwgConverter`, which keeps the event loop
+    running."""
+    dwg_path = Path(dwg_path)
+    tool, out_dxf = _new_output()
+    try:
+        _run(_converter_command(tool, dwg_path, out_dxf), out_dxf)
+    except DwgBridgeError:
+        discard_temp_dxf(out_dxf)
+        raise
+    _repair_dxf(out_dxf)
     return out_dxf
+
+
+class DwgConverter(QObject):
+    """``dwg2dxf`` in a :class:`QProcess` (#401).
+
+    :meth:`convert` blocks its caller in a local ``QEventLoop``, so it reads
+    like :func:`dwg_to_dxf` while the window keeps painting and a Cancel
+    button can call :meth:`cancel`. The :data:`_TIMEOUT` limit stays. On any
+    failure the temporary directory is removed before the error is raised."""
+
+    def __init__(self, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self._proc = QProcess(self)
+        self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self._proc.finished.connect(self._on_finished)
+        self._proc.errorOccurred.connect(self._on_error)
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._on_timeout)
+        self._loop: Optional[QEventLoop] = None
+        self._out_dxf: Optional[Path] = None
+        self._error: Optional[DwgBridgeError] = None
+        self._done = True
+
+    def convert(self, dwg_path: Path) -> Path:
+        tool, out_dxf = _new_output()
+        self._out_dxf = out_dxf
+        self._error = None
+        self._done = False
+        cmd = _converter_command(tool, Path(dwg_path), out_dxf)
+        self._timer.start(int(_TIMEOUT * 1000))
+        self._proc.start(cmd[0], cmd[1:])
+        if not self._done:
+            self._loop = QEventLoop(self)
+            self._loop.exec()
+            self._loop = None
+        if self._error is None:
+            try:
+                _repair_dxf(out_dxf)
+            except OSError as exc:
+                self._error = DwgBridgeError(
+                    f"cannot read the converted DXF: {exc}")
+        if self._error is not None:
+            discard_temp_dxf(out_dxf)
+            raise self._error
+        return out_dxf
+
+    def cancel(self) -> None:
+        self._stop(DwgBridgeError("conversion cancelled", "cancelled"))
+
+    def _stop(self, error: DwgBridgeError) -> None:
+        """End the run with *error* and kill the process if it still lives."""
+        if self._done:
+            return
+        self._settle(error)
+        if self._proc.state() != QProcess.ProcessState.NotRunning:
+            self._proc.kill()
+            self._proc.waitForFinished(5000)
+
+    def _settle(self, error: Optional[DwgBridgeError]) -> None:
+        self._done = True
+        self._error = error
+        self._timer.stop()
+        if self._loop is not None:
+            self._loop.quit()
+
+    def _on_timeout(self) -> None:
+        self._stop(DwgBridgeError(
+            f"converter timed out after {_TIMEOUT:g} s", "timeout"))
+
+    def _on_error(self, err: QProcess.ProcessError) -> None:
+        if err == QProcess.ProcessError.FailedToStart:
+            self._stop(DwgBridgeError(
+                "the converter could not be started: "
+                + self._proc.errorString()))
+
+    def _on_finished(self, code: int, _status: QProcess.ExitStatus) -> None:
+        if self._done:
+            return
+        log = bytes(self._proc.readAll().data()).decode("utf-8", "replace")
+        assert self._out_dxf is not None
+        try:
+            _check_output(self._out_dxf, code, log)
+        except DwgBridgeError as exc:
+            self._settle(exc)
+        else:
+            self._settle(None)
 
 
 def discard_temp_dxf(dxf_path: Path) -> None:

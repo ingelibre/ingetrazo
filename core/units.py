@@ -148,22 +148,28 @@ def _fixed(value: float, n: int) -> str:
     return txt[1:] if txt.startswith("-") and float(txt) == 0 else txt
 
 
-def format_length(metres: float, units: str = "m", decimals: int = 2) -> str:
+def format_length(metres: float, units: str = "m", decimals: int = 2,
+                  show_unit: bool = True) -> str:
+    """``metres`` in ``units`` to ``decimals``. ``show_unit=False`` leaves
+    the bare number — «1.30», not «1.30 m» — for drawings that state the
+    unit once, in the title block or a note (#374, #637). Feet and inches
+    together keep their marks: without them 5'3" reads «5 3»."""
     n = max(0, min(6, int(decimals)))
     u = units or "m"
     metres = float(metres)
     if not math.isfinite(metres):
         return "—"                       # never «nan m», never a crash
     if u == "in":
-        return f"{_fixed(metres / IN_M, n)}\""
+        return f"{_fixed(metres / IN_M, n)}" + ('"' if show_unit else "")
     if u == "ft":
-        return f"{_fixed(metres / FT_M, n)}'"
+        return f"{_fixed(metres / FT_M, n)}" + ("'" if show_unit else "")
     if u in ("ft-in", "ft-in-frac", "in-frac"):
         sign = "-" if metres < 0 else ""
         total_in = abs(metres) / IN_M
         if u == "in-frac":
             txt = _frac_inches(total_in, n)
-            return f"{sign if txt != '0' else ''}{txt}\""
+            return (f"{sign if txt != '0' else ''}{txt}"
+                    + ('"' if show_unit else ""))
         feet = int(total_in // 12)
         inches = total_in - feet * 12
         if u == "ft-in":
@@ -179,8 +185,9 @@ def format_length(metres: float, units: str = "m", decimals: int = 2) -> str:
         return f"{'' if zero else sign}{feet}'{txt}\""
     row = UNITS.get(u)
     if row is not None and row.kind == "length" and u not in ("in", "ft"):
-        return f"{_fixed(metres / row.factor, n)} {row.symbol}"
-    return f"{_fixed(metres, n)} m"
+        number = _fixed(metres / row.factor, n)
+        return f"{number} {row.symbol}" if show_unit else number
+    return f"{_fixed(metres, n)} m" if show_unit else _fixed(metres, n)
 
 
 def _length_per_metre(units: str) -> float:

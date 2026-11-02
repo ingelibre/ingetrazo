@@ -15,6 +15,10 @@
 pub enum Hypot {
     /// libstdc++ (`std::__hypot3`): scale by the largest component.
     LibStdCxx,
+    /// MSVC's STL (`_Hypot3` in `special_math.cpp`, Qt on Windows): the
+    /// largest component swapped to the front, the other two divided by it
+    /// and added to 1 in that order.
+    Msvc,
 }
 
 #[derive(Clone, Copy)]
@@ -49,9 +53,15 @@ impl V3 {
 
 #[inline]
 pub fn length(v: V3, h: Hypot) -> f32 {
+    hypot3([v.0, v.1, v.2], h)
+}
+
+/// `std::hypot(x, y, z)` in float as the C++ library `h` computes it.
+#[inline]
+pub fn hypot3(v: [f32; 3], h: Hypot) -> f32 {
     match h {
         Hypot::LibStdCxx => {
-            let (x, y, z) = (v.0.abs(), v.1.abs(), v.2.abs());
+            let (x, y, z) = (v[0].abs(), v[1].abs(), v[2].abs());
             let a = if x < y {
                 if y < z { z } else { y }
             } else if x < z {
@@ -65,6 +75,24 @@ pub fn length(v: V3, h: Hypot) -> f32 {
             } else {
                 0.0
             }
+        }
+        Hypot::Msvc => {
+            let (mut x, mut y, mut z) = (v[0].abs(), v[1].abs(), v[2].abs());
+            if x == f32::INFINITY || y == f32::INFINITY || z == f32::INFINITY {
+                return f32::INFINITY;
+            }
+            if y > x {
+                std::mem::swap(&mut x, &mut y);
+            }
+            if z > x {
+                std::mem::swap(&mut x, &mut z);
+            }
+            // boost::math::tools::epsilon<float>() is FLT_EPSILON.
+            if x * f32::EPSILON >= y && x * f32::EPSILON >= z {
+                return x;
+            }
+            let (a, b) = (y / x, z / x);
+            x * (1.0 + a * a + b * b).sqrt()
         }
     }
 }

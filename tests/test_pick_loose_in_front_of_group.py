@@ -95,3 +95,20 @@ def test_right_click_keeps_a_selection_with_a_group_behind_it():
     vp._context_pick(*px)
     assert set(vp.scene.selection) == {lid, *edges}, \
         "right-click replaced the selection with the group behind it"
+
+
+def test_a_loose_face_drawn_on_a_group_face_takes_the_click():
+    """#982: a circle drawn ON a wall group's face (coplanar, outside the
+    group) could not be clicked — every click went to the wall behind it,
+    so the new face could neither be grouped nor pushed. The user had to
+    hide the wall to reach it."""
+    vp = _vp()
+    g = _floor_group(vp)
+    disc = _loose_lid(vp, z=0.0)        # drawn on the group's face
+    px = vp._world_to_pixel(V(3, 3, 0))
+    assert vp.pick_group(*px) is None, "the group under the face won"
+    assert SelectTool()._pick(vp, *px) is disc
+    # off the drawn face the wall is still the pick
+    beside = vp._world_to_pixel(V(5, 5, 0))
+    assert vp.pick_group(*beside) is g
+    assert SelectTool()._pick(vp, *beside) is g

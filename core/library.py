@@ -80,9 +80,11 @@ def _get(rel: str) -> bytes | None:
         except OSError:
             return None
     url = base + "/" + urllib.parse.quote(rel)
+    from core.tls import https_context
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with urllib.request.urlopen(req, timeout=TIMEOUT,
+                                    context=https_context()) as r:
             return r.read()
     except (urllib.error.URLError, OSError, ValueError):
         return None

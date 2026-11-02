@@ -27,7 +27,7 @@ from __future__ import annotations
 #: What is bound in the execution scope. Same names through both doors.
 SCOPE = (
     "En el scope tienes: scene, mesh, selection, groups, layers, "
-    "viewport, QVector3D, Mesh, Group, Edge, Face, bim.")
+    "viewport, QVector3D, Mesh, Group, Edge, Face, Layer, bim.")
 
 #: The one-line builders. Hand-rolling these is the single biggest waste of
 #: turns we have measured — every model that was not told reinvented a
@@ -74,6 +74,12 @@ QVector3D(dx,dy,dz))  — y si g.xform is not None (instancia de \
 componente), compón la traslación en g.xform en vez de tocar vértices.
 - Cámara: viewport.camera.target/distance/yaw/pitch (RADIANES); \
 viewport.update()
+- LÁMINA (hoja del compositor para imprimir; «lámina»/«sheet»/«layout», \
+NO es una capa): c = sheet("Planta", paper="A3", landscape=True) — la crea \
+con un marco de vista y aparece sola en las pestañas de láminas. Borrar: \
+scene.compositions.remove(c) (queda al menos una si había).
+- CAPA / ETIQUETA: ly = Layer("Muros"); layers.append(ly); g.layer = \
+"Muros". En layers solo van objetos Layer, nunca textos.
 - print(...) para reportar datos (breve: el resultado viaja cada turno)."""
 
 #: What the engine guarantees, and what the model should not waste turns on.

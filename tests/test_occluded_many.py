@@ -96,8 +96,60 @@ def test_the_batch_hides_exactly_what_the_rays_hide(viewport, view):
     pts = _scene_points(vp.scene, random.Random(view), 400)
     one = [vp._is_occluded(p) for p in pts]
     assert any(one) and not all(one)          # the views do hide something
+    import numpy as np
+    xyz = np.array([(p.x(), p.y(), p.z()) for p in pts])
     for k in range(0, len(pts), 40):          # the batch size snaps ask
         assert vp._occluded_many(pts[k:k + 40]) == one[k:k + 40]
+        # The same points as an array (pick_vertex's corners, #158).
+        assert vp._occluded_many(xyz[k:k + 40]) == one[k:k + 40]
+
+
+def test_without_the_array_rays_the_batch_still_matches(viewport,
+                                                        monkeypatch):
+    # A C++ library whose QVector3D length rounds otherwise: the rays are
+    # built point by point, with the same answer.
+    import numpy as np
+    import views.viewport as V_
+    monkeypatch.setattr(V_, "_QV_HYPOT3", False)
+    vp = viewport
+    vp.camera.set_view("iso")
+    vp.camera.fit_to(V(-5, -3, 0), V(5, 3, 4))
+    pts = _scene_points(vp.scene, random.Random(7), 120)
+    one = [vp._is_occluded(p) for p in pts]
+    assert any(one) and not all(one)
+    xyz = np.array([(p.x(), p.y(), p.z()) for p in pts])
+    assert vp._occluded_many(pts) == one
+    assert vp._occluded_many(xyz) == one
+
+
+def test_the_rays_are_built_as_qvector3d_builds_them():
+    import numpy as np
+    import views.viewport as V_
+    rng = np.random.default_rng(3)
+    pts = np.concatenate([
+        rng.normal(size=(3000, 3)) * 10.0 ** rng.uniform(-3, 4, (3000, 1)),
+        np.array([[1.5, -2.0, 3.25], [1.5, -2.0, 3.25 + 1e-7],
+                  [0.0, 0.0, 9.0], [7.0, 0.0, 0.0]])])
+    eye = V(1.5, -2.0, 3.25)
+    rays = V_._unit_rays(eye, pts)
+    if not V_._qv_hypot3():
+        assert rays is None               # then built point by point
+        return
+    rows, D, dist = rays
+    want_rows, want_d, want_l = [], [], []
+    for i, p in enumerate(pts.tolist()):
+        delta = V(*p) - eye
+        L = delta.length()
+        if L < 1e-9:
+            continue
+        d = delta / L
+        want_rows.append(i)
+        want_d.append((d.x(), d.y(), d.z()))
+        want_l.append(L)
+    assert rows.tolist() == want_rows
+    assert len(rows) < len(pts)           # the eye itself is left out
+    assert (D == np.array(want_d)).all()
+    assert (dist == np.array(want_l)).all()
 
 
 def test_xray_hides_nothing_in_batch(viewport, monkeypatch):
@@ -334,3 +386,65 @@ def test_the_native_rays_hide_exactly_what_numpy_hides(viewport, view,
               for h in vp._occluded_many(pts[k:k + 40])]
     assert native == numpy_
     assert calls                              # the kernel did answer
+
+
+@pytest.mark.parametrize("view", ["iso", "front", "back", "left"])
+def test_a_narrow_cone_of_rays_hides_what_the_rays_hide(viewport, view,
+                                                        monkeypatch):
+    """Rays crowded onto a few blocks seen from afar (zoomed out over the
+    plant of #158, ~65 000 corners under the cursor): the spans outside
+    their cone are left out of the box test — the answer stays the rays'
+    one by one, and some spans were left out."""
+    import numpy as np
+    vp = viewport
+    vp.camera.set_view(view)
+    vp.camera.fit_to(V(-60, -40, -20), V(60, 40, 40))
+    _app.processEvents()
+    rng = random.Random(view)
+    sc = vp.scene
+    near = [g for g in sc.groups if g.name in ("block 0", "block 4",
+                                               "block 8", "post")]
+    pts = []
+    for g in near:
+        for f in g.mesh.faces:
+            for p in [f.centroid()] + [v.position for v in f.loop]:
+                pts.append(g.xform.map(p) if g.xform is not None else p)
+    pts += [V(rng.uniform(-3.5, -1.5), rng.uniform(0.5, 3), rng.uniform(0, 3))
+            for _ in range(200)]
+    one = [vp._is_occluded(p) for p in pts]
+    assert any(one) and not all(one)
+    widths = []
+    real = np.flatnonzero
+
+    def spy(a):
+        r = real(a)
+        if a.dtype == bool and a.ndim == 1 and len(a) > 64:
+            widths.append((len(r), len(a)))
+        return r
+    monkeypatch.setattr(np, "flatnonzero", spy)
+    got = vp._occluded_many(pts)
+    monkeypatch.setattr(np, "flatnonzero", real)
+    assert got == one
+    assert any(k < n for k, n in widths), widths     # the cone left some out
+
+
+def test_pick_vertex_asks_a_shared_corner_once(viewport, monkeypatch):
+    """A corner shared by several edges is one point: asked once."""
+    vp = viewport
+    vp.camera.set_view("iso")
+    vp.camera.fit_to(V(-60, -40, -20), V(60, 40, 40))
+    _app.processEvents()
+    asked = []
+    real_many, real_one = vp._occluded_many, vp._is_occluded
+    monkeypatch.setattr(vp, "_is_occluded",
+                        lambda w: asked.append(w) or True)
+    monkeypatch.setattr(vp, "_occluded_many",
+                        lambda ws: asked.extend(ws) or [True] * len(ws))
+    cx, cy = vp._world_to_pixel(V(-2.5, 1.5, 1.0))
+    vp.pick_threshold_px = 40
+    assert vp.pick_vertex(cx, cy) is None             # all hidden
+    keys = [(p.x(), p.y(), p.z()) for p in asked]
+    assert len(keys) > 8
+    assert len(keys) == len(set(keys))
+    monkeypatch.setattr(vp, "_is_occluded", real_one)
+    monkeypatch.setattr(vp, "_occluded_many", real_many)

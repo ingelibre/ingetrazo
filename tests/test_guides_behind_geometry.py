@@ -77,6 +77,11 @@ def _viewport():
     _app.processEvents()
     vp = win.viewport
     if getattr(vp, "_gl", None) is None or not vp.isValid():
+        # Closed before skipping: a shown window left behind took the
+        # keyboard from the next test's own (CI's batch 5, no OpenGL:
+        # Join Segments' Esc never reached its viewport).
+        win._saved_version = vp.scene.version
+        win.close()
         pytest.skip("no OpenGL context on this platform")
     return win, vp
 

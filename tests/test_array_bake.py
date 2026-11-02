@@ -105,7 +105,24 @@ _KINDS = ("by_texture", "tcol", "ttex", "back_vcol", "back_tex",
           "back_tcol", "back_ttex", "fvcol", "dback", "vcol", "edges")
 
 
-def _check(vp, tmp_path, seed):
+def _with_alpha(scene, rng):
+    """Front and back colours as imported ones may come: some with their
+    alpha as a fourth value, beside plain RGB ones."""
+    for m in _meshes(scene):
+        for f in m.faces:
+            r = rng.random()
+            if r < 0.5:
+                f.attrs["color"] = [0.3, 0.5, 0.7, 1.0]
+            elif r < 0.6:
+                f.attrs["color"] = [0.9, 0.4, 0.1]
+            elif r < 0.8:
+                f.attrs["back"] = {"color": [0.1, 0.6, 0.2, 1.0]}
+            elif r < 0.9:
+                f.attrs["back"] = {"color": [0.7, 0.1, 0.2, 0.5],
+                                   "opacity": 0.4}
+
+
+def _check(vp, tmp_path, seed, alpha=False):
     """Bake every mesh of a random painted scene both ways and compare;
     returns the buckets that were not empty."""
     rng = random.Random(seed)
@@ -115,6 +132,8 @@ def _check(vp, tmp_path, seed):
     img.save(str(png))
     scene = _random_scene(rng)
     _paint_up(scene, rng, png)
+    if alpha:
+        _with_alpha(scene, rng)
     path = tmp_path / f"doc{seed}.igz"
     igz.save_scene(scene, path)
     paints = [None, {"color": [0.2, 0.3, 0.9]},
@@ -147,6 +166,13 @@ def _check(vp, tmp_path, seed):
 @pytest.mark.parametrize("seed", range(4))
 def test_bake_from_arrays_is_the_object_bake(lazy, vp, tmp_path, seed):
     _check(vp, tmp_path, seed)
+
+
+@pytest.mark.parametrize("seed", range(3))
+def test_colours_with_their_alpha_bake_as_rgb(lazy, vp, tmp_path, seed):
+    """pileta.igz: RGBA colours stopped every frame with the engine on."""
+    seen = _check(vp, tmp_path, seed, alpha=True)
+    assert {"vcol", "back_vcol", "back_tcol"} <= seen
 
 
 def test_every_bucket_is_compared(lazy, vp, tmp_path):

@@ -11,6 +11,7 @@ box shows them, and ``ingetrazo-gl.txt`` in the log folder keeps them for a
 user who cannot read a dialog over WhatsApp."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 GL_VENDOR = 0x1F00
@@ -49,6 +50,37 @@ def read_gl_info(gl) -> dict:
 def is_software_renderer(renderer: str, vendor: str = "") -> bool:
     text = f"{renderer} {vendor}".lower()
     return any(marker in text for marker in SOFTWARE_MARKERS)
+
+
+#: The shaders open with ``#version 330 core``.
+REQUIRED_GL = (3, 3)
+
+_GL_VERSION_RE = re.compile(r"^\s*(?:OpenGL ES(?:-\w+)?\s+)?(\d+)\.(\d+)")
+
+
+def parse_gl_version(version: str) -> tuple[int, int] | None:
+    """``(major, minor)`` from a ``GL_VERSION`` string, which by spec
+    starts with the number and then carries free vendor text; None when
+    there is no number to read."""
+    match = _GL_VERSION_RE.match(version)
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def meets_gl_requirement(version: str) -> bool:
+    """Whether a context reporting ``version`` can compile the viewport's
+    shaders: desktop OpenGL :data:`REQUIRED_GL` or newer. A 3.3+
+    compatibility profile qualifies too, it is a superset of core.
+
+    Qt hands back a lower context without complaint when the driver cannot
+    give 3.3 — Windows then lands on ``opengl32sw.dll`` at 3.0 (issue
+    #751). A version that cannot be read is let through: the shader
+    compiler still has the last word."""
+    if version.lstrip().startswith("OpenGL ES"):
+        return False
+    parsed = parse_gl_version(version)
+    return parsed is None or parsed >= REQUIRED_GL
 
 
 def describe(info: dict) -> str:

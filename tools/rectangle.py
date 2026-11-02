@@ -59,6 +59,9 @@ class RectangleTool(PlaneLock, Tool):
     description = "Draw a rectangle from two opposite corners."
     axis_source = True
     axis_source_empty_only = True
+    # The second click is the opposite corner: the span to the cursor is the
+    # diagonal, never a line to infer along (#389, see ``compute_snap``).
+    diagonal_span = True
     vcb_label = "Dimensions"
     # Only a width AND a height mean something here, so "200,100" is two
     # values (the list comma, #152), not the decimal 200.1.
