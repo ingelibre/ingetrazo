@@ -3746,14 +3746,26 @@ class ReshareInstanceCommand(Command):
         self.edited = edited
         self.inner = list(inner)
         self._before = None
+        self._after = None
+
+    def _nested(self):
+        """The parts edited inside this session: their definitions go with
+        it. Their matrices are the assembly's to bring back."""
+        return [c for c in self.inner if isinstance(c, ReshareInstanceCommand)]
 
     def do(self, scene) -> None:
         if self._before is None:
             self._before = self.proto.capture_state()
+        else:
+            for c in self._nested():
+                c.proto.restore_state(c._after)
         scene.share_back(self.group, self.proto, self.xform, self.edited)
+        self._after = self.proto.capture_state()
         scene.version += 1
 
     def undo(self, scene) -> None:
+        for c in reversed(self._nested()):
+            c.proto.restore_state(c._before)
         self.proto.restore_state(self._before)
         self.group.mesh = self.proto
         self.group.xform = self.xform

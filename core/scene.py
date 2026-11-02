@@ -411,7 +411,21 @@ class Scene:
             # transform on it, because the tools work in world coordinates —
             # so the matrix is pushed down into the children and into its own
             # mesh, which leaves every world position exactly where it was.
+            instance = (callable(is_comp) and is_comp()
+                        and self._mesh_placed_elsewhere(group))
+            proto, xform = group.mesh, group.xform
             self._bake_container_xform(group)
+            if instance:
+                # An assembly is a component too: its own geometry is the
+                # definition its copies share. The session edits a world
+                # copy, and leaving shares it back and returns the matrix,
+                # as for a component with no parts (below).
+                if group.mesh is proto:
+                    from core.group import transformed_mesh
+                    from PySide6.QtGui import QMatrix4x4
+                    group.mesh = transformed_mesh(proto, QMatrix4x4())
+                self._edit_share = (group, proto, xform,
+                                    group.mesh.capture_state())
             if frame is not None:
                 # Its matrix went down into the children and its mesh is in
                 # world coordinates now: the axes stay, as world axes.
@@ -438,6 +452,14 @@ class Scene:
         self._refresh_dimension_holds()
         self.selection.clear()
         self.version += 1
+
+    def _mesh_placed_elsewhere(self, group) -> bool:
+        """Whether another placement, at any depth, draws ``group``'s mesh:
+        an assembly placed once has no copies to share an edit with."""
+        from core.purge import iter_groups
+        mesh = group.mesh
+        return any(g is not group and g.mesh is mesh
+                   for g in iter_groups(self.groups))
 
     def _refresh_dimension_holds(self) -> None:
         """Read every dimension's endpoints once, either side of an edit
@@ -534,8 +556,27 @@ class Scene:
         return share
 
     @staticmethod
+    def _unbake_container_xform(group, xform) -> None:
+        """Undo :meth:`_bake_container_xform` on leaving an assembly: its
+        matrix comes back up out of the children, which return to the frame
+        the copies share. Nothing moves in the world. A redo arrives with the
+        matrix already back, and leaves it alone."""
+        if not getattr(group, "children", None) or group.xform == xform:
+            return
+        inverse, ok = xform.inverted()
+        if not ok:
+            return
+        for child in group.children:
+            child.xform = inverse * child.xform
+        from core.explode import rotate_offsets
+        rotate_offsets(group, inverse)
+        # Its matrix is its axes again.
+        group.axes = None
+
+    @staticmethod
     def restore_sharing(group, proto, xform) -> None:
         """The instance left untouched: back on the shared definition."""
+        Scene._unbake_container_xform(group, xform)
         group.mesh = proto
         group.xform = xform
 
@@ -548,6 +589,7 @@ class Scene:
         inverse, ok = xform.inverted()
         local = transformed_mesh(edited, inverse if ok else xform)
         proto.restore_state(local.capture_state())
+        Scene._unbake_container_xform(group, xform)
         group.mesh = proto
         group.xform = xform
 
