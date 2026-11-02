@@ -26,6 +26,19 @@ open the document in a new tab, or bring its tab to the front when it is
 already open. **File ▸ New** (Ctrl+N) starts an untouched *Untitled* over
 in place, else makes a new tab.
 
+### Picture on hover
+
+![Picture of a project on hover over its tab](images/project-tabs/tab-picture.png)
+
+Hold the pointer over a tab in the back to see that project as its view
+stands, with the file's place under the picture, without leaving the project
+in front. A new tab, or one never left, shows only its name.
+
+The picture is drawn the first time the tab is hovered after you leave it, so
+opening and switching tabs never wait for it. On a very large model that first
+hover can take a moment; after that the picture comes at once until you go back
+to that project.
+
 ### Right-click on a tab
 
 ![Tab menu](images/project-tabs/tab-menu.png)
