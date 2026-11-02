@@ -3275,5 +3275,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "正面颜色 — 在隐藏线和单色模式下绘制面",
  "Distance ({unit}):": "距离（{unit}）：",
  "Restore defaults": "恢复默认值",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。"
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。",
+ "Make Faces": "创建面",
+ "Make the faces that the selected edges close, on those same edges.": "在所选边上创建它们围合的面。",
+ "Select the edges of the loops to turn into faces.": "请选择要变成面的轮廓的边。",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "所选边不在同一平面上（也不在不同高度的水平面上）：创建面只能生成平面。",
+ "The selected edges close no loop.": "所选边没有围合任何轮廓。",
+ "Make Faces: {n} faces made": "创建面：已创建 {n} 个面",
+ "Make Faces: those loops already had their faces": "创建面：这些轮廓已经有面了",
+ "Make Faces: an existing face already covers those loops": "创建面：已有的面已覆盖这些轮廓",
+ "Create faces from closed planar outlines": "从闭合的平面轮廓创建面",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "大型图纸上会较慢。也可以稍后选中线条再操作：工具 ▸ 创建面。",
+ "{n} faces made from closed outlines": "已从闭合轮廓创建 {n} 个面",
+ "Making faces…": "正在创建面…"
 }

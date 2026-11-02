@@ -3282,5 +3282,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "Kolor przedniej strony — maluje ściany w trybach Ukryte linie i Monochromatyczny",
  "Distance ({unit}):": "Odległość ({unit}):",
  "Restore defaults": "Przywróć domyślne",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Przywraca ustawienia tego okna do stanu, w jakim dostarczany jest IngeTrazo. Nic nie zostanie zapisane, dopóki nie naciśniesz OK. Język, Asystent AI, skróty klawiszowe i jednostki otwartego dokumentu pozostają bez zmian."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Przywraca ustawienia tego okna do stanu, w jakim dostarczany jest IngeTrazo. Nic nie zostanie zapisane, dopóki nie naciśniesz OK. Język, Asystent AI, skróty klawiszowe i jednostki otwartego dokumentu pozostają bez zmian.",
+ "Make Faces": "Utwórz ściany",
+ "Make the faces that the selected edges close, on those same edges.": "Tworzy ściany zamknięte przez zaznaczone krawędzie, na tych samych krawędziach.",
+ "Select the edges of the loops to turn into faces.": "Zaznacz krawędzie obrysów, które mają stać się ścianami.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "Zaznaczone krawędzie nie leżą w jednej płaszczyźnie (ani w poziomych płaszczyznach na różnych wysokościach): Utwórz ściany tworzy tylko płaskie ściany.",
+ "The selected edges close no loop.": "Zaznaczone krawędzie nie zamykają żadnego obrysu.",
+ "Make Faces: {n} faces made": "Utwórz ściany: utworzone ściany: {n}",
+ "Make Faces: those loops already had their faces": "Utwórz ściany: te obrysy miały już swoje ściany",
+ "Make Faces: an existing face already covers those loops": "Utwórz ściany: istniejąca ściana już pokrywa te obrysy",
+ "Create faces from closed planar outlines": "Utwórz ściany z zamkniętych płaskich obrysów",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Wolniejsze przy dużych rysunkach. Możesz to zrobić także później, z zaznaczonymi liniami: Narzędzia ▸ Utwórz ściany.",
+ "{n} faces made from closed outlines": "Ściany utworzone z zamkniętych obrysów: {n}",
+ "Making faces…": "Tworzenie ścian…"
 }

@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "Color frontal — pinta las caras en Línea oculta y Monocromo",
  "Distance ({unit}):": "Distancia ({unit}):",
  "Restore defaults": "Restablecer valores predeterminados",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Devuelve los ajustes de esta ventana a como viene IngeTrazo. No se guarda nada hasta pulsar Aceptar. El idioma, el Asistente de IA, los atajos de teclado y las unidades del documento abierto se quedan como están."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Devuelve los ajustes de esta ventana a como viene IngeTrazo. No se guarda nada hasta pulsar Aceptar. El idioma, el Asistente de IA, los atajos de teclado y las unidades del documento abierto se quedan como están.",
+ "Make Faces": "Crear caras",
+ "Make the faces that the selected edges close, on those same edges.": "Crea las caras que cierran las aristas seleccionadas, sobre esas mismas aristas.",
+ "Select the edges of the loops to turn into faces.": "Selecciona las aristas de los contornos que quieres convertir en caras.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "Las aristas seleccionadas no están en un mismo plano (ni en planos horizontales a distintas alturas): Crear caras solo hace caras planas.",
+ "The selected edges close no loop.": "Las aristas seleccionadas no cierran ningún contorno.",
+ "Make Faces: {n} faces made": "Crear caras: {n} caras creadas",
+ "Make Faces: those loops already had their faces": "Crear caras: esos contornos ya tenían sus caras",
+ "Make Faces: an existing face already covers those loops": "Crear caras: una cara existente ya cubre esos contornos",
+ "Create faces from closed planar outlines": "Crear caras de los contornos planos cerrados",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Más lento en dibujos grandes. También puedes hacerlo después, con las líneas seleccionadas: Herramientas ▸ Crear caras.",
+ "{n} faces made from closed outlines": "{n} caras creadas de contornos cerrados",
+ "Making faces…": "Creando caras…"
 }

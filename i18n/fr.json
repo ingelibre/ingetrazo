@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "Couleur de face — peint les faces dans les modes Lignes cachées et Monochrome",
  "Distance ({unit}):": "Distance ({unit}) :",
  "Restore defaults": "Rétablir les valeurs par défaut",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Remet les réglages de cette fenêtre tels qu'IngeTrazo les fournit. Rien n'est enregistré tant que vous n'appuyez pas sur OK. La langue, l'Assistant IA, les raccourcis clavier et les unités du document ouvert restent tels quels."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Remet les réglages de cette fenêtre tels qu'IngeTrazo les fournit. Rien n'est enregistré tant que vous n'appuyez pas sur OK. La langue, l'Assistant IA, les raccourcis clavier et les unités du document ouvert restent tels quels.",
+ "Make Faces": "Créer des faces",
+ "Make the faces that the selected edges close, on those same edges.": "Crée les faces que ferment les arêtes sélectionnées, sur ces mêmes arêtes.",
+ "Select the edges of the loops to turn into faces.": "Sélectionnez les arêtes des contours à transformer en faces.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "Les arêtes sélectionnées ne sont pas sur un même plan (ni sur des plans horizontaux à différentes hauteurs) : Créer des faces ne crée que des faces planes.",
+ "The selected edges close no loop.": "Les arêtes sélectionnées ne ferment aucun contour.",
+ "Make Faces: {n} faces made": "Créer des faces : {n} faces créées",
+ "Make Faces: those loops already had their faces": "Créer des faces : ces contours avaient déjà leurs faces",
+ "Make Faces: an existing face already covers those loops": "Créer des faces : une face existante couvre déjà ces contours",
+ "Create faces from closed planar outlines": "Créer des faces à partir des contours plans fermés",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Plus lent sur les grands dessins. Vous pouvez aussi le faire plus tard, avec les lignes sélectionnées : Outils ▸ Créer des faces.",
+ "{n} faces made from closed outlines": "{n} faces créées à partir de contours fermés",
+ "Making faces…": "Création des faces…"
 }

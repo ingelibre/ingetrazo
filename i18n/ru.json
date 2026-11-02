@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "Цвет передней стороны — применяется для граней в режимах «Скрытые линии» и «Монохромный»",
  "Distance ({unit}):": "Расстояние ({unit}):",
  "Restore defaults": "Восстановить значения по умолчанию",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений.",
+ "Make Faces": "Создать грани",
+ "Make the faces that the selected edges close, on those same edges.": "Создаёт грани, которые замыкают выбранные рёбра, на этих же рёбрах.",
+ "Select the edges of the loops to turn into faces.": "Выберите рёбра контуров, которые нужно превратить в грани.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "Выбранные рёбра не лежат в одной плоскости (и не на горизонтальных плоскостях на разной высоте): «Создать грани» строит только плоские грани.",
+ "The selected edges close no loop.": "Выбранные рёбра не замыкают ни одного контура.",
+ "Make Faces: {n} faces made": "Создать грани: создано граней: {n}",
+ "Make Faces: those loops already had their faces": "Создать грани: у этих контуров уже были грани",
+ "Make Faces: an existing face already covers those loops": "Создать грани: эти контуры уже покрыты существующей гранью",
+ "Create faces from closed planar outlines": "Создать грани из замкнутых плоских контуров",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Медленнее на больших чертежах. Это можно сделать и позже, выбрав линии: Инструменты ▸ Создать грани.",
+ "{n} faces made from closed outlines": "Граней создано из замкнутых контуров: {n}",
+ "Making faces…": "Создание граней…"
 }

@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "表面の色 — 隠線と単色モードで面を塗ります",
  "Restore defaults": "既定値に戻す",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "このウィンドウの設定を IngeTrazo の初期状態に戻します。OK を押すまで何も保存されません。言語、AI アシスタント、キーボードショートカット、開いている文書の単位はそのままです。",
- "Distance ({unit}):": "距離（{unit}）："
+ "Distance ({unit}):": "距離（{unit}）：",
+ "Make Faces": "面を作成",
+ "Make the faces that the selected edges close, on those same edges.": "選択したエッジが閉じる面を、そのエッジ上に作成します。",
+ "Select the edges of the loops to turn into faces.": "面にしたい輪郭のエッジを選択してください。",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "選択したエッジが同一平面上にありません（高さの異なる水平面上でもありません）。面を作成は平らな面だけを作ります。",
+ "The selected edges close no loop.": "選択したエッジは輪郭を閉じていません。",
+ "Make Faces: {n} faces made": "面を作成: {n} 個の面を作成しました",
+ "Make Faces: those loops already had their faces": "面を作成: これらの輪郭にはすでに面があります",
+ "Make Faces: an existing face already covers those loops": "面を作成: 既存の面がこれらの輪郭をすでに覆っています",
+ "Create faces from closed planar outlines": "閉じた平面の輪郭から面を作成",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "大きな図面では遅くなります。後から線を選択して行うこともできます: ツール ▸ 面を作成。",
+ "{n} faces made from closed outlines": "閉じた輪郭から {n} 個の面を作成しました",
+ "Making faces…": "面を作成中…"
 }
