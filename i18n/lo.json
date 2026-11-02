@@ -3277,5 +3277,22 @@
  "Front color — paints faces in Hidden line and Monochrome": "ສີດ້ານໜ້າ — ທາສີໜ້າພຽງໃນໂໝດເຊື່ອງເສັ້ນ ແລະ ຂາວດຳ",
  "Restore defaults": "ຄືນຄ່າເລີ່ມຕົ້ນ",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "ຄືນການຕັ້ງຄ່າໃນໜ້າຕ່າງນີ້ເປັນຄ່າທີ່ມາກັບ IngeTrazo. ຈະບໍ່ມີການບັນທຶກຈົນກວ່າທ່ານຈະກົດ ຕົກລົງ. ພາສາ, ຜູ້ຊ່ວຍ AI, ປຸ່ມລັດ ແລະ ຫົວໜ່ວຍຂອງເອກະສານທີ່ເປີດຢູ່ຈະຄືເກົ່າ.",
- "Distance ({unit}):": "ໄລຍະຫ່າງ ({unit}):"
+ "Distance ({unit}):": "ໄລຍະຫ່າງ ({unit}):",
+ "Filter by IFC class": "ກັ່ນຕອງຕາມຊັ້ນ IFC",
+ "How the rows are structured": "ວິທີຈັດແຖວ",
+ "Group by group": "ຈັດກຸ່ມຕາມກຸ່ມ",
+ "Group by IFC class": "ຈັດກຸ່ມຕາມຊັ້ນ IFC",
+ "No grouping": "ບໍ່ຈັດກຸ່ມ",
+ "Export all CSV…": "ສົ່ງອອກທັງໝົດເປັນ CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "ຕາຕະລາງປະລິມານວຽກທັງໝົດ — ຂົວຕໍ່ໄປສູ່ IngePresupuestos",
+ "Export shown CSV…": "ສົ່ງອອກແຖວທີ່ສະແດງເປັນ CSV…",
+ "Only the objects the search and the class filter show": "ສະເພາະວັດຖຸທີ່ການຄົ້ນຫາ ແລະ ຕົວກັ່ນຕອງຊັ້ນສະແດງ",
+ "Filter by IFC class: {n} hidden": "ກັ່ນຕອງຕາມຊັ້ນ IFC: ເຊື່ອງ {n}",
+ "Show all classes": "ສະແດງທຸກຊັ້ນ",
+ "(no BIM objects)": "(ບໍ່ມີວັດຖຸ BIM)",
+ "Search name, class or outline… (* and ? work)": "ຄົ້ນຫາຊື່, ຊັ້ນ ຫຼື ເສັ້ນທາງ… (ໃຊ້ * ແລະ ? ໄດ້)",
+ "Group by name": "ຈັດກຸ່ມຕາມຊື່",
+ "Outline path": "ເສັ້ນທາງໃນໂຄງສ້າງ",
+ "(no name)": "(ບໍ່ມີຊື່)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "ຖັນ: ສະແດງ ຫຼື ເຊື່ອງ ປະລິມານວຽກ, Vol m³ ແລະ ເສັ້ນທາງໃນໂຄງສ້າງ"
 }

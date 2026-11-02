@@ -3274,5 +3274,22 @@
  "Front color — paints faces in Hidden line and Monochrome": "Vorderseitenfarbe — färbt Flächen in Verdeckte Linien und Monochrom",
  "Distance ({unit}):": "Abstand ({unit}):",
  "Restore defaults": "Standardwerte wiederherstellen",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Setzt die Einstellungen dieses Fensters auf den Auslieferungszustand von IngeTrazo zurück. Nichts wird gespeichert, bevor du auf OK drückst. Sprache, KI-Assistent, Tastenkürzel und die Einheiten des offenen Dokuments bleiben, wie sie sind."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Setzt die Einstellungen dieses Fensters auf den Auslieferungszustand von IngeTrazo zurück. Nichts wird gespeichert, bevor du auf OK drückst. Sprache, KI-Assistent, Tastenkürzel und die Einheiten des offenen Dokuments bleiben, wie sie sind.",
+ "Filter by IFC class": "Nach IFC-Klasse filtern",
+ "How the rows are structured": "Wie die Zeilen gegliedert sind",
+ "Group by group": "Nach Gruppe gliedern",
+ "Group by IFC class": "Nach IFC-Klasse gliedern",
+ "No grouping": "Keine Gliederung",
+ "Export all CSV…": "Alles als CSV exportieren…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "Die ganze Mengentabelle — die Brücke zu IngePresupuestos",
+ "Export shown CSV…": "Angezeigtes als CSV exportieren…",
+ "Only the objects the search and the class filter show": "Nur die Objekte, die Suche und Klassenfilter zeigen",
+ "Filter by IFC class: {n} hidden": "Nach IFC-Klasse filtern: {n} ausgeblendet",
+ "Show all classes": "Alle Klassen zeigen",
+ "(no BIM objects)": "(keine BIM-Objekte)",
+ "Search name, class or outline… (* and ? work)": "Name, Klasse oder Gliederung suchen… (* und ? gehen)",
+ "Group by name": "Nach Name gliedern",
+ "Outline path": "Pfad in der Gliederung",
+ "(no name)": "(ohne Name)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Spalten: Menge, Vol m³ und Pfad in der Gliederung ein- oder ausblenden"
 }

@@ -3274,5 +3274,22 @@
  "Front color — paints faces in Hidden line and Monochrome": "앞면 색상 — 숨은선 모드와 단색 모드에서 면을 칠합니다",
  "Distance ({unit}):": "거리 ({unit}):",
  "Restore defaults": "기본값 복원",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다.",
+ "Filter by IFC class": "IFC 클래스로 필터",
+ "How the rows are structured": "행 구성 방식",
+ "Group by group": "그룹별로 묶기",
+ "Group by IFC class": "IFC 클래스별로 묶기",
+ "No grouping": "묶지 않음",
+ "Export all CSV…": "모두 CSV로 내보내기…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "전체 물량 산출표 — IngePresupuestos로 연결되는 다리",
+ "Export shown CSV…": "표시된 행 CSV로 내보내기…",
+ "Only the objects the search and the class filter show": "검색과 클래스 필터가 보여 주는 객체만",
+ "Filter by IFC class: {n} hidden": "IFC 클래스로 필터: {n}개 숨김",
+ "Show all classes": "모든 클래스 표시",
+ "(no BIM objects)": "(BIM 객체 없음)",
+ "Search name, class or outline… (* and ? work)": "이름, 클래스 또는 경로 검색… (* 및 ? 사용 가능)",
+ "Group by name": "이름별로 묶기",
+ "Outline path": "구조 경로",
+ "(no name)": "(이름 없음)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "열: 물량, Vol m³, 구조 경로 표시/숨기기"
 }

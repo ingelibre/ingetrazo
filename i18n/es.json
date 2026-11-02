@@ -3274,5 +3274,22 @@
  "Front color — paints faces in Hidden line and Monochrome": "Color frontal — pinta las caras en Línea oculta y Monocromo",
  "Distance ({unit}):": "Distancia ({unit}):",
  "Restore defaults": "Restablecer valores predeterminados",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Devuelve los ajustes de esta ventana a como viene IngeTrazo. No se guarda nada hasta pulsar Aceptar. El idioma, el Asistente de IA, los atajos de teclado y las unidades del documento abierto se quedan como están."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Devuelve los ajustes de esta ventana a como viene IngeTrazo. No se guarda nada hasta pulsar Aceptar. El idioma, el Asistente de IA, los atajos de teclado y las unidades del documento abierto se quedan como están.",
+ "Filter by IFC class": "Filtrar por clase IFC",
+ "How the rows are structured": "Cómo se estructuran las filas",
+ "Group by group": "Agrupar por grupo",
+ "Group by IFC class": "Agrupar por clase IFC",
+ "No grouping": "Sin agrupar",
+ "Export all CSV…": "Exportar todo a CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "Toda la tabla de metrado — el puente a IngePresupuestos",
+ "Export shown CSV…": "Exportar lo mostrado a CSV…",
+ "Only the objects the search and the class filter show": "Solo los objetos que muestran la búsqueda y el filtro de clase",
+ "Filter by IFC class: {n} hidden": "Filtrar por clase IFC: {n} ocultas",
+ "Show all classes": "Mostrar todas las clases",
+ "(no BIM objects)": "(sin objetos BIM)",
+ "Search name, class or outline… (* and ? work)": "Buscar nombre, clase o esquema… (* y ? funcionan)",
+ "Group by name": "Agrupar por nombre",
+ "Outline path": "Ruta en el esquema",
+ "(no name)": "(sin nombre)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Columnas: mostrar u ocultar Metrado, Vol m³ y Ruta en el esquema"
 }

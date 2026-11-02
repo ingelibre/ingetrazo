@@ -58,6 +58,7 @@ from core.i18n import tr
 from views.theme import style as theme_style
 from views.rtl import set_arrow
 from views.filedialogs import file_dialogs
+from views.side_tree import SideTree, StayOpenMenu, _HeaderButton
 from core.mesh import Edge, Face
 from core.bim import face_net_area
 from core.group import Group
@@ -4434,16 +4435,199 @@ class ScenesPanel(QWidget):
         self._window.viewport.update()
 
 
+#: The BIM panel's buttons: less padding than a dialog's, for a narrow tray.
+_SLIM_BUTTON = "padding:2px 8px;"
+
+
+def _fmt_metrado(metrado, unit: str) -> str:
+    """A budget measure as the BIM panel shows it: «12.40 m²», «3 und»."""
+    if metrado is None:
+        return "—"
+    pretty = {"m2": "m²", "m3": "m³"}.get(unit, unit)
+    if unit == "und":
+        return f"{metrado:.0f} {pretty}"
+    return f"{metrado:.2f} {pretty}"
+
+
+#: The BIM takeoff's columns. Class and Name always show; the others are
+#: switched by the header's columns button, as in the Browser.
+BIM_COL_CLASS, BIM_COL_NAME, BIM_COL_TAKEOFF, BIM_COL_VOL, BIM_COL_OUTLINE = \
+    range(5)
+#: A foldable takeoff row's key (its group or heading), kept over a rebuild.
+_BIM_FOLD_KEY = Qt.UserRole + 2
+#: (column, header label, starts shown).
+BIM_OPTIONAL_COLUMNS = ((BIM_COL_TAKEOFF, "Takeoff", True),
+                        (BIM_COL_VOL, "Vol m³", True),
+                        (BIM_COL_OUTLINE, "Outline path", True))
+
+
+class _BimTree(SideTree):
+    """The takeoff's tree: the Browser's strip for the columns button and
+    its row tones, without the drag and drop — nothing is filed here."""
+
+    def __init__(self, panel) -> None:
+        super().__init__(panel)
+        from PySide6.QtWidgets import QAbstractItemView
+        self.setDragEnabled(False)
+        self.setAcceptDrops(False)
+        self.viewport().setAcceptDrops(False)
+        self.setDragDropMode(QAbstractItemView.NoDragDrop)
+
+
+def _group_label(g) -> str:
+    """A group's name as the takeoff shows it — the Browser's word for an
+    unnamed one."""
+    from core import outliner
+    return g.name or (tr("Component") if outliner.kind(g) == "component"
+                      else tr("Group"))
+
+
 class BimPanel(QWidget):
     """BIM tagging (the thesis layer): mark the selected geometry as an IFC
     object — class + name — and read its LIVE quantities. Freeform stays
     freeform; a tag is metadata the takeoff (and the future IFC export)
     consumes. Untagged geometry is just drawing."""
 
+    #: The ways to structure the rows, in combo order: (key, label).
+    GROUPINGS = (("group", "Group by group"),
+                 ("class", "Group by IFC class"),
+                 ("name", "Group by name"),
+                 ("none", "No grouping"))
+    #: QSettings keys of the grouping, of the classes the funnel hides and
+    #: of the columns switched off.
+    GROUP_KEY = "bim/group_by"
+    HIDDEN_KEY = "bim/hidden_classes"
+    COLUMNS_KEY = "bim/hidden_columns"
+
+    def hidden_columns(self) -> set:
+        """The optional columns switched off; none saved yet: the ones that
+        start hidden (as the Browser reads its own)."""
+        raw = QSettings().value(self.COLUMNS_KEY)
+        if raw is None:
+            return {c for c, _l, shown in BIM_OPTIONAL_COLUMNS if not shown}
+        if isinstance(raw, str):
+            raw = [x for x in raw.split(",") if x]
+        out = set()
+        for x in raw or ():
+            try:
+                out.add(int(x))
+            except (TypeError, ValueError):
+                pass
+        return out
+
+    def set_column_shown(self, col: int, shown: bool) -> None:
+        hidden = self.hidden_columns()
+        (hidden.discard if shown else hidden.add)(col)
+        # «,» for none: an empty value would read as «nothing saved».
+        QSettings().setValue(self.COLUMNS_KEY, ",".join(
+            str(c) for c in sorted(hidden)) or ",")
+        self._apply_column_choice()
+
+    def _apply_column_choice(self) -> None:
+        hidden = self.hidden_columns()
+        for col, _label, _shown in BIM_OPTIONAL_COLUMNS:
+            self.tree.setColumnHidden(col, col in hidden)
+        self._place_columns_button()
+
+    def _columns_menu(self):
+        """Which columns show — the Browser's menu: it stays open while
+        columns are switched; «Show all columns» turns every one on and
+        «Default columns» puts back the ones that start shown."""
+        menu = StayOpenMenu(self)
+        hidden = self.hidden_columns()
+        show_all = menu.addAction(tr("Show all columns"))
+        show_all.setProperty("keep_open", True)
+        menu.addSeparator()
+        switches = []
+        for col, label, _shown in BIM_OPTIONAL_COLUMNS:
+            act = menu.addAction(tr(label))
+            act.setCheckable(True)
+            act.setChecked(col not in hidden)
+            act.toggled.connect(lambda on, c=col: self.set_column_shown(c, on))
+            switches.append(act)
+        menu.addSeparator()
+        defaults = menu.addAction(tr("Default columns"))
+        defaults.setProperty("keep_open", True)
+
+        def all_on() -> None:
+            for act in switches:
+                act.setChecked(True)             # each switch applies itself
+
+        def back_to_defaults() -> None:
+            for (_c, _l, shown), act in zip(BIM_OPTIONAL_COLUMNS, switches):
+                act.setChecked(shown)
+        show_all.triggered.connect(all_on)
+        defaults.triggered.connect(back_to_defaults)
+        return menu
+
+    def _on_header_menu(self, pos) -> None:
+        self._columns_menu().exec(self.tree.header().mapToGlobal(pos))
+
+    def _on_columns_button(self) -> None:
+        b = self._columns_button
+        self._columns_menu().exec(b.mapToGlobal(b.rect().bottomLeft()))
+
+    def _place_columns_button(self) -> None:
+        """At the header's right end, as tall as the header; «+2» says how
+        many columns are left to turn on, «⋮» none — the Browser's button."""
+        b = getattr(self, "_columns_button", None)
+        if b is None:
+            return
+        head = self.tree.header()
+        n = len(self.hidden_columns())
+        b.setText(f"+{n}" if n else "⋮")
+        font = b.font()
+        font.setBold(bool(n))
+        b.setFont(font)
+        width = max(max(head.height(), 18), b.sizeHint().width())
+        if self.tree.button_strip != width:
+            self.tree.button_strip = width
+            self.tree.updateGeometries()
+        g = head.geometry()
+        b.setGeometry(g.right() + 1, g.top(), width, g.height())
+        b.raise_()
+
+    def eventFilter(self, obj, ev) -> bool:
+        from PySide6.QtCore import QEvent
+        if obj is self.tree.header() and ev.type() in (QEvent.Resize,
+                                                       QEvent.Show):
+            self._place_columns_button()
+        return super().eventFilter(obj, ev)
+
+    @property
+    def group_by(self) -> str:
+        v = str(QSettings().value(self.GROUP_KEY, "group") or "group")
+        return v if v in dict(self.GROUPINGS) else "group"
+
+    def set_group_by(self, how: str) -> None:
+        """Structure the rows by the groups that hold them, by IFC class,
+        by name or not at all — a way of reading the takeoff, remembered
+        between sessions; nothing is measured again."""
+        how = how if how in dict(self.GROUPINGS) else "group"
+        QSettings().setValue(self.GROUP_KEY, how)
+        i = [k for k, _l in self.GROUPINGS].index(how)
+        if self.group_box.currentIndex() != i:
+            self.group_box.blockSignals(True)
+            self.group_box.setCurrentIndex(i)
+            self.group_box.blockSignals(False)
+        self._build_tree()
+
+    @property
+    def hidden_classes(self) -> set:
+        """The IFC classes the funnel leaves out — stored as the hidden
+        ones, so a class tagged for the first time shows."""
+        v = QSettings().value(self.HIDDEN_KEY, []) or []
+        return {v} if isinstance(v, str) else set(v)
+
+    def set_hidden_classes(self, classes) -> None:
+        QSettings().setValue(self.HIDDEN_KEY, sorted(classes))
+        self._show_filter_state()
+        self._apply_filter()
+
     def __init__(self, window) -> None:
         super().__init__()
         from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLineEdit,
-                                       QPushButton, QTreeWidget, QVBoxLayout)
+                                       QPushButton, QVBoxLayout)
         self._window = window
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 6, 8, 8)
@@ -4458,17 +4642,19 @@ class BimPanel(QWidget):
         row.addWidget(self.name_edit, 1)
         lay.addLayout(row)
 
-        btns = QHBoxLayout()
+        # Tag, Untag and Tag as you draw on one row, the buttons slim: the
+        # takeoff below gets the height. Wraps in a narrow tray.
+        btns = FlowLayout(spacing=4)
         tag_btn = QPushButton(tr("Tag selection"))
         tag_btn.setToolTip(tr(
             "Mark the selected faces / group as this IFC object"))
         tag_btn.clicked.connect(self._on_tag)
         untag_btn = QPushButton(tr("Untag"))
         untag_btn.clicked.connect(self._on_untag)
+        for b in (tag_btn, untag_btn):
+            b.setStyleSheet(_SLIM_BUTTON)
         btns.addWidget(tag_btn)
         btns.addWidget(untag_btn)
-        btns.addStretch(1)
-        lay.addLayout(btns)
 
         # Active class (tag-as-you-draw): while checked, every face you draw
         # is stamped with the class/name above, and pushing it extends the
@@ -4480,31 +4666,85 @@ class BimPanel(QWidget):
         self.active_check.toggled.connect(self._on_active_toggle)
         self.class_box.currentIndexChanged.connect(self._rearm_active)
         self.name_edit.editingFinished.connect(self._rearm_active)
-        lay.addWidget(self.active_check)
+        btns.addWidget(self.active_check)
+        lay.addLayout(btns)
 
-        self.tree = QTreeWidget()
-        self.tree.setColumnCount(4)
-        self.tree.setHeaderLabels([tr("Class"), tr("Name"),
-                                   tr("Takeoff"), tr("Vol m³")])
+        # Search, class filter and grouping: ways of reading the takeoff —
+        # the funnel and the grouping are remembered between sessions.
+        from views.outliner import _tool_button
+        bar = QHBoxLayout()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(tr(
+            "Search name, class or outline… (* and ? work)"))
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._on_search)
+        bar.addWidget(self.search, 1)
+        self.filter_btn = _tool_button("", tr("Filter by IFC class"),
+                                       self._open_class_menu)
+        bar.addWidget(self.filter_btn)
+        self.group_box = QComboBox()
+        for key, label in self.GROUPINGS:
+            self.group_box.addItem(tr(label), key)
+        self.group_box.setCurrentIndex(
+            [k for k, _l in self.GROUPINGS].index(self.group_by))
+        self.group_box.setToolTip(tr("How the rows are structured"))
+        self.group_box.currentIndexChanged.connect(
+            lambda _i: self.set_group_by(self.group_box.currentData()))
+        bar.addWidget(self.group_box)
+        lay.addLayout(bar)
+        self._query = ""
+        self._show_filter_state()
+
+        self.tree = _BimTree(self)
+        self.tree.setColumnCount(5)
+        self.tree.setHeaderLabels([tr("Class"), tr("Name"), tr("Takeoff"),
+                                   tr("Vol m³"), tr("Outline path")])
         # Rows sit in the groups that hold them, as the Browser shows them:
         # a tagged group is the parent of what is tagged inside it.
         self.tree.setRootIsDecorated(True)
         self.tree.setIndentation(12)
-        self.tree.setColumnWidth(0, 110)
-        self.tree.setColumnWidth(1, 90)
-        self.tree.setColumnWidth(2, 64)
+        self.tree.setColumnWidth(BIM_COL_CLASS, 110)
+        self.tree.setColumnWidth(BIM_COL_NAME, 90)
+        self.tree.setColumnWidth(BIM_COL_TAKEOFF, 64)
+        self.tree.setColumnWidth(BIM_COL_VOL, 56)
+        # Which columns show: right-click on the header, or the button at
+        # its right end — the Browser's way, remembered.
+        head = self.tree.header()
+        head.setContextMenuPolicy(Qt.CustomContextMenu)
+        head.customContextMenuRequested.connect(self._on_header_menu)
+        self._columns_button = _HeaderButton(self.tree)
+        self._columns_button.setToolTip(tr(
+            "Columns: show or hide Takeoff, Vol m³ and Outline path"))
+        self._columns_button.clicked.connect(self._on_columns_button)
+        head.installEventFilter(self)
+        self.tree.horizontalScrollBar().valueChanged.connect(
+            lambda _v: self._place_columns_button())
+        head.sectionResized.connect(
+            lambda *_a: self._place_columns_button())
+        self._apply_column_choice()
         self.tree.itemClicked.connect(self._on_pick_object)
         self.tree.itemExpanded.connect(self._fit_tree)
         self.tree.itemCollapsed.connect(self._fit_tree)
         lay.addWidget(self.tree)
 
-        exp = QPushButton(tr("Export quantities CSV…"))
+        exp_row = FlowLayout(spacing=4)      # wraps in a narrow tray
+        exp = QPushButton(tr("Export all CSV…"))
         exp.setToolTip(tr(
-            "The takeoff table — the bridge to IngePresupuestos"))
+            "The whole takeoff table — the bridge to IngePresupuestos"))
         exp.clicked.connect(self._on_export_csv)
-        lay.addWidget(exp)
+        exp_shown = QPushButton(tr("Export shown CSV…"))
+        exp_shown.setToolTip(tr(
+            "Only the objects the search and the class filter show"))
+        exp_shown.clicked.connect(lambda: self._on_export_csv(shown=True))
+        for b in (exp, exp_shown):
+            b.setStyleSheet(_SLIM_BUTTON)
+        exp_row.addWidget(exp)
+        exp_row.addWidget(exp_shown)
+        lay.addLayout(exp_row)
         self._objects: list = []
         self._containers: list = []
+        self._head_rows: list = []
+        self._up: dict = {}
         self.refresh()
 
     def _scene(self):
@@ -4638,8 +4878,7 @@ class BimPanel(QWidget):
         scene.bump_view()
         vp.update()
 
-    def _on_export_csv(self) -> None:
-        from PySide6.QtWidgets import QFileDialog
+    def _on_export_csv(self, shown: bool = False) -> None:
         from core.bim import quantities_csv
         path, _ = file_dialogs.getSaveFileName(
             self, tr("Export quantities CSV"), "metrado.csv",
@@ -4647,15 +4886,14 @@ class BimPanel(QWidget):
         if not path:
             return
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write(quantities_csv(self._scene()))
+            fh.write(quantities_csv(
+                self._scene(), self.shown_objects() if shown else None))
         self._window.statusBar().showMessage(
             tr("Quantities exported to {path}", path=path), 4000)
 
     # ---- Model → view ----------------------------------------------------------
     def refresh(self) -> None:
-        from PySide6.QtWidgets import QTreeWidgetItem
         from core.bim import collect_objects
-        from core.bim import class_quantities
         # File ▸ New (scene.clear) drops the active class — mirror it in the UI.
         if self.active_check.isChecked() and not self._scene().active_ifc:
             self.active_check.blockSignals(True)
@@ -4683,16 +4921,144 @@ class BimPanel(QWidget):
         self._untagged_scene = None if self._objects else id(scene)
         if hist is not None:
             hist.tags_cv = scene.content_version
+        # Nothing to hang from the groups: no map of the tree to build
+        # (6.5 ms on the 21 406 groups of #158).
+        self._up = {}
+        if self._objects:
+            from core import outliner
+            self._up = outliner.parents(scene.groups)
+            self._set_outlines()
+        self._build_tree()
+
+    def _set_outlines(self) -> None:
+        """Each object's place in the model's outline, «Group 1/Group 2»:
+        the groups around a tagged group, or the group whose mesh holds the
+        tagged faces and the ones around it; loose faces sit at the top
+        («»). One walk per group, shared by everything inside it."""
+        up = self._up
+        paths: dict = {}
+
+        def path_of(g) -> str:
+            if g is None:
+                return ""
+            p = paths.get(id(g))
+            if p is None:
+                above = path_of(up.get(id(g)))
+                p = paths[id(g)] = (above + "/" if above else "") + \
+                    _group_label(g)
+            return p
+        for obj in self._objects:
+            if "group" in obj:
+                obj["outline"] = path_of(up.get(id(obj["group"])))
+            else:
+                obj["outline"] = path_of(obj.get("owner"))
+
+    def _object_item(self, idx: int, obj: dict):
+        """The row of one takeoff object. The takeoff column shows the
+        class's budget measure (wall face m², column m³, pile m, door und)
+        — the number the IFC/CSV export carries to IngePresupuestos, not
+        the shell area."""
+        from PySide6.QtWidgets import QTreeWidgetItem
+        from core.bim import object_metrado
+        vol = "—" if obj["volume"] is None else f"{obj['volume']:.2f}"
+        outline = obj.get("outline", "")
+        item = QTreeWidgetItem([
+            obj["class"].removeprefix("Ifc"), obj["name"],
+            _fmt_metrado(*object_metrado(obj)), vol, outline])
+        item.setData(0, Qt.UserRole, idx)
+        if obj["volume"] is None:
+            item.setToolTip(BIM_COL_VOL, tr(
+                "Not watertight on its own — no volume"))
+        if outline:
+            item.setToolTip(BIM_COL_OUTLINE, outline)
+        return item
+
+    def _build_tree(self) -> None:
+        """The rows of the last takeoff, structured as the Group box says;
+        then the search and the funnel hide what they leave out. A branch
+        the user folded stays folded: picking a nested row opens the groups
+        around it, which rebuilds the list."""
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        folded = set()
+        it = QTreeWidgetItemIterator(self.tree)
+        while it.value() is not None:
+            item = it.value()
+            if item.childCount() and not item.isExpanded():
+                folded.add(item.data(0, _BIM_FOLD_KEY))
+            it += 1
         self.tree.clear()
         self._containers = []
-        if not self._objects:
-            # Nothing to hang from the groups: no map of the tree to build
-            # (6.5 ms on the 21 406 groups of #158).
-            self._fit_tree()
-            return
-        from core import outliner
-        up = outliner.parents(scene.groups)
-        # A tagged group's row is also the parent of what is tagged inside it.
+        self._head_rows = []
+        if self._objects:
+            how = self.group_by
+            if how in ("class", "name"):
+                self._build_headed(how)
+            elif how == "none":
+                self._build_flat()
+            else:
+                self._build_by_group()
+            self.tree.expandAll()
+            folded.discard(None)
+            if folded:
+                it = QTreeWidgetItemIterator(self.tree)
+                while it.value() is not None:
+                    item = it.value()
+                    if item.data(0, _BIM_FOLD_KEY) in folded:
+                        item.setExpanded(False)
+                    it += 1
+        self._apply_filter()
+
+    def _build_flat(self) -> None:
+        """No grouping: one row per object, by class and name."""
+        objs = self._objects
+        order = sorted(range(len(objs)), key=lambda i: (
+            objs[i]["class"], (objs[i]["name"] or "").casefold()))
+        self.tree.addTopLevelItems(
+            [self._object_item(i, objs[i]) for i in order])
+
+    def _build_headed(self, how: str) -> None:
+        """One heading per IFC class (``how`` = ``class``) or per name
+        (``name``), the objects under it — a tagged group is one row among
+        them; the groups that only hold tagged objects are not shown. The
+        heading's count and totals are set by the filter, for the rows it
+        shows."""
+        from PySide6.QtWidgets import QTreeWidgetItem
+        objs = self._objects
+        by_key: dict = {}
+        for i, obj in enumerate(objs):
+            key = obj["class"] if how == "class" else (obj["name"] or "")
+            by_key.setdefault(key, []).append(i)
+        if how == "class":
+            keys = sorted(by_key)
+            order = lambda i: (objs[i]["name"] or "").casefold()  # noqa: E731
+        else:
+            keys = sorted(by_key, key=str.casefold)
+            order = lambda i: (objs[i]["class"],  # noqa: E731
+                               objs[i].get("outline", "").casefold())
+        for key in keys:
+            if how == "class":
+                label = key.removeprefix("Ifc")
+            else:
+                label = key or tr("(no name)")
+            head = QTreeWidgetItem([label])
+            head.setData(0, Qt.UserRole, f"{how}:{key}")
+            head.setData(0, Qt.UserRole + 1, label)
+            head.setData(0, _BIM_FOLD_KEY, f"{how}:{key}")
+            font = head.font(0)
+            font.setBold(True)
+            for col in range(self.tree.columnCount()):
+                head.setFont(col, font)
+            head.setToolTip(0, key)
+            head.addChildren([self._object_item(i, objs[i])
+                              for i in sorted(by_key[key], key=order)])
+            self._head_rows.append(head)
+            self.tree.addTopLevelItem(head)
+
+    def _build_by_group(self) -> None:
+        """Rows sit in the groups that hold them, as the Browser shows
+        them: a tagged group is the parent of what is tagged inside it."""
+        from PySide6.QtWidgets import QTreeWidgetItem
+        up = self._up
         tagged_rows: dict = {}
         group_rows: dict = {}
 
@@ -4704,10 +5070,9 @@ class BimPanel(QWidget):
             row = tagged_rows.get(id(g)) or group_rows.get(id(g))
             if row is not None:
                 return row
-            row = QTreeWidgetItem([g.name or (
-                tr("Component") if outliner.kind(g) == "component"
-                else tr("Group"))])
+            row = QTreeWidgetItem([_group_label(g)])
             row.setData(0, Qt.UserRole, -len(self._containers) - 1)
+            row.setData(0, _BIM_FOLD_KEY, f"group:{id(g)}")
             self._containers.append(g)
             font = row.font(0)
             font.setItalic(True)
@@ -4723,35 +5088,12 @@ class BimPanel(QWidget):
             return row
 
         for idx, obj in enumerate(self._objects):
-            if "metrado" not in obj:
-                faces = obj.get("faces")
-                if faces is None:
-                    faces = list(obj["group"].mesh.faces)
-                # The takeoff column shows the class's budget measure (wall
-                # face m², column m³, pile m, door und) — the number the
-                # IFC/CSV export carries to IngePresupuestos, not the shell
-                # area. Kept on the object, so a memoised one reuses it.
-                obj["metrado"] = class_quantities(obj["class"], faces)[2]
-            metrado, unit = obj["metrado"]
-            pretty = {"m2": "m²", "m3": "m³"}.get(unit, unit)
-            if metrado is None:
-                met = "—"
-            elif unit == "und":
-                met = f"{metrado:.0f} {pretty}"
-            else:
-                met = f"{metrado:.2f} {pretty}"
-            vol = "—" if obj["volume"] is None else f"{obj['volume']:.2f}"
-            item = QTreeWidgetItem([
-                obj["class"].removeprefix("Ifc"),
-                obj["name"], met, vol])
-            item.setData(0, Qt.UserRole, idx)
-            if obj["volume"] is None:
-                item.setToolTip(3, tr(
-                    "Not watertight on its own — no volume"))
+            item = self._object_item(idx, obj)
             if "group" in obj:
                 g = obj["group"]
                 stale = group_rows.pop(id(g), None)
                 tagged_rows[id(g)] = item
+                item.setData(0, _BIM_FOLD_KEY, f"group:{id(g)}")
                 if stale is not None:
                     # Its contents came first: move them under the object row.
                     item.addChildren(stale.takeChildren())
@@ -4764,8 +5106,115 @@ class BimPanel(QWidget):
                 self.tree.addTopLevelItem(item)
             else:
                 parent.addChild(item)
-        self.tree.expandAll()
+
+    # ---- Search and class filter -------------------------------------------
+    def _on_search(self, text: str) -> None:
+        self._query = text.strip().casefold()
+        self._apply_filter()
+
+    def _passes(self, obj: dict, hidden: set | None = None) -> bool:
+        """Whether an object passes the search and the funnel."""
+        from core.bim import object_matches
+        hidden = self.hidden_classes if hidden is None else hidden
+        return obj["class"] not in hidden and object_matches(obj, self._query)
+
+    def _apply_filter(self) -> None:
+        """Hide the rows the search and the funnel leave out — no rebuild,
+        only each row's flag. A group, class or name heading shows while a
+        row under it does; a tagged group's row also while it passes."""
+        hidden = self.hidden_classes
+        objs = self._objects
+        active = bool(self._query) or bool(hidden)
+
+        def visit(item) -> bool:
+            kids = [visit(item.child(i)) for i in range(item.childCount())]
+            idx = item.data(0, Qt.UserRole)
+            shown = any(kids)
+            if isinstance(idx, int) and 0 <= idx < len(objs):
+                shown = shown or not active or self._passes(objs[idx], hidden)
+            if item.isHidden() == shown:
+                item.setHidden(not shown)
+            return shown
+
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            visit(root.child(i))
+        for head in self._head_rows:
+            self._set_head_totals(head)
         self._fit_tree()
+
+    def _set_head_totals(self, head) -> None:
+        """A heading's count and totals over the rows it shows: the takeoff
+        when they share a unit, the volume when every one has one."""
+        from core.bim import object_metrado
+        objs = [self._objects[head.child(i).data(0, Qt.UserRole)]
+                for i in range(head.childCount())
+                if not head.child(i).isHidden()]
+        head.setText(0, "%s (%d)" % (head.data(0, Qt.UserRole + 1),
+                                     len(objs)))
+        mets = [object_metrado(o) for o in objs]
+        units = {u for _m, u in mets}
+        if mets and len(units) == 1 and None not in [m for m, _u in mets]:
+            head.setText(BIM_COL_TAKEOFF, _fmt_metrado(
+                sum(m for m, _u in mets), units.pop()))
+        else:
+            head.setText(BIM_COL_TAKEOFF, "—")
+        vols = [o["volume"] for o in objs]
+        head.setText(BIM_COL_VOL, f"{sum(vols):.2f}"
+                     if vols and None not in vols else "—")
+
+    def shown_objects(self) -> list:
+        """The objects the search and the funnel pass, in the order of the
+        rows — what «Export shown CSV» writes. A tagged group shown only
+        for a match inside it is not one of them."""
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        hidden = self.hidden_classes
+        out = []
+        it = QTreeWidgetItemIterator(
+            self.tree, QTreeWidgetItemIterator.NotHidden)
+        while it.value() is not None:
+            idx = it.value().data(0, Qt.UserRole)
+            if (isinstance(idx, int) and 0 <= idx < len(self._objects)
+                    and self._passes(self._objects[idx], hidden)):
+                out.append(self._objects[idx])
+            it += 1
+        return out
+
+    def _show_filter_state(self) -> None:
+        """The funnel fills while it hides a class, and its tooltip says
+        how many — the Browser's own mark."""
+        from views.outliner import node_icon
+        n = len(self.hidden_classes)
+        self.filter_btn.setIcon(node_icon(
+            "layers_filter_on" if n else "layers_filter"))
+        self.filter_btn.setToolTip(
+            tr("Filter by IFC class: {n} hidden", n=n) if n
+            else tr("Filter by IFC class"))
+
+    def _open_class_menu(self) -> None:
+        """The classes in the model, each a switch: the menu stays open
+        while several are flipped."""
+        from views.side_tree import StayOpenMenu
+        menu = StayOpenMenu(self.filter_btn)
+        counts: dict = {}
+        for obj in self._objects:
+            counts[obj["class"]] = counts.get(obj["class"], 0) + 1
+        hidden = self.hidden_classes
+        show_all = menu.addAction(tr("Show all classes"))
+        show_all.setEnabled(bool(hidden))
+        show_all.triggered.connect(lambda: self.set_hidden_classes(set()))
+        menu.addSeparator()
+        if not counts:
+            menu.addAction(tr("(no BIM objects)")).setEnabled(False)
+        for cls in sorted(counts):
+            act = menu.addAction("%s (%d)" % (cls, counts[cls]))
+            act.setCheckable(True)
+            act.setChecked(cls not in hidden)
+            act.toggled.connect(lambda on, c=cls: self.set_hidden_classes(
+                self.hidden_classes - {c} if on
+                else self.hidden_classes | {c}))
+        menu.exec(self.filter_btn.mapToGlobal(
+            self.filter_btn.rect().bottomLeft()))
 
 
 class Tray(QDockWidget):
