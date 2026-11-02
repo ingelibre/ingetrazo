@@ -427,6 +427,7 @@ def _merged_placements(group) -> Mesh:
     attrs_list: list = []
     for g, m in iter_placements(group):
         src = g.mesh
+        mirror = _is_mirror(m)
         epts: list = []
         fpts: list = []
         for e in src.edges:
@@ -439,10 +440,11 @@ def _merged_placements(group) -> Mesh:
                 holes = _maximal_holes([list(h) for h in holes])
             ring_counts.append(1 + len(holes))
             ring_sizes.append(len(f.vertices))
-            fpts.extend((v.x(), v.y(), v.z()) for v in f.vertices)
+            fpts.extend((v.x(), v.y(), v.z())
+                        for v in _ring(f.vertices, mirror))
             for h in holes:
                 ring_sizes.append(len(h))
-                fpts.extend((v.x(), v.y(), v.z()) for v in h)
+                fpts.extend((v.x(), v.y(), v.z()) for v in _ring(h, mirror))
             # The texture's world->UV map travels with the placement, so a
             # nested leaf keeps its wood grain instead of inheriting the
             # parent's frame.
@@ -533,9 +535,24 @@ def np_affine(m):
     return rot, np.array([d[12], d[13], d[14]], dtype=np.float64)
 
 
+def _is_mirror(m) -> bool:
+    """Whether the matrix reflects: it turns every ring it maps inside out."""
+    return m is not None and m.determinant() < 0.0
+
+
+def _ring(points, mirror: bool):
+    """A face's ring in the order that keeps its front the front once mapped
+    through a matrix (see :func:`_is_mirror`)."""
+    return points[::-1] if mirror else points
+
+
 def transformed_mesh(src: Mesh, m) -> Mesh:
     """A DEEP copy of ``src`` with every position mapped through ``m``,
     carrying face attrs, soft/curve flags and re-fitted texture UV maps.
+
+    A mirror keeps each face's front the front, as a mirrored placement draws
+    it (``Viewport._instance_chunk``): opening one for editing showed every
+    face the other way round.
 
     Big meshes go through one vectorized ``bulk_weld`` pass (same recipe as
     the ``.igz`` loader): the per-entity ``add_face``/``add_edge`` walk froze
@@ -547,6 +564,7 @@ def transformed_mesh(src: Mesh, m) -> Mesh:
     import numpy as np
     from core.topology import _maximal_holes
     new = Mesh()
+    mirror = _is_mirror(m)
     flat: list = []
     for e in src.edges:
         flat.append((e.a.x(), e.a.y(), e.a.z()))
@@ -561,10 +579,10 @@ def transformed_mesh(src: Mesh, m) -> Mesh:
             holes = _maximal_holes([list(h) for h in holes])
         ring_counts.append(1 + len(holes))
         ring_sizes.append(len(f.vertices))
-        flat.extend((v.x(), v.y(), v.z()) for v in f.vertices)
+        flat.extend((v.x(), v.y(), v.z()) for v in _ring(f.vertices, mirror))
         for h in holes:
             ring_sizes.append(len(h))
-            flat.extend((v.x(), v.y(), v.z()) for v in h)
+            flat.extend((v.x(), v.y(), v.z()) for v in _ring(h, mirror))
         attrs_list.append(dict(f.attrs) if f.attrs else None)
     if not flat:
         return new
@@ -588,14 +606,16 @@ def _transformed_mesh_walk(src: Mesh, m) -> Mesh:
     """Sequential per-entity copy — exact semantics for small meshes."""
     from PySide6.QtGui import QVector3D
     new = Mesh()
+    mirror = _is_mirror(m)
 
     def W(p) -> QVector3D:
         return m.map(p)
 
     for f in src.faces:
         try:
-            nf = new.add_face([W(v) for v in f.vertices],
-                              [[W(v) for v in h] for h in f.holes] or None)
+            nf = new.add_face([W(v) for v in _ring(f.vertices, mirror)],
+                              [[W(v) for v in _ring(h, mirror)]
+                               for h in f.holes] or None)
         except Exception:  # noqa: BLE001 — degenerate under the transform
             continue
         if f.attrs:
