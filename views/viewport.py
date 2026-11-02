@@ -717,8 +717,13 @@ def _paint_of(vp, group):
     if group is not None and not isinstance(group, Group):
         return effective_material(group)
     scene = getattr(vp, "scene", None)
+    worn = effective_material(group)
+    if group is not None and group is getattr(scene, "edit_group", None):
+        # Open, its faces draw as the loose mesh and keep what they wore
+        # closed: the nearest painted container's, not only its own (#1101).
+        worn = scene.open_group_paint()
     if scene is None or getattr(vp, "plano_style", None) is not None:
-        return effective_material(group)       # a sheet's technical look
+        return worn                            # a sheet's technical look
     style = (getattr(vp, "style_override", None)
              or getattr(scene, "display_style", None))
     by_layer = bool(getattr(style, "color_by_layer", False)
@@ -730,9 +735,8 @@ def _paint_of(vp, group):
         memo = vp._layer_paints = (scene.version, {}, layer_fx(scene))
     fx = memo[2]
     if not by_layer and not fx:
-        return _with_front_tint(effective_material(group), style)
-    own = (None if by_layer
-           else _with_front_tint(effective_material(group), style))
+        return _with_front_tint(worn, style)
+    own = None if by_layer else _with_front_tint(worn, style)
     key = (by_layer, object_layer(group), material_sig(own))
     paint = memo[1].get(key)
     if paint is None:
@@ -4032,9 +4036,10 @@ class Viewport(QOpenGLWidget):
         ctx = self.scene.edit_group
 
         def walk(node, world, dentro=None, hidden=False, forced=forced,
-                 inherited=None):
+                 inherited=None, paint=None):
             """``dentro`` = the first-level child of the open context this
-            subtree hangs from, or ``None`` outside it.
+            subtree hangs from, or ``None`` outside it. ``paint`` = the
+            nearest painted container above the subtree.
 
             INSIDE a group its children are the first-class objects: `owner`
             points at the child, so a click selects the bench and not the
@@ -4067,7 +4072,11 @@ class Viewport(QOpenGLWidget):
                 # Hide on an object takes its whole subtree along, and a
                 # hidden child stays hidden inside a visible parent.
                 proxy.hidden = hidden or bool(child.hidden)
-                proxy.material = getattr(child, "material", None)
+                # An unpainted piece wears the nearest painted container
+                # above it, at any depth and whatever is open (#1101):
+                # reading it off ``owner`` — the object a click selects —
+                # made it follow the open group instead.
+                proxy.material = getattr(child, "material", None) or paint
                 if child is ctx:
                     # The group being edited, reached as a nested placement:
                     # it is the SUBJECT, not surroundings. Comparing by
@@ -4090,9 +4099,10 @@ class Viewport(QOpenGLWidget):
                             kid_forced = proxy.layer
                     walk(child, m,
                          child if (ctx is not None and node is ctx) else dentro,
-                         proxy.hidden, kid_forced, proxy.layer)
+                         proxy.hidden, kid_forced, proxy.layer, proxy.material)
 
-        walk(group, getattr(group, "xform", None), hidden=bool(group.hidden))
+        walk(group, getattr(group, "xform", None), hidden=bool(group.hidden),
+             paint=getattr(group, "material", None))
         return out
 
     def prepare_drawing(self, progress=None) -> None:

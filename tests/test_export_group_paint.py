@@ -233,3 +233,27 @@ def test_nested_piece_paint_wins_and_the_rest_takes_the_top(tmp_path):
     by_node = _glb_node_materials(_glb(_nested(), tmp_path))
     assert by_node["Green piece"] == {"Green"}
     assert by_node["Plain piece"] == {"Pink"}
+
+
+def test_a_plain_piece_two_levels_down_takes_its_nearest_painted_container(tmp_path):
+    """#1101: a pink object holding a green group holding a plain piece —
+    the piece is green in the file, as the viewport draws it."""
+    def scene():
+        s = Scene()
+        proto = Mesh()
+        _quad(proto, 0)
+        leaf = Group(proto, name="Leaf")
+        leaf.xform = _at(0)
+        mid = Group(Mesh(), name="Mid")
+        mid.adopt([leaf])
+        mid.material = _paint("Green", GREEN)
+        top = Group(Mesh(), name="Top")
+        top.adopt([mid])
+        top.material = _paint("Pink", PINK)
+        s.groups.append(top)
+        return s
+
+    materials, prims = collect_geometry(scene())
+    counts = {info.get("mat"): len(prims[k]) for k, info in materials.items()}
+    assert counts == {"Green": 2}
+    assert _glb_node_materials(_glb(scene(), tmp_path))["Leaf"] == {"Green"}
