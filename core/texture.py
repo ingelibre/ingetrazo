@@ -599,6 +599,7 @@ def uv_reference_points(points, normal=None):
 
 COLORIZE_SHIFT = 0
 COLORIZE_TINT = 1
+_COLORIZE_TILE_PIXELS = 256 * 1024
 
 
 def rgb_to_hls(rgb):
@@ -667,17 +668,25 @@ def colorize_image(data, target_rgb, ctype=COLORIZE_SHIFT):
         h0, l0, s0 = rgb_to_hls(avg.reshape(1, 3))
         ht, lt, st = rgb_to_hls(
             np.array([[c / 255.0 for c in target_rgb[:3]]]))
-        hue, lum, sat = rgb_to_hls(rgb)
-        if ctype == 1:
-            hue = np.full_like(hue, float(ht[0]))
-            sat = np.full_like(sat, float(st[0]))
-        else:
-            hue = (hue + (float(ht[0]) - float(h0[0]))) % 1.0
-            sat = np.clip(sat + (float(st[0]) - float(s0[0])), 0.0, 1.0)
-        lum = np.clip(lum + (float(lt[0]) - float(l0[0])), 0.0, 1.0)
-        out = np.clip(hls_to_rgb(hue, lum, sat) * 255.0 + 0.5,
-                      0, 255).astype(np.uint8)
-        result = np.dstack([out, alpha])
+        # Keep the original whole-image reduction (including summation order),
+        # but bound the elementwise HLS intermediates on large texture images.
+        del vis
+        result = np.empty((h * w, 4), dtype=np.uint8)
+        flat = rgb.reshape(-1, 3)
+        for start in range(0, h * w, _COLORIZE_TILE_PIXELS):
+            end = start + _COLORIZE_TILE_PIXELS
+            hue, lum, sat = rgb_to_hls(flat[start:end])
+            if ctype == 1:
+                hue = np.full_like(hue, float(ht[0]))
+                sat = np.full_like(sat, float(st[0]))
+            else:
+                hue = (hue + (float(ht[0]) - float(h0[0]))) % 1.0
+                sat = np.clip(sat + (float(st[0]) - float(s0[0])), 0.0, 1.0)
+            lum = np.clip(lum + (float(lt[0]) - float(l0[0])), 0.0, 1.0)
+            result[start:end, :3] = np.clip(
+                hls_to_rgb(hue, lum, sat) * 255.0 + 0.5, 0, 255).astype(np.uint8)
+        result[:, 3] = alpha.reshape(-1)
+        del rgb, flat
         tinted = QImage(result.tobytes(), w, h, w * 4,
                         QImage.Format.Format_RGBA8888)
         qbuf = QBuffer()
