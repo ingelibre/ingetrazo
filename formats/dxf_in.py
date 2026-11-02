@@ -430,7 +430,8 @@ def _fold_xform(m44, scale: float, offset) -> QMatrix4x4:
 
 # ---- The loader ------------------------------------------------------------
 def load_dxf(scene, path, progress=None, scale: float = 1.0,
-             doc=None, name: str | None = None) -> dict:
+             doc=None, name: str | None = None,
+             make_faces: bool = False) -> dict:
     """See :func:`_load_dxf_inner`. Wrapped with the generational GC off —
     the same mass-construction guard every importer here carries."""
     import gc
@@ -438,14 +439,26 @@ def load_dxf(scene, path, progress=None, scale: float = 1.0,
     gc.disable()
     try:
         return _load_dxf_inner(scene, path, progress=progress, scale=scale,
-                               doc=doc, name=name)
+                               doc=doc, name=name, make_faces=make_faces)
     finally:
         if was:
             gc.enable()
 
 
+def _faces_from_outlines(mesh) -> int:
+    """The import option (#1109): faces on the closed outlines of a built
+    mesh. A nicety, never fatal: the lines are already there."""
+    from core.make_faces import faces_from_linework
+
+    try:
+        return faces_from_linework(mesh)
+    except Exception:
+        return 0
+
+
 def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
-                    doc=None, name: str | None = None) -> dict:
+                    doc=None, name: str | None = None,
+                    make_faces: bool = False) -> dict:
     from core.group import Group
     from core.layers import Layer
 
@@ -519,6 +532,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
     groups_made = 0
     edges_made = 0
     faces_made = 0
+    outline_faces = 0
 
     def ensure_tag(layer_name: str) -> None:
         if layer_name != "0" and scene.layer(layer_name) is None:
@@ -528,6 +542,9 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
         mesh = _build_mesh(per_layer[layer], scale, offset)
         if not mesh.edges and not mesh.faces:
             continue
+        if make_faces:
+            tick(0.65, "Making faces…")
+            outline_faces += _faces_from_outlines(mesh)
         edges_made += len(mesh.edges)
         faces_made += len(mesh.faces)
         group = Group(mesh, name=(layer if layer != "0"
@@ -544,6 +561,9 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
     for block_name, buckets in proto_buckets.items():
         mesh = _build_mesh(buckets["0"], scale, (0.0, 0.0, 0.0))
         if mesh.edges or mesh.faces:
+            if make_faces:
+                # Once per definition: its copies share this mesh.
+                outline_faces += _faces_from_outlines(mesh)
             protos[block_name] = mesh
     for block_name, m44, layer in placements:
         proto = protos.get(block_name)
@@ -571,6 +591,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
         "entities": counter[0],
         "edges": edges_made,
         "faces": faces_made,
+        "outline_faces": outline_faces,
         "groups": groups_made,
         "components": components,
         "skipped": skipped,

@@ -3277,5 +3277,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "สีด้านหน้า — ระบายพื้นผิวในโหมดซ่อนเส้นและโหมดสีเดียว",
  "Distance ({unit}):": "ระยะ ({unit}):",
  "Restore defaults": "คืนค่าเริ่มต้น",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม"
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม",
+ "Make Faces": "สร้างระนาบ",
+ "Make the faces that the selected edges close, on those same edges.": "สร้างระนาบที่ขอบที่เลือกปิดล้อมไว้ บนขอบเหล่านั้นเอง",
+ "Select the edges of the loops to turn into faces.": "เลือกขอบของรูปปิดที่ต้องการทำเป็นระนาบ",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "ขอบที่เลือกไม่ได้อยู่บนระนาบเดียวกัน (และไม่ได้อยู่บนระนาบแนวนอนที่ความสูงต่างกัน): สร้างระนาบสร้างได้เฉพาะระนาบเรียบ",
+ "The selected edges close no loop.": "ขอบที่เลือกไม่ได้ปิดล้อมรูปใดเลย",
+ "Make Faces: {n} faces made": "สร้างระนาบ: สร้าง {n} ระนาบแล้ว",
+ "Make Faces: those loops already had their faces": "สร้างระนาบ: รูปปิดเหล่านั้นมีระนาบอยู่แล้ว",
+ "Make Faces: an existing face already covers those loops": "สร้างระนาบ: มีระนาบเดิมครอบคลุมรูปปิดเหล่านั้นอยู่แล้ว",
+ "Create faces from closed planar outlines": "สร้างระนาบจากรูปปิดที่อยู่บนระนาบเดียว",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "ช้าลงเมื่อแบบมีขนาดใหญ่ ทำภายหลังก็ได้โดยเลือกเส้นแล้วไปที่ เครื่องมือ ▸ สร้างระนาบ",
+ "{n} faces made from closed outlines": "สร้าง {n} ระนาบจากรูปปิดแล้ว",
+ "Making faces…": "กำลังสร้างระนาบ…"
 }

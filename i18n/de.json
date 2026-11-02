@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "Vorderseitenfarbe — färbt Flächen in Verdeckte Linien und Monochrom",
  "Distance ({unit}):": "Abstand ({unit}):",
  "Restore defaults": "Standardwerte wiederherstellen",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Setzt die Einstellungen dieses Fensters auf den Auslieferungszustand von IngeTrazo zurück. Nichts wird gespeichert, bevor du auf OK drückst. Sprache, KI-Assistent, Tastenkürzel und die Einheiten des offenen Dokuments bleiben, wie sie sind."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Setzt die Einstellungen dieses Fensters auf den Auslieferungszustand von IngeTrazo zurück. Nichts wird gespeichert, bevor du auf OK drückst. Sprache, KI-Assistent, Tastenkürzel und die Einheiten des offenen Dokuments bleiben, wie sie sind.",
+ "Make Faces": "Flächen erzeugen",
+ "Make the faces that the selected edges close, on those same edges.": "Erzeugt die Flächen, die die ausgewählten Kanten schließen, auf genau diesen Kanten.",
+ "Select the edges of the loops to turn into faces.": "Wählen Sie die Kanten der Umrisse, die zu Flächen werden sollen.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "Die ausgewählten Kanten liegen nicht in einer Ebene (auch nicht in waagerechten Ebenen auf verschiedenen Höhen): Flächen erzeugen erstellt nur ebene Flächen.",
+ "The selected edges close no loop.": "Die ausgewählten Kanten schließen keinen Umriss.",
+ "Make Faces: {n} faces made": "Flächen erzeugen: {n} Flächen erzeugt",
+ "Make Faces: those loops already had their faces": "Flächen erzeugen: Diese Umrisse hatten ihre Flächen schon",
+ "Make Faces: an existing face already covers those loops": "Flächen erzeugen: Eine vorhandene Fläche deckt diese Umrisse bereits ab",
+ "Create faces from closed planar outlines": "Flächen aus geschlossenen ebenen Umrissen erzeugen",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Langsamer bei großen Zeichnungen. Sie können es auch später tun, mit ausgewählten Linien: Werkzeuge ▸ Flächen erzeugen.",
+ "{n} faces made from closed outlines": "{n} Flächen aus geschlossenen Umrissen erzeugt",
+ "Making faces…": "Flächen werden erzeugt…"
 }

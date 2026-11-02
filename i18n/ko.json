@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "앞면 색상 — 숨은선 모드와 단색 모드에서 면을 칠합니다",
  "Distance ({unit}):": "거리 ({unit}):",
  "Restore defaults": "기본값 복원",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다.",
+ "Make Faces": "면 만들기",
+ "Make the faces that the selected edges close, on those same edges.": "선택한 모서리가 닫는 면을 그 모서리 위에 만듭니다.",
+ "Select the edges of the loops to turn into faces.": "면으로 만들 윤곽의 모서리를 선택하세요.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "선택한 모서리가 한 평면에 있지 않습니다(높이가 다른 수평면에도 있지 않습니다). 면 만들기는 평평한 면만 만듭니다.",
+ "The selected edges close no loop.": "선택한 모서리가 윤곽을 닫지 않습니다.",
+ "Make Faces: {n} faces made": "면 만들기: 면 {n}개를 만들었습니다",
+ "Make Faces: those loops already had their faces": "면 만들기: 이 윤곽에는 이미 면이 있습니다",
+ "Make Faces: an existing face already covers those loops": "면 만들기: 기존 면이 이미 이 윤곽을 덮고 있습니다",
+ "Create faces from closed planar outlines": "닫힌 평면 윤곽에서 면 만들기",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "큰 도면에서는 느려집니다. 나중에 선을 선택한 뒤 할 수도 있습니다: 도구 ▸ 면 만들기.",
+ "{n} faces made from closed outlines": "닫힌 윤곽에서 면 {n}개를 만들었습니다",
+ "Making faces…": "면 만드는 중…"
 }
