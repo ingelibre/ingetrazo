@@ -16877,7 +16877,6 @@ class Viewport(QOpenGLWidget):
                          and bool(getattr(parent, "component", True)))
         if (getattr(group, "xform", None) is not None
                 and not getattr(group, "component", True)
-                and not getattr(group, "children", None)
                 and not in_definition
                 and self._mesh_shared_elsewhere(group)):
             # A copied GROUP shares its geometry with the other copies only
@@ -16887,11 +16886,14 @@ class Viewport(QOpenGLWidget):
             from core.history import MakeUniqueCommand
             self.history.execute(MakeUniqueCommand(group))
         was_instance = (getattr(group, "xform", None) is not None
-                        and not getattr(group, "children", None))
+                        and (bool(getattr(group, "component", True))
+                             or not getattr(group, "children", None)))
         before = getattr(self.scene, "content_version", None)
         self.scene.begin_group_edit(group)
         _ctx_changed(self, before)
         self._edit_undo_mark = len(self.history.undo_stack)
+        # Per level too: leaving folds only what ran since THIS level opened.
+        self.scene._edit_stack[-1]["undo_mark"] = self._edit_undo_mark
         self._hover_entity = None
         self._edges_version = -1     # the rest may fade out or leave the VBOs
         share = getattr(self.scene, "_edit_share", None)
@@ -16980,7 +16982,13 @@ class Viewport(QOpenGLWidget):
     def _leave_group_edit(self, todos: bool) -> None:
         if self.scene.edit_group is None:
             return
+        # Level by level: a part shares back before the assembly around it
+        # takes its matrix back up out of the parts.
+        while todos and len(self.scene._edit_stack) > 1:
+            self._leave_group_edit(todos=False)
         share = self.scene.take_edit_share()
+        level_mark = self.scene._edit_stack[-1].get("undo_mark")
+        parts = self.scene._edit_stack[-1].get("parts")
         before = getattr(self.scene, "content_version", None)
         if todos:
             self.scene.end_group_edit()
@@ -16992,21 +17000,37 @@ class Viewport(QOpenGLWidget):
         if share is not None:
             group, proto, xform, state0 = share
             edited = group.mesh
-            if edited.capture_state() == state0:
-                self.scene.restore_sharing(group, proto, xform)
-                self.flash_status(tr("Left the group"), 2000)
+            mark = (level_mark if level_mark is not None
+                    else getattr(self, "_edit_undo_mark",
+                                 len(self.history.undo_stack)))
+            shared = edited.capture_state() != state0
+            if parts is not None and len(self.history.undo_stack) > mark:
+                # An assembly: what ran inside was recorded with its matrix
+                # down in the parts, so it folds into the step that brings
+                # the matrix back — a part deleted or moved undoes in place.
+                from core.history import ReshareAssemblyCommand
+                inner = self.history.undo_stack[mark:]
+                del self.history.undo_stack[mark:]
+                self.history.execute(ReshareAssemblyCommand(
+                    group, proto, xform, edited, state0, parts, inner))
+            elif not shared:
+                self.scene.restore_sharing(
+                    group, proto, xform,
+                    axes=parts[0] if parts is not None else None)
+                self.scene.bump_view()       # an assembly's parts rebased
             else:
                 from core.history import ReshareInstanceCommand
-                mark = getattr(self, "_edit_undo_mark",
-                               len(self.history.undo_stack))
                 inner = self.history.undo_stack[mark:]
                 del self.history.undo_stack[mark:]
                 self.history.execute(ReshareInstanceCommand(
                     group, proto, xform, edited, inner))
+            if shared:
                 copies = sum(1 for g in self.scene.groups if g.mesh is proto)
                 self.flash_status(tr(
                     "Component '{name}' updated on its {n} copies",
                     name=group.name, n=copies), 4000)
+            else:
+                self.flash_status(tr("Left the group"), 2000)
         elif self.scene.edit_group is not None:
             # Stepping up into another container: say so, or it reads as a
             # click that did nothing (everything around is still faded).
