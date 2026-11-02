@@ -21,7 +21,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (QHBoxLayout, QSizePolicy, QTabBar, QToolButton,
                                QWidget)
 
@@ -120,6 +121,49 @@ def live_viewport(viewport):
     return lambda: viewport
 
 
+class _ProjectTabs(QTabBar):
+    def minimumSizeHint(self):
+        hint = self.sizeHint()
+        return QSize(min(hint.width(), 64), hint.height())
+
+
+class _GlyphButton(QToolButton):
+    """A flat tab-strip button whose glyph (+ or ×) is drawn, not typeset: a
+    font's × or + sits wherever that font puts it, a stroke sits on the
+    centre of the button at any scale. Dim at rest, full strength under the
+    pointer; the box behind it comes from the stylesheet."""
+
+    def __init__(self, glyph: str, parent=None) -> None:
+        super().__init__(parent)
+        self._glyph = glyph
+        self.setAutoRaise(True)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        c = QColor(self.palette().windowText().color())
+        if self.underMouse() or self.isDown():
+            c.setAlpha(255)
+        elif self.property("current"):
+            c.setAlpha(175)
+        else:
+            c.setAlpha(115)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        pen = QPen(c, 1.4)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+        cx, cy = self.width() / 2, self.height() / 2
+        if self._glyph == "plus":
+            painter.drawLine(QPointF(cx - 4.5, cy), QPointF(cx + 4.5, cy))
+            painter.drawLine(QPointF(cx, cy - 4.5), QPointF(cx, cy + 4.5))
+        elif self._glyph == "close":
+            d = 3.2
+            painter.drawLine(QPointF(cx - d, cy - d), QPointF(cx + d, cy + d))
+            painter.drawLine(QPointF(cx - d, cy + d), QPointF(cx + d, cy - d))
+        painter.end()
+
+
 class ProjectTabBar(QWidget):
     """The project tabs above the viewport: the file name, a dot while it
     has unsaved changes, a × to close; «+» makes a new project; a middle
@@ -139,9 +183,9 @@ class ProjectTabBar(QWidget):
         super().__init__(parent)
         self.setObjectName("project_tabs")
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
+        row.setContentsMargins(3, 4, 4, 0)      # the strip's air above the tabs
         row.setSpacing(0)
-        bar = self.tabs = QTabBar(self)
+        bar = self.tabs = _ProjectTabs(self)
         bar.setObjectName("project_tab_bar")
         bar.setDocumentMode(True)
         bar.setExpanding(False)
@@ -157,29 +201,55 @@ class ProjectTabBar(QWidget):
         bar.tabMoved.connect(lambda *_a: self.moved.emit())
         bar.installEventFilter(self)
         row.addWidget(bar, 0)
-        plus = self.plus = QToolButton(self)
+        row.addSpacing(4)
+        plus = self.plus = _GlyphButton("plus", self)
         plus.setObjectName("project_tab_new")
-        plus.setText("+")
-        plus.setAutoRaise(True)
+        plus.setAccessibleName(tr("New project"))
+        plus.setFixedSize(24, 24)
         plus.setToolTip(tr("New project (Ctrl+N)"))
         plus.setCursor(Qt.PointingHandCursor)
+        plus.setProperty("current", True)
         plus.clicked.connect(self.newRequested.emit)
-        row.addWidget(plus, 0)
+        row.addWidget(plus, 0, Qt.AlignVCenter)
         row.addStretch(1)
         self._quiet = False
+        bar.currentChanged.connect(lambda *_a: self._refresh_buttons())
+        bar.tabMoved.connect(lambda *_a: self._refresh_buttons())
         from views.theme import style as theme_style
         theme_style(self,
-            "#project_tabs {{ background: palette(window); }}"
-            "QTabBar#project_tab_bar::tab {{ padding: 3px 10px;"
-            " max-width: 260px; border: none;"
-            " border-bottom: 2px solid transparent; }}"
+            "QTabBar#project_tab_bar::tab {{"
+            " min-height: 22px; max-width: 240px; padding: 0px 3px 0px 9px;"
+            " margin: 0px 2px 0px 0px; border: none;"
+            " border-bottom: 2px solid transparent;"
+            " border-top-left-radius: 6px; border-top-right-radius: 6px;"
+            " background: transparent; color: {muted}; }}"
             "QTabBar#project_tab_bar::tab:selected {{"
-            " border-bottom: 2px solid rgb({accent_rgb});"
-            " background: palette(base); }}"
+            " background: palette(base); color: palette(window-text);"
+            " border-bottom: 2px solid rgb({accent_rgb}); }}"
             "QTabBar#project_tab_bar::tab:!selected:hover {{"
-            " background: rgba({accent_rgb}, 40); }}"
-            "QToolButton#project_tab_new {{ padding: 0px 8px;"
-            " font-weight: bold; }}")
+            " background: rgba({accent_rgb}, 26); color: palette(window-text); }}"
+            "QToolButton#project_tab_close, QToolButton#project_tab_new {{ border: none; border-radius: 4px;"
+            " padding: 0px; margin: 0px; background: transparent; }}"
+            "QToolButton#project_tab_close:hover, QToolButton#project_tab_new:hover {{ background: rgba({accent_rgb}, 40); }}"
+            "QToolButton#project_tab_close:pressed, QToolButton#project_tab_new:pressed {{ background: rgba({accent_rgb}, 70); }}")
+
+    def paintEvent(self, event):  # noqa: N802 — Qt override
+        """The hairline under the strip, where the tabs meet the viewport;
+        the front tab's accent line sits over it."""
+        painter = QPainter(self)
+        painter.fillRect(0, self.height() - 1, self.width(), 1,
+                         self.palette().mid().color())
+        painter.end()
+
+    def _refresh_buttons(self) -> None:
+        """The tab in front keeps its × a little stronger."""
+        front = self.tabs.currentIndex()
+        for i in range(self.tabs.count()):
+            for side in (QTabBar.LeftSide, QTabBar.RightSide):
+                w = self.tabs.tabButton(i, side)
+                if w is not None:
+                    w.setProperty("current", i == front)
+                    w.update()
 
     # ---- the tabs ---------------------------------------------------------
     def count(self) -> int:
@@ -202,8 +272,17 @@ class ProjectTabBar(QWidget):
             else:
                 i = self.tabs.insertTab(index, "")
             self.tabs.setTabData(i, doc)
+            close = _GlyphButton("close", self.tabs)
+            close.setObjectName("project_tab_close")
+            close.setToolTip(tr("Close"))
+            close.setAccessibleName(tr("Close"))
+            close.setCursor(Qt.PointingHandCursor)
+            close.setFixedSize(18, 18)
+            close.clicked.connect(lambda _checked=False, d=doc: self._on_close_index(self.index_of(d)))
+            self.tabs.setTabButton(i, QTabBar.RightSide, close)
         finally:
             self._quiet = False
+        self._refresh_buttons()
         return i
 
     def remove(self, doc) -> None:
