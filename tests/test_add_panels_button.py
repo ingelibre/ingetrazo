@@ -99,11 +99,12 @@ def test_a_tray_alone_on_its_side_has_the_plus_too():
     win.move_dock(win.project_browser, Qt.LeftDockWidgetArea)
     _app.processEvents()
     _app.processEvents()
-    tab = win.project_browser.titleBarWidget()
+    tab = win.project_browser.titleBarWidget().tab
     assert isinstance(tab, _DockTitleTab)
     btn = _plus(tab)
     assert btn is not None and btn.isVisible()
     assert btn.x() > tab.tabRect(0).right()
+    assert btn.geometry().right() < tab.width()      # not cut by the name
     win.move_dock(win.project_browser, Qt.RightDockWidgetArea)
     _close(win)
 

@@ -13,8 +13,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QSettings, QEvent, QCoreApplication, QTimer, Signal
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QVector3D
+from PySide6.QtCore import (Qt, QSettings, QEvent, QCoreApplication, QPoint,
+                            QRect, QSize, QTimer, Signal)
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QKeySequence, QVector3D
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -25,6 +26,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QStatusBar,
     QSlider,
+    QProxyStyle,
+    QStyle,
+    QStyleOptionTab,
     QTabBar,
     QToolBar,
     QWidget,
@@ -160,22 +164,104 @@ def _obj_parts(temp):
         soften_smooth_edges(kid.mesh, cos_threshold=0.55)
     return group
 
+class _IconTabStyle(QProxyStyle):
+    """The side trays' tabs show only their icon, so many fit on the bar
+    without scrolling. The name stays the tab's text — Qt writes it there
+    again at every change, and the tabs are found by it — but it is not
+    drawn nor given room: it is the tab's tooltip and heads the panel
+    (_DockHeader)."""
+
+    def drawControl(self, element, option, painter, widget=None):
+        if (element == QStyle.CE_TabBarTabLabel
+                and isinstance(option, QStyleOptionTab)):
+            # The icon alone, centred: the style would set it at the left
+            # of where the text went.
+            rect = QRect(QPoint(0, 0), option.iconSize)
+            rect.moveCenter(option.rect.center())
+            if not option.state & QStyle.State_Selected:
+                rect.translate(0, self.pixelMetric(
+                    QStyle.PM_TabBarTabShiftVertical, option, widget))
+            mode = (QIcon.Normal if option.state & QStyle.State_Enabled
+                    else QIcon.Disabled)
+            option.icon.paint(painter, rect, Qt.AlignCenter, mode)
+            return
+        super().drawControl(element, option, painter, widget)
+
+    #: The room a tab keeps on each side of its icon.
+    PAD = 8
+
+    def sizeFromContents(self, kind, option, size, widget=None):
+        size = super().sizeFromContents(kind, option, size, widget)
+        if kind == QStyle.CT_TabBarTab and isinstance(option, QStyleOptionTab):
+            size = QSize(option.iconSize.width() + 2 * self.PAD,
+                         size.height())
+        return size
+
+
+#: The icon of a side tray's tab: the toolbars' Small size, a touch above
+#: the menus' 16 px — and a dozen tabs still fit across the tray.
+DOCK_TAB_ICON_PX = 20
+
+
 class _DockTitleTab(QTabBar):
-    """The title bar of a side tray: one tab with its name, as the tabs Qt
-    draws when trays share a side — so a tray alone on its side still has
-    a tab to drag to the other side, to right-click and to drop on. Qt
-    hides it while the tray is tabbed with others (their tab bar shows)."""
+    """The tab of a side tray alone on its side, as the tabs Qt draws when
+    trays share a side — so it still has a tab to drag to the other side,
+    to right-click and to drop on. Its icon only, as those; the name is
+    its tooltip and is written beside it (_DockHeader). Qt hides it while
+    the tray is tabbed with others (their tab bar shows)."""
 
     def __init__(self, window, dock) -> None:
         super().__init__(dock)
-        self.addTab(dock.windowTitle())
+        self.addTab(dock.windowIcon(), dock.windowTitle())
+        self.setTabToolTip(0, dock.windowTitle())
         self.setDrawBase(False)
         self.setExpanding(False)
         self.setElideMode(Qt.ElideNone)
-        dock.windowTitleChanged.connect(lambda t: self.setTabText(0, t))
+        self.setIconSize(QSize(DOCK_TAB_ICON_PX, DOCK_TAB_ICON_PX))
+        self.setStyle(window.icon_tab_style())
+        dock.windowTitleChanged.connect(self._retitle)
+        dock.windowIconChanged.connect(lambda i: self.setTabIcon(0, i))
         self.setProperty("ingetrazo_watched", True)
         self.setAcceptDrops(True)
         self.installEventFilter(window)
+
+    def _retitle(self, title: str) -> None:
+        self.setTabText(0, title)
+        self.setTabToolTip(0, title)
+
+    def sizeHint(self) -> QSize:
+        # The tab and, after it, the «+» (MainWindow._add_panels_button).
+        hint = super().sizeHint()
+        extra = MainWindow._PLUS_PX + 2 * MainWindow._PLUS_GAP
+        return QSize(hint.width() + extra, hint.height())
+
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
+
+
+class _DockHeader(QWidget):
+    """The top of a side tray, where its title bar was: its name, since
+    its tab shows only an icon. A tray alone on its side keeps its own
+    tab here too, left of the name (``tab``; None while tabbed)."""
+
+    def __init__(self, window, dock, alone: bool) -> None:
+        super().__init__(dock)
+        self.tab = _DockTitleTab(window, dock) if alone else None
+        row = QHBoxLayout(self)
+        if alone:
+            row.setContentsMargins(0, 0, 8, 0)
+        else:
+            row.setContentsMargins(8, 4, 8, 3)
+        row.setSpacing(6)
+        if self.tab is not None:
+            row.addWidget(self.tab)
+        self.label = QLabel(dock.windowTitle(), self)
+        self.label.setObjectName("dock_header_name")
+        font = self.label.font()
+        font.setBold(True)
+        self.label.setFont(font)
+        row.addWidget(self.label, 1)
+        dock.windowTitleChanged.connect(self.label.setText)
 
 
 class _StayOpenMenu(QMenu):
@@ -855,12 +941,15 @@ class MainWindow(QMainWindow):
         self.layers_dock.panel.orderChanged.connect(
             self.project_browser.outliner.on_layer_order_changed)
         self._lay_out_trays()
-        # The trays are tabbed: the tab bar already names the active panel,
-        # so each dock's own title bar would say the same thing right above
-        # it. An empty title-bar widget removes the duplicate (a clean tray
-        # look); panels are toggled from the View menu, not dragged around.
-        for dock in (self.tray, self.bim_tray, self.georef_tray,
-                     self.project_browser, self.layers_dock):
+        # The tabs show only an icon each (the name is their tooltip): the
+        # name heads the panel instead, in place of the dock's own title
+        # bar — _style_dock_tabs puts the header there.
+        for dock, key in ((self.tray, "panel_properties"),
+                          (self.bim_tray, "panel_bim"),
+                          (self.georef_tray, "panel_terrain"),
+                          (self.project_browser, "panel_browser"),
+                          (self.layers_dock, "layers_panel")):
+            self.set_dock_icon(dock, key)
             dock.setTitleBarWidget(QWidget(dock))
         self.tray.raise_()
         self._build_sidebar_handle()
@@ -1226,6 +1315,11 @@ class MainWindow(QMainWindow):
         icons in the previous theme's ink — they were baked at build time."""
         for action, key in getattr(self, "_icon_actions", []):
             action.setIcon(tool_icon(key))
+        for dock in self._sidebar_docks():
+            key = dock.property("icon_key")
+            if key:
+                dock.setWindowIcon(tool_icon(str(key)))
+        self._sync_tab_icons()
         layers = getattr(getattr(self, "layers_dock", None), "panel", None)
         if layers is not None:
             layers.refresh_pencil_icons()
@@ -2070,6 +2164,11 @@ class MainWindow(QMainWindow):
         st = QSettings()
         st.remove("ui/hidden_trays")
         st.remove("ui/known_trays")
+        # Laid out hidden, shown below: on their way into the tabs Qt
+        # stacks a tray under the others for a moment, and their heights —
+        # a header each — added up past a short window, which grew.
+        for d in self._sidebar_docks():
+            d.hide()
         self._lay_out_trays()
         hidden = self._hidden_tray_names(st)
         for d in self._sidebar_docks():
@@ -2370,6 +2469,10 @@ class MainWindow(QMainWindow):
                 QEvent.ZOrderChange):
             self._place_clean_screen_exit()
             self._place_sidebar_handle()
+        if event.type() == QEvent.ToolTip and isinstance(obj, QTabBar) \
+                and obj.parent() is self:
+            self._show_tab_tip(obj, event)
+            return True
         if self._side_dock_event(obj, event):
             return True
         return super().eventFilter(obj, event)
@@ -2435,16 +2538,74 @@ class MainWindow(QMainWindow):
         return [d for d in self._sidebar_docks()
                 if not d.isHidden() and self.dockWidgetArea(d) == area]
 
+    def icon_tab_style(self):
+        """The style of the side trays' tab bars: the application's, with
+        the tabs showing their icon only (_IconTabStyle). One for them all,
+        kept by the window."""
+        style = getattr(self, "_icon_tab_style", None)
+        if style is None:
+            style = self._icon_tab_style = _IconTabStyle(
+                QApplication.style().name())
+            style.setParent(self)
+        return style
+
+    def set_dock_icon(self, dock, icon) -> None:
+        """The icon of a side tray's tab: a ``tool_icon`` key — redrawn
+        when the theme or the accent colour change — or a QIcon."""
+        if isinstance(icon, str):
+            dock.setProperty("icon_key", icon)
+            icon = tool_icon(icon)
+        dock.setWindowIcon(icon)
+
+    def _sync_tab_icons(self) -> None:
+        """Qt copies a panel's icon into its tab only as the tab forms (a
+        new title is copied, a new icon is not): one set later — a panel
+        added after start-up, the theme or the accent redrawn — is copied
+        in here."""
+        from PySide6.QtWidgets import QDockWidget
+        from shiboken6 import isValid
+        docks = {d.windowTitle(): d for d in self.findChildren(QDockWidget)
+                 if d.parent() is self}
+        for tb in self._dock_tab_bars():
+            if not isValid(tb):
+                continue
+            for i in range(tb.count()):
+                d = docks.get(tb.tabText(i))
+                if d is not None and \
+                        tb.tabIcon(i).cacheKey() != d.windowIcon().cacheKey():
+                    tb.setTabIcon(i, d.windowIcon())
+
+    def _show_tab_tip(self, bar, event) -> None:
+        """The name of the tray under the pointer. Qt's own tray tab bars
+        show a tab's tooltip only when its name is cut short — and with
+        the icon alone nothing is ever cut, so it never came."""
+        from PySide6.QtWidgets import QToolTip
+        i = bar.tabAt(event.pos())
+        tip = bar.tabToolTip(i) if i >= 0 else ""
+        if tip:
+            QToolTip.showText(event.globalPos(), tip, bar, bar.tabRect(i))
+        else:
+            QToolTip.hideText()
+
     def _dock_tab_bars(self) -> list:
         from PySide6.QtWidgets import QTabBar
         return [tb for tb in self.findChildren(QTabBar)
                 if tb.parent() is self]
 
     def _style_dock_tabs(self) -> None:
-        """Whole names, scroll arrows: the composer's tabs. Qt makes a tab
-        bar per tabbed group as they form, so this runs again as children
-        come; each bar is watched once (drags out of it, drops on it)."""
+        """Icons only (the name is the tooltip and heads the panel), scroll
+        arrows when even so they do not fit. Qt makes a tab bar per tabbed
+        group as they form, so this runs again as children come; each bar
+        is watched once (drags out of it, drops on it)."""
+        from PySide6.QtWidgets import QDockWidget
         from shiboken6 import isValid
+        from views.icons import letter_icon
+        for d in self.findChildren(QDockWidget):
+            # A panel that brought no icon — an extension's, or one an
+            # extension built itself instead of add_panel: its initial, so
+            # its tab is never blank.
+            if d.parent() is self and not d.testAttribute(Qt.WA_SetWindowIcon):
+                d.setWindowIcon(letter_icon(d.windowTitle()))
         for tb in self._dock_tab_bars():
             if not isValid(tb):
                 continue
@@ -2454,7 +2615,10 @@ class MainWindow(QMainWindow):
                 tb.setProperty("ingetrazo_watched", True)
                 tb.setAcceptDrops(True)
                 tb.installEventFilter(self)
+                tb.setIconSize(QSize(DOCK_TAB_ICON_PX, DOCK_TAB_ICON_PX))
+                tb.setStyle(self.icon_tab_style())
             self._add_panels_button(tb)
+        self._sync_tab_icons()
         # A tray alone on its side has no tab bar from Qt — only its title
         # bar, an empty strip: it gets a tab of its own there, so it can
         # still be dragged across, right-clicked and dropped on.
@@ -2465,18 +2629,18 @@ class MainWindow(QMainWindow):
                 bump = lambda *_a: QTimer.singleShot(0, self, self._style_dock_tabs)
                 d.visibilityChanged.connect(bump)
                 d.dockLocationChanged.connect(bump)
-            # Tabbed with others, Qt's tab bar already names it: an empty
-            # title bar, as the trays always had (its own tab would read
-            # twice). Alone on its side: its own tab.
-            tabbed = any(not o.isHidden() for o in self.tabifiedDockWidgets(d))
+                d.windowIconChanged.connect(bump)
+            # Its name on top. Tabbed with others, Qt's tab bar holds its
+            # tab; alone on its side, its own tab goes beside the name.
+            alone = not any(not o.isHidden()
+                            for o in self.tabifiedDockWidgets(d))
             current = d.titleBarWidget()
-            if tabbed and isinstance(current, _DockTitleTab):
-                d.setTitleBarWidget(QWidget(d))
-                current.deleteLater()
-            elif not tabbed and not isinstance(current, _DockTitleTab):
-                title = _DockTitleTab(self, d)
-                self._add_panels_button(title)
-                d.setTitleBarWidget(title)
+            if not isinstance(current, _DockHeader) \
+                    or (current.tab is not None) != alone:
+                header = _DockHeader(self, d, alone)
+                if header.tab is not None:
+                    self._add_panels_button(header.tab)
+                d.setTitleBarWidget(header)
                 if current is not None:
                     current.deleteLater()
 
