@@ -109,12 +109,16 @@ def _dialog(monkeypatch, tmp_path, extensions):
     _wait_for_catalog(dialog, app)
     dialog._tabs.setCurrentIndex(1)                  # Installed
     dialog._render_page("installed")
+    from tests.test_extension_manager import _wait_for_page_render
+    _wait_for_page_render(dialog, app, "installed")
     return app, dialog
 
 
 def _rows(dialog):
-    grid = dialog._pages["installed"]["grid"]
-    return [grid.itemAt(i).widget() for i in range(grid.count())]
+    page = dialog._pages["installed"]
+    return [row for cache in (
+        page["rows"], page["hand_rows"], page["retired_rows"])
+        for row in cache.values() if row.isVisible()]
 
 
 def _texts(row, kind):
