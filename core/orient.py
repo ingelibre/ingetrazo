@@ -625,6 +625,23 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
                 skip=fidx[f])
             if state == "interior":
                 interior_now.add(f)
+        # An edge only two faces share is a seam of one surface: both are
+        # boundary or both are partition. A partition beside a boundary face
+        # there would leave the boundary with a crack, so a parity misread
+        # (a ray grazing a busy corner elsewhere) gives way to the topology.
+        # A wall left marked interior this way hid the material behind it
+        # from every later push, which then refused.
+        changed = True
+        while changed and interior_now:
+            changed = False
+            for e in mesh.edges:
+                if len(e.faces) != 2:
+                    continue
+                a, b = e.faces
+                if (a in interior_now) != (b in interior_now):
+                    interior_now.discard(a)
+                    interior_now.discard(b)
+                    changed = True
         if interior_now == {f for f in scope if f not in boundary}:
             break
         boundary = {f: t for f, t in all_tris.items() if f not in interior_now}
