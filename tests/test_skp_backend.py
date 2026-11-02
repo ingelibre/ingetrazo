@@ -652,11 +652,15 @@ def test_a_cutout_image_stuck_on_a_face_stays_put(tmp_path):
     assert by_name["toro"]["billboard"] is True         # free -> face-me
 
 
-def test_openskp_adapter_default_mapping_is_local(tmp_path):
+def test_openskp_adapter_default_mapping_is_local(tmp_path, monkeypatch):
     # The .skp format's default texture mapping runs in the component's LOCAL frame:
     # two copies of the same textured component must sample the same patch of
     # the tile (identical UVs), regardless of where each copy sits in world.
     from core.texture import affine_uv
+    from formats import openskp_compat
+    # Kinds unknown: each small copy stays a flattened group to read UVs from.
+    monkeypatch.setattr(openskp_compat, "note_model_kinds", lambda model: None)
+    openskp_compat.reset_group_definitions()
     from PySide6.QtGui import QImage
 
     png = tmp_path / "wood.png"
@@ -933,6 +937,32 @@ def test_a_faces_own_tag_arrives_by_name_not_by_its_id(tmp_path):
                     for f in g.mesh.faces)
     assert layers == ["None", "Roof"]
     assert "Roof" in [ly.name for ly in scene.layers]
+
+
+def test_installed_openskp_shared_edge_keeps_both_face_rings(tmp_path):
+    """Exercise the pinned parser's real coedges, including a reversed edge."""
+    openskp = pytest.importorskip("openskp")
+    create = pytest.importorskip("openskp.create")
+    builder = create.SkpBuilder()
+    with builder.add_component_definition("Square") as square:
+        square.add_face([(0, 0, 0), (10, 0, 0), (10, 10, 0)])
+        square.add_face([(0, 0, 0), (10, 10, 0), (0, 10, 0)])
+    builder.add_instance(square)
+    path = tmp_path / "shared-edge.skp"
+    builder.save(str(path))
+    model = openskp.SkpFile.open(path).parse()
+    definition = next(d for d in model.definitions.values() if d.name == "Square")
+    assert len(definition.faces) == 2
+    uses = {}
+    for face in definition.faces.values():
+        for edge_id, sense in face.loops[0]:
+            uses.setdefault(edge_id, []).append(sense)
+        ring = skp_openskp._ring_raw(definition, face.loops[0])
+        assert ring is not None and len(set(ring)) == 3
+        twice_area = sum(a[0] * b[1] - b[0] * a[1]
+                         for a, b in zip(ring, ring[1:] + ring[:1]))
+        assert twice_area == pytest.approx(100.0)
+    assert any(set(senses) == {-1, 1} for senses in uses.values())
 
 
 def test_resolve_face_layers_leaves_names_and_drops_the_default_tag():

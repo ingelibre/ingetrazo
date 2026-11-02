@@ -136,3 +136,30 @@ def test_lines_on_a_hidden_tag_stay_out():
     got = [seg for part in payload["groups"] + payload["protos"]
            for seg in part.get("loose_edges") or []]
     assert sorted(round(a[0] / 0.0254) for a, _b in got) == [20, 40]
+
+
+def test_the_model_s_own_flag_tells_groups_from_components():
+    """A reader that keeps ``Definition.is_group`` is believed, in place of
+    the notes taken while parsing: the single-pass reader takes neither road
+    the hooks watch for a 2021+ file."""
+    from types import SimpleNamespace as NS
+    model = NS(definitions={1: NS(id=1, is_group=True),
+                            2: NS(id=2, is_group=False)})
+    openskp_compat.reset_group_definitions()
+    try:
+        openskp_compat.note_model_kinds(model)
+        assert openskp_compat.group_definitions() == {1}
+        assert openskp_compat.kinds_known(False)
+    finally:
+        openskp_compat.reset_group_definitions()
+
+
+def test_a_reader_without_the_flag_keeps_the_notes():
+    from types import SimpleNamespace as NS
+    openskp_compat.reset_group_definitions()
+    try:
+        openskp_compat.note_model_kinds(NS(definitions={1: NS(id=1)}))
+        assert openskp_compat.group_definitions() == set()
+        assert not openskp_compat.kinds_known(False)
+    finally:
+        openskp_compat.reset_group_definitions()
