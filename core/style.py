@@ -61,10 +61,11 @@ class Style:
     background: tuple = (0.90, 0.91, 0.92)
     sky: bool = True
     # The sky/horizon/ground backdrop tones (drawn when ``sky`` is on; with it
-    # off the flat ``background`` shows instead). The white horizon preserves
-    # the viewport's historical haze, while making its tint style data.
+    # off the flat ``background`` shows instead). ``None`` keeps the exact
+    # historical two-haze gradient; picking a horizon colour opts into the new
+    # horizon-anchored gradient.
     sky_color: tuple = (0.925, 0.935, 0.945)
-    horizon_color: tuple = (1.0, 1.0, 1.0)
+    horizon_color: tuple | None = None
     ground_color: tuple = (0.815, 0.820, 0.815)
     # Section Fill: paint the cut-through areas of solids.
     # Lives in the STYLE, with the other modeling settings.
@@ -95,7 +96,6 @@ class Style:
             "background": list(self.background),
             "sky": self.sky,
             "sky_color": list(self.sky_color),
-            "horizon_color": list(self.horizon_color),
             "ground_color": list(self.ground_color),
             "section_fill": self.section_fill,
             "section_fill_color": list(self.section_fill_color),
@@ -105,6 +105,11 @@ class Style:
         }
         if self.color_by_layer:
             out["color_by_layer"] = True
+        # Missing means the legacy gradient. Keeping that state implicit makes
+        # new/default documents and styles saved by older versions render
+        # exactly as before; an explicitly picked white remains distinguishable.
+        if self.horizon_color is not None:
+            out["horizon_color"] = list(self.horizon_color)
         return out
 
     @classmethod
@@ -125,7 +130,7 @@ class Style:
             background=tuple(raw.get("background", d.background)),
             sky=bool(raw.get("sky", d.sky)),
             sky_color=tuple(raw.get("sky_color", d.sky_color)),
-            horizon_color=tuple(raw.get("horizon_color", d.horizon_color)),
+            horizon_color=_opt_rgb(raw.get("horizon_color")),
             ground_color=tuple(raw.get("ground_color", d.ground_color)),
             section_fill=bool(raw.get("section_fill", d.section_fill)),
             section_fill_color=tuple(raw.get("section_fill_color",
@@ -163,7 +168,7 @@ def _clamped(raw, default: float, bounds: tuple) -> float:
 def _opt_rgb(raw) -> tuple | None:
     """An optional RGB from a dict: ``None`` (or anything malformed — an
     old or hand-edited document must never break the style) stays
-    ``None``, i.e. automatic."""
+    ``None``, i.e. automatic/legacy behaviour."""
     if raw is None:
         return None
     try:

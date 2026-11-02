@@ -3331,12 +3331,16 @@ class StylesPanel(QWidget):
         return getattr(self._window.viewport.scene, "display_style", None)
 
     def _shown_color(self, attr: str):
-        """The colour a swatch shows for ``attr``. Back color may be unset
-        (automatic): show the tint that actually draws."""
+        """The colour a swatch shows for ``attr``. Optional colours use a
+        useful picker seed without changing their underlying unset state."""
         style = self._style()
         if attr == "back_color":
             from core.style import effective_back_color
             return effective_back_color(style, self._window.viewport.scene)
+        if attr == "horizon_color" and style.horizon_color is None:
+            # The legacy gradient hazes toward white. Merely showing that
+            # target must not opt the document into the new gradient.
+            return (1.0, 1.0, 1.0)
         return getattr(style, attr)
 
     def _swatch(self, title: str, attr: str) -> QPushButton:
@@ -3383,7 +3387,8 @@ class StylesPanel(QWidget):
             self._back_c.setStyleSheet(
                 self._css(self._shown_color("back_color")))
             self._sky_c.setStyleSheet(self._css(style.sky_color))
-            self._horizon_c.setStyleSheet(self._css(style.horizon_color))
+            self._horizon_c.setStyleSheet(
+                self._css(self._shown_color("horizon_color")))
             self._ground_c.setStyleSheet(self._css(style.ground_color))
             self._bg_c.setStyleSheet(self._css(style.background))
             self._fill_c.setStyleSheet(self._css(style.section_fill_color))

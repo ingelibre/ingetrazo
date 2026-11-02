@@ -6092,9 +6092,9 @@ class Viewport(QOpenGLWidget):
         self._tile_geom = (key, runs)
         return runs
 
-    # Sky, horizon haze and ground backdrop colours — a subtle three-tone.
+    # Sky and ground backdrop colours — a subtle two-tone by default. A style
+    # can explicitly add the configurable horizon colour.
     _SKY_RGB = (0.925, 0.935, 0.945)
-    _HORIZON_RGB = (1.0, 1.0, 1.0)
     _GROUND_RGB = (0.815, 0.820, 0.815)
 
     def _horizon_ndc_y(self, mvp) -> float:
@@ -6117,33 +6117,43 @@ class Viewport(QOpenGLWidget):
             return 2.0 if fwd.z() < 0 else -2.0
         return clip.y() / clip.w()
 
-    #: Fixed NDC spans over which the backdrop ramps complete. The sky span
-    #: must NOT shrink with the visible strip of sky: when the camera pitches
-    #: down and the horizon rises, the blue end leaves the screen and the
-    #: remaining strip becomes increasingly horizon-coloured.
+    #: Fixed NDC spans over which the backdrop ramps complete. The historical
+    #: span stays in use until a horizon colour is explicitly picked. The new
+    #: span must NOT shrink with the visible strip of sky: when the camera
+    #: pitches down and the horizon rises, the blue end leaves the screen and
+    #: the remaining strip becomes increasingly horizon-coloured.
+    _LEGACY_SKY_GRAD_SPAN = 1.4
     _SKY_GRAD_SPAN = 1.0
     _GROUND_GRAD_SPAN = 0.9
 
     @staticmethod
     def _sky_gradient(sky_rgb, horizon_rgb, ground_rgb, hy):
-        """Corner colours of the backdrop gradient. The sky starts at the
-        exact horizon tone and reaches the exact sky tone one fixed NDC unit
-        above it. The ramp stays anchored there while the camera pitches: a
-        rising horizon therefore leaves less of the upper-sky colour visible,
-        instead of stretching the same 50/50 split into a thinner strip. The
-        ground keeps its softer haze toward the horizon tone. Returns
-        ``(sky_bottom, sky_top, ground_top, ground_bottom, horizon_line)``."""
+        """Corner colours of the backdrop gradient.
+
+        ``horizon_rgb is None`` is the compatibility path: use the exact
+        white-haze formula and span from before configurable horizons. With an
+        explicit colour, the sky starts at that tone and reaches the sky tone
+        one fixed NDC unit above it. The ramp stays anchored there while the
+        camera pitches. Returns ``(sky_bottom, sky_top, ground_top,
+        ground_bottom, horizon_line)``.
+        """
         def mix(a, b, t):
             return (a[0] + (b[0] - a[0]) * t,
                     a[1] + (b[1] - a[1]) * t,
                     a[2] + (b[2] - a[2]) * t)
 
-        sky_h = horizon_rgb
-        gnd_h = mix(ground_rgb, horizon_rgb, 0.30)
+        if horizon_rgb is None:
+            white = (1.0, 1.0, 1.0)
+            sky_h = mix(sky_rgb, white, 0.55)
+            gnd_h = mix(ground_rgb, white, 0.30)
+            sky_span = Viewport._LEGACY_SKY_GRAD_SPAN
+        else:
+            sky_h = horizon_rgb
+            gnd_h = mix(ground_rgb, horizon_rgb, 0.30)
+            sky_span = Viewport._SKY_GRAD_SPAN
 
         def sky_at(y):
-            t = min(1.0, max(
-                0.0, (y - hy) / Viewport._SKY_GRAD_SPAN))
+            t = min(1.0, max(0.0, (y - hy) / sky_span))
             return mix(sky_h, sky_rgb, t)
 
         def gnd_at(y):
@@ -6158,14 +6168,16 @@ class Viewport(QOpenGLWidget):
         """Sky above the horizon and ground below, each a vertical gradient
         (style tones hazed toward the chosen horizon colour — see
         ``_sky_gradient``), with a subtle horizon line where they meet.
-        Per-vertex colours; GL interpolates per pixel. The class constants
-        ``_SKY_RGB`` / ``_HORIZON_RGB`` / ``_GROUND_RGB`` are the historical
+        Per-vertex colours; GL interpolates per pixel. An unset horizon keeps
+        the historical gradient rather than silently configuring white. The
+        class constants ``_SKY_RGB`` / ``_GROUND_RGB`` are the historical
         defaults, kept as fallbacks."""
         style = getattr(self, "_frame_style", None)
         sky_rgb = tuple(getattr(style, "sky_color", None)
                         or self._SKY_RGB)[:3]
-        horizon_rgb = tuple(getattr(style, "horizon_color", None)
-                            or self._HORIZON_RGB)[:3]
+        picked_horizon = getattr(style, "horizon_color", None)
+        horizon_rgb = (tuple(picked_horizon)[:3]
+                       if picked_horizon is not None else None)
         ground_rgb = tuple(getattr(style, "ground_color", None)
                            or self._GROUND_RGB)[:3]
         hy_raw = self._horizon_ndc_y(mvp)
