@@ -4453,6 +4453,8 @@ def _fmt_metrado(metrado, unit: str) -> str:
 #: switched by the header's columns button, as in the Browser.
 BIM_COL_CLASS, BIM_COL_NAME, BIM_COL_TAKEOFF, BIM_COL_VOL, BIM_COL_OUTLINE = \
     range(5)
+#: A foldable takeoff row's key (its group or heading), kept over a rebuild.
+_BIM_FOLD_KEY = Qt.UserRole + 2
 #: (column, header label, starts shown).
 BIM_OPTIONAL_COLUMNS = ((BIM_COL_TAKEOFF, "Takeoff", True),
                         (BIM_COL_VOL, "Vol m³", True),
@@ -4973,7 +4975,17 @@ class BimPanel(QWidget):
 
     def _build_tree(self) -> None:
         """The rows of the last takeoff, structured as the Group box says;
-        then the search and the funnel hide what they leave out."""
+        then the search and the funnel hide what they leave out. A branch
+        the user folded stays folded: picking a nested row opens the groups
+        around it, which rebuilds the list."""
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        folded = set()
+        it = QTreeWidgetItemIterator(self.tree)
+        while it.value() is not None:
+            item = it.value()
+            if item.childCount() and not item.isExpanded():
+                folded.add(item.data(0, _BIM_FOLD_KEY))
+            it += 1
         self.tree.clear()
         self._containers = []
         self._head_rows = []
@@ -4986,6 +4998,14 @@ class BimPanel(QWidget):
             else:
                 self._build_by_group()
             self.tree.expandAll()
+            folded.discard(None)
+            if folded:
+                it = QTreeWidgetItemIterator(self.tree)
+                while it.value() is not None:
+                    item = it.value()
+                    if item.data(0, _BIM_FOLD_KEY) in folded:
+                        item.setExpanded(False)
+                    it += 1
         self._apply_filter()
 
     def _build_flat(self) -> None:
@@ -5023,6 +5043,7 @@ class BimPanel(QWidget):
             head = QTreeWidgetItem([label])
             head.setData(0, Qt.UserRole, f"{how}:{key}")
             head.setData(0, Qt.UserRole + 1, label)
+            head.setData(0, _BIM_FOLD_KEY, f"{how}:{key}")
             font = head.font(0)
             font.setBold(True)
             for col in range(self.tree.columnCount()):
@@ -5051,6 +5072,7 @@ class BimPanel(QWidget):
                 return row
             row = QTreeWidgetItem([_group_label(g)])
             row.setData(0, Qt.UserRole, -len(self._containers) - 1)
+            row.setData(0, _BIM_FOLD_KEY, f"group:{id(g)}")
             self._containers.append(g)
             font = row.font(0)
             font.setItalic(True)
@@ -5071,6 +5093,7 @@ class BimPanel(QWidget):
                 g = obj["group"]
                 stale = group_rows.pop(id(g), None)
                 tagged_rows[id(g)] = item
+                item.setData(0, _BIM_FOLD_KEY, f"group:{id(g)}")
                 if stale is not None:
                     # Its contents came first: move them under the object row.
                     item.addChildren(stale.takeChildren())
