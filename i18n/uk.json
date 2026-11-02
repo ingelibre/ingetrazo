@@ -3356,5 +3356,17 @@
  "The Bulgarian translation.": "Болгарський переклад.",
  "The Traditional Chinese translation.": "Переклад традиційною китайською.",
  "A .skp component 10 000 times too big, traced.": "Знайдений компонент .skp, у 10 000 разів завеликий.",
- "Thanks as well to all the authors of the extensions catalogue": "Дякуємо також усім авторам каталогу розширень"
+ "Thanks as well to all the authors of the extensions catalogue": "Дякуємо також усім авторам каталогу розширень",
+ "Add Scene": "Додати сцену",
+ "Update Scene": "Оновити сцену",
+ "Delete Scene": "Видалити сцену",
+ "Scene '{name}' added": "Сцену '{name}' додано",
+ "Select a scene in the Scenes panel first": "Спочатку виберіть сцену на панелі «Сцени»",
+ "Show Scene": "Показати сцену",
+ "Show the selected scene": "Показати вибрану сцену",
+ "Rename Scene…": "Перейменувати сцену…",
+ "Rename Scene": "Перейменувати сцену",
+ "Rename the selected scene": "Перейменувати вибрану сцену",
+ "Duplicate Scene": "Дублювати сцену",
+ "Make a copy of the selected scene": "Створити копію вибраної сцени"
 }

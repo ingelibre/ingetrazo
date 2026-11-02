@@ -3384,5 +3384,17 @@
   "The Bulgarian translation.": "الترجمة البلغارية.",
   "The Traditional Chinese translation.": "الترجمة الصينية التقليدية.",
   "A .skp component 10 000 times too big, traced.": "تتبُّع مكون .skp أكبر من حجمه بـ 10 000 مرة.",
-  "Thanks as well to all the authors of the extensions catalogue": "شكرًا أيضًا لجميع مؤلفي كتالوج الإضافات"
+  "Thanks as well to all the authors of the extensions catalogue": "شكرًا أيضًا لجميع مؤلفي كتالوج الإضافات",
+  "Add Scene": "إضافة مشهد",
+  "Update Scene": "تحديث المشهد",
+  "Delete Scene": "حذف المشهد",
+  "Scene '{name}' added": "تمت إضافة المشهد '{name}'",
+  "Select a scene in the Scenes panel first": "حدد مشهدًا في لوحة المشاهد أولًا",
+  "Show Scene": "عرض المشهد",
+  "Show the selected scene": "عرض المشهد المحدد",
+  "Rename Scene…": "إعادة تسمية المشهد…",
+  "Rename Scene": "إعادة تسمية المشهد",
+  "Rename the selected scene": "إعادة تسمية المشهد المحدد",
+  "Duplicate Scene": "تكرار المشهد",
+  "Make a copy of the selected scene": "إنشاء نسخة من المشهد المحدد"
 }

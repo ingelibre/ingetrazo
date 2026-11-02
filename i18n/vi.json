@@ -3376,5 +3376,17 @@
  "The Bulgarian translation.": "Bản dịch tiếng Bulgaria.",
  "The Traditional Chinese translation.": "Bản dịch tiếng Trung phồn thể.",
  "A .skp component 10 000 times too big, traced.": "Truy ra một thành phần .skp lớn gấp 10 000 lần.",
- "Thanks as well to all the authors of the extensions catalogue": "Xin cảm ơn tất cả tác giả trong danh mục tiện ích mở rộng"
+ "Thanks as well to all the authors of the extensions catalogue": "Xin cảm ơn tất cả tác giả trong danh mục tiện ích mở rộng",
+ "Add Scene": "Thêm cảnh",
+ "Update Scene": "Cập nhật cảnh",
+ "Delete Scene": "Xóa cảnh",
+ "Scene '{name}' added": "Đã thêm cảnh '{name}'",
+ "Select a scene in the Scenes panel first": "Hãy chọn một cảnh trong bảng Cảnh trước",
+ "Show Scene": "Hiển thị cảnh",
+ "Show the selected scene": "Hiển thị cảnh đã chọn",
+ "Rename Scene…": "Đổi tên cảnh…",
+ "Rename Scene": "Đổi tên cảnh",
+ "Rename the selected scene": "Đổi tên cảnh đã chọn",
+ "Duplicate Scene": "Nhân bản cảnh",
+ "Make a copy of the selected scene": "Tạo bản sao của cảnh đã chọn"
 }

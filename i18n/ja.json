@@ -3349,5 +3349,17 @@
  "The Bulgarian translation.": "ブルガリア語翻訳。",
  "The Traditional Chinese translation.": "繁体字中国語翻訳。",
  "A .skp component 10 000 times too big, traced.": "10 000 倍大きすぎる .skp コンポーネントの原因究明。",
- "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します"
+ "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します",
+ "Add Scene": "シーンを追加",
+ "Update Scene": "シーンを更新",
+ "Delete Scene": "シーンを削除",
+ "Scene '{name}' added": "シーン「{name}」を追加しました",
+ "Select a scene in the Scenes panel first": "先にシーンパネルでシーンを選択してください",
+ "Show Scene": "シーンを表示",
+ "Show the selected scene": "選択したシーンを表示",
+ "Rename Scene…": "シーン名を変更…",
+ "Rename Scene": "シーン名を変更",
+ "Rename the selected scene": "選択したシーンの名前を変更",
+ "Duplicate Scene": "シーンを複製",
+ "Make a copy of the selected scene": "選択したシーンのコピーを作成"
 }
