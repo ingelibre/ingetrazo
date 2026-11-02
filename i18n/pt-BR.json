@@ -3286,5 +3286,12 @@
  "Update Scene": "Atualizar Cena",
  "Delete Scene": "Excluir Cena",
  "Scene '{name}' added": "Cena '{name}' adicionada",
- "Select a scene in the Scenes panel first": "Selecione primeiro uma cena no painel Cenas"
+ "Select a scene in the Scenes panel first": "Selecione primeiro uma cena no painel Cenas",
+ "Show Scene": "Mostrar Cena",
+ "Show the selected scene": "Mostrar a cena selecionada",
+ "Rename Scene…": "Renomear Cena…",
+ "Rename Scene": "Renomear Cena",
+ "Rename the selected scene": "Renomear a cena selecionada",
+ "Duplicate Scene": "Duplicar Cena",
+ "Make a copy of the selected scene": "Fazer uma cópia da cena selecionada"
 }
