@@ -2216,10 +2216,11 @@ def clear_cursor_cache() -> None:
     _cursor_cache.clear()
 
 # Drawing tools: pencil cursor + a mini badge of the shape at bottom-right
-# (None = bare pencil, for Line). Hotspot = the pencil tip.
+# (None = bare pencil; Rectangle's plane preview supplies its shape).
+# Hotspot = the pencil tip.
 _PENCIL_TOOLS = {
     "line": None, "freehand": "freehand",
-    "rectangle": "rectangle", "rectangle_center": "rectangle_center",
+    "rectangle": None, "rectangle_center": "rectangle_center",
     "rotated_rect": "rotated_rect",
     "circle": "circle", "polygon": "polygon", "arc": "arc", "arc3": "arc3",
     "center_arc": "center_arc", "pie": "pie", "geopath": "geopath",
@@ -2253,27 +2254,30 @@ _CURSOR_HOTSPOTS = {
 
 
 def _pencil(p, ink) -> None:
-    """A pencil pointing up-right, tip at (6, 42) in 48-space."""
+    """Original slim drafting pencil, tip at (6, 42) in 48-space."""
     p.save()
     p.translate(6.0, 42.0)
     p.rotate(-45.0)                 # +x runs up-right along the shaft
-    pen = QPen(ink, 3.0)
+    pen = QPen(ink, 1.25)
     pen.setJoinStyle(Qt.RoundJoin)
     pen.setCapStyle(Qt.RoundCap)
     p.setPen(pen)
-    p.setBrush(Qt.NoBrush)
-    # Sharpened tip.
-    p.drawPolygon(QPolygonF([QPointF(0.0, 0.0), QPointF(10.0, -5.5),
-                             QPointF(10.0, 5.5)]))
-    # Shaft with a flat butt.
-    p.drawLine(QPointF(10.0, -5.5), QPointF(40.0, -5.5))
-    p.drawLine(QPointF(10.0, 5.5), QPointF(40.0, 5.5))
-    p.drawLine(QPointF(40.0, -5.5), QPointF(40.0, 5.5))
-    # Accent lead at the very tip.
-    p.setPen(Qt.NoPen)
-    p.setBrush(QBrush(_accent()))
-    p.drawPolygon(QPolygonF([QPointF(-0.6, 0.0), QPointF(4.2, -2.4),
-                             QPointF(4.2, 2.4)]))
+    # A narrow faceted barrel, rather than a broad hollow marker outline.
+    accent = _accent()
+    p.setBrush(accent)
+    p.drawPolygon(QPolygonF([QPointF(11, -3), QPointF(37, -3),
+                             QPointF(40, -1.8), QPointF(40, 1.8),
+                             QPointF(37, 3), QPointF(11, 3)]))
+    p.setPen(QPen(accent.lighter(155), 1.0, Qt.SolidLine, Qt.FlatCap))
+    p.drawLine(QPointF(12, -0.8), QPointF(37.5, -0.8))
+    # Exposed wood and a fine graphite point make the material unambiguous.
+    p.setPen(pen)
+    p.setBrush(QColor(218, 181, 140))
+    p.drawPolygon(QPolygonF([QPointF(4.5, -1.15), QPointF(11, -3),
+                             QPointF(11, 3), QPointF(4.5, 1.15)]))
+    p.setBrush(ink)
+    p.drawPolygon(QPolygonF([QPointF(0, 0), QPointF(4.5, -1.15),
+                             QPointF(4.5, 1.15)]))
     p.restore()
 
 
@@ -2335,7 +2339,7 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
     app = QApplication.instance()
     screen = app.primaryScreen() if app is not None else None
     dpr = screen.devicePixelRatio() if screen is not None else 1.0
-    cache_key = (key, bool(plus), ink.rgb(), round(dpr, 2))
+    cache_key = (key, bool(plus), ink.rgb(), _accent().rgb(), round(dpr, 2))
     cached = _cursor_cache.get(cache_key)
     if cached is not None:
         return cached

@@ -28,3 +28,9 @@ def test_center_mode_keeps_the_first_click_at_the_center():
     assert (center-tool.hover_point).length()<1e-6
     assert not any((a-tool.hover_point).length()<1e-6 for a,_ in segments)
 
+
+def test_rectangle_cursor_uses_the_pencil_without_a_second_rectangle_badge():
+    from views.icons import tool_cursor
+    rectangle, pencil = tool_cursor('rectangle'), tool_cursor('line')
+    assert rectangle.hotSpot() == pencil.hotSpot()
+    assert rectangle.pixmap().toImage() == pencil.pixmap().toImage()
