@@ -5,7 +5,7 @@ added: it opens the Window ▸ Panels list, wherever the tabs are."""
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QApplication, QToolButton
+from PySide6.QtWidgets import QApplication, QLabel, QToolButton
 
 _app = QApplication.instance() or QApplication([])
 
@@ -74,8 +74,16 @@ def test_the_plus_follows_the_last_tab():
 
 def test_the_plus_stays_inside_the_bar_when_the_tabs_do_not_fit():
     win = _window()
+    # The tabs are icons now, and how narrow the tray can go depends on the
+    # platform's fonts: enough of them to overflow it anywhere.
+    from views.extension_api import ExtensionApp
+    app = ExtensionApp(win, "many_panels")
+    for i in range(20):
+        app.add_panel(f"Panel {i}", QLabel(str(i)), name=str(i))
     win._show_all_trays()
     win.resizeDocks([win.tray], [220], Qt.Horizontal)
+    _app.processEvents()
+    win._style_dock_tabs()
     _app.processEvents()
     bar = _bar_on_screen(win)
     btn = _plus(bar)
