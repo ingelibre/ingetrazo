@@ -28,7 +28,8 @@ elif not isinstance(_inst, QApplication):
 
 import core.extensions as extensions                              # noqa: E402
 
-_KEYS = ("scene_add", "scene_update", "scene_delete")
+_KEYS = ("scene_show", "scene_add", "scene_update", "scene_rename",
+         "scene_duplicate", "scene_delete")
 
 
 @pytest.fixture
@@ -42,7 +43,7 @@ def win(tmp_path, monkeypatch):
     w.close()
 
 
-def test_the_three_take_a_key_in_preferences_and_have_none_yet(win):
+def test_each_takes_a_key_in_preferences_and_have_none_yet(win):
     from views.shortcuts import action_key, collect_actions
     keys = {action_key(a): a for a in collect_actions(win)}
     for key in _KEYS:
@@ -83,7 +84,8 @@ def test_without_a_selected_scene_the_status_bar_says_why(win):
     scene = win.viewport.scene
     win.tray.scenes.refresh()                     # nothing selected
     before = list(scene.saved_views)
-    for key in ("scene_update", "scene_delete"):
+    for key in ("scene_show", "scene_update", "scene_rename",
+                "scene_duplicate", "scene_delete"):
         win.statusBar().clearMessage()
         win._scene_actions[key].trigger()
         assert "Select a scene" in win.statusBar().currentMessage()
@@ -102,3 +104,62 @@ def test_a_key_given_to_add_scene_adds_one(win):
                    Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)
     QApplication.processEvents()
     assert len(win.viewport.scene.saved_views) == n + 1
+
+
+def _add(win, name):
+    win._scene_actions["scene_add"].trigger()
+    view = win.viewport.scene.saved_views[-1]
+    view.name = name
+    win.tray.scenes.refresh()
+    win.tray.scenes.list.setCurrentRow(
+        win.viewport.scene.saved_views.index(view))
+    return view
+
+
+def test_show_scene_brings_the_selected_scene_back(win):
+    cam = win.viewport.camera
+    view = _add(win, "Planta")
+    cam.distance = view.distance * 3
+    win._scene_actions["scene_show"].trigger()
+    assert cam.distance == pytest.approx(view.distance)
+    assert "Planta" in win.statusBar().currentMessage()
+
+
+def test_rename_scene_follows_the_browsers_rule(win, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+    other = _add(win, "Corte")
+    view = _add(win, "Planta")
+    answer = ["Corte", True]
+    monkeypatch.setattr(QInputDialog, "getText",
+                        lambda *a, **k: tuple(answer))
+    win._scene_actions["scene_rename"].trigger()
+    assert view.name == "Planta" and other.name == "Corte"
+    assert "Corte" in win.statusBar().currentMessage()
+
+    answer[0] = "  Fachada  "
+    win._scene_actions["scene_rename"].trigger()
+    assert view.name == "Fachada"
+    assert win.tray.scenes.list.currentItem().data(Qt.UserRole) is view
+
+    answer[:] = ["Outra", False]                  # Cancel
+    win._scene_actions["scene_rename"].trigger()
+    assert view.name == "Fachada"
+
+
+def test_duplicate_scene_puts_a_copy_right_after_and_makes_it_current(win):
+    scene = win.viewport.scene
+    view = _add(win, "Planta")
+    _add(win, "Corte")
+    win.tray.scenes.list.setCurrentRow(scene.saved_views.index(view))
+    acts = win._scene_actions
+    acts["scene_duplicate"].trigger()
+    i = scene.saved_views.index(view)
+    copy = scene.saved_views[i + 1]
+    assert copy is not view and copy.name.startswith("Planta")
+    assert copy.to_dict() | {"name": view.name} == view.to_dict()
+    assert win.tray.scenes.list.currentItem().data(Qt.UserRole) is copy
+    # Again from the original: the names never clash.
+    win.tray.scenes.list.setCurrentRow(i)
+    acts["scene_duplicate"].trigger()
+    names = [v.name for v in scene.saved_views]
+    assert len(names) == len(set(names))

@@ -3355,5 +3355,12 @@
  "Update Scene": "Aggiorna scena",
  "Delete Scene": "Elimina scena",
  "Scene '{name}' added": "Scena '{name}' aggiunta",
- "Select a scene in the Scenes panel first": "Seleziona prima una scena nel pannello Scene"
+ "Select a scene in the Scenes panel first": "Seleziona prima una scena nel pannello Scene",
+ "Show Scene": "Mostra scena",
+ "Show the selected scene": "Mostra la scena selezionata",
+ "Rename Scene…": "Rinomina scena…",
+ "Rename Scene": "Rinomina scena",
+ "Rename the selected scene": "Rinomina la scena selezionata",
+ "Duplicate Scene": "Duplica scena",
+ "Make a copy of the selected scene": "Crea una copia della scena selezionata"
 }

@@ -3357,5 +3357,12 @@
  "Update Scene": "Perbarui Scene",
  "Delete Scene": "Hapus Scene",
  "Scene '{name}' added": "Scene '{name}' ditambahkan",
- "Select a scene in the Scenes panel first": "Pilih scene di panel Scene terlebih dahulu"
+ "Select a scene in the Scenes panel first": "Pilih scene di panel Scene terlebih dahulu",
+ "Show Scene": "Tampilkan Adegan",
+ "Show the selected scene": "Tampilkan adegan yang dipilih",
+ "Rename Scene…": "Ganti Nama Adegan…",
+ "Rename Scene": "Ganti Nama Adegan",
+ "Rename the selected scene": "Ganti nama adegan yang dipilih",
+ "Duplicate Scene": "Duplikat Adegan",
+ "Make a copy of the selected scene": "Buat salinan adegan yang dipilih"
 }

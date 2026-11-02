@@ -3354,5 +3354,12 @@
  "Update Scene": "Обновить сцену",
  "Delete Scene": "Удалить сцену",
  "Scene '{name}' added": "Сцена «{name}» добавлена",
- "Select a scene in the Scenes panel first": "Сначала выберите сцену на панели «Сцены»"
+ "Select a scene in the Scenes panel first": "Сначала выберите сцену на панели «Сцены»",
+ "Show Scene": "Показать сцену",
+ "Show the selected scene": "Показать выбранную сцену",
+ "Rename Scene…": "Переименовать сцену…",
+ "Rename Scene": "Переименовать сцену",
+ "Rename the selected scene": "Переименовать выбранную сцену",
+ "Duplicate Scene": "Дублировать сцену",
+ "Make a copy of the selected scene": "Создать копию выбранной сцены"
 }

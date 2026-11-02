@@ -3355,5 +3355,12 @@
  "Update Scene": "更新场景",
  "Delete Scene": "删除场景",
  "Scene '{name}' added": "场景 '{name}' 已添加",
- "Select a scene in the Scenes panel first": "请先在“场景”面板中选择一个场景"
+ "Select a scene in the Scenes panel first": "请先在“场景”面板中选择一个场景",
+ "Show Scene": "显示场景",
+ "Show the selected scene": "显示所选场景",
+ "Rename Scene…": "重命名场景…",
+ "Rename Scene": "重命名场景",
+ "Rename the selected scene": "重命名所选场景",
+ "Duplicate Scene": "复制场景",
+ "Make a copy of the selected scene": "复制所选场景"
 }
