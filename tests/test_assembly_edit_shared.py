@@ -187,6 +187,73 @@ def test_a_part_and_its_assembly_edited_together_undo_as_one_step():
         _close(win)
 
 
+def _parts_at(scene):
+    """World origin of every part and sub-part, sorted."""
+    o = V(0, 0, 0)
+    return sorted((g.name, round(m.map(o).x(), 3), round(m.map(o).y(), 3),
+                   round(m.map(o).z(), 3)) for g, m in scene.placements()
+                  if g.name in ("part", "sub"))
+
+
+def _move(win, vp, a):
+    from core.history import MoveGroupCommand
+    vp.history.execute(MoveGroupCommand(a.children[0], V(0, 5, 0)))
+
+
+def _delete(win, vp, a):
+    from core.history import DeleteGroupCommand
+    vp.history.execute(DeleteGroupCommand(a.children[0]))
+
+
+def _draw_and_delete(win, vp, a):
+    _draw(vp, V(10, 0, Z), V(11, 0, Z))
+    _delete(win, vp, a)
+
+
+def _explode(win, vp, a):
+    from core.history import ExplodeGroupCommand
+    win._execute_make(ExplodeGroupCommand(a.children[0]))
+
+
+@pytest.mark.parametrize("turn", [0.0, 90.0])
+@pytest.mark.parametrize("edit", [_move, _delete, _draw_and_delete, _explode])
+def test_parts_changed_inside_an_assembly_undo_and_redo_in_place(edit, turn):
+    """Deleting, moving or exploding a part happens with the matrix down in
+    the parts; leaving brings it back up. Undo used to restore a deleted
+    part with the matrix still in it, so it landed one placement away."""
+    a, b = _assembly(True, turn=turn)
+    if edit is _explode:
+        for g in (a, b):
+            part = g.children[0]
+            sub = Group(part.mesh, name="sub")
+            sub.xform = QMatrix4x4()
+            sub.xform.translate(0, 0, 3)
+            part.mesh = Mesh()
+            part.adopt([sub])
+    win, vp, scene = _window(a, b)
+    start, drawn0 = _parts_at(scene), _drawn(scene)
+    parts0 = [QMatrix4x4(c.xform) for c in a.children]
+    steps = len(vp.history.undo_stack)
+    try:
+        vp.begin_group_edit(a)
+        edit(win, vp, a)
+        vp.end_group_edit()
+        left, drawn1 = _parts_at(scene), _drawn(scene)
+        assert len(vp.history.undo_stack) == steps + 1
+        assert a.xform == _at(10.0, turn) and a.mesh is b.mesh
+        for _ in range(2):
+            vp.history.undo()
+            assert (_parts_at(scene), _drawn(scene)) == (start, drawn0)
+            assert a.xform == _at(10.0, turn)
+            assert [QMatrix4x4(c.xform) for c in a.children] == parts0
+            assert a.mesh is b.mesh
+            vp.history.redo()
+            assert (_parts_at(scene), _drawn(scene)) == (left, drawn1)
+            assert a.xform == _at(10.0, turn) and a.mesh is b.mesh
+    finally:
+        _close(win)
+
+
 def test_a_copied_group_of_parts_is_made_unique_on_the_way_in():
     a, b = _assembly(True)
     a.component = b.component = False

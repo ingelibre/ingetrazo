@@ -52,7 +52,7 @@ def _plog(tag: str, ms: float, extra: str = "", floor: float = 100.0) -> None:
                      f"{tag} {ms:.0f}ms"
                      f"{' ' + extra if extra else ''}\n")
 
-from PySide6.QtGui import QVector3D
+from PySide6.QtGui import QMatrix4x4, QVector3D
 
 from core.group import Group
 from core.materials import has_own_material
@@ -3746,30 +3746,111 @@ class ReshareInstanceCommand(Command):
         self.edited = edited
         self.inner = list(inner)
         self._before = None
-        self._after = None
-
-    def _nested(self):
-        """The parts edited inside this session: their definitions go with
-        it. Their matrices are the assembly's to bring back."""
-        return [c for c in self.inner if isinstance(c, ReshareInstanceCommand)]
 
     def do(self, scene) -> None:
         if self._before is None:
             self._before = self.proto.capture_state()
-        else:
-            for c in self._nested():
-                c.proto.restore_state(c._after)
         scene.share_back(self.group, self.proto, self.xform, self.edited)
-        self._after = self.proto.capture_state()
         scene.version += 1
 
     def undo(self, scene) -> None:
-        for c in reversed(self._nested()):
-            c.proto.restore_state(c._before)
         self.proto.restore_state(self._before)
         self.group.mesh = self.proto
         self.group.xform = self.xform
         scene.version += 1
+
+
+class ReshareAssemblyCommand(Command):
+    """Leaving an assembly edited in place: a component holding other
+    components, placed more than once. Its own geometry goes back into the
+    definition its copies share, and its matrix comes back up out of its
+    parts.
+
+    The commands run inside are folded in, one step either way, and stay
+    what they are: they were recorded with the matrix down in the parts,
+    where the tools work. Undo puts it back down, undoes them, and returns
+    the parts to the frame they entered with, bit for bit. Redo replays them
+    the same way. A snapshot of the definition alone cannot do it: deleting,
+    moving or exploding a part changes the parts, not the definition."""
+
+    def __init__(self, group, proto, xform, edited, state0, parts,
+                 inner=()) -> None:
+        self.group = group
+        self.proto = proto
+        self.xform = QMatrix4x4(xform)
+        self.edited = edited
+        self.state0 = state0
+        self.parts = parts            # on entry, matrix up: Scene.parts_record
+        self.inner = list(inner)
+        self._framed = None           # on leaving, matrix down
+        self._edited = None           # the world copy on leaving
+        self._left = None             # on leaving, matrix up
+        self._entered = None          # on entry, matrix down (set by undo)
+        self._before = None           # the definition before / after
+        self._after = None
+        self.shared = False
+
+    @staticmethod
+    def _in_mesh(scene, cmd, fn) -> None:
+        """As History does: each command against the mesh it ran on."""
+        target = getattr(cmd, "_history_mesh", None)
+        if target is None or target is scene.mesh:
+            fn()
+            return
+        current = scene.mesh
+        scene.mesh = target
+        try:
+            fn()
+        finally:
+            scene.mesh = current
+
+    def _frame(self, record, state) -> None:
+        """The matrix down in the parts and the world copy in place: how
+        the session stood."""
+        from core.scene import Scene
+        self.edited.restore_state(state)
+        self.group.mesh = self.edited
+        self.group.xform = QMatrix4x4()
+        Scene.put_parts(self.group, record)
+
+    def _unframe(self, record) -> None:
+        from core.scene import Scene
+        self.group.mesh = self.proto
+        self.group.xform = QMatrix4x4(self.xform)
+        Scene.put_parts(self.group, record)
+
+    def do(self, scene) -> None:
+        from core.scene import Scene
+        if self._framed is None:                 # leaving, the first time
+            self._framed = Scene.parts_record(self.group)
+            self._edited = self.edited.capture_state()
+            self._before = self.proto.capture_state()
+            self.shared = self._edited != self.state0
+            if self.shared:
+                scene.share_back(self.group, self.proto, self.xform,
+                                 self.edited, axes=self.parts[0])
+            else:
+                scene.restore_sharing(self.group, self.proto, self.xform,
+                                      axes=self.parts[0])
+            self._after = self.proto.capture_state()
+            self._left = Scene.parts_record(self.group)
+        else:
+            self._frame(self._entered, self.state0)
+            for cmd in self.inner:
+                self._in_mesh(scene, cmd, lambda cmd=cmd: cmd.do(scene))
+            self.proto.restore_state(self._after)
+            self._unframe(self._left)
+        scene.bump_view()
+
+    def undo(self, scene) -> None:
+        from core.scene import Scene
+        self._frame(self._framed, self._edited)
+        self.proto.restore_state(self._before)
+        for cmd in reversed(self.inner):
+            self._in_mesh(scene, cmd, lambda cmd=cmd: cmd.undo(scene))
+        self._entered = Scene.parts_record(self.group)
+        self._unframe(self.parts)
+        scene.bump_view()
 
 
 class MakeUniqueCommand(Command):
