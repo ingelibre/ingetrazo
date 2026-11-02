@@ -3302,7 +3302,6 @@
  "Restore defaults": "Khôi phục mặc định",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Đưa các thiết lập của cửa sổ này về như khi cài IngeTrazo. Không có gì được lưu cho đến khi bạn nhấn OK. Ngôn ngữ, Trợ lý AI, phím tắt và đơn vị của tài liệu đang mở được giữ nguyên.",
  "Distance ({unit}):": "Khoảng cách ({unit}):",
- "Search name or class… (* and ? work)": "Tìm tên hoặc lớp… (dùng được * và ?)",
  "Filter by IFC class": "Lọc theo lớp đối tượng IFC",
  "How the rows are structured": "Cách sắp xếp các hàng",
  "Group by group": "Nhóm theo nhóm",
@@ -3314,5 +3313,10 @@
  "Only the objects the search and the class filter show": "Chỉ các đối tượng mà tìm kiếm và bộ lọc lớp hiển thị",
  "Filter by IFC class: {n} hidden": "Lọc theo lớp đối tượng IFC: ẩn {n}",
  "Show all classes": "Hiện tất cả các lớp",
- "(no BIM objects)": "(không có đối tượng BIM)"
+ "(no BIM objects)": "(không có đối tượng BIM)",
+ "Search name, class or outline… (* and ? work)": "Tìm tên, lớp hoặc đường dẫn… (dùng được * và ?)",
+ "Group by name": "Nhóm theo tên",
+ "Outline path": "Đường dẫn trong cây",
+ "(no name)": "(không tên)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Các cột: hiện hoặc ẩn Khối lượng, Vol m³ và Đường dẫn trong cây"
 }

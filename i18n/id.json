@@ -3278,7 +3278,6 @@
  "Distance ({unit}):": "Jarak ({unit}):",
  "Restore defaults": "Pulihkan bawaan",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Mengembalikan pengaturan jendela ini seperti bawaan IngeTrazo. Tidak ada yang disimpan sampai Anda menekan OK. Bahasa, Asisten AI, pintasan keyboard, dan satuan dokumen yang terbuka tetap seperti semula.",
- "Search name or class… (* and ? work)": "Cari nama atau kelas… (* dan ? bisa dipakai)",
  "Filter by IFC class": "Saring menurut kelas IFC",
  "How the rows are structured": "Cara baris disusun",
  "Group by group": "Kelompokkan menurut grup",
@@ -3290,5 +3289,10 @@
  "Only the objects the search and the class filter show": "Hanya objek yang ditampilkan pencarian dan saringan kelas",
  "Filter by IFC class: {n} hidden": "Saring menurut kelas IFC: {n} disembunyikan",
  "Show all classes": "Tampilkan semua kelas",
- "(no BIM objects)": "(tidak ada objek BIM)"
+ "(no BIM objects)": "(tidak ada objek BIM)",
+ "Search name, class or outline… (* and ? work)": "Cari nama, kelas, atau jalur… (* dan ? bisa dipakai)",
+ "Group by name": "Kelompokkan menurut nama",
+ "Outline path": "Jalur di struktur",
+ "(no name)": "(tanpa nama)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Kolom: tampilkan atau sembunyikan Volume, Vol m³, dan Jalur di struktur"
 }

@@ -3310,7 +3310,6 @@
   "Distance ({unit}):": "المسافة ({unit}):",
   "Restore defaults": "استعادة الإعدادات الافتراضية",
   "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "يعيد إعدادات هذه النافذة إلى ما يأتي به IngeTrazo. لا يُحفظ شيء حتى تضغط موافق. تبقى اللغة ومساعد الذكاء الاصطناعي واختصارات لوحة المفاتيح ووحدات المستند المفتوح كما هي.",
-  "Search name or class… (* and ? work)": "ابحث عن اسم أو فئة… (يعمل * و ?)",
   "Filter by IFC class": "التصفية حسب فئة IFC",
   "How the rows are structured": "طريقة تنظيم الصفوف",
   "Group by group": "التجميع حسب المجموعة",
@@ -3322,5 +3321,10 @@
   "Only the objects the search and the class filter show": "الكائنات التي يعرضها البحث ومرشّح الفئات فقط",
   "Filter by IFC class: {n} hidden": "التصفية حسب فئة IFC: {n} مخفية",
   "Show all classes": "إظهار كل الفئات",
-  "(no BIM objects)": "(لا توجد كائنات BIM)"
+  "(no BIM objects)": "(لا توجد كائنات BIM)",
+  "Search name, class or outline… (* and ? work)": "ابحث عن اسم أو فئة أو مسار… (يعمل * و ?)",
+  "Group by name": "التجميع حسب الاسم",
+  "Outline path": "المسار في المخطط",
+  "(no name)": "(بلا اسم)",
+  "Columns: show or hide Takeoff, Vol m³ and Outline path": "الأعمدة: إظهار أو إخفاء الكميات وVol m³ والمسار في المخطط"
 }

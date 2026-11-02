@@ -3275,7 +3275,6 @@
  "Restore defaults": "既定値に戻す",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "このウィンドウの設定を IngeTrazo の初期状態に戻します。OK を押すまで何も保存されません。言語、AI アシスタント、キーボードショートカット、開いている文書の単位はそのままです。",
  "Distance ({unit}):": "距離（{unit}）：",
- "Search name or class… (* and ? work)": "名前またはクラスで検索…（* と ? が使えます）",
  "Filter by IFC class": "IFC クラスで絞り込む",
  "How the rows are structured": "行のまとめ方",
  "Group by group": "グループ別にまとめる",
@@ -3287,5 +3286,10 @@
  "Only the objects the search and the class filter show": "検索とクラスの絞り込みで表示されるオブジェクトのみ",
  "Filter by IFC class: {n} hidden": "IFC クラスで絞り込み：{n} 件非表示",
  "Show all classes": "すべてのクラスを表示",
- "(no BIM objects)": "（BIM オブジェクトなし）"
+ "(no BIM objects)": "（BIM オブジェクトなし）",
+ "Search name, class or outline… (* and ? work)": "名前・クラス・階層で検索…（* と ? が使えます）",
+ "Group by name": "名前別にまとめる",
+ "Outline path": "階層パス",
+ "(no name)": "（名前なし）",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "列：数量、Vol m³、階層パスの表示を切り替えます"
 }

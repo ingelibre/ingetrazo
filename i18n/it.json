@@ -3276,7 +3276,6 @@
  "Distance ({unit}):": "Distanza ({unit}):",
  "Restore defaults": "Ripristina predefiniti",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Riporta le impostazioni di questa finestra a come arriva IngeTrazo. Non viene salvato nulla finché non premi OK. La lingua, l'Assistente IA, le scorciatoie da tastiera e le unità del documento aperto restano come sono.",
- "Search name or class… (* and ? work)": "Cerca nome o classe… (* e ? funzionano)",
  "Filter by IFC class": "Filtra per classe IFC",
  "How the rows are structured": "Come sono strutturate le righe",
  "Group by group": "Raggruppa per gruppo",
@@ -3288,5 +3287,10 @@
  "Only the objects the search and the class filter show": "Solo gli oggetti mostrati dalla ricerca e dal filtro di classe",
  "Filter by IFC class: {n} hidden": "Filtra per classe IFC: {n} nascoste",
  "Show all classes": "Mostra tutte le classi",
- "(no BIM objects)": "(nessun oggetto BIM)"
+ "(no BIM objects)": "(nessun oggetto BIM)",
+ "Search name, class or outline… (* and ? work)": "Cerca nome, classe o struttura… (* e ? funzionano)",
+ "Group by name": "Raggruppa per nome",
+ "Outline path": "Percorso nella struttura",
+ "(no name)": "(senza nome)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Colonne: mostra o nascondi Computo, Vol m³ e Percorso nella struttura"
 }

@@ -3278,7 +3278,6 @@
  "Distance ({unit}):": "ระยะ ({unit}):",
  "Restore defaults": "คืนค่าเริ่มต้น",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม",
- "Search name or class… (* and ? work)": "ค้นหาชื่อหรือคลาส… (ใช้ * และ ? ได้)",
  "Filter by IFC class": "กรองตามคลาส IFC",
  "How the rows are structured": "วิธีจัดโครงสร้างแถว",
  "Group by group": "จัดกลุ่มตามกลุ่ม",
@@ -3290,5 +3289,10 @@
  "Only the objects the search and the class filter show": "เฉพาะวัตถุที่การค้นหาและตัวกรองคลาสแสดง",
  "Filter by IFC class: {n} hidden": "กรองตามคลาส IFC: ซ่อน {n}",
  "Show all classes": "แสดงทุกคลาส",
- "(no BIM objects)": "(ไม่มีวัตถุ BIM)"
+ "(no BIM objects)": "(ไม่มีวัตถุ BIM)",
+ "Search name, class or outline… (* and ? work)": "ค้นหาชื่อ คลาส หรือเส้นทาง… (ใช้ * และ ? ได้)",
+ "Group by name": "จัดกลุ่มตามชื่อ",
+ "Outline path": "เส้นทางในโครงสร้าง",
+ "(no name)": "(ไม่มีชื่อ)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "คอลัมน์: แสดงหรือซ่อน ปริมาณงาน, Vol m³ และเส้นทางในโครงสร้าง"
 }

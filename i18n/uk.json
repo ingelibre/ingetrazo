@@ -3290,7 +3290,6 @@
  "Distance ({unit}):": "Відстань ({unit}):",
  "Restore defaults": "Відновити типові",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Повертає налаштування цього вікна до стандартних налаштувань IngeTrazo. Нічого не зберігається, доки ви не натиснете «Гаразд». Мова, Асистент ШІ, сполучення клавіш і одиниці відкритого документа залишаються без змін.",
- "Search name or class… (* and ? work)": "Пошук за назвою або класом… (* і ? працюють)",
  "Filter by IFC class": "Фільтр за класом IFC",
  "How the rows are structured": "Як упорядковано рядки",
  "Group by group": "Групувати за групами",
@@ -3302,5 +3301,10 @@
  "Only the objects the search and the class filter show": "Лише об'єкти, які показують пошук і фільтр класів",
  "Filter by IFC class: {n} hidden": "Фільтр за класом IFC: приховано {n}",
  "Show all classes": "Показати всі класи",
- "(no BIM objects)": "(немає об'єктів BIM)"
+ "(no BIM objects)": "(немає об'єктів BIM)",
+ "Search name, class or outline… (* and ? work)": "Пошук за назвою, класом або шляхом… (* і ? працюють)",
+ "Group by name": "Групувати за назвою",
+ "Outline path": "Шлях у структурі",
+ "(no name)": "(без назви)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Стовпці: показати або приховати Обсяг, Vol m³ і Шлях у структурі"
 }

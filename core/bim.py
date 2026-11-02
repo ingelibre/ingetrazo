@@ -535,8 +535,9 @@ def object_matches(obj: dict, query: str = "",
                    classes: set | None = None) -> bool:
     """Whether a takeoff object passes the BIM panel's filters: its class
     among ``classes`` (``None``: every class) and ``query`` (already
-    casefolded) in its name or its class — with ``*`` and ``?`` as
-    wildcards, as in the Browser."""
+    casefolded) in its name, its class or its ``outline`` (the groups it
+    sits in, «Group 1/Group 2») — with ``*`` and ``?`` as wildcards, as in
+    the Browser."""
     from core.outliner import text_matches
     cls = obj.get("class", "")
     if classes is not None and cls not in classes:
@@ -544,7 +545,8 @@ def object_matches(obj: dict, query: str = "",
     if not query:
         return True
     return any(text_matches(t, query) for t in (
-        obj.get("name") or "", cls, cls.removeprefix("Ifc")))
+        obj.get("name") or "", cls, cls.removeprefix("Ifc"),
+        obj.get("outline") or ""))
 
 
 def object_metrado(obj: dict) -> tuple:

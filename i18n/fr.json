@@ -3275,7 +3275,6 @@
  "Distance ({unit}):": "Distance ({unit}) :",
  "Restore defaults": "Rétablir les valeurs par défaut",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Remet les réglages de cette fenêtre tels qu'IngeTrazo les fournit. Rien n'est enregistré tant que vous n'appuyez pas sur OK. La langue, l'Assistant IA, les raccourcis clavier et les unités du document ouvert restent tels quels.",
- "Search name or class… (* and ? work)": "Rechercher un nom ou une classe… (* et ? fonctionnent)",
  "Filter by IFC class": "Filtrer par classe IFC",
  "How the rows are structured": "Comment les lignes sont structurées",
  "Group by group": "Regrouper par groupe",
@@ -3287,5 +3286,10 @@
  "Only the objects the search and the class filter show": "Seulement les objets que montrent la recherche et le filtre de classe",
  "Filter by IFC class: {n} hidden": "Filtrer par classe IFC : {n} masquées",
  "Show all classes": "Afficher toutes les classes",
- "(no BIM objects)": "(aucun objet BIM)"
+ "(no BIM objects)": "(aucun objet BIM)",
+ "Search name, class or outline… (* and ? work)": "Rechercher un nom, une classe ou une arborescence… (* et ? fonctionnent)",
+ "Group by name": "Regrouper par nom",
+ "Outline path": "Chemin dans l'arborescence",
+ "(no name)": "(sans nom)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Colonnes : afficher ou masquer Métré, Vol m³ et Chemin dans l'arborescence"
 }
