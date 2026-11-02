@@ -2557,6 +2557,18 @@ class MainWindow(QMainWindow):
             icon = tool_icon(icon)
         dock.setWindowIcon(icon)
 
+    def _settle_tab_icons(self) -> None:
+        """A panel that brought no icon — an extension's, or one an
+        extension built itself instead of add_panel — gets its initial, so
+        its tab is never blank; then every tab takes its panel's icon."""
+        from PySide6.QtWidgets import QDockWidget
+        from views.icons import letter_icon
+        self._tab_icons_due = False
+        for d in self.findChildren(QDockWidget):
+            if d.parent() is self and not d.testAttribute(Qt.WA_SetWindowIcon):
+                d.setWindowIcon(letter_icon(d.windowTitle()))
+        self._sync_tab_icons()
+
     def _sync_tab_icons(self) -> None:
         """Qt copies a panel's icon into its tab only as the tab forms (a
         new title is copied, a new icon is not): one set later — a panel
@@ -2597,15 +2609,12 @@ class MainWindow(QMainWindow):
         arrows when even so they do not fit. Qt makes a tab bar per tabbed
         group as they form, so this runs again as children come; each bar
         is watched once (drags out of it, drops on it)."""
-        from PySide6.QtWidgets import QDockWidget
         from shiboken6 import isValid
-        from views.icons import letter_icon
-        for d in self.findChildren(QDockWidget):
-            # A panel that brought no icon — an extension's, or one an
-            # extension built itself instead of add_panel: its initial, so
-            # its tab is never blank.
-            if d.parent() is self and not d.testAttribute(Qt.WA_SetWindowIcon):
-                d.setWindowIcon(letter_icon(d.windowTitle()))
+        # This runs hundreds of times while the window is built (for every
+        # child that comes): the icons once, when it settles.
+        if not getattr(self, "_tab_icons_due", False):
+            self._tab_icons_due = True
+            QTimer.singleShot(0, self, self._settle_tab_icons)
         for tb in self._dock_tab_bars():
             if not isValid(tb):
                 continue
@@ -2618,11 +2627,9 @@ class MainWindow(QMainWindow):
                 tb.setIconSize(QSize(DOCK_TAB_ICON_PX, DOCK_TAB_ICON_PX))
                 tb.setStyle(self.icon_tab_style())
             self._add_panels_button(tb)
-        self._sync_tab_icons()
         # A tray alone on its side has no tab bar from Qt — only its title
         # bar, an empty strip: it gets a tab of its own there, so it can
         # still be dragged across, right-clicked and dropped on.
-        from PySide6.QtCore import QTimer
         for d in self._sidebar_docks():
             if d.property("ingetrazo_titles") is None:
                 d.setProperty("ingetrazo_titles", True)

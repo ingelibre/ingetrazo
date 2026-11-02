@@ -201,6 +201,7 @@ def test_a_panel_without_an_icon_shows_its_initial(win):
     from views.icons import letter_icon
     dock = ExtensionApp(win, "plain").add_panel("Zeta", QLabel("z"))
     win._style_dock_tabs()
+    _app.processEvents()
     assert not dock.windowIcon().isNull()
     assert _image(dock.windowIcon()) == _image(letter_icon("Zeta"))
 
