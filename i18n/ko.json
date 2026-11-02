@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "앞면 색상 — 숨은선 모드와 단색 모드에서 면을 칠합니다",
  "Distance ({unit}):": "거리 ({unit}):",
  "Restore defaults": "기본값 복원",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다.",
+ "Add Scene": "장면 추가",
+ "Update Scene": "장면 업데이트",
+ "Delete Scene": "장면 삭제",
+ "Scene '{name}' added": "장면 '{name}' 추가됨",
+ "Select a scene in the Scenes panel first": "먼저 장면 패널에서 장면을 선택하세요",
+ "Show Scene": "장면 표시",
+ "Show the selected scene": "선택한 장면 표시",
+ "Rename Scene…": "장면 이름 바꾸기…",
+ "Rename Scene": "장면 이름 바꾸기",
+ "Rename the selected scene": "선택한 장면의 이름 바꾸기",
+ "Duplicate Scene": "장면 복제",
+ "Make a copy of the selected scene": "선택한 장면의 사본 만들기"
 }

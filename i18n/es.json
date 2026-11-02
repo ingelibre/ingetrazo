@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "Color frontal — pinta las caras en Línea oculta y Monocromo",
  "Distance ({unit}):": "Distancia ({unit}):",
  "Restore defaults": "Restablecer valores predeterminados",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Devuelve los ajustes de esta ventana a como viene IngeTrazo. No se guarda nada hasta pulsar Aceptar. El idioma, el Asistente de IA, los atajos de teclado y las unidades del documento abierto se quedan como están."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Devuelve los ajustes de esta ventana a como viene IngeTrazo. No se guarda nada hasta pulsar Aceptar. El idioma, el Asistente de IA, los atajos de teclado y las unidades del documento abierto se quedan como están.",
+ "Add Scene": "Agregar escena",
+ "Update Scene": "Actualizar escena",
+ "Delete Scene": "Eliminar escena",
+ "Scene '{name}' added": "Escena '{name}' agregada",
+ "Select a scene in the Scenes panel first": "Selecciona primero una escena en el panel Escenas",
+ "Show Scene": "Mostrar escena",
+ "Show the selected scene": "Mostrar la escena seleccionada",
+ "Rename Scene…": "Renombrar escena…",
+ "Rename Scene": "Renombrar escena",
+ "Rename the selected scene": "Renombrar la escena seleccionada",
+ "Duplicate Scene": "Duplicar escena",
+ "Make a copy of the selected scene": "Hacer una copia de la escena seleccionada"
 }

@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "Couleur de face — peint les faces dans les modes Lignes cachées et Monochrome",
  "Distance ({unit}):": "Distance ({unit}) :",
  "Restore defaults": "Rétablir les valeurs par défaut",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Remet les réglages de cette fenêtre tels qu'IngeTrazo les fournit. Rien n'est enregistré tant que vous n'appuyez pas sur OK. La langue, l'Assistant IA, les raccourcis clavier et les unités du document ouvert restent tels quels."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Remet les réglages de cette fenêtre tels qu'IngeTrazo les fournit. Rien n'est enregistré tant que vous n'appuyez pas sur OK. La langue, l'Assistant IA, les raccourcis clavier et les unités du document ouvert restent tels quels.",
+ "Add Scene": "Ajouter une scène",
+ "Update Scene": "Mettre à jour la scène",
+ "Delete Scene": "Supprimer la scène",
+ "Scene '{name}' added": "Scène « {name} » ajoutée",
+ "Select a scene in the Scenes panel first": "Sélectionnez d’abord une scène dans le panneau Scènes",
+ "Show Scene": "Afficher la scène",
+ "Show the selected scene": "Afficher la scène sélectionnée",
+ "Rename Scene…": "Renommer la scène…",
+ "Rename Scene": "Renommer la scène",
+ "Rename the selected scene": "Renommer la scène sélectionnée",
+ "Duplicate Scene": "Dupliquer la scène",
+ "Make a copy of the selected scene": "Faire une copie de la scène sélectionnée"
 }

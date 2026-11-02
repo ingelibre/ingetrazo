@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "表面の色 — 隠線と単色モードで面を塗ります",
  "Restore defaults": "既定値に戻す",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "このウィンドウの設定を IngeTrazo の初期状態に戻します。OK を押すまで何も保存されません。言語、AI アシスタント、キーボードショートカット、開いている文書の単位はそのままです。",
- "Distance ({unit}):": "距離（{unit}）："
+ "Distance ({unit}):": "距離（{unit}）：",
+ "Add Scene": "シーンを追加",
+ "Update Scene": "シーンを更新",
+ "Delete Scene": "シーンを削除",
+ "Scene '{name}' added": "シーン「{name}」を追加しました",
+ "Select a scene in the Scenes panel first": "先にシーンパネルでシーンを選択してください",
+ "Show Scene": "シーンを表示",
+ "Show the selected scene": "選択したシーンを表示",
+ "Rename Scene…": "シーン名を変更…",
+ "Rename Scene": "シーン名を変更",
+ "Rename the selected scene": "選択したシーンの名前を変更",
+ "Duplicate Scene": "シーンを複製",
+ "Make a copy of the selected scene": "選択したシーンのコピーを作成"
 }

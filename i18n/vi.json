@@ -3301,5 +3301,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "Màu mặt trước - vẽ các mặt trong Đường ẩn và Đơn sắc",
  "Restore defaults": "Khôi phục mặc định",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Đưa các thiết lập của cửa sổ này về như khi cài IngeTrazo. Không có gì được lưu cho đến khi bạn nhấn OK. Ngôn ngữ, Trợ lý AI, phím tắt và đơn vị của tài liệu đang mở được giữ nguyên.",
- "Distance ({unit}):": "Khoảng cách ({unit}):"
+ "Distance ({unit}):": "Khoảng cách ({unit}):",
+ "Add Scene": "Thêm cảnh",
+ "Update Scene": "Cập nhật cảnh",
+ "Delete Scene": "Xóa cảnh",
+ "Scene '{name}' added": "Đã thêm cảnh '{name}'",
+ "Select a scene in the Scenes panel first": "Hãy chọn một cảnh trong bảng Cảnh trước",
+ "Show Scene": "Hiển thị cảnh",
+ "Show the selected scene": "Hiển thị cảnh đã chọn",
+ "Rename Scene…": "Đổi tên cảnh…",
+ "Rename Scene": "Đổi tên cảnh",
+ "Rename the selected scene": "Đổi tên cảnh đã chọn",
+ "Duplicate Scene": "Nhân bản cảnh",
+ "Make a copy of the selected scene": "Tạo bản sao của cảnh đã chọn"
 }

@@ -3274,5 +3274,17 @@
  "Front color — paints faces in Hidden line and Monochrome": "Vorderseitenfarbe — färbt Flächen in Verdeckte Linien und Monochrom",
  "Distance ({unit}):": "Abstand ({unit}):",
  "Restore defaults": "Standardwerte wiederherstellen",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Setzt die Einstellungen dieses Fensters auf den Auslieferungszustand von IngeTrazo zurück. Nichts wird gespeichert, bevor du auf OK drückst. Sprache, KI-Assistent, Tastenkürzel und die Einheiten des offenen Dokuments bleiben, wie sie sind."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Setzt die Einstellungen dieses Fensters auf den Auslieferungszustand von IngeTrazo zurück. Nichts wird gespeichert, bevor du auf OK drückst. Sprache, KI-Assistent, Tastenkürzel und die Einheiten des offenen Dokuments bleiben, wie sie sind.",
+ "Add Scene": "Szene hinzufügen",
+ "Update Scene": "Szene aktualisieren",
+ "Delete Scene": "Szene löschen",
+ "Scene '{name}' added": "Szene '{name}' hinzugefügt",
+ "Select a scene in the Scenes panel first": "Wähle zuerst eine Szene im Bereich Szenen aus",
+ "Show Scene": "Szene anzeigen",
+ "Show the selected scene": "Die ausgewählte Szene anzeigen",
+ "Rename Scene…": "Szene umbenennen…",
+ "Rename Scene": "Szene umbenennen",
+ "Rename the selected scene": "Die ausgewählte Szene umbenennen",
+ "Duplicate Scene": "Szene duplizieren",
+ "Make a copy of the selected scene": "Eine Kopie der ausgewählten Szene erstellen"
 }

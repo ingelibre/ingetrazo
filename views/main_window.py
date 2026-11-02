@@ -1509,6 +1509,38 @@ class MainWindow(QMainWindow):
         camera_menu.addAction(self._act_zoom_extents)   # la MISMA del botón
         camera_menu.addAction(self._act_zoom_selection)
 
+        # Scenes as window actions, so they can take keys of one's own in
+        # Preferences ▸ Shortcuts (#695, discussions #639 and #640): the
+        # Scenes panel's buttons were the only way in. No factory keys —
+        # the known interface stays as it was. Each runs what its button
+        # runs; the others act on the scene selected in the panel. Show,
+        # Rename and Duplicate are here too, so the panel, the scene tabs
+        # and the Browser can all run the same actions (#1158, point 7).
+        scenes_menu = camera_menu.addMenu(tr("Scenes"))
+        self._scene_actions = {}
+        for key, text, tip, slot in (
+                ("scene_show", "Show Scene",
+                 "Show the selected scene", self._on_scene_show),
+                ("scene_add", "Add Scene",
+                 "Save the current view and layer visibility",
+                 self._on_scene_add),
+                ("scene_update", "Update Scene",
+                 "Update the selected scene from the current view",
+                 self._on_scene_update),
+                ("scene_rename", "Rename Scene…",
+                 "Rename the selected scene", self._on_scene_rename),
+                ("scene_duplicate", "Duplicate Scene",
+                 "Make a copy of the selected scene",
+                 self._on_scene_duplicate),
+                ("scene_delete", "Delete Scene",
+                 "Delete the selected scenes", self._on_scene_delete)):
+            act = QAction(tr(text), self)
+            act.setObjectName(key)            # the same key in every language
+            act.setStatusTip(tr(tip))
+            act.triggered.connect(slot)
+            scenes_menu.addAction(act)
+            self._scene_actions[key] = act
+
         camera_menu.addSeparator()
 
         action_proj = QAction(tr("Toggle Perspective / Parallel"), self)
@@ -5665,6 +5697,102 @@ class MainWindow(QMainWindow):
     def _sheet_tab_menu(self, index: int, global_pos) -> None:
         self._ensure_composer().sheet_tab_menu(index, global_pos, self)
         self._refresh_sheet_tabs()
+
+    # ---- Scenes (Camera ▸ Scenes, #695) -------------------------------------
+    def _on_scene_add(self) -> None:
+        """«+ Scene», from a menu or a key. The new scene becomes the
+        panel's current one, so Update Scene right after updates it."""
+        panel = self.tray.scenes
+        panel._on_add()
+        views = self.viewport.scene.saved_views
+        if not views:
+            return
+        panel.list.setCurrentRow(len(views) - 1)
+        self.statusBar().showMessage(
+            tr("Scene '{name}' added", name=views[-1].name), 2000)
+
+    def _selected_scene_item(self):
+        """The panel's current scene row, or None after saying why."""
+        item = self.tray.scenes.list.currentItem()
+        if item is None or item.data(Qt.UserRole) is None:
+            self._no_scene_selected()
+            return None
+        return item
+
+    def _on_scene_show(self) -> None:
+        item = self._selected_scene_item()
+        if item is not None:
+            self.tray.scenes._on_activate(item)
+
+    def _on_scene_update(self) -> None:
+        if self._selected_scene_item() is not None:
+            self.tray.scenes._on_update()
+
+    def _on_scene_rename(self) -> None:
+        """A name asked in a dialog, since from a key the panel may be
+        closed. The Browser's rule: the sheet views that show the scene
+        follow the new name, and a name another scene has is refused."""
+        item = self._selected_scene_item()
+        if item is None:
+            return
+        view = item.data(Qt.UserRole)
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(
+            self, tr("Rename Scene"), tr("Name:"), text=view.name)
+        name = name.strip()
+        if not ok or not name or name == view.name:
+            return
+        from core.outliner import rename_scene
+        if not rename_scene(self.viewport.scene, view, name):
+            self.statusBar().showMessage(tr(
+                "Another scene is already called «{name}»", name=name), 3500)
+            return
+        self._scene_changed_in_list(view)
+        reload = getattr(getattr(self, "_composer", None),
+                         "_reload_view_sources", None)
+        if reload is not None:
+            reload()
+
+    def _on_scene_duplicate(self) -> None:
+        """A copy right after the scene, made current, so Update or Rename
+        right after acts on the copy."""
+        item = self._selected_scene_item()
+        if item is None:
+            return
+        view = item.data(Qt.UserRole)
+        from core.saved_views import SavedView
+        views = self.viewport.scene.saved_views
+        taken = {v.name for v in views}
+        base = view.name + tr(" (copy)")
+        name, n = base, 2
+        while name in taken:
+            name, n = f"{base} {n}", n + 1
+        copy = SavedView.from_dict(view.to_dict())
+        copy.name = name
+        views.insert(views.index(view) + 1, copy)
+        self._scene_changed_in_list(copy)
+        self.statusBar().showMessage(
+            tr("Scene '{name}' added", name=name), 2000)
+
+    def _scene_changed_in_list(self, current) -> None:
+        """Refresh the panel keeping ``current`` the current row."""
+        panel = self.tray.scenes
+        panel.refresh()
+        panel.list.setCurrentRow(
+            self.viewport.scene.saved_views.index(current))
+        panel._touch()
+
+    def _on_scene_delete(self) -> None:
+        panel = self.tray.scenes
+        if not panel.list.selectedItems() and panel.list.currentItem() is None:
+            self._no_scene_selected()
+            return
+        panel._on_delete()
+
+    def _no_scene_selected(self) -> None:
+        # From a key the panel may be closed: say why nothing happened.
+        self.statusBar().showMessage(
+            tr("Select a scene in the Scenes panel first"), 3000)
 
     def _on_open_composer(self) -> None:
         """Open (or raise) the sheet composer — see docs/composer-plan.md.
