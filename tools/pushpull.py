@@ -146,6 +146,41 @@ def _boundary_cracks(mesh) -> int:
                if sum(1 for f in e.faces if not f.interior) % 2)
 
 
+def _drop_stranded_partitions(mesh) -> bool:
+    """Remove the partitions a push left with nothing around them.
+
+    A kept base standing on a face's plane (a beam's end butting into a
+    wall) has its whole rim on that face. Pushing the face out past it
+    swallows the beam's end into the wall, and the rebuild drops every face
+    around the old base, but not the base itself: it is left floating, open
+    on every edge, and the push was refused. A partition whose every edge
+    borders nothing else is inside the solid by then, so it goes. Only
+    faces marked as partitions are ever removed. Returns whether anything
+    was removed."""
+    removed = False
+    while True:
+        stranded = []
+        for f in mesh.faces:
+            if not f.interior:
+                continue
+            edges = []
+            for lp in (f.loop, *f.hole_loops):
+                n = len(lp)
+                edges.extend(mesh.find_edge(lp[i], lp[(i + 1) % n])
+                             for i in range(n))
+            if edges and all(e is not None and e.faces == [f] for e in edges):
+                stranded.append((f, edges))
+        if not stranded:
+            return removed
+        for f, edges in stranded:
+            mesh.remove_face(f)
+            for e in edges:
+                if not e.faces:
+                    mesh.remove_edge(e)
+        mesh.prune_orphan_vertices()
+        removed = True
+
+
 def _component_is_closed(mesh, face) -> bool:
     """Whether ``face``'s edge-connected component is watertight — every edge
     reachable from it borders at least two faces. An open sheet (a flat
@@ -2164,6 +2199,8 @@ class PushPullTool(Tool):
         fp_before = self._mesh_fingerprint(mesh) if guard is not None else None
         self._cracks_before = None
         self._mutate_inner(scene, preview)
+        if guard is not None and not is_closed(mesh):
+            _drop_stranded_partitions(mesh)
         if guard is not None and not (is_closed(mesh) or _mesh_is_flat(mesh)):
             mesh.restore_state(guard)
             self._refused = True
