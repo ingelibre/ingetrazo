@@ -252,6 +252,17 @@ class Scene:
             memo = self._open_mesh_ids = (key, ids)
         return group_layer if id(entity) in memo[1] else None
 
+    def open_group_paint(self):
+        """The paint the open group's default faces wear: its own, or the
+        nearest enclosing open group's that has one — what they wore with
+        the group closed (#1101), as :meth:`_open_group_layer` does for
+        the layer. ``None`` outside a group or when nothing is painted."""
+        for level in reversed(self._edit_stack):
+            paint = getattr(level["group"], "material", None)
+            if paint:
+                return paint
+        return None
+
     @staticmethod
     def _object_hidden(entity) -> bool:
         """Hide on an OBJECT (a group or component). Edges carry

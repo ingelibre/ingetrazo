@@ -369,3 +369,72 @@ def test_explode_keeps_the_container_paint_on_the_back_too():
     red = [f for f in scene.mesh.faces
            if f.attrs.get("color") == [1.0, 0.0, 0.0]]
     assert red and all(f.attrs.get("back") for f in red)
+
+
+# ---- nested groups: the nearest painted container (#1101) -----------------
+
+GRASS = {"color": [0.0, 0.6, 0.0]}
+OAK = {"color": [0.6, 0.4, 0.1]}
+BLUE = {"color": [0.0, 0.0, 0.8]}
+
+
+def _issue_1101_tree(scene):
+    """@BastelBaus's model: Group 20 holds Group 19 (grass) with an oak
+    piece and a plain one, and Blue (blue) with two plain pieces."""
+    def piece(name, x, paint=None):
+        m = Mesh()
+        m.add_face([V(x, 0), V(x + 1, 0), V(x + 1, 1), V(x, 1)])
+        g = Group(m, name)
+        g.material = paint
+        return g
+
+    g19 = Group(Mesh(), "Group 19")
+    g19.material = dict(GRASS)
+    g19.children = [piece("Oak", 0, dict(OAK)), piece("Grass", 2)]
+    blue = Group(Mesh(), "Blue")
+    blue.material = dict(BLUE)
+    blue.children = [piece("Blue 1", 4), piece("Blue 2", 6)]
+    g20 = Group(Mesh(), "Group 20")
+    g20.children = [g19, blue]
+    scene.groups.append(g20)
+    scene.version += 1
+    return g20, g19
+
+
+def _drawn_paint(vp):
+    """The paint each leaf piece is baked with, by name."""
+    shaded = {tuple(round(float(c), 3) for c in vp._shaded_color(tuple(p["color"]), V(0, 0, 1))): n
+              for n, p in (("grass", GRASS), ("oak", OAK), ("blue", BLUE))}
+    out = {}
+    for g in vp._placements():
+        if g.children or not g.mesh.faces:
+            continue
+        worn = {shaded[c] for c in _vcol_colours(vp._group_chunk(g)) if c in shaded}
+        out[g.name] = worn.pop() if len(worn) == 1 else None
+    return out
+
+
+def test_a_plain_piece_wears_its_nearest_painted_container_whatever_is_open():
+    scene = Scene()
+    vp = _stub(scene)
+    g20, g19 = _issue_1101_tree(scene)
+    want = {"Oak": "oak", "Grass": "grass", "Blue 1": "blue", "Blue 2": "blue"}
+    assert _drawn_paint(vp) == want                      # nothing open
+    scene.begin_group_edit(g20)
+    assert _drawn_paint(vp) == want                      # Group 20 open
+    scene.begin_group_edit(g19)
+    assert _drawn_paint(vp) == want                      # Group 19 open inside it
+
+
+def test_an_open_plain_piece_keeps_wearing_its_container_paint():
+    scene = Scene()
+    vp = _stub(scene)
+    g20, g19 = _issue_1101_tree(scene)
+    grass = g19.children[1]
+    for g in (g20, g19, grass):
+        scene.begin_group_edit(g)
+    assert scene.open_group_paint() == GRASS
+    from views.viewport import _paint_of
+    assert _paint_of(vp, scene.edit_group)["color"] == GRASS["color"]
+    scene.end_group_edit()
+    assert scene.open_group_paint() is None
