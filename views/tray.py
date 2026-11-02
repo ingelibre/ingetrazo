@@ -22,8 +22,8 @@ import math
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
+from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QSpinBox,
     QStyle,
+    QStyleOptionSlider,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -177,6 +178,212 @@ def style_slider(slider) -> None:
         f" background: {knob}; border: 1px solid {hi};"
         " width: 16px; height: 16px; margin: -6px 0; border-radius: 8px; }")
     slider.setMinimumHeight(20)
+
+
+class _FogRangeSlider(QWidget):
+    """One horizontal track with independently draggable start/end handles.
+
+    Positions are deliberately integers: :class:`FogPanel` owns the
+    logarithmic conversion to metres.  Crossing the upper handle with the
+    lower one pushes it along; the upper handle cannot travel below the
+    lower.  Space switches the keyboard-active handle.
+    """
+
+    positionsChanged = Signal(int, int)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._minimum = 0
+        self._maximum = 400
+        self._start = 0
+        self._end = 400
+        self._active = "start"
+        self._pressed = False
+        self._drag_offset = 0.0
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setAccessibleName(tr("Distance:").rstrip(":").strip())
+        self.setMinimumHeight(24)
+
+    def startPosition(self) -> int:
+        return self._start
+
+    def endPosition(self) -> int:
+        return self._end
+
+    def setRange(self, minimum: int, maximum: int) -> None:
+        minimum, maximum = int(minimum), int(maximum)
+        if maximum < minimum:
+            minimum, maximum = maximum, minimum
+        if (minimum, maximum) == (self._minimum, self._maximum):
+            return
+        self._minimum, self._maximum = minimum, maximum
+        self.setPositions(self._start, self._end)
+        self.updateGeometry()
+        self.update()
+
+    def setPositions(self, start: int, end: int) -> None:
+        start = min(max(int(start), self._minimum), self._maximum)
+        end = min(max(int(end), self._minimum), self._maximum)
+        end = max(start, end)
+        if (start, end) == (self._start, self._end):
+            return
+        self._start, self._end = start, end
+        self.update()
+        self.positionsChanged.emit(start, end)
+
+    def sizeHint(self) -> QSize:
+        thickness = self.style().pixelMetric(
+            QStyle.PM_SliderThickness, self._option(), self)
+        return QSize(190, max(24, thickness + 8))
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(90, 24)
+
+    def _option(self, position: int | None = None) -> QStyleOptionSlider:
+        option = QStyleOptionSlider()
+        option.initFrom(self)
+        option.orientation = Qt.Horizontal
+        option.minimum = self._minimum
+        option.maximum = self._maximum
+        option.singleStep = 1
+        option.pageStep = 10
+        option.sliderPosition = (self._start if position is None
+                                 else int(position))
+        option.sliderValue = option.sliderPosition
+        option.upsideDown = self.layoutDirection() == Qt.RightToLeft
+        return option
+
+    def _handle_rect(self, position: int) -> QRect:
+        return self.style().subControlRect(
+            QStyle.CC_Slider, self._option(position),
+            QStyle.SC_SliderHandle, self)
+
+    def _value_from_x(self, x: float) -> int:
+        first = self._handle_rect(self._minimum).center().x()
+        last = self._handle_rect(self._maximum).center().x()
+        left, right = min(first, last), max(first, last)
+        span = max(1, right - left)
+        pixel = min(max(round(x - left), 0), span)
+        return QStyle.sliderValueFromPosition(
+            self._minimum, self._maximum, pixel, span,
+            self._option().upsideDown)
+
+    def _move_active(self, position: int) -> None:
+        position = min(max(int(position), self._minimum), self._maximum)
+        if self._active == "start":
+            # Once start catches end, both handles travel together.  The user
+            # can switch to end (click it or press Space) to open the range.
+            self.setPositions(position, max(self._end, position))
+        else:
+            self.setPositions(self._start, max(self._start, position))
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        groove_option = self._option()
+        groove_option.subControls = QStyle.SC_SliderGroove
+        self.style().drawComplexControl(
+            QStyle.CC_Slider, groove_option, painter, self)
+
+        a = self._handle_rect(self._start).center()
+        b = self._handle_rect(self._end).center()
+        left, right = sorted((a.x(), b.x()))
+        selected = QRect(left, a.y() - 2, max(1, right - left), 5)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(self.palette().highlight())
+        painter.drawRoundedRect(selected, 2, 2)
+
+        order = ["end", "start"] if self._active == "start" \
+            else ["start", "end"]
+        for name in order:
+            position = self._start if name == "start" else self._end
+            option = self._option(position)
+            option.subControls = QStyle.SC_SliderHandle
+            if name == self._active:
+                option.activeSubControls = QStyle.SC_SliderHandle
+                if self._pressed:
+                    option.state |= QStyle.State_Sunken
+            self.style().drawComplexControl(
+                QStyle.CC_Slider, option, painter, self)
+
+        if self.hasFocus():
+            focus = self._handle_rect(
+                self._start if self._active == "start" else self._end)
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(self.palette().highlight().color(), 1.5))
+            painter.drawRoundedRect(focus.adjusted(-2, -2, 2, 2), 4, 4)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() != Qt.LeftButton:
+            event.ignore()
+            return
+        self.setFocus(Qt.MouseFocusReason)
+        x = event.position().x()
+        start_rect = self._handle_rect(self._start)
+        end_rect = self._handle_rect(self._end)
+        in_start = start_rect.contains(event.position().toPoint())
+        in_end = end_rect.contains(event.position().toPoint())
+        if in_start and in_end:
+            self._active = "end" if self._active == "start" else "start"
+        elif in_start:
+            self._active = "start"
+        elif in_end:
+            self._active = "end"
+        else:
+            ds = abs(x - start_rect.center().x())
+            de = abs(x - end_rect.center().x())
+            self._active = "start" if ds <= de else "end"
+            self._move_active(self._value_from_x(x))
+        active_rect = (self._handle_rect(self._start)
+                       if self._active == "start"
+                       else self._handle_rect(self._end))
+        self._drag_offset = x - active_rect.center().x()
+        self._pressed = True
+        self.update()
+        event.accept()
+
+    def mouseMoveEvent(self, event) -> None:
+        if not self._pressed:
+            event.ignore()
+            return
+        self._move_active(self._value_from_x(
+            event.position().x() - self._drag_offset))
+        event.accept()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton and self._pressed:
+            self._pressed = False
+            self.update()
+            event.accept()
+            return
+        event.ignore()
+
+    def keyPressEvent(self, event) -> None:
+        key = event.key()
+        if key == Qt.Key_Space:
+            self._active = "end" if self._active == "start" else "start"
+            self.update()
+            event.accept()
+            return
+        current = self._start if self._active == "start" else self._end
+        if key == Qt.Key_Home:
+            target = self._minimum
+        elif key == Qt.Key_End:
+            target = self._maximum
+        elif key in (Qt.Key_PageUp, Qt.Key_PageDown):
+            target = current + (10 if key == Qt.Key_PageUp else -10)
+        elif key in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+            positive = key in (Qt.Key_Right, Qt.Key_Up)
+            if self.layoutDirection() == Qt.RightToLeft \
+                    and key in (Qt.Key_Left, Qt.Key_Right):
+                positive = not positive
+            target = current + (1 if positive else -1)
+        else:
+            super().keyPressEvent(event)
+            return
+        self._move_active(target)
+        event.accept()
 
 
 def fit_rows(view, min_rows: int = 3, max_rows: int | None = None,
@@ -3498,6 +3705,12 @@ class StylesPanel(QWidget):
             return
         setattr(style, attr, (chosen.redF(), chosen.greenF(), chosen.blueF()))
         self.refresh()
+        # Fog may use this flat background as its effective colour.  Its
+        # disabled swatch must still mirror what the viewport will draw.
+        if attr == "background":
+            fog_panel = getattr(self._window, "fog_panel", None)
+            if fog_panel is not None:
+                fog_panel.refresh()
         self._window.viewport.update()
         # Every colour is editable in every mode (build the look, save it) —
         # but an edit that can't show RIGHT NOW says so, or it reads as
@@ -3568,6 +3781,183 @@ class StylesPanel(QWidget):
             return
         delete_user_style(name)
         self._window._sync_style_menu()
+
+
+class FogPanel(QWidget):
+    """Live fog controls for the active display style.
+
+    Fog is a view treatment, so it travels with ``scene.display_style`` just
+    like the backdrop and ambient occlusion.  The viewport reads these values
+    directly; every edit only needs a repaint.
+    """
+
+    def __init__(self, window) -> None:
+        super().__init__()
+        self._window = window
+        self._updating = False
+        grid = QGridLayout(self)
+        grid.setContentsMargins(8, 6, 8, 8)
+
+        self._enable = QCheckBox(tr("Show fog"))
+        self._enable.toggled.connect(self._apply)
+        grid.addWidget(self._enable, 0, 0, 1, 2)
+
+        self._distance_lbl = QLabel(tr("Distance:"))
+        grid.addWidget(self._distance_lbl, 1, 0)
+        distance_row = QHBoxLayout()
+        self._range = _FogRangeSlider()
+        self._range.setRange(0, self._FOG_SLIDER_STEPS)
+        self._range.positionsChanged.connect(self._on_range_slider)
+        self._distance_lbl.setBuddy(self._range)
+        distance_row.addWidget(self._range, 1)
+        self._range_val = QLabel()
+        self._range_val.setMinimumWidth(138)
+        distance_row.addWidget(self._range_val)
+        grid.addLayout(distance_row, 1, 1)
+
+        self._use_background = QCheckBox(tr("Use background color"))
+        self._use_background.toggled.connect(self._apply)
+        grid.addWidget(self._use_background, 2, 0, 1, 2)
+
+        self._color_lbl = QLabel(tr("Fog color:"))
+        grid.addWidget(self._color_lbl, 3, 0)
+        self._color = QPushButton()
+        self._color.setToolTip(tr("Fog color"))
+        self._color.clicked.connect(self._pick_color)
+        grid.addWidget(self._color, 3, 1)
+
+        self.refresh()
+
+    # Six orders of magnitude do not fit a useful linear track: one end would
+    # be all centimetres and the other all kilometres.  Four hundred positions
+    # keep keyboard nudges useful while remaining smooth to drag.
+    _FOG_SLIDER_STEPS = 400
+    _DISTANCE_LOG_SCALE = 0.01
+
+    def _style(self):
+        return getattr(self._window.viewport.scene, "display_style", None)
+
+    @staticmethod
+    def _safe_fog_value(value, bounds: tuple, default: float) -> float:
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return default
+        if not math.isfinite(value):
+            return default
+        return min(max(value, bounds[0]), bounds[1])
+
+    @classmethod
+    def _distance_at(cls, pos: int) -> float:
+        """Metres at a distance-slider position; zero stays an exact stop."""
+        from core.style import FOG_DISTANCE_RANGE
+        lo, hi = FOG_DISTANCE_RANGE
+        pos = min(max(int(pos), 0), cls._FOG_SLIDER_STEPS)
+        if pos == 0 or hi <= lo:
+            return float(lo)
+        scale = cls._DISTANCE_LOG_SCALE
+        value = scale * math.expm1(
+            math.log1p((hi - lo) / scale)
+            * pos / cls._FOG_SLIDER_STEPS)
+        return min(float(hi), float(lo) + value)
+
+    @classmethod
+    def _distance_pos(cls, value: float) -> int:
+        from core.style import FOG_DISTANCE_RANGE
+        lo, hi = FOG_DISTANCE_RANGE
+        value = cls._safe_fog_value(value, FOG_DISTANCE_RANGE, 10.0)
+        if value <= lo or hi <= lo:
+            return 0
+        scale = cls._DISTANCE_LOG_SCALE
+        return round(math.log1p((value - lo) / scale)
+                     / math.log1p((hi - lo) / scale)
+                     * cls._FOG_SLIDER_STEPS)
+
+    def refresh(self) -> None:
+        """Mirror the active style after a preset, scene or file change."""
+        style = self._style()
+        if style is None:
+            return
+        self._updating = True
+        try:
+            self._enable.setChecked(getattr(style, "fog_enabled", False))
+            start = getattr(style, "fog_distance", 10.0)
+            end = start + getattr(style, "fog_thickness", 10.0)
+            self._range.setPositions(
+                self._distance_pos(start), self._distance_pos(end))
+            self._use_background.setChecked(
+                getattr(style, "fog_use_background", False))
+            self._sync_controls()
+        finally:
+            self._updating = False
+
+    def _apply(self, *_a) -> None:
+        style = self._style()
+        if style is None or self._updating:
+            return
+        style.fog_enabled = self._enable.isChecked()
+        style.fog_use_background = self._use_background.isChecked()
+        self._sync_controls()
+        self._window.viewport.update()
+
+    def _on_range_slider(self, start_pos: int, end_pos: int) -> None:
+        style = self._style()
+        if style is None or self._updating:
+            return
+        from core.style import FOG_THICKNESS_RANGE
+        start = self._distance_at(start_pos)
+        end = self._distance_at(end_pos)
+        style.fog_distance = start
+        style.fog_thickness = min(
+            FOG_THICKNESS_RANGE[1],
+            max(FOG_THICKNESS_RANGE[0], end - start))
+        self._apply()
+
+    def _sync_controls(self) -> None:
+        on = self._enable.isChecked()
+        for widget in (self._distance_lbl, self._range, self._range_val,
+                       self._use_background):
+            widget.setEnabled(on)
+        custom = not self._use_background.isChecked()
+        self._color_lbl.setEnabled(on and custom)
+        self._color.setEnabled(on and custom)
+        style = self._style()
+        if style is not None:
+            color = (getattr(style, "fog_color", (0.74, 0.76, 0.78))
+                     if custom else getattr(style, "background",
+                                            (0.90, 0.91, 0.92)))
+            self._color.setStyleSheet(StylesPanel._css(color))
+            from core import units
+            u = units.model_unit()
+            if u in ("in", "in-frac"):
+                symbol = "in"
+            elif u in ("ft", "ft-in", "ft-in-frac"):
+                symbol = "ft"
+            else:
+                row = units.UNITS.get(u)
+                symbol = row.symbol if row is not None else "m"
+            distance = units.length_number(
+                getattr(style, "fog_distance", 10.0), u)
+            end = units.length_number(
+                getattr(style, "fog_distance", 10.0)
+                + getattr(style, "fog_thickness", 10.0), u)
+            self._range_val.setText(
+                f"{units.localized(f'{distance:.2f}')} → "
+                f"{units.localized(f'{end:.2f}')} {symbol}")
+
+    def _pick_color(self) -> None:
+        style = self._style()
+        if style is None:
+            return
+        color = getattr(style, "fog_color", (0.74, 0.76, 0.78))
+        chosen = get_color(
+            QColor.fromRgbF(*(float(v) for v in color[:3])),
+            _dialog_parent(self), tr("Fog color"))
+        if not chosen.isValid():
+            return
+        style.fog_color = (chosen.redF(), chosen.greenF(), chosen.blueF())
+        self._sync_controls()
+        self._window.viewport.update()
 
 
 class ShadowsPanel(QWidget):

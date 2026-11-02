@@ -1,4 +1,11 @@
 {
+ "Fog": "안개",
+ "Fade distant geometry into a chosen color.": "멀리 있는 형상을 선택한 색상으로 흐리게 합니다.",
+ "Show fog": "안개 표시",
+ "Thickness:": "두께:",
+ "Fog color:": "안개 색상:",
+ "Fog color": "안개 색상",
+ "Use background color": "배경색 사용",
  "Add a terrain profile along a traced path (two clicks or drag)": "추적 경로를 따라 지형 단면 추가 (두 번 클릭 또는 드래그)",
  "Guide point": "가이드 점",
  "IngeTrazo could not read {name} with its built-in .skp reader.\n\nOpen it in the program it came from and export it as COLLADA (.dae) or OBJ, then import that file here.": "IngeTrazo의 내장 .skp 리더로 {name}을(를) 읽을 수 없습니다.\n\n원래 프로그램에서 파일을 열어 COLLADA(.dae) 또는 OBJ로 내보낸 다음, 그 파일을 여기로 가져오세요.",

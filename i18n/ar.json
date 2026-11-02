@@ -1,4 +1,11 @@
 {
+ "Fog": "ضباب",
+ "Fade distant geometry into a chosen color.": "يدمج الأشكال الهندسية البعيدة تدريجيًا في لون محدد.",
+ "Show fog": "إظهار الضباب",
+ "Thickness:": "السُمك:",
+ "Fog color:": "لون الضباب:",
+ "Fog color": "لون الضباب",
+ "Use background color": "استخدام لون الخلفية",
   "File": "ملف",
   "Edit": "تحرير",
   "View": "عرض",

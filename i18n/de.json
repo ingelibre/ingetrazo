@@ -1,4 +1,11 @@
 {
+ "Fog": "Nebel",
+ "Fade distant geometry into a chosen color.": "Blendet entfernte Geometrie in eine ausgewählte Farbe aus.",
+ "Show fog": "Nebel anzeigen",
+ "Thickness:": "Dicke:",
+ "Fog color:": "Nebelfarbe:",
+ "Fog color": "Nebelfarbe",
+ "Use background color": "Hintergrundfarbe verwenden",
  "Add a terrain profile along a traced path (two clicks or drag)": "Geländeprofil entlang eines Trassenpfads hinzufügen (zwei Klicks oder Ziehen)",
  "Guide point": "Führungspunkt",
  "IngeTrazo could not read {name} with its built-in .skp reader.\n\nOpen it in the program it came from and export it as COLLADA (.dae) or OBJ, then import that file here.": "IngeTrazo konnte {name} mit dem integrierten .skp-Leser nicht lesen.\n\nÖffne die Datei im Ursprungsprogramm, exportiere sie als COLLADA (.dae) oder OBJ und importiere dann diese Datei hier.",
