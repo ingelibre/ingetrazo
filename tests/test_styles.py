@@ -50,7 +50,8 @@ def test_igz_roundtrip_keeps_the_style(tmp_path):
     scene = Scene()
     scene.mesh.add_edge(_v(0, 0), _v(1, 0))
     scene.display_style = Style(name="Monochrome", face_mode="monochrome",
-                                background=(1.0, 1.0, 1.0), sky=False)
+                                background=(1.0, 1.0, 1.0), sky=False,
+                                horizon_color=(0.9, 0.6, 0.3))
     path = tmp_path / "estilo.igz"
     igz_format.save_scene(scene, path)
 
@@ -59,6 +60,7 @@ def test_igz_roundtrip_keeps_the_style(tmp_path):
     assert fresh.display_style.name == "Monochrome"
     assert fresh.display_style.face_mode == "monochrome"
     assert fresh.display_style.sky is False
+    assert fresh.display_style.horizon_color == (0.9, 0.6, 0.3)
 
     # A default style stays implicit — old readers see the same terse file.
     scene2 = Scene()
@@ -74,18 +76,21 @@ def test_saved_view_remembers_the_style():
     from core.saved_views import SavedView
     scene = Scene()
     cam = OrbitCamera()
-    scene.display_style = Style(name="Hidden line", face_mode="hidden_line")
+    scene.display_style = Style(name="Hidden line", face_mode="hidden_line",
+                                horizon_color=(0.8, 0.7, 0.6))
     view = SavedView.capture("Planta", scene, cam)
 
     scene.display_style = Style()              # user switches back to Default
     view.apply(scene, cam)                     # recalling the scene restores it
     assert scene.display_style.face_mode == "hidden_line"
+    assert scene.display_style.horizon_color == (0.8, 0.7, 0.6)
 
     # Round-trip through the .igz dict form.
     again = SavedView.from_dict(view.to_dict())
     scene.display_style = Style()
     again.apply(scene, cam)
     assert scene.display_style.name == "Hidden line"
+    assert scene.display_style.horizon_color == (0.8, 0.7, 0.6)
 
 
 def test_style_by_name_returns_copies():

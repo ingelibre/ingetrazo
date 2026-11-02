@@ -1376,6 +1376,35 @@ def _styles_icon(p, ink):
     p.restore()
 
 
+def _fog_icon(p, ink):
+    # A distant ridge dissolving behind three soft banks of mist.
+    p.save()
+    distant = QColor(ink)
+    distant.setAlpha(95)
+    pen = QPen(distant, 2.0)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(10, 31), QPointF(20, 20),
+                              QPointF(28, 28), QPointF(35, 17),
+                              QPointF(42, 25)]))
+    for y, left, right, alpha, bend in (
+            (19, 11, 30, 110, -2),
+            (28, 7, 41, 175, 3),
+            (37, 12, 38, 235, -3)):
+        color = QColor(ink)
+        color.setAlpha(alpha)
+        mist_pen = QPen(color, 2.7)
+        mist_pen.setCapStyle(Qt.RoundCap)
+        p.setPen(mist_pen)
+        path = QPainterPath(QPointF(left, y))
+        mid = (left + right) / 2.0
+        path.cubicTo(mid - 5, y + bend, mid + 4, y - bend,
+                     right, y)
+        p.drawPath(path)
+    p.restore()
+
+
 def _shadows_icon(p, ink):
     # A block with its cast shadow, sun rays at the corner.
     p.save()
@@ -2157,7 +2186,7 @@ _DRAW = {
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
     "section": _section,
-    "styles": _styles_icon, "shadows": _shadows_icon,
+    "styles": _styles_icon, "fog": _fog_icon, "shadows": _shadows_icon,
     "layers_panel": _layers_panel, "layers_make_active": _layers_make_active,
     "layers_isolate": _layers_isolate, "layers_hide": _layers_hide,
     "layers_lock": _layers_lock, "layers_show_all": _layers_show_all,

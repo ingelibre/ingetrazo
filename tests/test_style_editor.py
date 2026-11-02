@@ -146,11 +146,13 @@ def test_every_swatch_stays_editable_and_hints_when_invisible(settings_file):
 
     # Default style: textures + sky + edges + section fill.
     for sw in (panel._edge_c, panel._front_c, panel._sky_c,
-               panel._ground_c, panel._bg_c, panel._fill_c):
+               panel._horizon_c, panel._ground_c, panel._bg_c,
+               panel._fill_c):
         assert sw.isEnabled()
     assert panel._color_hint("front_color") is None  # default faces (#776)
     assert panel._color_hint("background")         # sky covers it
     assert panel._color_hint("sky_color") is None  # sky is on: visible
+    assert panel._color_hint("horizon_color") is None
     assert panel._color_hint("edge_color") is None
 
     style.face_mode = "hidden_line"
@@ -160,6 +162,7 @@ def test_every_swatch_stays_editable_and_hints_when_invisible(settings_file):
     assert panel._color_hint("front_color") is None
     assert panel._color_hint("background") is None
     assert panel._color_hint("sky_color")          # sky off now
+    assert panel._color_hint("horizon_color")
     assert panel._color_hint("edge_color")         # edges off
     assert panel._color_hint("section_fill_color")
     style.face_mode = "wireframe"
@@ -170,40 +173,64 @@ def test_every_swatch_stays_editable_and_hints_when_invisible(settings_file):
     assert panel._color_hint("edge_color") is None  # wireframe always draws
 
 
-def test_sky_gradient_ramps_from_haze_to_the_picked_tones():
-    """The backdrop gradient: the user's sky colour rules the zenith and the
-    ground colour rules the foreground, both hazing toward white at the
-    horizon. Pure math (no GL) — the quads only colour their corners, so
-    these ARE the rendered colours."""
+def test_sky_gradient_stays_anchored_when_the_camera_pitches_down():
+    """The ramp has a fixed height above the horizon. A level view shows its
+    full range; when the horizon rises, the upper-sky end leaves the screen
+    instead of being squeezed back into the remaining strip."""
     from pytest import approx
     from views.viewport import Viewport
     sky = (0.2, 0.4, 0.9)                       # a deep blue
+    horizon = (0.9, 0.7, 0.5)                   # a warm sunset
     gnd = (0.4, 0.3, 0.2)
-    s0, s1, g0, g1, line = Viewport._sky_gradient(sky, gnd, 0.0)
-    # Near the horizon both halves are pulled toward white (haze)…
-    assert s0[0] > sky[0] and g0[0] > gnd[0]
-    # …and away from it they approach the picked tones (blue: red channel
-    # falls toward 0.2 going up; ground darkens going down).
-    assert s1[0] < s0[0] and g1[0] < g0[0]
+    s0, s1, g0, g1, line = Viewport._sky_gradient(
+        sky, horizon, gnd, 0.0)
+    assert s0 == approx(horizon)
+    assert s1 == approx(sky)
+    # These are the quad's two vertical vertex colours; interpolation at
+    # half-height is consequently their equal mix.
+    midpoint = tuple((a + b) / 2 for a, b in zip(s0, s1))
+    assert midpoint == approx((0.55, 0.55, 0.70))
+    # The ground keeps the softer haze it already had.
+    assert g0 == approx(tuple(a + (b - a) * 0.30
+                              for a, b in zip(gnd, horizon)))
+    assert g1[0] < g0[0]
     assert all(0.0 <= v <= 1.0 for c in (s0, s1, g0, g1, line) for v in c)
 
+    # Camera pitched down: only half the fixed ramp remains on screen. Even
+    # the TOP visible pixel is now the equal mix, so the narrow sky strip is
+    # dominated by the horizon tone instead of retaining a forced 50/50 split.
+    s0, s1, _g0, _g1, _l = Viewport._sky_gradient(
+        sky, horizon, gnd, 0.5)
+    assert s0 == approx(horizon)
+    assert s1 == approx((0.55, 0.55, 0.70))
+
+    # With only a tenth of the ramp visible, the screen top is 90 % horizon.
+    _s0, s1, _g0, _g1, _l = Viewport._sky_gradient(
+        sky, horizon, gnd, 0.9)
+    assert s1 == approx(tuple(a + (b - a) * 0.1
+                              for a, b in zip(horizon, sky)))
+
     # Camera pitched up: the whole visible sky is zenith colour.
-    s0, s1, _g0, _g1, _l = Viewport._sky_gradient(sky, gnd, -3.0)
+    s0, s1, _g0, _g1, _l = Viewport._sky_gradient(
+        sky, horizon, gnd, -3.0)
     assert s0 == approx(sky) and s1 == approx(sky)
     # Pitched down: the visible ground is fully the ground colour.
-    _s0, _s1, g0, g1, _l = Viewport._sky_gradient(sky, gnd, 3.0)
+    _s0, _s1, g0, g1, _l = Viewport._sky_gradient(
+        sky, horizon, gnd, 3.0)
     assert g0 == approx(gnd) and g1 == approx(gnd)
 
 
-def test_sky_and_ground_colors_are_style_data(settings_file):
+def test_sky_horizon_and_ground_colors_are_style_data(settings_file):
     """The backdrop tones live in the Style (serialised, library-saved) and
-    the viewport reads them per frame — Marco asked for the sky colour and
-    it was a hardcoded constant."""
+    the viewport reads them per frame; the horizon is no longer a hard-coded
+    white target."""
     st = Style(name="Tarde", sky_color=(0.9, 0.7, 0.5),
+               horizon_color=(1.0, 0.5, 0.2),
                ground_color=(0.4, 0.3, 0.2))
     save_user_style(st)
     got = style_by_name("Tarde")
     assert got.sky_color == (0.9, 0.7, 0.5)
+    assert got.horizon_color == (1.0, 0.5, 0.2)
     assert got.ground_color == (0.4, 0.3, 0.2)
     # An old style dict without the fields gets the historical defaults —
     # which are the viewport's former constants, so old documents render
@@ -211,7 +238,25 @@ def test_sky_and_ground_colors_are_style_data(settings_file):
     from views.viewport import Viewport
     legacy = Style.from_dict({"name": "vieja"})
     assert legacy.sky_color == Viewport._SKY_RGB
+    assert legacy.horizon_color == Viewport._HORIZON_RGB
     assert legacy.ground_color == Viewport._GROUND_RGB
+
+
+def test_panel_horizon_swatch_edits_the_live_gradient(settings_file,
+                                                       monkeypatch):
+    from PySide6.QtGui import QColor
+    from views.tray import StylesPanel
+    win = _Win()
+    panel = StylesPanel(win)
+    assert "rgb(255,255,255)" in panel._horizon_c.styleSheet()
+
+    import views.color_dialog as color_dialog
+    monkeypatch.setattr(color_dialog.QColorDialog, "getColor",
+                        staticmethod(lambda *a, **k: QColor(255, 128, 0)))
+    panel._pick_color("Horizon color", "horizon_color")
+    assert win.viewport.scene.display_style.horizon_color == pytest.approx(
+        (1.0, 128 / 255, 0.0))
+    assert "rgb(255,128,0)" in panel._horizon_c.styleSheet()
 
 
 def test_panel_combo_lists_saved_styles_and_arms_delete(settings_file):
