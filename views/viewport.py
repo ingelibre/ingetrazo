@@ -1766,6 +1766,8 @@ class Viewport(QOpenGLWidget):
     # "two_point"), whoever changed it — the View toolbar's quick buttons
     # follow it.
     projectionChanged = Signal(str)
+    # A double click of the wheel: frame the whole model (#979).
+    zoomExtentsRequested = Signal()
 
     # Soft warm white painted on faces with no material colour — like the matte
     # cardstock of an architecture model (a near-white default).
@@ -17503,7 +17505,13 @@ class Viewport(QOpenGLWidget):
 
         Box-select tools (Select) get the double-click DIRECTLY (no drag box
         starts on a double), and the event is remembered so the next press in
-        place counts as a triple click."""
+        place counts as a triple click.
+
+        A double click of the wheel asks for Zoom Extents and starts no
+        orbit; the tool in use never hears of it (#979)."""
+        if ev.button() == Qt.MiddleButton:
+            self.zoomExtentsRequested.emit()
+            return
         if ev.button() != Qt.LeftButton or self.active_tool is None \
                 or self.nav_mode is not None:
             self.mousePressEvent(ev)
