@@ -49,8 +49,10 @@ class Document:
         #: The composer was on screen when the user left this tab.
         self.composer_shown = False
         self.last_sheet: int = 0
-        #: Its viewport's last frame, small, shown on hover over its tab.
+        #: Its viewport's frame, small, shown on hover over its tab; drawn
+        #: then, if it is due (MainWindow._tab_picture).
         self.thumbnail = None
+        self.picture_due = False
         #: Its scenes shown as tabs under the viewport (views/scene_tabs.py);
         #: its tab's right-click menu turns them off and on.
         from views.scene_tabs import SCENE_TABS_DEFAULT
@@ -164,11 +166,23 @@ class _ProjectTabs(QTabBar):
 
     def tabSizeHint(self, index: int):  # noqa: N802 — Qt override
         hint = super().tabSizeHint(index)
+        height = self._panel_tab_height()
+        # Qt asks for every tab many times over a single layout.
+        name = self.tabText(index)
+        key = (name, hint.width(), self.font().key(), self.style().name())
+        width = self._hint_widths.get(key)
+        if width is None:
+            width = self._hint_widths[key] = self._tab_width(index, hint,
+                                                             height)
+        hint.setWidth(width)
+        hint.setHeight(height)
+        return hint
+
+    def _tab_width(self, index: int, hint, height: int) -> int:
         fm = self.fontMetrics()
         name = self.tabText(index)
         width = (self.PAD_LEFT + fm.horizontalAdvance(name) + self.PAD_GAP
                  + self.CLOSE_PX + self.PAD_RIGHT)
-        height = self._panel_tab_height()
         # The style keeps margins of its own around the name: widen until
         # the whole name fits, measured as the selected tab (the narrower
         # text area), so the size does not change when it comes to front.
@@ -185,10 +199,9 @@ class _ProjectTabs(QTabBar):
                     QStyle.SE_TabBarTabText, opt, self).width() >= need:
                 break
             width += 2
-        hint.setWidth(min(hint.width(), width))
-        hint.setHeight(height)
-        return hint
+        return min(hint.width(), width)
 
+    _hint_widths: dict = {}
     _probe_heights: dict = {}
 
     def _panel_tab_height(self) -> int:
@@ -515,6 +528,8 @@ class ProjectTabBar(QWidget):
     # ---- preview on hover -------------------------------------------------
     _preview = None
     _preview_doc = None
+    #: The picture of a document in the back (the window draws it if due).
+    picture_of = staticmethod(lambda doc: doc.thumbnail)
 
     def _show_preview(self, pos, global_pos) -> bool:
         """Over a tab in the back: the picture its viewport showed when it
@@ -523,9 +538,10 @@ class ProjectTabBar(QWidget):
         then shows."""
         i = self.tabs.tabAt(pos)
         doc = self.tabs.tabData(i) if i >= 0 else None
-        img = getattr(doc, "thumbnail", None)
-        if doc is None or img is None or img.isNull() \
-                or i == self.tabs.currentIndex():
+        img = None
+        if doc is not None and i != self.tabs.currentIndex():
+            img = self.picture_of(doc)
+        if img is None or img.isNull():
             self._hide_preview()
             return False
         from PySide6.QtGui import QPixmap

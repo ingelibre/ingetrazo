@@ -382,6 +382,7 @@ class MainWindow(QMainWindow):
         bar.activated.connect(self.activate_document)
         bar.closeRequested.connect(self.close_document)
         bar.newRequested.connect(self._on_new_tab)
+        bar.picture_of = self._tab_picture
         box.addWidget(bar)
         self._doc_stack = QStackedWidget(area)
         box.addWidget(self._doc_stack, 1)
@@ -6351,8 +6352,11 @@ class MainWindow(QMainWindow):
             return
         vp._last_pos = None
         # The picture draws a whole frame again — seconds and ~650 MB of
-        # draw caches on the SPR the first time — wasted on a closing tab.
-        doc.thumbnail = self._tab_thumbnail(vp) if picture else None
+        # draw caches on the SPR the first time: never on the way out of a
+        # tab, only when its tab is hovered (_tab_picture). None for a
+        # closing tab.
+        doc.thumbnail = None
+        doc.picture_due = picture
         comp = doc.composer
         doc.composer_shown = bool(comp is not None and comp.isVisible())
         if doc.composer_shown:
@@ -6361,12 +6365,30 @@ class MainWindow(QMainWindow):
     #: Width of the picture a tab in the back shows on hover (px).
     TAB_PREVIEW_PX = 280
 
+    def _tab_picture(self, doc):
+        """The picture of a tab in the back, drawn the first time its tab is
+        hovered since it was left: nothing in it can have moved since. The
+        units and axes are global, so they are its own for that one frame."""
+        if doc.picture_due and doc.thumbnail is None \
+                and doc.viewport is not None:
+            doc.picture_due = False
+            from core import axes as _axes
+            from core import units as _units
+            front = self.viewport.scene
+            _units.bind_scene(doc.viewport.scene)
+            _axes.sync(getattr(doc.viewport.scene, "drawing_frame", None))
+            try:
+                doc.thumbnail = self._tab_thumbnail(doc.viewport)
+            finally:
+                _units.bind_scene(front)
+                _axes.sync(getattr(front, "drawing_frame", None))
+        return doc.thumbnail
+
     def _tab_thumbnail(self, vp):
-        """The frame the viewport shows as its tab is left, small: the
-        picture of the project on hover over its tab (one frame drawn
-        again, as the view stands); None off screen."""
+        """The frame the viewport shows, small: the picture of the project
+        on hover over its tab (one frame drawn again, as the view stands)."""
         try:
-            if not vp.isVisible() or not vp.isValid():
+            if not vp.isValid():
                 return None
             img = vp.grabFramebuffer()
         except Exception:  # noqa: BLE001 — a missing picture only
@@ -7455,7 +7477,7 @@ class MainWindow(QMainWindow):
         """A face-me scale figure (arch-viz cutout). ``image``: a file of
         resources/components, or a full path (the user's own picture)."""
         from pathlib import Path
-        from PySide6.QtGui import QImage
+        from PySide6.QtGui import QImageReader
         from core.group import make_billboard_group
         from core.paths import app_root
         path = Path(image)
@@ -7463,11 +7485,11 @@ class MainWindow(QMainWindow):
             path = app_root() / "resources" / "components" / image
         if not path.exists():
             return None
-        img = QImage(str(path))
-        if img.isNull() or img.height() == 0:
+        size = QImageReader(str(path)).size()   # the file's header: no decoding
+        if not size.isValid() or size.height() == 0:
             return None
         return make_billboard_group(str(path), height, name or tr("Person"),
-                                    img.width() / img.height(),
+                                    size.width() / size.height(),
                                     position=position)
 
     def _on_insert_person_2d(self, image: str = "person_billboard.png",
