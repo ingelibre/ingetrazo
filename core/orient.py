@@ -594,7 +594,25 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
             return []
         scope = [f for f in mesh.faces if comp_of[f] in live_comps]
 
-    boundary = dict(all_tris)
+    # Start with the likely partitions already peeled off: a face whose every
+    # edge is shared by three or more faces (a kept Ctrl-push base standing
+    # on its belt). Two such slabs in a row hide each other otherwise — a
+    # ray from one crosses the other, reads it as a wall of the solid, and
+    # neither is ever taken for interior; the second one was then flipped
+    # and the next push refused («rompería el sólido»). A face peeled here
+    # that is really boundary reads outward/inward in the first round and
+    # goes back, so the fixpoint below still has the last word.
+    touches_manifold = set()
+    edge_count: dict = {}
+    for e in mesh.edges:
+        for f in e.faces:
+            edge_count[f] = edge_count.get(f, 0) + 1
+            if len(e.faces) < 3:
+                touches_manifold.add(f)
+    in_scope = set(scope)
+    seeds = {f for f in in_scope
+             if f in all_tris and edge_count.get(f) and f not in touches_manifold}
+    boundary = {f: t for f, t in all_tris.items() if f not in seeds}
     for _ in range(4):
         rng = random.Random(seed)
         base_by_comp = _boundary_base(set(boundary))
@@ -607,6 +625,23 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
                 skip=fidx[f])
             if state == "interior":
                 interior_now.add(f)
+        # An edge only two faces share is a seam of one surface: both are
+        # boundary or both are partition. A partition beside a boundary face
+        # there would leave the boundary with a crack, so a parity misread
+        # (a ray grazing a busy corner elsewhere) gives way to the topology.
+        # A wall left marked interior this way hid the material behind it
+        # from every later push, which then refused.
+        changed = True
+        while changed and interior_now:
+            changed = False
+            for e in mesh.edges:
+                if len(e.faces) != 2:
+                    continue
+                a, b = e.faces
+                if (a in interior_now) != (b in interior_now):
+                    interior_now.discard(a)
+                    interior_now.discard(b)
+                    changed = True
         if interior_now == {f for f in scope if f not in boundary}:
             break
         boundary = {f: t for f, t in all_tris.items() if f not in interior_now}

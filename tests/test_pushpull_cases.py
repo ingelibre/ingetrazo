@@ -437,9 +437,6 @@ def test_789_box_lengthened_with_ctrl():
     assert signed_volume(scene.mesh) == pytest.approx(v0 + area, abs=1e-6)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#789: pushing the end back across the Ctrl division is refused "
-    "(«would break the solid»); the interior partition guard"))
 def test_789_end_pushed_back_across_the_division():
     scene, _h = _boxed(0, 0, 0, 2, 1, 1)
     end = _face(scene.mesh, (2, 0.5, 0.5), (1, 0, 0))
