@@ -548,6 +548,9 @@ class Scene:
         inverse, ok = xform.inverted()
         local = transformed_mesh(edited, inverse if ok else xform)
         proto.restore_state(local.capture_state())
+        # A face reversed in the session was counted on the world copy, and
+        # a reversed loop is all the definition's chunk could not see.
+        proto.note_rewound()
         group.mesh = proto
         group.xform = xform
 

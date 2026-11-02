@@ -1144,6 +1144,15 @@ class Mesh:
         for f, interior in snap.get("finterior", {}).items():
             f.interior = interior
 
+    def note_rewound(self) -> None:
+        """Say that faces may have changed winding (#197): no count,
+        coordinate or paint shows it, so the drawing's chunk has to be told.
+        Marked dirty too, or a move in the same breath would carry the old
+        triangles along on the translation fast path."""
+        self._winding_rev = getattr(self, "_winding_rev", 0) + 1
+        self._chunk_dirty = True
+        self._attrs_dirty = True
+
     # ---- Reset --------------------------------------------------------------
     def clear(self) -> None:
         self._chunk_dirty = True
