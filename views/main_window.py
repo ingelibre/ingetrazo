@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QStyleOptionTab,
     QTabBar,
     QToolBar,
+    QToolButton,
     QWidget,
     QWidgetAction,
 )
@@ -164,6 +165,23 @@ def _obj_parts(temp):
         soften_smooth_edges(kid.mesh, cos_threshold=0.55)
     return group
 
+#: The shapes of a tab bar that runs top to bottom.
+_VERTICAL_TABS = (QTabBar.RoundedEast, QTabBar.RoundedWest,
+                  QTabBar.TriangularEast, QTabBar.TriangularWest)
+
+
+def _tab_end_room(bar) -> int:
+    """What a tray tab bar keeps after its last tab: the «+» and the gear."""
+    return 0 if bar is None else int(bar.property("ingetrazo_end_room") or 0)
+
+
+def _cut_end_room(rect, room: int, shape, rtl: bool) -> QRect:
+    """``rect``, a last tab's, without the room it keeps at its end."""
+    if shape in _VERTICAL_TABS:
+        return rect.adjusted(0, 0, 0, -room)
+    return rect.adjusted(room, 0, 0, 0) if rtl else rect.adjusted(0, 0, -room, 0)
+
+
 class _IconTabStyle(QProxyStyle):
     """The side trays' tabs show only their icon, so many fit on the bar
     without scrolling. The name stays the tab's text — Qt writes it there
@@ -171,14 +189,32 @@ class _IconTabStyle(QProxyStyle):
     drawn nor given room: it is the tab's tooltip and heads the panel
     (_DockHeader)."""
 
+    @staticmethod
+    def _without_end_room(option, widget):
+        """The last tab of a tray bar is drawn in its own size, without the
+        room it takes (sizeFromContents)."""
+        room = _tab_end_room(widget)
+        if not room or option.position not in (QStyleOptionTab.End,
+                                               QStyleOptionTab.OnlyOneTab):
+            return option
+        option = QStyleOptionTab(option)
+        option.rect = _cut_end_room(option.rect, room, option.shape,
+                                    option.direction == Qt.RightToLeft)
+        return option
+
     def drawControl(self, element, option, painter, widget=None):
+        if (element in (QStyle.CE_TabBarTabShape, QStyle.CE_TabBarTabLabel)
+                and isinstance(option, QStyleOptionTab)):
+            option = self._without_end_room(option, widget)
         if (element == QStyle.CE_TabBarTabLabel
                 and isinstance(option, QStyleOptionTab)):
-            # The icon alone, centred: the style would set it at the left
-            # of where the text went.
+            # The icon alone, centred and upright, whichever way the bar
+            # runs: the style would set it where the text began, turned
+            # with a vertical bar.
             rect = QRect(QPoint(0, 0), option.iconSize)
             rect.moveCenter(option.rect.center())
-            if not option.state & QStyle.State_Selected:
+            if option.shape not in _VERTICAL_TABS \
+                    and not option.state & QStyle.State_Selected:
                 rect.translate(0, self.pixelMetric(
                     QStyle.PM_TabBarTabShiftVertical, option, widget))
             mode = (QIcon.Normal if option.state & QStyle.State_Enabled
@@ -193,8 +229,19 @@ class _IconTabStyle(QProxyStyle):
     def sizeFromContents(self, kind, option, size, widget=None):
         size = super().sizeFromContents(kind, option, size, widget)
         if kind == QStyle.CT_TabBarTab and isinstance(option, QStyleOptionTab):
-            size = QSize(option.iconSize.width() + 2 * self.PAD,
-                         size.height())
+            # The last tab also takes the room of what follows it on the
+            # bar: Qt brings out the scroll arrows only when the tabs pass
+            # its end, and until then they would run under the buttons.
+            room = 0
+            if option.position in (QStyleOptionTab.End,
+                                   QStyleOptionTab.OnlyOneTab):
+                room = _tab_end_room(widget)
+            if option.shape in _VERTICAL_TABS:
+                size = QSize(size.width(),
+                             option.iconSize.height() + 2 * self.PAD + room)
+            else:
+                size = QSize(option.iconSize.width() + 2 * self.PAD + room,
+                             size.height())
         return size
 
 
@@ -242,14 +289,15 @@ class _DockTitleTab(QTabBar):
 class _DockHeader(QWidget):
     """The top of a side tray, where its title bar was: its name, since
     its tab shows only an icon. A tray alone on its side keeps its own
-    tab here too, left of the name (``tab``; None while tabbed)."""
+    tab here too, left of the name, and at the right the gear that a tabbed
+    one finds on the tab bar (``tab`` and ``options``; None while tabbed)."""
 
     def __init__(self, window, dock, alone: bool) -> None:
         super().__init__(dock)
         self.tab = _DockTitleTab(window, dock) if alone else None
         row = QHBoxLayout(self)
         if alone:
-            row.setContentsMargins(0, 0, 8, 0)
+            row.setContentsMargins(0, 0, 0, 0)
         else:
             row.setContentsMargins(8, 4, 8, 3)
         row.setSpacing(6)
@@ -261,6 +309,12 @@ class _DockHeader(QWidget):
         font.setBold(True)
         self.label.setFont(font)
         row.addWidget(self.label, 1)
+        self.options = None
+        if alone:
+            self.options = window._panel_options_button(self, dock)
+            self.options.setFixedSize(MainWindow._OPTIONS_PX,
+                                      MainWindow._OPTIONS_PX)
+            row.addWidget(self.options)
         dock.windowTitleChanged.connect(self.label.setText)
 
 
@@ -1319,6 +1373,9 @@ class MainWindow(QMainWindow):
             key = dock.property("icon_key")
             if key:
                 dock.setWindowIcon(tool_icon(str(key)))
+        from PySide6.QtWidgets import QToolButton
+        for btn in self.findChildren(QToolButton, "panel_options_button"):
+            btn.setIcon(tool_icon("panel_options"))
         self._sync_tab_icons()
         layers = getattr(getattr(self, "layers_dock", None), "panel", None)
         if layers is not None:
@@ -2164,6 +2221,8 @@ class MainWindow(QMainWindow):
         st = QSettings()
         st.remove("ui/hidden_trays")
         st.remove("ui/known_trays")
+        st.remove("ui/dock_tabs_vertical")
+        self._apply_dock_tabs_position()
         # Laid out hidden, shown below: on their way into the tabs Qt
         # stacks a tray under the others for a moment, and their heights —
         # a header each — added up past a short window, which grew.
@@ -2193,9 +2252,10 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self, self._style_dock_tabs)
         QTimer.singleShot(0, self, self._place_sidebar_handle)
 
-    def _fill_panels_menu(self, menu) -> None:
+    def _fill_panels_menu(self, menu, area=None) -> None:
         """One checkable entry per side-tray tab (Marco, 29-09: «cuando
-        tenga demasiadas pestañas… configurar para no mostrar»)."""
+        tenga demasiadas pestañas… configurar para no mostrar»). Opened from
+        a side's own tabs (``area``), a closed panel opens on that side."""
         menu.clear()
         for dock in self._sidebar_docks():
             dock.toggleViewAction().setStatusTip(
@@ -2205,7 +2265,7 @@ class MainWindow(QMainWindow):
             act.setCheckable(True)
             act.setChecked(not dock.isHidden())
             act.triggered.connect(
-                lambda on, d=dock: self.set_tray_shown(d, on))
+                lambda on, d=dock: self.set_tray_shown(d, on, area))
         menu.addSeparator()
         every = menu.addAction(tr("Show all panels"))
         every.setStatusTip(tr("Bring back every tab of the side tray."))
@@ -2216,10 +2276,14 @@ class MainWindow(QMainWindow):
             "all on the right in the factory order."))
         reset.triggered.connect(self.restore_default_trays)
 
-    def set_tray_shown(self, dock, shown: bool) -> None:
+    def set_tray_shown(self, dock, shown: bool, area=None) -> None:
         """Show (in front) or hide one side-tray tab and remember it. A
-        folded sidebar unfolds first: asking for a tab means seeing it."""
-        if shown:
+        folded sidebar unfolds first: asking for a tab means seeing it.
+        With ``area``, a closed tab opens on that side."""
+        if shown and area is not None and dock.isHidden() \
+                and self.dockWidgetArea(dock) != area:
+            self.move_dock(dock, area)
+        elif shown:
             act = getattr(self, "_act_sidebar", None)
             if act is not None and not act.isChecked():
                 act.setChecked(True)
@@ -2490,11 +2554,11 @@ class MainWindow(QMainWindow):
         dragging a tab out of it — onto the viewport's left or right half,
         or onto the other side's tabs — or from its right-click menu; each
         side folds with its handle (Ctrl+F5 right, Ctrl+F6 left). Where
-        each tray is is part of the window layout, saved with it."""
+        each tray is is part of the window layout, saved with it. The tabs
+        can also run down the panels' right edge (dock_tabs_vertical)."""
         from PySide6.QtCore import QSize
-        from PySide6.QtWidgets import QTabWidget, QToolButton
-        self.setTabPosition(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea,
-                            QTabWidget.North)
+        from PySide6.QtWidgets import QToolButton
+        self._apply_dock_tabs_position()
         self.viewport.setAcceptDrops(True)
         self.installEventFilter(self)           # new tab bars, as Qt makes them
         act = QAction(tr("Left sidebar"), self)
@@ -2520,6 +2584,28 @@ class MainWindow(QMainWindow):
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0, self, self._style_dock_tabs)
         QTimer.singleShot(0, self, self._place_sidebar_handle)
+
+    def dock_tabs_vertical(self) -> bool:
+        """Whether the side trays' tabs run down the panels' right edge
+        instead of along their top."""
+        return str(QSettings().value("ui/dock_tabs_vertical", "0")) == "1"
+
+    def set_dock_tabs_vertical(self, on: bool) -> None:
+        QSettings().setValue("ui/dock_tabs_vertical", "1" if on else "0")
+        self._apply_dock_tabs_position()
+        QTimer.singleShot(0, self, self._place_sidebar_handle)
+
+    def _apply_dock_tabs_position(self) -> None:
+        from PySide6.QtWidgets import QTabWidget
+        self.setTabPosition(
+            Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea,
+            QTabWidget.East if self.dock_tabs_vertical() else QTabWidget.North)
+
+    def restoreState(self, state, version=0) -> bool:  # noqa: N802 — Qt override
+        # A saved layout brings the shape its tab bars had when it was saved.
+        restored = super().restoreState(state, version)
+        self._apply_dock_tabs_position()
+        return restored
 
     def _foreign_side_docks(self, area) -> list:
         """Panels docked on ``area`` that are not trays: an extension that
@@ -2592,7 +2678,7 @@ class MainWindow(QMainWindow):
         show a tab's tooltip only when its name is cut short — and with
         the icon alone nothing is ever cut, so it never came."""
         from PySide6.QtWidgets import QToolTip
-        i = bar.tabAt(event.pos())
+        i = self._tab_on_bar_at(bar, event.pos())
         tip = bar.tabToolTip(i) if i >= 0 else ""
         if tip:
             QToolTip.showText(event.globalPos(), tip, bar, bar.tabRect(i))
@@ -2622,10 +2708,14 @@ class MainWindow(QMainWindow):
             tb.setUsesScrollButtons(True)
             if not tb.property("ingetrazo_watched"):
                 tb.setProperty("ingetrazo_watched", True)
+                tb.setProperty("ingetrazo_options_px", self._OPTIONS_CELL)
+                tb.setProperty("ingetrazo_end_room", self._OPTIONS_CELL
+                               + self._PLUS_PX + 2 * self._PLUS_GAP)
                 tb.setAcceptDrops(True)
                 tb.installEventFilter(self)
                 tb.setIconSize(QSize(DOCK_TAB_ICON_PX, DOCK_TAB_ICON_PX))
                 tb.setStyle(self.icon_tab_style())
+                self._add_options_button(tb)
             self._add_panels_button(tb)
         # A tray alone on its side has no tab bar from Qt — only its title
         # bar, an empty strip: it gets a tab of its own there, so it can
@@ -2654,6 +2744,40 @@ class MainWindow(QMainWindow):
     #: The «+» after the tray tabs, and the gap it keeps from the arrows.
     _PLUS_PX = 20
     _PLUS_GAP = 4
+    #: The gear, and the cell it keeps fixed at the end of a tray tab bar.
+    _OPTIONS_PX = 24
+    _OPTIONS_CELL = 30
+
+    def _panel_options_button(self, parent, dock=None):
+        """The gear of the panels' options (_open_panel_options)."""
+        from PySide6.QtCore import QSize
+        from PySide6.QtWidgets import QToolButton
+        btn = QToolButton(parent)
+        btn.setObjectName("panel_options_button")
+        btn.setIcon(tool_icon("panel_options"))
+        btn.setIconSize(QSize(18, 18))
+        btn.setToolTip(tr("Panel options"))
+        btn.setAutoRaise(True)
+        btn.clicked.connect(lambda: self._open_panel_options(btn, dock))
+        return btn
+
+    def _add_options_button(self, bar) -> None:
+        btn = self._panel_options_button(bar)
+        btn.show()
+
+    def _real_tab_rect(self, bar, index: int):
+        """Tab ``index`` as it shows: a last tab without the room it keeps
+        for the «+» and the gear."""
+        rect = bar.tabRect(index)
+        if index != bar.count() - 1:
+            return rect
+        return _cut_end_room(rect, _tab_end_room(bar), bar.shape(),
+                             bar.isRightToLeft())
+
+    def _tab_on_bar_at(self, bar, pos) -> int:
+        """The tab whose drawing is under ``pos`` (bar coordinates), or -1."""
+        i = bar.tabAt(pos)
+        return i if i >= 0 and self._real_tab_rect(bar, i).contains(pos) else -1
 
     def _add_panels_button(self, bar) -> None:
         """A «+» right after the last tab of a tray tab bar: the Window ▸
@@ -2669,7 +2793,8 @@ class MainWindow(QMainWindow):
         arrow = bar.style().pixelMetric(
             QStyle.PM_TabBarScrollButtonWidth, None, bar)
         bar.setProperty("ingetrazo_arrow_px", arrow)
-        room = 2 * arrow + self._PLUS_PX + 2 * self._PLUS_GAP
+        room = (2 * arrow + self._PLUS_PX + 2 * self._PLUS_GAP
+                + int(bar.property("ingetrazo_options_px") or 0))
         bar.setStyleSheet(bar.styleSheet()
                           + f" QTabBar::scroller {{ width: {room}px; }}")
         btn = QToolButton(bar)
@@ -2699,30 +2824,43 @@ class MainWindow(QMainWindow):
         btn = bar.findChild(QToolButton, "add_panels_button")
         if btn is None or bar.count() == 0:
             return
+        gear = bar.findChild(QToolButton, "panel_options_button")
+        cell = int(bar.property("ingetrazo_options_px") or 0)
+        if bar.shape() in _VERTICAL_TABS:
+            self._place_add_panels_button_down(bar, btn, gear, cell)
+            return
         # Worked out left to right; a right-to-left bar (#1067) mirrors
         # every place, so the room and the arrows sit at its other end.
         from views.rtl import visual_rect
         whole = bar.rect()
-        last = visual_rect(bar, whole, bar.tabRect(bar.count() - 1))
+        if gear is not None:             # fixed at the bar's end, whatever comes
+            geo = visual_rect(bar, whole, QRect(
+                bar.width() - cell, 0, cell, bar.height()))
+            if gear.geometry() != geo:
+                gear.setFixedSize(geo.size())
+                gear.setGeometry(geo)
+            gear.raise_()
+        last = visual_rect(bar, whole,
+                           self._real_tab_rect(bar, bar.count() - 1))
         y = max(0, last.center().y() - btn.height() // 2 + 1)
         rtl = bar.isRightToLeft()
         arrows = sorted((b for b in bar.findChildren(QToolButton)
-                         if b is not btn and b.isVisible()),
+                         if b is not btn and b is not gear and b.isVisible()),
                         key=(lambda b: -b.x()) if rtl else (lambda b: b.x()))
         if arrows:
             w = int(bar.property("ingetrazo_arrow_px") or arrows[0].width())
-            x = bar.width()
+            x = bar.width() - cell
             for b in reversed(arrows):
                 x -= w
                 geo = visual_rect(bar, whole, QRect(x, b.y(), w, b.height()))
                 if b.geometry() != geo:
                     b.setGeometry(geo)
             # The whole room, top to bottom: the cut tab ends at its edge.
-            cell = self._PLUS_PX + 2 * self._PLUS_GAP
-            geo = QRect(max(0, x - cell), 0, cell, bar.height())
+            plus = self._PLUS_PX + 2 * self._PLUS_GAP
+            geo = QRect(max(0, x - plus), 0, plus, bar.height())
         else:
             geo = QRect(max(0, min(last.right() + 3,
-                                   bar.width() - self._PLUS_PX - 2)), y,
+                                   bar.width() - cell - self._PLUS_PX - 2)), y,
                         self._PLUS_PX, self._PLUS_PX)
         geo = visual_rect(bar, whole, geo)
         if btn.geometry() != geo:
@@ -2730,10 +2868,91 @@ class MainWindow(QMainWindow):
             btn.setGeometry(geo)
         btn.raise_()
 
+    def _place_add_panels_button_down(self, bar, btn, gear, cell) -> None:
+        """The same on a bar that runs top to bottom: under the last tab
+        while they all fit; when they do not, above the arrows, with the
+        gear fixed at its end."""
+        from PySide6.QtCore import QRect
+        from PySide6.QtWidgets import QToolButton
+        if gear is not None:
+            geo = QRect(0, bar.height() - cell, bar.width(), cell)
+            if gear.geometry() != geo:
+                gear.setFixedSize(geo.size())
+                gear.setGeometry(geo)
+            gear.raise_()
+        arrows = sorted((b for b in bar.findChildren(QToolButton)
+                         if b is not btn and b is not gear and b.isVisible()),
+                        key=lambda b: b.y())
+        if arrows:
+            h = int(bar.property("ingetrazo_arrow_px") or arrows[0].height())
+            y = bar.height() - cell
+            for b in reversed(arrows):
+                y -= h
+                geo = QRect(b.x(), y, b.width(), h)
+                if b.geometry() != geo:
+                    b.setGeometry(geo)
+            plus = self._PLUS_PX + 2 * self._PLUS_GAP
+            geo = QRect(0, max(0, y - plus), bar.width(), plus)
+        else:
+            last = self._real_tab_rect(bar, bar.count() - 1)
+            geo = QRect(max(0, (bar.width() - self._PLUS_PX) // 2),
+                        max(0, min(last.bottom() + 3,
+                                   bar.height() - cell - self._PLUS_PX - 2)),
+                        self._PLUS_PX, self._PLUS_PX)
+        if btn.geometry() != geo:
+            btn.setFixedSize(geo.size())
+            btn.setGeometry(geo)
+        btn.raise_()
+
+    def _area_of_bar(self, bar):
+        """The side a tab bar is on, from the trays on its tabs."""
+        for i in range(bar.count()):
+            dock = self._dock_of_tab(bar, i)
+            if dock is not None:
+                return self.dockWidgetArea(dock)
+        return None
+
     def _open_panels_menu(self, btn) -> None:
         menu = _StayOpenMenu(self)
-        self._fill_panels_menu(menu)
+        self._fill_panels_menu(menu, self._area_of_bar(btn.parentWidget()))
         self._popup_menu(menu, btn.mapToGlobal(btn.rect().bottomLeft()))
+
+    def _open_panel_options(self, btn, dock=None) -> None:
+        """The gear: of ``dock``, or of the tray in front on the tab bar
+        that holds the button."""
+        if dock is None:
+            bar = btn.parentWidget()
+            dock = self._dock_of_tab(bar, bar.currentIndex())
+        if dock is None:
+            return
+        menu = _StayOpenMenu(self)
+        self._fill_panel_options_menu(menu, dock)
+        self._popup_menu(menu, btn.mapToGlobal(btn.rect().bottomLeft()))
+
+    def _fill_panel_options_menu(self, menu, dock) -> None:
+        """Where the tabs run, this panel to the other side, and the panels
+        list, a closed one opening on this side."""
+        from PySide6.QtGui import QActionGroup
+        self._fill_panels_menu(menu, self.dockWidgetArea(dock))
+        first = menu.actions()[0]
+        group = QActionGroup(menu)
+        for vertical, label in ((False, "Tabs on top"),
+                                (True, "Tabs on the right, vertical")):
+            act = QAction(tr(label), menu)
+            act.setCheckable(True)
+            act.setChecked(self.dock_tabs_vertical() == vertical)
+            group.addAction(act)
+            act.triggered.connect(
+                lambda _c=False, v=vertical: self.set_dock_tabs_vertical(v))
+            menu.insertAction(first, act)
+        menu.insertSeparator(first)
+        left = self.dockWidgetArea(dock) == Qt.LeftDockWidgetArea
+        move = QAction(tr("Move to the right side") if left
+                       else tr("Move to the left side"), menu)
+        move.triggered.connect(lambda: self.move_dock(
+            dock, Qt.RightDockWidgetArea if left else Qt.LeftDockWidgetArea))
+        menu.insertAction(first, move)
+        menu.insertSeparator(first)
 
     def _popup_menu(self, menu, pos) -> None:
         menu.exec(pos)
@@ -2817,9 +3036,12 @@ class MainWindow(QMainWindow):
             if t in (QEvent.Paint, QEvent.Resize, QEvent.Show):
                 self._place_add_panels_button(obj)
             if t == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
-                i = obj.tabAt(event.position().toPoint())
+                pos = event.position().toPoint()
+                i = self._tab_on_bar_at(obj, pos)
                 # Off the tabs, on the bar: the whole side goes (-2).
                 obj.setProperty("ingetrazo_press", i if i >= 0 else -2)
+                if i < 0 <= obj.tabAt(pos):     # the room the last tab keeps
+                    return True
             elif t == QEvent.MouseButtonRelease:
                 obj.setProperty("ingetrazo_press", -1)
             elif t == QEvent.MouseMove and event.buttons() & Qt.LeftButton:

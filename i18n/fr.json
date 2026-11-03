@@ -3274,5 +3274,8 @@
  "Front color — paints faces in Hidden line and Monochrome": "Couleur de face — peint les faces dans les modes Lignes cachées et Monochrome",
  "Distance ({unit}):": "Distance ({unit}) :",
  "Restore defaults": "Rétablir les valeurs par défaut",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Remet les réglages de cette fenêtre tels qu'IngeTrazo les fournit. Rien n'est enregistré tant que vous n'appuyez pas sur OK. La langue, l'Assistant IA, les raccourcis clavier et les unités du document ouvert restent tels quels."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Remet les réglages de cette fenêtre tels qu'IngeTrazo les fournit. Rien n'est enregistré tant que vous n'appuyez pas sur OK. La langue, l'Assistant IA, les raccourcis clavier et les unités du document ouvert restent tels quels.",
+ "Tabs on top": "Onglets en haut",
+ "Tabs on the right, vertical": "Onglets à droite, à la verticale",
+ "Panel options": "Options des panneaux"
 }

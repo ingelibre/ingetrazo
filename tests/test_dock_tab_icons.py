@@ -106,8 +106,8 @@ def test_a_tab_takes_the_icons_room_not_the_names(win):
     name = bar.fontMetrics().horizontalAdvance(win.tray.windowTitle())
     assert hint < bar.iconSize().width() + 32
     assert hint < name + bar.iconSize().width()     # what it took before
-    # Every tab alike: the bar is about as wide as its icons.
-    widths = {bar.tabSizeHint(j).width() for j in range(bar.count())}
+    # Every tab alike as drawn: the bar is about as wide as its icons.
+    widths = {win._real_tab_rect(bar, j).width() for j in range(bar.count())}
     assert max(widths) - min(widths) <= 2
 
 
@@ -243,6 +243,270 @@ def test_a_panel_an_extension_builds_itself_gets_an_icon_too(win):
     dock.deleteLater()
 
 
+def _gear(bar):
+    from PySide6.QtWidgets import QToolButton
+    return bar.findChild(QToolButton, "panel_options_button")
+
+
+def test_the_gear_is_fixed_at_the_end_of_the_tabs_row(win):
+    bar, _i = _bar_of(win, win.tray)
+    gear = _gear(bar)
+    assert gear.isVisible() and not gear.icon().isNull()
+    assert gear.toolTip() == "Panel options" and gear.autoRaise()
+    assert gear.geometry().right() == bar.width() - 1   # the same row, its end
+    assert gear.y() == 0 and gear.height() == bar.height()
+    # No tab, no matter how many come: it stays where it is, after them all.
+    win.set_tray_shown(win.georef_tray, False)
+    _app.processEvents()
+    win._style_dock_tabs()
+    _app.processEvents()
+    bar, _i = _bar_of(win, win.tray)
+    assert _gear(bar).geometry().right() == bar.width() - 1
+    last = win._real_tab_rect(bar, bar.count() - 1)
+    assert last.right() < _gear(bar).x()
+    # Its header gets none: the name alone.
+    assert win.tray.titleBarWidget().options is None
+    win.set_tray_shown(win.georef_tray, True)
+
+
+def test_the_room_after_the_last_tab_is_no_tab(win):
+    bar, _i = _bar_of(win, win.tray)
+    i = bar.count() - 1
+    drawn = win._real_tab_rect(bar, i)
+    assert drawn.width() < bar.tabRect(i).width()
+    room = QPoint(drawn.right() + 3, drawn.center().y())
+    assert bar.tabAt(room) == i and win._tab_on_bar_at(bar, room) == -1
+    assert win._tab_on_bar_at(bar, drawn.center()) == i
+    assert _tip_over(bar, i) == win._dock_of_tab(bar, i).windowTitle()
+
+
+def test_the_tabs_bring_out_the_arrows_before_reaching_the_gear(win):
+    # The «+» and the gear count: the arrows come before tabs go under them.
+    from PySide6.QtWidgets import QToolButton
+    from views.extension_api import ExtensionApp
+    app = ExtensionApp(win, "fill_up")
+    for n in range(30):
+        app.add_panel(f"Fill {n}", QLabel(str(n)), name=str(n))
+        _app.processEvents()
+        win._style_dock_tabs()
+        _app.processEvents()
+        bar, _i = _bar_of(win, win.tray)
+        plus = bar.findChild(QToolButton, "add_panels_button")
+        arrows = [b for b in bar.findChildren(QToolButton)
+                  if b not in (plus, _gear(bar)) and b.isVisible()]
+        if not arrows:
+            last = win._real_tab_rect(bar, bar.count() - 1)
+            assert last.right() < plus.x()
+            assert plus.geometry().right() < _gear(bar).x()
+    assert arrows
+
+
+def test_the_gear_opens_the_panel_options(win, monkeypatch):
+    shown = []
+    monkeypatch.setattr(win, "_popup_menu",
+                        lambda menu, pos: shown.append(menu))
+    win.tray.raise_()
+    _app.processEvents()
+    _gear(_bar_of(win, win.tray)[0]).click()
+    texts = [a.text() for a in shown[0].actions()]
+    assert texts[:2] == ["Tabs on top", "Tabs on the right, vertical"]
+    assert "Move to the left side" in texts
+    assert win.bim_tray.windowTitle() in texts      # and the panels list
+    assert "Show all panels" in texts
+    # The panel's own side: from one on the left, back to the right.
+    win.move_dock(win.project_browser, Qt.LeftDockWidgetArea)
+    _app.processEvents()
+    _app.processEvents()
+    win.project_browser.titleBarWidget().options.click()    # alone: its header
+    assert "Move to the right side" in [a.text() for a in shown[1].actions()]
+    win.move_dock(win.project_browser, Qt.RightDockWidgetArea)
+
+
+def _open_on(win, monkeypatch, opener, dock):
+    """Tick ``dock`` in the list that ``opener`` pops up."""
+    def pick(menu, pos):
+        next(a for a in menu.actions()
+             if a.text() == dock.windowTitle()).trigger()
+    monkeypatch.setattr(win, "_popup_menu", pick)
+    opener()
+    _app.processEvents()
+    win._style_dock_tabs()
+    _app.processEvents()
+    _app.processEvents()
+
+
+def test_a_closed_panel_opens_on_the_side_of_the_plus(win, monkeypatch):
+    from PySide6.QtWidgets import QToolButton
+    win.set_tray_shown(win.georef_tray, False)
+    win.move_dock(win.project_browser, Qt.LeftDockWidgetArea)
+    _app.processEvents()
+    win._style_dock_tabs()
+    _app.processEvents()
+    assert win.dockWidgetArea(win.georef_tray) == Qt.RightDockWidgetArea
+    # The left side holds one tray alone: the «+» of its own tab.
+    tab = win.project_browser.titleBarWidget().tab
+    plus = tab.findChild(QToolButton, "add_panels_button")
+    _open_on(win, monkeypatch, plus.click, win.georef_tray)
+    assert win.dockWidgetArea(win.georef_tray) == Qt.LeftDockWidgetArea
+    assert not win.georef_tray.isHidden()
+    assert win.georef_tray in win.tabifiedDockWidgets(win.project_browser)
+    # Now tabbed there, another one comes by the bar's «+», or by its gear.
+    win.set_tray_shown(win.bim_tray, False)
+    bar, _i = _bar_of(win, win.project_browser)
+    plus = bar.findChild(QToolButton, "add_panels_button")
+    _open_on(win, monkeypatch, plus.click, win.bim_tray)
+    assert win.dockWidgetArea(win.bim_tray) == Qt.LeftDockWidgetArea
+    win.set_tray_shown(win.bim_tray, False)
+    win.move_dock(win.bim_tray, Qt.RightDockWidgetArea)
+    win.set_tray_shown(win.bim_tray, False)
+    bar, _i = _bar_of(win, win.project_browser)
+    _open_on(win, monkeypatch, _gear(bar).click, win.bim_tray)
+    assert win.dockWidgetArea(win.bim_tray) == Qt.LeftDockWidgetArea
+
+
+def test_an_open_panel_stays_on_its_side_and_the_window_menu_moves_none(win):
+    # Unticked from the other side's list it closes where it is; from
+    # Window ▸ Panels, which belongs to no side, it comes back where it was.
+    win.set_tray_shown(win.bim_tray, False, Qt.LeftDockWidgetArea)
+    assert win.dockWidgetArea(win.bim_tray) == Qt.RightDockWidgetArea
+    win.set_tray_shown(win.bim_tray, True)
+    assert win.dockWidgetArea(win.bim_tray) == Qt.RightDockWidgetArea
+    assert not win.bim_tray.isHidden()
+
+
+def _set_vertical(win, on):
+    win.set_dock_tabs_vertical(on)
+    _app.processEvents()
+    win._style_dock_tabs()
+    _app.processEvents()
+
+
+def test_the_tabs_can_run_down_the_panels_right_edge(win):
+    from PySide6.QtWidgets import QTabBar
+    from views.main_window import DOCK_TAB_ICON_PX, _VERTICAL_TABS
+    assert not win.dock_tabs_vertical()
+    assert _bar_of(win, win.tray)[0].shape() not in _VERTICAL_TABS
+    _set_vertical(win, True)
+    assert win.dock_tabs_vertical()
+    bar, _i = _bar_of(win, win.tray)
+    assert bar.shape() == QTabBar.RoundedEast
+    tops = [bar.tabRect(j).top() for j in range(bar.count())]
+    assert tops == sorted(tops) and len(set(tops)) == bar.count()
+    assert bar.width() < bar.height()
+    # On the panel's right, in a tab as tall as the icon's room.
+    shown = next(d for d in win._sidebar_docks() if d.isVisible()
+                 and not d.visibleRegion().isEmpty())
+    assert bar.mapTo(win, QPoint(0, 0)).x() >= \
+        shown.mapTo(win, QPoint(shown.width() - 1, 0)).x()
+    assert bar.tabSizeHint(0).height() < DOCK_TAB_ICON_PX + 32
+    # Still found, named and told as ever.
+    bar, i = _bar_of(win, win.bim_tray)
+    pos = bar.mapTo(win, bar.tabRect(i).center())
+    assert win._dock_tab_at(pos) is win.bim_tray
+    assert _tip_over(bar, i) == "BIM"
+    # And back on top.
+    _set_vertical(win, False)
+    assert _bar_of(win, win.tray)[0].shape() not in _VERTICAL_TABS
+
+
+def test_a_vertical_tab_paints_its_icon_upright():
+    from PySide6.QtCore import QRect
+    from PySide6.QtGui import QPainter
+    from PySide6.QtWidgets import QStyle, QStyleOptionTab, QTabBar
+    from views.main_window import _IconTabStyle
+    pm = QPixmap(20, 20)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.fillRect(0, 0, 20, 10, Qt.red)                # the icon's top half
+    p.end()
+    opt = QStyleOptionTab()
+    opt.shape = QTabBar.RoundedEast
+    opt.state = QStyle.State_Enabled | QStyle.State_Selected
+    opt.icon = QIcon(pm)
+    opt.iconSize = pm.size()
+    opt.rect = QRect(0, 0, 40, 40)
+    out = QPixmap(40, 40)
+    out.fill(Qt.transparent)
+    p = QPainter(out)
+    _IconTabStyle(QApplication.style().name()).drawControl(
+        QStyle.CE_TabBarTabLabel, opt, p, None)
+    p.end()
+    img = out.toImage()
+    assert img.pixelColor(20, 13).alpha() > 0       # the top half on top
+    assert img.pixelColor(20, 26).alpha() == 0
+
+
+def test_the_plus_follows_the_vertical_tabs(win):
+    _set_vertical(win, True)
+    from PySide6.QtWidgets import QToolButton
+    bar, _i = _bar_of(win, win.tray)
+    btn = bar.findChild(QToolButton, "add_panels_button")
+    last = win._real_tab_rect(bar, bar.count() - 1)
+    assert btn.isVisible()
+    assert last.bottom() < btn.y() <= last.bottom() + 6
+    assert 0 <= btn.x() and btn.geometry().right() < bar.width()
+    # The gear, at the column's end.
+    assert _gear(bar).geometry().bottom() == bar.height() - 1
+    assert btn.geometry().bottom() < _gear(bar).y()
+    _set_vertical(win, False)
+
+
+def test_the_plus_stays_inside_a_vertical_bar_that_overflows(win):
+    from PySide6.QtWidgets import QToolButton
+    from views.extension_api import ExtensionApp
+    app = ExtensionApp(win, "many_down")
+    for i in range(60):
+        app.add_panel(f"Down {i}", QLabel(str(i)), name=str(i))
+    win._show_all_trays()
+    _set_vertical(win, True)
+    bar, _i = _bar_of(win, win.tray)
+    btn = bar.findChild(QToolButton, "add_panels_button")
+    gear = _gear(bar)
+    arrows = [b for b in bar.findChildren(QToolButton)
+              if b not in (btn, gear) and b.isVisible()]
+    assert arrows                                   # they really do not fit
+    for arrow in arrows:
+        assert not btn.geometry().intersects(arrow.geometry())
+        assert arrow.y() > btn.y()                  # «+», then the arrows,
+    # and the gear at the end.
+    assert max(a.geometry().bottom() for a in arrows) == gear.y() - 1
+    assert gear.geometry().bottom() == bar.height() - 1
+    _set_vertical(win, False)
+
+
+def test_the_choice_is_kept_and_a_saved_layout_does_not_undo_it(win):
+    from views.main_window import _VERTICAL_TABS
+    state = win.saveState()                         # saved with tabs on top
+    _set_vertical(win, True)
+    win.restoreState(state)
+    _app.processEvents()
+    assert _bar_of(win, win.tray)[0].shape() in _VERTICAL_TABS
+    # A new window reads it.
+    from views.main_window import MainWindow
+    other = MainWindow()
+    other.resize(1400, 900)
+    other.show()
+    _app.processEvents()
+    other._style_dock_tabs()
+    _app.processEvents()
+    assert other.dock_tabs_vertical()
+    assert _bar_of(other, other.tray)[0].shape() in _VERTICAL_TABS
+    other._saved_version = other.viewport.scene.version
+    other.close()
+    _set_vertical(win, False)
+
+
+def test_restore_default_panels_puts_the_tabs_back_on_top(win):
+    from views.main_window import _VERTICAL_TABS
+    _set_vertical(win, True)
+    win.restore_default_trays()
+    _app.processEvents()
+    win._style_dock_tabs()
+    _app.processEvents()
+    assert not win.dock_tabs_vertical()
+    assert _bar_of(win, win.tray)[0].shape() not in _VERTICAL_TABS
+
+
 def _tip_over(bar, i):
     """What pops up with the pointer resting on tab ``i``."""
     from PySide6.QtGui import QHelpEvent
@@ -250,7 +514,8 @@ def _tip_over(bar, i):
     from PySide6.QtWidgets import QToolTip
     QToolTip.hideText()
     _app.processEvents()
-    centre = bar.tabRect(i).center()
+    # Near its start: the last tab's rect holds the room it keeps too.
+    centre = bar.tabRect(i).topLeft() + QPoint(8, 8)
     QApplication.sendEvent(bar, QHelpEvent(QEvent.ToolTip, centre,
                                            bar.mapToGlobal(centre)))
     _app.processEvents()

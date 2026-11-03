@@ -2222,6 +2222,22 @@ def _panel_solid_inspector(p, ink):
     _magnifier(p, ink, 31, 31, 7)
 
 
+def _panel_options(p, ink):
+    # A gear of eight teeth, its hub in the accent: options, not a tab.
+    import math
+    teeth = 8
+    points = []
+    for i in range(teeth):
+        mid = 2 * math.pi * i / teeth
+        for off, radius in ((-0.30, 13.5), (-0.17, 19.0), (0.17, 19.0),
+                            (0.30, 13.5)):
+            points.append(QPointF(24 + radius * math.cos(mid + off),
+                                  24 + radius * math.sin(mid + off)))
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(points))
+    _dot(p, 24, 24, 5.0)
+
+
 def _panel_levels(p, ink):
     # A building cut through: floor slabs on columns, the level marker
     # pointing at the middle floor.
@@ -2281,7 +2297,7 @@ _DRAW = {
     "panel_terrain": _panel_terrain, "panel_browser": _panel_browser,
     "panel_ai": _panel_ai, "panel_render": _panel_render,
     "panel_solid_inspector": _panel_solid_inspector,
-    "panel_levels": _panel_levels,
+    "panel_levels": _panel_levels, "panel_options": _panel_options,
     "layers_panel": _layers_panel, "layers_make_active": _layers_make_active,
     "layers_isolate": _layers_isolate, "layers_hide": _layers_hide,
     "layers_lock": _layers_lock, "layers_show_all": _layers_show_all,

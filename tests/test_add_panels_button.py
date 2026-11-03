@@ -56,7 +56,7 @@ def test_the_plus_follows_the_last_tab():
     _app.processEvents()
     bar = _bar_on_screen(win)
     btn = _plus(bar)
-    last = bar.tabRect(bar.count() - 1)
+    last = win._real_tab_rect(bar, bar.count() - 1)
     assert last.right() < btn.x() <= last.right() + 6
     # One more tab: it moves along.
     before = btn.x()
@@ -67,7 +67,7 @@ def test_the_plus_follows_the_last_tab():
     bar = _bar_on_screen(win)
     btn = _plus(bar)
     assert btn.x() > before
-    assert btn.x() > bar.tabRect(bar.count() - 1).right()
+    assert btn.x() > win._real_tab_rect(bar, bar.count() - 1).right()
     win._show_all_trays()
     _close(win)
 
@@ -87,14 +87,17 @@ def test_the_plus_stays_inside_the_bar_when_the_tabs_do_not_fit():
     _app.processEvents()
     bar = _bar_on_screen(win)
     btn = _plus(bar)
+    gear = bar.findChild(QToolButton, "panel_options_button")
     arrows = [b for b in bar.findChildren(QToolButton)   # Qt's scroll arrows
-              if b is not btn and b.isVisible()]
+              if b not in (btn, gear) and b.isVisible()]
     assert arrows                                  # they really do not fit
     for arrow in arrows:
         assert not btn.geometry().intersects(arrow.geometry())
         assert arrow.x() > btn.x()                 # «+», then the arrows,
         assert arrow.width() == bar.property("ingetrazo_arrow_px")
-    assert max(a.geometry().right() for a in arrows) == bar.width() - 1
+    # and the gear, fixed at the bar's end.
+    assert max(a.geometry().right() for a in arrows) == gear.x() - 1
+    assert gear.geometry().right() == bar.width() - 1
     # A whole cell of the bar's height: the cut tab ends at its edge
     # instead of showing around a small «+».
     assert btn.height() == bar.height()

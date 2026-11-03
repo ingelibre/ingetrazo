@@ -3277,5 +3277,8 @@
  "Front color — paints faces in Hidden line and Monochrome": "สีด้านหน้า — ระบายพื้นผิวในโหมดซ่อนเส้นและโหมดสีเดียว",
  "Distance ({unit}):": "ระยะ ({unit}):",
  "Restore defaults": "คืนค่าเริ่มต้น",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม"
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม",
+ "Tabs on top": "แท็บด้านบน",
+ "Tabs on the right, vertical": "แท็บด้านขวา แนวตั้ง",
+ "Panel options": "ตัวเลือกแผง"
 }
