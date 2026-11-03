@@ -1281,6 +1281,77 @@ def _intersection_snap(
     return SnapResult(hit, "intersection", COLOR_ENDPOINT)
 
 
+def _edge_face_snap(
+    cx, cy, scene, world_to_pixel, et, is_occluded, outline
+) -> Optional[SnapResult]:
+    """Green intersection where an edge — a guide line, a loose line, a
+    facet of an arc or circle — pierces the face under the cursor.
+
+    ``_intersection_snap`` only pairs edges with edges and
+    ``face_crossing`` only faces with faces, so a line through a face
+    offered nothing. ``outline`` is ``(outer, holes, context)``: the face's
+    loops in world space. The crossing counts only INSIDE the face (outer
+    loop, outside every hole), on the edge's own span, and under the cursor.
+    An edge lying in the face's plane has no single crossing and is skipped."""
+    from core.topology import _point_inside_2d
+    from core.triangulate import plane_axes
+    outer, holes, context = outline
+    if len(outer) < 3:
+        return None
+    nx = ny = nz = 0.0
+    for i in range(len(outer)):
+        a, b = outer[i], outer[(i + 1) % len(outer)]
+        nx += (a.y() - b.y()) * (a.z() + b.z())
+        ny += (a.z() - b.z()) * (a.x() + b.x())
+        nz += (a.x() - b.x()) * (a.y() + b.y())
+    n = QVector3D(nx, ny, nz)
+    if n.length() < 1e-12:
+        return None
+    n = n.normalized()
+    origin = outer[0]
+    u, w = plane_axes(n)
+
+    def proj(p):
+        rel = p - origin
+        return (QVector3D.dotProduct(rel, u), QVector3D.dotProduct(rel, w))
+
+    outer2 = [proj(p) for p in outer]
+    holes2 = [[proj(p) for p in h] for h in holes if len(h) >= 3]
+
+    found = []
+    for edge in scene.edges:
+        if getattr(edge, "center", False):
+            continue
+        ab = edge.b - edge.a
+        if QVector3D.dotProduct(ab, ab) < 1e-12:
+            continue
+        den = QVector3D.dotProduct(n, ab)
+        if abs(den) < 1e-9 * ab.length():
+            continue                      # parallel / in the plane
+        t = QVector3D.dotProduct(n, origin - edge.a) / den
+        if t < -1e-6 or t > 1.0 + 1e-6:
+            continue                      # the edge stops short of the plane
+        hit = edge.a + ab * max(0.0, min(1.0, t))
+        hp = world_to_pixel(hit)
+        if hp is None:
+            continue
+        dh = math.hypot(hp[0] - cx, hp[1] - cy)
+        if dh > et:
+            continue
+        pt = proj(hit)
+        if not _point_inside_2d(pt, outer2):
+            continue
+        if any(_point_inside_2d(pt, h) for h in holes2):
+            continue
+        found.append((dh, hit))
+    found.sort(key=lambda f: f[0])
+    for _dh, hit in found:
+        if is_occluded is None or not is_occluded(hit):
+            return SnapResult(hit, "intersection", COLOR_ENDPOINT,
+                              context=context)
+    return None
+
+
 def _lock_reference_snap(
     start_point, line_dir, world_to_pixel, hover_edge, hover_plane,
 ) -> Optional[SnapResult]:
@@ -1481,6 +1552,7 @@ def compute_snap(
     hover_lock_edge=None,
     hover_lock_plane: Optional[tuple] = None,
     face_crossing: Optional[Callable[[], Optional[tuple]]] = None,
+    face_outline: Optional[Callable[[], Optional[tuple]]] = None,
 ) -> SnapResult:
     # Linear-inference toggle (Alt): "all" = every inference, "off" =
     # point snaps only, "parallel_perp" = keep only parallel/perpendicular. The
@@ -1975,6 +2047,18 @@ def compute_snap(
                                are_occluded)
     if inter is not None and axis_engaged is None:
         return inter
+
+    # 5d. An edge — guide, line, arc or circle facet — piercing the face under
+    #     the cursor. Asked after the edge/edge crossing and before the
+    #     midpoint / on-edge / on-line rules, which would otherwise slide
+    #     along the edge past the crossing.
+    if face_outline is not None and face_under_cursor and axis_engaged is None:
+        outline = face_outline()
+        if outline is not None:
+            pierce = _edge_face_snap(cx, cy, scene, world_to_pixel, et,
+                                     is_occluded, outline)
+            if pierce is not None:
+                return pierce
 
     # 6. Midpoint + origin.
     best = None

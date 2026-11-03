@@ -10816,6 +10816,27 @@ class Viewport(QOpenGLWidget):
             break
         return x, context
 
+    def _face_outline_world(self, px: float, py: float):
+        """The face under the cursor as ``(outer loop, holes, context)`` in
+        world space (``context``: "group" / "component" when it is inside
+        one), or ``None``. What a line piercing the face is tested against."""
+        face, place = self.pick_face_placement(px, py)    # memoised
+        if face is None:
+            return None
+        xf = getattr(place, "xform", None)
+
+        def w(p):
+            return xf.map(QVector3D(p)) if xf is not None else QVector3D(p)
+        outer = [w(p) for p in face.vertices]
+        holes = [[w(p) for p in h] for h in face.holes]
+        context = None
+        if place is not None:
+            owner = self._owner_of(place)
+            is_comp = getattr(owner, "is_instance", None)
+            context = ("component" if is_comp is not None and is_comp()
+                       else "group")
+        return outer, holes, context
+
     def _still_face_under(self, px: float, py: float) -> bool:
         """Whether a face the drag is NOT bending is under the cursor —
         the «On face» cue never names the face being moved."""
