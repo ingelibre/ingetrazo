@@ -240,6 +240,8 @@ class InferenceEngine:
             axis_in_plane=not _magnet_may_leave_plane(tool),
             face_crossing=(lambda: vp._face_crossing_point(px_x, px_y))
             if hasattr(vp, "_face_crossing_point") else None,
+            face_outline=(lambda: vp._face_outline_world(px_x, px_y))
+            if hasattr(vp, "_face_outline_world") else None,
         )
         snap = self._axis_source_cue(snap, px_x, px_y)
         snap = self._extension_snap(snap, px_x, px_y)
