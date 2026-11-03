@@ -4,6 +4,26 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Añadido
+
+- **Campo `{sheet_name}`**: siempre el nombre de la lámina, como aparece en
+  la lista de láminas — a diferencia de `{lamina}`/`{sheet}`, que leen la
+  fila LÁMINA del cajetín (el número de plano). Es otro nombre de
+  `{nombre}`/`{name}`. *Cómo probarlo:* escribe un texto «{sheet} —
+  {sheet_name}» en una lámina con cajetín y renombra la lámina.
+
+### Corregido
+
+- **`{proyecto}`, `{autor}` y `{lamina}` leen la tabla del cajetín**: los
+  campos de los textos de la lámina tomaban los valores con los que nació el
+  cajetín, no los que uno escribe después en su tabla — cambiabas el nombre
+  del proyecto y el texto seguía diciendo el viejo. Ahora leen la fila con
+  ese nombre (PROYECTO, AUTOR, LÁMINA; también en inglés o alemán, con o sin
+  tilde). *Cómo probarlo:* en una lámina con cajetín, escribe un texto
+  «{proyecto} — {lamina}» y cambia la fila PROYECTO en el panel.
+
 ## [0.6.0] — 2026-11-01
 
 **Varios proyectos en pestañas en la misma ventana; IngeTrazo ya habla 17
