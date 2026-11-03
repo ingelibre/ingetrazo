@@ -2306,34 +2306,33 @@ class MainWindow(QMainWindow):
         if not self.tray.isHidden():
             self.tray.raise_()
 
-    def _tray_tab_bar_at(self, pos) -> bool:
-        """Whether ``pos`` (window coordinates) is on the tab bar of the
-        side trays — the tabs QMainWindow draws for tabified docks."""
+    def _tab_bar_at(self, pos):
+        """The tab bar of the side trays under ``pos`` (window coordinates)
+        — the tabs QMainWindow draws for tabified docks — or None."""
         from PySide6.QtWidgets import QTabBar
         child = self.childAt(pos)
         while child is not None and child is not self:
             if isinstance(child, QTabBar):
-                return True
+                return child
             child = child.parentWidget()
-        return False
+        return None
+
+    def _tray_tab_bar_at(self, pos) -> bool:
+        return self._tab_bar_at(pos) is not None
 
     def contextMenuEvent(self, event) -> None:
-        """Right-click on the tray tabs → the Window ▸ Panels list, instead
-        of Qt's toolbar-and-dock menu."""
-        if self._tray_tab_bar_at(event.pos()):
-            menu = QMenu(self)
+        """Right-click on a tray tab → the gear's menu, for that tab; on
+        the bar off the tabs → the panels list. Instead of Qt's
+        toolbar-and-dock menu."""
+        bar = self._tab_bar_at(event.pos())
+        if bar is not None:
+            menu = _StayOpenMenu(self)
             dock = self._dock_tab_at(event.pos())
             if dock is not None:
-                left = self.dockWidgetArea(dock) == Qt.LeftDockWidgetArea
-                menu.addAction(
-                    tr("Move to the right side") if left
-                    else tr("Move to the left side"),
-                    lambda: self.move_dock(
-                        dock, Qt.RightDockWidgetArea if left
-                        else Qt.LeftDockWidgetArea))
-                menu.addSeparator()
-            self._fill_panels_menu(menu)
-            menu.exec(event.globalPos())
+                self._fill_panel_options_menu(menu, dock)
+            else:
+                self._fill_panels_menu(menu, self._area_of_bar(bar))
+            self._popup_menu(menu, event.globalPos())
             event.accept()
             return
         super().contextMenuEvent(event)
@@ -2990,7 +2989,8 @@ class MainWindow(QMainWindow):
             child = child.parentWidget()
         if child is None:
             return None
-        return self._dock_of_tab(child, child.tabAt(child.mapFrom(self, pos)))
+        return self._dock_of_tab(
+            child, self._tab_on_bar_at(child, child.mapFrom(self, pos)))
 
     def move_dock(self, dock, area) -> None:
         """Put a tray on the ``area`` side (Qt.LeftDockWidgetArea /

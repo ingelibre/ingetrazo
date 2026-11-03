@@ -395,6 +395,56 @@ def test_the_gear_opens_the_panel_options(win, monkeypatch):
     win.move_dock(win.project_browser, Qt.RightDockWidgetArea)
 
 
+def _right_click(win, bar, point):
+    from PySide6.QtGui import QContextMenuEvent
+    pos = bar.mapTo(win, point)
+    win.contextMenuEvent(QContextMenuEvent(
+        QContextMenuEvent.Mouse, pos, win.mapToGlobal(pos)))
+
+
+def test_right_click_on_a_tab_opens_the_gears_menu_for_that_tab(win, monkeypatch):
+    menus = []
+    monkeypatch.setattr(win, "_popup_menu", lambda menu, pos: menus.append(menu))
+    win.tray.raise_()
+    _app.processEvents()
+    bar, _i = _bar_of(win, win.tray)
+    _gear(bar).click()
+    bar, i = _bar_of(win, win.bim_tray)             # not the panel in front
+    _right_click(win, bar, bar.tabRect(i).center())
+    texts = [a.text() for a in menus[1].actions()]
+    assert texts == [a.text() for a in menus[0].actions()]
+    assert texts[:2] == ["Tabs on top", "Tabs on the right, vertical"]
+    # It moves the tab clicked, not the one in front.
+    next(a for a in menus[1].actions()
+         if a.text() == "Move to the left side").trigger()
+    _app.processEvents()
+    assert win.dockWidgetArea(win.bim_tray) == Qt.LeftDockWidgetArea
+    assert win.dockWidgetArea(win.tray) == Qt.RightDockWidgetArea
+    win.move_dock(win.bim_tray, Qt.RightDockWidgetArea)
+
+
+def test_right_click_off_the_tabs_lists_the_panels_for_that_side(win, monkeypatch):
+    menus = []
+    monkeypatch.setattr(win, "_popup_menu", lambda menu, pos: menus.append(menu))
+    win.set_tray_shown(win.georef_tray, False)
+    win.move_dock(win.project_browser, Qt.LeftDockWidgetArea)
+    win.move_dock(win.bim_tray, Qt.LeftDockWidgetArea)
+    for _ in range(3):
+        _app.processEvents()
+    win._style_dock_tabs()
+    _app.processEvents()
+    bar, _i = _bar_of(win, win.bim_tray)
+    drawn = win._real_tab_rect(bar, bar.count() - 1)
+    _right_click(win, bar, QPoint(drawn.right() + 3, drawn.center().y()))
+    texts = [a.text() for a in menus[0].actions()]
+    assert "Tabs on top" not in texts and win.tray.windowTitle() in texts
+    next(a for a in menus[0].actions()
+         if a.text() == win.georef_tray.windowTitle()).trigger()
+    assert win.dockWidgetArea(win.georef_tray) == Qt.LeftDockWidgetArea
+    for dock in (win.georef_tray, win.bim_tray, win.project_browser):
+        win.move_dock(dock, Qt.RightDockWidgetArea)
+
+
 def _open_on(win, monkeypatch, opener, dock):
     """Tick ``dock`` in the list that ``opener`` pops up."""
     def pick(menu, pos):
