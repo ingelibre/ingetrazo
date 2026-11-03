@@ -3327,5 +3327,8 @@
   "Close Projects to the Left": "إغلاق المشاريع على اليسار",
   "Close All Projects": "إغلاق كل المشاريع",
   "Hide scenes": "إخفاء المشاهد",
-  "Hide this project's scene tabs; Alt+E shows them again.": "يخفي علامات تبويب مشاهد هذا المشروع؛ Alt+E يعيد إظهارها."
+  "Hide this project's scene tabs; Alt+E shows them again.": "يخفي علامات تبويب مشاهد هذا المشروع؛ Alt+E يعيد إظهارها.",
+  "Show a picture of the project on hover over its tab": "عرض صورة للمشروع عند تمرير المؤشر فوق علامة التبويب الخاصة به",
+  "Show project tabs": "عرض علامات تبويب المشاريع",
+  "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "علامات تبويب المشاريع المفتوحة فوق العرض؛ عند إخفائها تبقى المشاريع مفتوحة: يتنقل Ctrl+PgDown بينها."
 }

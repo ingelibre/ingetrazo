@@ -3319,5 +3319,8 @@
  "Close Projects to the Left": "Đóng các dự án bên trái",
  "Close All Projects": "Đóng tất cả dự án",
  "Hide scenes": "Ẩn các cảnh",
- "Hide this project's scene tabs; Alt+E shows them again.": "Ẩn các thẻ cảnh của dự án này; Alt+E hiện lại."
+ "Hide this project's scene tabs; Alt+E shows them again.": "Ẩn các thẻ cảnh của dự án này; Alt+E hiện lại.",
+ "Show a picture of the project on hover over its tab": "Hiện hình ảnh của dự án khi di chuột lên thẻ của nó",
+ "Show project tabs": "Hiện các thẻ dự án",
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Các thẻ của dự án đang mở phía trên khung nhìn; khi ẩn, các dự án vẫn mở: Ctrl+PgDown chuyển giữa chúng."
 }

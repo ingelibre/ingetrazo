@@ -3295,5 +3295,8 @@
  "Close Projects to the Left": "Tutup Proyek di Kiri",
  "Close All Projects": "Tutup Semua Proyek",
  "Hide scenes": "Sembunyikan scene",
- "Hide this project's scene tabs; Alt+E shows them again.": "Sembunyikan tab scene proyek ini; Alt+E menampilkannya lagi."
+ "Hide this project's scene tabs; Alt+E shows them again.": "Sembunyikan tab scene proyek ini; Alt+E menampilkannya lagi.",
+ "Show a picture of the project on hover over its tab": "Tampilkan gambar proyek saat penunjuk berada di atas tabnya",
+ "Show project tabs": "Tampilkan tab proyek",
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Tab proyek yang terbuka di atas tampilan; saat disembunyikan, proyek tetap terbuka: Ctrl+PgDown berpindah di antaranya."
 }

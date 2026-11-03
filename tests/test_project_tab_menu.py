@@ -53,6 +53,72 @@ def test_the_menu_offers_files_closing_and_scenes(win):
     menu.close()
 
 
+def test_the_menu_turns_the_picture_on_hover_off_and_on(win):
+    """The same setting as the box in Preferences."""
+    from PySide6.QtCore import QSettings
+    from core.i18n import tr
+    text = tr("Show a picture of the project on hover over its tab")
+    try:
+        menu = win._build_project_tab_menu(win._doc)
+        act = _actions(menu)[text]
+        assert act.isCheckable() and act.isChecked()
+        act.setChecked(False)
+        assert QSettings().value("tabs/hover_picture") == "0"
+        menu.close()
+        menu = win._build_project_tab_menu(win._doc)
+        act = _actions(menu)[text]
+        assert not act.isChecked()
+        act.setChecked(True)
+        assert QSettings().value("tabs/hover_picture") == "1"
+        menu.close()
+    finally:
+        QSettings().remove("tabs/hover_picture")
+
+
+def test_alt_t_hides_the_project_tabs_and_the_projects_stay_open(win):
+    from PySide6.QtCore import QSettings
+    from PySide6.QtGui import QKeySequence
+    a, b, c = _three(win)
+    bar = win._project_tabs
+    act = win._act_project_tabs
+    assert act.shortcut() == QKeySequence("Alt+T") and act.isChecked()
+    assert not bar.isHidden()
+    try:
+        act.trigger()
+        assert bar.isHidden() and not act.isChecked()
+        assert QSettings().value("tabs/show_project_tabs") == "0"
+        assert win._documents == [a, b, c]
+        front = win._doc
+        win._step_document(1)                       # Ctrl+PgDown still goes
+        assert win._doc is not front
+        act.trigger()
+        assert not bar.isHidden() and act.isChecked()
+    finally:
+        QSettings().remove("tabs/show_project_tabs")
+
+
+def test_alt_t_is_nobody_elses_key(win):
+    from PySide6.QtGui import QAction, QKeySequence
+    alt_t = QKeySequence("Alt+T")
+    holders = [a for a in win.findChildren(QAction) if alt_t in a.shortcuts()]
+    assert holders == [win._act_project_tabs]
+
+
+def test_hidden_project_tabs_come_back_for_the_empty_areas_plus(win):
+    from PySide6.QtCore import QSettings
+    bar = win._project_tabs
+    try:
+        win._act_project_tabs.trigger()
+        assert bar.isHidden()
+        win.close_document(ask=False)
+        assert win.is_empty() and not bar.isHidden() and not bar.plus.isHidden()
+        assert bar.tabs.isHidden()
+        bar.plus.click()
+        assert not win.is_empty() and bar.isHidden(), "hidden as it was asked"
+    finally:
+        QSettings().remove("tabs/show_project_tabs")
+
+
 def test_left_and_right_are_offered_only_when_there_are(win):
     from core.i18n import tr
     a, b, c = _three(win)

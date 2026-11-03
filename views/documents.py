@@ -533,7 +533,7 @@ class ProjectTabBar(QWidget):
 
     def _show_preview(self, pos, global_pos) -> bool:
         """Over a tab in the back: the picture its viewport showed when it
-        was left, with the file's place under it. False when there is no
+        was left, with the file's name under it. False when there is no
         picture (the tab in front, or one never left): the plain tooltip
         then shows."""
         i = self.tabs.tabAt(pos)
@@ -560,7 +560,7 @@ class ProjectTabBar(QWidget):
                               " border: 1px solid palette(mid); }")
         box = self._preview
         box._pic.setPixmap(QPixmap.fromImage(img))
-        box._name.setText(self.tabs.tabToolTip(i) or self.tabs.tabText(i))
+        box._name.setText(doc.display_name())
         box.adjustSize()
         r = self.tabs.tabRect(i)
         at = self.tabs.mapToGlobal(r.bottomLeft()) + QPoint(0, 4)

@@ -3292,5 +3292,8 @@
  "Close Projects to the Left": "Fermer les projets à gauche",
  "Close All Projects": "Fermer tous les projets",
  "Hide scenes": "Masquer les scènes",
- "Hide this project's scene tabs; Alt+E shows them again.": "Masque les onglets de scènes de ce projet ; Alt+E les réaffiche."
+ "Hide this project's scene tabs; Alt+E shows them again.": "Masque les onglets de scènes de ce projet ; Alt+E les réaffiche.",
+ "Show a picture of the project on hover over its tab": "Afficher une image du projet au survol de son onglet",
+ "Show project tabs": "Afficher les onglets de projet",
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Les onglets des projets ouverts, au-dessus de la vue ; masqués, les projets restent ouverts : Ctrl+PgSuiv passe de l'un à l'autre."
 }

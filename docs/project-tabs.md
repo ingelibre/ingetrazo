@@ -31,13 +31,17 @@ in place, else makes a new tab.
 ![Picture of a project on hover over its tab](images/project-tabs/tab-picture.png)
 
 Hold the pointer over a tab in the back to see that project as its view
-stands, with the file's place under the picture, without leaving the project
-in front. A new tab, or one never left, shows only its name.
+stands, with the file's name under the picture, without leaving the project
+in front. A new tab, or one never left, shows only a tooltip.
 
 The picture is drawn the first time the tab is hovered after you leave it, so
 opening and switching tabs never wait for it. On a very large model that first
 hover can take a moment; after that the picture comes at once until you go back
 to that project.
+
+To turn it off for every tab, clear **Show a picture of the project on hover
+over its tab** in a tab's right-click menu or in **Window ▸ Preferences**: the
+tab then shows a tooltip with the file's place, and no picture is drawn.
 
 ### Right-click on a tab
 
@@ -53,6 +57,7 @@ The project right-clicked comes to the front first, so **Save** and
 | Close Projects to the Right / to the Left | Closes the tabs on that side, one by one; each asks about its own changes, and Cancel stops there. Greyed out when there are none on that side. |
 | Close All Projects | Closes them all: the [empty area](#4-every-project-closed) is left. |
 | Show scenes as tabs | This project's scene row on or off (Alt+E). |
+| Show a picture of the project on hover over its tab | The [picture on hover](#picture-on-hover) on or off, for every tab. |
 
 ### Keys
 
@@ -62,6 +67,16 @@ The project right-clicked comes to the front first, so **Save** and
 | Ctrl+PgDown / Ctrl+PgUp | Next / previous project |
 | Ctrl+Tab | With several projects, the next one; with one, the sheets |
 | Alt+E | The scene row of the project in front, on or off |
+| Alt+T | The project tabs, on or off |
+
+### Hiding the project tabs
+
+**Alt+T** or **Window ▸ Show project tabs** hides the whole row, with its **+**
+and the four squares, to give the view that height; the window remembers it for
+the next start. The projects stay open: Ctrl+PgDown and Ctrl+PgUp go through
+them, and the title bar says which one is in front. With every project closed
+the row comes back with its **+**, the only way out of the
+[empty area](#4-every-project-closed).
 
 ---
 

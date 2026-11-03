@@ -3293,5 +3293,8 @@
  "Close Projects to the Left": "关闭左侧的项目",
  "Close All Projects": "关闭所有项目",
  "Hide scenes": "隐藏场景",
- "Hide this project's scene tabs; Alt+E shows them again.": "隐藏此项目的场景标签页；按 Alt+E 重新显示。"
+ "Hide this project's scene tabs; Alt+E shows them again.": "隐藏此项目的场景标签页；按 Alt+E 重新显示。",
+ "Show a picture of the project on hover over its tab": "将鼠标悬停在标签页上时显示项目图片",
+ "Show project tabs": "显示项目标签页",
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "视图上方已打开项目的标签页；隐藏后项目仍保持打开：Ctrl+PgDown 可在其间切换。"
 }

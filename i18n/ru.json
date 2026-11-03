@@ -3292,5 +3292,8 @@
  "Close Projects to the Left": "Закрыть проекты слева",
  "Close All Projects": "Закрыть все проекты",
  "Hide scenes": "Скрыть сцены",
- "Hide this project's scene tabs; Alt+E shows them again.": "Скрывает вкладки сцен этого проекта; Alt+E показывает их снова."
+ "Hide this project's scene tabs; Alt+E shows them again.": "Скрывает вкладки сцен этого проекта; Alt+E показывает их снова.",
+ "Show a picture of the project on hover over its tab": "Показывать изображение проекта при наведении на его вкладку",
+ "Show project tabs": "Показывать вкладки проектов",
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Вкладки открытых проектов над видом; когда они скрыты, проекты остаются открытыми: Ctrl+PgDown переключает между ними."
 }

@@ -3295,5 +3295,8 @@
  "Close Projects to the Left": "ปิดโปรเจกต์ทางซ้าย",
  "Close All Projects": "ปิดโปรเจกต์ทั้งหมด",
  "Hide scenes": "ซ่อนฉาก",
- "Hide this project's scene tabs; Alt+E shows them again.": "ซ่อนแท็บฉากของโปรเจกต์นี้ Alt+E แสดงอีกครั้ง"
+ "Hide this project's scene tabs; Alt+E shows them again.": "ซ่อนแท็บฉากของโปรเจกต์นี้ Alt+E แสดงอีกครั้ง",
+ "Show a picture of the project on hover over its tab": "แสดงภาพของโปรเจกต์เมื่อวางเมาส์เหนือแท็บ",
+ "Show project tabs": "แสดงแท็บโปรเจกต์",
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "แท็บของโปรเจกต์ที่เปิดอยู่เหนือมุมมอง เมื่อซ่อนไว้โปรเจกต์ยังคงเปิดอยู่ ใช้ Ctrl+PgDown เพื่อสลับ"
 }

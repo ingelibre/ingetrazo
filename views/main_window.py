@@ -383,6 +383,7 @@ class MainWindow(QMainWindow):
         bar.closeRequested.connect(self.close_document)
         bar.newRequested.connect(self._on_new_tab)
         bar.picture_of = self._tab_picture
+        bar.setVisible(self._project_tabs_wanted())
         box.addWidget(bar)
         self._doc_stack = QStackedWidget(area)
         box.addWidget(self._doc_stack, 1)
@@ -1864,6 +1865,18 @@ class MainWindow(QMainWindow):
         self.addAction(scenes_action)
         window_menu.addAction(scenes_action)
         self._act_scene_tabs = scenes_action
+        # The project tabs above the viewport, for the whole window.
+        tabs_action = QAction(tr("Show project tabs"), self)
+        tabs_action.setCheckable(True)
+        tabs_action.setChecked(self._project_tabs_wanted())
+        tabs_action.setShortcut(QKeySequence("Alt+T"))
+        tabs_action.setStatusTip(tr(
+            "The tabs of the open projects above the view; hidden, the "
+            "projects stay open: Ctrl+PgDown goes through them."))
+        tabs_action.toggled.connect(self.set_project_tabs_shown)
+        self.addAction(tabs_action)
+        window_menu.addAction(tabs_action)
+        self._act_project_tabs = tabs_action
 
         window_menu.addSeparator()
         # Ctrl+U: the units panel straight away (the Preferences page).
@@ -6368,7 +6381,10 @@ class MainWindow(QMainWindow):
     def _tab_picture(self, doc):
         """The picture of a tab in the back, drawn the first time its tab is
         hovered since it was left: nothing in it can have moved since. The
-        units and axes are global, so they are its own for that one frame."""
+        units and axes are global, so they are its own for that one frame.
+        None with the picture off in Preferences: the plain tooltip shows."""
+        if str(QSettings().value("tabs/hover_picture", "1")) == "0":
+            return None
         if doc.picture_due and doc.thumbnail is None \
                 and doc.viewport is not None:
             doc.picture_due = False
@@ -6461,6 +6477,22 @@ class MainWindow(QMainWindow):
         """No project open: the empty area is shown."""
         return bool(self.__dict__.get("_empty_on"))
 
+    @staticmethod
+    def _project_tabs_wanted() -> bool:
+        return str(QSettings().value("tabs/show_project_tabs", "1")) != "0"
+
+    def set_project_tabs_shown(self, on: bool) -> None:
+        """Window ▸ Show project tabs (Alt+T), kept for the next start. With
+        them hidden the projects stay open, each key still goes through them;
+        the empty area keeps its «+», the only way back from it."""
+        QSettings().setValue("tabs/show_project_tabs", "1" if on else "0")
+        self._sync_project_tabs_bar()
+
+    def _sync_project_tabs_bar(self) -> None:
+        self._project_tabs.setVisible(self._project_tabs_wanted()
+                                      or self.is_empty())
+        self._place_sidebar_handle()
+
     def _show_empty_area(self) -> None:
         """Every project closed: the hatched area with only «+» above —
         the tabs, the views button, the scene row, the panels and their
@@ -6473,6 +6505,7 @@ class MainWindow(QMainWindow):
         bar = self._project_tabs
         bar.tabs.setVisible(False)
         bar.views_button.setVisible(False)
+        self._sync_project_tabs_bar()
         self._layout_picker.hide()
         self._hide_panels()
         strip = getattr(self, "_sheet_tabs", None)
@@ -6495,6 +6528,7 @@ class MainWindow(QMainWindow):
         bar = self._project_tabs
         bar.tabs.setVisible(True)
         bar.views_button.setVisible(True)
+        self._sync_project_tabs_bar()
         self.set_tool_filter(None)
         self._empty_area.setVisible(False)
         self._doc_stack.setVisible(True)
@@ -6713,7 +6747,7 @@ class MainWindow(QMainWindow):
     def _build_project_tab_menu(self, doc):
         """A project tab's right-click menu: New, Open…, Save, Save As…;
         closing it, the ones to its right or left, or all; and its scenes
-        as tabs."""
+        as tabs; the picture on hover over the tabs, as in Preferences."""
         from PySide6.QtGui import QKeySequence
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
@@ -6751,6 +6785,12 @@ class MainWindow(QMainWindow):
         act.setStatusTip(tr(
             "This project's scenes as tabs under the view; a click shows one."))
         act.toggled.connect(lambda on, d=doc: self.set_scene_tabs(on, d))
+        act = menu.addAction(tr(
+            "Show a picture of the project on hover over its tab"))
+        act.setCheckable(True)
+        act.setChecked(str(QSettings().value("tabs/hover_picture", "1")) != "0")
+        act.toggled.connect(lambda on: QSettings().setValue(
+            "tabs/hover_picture", "1" if on else "0"))
         return menu
 
     def _update_tab(self, doc=None) -> None:
