@@ -177,6 +177,28 @@ def test_a_tray_alone_has_its_icon_tab_beside_the_name(win):
     win.move_dock(win.project_browser, Qt.RightDockWidgetArea)
 
 
+def test_a_new_icon_reaches_no_tab_already_gone(win, monkeypatch):
+    # A tray alone on its side, then tabbed: its own tab is deleted, and a
+    # later icon (the theme redrawn) must not go looking for it.
+    import sys
+    errors = []
+    monkeypatch.setattr(sys, "excepthook", lambda *a: errors.append(a[1]))
+    win.move_dock(win.project_browser, Qt.LeftDockWidgetArea)
+    _app.processEvents()
+    _app.processEvents()
+    win.move_dock(win.bim_tray, Qt.LeftDockWidgetArea)
+    for _ in range(3):
+        _app.processEvents()
+    from PySide6.QtCore import QCoreApplication, QEvent
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    _app.processEvents()
+    win._refresh_toolbar_icons()
+    _app.processEvents()
+    assert not errors
+    win.move_dock(win.project_browser, Qt.RightDockWidgetArea)
+    win.move_dock(win.bim_tray, Qt.RightDockWidgetArea)
+
+
 def test_add_panel_takes_a_drawn_icon_or_a_qicon(win):
     from views.extension_api import ExtensionApp
     app = ExtensionApp(win, "iconext")

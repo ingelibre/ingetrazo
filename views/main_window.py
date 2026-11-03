@@ -267,10 +267,14 @@ class _DockTitleTab(QTabBar):
         self.setIconSize(QSize(DOCK_TAB_ICON_PX, DOCK_TAB_ICON_PX))
         self.setStyle(window.icon_tab_style())
         dock.windowTitleChanged.connect(self._retitle)
-        dock.windowIconChanged.connect(lambda i: self.setTabIcon(0, i))
+        dock.windowIconChanged.connect(self._reicon)
         self.setProperty("ingetrazo_watched", True)
         self.setAcceptDrops(True)
         self.installEventFilter(window)
+
+    def _reicon(self, icon) -> None:
+        # A method, not a lambda: Qt drops the connection along with the tab.
+        self.setTabIcon(0, icon)
 
     def _retitle(self, title: str) -> None:
         self.setTabText(0, title)
