@@ -3281,5 +3281,8 @@
  "Front color saved — it paints faces in Hidden line and Monochrome modes.": "Cor frontal salva — ela pinta as faces nos modos Linha oculta e Monocromo.",
  "Distance ({unit}):": "Distância ({unit}):",
  "Restore defaults": "Restaurar padrões",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Volta as configurações desta janela para como o IngeTrazo vem. Nada é salvo até você clicar em OK. O idioma, o Assistente de IA, os atalhos de teclado e as unidades do documento aberto ficam como estão."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Volta as configurações desta janela para como o IngeTrazo vem. Nada é salvo até você clicar em OK. O idioma, o Assistente de IA, os atalhos de teclado e as unidades do documento aberto ficam como estão.",
+ "Tabs on top": "Abas no topo",
+ "Tabs on the right, vertical": "Abas à direita, na vertical",
+ "Panel options": "Opções dos painéis"
 }

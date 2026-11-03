@@ -114,7 +114,7 @@ def test_a_tray_alone_on_its_side_still_has_a_tab():
     win.move_dock(win.project_browser, Qt.LeftDockWidgetArea)
     _app.processEvents()
     _app.processEvents()
-    tab = win.project_browser.titleBarWidget()
+    tab = win.project_browser.titleBarWidget().tab
     assert isinstance(tab, _DockTitleTab)
     assert tab.isVisible() and tab.tabText(0) == "Browser"
     centre = tab.mapTo(win, tab.tabRect(0).center())
@@ -123,15 +123,15 @@ def test_a_tray_alone_on_its_side_still_has_a_tab():
     _close(win)
 
 
-def test_a_tabbed_tray_does_not_name_itself_twice():
+def test_a_tabbed_tray_has_no_tab_of_its_own():
     win = _window()
     from views.main_window import _DockTitleTab
     win._style_dock_tabs()
-    assert not isinstance(win.tray.titleBarWidget(), _DockTitleTab)  # tabbed
+    assert win.tray.titleBarWidget().tab is None        # Qt's bar holds it
     win.move_dock(win.project_browser, Qt.LeftDockWidgetArea)
     _app.processEvents()
     win._style_dock_tabs()
-    assert isinstance(win.project_browser.titleBarWidget(), _DockTitleTab)
+    assert isinstance(win.project_browser.titleBarWidget().tab, _DockTitleTab)
     win.move_dock(win.project_browser, Qt.RightDockWidgetArea)
     _close(win)
 

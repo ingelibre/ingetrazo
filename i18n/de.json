@@ -3274,5 +3274,8 @@
  "Front color — paints faces in Hidden line and Monochrome": "Vorderseitenfarbe — färbt Flächen in Verdeckte Linien und Monochrom",
  "Distance ({unit}):": "Abstand ({unit}):",
  "Restore defaults": "Standardwerte wiederherstellen",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Setzt die Einstellungen dieses Fensters auf den Auslieferungszustand von IngeTrazo zurück. Nichts wird gespeichert, bevor du auf OK drückst. Sprache, KI-Assistent, Tastenkürzel und die Einheiten des offenen Dokuments bleiben, wie sie sind."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Setzt die Einstellungen dieses Fensters auf den Auslieferungszustand von IngeTrazo zurück. Nichts wird gespeichert, bevor du auf OK drückst. Sprache, KI-Assistent, Tastenkürzel und die Einheiten des offenen Dokuments bleiben, wie sie sind.",
+ "Tabs on top": "Reiter oben",
+ "Tabs on the right, vertical": "Reiter rechts, vertikal",
+ "Panel options": "Bereichsoptionen"
 }

@@ -3274,5 +3274,8 @@
  "Front color — paints faces in Hidden line and Monochrome": "Цвет передней стороны — применяется для граней в режимах «Скрытые линии» и «Монохромный»",
  "Distance ({unit}):": "Расстояние ({unit}):",
  "Restore defaults": "Восстановить значения по умолчанию",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений.",
+ "Tabs on top": "Вкладки сверху",
+ "Tabs on the right, vertical": "Вкладки справа, вертикально",
+ "Panel options": "Параметры панелей"
 }

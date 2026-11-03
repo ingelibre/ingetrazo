@@ -285,7 +285,7 @@ def snap_to_levels(app, viewport, snap, px: float, py: float):
 
 def setup(app) -> None:
     panel = LevelsPanel(app)
-    app.add_panel(_t("Levels"), panel)
+    app.add_panel(_t("Levels"), panel, icon="panel_levels")
     app.on_document_changed(panel.refresh)
     app.add_overlay(lambda vp, painter: draw_guides(app, vp, painter))
     app.add_snap_provider(
