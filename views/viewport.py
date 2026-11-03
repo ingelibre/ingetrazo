@@ -10512,6 +10512,16 @@ class Viewport(QOpenGLWidget):
             if isinstance(tool, PlaneLock):
                 locked = tool.locked_work_plane(axes.origin())
                 if locked is not None:
+                    # The arrow chooses the plane's ORIENTATION only. Over a
+                    # face, "On face" names a point, so the locked plane is
+                    # anchored there (same normal); with no face under the
+                    # cursor it stays the world plane.
+                    if cursor is not None:
+                        face_plane = self._hover_face_plane(cursor)
+                        if face_plane is not None:
+                            hit = self._ray_hit_plane(cursor, face_plane)
+                            if hit is not None:
+                                return tool.locked_work_plane(hit)
                     return locked
             # First-click hover: if the cursor is over an existing face —
             # loose OR a group's (drawing/measuring on top of an imported
