@@ -450,8 +450,9 @@ def test_the_materials_panel_reads_only_the_meshes_that_came():
 
         def colours():
             panel.refresh_in_model()
-            return sorted(tuple(round(c, 3) for c in k)
-                          for (k, _c, _n) in panel._swatch_sig[0])
+            return sorted(tuple(round(c, 3) for c in rgb)
+                          for ((rgb, _opacity), _c, _n)
+                          in panel._swatch_sig[0])
 
         read = []
         real = cm.face_attrs
