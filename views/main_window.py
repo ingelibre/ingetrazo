@@ -175,11 +175,14 @@ def _tab_end_room(bar) -> int:
     return 0 if bar is None else int(bar.property("ingetrazo_end_room") or 0)
 
 
-def _cut_end_room(rect, room: int, shape, rtl: bool) -> QRect:
-    """``rect``, a last tab's, without the room it keeps at its end."""
+def _cut_to_own_size(rect, own: int, shape, rtl: bool) -> QRect:
+    """``rect``, a tab's, in its own size: without the room the last tab
+    keeps at its end. Any tab, for Qt carries a tab along a drag with the
+    size it had, the room included."""
     if shape in _VERTICAL_TABS:
-        return rect.adjusted(0, 0, 0, -room)
-    return rect.adjusted(room, 0, 0, 0) if rtl else rect.adjusted(0, 0, -room, 0)
+        return rect.adjusted(0, 0, 0, min(0, own - rect.height()))
+    cut = max(0, rect.width() - own)
+    return rect.adjusted(cut, 0, 0, 0) if rtl else rect.adjusted(0, 0, -cut, 0)
 
 
 class _IconTabStyle(QProxyStyle):
@@ -189,17 +192,17 @@ class _IconTabStyle(QProxyStyle):
     drawn nor given room: it is the tab's tooltip and heads the panel
     (_DockHeader)."""
 
-    @staticmethod
-    def _without_end_room(option, widget):
-        """The last tab of a tray bar is drawn in its own size, without the
-        room it takes (sizeFromContents)."""
-        room = _tab_end_room(widget)
-        if not room or option.position not in (QStyleOptionTab.End,
-                                               QStyleOptionTab.OnlyOneTab):
+    def _without_end_room(self, option, widget):
+        """A tab of a tray bar is drawn in its own size, without the room
+        the last one takes (sizeFromContents)."""
+        if not _tab_end_room(widget):
             return option
+        vertical = option.shape in _VERTICAL_TABS
+        own = (option.iconSize.height() if vertical
+               else option.iconSize.width()) + 2 * self.PAD
         option = QStyleOptionTab(option)
-        option.rect = _cut_end_room(option.rect, room, option.shape,
-                                    option.direction == Qt.RightToLeft)
+        option.rect = _cut_to_own_size(option.rect, own, option.shape,
+                                       option.direction == Qt.RightToLeft)
         return option
 
     def drawControl(self, element, option, painter, widget=None):
@@ -2720,6 +2723,8 @@ class MainWindow(QMainWindow):
                 tb.setIconSize(QSize(DOCK_TAB_ICON_PX, DOCK_TAB_ICON_PX))
                 tb.setStyle(self.icon_tab_style())
                 self._add_options_button(tb)
+                tb.tabMoved.connect(lambda *_a, bar=tb: QTimer.singleShot(
+                    0, bar, lambda: self._measure_tabs_again(bar)))
             self._add_panels_button(tb)
         # A tray alone on its side has no tab bar from Qt — only its title
         # bar, an empty strip: it gets a tab of its own there, so it can
@@ -2773,10 +2778,19 @@ class MainWindow(QMainWindow):
         """Tab ``index`` as it shows: a last tab without the room it keeps
         for the «+» and the gear."""
         rect = bar.tabRect(index)
-        if index != bar.count() - 1:
+        if not _tab_end_room(bar):
             return rect
-        return _cut_end_room(rect, _tab_end_room(bar), bar.shape(),
-                             bar.isRightToLeft())
+        vertical = bar.shape() in _VERTICAL_TABS
+        own = (bar.iconSize().height() if vertical
+               else bar.iconSize().width()) + 2 * _IconTabStyle.PAD
+        return _cut_to_own_size(rect, own, bar.shape(), bar.isRightToLeft())
+
+    def _measure_tabs_again(self, bar) -> None:
+        """Qt moves a tab with the size it had, and only the last one keeps
+        room after it: each measured with its own, once no drag is on (Qt
+        moves them all along a drag, reading their places as it goes)."""
+        if bar.property("ingetrazo_press") in (None, -1):
+            bar.setIconSize(bar.iconSize())
 
     def _tab_on_bar_at(self, bar, pos) -> int:
         """The tab whose drawing is under ``pos`` (bar coordinates), or -1."""
@@ -3048,6 +3062,9 @@ class MainWindow(QMainWindow):
                     return True
             elif t == QEvent.MouseButtonRelease:
                 obj.setProperty("ingetrazo_press", -1)
+                if _tab_end_room(obj):
+                    QTimer.singleShot(0, obj,
+                                      lambda: self._measure_tabs_again(obj))
             elif t == QEvent.MouseMove and event.buttons() & Qt.LeftButton:
                 i = obj.property("ingetrazo_press")
                 if i is not None and (i >= 0 or i == -2):

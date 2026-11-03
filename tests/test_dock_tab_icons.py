@@ -302,6 +302,57 @@ def test_the_room_after_the_last_tab_is_no_tab(win):
     assert _tip_over(bar, i) == win._dock_of_tab(bar, i).windowTitle()
 
 
+def _drag_along(bar, frm, to):
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtTest import QTest
+    start = bar.tabRect(frm).topLeft() + QPoint(10, 10)
+    end = bar.tabRect(to).topLeft() + QPoint(10, 10)
+    QTest.mousePress(bar, _Qt.LeftButton, _Qt.NoModifier, start)
+    for step in range(1, 13):
+        QTest.mouseMove(bar, QPoint(
+            start.x() + (end.x() - start.x()) * step // 12, start.y()))
+        QTest.qWait(15)
+    QTest.mouseRelease(bar, _Qt.LeftButton, _Qt.NoModifier, end)
+    QTest.qWait(400)
+
+
+def test_a_tab_dragged_from_the_end_does_not_keep_the_room_of_the_last(win):
+    # The tab that was last stayed wide wherever it was dragged, and the new
+    # last one was left with no room to be drawn in.
+    bar, _i = _bar_of(win, win.tray)
+    name = bar.tabText(bar.count() - 1)
+    plain = win._real_tab_rect(bar, 0).width()
+
+    def every_tab_in_its_size():
+        for i in range(bar.count() - 1):
+            assert bar.tabRect(i).width() == plain, bar.tabText(i)
+        assert bar.tabRect(bar.count() - 1).width() > plain
+        assert win._real_tab_rect(bar, bar.count() - 1).width() == plain
+
+    _drag_along(bar, bar.count() - 1, 0)
+    assert bar.tabText(bar.count() - 1) != name     # it did move
+    every_tab_in_its_size()
+    _drag_along(bar, 0, bar.count() - 1)            # a first one, along the bar
+    every_tab_in_its_size()
+
+
+def test_a_tab_is_drawn_in_its_own_size_even_if_carried_wider():
+    # Along a drag Qt carries the tab that was last with the size it had.
+    from PySide6.QtCore import QRect
+    from PySide6.QtWidgets import QTabBar
+    from views.main_window import _cut_to_own_size
+    wide = QRect(0, 0, 94, 32)
+    assert _cut_to_own_size(wide, 36, QTabBar.RoundedNorth, False) \
+        == QRect(0, 0, 36, 32)
+    assert _cut_to_own_size(wide, 36, QTabBar.RoundedNorth, True) \
+        == QRect(58, 0, 36, 32)
+    plain = QRect(0, 0, 36, 32)
+    assert _cut_to_own_size(plain, 36, QTabBar.RoundedNorth, False) == plain
+    tall = QRect(0, 0, 32, 94)
+    assert _cut_to_own_size(tall, 36, QTabBar.RoundedEast, False) \
+        == QRect(0, 0, 32, 36)
+
+
 def test_the_tabs_bring_out_the_arrows_before_reaching_the_gear(win):
     # The «+» and the gear count: the arrows come before tabs go under them.
     from PySide6.QtWidgets import QToolButton
