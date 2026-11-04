@@ -234,6 +234,36 @@ def test_a_grouped_disc_on_a_loose_face():
     assert tool._pick(vp, *beside) in vp.scene.mesh.faces
 
 
+def test_a_loose_face_keeps_the_click_at_the_same_size():
+    """A group's face and a loose copy of it: #982's first fix stands."""
+    vp = _vp()
+    wall, P = _wall(vp, "group", 33.3)
+    same = [P(0, 0, 0), P(3, 0, 0), P(3, 0, 2.5), P(0, 0, 2.5)]
+    face = vp.scene.mesh.add_face(same)
+    _look(vp, P, 33.3, -83.3, 17, 6)
+    for px in _inner_pixels(vp, P):
+        assert vp.pick_group(*px) is None
+        assert vp.pick_face(*px) is face
+    assert wall in vp.scene.groups
+
+
+def test_a_loose_face_wider_than_the_groups_loses_only_over_it():
+    """The rule is the size of what lies under the cursor: a small group on
+    a big loose face, and a big loose one around a small group, read alike."""
+    vp = _vp()
+    P = lambda a, b, c: _placed(33.3).map(V(a, b, c))  # noqa: E731
+    vp.scene.mesh.add_face([P(0, 0, 0), P(3, 0, 0), P(3, 0, 2.5),
+                            P(0, 0, 2.5)])
+    m = Mesh()
+    m.add_face([P(1, 0, 1), P(2, 0, 1), P(2, 0, 1.5), P(1, 0, 1.5)])
+    small = Group(m, "placa")
+    vp.scene.groups.append(small)
+    vp.scene.version += 1
+    _look(vp, P, 33.3, -83.3, 17, 6)
+    assert vp.pick_group(*vp._world_to_pixel(P(1.5, 0, 1.25))) is small
+    assert vp.pick_group(*vp._world_to_pixel(P(2.5, 0, 2.0))) is None
+
+
 def test_a_child_on_its_open_parents_face_is_reachable():
     """Same plane inside an open group: its own face is the loose part."""
     vp = _vp()
