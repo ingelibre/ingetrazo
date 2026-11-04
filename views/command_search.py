@@ -74,8 +74,9 @@ def _without_keys(text: str) -> str:
 
 def _menubar(window):
     """The window's menu bar, or ``None`` — never made by asking (the
-    composer has none, and ``menuBar()`` would give it an empty one)."""
-    bar = window.menuWidget()
+    composer has none, and ``menuBar()`` would give it an empty one), and
+    none either for a window that is not a main window."""
+    bar = window.menuWidget() if isinstance(window, QMainWindow) else None
     return bar if isinstance(bar, QMenuBar) else None
 
 
