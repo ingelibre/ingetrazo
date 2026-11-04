@@ -54,6 +54,15 @@ def _magnet_may_leave_plane(tool) -> bool:
     return bool(rule()) if callable(rule) else True
 
 
+def _tool_is_planar(tool) -> bool:
+    """Whether ``tool`` is a planar shape (``PlaneLock``): it draws in ONE
+    plane, so its 'from point' inference stays on the face the cursor is
+    over. The Line and the free placements are not, and read the reference
+    in 3D through the cursor ray (issue #1095)."""
+    from tools.base import PlaneLock
+    return isinstance(tool, PlaneLock)
+
+
 class InferenceEngine:
     """Snap-target state the viewport keeps between moves.
 
@@ -78,6 +87,14 @@ class InferenceEngine:
         # Sticky inference lock (Shift): (direction, color) captured from the
         # active inference, held until Shift is released.
         self._shift_lock: Optional[tuple] = None
+        # The magnetic axis held while a line is drawn (sticky hysteresis):
+        # once the magnet engaged an axis, it stays until the cursor breaks
+        # away, so a hand drifting in perspective keeps the line on axis.
+        self._sticky_axis: Optional[str] = None
+        # The (point, axis) of the 'from point' reference the Shift lock was
+        # captured from: kept so the dashed axis line through that point stays
+        # visible while the lock is held (issue #1095).
+        self._shift_lock_ref = None
         # Last edge under the cursor (candidate for capture) and the centre of
         # the last circle or arc the cursor visited (its edge, or a face it
         # bounds), kept as a reference until another circle takes its place or
@@ -233,14 +250,21 @@ class InferenceEngine:
             acquired_points=self._encouraged,
             shift_lock_dir=self._shift_lock[0] if self._shift_lock else None,
             shift_lock_color=self._shift_lock[1] if self._shift_lock else None,
+            shift_lock_ref=self._shift_lock_ref,
             linear_mode=vp.linear_inference_mode,
             diagonal_span=bool(getattr(tool, "diagonal_span", False)),
             work_plane_normal=vp._work_plane_normal(),
             radial_arm=bool(getattr(tool, "radial_arm", False)),
             axis_in_plane=not _magnet_may_leave_plane(tool),
+            free_3d=not _tool_is_planar(tool),
+            sticky_axis=self._sticky_axis,
             face_crossing=(lambda: vp._face_crossing_point(px_x, px_y))
             if hasattr(vp, "_face_crossing_point") else None,
         )
+        if snap is not None and snap.kind == "axis" and snap.axis:
+            self._sticky_axis = snap.axis
+        else:
+            self._sticky_axis = None
         snap = self._axis_source_cue(snap, px_x, px_y)
         snap = self._extension_snap(snap, px_x, px_y)
         return self._limit_snap(snap, tool)
@@ -362,6 +386,8 @@ class InferenceEngine:
 
     def clear_references(self) -> None:
         """Drop cursor-acquired and encouraged model references."""
+        self._sticky_axis = None
+        self._shift_lock_ref = None
         self._dwell_timer.stop()
         self._dwell_point = None
         self._hover_edge = None
