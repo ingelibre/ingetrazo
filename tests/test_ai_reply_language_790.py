@@ -28,5 +28,6 @@ def test_the_prompt_no_longer_pins_spanish():
 def test_the_fallback_follows_the_interface_language():
     from plugins.ai_assistant import system_prompt
     assert "Deutsch" in system_prompt("de")
+    assert "繁體中文" in system_prompt("zh-TW")
     assert "español" in system_prompt("es")
     assert "English" in system_prompt("xx")       # unknown → English

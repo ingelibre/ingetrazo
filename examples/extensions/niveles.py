@@ -143,6 +143,12 @@ def _next_height(levels) -> float:
 
 # ---- Panel ------------------------------------------------------------------------
 
+def _height_step(unit: str) -> float:
+    """What the arrows of the height field add, in metres (#1075): 10 cm, or
+    the 4 inches closest to it in a document in feet or inches."""
+    return 0.10 if unit in ("m", "cm", "mm") else 4 * 0.0254
+
+
 class _LevelDialog(QDialog):
     def __init__(self, parent, title: str, name: str, z: float) -> None:
         super().__init__(parent)
@@ -154,6 +160,7 @@ class _LevelDialog(QDialog):
             # The height in the document's units; value() stays in metres.
             from views.length_field import LengthSpinBox
             self.z = LengthSpinBox(minimum=-1000.0, maximum=1000.0)
+            self.z.setSingleStep(_height_step(self.z.unit()))
         else:
             self.z = QDoubleSpinBox()
             self.z.setRange(-1000.0, 1000.0)

@@ -7387,8 +7387,7 @@ class MainWindow(QMainWindow):
     def _open_path_here(self, path: Path, suffix: str) -> bool:
         """Read ``path`` into the project in front (see :meth:`open_path`)."""
         if suffix == ".dae":
-            self._import_dae_path(path)
-            return True
+            return self._import_dae_path(path)
         if suffix == ".skp":
             return self.import_skp_path(path)
         if suffix == ".dxf":
@@ -8179,6 +8178,39 @@ class MainWindow(QMainWindow):
                 pass
         cb(1.0, "Done")
 
+    def _run_import(self, load, dlg, title: str, describe=str):
+        """``load(scene)`` as one undo step. Returns the command, or ``None``
+        when it failed: the failure has been shown (``describe`` makes its
+        text) and the project is as it was.
+
+        ``history.execute`` rolls a failed command back and does not raise,
+        so the failure is caught where it happens. The rollback moves the
+        version on, and nothing changed: an untouched project stays so, and
+        a tab opened for this goes."""
+        failure: list = []
+
+        def guarded(scene):
+            try:
+                load(scene)
+            except Exception as exc:  # noqa: BLE001 — surface parse errors
+                failure.append(exc)
+                raise               # history.execute rolls back and keeps it
+
+        cmd = SnapshotImport(guarded)
+        was_clean = not self._is_dirty()
+        try:
+            self.viewport.history.execute(cmd)
+        except Exception as exc:  # noqa: BLE001
+            failure.append(exc)
+        if not failure:
+            return cmd
+        dlg.close()
+        if was_clean:
+            self._saved_version = self.viewport.scene.version
+        self._update_title()
+        QMessageBox.critical(self, title, describe(failure[0]))
+        return None
+
     def _on_import_dae(self) -> None:
         path_str, _ = file_dialogs.getOpenFileName(
             self, tr("Import DAE"), "",
@@ -8195,7 +8227,7 @@ class MainWindow(QMainWindow):
             return
         self._import_glb_path(Path(path_str))
 
-    def _import_glb_path(self, path: Path) -> None:
+    def _import_glb_path(self, path: Path) -> bool:
         from formats import glb as glb_format
         dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))
         moved: dict = {}
@@ -8203,40 +8235,34 @@ class MainWindow(QMainWindow):
         def load(scene):
             moved["offset"] = glb_format.load_glb(scene, path, progress=cb)
 
-        cmd = SnapshotImport(load)
-        try:
-            self.viewport.history.execute(cmd)
-        except Exception as exc:  # noqa: BLE001
-            dlg.close()
-            QMessageBox.critical(self, tr("Import glTF/GLB failed"), str(exc))
-            return
+        cmd = self._run_import(load, dlg, tr("Import glTF/GLB failed"))
+        if cmd is None:
+            return False
         self._prepare_import_display(cmd, cb)
         dlg.close()
         self.viewport.update()
         self._import_name = path.name
         self._update_title()
         self._report_import(path.name, moved.get("offset"))
+        return True
 
-    def _import_dae_path(self, path: Path) -> None:
+    def _import_dae_path(self, path: Path) -> bool:
         dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))
         moved: dict = {}
 
         def load(scene):
             moved["offset"] = dae_format.load_dae(scene, path, progress=cb)
 
-        cmd = SnapshotImport(load)
-        try:
-            self.viewport.history.execute(cmd)
-        except Exception as exc:  # noqa: BLE001
-            dlg.close()
-            QMessageBox.critical(self, tr("Import DAE failed"), str(exc))
-            return
+        cmd = self._run_import(load, dlg, tr("Import DAE failed"))
+        if cmd is None:
+            return False
         self._prepare_import_display(cmd, cb)
         dlg.close()
         self.viewport.update()
         self._import_name = path.name
         self._update_title()
         self._report_import(path.name, moved.get("offset"))
+        return True
 
     # ---- SKP import: IngeTrazo's own reader (formats/skp.py) -----------------
     def import_skp_path(self, skp: Path) -> bool:
@@ -8264,14 +8290,11 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, tr("Import SKP failed"), str(exc))
                 return False
             if payload is not None:
-                cmd = SnapshotImport(
+                cmd = self._run_import(
                     lambda scene: skp_format.apply_payload(scene, payload,
-                                                           progress=cb))
-                try:
-                    self.viewport.history.execute(cmd)
-                except Exception as exc:  # noqa: BLE001
-                    dlg.close()
-                    QMessageBox.critical(self, tr("Import SKP failed"), str(exc))
+                                                           progress=cb),
+                    dlg, tr("Import SKP failed"))
+                if cmd is None:
                     return False
                 self._prepare_import_display(cmd, cb)
                 dlg.close()
@@ -8472,14 +8495,11 @@ class MainWindow(QMainWindow):
 
         def load(scene):
             moved["offset"] = obj_format.load_obj(scene, path, progress=cb,
-                                                  scale=scale)
+                                                  scale=scale,
+                                                  require_geometry=True)
 
-        cmd = SnapshotImport(load)
-        try:
-            self.viewport.history.execute(cmd)
-        except Exception as exc:  # noqa: BLE001
-            dlg.close()
-            QMessageBox.critical(self, tr("Import OBJ failed"), str(exc))
+        cmd = self._run_import(load, dlg, tr("Import OBJ failed"))
+        if cmd is None:
             return
         self._prepare_import_display(cmd, cb)
         dlg.close()
@@ -8547,13 +8567,10 @@ class MainWindow(QMainWindow):
             dlg.close()
             QMessageBox.critical(self, tr("Import STL failed"), str(exc))
             return
-        cmd = SnapshotImport(
-            lambda scene: stl_format.add_stl_mesh(scene, path, target))
-        try:
-            self.viewport.history.execute(cmd)
-        except Exception as exc:  # noqa: BLE001
-            dlg.close()
-            QMessageBox.critical(self, tr("Import STL failed"), str(exc))
+        cmd = self._run_import(
+            lambda scene: stl_format.add_stl_mesh(scene, path, target),
+            dlg, tr("Import STL failed"))
+        if cmd is None:
             return
         self._prepare_import_display(cmd, cb)
         dlg.close()
@@ -8975,33 +8992,16 @@ class MainWindow(QMainWindow):
         dlg, cb = self._import_progress(tr("Importing {name}…",
                                            name=shown.name))
         stats: dict = {}
-        failure: list = []
 
         def load(scene):
-            try:
-                stats.update(load_dxf(scene, path, progress=cb, scale=scale,
-                                      doc=doc, name=shown.stem))
-            except Exception as exc:  # noqa: BLE001 — surface parse errors
-                failure.append(exc)
-                raise               # history.execute rolls back and keeps it
+            stats.update(load_dxf(scene, path, progress=cb, scale=scale,
+                                  doc=doc, name=shown.stem))
 
-        cmd = SnapshotImport(load)
-        was_clean = not self._is_dirty()
-        try:
-            self.viewport.history.execute(cmd)
-        except Exception as exc:  # noqa: BLE001
-            failure.append(exc)
-        if failure:
-            dlg.close()
-            # The rollback moved the version on, and nothing changed: an
-            # untouched project stays so, and a tab opened for this goes.
-            if was_clean:
-                self._saved_version = self.viewport.scene.version
-            self._update_title()
-            QMessageBox.critical(
-                self, (tr("Import DWG failed") if label is not None
-                       else tr("Import DXF failed")),
-                self._dxf_failure_text(failure[0], shown))
+        cmd = self._run_import(
+            load, dlg, (tr("Import DWG failed") if label is not None
+                        else tr("Import DXF failed")),
+            describe=lambda exc: self._dxf_failure_text(exc, shown))
+        if cmd is None:
             return False
         self._prepare_import_display(cmd, cb)
         dlg.close()
