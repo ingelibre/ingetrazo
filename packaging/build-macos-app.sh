@@ -30,9 +30,7 @@ cd "$ROOT"
 VERSION=$("$PYTHON" -c 'from core.version import __version__; print(__version__)')
 BUILD_APP="$WORK/pyi/IngeTrazo.app"
 APP="$OUT/IngeTrazo.app"
-# INGETRAZO_DMG_TAG names a package apart: macos12 for the extra Monterey build
-# (#1123). Unset, the name is the usual one.
-DMG="$OUT/IngeTrazo-$VERSION-${INGETRAZO_DMG_TAG:-macos}-$ARCH.dmg"
+DMG="$OUT/IngeTrazo-$VERSION-macos-$ARCH.dmg"
 
 echo "==> IngeTrazo $VERSION -> $DMG"
 

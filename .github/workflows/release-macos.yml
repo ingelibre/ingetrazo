@@ -11,11 +11,6 @@
 # macos-14 left GitHub Actions on 2026-11-02 (actions/runner-images#13518). A
 # runner sets the floor of what is compiled on it unless told otherwise, so the
 # arm64 job asks for 14.0 and its package keeps asking what it asked before.
-#
-# The third row is an EXTRA package for macOS 12 Intel (#1123): the newest
-# wheels that still run there, and nothing of the other two changes. There is
-# no macOS 12 runner, so nothing here proves it runs: it stays an artifact, off
-# the release, until someone tries it on a Monterey machine.
 name: release-macos
 
 on:
@@ -32,7 +27,7 @@ env:
 
 jobs:
   dmg:
-    name: .app + .dmg (${{ matrix.arch }}${{ matrix.dmg_tag && format(', {0}', matrix.dmg_tag) || '' }})
+    name: .app + .dmg (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false            # one Mac failing never holds the other
@@ -43,12 +38,6 @@ jobs:
             deployment_target: "14.0"
           - runner: macos-15-intel  # Intel; the .dmg is named by uname -m
             arch: x86_64
-          - runner: macos-15-intel  # macOS 12 Monterey, Intel (#1123)
-            arch: x86_64
-            dmg_tag: macos12
-            deployment_target: "12.0"
-    env:
-      INGETRAZO_DMG_TAG: ${{ matrix.dmg_tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,20 +55,6 @@ jobs:
           python -m pip install --upgrade pip
           grep -vE '^\s*pytest\b' requirements.txt > reqs.txt
           python -m pip install -r reqs.txt pyinstaller
-
-      # 6.9.3 is the last PySide6 tagged macosx_12_0 (6.10 and 6.11 are 13_0).
-      # This runner would pick NumPy's macosx_14_0 wheel; --platform takes the
-      # one that runs on macOS 12.
-      - name: Wheels for macOS 12
-        if: matrix.dmg_tag == 'macos12'
-        run: |
-          python -m pip install "PySide6==6.9.3" "PySide6-Essentials==6.9.3" \
-            "PySide6-Addons==6.9.3" "shiboken6==6.9.3"
-          SITE=$(python -c 'import site; print(site.getsitepackages()[0])')
-          python -m pip uninstall -y numpy
-          python -m pip install --no-deps --only-binary=:all: \
-            --platform macosx_12_0_x86_64 --python-version 3.12 \
-            --implementation cp --target "$SITE" numpy
 
       # The Rust engine (rust/ingetrazo_core, Preferences ▸
       # General; on by default since 0.5.10), built for this runner's architecture.
@@ -121,20 +96,19 @@ jobs:
       - name: The bundle finds everything it needs
         run: dist/IngeTrazo.app/Contents/MacOS/ingetrazo --check
 
-      # Fails the macOS 12 package if anything in it asks for more. For the
-      # others it is a report: it must not hold up a package that was fine.
+      # A report: it must not hold up a package that was fine.
       - name: No Mach-O asks for a newer macOS
         if: matrix.deployment_target
-        continue-on-error: ${{ !matrix.dmg_tag }}
+        continue-on-error: true
         run: python scripts/check_macos_minos.py dist/IngeTrazo.app "${{ matrix.deployment_target }}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ingetrazo-${{ matrix.dmg_tag || 'macos' }}-dmg-${{ matrix.arch }}
+          name: ingetrazo-macos-dmg-${{ matrix.arch }}
           path: dist/*.dmg
 
       - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/v') && !matrix.dmg_tag
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
