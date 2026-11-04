@@ -427,7 +427,9 @@ class ViewGrid(QWidget):
         self._maximized = None
         if key != "single" and not self.extras():
             self._make_extras()
-        if key != "single":
+        # Their caches stand: only another document makes them again (a
+        # second or more of every layout change on a model of some size).
+        if any(vp.scene is not self.main.scene for vp in self.extras()):
             self.follow_document()
         self._apply()
 

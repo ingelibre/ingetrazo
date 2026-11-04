@@ -404,3 +404,16 @@ def test_quitting_hands_back_the_extra_views_textures(win, monkeypatch):
     extras = _grid(win).extras()
     win.close()
     assert all(vp in gone for vp in extras)
+
+
+def test_changing_layout_keeps_the_extra_views_caches(win, monkeypatch):
+    """Rebuilding them took seconds of every layout change on a model of
+    some size: only another document asks for that."""
+    win.set_view_layout("four")
+    made = []
+    for vp in _grid(win).extras():
+        monkeypatch.setattr(vp, "reset_document_caches",
+                            lambda v=vp: made.append(v))
+    win.set_view_layout("two")
+    win.set_view_layout("three")
+    assert made == []
