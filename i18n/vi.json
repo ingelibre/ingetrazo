@@ -3348,5 +3348,13 @@
  "Round, extended by a quarter of the width": "Tròn, kéo dài thêm một phần tư độ dày",
  "Square, overhang: half the width minus 2 px (minimum 0)": "Vuông, phần nhô: nửa độ dày trừ 2 px (tối thiểu 0)",
  "Round, overhang: half the width minus 2 px (minimum 0)": "Tròn, phần nhô: nửa độ dày trừ 2 px (tối thiểu 0)",
- "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Cạnh chưa sơn dùng vật liệu của các mặt kề (màu trung bình nếu khác nhau). Sơn cạnh để thay màu này; mở nhóm để sơn các cạnh của nhóm."
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Cạnh chưa sơn dùng vật liệu của các mặt kề (màu trung bình nếu khác nhau). Sơn cạnh để thay màu này; mở nhóm để sơn các cạnh của nhóm.",
+ "Display material opacity and transparent textures without changing their paint.": "Hiển thị độ mờ của vật liệu và họa tiết trong suốt mà không thay đổi lớp sơn.",
+ "Faster": "Nhanh hơn",
+ "Lower opacity makes X-ray faces more transparent.": "Độ mờ thấp hơn làm các mặt X-quang trong suốt hơn.",
+ "Material transparency": "Độ trong suốt vật liệu",
+ "Nicer": "Đẹp hơn",
+ "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Đẹp hơn sắp xếp các tam giác trong suốt từ sau ra trước. Nhanh hơn giữ các nhóm theo vật liệu.",
+ "Transparency quality:": "Chất lượng trong suốt:",
+ "X-ray opacity:": "Độ mờ X-quang:"
 }

@@ -61,7 +61,7 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
             material = front if flat else (0.68, 0.55, 0.39)
             painter.setPen(Qt.NoPen)
             if mode == "xray":
-                painter.setOpacity(0.48)
+                painter.setOpacity(style.xray_opacity / 100.0)
             for points, rgb, shade in ((top, front, 1.0),
                                        (left, front, 0.91 if not flat else 1.0),
                                        (right, material, 0.78 if not flat else 1.0)):

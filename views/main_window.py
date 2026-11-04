@@ -4397,22 +4397,24 @@ class MainWindow(QMainWindow):
             tr("Style: {name}", name=tr(preset.name)), 2000)
 
     def _toggle_xray(self) -> None:
-        """Alt+X: into X-ray, remembering the style you leave; out of it,
-        back to that style — or to Default when there is none to go back to
-        (X-ray picked from the menu, or another document since)."""
-        from core.style import style_by_name
+        """Toggle X-ray while preserving edits to the active display style."""
+        from core.style import Style
         scene = self.viewport.scene
-        style = getattr(scene, "display_style", None)
-        if style is not None and style.face_mode == "xray":
+        style = getattr(scene, "display_style", None) or Style()
+        updated = style.copy()
+        if style.face_mode == "xray":
             prev_scene, prev = self._style_before_xray
             self._style_before_xray = (None, None)
-            if prev_scene is not scene or prev is None:
-                prev = style_by_name("Default")
-            self._apply_display_style(prev)
+            if prev_scene is scene and prev is not None:
+                updated.face_mode, updated.name = prev.face_mode, prev.name
+            else:
+                updated.face_mode = "textures"
+                if updated.name == "X-ray":
+                    updated.name = "Default"
         else:
-            self._style_before_xray = (
-                scene, style.copy() if style is not None else None)
-            self._apply_display_style(style_by_name("X-ray"))
+            self._style_before_xray = (scene, style.copy())
+            updated.face_mode = "xray"
+        self._apply_display_style(updated)
 
     def _set_style_field(self, name: str, value: bool) -> None:
         style = getattr(self.viewport.scene, "display_style", None)

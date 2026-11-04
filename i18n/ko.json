@@ -3321,5 +3321,13 @@
  "Round, extended by a quarter of the width": "원형, 선 두께의 4분의 1만큼 연장",
  "Square, overhang: half the width minus 2 px (minimum 0)": "사각형, 돌출 길이: 선 두께의 절반에서 2 px를 뺀 값 (최소 0)",
  "Round, overhang: half the width minus 2 px (minimum 0)": "원형, 돌출 길이: 선 두께의 절반에서 2 px를 뺀 값 (최소 0)",
- "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "칠하지 않은 모서리는 인접한 면의 재질을 사용합니다(서로 다르면 평균 색상). 모서리를 칠하면 그 색상이 우선합니다. 그룹의 모서리를 칠하려면 그룹을 여세요."
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "칠하지 않은 모서리는 인접한 면의 재질을 사용합니다(서로 다르면 평균 색상). 모서리를 칠하면 그 색상이 우선합니다. 그룹의 모서리를 칠하려면 그룹을 여세요.",
+ "Display material opacity and transparent textures without changing their paint.": "칠한 재질을 변경하지 않고 재질의 불투명도와 투명 텍스처를 표시합니다.",
+ "Faster": "빠르게",
+ "Lower opacity makes X-ray faces more transparent.": "불투명도를 낮추면 X선 모드의 면이 더 투명해집니다.",
+ "Material transparency": "재질 투명도",
+ "Nicer": "고품질",
+ "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "고품질은 투명 삼각형을 뒤에서 앞으로 정렬합니다. 빠르게는 재질별 묶음을 유지합니다.",
+ "Transparency quality:": "투명도 품질:",
+ "X-ray opacity:": "X선 불투명도:"
 }

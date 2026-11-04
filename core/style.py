@@ -33,6 +33,8 @@ ENDPOINT_TYPES = ("default", "round", "square", "triangle")
 EDGE_WIDTH_RANGE = (1, 20)
 EDGE_LENGTH_RANGE = (1, 50)
 EDGE_EXTENSION_RANGE = (-50, 50)
+TRANSPARENCY_QUALITIES = ("faster", "nicer")
+XRAY_OPACITY_RANGE = (20, 80)
 
 #: The soft warm white of the faces that wear no material in the shaded
 #: modes — the matte cardstock of an architecture model. The style's Front
@@ -68,6 +70,9 @@ class Style:
     endpoint_size: int = 6
     dashes: bool = True
     edge_color_mode: str = "same"
+    material_transparency: bool = True
+    transparency_quality: str = "faster"
+    xray_opacity: int = 60
     # The faces' front colour: every face in Hidden line and Monochrome,
     # and the faces wearing no material in the other modes (issue #776).
     front_color: tuple = (1.0, 1.0, 1.0)
@@ -128,7 +133,8 @@ class Style:
                     "extension_length": 3, "endpoints": False,
                     "endpoint_length": 3, "endpoint_type": "default",
                     "endpoint_size": 6, "dashes": True,
-                    "edge_color_mode": "same"}
+                    "edge_color_mode": "same", "material_transparency": True,
+                    "transparency_quality": "faster", "xray_opacity": 60}
         for attr, default in defaults.items():
             value = getattr(self, attr)
             if value != default:
@@ -168,6 +174,11 @@ class Style:
             dashes=bool(raw.get("dashes", d.dashes)),
             edge_color_mode=(raw.get("edge_color_mode")
                              if raw.get("edge_color_mode") in EDGE_COLOR_MODES else "same"),
+            material_transparency=bool(raw.get("material_transparency", d.material_transparency)),
+            transparency_quality=(raw.get("transparency_quality")
+                                  if raw.get("transparency_quality") in TRANSPARENCY_QUALITIES
+                                  else d.transparency_quality),
+            xray_opacity=_pixel_value(raw.get("xray_opacity"), d.xray_opacity, XRAY_OPACITY_RANGE),
             front_color=tuple(raw.get("front_color", d.front_color)),
             back_color=_opt_rgb(raw.get("back_color")),
             background=tuple(raw.get("background", d.background)),

@@ -3329,5 +3329,13 @@
  "Round, extended by a quarter of the width": "Okrągłe, wydłużone o ćwierć grubości",
  "Square, overhang: half the width minus 2 px (minimum 0)": "Kwadratowe, występ: połowa grubości minus 2 px (minimum 0)",
  "Round, overhang: half the width minus 2 px (minimum 0)": "Okrągłe, występ: połowa grubości minus 2 px (minimum 0)",
- "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Niepomalowane krawędzie przejmują materiały sąsiednich ścian (średni kolor, jeśli się różnią). Pomaluj krawędź, aby go zastąpić; otwórz grupę, aby malować jej krawędzie."
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Niepomalowane krawędzie przejmują materiały sąsiednich ścian (średni kolor, jeśli się różnią). Pomaluj krawędź, aby go zastąpić; otwórz grupę, aby malować jej krawędzie.",
+ "Display material opacity and transparent textures without changing their paint.": "Wyświetlaj krycie materiałów i przezroczyste tekstury bez zmiany ich malowania.",
+ "Faster": "Szybciej",
+ "Lower opacity makes X-ray faces more transparent.": "Mniejsze krycie zwiększa przezroczystość ścian w trybie rentgenowskim.",
+ "Material transparency": "Przezroczystość materiałów",
+ "Nicer": "Dokładniej",
+ "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Dokładniej sortuje przezroczyste trójkąty od tyłu do przodu. Szybciej zachowuje partie materiałów.",
+ "Transparency quality:": "Jakość przezroczystości:",
+ "X-ray opacity:": "Krycie rentgenowskie:"
 }

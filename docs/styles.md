@@ -4,6 +4,26 @@ Open **Styles** from the Panels toolbar. The window stays open while you work in
 Use **Select** to browse Built-in styles or My styles, and **Edit** to adjust the current look.
 Changes appear immediately; **Save style…** stores a reusable copy in My styles.
 
+## Faces
+
+On **Edit**, choose **Face settings**. The mode buttons select Textures, Shaded,
+Hidden line, Monochrome, Wireframe or X-ray. Tooltips identify each button.
+Front and back colors and ambient occlusion keep their existing behavior.
+
+**Material transparency** displays material opacity and texture transparency. Turning it off
+draws model materials as opaque without changing their saved paint. Hidden line and Monochrome
+draw translucent material faces as solid surfaces too.
+
+**Transparency quality** offers Faster (material batches) and Nicer (transparent triangles
+ordered by depth across materials). Nicer trades additional draws for more accurate layering;
+its triangle-center sort does not split intersecting triangles. This choice is preserved while
+material transparency is off.
+
+**X-ray opacity** sets face opacity from 20% to 80%, with 60% preserving the previous default.
+The slider and numeric field stay synchronized and become available in X-ray mode. The setting
+applies to loose geometry, textures, instances and painted backs. Styles, saved views and the
+user style library retain these settings.
+
 ## Edges
 
 On **Edit**, choose **Edge settings**, the first category button.

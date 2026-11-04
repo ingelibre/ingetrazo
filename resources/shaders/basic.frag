@@ -8,6 +8,8 @@ uniform int u_use_vcolor;
 // Uniform opacity of the current draw (1.0 = opaque pass). Translucent
 // material runs (.skp trans with useTrans) draw last with this < 1.
 uniform float u_opacity;
+// Styles can display materials as opaque without changing their paint.
+uniform int u_material_opaque;
 // 1 while drawing face-me billboards: a HARD alpha cut at 0.5 instead of
 // the Bayer dither below. Their mipmapped edge alpha would otherwise
 // render as stipple dots around the figure; the dither stays for scene
@@ -179,6 +181,7 @@ void main() {
     vec4 c;
     if (u_use_texture == 1) {
         vec4 texel = texture(u_tex, v_uv);
+        if (u_material_opaque == 1) texel.a = 1.0;
         // Cutout transparency (face-me billboards, leaves, chain-link):
         // discard keeps the depth buffer honest behind the holes. Below the
         // 0.5 cut the test is DITHERED, not hard — mipmap minification

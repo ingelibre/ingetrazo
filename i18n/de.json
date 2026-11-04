@@ -3321,5 +3321,13 @@
  "Round, extended by a quarter of the width": "Rund, um ein Viertel der Strichbreite verlängert",
  "Square, overhang: half the width minus 2 px (minimum 0)": "Eckig, Überstand: halbe Strichbreite minus 2 px (mindestens 0)",
  "Round, overhang: half the width minus 2 px (minimum 0)": "Rund, Überstand: halbe Strichbreite minus 2 px (mindestens 0)",
- "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Unbemalte Kanten übernehmen die Materialien benachbarter Flächen (bei Unterschieden deren mittlere Farbe). Eine Kante bemalen, um dies zu überschreiben; eine Gruppe öffnen, um ihre Kanten zu bemalen."
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Unbemalte Kanten übernehmen die Materialien benachbarter Flächen (bei Unterschieden deren mittlere Farbe). Eine Kante bemalen, um dies zu überschreiben; eine Gruppe öffnen, um ihre Kanten zu bemalen.",
+ "Display material opacity and transparent textures without changing their paint.": "Materialdeckkraft und transparente Texturen anzeigen, ohne die Bemalung zu ändern.",
+ "Faster": "Schneller",
+ "Lower opacity makes X-ray faces more transparent.": "Geringere Deckkraft macht Röntgenflächen transparenter.",
+ "Material transparency": "Materialtransparenz",
+ "Nicer": "Höhere Qualität",
+ "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Höhere Qualität sortiert transparente Dreiecke von hinten nach vorne. Schneller behält Materialgruppen bei.",
+ "Transparency quality:": "Transparenzqualität:",
+ "X-ray opacity:": "Röntgen-Deckkraft:"
 }

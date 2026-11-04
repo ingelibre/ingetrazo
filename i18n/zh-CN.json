@@ -3322,5 +3322,13 @@
  "Round, extended by a quarter of the width": "圆头，延长四分之一个线宽",
  "Square, overhang: half the width minus 2 px (minimum 0)": "方头，伸出量：半个线宽减2像素（最小为0）",
  "Round, overhang: half the width minus 2 px (minimum 0)": "圆头，伸出量：半个线宽减2像素（最小为0）",
- "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "未涂色的边线使用相邻面的材质（不同时取平均颜色）。直接涂绘边线可覆盖此颜色；打开组后可涂绘组内边线。"
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "未涂色的边线使用相邻面的材质（不同时取平均颜色）。直接涂绘边线可覆盖此颜色；打开组后可涂绘组内边线。",
+ "Display material opacity and transparent textures without changing their paint.": "显示材质不透明度和透明纹理，不改变其涂色。",
+ "Faster": "更快",
+ "Lower opacity makes X-ray faces more transparent.": "降低不透明度会使X射线模式下的面更透明。",
+ "Material transparency": "材质透明度",
+ "Nicer": "更精细",
+ "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "更精细会将透明三角形从后向前排序。更快保留按材质分组的批次。",
+ "Transparency quality:": "透明度质量：",
+ "X-ray opacity:": "X射线不透明度："
 }

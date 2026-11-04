@@ -3336,5 +3336,13 @@
  "Round, extended by a quarter of the width": "Кругле, з виступом на чверть товщини",
  "Square, overhang: half the width minus 2 px (minimum 0)": "Квадратне, виступ: половина товщини мінус 2 пікс. (мінімум 0)",
  "Round, overhang: half the width minus 2 px (minimum 0)": "Кругле, виступ: половина товщини мінус 2 пікс. (мінімум 0)",
- "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Нефарбовані ребра використовують матеріали сусідніх граней (середній колір, якщо вони різняться). Пофарбуйте ребро, щоб замінити цей колір; відкрийте групу для фарбування її ребер."
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Нефарбовані ребра використовують матеріали сусідніх граней (середній колір, якщо вони різняться). Пофарбуйте ребро, щоб замінити цей колір; відкрийте групу для фарбування її ребер.",
+ "Display material opacity and transparent textures without changing their paint.": "Показувати непрозорість матеріалів і прозорі текстури без зміни їхнього фарбування.",
+ "Faster": "Швидше",
+ "Lower opacity makes X-ray faces more transparent.": "Менша непрозорість робить грані в рентгенівському режимі прозорішими.",
+ "Material transparency": "Прозорість матеріалів",
+ "Nicer": "Якісніше",
+ "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Якісніше сортує прозорі трикутники від дальніх до ближніх. Швидше зберігає групування за матеріалами.",
+ "Transparency quality:": "Якість прозорості:",
+ "X-ray opacity:": "Непрозорість рентгену:"
 }

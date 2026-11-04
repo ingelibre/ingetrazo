@@ -3328,5 +3328,13 @@
  "Round, extended by a quarter of the width": "Redonda, prolongada por um quarto da espessura",
  "Square, overhang: half the width minus 2 px (minimum 0)": "Quadrada, avanço: metade da espessura menos 2 px (mínimo 0)",
  "Round, overhang: half the width minus 2 px (minimum 0)": "Redonda, avanço: metade da espessura menos 2 px (mínimo 0)",
- "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Arestas não pintadas usam os materiais das faces vizinhas (a cor média se forem diferentes). Pinte uma aresta para substituir essa cor; abra um grupo para pintar suas arestas."
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Arestas não pintadas usam os materiais das faces vizinhas (a cor média se forem diferentes). Pinte uma aresta para substituir essa cor; abra um grupo para pintar suas arestas.",
+ "Display material opacity and transparent textures without changing their paint.": "Exibir a opacidade dos materiais e texturas transparentes sem alterar sua pintura.",
+ "Faster": "Mais rápida",
+ "Lower opacity makes X-ray faces more transparent.": "Uma opacidade menor deixa as faces em raios X mais transparentes.",
+ "Material transparency": "Transparência de materiais",
+ "Nicer": "Mais precisa",
+ "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Mais precisa ordena os triângulos transparentes de trás para frente. Mais rápida mantém os lotes por material.",
+ "Transparency quality:": "Qualidade da transparência:",
+ "X-ray opacity:": "Opacidade de raios X:"
 }

@@ -1147,9 +1147,6 @@ def edit_fade_color(background) -> tuple:
     being edited keeps its colours."""
     return tuple(0.5 * float(c) + 0.5 * 0.55 for c in list(background)[:3])
 
-#: X-ray: how opaque each translucent face layer is. Layers stack, so a face
-#: seen through another reads darker and an opening (no face) stays clear.
-XRAY_FACE_OPACITY = 0.6
 #: X-ray: edges hidden behind a face are washed this far toward the
 #: background (0 = like a visible edge, 1 = gone), so the form still reads
 #: and you can tell which edges have a face in front of them.
@@ -1924,6 +1921,9 @@ class Viewport(QOpenGLWidget):
         self._faces_vao = None
         self._faces_vbo = None
         self._faces_count = 0
+        self._face_transparency_runs = []
+        self._transparency_order_key = None
+        self._transparency_order = []
         # Solid-colour faces share ONE interleaved pos+rgb VBO drawn in a
         # single call (the shaded material colour rides per vertex).
         # Textured faces (pos+uv VBO) grouped by image path: [(path, start, count)].
@@ -2140,6 +2140,7 @@ class Viewport(QOpenGLWidget):
         self._loc_vcolor = self._program.attributeLocation("a_color")
         self._loc_use_vcolor = self._program.uniformLocation("u_use_vcolor")
         self._loc_opacity = self._program.uniformLocation("u_opacity")
+        self._loc_material_opaque = self._program.uniformLocation("u_material_opaque")
         self._loc_hard_cutout = self._program.uniformLocation("u_hard_cutout")
         self._loc_shade = self._program.uniformLocation("u_shade")
         # Instanced pass: re-shade the prototype's baked tones for the
@@ -2486,6 +2487,7 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue(self._loc_tex, 0)  # sampler → unit 0
         self._program.setUniformValue(self._loc_use_vcolor, 0)
         self._program.setUniformValue1f(self._loc_opacity, 1.0)
+        self._program.setUniformValue(self._loc_material_opaque, 0)
         self._program.setUniformValue1f(self._loc_shade, 1.0)
         self._program.setUniformValue(self._loc_hard_cutout, 0)
         self._program.setUniformValue1f(self._loc_fade, 0.0)
@@ -2730,6 +2732,8 @@ class Viewport(QOpenGLWidget):
         if getattr(self, "_frame_shadow", None) is not None:
             self._draw_shadow_ground(style)
             self._program.setUniformValue(self._loc_shadow_enable, 1)
+        self._program.setUniformValue(self._loc_material_opaque, int(not style.material_transparency))
+        self._gl.glBlendFuncSeparate(0x0302, 0x0303, 1, 0x0303)
         if self._faces_count > 0 and mode != "wireframe":
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
@@ -2759,7 +2763,7 @@ class Viewport(QOpenGLWidget):
                 # X-ray: translucent faces that do not occlude — edges stay
                 # fully visible because nothing writes depth.
                 self._program.setUniformValue1f(self._loc_opacity,
-                                                XRAY_FACE_OPACITY)
+                                                style.xray_opacity / 100.0)
                 self._gl.glDepthMask(GL_FALSE)
             self._faces_vao.bind()
             if split_f is None:
@@ -2842,7 +2846,7 @@ class Viewport(QOpenGLWidget):
             self._program.setUniformValue(self._loc_use_tex, 1)
             if mode == "xray":
                 self._program.setUniformValue1f(self._loc_opacity,
-                                                XRAY_FACE_OPACITY)
+                                                style.xray_opacity / 100.0)
                 self._gl.glDepthMask(GL_FALSE)
             self._tex_faces_vao.bind()
             run_parts = getattr(self, "_tex_run_parts", None)
@@ -2944,6 +2948,9 @@ class Viewport(QOpenGLWidget):
         # they win the depth test over the front copy there.
         if (self._back_vcol_run[1] > 0 or self._back_tex_runs) \
                 and mode in ("textures", "shaded", "xray"):
+            if mode == "xray":
+                self._program.setUniformValue1f(self._loc_opacity, style.xray_opacity / 100.0)
+                self._gl.glDepthMask(GL_FALSE)
             self._gl.glEnable(GL_CULL_FACE)
             self._gl.glCullFace(GL_FRONT)
             bstart, bcount = self._back_vcol_run
@@ -2970,7 +2977,12 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue1f(self._loc_shade, 1.0)
                 self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_CULL_FACE)
+            if mode == "xray":
+                self._program.setUniformValue1f(self._loc_opacity, 1.0)
+                self._gl.glDepthMask(GL_TRUE)
 
+        if not style.material_transparency or mode in ("hidden_line", "monochrome"):
+            self._draw_face_material_runs(mode, style)
         self._draw_section_fill(mode, style)
         # Ambient occlusion (#954): onto the opaque faces only — the glass
         # below, the billboards, highlights and every edge come after it.
@@ -2979,9 +2991,15 @@ class Viewport(QOpenGLWidget):
         # Translucent material runs (.skp trans with useTrans): drawn
         # after everything opaque, blended, depth-tested but not depth-
         # written, so glass/mesh screens show what's behind them.
-        if (self._tcol_runs or self._ttex_runs
+        if (style.material_transparency and (style.transparency_quality == "nicer" or mode == "shaded")
+                and mode in ("textures", "shaded", "xray")):
+            self._draw_face_material_runs(mode, style,
+                                          sorted_triangles=style.transparency_quality == "nicer")
+        elif (self._tcol_runs or self._ttex_runs
                 or self._back_tcol_runs or self._back_ttex_runs) \
-                and mode in ("textures", "shaded", "xray"):
+                and style.material_transparency and mode in ("textures", "shaded", "xray"):
+            def material_opacity(value):
+                return float(value) * (style.xray_opacity / 100.0 if mode == "xray" else 1.0)
             self._gl.glDepthMask(GL_FALSE)
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
@@ -2989,7 +3007,7 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue(self._loc_use_vcolor, 1)
                 self._faces_vao.bind()
                 for a, fc, start, count in self._tcol_runs:
-                    self._program.setUniformValue1f(self._loc_opacity, float(a))
+                    self._program.setUniformValue1f(self._loc_opacity, material_opacity(a))
                     if fc:
                         # glass-backed front copy: front side only
                         self._gl.glEnable(GL_CULL_FACE)
@@ -3002,7 +3020,7 @@ class Viewport(QOpenGLWidget):
                     self._gl.glEnable(GL_CULL_FACE)
                     self._gl.glCullFace(GL_FRONT)
                     for a, start, count in self._back_tcol_runs:
-                        self._program.setUniformValue1f(self._loc_opacity, float(a))
+                        self._program.setUniformValue1f(self._loc_opacity, material_opacity(a))
                         self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                     self._gl.glDisable(GL_CULL_FACE)
                 self._faces_vao.release()
@@ -3014,7 +3032,7 @@ class Viewport(QOpenGLWidget):
                     tex = self._get_texture(path)
                     if tex is None:
                         continue
-                    self._program.setUniformValue1f(self._loc_opacity, float(a))
+                    self._program.setUniformValue1f(self._loc_opacity, material_opacity(a))
                     self._program.setUniformValue1f(self._loc_shade, float(shade))
                     if fc:
                         self._gl.glEnable(GL_CULL_FACE)
@@ -3031,7 +3049,7 @@ class Viewport(QOpenGLWidget):
                         tex = self._get_texture(path)
                         if tex is None:
                             continue
-                        self._program.setUniformValue1f(self._loc_opacity, float(a))
+                        self._program.setUniformValue1f(self._loc_opacity, material_opacity(a))
                         self._program.setUniformValue1f(self._loc_shade, float(shade))
                         tex.bind(0)
                         self._gl.glDrawArrays(GL_TRIANGLES, start, count)
@@ -3044,6 +3062,8 @@ class Viewport(QOpenGLWidget):
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
             self._gl.glDepthMask(GL_TRUE)
 
+        self._program.setUniformValue(self._loc_material_opaque, 0)
+        self._gl.glBlendFunc(0x0302, 0x0303)
         # Face-me billboards (2D people): per-frame textured cutout
         # — skipped on plan sheets and line styles: a coloured cutout person
         # on a technical drawing gives the raster away; scale figures belong
@@ -4894,6 +4914,65 @@ class Viewport(QOpenGLWidget):
         self._lean_faces_rec = ((key, by_proto, pairs, tape) if cacheable
                                 else None)
 
+    def _draw_face_material_runs(self, mode, style, sorted_triangles=False) -> None:
+        """Draw translucent material buffers sorted, opaque, or in flat styles."""
+        from core.transparency import transparency_draws
+        if mode == "wireframe" or not self._face_transparency_runs:
+            return
+        flat = mode in ("hidden_line", "monochrome")
+        opaque = not style.material_transparency or flat
+        xray = mode == "xray"
+        eye, forward = self.camera.eye().toTuple(), self.camera.forward().toTuple()
+        key = (eye, forward, sorted_triangles)
+        if key != self._transparency_order_key:
+            self._transparency_order_key = key
+            self._transparency_order = transparency_draws(
+                self._face_transparency_runs, eye, forward, sorted_triangles)
+        self._gl.glDepthMask(GL_TRUE if opaque and not xray else GL_FALSE)
+        self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+        self._gl.glPolygonOffset(1.0, 1.0)
+        try:
+            for run, first, count in self._transparency_order:
+                alpha = (1.0 if opaque else run.opacity) * (style.xray_opacity / 100.0 if xray else 1.0)
+                textured = run.path is not None and mode in ("textures", "xray")
+                tex = self._get_texture(run.path) if textured else None
+                if textured and tex is None:
+                    continue
+                self._program.setUniformValue1f(self._loc_opacity, alpha)
+                self._program.setUniformValue(self._loc_use_tex, int(textured))
+                self._program.setUniformValue(self._loc_use_vcolor, int(run.path is None and not flat))
+                self._program.setUniformValue1f(self._loc_shade, run.shade)
+                if flat or (run.path is not None and not textured):
+                    rgb = (style.front_color if flat else
+                           tuple(c * run.shade for c in self._texture_avg_color(run.path)))
+                    self._set_color(*rgb, alpha)
+                    if mode == "monochrome":
+                        self._set_back_face_color()
+                    else:
+                        self._program.setUniformValue(self._loc_back_color, QVector4D(*rgb, alpha))
+                if flat or run.side == "both":
+                    self._gl.glDisable(GL_CULL_FACE)
+                else:
+                    self._gl.glEnable(GL_CULL_FACE)
+                    self._gl.glCullFace(GL_BACK if run.side == "front" else GL_FRONT)
+                vao = self._tex_faces_vao if run.path is not None else self._faces_vao
+                vao.bind()
+                if tex is not None:
+                    tex.bind(0)
+                self._gl.glDrawArrays(GL_TRIANGLES, first, count)
+                if tex is not None:
+                    tex.release(0)
+                vao.release()
+        finally:
+            self._gl.glDisable(GL_CULL_FACE)
+            self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+            self._gl.glDepthMask(GL_TRUE)
+            self._program.setUniformValue(self._loc_use_tex, 0)
+            self._program.setUniformValue(self._loc_use_vcolor, 0)
+            self._program.setUniformValue1f(self._loc_opacity, 1.0)
+            self._program.setUniformValue1f(self._loc_shade, 1.0)
+            self._set_back_face_color()
+
     def _draw_instanced_faces(self, mode, style) -> None:
         by_proto = self._gather_instanced()
         if not by_proto or mode == "wireframe":
@@ -4903,7 +4982,7 @@ class Viewport(QOpenGLWidget):
         self._gl.glPolygonOffset(1.0, 1.0)
         if mode == "xray":
             self._program.setUniformValue1f(self._loc_opacity,
-                                            XRAY_FACE_OPACITY)
+                                            style.xray_opacity / 100.0)
             self._gl.glDepthMask(GL_FALSE)
         # The prototype's tones were baked for ITS orientation (#482).
         self._program.setUniformValue(self._loc_reshade, 1)
@@ -5708,6 +5787,9 @@ class Viewport(QOpenGLWidget):
             if isinstance(cache, dict):
                 cache.clear()
         self._edges_version = -1          # rebuild the VBOs from nothing
+        self._face_transparency_runs = []
+        self._transparency_order_key = None
+        self._transparency_order = []
         self._frozen_cache_version = None
         self._sil_table = None            # holds the old document's bakes
         self._pick_cat_memo = None        # ...and its pick triangles
@@ -7789,6 +7871,10 @@ class Viewport(QOpenGLWidget):
         # Translucent colour runs live in the SAME VBO, after the opaque
         # batch; drawn in their own blended pass (depth-write off).
         self._tcol_runs = []
+        from core.transparency import transparency_run
+        self._face_transparency_runs = []
+        self._transparency_order_key = None
+        self._transparency_order = []
         start = sum(len(p) for p in all_face_parts) // 24
         for key in sorted(tcol_runs):
             a, fc = key
@@ -7796,6 +7882,8 @@ class Viewport(QOpenGLWidget):
             all_face_parts += run
             count = sum(map(len, run)) // 24
             self._tcol_runs.append((a, fc, start, count))
+            self._face_transparency_runs.append(transparency_run(
+                run, start, 6, a, side="front" if fc else "both"))
             start += count
         run = pieces(back_vcol_parts)
         self._back_vcol_run = (start, sum(map(len, run)) // 24)
@@ -7811,6 +7899,7 @@ class Viewport(QOpenGLWidget):
             all_face_parts += run
             count = sum(map(len, run)) // 24
             self._back_tcol_runs.append((a, start, count))
+            self._face_transparency_runs.append(transparency_run(run, start, 6, a, side="back"))
             start += count
         self._upload_vbo(self._faces_vbo, "faces", all_face_parts, empty=48)
 
@@ -7872,6 +7961,8 @@ class Viewport(QOpenGLWidget):
             tex_parts += run
             count = sum(map(len, run)) // 20
             self._ttex_runs.append((key, a, fc, start, count))
+            self._face_transparency_runs.append(transparency_run(
+                run, start, 5, a, path=key[0], shade=key[1], side="front" if fc else "both"))
             start += count
         self._back_tex_runs = []
         for key in sorted(back_tex_runs):
@@ -7887,6 +7978,8 @@ class Viewport(QOpenGLWidget):
             tex_parts += run
             count = sum(map(len, run)) // 20
             self._back_ttex_runs.append((key, a, start, count))
+            self._face_transparency_runs.append(transparency_run(
+                run, start, 5, a, path=key[0], shade=key[1], side="back"))
             start += count
         self._tex_faces_count = self._upload_vbo(
             self._tex_faces_vbo, "tex", tex_parts, empty=40) // 20

@@ -220,12 +220,15 @@ def test_profile_cap_overhang_scales_with_export_resolution(drawing, cap, inset)
 @pytest.fixture
 def cube_viewport():
     """A real, invisible viewport with solid faces, depth, MSAA and picking."""
+    import gc
     from PySide6.QtCore import QCoreApplication, QEvent, Qt
     from PySide6.QtWidgets import QApplication
     from views.viewport import Viewport
 
     if QApplication.platformName() == "offscreen":
         pytest.skip("no native OpenGL widget on this platform")
+    # Release previous Qt/Python cycles before a new GL context is current.
+    gc.collect()
     vp = Viewport()
     vp.setAttribute(Qt.WA_DontShowOnScreen)
     vp.resize(900, 750)

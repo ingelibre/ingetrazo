@@ -3324,5 +3324,13 @@
  "Round, extended by a quarter of the width": "ປາຍມົນ ຍື່ນອອກໜຶ່ງສ່ວນສີ່ຂອງຄວາມໜາ",
  "Square, overhang: half the width minus 2 px (minimum 0)": "ປາຍສີ່ຫຼ່ຽມ, ສ່ວນຍື່ນ: ເຄິ່ງຄວາມໜາລົບ 2 ພິກເຊວ (ຕ່ຳສຸດ 0)",
  "Round, overhang: half the width minus 2 px (minimum 0)": "ປາຍມົນ, ສ່ວນຍື່ນ: ເຄິ່ງຄວາມໜາລົບ 2 ພິກເຊວ (ຕ່ຳສຸດ 0)",
- "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "ຂອບທີ່ຍັງບໍ່ທາສີໃຊ້ວັດສະດຸຂອງໜ້າທີ່ຕິດກັນ (ສີສະເລ່ຍຖ້າແຕກຕ່າງກັນ). ທາສີຂອບເພື່ອປ່ຽນສີນີ້; ເປີດກຸ່ມເພື່ອທາສີຂອບຂອງມັນ."
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "ຂອບທີ່ຍັງບໍ່ທາສີໃຊ້ວັດສະດຸຂອງໜ້າທີ່ຕິດກັນ (ສີສະເລ່ຍຖ້າແຕກຕ່າງກັນ). ທາສີຂອບເພື່ອປ່ຽນສີນີ້; ເປີດກຸ່ມເພື່ອທາສີຂອບຂອງມັນ.",
+ "Display material opacity and transparent textures without changing their paint.": "ສະແດງຄວາມທຶບຂອງວັດສະດຸ ແລະ ລວດລາຍໂປ່ງໃສ ໂດຍບໍ່ປ່ຽນສີທີ່ທາ.",
+ "Faster": "ໄວກວ່າ",
+ "Lower opacity makes X-ray faces more transparent.": "ຄວາມທຶບທີ່ຕ່ຳລົງເຮັດໃຫ້ໜ້າໃນໂໝດເອັກຊ໌ເຣໂປ່ງໃສຂຶ້ນ.",
+ "Material transparency": "ຄວາມໂປ່ງໃສຂອງວັດສະດຸ",
+ "Nicer": "ຄຸນນະພາບດີກວ່າ",
+ "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "ຄຸນນະພາບດີກວ່າຈັດລຽງສາມຫຼ່ຽມໂປ່ງໃສຈາກຫຼັງໄປໜ້າ. ໄວກວ່າຮັກສາກຸ່ມຕາມວັດສະດຸ.",
+ "Transparency quality:": "ຄຸນນະພາບຄວາມໂປ່ງໃສ:",
+ "X-ray opacity:": "ຄວາມທຶບເອັກຊ໌ເຣ:"
 }

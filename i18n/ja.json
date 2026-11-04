@@ -3321,5 +3321,13 @@
  "Round, extended by a quarter of the width": "丸型、線幅の4分の1だけ延長",
  "Square, overhang: half the width minus 2 px (minimum 0)": "角型、突出量：線幅の半分から2 pxを引く（最小0）",
  "Round, overhang: half the width minus 2 px (minimum 0)": "丸型、突出量：線幅の半分から2 pxを引く（最小0）",
- "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "未塗装のエッジは隣接する面のマテリアルを使います（異なる場合は平均色）。エッジを塗るとその色を優先します。グループのエッジを塗るにはグループを開いてください。"
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "未塗装のエッジは隣接する面のマテリアルを使います（異なる場合は平均色）。エッジを塗るとその色を優先します。グループのエッジを塗るにはグループを開いてください。",
+ "Display material opacity and transparent textures without changing their paint.": "塗装を変更せず、マテリアルの不透明度と透明なテクスチャを表示します。",
+ "Faster": "高速",
+ "Lower opacity makes X-ray faces more transparent.": "不透明度を下げると、X線表示の面がより透明になります。",
+ "Material transparency": "マテリアルの透明度",
+ "Nicer": "高品質",
+ "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "高品質は透明な三角形を奥から手前に並べます。高速はマテリアル単位の描画を維持します。",
+ "Transparency quality:": "透明度の品質:",
+ "X-ray opacity:": "X線の不透明度:"
 }

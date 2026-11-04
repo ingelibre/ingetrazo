@@ -3359,7 +3359,27 @@ class StylesPanel(QWidget):
         for key, label in self._MODES:
             self._mode.addItem(tr(label), key)
         self._mode.currentIndexChanged.connect(self._apply_edits)
-        faces.addWidget(self._mode, 0, 1)
+        # Keep one mode model for menus/tests; the visible controls are icons.
+        self._mode.setParent(faces.parentWidget())
+        self._mode.hide()
+        face_modes = QHBoxLayout()
+        face_modes.setSpacing(3)
+        self._face_modes = QButtonGroup(self)
+        from views.icons import tool_icon
+        for index, (key, label) in enumerate(self._MODES):
+            button = QToolButton()
+            button.setCheckable(True)
+            button.setIcon(tool_icon("face_" + key))
+            button.setProperty("icon_key", "face_" + key)
+            button.setToolTip(tr(label))
+            button.setAccessibleName(tr(label))
+            button.setFixedSize(28, 28)
+            button.setIconSize(QSize(22, 22))
+            self._face_modes.addButton(button, index)
+            face_modes.addWidget(button)
+        face_modes.addStretch(1)
+        self._face_modes.idClicked.connect(self._mode.setCurrentIndex)
+        faces.addLayout(face_modes, 0, 1)
 
         self._edges = QCheckBox(tr("Edges"))
         self._edges.toggled.connect(self._apply_edits)
@@ -3461,6 +3481,38 @@ class StylesPanel(QWidget):
             tr("Back color — paints faces seen from behind"), "back_color")
         faces.addWidget(self._back_c, 2, 1)
 
+        self._material_transparency = QCheckBox(tr("Material transparency"))
+        self._material_transparency.setToolTip(tr(
+            "Display material opacity and transparent textures without changing their paint."))
+        self._material_transparency.toggled.connect(self._apply_edits)
+        faces.addWidget(self._material_transparency, 3, 0, 1, 2)
+        faces.addWidget(QLabel(tr("Transparency quality:")), 4, 0)
+        self._transparency_quality = QComboBox()
+        self._transparency_quality.addItem(tr("Faster"), "faster")
+        self._transparency_quality.addItem(tr("Nicer"), "nicer")
+        self._transparency_quality.setToolTip(tr(
+            "Nicer sorts transparent triangles from back to front. Faster keeps material batches."))
+        self._transparency_quality.currentIndexChanged.connect(self._apply_edits)
+        faces.addWidget(self._transparency_quality, 4, 1)
+        self._xray_label = QLabel(tr("X-ray opacity:"))
+        faces.addWidget(self._xray_label, 5, 0)
+        xray_row = QHBoxLayout()
+        self._xray_slider = QSlider(Qt.Horizontal)
+        self._xray_slider.setRange(20, 80)
+        self._xray_opacity = QSpinBox()
+        self._xray_opacity.setRange(20, 80)
+        self._xray_opacity.setSuffix(" %")
+        self._xray_opacity.setAccessibleName(tr("X-ray opacity:"))
+        self._xray_slider.setAccessibleName(tr("X-ray opacity:"))
+        self._xray_slider.setToolTip(tr("Lower opacity makes X-ray faces more transparent."))
+        self._xray_opacity.setToolTip(self._xray_slider.toolTip())
+        self._xray_slider.valueChanged.connect(self._xray_opacity.setValue)
+        self._xray_opacity.valueChanged.connect(self._xray_slider.setValue)
+        self._xray_opacity.valueChanged.connect(self._apply_edits)
+        xray_row.addWidget(self._xray_slider, 1)
+        xray_row.addWidget(self._xray_opacity)
+        faces.addLayout(xray_row, 5, 1)
+
         background.addWidget(QLabel(tr("Background:")), 0, 0)
         self._bg_c = self._swatch(
             tr("Background — visible with the sky off"), "background")
@@ -3489,9 +3541,9 @@ class StylesPanel(QWidget):
             "Softly darkens where surfaces meet — corners, the foot of a "
             "wall, under a bench."))
         self._ao.toggled.connect(self._apply_edits)
-        faces.addWidget(self._ao, 3, 0, 1, 2)
+        faces.addWidget(self._ao, 6, 0, 1, 2)
         self._ao_dist_lbl = QLabel()             # its unit: _sync_ao_controls
-        faces.addWidget(self._ao_dist_lbl, 4, 0)
+        faces.addWidget(self._ao_dist_lbl, 7, 0)
         # A slider and its value, like the intensity below, on a log scale:
         # a centimetre matters at the foot of a skirting board, ten metres
         # between two buildings.
@@ -3505,9 +3557,9 @@ class StylesPanel(QWidget):
         self._ao_dist_val = QLabel()
         self._ao_dist_val.setMinimumWidth(28)
         dist_row.addWidget(self._ao_dist_val)
-        faces.addLayout(dist_row, 4, 1)
+        faces.addLayout(dist_row, 7, 1)
         self._ao_int_lbl = QLabel(tr("Intensity:"))
-        faces.addWidget(self._ao_int_lbl, 5, 0)
+        faces.addWidget(self._ao_int_lbl, 8, 0)
         int_row = QHBoxLayout()
         self._ao_int = QSlider(Qt.Horizontal)
         self._ao_int.setRange(0, 20)             # tenths: 0.0 – 2.0
@@ -3516,7 +3568,7 @@ class StylesPanel(QWidget):
         self._ao_int_val = QLabel()
         self._ao_int_val.setMinimumWidth(28)
         int_row.addWidget(self._ao_int_val)
-        faces.addLayout(int_row, 5, 1)
+        faces.addLayout(int_row, 8, 1)
 
         watermark.addWidget(self._notice(
             tr("Watermark settings are not available yet.")), 0, 0, 1, 2)
@@ -3660,6 +3712,15 @@ class StylesPanel(QWidget):
             0 if self._endpoint_types.checkedButton().property("shape") == "default" else 1)
         self._edge_material_help.setVisible(self._edge_color_mode.currentData() == "material")
 
+    def _sync_face_controls(self) -> None:
+        button = self._face_modes.button(self._mode.currentIndex())
+        if button is not None:
+            button.setChecked(True)
+        self._transparency_quality.setEnabled(self._material_transparency.isChecked())
+        xray = self._mode.currentData() == "xray"
+        for widget in (self._xray_label, self._xray_slider, self._xray_opacity):
+            widget.setEnabled(xray)
+
     def _shown_color(self, attr: str):
         """The colour a swatch shows for ``attr``. Back color may be unset
         (automatic): show the tint that actually draws."""
@@ -3719,6 +3780,11 @@ class StylesPanel(QWidget):
                 self._style_hint.setText(tr(mode_label))
             self._mode.setCurrentIndex(
                 self._mode.findData(style.face_mode))
+            self._material_transparency.setChecked(style.material_transparency)
+            self._transparency_quality.setCurrentIndex(
+                self._transparency_quality.findData(style.transparency_quality))
+            self._xray_opacity.setValue(style.xray_opacity)
+            self._sync_face_controls()
             self._edges.setChecked(style.edges)
             self._profiles.setChecked(style.profiles)
             self._profile_width.setValue(style.profile_width)
@@ -3774,7 +3840,16 @@ class StylesPanel(QWidget):
         style = self._style()
         if style is None or self._updating:
             return
-        style.face_mode = self._mode.currentData()
+        face_mode = self._mode.currentData()
+        if style.face_mode != "xray" and face_mode == "xray":
+            self._window._style_before_xray = (self._window.viewport.scene, style.copy())
+        elif style.face_mode == "xray" and face_mode != "xray":
+            self._window._style_before_xray = (None, None)
+        style.face_mode = face_mode
+        style.material_transparency = self._material_transparency.isChecked()
+        style.transparency_quality = self._transparency_quality.currentData()
+        style.xray_opacity = self._xray_opacity.value()
+        self._sync_face_controls()
         style.edges = self._edges.isChecked()
         style.profiles = self._profiles.isChecked()
         style.profile_width = self._profile_width.value()

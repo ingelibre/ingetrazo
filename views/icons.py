@@ -2120,6 +2120,32 @@ def _first_person(p, ink):
         p.drawPath(cap)
 
 
+def _face_mode(p, ink, mode):
+    top = [QPointF(24, 5), QPointF(43, 15), QPointF(24, 25), QPointF(5, 15)]
+    left = [QPointF(5, 15), QPointF(24, 25), QPointF(24, 43), QPointF(5, 33)]
+    right = [QPointF(24, 25), QPointF(43, 15), QPointF(43, 33), QPointF(24, 43)]
+    p.setPen(_rpen(ink, 2))
+    for index, points in enumerate((top, left, right)):
+        fill = QColor(_accent() if mode in ("textures", "shaded") else ink)
+        fill.setAlpha(35 if mode == "xray" else (55 + index * 35))
+        p.setBrush(Qt.NoBrush if mode == "wireframe" else fill)
+        p.drawPolygon(QPolygonF(points))
+    if mode in ("wireframe", "xray"):
+        pen = _rpen(ink, 1.4)
+        pen.setStyle(Qt.DashLine)
+        p.setPen(pen)
+        for point in (top[0], left[3], right[2]):
+            p.drawLine(QPointF(24, 23), point)
+    if mode == "textures":
+        p.setPen(_rpen(ink, 1.4))
+        for y in (23, 29, 35):
+            p.drawLine(QPointF(27, y + 5), QPointF(40, y - 2))
+    if mode == "monochrome":
+        p.setBrush(_accent())
+        p.drawPolygon(QPolygonF([QPointF(10, 25), QPointF(18, 29),
+                                 QPointF(18, 37), QPointF(10, 33)]))
+
+
 def _edge_cap(p, ink, mode):
     p.setPen(_rpen(ink, 1.5))
     for x in (12, 36):
@@ -2150,6 +2176,8 @@ def _edge_endpoint(p, ink, mode):
 
 
 _DRAW = {
+    **{"face_" + mode: (lambda p, ink, mode=mode: _face_mode(p, ink, mode))
+       for mode in ("wireframe", "hidden_line", "shaded", "textures", "monochrome", "xray")},
     **{key: (lambda p, ink, mode=mode: _edge_cap(p, ink, mode))
        for mode, key in enumerate(("cap_butt", "cap_round", "cap_square", "cap_round_extended"))},
     **{key: (lambda p, ink, mode=mode: _edge_endpoint(p, ink, mode))

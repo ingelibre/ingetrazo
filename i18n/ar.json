@@ -3356,5 +3356,13 @@
  "Round, extended by a quarter of the width": "دائرية، ممتدة بربع السماكة",
  "Square, overhang: half the width minus 2 px (minimum 0)": "مربعة، الامتداد: نصف السماكة ناقص بكسلين (الحد الأدنى 0)",
  "Round, overhang: half the width minus 2 px (minimum 0)": "دائرية، الامتداد: نصف السماكة ناقص بكسلين (الحد الأدنى 0)",
- "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "تستخدم الحواف غير المطلية مواد الأوجه المجاورة (متوسط ألوانها عند اختلافها). اطْلِ الحافة لتغيير هذا اللون؛ وافتح المجموعة لطلاء حوافها."
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "تستخدم الحواف غير المطلية مواد الأوجه المجاورة (متوسط ألوانها عند اختلافها). اطْلِ الحافة لتغيير هذا اللون؛ وافتح المجموعة لطلاء حوافها.",
+ "Display material opacity and transparent textures without changing their paint.": "عرض عتامة المواد والأنسجة الشفافة دون تغيير طلائها.",
+ "Faster": "أسرع",
+ "Lower opacity makes X-ray faces more transparent.": "خفض العتامة يجعل الأوجه أكثر شفافية في وضع الأشعة السينية.",
+ "Material transparency": "شفافية المواد",
+ "Nicer": "أعلى جودة",
+ "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "أعلى جودة يرتب المثلثات الشفافة من الخلف إلى الأمام. أسرع يحافظ على التجميع حسب المادة.",
+ "Transparency quality:": "جودة الشفافية:",
+ "X-ray opacity:": "عتامة الأشعة السينية:"
 }
