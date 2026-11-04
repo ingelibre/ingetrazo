@@ -120,13 +120,6 @@ def _facing_quad(mesh, toward):
     return out
 
 
-def _piece_paint(piece, top):
-    """The paint a piece's default faces show (``core.group.
-    effective_material``): its own, else the top-level object's."""
-    return (getattr(piece, "material", None)
-            or getattr(top, "material", None) or None)
-
-
 def _shown(face, paint) -> dict:
     """The attrs ``face`` is drawn with under a container's ``paint``."""
     from core.materials import effective_attrs
@@ -139,8 +132,8 @@ def _placements_facing(group, toward, figures: bool = True):
     outline (``"mesh"``) by :func:`_turned_toward`, a simple quad rebuilt by
     :func:`_facing_quad`. ``figures=False`` leaves the figures out
     (:func:`faceme_figures`)."""
-    from core.group import iter_placements, transformed_mesh
-    for g, m in iter_placements(group):
+    from core.group import iter_painted_placements, transformed_mesh
+    for g, m, paint in iter_painted_placements(group):
         kind = getattr(g, "billboard", False)
         if kind and not figures:
             continue
@@ -149,30 +142,29 @@ def _placements_facing(group, toward, figures: bool = True):
             mesh = _turned_toward(mesh, toward)
         elif kind:
             mesh = _facing_quad(mesh, toward)
-        paint = _piece_paint(g, group)
         for f in mesh.faces:
             yield f, _shown(f, paint)
 
 
 def _group_faces(group):
     """A group's faces in world space as ``(face, attrs)``, each with the
-    paint it shows: the face's own, else its piece's, else the group's.
+    paint it shows: the face's own, else its piece's, else the nearest
+    painted container's above it.
 
     When no nested piece carries paint of its own, the whole group is ONE
     paint and comes through :func:`core.group.world_mesh` in a single
     vectorized pass; only a group with painted pieces is walked piece by
     piece (each through its own transform), since the merged mesh no longer
     knows which piece a face came from."""
-    from core.group import iter_placements, transformed_mesh, world_mesh
-    pieces = list(iter_placements(group))
-    if not any(getattr(p, "material", None) for p, _m in pieces[1:]):
+    from core.group import iter_painted_placements, transformed_mesh, world_mesh
+    pieces = list(iter_painted_placements(group))
+    if not any(getattr(p, "material", None) for p, _m, _paint in pieces[1:]):
         paint = getattr(group, "material", None)
         for f in world_mesh(group).faces:
             yield f, _shown(f, paint)
         return
-    for p, m in pieces:
+    for p, m, paint in pieces:
         mesh = p.mesh if m is None else transformed_mesh(p.mesh, m)
-        paint = _piece_paint(p, group)
         for f in mesh.faces:
             yield f, _shown(f, paint)
 

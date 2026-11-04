@@ -2724,7 +2724,13 @@ class PushPullTool(Tool):
             # thickness, it stopped at the centroid's 1e-4 and left its cap
             # on the far wall (#1076). Within _OUT_OF_TRUE the push meets
             # the face as soon as any corner does.
-            reach = [QVector3D.dotProduct(g.centroid() - v, push)
+            # Measured to the far PLANE along the push: projected on the
+            # push, the way to the far face's centroid also counted how far
+            # to the side it lies, tenths of a millimetre on a door 1 mm out
+            # of true, and the face read as beyond the push (#1094).
+            toward = QVector3D.dotProduct(push, g.normal().normalized())
+            reach = [QVector3D.dotProduct(g.centroid() - v,
+                                          g.normal().normalized()) / toward
                      for v in face.vertices]
             lo, hi = min(reach), max(reach)
             if hi - lo > _OUT_OF_TRUE:
