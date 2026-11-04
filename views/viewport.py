@@ -5374,10 +5374,10 @@ class Viewport(QOpenGLWidget):
         Viewport._drop_past_cut(self, hits, origin, direction)
         if hits is None or not len(hits.t):
             return None
-        i = int(np.argmin(hits.t))
-        if not np.isfinite(hits.t[i]):
+        front = Viewport._smallest_at_front(self, hits, origin, direction)
+        if not len(front):
             return None
-        owner = hits.ent(i)[1]
+        owner = hits.ent(int(front[0]))[1]
         for g in (owner, getattr(owner, "owner", None)):
             if (g is not None and getattr(g, "locked", False)
                     and hasattr(g, "children")):
@@ -16519,9 +16519,25 @@ class Viewport(QOpenGLWidget):
             return face, fp[1]
         return face, owner
 
+    def _smallest_at_front(self, hits, origin, direction):
+        """Rows of ``hits`` a ray pick lands on: of the faces at the nearest
+        depth (see :meth:`_coplanar_eps`), the smallest, with those of the
+        same area up to float noise. Empty when nothing was hit. The same
+        tiebreak as :meth:`pick_face`, for the picks that answer an object."""
+        import numpy as np
+        nearest = float(hits.t.min())
+        if not np.isfinite(nearest):
+            return np.empty(0, np.intp)
+        eps = self._coplanar_eps(origin, direction, nearest)
+        cand = np.flatnonzero(hits.t <= nearest + eps)
+        area = hits.area[cand]
+        return cand[area <= float(area.min()) * (1.0 + 1e-6)]
+
     def pick_group(self, screen_x: float, screen_y: float):
         """The group whose geometry the cursor hits (front-most face, or nearest
-        edge for a group that's only lines), or ``None``."""
+        edge for a group that's only lines), or ``None``. Faces sharing a plane
+        go to the smallest, as in :meth:`pick_face`: a disc grouped on a wall
+        group's face lies at the wall's depth to the last float (#982)."""
         if (self.scene.edit_group is not None
                 and not getattr(self.scene.edit_group, "children", None)):
             return None                     # inside a plain group: its content
@@ -16533,12 +16549,20 @@ class Viewport(QOpenGLWidget):
             loose_t = np.inf
             hits = self._hover_hits(idx, origin, direction)
             if hits is not None and len(hits.t):
-                face_t = hits.t
-                loose_t = float(np.where(hits.loose, face_t, np.inf).min())
-                face_t = np.where(hits.loose, np.inf, face_t)
-                i = int(np.argmin(face_t))
-                if np.isfinite(face_t[i]):
-                    best = (float(face_t[i]), hits.ent(i)[1])
+                loose_t = float(np.where(hits.loose, hits.t, np.inf).min())
+                if np.isfinite(np.where(hits.loose, np.inf, hits.t).min()):
+                    # A loose face in FRONT hides the group: what the cursor
+                    # shows is that face, and every caller asks for the group
+                    # it can see (#276, #363, #378 — a loose box before a
+                    # component could not be clicked). So does a loose face
+                    # ON a group's face, unless the group's is the smaller
+                    # (#982); at the same size the loose one is the target.
+                    front = Viewport._smallest_at_front(self, hits, origin,
+                                                        direction)
+                    best = (float(hits.t[front].min()),
+                            None if hits.loose[front].any()
+                            else hits.ent(int(front[0]))[1])
+            faces_answer = best
             for g in self._context_placements():
                 # The figure test first: it is an attribute, the layer test
                 # walks tags — asked of every placement on every hover it
@@ -16556,13 +16580,9 @@ class Viewport(QOpenGLWidget):
                             if t is not None and (best is None or t < best[0]):
                                 best = (t, self._owner_of(g))
             if best is not None:
-                # A loose face clearly in FRONT hides the group: what the
-                # cursor shows is that face, and every caller asks for the
-                # group it can see (#276, #363, #378 — a loose box before
-                # a component could not be clicked). A coplanar one too:
-                # a face drawn ON a group's face is the deliberate target,
-                # and with the group winning it could only be reached by
-                # hiding the group (#982).
+                if best is faces_answer:
+                    return best[1]
+                # A figure: a loose face in front of it or on it hides it.
                 eps = self._coplanar_eps(origin, direction, best[0])
                 if np.isfinite(loose_t) and loose_t <= best[0] + eps:
                     return None
