@@ -213,6 +213,25 @@ def test_a_painted_back_shows_and_undo_clears_it(win, layout):
 
 
 @every_layout
+def test_a_texture_on_the_back_shows_over_a_painted_front(win, layout, tmp_path):
+    vp = win.viewport
+    _open(vp, layout)
+    mesh = vp.scene.mesh
+    mesh.remove_face(_front_face(vp))
+    vp.scene.version += 1
+    _pixel(vp)
+    far = max((f for f in mesh.faces
+               if max(v.y() for v in f.vertices)
+               - min(v.y() for v in f.vertices) < 1e-6),
+              key=lambda f: f.vertices[0].y())
+    vp.history.execute(SetFaceColorCommand([far], (0.0, 1.0, 0.0)))
+    vp.history.execute(SetFaceBackCommand([far],
+                                          [{"texture": _red_image(tmp_path)}]))
+    assert _red(_pixel(vp))
+    assert far.attrs["color"] == [0.0, 1.0, 0.0]       # the front keeps its own
+
+
+@every_layout
 def test_a_new_face_shows(win, layout):
     vp = win.viewport
     _open(vp, layout)
