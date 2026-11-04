@@ -3670,6 +3670,15 @@ class Viewport(QOpenGLWidget):
         if (_NO_INSTANCING or getattr(g, "xform", None) is None
                 or getattr(g, "billboard", False)):
             return False
+        # Not the mesh open for editing, which takes the consolidated path
+        # like an open top-level group. A nested group or a container, opened,
+        # keeps a matrix (its parents': see Scene._bake_container_xform), but
+        # everything the instanced caches trust (the proto entry, the pool's
+        # box and eligibility, the recorded passes) is keyed on the placements
+        # epoch, and the epoch leaves this mesh's edits out on purpose: paint,
+        # new faces and moves inside it were not drawn until it was closed.
+        if g.mesh is getattr(getattr(self, "scene", None), "mesh", None):
+            return False
         # A MIRRORED placement turns the prototype's triangles inside out
         # for GL (front becomes back). It used to fall back to the
         # consolidated path, one baked copy per placement — «mirrors are
@@ -3683,10 +3692,7 @@ class Viewport(QOpenGLWidget):
         # (64 000 calls per rebuild on the plant of #158, ~1.5 s an undo).
         epoch_of = getattr(self, "_placements_epoch", None)
         memo = None
-        # Not the mesh open for editing: the epoch leaves its changes out
-        # (they are the per-frame half), and a paint inside could turn it
-        # translucent under the same epoch.
-        if epoch_of is not None and g.mesh is not self.scene.mesh:
+        if epoch_of is not None:
             epoch = epoch_of()
             memo = getattr(self, "_elig_memo", None)
             if memo is None or memo[0] != epoch:
@@ -11975,14 +11981,17 @@ class Viewport(QOpenGLWidget):
         base = self._group_chunk(
             _proto_wrapper(self, mesh, _paint_of(self, group)))
         xf = group.xform
-        key = (base["uid"], tuple(xf.data()))
+        # The base's rev too: moving the whole of an open mesh shifts its
+        # bake in place, same uid (_shift_chunk).
+        key = (base["uid"], tuple(xf.data()), base.get("rev"))
         cache = getattr(self, "_inst_chunks", None)
         if cache is None:
             cache = self._inst_chunks = {}
         cur = cache.get(id(group))
         if cur is not None and cur["ikey"] == key:
             return cur
-        if cur is not None and cur["ikey"][0] == base["uid"]:
+        if (cur is not None and cur["ikey"][0] == base["uid"]
+                and cur["ikey"][2] == key[2]):
             old, new = cur["ikey"][1], key[1]
             # QMatrix4x4.data() is column-major: translation at 12/13/14.
             lin = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15)
