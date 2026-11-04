@@ -268,6 +268,8 @@ class InferenceEngine:
             sticky_axis=self._sticky_axis if _STICKY_AXIS else None,
             face_crossing=(lambda: vp._face_crossing_point(px_x, px_y))
             if hasattr(vp, "_face_crossing_point") else None,
+            face_outline=(lambda: vp._face_outline_world(px_x, px_y))
+            if hasattr(vp, "_face_outline_world") else None,
         )
         if snap is not None and snap.kind == "axis" and snap.axis:
             self._sticky_axis = snap.axis
