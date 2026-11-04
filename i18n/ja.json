@@ -3301,5 +3301,6 @@
  "Maximize": "最大化",
  "Restore": "復元",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "「{name}」を読み込みましたが、インポートできるものがありません。モデル空間に線、ポリライン、円弧、円、楕円、スプライン、面がありません。",
- "Left out: {kinds}": "除外: {kinds}"
+ "Left out: {kinds}": "除外: {kinds}",
+ "Menu": "メニュー"
 }

@@ -3301,5 +3301,6 @@
  "Maximize": "Развернуть",
  "Restore": "Восстановить",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "Файл «{name}» прочитан, но импортировать нечего: в пространстве модели нет линий, полилиний, дуг, окружностей, эллипсов, сплайнов и граней.",
- "Left out: {kinds}": "Пропущено: {kinds}"
+ "Left out: {kinds}": "Пропущено: {kinds}",
+ "Menu": "Меню"
 }

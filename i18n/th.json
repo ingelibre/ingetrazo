@@ -3304,5 +3304,6 @@
  "Maximize": "ขยายเต็ม",
  "Restore": "คืนค่า",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "อ่าน “{name}” แล้ว แต่ไม่มีสิ่งใดที่นำเข้าได้: ไม่มีเส้น เส้นโพลีไลน์ ส่วนโค้ง วงกลม วงรี เส้นสไปลน์ หรือหน้าในพื้นที่โมเดล",
- "Left out: {kinds}": "ข้ามไป: {kinds}"
+ "Left out: {kinds}": "ข้ามไป: {kinds}",
+ "Menu": "เมนู"
 }

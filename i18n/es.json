@@ -3301,5 +3301,6 @@
  "Maximize": "Maximizar",
  "Restore": "Restaurar",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "Se leyó “{name}”, pero no tiene nada que se pueda importar: ni líneas, polilíneas, arcos, círculos, elipses, splines o caras en el espacio modelo.",
- "Left out: {kinds}": "Se omitió: {kinds}"
+ "Left out: {kinds}": "Se omitió: {kinds}",
+ "Menu": "Menú"
 }

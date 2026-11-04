@@ -1257,7 +1257,7 @@ class MainWindow(QMainWindow):
             action.setIcon(tool_icon(key))
         layers = getattr(getattr(self, "layers_dock", None), "panel", None)
         if layers is not None:
-            layers.refresh_pencil_icons()
+            layers.refresh_icons()
 
     def changeEvent(self, event) -> None:
         # Qt posts these when the OS/Qt theme (palette) flips at runtime.
@@ -6278,6 +6278,7 @@ class MainWindow(QMainWindow):
         def live(fn):
             return lambda *a: fn(*a) if vp is self.viewport else None
         vp.projectionChanged.connect(live(self._sync_projection_buttons))
+        vp.zoomExtentsRequested.connect(live(self._on_zoom_extents))
         for name in ("tray", "bim_tray", "georef_tray", "project_browser",
                      "layers_dock", "layers_toolbar", "profile_dock"):
             panel = getattr(self, name, None)

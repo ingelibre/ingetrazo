@@ -3304,5 +3304,6 @@
  "Maximize": "Maksimalkan",
  "Restore": "Pulihkan",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "“{name}” berhasil dibaca, tetapi tidak ada yang bisa diimpor: tidak ada garis, polyline, busur, lingkaran, elips, spline, atau muka di ruang model.",
- "Left out: {kinds}": "Dilewati: {kinds}"
+ "Left out: {kinds}": "Dilewati: {kinds}",
+ "Menu": "Menu"
 }

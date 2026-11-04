@@ -1776,6 +1776,8 @@ class Viewport(QOpenGLWidget):
     # "two_point"), whoever changed it — the View toolbar's quick buttons
     # follow it.
     projectionChanged = Signal(str)
+    # A double click of the wheel: frame the whole model (#979).
+    zoomExtentsRequested = Signal()
 
     # Soft warm white painted on faces with no material colour — like the matte
     # cardstock of an architecture model (a near-white default).
@@ -3871,6 +3873,12 @@ class Viewport(QOpenGLWidget):
         edited = set()
         for x, y in zip(pa[head:], pb[head:]):
             if x is not y and x != y and (x[:2] != y[:2] or x[4:] != y[4:]):
+                return False
+            # Gaining or losing a matrix is no move: the group changes draw
+            # path. A classic group made a component kept the old instanced
+            # pool, which never held it, while the static pass skipped it as
+            # instanced — it vanished from the view.
+            if (x[3] is None) != (y[3] is None):
                 return False
             if x[2] != y[2]:
                 if x[3] is not None or y[3] is not None:
@@ -17539,7 +17547,13 @@ class Viewport(QOpenGLWidget):
 
         Box-select tools (Select) get the double-click DIRECTLY (no drag box
         starts on a double), and the event is remembered so the next press in
-        place counts as a triple click."""
+        place counts as a triple click.
+
+        A double click of the wheel asks for Zoom Extents and starts no
+        orbit; the tool in use never hears of it (#979)."""
+        if ev.button() == Qt.MiddleButton:
+            self.zoomExtentsRequested.emit()
+            return
         if ev.button() != Qt.LeftButton or self.active_tool is None \
                 or self.nav_mode is not None:
             self.mousePressEvent(ev)

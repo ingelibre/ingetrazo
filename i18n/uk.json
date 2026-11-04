@@ -3316,5 +3316,6 @@
  "Maximize": "Розгорнути",
  "Restore": "Відновити",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "Файл «{name}» прочитано, але імпортувати нічого: у просторі моделі немає ліній, поліліній, дуг, кіл, еліпсів, сплайнів і граней.",
- "Left out: {kinds}": "Пропущено: {kinds}"
+ "Left out: {kinds}": "Пропущено: {kinds}",
+ "Menu": "Меню"
 }
