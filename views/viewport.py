@@ -1780,8 +1780,6 @@ class Viewport(QOpenGLWidget):
     # "two_point"), whoever changed it — the View toolbar's quick buttons
     # follow it.
     projectionChanged = Signal(str)
-    # A double click of the wheel: frame the whole model (#979).
-    zoomExtentsRequested = Signal()
 
     # Soft warm white painted on faces with no material colour — like the matte
     # cardstock of an architecture model (a near-white default).
@@ -3670,6 +3668,15 @@ class Viewport(QOpenGLWidget):
         if (_NO_INSTANCING or getattr(g, "xform", None) is None
                 or getattr(g, "billboard", False)):
             return False
+        # Not the mesh open for editing, which takes the consolidated path
+        # like an open top-level group. A nested group or a container, opened,
+        # keeps a matrix (its parents': see Scene._bake_container_xform), but
+        # everything the instanced caches trust (the proto entry, the pool's
+        # box and eligibility, the recorded passes) is keyed on the placements
+        # epoch, and the epoch leaves this mesh's edits out on purpose: paint,
+        # new faces and moves inside it were not drawn until it was closed.
+        if g.mesh is getattr(getattr(self, "scene", None), "mesh", None):
+            return False
         # A MIRRORED placement turns the prototype's triangles inside out
         # for GL (front becomes back). It used to fall back to the
         # consolidated path, one baked copy per placement — «mirrors are
@@ -3683,10 +3690,7 @@ class Viewport(QOpenGLWidget):
         # (64 000 calls per rebuild on the plant of #158, ~1.5 s an undo).
         epoch_of = getattr(self, "_placements_epoch", None)
         memo = None
-        # Not the mesh open for editing: the epoch leaves its changes out
-        # (they are the per-frame half), and a paint inside could turn it
-        # translucent under the same epoch.
-        if epoch_of is not None and g.mesh is not self.scene.mesh:
+        if epoch_of is not None:
             epoch = epoch_of()
             memo = getattr(self, "_elig_memo", None)
             if memo is None or memo[0] != epoch:
@@ -11975,14 +11979,17 @@ class Viewport(QOpenGLWidget):
         base = self._group_chunk(
             _proto_wrapper(self, mesh, _paint_of(self, group)))
         xf = group.xform
-        key = (base["uid"], tuple(xf.data()))
+        # The base's rev too: moving the whole of an open mesh shifts its
+        # bake in place, same uid (_shift_chunk).
+        key = (base["uid"], tuple(xf.data()), base.get("rev"))
         cache = getattr(self, "_inst_chunks", None)
         if cache is None:
             cache = self._inst_chunks = {}
         cur = cache.get(id(group))
         if cur is not None and cur["ikey"] == key:
             return cur
-        if cur is not None and cur["ikey"][0] == base["uid"]:
+        if (cur is not None and cur["ikey"][0] == base["uid"]
+                and cur["ikey"][2] == key[2]):
             old, new = cur["ikey"][1], key[1]
             # QMatrix4x4.data() is column-major: translation at 12/13/14.
             lin = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15)
@@ -17251,17 +17258,10 @@ class Viewport(QOpenGLWidget):
         cam = self.camera
         return QVector3D.dotProduct(point - cam.eye(), cam.forward())
 
-    def _orbit_pivot_at(self, x: float, y: float):
-        """Where an orbit gesture that starts at pixel ``(x, y)`` turns (#164).
-
-        1. The model point under the cursor -- the nearest face the pick
-           ray hits (loose geometry and groups alike);
-        2. else, with the cursor on sky or ground, the middle of the
-           stretch of the view's central ray that crosses the model's
-           bounding box -- the middle of what is on screen;
-        3. else the camera target (an empty scene, a model off screen).
-        Worked out once per gesture: the pivot stays put while dragging.
-        """
+    def _model_point_at(self, x: float, y: float):
+        """The model point under pixel ``(x, y)`` -- what the frame on screen
+        shows there, else the nearest face the pick ray hits -- or ``None``
+        when the cursor is on sky or ground."""
         origin, direction = self._pixel_to_ray(x, y)
         seen = self._depth_world_at(x, y) if hasattr(self, "_depth_world_at") \
             else None
@@ -17276,8 +17276,43 @@ class Viewport(QOpenGLWidget):
                     t = float(np.min(hits.t))
                     if math.isfinite(t) and t > 0.0:
                         return origin + direction * t
-            except Exception:                  # noqa: BLE001 - fall back
+            except Exception:                  # noqa: BLE001 - no point then
                 pass
+        return None
+
+    def _recentre_on(self, x: float, y: float) -> None:
+        """Bring the model point under pixel ``(x, y)`` to the centre of the
+        view: a slide, the view keeps its direction and what is at that depth
+        keeps its size on screen. Nothing there, nothing happens (#1154)."""
+        point = self._model_point_at(x, y)
+        if point is None:
+            return
+        cam = self.camera
+        if cam.perspective:
+            # The depth along the view, not the slant length to the point:
+            # the eye slides sideways and comes no nearer. A parallel view
+            # keeps its distance, which is its zoom.
+            depth = self._depth_of(point)
+            if depth is None or not math.isfinite(depth) or depth <= 0.0:
+                return
+            cam.distance = max(cam.min_distance(point), depth)
+        cam.target = QVector3D(point)
+        self.update()
+
+    def _orbit_pivot_at(self, x: float, y: float):
+        """Where an orbit gesture that starts at pixel ``(x, y)`` turns (#164).
+
+        1. The model point under the cursor -- the nearest face the pick
+           ray hits (loose geometry and groups alike);
+        2. else, with the cursor on sky or ground, the middle of the
+           stretch of the view's central ray that crosses the model's
+           bounding box -- the middle of what is on screen;
+        3. else the camera target (an empty scene, a model off screen).
+        Worked out once per gesture: the pivot stays put while dragging.
+        """
+        point = Viewport._model_point_at(self, x, y)
+        if point is not None:
+            return point
         lo, hi = self.scene.bounds()
         if lo is not None:
             o, d = self._pixel_to_ray(self.width() / 2.0, self.height() / 2.0)
@@ -17603,10 +17638,11 @@ class Viewport(QOpenGLWidget):
         starts on a double), and the event is remembered so the next press in
         place counts as a triple click.
 
-        A double click of the wheel asks for Zoom Extents and starts no
-        orbit; the tool in use never hears of it (#979)."""
+        A double click of the wheel recentres the view on the point under
+        the cursor and starts no orbit; the tool in use never hears of it
+        (#979, #1154)."""
         if ev.button() == Qt.MiddleButton:
-            self.zoomExtentsRequested.emit()
+            self._recentre_on(ev.position().x(), ev.position().y())
             return
         if ev.button() != Qt.LeftButton or self.active_tool is None \
                 or self.nav_mode is not None:
