@@ -2120,7 +2120,39 @@ def _first_person(p, ink):
         p.drawPath(cap)
 
 
+def _edge_cap(p, ink, mode):
+    p.setPen(_rpen(ink, 1.5))
+    for x in (12, 36):
+        p.drawLine(QPointF(x, 8), QPointF(x, 40))
+    p.setPen(Qt.NoPen)
+    p.setBrush(ink)
+    rect = QRectF(6 if mode >= 2 else 12, 18, 36 if mode >= 2 else 24, 12)
+    if mode % 2:
+        p.drawRoundedRect(rect, 6, 6)
+    else:
+        p.drawRect(rect)
+
+
+def _edge_endpoint(p, ink, mode):
+    p.setPen(_rpen(ink, 3))
+    p.drawLine(QPointF(10, 24), QPointF(40, 24))
+    p.setPen(Qt.NoPen)
+    p.setBrush(ink)
+    if mode == 0:
+        p.drawRect(QRectF(10, 19, 14, 10))
+    elif mode == 1:
+        p.drawEllipse(QPointF(16, 24), 8, 8)
+    elif mode == 2:
+        p.drawRect(QRectF(8, 16, 16, 16))
+    else:
+        p.drawPolygon(QPolygonF([QPointF(16, 15), QPointF(7, 32), QPointF(25, 32)]))
+
+
 _DRAW = {
+    **{key: (lambda p, ink, mode=mode: _edge_cap(p, ink, mode))
+       for mode, key in enumerate(("cap_butt", "cap_round", "cap_square", "cap_round_extended"))},
+    **{key: (lambda p, ink, mode=mode: _edge_endpoint(p, ink, mode))
+       for mode, key in enumerate(("endpoint_default", "endpoint_round", "endpoint_square", "endpoint_triangle"))},
     **_SOLID_ICONS,
     "select": _select, "line": _line, "freehand": _freehand,
     "side_collapse": _side_collapse,

@@ -3368,7 +3368,15 @@ class StylesPanel(QWidget):
         self._profiles.toggled.connect(self._apply_edits)
         edges.addWidget(self._profiles, 2, 0)
         self._profile_width = self._edge_pixels(self._profiles, "profile_width", (1, 20))
-        edges.addWidget(self._profile_width, 2, 1, alignment=Qt.AlignLeft)
+        profile_row = QHBoxLayout()
+        profile_row.setSpacing(3)
+        profile_row.addWidget(self._profile_width)
+        self._profile_caps = self._edge_shapes(profile_row, (
+            ("butt", "cap_butt", "Square, flush"),
+            ("round", "cap_round", "Round, flush"),
+            ("square", "cap_square", "Square, extended by half the width"),
+            ("round_extended", "cap_round_extended", "Round, extended by half the width")))
+        edges.addLayout(profile_row, 2, 1)
         self._back_edges = QCheckBox(tr("Back edges"))
         self._back_edges.setToolTip(tr(
             "Draw the edges hidden behind faces as dashed lines."))
@@ -3377,33 +3385,47 @@ class StylesPanel(QWidget):
 
         self._depth_cue = QCheckBox(tr("Depth cue"))
         self._depth_cue.setToolTip(tr(
-            "Make foreground edges thicker than distant edges."))
+            "Set the foreground width in pixels. Distant edges become thinner."))
         self._depth_cue.toggled.connect(self._apply_edits)
         edges.addWidget(self._depth_cue, 3, 0)
         self._depth_cue_width = self._edge_pixels(
             self._depth_cue, "depth_cue_width", (1, 20))
         edges.addWidget(self._depth_cue_width, 3, 1, alignment=Qt.AlignLeft)
 
-        self._extensions = QCheckBox(tr("Extensions"))
+        self._extensions = QCheckBox(tr("Edge extensions"))
         self._extensions.setToolTip(tr(
-            "Extend drawn edges past their ends without changing the geometry."))
+            "Positive values extend edges; negative values shorten them. Geometry stays unchanged."))
         self._extensions.toggled.connect(self._apply_edits)
         edges.addWidget(self._extensions, 4, 0)
         self._extension_length = self._edge_pixels(
-            self._extensions, "extension_length", (1, 50))
+            self._extensions, "extension_length", (-50, 50))
         edges.addWidget(self._extension_length, 4, 1, alignment=Qt.AlignLeft)
 
         self._endpoints = QCheckBox(tr("Endpoints"))
-        self._endpoints.setToolTip(tr("Emphasize the ends of edges with a thicker stroke."))
+        self._endpoints.setToolTip(tr("Emphasize edge ends with a stroke or a marker."))
         self._endpoints.toggled.connect(self._apply_edits)
         edges.addWidget(self._endpoints, 5, 0)
         self._endpoint_length = self._edge_pixels(
             self._endpoints, "endpoint_length", (1, 50))
-        edges.addWidget(self._endpoint_length, 5, 1, alignment=Qt.AlignLeft)
+        endpoint_row = QHBoxLayout()
+        endpoint_row.setSpacing(3)
+        self._endpoint_size = self._edge_pixels(self._endpoints, "endpoint_size", (1, 50))
+        self._endpoint_size.setToolTip(tr("Marker size in screen pixels, independent of zoom."))
+        self._endpoint_values = QStackedWidget()
+        self._endpoint_values.addWidget(self._endpoint_length)
+        self._endpoint_values.addWidget(self._endpoint_size)
+        endpoint_row.addWidget(self._endpoint_values)
+        self._endpoint_types = self._edge_shapes(endpoint_row, (
+            ("default", "endpoint_default", "Default stroke"),
+            ("round", "endpoint_round", "Round dot"),
+            ("square", "endpoint_square", "Square dot"),
+            ("triangle", "endpoint_triangle", "Triangle")))
+        edges.addLayout(endpoint_row, 5, 1)
 
         self._dashes = QCheckBox(tr("Dashes"))
         self._dashes.setToolTip(tr(
-            "Show the line patterns assigned in Layers. Turn off to draw solid lines."))
+            "Show the line patterns assigned in Layers. Continuous layers stay solid. "
+            "Turn off to draw all layer lines solid; back edges keep their own dashes."))
         self._dashes.toggled.connect(self._apply_edits)
         edges.addWidget(self._dashes, 6, 0, 1, 2)
 
@@ -3600,12 +3622,40 @@ class StylesPanel(QWidget):
         field.valueChanged.connect(self._apply_edits)
         return field
 
+    def _edge_shapes(self, layout, choices) -> QButtonGroup:
+        from views.icons import tool_icon
+
+        group = QButtonGroup(self)
+        for index, (value, icon, title) in enumerate(choices):
+            button = QToolButton()
+            button.setCheckable(True)
+            button.setIcon(tool_icon(icon))
+            button.setProperty("icon_key", icon)
+            button.setProperty("shape", value)
+            button.setToolTip(tr(title))
+            button.setAccessibleName(tr(title))
+            button.setFixedSize(26, 26)
+            button.setIconSize(QSize(20, 20))
+            group.addButton(button, index)
+            layout.addWidget(button)
+        group.button(0).setChecked(True)
+        group.buttonClicked.connect(self._apply_edits)
+        layout.addStretch(1)
+        return group
+
     def _sync_edge_controls(self) -> None:
         for toggle, field in ((self._profiles, self._profile_width),
                               (self._depth_cue, self._depth_cue_width),
                               (self._extensions, self._extension_length),
                               (self._endpoints, self._endpoint_length)):
             field.setEnabled(toggle.isChecked())
+        for button in self._profile_caps.buttons():
+            button.setEnabled(self._profiles.isChecked())
+        for button in self._endpoint_types.buttons():
+            button.setEnabled(self._endpoints.isChecked())
+        self._endpoint_size.setEnabled(self._endpoints.isChecked())
+        self._endpoint_values.setCurrentIndex(
+            0 if self._endpoint_types.checkedButton().property("shape") == "default" else 1)
 
     def _shown_color(self, attr: str):
         """The colour a swatch shows for ``attr``. Back color may be unset
@@ -3669,12 +3719,17 @@ class StylesPanel(QWidget):
             self._edges.setChecked(style.edges)
             self._profiles.setChecked(style.profiles)
             self._profile_width.setValue(style.profile_width)
+            for button in self._profile_caps.buttons():
+                button.setChecked(button.property("shape") == style.profile_cap)
             self._depth_cue.setChecked(style.depth_cue)
             self._depth_cue_width.setValue(style.depth_cue_width)
             self._extensions.setChecked(style.extensions)
             self._extension_length.setValue(style.extension_length)
             self._endpoints.setChecked(style.endpoints)
             self._endpoint_length.setValue(style.endpoint_length)
+            self._endpoint_size.setValue(style.endpoint_size)
+            for button in self._endpoint_types.buttons():
+                button.setChecked(button.property("shape") == style.endpoint_type)
             self._dashes.setChecked(style.dashes)
             self._edge_color_mode.setCurrentIndex(
                 self._edge_color_mode.findData(style.edge_color_mode))
@@ -3720,12 +3775,15 @@ class StylesPanel(QWidget):
         style.edges = self._edges.isChecked()
         style.profiles = self._profiles.isChecked()
         style.profile_width = self._profile_width.value()
+        style.profile_cap = self._profile_caps.checkedButton().property("shape")
         style.depth_cue = self._depth_cue.isChecked()
         style.depth_cue_width = self._depth_cue_width.value()
         style.extensions = self._extensions.isChecked()
         style.extension_length = self._extension_length.value()
         style.endpoints = self._endpoints.isChecked()
         style.endpoint_length = self._endpoint_length.value()
+        style.endpoint_type = self._endpoint_types.checkedButton().property("shape")
+        style.endpoint_size = self._endpoint_size.value()
         style.dashes = self._dashes.isChecked()
         style.edge_color_mode = self._edge_color_mode.currentData()
         self._sync_edge_controls()

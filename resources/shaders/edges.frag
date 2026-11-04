@@ -7,9 +7,13 @@ flat in vec3 g_info;
 flat in vec4 g_dash0;
 flat in vec4 g_dash1;
 flat in vec2 g_caps;
+flat in vec2 g_limits;
+flat in int g_cap;
 flat in vec2 g_depth_side;
 flat in vec2 g_depth_along;
 uniform float u_endpoint;
+uniform int u_endpoint_type;
+uniform float u_endpoint_size;
 uniform float u_scale;
 uniform int u_dashes;
 uniform int u_hidden;
@@ -18,10 +22,19 @@ uniform float u_fade;
 uniform vec3 u_background;
 uniform vec3 u_fade_color;
 out vec4 fragColor;
+
+// Positive signed coverage inside a marker, measured in framebuffer pixels.
+float marker(vec2 point, float radius) {
+    if (u_endpoint_type == 1) return radius - length(point);
+    if (u_endpoint_type == 2) return radius - max(abs(point.x), abs(point.y));
+    return min(radius - point.y, (point.y + radius - 2.0 * abs(point.x)) / sqrt(5.0));
+}
+
 void main() {
     float along = g_pixel.x;
+    bool gap = false;
     if (u_hidden == 1 && u_hidden_fade < 0.01) {
-        if (mod(max(along, 0.0), 8.0 * u_scale) >= 4.0 * u_scale) discard;
+        gap = mod(max(along, 0.0), 8.0 * u_scale) >= 4.0 * u_scale;
     } else if (u_dashes == 1 && g_info.z > 0.5) {
         int count = int(g_info.z + 0.5);
         float period = 0.0;
@@ -32,16 +45,36 @@ void main() {
         for (int i=0; i<8; i++) {
             if (i >= count) break;
             float step = i < 4 ? g_dash0[i] : g_dash1[i - 4];
-            if (t < step) { if (i % 2 == 1) discard; break; }
+            if (t < step) { gap = i % 2 == 1; break; }
             t -= step;
         }
     }
     float width = mix(g_width.x, g_width.y, clamp(along / g_length, 0.0, 1.0));
-    if (u_endpoint > 0.0 && ((g_caps.x > 0.5 && along >= 0.0 && along < u_endpoint * u_scale)
+    if (u_endpoint > 0.0 && u_endpoint_type == 0 && ((g_caps.x > 0.5 && along >= 0.0 && along < u_endpoint * u_scale)
             || (g_caps.y > 0.5 && along <= g_length && along > g_length - u_endpoint * u_scale))) {
         width += 2.0 * u_scale;
     }
-    float coverage = clamp(width * 0.5 + 0.5 - abs(g_pixel.y), 0.0, 1.0);
+    float radius = width * 0.5;
+    float distance = min(radius - abs(g_pixel.y), min(along - g_limits.x, g_limits.y - along));
+    if (g_cap == 1 || g_cap == 3) {
+        // Flush rounded ends fit inside the requested length. Extended
+        // rounded ends use the same capsule, with limits moved by half-width.
+        float rx = min(radius, (g_limits.y - g_limits.x) * 0.5);
+        float center = clamp(along, g_limits.x + rx, g_limits.y - rx);
+        bool at_cut = (g_caps.x < 0.5 && along < g_limits.x + rx)
+                   || (g_caps.y < 0.5 && along > g_limits.y - rx);
+        if (!at_cut) distance = (1.0 - length(vec2((along - center) / max(rx, 1e-4),
+                                                  g_pixel.y / radius))) * min(rx, radius);
+    }
+    float coverage = gap ? 0.0 : clamp(distance + 0.5, 0.0, 1.0);
+    if (u_endpoint > 0.0 && u_endpoint_type != 0) {
+        float r = u_endpoint_size * u_scale * 0.5;
+        float start = max(0.0, g_limits.x), end = min(g_length, g_limits.y);
+        float mark = -1.0;
+        if (g_caps.x > 0.5) mark = marker(vec2(along - start, g_pixel.y), r);
+        if (g_caps.y > 0.5) mark = max(mark, marker(vec2(along - end, g_pixel.y), r));
+        coverage = max(coverage, clamp(mark + 0.5, 0.0, 1.0));
+    }
     if (coverage <= 0.0) discard;
     // Match adjacent faces at each covered pixel, rather than pulling the
     // entire expanded quad forward. Its center keeps the real edge depth.

@@ -112,22 +112,47 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                     color = _color((0.68, 0.55, 0.39))
                 width = style.profile_width if style.profiles and index in outline else 1.0
                 if style.depth_cue:
-                    width = max(width, 1 + (style.depth_cue_width - 1) * (a[1] + b[1]) / 160)
+                    width = max(width, 1 + (style.depth_cue_width - 1)
+                                * min(1, max(0, ((a[1] + b[1]) / 2 - 13) / 52)))
                 width = min(8, width)
-                pen = QPen(color, width)
-                painter.setPen(pen)
                 dx, dy = b[0] - a[0], b[1] - a[1]
                 length = max(math.hypot(dx, dy), 1e-6)
                 dx, dy = dx / length, dy / length
-                extension = min(10, style.extension_length) if style.extensions else 0
-                painter.drawLine(QPointF(a[0] - dx * extension, a[1] - dy * extension),
-                                 QPointF(b[0] + dx * extension, b[1] + dy * extension))
+                extension = max(-50, min(10, style.extension_length)) if style.extensions else 0
+                start, end = -extension, length + extension
+                if start >= end:
+                    continue
+                cap = style.profile_cap if style.profiles and index in outline else "butt"
+                if cap in ("square", "round_extended"):
+                    start -= width / 2
+                    end += width / 2
+                painter.save()
+                painter.translate(*a)
+                painter.rotate(math.degrees(math.atan2(dy, dx)))
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(color)
+                rect = QRectF(start, -width / 2, end - start, width)
+                if cap in ("round", "round_extended"):
+                    painter.drawRoundedRect(rect, min(width / 2, (end - start) / 2), width / 2)
+                else:
+                    painter.drawRect(rect)
                 if style.endpoints:
-                    pen.setWidthF(width + 2)
-                    painter.setPen(pen)
-                    size = min(length / 2, style.endpoint_length)
-                    painter.drawLine(QPointF(*a), QPointF(a[0] + dx * size, a[1] + dy * size))
-                    painter.drawLine(QPointF(*b), QPointF(b[0] - dx * size, b[1] - dy * size))
+                    if style.endpoint_type == "default":
+                        size = min(length / 2, style.endpoint_length)
+                        for lo, hi in ((max(0, start), min(size, end)),
+                                       (max(length - size, start), min(length, end))):
+                            if hi > lo:
+                                painter.drawRect(QRectF(lo, -width / 2 - 1, hi - lo, width + 2))
+                    else:
+                        r = style.endpoint_size / 2
+                        for x in (max(0, start), min(length, end)):
+                            if style.endpoint_type == "round":
+                                painter.drawEllipse(QPointF(x, 0), r, r)
+                            elif style.endpoint_type == "square":
+                                painter.drawRect(QRectF(x - r, -r, r * 2, r * 2))
+                            else:
+                                painter.drawPolygon(_polygon([(x, -r), (x + r, r), (x - r, r)]))
+                painter.restore()
     finally:
         painter.end()
     return pixmap

@@ -22,7 +22,8 @@ def needs_edge_renderer(style, scene) -> bool:
     """Keep the original fast path for an unchanged, solid-color style."""
     return (style.edge_color_mode != "same" or style.depth_cue
             or style.extensions or style.endpoints
-            or (style.profiles and (style.profile_width != 1 or not style.edges))
+            or (style.profiles and (style.profile_width != 1
+                                    or style.profile_cap != "butt" or not style.edges))
             or (style.dashes and any(layer.linetype != "continuous"
                                      for layer in scene.layers)))
 

@@ -162,6 +162,72 @@ def test_depth_cue_makes_foreground_strokes_thicker(drawing):
     assert upper > lower + 1
 
 
+@pytest.mark.parametrize("width", [1, 4, 8, 20])
+def test_depth_cue_foreground_matches_the_same_profile_width(drawing, width):
+    vp, render, _renderer = drawing
+    _line(vp)
+    profiles = render(_style(profiles=True, profile_width=width))
+    depth = render(_style(depth_cue=True, depth_cue_width=width))
+    assert np.array_equal(profiles, depth)
+
+
+def test_negative_extensions_retract_both_ends_without_reversing_short_lines(drawing):
+    vp, render, _renderer = drawing
+    _line(vp)
+    plain = np.flatnonzero(_ink(render(_style())).any(axis=0))
+    short = np.flatnonzero(_ink(render(_style(extensions=True, extension_length=-12))).any(axis=0))
+    assert short[0] == pytest.approx(plain[0] + 12, abs=1)
+    assert short[-1] == pytest.approx(plain[-1] - 12, abs=1)
+    vp.camera.distance = 100
+    assert not _ink(render(_style(extensions=True, extension_length=-50))).any()
+
+
+def test_profile_caps_have_flush_or_half_width_extents_and_distinct_corners(drawing):
+    vp, render, _renderer = drawing
+    _line(vp)
+    masks = {cap: _ink(render(_style(profiles=True, profile_width=12, profile_cap=cap)))
+             for cap in ("butt", "round", "square", "round_extended")}
+    bounds = {cap: np.flatnonzero(mask.any(axis=0)) for cap, mask in masks.items()}
+    for cap in ("butt", "round"):
+        assert bounds[cap][0] == pytest.approx(bounds["butt"][0], abs=1)
+        assert bounds[cap][-1] == pytest.approx(bounds["butt"][-1], abs=1)
+    for cap in ("square", "round_extended"):
+        assert bounds[cap][0] == pytest.approx(bounds["butt"][0] - 6, abs=1)
+        assert bounds[cap][-1] == pytest.approx(bounds["butt"][-1] + 6, abs=1)
+    assert masks["round"].sum() < masks["butt"].sum() - 20
+    assert masks["round_extended"].sum() < masks["square"].sum() - 20
+
+
+def test_endpoint_shapes_have_different_silhouettes_and_keep_size_on_zoom(drawing):
+    vp, render, _renderer = drawing
+    _line(vp)
+    masks = {kind: _ink(render(_style(endpoints=True, endpoint_type=kind, endpoint_size=14)))
+             for kind in ("default", "round", "square", "triangle")}
+    for left in masks:
+        for right in masks:
+            if left != right:
+                assert not np.array_equal(masks[left], masks[right])
+    assert masks["square"].sum() > masks["round"].sum() > masks["triangle"].sum()
+    for distance in (3, 8):
+        vp.camera.distance = distance
+        image = render(_style(endpoints=True, endpoint_type="square", endpoint_size=14))
+        mask = _ink(image)
+        assert np.flatnonzero(mask.any(axis=1)).size == 14
+        assert np.all(image[:, :, 3] == 255)
+
+
+def test_clipped_ends_get_neither_markers_nor_extended_profile_caps(drawing):
+    from PySide6.QtGui import QVector4D
+    vp, render, _renderer = drawing
+    _line(vp)
+    vp._clip_vec = QVector4D(1, 0, 0, 0)
+    mask = _ink(render(_style(profiles=True, profile_width=4, profile_cap="round_extended",
+                              endpoints=True, endpoint_type="square", endpoint_size=20)))
+    assert not mask[:, :WIDTH // 2 - 1].any()
+    assert mask[:, WIDTH // 2 + 2].sum() <= 5
+    assert mask.sum(axis=0).max() >= 20
+
+
 def test_dashes_follow_layers_and_switch_off_without_repainting_geometry(drawing):
     vp, render, _renderer = drawing
     _line(vp)

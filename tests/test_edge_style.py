@@ -24,9 +24,11 @@ def test_edge_settings_survive_copy_library_scene_and_saved_view(tmp_path, monke
 
     monkeypatch.setattr(library, "_settings", lambda: QSettings(
         str(tmp_path / "styles.ini"), QSettings.IniFormat))
-    style = Style(name="Ink", profile_width=5, depth_cue=True, depth_cue_width=6,
-                  extensions=True, extension_length=8, endpoints=True,
-                  endpoint_length=7, dashes=False, edge_color_mode="axis")
+    style = Style(name="Ink", profile_width=5, profile_cap="round_extended",
+                  depth_cue=True, depth_cue_width=6,
+                  extensions=True, extension_length=-8, endpoints=True,
+                  endpoint_length=7, endpoint_type="triangle", endpoint_size=12,
+                  dashes=False, edge_color_mode="axis")
     library.save_user_style(style)
     assert library.style_by_name("Ink").to_dict() == style.to_dict()
     assert style.copy().to_dict() == style.to_dict()
@@ -50,10 +52,14 @@ def test_old_documents_keep_defaults_and_malformed_sizes_are_bounded():
     assert "profile_width" not in Style().to_dict()
     odd = Style.from_dict({"profile_width": -100, "depth_cue_width": 1000,
                            "extension_length": "NaN", "endpoint_length": [],
-                           "edge_color_mode": "unknown"})
+                           "edge_color_mode": "unknown", "profile_cap": "unknown",
+                           "endpoint_type": [], "endpoint_size": -999})
     assert odd.profile_width == 1 and odd.depth_cue_width == 20
     assert odd.extension_length == 3 and odd.endpoint_length == 3
     assert odd.edge_color_mode == "same"
+    assert odd.profile_cap == "butt" and odd.endpoint_type == "default"
+    assert odd.endpoint_size == 1
+    assert Style.from_dict({"extension_length": -999}).extension_length == -50
 
 
 def test_default_fast_path_and_layer_dash_switch():
@@ -65,6 +71,9 @@ def test_default_fast_path_and_layer_dash_switch():
     assert not needs_edge_renderer(style, scene)
     style.profiles = True
     style.profile_width = 5
+    assert needs_edge_renderer(style, scene)
+    style.profile_width = 1
+    style.profile_cap = "round"
     assert needs_edge_renderer(style, scene)
 
 
@@ -159,22 +168,33 @@ def test_edge_controls_apply_live_and_disabled_values_survive_refresh(tmp_path, 
     assert not panel._depth_cue_width.isEnabled()
     assert not panel._extension_length.isEnabled()
     panel._profile_width.setValue(5)
+    panel._profile_caps.button(3).click()
     panel._depth_cue.setChecked(True)
     panel._depth_cue_width.setValue(7)
     panel._extensions.setChecked(True)
-    panel._extension_length.setValue(12)
+    panel._extension_length.setValue(-12)
     panel._endpoints.setChecked(True)
     panel._endpoint_length.setValue(8)
+    panel._endpoint_types.button(3).click()
+    panel._endpoint_size.setValue(14)
     panel._dashes.setChecked(False)
     panel._edge_color_mode.setCurrentIndex(panel._edge_color_mode.findData("material"))
     assert style.profile_width == 5 and style.depth_cue_width == 7
     assert style.depth_cue and style.extensions and style.endpoints
-    assert style.extension_length == 12 and style.endpoint_length == 8
+    assert style.extension_length == -12 and style.endpoint_length == 8
+    assert style.profile_cap == "round_extended"
+    assert style.endpoint_type == "triangle" and style.endpoint_size == 14
+    assert panel._endpoint_values.currentIndex() == 1
+    panel._endpoint_types.button(0).click()
+    assert panel._endpoint_values.currentIndex() == 0
+    assert panel._endpoint_length.value() == 8
+    panel._endpoint_types.button(1).click()
+    assert panel._endpoint_size.value() == 14
     assert not style.dashes and style.edge_color_mode == "material"
     panel._extensions.setChecked(False)
     panel.refresh()
-    assert style.extension_length == 12
+    assert style.extension_length == -12
     assert not panel._extension_length.isEnabled()
     panel._extensions.setChecked(True)
-    assert panel._extension_length.value() == 12
+    assert panel._extension_length.value() == -12
     panel.close()

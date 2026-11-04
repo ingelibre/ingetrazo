@@ -13,6 +13,7 @@ from core.group import effective_material
 from core.layers import DEFAULT_LAYER
 from core.materials import material_sig
 from core.paths import app_root
+from core.style import PROFILE_CAPS, ENDPOINT_TYPES
 
 GL_FLOAT, GL_LINES = 0x1406, 0x0001
 GL_LEQUAL, GL_GREATER = 0x0203, 0x0204
@@ -84,7 +85,13 @@ class EdgeRenderer:
             extra.glVertexAttribDivisor(location, 1)
         matrix_buffer.release()
         vao.release()
+        # Eight local bounds corners per instance suffice for a stable scene
+        # depth interval, without keeping a second copy of every edge on CPU.
+        corners = geometry["corners"]
+        transforms = np.asarray(matrices).reshape((-1, 4, 4)).transpose(0, 2, 1)
+        world = np.einsum("nij,kj->nki", transforms, corners)[..., :3].reshape((-1, 3))
         return {"vao": vao, "matrices": matrix_buffer, "instances": len(matrices),
+                "corners": world,
                 "count": geometry["count"], "fade": fade}
 
     def _clear_batches(self):
@@ -158,6 +165,11 @@ class EdgeRenderer:
                 data = edge_vertices(mesh, scene, paint, layer, vp._texture_avg_color)
                 geometry = {"vbo": self._buffer(data.tobytes(), QOpenGLBuffer.StaticDraw),
                             "count": len(data), "mesh": mesh}
+                lo = data[:, :3].min(axis=0) if len(data) else np.zeros(3)
+                hi = data[:, :3].max(axis=0) if len(data) else lo
+                geometry["corners"] = np.array([
+                    (x, y, z, 1) for x in (lo[0], hi[0])
+                    for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
                 self.geometry[cache_key] = geometry
             live.add(cache_key)
             if geometry["count"]:
@@ -193,10 +205,21 @@ class EdgeRenderer:
             if vp._export_size is not None:
                 profile_width = max(profile_width, getattr(vp, "_export_profile_px", 1) / scale)
             self.number("u_profile_width", profile_width)
+            self.integer("u_profile_cap", PROFILE_CAPS.index(style.profile_cap))
             self.number("u_depth_width", style.depth_cue_width if style.depth_cue else 1)
-            self.number("u_depth_range", vp.camera.distance * 2)
+            near, far = 0.0, 1.0
+            if style.depth_cue:
+                forward = np.asarray(vp.camera.forward().toTuple())
+                eye = np.asarray(vp.camera.eye().toTuple())
+                depths = [(batch["corners"] - eye) @ forward for batch in self.batches]
+                near = max(0.0, min((d.min() for d in depths), default=0.0))
+                far = max(near + 1e-4, max((d.max() for d in depths), default=near))
+            self.number("u_depth_near", near)
+            self.number("u_depth_range", far - near)
             self.number("u_extension", style.extension_length if style.extensions else 0)
             self.number("u_endpoint", style.endpoint_length if style.endpoints else 0)
+            self.integer("u_endpoint_type", ENDPOINT_TYPES.index(style.endpoint_type))
+            self.number("u_endpoint_size", style.endpoint_size)
             self.integer("u_dashes", style.dashes)
             self.integer("u_color_mode", {"same": 0, "material": 1, "axis": 2}[style.edge_color_mode])
             self.vector("u_color", style.edge_color)

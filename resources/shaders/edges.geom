@@ -17,10 +17,14 @@ uniform int u_perspective;
 uniform int u_edges;
 uniform int u_profiles;
 uniform float u_profile_width;
+uniform int u_profile_cap;
 uniform float u_depth_width;
+uniform float u_depth_near;
 uniform float u_depth_range;
 uniform float u_extension;
 uniform float u_endpoint;
+uniform int u_endpoint_type;
+uniform float u_endpoint_size;
 uniform float u_scale;
 uniform int u_color_mode;
 uniform vec3 u_color;
@@ -39,6 +43,8 @@ flat out vec3 g_info;
 flat out vec4 g_dash0;
 flat out vec4 g_dash1;
 flat out vec2 g_caps;
+flat out vec2 g_limits;
+flat out int g_cap;
 flat out vec2 g_depth_side;
 flat out vec2 g_depth_along;
 float line_length;
@@ -47,6 +53,8 @@ vec3 line_color;
 vec2 plane_slope0;
 vec2 plane_slope1;
 vec2 line_caps;
+vec2 line_limits;
+int line_cap;
 vec2 depth_side;
 vec2 depth_along;
 
@@ -79,6 +87,8 @@ void corner(vec4 center, vec3 world, vec2 shift, float along, float side) {
     g_dash0 = edge[0].dash0;
     g_dash1 = edge[0].dash1;
     g_caps = line_caps;
+    g_limits = line_limits;
+    g_cap = line_cap;
     g_depth_side = depth_side;
     g_depth_along = depth_along;
     EmitVertex();
@@ -112,10 +122,26 @@ void main() {
     float base = u_profiles == 1 && profile ? u_profile_width : 1.0;
     vec2 depth = vec2(dot(wa - u_eye, u_forward), dot(wb - u_eye, u_forward));
     vec2 widths = max(vec2(base), mix(vec2(1.0), vec2(max(1.0, u_depth_width)),
-        clamp(vec2(1.0) - depth / max(u_depth_range, 1e-4), 0.0, 1.0))) * u_scale;
-    float radius = max(widths.x, widths.y) * 0.5 + (u_endpoint > 0.0 ? u_scale : 0.0) + 0.5;
+        clamp(vec2(1.0) - (depth - u_depth_near) / max(u_depth_range, 1e-4), 0.0, 1.0))) * u_scale;
     float before = cut.x ? 0.0 : u_extension * u_scale;
     float after = cut.y ? 0.0 : u_extension * u_scale;
+    // A retraction that consumes a short segment hides it, never reverses it.
+    if (len + before + after <= 1e-4) return;
+    line_cap = u_profiles == 1 && profile ? u_profile_cap : 0;
+    line_limits = vec2(-before, len + after);
+    if (line_cap >= 2) {
+        if (!cut.x) line_limits.x -= widths.x * 0.5;
+        if (!cut.y) line_limits.y += widths.y * 0.5;
+    }
+    float radius = max(widths.x, widths.y) * 0.5;
+    float marker_radius = 0.0;
+    if (u_endpoint > 0.0) {
+        if (u_endpoint_type == 0) radius += u_scale;
+        else marker_radius = u_endpoint_size * u_scale * 0.5;
+    }
+    radius = max(radius, marker_radius) + 0.5;
+    before = max(-line_limits.x, cut.x ? 0.0 : marker_radius) + 0.5;
+    after = max(line_limits.y - len, cut.y ? 0.0 : marker_radius) + 0.5;
     line_length = len; line_width = widths;
     line_color = u_color;
     if (u_color_mode == 1 && edge[0].color.x >= 0.0) line_color = edge[0].color;
