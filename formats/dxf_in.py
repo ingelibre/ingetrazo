@@ -79,6 +79,17 @@ _SKIP_SILENT = {"ATTDEF", "VIEWPORT", "XLINE", "RAY"}
 _MAX_INSERT_DEPTH = 8
 
 
+class NothingToImport(ValueError):
+    """The file reads, but its model space has nothing to build. ``skipped``:
+    the entity kinds left out, with how many of each."""
+
+    def __init__(self, skipped=None) -> None:
+        super().__init__("no importable geometry (lines, polylines, arcs, "
+                         "circles, ellipses, splines or faces) in the "
+                         "model space")
+        self.skipped = dict(skipped or {})
+
+
 # ---- Reading ---------------------------------------------------------------
 def open_document(path: Path):
     """ezdxf's strict reader, falling back to its recover mode — real-world
@@ -485,9 +496,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
 
     if not per_layer and not any(
             b["0"].runs or b["0"].faces for b in proto_buckets.values()):
-        raise ValueError("no importable geometry (lines, polylines, arcs, "
-                         "circles, ellipses, splines or faces) in the "
-                         "model space")
+        raise NothingToImport(skipped)
 
     # ---- Measure for the UTM recentring (placements count too) ----
     tick(0.45, "Scaling…")
@@ -561,9 +570,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
                        if components[block_name] == 1 else 0)
 
     if groups_made == 0:
-        raise ValueError("no importable geometry (lines, polylines, arcs, "
-                         "circles, ellipses, splines or faces) in the "
-                         "model space")
+        raise NothingToImport(skipped)
 
     scene.version += 1
     tick(1.0, "Done")

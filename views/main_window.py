@@ -6171,7 +6171,6 @@ class MainWindow(QMainWindow):
             setattr(self._doc, name, value)
         return property(get, put)
 
-    viewport = _doc_attr("viewport")
     _current_path = _doc_attr("path")
     _import_name = _doc_attr("import_name")
     _saved_content = _doc_attr("saved_content")
@@ -6179,6 +6178,27 @@ class MainWindow(QMainWindow):
     _composer = _doc_attr("composer")
     _last_sheet = _doc_attr("last_sheet")
     del _doc_attr
+
+    # What the code and the extensions call the viewport is the view in front
+    # of the active project, which an extension may have assigned (a split
+    # pane, perhaps on a scene of its own). ``Document.viewport`` never moves:
+    # saving, the unsaved-changes state and closing go by that one (#1106).
+    @property
+    def viewport(self):
+        doc = self.__dict__.get("_doc")
+        if doc is None:
+            return None
+        return doc.front_view if doc.front_view is not None else doc.viewport
+
+    @viewport.setter
+    def viewport(self, view) -> None:
+        # A project's own viewport ends the replacement in ITS project,
+        # whichever tab is in front: it never becomes another project's.
+        for doc in self._documents:
+            if doc.viewport is view:
+                doc.front_view = None
+                return
+        self._doc.front_view = view
 
     #: The active project changed (another tab, or the one in front was
     #: closed); panels that keep something of the document refresh.
@@ -6259,6 +6279,8 @@ class MainWindow(QMainWindow):
         vp = doc.viewport
         if doc.path is not None or doc.import_name or vp is None:
             return False
+        if doc.front_view is not None:
+            return False    # what would replace it would land on that view
         hist = vp.history
         if hist.undo_stack or hist.redo_stack:
             return False
@@ -6368,6 +6390,8 @@ class MainWindow(QMainWindow):
         if vp is None:
             return
         try:
+            if doc.front_view is not None:
+                doc.front_view.set_active_tool(None)
             vp.set_active_tool(None)
             vp.end_group_edit()
         except RuntimeError:            # its widget is already gone
@@ -6464,13 +6488,13 @@ class MainWindow(QMainWindow):
                 georef.base_map.sync_photo_mesh()
             except Exception:  # noqa: BLE001 — a panel never blocks the switch
                 pass
-        vp.notify_scene_changed()       # panels, title, extensions
+        self.viewport.notify_scene_changed()    # panels, title, extensions
         if doc.composer is not None and doc.composer_shown:
             doc.composer.show()
         self.documentChanged.emit()
         self._refresh_scene_tabs()
         self._light_views_button()
-        vp.setFocus()
+        self.viewport.setFocus()
 
     # ---- every project closed: the empty area (views/empty_area.py) --------
     #: What a file dropped on the empty area may be, besides an extension's
@@ -6852,6 +6876,9 @@ class MainWindow(QMainWindow):
         if ask and self._doc_is_dirty(doc):
             if doc is not self._doc:
                 self.activate_document(doc)     # show what is being asked about
+                if doc is not self._doc:
+                    return False    # a workspace holds the window: the
+                                    # question would be about its document
             self.viewport.end_group_edit()
             if not self._confirm_discard(tr(
                     "Close “{name}”?", name=doc.display_name())):
@@ -6892,6 +6919,7 @@ class MainWindow(QMainWindow):
             pass
         self._documents.remove(doc)
         self._project_tabs.remove(doc)
+        doc.front_view = None
         for fn in list(self.__dict__.get("_doc_close_hooks", ())):
             try:
                 fn(doc.viewport.scene)
@@ -7098,7 +7126,8 @@ class MainWindow(QMainWindow):
         self._current_path = p["path"]
         self._import_name = p["import_name"]
         # set_document moved the version on: a model that was saved stays so.
-        self._saved_version = self.viewport.scene.version if p["clean"] else -1
+        self._saved_version = (self._doc.viewport.scene.version
+                               if p["clean"] else -1)
         self._apply_camera_dict(p["camera"])
         if getattr(self, "_sheet_tabs", None) is not None:
             self._sheet_tabs.setVisible(True)
@@ -7445,7 +7474,7 @@ class MainWindow(QMainWindow):
             self._workspace.save()
             self._update_title()
             return
-        self.viewport.end_group_edit()
+        self._end_group_edits()
         if self._current_path is None:
             self._on_save_as()
             return
@@ -7456,7 +7485,7 @@ class MainWindow(QMainWindow):
             self._workspace.save_as()
             self._update_title()
             return
-        self.viewport.end_group_edit()
+        self._end_group_edits()
         default_name = (
             self._current_path.name if self._current_path is not None else "untitled.igz"
         )
@@ -7473,7 +7502,21 @@ class MainWindow(QMainWindow):
             path = path.with_suffix(".igz")
         self._do_save(path)
 
+    def _end_group_edits(self) -> None:
+        """The view in front and the project's own, when they differ."""
+        self.viewport.end_group_edit()
+        self._doc.viewport.end_group_edit()
+
     def _do_save(self, path: Path) -> None:
+        """Write the active project to ``path``: its OWN scene and camera,
+        whatever view an extension has put in front (#1106)."""
+        doc = self._doc
+        vp = doc.viewport
+        if self.viewport.scene is not vp.scene:
+            import logging
+            logging.getLogger("ingetrazo.plugins").warning(
+                "Saving the project's own scene: the view in front (%s) holds "
+                "another one.", type(self.viewport).__name__)
         # Backup BEFORE writing (Preferences ▸ General): the previous good
         # version survives even a save that dies mid-write — which a syncing
         # drive has actually produced (pCloud truncation).
@@ -7486,17 +7529,17 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(
                     tr("Could not write the backup copy."), 4000)
         try:
-            self.viewport.scene.camera_home = self._camera_dict()
-            stats = igz_format.save_scene(self.viewport.scene, path) or {}
+            vp.scene.camera_home = self._camera_dict(vp)
+            stats = igz_format.save_scene(vp.scene, path) or {}
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return
         # A clean save ends the recovery window for this document — and for
-        # the untitled slot when this save gave the document its first name.
+        # the slot of what it was called until now (untitled, or the old
+        # name of a Save As).
         from core import autosave
         autosave.clear(path)
-        if self._current_path is None:
-            autosave.clear(None, untitled=self._doc.untitled_no)
+        autosave.clear(doc.path, untitled=doc.untitled_no)
         # Textures travel inside the document — say so, and say it loudly when
         # an image could not be read (that face's texture will NOT travel).
         embedded = int(stats.get("embedded", 0))
@@ -7511,9 +7554,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 tr("Saved — {n} texture(s) packed into the document.",
                    n=embedded), 4000)
-        self._current_path = path
+        doc.path = path
         self._remember_recent(path)
-        self._saved_version = self.viewport.scene.version
+        self._saved_version = vp.scene.version
         self._update_title()
 
     def _insert_scale_figure(self) -> None:
@@ -8875,15 +8918,33 @@ class MainWindow(QMainWindow):
         dlg, cb = self._import_progress(tr("Importing {name}…",
                                            name=shown.name))
         stats: dict = {}
-        cmd = SnapshotImport(
-            lambda scene: stats.update(
-                load_dxf(scene, path, progress=cb, scale=scale, doc=doc,
-                         name=shown.stem)))
+        failure: list = []
+
+        def load(scene):
+            try:
+                stats.update(load_dxf(scene, path, progress=cb, scale=scale,
+                                      doc=doc, name=shown.stem))
+            except Exception as exc:  # noqa: BLE001 — surface parse errors
+                failure.append(exc)
+                raise               # history.execute rolls back and keeps it
+
+        cmd = SnapshotImport(load)
+        was_clean = not self._is_dirty()
         try:
             self.viewport.history.execute(cmd)
-        except Exception as exc:  # noqa: BLE001 — surface parse errors
+        except Exception as exc:  # noqa: BLE001
+            failure.append(exc)
+        if failure:
             dlg.close()
-            QMessageBox.critical(self, tr("Import DXF failed"), str(exc))
+            # The rollback moved the version on, and nothing changed: an
+            # untouched project stays so, and a tab opened for this goes.
+            if was_clean:
+                self._saved_version = self.viewport.scene.version
+            self._update_title()
+            QMessageBox.critical(
+                self, (tr("Import DWG failed") if label is not None
+                       else tr("Import DXF failed")),
+                self._dxf_failure_text(failure[0], shown))
             return False
         self._prepare_import_display(cmd, cb)
         dlg.close()
@@ -8899,6 +8960,20 @@ class MainWindow(QMainWindow):
         msg += self._survey_note(stats.get("offset"))
         self.statusBar().showMessage(msg, 8000)
         return True
+
+    @staticmethod
+    def _dxf_failure_text(exc, shown) -> str:
+        from formats.dxf_in import NothingToImport
+        if not isinstance(exc, NothingToImport):
+            return str(exc)
+        text = tr("“{name}” was read, but it has nothing that can be imported: "
+                  "no lines, polylines, arcs, circles, ellipses, splines or "
+                  "faces in the model space.", name=shown.name)
+        if exc.skipped:
+            kinds = ", ".join(f"{kind} ×{n}"
+                              for kind, n in sorted(exc.skipped.items()))
+            text += "\n\n" + tr("Left out: {kinds}", kinds=kinds)
+        return text
 
     def _dxf_unit(self, path, header_scale=None) -> "float | None":
         """Confirm the drawing's unit. The header's declaration (when there
@@ -9425,15 +9500,15 @@ class MainWindow(QMainWindow):
 
     @_saved_version.setter
     def _saved_version(self, version: int) -> None:
-        viewport = getattr(self, "viewport", None)
-        scene = getattr(viewport, "scene", None)
+        doc = self.__dict__.get("_doc")
+        scene = getattr(getattr(doc, "viewport", None), "scene", None)
         view = getattr(scene, "view_version", 0) if version >= 0 else 0
         self._saved_content = version - view
 
     def _is_dirty(self) -> bool:
         if self._workspace is not None:
             return bool(self._workspace.is_dirty())
-        return self.viewport.scene.content_version != self._saved_content
+        return self._doc.viewport.scene.content_version != self._saved_content
 
     def _on_scene_version_changed(self, _version: int) -> None:
         # Something came into the blank project behind the empty area (an

@@ -3300,5 +3300,7 @@
  "Maximize view": "Ingrandisci vista",
  "Restore views": "Ripristina viste",
  "Maximize": "Ingrandisci",
- "Restore": "Ripristina"
+ "Restore": "Ripristina",
+ "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "“{name}” è stato letto, ma non contiene nulla di importabile: nessuna linea, polilinea, arco, cerchio, ellisse, spline o faccia nello spazio modello.",
+ "Left out: {kinds}": "Omesso: {kinds}"
 }

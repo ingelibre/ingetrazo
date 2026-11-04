@@ -3334,5 +3334,7 @@
   "Maximize view": "تكبير العرض",
   "Restore views": "استعادة طرق العرض",
   "Maximize": "تكبير",
-  "Restore": "استعادة"
+  "Restore": "استعادة",
+  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "تمت قراءة “{name}” لكن لا يوجد فيه ما يمكن استيراده: لا خطوط ولا خطوط متعددة ولا أقواس ولا دوائر ولا قطوع ناقصة ولا منحنيات ولا أوجه في فضاء النموذج.",
+  "Left out: {kinds}": "تم تخطي: {kinds}"
 }

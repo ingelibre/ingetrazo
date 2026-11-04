@@ -3300,5 +3300,7 @@
  "Maximize view": "最大化视图",
  "Restore views": "还原视图",
  "Maximize": "最大化",
- "Restore": "还原"
+ "Restore": "还原",
+ "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "已读取“{name}”，但没有可导入的内容：模型空间中没有直线、多段线、圆弧、圆、椭圆、样条曲线或面。",
+ "Left out: {kinds}": "已跳过：{kinds}"
 }
