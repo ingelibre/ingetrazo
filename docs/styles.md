@@ -12,11 +12,17 @@ On **Edit**, choose **Edge settings**, the first category button.
 | --- | --- |
 | Edges | Show the model's regular edges. Wireframe always shows edges. |
 | Back edges | Show edges behind faces with a dashed stroke. |
-| Profiles | Emphasize outlines and silhouettes; choose a width from 1 to 20 pixels. |
+| Profiles | Emphasize outlines and silhouettes; choose a width from 1 to 20 pixels and a square or round ending. |
 | Depth cue | Make foreground edges thicker than distant edges; choose the foreground width. |
-| Extensions | Extend strokes beyond their geometric ends by 1 to 50 pixels. |
-| Endpoints | Thicken the last 1 to 50 pixels at each end of an edge. |
-| Dashes | Show the line patterns assigned in Layers. Turning this off shows those lines as solid. Back edges retain their own hidden-line dash pattern. |
+| Edge extensions | Positive values extend strokes; negative values shorten them, from -50 to 50 pixels. A fully shortened stroke disappears. |
+| Endpoints | Emphasize each end with the default thickened stroke, or a round, square or triangular marker. Stroke length and marker size are stored separately, from 1 to 50 pixels. |
+| Layer line | Show the line patterns assigned in Layers. Turning this off shows those lines as solid. Back edges retain their own hidden-line dash pattern. |
+
+The four profile endings are square flush, round flush, square extended and round extended.
+The extended square overhangs by `max(0, width / 2 - 2 px)`; the extended round overhangs by
+`width / 2`. Endpoint markers stay aligned with the screen and are drawn once per shared vertex,
+including where separate groups meet. An artificial endpoint created by section clipping does
+not acquire a marker.
 
 Widths and lengths use screen pixels and remain independent of model zoom. Enlarging an exported
 image scales these effects with its line pens. Extensions and endpoint accents change only the
@@ -28,8 +34,11 @@ off preserves its numeric value for the next time it is enabled.
 ## Edge colors and independent paint
 
 - **All same** uses the color swatch beside the selector.
-- **By material** uses each edge's own paint. Unpainted edges inherit their group's material;
-  otherwise they use the style's edge color. Face paint does not repaint its surrounding edges.
+- **By material** gives priority to each edge's own paint. An unpainted edge takes the average
+  color of adjacent painted faces; textures contribute their average image color. A default
+  face contributes its group's material when present, otherwise no color. An edge without a
+  colored adjacent face falls back to its group's material, then the style's edge color.
+  This is a display rule: it does not assign a material to the edge or change its faces.
 - **By axis** uses red, green or blue for edges aligned with the active drawing axes. Diagonal
   edges use the style's edge color. Hidden back edges keep the fallback color.
 
@@ -39,7 +48,8 @@ in the current edge selection paints that selected set. Clicking a face away fro
 continues to paint faces as usual.
 
 Use **Alt** with Paint to sample an edge's material. Choose the default material to remove its
-independent paint. Painting supports Undo and Redo. Switching to All same or By axis preserves
+independent paint and restore automatic coloring. An automatically colored edge samples its
+calculated color. Painting supports Undo and Redo. Switching to All same or By axis preserves
 the assigned materials so that switching back restores them.
 
 Styles are stored in `.igz` documents, saved views and the user style library. Independent edge
