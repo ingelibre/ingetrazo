@@ -266,15 +266,16 @@ class _ProjectTabs(QTabBar):
         self._seat_close_buttons()
 
     def _seat_close_buttons(self) -> None:
-        """Against the tab's right edge, centred on its height (the style
-        lays it out with a margin of its own)."""
+        """Against the tab's far edge (the left one, right to left), centred
+        on its height (the style lays it out with a margin of its own)."""
         for i in range(self.count()):
             btn = self.tabButton(i, QTabBar.RightSide)
             if btn is None:
                 continue
             r = self.tabRect(i)
-            want = QPoint(r.right() - self.CLOSE_EDGE - btn.width() + 1,
-                          r.top() + (r.height() - btn.height()) // 2)
+            x = (r.left() + self.CLOSE_EDGE if self.isRightToLeft()
+                 else r.right() - self.CLOSE_EDGE - btn.width() + 1)
+            want = QPoint(x, r.top() + (r.height() - btn.height()) // 2)
             if btn.pos() != want:
                 btn.move(want)
 

@@ -178,3 +178,31 @@ def test_the_cross_stays_put_when_a_tab_is_clicked(win):
     QApplication.processEvents()
     tabs.repaint()
     assert gaps() == [tabs.CLOSE_EDGE] * tabs.count()
+
+
+def test_right_to_left_the_cross_stays_off_the_name():
+    """In Arabic the name goes to the tab's right, where the cross was put
+    regardless: it covered the name's first letters."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QStyle, QStyleOptionTab, QTabBar
+    from views.documents import ProjectTabBar
+    bar = ProjectTabBar()
+    bar.setLayoutDirection(Qt.RightToLeft)
+    bar.resize(600, 40)
+    tabs = bar.tabs
+    tabs.addTab("Sin título")
+    tabs.addTab("Otro")
+    tabs.setCurrentIndex(0)
+    bar.show()
+    QApplication.processEvents()
+    for i in range(tabs.count()):
+        opt = QStyleOptionTab()
+        tabs.initStyleOption(opt, i)
+        text = tabs.style().subElementRect(QStyle.SE_TabBarTabText, opt, tabs)
+        ink = tabs.fontMetrics().horizontalAdvance(tabs.tabText(i))
+        name_left = text.center().x() - ink // 2
+        cross = tabs.tabButton(i, QTabBar.RightSide)
+        tabs._seat_close_buttons()
+        assert tabs.tabRect(i).contains(cross.geometry())
+        assert cross.geometry().right() < name_left
+    bar.close()
