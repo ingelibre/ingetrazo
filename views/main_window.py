@@ -1130,6 +1130,7 @@ class MainWindow(QMainWindow):
         act_ze.triggered.connect(self._on_zoom_extents)
         view_tb.addAction(act_ze)
         self._act_zoom_extents = act_ze
+        self.viewport.zoomExtentsRequested.connect(self._on_zoom_extents)
 
         # Zoom Selection: the same framing over the selection alone. With
         # nothing selected it does nothing (Zoom Extents is one key away).
