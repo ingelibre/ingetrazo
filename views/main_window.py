@@ -820,6 +820,7 @@ class MainWindow(QMainWindow):
                 continue
             try:
                 vp.scene.camera_home = self._camera_dict(vp)
+                vp.scene.views_home = self._views_dict(doc)
                 autosave.write(vp.scene, doc.path, untitled=doc.untitled_no)
             except Exception:  # noqa: BLE001 — recovery must never break modeling
                 continue
@@ -3656,6 +3657,9 @@ class MainWindow(QMainWindow):
             return
         tool = self._tools[key]
         self.viewport.set_active_tool(tool)
+        grid = self._doc.view_grid if self.__dict__.get("_doc") else None
+        if grid is not None and key != "select":
+            grid.cross.hide()
         if key == "tape":
             tool.start_from_hover(self.viewport)
         action = self._tool_actions.get(key)
@@ -6607,6 +6611,25 @@ class MainWindow(QMainWindow):
         self._light_views_button()
         self._update_title()
 
+    def _views_dict(self, doc):
+        """How many views ``doc`` shows and where their lines are, for its
+        file; None for one view."""
+        grid = doc.view_grid
+        if grid is None or doc.view_layout == "single":
+            return None
+        return {"layout": doc.view_layout, **grid.lines_state()}
+
+    def _apply_views_home(self) -> None:
+        """Open in the views the file was saved in; a file without them
+        leaves the tab's as they are."""
+        home = getattr(self.viewport.scene, "views_home", None)
+        if not isinstance(home, dict) or not isinstance(home.get("layout"), str):
+            return
+        self.set_view_layout(home["layout"])
+        grid = self._doc.view_grid
+        if grid is not None and self._doc.view_layout == home["layout"]:
+            grid.apply_lines_state(home)
+
     def _view_grid_of(self, doc, make: bool = False):
         """``doc``'s grid of views; with ``make``, made now if it has none
         — its viewport moves into it once, into the tab's slot, the way an
@@ -7349,6 +7372,7 @@ class MainWindow(QMainWindow):
         self.viewport.update()
         self.viewport.inference.reset()
         self._apply_camera_home()
+        self._apply_views_home()
         self._current_path = path
         self._remember_recent(path)
         self._import_name = None
@@ -7476,6 +7500,7 @@ class MainWindow(QMainWindow):
                     tr("Could not write the backup copy."), 4000)
         try:
             self.viewport.scene.camera_home = self._camera_dict()
+            self.viewport.scene.views_home = self._views_dict(self._doc)
             stats = igz_format.save_scene(self.viewport.scene, path) or {}
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Save failed"), str(exc))

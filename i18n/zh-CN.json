@@ -3279,7 +3279,7 @@
  "Show scenes as tabs": "以标签页显示场景",
  "This project's scenes as tabs under the view; a click shows one.": "将此项目的场景显示为视图下方的标签页；单击即可显示。",
  "No scenes yet: «+» keeps the current view as one.": "还没有场景：«+» 会将当前视图保存为场景。",
- "Click: change the view · Double-click: this view alone, or the four again": "单击：切换视图 · 双击：只显示此视图，或恢复四个视图",
+ "Maximize this view or change it": "最大化或切换此视图",
  "One view": "一个视图",
  "Two views": "两个视图",
  "Two views, one wider": "两个视图（一个更宽）",

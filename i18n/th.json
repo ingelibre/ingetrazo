@@ -3281,7 +3281,7 @@
  "Show scenes as tabs": "แสดงฉากเป็นแท็บ",
  "This project's scenes as tabs under the view; a click shows one.": "ฉากของโปรเจกต์นี้เป็นแท็บใต้มุมมอง คลิกเพื่อแสดงฉาก",
  "No scenes yet: «+» keeps the current view as one.": "ยังไม่มีฉาก: «+» เก็บมุมมองปัจจุบันเป็นฉาก",
- "Click: change the view · Double-click: this view alone, or the four again": "คลิก: เปลี่ยนมุมมอง · ดับเบิลคลิก: เฉพาะมุมมองนี้ หรือทั้งสี่อีกครั้ง",
+ "Maximize this view or change it": "ขยายมุมมองนี้เต็มพื้นที่หรือเปลี่ยนมุมมอง",
  "One view": "มุมมองเดียว",
  "Two views": "สองมุมมอง",
  "Two views, one wider": "สองมุมมอง หนึ่งกว้างกว่า",

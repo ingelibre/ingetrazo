@@ -214,6 +214,27 @@ def test_the_labels_menu_says_maximize_or_restore(win):
     assert len(header.menu().actions()) == 10, "the views, once"
 
 
+def test_a_double_click_on_the_label_maximizes_nothing(win):
+    from PySide6.QtCore import QEvent, QPoint, Qt
+    from PySide6.QtGui import QMouseEvent
+    win.show()
+    win.set_view_layout("four")
+    QApplication.processEvents()
+    header = _grid(win).cells[2].header
+    menu = header.menu()
+    # The popup would block the test: the menu is not what is tried here.
+    header.setMenu(None)
+    at = QPointF(QPoint(3, 3))
+    QApplication.sendEvent(header, QMouseEvent(
+        QEvent.MouseButtonDblClick, at, QPointF(header.mapToGlobal(QPoint(3, 3))),
+        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    QApplication.sendEvent(header, QMouseEvent(
+        QEvent.MouseButtonRelease, at, QPointF(header.mapToGlobal(QPoint(3, 3))),
+        Qt.LeftButton, Qt.NoButton, Qt.NoModifier))
+    header.setMenu(menu)
+    assert _shown(win) == [0, 1, 2, 3]
+
+
 def test_the_key_takes_the_view_under_the_pointer_and_comes_back(win, monkeypatch):
     from PySide6.QtCore import QPoint
     from PySide6.QtGui import QAction, QKeySequence
@@ -548,6 +569,168 @@ def test_three_views_have_a_square_too_and_two_do_not(win):
     win.set_view_layout("two_stacked")
     QApplication.processEvents()
     assert grid.crossings() == []
+
+
+def test_a_drawing_tool_keeps_the_square_away(win):
+    grid = _four(win)
+    at = grid.mapToGlobal(grid.crossings()[0])
+    win._activate_tool("select")
+    grid.pointer_moved(at)
+    assert grid.cross.isVisible()
+    win._activate_tool("line")
+    assert not grid.cross.isVisible(), "gone as the tool comes"
+    grid.pointer_moved(at)
+    assert not grid.cross.isVisible()
+    # The lines still drag.
+    handle = grid.col_a.handle(1)
+    start = handle.y()
+    _drag(handle, start - 60)
+    assert abs(handle.y() - (start - 60)) <= 1
+    win._activate_tool("select")
+    grid.pointer_moved(at)
+    assert not grid.cross.isVisible() or grid.crossings()
+
+
+def _saved_with_lines(win, tmp_path, name="views.igz"):
+    grid = _four(win)
+    _drag(grid.columns.handle(1), grid.columns.handle(1).x() + 80)
+    _drag(grid.col_a.handle(1), grid.col_a.handle(1).y() - 70)
+    _drag(grid.col_b.handle(1), grid.col_b.handle(1).y() + 50)
+    QApplication.processEvents()
+    path = tmp_path / name
+    win._do_save(path)
+    return grid.lines_state(), path
+
+
+def _copy_opened(win, path, tmp_path):
+    """The same file only brings its tab to the front: a copy of it."""
+    import shutil
+    copy = tmp_path / ("copy-" + path.name)
+    shutil.copy(path, copy)
+    win.open_path(copy)
+    from PySide6.QtTest import QTest
+    QTest.qWait(100)
+    return win._doc
+
+
+def test_the_file_opens_in_its_layout_with_its_lines(win, tmp_path):
+    state, path = _saved_with_lines(win, tmp_path)
+    doc = _copy_opened(win, path, tmp_path)
+    assert doc.view_layout == "four"
+    back = doc.view_grid.lines_state()
+    assert abs(back["columns"] - state["columns"]) < 0.02
+    assert abs(back["rows"][0] - state["rows"][0]) < 0.02
+    assert abs(back["rows"][1] - state["rows"][1]) < 0.02
+    assert abs(back["rows"][0] - back["rows"][1]) > 0.05, "the halves stay apart"
+    assert not win._is_dirty(), "opening it is not an edit"
+
+
+def test_it_travels_in_the_igz(tmp_path):
+    from core.scene import Scene
+    from formats import igz
+    scene = Scene()
+    scene.views_home = {"layout": "three", "columns": 0.4, "rows": [0.5, 0.3]}
+    path = tmp_path / "v.igz"
+    igz.save_scene(scene, path)
+    back = Scene()
+    igz.load_into(back, path)
+    assert back.views_home == scene.views_home
+    back.clear()
+    assert back.views_home is None
+
+
+def test_one_view_saves_nothing_and_opens_as_it_is(win, tmp_path):
+    path = tmp_path / "one.igz"
+    win._do_save(path)
+    assert win.viewport.scene.views_home is None
+    doc = _copy_opened(win, path, tmp_path)
+    assert doc.view_layout == "single"
+
+
+def test_a_maximized_view_saves_the_lines_restore_would_bring(win, tmp_path):
+    grid = _four(win)
+    _drag(grid.col_a.handle(1), grid.col_a.handle(1).y() - 70)
+    QApplication.processEvents()
+    state = grid.lines_state()
+    grid.toggle_maximized(grid.cells[0])
+    QApplication.processEvents()
+    assert abs(grid.lines_state()["rows"][0] - state["rows"][0]) < 0.01
+
+
+@pytest.mark.parametrize("home", [
+    {"layout": "nonsense"}, {"layout": 7}, {"nothing": 1},
+    {"layout": "four", "columns": "x", "rows": [2, None]},
+    {"layout": "four", "columns": True, "rows": "ab"},
+])
+def test_odd_views_in_a_file_open_anyway(win, home):
+    win.viewport.scene.views_home = home
+    win._apply_views_home()
+    QApplication.processEvents()
+    assert win._doc.view_layout in ("single", "four")
+
+
+def _previews(grid):
+    return sorted(c.index for c in grid.cells
+                  if c.viewport is not None and c.viewport.tool_preview)
+
+
+def test_a_tools_preview_shows_in_one_view_only(win):
+    grid = _four(win)
+    assert _previews(grid) == [1], "the window's own, before the pointer comes"
+    grid.set_tool_view(grid.cells[0].viewport)
+    assert _previews(grid) == [0]
+    grid.set_tool_view(grid.cells[3].viewport)
+    assert _previews(grid) == [3]
+
+
+def test_the_pointer_coming_into_a_view_brings_the_preview(win):
+    from PySide6.QtCore import QEvent
+    grid = _four(win)
+    vp = grid.cells[2].viewport
+    QApplication.sendEvent(vp, QEvent(QEvent.Enter))
+    assert _previews(grid) == [2]
+
+
+def test_one_view_always_shows_the_preview(win):
+    grid = _four(win)
+    grid.set_tool_view(grid.cells[0].viewport)
+    win.set_view_layout("single")
+    QApplication.processEvents()
+    assert grid.main.tool_preview
+
+
+def test_a_view_filling_the_area_takes_the_preview(win):
+    grid = _four(win)
+    grid.set_tool_view(grid.cells[0].viewport)
+    grid.toggle_maximized(grid.cells[3])
+    QApplication.processEvents()
+    assert _previews(grid) == [3]
+
+
+def test_a_layout_without_that_view_hands_over_the_preview(win):
+    grid = _four(win)
+    grid.set_tool_view(grid.cells[3].viewport)
+    win.set_view_layout("two")
+    QApplication.processEvents()
+    assert _previews(grid) == [1], "the window's own"
+
+
+def test_a_view_without_the_preview_draws_with_no_tool_and_gives_it_back(
+        win, monkeypatch):
+    grid = _four(win)
+    win._activate_tool("line")
+    vp = grid.cells[0].viewport
+    tool = grid.main.active_tool
+    vp.active_tool = tool
+    seen = []
+    monkeypatch.setattr(vp, "_paint_frame", lambda: seen.append(vp.active_tool))
+    vp.tool_preview = False
+    vp.paintGL()
+    assert seen == [None] and vp.active_tool is tool
+    vp.tool_preview = True
+    vp.paintGL()
+    assert seen == [None, tool]
+    win._activate_tool("select")
 
 
 def test_a_maximized_view_has_no_square(win):

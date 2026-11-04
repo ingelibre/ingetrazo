@@ -3278,7 +3278,7 @@
  "Show scenes as tabs": "シーンをタブで表示",
  "This project's scenes as tabs under the view; a click shows one.": "このプロジェクトのシーンをビューの下にタブとして表示します。クリックでシーンを表示します。",
  "No scenes yet: «+» keeps the current view as one.": "シーンはまだありません：«+» で現在のビューをシーンとして保存します。",
- "Click: change the view · Double-click: this view alone, or the four again": "クリック：ビューを変更 · ダブルクリック：このビューだけ、または再び4つ",
+ "Maximize this view or change it": "このビューを最大化または変更",
  "One view": "1ビュー",
  "Two views": "2ビュー",
  "Two views, one wider": "2ビュー（片方を広く）",

@@ -21,8 +21,8 @@ window's tool when the mouse comes in, and its readouts (typed value,
 measurement, coordinates) and document changes reach the window through
 the main viewport's signals, as if it had happened there. Each cell has a
 small title that opens a menu: first the entry that fills the work area with
-that view and, then, brings the others back (Ctrl+Space, or a double-click on
-the title, does the same), and after it the standard views.
+that view and, then, brings the others back (Ctrl+Space does the same), and
+after it the standard views.
 
 A line between the views drags alone (with four views the two halves of the
 cross part ways); near a crossing a square with arrows drags the lines meeting
@@ -87,9 +87,9 @@ QToolButton#viewChip[active="true"] {{ background: rgb({accent_rgb}); }}
 
 
 class _CellHeader(QToolButton):
-    """The cell's title, a small label over the view's corner: a click
-    opens the views, a double-click fills the work area with the cell (and
-    back)."""
+    """The cell's title, a small label over the view's corner: a click opens
+    its menu, to fill the work area with the cell (and back) or change its
+    view."""
 
     #: Distance (px) from the view's top-left corner.
     MARGIN = 2
@@ -104,8 +104,7 @@ class _CellHeader(QToolButton):
         self.setCursor(Qt.PointingHandCursor)
         from views.theme import style
         style(self, _CHIP)
-        self.setToolTip(tr("Click: change the view · Double-click: "
-                           "this view alone, or the four again"))
+        self.setToolTip(tr("Maximize this view or change it"))
         # Filled as it opens: the window's own view actions (Camera menu,
         # Views bar) stay the only ones with those names, for the shortcut
         # editor and the command search.
@@ -138,10 +137,6 @@ class _CellHeader(QToolButton):
         if act is not None and not act.shortcut().isEmpty():
             text += "\t" + act.shortcut().toString(QKeySequence.NativeText)
         self._maximize_action.setText(text)
-
-    def mouseDoubleClickEvent(self, ev) -> None:  # noqa: N802 — Qt override
-        self._cell.grid.toggle_maximized(self._cell)
-        ev.accept()
 
     def set_active(self, on: bool) -> None:
         if bool(self.property("active")) == bool(on):
@@ -203,6 +198,8 @@ class ViewCell(QWidget):
         if obj is not self.viewport:
             return False
         kind = ev.type()
+        if kind in (QEvent.Enter, QEvent.MouseMove, QEvent.MouseButtonPress):
+            self.grid.set_tool_view(obj)
         # The view clicked or given the keyboard is the one worked in.
         if kind in (QEvent.MouseButtonPress, QEvent.FocusIn):
             self.grid.set_active_cell(self)
@@ -689,6 +686,7 @@ class ViewGrid(QWidget):
         self._layout = "single"
         self._maximized = None
         self._kept_sizes = None
+        self._tool_view = None
         self._follow = _FollowWindow(self)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -774,6 +772,28 @@ class ViewGrid(QWidget):
             self._kept_sizes = (self.columns.sizes(), self.col_a.sizes(),
                                 self.col_b.sizes())
 
+    def set_tool_view(self, viewport) -> None:
+        """The pointer is in ``viewport``: the tool's preview shows there."""
+        if viewport is not self._tool_view:
+            self._tool_view = viewport
+            self._sync_tool_preview()
+
+    def _sync_tool_preview(self) -> None:
+        """A tool's preview in one view only, not one of its own in each. A
+        view gone from sight hands over to the one filling the area, or the
+        window's."""
+        views = [c for c in self.cells if c.viewport is not None]
+        if not any(c.viewport is self._tool_view and not c.isHidden()
+                   for c in views):
+            self._tool_view = (self._maximized.viewport
+                               if self._maximized is not None else self.main)
+        on_all = not self.is_enabled()
+        for cell in views:
+            want = on_all or cell.viewport is self._tool_view
+            if cell.viewport.tool_preview != want:
+                cell.viewport.tool_preview = want
+                cell.viewport.update()
+
     def toggle_maximized_here(self) -> None:
         """Ctrl+Space: back to the others if a view fills the area; else the view
         under the pointer fills it, or the one being worked in, or the
@@ -821,6 +841,10 @@ class ViewGrid(QWidget):
         """The square with arrows comes while the pointer is near a crossing."""
         if self._dragging is not None:
             return
+        # Only with Select in hand: a drawing tool's click there is the tool's.
+        if getattr(self.main.active_tool, "name", "Select") != "Select":
+            self.cross.hide()
+            return
         at = self.mapFromGlobal(global_pos)
         near = [c for c in self.crossings()
                 if (c - at).manhattanLength() <= 2 * self.cross.NEAR
@@ -831,6 +855,33 @@ class ViewGrid(QWidget):
                 near, key=lambda c: (c - at).manhattanLength()))
         else:
             self.cross.hide()
+
+    def lines_state(self) -> dict:
+        """Where the lines are, as shares of the room they split, for the
+        file: with a view maximized, where Restore would put them."""
+        columns, col_a, col_b = self._kept_sizes or (
+            self.columns.sizes(), self.col_a.sizes(), self.col_b.sizes())
+
+        def share(sizes):
+            total = sum(sizes)
+            return sizes[0] / total if len(sizes) == 2 and total > 0 else 0.5
+        return {"columns": share(columns), "rows": [share(col_a), share(col_b)]}
+
+    def apply_lines_state(self, state) -> None:
+        """Put back :meth:`lines_state`; anything odd in it is left alone."""
+        def put(splitter, share):
+            if (isinstance(share, (int, float))
+                    and not isinstance(share, bool) and 0 < share < 1):
+                # Shares, not pixels: setSizes scales them to the room.
+                splitter.setSizes([round(share * 10000),
+                                   round((1 - share) * 10000)])
+        if not isinstance(state, dict):
+            return
+        put(self.columns, state.get("columns"))
+        rows = state.get("rows")
+        if isinstance(rows, (list, tuple)) and len(rows) == 2:
+            put(self.col_a, rows[0])
+            put(self.col_b, rows[1])
 
     def begin_drag(self, dragging) -> None:
         self._dragging = dragging
@@ -893,6 +944,7 @@ class ViewGrid(QWidget):
             half = max(1, self.height() // 2)
             for col in (self.col_a, self.col_b):
                 col.setSizes([half, half])
+        self._sync_tool_preview()
         sync = getattr(self.window(), "_sync_maximize_action", None)
         if sync is not None:
             sync()
