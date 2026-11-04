@@ -168,6 +168,45 @@ def test_a_painted_colour_shows_and_undo_and_redo_too(win, layout):
     assert _red(_pixel(vp))
 
 
+def nested_component_turned(vp):
+    """A matrix that does not round-trip to the bit: the edited definition
+    comes back a hair off, which reads as a tiny translation of its bake."""
+    kid = Group(_box_mesh(0, 0, 0, 2, 2, 2))
+    m = _at(0.008682441711426, -1.4345712661743164, -0.5000573992729187)
+    m.rotate(45.0, 0.0, 0.0, 1.0)
+    kid.xform = m
+    kid.component = "c"
+    other = Group(_box_mesh(5, 5, 0, 6, 6, 1))
+    top = Group(Mesh())
+    top.adopt([kid, other])
+    top.xform = _at(0, 0, 0)
+    vp.scene.groups.append(top)
+    return [top, kid]
+
+
+@pytest.mark.parametrize("layout", LAYOUTS + [nested_component_turned],
+                         ids=lambda l: l.__name__)
+def test_a_paint_stays_on_screen_after_leaving_the_groups(win, layout):
+    """What was seen inside is what is seen outside: an edited component goes
+    back through restore_state, and a bake that took it for a move kept the
+    old material (the letters of the plaza, 04-11)."""
+    vp = win.viewport
+    _open(vp, layout)
+    img = vp.grabFramebuffer()
+    x = (img.width() // 2 + 15) * vp.width() // img.width()
+    y = (img.height() // 2 + 15) * vp.height() // img.height()
+    face = vp.pick_face_any(x, y)[0]
+    assert face is not None
+    vp.history.execute(SetFaceColorCommand([face], (1.0, 0.0, 0.0)))
+    assert _red(_pixel(vp))
+    vp.end_group_edit()
+    assert _red(_pixel(vp))
+    vp.history.undo()
+    assert not _red(_pixel(vp))
+    vp.history.redo()
+    assert _red(_pixel(vp))
+
+
 @every_layout
 def test_a_painted_texture_shows(win, layout, tmp_path):
     vp = win.viewport
