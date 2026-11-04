@@ -27,7 +27,8 @@ _I18N_DIR = app_root() / "i18n"
 
 #: How each language names itself in the Language menu and Preferences.
 LANGUAGE_NAMES = {"en": "English", "es": "Español",
-                  "pt-BR": "Português (Brasil)", "zh-CN": "简体中文", "it": "Italiano",
+                  "pt-BR": "Português (Brasil)", "zh-CN": "简体中文",
+                  "zh-TW": "正體中文", "it": "Italiano",
                   "id": "Bahasa Indonesia", "fr": "Français", "de": "Deutsch",
                   "pl": "Polski", "ru": "Русский", "vi": "Tiếng Việt",
                   "lo": "ລາວ", "th": "ไทย",
@@ -67,14 +68,21 @@ def available_languages() -> list[str]:
                   if p.stem not in HIDDEN_LANGUAGES)
 
 
+#: What in a Chinese locale tag means the traditional script: a system in
+#: Taiwan says ``zh-Hant-TW``, which would read the simplified catalog by its
+#: base language.
+_TRADITIONAL_CHINESE = frozenset({"hant", "tw", "hk", "mo"})
+
+
 def language_for_locales(locales) -> str:
     """The catalog that best serves ``locales`` — the system's UI
     languages, most preferred first (``["pt-PT", "en-US"]``).
 
     An exact tag wins, else the same base language: Portuguese from
     Portugal reads the Brazilian catalog, ``zh-Hans-CN`` the simplified
-    Chinese one. The first locale with any match decides, so an English
-    system stays English; nothing matching at all means English."""
+    Chinese one, and ``zh-Hant-TW`` or ``zh-HK`` the traditional one. The
+    first locale with any match decides, so an English system stays English;
+    nothing matching at all means English."""
     have = available_languages()
     by_tag = {code.lower(): code for code in have}
     by_base: dict[str, str] = {}
@@ -82,7 +90,11 @@ def language_for_locales(locales) -> str:
         by_base.setdefault(code.lower().split("-")[0], code)
     for name in locales:
         tag = str(name).replace("_", "-").lower()
-        found = by_tag.get(tag) or by_base.get(tag.split("-")[0])
+        found = by_tag.get(tag)
+        if not found and _TRADITIONAL_CHINESE.intersection(tag.split("-")[1:]) \
+                and tag.startswith("zh-"):
+            found = by_tag.get("zh-tw")
+        found = found or by_base.get(tag.split("-")[0])
         if found:
             return found
     return "en"
