@@ -57,6 +57,10 @@ class Document:
         #: ``takeCentralWidget`` and that call; None = the viewport itself.
         #: See MainWindow.centralWidget.
         self.stand_in = None
+        #: The view an extension made ``window.viewport`` while this project
+        #: is in front (a split pane), or None. ``viewport`` stays the
+        #: project's own: what is saved comes from there (#1106).
+        self.front_view = None
 
     def slot_widget(self):
         """The widget this project shows in the viewport stack."""
