@@ -387,7 +387,7 @@ def _remap_uvws(mesh, m, faces=None) -> None:
         f.attrs["texture"] = {**t, "uvw": new}
 
 
-def world_mesh(group) -> Mesh:
+def world_mesh(group, placements=None) -> Mesh:
     """A world-space mesh for a group: the mesh itself for classic groups,
     a transformed DEEP copy (positions + texture UV maps) for component
     instances — the shared prototype is never touched. (``capture_state``
@@ -398,15 +398,19 @@ def world_mesh(group) -> Mesh:
     A group's nested placements (``children``) are folded in, each through
     its own transform composed with this one — the group's full geometry,
     which is what every consumer that used to read ``group.mesh`` directly
-    needs once a component keeps its internal sharing."""
+    needs once a component keeps its internal sharing.
+
+    ``placements`` (``(group, world_matrix)`` pairs, as
+    :func:`iter_placements` yields them) folds in only those: what
+    :func:`visible_placements` returns, for a consumer that draws."""
     m = getattr(group, "xform", None)
     kids = getattr(group, "children", None)
     if not kids:
         return group.mesh if m is None else transformed_mesh(group.mesh, m)
-    return _merged_placements(group)
+    return _merged_placements(group, placements)
 
 
-def _merged_placements(group) -> Mesh:
+def _merged_placements(group, placements=None) -> Mesh:
     """Every placement of ``group`` welded into ONE mesh, in a single
     vectorized pass.
 
@@ -425,7 +429,8 @@ def _merged_placements(group) -> Mesh:
     ring_sizes: list = []
     ring_counts: list = []
     attrs_list: list = []
-    for g, m in iter_placements(group):
+    for g, m in (iter_placements(group) if placements is None
+                 else placements):
         src = g.mesh
         epts: list = []
         fpts: list = []
@@ -501,6 +506,47 @@ def iter_placements(group, base=None):
     yield group, m
     for child in getattr(group, "children", None) or ():
         yield from iter_placements(child, m)
+
+
+def visible_placements(scene, group):
+    """:func:`iter_placements` without the nested placements the viewport
+    does not draw, for a top-level ``group`` the caller already found
+    visible.
+
+    The same rule as ``Viewport._expand_placements``: Hide on a group takes
+    its whole subtree along; a nested group with no tag of its own takes the
+    nearest one above it; and a hidden or locked tag above puts every
+    instance below it on that tag, whatever its children are tagged. A
+    hidden group two levels down drew in a sheet while the viewport left it
+    out, because :func:`world_mesh` folds in every child."""
+    def shown(layer):
+        ly = scene.layer(layer) if layer else None
+        return ly is None or ly.visible
+
+    def blocking(layer):
+        ly = scene.layer(layer) if layer else None
+        return ly is not None and (not ly.visible or ly.locked)
+
+    def walk(node, world, hidden, forced, inherited):
+        for child in node.children:
+            m = (child.xform if world is None
+                 else (world * child.xform if child.xform is not None
+                       else world))
+            layer = forced or child.layer or inherited or node.layer
+            off = hidden or bool(child.hidden)
+            if not off and shown(layer):
+                yield child, m
+            if child.children:
+                kid_forced = forced
+                if kid_forced is None and blocking(layer):
+                    kid_forced = layer
+                yield from walk(child, m, off, kid_forced, layer)
+
+    m = getattr(group, "xform", None)
+    yield group, m
+    if getattr(group, "children", None):
+        forced = group.layer if blocking(group.layer) else None
+        yield from walk(group, m, bool(group.hidden), forced, None)
 
 
 def _copy_mesh(mesh) -> Mesh:

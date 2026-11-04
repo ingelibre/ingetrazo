@@ -73,7 +73,7 @@ def collect_geometry(scene, layers: bool = False):
     its line is inked with on a sheet — its own, else its object's (the
     insides of an object follow the object): ``(tris, hard, soft,
     hard_layers, soft_layers)``."""
-    from core.group import world_mesh
+    from core.group import visible_placements, world_mesh
     from core.layers import DEFAULT_LAYER, layer_of
 
     tris: list = []
@@ -118,9 +118,14 @@ def collect_geometry(scene, layers: bool = False):
     for g in scene.groups:
         if not scene.entity_visible(g) or getattr(g, "billboard", False):
             continue
-        mesh = (world_mesh(g) if g.xform is not None or g.children
-                else g.mesh)
-        eat_mesh(mesh, owner=layer_of(g))
+        if g.children:
+            mesh = world_mesh(g, visible_placements(scene, g))
+        else:
+            mesh = world_mesh(g) if g.xform is not None else g.mesh
+        # A face hidden inside a group (Edit ▸ Hide) leaves the group's
+        # chunk in the viewport; it leaves the sheet too.
+        eat_mesh(mesh, visible=lambda e: not scene.entity_hidden(e),
+                 owner=layer_of(g))
     if layers:
         return tris, hard, soft, hard_l, soft_l
     return tris, hard, soft
@@ -137,7 +142,7 @@ def collect_circles(scene) -> list:
     (Marco, 2026-09-20: «como que no reconoce el centro de un círculo»).
     The same curve on two faces (a hole and the pipe through it) is
     reported once."""
-    from core.group import iter_placements
+    from core.group import visible_placements
     from core.snap import curve_centers_of_face
 
     out: list = []
@@ -166,7 +171,7 @@ def collect_circles(scene) -> list:
     for g in scene.groups:
         if not scene.entity_visible(g) or getattr(g, "billboard", False):
             continue
-        for placed, m in iter_placements(g):
+        for placed, m in visible_placements(scene, g):
             eat(placed.mesh, m)
     return out
 
