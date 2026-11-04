@@ -102,3 +102,28 @@ def test_a_move_over_a_face_lands_on_it_not_on_a_reference_in_the_air():
     r = _hover(vp, ref + V(1, 0, 0))           # floats 5 m before the wall
     assert r.kind == "on_face"
     assert abs(r.point.y() - 5.0) < 1e-3
+
+
+def test_an_arrow_before_the_first_click_leaves_the_corner_to_click():
+    """The arrow says which way the line runs from the corner about to be
+    clicked. A corner paused on earlier must not take that corner away."""
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+
+    vp = _vp()
+    vp.scene.mesh.add_edge(V(0, 0, 0), V(1, 0, 2))
+    vp.scene.mesh.add_edge(V(4, 3, 0), V(4, 3, 1))
+    t = LineTool()
+    vp.active_tool = t
+    t.on_activate(vp)
+    assert _hover(vp, V(1, 0, 2)).kind == "endpoint"
+    vp._encourage_dwelt()
+    vp.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Right, Qt.NoModifier))
+    r = _hover(vp, V(4, 3, 0))
+    assert r.kind == "endpoint"
+    assert (r.point - V(4, 3, 0)).length() < 1e-6
+    x, y = vp._world_to_pixel(V(4, 3, 0))
+    t.on_click(vp._build_ctx(_HoverEvent(QPointF(x, y), Qt.NoModifier)))
+    r = _hover(vp, V(6, 3.5, 0))               # and the arrow holds from there
+    assert r.kind == "axis" and r.axis == "x"
+    assert abs(r.point.y() - 3.0) < 1e-6

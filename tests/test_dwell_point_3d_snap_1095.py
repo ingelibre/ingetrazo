@@ -256,7 +256,7 @@ def test_an_axis_lock_before_the_first_click_anchors_on_the_dwell():
     r = compute_snap(
         cand, w2p(cand), scene, w2p, threshold_px=9.0, edge_threshold_px=14.0,
         start_point=None, project_onto_line=project,
-        axis_lock="y", acquired_point=dwell,
+        axis_lock="y", acquired_point=dwell, dwell_axis_lock=True,
     )
     assert r.kind == "axis" and r.axis == "y"
     assert (r.point - V(0, 2.5, 1.87)).length() < 1e-3

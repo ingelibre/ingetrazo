@@ -1610,6 +1610,7 @@ def compute_snap(
     axis_in_plane: bool = False,
     free_3d: bool = False,
     sticky_axis: Optional[str] = None,
+    dwell_axis_lock: bool = False,
     hover_lock_edge=None,
     hover_lock_plane: Optional[tuple] = None,
     face_crossing: Optional[Callable[[], Optional[tuple]]] = None,
@@ -1709,8 +1710,8 @@ def compute_snap(
     #     yet, an arrow key constrains the first click to the encouraged
     #     point's own axis line, so a line starts 'level with' the dwell. The
     #     point snaps a lock normally offers stay available on that line.
-    if (axis_lock and start_point is None and acquired_point is not None
-            and project_onto_line is not None):
+    if (dwell_axis_lock and axis_lock and start_point is None
+            and acquired_point is not None and project_onto_line is not None):
         axis_dir = _AXIS_VECTORS[axis_lock]
         cx, cy = candidate_pixel
         hit = _lock_line_snaps(

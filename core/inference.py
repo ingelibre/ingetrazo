@@ -48,6 +48,11 @@ def _no_snap_fast() -> bool:
 #: draw a free line at 10° once the cursor has crossed the axis.
 #: ``INGETRAZO_STICKY_AXIS=1`` turns it on to try it by hand.
 _STICKY_AXIS = os.environ.get("INGETRAZO_STICKY_AXIS", "") == "1"
+#: An arrow pressed before the first click (#1095) is also held back: it says
+#: which way the line will run from the corner about to be clicked, and anchoring
+#: it on the last corner paused on takes that corner away.
+#: ``INGETRAZO_DWELL_ARROW=1`` turns it on to try it by hand.
+_DWELL_ARROW = os.environ.get("INGETRAZO_DWELL_ARROW", "") == "1"
 
 
 def _magnet_may_leave_plane(tool) -> bool:
@@ -267,6 +272,7 @@ class InferenceEngine:
             free_3d=(not _tool_is_planar(tool)
                      and not getattr(tool, "prefers_vertical_drag", False)),
             sticky_axis=self._sticky_axis if _STICKY_AXIS else None,
+            dwell_axis_lock=_DWELL_ARROW,
             face_crossing=(lambda: vp._face_crossing_point(px_x, px_y))
             if hasattr(vp, "_face_crossing_point") else None,
             face_outline=(lambda: vp._face_outline_world(px_x, px_y))
