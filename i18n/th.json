@@ -3318,5 +3318,8 @@
  "Triangle": "สามเหลี่ยม",
  "Watermark settings": "การตั้งค่าลายน้ำ",
  "Watermark settings are not available yet.": "การตั้งค่าลายน้ำยังไม่พร้อมใช้งาน",
- "Edge extensions": "การยืดขอบ"
+ "Edge extensions": "การยืดขอบ",
+ "Layer line": "เส้นของเลเยอร์",
+ "Square, extended by a quarter of the width": "ปลายเหลี่ยม ยื่นออกหนึ่งในสี่ของความหนา",
+ "Round, extended by a quarter of the width": "ปลายมน ยื่นออกหนึ่งในสี่ของความหนา"
 }

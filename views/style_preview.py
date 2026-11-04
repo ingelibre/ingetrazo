@@ -102,6 +102,7 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                         (left[2], left[1], 2), (right[1], right[2], 2),
                         (right[2], right[3], 1))
             outline = {0, 3, 4, 5, 7, 8}
+            markers = {}
             for index, (a, b, axis) in enumerate(segments):
                 if not style.edges and mode not in ("wireframe", "xray") and index not in outline:
                     continue
@@ -124,8 +125,8 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                     continue
                 cap = style.profile_cap if style.profiles and index in outline else "butt"
                 if cap in ("square", "round_extended"):
-                    start -= width / 2
-                    end += width / 2
+                    start -= width / 4
+                    end += width / 4
                 painter.save()
                 painter.translate(*a)
                 painter.rotate(math.degrees(math.atan2(dy, dx)))
@@ -144,15 +145,21 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                             if hi > lo:
                                 painter.drawRect(QRectF(lo, -width / 2 - 1, hi - lo, width + 2))
                     else:
-                        r = style.endpoint_size / 2
-                        for x in (max(0, start), min(length, end)):
-                            if style.endpoint_type == "round":
-                                painter.drawEllipse(QPointF(x, 0), r, r)
-                            elif style.endpoint_type == "square":
-                                painter.drawRect(QRectF(x - r, -r, r * 2, r * 2))
-                            else:
-                                painter.drawPolygon(_polygon([(x, -r), (x + r, r), (x - r, r)]))
+                        for point in (a, b):
+                            markers.setdefault(tuple(point), color)
                 painter.restore()
+            # Draw one marker per sample vertex after the strokes, using the
+            # screen axes just like the viewport's separate marker pass.
+            r = style.endpoint_size / 2
+            painter.setPen(Qt.NoPen)
+            for (x, y), color in markers.items():
+                painter.setBrush(color)
+                if style.endpoint_type == "round":
+                    painter.drawEllipse(QPointF(x, y), r, r)
+                elif style.endpoint_type == "square":
+                    painter.drawRect(QRectF(x - r, y - r, r * 2, r * 2))
+                else:
+                    painter.drawPolygon(_polygon([(x, y - r), (x + r, y + r), (x - r, y + r)]))
     finally:
         painter.end()
     return pixmap

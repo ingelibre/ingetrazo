@@ -3350,5 +3350,8 @@
  "Triangle": "مثلث",
  "Watermark settings": "إعدادات العلامة المائية",
  "Watermark settings are not available yet.": "إعدادات العلامة المائية غير متاحة بعد.",
- "Edge extensions": "تمديد الحواف"
+ "Edge extensions": "تمديد الحواف",
+ "Layer line": "خط الطبقة",
+ "Square, extended by a quarter of the width": "مربعة، ممتدة بربع السماكة",
+ "Round, extended by a quarter of the width": "دائرية، ممتدة بربع السماكة"
 }

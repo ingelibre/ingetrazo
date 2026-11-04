@@ -8,7 +8,7 @@ from PySide6.QtGui import QMatrix4x4, QVector2D, QVector3D, QVector4D
 from PySide6.QtOpenGL import QOpenGLBuffer, QOpenGLShader, QOpenGLShaderProgram
 from PySide6.QtOpenGL import QOpenGLVertexArrayObject
 
-from core.edge_style import EDGE_FLOATS, edge_vertices
+from core.edge_style import EDGE_FLOATS, AXIS_COLORS, edge_vertices, marker_candidates
 from core.group import effective_material
 from core.layers import DEFAULT_LAYER
 from core.materials import material_sig
@@ -38,6 +38,8 @@ class EdgeRenderer:
         self.geometry = {}
         self.batches = []
         self.batch_key = None
+        self.marker_batches = []
+        self.marker_key = None
 
     def loc(self, name):
         if name not in self.locations:
@@ -86,12 +88,12 @@ class EdgeRenderer:
         matrix_buffer.release()
         vao.release()
         # Eight local bounds corners per instance suffice for a stable scene
-        # depth interval, without keeping a second copy of every edge on CPU.
+        # depth interval. Marker eligibility is evaluated only on view changes.
         corners = geometry["corners"]
         transforms = np.asarray(matrices).reshape((-1, 4, 4)).transpose(0, 2, 1)
         world = np.einsum("nij,kj->nki", transforms, corners)[..., :3].reshape((-1, 3))
         return {"vao": vao, "matrices": matrix_buffer, "instances": len(matrices),
-                "corners": world,
+                "corners": world, "transforms": transforms, "source": geometry,
                 "count": geometry["count"], "fade": fade}
 
     def _clear_batches(self):
@@ -100,6 +102,16 @@ class EdgeRenderer:
             batch["vao"].deleteLater()
             batch["matrices"].destroy()
         self.batches = []
+        self._clear_markers()
+
+    def _clear_markers(self):
+        for batch in self.marker_batches:
+            batch["vao"].destroy()
+            batch["vao"].deleteLater()
+            batch["matrices"].destroy()
+            batch["source"]["vbo"].destroy()
+        self.marker_batches = []
+        self.marker_key = None
 
     def clear(self):
         """Release a document's buffers with the owning GL context current."""
@@ -111,10 +123,12 @@ class EdgeRenderer:
 
     def forget_context(self):
         """Drop Qt wrappers after their GL context has already gone away."""
-        for batch in self.batches:
+        for batch in self.batches + self.marker_batches:
             batch["vao"].deleteLater()
         self.program.deleteLater()
         self.batches = []
+        self.marker_batches = []
+        self.marker_key = None
         self.geometry.clear()
         self.batch_key = None
 
@@ -164,7 +178,8 @@ class EdgeRenderer:
             if geometry is None:
                 data = edge_vertices(mesh, scene, paint, layer, vp._texture_avg_color)
                 geometry = {"vbo": self._buffer(data.tobytes(), QOpenGLBuffer.StaticDraw),
-                            "count": len(data), "mesh": mesh}
+                            "count": len(data), "mesh": mesh,
+                            "paint": paint, "layer": layer, "marker_data": None}
                 lo = data[:, :3].min(axis=0) if len(data) else np.zeros(3)
                 hi = data[:, :3].max(axis=0) if len(data) else lo
                 geometry["corners"] = np.array([
@@ -176,6 +191,81 @@ class EdgeRenderer:
                 self.batches.append(self._make_batch(geometry, matrices, fade))
         for old in list(self.geometry.keys() - live):
             self.geometry.pop(old)["vbo"].destroy()
+
+    def _sync_markers(self, mvp, width, height, style, mode):
+        """One screen-aligned marker per world vertex, across all placements.
+
+        Cache this stream until the camera, geometry or edge visibility changes.
+        The original instanced edge buffers remain untouched.
+        """
+        from core import axes
+        vp = self.viewport
+        basis = np.asarray([axes.as_tuple(axis) for axis in ("x", "y", "z")])
+        key = (tuple(mvp.data()), width, height, style.edges, style.profiles,
+               mode, style.edge_color_mode, tuple(style.edge_color), tuple(basis.flat))
+        if key == self.marker_key:
+            return
+        self._clear_markers()
+        self.marker_key = key
+        eye = np.asarray(vp.camera.eye().toTuple())
+        forward = np.asarray(vp.camera.forward().toTuple())
+        streams, fades = [], []
+        # Prefer an actively edited edge to a faded neighbour at the same point.
+        for batch in sorted(self.batches, key=lambda b: b["fade"]):
+            source = batch["source"]
+            if source["marker_data"] is None:
+                source["marker_data"] = edge_vertices(
+                    source["mesh"], vp.scene, source["paint"], source["layer"], vp._texture_avg_color)
+            for transform in batch["transforms"]:
+                data = marker_candidates(source["marker_data"], transform, style, mode,
+                                         eye, forward, vp.camera.perspective)
+                if not len(data):
+                    continue
+                # A segment projected to a point has no visible stroke to mark.
+                matrix = np.asarray(mvp.data()).reshape(4, 4).T
+                clip = np.c_[data[:, :3], np.ones(len(data))] @ matrix.T
+                ndc = clip[:, :2] / np.maximum(clip[:, 3:4], 1e-7)
+                visible = np.linalg.norm(np.diff(ndc.reshape((-1, 2, 2)), axis=1)[:, 0], axis=1) > 1e-7
+                data = data.reshape((-1, 2, EDGE_FLOATS))[visible].reshape((-1, EDGE_FLOATS))
+                if style.edge_color_mode == "axis" and len(data):
+                    direction = np.diff(data[:, :3].reshape((-1, 2, 3)), axis=1)[:, 0]
+                    direction /= np.maximum(np.linalg.norm(direction, axis=1)[:, None], 1e-12)
+                    dots = np.abs(direction @ basis.T)
+                    color = np.broadcast_to(style.edge_color, (len(direction), 3)).copy()
+                    aligned = dots.max(axis=1) >= 0.999999
+                    color[aligned] = np.asarray(AXIS_COLORS)[dots[aligned].argmax(axis=1)]
+                    data[:, 3:6] = np.repeat(color, 2, axis=0)
+                streams.append(data)
+                fades.append(np.full(len(data), batch["fade"]))
+        if not streams:
+            return
+        data = np.concatenate(streams)
+        fade = np.concatenate(fades)
+        _points, first, inverse_ids = np.unique(data[:, :3], axis=0, return_index=True, return_inverse=True)
+        if not len(first):
+            return
+        # Bound every incident face's slope. The single marker must cover the
+        # junction's faces as reliably as the former overlapping edge quads.
+        inverse, _ok = mvp.inverted()
+        plane_matrix = np.asarray(inverse.data()).reshape(4, 4).T
+        slopes = np.zeros((len(data), 2))
+        for column in (6, 9):
+            normals = data[:, column:column + 3]
+            planes = np.c_[normals, -np.sum(normals * data[:, :3], axis=1)] @ plane_matrix
+            valid = np.abs(planes[:, 2]) > 1e-8
+            slopes[valid] = np.maximum(slopes[valid], np.abs(
+                planes[valid, :2] / planes[valid, 2:3]) * (2.0 / np.array([width, height])))
+        bounds = np.zeros((len(first), 2))
+        np.maximum.at(bounds, inverse_ids, slopes)
+        markers = data[first].copy()
+        markers[:, 15:17] = bounds
+        identity = list(QMatrix4x4().data())
+        for opacity in np.unique(fade[first]):
+            # A line invocation whose two inputs coincide emits one marker quad.
+            packed = np.repeat(markers[fade[first] == opacity], 2, axis=0)
+            geometry = {"vbo": self._buffer(packed.tobytes(), QOpenGLBuffer.StaticDraw),
+                        "count": len(packed), "corners": np.zeros((1, 4))}
+            self.marker_batches.append(self._make_batch(geometry, [identity], float(opacity)))
 
     def draw(self, mvp, width, height, style, mode, fade_color=None):
         """Draw visible edges and optional hidden edges, restoring the main program."""
@@ -228,6 +318,9 @@ class EdgeRenderer:
             axes.sync(vp.scene.drawing_frame)
             for index, axis in enumerate(("x", "y", "z")):
                 self.vector(f"u_axis{index}", axes.as_tuple(axis))
+            markers = style.endpoints and style.endpoint_type != "default"
+            if markers:
+                self._sync_markers(mvp, width, height, style, mode)
             self.vector("u_fade_color", style.background if fade_color is None else fade_color)
             plane = getattr(vp, "_clip_vec", None)
             self.integer("u_clip_enable", plane is not None)
@@ -246,15 +339,20 @@ class EdgeRenderer:
             passes = [(False, 0.0)]
             if xray or (style.back_edges and mode != "wireframe"):
                 passes.insert(0, (True, 0.6 if xray else 0.0))
-            for hidden, hidden_fade in passes:
-                self.integer("u_hidden", hidden)
-                self.number("u_hidden_fade", hidden_fade)
-                gl.glDepthFunc(GL_GREATER if hidden else GL_LEQUAL)
-                for batch in self.batches:
-                    self.number("u_fade", batch["fade"])
-                    batch["vao"].bind()
-                    extra.glDrawArraysInstanced(GL_LINES, 0, batch["count"], batch["instances"])
-                    batch["vao"].release()
+            streams = [(False, self.batches)]
+            if markers:
+                streams.append((True, self.marker_batches))
+            for marker_pass, batches in streams:
+                self.integer("u_marker_pass", marker_pass)
+                for hidden, hidden_fade in passes:
+                    self.integer("u_hidden", hidden)
+                    self.number("u_hidden_fade", hidden_fade)
+                    gl.glDepthFunc(GL_GREATER if hidden else GL_LEQUAL)
+                    for batch in batches:
+                        self.number("u_fade", batch["fade"])
+                        batch["vao"].bind()
+                        extra.glDrawArraysInstanced(GL_LINES, 0, batch["count"], batch["instances"])
+                        batch["vao"].release()
         finally:
             gl.glBlendFunc(0x0302, 0x0303)
             gl.glDepthFunc(GL_LEQUAL)

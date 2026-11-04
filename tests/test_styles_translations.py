@@ -79,7 +79,7 @@ def test_french_editor_uses_translated_labels_and_shape_descriptions(tmp_path, m
         assert panel._depth_cue.text() == "Profondeur"
         assert panel._endpoints.text() == "Extrémités"
         assert panel._extensions.text() == "Prolongements"
-        assert panel._dashes.text() == "Tirets"
+        assert panel._dashes.text() == "Ligne du calque"
         assert panel._edge_color_mode.itemText(0) == "Toutes identiques"
         assert panel._profile_caps.button(1).toolTip() == "Ronde, à ras"
         assert panel._endpoint_types.button(1).toolTip() == "Point rond"

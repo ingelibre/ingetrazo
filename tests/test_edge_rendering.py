@@ -182,7 +182,7 @@ def test_negative_extensions_retract_both_ends_without_reversing_short_lines(dra
     assert not _ink(render(_style(extensions=True, extension_length=-50))).any()
 
 
-def test_profile_caps_have_flush_or_half_width_extents_and_distinct_corners(drawing):
+def test_profile_caps_have_flush_or_quarter_width_extents_and_distinct_corners(drawing):
     vp, render, _renderer = drawing
     _line(vp)
     masks = {cap: _ink(render(_style(profiles=True, profile_width=12, profile_cap=cap)))
@@ -192,8 +192,8 @@ def test_profile_caps_have_flush_or_half_width_extents_and_distinct_corners(draw
         assert bounds[cap][0] == pytest.approx(bounds["butt"][0], abs=1)
         assert bounds[cap][-1] == pytest.approx(bounds["butt"][-1], abs=1)
     for cap in ("square", "round_extended"):
-        assert bounds[cap][0] == pytest.approx(bounds["butt"][0] - 6, abs=1)
-        assert bounds[cap][-1] == pytest.approx(bounds["butt"][-1] + 6, abs=1)
+        assert bounds[cap][0] == pytest.approx(bounds["butt"][0] - 3, abs=1)
+        assert bounds[cap][-1] == pytest.approx(bounds["butt"][-1] + 3, abs=1)
     assert masks["round"].sum() < masks["butt"].sum() - 20
     assert masks["round_extended"].sum() < masks["square"].sum() - 20
 
@@ -226,6 +226,82 @@ def test_clipped_ends_get_neither_markers_nor_extended_profile_caps(drawing):
     assert not mask[:, :WIDTH // 2 - 1].any()
     assert mask[:, WIDTH // 2 + 2].sum() <= 5
     assert mask.sum(axis=0).max() >= 20
+
+
+@pytest.mark.parametrize("kind", ["round", "square", "triangle"])
+def test_junction_has_one_screen_aligned_marker_for_all_branches(drawing, kind):
+    vp, render, renderer = drawing
+    for end in (V(-1, 0, 0), V(0.7, 0, 0.7), V(0.4, 0, -0.8)):
+        vp.scene.mesh.add_edge(V(0, 0, 0), end)
+    vp.scene.version += 1
+    plain = _ink(render(_style()))
+    marked = _ink(render(_style(endpoints=True, endpoint_type=kind, endpoint_size=20)))
+    # Three branches, four vertices: only four marker quads, not six.
+    assert sum(batch["count"] // 2 for batch in renderer.marker_batches) == 4
+    ys, xs = np.mgrid[-14:14, -14:14] + 0.5
+    added = (marked & ~plain)[HEIGHT // 2 - 14:HEIGHT // 2 + 14,
+                              WIDTH // 2 - 14:WIDTH // 2 + 14]
+    if kind == "round":
+        allowed = np.hypot(xs, ys) <= 10.6
+    elif kind == "square":
+        allowed = np.maximum(abs(xs), abs(ys)) <= 10.6
+    else:
+        allowed = (ys <= 10.6) & (ys + 10 - 2 * abs(xs) >= -1.3)
+    assert added.any()
+    assert not (added & ~allowed).any()
+
+
+def test_markers_deduplicate_touching_instances_and_rebuild_only_when_needed(drawing):
+    vp, render, renderer = drawing
+    _line(vp)
+    group = Group()
+    group.mesh.add_edge(V(1, 0, 0), V(1, 0, 1))
+    vp.scene.groups.append(group)
+    vp.scene.version += 1
+    style = _style(endpoints=True, endpoint_type="square")
+    render(style)
+    assert sum(batch["count"] // 2 for batch in renderer.marker_batches) == 3
+    batch = renderer.marker_batches[0]
+    render(style)
+    assert renderer.marker_batches[0] is batch
+    style.endpoint_type = "triangle"
+    render(style)
+    assert renderer.marker_batches[0] is batch
+    vp.camera.set_view("iso")
+    render(style)
+    assert renderer.marker_batches[0] is not batch
+    renderer.clear()
+    assert renderer.marker_batches == []
+
+
+def test_hidden_or_unrendered_soft_edges_do_not_steal_a_junction_marker(drawing):
+    vp, render, renderer = drawing
+    mesh = vp.scene.mesh
+    hidden = mesh.add_edge(V(0, 0, 0), V(-1, 0, 0))
+    hidden.hidden = True
+    soft = mesh.add_edge(V(0, 0, 0), V(0, 0, 1))
+    soft.soft = True
+    mesh.add_edge(V(0, 0, 0), V(1, 0, 0))
+    vp.scene.version += 1
+    render(_style(endpoints=True, endpoint_type="square"))
+    assert sum(batch["count"] // 2 for batch in renderer.marker_batches) == 2
+
+
+def test_profiles_only_filters_marker_owners_at_soft_silhouettes(drawing):
+    vp, render, renderer = drawing
+    mesh = vp.scene.mesh
+    a, b = V(0, 0, -1), V(0, 0, 1)
+    mesh.add_face([a, b, V(1, 1, 1), V(1, 1, -1)])
+    mesh.add_face([b, a, V(1, -1, -1), V(1, -1, 1)])
+    for edge in mesh.edges:
+        edge.soft = True
+    vp.scene.version += 1
+    style = _style(edges=False, profiles=True, endpoints=True, endpoint_type="square")
+    render(style)
+    assert renderer.marker_batches
+    style.profiles = False
+    assert not _ink(render(style)).any()
+    assert renderer.marker_batches == []
 
 
 def test_dashes_follow_layers_and_switch_off_without_repainting_geometry(drawing):

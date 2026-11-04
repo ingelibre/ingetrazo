@@ -3316,5 +3316,8 @@
  "Triangle": "三角形",
  "Watermark settings": "水印设置",
  "Watermark settings are not available yet.": "水印设置尚不可用。",
- "Edge extensions": "边线延长"
+ "Edge extensions": "边线延长",
+ "Layer line": "图层线型",
+ "Square, extended by a quarter of the width": "方头，延长四分之一个线宽",
+ "Round, extended by a quarter of the width": "圆头，延长四分之一个线宽"
 }

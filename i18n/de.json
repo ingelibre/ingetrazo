@@ -3315,5 +3315,8 @@
  "Triangle": "Dreieck",
  "Watermark settings": "Wasserzeicheneinstellungen",
  "Watermark settings are not available yet.": "Wasserzeicheneinstellungen sind noch nicht verfügbar.",
- "Edge extensions": "Kantenverlängerung"
+ "Edge extensions": "Kantenverlängerung",
+ "Layer line": "Ebenenlinie",
+ "Square, extended by a quarter of the width": "Eckig, um ein Viertel der Strichbreite verlängert",
+ "Round, extended by a quarter of the width": "Rund, um ein Viertel der Strichbreite verlängert"
 }

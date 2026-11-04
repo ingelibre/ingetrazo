@@ -3315,5 +3315,8 @@
  "Triangle": "삼각형",
  "Watermark settings": "워터마크 설정",
  "Watermark settings are not available yet.": "워터마크 설정은 아직 사용할 수 없습니다.",
- "Edge extensions": "모서리 연장"
+ "Edge extensions": "모서리 연장",
+ "Layer line": "레이어 선",
+ "Square, extended by a quarter of the width": "사각형, 선 두께의 4분의 1만큼 연장",
+ "Round, extended by a quarter of the width": "원형, 선 두께의 4분의 1만큼 연장"
 }

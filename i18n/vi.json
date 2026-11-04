@@ -3342,5 +3342,8 @@
  "Triangle": "Tam giác",
  "Watermark settings": "Thiết lập hình mờ",
  "Watermark settings are not available yet.": "Thiết lập hình mờ chưa khả dụng.",
- "Edge extensions": "Kéo dài cạnh"
+ "Edge extensions": "Kéo dài cạnh",
+ "Layer line": "Đường của lớp",
+ "Square, extended by a quarter of the width": "Vuông, kéo dài thêm một phần tư độ dày",
+ "Round, extended by a quarter of the width": "Tròn, kéo dài thêm một phần tư độ dày"
 }

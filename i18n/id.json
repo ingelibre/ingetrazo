@@ -3318,5 +3318,8 @@
  "Triangle": "Segitiga",
  "Watermark settings": "Pengaturan tanda air",
  "Watermark settings are not available yet.": "Pengaturan tanda air belum tersedia.",
- "Edge extensions": "Perpanjangan rusuk"
+ "Edge extensions": "Perpanjangan rusuk",
+ "Layer line": "Garis lapisan",
+ "Square, extended by a quarter of the width": "Persegi, diperpanjang seperempat ketebalan",
+ "Round, extended by a quarter of the width": "Bulat, diperpanjang seperempat ketebalan"
 }

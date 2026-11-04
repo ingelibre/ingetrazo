@@ -3315,5 +3315,8 @@
  "Triangle": "Треугольник",
  "Watermark settings": "Настройки водяных знаков",
  "Watermark settings are not available yet.": "Настройки водяных знаков пока недоступны.",
- "Edge extensions": "Продление рёбер"
+ "Edge extensions": "Продление рёбер",
+ "Layer line": "Линия слоя",
+ "Square, extended by a quarter of the width": "Квадратное, с выступом на четверть толщины",
+ "Round, extended by a quarter of the width": "Круглое, с выступом на четверть толщины"
 }

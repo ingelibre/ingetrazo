@@ -3315,5 +3315,8 @@
  "Triangle": "Triángulo",
  "Watermark settings": "Configuración de marcas de agua",
  "Watermark settings are not available yet.": "La configuración de marcas de agua aún no está disponible.",
- "Edge extensions": "Prolongaciones"
+ "Edge extensions": "Prolongaciones",
+ "Layer line": "Línea de capa",
+ "Square, extended by a quarter of the width": "Cuadrado, prolongado un cuarto de la anchura",
+ "Round, extended by a quarter of the width": "Redondo, prolongado un cuarto de la anchura"
 }

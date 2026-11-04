@@ -3315,5 +3315,8 @@
  "Triangle": "三角形",
  "Watermark settings": "透かし設定",
  "Watermark settings are not available yet.": "透かし設定はまだ利用できません。",
- "Edge extensions": "エッジの延長"
+ "Edge extensions": "エッジの延長",
+ "Layer line": "レイヤーの線",
+ "Square, extended by a quarter of the width": "角型、線幅の4分の1だけ延長",
+ "Round, extended by a quarter of the width": "丸型、線幅の4分の1だけ延長"
 }

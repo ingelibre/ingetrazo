@@ -40,6 +40,32 @@ def axis_color(direction, fallback, axes=None):
     return AXIS_COLORS[axis] if dots[axis] >= 1.0 - 1e-6 else fallback
 
 
+def marker_candidates(data, transform, style, mode, eye, forward, perspective):
+    """World-space endpoints of drawn edges, before deduplicating junctions.
+
+    Match the geometry shader's soft-edge and silhouette rules, so a hidden
+    soft edge cannot own (and thereby suppress) another edge's marker.
+    """
+    linear = transform[:3, :3]
+    normal = (np.linalg.inv(linear).T if abs(np.linalg.det(linear)) > 1e-12
+              else np.eye(3))
+    world = data.copy()
+    world[:, :3] = data[:, :3] @ linear.T + transform[:3, 3]
+    world[:, 6:9] = data[:, 6:9] @ normal.T
+    world[:, 9:12] = data[:, 9:12] @ normal.T
+    pairs = world.reshape((-1, 2, EDGE_FLOATS))
+    toward = (eye - pairs[:, :, :3].mean(axis=1) if perspective
+              else np.broadcast_to(-forward, (len(pairs), 3)))
+    first = pairs[:, 0]
+    profile = ((first[:, 13] > 0.5)
+               | (np.sum(first[:, 6:9] * toward, axis=1)
+                  * np.sum(first[:, 9:12] * toward, axis=1) < 0))
+    silhouettes = style.profiles & profile
+    shown = ((first[:, 12] < 0.5) | silhouettes)
+    shown &= (style.edges or mode == "wireframe") | silhouettes
+    return np.ascontiguousarray(pairs[shown].reshape((-1, EDGE_FLOATS)))
+
+
 def _paint_color(attrs, average):
     color = attrs.get("color")
     texture = attrs.get("texture")

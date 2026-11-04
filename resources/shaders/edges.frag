@@ -14,6 +14,7 @@ flat in vec2 g_depth_along;
 uniform float u_endpoint;
 uniform int u_endpoint_type;
 uniform float u_endpoint_size;
+uniform int u_marker_pass;
 uniform float u_scale;
 uniform int u_dashes;
 uniform int u_hidden;
@@ -27,10 +28,10 @@ out vec4 fragColor;
 float marker(vec2 point, float radius) {
     if (u_endpoint_type == 1) return radius - length(point);
     if (u_endpoint_type == 2) return radius - max(abs(point.x), abs(point.y));
-    return min(radius - point.y, (point.y + radius - 2.0 * abs(point.x)) / sqrt(5.0));
+    return min(radius + point.y, (radius - point.y - 2.0 * abs(point.x)) / sqrt(5.0));
 }
 
-void main() {
+float stroke_coverage() {
     float along = g_pixel.x;
     bool gap = false;
     if (u_hidden == 1 && u_hidden_fade < 0.01) {
@@ -58,7 +59,7 @@ void main() {
     float distance = min(radius - abs(g_pixel.y), min(along - g_limits.x, g_limits.y - along));
     if (g_cap == 1 || g_cap == 3) {
         // Flush rounded ends fit inside the requested length. Extended
-        // rounded ends use the same capsule, with limits moved by half-width.
+        // rounded ends use the same capsule, with a quarter-width overhang.
         float rx = min(radius, (g_limits.y - g_limits.x) * 0.5);
         float center = clamp(along, g_limits.x + rx, g_limits.y - rx);
         bool at_cut = (g_caps.x < 0.5 && along < g_limits.x + rx)
@@ -66,20 +67,20 @@ void main() {
         if (!at_cut) distance = (1.0 - length(vec2((along - center) / max(rx, 1e-4),
                                                   g_pixel.y / radius))) * min(rx, radius);
     }
-    float coverage = gap ? 0.0 : clamp(distance + 0.5, 0.0, 1.0);
-    if (u_endpoint > 0.0 && u_endpoint_type != 0) {
-        float r = u_endpoint_size * u_scale * 0.5;
-        float start = max(0.0, g_limits.x), end = min(g_length, g_limits.y);
-        float mark = -1.0;
-        if (g_caps.x > 0.5) mark = marker(vec2(along - start, g_pixel.y), r);
-        if (g_caps.y > 0.5) mark = max(mark, marker(vec2(along - end, g_pixel.y), r));
-        coverage = max(coverage, clamp(mark + 0.5, 0.0, 1.0));
-    }
+    return gap ? 0.0 : clamp(distance + 0.5, 0.0, 1.0);
+}
+
+void main() {
+    float coverage = u_marker_pass == 1
+        ? clamp(marker(g_pixel, u_endpoint_size * u_scale * 0.5) + 0.5, 0.0, 1.0)
+        : stroke_coverage();
     if (coverage <= 0.0) discard;
     // Match adjacent faces at each covered pixel, rather than pulling the
     // entire expanded quad forward. Its center keeps the real edge depth.
+    float along = g_pixel.x;
     float extension = min(along, 0.0) + max(along - g_length, 0.0);
     vec2 delta = g_depth_side * g_pixel.y + g_depth_along * extension;
+    if (u_marker_pass == 1) delta = -g_depth_side * abs(g_pixel.y) - g_depth_along * abs(g_pixel.x);
     // Depth is tested at MSAA samples, while varyings are evaluated at
     // the pixel center. Cover that subpixel difference on sloped faces.
     float margin = 0.75 * (max(abs(g_depth_side.x), abs(g_depth_side.y))

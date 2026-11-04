@@ -3330,5 +3330,8 @@
  "Triangle": "Трикутник",
  "Watermark settings": "Налаштування водяних знаків",
  "Watermark settings are not available yet.": "Налаштування водяних знаків поки недоступні.",
- "Edge extensions": "Подовження ребер"
+ "Edge extensions": "Подовження ребер",
+ "Layer line": "Лінія шару",
+ "Square, extended by a quarter of the width": "Квадратне, з виступом на чверть товщини",
+ "Round, extended by a quarter of the width": "Кругле, з виступом на чверть товщини"
 }

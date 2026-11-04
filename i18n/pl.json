@@ -3323,5 +3323,8 @@
  "Triangle": "Trójkąt",
  "Watermark settings": "Ustawienia znaków wodnych",
  "Watermark settings are not available yet.": "Ustawienia znaków wodnych nie są jeszcze dostępne.",
- "Edge extensions": "Wydłużenie krawędzi"
+ "Edge extensions": "Wydłużenie krawędzi",
+ "Layer line": "Linia warstwy",
+ "Square, extended by a quarter of the width": "Kwadratowe, wydłużone o ćwierć grubości",
+ "Round, extended by a quarter of the width": "Okrągłe, wydłużone o ćwierć grubości"
 }

@@ -3374,8 +3374,8 @@ class StylesPanel(QWidget):
         self._profile_caps = self._edge_shapes(profile_row, (
             ("butt", "cap_butt", "Square, flush"),
             ("round", "cap_round", "Round, flush"),
-            ("square", "cap_square", "Square, extended by half the width"),
-            ("round_extended", "cap_round_extended", "Round, extended by half the width")))
+            ("square", "cap_square", "Square, extended by a quarter of the width"),
+            ("round_extended", "cap_round_extended", "Round, extended by a quarter of the width")))
         edges.addLayout(profile_row, 2, 1)
         self._back_edges = QCheckBox(tr("Back edges"))
         self._back_edges.setToolTip(tr(
@@ -3422,7 +3422,7 @@ class StylesPanel(QWidget):
             ("triangle", "endpoint_triangle", "Triangle")))
         edges.addLayout(endpoint_row, 5, 1)
 
-        self._dashes = QCheckBox(tr("Dashes"))
+        self._dashes = QCheckBox(tr("Layer line"))
         self._dashes.setToolTip(tr(
             "Show the line patterns assigned in Layers. Continuous layers stay solid. "
             "Turn off to draw all layer lines solid; back edges keep their own dashes."))

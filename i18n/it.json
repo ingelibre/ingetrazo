@@ -3316,5 +3316,8 @@
  "Triangle": "Triangolo",
  "Watermark settings": "Impostazioni filigrana",
  "Watermark settings are not available yet.": "Le impostazioni della filigrana non sono ancora disponibili.",
- "Edge extensions": "Prolungamenti"
+ "Edge extensions": "Prolungamenti",
+ "Layer line": "Linea del livello",
+ "Square, extended by a quarter of the width": "Quadrata, prolungata di un quarto dello spessore",
+ "Round, extended by a quarter of the width": "Rotonda, prolungata di un quarto dello spessore"
 }

@@ -3318,5 +3318,8 @@
  "Triangle": "ສາມຫຼ່ຽມ",
  "Watermark settings": "ການຕັ້ງຄ່າລາຍນ້ຳ",
  "Watermark settings are not available yet.": "ການຕັ້ງຄ່າລາຍນ້ຳຍັງບໍ່ພ້ອມໃຊ້.",
- "Edge extensions": "ການຍືດຂອບ"
+ "Edge extensions": "ການຍືດຂອບ",
+ "Layer line": "ເສັ້ນຂອງຊັ້ນ",
+ "Square, extended by a quarter of the width": "ປາຍສີ່ຫຼ່ຽມ ຍື່ນອອກໜຶ່ງສ່ວນສີ່ຂອງຄວາມໜາ",
+ "Round, extended by a quarter of the width": "ປາຍມົນ ຍື່ນອອກໜຶ່ງສ່ວນສີ່ຂອງຄວາມໜາ"
 }

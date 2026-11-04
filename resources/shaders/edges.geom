@@ -25,6 +25,7 @@ uniform float u_extension;
 uniform float u_endpoint;
 uniform int u_endpoint_type;
 uniform float u_endpoint_size;
+uniform int u_marker_pass;
 uniform float u_scale;
 uniform int u_color_mode;
 uniform vec3 u_color;
@@ -97,6 +98,25 @@ void corner(vec4 center, vec3 world, vec2 shift, float along, float side) {
 void main() {
     vec4 a = gl_in[0].gl_Position, b = gl_in[1].gl_Position;
     vec3 wa = edge[0].world, wb = edge[1].world;
+    if (u_marker_pass == 1) {
+        if (a.w <= 1e-7 || a.z + a.w < 0.0) return;
+        if (u_clip_enable == 1 && dot(vec4(wa, 1.0), u_clip_plane) < 0.0) return;
+        float r = u_endpoint_size * u_scale * 0.5 + 0.5;
+        line_length = 1.0; line_width = vec2(1.0);
+        line_limits = vec2(0.0); line_caps = vec2(0.0); line_cap = 0;
+        depth_along = vec2(edge[0].dash0.x);
+        depth_side = vec2(edge[0].dash0.y);
+        line_color = u_color;
+        if ((u_color_mode == 1 || (u_color_mode == 2 && u_hidden == 0))
+                && edge[0].color.x >= 0.0) line_color = edge[0].color;
+        // Marker quads use screen axes, independent of each branch's angle.
+        corner(a, wa, vec2(-r, -r), -r, -r);
+        corner(a, wa, vec2(-r, r), -r, r);
+        corner(a, wa, vec2(r, -r), r, -r);
+        corner(a, wa, vec2(r, r), r, r);
+        EndPrimitive();
+        return;
+    }
     vec3 direction = wb - wa;
     plane_slope0 = plane_slope(edge[0].normal0, wa);
     plane_slope1 = plane_slope(edge[0].normal1, wa);
@@ -130,18 +150,14 @@ void main() {
     line_cap = u_profiles == 1 && profile ? u_profile_cap : 0;
     line_limits = vec2(-before, len + after);
     if (line_cap >= 2) {
-        if (!cut.x) line_limits.x -= widths.x * 0.5;
-        if (!cut.y) line_limits.y += widths.y * 0.5;
+        if (!cut.x) line_limits.x -= widths.x * 0.25;
+        if (!cut.y) line_limits.y += widths.y * 0.25;
     }
     float radius = max(widths.x, widths.y) * 0.5;
-    float marker_radius = 0.0;
-    if (u_endpoint > 0.0) {
-        if (u_endpoint_type == 0) radius += u_scale;
-        else marker_radius = u_endpoint_size * u_scale * 0.5;
-    }
-    radius = max(radius, marker_radius) + 0.5;
-    before = max(-line_limits.x, cut.x ? 0.0 : marker_radius) + 0.5;
-    after = max(line_limits.y - len, cut.y ? 0.0 : marker_radius) + 0.5;
+    if (u_endpoint > 0.0 && u_endpoint_type == 0) radius += u_scale;
+    radius += 0.5;
+    before = -line_limits.x + 0.5;
+    after = line_limits.y - len + 0.5;
     line_length = len; line_width = widths;
     line_color = u_color;
     if (u_color_mode == 1 && edge[0].color.x >= 0.0) line_color = edge[0].color;
