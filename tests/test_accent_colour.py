@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication, QToolButton
 
 from views import theme
 from views.icons import tool_icon
+from views.toolbar_icons import accent_tone
 
 ORANGE = QColor(243, 115, 41)
 
@@ -42,14 +43,15 @@ def test_the_icons_and_the_toolbar_hover_follow_the_accent():
     theme.style(button, "QToolButton:hover {{ background: "
                         "rgb({accent_rgb}); }}")
     assert "rgb(243, 115, 41)" in button.styleSheet()
-    assert _has(tool_icon("line"), ORANGE)
+    background = app.palette().window().color()
+    assert _has(tool_icon("line"), accent_tone(ORANGE, background))
     blue = theme.accent_color("blue")
     try:
         theme.save_accent("blue")
         theme.apply_accent(app)
         assert "rgb(53, 132, 228)" in button.styleSheet()
-        assert _has(tool_icon("line"), blue)
-        assert not _has(tool_icon("line"), ORANGE)
+        assert _has(tool_icon("line"), accent_tone(blue, background))
+        assert not _has(tool_icon("line"), accent_tone(ORANGE, background))
     finally:
         theme.save_accent(theme.ORANGE)
         theme.apply_accent(app)
