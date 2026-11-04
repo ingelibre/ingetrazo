@@ -60,6 +60,12 @@ def test_traditional_chinese_is_offered_under_its_own_name():
     assert LANGUAGE_NAMES["zh-TW"] == "正體中文"
 
 
+def test_bulgarian_is_offered_under_its_own_name():
+    """Bulgarian (#1185) only needs its file and its name."""
+    assert "bg" in available_languages()
+    assert LANGUAGE_NAMES["bg"] == "Български"
+
+
 def test_traditional_chinese_keeps_the_composer_tab_generic():
     """Its source used a product's name for the sheet layout tab."""
     data = json.loads((_I18N_DIR / "zh-TW.json").read_text(encoding="utf-8"))

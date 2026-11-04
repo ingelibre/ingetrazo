@@ -3309,5 +3309,17 @@
  "On Red Axis": "Pada sumbu merah",
  "On Green Axis": "Pada sumbu hijau",
  "On Blue Axis": "Pada sumbu biru",
- "hold Shift to lock": "tahan Shift untuk mengunci"
+ "hold Shift to lock": "tahan Shift untuk mengunci",
+ "Check for Updates…": "Periksa Pembaruan…",
+ "See whether a newer version of IngeTrazo is out.": "Memeriksa apakah ada versi IngeTrazo yang lebih baru.",
+ "Check for new versions at startup": "Periksa versi baru saat memulai",
+ "Once a day, IngeTrazo asks GitHub for the latest version number. Nothing about you or your files is sent.": "Sekali sehari, IngeTrazo menanyakan nomor versi terbaru ke GitHub. Tidak ada data tentang Anda atau berkas Anda yang dikirim.",
+ "Updates": "Pembaruan",
+ "IngeTrazo {version} is available": "IngeTrazo {version} tersedia",
+ "You have version {current}. Published on {date}.": "Anda memakai versi {current}. Diterbitkan pada {date}.",
+ "What's new:": "Yang baru:",
+ "Skip This Version": "Lewati Versi Ini",
+ "Remind Me Later": "Ingatkan Nanti",
+ "Could not check for updates. Check your internet connection and try again.": "Tidak dapat memeriksa pembaruan. Periksa koneksi internet Anda lalu coba lagi.",
+ "You have the latest version ({version}).": "Anda memakai versi terbaru ({version})."
 }

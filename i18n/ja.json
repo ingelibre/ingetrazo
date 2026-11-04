@@ -3306,5 +3306,17 @@
  "On Red Axis": "赤軸上",
  "On Green Axis": "緑軸上",
  "On Blue Axis": "青軸上",
- "hold Shift to lock": "Shift を押し続けてロック"
+ "hold Shift to lock": "Shift を押し続けてロック",
+ "Check for Updates…": "更新を確認…",
+ "See whether a newer version of IngeTrazo is out.": "IngeTrazo の新しいバージョンがあるか確認します。",
+ "Check for new versions at startup": "起動時に新しいバージョンを確認",
+ "Once a day, IngeTrazo asks GitHub for the latest version number. Nothing about you or your files is sent.": "IngeTrazo は 1 日に 1 回、最新のバージョン番号を GitHub に問い合わせます。あなたやファイルに関する情報は送信されません。",
+ "Updates": "更新",
+ "IngeTrazo {version} is available": "IngeTrazo {version} が利用できます",
+ "You have version {current}. Published on {date}.": "現在のバージョンは {current} です。公開日：{date}。",
+ "What's new:": "新機能：",
+ "Skip This Version": "このバージョンをスキップ",
+ "Remind Me Later": "後で通知",
+ "Could not check for updates. Check your internet connection and try again.": "更新を確認できませんでした。インターネット接続を確認して、もう一度お試しください。",
+ "You have the latest version ({version}).": "最新バージョン（{version}）をお使いです。"
 }

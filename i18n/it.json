@@ -3307,5 +3307,17 @@
  "On Red Axis": "Sull'asse rosso",
  "On Green Axis": "Sull'asse verde",
  "On Blue Axis": "Sull'asse blu",
- "hold Shift to lock": "tieni premuto Maiusc per bloccare"
+ "hold Shift to lock": "tieni premuto Maiusc per bloccare",
+ "Check for Updates…": "Cerca aggiornamenti…",
+ "See whether a newer version of IngeTrazo is out.": "Controlla se è disponibile una versione più recente di IngeTrazo.",
+ "Check for new versions at startup": "Cerca nuove versioni all'avvio",
+ "Once a day, IngeTrazo asks GitHub for the latest version number. Nothing about you or your files is sent.": "Una volta al giorno, IngeTrazo chiede a GitHub il numero dell'ultima versione. Non viene inviato nulla su di te o sui tuoi file.",
+ "Updates": "Aggiornamenti",
+ "IngeTrazo {version} is available": "IngeTrazo {version} è disponibile",
+ "You have version {current}. Published on {date}.": "Hai la versione {current}. Pubblicata il {date}.",
+ "What's new:": "Novità:",
+ "Skip This Version": "Salta questa versione",
+ "Remind Me Later": "Ricordamelo più tardi",
+ "Could not check for updates. Check your internet connection and try again.": "Impossibile cercare aggiornamenti. Controlla la connessione a Internet e riprova.",
+ "You have the latest version ({version}).": "Hai l'ultima versione ({version})."
 }

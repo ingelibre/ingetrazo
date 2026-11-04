@@ -3306,5 +3306,17 @@
  "On Red Axis": "在紅軸上",
  "On Green Axis": "在綠軸上",
  "On Blue Axis": "在藍軸上",
- "hold Shift to lock": "按住 Shift 鎖定"
+ "hold Shift to lock": "按住 Shift 鎖定",
+ "Check for Updates…": "檢查更新…",
+ "See whether a newer version of IngeTrazo is out.": "查看是否有較新版本的 IngeTrazo。",
+ "Check for new versions at startup": "啟動時檢查新版本",
+ "Once a day, IngeTrazo asks GitHub for the latest version number. Nothing about you or your files is sent.": "IngeTrazo 每天向 GitHub 查詢一次最新版本號碼，不會傳送任何關於您或您檔案的資訊。",
+ "Updates": "更新",
+ "IngeTrazo {version} is available": "IngeTrazo {version} 已推出",
+ "You have version {current}. Published on {date}.": "您的版本是 {current}。發布日期：{date}。",
+ "What's new:": "新增內容：",
+ "Skip This Version": "略過此版本",
+ "Remind Me Later": "稍後提醒",
+ "Could not check for updates. Check your internet connection and try again.": "無法檢查更新。請檢查網路連線後再試一次。",
+ "You have the latest version ({version}).": "您使用的已是最新版本（{version}）。"
 }

@@ -3306,5 +3306,17 @@
  "On Red Axis": "빨간 축 위",
  "On Green Axis": "녹색 축 위",
  "On Blue Axis": "파란 축 위",
- "hold Shift to lock": "Shift를 누르고 있으면 고정"
+ "hold Shift to lock": "Shift를 누르고 있으면 고정",
+ "Check for Updates…": "업데이트 확인…",
+ "See whether a newer version of IngeTrazo is out.": "IngeTrazo의 새 버전이 있는지 확인합니다.",
+ "Check for new versions at startup": "시작할 때 새 버전 확인",
+ "Once a day, IngeTrazo asks GitHub for the latest version number. Nothing about you or your files is sent.": "IngeTrazo는 하루에 한 번 GitHub에 최신 버전 번호를 확인합니다. 사용자나 파일에 관한 정보는 전송되지 않습니다.",
+ "Updates": "업데이트",
+ "IngeTrazo {version} is available": "IngeTrazo {version} 버전을 사용할 수 있습니다",
+ "You have version {current}. Published on {date}.": "현재 버전은 {current}입니다. 게시일: {date}.",
+ "What's new:": "새로운 기능:",
+ "Skip This Version": "이 버전 건너뛰기",
+ "Remind Me Later": "나중에 알림",
+ "Could not check for updates. Check your internet connection and try again.": "업데이트를 확인할 수 없습니다. 인터넷 연결을 확인한 후 다시 시도하세요.",
+ "You have the latest version ({version}).": "최신 버전({version})을 사용 중입니다."
 }

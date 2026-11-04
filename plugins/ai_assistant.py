@@ -80,7 +80,7 @@ _LANGUAGE_NAMES = {
     "id": "Bahasa Indonesia", "it": "italiano", "pl": "polski",
     "pt-BR": "português do Brasil", "ru": "русский", "zh-CN": "简体中文",
     "zh-TW": "繁體中文", "vi": "Tiếng Việt", "lo": "ລາວ", "th": "ไทย", "ja": "日本語", "ko": "한국어",
-    "ar": "العربية",
+    "ar": "العربية", "bg": "български",
 }
 
 

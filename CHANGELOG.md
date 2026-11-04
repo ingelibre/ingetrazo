@@ -8,6 +8,12 @@ follow [SemVer](https://semver.org).
 
 ### Añadido
 
+- **Aviso de versión nueva**: una vez al día, al abrir, IngeTrazo pregunta a
+  GitHub cuál es la última versión y, si hay una más reciente, muestra sus
+  novedades sin interrumpir. También en Ayuda ▸ Buscar actualizaciones…; se
+  apaga en Preferencias. No aparece en Flatpak ni Snap, que se actualizan
+  solos.
+- **Búlgaro** (#1185, @davidsmavrov-debug).
 - **Campo `{sheet_name}`**: siempre el nombre de la lámina, como aparece en
   la lista de láminas — a diferencia de `{lamina}`/`{sheet}`, que leen la
   fila LÁMINA del cajetín (el número de plano). Es otro nombre de
@@ -24,6 +30,8 @@ follow [SemVer](https://semver.org).
 
 ### Corregido
 
+- **Importar `.skp`**: un componente escalado de cierta forma entraba 10 000
+  veces más grande (#1196, @DarkBiscuits).
 - **Lo que cambias dentro de un grupo anidado se ve al momento**: en un grupo
   abierto dentro de otro, o en un contenedor con caras propias, pintar, dibujar
   o mover no aparecía en pantalla hasta salir del grupo. Tampoco se veía

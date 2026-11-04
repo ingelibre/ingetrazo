@@ -3333,5 +3333,17 @@
  "On Red Axis": "Trên trục đỏ",
  "On Green Axis": "Trên trục xanh lá",
  "On Blue Axis": "Trên trục xanh dương",
- "hold Shift to lock": "giữ Shift để khóa"
+ "hold Shift to lock": "giữ Shift để khóa",
+ "Check for Updates…": "Kiểm tra cập nhật…",
+ "See whether a newer version of IngeTrazo is out.": "Kiểm tra xem có phiên bản IngeTrazo mới hơn không.",
+ "Check for new versions at startup": "Kiểm tra phiên bản mới khi khởi động",
+ "Once a day, IngeTrazo asks GitHub for the latest version number. Nothing about you or your files is sent.": "Mỗi ngày một lần, IngeTrazo hỏi GitHub số phiên bản mới nhất. Không có thông tin nào về bạn hoặc tệp của bạn được gửi đi.",
+ "Updates": "Cập nhật",
+ "IngeTrazo {version} is available": "IngeTrazo {version} đã có",
+ "You have version {current}. Published on {date}.": "Bạn đang dùng phiên bản {current}. Phát hành ngày {date}.",
+ "What's new:": "Có gì mới:",
+ "Skip This Version": "Bỏ qua phiên bản này",
+ "Remind Me Later": "Nhắc lại sau",
+ "Could not check for updates. Check your internet connection and try again.": "Không thể kiểm tra cập nhật. Hãy kiểm tra kết nối internet rồi thử lại.",
+ "You have the latest version ({version}).": "Bạn đang dùng phiên bản mới nhất ({version})."
 }
