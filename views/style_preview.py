@@ -10,6 +10,7 @@ from PySide6.QtGui import (
 )
 
 from core.style import DEFAULT_FACE_COLOR, Style, effective_back_color, base_face_mode, xray_enabled
+from views.theme import accent_color
 
 
 def _color(rgb, shade: float = 1.0) -> QColor:
@@ -67,10 +68,20 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                                        (left, front, 0.91 if not flat else 1.0),
                                        (right, material, 0.78 if not flat else 1.0)):
                 painter.setBrush(_color(rgb, shade))
-                painter.drawPolygon(_polygon(points))
+                if mode == "monochrome":
+                    # Match the mode icon: two whole triangles per face,
+                    # rather than a small inset suggesting a window.
+                    painter.drawPolygon(_polygon(points[:3]))
+                    painter.setBrush(accent_color())
+                    painter.drawPolygon(_polygon([points[0], points[2], points[3]]))
+                    painter.setPen(QPen(edge, 0.85))
+                    painter.drawLine(QPointF(*points[0]), QPointF(*points[2]))
+                    painter.setPen(Qt.NoPen)
+                else:
+                    painter.drawPolygon(_polygon(points))
 
             # A small recessed panel exposes a back face in the sample.
-            if mode != "hidden_line":
+            if mode not in ("hidden_line", "monochrome"):
                 painter.setBrush(_color(effective_back_color(style)))
                 painter.drawPolygon(_polygon([(27, 40), (39, 46),
                                                (39, 62), (27, 56)]))
