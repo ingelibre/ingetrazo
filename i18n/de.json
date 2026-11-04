@@ -3277,7 +3277,6 @@
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Setzt die Einstellungen dieses Fensters auf den Auslieferungszustand von IngeTrazo zurück. Nichts wird gespeichert, bevor du auf OK drückst. Sprache, KI-Assistent, Tastenkürzel und die Einheiten des offenen Dokuments bleiben, wie sie sind.",
  "Show scenes as tabs": "Szenen als Tabs zeigen",
  "This project's scenes as tabs under the view; a click shows one.": "Die Szenen dieses Projekts als Tabs unter der Ansicht; ein Klick zeigt eine.",
- "Click: change the view · Double-click: this view alone, or the four again": "Klick: Ansicht wechseln · Doppelklick: nur diese Ansicht oder wieder alle vier",
  "One view": "Eine Ansicht",
  "Two views": "Zwei Ansichten",
  "Two views, one wider": "Zwei Ansichten, eine breiter",
@@ -3318,5 +3317,7 @@
  "Skip This Version": "Diese Version überspringen",
  "Remind Me Later": "Später erinnern",
  "Could not check for updates. Check your internet connection and try again.": "Die Suche nach Updates ist fehlgeschlagen. Prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.",
- "You have the latest version ({version}).": "Sie haben die neueste Version ({version})."
+ "You have the latest version ({version}).": "Sie haben die neueste Version ({version}).",
+ "Maximize this view or change it": "Diese Ansicht maximieren oder wechseln",
+ "Drag: move these views' lines together": "Ziehen: die Linien dieser Ansichten zusammen verschieben"
 }

@@ -3278,7 +3278,6 @@
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。",
  "Show scenes as tabs": "以标签页显示场景",
  "This project's scenes as tabs under the view; a click shows one.": "将此项目的场景显示为视图下方的标签页；单击即可显示。",
- "Click: change the view · Double-click: this view alone, or the four again": "单击：切换视图 · 双击：只显示此视图，或恢复四个视图",
  "One view": "一个视图",
  "Two views": "两个视图",
  "Two views, one wider": "两个视图（一个更宽）",
@@ -3319,5 +3318,7 @@
  "Skip This Version": "跳过此版本",
  "Remind Me Later": "稍后提醒",
  "Could not check for updates. Check your internet connection and try again.": "无法检查更新。请检查网络连接后重试。",
- "You have the latest version ({version}).": "您使用的已是最新版本（{version}）。"
+ "You have the latest version ({version}).": "您使用的已是最新版本（{version}）。",
+ "Maximize this view or change it": "最大化或切换此视图",
+ "Drag: move these views' lines together": "拖动：一起移动这些视图的分隔线"
 }

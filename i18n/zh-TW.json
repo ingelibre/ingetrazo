@@ -3318,5 +3318,7 @@
  "Skip This Version": "略過此版本",
  "Remind Me Later": "稍後提醒",
  "Could not check for updates. Check your internet connection and try again.": "無法檢查更新。請檢查網路連線後再試一次。",
- "You have the latest version ({version}).": "您使用的已是最新版本（{version}）。"
+ "You have the latest version ({version}).": "您使用的已是最新版本（{version}）。",
+ "Maximize this view or change it": "最大化或變更此視圖",
+ "Drag: move these views' lines together": "拖曳：一併移動這些視圖的分隔線"
 }

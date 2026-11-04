@@ -3304,7 +3304,6 @@
  "Distance ({unit}):": "Khoảng cách ({unit}):",
  "Show scenes as tabs": "Hiện các cảnh dạng thẻ",
  "This project's scenes as tabs under the view; a click shows one.": "Các cảnh của dự án này thành thẻ bên dưới khung nhìn; nhấp để hiện một cảnh.",
- "Click: change the view · Double-click: this view alone, or the four again": "Nhấp: đổi góc nhìn · Nhấp đúp: chỉ góc nhìn này, hoặc lại cả bốn",
  "One view": "Một khung nhìn",
  "Two views": "Hai khung nhìn",
  "Two views, one wider": "Hai khung nhìn, một khung rộng hơn",
@@ -3345,5 +3344,7 @@
  "Skip This Version": "Bỏ qua phiên bản này",
  "Remind Me Later": "Nhắc lại sau",
  "Could not check for updates. Check your internet connection and try again.": "Không thể kiểm tra cập nhật. Hãy kiểm tra kết nối internet rồi thử lại.",
- "You have the latest version ({version}).": "Bạn đang dùng phiên bản mới nhất ({version})."
+ "You have the latest version ({version}).": "Bạn đang dùng phiên bản mới nhất ({version}).",
+ "Maximize this view or change it": "Phóng to khung nhìn này hoặc đổi nó",
+ "Drag: move these views' lines together": "Kéo: di chuyển các đường của những khung nhìn này cùng nhau"
 }

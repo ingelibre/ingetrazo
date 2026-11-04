@@ -3277,7 +3277,6 @@
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений.",
  "Show scenes as tabs": "Показывать сцены вкладками",
  "This project's scenes as tabs under the view; a click shows one.": "Сцены этого проекта вкладками под видом; щелчок показывает сцену.",
- "Click: change the view · Double-click: this view alone, or the four again": "Щелчок: сменить вид · Двойной щелчок: только этот вид или снова все четыре",
  "One view": "Один вид",
  "Two views": "Два вида",
  "Two views, one wider": "Два вида, один шире",
@@ -3318,5 +3317,7 @@
  "Skip This Version": "Пропустить эту версию",
  "Remind Me Later": "Напомнить позже",
  "Could not check for updates. Check your internet connection and try again.": "Не удалось проверить обновления. Проверьте подключение к интернету и повторите попытку.",
- "You have the latest version ({version}).": "У вас последняя версия ({version})."
+ "You have the latest version ({version}).": "У вас последняя версия ({version}).",
+ "Maximize this view or change it": "Развернуть этот вид или сменить его",
+ "Drag: move these views' lines together": "Перетащите, чтобы переместить линии этих видов вместе"
 }

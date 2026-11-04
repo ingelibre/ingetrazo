@@ -3277,7 +3277,6 @@
  "Distance ({unit}):": "距離（{unit}）：",
  "Show scenes as tabs": "シーンをタブで表示",
  "This project's scenes as tabs under the view; a click shows one.": "このプロジェクトのシーンをビューの下にタブとして表示します。クリックでシーンを表示します。",
- "Click: change the view · Double-click: this view alone, or the four again": "クリック：ビューを変更 · ダブルクリック：このビューだけ、または再び4つ",
  "One view": "1ビュー",
  "Two views": "2ビュー",
  "Two views, one wider": "2ビュー（片方を広く）",
@@ -3318,5 +3317,7 @@
  "Skip This Version": "このバージョンをスキップ",
  "Remind Me Later": "後で通知",
  "Could not check for updates. Check your internet connection and try again.": "更新を確認できませんでした。インターネット接続を確認して、もう一度お試しください。",
- "You have the latest version ({version}).": "最新バージョン（{version}）をお使いです。"
+ "You have the latest version ({version}).": "最新バージョン（{version}）をお使いです。",
+ "Maximize this view or change it": "このビューを最大化または変更",
+ "Drag: move these views' lines together": "ドラッグ: これらのビューの線をまとめて移動"
 }

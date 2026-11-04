@@ -143,19 +143,32 @@ as their panes. One view is always first; the rest go from the most used.
 - Each project keeps its own layout, the cameras of its views and the view
   filling the area; a new project opens in one 3D view. Choosing a layout
   does not mark the document as changed.
+- **Save** also keeps the layout and where the lines are in the file, as it
+  keeps the camera, and the file opens that way. The other views' cameras and a
+  maximized view are not kept: they start over.
 - Every view shows its name in a small label in its corner; the view being
   worked in wears the accent colour. Click the label for the standard views
   (Top, Front, Right, Back, Left, Bottom, Isometric, Perspective). A view
   picked by hand stays through layout changes.
 - **Maximize**, first in the label's menu, makes the view fill the area; the
   same entry then says **Restore** and brings the others back as they were.
-  **Ctrl+Space** does the same for the view under the pointer, as do
-  **Window ▸ Maximize view** and a double-click on the label.
+  **Ctrl+Space** or **Window ▸ Maximize view** does the same for the view under
+  the pointer.
 - All the views draw the same model with the same undo: what is drawn,
   selected or undone in one shows in all. Each view picks up the tool in
-  hand as the mouse comes in.
+  hand as the mouse comes in, and what the tool is about to do shows only in
+  the view the pointer is in; once done, it shows in all.
 - **Zoom Extents** frames every view shown.
-- Drag the lines between the views to resize them.
+- Drag a line between the views to move it: only that line moves, so with four
+  views the two halves of the horizontal line can part ways. A line shows where
+  it will land, and the views change when you release.
+- Near a crossing of the lines, with the Select tool in hand, a small square
+  with four arrows appears. Drag it to move the lines that meet there as one
+  block, which also lines up two halves that had parted. With any other tool it
+  stays away, so a click near the crossing is the tool's; the lines still drag.
+- A line sticks to its other half and to the middle of the views, and the block
+  to the middle, drawn dashed while it does, so they line up without aiming.
+  **Esc** during a drag leaves everything as it was.
 
 ---
 

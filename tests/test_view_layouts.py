@@ -214,6 +214,27 @@ def test_the_labels_menu_says_maximize_or_restore(win):
     assert len(header.menu().actions()) == 10, "the views, once"
 
 
+def test_a_double_click_on_the_label_maximizes_nothing(win):
+    from PySide6.QtCore import QEvent, QPoint, Qt
+    from PySide6.QtGui import QMouseEvent
+    win.show()
+    win.set_view_layout("four")
+    QApplication.processEvents()
+    header = _grid(win).cells[2].header
+    menu = header.menu()
+    # The popup would block the test: the menu is not what is tried here.
+    header.setMenu(None)
+    at = QPointF(QPoint(3, 3))
+    QApplication.sendEvent(header, QMouseEvent(
+        QEvent.MouseButtonDblClick, at, QPointF(header.mapToGlobal(QPoint(3, 3))),
+        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    QApplication.sendEvent(header, QMouseEvent(
+        QEvent.MouseButtonRelease, at, QPointF(header.mapToGlobal(QPoint(3, 3))),
+        Qt.LeftButton, Qt.NoButton, Qt.NoModifier))
+    header.setMenu(menu)
+    assert _shown(win) == [0, 1, 2, 3]
+
+
 def test_the_key_takes_the_view_under_the_pointer_and_comes_back(win, monkeypatch):
     from PySide6.QtCore import QPoint
     from PySide6.QtGui import QAction, QKeySequence
@@ -271,6 +292,476 @@ def test_a_views_label_covers_little_of_the_view(win):
     assert header.height() <= fm.height() + 4
     # Its name and the small padding: no room kept for an arrow.
     assert header.width() <= fm.horizontalAdvance(header.text()) + 14
+
+
+def _four(win):
+    from PySide6.QtTest import QTest
+    win.show()
+    win.set_view_layout("four")
+    QTest.qWait(100)                    # the window's layout settles
+    return _grid(win)
+
+
+def _about(sizes, others) -> bool:
+    """The same split, but for the pixel or two the grid's height may still
+    settle by offscreen."""
+    return all(abs(a - b) <= 2 for a, b in zip(sizes, others))
+
+
+def _send(widget, kind, glob, mods=None):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QMouseEvent
+    button = Qt.NoButton if kind == QEvent.MouseMove else Qt.LeftButton
+    buttons = Qt.NoButton if kind == QEvent.MouseButtonRelease else Qt.LeftButton
+    QApplication.sendEvent(widget, QMouseEvent(
+        kind, QPointF(widget.mapFromGlobal(glob)), QPointF(glob), button,
+        buttons, Qt.NoModifier))
+    QApplication.processEvents()
+
+
+def _mouse(handle, kind, along):
+    """A mouse event on ``handle``, ``along`` px down its splitter's axis."""
+    from PySide6.QtCore import QPoint, Qt
+    at = (QPoint(along, handle.height() // 2)
+          if handle.orientation() == Qt.Horizontal
+          else QPoint(handle.width() // 2, along))
+    _send(handle, kind, handle.splitter().mapToGlobal(at))
+
+
+def _drag(handle, to, release=True):
+    from PySide6.QtCore import QEvent, Qt
+    start = handle.x() if handle.orientation() == Qt.Horizontal else handle.y()
+    _mouse(handle, QEvent.MouseButtonPress, start)
+    _mouse(handle, QEvent.MouseMove, to)
+    if release:
+        _mouse(handle, QEvent.MouseButtonRelease, to)
+
+
+def test_a_line_shows_the_drag_arrow(win):
+    from PySide6.QtCore import Qt
+    grid = _four(win)
+    assert grid.col_a.handle(1).cursor().shape() == Qt.SizeVerCursor
+    assert grid.columns.handle(1).cursor().shape() == Qt.SizeHorCursor
+
+
+def test_a_line_drags_alone(win):
+    grid = _four(win)
+    other = grid.col_b.sizes()
+    handle = grid.col_a.handle(1)
+    start = handle.y()
+    _drag(handle, start - 60)
+    assert abs(handle.y() - (start - 60)) <= 1
+    assert _about(grid.col_b.sizes(), other), "its other half stayed"
+    assert _shown(win) == [0, 1, 2, 3]
+    assert not grid.divider_guide.isVisible()
+
+
+def test_nothing_moves_until_it_is_released_and_a_guide_shows_where(win):
+    from PySide6.QtCore import QEvent
+    grid = _four(win)
+    handle = grid.col_a.handle(1)
+    before = grid.col_a.sizes()
+    to = handle.y() - 60
+    _drag(handle, to, release=False)
+    assert _about(grid.col_a.sizes(), before)
+    guide = grid.divider_guide
+    assert guide.isVisible() and not guide.lines[0][1]
+    assert abs(guide.lines[0][0].y1() - to) <= 4
+    _mouse(handle, QEvent.MouseButtonRelease, to)
+    assert not _about(grid.col_a.sizes(), before)
+
+
+def test_a_line_sticks_to_the_middle_and_shows_it(win):
+    from PySide6.QtCore import QEvent
+    grid = _four(win)
+    handle = grid.col_a.handle(1)
+    _drag(grid.col_b.handle(1), grid.col_b.handle(1).y() - 120)
+    _drag(handle, handle.y() - 80)                       # away from the middle
+    middle = handle.middle()
+    assert abs(handle.y() - middle) > 20
+    _mouse(handle, QEvent.MouseButtonPress, handle.y())
+    _mouse(handle, QEvent.MouseMove, middle + 7)
+    assert grid.divider_guide.lines[0][1]
+    _mouse(handle, QEvent.MouseButtonRelease, middle + 7)
+    assert handle.y() == middle
+    # Beyond the tolerance it goes where it is taken.
+    _mouse(handle, QEvent.MouseButtonPress, handle.y())
+    _mouse(handle, QEvent.MouseMove, middle + 30)
+    assert not grid.divider_guide.lines[0][1]
+    _mouse(handle, QEvent.MouseButtonRelease, middle + 30)
+    assert abs(handle.y() - (middle + 30)) <= 1
+
+
+def test_a_line_sticks_to_its_other_half_to_line_up_again(win):
+    from PySide6.QtCore import QEvent
+    grid = _four(win)
+    left, right = grid.col_a.handle(1), grid.col_b.handle(1)
+    _drag(right, right.y() - 100)
+    target = right.y()
+    assert abs(target - left.middle()) > 50
+    _mouse(left, QEvent.MouseButtonPress, left.y())
+    _mouse(left, QEvent.MouseMove, target + 12)
+    assert grid.divider_guide.lines[0][1]
+    _mouse(left, QEvent.MouseButtonRelease, target + 12)
+    assert left.y() == right.y(), "the two halves line up without aiming"
+
+
+def test_with_a_hidden_column_there_is_no_other_half(win):
+    grid = _four(win)
+    grid.toggle_maximized(grid.cells[0])
+    QApplication.processEvents()
+    assert grid.col_a.handle(1).other_half() is None
+    grid.toggle_maximized(grid.cells[0])
+    win.set_view_layout("two")
+    QApplication.processEvents()
+    assert grid.columns.handle(1).other_half() is None
+
+
+def test_the_tolerance_comes_from_the_settings(win):
+    from PySide6.QtCore import QEvent, QSettings
+    grid = _four(win)
+    handle = grid.col_a.handle(1)
+    _drag(grid.col_b.handle(1), grid.col_b.handle(1).y() - 120)
+    _drag(handle, handle.y() - 80)
+    middle = handle.middle()
+    QSettings().setValue("views/divider_snap_px", 40)
+    try:
+        _mouse(handle, QEvent.MouseButtonPress, handle.y())
+        _mouse(handle, QEvent.MouseMove, middle + 35)
+        assert grid.divider_guide.lines[0][1]
+        _mouse(handle, QEvent.MouseButtonRelease, middle + 35)
+        assert handle.y() == middle
+    finally:
+        QSettings().remove("views/divider_snap_px")
+
+
+def test_esc_leaves_the_line_where_it_was(win):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    grid = _four(win)
+    handle = grid.col_a.handle(1)
+    before = grid.col_a.sizes()
+    _drag(handle, handle.y() - 60, release=False)
+    QApplication.sendEvent(handle, QKeyEvent(QEvent.KeyPress, Qt.Key_Escape,
+                                             Qt.NoModifier))
+    assert not grid.divider_guide.isVisible()
+    _mouse(handle, QEvent.MouseMove, handle.y() - 90)
+    _mouse(handle, QEvent.MouseButtonRelease, handle.y() - 90)
+    assert _about(grid.col_a.sizes(), before)
+
+
+def test_the_line_between_the_columns_drags_too(win):
+    grid = _four(win)
+    handle = grid.columns.handle(1)
+    rows = grid.col_a.sizes(), grid.col_b.sizes()
+    start = handle.x()
+    _drag(handle, start + 70)
+    assert abs(handle.x() - (start + 70)) <= 1
+    assert _about(grid.col_a.sizes(), rows[0])
+    assert _about(grid.col_b.sizes(), rows[1])
+
+
+def test_a_line_keeps_the_views_their_least_room(win):
+    grid = _four(win)
+    _drag(grid.col_a.handle(1), -500)
+    assert grid.col_a.sizes()[0] >= grid.cells[0].minimumSizeHint().height()
+
+
+def test_the_square_comes_only_near_a_crossing(win):
+    from PySide6.QtCore import QPoint, Qt
+    grid = _four(win)
+    cross = grid.cross
+    assert not cross.isVisible()
+    at = grid.crossings()[0]
+    grid.pointer_moved(grid.mapToGlobal(at + QPoint(10, -10)))
+    assert cross.isVisible()
+    assert cross.centre() == at
+    assert cross.cursor().shape() == Qt.SizeAllCursor
+    grid.pointer_moved(grid.mapToGlobal(at + QPoint(120, 0)))
+    assert not cross.isVisible(), "further along the line, it drags alone"
+
+
+def _cross_drag(grid, by, release=True):
+    from PySide6.QtCore import QEvent
+    at = grid.crossings()[0]
+    grid.pointer_moved(grid.mapToGlobal(at))
+    cross = grid.cross
+    assert cross.isVisible()
+    glob = grid.mapToGlobal(at)
+    _send(cross, QEvent.MouseButtonPress, glob)
+    _send(cross, QEvent.MouseMove, glob + by)
+    if release:
+        _send(cross, QEvent.MouseButtonRelease, glob + by)
+
+
+def test_the_square_moves_the_block_as_one(win):
+    from PySide6.QtCore import QPoint
+    grid = _four(win)
+    at = grid.crossings()[0]
+    _cross_drag(grid, QPoint(70, -50))
+    moved = grid.crossings()
+    assert len(moved) == 1, "the two halves together"
+    assert abs(moved[0].x() - (at.x() + 70)) <= 2
+    assert abs(moved[0].y() - (at.y() - 50)) <= 2
+    assert not grid.divider_guide.isVisible()
+
+
+def test_nothing_moves_until_the_square_is_released(win):
+    from PySide6.QtCore import QEvent, QPoint
+    grid = _four(win)
+    before = grid.columns.sizes(), grid.col_a.sizes()
+    at = grid.crossings()[0]
+    _cross_drag(grid, QPoint(70, -50), release=False)
+    assert _about(grid.columns.sizes(), before[0])
+    assert _about(grid.col_a.sizes(), before[1])
+    assert len(grid.divider_guide.lines) == 3, "the three lines of the block"
+    _send(grid.cross, QEvent.MouseButtonRelease,
+          grid.mapToGlobal(at) + QPoint(70, -50))
+
+
+def test_the_square_lines_up_two_halves_that_had_parted(win):
+    from PySide6.QtCore import QPoint
+    grid = _four(win)
+    _drag(grid.col_b.handle(1), grid.col_b.handle(1).y() - 100)
+    assert len(grid.crossings()) == 2
+    _cross_drag(grid, QPoint(0, -40))
+    assert len(grid.crossings()) == 1
+    assert grid.col_a.handle(1).y() == grid.col_b.handle(1).y()
+
+
+def test_the_square_sticks_each_way_to_the_middle(win):
+    from PySide6.QtCore import QEvent, QPoint
+    grid = _four(win)
+    _cross_drag(grid, QPoint(90, -90))
+    column, row = grid.columns.handle(1), grid.col_a.handle(1)
+    away = QPoint(column.middle() - column.x() + 7, row.middle() - row.y() - 7)
+    _cross_drag(grid, away, release=False)
+    assert all(stuck for _line, stuck in grid.divider_guide.lines)
+    glob = grid.mapToGlobal(grid.cross.centre())
+    _send(grid.cross, QEvent.MouseButtonRelease, glob)
+    assert column.x() == column.middle()
+    assert row.y() == row.middle()
+
+
+def test_esc_leaves_the_block_where_it_was(win):
+    from PySide6.QtCore import QEvent, QPoint, Qt
+    from PySide6.QtGui import QKeyEvent
+    grid = _four(win)
+    before = grid.columns.sizes(), grid.col_a.sizes()
+    _cross_drag(grid, QPoint(70, -50), release=False)
+    QApplication.sendEvent(grid.cross, QKeyEvent(
+        QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier))
+    assert not grid.divider_guide.isVisible() and grid.cross._drag_offset is None
+    assert _about(grid.columns.sizes(), before[0])
+    assert _about(grid.col_a.sizes(), before[1])
+
+
+def test_three_views_have_a_square_too_and_two_do_not(win):
+    from PySide6.QtCore import QPoint
+    grid = _four(win)
+    win.set_view_layout("three")
+    QApplication.processEvents()
+    assert len(grid.crossings()) == 1
+    _cross_drag(grid, QPoint(40, 30))
+    win.set_view_layout("two")
+    QApplication.processEvents()
+    assert grid.crossings() == []
+    win.set_view_layout("two_stacked")
+    QApplication.processEvents()
+    assert grid.crossings() == []
+
+
+def test_a_drawing_tool_keeps_the_square_away(win):
+    grid = _four(win)
+    at = grid.mapToGlobal(grid.crossings()[0])
+    win._activate_tool("select")
+    grid.pointer_moved(at)
+    assert grid.cross.isVisible()
+    win._activate_tool("line")
+    assert not grid.cross.isVisible(), "gone as the tool comes"
+    grid.pointer_moved(at)
+    assert not grid.cross.isVisible()
+    # The lines still drag.
+    handle = grid.col_a.handle(1)
+    start = handle.y()
+    _drag(handle, start - 60)
+    assert abs(handle.y() - (start - 60)) <= 1
+    win._activate_tool("select")
+    grid.pointer_moved(at)
+    assert not grid.cross.isVisible() or grid.crossings()
+
+
+def _saved_with_lines(win, tmp_path, name="views.igz"):
+    grid = _four(win)
+    _drag(grid.columns.handle(1), grid.columns.handle(1).x() + 80)
+    _drag(grid.col_a.handle(1), grid.col_a.handle(1).y() - 70)
+    _drag(grid.col_b.handle(1), grid.col_b.handle(1).y() + 50)
+    QApplication.processEvents()
+    path = tmp_path / name
+    win._do_save(path)
+    return grid.lines_state(), path
+
+
+def _copy_opened(win, path, tmp_path):
+    """The same file only brings its tab to the front: a copy of it."""
+    import shutil
+    copy = tmp_path / ("copy-" + path.name)
+    shutil.copy(path, copy)
+    win.open_path(copy)
+    from PySide6.QtTest import QTest
+    QTest.qWait(100)
+    return win._doc
+
+
+def test_the_file_opens_in_its_layout_with_its_lines(win, tmp_path):
+    state, path = _saved_with_lines(win, tmp_path)
+    doc = _copy_opened(win, path, tmp_path)
+    assert doc.view_layout == "four"
+    back = doc.view_grid.lines_state()
+    assert abs(back["columns"] - state["columns"]) < 0.02
+    assert abs(back["rows"][0] - state["rows"][0]) < 0.02
+    assert abs(back["rows"][1] - state["rows"][1]) < 0.02
+    assert abs(back["rows"][0] - back["rows"][1]) > 0.05, "the halves stay apart"
+    assert not win._is_dirty(), "opening it is not an edit"
+
+
+def test_it_travels_in_the_igz(tmp_path):
+    from core.scene import Scene
+    from formats import igz
+    scene = Scene()
+    scene.views_home = {"layout": "three", "columns": 0.4, "rows": [0.5, 0.3]}
+    path = tmp_path / "v.igz"
+    igz.save_scene(scene, path)
+    back = Scene()
+    igz.load_into(back, path)
+    assert back.views_home == scene.views_home
+    back.clear()
+    assert back.views_home is None
+
+
+def test_one_view_saves_nothing_and_opens_as_it_is(win, tmp_path):
+    path = tmp_path / "one.igz"
+    win._do_save(path)
+    assert win.viewport.scene.views_home is None
+    doc = _copy_opened(win, path, tmp_path)
+    assert doc.view_layout == "single"
+
+
+def test_a_maximized_view_saves_the_lines_restore_would_bring(win, tmp_path):
+    grid = _four(win)
+    _drag(grid.col_a.handle(1), grid.col_a.handle(1).y() - 70)
+    QApplication.processEvents()
+    state = grid.lines_state()
+    grid.toggle_maximized(grid.cells[0])
+    QApplication.processEvents()
+    assert abs(grid.lines_state()["rows"][0] - state["rows"][0]) < 0.01
+
+
+@pytest.mark.parametrize("home", [
+    {"layout": "nonsense"}, {"layout": 7}, {"nothing": 1},
+    {"layout": "four", "columns": "x", "rows": [2, None]},
+    {"layout": "four", "columns": True, "rows": "ab"},
+])
+def test_odd_views_in_a_file_open_anyway(win, home):
+    win.viewport.scene.views_home = home
+    win._apply_views_home()
+    QApplication.processEvents()
+    assert win._doc.view_layout in ("single", "four")
+
+
+def _previews(grid):
+    return sorted(c.index for c in grid.cells
+                  if c.viewport is not None and c.viewport.tool_preview)
+
+
+def test_a_tools_preview_shows_in_one_view_only(win):
+    grid = _four(win)
+    assert _previews(grid) == [1], "the window's own, before the pointer comes"
+    grid.set_tool_view(grid.cells[0].viewport)
+    assert _previews(grid) == [0]
+    grid.set_tool_view(grid.cells[3].viewport)
+    assert _previews(grid) == [3]
+
+
+def test_the_pointer_coming_into_a_view_brings_the_preview(win):
+    from PySide6.QtCore import QEvent
+    grid = _four(win)
+    vp = grid.cells[2].viewport
+    QApplication.sendEvent(vp, QEvent(QEvent.Enter))
+    assert _previews(grid) == [2]
+
+
+def test_one_view_always_shows_the_preview(win):
+    grid = _four(win)
+    grid.set_tool_view(grid.cells[0].viewport)
+    win.set_view_layout("single")
+    QApplication.processEvents()
+    assert grid.main.tool_preview
+
+
+def test_a_view_filling_the_area_takes_the_preview(win):
+    grid = _four(win)
+    grid.set_tool_view(grid.cells[0].viewport)
+    grid.toggle_maximized(grid.cells[3])
+    QApplication.processEvents()
+    assert _previews(grid) == [3]
+
+
+def test_a_layout_without_that_view_hands_over_the_preview(win):
+    grid = _four(win)
+    grid.set_tool_view(grid.cells[3].viewport)
+    win.set_view_layout("two")
+    QApplication.processEvents()
+    assert _previews(grid) == [1], "the window's own"
+
+
+def test_a_view_without_the_preview_draws_with_no_tool_and_gives_it_back(
+        win, monkeypatch):
+    grid = _four(win)
+    win._activate_tool("line")
+    vp = grid.cells[0].viewport
+    tool = grid.main.active_tool
+    vp.active_tool = tool
+    seen = []
+    monkeypatch.setattr(type(vp), "_paint_frame",
+                        lambda self: seen.append(self.active_tool))
+    vp.tool_preview = False
+    vp.paintGL()
+    assert seen == [None] and vp.active_tool is tool
+    vp.tool_preview = True
+    vp.paintGL()
+    assert seen == [None, tool]
+    win._activate_tool("select")
+
+
+def test_a_maximized_view_has_no_square(win):
+    grid = _four(win)
+    grid.toggle_maximized(grid.cells[1])
+    QApplication.processEvents()
+    assert grid.crossings() == []
+
+
+def test_restore_brings_the_lines_back_where_they_were(win):
+    grid = _four(win)
+    _drag(grid.col_a.handle(1), grid.col_a.handle(1).y() - 60)
+    _drag(grid.columns.handle(1), grid.columns.handle(1).x() + 70)
+    QApplication.processEvents()
+    kept = grid.columns.sizes(), grid.col_a.sizes(), grid.col_b.sizes()
+    grid.toggle_maximized(grid.cells[3])
+    QApplication.processEvents()
+    assert _shown(win) == [3]
+    grid.toggle_maximized(grid.cells[3])
+    QApplication.processEvents()
+    assert _shown(win) == [0, 1, 2, 3]
+    assert _about(grid.columns.sizes(), kept[0])
+    assert _about(grid.col_a.sizes(), kept[1])
+    assert _about(grid.col_b.sizes(), kept[2])
+    # A layout chosen again starts from the middle, as it always did.
+    win.set_view_layout("two")
+    win.set_view_layout("four")
+    QApplication.processEvents()
+    a, b = grid.col_a.sizes()
+    assert abs(a - b) <= 2
 
 
 def test_the_sidebar_handle_stays_on_the_views_edge(win):

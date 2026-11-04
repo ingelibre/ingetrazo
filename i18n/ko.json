@@ -3277,7 +3277,6 @@
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다.",
  "Show scenes as tabs": "장면을 탭으로 표시",
  "This project's scenes as tabs under the view; a click shows one.": "이 프로젝트의 장면을 뷰 아래에 탭으로 표시합니다. 클릭하면 해당 장면을 보여 줍니다.",
- "Click: change the view · Double-click: this view alone, or the four again": "클릭: 뷰 변경 · 더블클릭: 이 뷰만, 또는 다시 네 개",
  "One view": "뷰 1개",
  "Two views": "뷰 2개",
  "Two views, one wider": "뷰 2개(한쪽을 넓게)",
@@ -3318,5 +3317,7 @@
  "Skip This Version": "이 버전 건너뛰기",
  "Remind Me Later": "나중에 알림",
  "Could not check for updates. Check your internet connection and try again.": "업데이트를 확인할 수 없습니다. 인터넷 연결을 확인한 후 다시 시도하세요.",
- "You have the latest version ({version}).": "최신 버전({version})을 사용 중입니다."
+ "You have the latest version ({version}).": "최신 버전({version})을 사용 중입니다.",
+ "Maximize this view or change it": "이 뷰를 최대화하거나 변경",
+ "Drag: move these views' lines together": "드래그: 이 뷰들의 선을 함께 이동"
 }

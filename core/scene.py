@@ -116,6 +116,10 @@ class Scene:
     #: @pacaeiro, issue #60: «If I do a New drawing, or open a drawing, the
     #: Camera stays in the position where it was before».
     camera_home: dict | None = None
+    #: How many views it opens in and where the lines between them are
+    #: (views/multi_view.py); None: one view. Travels in the .igz like the
+    #: camera, and like the camera changing it is not an edit.
+    views_home: dict | None = None
     #: The model's units (issue #33): the unit a bare number is typed in and
     #: every length is shown in, plus the decimals. Travels in the .igz;
     #: read through ``core.units`` (``fmt_len`` & co.).
@@ -756,6 +760,7 @@ class Scene:
             self.version += 1
         # Outside the guard: an empty document has a camera to forget too.
         self.camera_home = None
+        self.views_home = None
         self.units = {"length": "m", "precision": 2}
         self.plugin_data = {}
 

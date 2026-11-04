@@ -3312,7 +3312,6 @@
   "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "يعيد إعدادات هذه النافذة إلى ما يأتي به IngeTrazo. لا يُحفظ شيء حتى تضغط موافق. تبقى اللغة ومساعد الذكاء الاصطناعي واختصارات لوحة المفاتيح ووحدات المستند المفتوح كما هي.",
   "Show scenes as tabs": "عرض المشاهد كعلامات تبويب",
   "This project's scenes as tabs under the view; a click shows one.": "مشاهد هذا المشروع كعلامات تبويب أسفل العرض؛ نقرة تعرض أحدها.",
-  "Click: change the view · Double-click: this view alone, or the four again": "نقرة: تغيير العرض · نقرة مزدوجة: هذا العرض وحده، أو الأربعة مجددًا",
   "One view": "عرض واحد",
   "Two views": "عرضان",
   "Two views, one wider": "عرضان، أحدهما أعرض",
@@ -3353,5 +3352,7 @@
   "Skip This Version": "تخطي هذا الإصدار",
   "Remind Me Later": "ذكرني لاحقًا",
   "Could not check for updates. Check your internet connection and try again.": "تعذر البحث عن تحديثات. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.",
-  "You have the latest version ({version}).": "لديك أحدث إصدار ({version})."
+  "You have the latest version ({version}).": "لديك أحدث إصدار ({version}).",
+  "Maximize this view or change it": "تكبير هذا العرض أو تغييره",
+  "Drag: move these views' lines together": "اسحب: حرّك خطوط هذه العروض معًا"
 }

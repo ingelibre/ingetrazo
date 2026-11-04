@@ -3280,7 +3280,6 @@
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Mengembalikan pengaturan jendela ini seperti bawaan IngeTrazo. Tidak ada yang disimpan sampai Anda menekan OK. Bahasa, Asisten AI, pintasan keyboard, dan satuan dokumen yang terbuka tetap seperti semula.",
  "Show scenes as tabs": "Tampilkan scene sebagai tab",
  "This project's scenes as tabs under the view; a click shows one.": "Scene proyek ini sebagai tab di bawah tampilan; satu klik menampilkannya.",
- "Click: change the view · Double-click: this view alone, or the four again": "Klik: ganti tampilan · Klik ganda: hanya tampilan ini, atau keempatnya lagi",
  "One view": "Satu tampilan",
  "Two views": "Dua tampilan",
  "Two views, one wider": "Dua tampilan, satu lebih lebar",
@@ -3321,5 +3320,7 @@
  "Skip This Version": "Lewati Versi Ini",
  "Remind Me Later": "Ingatkan Nanti",
  "Could not check for updates. Check your internet connection and try again.": "Tidak dapat memeriksa pembaruan. Periksa koneksi internet Anda lalu coba lagi.",
- "You have the latest version ({version}).": "Anda memakai versi terbaru ({version})."
+ "You have the latest version ({version}).": "Anda memakai versi terbaru ({version}).",
+ "Maximize this view or change it": "Maksimalkan tampilan ini atau ubah",
+ "Drag: move these views' lines together": "Seret: pindahkan garis tampilan ini bersama-sama"
 }

@@ -3318,5 +3318,7 @@
   "Skip This Version": "Пропусни тази версия",
   "Remind Me Later": "Напомни ми по-късно",
   "Could not check for updates. Check your internet connection and try again.": "Проверката за актуализации не бе успешна. Проверете връзката си с интернет и опитайте отново.",
-  "You have the latest version ({version}).": "Имате последната версия ({version})."
+  "You have the latest version ({version}).": "Имате последната версия ({version}).",
+  "Maximize this view or change it": "Увеличаване на този изглед или смяна",
+  "Drag: move these views' lines together": "Плъзгане: преместване заедно на линиите на тези изгледи"
 }
