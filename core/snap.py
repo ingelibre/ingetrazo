@@ -882,7 +882,7 @@ def _in_plane_with_point_snap(
     best = None
     for axis, a in _AXIS_VECTORS.items():
         d = QVector3D.crossProduct(a, n)
-        if d.length() < 1e-6:
+        if d.length() < 1e-5:     # normalized() gives the NULL vector below this
             continue      # the axis plane is parallel to the face: no line
         d = d.normalized()
         # In the face, square to the line: the way the cursor has to move
