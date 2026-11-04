@@ -3318,5 +3318,7 @@
  "Edge extensions": "모서리 연장",
  "Layer line": "레이어 선",
  "Square, extended by a quarter of the width": "사각형, 선 두께의 4분의 1만큼 연장",
- "Round, extended by a quarter of the width": "원형, 선 두께의 4분의 1만큼 연장"
+ "Round, extended by a quarter of the width": "원형, 선 두께의 4분의 1만큼 연장",
+ "Square, overhang: half the width minus 2 px (minimum 0)": "사각형, 돌출 길이: 선 두께의 절반에서 2 px를 뺀 값 (최소 0)",
+ "Round, overhang: half the width minus 2 px (minimum 0)": "원형, 돌출 길이: 선 두께의 절반에서 2 px를 뺀 값 (최소 0)"
 }

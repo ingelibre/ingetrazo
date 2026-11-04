@@ -2126,7 +2126,7 @@ def _edge_cap(p, ink, mode):
         p.drawLine(QPointF(x, 8), QPointF(x, 40))
     p.setPen(Qt.NoPen)
     p.setBrush(ink)
-    rect = QRectF(9 if mode >= 2 else 12, 18, 30 if mode >= 2 else 24, 12)
+    rect = QRectF(8 if mode >= 2 else 12, 18, 32 if mode >= 2 else 24, 12)
     if mode % 2:
         p.drawRoundedRect(rect, 6, 6)
     else:

@@ -3353,5 +3353,7 @@
  "Edge extensions": "تمديد الحواف",
  "Layer line": "خط الطبقة",
  "Square, extended by a quarter of the width": "مربعة، ممتدة بربع السماكة",
- "Round, extended by a quarter of the width": "دائرية، ممتدة بربع السماكة"
+ "Round, extended by a quarter of the width": "دائرية، ممتدة بربع السماكة",
+ "Square, overhang: half the width minus 2 px (minimum 0)": "مربعة، الامتداد: نصف السماكة ناقص بكسلين (الحد الأدنى 0)",
+ "Round, overhang: half the width minus 2 px (minimum 0)": "دائرية، الامتداد: نصف السماكة ناقص بكسلين (الحد الأدنى 0)"
 }

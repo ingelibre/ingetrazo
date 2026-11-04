@@ -3333,5 +3333,7 @@
  "Edge extensions": "Подовження ребер",
  "Layer line": "Лінія шару",
  "Square, extended by a quarter of the width": "Квадратне, з виступом на чверть товщини",
- "Round, extended by a quarter of the width": "Кругле, з виступом на чверть товщини"
+ "Round, extended by a quarter of the width": "Кругле, з виступом на чверть товщини",
+ "Square, overhang: half the width minus 2 px (minimum 0)": "Квадратне, виступ: половина товщини мінус 2 пікс. (мінімум 0)",
+ "Round, overhang: half the width minus 2 px (minimum 0)": "Кругле, виступ: половина товщини мінус 2 пікс. (мінімум 0)"
 }

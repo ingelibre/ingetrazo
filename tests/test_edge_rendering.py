@@ -182,20 +182,38 @@ def test_negative_extensions_retract_both_ends_without_reversing_short_lines(dra
     assert not _ink(render(_style(extensions=True, extension_length=-50))).any()
 
 
-def test_profile_caps_have_flush_or_quarter_width_extents_and_distinct_corners(drawing):
+@pytest.mark.parametrize("width", [1, 4, 6, 8, 12, 20])
+def test_profile_cap_overhang_is_half_width_minus_two_pixels(drawing, width):
     vp, render, _renderer = drawing
     _line(vp)
-    masks = {cap: _ink(render(_style(profiles=True, profile_width=12, profile_cap=cap)))
+    masks = {cap: _ink(render(_style(profiles=True, profile_width=width, profile_cap=cap)))
              for cap in ("butt", "round", "square", "round_extended")}
     bounds = {cap: np.flatnonzero(mask.any(axis=0)) for cap, mask in masks.items()}
     for cap in ("butt", "round"):
         assert bounds[cap][0] == pytest.approx(bounds["butt"][0], abs=1)
         assert bounds[cap][-1] == pytest.approx(bounds["butt"][-1], abs=1)
     for cap in ("square", "round_extended"):
-        assert bounds[cap][0] == pytest.approx(bounds["butt"][0] - 3, abs=1)
-        assert bounds[cap][-1] == pytest.approx(bounds["butt"][-1] + 3, abs=1)
-    assert masks["round"].sum() < masks["butt"].sum() - 20
-    assert masks["round_extended"].sum() < masks["square"].sum() - 20
+        overhang = max(0, width / 2 - 2)
+        assert bounds[cap][0] == pytest.approx(bounds["butt"][0] - overhang, abs=1)
+        assert bounds[cap][-1] == pytest.approx(bounds["butt"][-1] + overhang, abs=1)
+    if width <= 4:
+        assert np.array_equal(masks["square"], masks["butt"])
+        assert np.array_equal(masks["round_extended"], masks["round"])
+    if width >= 8:
+        assert masks["round"].sum() < masks["butt"].sum() - 10
+        assert masks["round_extended"].sum() < masks["square"].sum() - 10
+
+
+def test_profile_cap_two_pixel_inset_scales_with_export_resolution(drawing):
+    vp, render, _renderer = drawing
+    _line(vp)
+    vp._export_size = (WIDTH, HEIGHT)
+    vp._export_edge_px = 2
+    plain = np.flatnonzero(_ink(render(_style(profiles=True, profile_width=12))).any(axis=0))
+    cap = np.flatnonzero(_ink(render(_style(profiles=True, profile_width=12,
+                                           profile_cap="square"))).any(axis=0))
+    assert cap[0] == pytest.approx(plain[0] - (12 / 2 - 2) * 2, abs=1)
+    assert cap[-1] == pytest.approx(plain[-1] + (12 / 2 - 2) * 2, abs=1)
 
 
 def test_endpoint_shapes_have_different_silhouettes_and_keep_size_on_zoom(drawing):

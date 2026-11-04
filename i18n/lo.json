@@ -3321,5 +3321,7 @@
  "Edge extensions": "ການຍືດຂອບ",
  "Layer line": "ເສັ້ນຂອງຊັ້ນ",
  "Square, extended by a quarter of the width": "ປາຍສີ່ຫຼ່ຽມ ຍື່ນອອກໜຶ່ງສ່ວນສີ່ຂອງຄວາມໜາ",
- "Round, extended by a quarter of the width": "ປາຍມົນ ຍື່ນອອກໜຶ່ງສ່ວນສີ່ຂອງຄວາມໜາ"
+ "Round, extended by a quarter of the width": "ປາຍມົນ ຍື່ນອອກໜຶ່ງສ່ວນສີ່ຂອງຄວາມໜາ",
+ "Square, overhang: half the width minus 2 px (minimum 0)": "ປາຍສີ່ຫຼ່ຽມ, ສ່ວນຍື່ນ: ເຄິ່ງຄວາມໜາລົບ 2 ພິກເຊວ (ຕ່ຳສຸດ 0)",
+ "Round, overhang: half the width minus 2 px (minimum 0)": "ປາຍມົນ, ສ່ວນຍື່ນ: ເຄິ່ງຄວາມໜາລົບ 2 ພິກເຊວ (ຕ່ຳສຸດ 0)"
 }

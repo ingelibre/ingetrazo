@@ -3318,5 +3318,7 @@
  "Edge extensions": "Prolongaciones",
  "Layer line": "Línea de capa",
  "Square, extended by a quarter of the width": "Cuadrado, prolongado un cuarto de la anchura",
- "Round, extended by a quarter of the width": "Redondo, prolongado un cuarto de la anchura"
+ "Round, extended by a quarter of the width": "Redondo, prolongado un cuarto de la anchura",
+ "Square, overhang: half the width minus 2 px (minimum 0)": "Cuadrado, saliente: media anchura menos 2 px (mínimo 0)",
+ "Round, overhang: half the width minus 2 px (minimum 0)": "Redondo, saliente: media anchura menos 2 px (mínimo 0)"
 }

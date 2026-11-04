@@ -3318,5 +3318,7 @@
  "Edge extensions": "Kantenverlängerung",
  "Layer line": "Ebenenlinie",
  "Square, extended by a quarter of the width": "Eckig, um ein Viertel der Strichbreite verlängert",
- "Round, extended by a quarter of the width": "Rund, um ein Viertel der Strichbreite verlängert"
+ "Round, extended by a quarter of the width": "Rund, um ein Viertel der Strichbreite verlängert",
+ "Square, overhang: half the width minus 2 px (minimum 0)": "Eckig, Überstand: halbe Strichbreite minus 2 px (mindestens 0)",
+ "Round, overhang: half the width minus 2 px (minimum 0)": "Rund, Überstand: halbe Strichbreite minus 2 px (mindestens 0)"
 }

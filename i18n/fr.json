@@ -3318,5 +3318,7 @@
  "Edge extensions": "Prolongements",
  "Layer line": "Ligne du calque",
  "Square, extended by a quarter of the width": "Carrée, prolongée d’un quart d’épaisseur",
- "Round, extended by a quarter of the width": "Ronde, prolongée d’un quart d’épaisseur"
+ "Round, extended by a quarter of the width": "Ronde, prolongée d’un quart d’épaisseur",
+ "Square, overhang: half the width minus 2 px (minimum 0)": "Carrée, débord : demi-épaisseur moins 2 px (minimum 0)",
+ "Round, overhang: half the width minus 2 px (minimum 0)": "Ronde, débord : demi-épaisseur moins 2 px (minimum 0)"
 }

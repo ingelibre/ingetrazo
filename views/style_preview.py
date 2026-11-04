@@ -125,8 +125,9 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                     continue
                 cap = style.profile_cap if style.profiles and index in outline else "butt"
                 if cap in ("square", "round_extended"):
-                    start -= width / 4
-                    end += width / 4
+                    overhang = max(0, width / 2 - 2)
+                    start -= overhang
+                    end += overhang
                 painter.save()
                 painter.translate(*a)
                 painter.rotate(math.degrees(math.atan2(dy, dx)))

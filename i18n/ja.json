@@ -3318,5 +3318,7 @@
  "Edge extensions": "エッジの延長",
  "Layer line": "レイヤーの線",
  "Square, extended by a quarter of the width": "角型、線幅の4分の1だけ延長",
- "Round, extended by a quarter of the width": "丸型、線幅の4分の1だけ延長"
+ "Round, extended by a quarter of the width": "丸型、線幅の4分の1だけ延長",
+ "Square, overhang: half the width minus 2 px (minimum 0)": "角型、突出量：線幅の半分から2 pxを引く（最小0）",
+ "Round, overhang: half the width minus 2 px (minimum 0)": "丸型、突出量：線幅の半分から2 pxを引く（最小0）"
 }

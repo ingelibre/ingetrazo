@@ -150,8 +150,8 @@ void main() {
     line_cap = u_profiles == 1 && profile ? u_profile_cap : 0;
     line_limits = vec2(-before, len + after);
     if (line_cap >= 2) {
-        if (!cut.x) line_limits.x -= widths.x * 0.25;
-        if (!cut.y) line_limits.y += widths.y * 0.25;
+        if (!cut.x) line_limits.x -= max(0.0, widths.x * 0.5 - 2.0 * u_scale);
+        if (!cut.y) line_limits.y += max(0.0, widths.y * 0.5 - 2.0 * u_scale);
     }
     float radius = max(widths.x, widths.y) * 0.5;
     if (u_endpoint > 0.0 && u_endpoint_type == 0) radius += u_scale;

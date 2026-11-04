@@ -3326,5 +3326,7 @@
  "Edge extensions": "Wydłużenie krawędzi",
  "Layer line": "Linia warstwy",
  "Square, extended by a quarter of the width": "Kwadratowe, wydłużone o ćwierć grubości",
- "Round, extended by a quarter of the width": "Okrągłe, wydłużone o ćwierć grubości"
+ "Round, extended by a quarter of the width": "Okrągłe, wydłużone o ćwierć grubości",
+ "Square, overhang: half the width minus 2 px (minimum 0)": "Kwadratowe, występ: połowa grubości minus 2 px (minimum 0)",
+ "Round, overhang: half the width minus 2 px (minimum 0)": "Okrągłe, występ: połowa grubości minus 2 px (minimum 0)"
 }

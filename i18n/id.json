@@ -3321,5 +3321,7 @@
  "Edge extensions": "Perpanjangan rusuk",
  "Layer line": "Garis lapisan",
  "Square, extended by a quarter of the width": "Persegi, diperpanjang seperempat ketebalan",
- "Round, extended by a quarter of the width": "Bulat, diperpanjang seperempat ketebalan"
+ "Round, extended by a quarter of the width": "Bulat, diperpanjang seperempat ketebalan",
+ "Square, overhang: half the width minus 2 px (minimum 0)": "Persegi, juluran: setengah ketebalan dikurangi 2 px (minimum 0)",
+ "Round, overhang: half the width minus 2 px (minimum 0)": "Bulat, juluran: setengah ketebalan dikurangi 2 px (minimum 0)"
 }

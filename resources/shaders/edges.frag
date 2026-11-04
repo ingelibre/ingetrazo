@@ -59,7 +59,7 @@ float stroke_coverage() {
     float distance = min(radius - abs(g_pixel.y), min(along - g_limits.x, g_limits.y - along));
     if (g_cap == 1 || g_cap == 3) {
         // Flush rounded ends fit inside the requested length. Extended
-        // rounded ends use the same capsule, with a quarter-width overhang.
+        // rounded ends use the same capsule, with the requested overhang.
         float rx = min(radius, (g_limits.y - g_limits.x) * 0.5);
         float center = clamp(along, g_limits.x + rx, g_limits.y - rx);
         bool at_cut = (g_caps.x < 0.5 && along < g_limits.x + rx)
