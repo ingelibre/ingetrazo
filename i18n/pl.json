@@ -3303,5 +3303,9 @@
  "Hide this project's scene tabs; Alt+E shows them again.": "Ukrywa karty scen tego projektu; Alt+E pokazuje je ponownie.",
  "Show a picture of the project on hover over its tab": "Pokazuj obraz projektu po najechaniu na jego kartę",
  "Show project tabs": "Pokaż karty projektów",
- "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Karty otwartych projektów nad widokiem; po ukryciu projekty pozostają otwarte: Ctrl+PgDown przełącza między nimi."
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Karty otwartych projektów nad widokiem; po ukryciu projekty pozostają otwarte: Ctrl+PgDown przełącza między nimi.",
+ "Maximize view": "Maksymalizuj widok",
+ "Restore views": "Przywróć widoki",
+ "Maximize": "Maksymalizuj",
+ "Restore": "Przywróć"
 }

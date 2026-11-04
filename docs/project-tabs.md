@@ -68,6 +68,7 @@ The project right-clicked comes to the front first, so **Save** and
 | Ctrl+Tab | With several projects, the next one; with one, the sheets |
 | Alt+E | The scene row of the project in front, on or off |
 | Alt+T | The project tabs, on or off |
+| Ctrl+Space | With several views, the one under the pointer alone, and back |
 
 ### Hiding the project tabs
 
@@ -134,9 +135,12 @@ as their panes. One view is always first; the rest go from the most used.
   does not mark the document as changed.
 - Every view shows its name in a small label in its corner; the view being
   worked in wears the accent colour. Click the label for the standard views
-  (Top, Front, Right, Back, Left, Bottom, Isometric, Perspective); a
-  double-click fills the area with that view, another brings the others
-  back. A view picked by hand stays through layout changes.
+  (Top, Front, Right, Back, Left, Bottom, Isometric, Perspective). A view
+  picked by hand stays through layout changes.
+- **Maximize**, first in the label's menu, makes the view fill the area; the
+  same entry then says **Restore** and brings the others back as they were.
+  **Ctrl+Space** does the same for the view under the pointer, as do
+  **Window ▸ Maximize view** and a double-click on the label.
 - All the views draw the same model with the same undo: what is drawn,
   selected or undone in one shows in all. Each view picks up the tool in
   hand as the mouse comes in.

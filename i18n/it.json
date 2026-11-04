@@ -3296,5 +3296,9 @@
  "Hide this project's scene tabs; Alt+E shows them again.": "Nasconde le schede delle scene di questo progetto; Alt+E le mostra di nuovo.",
  "Show a picture of the project on hover over its tab": "Mostra un'immagine del progetto al passaggio del mouse sulla sua scheda",
  "Show project tabs": "Mostra le schede dei progetti",
- "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Le schede dei progetti aperti sopra la vista; nascoste, i progetti restano aperti: Ctrl+PagGiù passa dall'uno all'altro."
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Le schede dei progetti aperti sopra la vista; nascoste, i progetti restano aperti: Ctrl+PagGiù passa dall'uno all'altro.",
+ "Maximize view": "Ingrandisci vista",
+ "Restore views": "Ripristina viste",
+ "Maximize": "Ingrandisci",
+ "Restore": "Ripristina"
 }

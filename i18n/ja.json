@@ -3295,5 +3295,9 @@
  "Hide this project's scene tabs; Alt+E shows them again.": "このプロジェクトのシーンタブを隠します。Alt+E で再表示します。",
  "Show a picture of the project on hover over its tab": "タブにカーソルを合わせたときにプロジェクトの画像を表示",
  "Show project tabs": "プロジェクトのタブを表示",
- "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "開いているプロジェクトのタブをビューの上に表示します。非表示でもプロジェクトは開いたままで、Ctrl+PgDown で切り替えられます。"
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "開いているプロジェクトのタブをビューの上に表示します。非表示でもプロジェクトは開いたままで、Ctrl+PgDown で切り替えられます。",
+ "Maximize view": "ビューを最大化",
+ "Restore views": "ビューを元に戻す",
+ "Maximize": "最大化",
+ "Restore": "復元"
 }

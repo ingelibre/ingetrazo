@@ -20,12 +20,14 @@ is drawn, selected or undone in one shows in the four. Each picks up the
 window's tool when the mouse comes in, and its readouts (typed value,
 measurement, coordinates) and document changes reach the window through
 the main viewport's signals, as if it had happened there. Each cell has a
-small title that opens a menu of the standard views; a double-click on it
-fills the work area with that view and another brings the four back.
+small title that opens a menu: first the entry that fills the work area with
+that view and, then, brings the others back (Ctrl+Space, or a double-click on
+the title, does the same), and after it the standard views.
 """
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
+from PySide6.QtGui import QCursor, QKeySequence
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QMenu, QSizePolicy,
                                QSplitter, QToolButton, QVBoxLayout, QWidget)
 
@@ -63,18 +65,15 @@ def _apply_camera_state(cam, state: dict) -> None:
 
 
 #: The view's name as a small label over its top-left corner (not a strip
-#: above it): dark and translucent, in the accent colour for the view
-#: being worked in.
+#: above it), covering as little of the view as it can: small, no arrow, dark
+#: and faint until hovered, in the accent colour for the view being worked in.
 _CHIP = """
 QToolButton#viewChip {{
-    background: rgba(32, 36, 42, 0.62); color: white;
-    border: 0px; border-radius: 3px; padding: 1px 16px 1px 6px;
-    font-weight: 600;
+    background: rgba(32, 36, 42, 0.45); color: white;
+    border: 0px; border-radius: 2px; padding: 0px 4px;
+    font-size: 8pt;
 }}
-QToolButton#viewChip::menu-indicator {{
-    subcontrol-origin: padding; subcontrol-position: right center;
-    right: 4px;
-}}
+QToolButton#viewChip::menu-indicator {{ image: none; width: 0px; }}
 QToolButton#viewChip:hover {{ background: rgba(32, 36, 42, 0.82); }}
 QToolButton#viewChip[active="true"] {{ background: rgb({accent_rgb}); }}
 """
@@ -86,7 +85,7 @@ class _CellHeader(QToolButton):
     back)."""
 
     #: Distance (px) from the view's top-left corner.
-    MARGIN = 4
+    MARGIN = 2
 
     def __init__(self, cell) -> None:
         super().__init__(cell)
@@ -107,14 +106,31 @@ class _CellHeader(QToolButton):
         menu.aboutToShow.connect(self._fill)
         self.setMenu(menu)
 
+    def sizeHint(self):  # noqa: N802 — Qt override
+        """As wide as its name: Qt keeps room for the arrow it no longer has."""
+        self.ensurePolished()
+        hint = super().sizeHint()
+        hint.setWidth(self.fontMetrics().horizontalAdvance(self.text()) + 10)
+        return hint
+
     def _fill(self) -> None:
         menu = self.menu()
-        if menu.actions():
-            return
-        for key, label in VIEWS:
-            act = menu.addAction(tr(label))
-            act.triggered.connect(
-                lambda _c=False, k=key: self._cell.pick_view(k))
+        if not menu.actions():
+            self._maximize_action = menu.addAction("")
+            self._maximize_action.triggered.connect(
+                lambda _c=False: self._cell.grid.toggle_maximized(self._cell))
+            menu.addSeparator()
+            for key, label in VIEWS:
+                act = menu.addAction(tr(label))
+                act.triggered.connect(
+                    lambda _c=False, k=key: self._cell.pick_view(k))
+        # The key only shown, after a tab, so that people learn it: the
+        # window's action is the one that holds it.
+        text = self._cell.maximize_label()
+        act = getattr(self.window(), "_act_maximize_view", None)
+        if act is not None and not act.shortcut().isEmpty():
+            text += "\t" + act.shortcut().toString(QKeySequence.NativeText)
+        self._maximize_action.setText(text)
 
     def mouseDoubleClickEvent(self, ev) -> None:  # noqa: N802 — Qt override
         self._cell.grid.toggle_maximized(self._cell)
@@ -167,6 +183,10 @@ class ViewCell(QWidget):
         h.adjustSize()
         h.move(h.MARGIN, h.MARGIN)
         h.raise_()
+
+    def maximize_label(self) -> str:
+        return (tr("Restore") if self.grid.maximized_index() == self.index
+                else tr("Maximize"))
 
     def resizeEvent(self, ev) -> None:  # noqa: N802 — Qt override
         super().resizeEvent(ev)
@@ -428,7 +448,26 @@ class ViewGrid(QWidget):
         if not self.is_enabled():
             return
         self._maximized = None if self._maximized is cell else cell
+        self.set_active_cell(cell)
         self._apply()
+
+    def toggle_maximized_here(self) -> None:
+        """Ctrl+Space: back to the others if a view fills the area; else the view
+        under the pointer fills it, or the one being worked in, or the
+        window's own."""
+        if not self.is_enabled():
+            return
+        cell = self._maximized
+        if cell is None:
+            shown = [c for c in self.cells if not c.isHidden()]
+            at = QCursor.pos()
+            cell = next((c for c in shown
+                         if c.rect().contains(c.mapFromGlobal(at))), None)
+        if cell is None:
+            active = self.active_cell()
+            cell = (active if active is not None and not active.isHidden()
+                    else self.cells[1])
+        self.toggle_maximized(cell)
 
     def _apply(self) -> None:
         on = self.is_enabled()
@@ -466,6 +505,9 @@ class ViewGrid(QWidget):
             half = max(1, self.height() // 2)
             for col in (self.col_a, self.col_b):
                 col.setSizes([half, half])
+        sync = getattr(self.window(), "_sync_maximize_action", None)
+        if sync is not None:
+            sync()
         # The sidebar's handle sits on the views' edge: placed again once
         # the cells are laid out.
         place = getattr(self.window(), "_place_sidebar_handle", None)

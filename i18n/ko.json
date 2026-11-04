@@ -3295,5 +3295,9 @@
  "Hide this project's scene tabs; Alt+E shows them again.": "이 프로젝트의 장면 탭을 숨깁니다. Alt+E로 다시 표시합니다.",
  "Show a picture of the project on hover over its tab": "탭 위에 마우스를 올리면 프로젝트 이미지 표시",
  "Show project tabs": "프로젝트 탭 표시",
- "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "뷰 위에 열린 프로젝트의 탭을 표시합니다. 숨겨도 프로젝트는 열려 있으며 Ctrl+PgDown으로 전환합니다."
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "뷰 위에 열린 프로젝트의 탭을 표시합니다. 숨겨도 프로젝트는 열려 있으며 Ctrl+PgDown으로 전환합니다.",
+ "Maximize view": "뷰 최대화",
+ "Restore views": "뷰 복원",
+ "Maximize": "최대화",
+ "Restore": "복원"
 }

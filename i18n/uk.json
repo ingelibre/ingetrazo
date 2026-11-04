@@ -3310,5 +3310,9 @@
  "Hide this project's scene tabs; Alt+E shows them again.": "Ховає вкладки сцен цього проєкту; Alt+E показує їх знову.",
  "Show a picture of the project on hover over its tab": "Показувати зображення проєкту під час наведення на його вкладку",
  "Show project tabs": "Показувати вкладки проєктів",
- "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Вкладки відкритих проєктів над видом; коли вони приховані, проєкти лишаються відкритими: Ctrl+PgDown перемикає між ними."
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Вкладки відкритих проєктів над видом; коли вони приховані, проєкти лишаються відкритими: Ctrl+PgDown перемикає між ними.",
+ "Maximize view": "Розгорнути вид",
+ "Restore views": "Відновити види",
+ "Maximize": "Розгорнути",
+ "Restore": "Відновити"
 }

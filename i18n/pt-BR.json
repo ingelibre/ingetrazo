@@ -3302,5 +3302,9 @@
  "Hide this project's scene tabs; Alt+E shows them again.": "Oculta as abas de cenas deste projeto; Alt+E as mostra de novo.",
  "Show a picture of the project on hover over its tab": "Mostrar uma imagem do projeto ao passar o mouse sobre a aba",
  "Show project tabs": "Mostrar as abas de projeto",
- "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "As abas dos projetos abertos, acima da vista; ocultas, os projetos continuam abertos: Ctrl+PgDown passa de um para outro."
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "As abas dos projetos abertos, acima da vista; ocultas, os projetos continuam abertos: Ctrl+PgDown passa de um para outro.",
+ "Maximize view": "Maximizar vista",
+ "Restore views": "Restaurar vistas",
+ "Maximize": "Maximizar",
+ "Restore": "Restaurar"
 }

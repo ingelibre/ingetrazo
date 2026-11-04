@@ -1877,6 +1877,14 @@ class MainWindow(QMainWindow):
         self.addAction(tabs_action)
         window_menu.addAction(tabs_action)
         self._act_project_tabs = tabs_action
+        # With several views, the one under the pointer alone and back.
+        maximize_action = QAction(tr("Maximize view"), self)
+        maximize_action.setShortcut(QKeySequence("Ctrl+Space"))
+        maximize_action.setEnabled(False)
+        maximize_action.triggered.connect(self._toggle_maximized_view)
+        self.addAction(maximize_action)
+        window_menu.addAction(maximize_action)
+        self._act_maximize_view = maximize_action
 
         window_menu.addSeparator()
         # Ctrl+U: the units panel straight away (the Preferences page).
@@ -6649,6 +6657,25 @@ class MainWindow(QMainWindow):
         on = doc.view_layout != "single"
         if button.isChecked() != on:
             button.setChecked(on)
+        self._sync_maximize_action()
+
+    def _toggle_maximized_view(self) -> None:
+        grid = self._doc.view_grid
+        if grid is not None:
+            grid.toggle_maximized_here()
+
+    def _sync_maximize_action(self) -> None:
+        """Window ▸ Maximize view (Ctrl+Space): only with several views, and
+        Restore views while one fills the area."""
+        act = self.__dict__.get("_act_maximize_view")
+        doc = self.__dict__.get("_doc")
+        if act is None or doc is None:
+            return
+        grid = doc.view_grid
+        act.setEnabled(grid is not None and grid.is_enabled()
+                       and not self.is_empty())
+        full = grid is not None and grid.maximized_index() is not None
+        act.setText(tr("Restore views") if full else tr("Maximize view"))
 
     # ---- the active project's scenes as tabs (views/scene_tabs.py) --------
     def _refresh_scene_tabs(self) -> None:

@@ -3298,5 +3298,9 @@
  "Hide this project's scene tabs; Alt+E shows them again.": "ເຊື່ອງແຖບສາກຂອງໂຄງການນີ້; Alt+E ສະແດງຄືນ.",
  "Show a picture of the project on hover over its tab": "ສະແດງຮູບຂອງໂປຣເຈັກເມື່ອວາງເມົາສ໌ເທິງແຖບຂອງມັນ",
  "Show project tabs": "ສະແດງແຖບໂປຣເຈັກ",
- "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "ແຖບຂອງໂປຣເຈັກທີ່ເປີດຢູ່ເທິງມຸມມອງ; ເມື່ອເຊື່ອງໄວ້ ໂປຣເຈັກຍັງເປີດຢູ່: Ctrl+PgDown ສະຫຼັບລະຫວ່າງພວກມັນ."
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "ແຖບຂອງໂປຣເຈັກທີ່ເປີດຢູ່ເທິງມຸມມອງ; ເມື່ອເຊື່ອງໄວ້ ໂປຣເຈັກຍັງເປີດຢູ່: Ctrl+PgDown ສະຫຼັບລະຫວ່າງພວກມັນ.",
+ "Maximize view": "ຂະຫຍາຍມຸມມອງເຕັມ",
+ "Restore views": "ກູ້ຄືນມຸມມອງ",
+ "Maximize": "ຂະຫຍາຍເຕັມ",
+ "Restore": "ກູ້ຄືນ"
 }

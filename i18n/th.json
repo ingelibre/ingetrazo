@@ -3298,5 +3298,9 @@
  "Hide this project's scene tabs; Alt+E shows them again.": "ซ่อนแท็บฉากของโปรเจกต์นี้ Alt+E แสดงอีกครั้ง",
  "Show a picture of the project on hover over its tab": "แสดงภาพของโปรเจกต์เมื่อวางเมาส์เหนือแท็บ",
  "Show project tabs": "แสดงแท็บโปรเจกต์",
- "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "แท็บของโปรเจกต์ที่เปิดอยู่เหนือมุมมอง เมื่อซ่อนไว้โปรเจกต์ยังคงเปิดอยู่ ใช้ Ctrl+PgDown เพื่อสลับ"
+ "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "แท็บของโปรเจกต์ที่เปิดอยู่เหนือมุมมอง เมื่อซ่อนไว้โปรเจกต์ยังคงเปิดอยู่ ใช้ Ctrl+PgDown เพื่อสลับ",
+ "Maximize view": "ขยายมุมมองเต็มพื้นที่",
+ "Restore views": "คืนค่ามุมมอง",
+ "Maximize": "ขยายเต็ม",
+ "Restore": "คืนค่า"
 }

@@ -193,6 +193,86 @@ def test_a_views_name_is_a_small_label_over_its_corner(win):
     assert grid.active_cell() is cell
 
 
+def test_the_labels_menu_says_maximize_or_restore(win):
+    from core.i18n import tr
+    win.show()
+    win.set_view_layout("four")
+    QApplication.processEvents()
+    header = _grid(win).cells[2].header
+
+    def entry():
+        header.menu().aboutToShow.emit()
+        return header.menu().actions()[0]               # first of all
+    assert entry().text() == tr("Maximize") + "\tCtrl+Space"
+    assert header.menu().actions()[1].isSeparator()
+    assert entry().shortcut().isEmpty(), "the window's action holds the key"
+    entry().trigger()
+    assert _shown(win) == [2] and _grid(win).active_cell() is _grid(win).cells[2]
+    assert entry().text() == tr("Restore") + "\tCtrl+Space"
+    entry().trigger()
+    assert _shown(win) == [0, 1, 2, 3]
+    assert len(header.menu().actions()) == 10, "the views, once"
+
+
+def test_the_key_takes_the_view_under_the_pointer_and_comes_back(win, monkeypatch):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QAction, QKeySequence
+    from core.i18n import tr
+    import views.multi_view as mv
+    act = win._act_maximize_view
+    assert act.shortcut() == QKeySequence("Ctrl+Space")
+    assert [a for a in win.findChildren(QAction)
+            if QKeySequence("Ctrl+Space") in a.shortcuts()] == [act]
+    assert not act.isEnabled(), "nothing to maximize with one view"
+    win.show()
+    win.set_view_layout("four")
+    QApplication.processEvents()
+    assert act.isEnabled()
+    cell = _grid(win).cells[3]
+    centre = cell.mapToGlobal(cell.rect().center())
+    monkeypatch.setattr(mv.QCursor, "pos", staticmethod(lambda: centre))
+    act.trigger()
+    assert _shown(win) == [3] and act.text() == tr("Restore views")
+    monkeypatch.setattr(mv.QCursor, "pos",
+                        staticmethod(lambda: QPoint(-9000, -9000)))
+    act.trigger()
+    assert _shown(win) == [0, 1, 2, 3] and act.text() == tr("Maximize view")
+    # Off the views: the one being worked in.
+    _grid(win).set_active_cell(_grid(win).cells[2])
+    act.trigger()
+    assert _shown(win) == [2]
+    act.trigger()
+    win.set_view_layout("single")
+    assert not act.isEnabled() and win._act_maximize_view.text() == tr("Maximize view")
+
+
+def test_each_project_keeps_its_maximized_view_and_the_action_follows(win):
+    from core.i18n import tr
+    win.show()
+    first = win._doc
+    win.set_view_layout("four")
+    QApplication.processEvents()
+    _grid(win).toggle_maximized(_grid(win).cells[0])
+    second = win._new_document()
+    QApplication.processEvents()
+    assert win._doc is second and not win._act_maximize_view.isEnabled()
+    win.activate_document(first)
+    QApplication.processEvents()
+    assert _shown(win) == [0]
+    assert win._act_maximize_view.text() == tr("Restore views")
+
+
+def test_a_views_label_covers_little_of_the_view(win):
+    win.show()
+    win.set_view_layout("four")
+    QApplication.processEvents()
+    header = _grid(win).cells[1].header
+    fm = header.fontMetrics()
+    assert header.height() <= fm.height() + 4
+    # Its name and the small padding: no room kept for an arrow.
+    assert header.width() <= fm.horizontalAdvance(header.text()) + 14
+
+
 def test_the_sidebar_handle_stays_on_the_views_edge(win):
     from PySide6.QtCore import QPoint
     win.show()
