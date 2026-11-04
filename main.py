@@ -666,6 +666,7 @@ def main() -> int:
         # came up in the middle of it, and the document stayed frozen at
         # 5 % behind it, the view blank, until it was answered.
         QTimer.singleShot(0, window.offer_units_at_start)
+        QTimer.singleShot(4000, window.check_updates_quietly)
 
     QTimer.singleShot(0, _after_first_frame)
     _offer_appimage_integration(window)

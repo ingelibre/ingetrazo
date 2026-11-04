@@ -1951,6 +1951,13 @@ class MainWindow(QMainWindow):
             rm_act.triggered.connect(self.remove_appimage_from_menu)
             help_menu.addAction(rm_act)
             help_menu.addSeparator()
+        from core.update_check import store_managed
+        if not store_managed():
+            updates_action = QAction(tr("Check for Updates…"), self)
+            updates_action.setStatusTip(tr(
+                "See whether a newer version of IngeTrazo is out."))
+            updates_action.triggered.connect(self._on_check_updates)
+            help_menu.addAction(updates_action)
         about_action = QAction(tr("About IngeTrazo"), self)
         about_action.setStatusTip(tr(
             "The version, the authors and the licence of IngeTrazo."))
@@ -3269,6 +3276,15 @@ class MainWindow(QMainWindow):
     def _on_command_search(self) -> None:
         from views.command_search import open_search
         open_search(self)
+
+    def _on_check_updates(self) -> None:
+        from views.update_dialog import start_check
+        start_check(self, quiet=False)
+
+    def check_updates_quietly(self) -> None:
+        """Once a day at start: see views/update_dialog.py."""
+        from views.update_dialog import start_check
+        start_check(self, quiet=True)
 
     def _on_about(self) -> None:
         from core.glinfo import describe
