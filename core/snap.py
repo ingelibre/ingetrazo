@@ -1481,6 +1481,7 @@ def compute_snap(
     acquired_points=None,
     shift_lock_dir=None,
     shift_lock_color=None,
+    shift_lock_anchor=None,
     linear_mode: str = "all",
     diagonal_span: bool = False,
     work_plane_normal: Optional[QVector3D] = None,
@@ -1607,15 +1608,19 @@ def compute_snap(
     #     land exactly on a corner without leaving the lock.
     if (
         shift_lock_dir is not None
-        and start_point is not None
+        and (start_point is not None or shift_lock_anchor is not None)
         and project_onto_line is not None
     ):
         cx, cy = candidate_pixel
         lock_dir = QVector3D(shift_lock_dir)
-        locked = project_onto_line(start_point, lock_dir)
+        # A lock taken from a dwelt point runs through THAT point, which is
+        # the only origin it has before the first click.
+        lock_origin = (QVector3D(shift_lock_anchor)
+                       if shift_lock_anchor is not None else start_point)
+        locked = project_onto_line(lock_origin, lock_dir)
         # The lock line runs BOTH ways from the start: point it at the cursor,
         # exactly as rule 1 does since issue #27, or half of it offers nothing.
-        if QVector3D.dotProduct(locked - start_point, lock_dir) < 0:
+        if QVector3D.dotProduct(locked - lock_origin, lock_dir) < 0:
             lock_dir = -lock_dir
         # Everything rule 1 gained in issue #27 and this one never did.
         # @pacaeiro on 0.4.4: «when I get an Axis and locked it with Shift, I
@@ -1625,15 +1630,28 @@ def compute_snap(
         # object. Held to a direction with no points to fetch, it is half a
         # tool. Same sub-rules, same order (``_lock_line_snaps``).
         hit = _lock_line_snaps(
-            scene, start_point, lock_dir, cx, cy, world_to_pixel,
+            scene, lock_origin, lock_dir, cx, cy, world_to_pixel,
             threshold_px, is_occluded, acquired_point, chain_first_point,
             project_onto_line, hover_lock_edge, hover_lock_plane,
         )
         color = shift_lock_color if shift_lock_color is not None else COLOR_REFERENCE
+        # The dashed line that gave the axis keeps showing from the dwelt
+        # point to the cursor while the lock holds.
+        anchor_guide = (
+            (lock_origin, hit.point if hit is not None else locked)
+            if shift_lock_anchor is not None else None)
         if hit is not None:
             hit.lock_color = color
+            if anchor_guide is not None:
+                if hit.guide is None:
+                    hit.guide = anchor_guide
+                    hit.guide_color = color
+                else:
+                    hit.guides = list(hit.guides or []) + [
+                        (anchor_guide[0], anchor_guide[1], color)]
             return hit
-        return SnapResult(locked, "reference", color)
+        return SnapResult(locked, "reference", color, guide=anchor_guide,
+                          guide_color=color if anchor_guide else None)
 
     # 2. Reference edge lock (Down arrow + edge under cursor).
     if (

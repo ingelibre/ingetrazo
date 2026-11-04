@@ -233,6 +233,9 @@ class InferenceEngine:
             acquired_points=self._encouraged,
             shift_lock_dir=self._shift_lock[0] if self._shift_lock else None,
             shift_lock_color=self._shift_lock[1] if self._shift_lock else None,
+            shift_lock_anchor=(self._shift_lock[2]
+                               if self._shift_lock and len(self._shift_lock) > 2
+                               else None),
             linear_mode=vp.linear_inference_mode,
             diagonal_span=bool(getattr(tool, "diagonal_span", False)),
             work_plane_normal=vp._work_plane_normal(),

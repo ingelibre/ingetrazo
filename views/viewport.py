@@ -10804,7 +10804,6 @@ class Viewport(QOpenGLWidget):
         tool = self.active_tool
         allow_planar_grazing = False
         if (tool is not None
-                and getattr(tool, "start_point", None) is None
                 and getattr(tool, "work_plane", None) is None
                 and getattr(tool, "plane_lock", None) is None
                 and getattr(tool, "plane_ref", None) is None):
@@ -10812,8 +10811,12 @@ class Viewport(QOpenGLWidget):
             if isinstance(tool, PlaneLock):
                 from core import axes
                 normal = QVector3D(plane_normal).normalized()
+                # Once started, the plane goes through the first point and
+                # keeps the one shown before the click, so it must not turn
+                # unreachable toward the horizon either.
                 through_origin = (
-                    (QVector3D(plane_point) - axes.origin()).length() < 1e-5)
+                    getattr(tool, "start_point", None) is not None
+                    or (QVector3D(plane_point) - axes.origin()).length() < 1e-5)
                 principal = any(
                     abs(QVector3D.dotProduct(normal, axes.axis(name))) > 0.999
                     for name in ("x", "y", "z")
@@ -11092,6 +11095,25 @@ class Viewport(QOpenGLWidget):
             if isinstance(tool, PlaneLock):
                 locked = tool.locked_work_plane(axes.origin())
                 if locked is not None:
+                    # A reference point (a dwell, like the Line's) is only
+                    # reachable by alignment if the plane passes through it:
+                    # otherwise its axis lines never meet the plane. When the
+                    # cursor is on one of them, the lock takes that offset.
+                    if cursor is not None:
+                        through = self._locked_plane_through_reference(
+                            tool, cursor)
+                        if through is not None:
+                            return through
+                    # The arrow chooses the plane's ORIENTATION only. Over a
+                    # face, "On face" names a point, so the locked plane is
+                    # anchored there (same normal); with no face under the
+                    # cursor it stays the world plane.
+                    if cursor is not None:
+                        face_plane = self._hover_face_plane(cursor)
+                        if face_plane is not None:
+                            hit = self._ray_hit_plane(cursor, face_plane)
+                            if hit is not None:
+                                return tool.locked_work_plane(hit)
                     return locked
             # First-click hover: if the cursor is over an existing face —
             # loose OR a group's (drawing/measuring on top of an imported
@@ -11129,6 +11151,14 @@ class Viewport(QOpenGLWidget):
             return QVector3D(0.0, 0.0, 0.0), QVector3D(0.0, 0.0, 1.0)
 
         base = self._start_point_plane(tool, start)
+        from tools.base import PlaneLock
+        hover_plane = getattr(tool, "hover_plane", None)
+        if isinstance(tool, PlaneLock) and hover_plane is not None:
+            # A planar shape started on a free point lives in the plane the
+            # cursor showed at the first click. The near-horizon vertical
+            # escape in ``_start_point_plane`` is for a Line to rise in Z;
+            # here it flipped the shape from XY to XZ on that click.
+            base = (QVector3D(start), QVector3D(hover_plane[1]))
         if cursor is not None and self.axis_lock is None:
             # On Face for the SECOND point (Move's target, the
             # tape's far end, a line's end): the cursor over another face
@@ -11431,6 +11461,40 @@ class Viewport(QOpenGLWidget):
                 return None
         from core.snap import face_plane_world
         return face_plane_world(face, getattr(grp, "xform", None))
+
+    def _locked_plane_through_reference(self, tool, cursor):
+        """The tool's locked plane (same normal) through an acquired or
+        encouraged point, when the cursor lies on one of that point's axis
+        lines inside the plane; else ``None``.
+
+        The arrow only chooses the plane's ORIENTATION. A point the cursor
+        dwelt on (a circle's centre) is aligned with by moving along one of
+        the two world axes the plane holds, and those lines exist only in
+        the plane through the point."""
+        from core import axes
+        refs = list(self._encouraged)
+        if self._acquired_point is not None:
+            refs.append(self._acquired_point)
+        for ref in reversed(refs):
+            plane = tool.locked_work_plane(ref)
+            if plane is None:
+                return None
+            hit = self._ray_hit_plane(cursor, plane)
+            if hit is None:
+                continue
+            normal = QVector3D(plane[1]).normalized()
+            for name in ("x", "y", "z"):
+                a = axes.axis(name)
+                if abs(QVector3D.dotProduct(a, normal)) > 1e-3:
+                    continue
+                foot = ref + a * QVector3D.dotProduct(hit - ref, a)
+                px = self._world_to_pixel(foot)
+                if px is None:
+                    continue
+                if math.hypot(px[0] - cursor[0], px[1] - cursor[1]) \
+                        <= self.snap_threshold_px:
+                    return plane
+        return None
 
     def _ray_hit_plane(self, cursor, plane):
         origin, direction = self._pixel_to_ray(cursor[0], cursor[1])
@@ -18597,6 +18661,15 @@ class Viewport(QOpenGLWidget):
         if owns is not None and owns():
             return  # the tool reads the cursor's motion itself
         start = getattr(tool, "start_point", None) if tool is not None else None
+        if (snap is not None and snap.kind == "from_point"
+                and snap.guide is not None and not snap.guides):
+            # An alignment taken from a dwelt point: hold the line through
+            # that point, with or without a first point yet.
+            ref, foot = QVector3D(snap.guide[0]), QVector3D(snap.guide[1])
+            d = foot - ref
+            if d.length() > 1e-6:
+                self._shift_lock = (d.normalized(), snap.guide_color, ref)
+                return
         if snap is None or start is None or snap.kind not in self._SHIFT_LOCKABLE:
             return
 
