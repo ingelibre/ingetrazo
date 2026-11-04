@@ -303,7 +303,10 @@ def node_icon(key: str) -> QIcon:
     Kept once per theme: they are painted in the palette's ink and accent,
     and a theme switched with the app open must not get the old ones back
     (#1086)."""
-    slot = (key, _ink().rgba(), _accent().rgba())
+    from PySide6.QtWidgets import QApplication
+    # The palette's cache key, not its colours: the Browser asks three times
+    # per row, and reading the colours cost a 20 000-row refresh 0.2 s.
+    slot = (key, QApplication.palette().cacheKey())
     if slot not in _ICONS:
         if key.startswith("layers_"):
             # The Layers bar's icons (views/icons.py): the two trees draw
@@ -315,11 +318,9 @@ def node_icon(key: str) -> QIcon:
             _ICONS[slot] = tool_icon({"image": "image", "text": "text3d",
                                       "sections": "section_planes"}[key])
         elif key == "warning":
-            from PySide6.QtWidgets import QApplication
             _ICONS[slot] = QApplication.style().standardIcon(
                 QStyle.SP_MessageBoxWarning)
         elif key == "folder":
-            from PySide6.QtWidgets import QApplication
             _ICONS[slot] = QApplication.style().standardIcon(QStyle.SP_DirIcon)
         else:
             _ICONS[slot] = _draw(key)
