@@ -1,4 +1,4 @@
-# Styles and edge settings
+# Styles and face/edge settings
 
 Open **Styles** from the Panels toolbar. The window stays open while you work in the model.
 Use **Select** to browse Built-in styles or My styles, and **Edit** to adjust the current look.
@@ -10,6 +10,8 @@ On **Edit**, choose **Face settings**. The mode buttons select Textures, Shaded,
 Hidden line, Monochrome or Wireframe. Tooltips identify each button. **X-ray** is a
 separate toggle: it keeps the selected mode, makes its faces transparent and enables
 snapping to entities through faces. Changing modes keeps the toggle's state.
+**Alt+X** and the View menu's X-ray action control the same option. Turning it off
+retains the selected mode, edge settings and any edits made while it was active.
 Front and back colors and ambient occlusion keep their existing behavior.
 
 **Material transparency** displays material opacity and texture transparency. Turning it off
@@ -25,6 +27,9 @@ material transparency is off.
 The slider and numeric field stay synchronized and become available while X-ray is enabled. The setting
 applies to loose geometry, textures, instances and painted backs. Styles, saved views and the
 user style library retain these settings.
+
+Older saved styles using X-ray as their face mode load as Textures with X-ray enabled.
+Their previous 60% face opacity is preserved unless a different opacity was saved.
 
 ## Edges
 
