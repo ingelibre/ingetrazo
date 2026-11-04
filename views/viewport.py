@@ -2386,7 +2386,21 @@ class Viewport(QOpenGLWidget):
         b = QVector3D(max(xs), max(ys), max(zs))
         cam.depth_reach = ((a + b) * 0.5, (b - a).length() * 0.5)
 
+    #: Off in a view of several (views/multi_view.py) other than the one being
+    #: worked in: the model shows there, without the tool in hand's preview.
+    tool_preview = True
+
     def paintGL(self) -> None:
+        if getattr(self, "tool_preview", True):
+            Viewport._paint_frame(self)
+            return
+        tool, self.active_tool = self.active_tool, None
+        try:
+            Viewport._paint_frame(self)
+        finally:
+            self.active_tool = tool
+
+    def _paint_frame(self) -> None:
         self._tick = getattr(self, "_tick", 0) + 1     # a new epoch memo
         self._depth_clean = None          # see the read-back at the end
         self._sync_axes()

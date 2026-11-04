@@ -49,8 +49,18 @@ class Document:
         #: The composer was on screen when the user left this tab.
         self.composer_shown = False
         self.last_sheet: int = 0
-        #: Its viewport's last frame, small, shown on hover over its tab.
+        #: Its viewport's frame, small, shown on hover over its tab; drawn
+        #: then, if it is due (MainWindow._tab_picture).
         self.thumbnail = None
+        self.picture_due = False
+        #: Its scenes shown as tabs under the viewport (views/scene_tabs.py);
+        #: its tab's right-click menu turns them off and on.
+        from views.scene_tabs import SCENE_TABS_DEFAULT
+        self.scene_tabs: bool = SCENE_TABS_DEFAULT
+        #: How many views it shows (views/multi_view.py LAYOUTS) and the
+        #: grid holding them, made the first time it shows more than one.
+        self.view_layout: str = "single"
+        self.view_grid = None
         #: What an extension put in this project's place in the viewport
         #: stack with ``setCentralWidget`` (MultiView's grid of views, which
         #: holds this viewport), or a blank placeholder between its
@@ -120,6 +130,186 @@ def live_viewport(viewport):
     return lambda: viewport
 
 
+#: The «+» after a row of tabs: its icon (px). The project tabs and the
+#: scene tabs under the viewport share the same «+».
+PLUS_ICON = 16
+
+
+def size_plus_button(plus, tabs) -> None:
+    """``plus`` as tall as a tab of ``tabs`` and a little wider than tall —
+    the same «+» after the project tabs and after the scene tabs."""
+    h = tabs.sizeHint().height() if tabs.count() else 0
+    if h <= 0:
+        probe = QTabBar()
+        probe.setFont(tabs.font())
+        probe.addTab("Xg")
+        h = probe.sizeHint().height()
+    if plus.height() != h or plus.width() != max(30, h + 4):
+        plus.setFixedSize(max(30, h + 4), h)
+
+
+class _ProjectTabs(QTabBar):
+    """The project tabs, drawn as the side panels' tabs are (the same
+    QTabBar and style, the same height), with a line in the accent colour
+    under the active project's name; as wide as a name and its cross need,
+    and the cross bigger and against the tab's right edge."""
+
+    #: The accent line: thickness and gap above the tab's foot (px).
+    LINE_PX = 2
+    LINE_GAP = 3
+    #: The close cross: its button, the icon in it, its gap from the edge.
+    CLOSE_PX = 16
+    CLOSE_ICON = 13
+    CLOSE_EDGE = 4
+    #: Room around a name: left, between name and cross, and right (px).
+    PAD_LEFT, PAD_GAP, PAD_RIGHT = 10, 4, 4
+
+    def tabSizeHint(self, index: int):  # noqa: N802 — Qt override
+        hint = super().tabSizeHint(index)
+        height = self._panel_tab_height()
+        # Qt asks for every tab many times over a single layout.
+        name = self.tabText(index)
+        key = (name, hint.width(), self.font().key(), self.style().name())
+        width = self._hint_widths.get(key)
+        if width is None:
+            width = self._hint_widths[key] = self._tab_width(index, hint,
+                                                             height)
+        hint.setWidth(width)
+        hint.setHeight(height)
+        return hint
+
+    def _tab_width(self, index: int, hint, height: int) -> int:
+        fm = self.fontMetrics()
+        name = self.tabText(index)
+        width = (self.PAD_LEFT + fm.horizontalAdvance(name) + self.PAD_GAP
+                 + self.CLOSE_PX + self.PAD_RIGHT)
+        # The style keeps margins of its own around the name: widen until
+        # the whole name fits, measured as the selected tab (the narrower
+        # text area), so the size does not change when it comes to front.
+        from PySide6.QtCore import QRect
+        from PySide6.QtWidgets import QStyle, QStyleOptionTab
+        opt = QStyleOptionTab()
+        self.initStyleOption(opt, index)
+        opt.state |= QStyle.State_Selected
+        opt.position = QStyleOptionTab.Middle
+        need = fm.horizontalAdvance(name) + 2
+        while width < hint.width():
+            opt.rect = QRect(0, 0, width, height)
+            if self.style().subElementRect(
+                    QStyle.SE_TabBarTabText, opt, self).width() >= need:
+                break
+            width += 2
+        return min(hint.width(), width)
+
+    _hint_widths: dict = {}
+    _probe_heights: dict = {}
+
+    def _panel_tab_height(self) -> int:
+        """A side panel's tab height: the style's tab for this font, with
+        no button in it (Qt makes a tab with a cross taller)."""
+        key = (self.font().key(), self.style().name())
+        h = self._probe_heights.get(key)
+        if h is None:
+            probe = QTabBar()
+            probe.setFont(self.font())
+            probe.setStyle(self.style())
+            probe.addTab("Xg")
+            h = self._probe_heights[key] = probe.tabSizeHint(0).height()
+            probe.deleteLater()
+        return h
+
+    def sizeHint(self):  # noqa: N802 — Qt override
+        """Exactly as wide as its tabs: Qt's hint keeps room for the
+        scroll arrows, which left «+» a gap away from the last tab."""
+        hint = super().sizeHint()
+        if self.count():
+            hint.setWidth(sum(self.tabSizeHint(i).width()
+                              for i in range(self.count())))
+        return hint
+
+    def minimumSizeHint(self):  # noqa: N802 — Qt override
+        hint = super().minimumSizeHint()
+        hint.setWidth(min(hint.width(), self.sizeHint().width()))
+        return hint
+
+    # ---- the cross ---------------------------------------------------------
+    def tabInserted(self, index: int) -> None:  # noqa: N802 — Qt override
+        super().tabInserted(index)
+        from PySide6.QtCore import QSize
+        from views.icons import tool_icon
+        btn = QToolButton(self)
+        btn.setObjectName("project_tab_close")
+        btn.setProperty("icon_key", "close")
+        btn.setIcon(tool_icon("close"))
+        btn.setIconSize(QSize(self.CLOSE_ICON, self.CLOSE_ICON))
+        btn.setFixedSize(self.CLOSE_PX, self.CLOSE_PX)
+        btn.setAutoRaise(True)
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setToolTip(tr("Close Project") + " (Ctrl+W)")
+        btn.setAccessibleName(tr("Close Project"))
+        btn.clicked.connect(lambda _c=False, b=btn: self._close_clicked(b))
+        self.setTabButton(index, QTabBar.RightSide, btn)
+
+    def _close_clicked(self, btn) -> None:
+        for i in range(self.count()):
+            if self.tabButton(i, QTabBar.RightSide) is btn:
+                self.tabCloseRequested.emit(i)
+                return
+
+    def tabLayoutChange(self) -> None:  # noqa: N802 — Qt override
+        super().tabLayoutChange()
+        self._seat_close_buttons()
+
+    def resizeEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        super().resizeEvent(ev)
+        self._seat_close_buttons()
+
+    def _seat_close_buttons(self) -> None:
+        """Against the tab's right edge, centred on its height (the style
+        lays it out with a margin of its own)."""
+        for i in range(self.count()):
+            btn = self.tabButton(i, QTabBar.RightSide)
+            if btn is None:
+                continue
+            r = self.tabRect(i)
+            want = QPoint(r.right() - self.CLOSE_EDGE - btn.width() + 1,
+                          r.top() + (r.height() - btn.height()) // 2)
+            if btn.pos() != want:
+                btn.move(want)
+
+    # ---- the accent line ---------------------------------------------------
+    def underline_rect(self):
+        from PySide6.QtCore import QRect
+        from PySide6.QtWidgets import QStyle, QStyleOptionTab
+        i = self.currentIndex()
+        if i < 0 or not self.tabText(i):
+            return None
+        opt = QStyleOptionTab()
+        self.initStyleOption(opt, i)
+        text = self.style().subElementRect(QStyle.SE_TabBarTabText, opt, self)
+        width = min(self.fontMetrics().horizontalAdvance(opt.text),
+                    text.width())
+        tab = self.tabRect(i)
+        y = tab.bottom() - self.LINE_GAP - self.LINE_PX + 1
+        return QRect(text.center().x() - width // 2, y, width, self.LINE_PX)
+
+    def paintEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        # Qt seats the crosses again on its own (a click on a tab did, and
+        # the cross jumped back to the style's place): every frame, before
+        # drawing, they go back against the edge.
+        self._seat_close_buttons()
+        super().paintEvent(ev)
+        rect = self.underline_rect()
+        if rect is None:
+            return
+        from PySide6.QtGui import QPainter
+        from views.theme import accent_color
+        p = QPainter(self)
+        p.fillRect(rect, accent_color())
+        p.end()
+
+
 class ProjectTabBar(QWidget):
     """The project tabs above the viewport: the file name, a dot while it
     has unsaved changes, a × to close; «+» makes a new project; a middle
@@ -131,6 +321,10 @@ class ProjectTabBar(QWidget):
     closeRequested = Signal(object)
     newRequested = Signal()
     moved = Signal()
+    #: The views button: the layouts of the project in front.
+    viewsRequested = Signal()
+    #: A right-click on a tab: its document and where (global position).
+    menuRequested = Signal(object, QPoint)
 
     #: The mark of a project with unsaved changes, after its name.
     DIRTY_MARK = " •"
@@ -139,14 +333,35 @@ class ProjectTabBar(QWidget):
         super().__init__(parent)
         self.setObjectName("project_tabs")
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
+        row.setContentsMargins(4, 2, 0, 0)
         row.setSpacing(0)
-        bar = self.tabs = QTabBar(self)
+        from PySide6.QtCore import QSize
+        from views.icons import tool_icon
+        # The views button, first: one, two, three or four views of the
+        # project in front (views/multi_view.py).
+        views = self.views_button = QToolButton(self)
+        views.setObjectName("project_views")
+        views.setProperty("icon_key", "four_views")
+        views.setIcon(tool_icon("four_views"))
+        views.setIconSize(QSize(18, 18))
+        views.setFixedSize(26, 26)
+        views.setCheckable(True)
+        views.setAutoRaise(True)
+        views.setCursor(Qt.PointingHandCursor)
+        views.setToolTip(tr(
+            "View layout: one, two, three or four views of the model"))
+        views.setAccessibleName(views.toolTip())
+        views.clicked.connect(lambda _c=False: self.viewsRequested.emit())
+        row.addWidget(views, 0, Qt.AlignVCenter)
+        row.addSpacing(4)
+        bar = self.tabs = _ProjectTabs(self)
         bar.setObjectName("project_tab_bar")
-        bar.setDocumentMode(True)
+        # Drawn as the side panels' tabs (no document mode, no style sheet
+        # of its own) with the accent line under the active name.
+        bar.setDocumentMode(False)
         bar.setExpanding(False)
         bar.setMovable(True)
-        bar.setTabsClosable(True)
+        bar.setTabsClosable(False)          # our own, bigger cross
         bar.setUsesScrollButtons(True)
         bar.setElideMode(Qt.ElideMiddle)
         bar.setDrawBase(False)
@@ -156,30 +371,47 @@ class ProjectTabBar(QWidget):
         bar.currentChanged.connect(self._on_current)
         bar.tabMoved.connect(lambda *_a: self.moved.emit())
         bar.installEventFilter(self)
-        row.addWidget(bar, 0)
+        bar.setContextMenuPolicy(Qt.CustomContextMenu)
+        bar.customContextMenuRequested.connect(self._on_menu)
+        row.addWidget(bar, 0, Qt.AlignBottom)
+        # «+» right after the last tab, as tall as a tab; drawn, so it is
+        # centred to the pixel (a font's «+» sits off centre).
         plus = self.plus = QToolButton(self)
         plus.setObjectName("project_tab_new")
-        plus.setText("+")
+        plus.setProperty("icon_key", "plus")
+        plus.setIcon(tool_icon("plus"))
+        plus.setIconSize(QSize(PLUS_ICON, PLUS_ICON))
+        plus.setToolButtonStyle(Qt.ToolButtonIconOnly)
         plus.setAutoRaise(True)
         plus.setToolTip(tr("New project (Ctrl+N)"))
         plus.setCursor(Qt.PointingHandCursor)
         plus.clicked.connect(self.newRequested.emit)
-        row.addWidget(plus, 0)
+        row.addWidget(plus, 0, Qt.AlignBottom)
         row.addStretch(1)
         self._quiet = False
         from views.theme import style as theme_style
         theme_style(self,
             "#project_tabs {{ background: palette(window); }}"
-            "QTabBar#project_tab_bar::tab {{ padding: 3px 10px;"
-            " max-width: 260px; border: none;"
-            " border-bottom: 2px solid transparent; }}"
-            "QTabBar#project_tab_bar::tab:selected {{"
-            " border-bottom: 2px solid rgb({accent_rgb});"
-            " background: palette(base); }}"
-            "QTabBar#project_tab_bar::tab:!selected:hover {{"
-            " background: rgba({accent_rgb}, 40); }}"
-            "QToolButton#project_tab_new {{ padding: 0px 8px;"
-            " font-weight: bold; }}")
+            "QToolButton#project_tab_close {{ border: none;"
+            " border-radius: 4px; background: transparent; padding: 0px; }}"
+            "QToolButton#project_tab_close:hover {{"
+            " background: rgba({accent_rgb}, 66); }}"
+            "QToolButton#project_tab_new, QToolButton#project_views {{"
+            " border: none; border-radius: 6px; background: transparent;"
+            " padding: 0px; }}"
+            "QToolButton#project_tab_new:hover,"
+            " QToolButton#project_views:hover {{"
+            " background: rgba({accent_rgb}, 36); }}"
+            "QToolButton#project_views:checked {{"
+            " background: rgba({accent_rgb}, 60); }}")
+
+    def showEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        super().showEvent(ev)
+        self.match_plus_to_tabs()
+
+    def match_plus_to_tabs(self) -> None:
+        """«+» as tall as a tab (a little wider than tall)."""
+        size_plus_button(self.plus, self.tabs)
 
     # ---- the tabs ---------------------------------------------------------
     def count(self) -> int:
@@ -256,6 +488,12 @@ class ProjectTabBar(QWidget):
         # returns, and the window rebuilds things under the pointer.
         QTimer.singleShot(0, self, lambda d=doc: self.activated.emit(d))
 
+    def _on_menu(self, pos) -> None:
+        i = self.tabs.tabAt(pos)
+        if i >= 0:
+            self.menuRequested.emit(self.tabs.tabData(i),
+                                    self.tabs.mapToGlobal(pos))
+
     def _on_close_index(self, index: int) -> None:
         doc = self.tabs.tabData(index)
         if doc is not None:
@@ -290,17 +528,20 @@ class ProjectTabBar(QWidget):
     # ---- preview on hover -------------------------------------------------
     _preview = None
     _preview_doc = None
+    #: The picture of a document in the back (the window draws it if due).
+    picture_of = staticmethod(lambda doc: doc.thumbnail)
 
     def _show_preview(self, pos, global_pos) -> bool:
         """Over a tab in the back: the picture its viewport showed when it
-        was left, with the file's place under it. False when there is no
+        was left, with the file's name under it. False when there is no
         picture (the tab in front, or one never left): the plain tooltip
         then shows."""
         i = self.tabs.tabAt(pos)
         doc = self.tabs.tabData(i) if i >= 0 else None
-        img = getattr(doc, "thumbnail", None)
-        if doc is None or img is None or img.isNull() \
-                or i == self.tabs.currentIndex():
+        img = None
+        if doc is not None and i != self.tabs.currentIndex():
+            img = self.picture_of(doc)
+        if img is None or img.isNull():
             self._hide_preview()
             return False
         from PySide6.QtGui import QPixmap
@@ -319,7 +560,7 @@ class ProjectTabBar(QWidget):
                               " border: 1px solid palette(mid); }")
         box = self._preview
         box._pic.setPixmap(QPixmap.fromImage(img))
-        box._name.setText(self.tabs.tabToolTip(i) or self.tabs.tabText(i))
+        box._name.setText(doc.display_name())
         box.adjustSize()
         r = self.tabs.tabRect(i)
         at = self.tabs.mapToGlobal(r.bottomLeft()) + QPoint(0, 4)
