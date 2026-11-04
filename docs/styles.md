@@ -16,6 +16,11 @@ Choose **Behind model** for a background or **In front of model** for an overlay
 Within each placement layer, the top image in the list appears on top; use the
 arrow buttons to reorder images and **Delete** to remove the selected image.
 
+**Create mask** uses the image's brightness as a mask: white is transparent,
+black paints the style's background color and gray is partially transparent.
+The image's existing alpha is preserved and **Opacity** still applies. The
+original embedded image is retained, so unchecking the option restores it.
+
 **Positioned** offers nine anchors and a width relative to the viewport, preserving
 the image's proportions. **Stretched** fills the viewport; **Keep aspect ratio**
 fills it without distortion, cropping any excess. **Tiled** repeats the image

@@ -3392,5 +3392,7 @@
  "Bottom left": "أسفل اليسار",
  "Bottom center": "أسفل الوسط",
  "Bottom right": "أسفل اليمين",
- "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "الصور (*.png *.jpg *.jpeg *.bmp *.webp)"
+ "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "الصور (*.png *.jpg *.jpeg *.bmp *.webp)",
+ "Create mask": "إنشاء قناع",
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "يصبح الأبيض شفافًا؛ ويستخدم الأسود لون خلفية النمط. يعطي الرمادي شفافية جزئية. تُحفظ الصورة الأصلية."
 }

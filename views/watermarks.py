@@ -7,6 +7,8 @@ import base64
 import binascii
 from functools import lru_cache
 
+import numpy as np
+
 from PySide6.QtCore import QBuffer, QIODevice, QRectF, QSize, Qt
 from PySide6.QtGui import QBrush, QImage, QImageReader, QPainter, QTransform
 
@@ -32,6 +34,29 @@ def watermark_image(data: str) -> QImage:
         return QImage()
 
 
+@lru_cache(maxsize=32)
+def masked_watermark_image(data: str, background: tuple) -> QImage:
+    """White reveals the view; black paints the style's background color.
+
+    Source alpha is retained, and luminance controls the mask's coverage.
+    Work on a copy so switching the option off restores the original image.
+    """
+    source = watermark_image(data)
+    if source.isNull():
+        return source
+    image = source.convertToFormat(QImage.Format_RGBA8888).copy()
+    pixels = np.frombuffer(image.bits(), dtype=np.uint8).reshape(
+        (image.height(), image.bytesPerLine() // 4, 4))[:, :image.width()]
+    rgb = pixels[:, :, :3].astype(np.uint16)
+    # Approximate Rec.709 luma, with weights adding to 256. uint16 holds
+    # both the luminance sum and the alpha product without overflowing.
+    luminance = (rgb @ np.array([54, 183, 19], dtype=np.uint16) + 128) // 256
+    pixels[:, :, 3] = (pixels[:, :, 3].astype(np.uint16) * (255 - luminance) + 127) // 255
+    pixels[:, :, :3] = [round(max(0.0, min(1.0, float(c))) * 255)
+                        for c in background[:3]]
+    return image
+
+
 def paint_watermarks(painter: QPainter, style, size: QSize, layer: str) -> None:
     if not getattr(style, "watermarks_visible", True):
         return
@@ -46,7 +71,8 @@ def paint_watermarks(painter: QPainter, style, size: QSize, layer: str) -> None:
         for mark in reversed(getattr(style, "watermarks", ())):
             if not mark.visible or mark.layer != layer or mark.opacity <= 0:
                 continue
-            image = watermark_image(mark.image)
+            image = (masked_watermark_image(mark.image, tuple(style.background[:3]))
+                     if mark.create_mask else watermark_image(mark.image))
             if image.isNull():
                 continue
             painter.setOpacity(mark.opacity / 100.0)

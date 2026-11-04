@@ -14,7 +14,7 @@ from core.scene import Scene
 from core.style import Style
 from core.watermark import Watermark, load_watermarks
 from tests.test_edge_rendering import cube_viewport  # noqa: F401 - native fixture
-from views.watermarks import import_image, paint_watermarks, watermark_image
+from views.watermarks import import_image, masked_watermark_image, paint_watermarks, watermark_image
 
 
 def _mark(tmp_path, color="red", **values):
@@ -42,7 +42,7 @@ def test_images_remain_portable_after_original_file_is_deleted(tmp_path, monkeyp
 
     monkeypatch.setattr(library, "_settings", lambda: QSettings(
         str(tmp_path / "styles.ini"), QSettings.IniFormat))
-    mark = _mark(tmp_path, opacity=37, layer="background", placement="tiled")
+    mark = _mark(tmp_path, opacity=37, layer="background", placement="tiled", create_mask=True)
     (tmp_path / "red.png").unlink()
     style = Style(name="Portable", watermarks=[mark], watermarks_visible=False)
     library.save_user_style(style)
@@ -74,6 +74,7 @@ def test_old_styles_and_malformed_entries_are_safe():
                                 "anchor": 99, "placement": "unknown", "layer": "bad"})
     assert mark.opacity == 100 and mark.scale == 1 and mark.anchor == 8
     assert mark.layer == "foreground" and mark.placement == "positioned"
+    assert not mark.create_mask and "create_mask" not in mark.to_dict()
     assert watermark_image(mark.image).isNull()
 
 
@@ -160,13 +161,17 @@ def test_editor_import_edit_order_and_remove(tmp_path, monkeypatch):
         assert editor.add_image(str(tmp_path / "red.png"))
         red_id = editor._selected().id
         editor.opacity_slider.setValue(37)
+        editor.create_mask.setChecked(True)
+        assert editor._selected().create_mask
         editor.layer.setCurrentIndex(editor.layer.findData("background"))
         editor.placement.setCurrentIndex(editor.placement.findData("tiled"))
         assert editor._selected().opacity == 37 and editor.opacity.value() == 37
         assert editor._selected().layer == "background" and not editor.anchor.isEnabled()
+        assert editor.create_mask.isEnabled() and editor.create_mask.isChecked()
         editor.display.setChecked(False)
         assert not window.viewport.scene.display_style.watermarks_visible
         assert editor._selected().opacity == 37
+        assert editor._selected().create_mask
         editor.add_image(str(tmp_path / "blue.png"))
         editor.down.click()
         assert window.viewport.scene.display_style.watermarks[0].id == red_id
@@ -243,3 +248,62 @@ def test_png_transparent_pixels_survive_opaque_material_mode(cube_viewport, tmp_
     rendered = _render(vp)
     assert rendered[250, 100] == pytest.approx((255, 0, 0), abs=2)
     assert np.array_equal(rendered[:, 400:], baseline[:, 400:])
+
+
+def _mask_mark(tmp_path):
+    image = QImage(4, 1, QImage.Format_RGBA8888)
+    for x, color in enumerate((QColor("white"), QColor("black"),
+                               QColor(128, 128, 128), QColor(0, 0, 0, 64))):
+        image.setPixelColor(x, 0, color)
+    path = tmp_path / "mask.png"
+    assert image.save(str(path))
+    return replace(Watermark.create("Mask", import_image(str(path))),
+                   placement="stretched", keep_aspect=False, create_mask=True)
+
+
+def test_mask_uses_brightness_and_existing_alpha_without_changing_source(tmp_path):
+    mark = _mask_mark(tmp_path)
+    original = watermark_image(mark.image).copy()
+    result = masked_watermark_image(mark.image, (0.2, 0.4, 0.6))
+    assert [result.pixelColor(x, 0).alpha() for x in range(4)] == [0, 255, 127, 64]
+    assert result.pixelColor(1, 0).getRgb() == (51, 102, 153, 255)
+    assert watermark_image(mark.image) == original
+    assert masked_watermark_image("broken", (1, 1, 1)).isNull()
+
+
+@pytest.mark.parametrize("placement", ["stretched", "tiled", "positioned"])
+def test_mask_keeps_opacity_in_each_placement_mode(tmp_path, placement):
+    black = _mark(tmp_path, "black", create_mask=True, placement=placement,
+                  keep_aspect=False, scale=100, anchor=0, opacity=50)
+    style = Style(background=(0, 0, 1), watermarks=[black])
+    color = _paint(style).pixelColor(50, 50)
+    assert color.getRgb() == pytest.approx((128, 128, 255, 255), abs=1)
+    style.watermarks = [replace(black, create_mask=False)]
+    assert _paint(style).pixelColor(50, 50).getRgb() == pytest.approx((128, 128, 128, 255), abs=1)
+
+
+def test_mask_in_native_view_and_export_updates_with_background_color(cube_viewport, tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    vp = cube_viewport
+    mark = _mask_mark(tmp_path)
+    style = vp.scene.display_style = Style(
+        sky=False, ground=False, face_mode="monochrome", front_color=(0, 1, 0),
+        back_color=(0, 1, 0), edges=False, profiles=False, background=(0.1, 0.2, 0.8))
+    baseline = _render(vp)
+    style.watermarks = [mark]
+    masked = _render(vp)
+    assert masked[250, 75] == pytest.approx(baseline[250, 75], abs=2)
+    assert masked[250, 225] == pytest.approx((26, 51, 204), abs=2)
+    assert masked[250, 375] == pytest.approx(
+        baseline[250, 375] * (128 / 255) + np.array([26, 51, 204]) * (127 / 255), abs=3)
+    # A background edit alone must invalidate the composed GPU image, too.
+    style.background = (0.9, 0.6, 0.2)
+    assert _render(vp)[250, 225] == pytest.approx((230, 153, 51), abs=2)
+    for _ in range(3):
+        vp.update()
+        QApplication.processEvents()
+    live = vp.grabFramebuffer().scaled(600, 500)
+    assert live.pixelColor(225, 250).getRgb()[:3] == pytest.approx((230, 153, 51), abs=2)
+    style.watermarks = [replace(mark, create_mask=False)]
+    assert _render(vp)[250, 225] == pytest.approx((0, 0, 0), abs=2)

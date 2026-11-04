@@ -115,6 +115,12 @@ class WatermarksPanel(QWidget):
         self.keep_aspect = QCheckBox(tr("Keep aspect ratio"))
         self.keep_aspect.toggled.connect(self._apply)
         form.addWidget(self.keep_aspect, 7, 0, 1, 2)
+        self.create_mask = QCheckBox(tr("Create mask"))
+        self.create_mask.setToolTip(tr(
+            "White becomes transparent; black uses the style's background color. "
+            "Gray gives partial transparency. The original image is preserved."))
+        self.create_mask.toggled.connect(self._apply)
+        form.addWidget(self.create_mask, 8, 0, 1, 2)
         layout.addWidget(self.options)
         layout.addStretch(1)
 
@@ -179,6 +185,7 @@ class WatermarksPanel(QWidget):
             self.scale.setValue(mark.scale)
             self.anchor.setCurrentIndex(mark.anchor)
             self.keep_aspect.setChecked(mark.keep_aspect)
+            self.create_mask.setChecked(mark.create_mask)
             positioned = mark.placement == "positioned"
             for widget in (self.anchor_label, self.anchor):
                 widget.setEnabled(positioned)
@@ -221,7 +228,8 @@ class WatermarksPanel(QWidget):
         updated = replace(mark, name=self.name.text(), visible=self.visible.isChecked(),
                           layer=self.layer.currentData(), placement=self.placement.currentData(),
                           anchor=self.anchor.currentIndex(), scale=self.scale.value(),
-                          opacity=self.opacity.value(), keep_aspect=self.keep_aspect.isChecked())
+                          opacity=self.opacity.value(), keep_aspect=self.keep_aspect.isChecked(),
+                          create_mask=self.create_mask.isChecked())
         style = self._style()
         style.watermarks[style.watermarks.index(mark)] = updated
         self.refresh(mark.id)

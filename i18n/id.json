@@ -3360,5 +3360,7 @@
  "Bottom left": "Kiri bawah",
  "Bottom center": "Tengah bawah",
  "Bottom right": "Kanan bawah",
- "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Gambar (*.png *.jpg *.jpeg *.bmp *.webp)"
+ "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Gambar (*.png *.jpg *.jpeg *.bmp *.webp)",
+ "Create mask": "Buat masker",
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Putih menjadi transparan; hitam menggunakan warna latar gaya. Abu-abu memberikan transparansi sebagian. Gambar asli tetap disimpan."
 }

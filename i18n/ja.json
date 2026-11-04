@@ -3357,5 +3357,7 @@
  "Bottom left": "左下",
  "Bottom center": "下中央",
  "Bottom right": "右下",
- "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "画像 (*.png *.jpg *.jpeg *.bmp *.webp)"
+ "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "画像 (*.png *.jpg *.jpeg *.bmp *.webp)",
+ "Create mask": "マスクを作成",
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "白は透明になり、黒はスタイルの背景色になります。グレーは半透明になります。元の画像は保持されます。"
 }

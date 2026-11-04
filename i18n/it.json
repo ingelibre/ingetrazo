@@ -3358,5 +3358,7 @@
  "Bottom left": "In basso a sinistra",
  "Bottom center": "In basso al centro",
  "Bottom right": "In basso a destra",
- "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Immagini (*.png *.jpg *.jpeg *.bmp *.webp)"
+ "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Immagini (*.png *.jpg *.jpeg *.bmp *.webp)",
+ "Create mask": "Crea maschera",
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Il bianco diventa trasparente; il nero usa il colore di sfondo dello stile. Il grigio produce una trasparenza parziale. L’immagine originale viene conservata."
 }

@@ -3357,5 +3357,7 @@
  "Bottom left": "왼쪽 아래",
  "Bottom center": "가운데 아래",
  "Bottom right": "오른쪽 아래",
- "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "이미지 (*.png *.jpg *.jpeg *.bmp *.webp)"
+ "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "이미지 (*.png *.jpg *.jpeg *.bmp *.webp)",
+ "Create mask": "마스크 만들기",
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "흰색은 투명해지고 검은색은 스타일의 배경색을 사용합니다. 회색은 부분적으로 투명해집니다. 원본 이미지는 유지됩니다."
 }

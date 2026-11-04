@@ -6357,7 +6357,7 @@ class Viewport(QOpenGLWidget):
         from views.watermarks import paint_watermarks
         from PySide6.QtGui import QTransform
         marks = tuple(mark for mark in style.watermarks if mark.layer == layer)
-        key = (marks, width, height)
+        key = (marks, width, height, tuple(style.background[:3]))
         cached = self._watermark_textures.get(layer)
         if cached is None or cached[0] != key:
             image = QImage(width, height, QImage.Format_RGBA8888)

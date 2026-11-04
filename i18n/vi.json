@@ -3384,5 +3384,7 @@
  "Bottom left": "Dưới bên trái",
  "Bottom center": "Dưới chính giữa",
  "Bottom right": "Dưới bên phải",
- "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Hình ảnh (*.png *.jpg *.jpeg *.bmp *.webp)"
+ "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Hình ảnh (*.png *.jpg *.jpeg *.bmp *.webp)",
+ "Create mask": "Tạo mặt nạ",
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Màu trắng trở nên trong suốt; màu đen dùng màu nền của kiểu. Màu xám tạo độ trong suốt một phần. Ảnh gốc được giữ nguyên."
 }

@@ -28,13 +28,17 @@ class Watermark:
     scale: int = 25
     opacity: int = 100
     keep_aspect: bool = True
+    create_mask: bool = False
 
     @classmethod
     def create(cls, name: str, image: str) -> "Watermark":
         return cls(uuid4().hex, name, image)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        out = asdict(self)
+        if not self.create_mask:
+            out.pop("create_mask")
+        return out
 
     @classmethod
     def from_dict(cls, raw) -> "Watermark | None":
@@ -51,6 +55,7 @@ class Watermark:
             scale=_number(raw.get("scale", 25), 25, 1, 200),
             opacity=_number(raw.get("opacity", 100), 100, 0, 100),
             keep_aspect=bool(raw.get("keep_aspect", True)),
+            create_mask=bool(raw.get("create_mask", False)),
         )
 
 

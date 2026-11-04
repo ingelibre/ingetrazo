@@ -3358,5 +3358,7 @@
  "Bottom left": "左下",
  "Bottom center": "底部居中",
  "Bottom right": "右下",
- "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "图像 (*.png *.jpg *.jpeg *.bmp *.webp)"
+ "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "图像 (*.png *.jpg *.jpeg *.bmp *.webp)",
+ "Create mask": "创建蒙版",
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "白色变为透明；黑色使用样式的背景颜色。灰色产生部分透明效果。原始图像保持不变。"
 }

@@ -3365,5 +3365,7 @@
  "Bottom left": "Dół po lewej",
  "Bottom center": "Dół pośrodku",
  "Bottom right": "Dół po prawej",
- "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Obrazy (*.png *.jpg *.jpeg *.bmp *.webp)"
+ "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Obrazy (*.png *.jpg *.jpeg *.bmp *.webp)",
+ "Create mask": "Utwórz maskę",
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Biel staje się przezroczysta; czerń przyjmuje kolor tła stylu. Szarość daje częściową przezroczystość. Oryginalny obraz zostaje zachowany."
 }

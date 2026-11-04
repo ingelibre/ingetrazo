@@ -3372,5 +3372,7 @@
  "Bottom left": "Знизу ліворуч",
  "Bottom center": "Знизу по центру",
  "Bottom right": "Знизу праворуч",
- "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Зображення (*.png *.jpg *.jpeg *.bmp *.webp)"
+ "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Зображення (*.png *.jpg *.jpeg *.bmp *.webp)",
+ "Create mask": "Створити маску",
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Білий стає прозорим; чорний використовує колір тла стилю. Сірий дає часткову прозорість. Початкове зображення зберігається."
 }

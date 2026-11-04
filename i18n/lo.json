@@ -3360,5 +3360,7 @@
  "Bottom left": "ລຸ່ມຊ້າຍ",
  "Bottom center": "ລຸ່ມກາງ",
  "Bottom right": "ລຸ່ມຂວາ",
- "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "ຮູບພາບ (*.png *.jpg *.jpeg *.bmp *.webp)"
+ "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "ຮູບພາບ (*.png *.jpg *.jpeg *.bmp *.webp)",
+ "Create mask": "ສ້າງໜ້າກາກ",
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "ສີຂາວຈະໂປ່ງໃສ; ສີດຳໃຊ້ສີພື້ນຫຼັງຂອງຮູບແບບ. ສີເທົາໃຫ້ຄວາມໂປ່ງໃສບາງສ່ວນ. ຮູບຕົ້ນສະບັບຍັງຖືກເກັບໄວ້."
 }
