@@ -3277,7 +3277,6 @@
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений.",
  "Show scenes as tabs": "Показывать сцены вкладками",
  "This project's scenes as tabs under the view; a click shows one.": "Сцены этого проекта вкладками под видом; щелчок показывает сцену.",
- "No scenes yet: «+» keeps the current view as one.": "Сцен пока нет: «+» сохраняет текущий вид как сцену.",
  "Click: change the view · Double-click: this view alone, or the four again": "Щелчок: сменить вид · Двойной щелчок: только этот вид или снова все четыре",
  "One view": "Один вид",
  "Two views": "Два вида",
@@ -3302,5 +3301,6 @@
  "Restore": "Восстановить",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "Файл «{name}» прочитан, но импортировать нечего: в пространстве модели нет линий, полилиний, дуг, окружностей, эллипсов, сплайнов и граней.",
  "Left out: {kinds}": "Пропущено: {kinds}",
- "Menu": "Меню"
+ "Menu": "Меню",
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "В этом проекте ещё нет сцен: вкладки появятся с первой (панель Сцены, «+ Сцена»)."
 }

@@ -3277,7 +3277,6 @@
  "Distance ({unit}):": "距離（{unit}）：",
  "Show scenes as tabs": "シーンをタブで表示",
  "This project's scenes as tabs under the view; a click shows one.": "このプロジェクトのシーンをビューの下にタブとして表示します。クリックでシーンを表示します。",
- "No scenes yet: «+» keeps the current view as one.": "シーンはまだありません：«+» で現在のビューをシーンとして保存します。",
  "Click: change the view · Double-click: this view alone, or the four again": "クリック：ビューを変更 · ダブルクリック：このビューだけ、または再び4つ",
  "One view": "1ビュー",
  "Two views": "2ビュー",
@@ -3302,5 +3301,6 @@
  "Restore": "復元",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "「{name}」を読み込みましたが、インポートできるものがありません。モデル空間に線、ポリライン、円弧、円、楕円、スプライン、面がありません。",
  "Left out: {kinds}": "除外: {kinds}",
- "Menu": "メニュー"
+ "Menu": "メニュー",
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "このプロジェクトにはまだシーンがありません。最初のシーンを作るとタブが表示されます（「シーン一覧」パネル、「+ シーン」）。"
 }

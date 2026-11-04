@@ -45,6 +45,13 @@ class SheetTabs(QTabBar):
     are the owner's callbacks; ``refresh`` rebuilds the strip from the
     sheet names and marks the current tab (``None`` = the model)."""
 
+    #: The widest a sheet's name reads on its tab, in average characters
+    #: (some 20 letters of ordinary text); past it, «…» and the whole name
+    #: in the tab's tooltip. Measured at 9 pt: five long names, «Model» and
+    #: «+» fit in what the bar has free at 1536 px; a larger font scrolls
+    #: sooner. Long names scrolled «Model» out of sight (#1184).
+    LABEL_MAX_CHARS = 18
+
     def __init__(self, parent, on_model, on_sheet, on_new=None,
                  on_menu=None) -> None:
         super().__init__(parent)
@@ -58,7 +65,8 @@ class SheetTabs(QTabBar):
         self.setDrawBase(False)
         self.setUsesScrollButtons(True)
         # Scroll, never elide: an elided strip squeezes every name to «L…»
-        # before the ◀ ▶ buttons ever show.
+        # before the ◀ ▶ buttons ever show. Only a very long name is cut,
+        # once and for all (``_tab_text``), however much room there is.
         self.setElideMode(Qt.ElideNone)
         # The keys here too, not only on each tab: where Qt cannot tell
         # which tab is under the pointer (Marco's Wayland screen at 120 %)
@@ -114,6 +122,16 @@ class SheetTabs(QTabBar):
         return ([("model",)] + [("sheet", i) for i in range(n)]
                 + ([("new",)] if self._has_new() else []))
 
+    def _tab_text(self, slot) -> str:
+        """What the tab of ``slot`` reads: a sheet's long name is cut."""
+        label = self._slot_label(slot)
+        if slot[0] != "sheet":
+            return label
+        metrics = self.fontMetrics()
+        return metrics.elidedText(
+            label, Qt.ElideRight,
+            self.LABEL_MAX_CHARS * metrics.averageCharWidth())
+
     def _slot_label(self, slot) -> str:
         kind = slot[0]
         if kind == "model":
@@ -146,7 +164,8 @@ class SheetTabs(QTabBar):
                 while self.count():
                     self.removeTab(0)
                 for i, (label, sl) in enumerate(zip(shown, slots)):
-                    self.addTab(label)
+                    text = self._tab_text(sl)
+                    self.addTab(text)
                     # The keys that walk the strip, where the hand already
                     # is (Marco, 24-09: «un mensaje informativo cuando me
                     # acerque a modelo o lámina»).
@@ -156,10 +175,12 @@ class SheetTabs(QTabBar):
                         self.setTabToolTip(i, tr(
                             "Model — Ctrl+Tab goes to the sheet"))
                     else:
-                        self.setTabToolTip(i, tr(
+                        tip = tr(
                             "Sheet — Ctrl+Tab goes back to the model; "
                             "Ctrl+PgUp / Ctrl+PgDown, the sheet before / "
-                            "after"))
+                            "after")
+                        self.setTabToolTip(i, tip if text == label
+                                           else f"{label}\n{tip}")
                 self._shown = shown
                 # A hidden QTabBar does not tell the layout its size changed.
                 self.updateGeometry()

@@ -78,7 +78,9 @@ def test_plus_brings_a_project_and_everything_back(win):
     assert all(d.toggleViewAction().isChecked() for d in panels)
     assert win._sidebar_handle.isVisible()
     assert win._sheet_tabs.isVisible()
-    assert not win._scene_tabs.isHidden()
+    assert win._scene_tabs.isHidden()           # a blank project: no scenes
+    win.tray.scenes.add_scene()
+    assert not win._scene_tabs.isHidden()       # the row is back with one
 
 
 def test_file_new_leaves_it_too(win):

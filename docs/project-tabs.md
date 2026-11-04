@@ -91,6 +91,8 @@ same scenes as in the **Scenes** panel.
 | Action | What it does |
 |---|---|
 | Click on a scene | Shows it (as a double-click in the Scenes panel) and marks it with the accent line. |
+| Double-click on a scene | Shows it and asks for its new name. |
+| Drag a scene | Changes the order of the scenes; the view stays where it is. Ctrl+Z puts it back. |
 | **+** after the last scene | Keeps the current view as a new scene. |
 | Right-click on a scene | Its menu, and nothing else: the view does not change. |
 | Right-click on the bar, off the tabs | **Hide scenes**. |
@@ -100,14 +102,22 @@ same scenes as in the **Scenes** panel.
 | Entry | What it does |
 |---|---|
 | Update | Keeps the current view in this scene. |
+| Rename… | Asks for its new name; the sheet views that show it follow. Ctrl+Z puts the old one back. |
 | Delete | Deletes the scene; Ctrl+Z brings it back. |
 
 Both menus open upwards, from the foot of the window.
 
-The row is on for every project; each project keeps its own choice. Turn it
-off or on with **Alt+E**, **Window ▸ Show scenes as tabs**, the project
-tab's menu, or **Hide scenes** on the bar. A project without scenes shows
-**+** and a line saying how to make the first one.
+The **Scenes** panel does the same: its right-click menu has **Rename…**,
+**Move up** and **Move down**, and **↑ ↓** under the list (Alt+↑ / Alt+↓) move
+the scene selected. The row and the panel always list the same scenes in the
+same order, and that order is what the document saves.
+
+A project without scenes has no row, so it takes no height from the view: the
+first scene brings it (**+ Scene** in the Scenes panel), and deleting the last
+takes it away. Each project keeps its own choice of showing it or not. Turn it
+off or on with **Alt+E**, **Window ▸ Show scenes as tabs**, the project tab's
+menu, or **Hide scenes** on the bar; off, the tabs stay away whatever scenes the
+project has.
 
 ---
 

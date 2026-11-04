@@ -3278,7 +3278,6 @@
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。",
  "Show scenes as tabs": "以标签页显示场景",
  "This project's scenes as tabs under the view; a click shows one.": "将此项目的场景显示为视图下方的标签页；单击即可显示。",
- "No scenes yet: «+» keeps the current view as one.": "还没有场景：«+» 会将当前视图保存为场景。",
  "Click: change the view · Double-click: this view alone, or the four again": "单击：切换视图 · 双击：只显示此视图，或恢复四个视图",
  "One view": "一个视图",
  "Two views": "两个视图",
@@ -3303,5 +3302,6 @@
  "Restore": "还原",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "已读取“{name}”，但没有可导入的内容：模型空间中没有直线、多段线、圆弧、圆、椭圆、样条曲线或面。",
  "Left out: {kinds}": "已跳过：{kinds}",
- "Menu": "菜单"
+ "Menu": "菜单",
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "此项目还没有场景：创建第一个场景后会显示标签页（“场景”面板，“+ 场景”）。"
 }

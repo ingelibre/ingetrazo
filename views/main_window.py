@@ -395,6 +395,8 @@ class MainWindow(QMainWindow):
         scenes.addRequested.connect(self._add_scene_from_tabs)
         scenes.menuRequested.connect(self._scene_tab_menu)
         scenes.barMenuRequested.connect(self._scene_bar_menu)
+        scenes.renameRequested.connect(self._rename_scene_tab)
+        scenes.moveRequested.connect(self._move_scene_tab)
         scenes.setVisible(False)
         box.addWidget(scenes)
         # Every project closed: an empty, hatched area with only «+» above
@@ -6735,8 +6737,10 @@ class MainWindow(QMainWindow):
 
     # ---- the active project's scenes as tabs (views/scene_tabs.py) --------
     def _refresh_scene_tabs(self) -> None:
-        """Show the active project's scenes under the viewport, while it
-        asks for them and no extension's workspace holds the window."""
+        """Show the active project's scenes under the viewport: while it
+        has some and asks for them, and no extension's workspace holds the
+        window. A project without scenes has no row, and its first scene
+        brings it (Scenes panel, «+ Scene»)."""
         row = self.__dict__.get("_scene_tabs")
         doc = self.__dict__.get("_doc")
         if row is None or doc is None or doc.viewport is None:
@@ -6746,11 +6750,11 @@ class MainWindow(QMainWindow):
             act.blockSignals(True)            # the project in front's choice
             act.setChecked(bool(doc.scene_tabs))
             act.blockSignals(False)
-        on = (bool(doc.scene_tabs) and self._workspace is None
+        views = list(getattr(self.viewport.scene, "saved_views", []) or [])
+        on = (bool(views) and bool(doc.scene_tabs) and self._workspace is None
                and not self.__dict__.get("_empty_on"))
         if on:
-            row.show_views(list(getattr(self.viewport.scene,
-                                        "saved_views", []) or []))
+            row.show_views(views)
         if row.isHidden() == on:
             row.setVisible(on)
 
@@ -6759,11 +6763,29 @@ class MainWindow(QMainWindow):
         doc = doc or self._doc
         doc.scene_tabs = bool(on)
         self._refresh_scene_tabs()
+        # Turned on with nothing to show: say why no row came up.
+        if on and doc is self._doc and not self.viewport.scene.saved_views:
+            self.statusBar().showMessage(tr(
+                "This project has no scenes yet: its tabs appear with the "
+                "first one (Scenes panel, «+ Scene»)."), 4000)
 
     def _on_scene_tab(self, index: int) -> None:
         views = self._scene_tabs.tabs.views
         if 0 <= index < len(views):
             self.tray.scenes.show_view(views[index])
+
+    def _rename_scene_tab(self, index: int) -> None:
+        # From the event loop: this can come from a double-click on the
+        # bar, still in the middle of its mouse events.
+        views = self._scene_tabs.tabs.views
+        if 0 <= index < len(views):
+            QTimer.singleShot(
+                0, lambda v=views[index]: self.tray.scenes.ask_rename(v))
+
+    def _move_scene_tab(self, index: int, to: int) -> None:
+        views = self.viewport.scene.saved_views
+        if 0 <= index < len(views):
+            self.tray.scenes.move_view(views[index], to)
 
     def _scene_tab_menu(self, index: int, global_pos) -> None:
         from views.scene_tabs import menu_upwards
@@ -6792,7 +6814,7 @@ class MainWindow(QMainWindow):
 
     def _build_scene_tab_menu(self, index: int):
         """A scene tab's right-click menu: keep the current view in that
-        scene, or delete it."""
+        scene, rename it, or delete it."""
         from PySide6.QtGui import QKeySequence
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
@@ -6804,6 +6826,10 @@ class MainWindow(QMainWindow):
         update.setEnabled(view is not None)
         update.triggered.connect(
             lambda _c=False, v=view: self.tray.scenes.update_view(v))
+        rename = menu.addAction(tr("Rename…"))
+        rename.setEnabled(view is not None)
+        rename.triggered.connect(
+            lambda _c=False, i=index: self._rename_scene_tab(i))
         menu.addSeparator()
         act = menu.addAction(tr("Delete"))
         act.setShortcut(QKeySequence.Delete)

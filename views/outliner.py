@@ -4565,11 +4565,7 @@ class SheetsPanel(QWidget):
 
     def rename_scene(self, view, name: str) -> bool:
         """Rename a scene and carry the sheet views that show it along."""
-        if not outliner.rename_scene(self._scene(), view, name):
-            if name and name != view.name:
-                self._window.viewport.flash_status(tr(
-                    "Another scene is already called «{name}»", name=name),
-                    3500)
+        if not self._window.tray.scenes.rename_view(view, name):
             self._touch()
             return False
         self._window.tray.scenes.refresh()
