@@ -3320,5 +3320,6 @@
  "Square, extended by a quarter of the width": "사각형, 선 두께의 4분의 1만큼 연장",
  "Round, extended by a quarter of the width": "원형, 선 두께의 4분의 1만큼 연장",
  "Square, overhang: half the width minus 2 px (minimum 0)": "사각형, 돌출 길이: 선 두께의 절반에서 2 px를 뺀 값 (최소 0)",
- "Round, overhang: half the width minus 2 px (minimum 0)": "원형, 돌출 길이: 선 두께의 절반에서 2 px를 뺀 값 (최소 0)"
+ "Round, overhang: half the width minus 2 px (minimum 0)": "원형, 돌출 길이: 선 두께의 절반에서 2 px를 뺀 값 (최소 0)",
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "칠하지 않은 모서리는 인접한 면의 재질을 사용합니다(서로 다르면 평균 색상). 모서리를 칠하면 그 색상이 우선합니다. 그룹의 모서리를 칠하려면 그룹을 여세요."
 }

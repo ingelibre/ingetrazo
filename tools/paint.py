@@ -479,7 +479,13 @@ class PaintTool(Tool):
         vp = ctx.viewport
         if self._sampling(ctx):
             from core.group import effective_material
-            paint = edge.material or effective_material(vp.scene.edit_group) or {}
+            from core.edge_style import edge_auto_color
+            paint = edge.material
+            if not paint:
+                inherited = effective_material(vp.scene.edit_group)
+                color = edge_auto_color(edge, vp.scene, inherited,
+                                        getattr(vp, "_texture_avg_color", None))
+                paint = {"color": color} if color is not None else (inherited or {})
             PaintTool.current_is_default = not bool(paint)
             PaintTool.current_color = tuple(paint.get("color") or vp.scene.display_style.edge_color)
             PaintTool.current_texture = dict(paint["texture"]) if paint.get("texture") else None

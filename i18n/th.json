@@ -3323,5 +3323,6 @@
  "Square, extended by a quarter of the width": "ปลายเหลี่ยม ยื่นออกหนึ่งในสี่ของความหนา",
  "Round, extended by a quarter of the width": "ปลายมน ยื่นออกหนึ่งในสี่ของความหนา",
  "Square, overhang: half the width minus 2 px (minimum 0)": "ปลายเหลี่ยม ระยะยื่น: ครึ่งความหนาลบ 2 พิกเซล (ต่ำสุด 0)",
- "Round, overhang: half the width minus 2 px (minimum 0)": "ปลายมน ระยะยื่น: ครึ่งความหนาลบ 2 พิกเซล (ต่ำสุด 0)"
+ "Round, overhang: half the width minus 2 px (minimum 0)": "ปลายมน ระยะยื่น: ครึ่งความหนาลบ 2 พิกเซล (ต่ำสุด 0)",
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "ขอบที่ยังไม่ระบายสีใช้วัสดุของหน้าที่อยู่ติดกัน (สีเฉลี่ยหากต่างกัน) ระบายสีขอบเพื่อแทนที่สีนี้ เปิดกลุ่มเพื่อระบายสีขอบของกลุ่ม"
 }

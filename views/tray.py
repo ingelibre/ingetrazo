@@ -3433,8 +3433,8 @@ class StylesPanel(QWidget):
         color_row = QHBoxLayout()
         self._edge_color_mode = QComboBox()
         self._edge_color_mode.setToolTip(tr(
-            "By material: choose a material in Materials and use Paint on an edge. "
-            "Open a group to paint its edges individually."))
+            "Unpainted edges use adjacent face materials (their average color when different). "
+            "Paint an edge to override; open a group to paint its edges."))
         for key, title in (("same", "All same"), ("material", "By material"),
                            ("axis", "By axis")):
             self._edge_color_mode.addItem(tr(title), key)

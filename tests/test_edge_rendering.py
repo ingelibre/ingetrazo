@@ -331,6 +331,44 @@ def test_painting_a_solid_edge_updates_3d_material_color_and_undo(cube_viewport,
     assert vp.history.redo() and is_green()
 
 
+@pytest.mark.parametrize("textured", [False, True])
+def test_face_material_updates_unpainted_edges_live_without_overwriting_own_paint(
+        cube_viewport, tmp_path, textured):
+    from PySide6.QtGui import QColor
+    from core.history import SetEdgeMaterialCommand, SetFaceColorCommand, SetFaceTextureCommand
+
+    vp = cube_viewport
+    scene = vp.scene
+    scene.display_style = _style(profiles=True, profile_width=6, edge_color_mode="material")
+    face = scene.mesh.faces[1]
+    target = next(e for e in scene.mesh.edges if face in e.faces
+                  and not vp._is_occluded((e.a + e.b) * 0.5)
+                  and V.dotProduct(e.faces[0].normal(), vp.camera.eye() - e.a)
+                  * V.dotProduct(e.faces[1].normal(), vp.camera.eye() - e.a) < 0)
+    x, y = vp._world_to_pixel((target.a + target.b) * 0.5)
+
+    def is_red():
+        color = vp.render_image(900, 750, overlays=False).pixelColor(round(x), round(y))
+        return color.red() > color.green() + 80 and color.red() > color.blue() + 80
+
+    assert not is_red()
+    if textured:
+        image = QImage(8, 8, QImage.Format_RGB32)
+        image.fill(QColor(230, 25, 25))
+        path = tmp_path / "red.png"
+        assert image.save(str(path))
+        command = SetFaceTextureCommand([face], {"path": str(path), "sw": 1, "sh": 1})
+    else:
+        command = SetFaceColorCommand([face], (0.9, 0.1, 0.1))
+    vp.history.execute(command)
+    assert target.material is None and is_red()
+    vp.history.execute(SetEdgeMaterialCommand([target], {"color": (0.1, 0.85, 0.2)}))
+    assert not is_red()
+    assert vp.history.undo() and target.material is None and is_red()
+    assert vp.history.undo() and not is_red()
+    assert vp.history.redo() and is_red()
+
+
 def test_endpoint_shapes_have_different_silhouettes_and_keep_size_on_zoom(drawing):
     vp, render, _renderer = drawing
     _line(vp)

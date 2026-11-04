@@ -38,11 +38,51 @@ def test_edge_paint_is_independent_and_undoable():
     assert edge.material == paint and face.attrs == before
     data = edge_vertices(scene.mesh, scene)
     assert np.allclose(data[:2, 3:6], paint["color"])
-    assert np.all(data[2:, 3:6] == -1)  # Face paint cannot repaint its other edges.
+    assert np.allclose(data[2:, 3:6], face.attrs["color"])
+    assert all(e.material is None for e in scene.mesh.edges[1:])  # Display never repaints edges.
     paint["color"][0] = 0.0
     assert edge.material["color"][0] == 0.9
     assert history.undo() and edge.material is None
     assert history.redo() and edge.material["color"][0] == 0.9
+
+
+def test_unpainted_edges_blend_neighbor_colors_with_independent_paint_priority():
+    scene = Scene()
+    first = scene.mesh.add_face([V(0, 0, 0), V(2, 0, 0), V(2, 0, 2), V(0, 0, 2)])
+    second = scene.mesh.add_face([V(2, 0, 0), V(0, 0, 0), V(0, 2, 0), V(2, 2, 0)])
+    first.attrs["color"] = (1, 0, 0)
+    second.attrs["color"] = (0, 0, 1)
+    shared = next(e for e in scene.mesh.edges if len(e.faces) == 2)
+
+    def color(edge, inherited=None):
+        index = scene.mesh.edges.index(edge)
+        return edge_vertices(scene.mesh, scene, paint=inherited)[index * 2, 3:6]
+
+    assert np.allclose(color(shared), (0.5, 0, 0.5))
+    assert shared.material is None
+    shared.material = {"color": (0, 1, 0)}
+    assert np.allclose(color(shared), (0, 1, 0))
+    shared.material = None
+    second.attrs.clear()
+    assert np.allclose(color(shared), (1, 0, 0))
+    assert np.allclose(color(shared, {"color": (0, 1, 0)}), (0.5, 0.5, 0))
+    second.attrs["hidden"] = True
+    assert np.allclose(color(shared), (1, 0, 0))
+    first.attrs.clear()
+    assert np.all(color(shared) == -1)
+
+
+def test_unpainted_edges_use_texture_average_and_material_registry():
+    scene, face, edge = _scene()
+    face.attrs = {"texture": {"path": "brick.png"}, "color": (1, 1, 1)}
+    assert np.allclose(edge_vertices(scene.mesh, scene, average=lambda _: (0.7, 0.3, 0.1))[:, 3:6],
+                       (0.7, 0.3, 0.1))
+    scene.materials["Blue"] = Material("Blue", color=(0, 0, 1))
+    face.attrs = {"mat": "Blue"}
+    assert np.allclose(edge_vertices(scene.mesh, scene)[:, 3:6], (0, 0, 1))
+    edge.material = {"mat": "Blue"}
+    face.attrs["color"] = (1, 0, 0)
+    assert np.allclose(edge_vertices(scene.mesh, scene)[:2, 3:6], (0, 0, 1))
 
 
 def test_paint_tool_targets_edges_in_by_material_and_samples_or_removes_them(monkeypatch):
@@ -91,6 +131,11 @@ def test_paint_tool_targets_edges_in_by_material_and_samples_or_removes_them(mon
     PaintTool.current_is_default = True
     tool.on_click(ctx)
     assert edge.material is None and face.attrs == before
+    ctx.modifiers = Qt.AltModifier
+    tool.on_click(ctx)
+    assert PaintTool.current_color == tuple(face.attrs["color"])
+    assert PaintTool.current_material is None
+    assert not PaintTool.current_is_default
 
 
 @pytest.mark.parametrize("binary", [False, True])

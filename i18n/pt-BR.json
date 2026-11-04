@@ -3327,5 +3327,6 @@
  "Square, extended by a quarter of the width": "Quadrada, prolongada por um quarto da espessura",
  "Round, extended by a quarter of the width": "Redonda, prolongada por um quarto da espessura",
  "Square, overhang: half the width minus 2 px (minimum 0)": "Quadrada, avanço: metade da espessura menos 2 px (mínimo 0)",
- "Round, overhang: half the width minus 2 px (minimum 0)": "Redonda, avanço: metade da espessura menos 2 px (mínimo 0)"
+ "Round, overhang: half the width minus 2 px (minimum 0)": "Redonda, avanço: metade da espessura menos 2 px (mínimo 0)",
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Arestas não pintadas usam os materiais das faces vizinhas (a cor média se forem diferentes). Pinte uma aresta para substituir essa cor; abra um grupo para pintar suas arestas."
 }

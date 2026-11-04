@@ -3323,5 +3323,6 @@
  "Square, extended by a quarter of the width": "Persegi, diperpanjang seperempat ketebalan",
  "Round, extended by a quarter of the width": "Bulat, diperpanjang seperempat ketebalan",
  "Square, overhang: half the width minus 2 px (minimum 0)": "Persegi, juluran: setengah ketebalan dikurangi 2 px (minimum 0)",
- "Round, overhang: half the width minus 2 px (minimum 0)": "Bulat, juluran: setengah ketebalan dikurangi 2 px (minimum 0)"
+ "Round, overhang: half the width minus 2 px (minimum 0)": "Bulat, juluran: setengah ketebalan dikurangi 2 px (minimum 0)",
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Rusuk yang belum dicat memakai material bidang di sebelahnya (warna rata-rata jika berbeda). Cat rusuk untuk mengganti warna ini; buka grup untuk mengecat rusuknya."
 }

@@ -66,14 +66,47 @@ def marker_candidates(data, transform, style, mode, eye, forward, perspective):
     return np.ascontiguousarray(pairs[shown].reshape((-1, EDGE_FLOATS)))
 
 
-def _paint_color(attrs, average):
+def _paint_color(attrs, average, registry=None):
+    if (attrs.get("color") is None and not attrs.get("texture")
+            and registry and attrs.get("mat") in registry):
+        attrs = registry[attrs["mat"]].face_attrs()
     color = attrs.get("color")
     texture = attrs.get("texture")
+    if texture and texture.get("path") and average is not None:
+        return tuple(average(texture["path"]))
     if color is not None and len(color) >= 3:
         return tuple(color[:3])
-    if texture and texture.get("path") and average is not None:
-        return average(texture["path"])
     return None
+
+
+def _face_colors(attrs_list, scene, paint, average):
+    """Effective front material colors; unpainted default faces contribute none."""
+    inherited = _paint_color(paint or {}, average, scene.materials)
+    layers = {layer.name: layer for layer in scene.layers}
+    colors = []
+    for attrs in attrs_list:
+        layer = layers.get(attrs.get("layer"))
+        if attrs.get("hidden") or (layer is not None and not layer.visible):
+            colors.append(None)
+        else:
+            colors.append(_paint_color(attrs, average, scene.materials) or inherited)
+    return colors
+
+
+def _mean_color(colors):
+    colors = [color for color in colors if color is not None]
+    return (tuple(sum(c[channel] for c in colors) / len(colors) for channel in range(3))
+            if colors else None)
+
+
+def edge_auto_color(edge, scene, paint=None, average=None):
+    """The automatic color of an unpainted edge, also used by the eyedropper.
+
+    Average adjacent painted faces to avoid an arbitrary face-order choice.
+    An unpainted face inherits its container; a loose edge does so directly.
+    """
+    return (_mean_color(_face_colors([face.attrs for face in edge.faces], scene, paint, average))
+            or _paint_color(paint or {}, average, scene.materials))
 
 
 def _plan_arrays(mesh, plan):
@@ -97,15 +130,15 @@ def _plan_arrays(mesh, plan):
 def edge_vertices(mesh, scene, paint=None, inherited_layer=None, average=None) -> np.ndarray:
     """Build a packed line stream including profiles, materials and tag dashes.
 
-    An unpainted edge inherits its container's material. Missing paint is
-    a sentinel, resolved by the
+    Own edge paint wins; otherwise average adjacent effective face materials,
+    then fall back to the container. Missing paint is a sentinel, resolved by the
     shader to the style's fallback color rather than a baked black.
     """
     from core.lazy_mesh import plan_of
     plan = plan_of(mesh)
     if plan is not None:
         points, normals, starts, incident = _plan_arrays(mesh, plan)
-        from formats.igz import _edge_material_map
+        from formats.igz import _edge_material_map, _face_attrs_from_json
         from core.mesh import edge_material_key
         paints = _edge_material_map(mesh.__dict__["_deferred_source"]["meta"])
         materials = ([paints.get(edge_material_key(a, b)) for a, b in points]
@@ -113,6 +146,9 @@ def edge_vertices(mesh, scene, paint=None, inherited_layer=None, average=None) -
         soft = plan.soft
         hidden = plan.hidden
         layers = plan.layer
+        source = mesh.__dict__["_deferred_source"]
+        table = [_face_attrs_from_json(raw) or {} for raw in source["meta"].get("face_attrs", [])]
+        face_attrs = [table[int(k)] if k >= 0 else {} for k in source["face_attr"]]
     else:
         edges, faces = mesh.edges, mesh.faces
         points = np.asarray([[e.a.toTuple(), e.b.toTuple()] for e in edges], dtype=float)
@@ -127,6 +163,7 @@ def edge_vertices(mesh, scene, paint=None, inherited_layer=None, average=None) -
         soft = np.asarray([edge.soft for edge in edges])
         hidden = np.asarray([edge.hidden or not scene.entity_visible(edge) for edge in edges])
         layers = [edge.layer for edge in edges]
+        face_attrs = [face.attrs for face in faces]
     count = len(points)
     data = np.zeros((count, 2, EDGE_FLOATS), dtype=np.float32)
     data[:, :, :3] = points
@@ -134,7 +171,8 @@ def edge_vertices(mesh, scene, paint=None, inherited_layer=None, average=None) -
     data[:, :, 12] = np.asarray(soft)[:, None]
     lengths = starts[1:] - starts[:-1]
     data[:, :, 13] = (lengths != 2)[:, None]
-    inherited = _paint_color(paint or {}, average)
+    inherited = _paint_color(paint or {}, average, scene.materials)
+    face_colors = _face_colors(face_attrs, scene, paint, average)
     keep = ~np.asarray(hidden, dtype=bool)
     layer_map = {layer.name: layer for layer in scene.layers}
     for i in range(count):
@@ -142,7 +180,8 @@ def edge_vertices(mesh, scene, paint=None, inherited_layer=None, average=None) -
         if len(faces):
             data[i, :, 6:9] = normals[faces[0]]
             data[i, :, 9:12] = normals[faces[1] if len(faces) > 1 else faces[0]]
-        color = _paint_color(materials[i] or {}, average) or inherited
+        color = (_paint_color(materials[i] or {}, average, scene.materials)
+                 or _mean_color([face_colors[int(f)] for f in faces]) or inherited)
         if color is not None:
             data[i, :, 3:6] = color
         name = layers[i]

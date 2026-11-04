@@ -94,8 +94,8 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
 
         if style.edges or style.profiles or mode in ("wireframe", "xray"):
             from core.edge_style import AXIS_COLORS
-            # Local sample edges with their 3D axis and a small independent
-            # paint sample. This is a style illustration, not model geometry.
+            # Local sample axes and the painted right face's boundary edges.
+            # This is a style illustration, not model geometry.
             segments = ((top[0], top[1], 0), (top[1], top[2], 1),
                         (top[2], top[3], 0), (top[3], top[0], 1),
                         (left[0], left[3], 2), (left[3], left[2], 0),
@@ -109,7 +109,7 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                 color = edge
                 if style.edge_color_mode == "axis":
                     color = _color(AXIS_COLORS[axis])
-                elif style.edge_color_mode == "material" and index in (1, 7, 8):
+                elif style.edge_color_mode == "material" and index in (1, 6, 7, 8):
                     color = _color((0.68, 0.55, 0.39))
                 width = style.profile_width if style.profiles and index in outline else 1.0
                 if style.depth_cue:

@@ -3320,5 +3320,6 @@
  "Square, extended by a quarter of the width": "Eckig, um ein Viertel der Strichbreite verlängert",
  "Round, extended by a quarter of the width": "Rund, um ein Viertel der Strichbreite verlängert",
  "Square, overhang: half the width minus 2 px (minimum 0)": "Eckig, Überstand: halbe Strichbreite minus 2 px (mindestens 0)",
- "Round, overhang: half the width minus 2 px (minimum 0)": "Rund, Überstand: halbe Strichbreite minus 2 px (mindestens 0)"
+ "Round, overhang: half the width minus 2 px (minimum 0)": "Rund, Überstand: halbe Strichbreite minus 2 px (mindestens 0)",
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Unbemalte Kanten übernehmen die Materialien benachbarter Flächen (bei Unterschieden deren mittlere Farbe). Eine Kante bemalen, um dies zu überschreiben; eine Gruppe öffnen, um ihre Kanten zu bemalen."
 }

@@ -3321,5 +3321,6 @@
  "Square, extended by a quarter of the width": "方头，延长四分之一个线宽",
  "Round, extended by a quarter of the width": "圆头，延长四分之一个线宽",
  "Square, overhang: half the width minus 2 px (minimum 0)": "方头，伸出量：半个线宽减2像素（最小为0）",
- "Round, overhang: half the width minus 2 px (minimum 0)": "圆头，伸出量：半个线宽减2像素（最小为0）"
+ "Round, overhang: half the width minus 2 px (minimum 0)": "圆头，伸出量：半个线宽减2像素（最小为0）",
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "未涂色的边线使用相邻面的材质（不同时取平均颜色）。直接涂绘边线可覆盖此颜色；打开组后可涂绘组内边线。"
 }

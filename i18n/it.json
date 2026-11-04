@@ -3321,5 +3321,6 @@
  "Square, extended by a quarter of the width": "Quadrata, prolungata di un quarto dello spessore",
  "Round, extended by a quarter of the width": "Rotonda, prolungata di un quarto dello spessore",
  "Square, overhang: half the width minus 2 px (minimum 0)": "Quadrata, sporgenza: metà spessore meno 2 px (minimo 0)",
- "Round, overhang: half the width minus 2 px (minimum 0)": "Rotonda, sporgenza: metà spessore meno 2 px (minimo 0)"
+ "Round, overhang: half the width minus 2 px (minimum 0)": "Rotonda, sporgenza: metà spessore meno 2 px (minimo 0)",
+ "Unpainted edges use adjacent face materials (their average color when different). Paint an edge to override; open a group to paint its edges.": "Gli spigoli non dipinti usano i materiali delle facce adiacenti (il colore medio se diversi). Dipingi uno spigolo per sostituirlo; apri un gruppo per dipingerne gli spigoli."
 }
