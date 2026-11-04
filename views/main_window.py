@@ -2925,9 +2925,11 @@ class MainWindow(QMainWindow):
                 continue
             try:
                 plug.setup(ExtensionApp(self, plug.stem))
-            except Exception as exc:  # noqa: BLE001 — never break startup
+            # SystemExit too: sys.exit() in a setup closed the whole app.
+            except (Exception, SystemExit) as exc:  # noqa: BLE001 — never break startup
                 log.exception("plugin %r setup failed", plug.stem)
-                from core.extensions import PluginError
+                from core.extensions import PluginError, note_failure
+                note_failure(f"plugin {plug.stem!r} setup failed")
                 errors.append(PluginError(
                     plug.stem, plug.path, f"{type(exc).__name__}: {exc}"))
                 plugins.remove(plug)
@@ -2942,28 +2944,17 @@ class MainWindow(QMainWindow):
                           for tool in plug.tools),
                          key=lambda pt: getattr(pt[1], "menu_order", 0))
         for plug, tool in entries:
-            key = f"plugin_{plug.stem}_{type(tool).__name__}"
-            self._tools[key] = tool
-            action = QAction(tr(tool.name), self)
-            if tool.description:
-                action.setStatusTip(tr(tool.description))
-            if tool.shortcut:
-                seq = QKeySequence(tool.shortcut).toString()
-                if seq and (seq not in taken or reserved.get(seq) == key):
-                    action.setShortcut(QKeySequence(tool.shortcut))
-                    from views.shortcuts import set_tooltip
-                    set_tooltip(action, tr(tool.name))
-                    taken.add(seq)
-                else:
-                    log.warning("plugin %r wants shortcut %r, already "
-                                "taken; entry added without it",
-                                plug.stem, tool.shortcut)
-            action.triggered.connect(
-                lambda _c, k=key: self._activate_plugin_tool(k))
-            ext_menu.insertAction(anchor, action)
-            self.__dict__.setdefault("_ext_action_owner", {})[action] = plug.stem
-            count += 1
-        self._group_extension_menu()
+            try:
+                self._add_plugin_tool_entry(plug, tool, taken, reserved)
+                count += 1
+            except Exception:  # noqa: BLE001 — the others still get theirs
+                log.exception("plugin %r: bad menu entry", plug.stem)
+                from core.extensions import note_failure
+                note_failure(f"plugin {plug.stem!r}: bad menu entry")
+        try:
+            self._group_extension_menu()
+        except Exception:  # noqa: BLE001 — a flat menu still works
+            log.exception("could not group the Extensions menu")
 
         for err in errors:
             action = QAction(tr("\u26a0 {name} (load error)", name=err.stem), self)
@@ -2990,6 +2981,32 @@ class MainWindow(QMainWindow):
                 self._wrap_toolbar_rows()
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0, self, self._fit_docks_to_screen)
+
+    def _add_plugin_tool_entry(self, plug, tool, taken, reserved) -> None:
+        """One tool's entry in the Extensions menu. Apart so that a tool
+        with an unusable name or shortcut costs only its own entry."""
+        import logging
+        log = logging.getLogger("ingetrazo.plugins")
+        key = f"plugin_{plug.stem}_{type(tool).__name__}"
+        action = QAction(tr(tool.name), self)
+        if tool.description:
+            action.setStatusTip(tr(tool.description))
+        if tool.shortcut:
+            seq = QKeySequence(tool.shortcut).toString()
+            if seq and (seq not in taken or reserved.get(seq) == key):
+                action.setShortcut(QKeySequence(tool.shortcut))
+                from views.shortcuts import set_tooltip
+                set_tooltip(action, tr(tool.name))
+                taken.add(seq)
+            else:
+                log.warning("plugin %r wants shortcut %r, already "
+                            "taken; entry added without it",
+                            plug.stem, tool.shortcut)
+        self._tools[key] = tool
+        action.triggered.connect(
+            lambda _c, k=key: self._activate_plugin_tool(k))
+        self._ext_menu.insertAction(self._ext_anchor, action)
+        self.__dict__.setdefault("_ext_action_owner", {})[action] = plug.stem
 
     def restore_late_toolbars(self) -> bool:
         """Put toolbars that arrived after the window was laid out where the
@@ -3041,8 +3058,22 @@ class MainWindow(QMainWindow):
             self.layout().activate()
 
     def _on_manage_extensions(self) -> None:
-        from views.extension_manager_dialog import ExtensionManagerDialog
-        dialog = ExtensionManagerDialog(self)
+        # An exception in a menu slot goes to stderr, and a windowed build
+        # has none: the click did nothing at all (#1152).
+        try:
+            from views.extension_manager_dialog import ExtensionManagerDialog
+            dialog = ExtensionManagerDialog(self)
+        except Exception as exc:  # noqa: BLE001 — say so, whatever it was
+            import logging
+            from core.extensions import note_failure
+            logging.getLogger("ingetrazo.plugins").exception(
+                "the extension manager could not open")
+            note_failure("the extension manager could not open")
+            QMessageBox.warning(
+                self, tr("Extension manager"),
+                tr("Could not load extensions: {error}",
+                   error=f"{type(exc).__name__}: {exc}"))
+            return
         dialog.exec()
         dialog.deleteLater()
 
