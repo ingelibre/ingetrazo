@@ -2391,12 +2391,12 @@ class Viewport(QOpenGLWidget):
     tool_preview = True
 
     def paintGL(self) -> None:
-        if self.tool_preview:
-            self._paint_frame()
+        if getattr(self, "tool_preview", True):
+            Viewport._paint_frame(self)
             return
         tool, self.active_tool = self.active_tool, None
         try:
-            self._paint_frame()
+            Viewport._paint_frame(self)
         finally:
             self.active_tool = tool
 

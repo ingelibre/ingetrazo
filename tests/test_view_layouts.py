@@ -723,7 +723,8 @@ def test_a_view_without_the_preview_draws_with_no_tool_and_gives_it_back(
     tool = grid.main.active_tool
     vp.active_tool = tool
     seen = []
-    monkeypatch.setattr(vp, "_paint_frame", lambda: seen.append(vp.active_tool))
+    monkeypatch.setattr(type(vp), "_paint_frame",
+                        lambda self: seen.append(self.active_tool))
     vp.tool_preview = False
     vp.paintGL()
     assert seen == [None] and vp.active_tool is tool
