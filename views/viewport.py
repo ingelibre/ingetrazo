@@ -11414,6 +11414,27 @@ class Viewport(QOpenGLWidget):
             break
         return x, context
 
+    def _face_outline_world(self, px: float, py: float):
+        """The face under the cursor as ``(outer loop, holes, context)`` in
+        world space (``context``: "group" / "component" when it is inside
+        one), or ``None``. What a line piercing the face is tested against."""
+        face, place = self.pick_face_placement(px, py)    # memoised
+        if face is None:
+            return None
+        xf = getattr(place, "xform", None)
+
+        def w(p):
+            return xf.map(QVector3D(p)) if xf is not None else QVector3D(p)
+        outer = [w(p) for p in face.vertices]
+        holes = [[w(p) for p in h] for h in face.holes]
+        context = None
+        if place is not None:
+            owner = self._owner_of(place)
+            is_comp = getattr(owner, "is_instance", None)
+            context = ("component" if is_comp is not None and is_comp()
+                       else "group")
+        return outer, holes, context
+
     def _still_face_under(self, px: float, py: float) -> bool:
         """Whether a face the drag is NOT bending is under the cursor —
         the «On face» cue never names the face being moved."""
@@ -17775,6 +17796,14 @@ class Viewport(QOpenGLWidget):
         self.inference._shift_lock = value
 
     @property
+    def _shift_lock_ref(self):
+        return self.inference._shift_lock_ref
+
+    @_shift_lock_ref.setter
+    def _shift_lock_ref(self, value) -> None:
+        self.inference._shift_lock_ref = value
+
+    @property
     def _hover_edge(self):
         return self.inference._hover_edge
 
@@ -17866,7 +17895,8 @@ class Viewport(QOpenGLWidget):
         if ctx is None:
             return
         self._note_snap(ctx.snap)
-        if self.active_tool.uses_snap:
+        if (self.active_tool.uses_snap
+                and getattr(self.active_tool, "allow_inferences", True)):
             # Encouraging: the point the snap already found — no extra pick
             # per hover. A circle's rim encourages its CENTRE (found by the
             # centre reference while the cursor is on the rim); on a face
@@ -18609,6 +18639,7 @@ class Viewport(QOpenGLWidget):
         if ev.key() == Qt.Key_Shift and not ev.isAutoRepeat():
             self._set_middle_drag_pan_mode(False)
             self._shift_lock = None
+            self._shift_lock_ref = None
             self._release_shift_plane_mark()
             self._refresh_snap()
         super().keyReleaseEvent(ev)
@@ -18629,7 +18660,7 @@ class Viewport(QOpenGLWidget):
     # Inferences whose direction can be captured by a Shift lock.
     _SHIFT_LOCKABLE = frozenset({
         "axis", "axis_inference", "reference", "through_point", "perp_face",
-        "extension",
+        "extension", "from_point",
     })
 
     def _capture_shift_lock(self) -> None:
@@ -18640,6 +18671,7 @@ class Viewport(QOpenGLWidget):
         goes on marking midpoints, endpoints and alignments (Marco: «100%
         aditivo»). Each side keeps its own guard."""
         self._shift_lock = None
+        self._shift_lock_ref = None
         self._mark_plane_for_shift()
         snap = self.last_snap
         tool = self.active_tool
@@ -18647,18 +18679,24 @@ class Viewport(QOpenGLWidget):
         if owns is not None and owns():
             return  # the tool reads the cursor's motion itself
         start = getattr(tool, "start_point", None) if tool is not None else None
-        if snap is None or start is None or snap.kind not in self._SHIFT_LOCKABLE:
+        if snap is None or snap.kind not in self._SHIFT_LOCKABLE:
             return
+        axis = snap.axis if snap.axis in _AXIS_VECTORS else None
+        if start is None and axis is None:
+            return          # no start point and no axis: nothing to lock
 
         # Lock to the exact inferred axis, preserving its direction.
-        if snap.axis in _AXIS_VECTORS:
-            d = QVector3D(_AXIS_VECTORS[snap.axis])
-            if QVector3D.dotProduct(snap.point - start, d) < 0.0:
+        if axis is not None:
+            d = QVector3D(_AXIS_VECTORS[axis])
+            if start is not None and QVector3D.dotProduct(snap.point - start, d) < 0.0:
                 d = -d
         else:
             d = snap.point - start
         if d.length() > 1e-6:
             self._shift_lock = (d.normalized(), snap.color)
+            if (snap.kind == "from_point" and axis is not None
+                    and getattr(snap, "guide", None) is not None):
+                self._shift_lock_ref = (snap.guide[0], axis)
 
     def _mark_plane_for_shift(self) -> None:
         """Shift marks the plane the shape would draw on — the tool's call
