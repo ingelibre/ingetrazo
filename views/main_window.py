@@ -428,6 +428,7 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geo)
 
         self._setup_autosave()
+        self.workspace_profiles.restore_controls()
         # An untitled recovery slot on disk means the last session died with
         # unsaved work (a clean exit clears it) — offer it back, once the
         # window is up (QTimer 0: not during __init__, the viewport isn't
@@ -1779,6 +1780,9 @@ class MainWindow(QMainWindow):
 
         # Window menu (panels + app preferences)
         window_menu = menubar.addMenu(tr("Window"))
+        from views.workspace_profiles import WorkspaceProfiles
+        self.workspace_profiles = WorkspaceProfiles(
+            self, window_menu.addMenu(tr("Workspace")))
 
         # Every tray, extension tabs included, has its entry here — and the
         # same list opens on a right-click over the tabs. Only this list
@@ -8972,6 +8976,9 @@ class MainWindow(QMainWindow):
                     clean_state if (act is not None and act.isChecked()
                                     and clean_state is not None)
                     else self.saveState())
+        # A clean screen is temporary; preserve the underlying profile.
+        if act is None or not act.isChecked():
+            self.workspace_profiles.save()
         st.setValue("ui/window_geometry", self.saveGeometry())
         # Free every GL texture while a GL context still exists — the survey
         # atlases (hundreds of MB), the tile and terrain textures, and the

@@ -36,7 +36,7 @@ def fold(text: str) -> str:
     Remembered: the same labels are folded each time a box opens."""
     decomposed = unicodedata.normalize("NFKD", text or "")
     return "".join(c for c in decomposed
-                   if not unicodedata.combining(c)).casefold()
+                   if not unicodedata.combining(c)).casefold().replace("ı", "i")
 
 
 def words_of(text: str) -> list:

@@ -38,6 +38,14 @@ from views.shortcuts import _plain, action_key, collect_actions
 
 #: The command that opens this box — kept out of its own list.
 OBJECT_NAME = "command_search"
+# Discovery synonyms are display-only: actions and shortcut IDs stay intact.
+_ALIASES = {
+    "Offset": "Offset / parallel copy",
+    "Push / Pull": "Extrude / Push / Pull",
+    "Orbit": "Orbit / rotate camera",
+    "Pan": "Pan / move camera",
+    "BIM tagging": "BIM / classification / quantities",
+}
 _RECENT_KEY = "command_search/recent"
 _RECENT_MAX = 100
 _SEP = " ▸ "
@@ -195,6 +203,9 @@ class Command:
         self.items = (
             string_search.Item(trail + [name]),
             string_search.Item([source_of(p) for p in trail] + [english]))
+        alias = _ALIASES.get(english)
+        if alias:
+            self.items += (string_search.Item([tr(alias)]),)
         self.tip = _description(action, name)
 
 

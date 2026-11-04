@@ -262,6 +262,9 @@ CONTRIBUTORS = [
      "The IngeTrazo Tutorials channel on YouTube, and nine extensions: "
      "MultiView, Phasing Animator, Kitchen Maker, Taper and more.",
      "https://github.com/aashishzharbade-arch"),
+    ("İbrahim Halim Gökbulut",
+     "Turkish localization and workspace guide.",
+     "https://github.com/h-skycloud"),
 ]
 
 #: Roll speed: pixels per tick, and the tick.
