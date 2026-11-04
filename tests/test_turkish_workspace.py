@@ -112,6 +112,15 @@ def test_profile_customization_is_restored(window):
         other.close()
 
 
+def test_unused_profiles_do_not_change_upstream_persistence(window):
+    st = QSettings()
+    hidden_before = st.value("ui/hidden_trays")
+    assert not window.workspace_profiles.enabled
+    window.close()
+    assert not any(k.startswith("workspace_profiles/") for k in st.allKeys())
+    assert st.value("ui/hidden_trays") == hidden_before
+
+
 def test_original_folded_sidebar_returns_and_unfolds(window):
     original_open = {d.objectName() for d in window._sidebar_docks() if not d.isHidden()}
     window._act_sidebar.setChecked(False)

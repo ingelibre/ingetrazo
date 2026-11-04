@@ -55,6 +55,8 @@ Window > Workspace offers four explicitly selected layouts:
 Each profile remembers its customized Qt layout, panel visibility and folded
 sidebars under `workspace_profiles/`. Window > Panels and toolbar toggles
 remain available; presets never remove actions or change key assignments.
+Until a profile is explicitly selected, workspace persistence stays inactive
+and the existing upstream window-state behavior is left in control.
 Extension panels and toolbars are not assigned preset visibility. Returning
 to Original restores its captured state rather than resetting a user's work.
 

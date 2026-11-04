@@ -29,7 +29,10 @@ _PANELS = {
 class WorkspaceProfiles:
     def __init__(self, window, menu) -> None:
         self.window = window
+        self.menu = menu
         self.current = str(QSettings().value("workspace_profiles/current", "original"))
+        self.enabled = (QSettings().contains("workspace_profiles/current")
+                        and self.current in PROFILES)
         if self.current not in PROFILES:
             self.current = "original"
         self.group = QActionGroup(window)
@@ -48,6 +51,8 @@ class WorkspaceProfiles:
         intro.triggered.connect(lambda: show_intro(window))
 
     def save(self) -> None:
+        if not self.enabled:
+            return
         st = QSettings()
         prefix = "workspace_profiles/" + self.current
         st.setValue(prefix + "/state", self.window.saveState())
@@ -67,6 +72,8 @@ class WorkspaceProfiles:
         from views.icons import tool_icon
         st, win = QSettings(), self.window
         prefix = "workspace_profiles/" + self.current
+        if not self.enabled:
+            return
         if not fresh and not st.contains(prefix + "/state"):
             return
         docks = {d.objectName(): d for d in win._sidebar_docks()}
@@ -101,6 +108,7 @@ class WorkspaceProfiles:
         win = self.window
         if win._act_clean_screen.isChecked():
             win._act_clean_screen.setChecked(False)
+        self.enabled = True
         self.save()
         st = QSettings()
         prefix = "workspace_profiles/" + key
