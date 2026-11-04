@@ -191,6 +191,10 @@ def test_edge_controls_apply_live_and_disabled_values_survive_refresh(tmp_path, 
     panel._endpoint_types.button(1).click()
     assert panel._endpoint_size.value() == 14
     assert not style.dashes and style.edge_color_mode == "material"
+    assert not panel._edge_material_help.isHidden()
+    panel._edge_color_mode.setCurrentIndex(panel._edge_color_mode.findData("same"))
+    assert panel._edge_material_help.isHidden()
+    panel._edge_color_mode.setCurrentIndex(panel._edge_color_mode.findData("material"))
     panel._extensions.setChecked(False)
     panel.refresh()
     assert style.extension_length == -12

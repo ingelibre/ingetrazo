@@ -217,15 +217,9 @@ def test_profile_cap_overhang_scales_with_export_resolution(drawing, cap, inset)
     assert cap[-1] == pytest.approx(plain[-1] + (12 / 2 - inset) * 2, abs=1)
 
 
-@pytest.mark.parametrize("perspective", [False, True])
-@pytest.mark.parametrize("cap", ["square", "round_extended"])
-@pytest.mark.parametrize("width", [8, 20])
-def test_thick_profiles_stay_opaque_over_faces_near_their_ends(perspective, cap, width):
-    """Exercise the real face depth and MSAA, not an empty depth buffer.
-
-    Expanding a quad in XY while retaining the endpoints' Z used to flatten
-    its depth slope. Faces then cut gray blocks into the inside of profiles.
-    """
+@pytest.fixture
+def cube_viewport():
+    """A real, invisible viewport with solid faces, depth, MSAA and picking."""
     from PySide6.QtCore import QCoreApplication, QEvent, Qt
     from PySide6.QtWidgets import QApplication
     from views.viewport import Viewport
@@ -247,41 +241,94 @@ def test_thick_profiles_stay_opaque_over_faces_near_their_ends(perspective, cap,
         for face in ((0, 2, 3, 1), (4, 5, 7, 6), (0, 1, 5, 4),
                      (1, 3, 7, 5), (3, 2, 6, 7), (2, 0, 4, 6)):
             scene.mesh.add_face([points[i] for i in face])
-        scene.display_style = _style(profiles=True, profile_width=width, profile_cap=cap)
         vp.camera.set_view("iso")
-        vp.camera.perspective = perspective
         vp.camera.fit_to(V(-1.25, -1.25, -1.25), V(1.25, 1.25, 1.25))
         scene.version += 1
-        image = vp.render_image(900, 750, overlays=False).convertToFormat(QImage.Format_RGBA8888)
-        pixels = np.frombuffer(image.constBits(), dtype=np.uint8).reshape((750, image.bytesPerLine() // 4, 4))
-        mvp = vp.camera.projection_matrix() * vp.camera.view_matrix()
-
-        def project(point):
-            p = mvp.map(point)
-            return np.array([(p.x() + 1) * 450, (1 - p.y()) * 375])
-
-        samples = 0
-        for edge in scene.mesh.edges:
-            toward = (vp.camera.eye() - (edge.a + edge.b) * 0.5
-                      if perspective else -vp.camera.forward())
-            if len(edge.faces) != 2 or (V.dotProduct(edge.faces[0].normal(), toward)
-                                       * V.dotProduct(edge.faces[1].normal(), toward) >= 0):
-                continue
-            a, b = project(edge.a), project(edge.b)
-            tangent = (b - a) / np.linalg.norm(b - a)
-            normal = np.array([-tangent[1], tangent[0]])
-            for origin, direction in ((a, tangent), (b, -tangent)):
-                for along in (width, width * 2, width * 3):
-                    for side in (-width / 4, width / 4):
-                        x, y = np.rint(origin + direction * along + normal * side).astype(int)
-                        assert pixels[y, x, :3].max() <= 3, (cap, width, perspective, x, y, pixels[y, x])
-                        assert pixels[y, x, 3] == 255
-                        samples += 1
-        assert samples >= 48
+        yield vp
     finally:
         vp.close()
         vp.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+@pytest.mark.parametrize("perspective", [False, True])
+@pytest.mark.parametrize("cap", ["square", "round_extended"])
+@pytest.mark.parametrize("width", [8, 20])
+def test_thick_profiles_stay_opaque_over_faces_near_their_ends(cube_viewport, perspective, cap, width):
+    """Expanded strokes must keep their depth slope against real faces."""
+    vp = cube_viewport
+    scene = vp.scene
+    scene.display_style = _style(profiles=True, profile_width=width, profile_cap=cap)
+    vp.camera.perspective = perspective
+    image = vp.render_image(900, 750, overlays=False).convertToFormat(QImage.Format_RGBA8888)
+    pixels = np.frombuffer(image.constBits(), dtype=np.uint8).reshape((750, image.bytesPerLine() // 4, 4))
+    mvp = vp.camera.projection_matrix() * vp.camera.view_matrix()
+
+    def project(point):
+        p = mvp.map(point)
+        return np.array([(p.x() + 1) * 450, (1 - p.y()) * 375])
+
+    samples = 0
+    for edge in scene.mesh.edges:
+        toward = (vp.camera.eye() - (edge.a + edge.b) * 0.5
+                  if perspective else -vp.camera.forward())
+        if len(edge.faces) != 2 or (V.dotProduct(edge.faces[0].normal(), toward)
+                                   * V.dotProduct(edge.faces[1].normal(), toward) >= 0):
+            continue
+        a, b = project(edge.a), project(edge.b)
+        tangent = (b - a) / np.linalg.norm(b - a)
+        normal = np.array([-tangent[1], tangent[0]])
+        for origin, direction in ((a, tangent), (b, -tangent)):
+            for along in (width, width * 2, width * 3):
+                for side in (-width / 4, width / 4):
+                    x, y = np.rint(origin + direction * along + normal * side).astype(int)
+                    assert pixels[y, x, :3].max() <= 3, (cap, width, perspective, x, y, pixels[y, x])
+                    assert pixels[y, x, 3] == 255
+                    samples += 1
+    assert samples >= 48
+
+
+def test_painting_a_solid_edge_updates_3d_material_color_and_undo(cube_viewport, monkeypatch):
+    from PySide6.QtCore import QPointF, Qt
+    from core.materials import Material
+    from tools.base import ToolContext
+    from tools.paint import PaintTool
+
+    vp = cube_viewport
+    scene = vp.scene
+    scene.display_style = _style(profiles=True, profile_width=6, edge_color_mode="material")
+    scene.mesh.faces[1].attrs["color"] = (0.9, 0.35, 0.1)
+    scene.version += 1
+    vp.render_image(900, 750, overlays=False)
+    target = next(edge for edge in scene.mesh.edges
+                  if not vp._is_occluded((edge.a + edge.b) * 0.5))
+    midpoint = (target.a + target.b) * 0.5
+    x, y = vp._world_to_pixel(midpoint)
+    assert vp.pick_visible_edge(x, y) is target
+    original_faces = [dict(face.attrs) for face in scene.mesh.faces]
+    paint = Material("Green edge", color=(0.1, 0.85, 0.2))
+    for attr, value in {"current_material": paint, "current_color": paint.color,
+                        "current_texture": None, "current_opacity": None,
+                        "current_is_default": False, "sample_armed": False, "recent": []}.items():
+        monkeypatch.setattr(PaintTool, attr, value)
+    tool = PaintTool()
+    tool.on_click(ToolContext(viewport=vp, world=midpoint, screen=QPointF(x, y),
+                              modifiers=Qt.NoModifier, snap=None))
+    assert target.material["mat"] == paint.name
+    assert [face.attrs for face in scene.mesh.faces] == original_faces
+
+    def is_green():
+        color = vp.render_image(900, 750, overlays=False).pixelColor(round(x), round(y))
+        return color.green() > color.red() + 80 and color.green() > color.blue() + 80
+
+    assert is_green()
+    scene.display_style.edge_color_mode = "same"
+    assert not is_green()
+    scene.display_style.edge_color_mode = "material"
+    assert is_green()
+    assert vp.history.undo() and target.material is None
+    assert not is_green()
+    assert vp.history.redo() and is_green()
 
 
 def test_endpoint_shapes_have_different_silhouettes_and_keep_size_on_zoom(drawing):

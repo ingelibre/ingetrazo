@@ -3444,6 +3444,8 @@ class StylesPanel(QWidget):
         self._edge_c.setFixedWidth(28)
         color_row.addWidget(self._edge_c)
         edges.addLayout(color_row, 7, 1)
+        self._edge_material_help = self._notice(self._edge_color_mode.toolTip())
+        edges.addWidget(self._edge_material_help, 8, 0, 1, 2)
 
         faces.addWidget(QLabel(tr("Front color:")), 1, 0)
         self._front_c = self._swatch(
@@ -3656,6 +3658,7 @@ class StylesPanel(QWidget):
         self._endpoint_size.setEnabled(self._endpoints.isChecked())
         self._endpoint_values.setCurrentIndex(
             0 if self._endpoint_types.checkedButton().property("shape") == "default" else 1)
+        self._edge_material_help.setVisible(self._edge_color_mode.currentData() == "material")
 
     def _shown_color(self, attr: str):
         """The colour a swatch shows for ``attr``. Back color may be unset
