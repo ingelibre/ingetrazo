@@ -78,3 +78,27 @@ def test_a_free_line_ten_degrees_off_the_axis_stays_free():
     r = _hover(vp, V(3, 3 * math.tan(math.radians(10)), 0))
     assert r.kind == "none"
     assert r.point.y() > 0.4
+
+
+def test_a_move_over_a_face_lands_on_it_not_on_a_reference_in_the_air():
+    """The 3D reading of a reference is for drawing (#1095). What Move carries
+    goes onto the face under the cursor, also where the axis line of a corner
+    passes in front of that face on screen."""
+    from tools.move import MoveTool
+
+    vp = _vp()
+    vp.scene.mesh.add_face([V(-20, 5, -5), V(20, 5, -5),
+                            V(20, 5, 10), V(-20, 5, 10)])
+    vp.scene.mesh.add_face([V(0, 0, 0), V(1, 0, 0), V(1, 0.5, 0), V(0, 0.5, 0)])
+    t = MoveTool()
+    vp.active_tool = t
+    t.on_activate(vp)
+    x, y = vp._world_to_pixel(V(0.5, 0.25, 0))
+    vp._process_hover(QPointF(x, y), Qt.NoModifier)
+    t.on_click(vp._build_ctx(_HoverEvent(QPointF(x, y), Qt.NoModifier)))
+    ref = V(-2, 0, 3)
+    vp.inference._acquired_point = ref
+    vp.inference._encouraged = [V(ref)]
+    r = _hover(vp, ref + V(1, 0, 0))           # floats 5 m before the wall
+    assert r.kind == "on_face"
+    assert abs(r.point.y() - 5.0) < 1e-3

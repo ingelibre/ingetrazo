@@ -264,7 +264,8 @@ class InferenceEngine:
             work_plane_normal=vp._work_plane_normal(),
             radial_arm=bool(getattr(tool, "radial_arm", False)),
             axis_in_plane=not _magnet_may_leave_plane(tool),
-            free_3d=not _tool_is_planar(tool),
+            free_3d=(not _tool_is_planar(tool)
+                     and not getattr(tool, "prefers_vertical_drag", False)),
             sticky_axis=self._sticky_axis if _STICKY_AXIS else None,
             face_crossing=(lambda: vp._face_crossing_point(px_x, px_y))
             if hasattr(vp, "_face_crossing_point") else None,
