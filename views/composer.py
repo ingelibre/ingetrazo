@@ -10739,6 +10739,8 @@ class ComposerWindow(QMainWindow):
         item.update()
         for it in others:
             it.update()
+        if "campos" in changed and isinstance(model, Cajetin):
+            self.refresh_items()             # any text may read these rows
         return others
 
     def _on_frame_props(self, *_a) -> None:
