@@ -145,7 +145,15 @@ as their panes. One view is always first; the rest go from the most used.
   selected or undone in one shows in all. Each view picks up the tool in
   hand as the mouse comes in.
 - **Zoom Extents** frames every view shown.
-- Drag the lines between the views to resize them.
+- Drag a line between the views to move it: only that line moves, so with four
+  views the two halves of the horizontal line can part ways. A line shows where
+  it will land, and the views change when you release.
+- Near a crossing of the lines a small square with four arrows appears. Drag it
+  to move the lines that meet there as one block, which also lines up two
+  halves that had parted.
+- A line sticks to its other half and to the middle of the views, and the block
+  to the middle, drawn dashed while it does, so they line up without aiming.
+  **Esc** during a drag leaves everything as it was.
 
 ---
 

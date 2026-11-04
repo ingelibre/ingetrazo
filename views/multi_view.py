@@ -23,13 +23,20 @@ the main viewport's signals, as if it had happened there. Each cell has a
 small title that opens a menu: first the entry that fills the work area with
 that view and, then, brings the others back (Ctrl+Space, or a double-click on
 the title, does the same), and after it the standard views.
+
+A line between the views drags alone (with four views the two halves of the
+cross part ways); near a crossing a square with arrows drags the lines meeting
+there as one block. A guide shows where they will land, they stick to the middle
+of the views (a line also to its other half), and Esc leaves them as they were.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
-from PySide6.QtGui import QCursor, QKeySequence
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QMenu, QSizePolicy,
-                               QSplitter, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtCore import (QEvent, QLine, QObject, QPoint, QPointF, QRectF,
+                            QSettings, QSize, Qt, Signal)
+from PySide6.QtGui import QColor, QCursor, QKeySequence, QPainter, QPen
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMenu,
+                               QSizePolicy, QSplitter, QSplitterHandle,
+                               QToolButton, QVBoxLayout, QWidget)
 
 from core.i18n import tr
 
@@ -193,10 +200,16 @@ class ViewCell(QWidget):
         self._place_header()
 
     def eventFilter(self, obj, ev) -> bool:  # noqa: N802 — Qt override
+        if obj is not self.viewport:
+            return False
+        kind = ev.type()
         # The view clicked or given the keyboard is the one worked in.
-        if obj is self.viewport and ev.type() in (QEvent.MouseButtonPress,
-                                                  QEvent.FocusIn):
+        if kind in (QEvent.MouseButtonPress, QEvent.FocusIn):
             self.grid.set_active_cell(self)
+        elif kind == QEvent.MouseMove and ev.buttons() == Qt.NoButton:
+            self.grid.pointer_moved(ev.globalPosition().toPoint())
+        elif kind == QEvent.Leave:
+            self.grid.pointer_moved(QCursor.pos())
         return False
 
     def pick_view(self, key: str) -> None:
@@ -355,6 +368,312 @@ class LayoutPicker(QFrame):
         self.chosen.emit(key)
 
 
+#: How near (px) a dragged line sticks to the middle of the views or to its
+#: other half.
+DIVIDER_SNAP_PX = 16
+
+
+def _divider_snap_px() -> int:
+    """``views/divider_snap_px`` in the settings, or :data:`DIVIDER_SNAP_PX`."""
+    try:
+        return max(0, int(QSettings().value("views/divider_snap_px",
+                                            DIVIDER_SNAP_PX)))
+    except (TypeError, ValueError):
+        return DIVIDER_SNAP_PX
+
+
+def _stick(wanted: int, low: int, high: int, targets) -> tuple:
+    """(where a line lands, whether it stuck) for a wished place, kept inside
+    ``low``..``high``; the nearest of ``targets`` within the tolerance wins."""
+    wanted = min(max(wanted, low), max(low, high))
+    near = [t for t in targets if low <= t <= high
+            and abs(wanted - t) <= _divider_snap_px()]
+    if near:
+        return min(near, key=lambda t: abs(wanted - t)), True
+    return wanted, False
+
+
+class _EscCancelsDrag(QObject):
+    """On the application during a drag: Esc is the drag's, ahead of the
+    window's filters and shortcuts."""
+
+    def __init__(self, grid) -> None:
+        super().__init__(grid)
+        self._grid = grid
+
+    def eventFilter(self, _obj, ev) -> bool:  # noqa: N802 — Qt override
+        kind = ev.type()
+        if (kind not in (QEvent.KeyPress, QEvent.KeyRelease,
+                         QEvent.ShortcutOverride)
+                or ev.key() != Qt.Key_Escape):
+            return False
+        if kind == QEvent.ShortcutOverride:
+            ev.accept()
+        elif kind == QEvent.KeyPress:
+            self._grid.cancel_drag()
+        return True
+
+
+class _DividerGuide(QWidget):
+    """Over the grid during a drag: where the lines will land, dashed while
+    one is sticking."""
+
+    def __init__(self, parent) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.hide()
+        self.lines = []
+
+    def show_lines(self, lines) -> None:
+        """``lines``: (QLine in the grid's coordinates, sticking)."""
+        self.lines = lines
+        self.setGeometry(self.parentWidget().rect())
+        self.show()
+        self.update()
+
+    def paintEvent(self, _ev) -> None:  # noqa: N802 — Qt override
+        from views.theme import accent_color
+        p = QPainter(self)
+        for line, snapped in self.lines:
+            p.setPen(QPen(QColor(32, 36, 42, 150), 4))
+            p.drawLine(line)
+            pen = QPen(accent_color(), 2)
+            if snapped:
+                pen.setStyle(Qt.DashLine)
+            p.setPen(pen)
+            p.drawLine(line)
+        p.end()
+
+
+class _ViewSplitterHandle(QSplitterHandle):
+    """A line between views: it drags alone. A guide shows where it will land,
+    it sticks to the middle of the views and to its other half, Esc leaves it
+    where it was, and only releasing the mouse moves it."""
+
+    def __init__(self, orientation, splitter) -> None:
+        super().__init__(orientation, splitter)
+        self.setCursor(Qt.SizeHorCursor if orientation == Qt.Horizontal
+                       else Qt.SizeVerCursor)
+        self.setMouseTracking(True)         # the crossing's square, nearby
+        self._drag_offset = None
+        self._landing = None
+
+    def _grid(self):
+        return self.splitter().view_grid
+
+    def along(self, point: QPoint) -> int:
+        return (point.x() if self.orientation() == Qt.Horizontal
+                else point.y())
+
+    def thickness(self) -> int:
+        return (self.width() if self.orientation() == Qt.Horizontal
+                else self.height())
+
+    def limits(self) -> tuple:
+        """How far the line may go, keeping the two views beside it their
+        least room."""
+        s = self.splitter()
+        i = s.indexOf(self)
+        before, after = s.widget(i - 1), s.widget(i)
+        horizontal = self.orientation() == Qt.Horizontal
+        least = ((lambda w: max(w.minimumWidth(), w.minimumSizeHint().width()))
+                 if horizontal else
+                 (lambda w: max(w.minimumHeight(),
+                                w.minimumSizeHint().height())))
+        end = self.along(after.pos()) + (after.width() if horizontal
+                                         else after.height())
+        return (self.along(before.pos()) + least(before),
+                end - least(after) - self.thickness())
+
+    def middle(self) -> int:
+        s = self.splitter()
+        extent = (s.width() if self.orientation() == Qt.Horizontal
+                  else s.height())
+        return (extent - self.thickness()) // 2
+
+    def other_half(self):
+        """The line that continues this one in the column beside, if both
+        columns show two views."""
+        grid = self._grid()
+        s = self.splitter()
+        if s not in (grid.col_a, grid.col_b):
+            return None
+        other = grid.col_b if s is grid.col_a else grid.col_a
+        return other.handle(1) if grid.shows_two(other) else None
+
+    def line_at(self, at: int) -> QLine:
+        """The line landed at ``at``, in the grid's coordinates."""
+        s = self.splitter()
+        o = s.mapTo(self._grid(), QPoint(0, 0))
+        c = at + self.thickness() // 2
+        if self.orientation() == Qt.Horizontal:
+            return QLine(o.x() + c, o.y(), o.x() + c, o.y() + s.height())
+        return QLine(o.x(), o.y() + c, o.x() + s.width(), o.y() + c)
+
+    def move_to(self, at: int) -> None:
+        s = self.splitter()
+        i = s.indexOf(self)
+        sizes = s.sizes()
+        total = sizes[i - 1] + sizes[i]
+        first = at - self.along(s.widget(i - 1).pos())
+        sizes[i - 1], sizes[i] = first, total - first
+        s.setSizes(sizes)
+
+    def _show_landing(self, global_pos: QPoint) -> None:
+        s = self.splitter()
+        low, high = self.limits()
+        targets = [self.middle()]
+        other = self.other_half()
+        if other is not None:
+            targets.append(other.y())
+        self._landing, snapped = _stick(
+            self.along(s.mapFromGlobal(global_pos)) - self._drag_offset,
+            low, high, targets)
+        self._grid().divider_guide.show_lines(
+            [(self.line_at(self._landing), snapped)])
+
+    def cancel(self) -> None:
+        self._drag_offset = None
+        self._landing = None
+
+    def mousePressEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        if ev.button() != Qt.LeftButton:
+            ev.ignore()
+            return
+        self._drag_offset = self.along(ev.position().toPoint())
+        self._grid().begin_drag(self)
+        self._show_landing(ev.globalPosition().toPoint())
+        ev.accept()
+
+    def mouseMoveEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        if self._drag_offset is not None:
+            self._show_landing(ev.globalPosition().toPoint())
+        elif ev.buttons() == Qt.NoButton:
+            self._grid().pointer_moved(ev.globalPosition().toPoint())
+        ev.accept()
+
+    def mouseReleaseEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        if self._drag_offset is not None:
+            at = self._landing
+            self.cancel()
+            self._grid().end_drag()
+            self.move_to(at)
+        ev.accept()
+
+    def mouseDoubleClickEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        ev.accept()
+
+
+class _CrossHandle(QWidget):
+    """The square with four arrows on a crossing of the lines, there while the
+    pointer is near it: it drags the lines that meet there as one block."""
+
+    #: Its side, and how near (px) the pointer brings it.
+    SIDE = 22
+    NEAR = 18
+
+    def __init__(self, grid) -> None:
+        super().__init__(grid)
+        self._grid = grid
+        self.setFixedSize(self.SIDE, self.SIDE)
+        self.setCursor(Qt.SizeAllCursor)
+        self.setToolTip(tr("Drag: move these views' lines together"))
+        self.hide()
+        self._drag_offset = None
+        self._landing = None
+
+    def centre(self) -> QPoint:
+        return self.pos() + QPoint(self.SIDE // 2, self.SIDE // 2)
+
+    def place(self, centre: QPoint) -> None:
+        self.move(centre - QPoint(self.SIDE // 2, self.SIDE // 2))
+        self.show()
+        self.raise_()
+
+    def paintEvent(self, _ev) -> None:  # noqa: N802 — Qt override
+        from views.theme import accent_color
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        p.setBrush(accent_color() if self._drag_offset is not None
+                   else QColor(32, 36, 42, 215))
+        p.drawRoundedRect(self.rect(), 3, 3)
+        p.translate(self.width() / 2, self.height() / 2)
+        p.setBrush(QColor("white"))
+        for _ in range(4):
+            p.drawRect(QRectF(-1, -6, 2, 6))
+            p.drawPolygon([QPointF(0, -9), QPointF(-3.5, -5), QPointF(3.5, -5)])
+            p.rotate(90)
+        p.end()
+
+    def _show_landing(self, global_pos: QPoint) -> None:
+        grid = self._grid
+        at = grid.mapFromGlobal(global_pos) - self._drag_offset
+        column = grid.columns.handle(1)
+        low, high = column.limits()
+        x = column.along(grid.columns.mapFrom(grid, at)) - column.thickness() // 2
+        x, x_stuck = _stick(x, low, high, [column.middle()])
+        rows = grid.row_lines()
+        low = max(r.limits()[0] for r in rows)
+        high = min(r.limits()[1] for r in rows)
+        first = rows[0]
+        y = first.along(first.splitter().mapFrom(grid, at)) - first.thickness() // 2
+        y, y_stuck = _stick(y, low, high, [first.middle()])
+        self._landing = (x, y)
+        grid.divider_guide.show_lines(
+            [(column.line_at(x), x_stuck)]
+            + [(r.line_at(y), y_stuck) for r in rows])
+        self.place(QPoint(column.line_at(x).x1(), first.line_at(y).y1()))
+
+    def cancel(self) -> None:
+        self._drag_offset = None
+        self._landing = None
+        self.update()
+
+    def mousePressEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        if ev.button() != Qt.LeftButton:
+            ev.ignore()
+            return
+        self._drag_offset = (self._grid.mapFromGlobal(
+            ev.globalPosition().toPoint()) - self.centre())
+        self._grid.begin_drag(self)
+        self._show_landing(ev.globalPosition().toPoint())
+        ev.accept()
+
+    def mouseMoveEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        if self._drag_offset is not None:
+            self._show_landing(ev.globalPosition().toPoint())
+        ev.accept()
+
+    def mouseReleaseEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        if self._drag_offset is None:
+            ev.accept()
+            return
+        x, y = self._landing
+        self.cancel()
+        self._grid.end_drag()
+        self._grid.columns.handle(1).move_to(x)
+        for row in self._grid.row_lines():
+            row.move_to(y)
+        ev.accept()
+
+    def leaveEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        if self._drag_offset is None:
+            self._grid.pointer_moved(QCursor.pos())
+        super().leaveEvent(ev)
+
+
+class _ViewSplitter(QSplitter):
+    """A splitter of the views' grid, with lines of its own."""
+
+    def __init__(self, orientation, grid) -> None:
+        super().__init__(orientation)
+        self.view_grid = grid
+
+    def createHandle(self):  # noqa: N802 — Qt override
+        return _ViewSplitterHandle(self.orientation(), self)
+
+
 class ViewGrid(QWidget):
     """The work area's views: the window's viewport alone, or two, three or
     four views side by side (:data:`LAYOUTS`).
@@ -369,34 +688,29 @@ class ViewGrid(QWidget):
         self._main_min = main_viewport.minimumSize()
         self._layout = "single"
         self._maximized = None
+        self._kept_sizes = None
         self._follow = _FollowWindow(self)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        self.columns = QSplitter(Qt.Horizontal)
+        self.columns = _ViewSplitter(Qt.Horizontal, self)
         self.columns.setChildrenCollapsible(False)
         lay.addWidget(self.columns)
         self.cells = [ViewCell(self, i, main_viewport if i == 1 else None)
                       for i in range(4)]
         # Column A holds cells 0 and 2, column B cells 1 and 3.
-        self.col_a = QSplitter(Qt.Vertical)
-        self.col_b = QSplitter(Qt.Vertical)
+        self.col_a = _ViewSplitter(Qt.Vertical, self)
+        self.col_b = _ViewSplitter(Qt.Vertical, self)
         for col, cells in ((self.col_a, (0, 2)), (self.col_b, (1, 3))):
             col.setChildrenCollapsible(False)
             for i in cells:
                 col.addWidget(self.cells[i])
             self.columns.addWidget(col)
-        # With four views the two columns share their row line, as one
-        # cross.
-        self.col_a.splitterMoved.connect(
-            lambda *_: self._sync_rows(self.col_a, self.col_b))
-        self.col_b.splitterMoved.connect(
-            lambda *_: self._sync_rows(self.col_b, self.col_a))
+        self.divider_guide = _DividerGuide(self)
+        self.cross = _CrossHandle(self)
+        self._dragging = None
+        self._esc_filter = _EscCancelsDrag(self)
         main_viewport.sceneVersionChanged.connect(self._repaint_extras)
         self._apply()
-
-    def _sync_rows(self, src, dst) -> None:
-        if self._layout == "four":
-            dst.setSizes(src.sizes())
 
     # ---- state ---------------------------------------------------------------
     def layout_key(self) -> str:
@@ -425,6 +739,7 @@ class ViewGrid(QWidget):
             return
         self._layout = key
         self._maximized = None
+        self._kept_sizes = None
         if key != "single" and not self.extras():
             self._make_extras()
         if key != "single":
@@ -447,9 +762,17 @@ class ViewGrid(QWidget):
     def toggle_maximized(self, cell) -> None:
         if not self.is_enabled():
             return
+        self._keep_sizes(None if self._maximized is cell else cell)
         self._maximized = None if self._maximized is cell else cell
         self.set_active_cell(cell)
         self._apply()
+
+    def _keep_sizes(self, maximizing) -> None:
+        """A view is about to fill the area: where the lines are now, for
+        Restore to find them."""
+        if maximizing is not None and self._maximized is None:
+            self._kept_sizes = (self.columns.sizes(), self.col_a.sizes(),
+                                self.col_b.sizes())
 
     def toggle_maximized_here(self) -> None:
         """Ctrl+Space: back to the others if a view fills the area; else the view
@@ -469,8 +792,68 @@ class ViewGrid(QWidget):
                     else self.cells[1])
         self.toggle_maximized(cell)
 
+    # ---- dragging the lines ---------------------------------------------------
+    def shows_two(self, column) -> bool:
+        """``column`` is on show with its two views, so with a line."""
+        return (not column.isHidden()
+                and sum(not column.widget(i).isHidden()
+                        for i in range(column.count())) == 2)
+
+    def row_lines(self) -> list:
+        """The lines across the columns, in the columns showing two views."""
+        return [c.handle(1) for c in (self.col_a, self.col_b)
+                if self.shows_two(c)]
+
+    def crossings(self) -> list:
+        """Where the line between the columns meets those across them, in
+        this widget's coordinates: one with the two halves lined up, two when
+        they are apart."""
+        if not self.is_enabled() or self._maximized is not None:
+            return []
+        column = self.columns.handle(1)
+        if column.isHidden():
+            return []
+        x = column.line_at(column.along(column.pos())).x1()
+        ys = {r.line_at(r.along(r.pos())).y1() for r in self.row_lines()}
+        return [QPoint(x, y) for y in sorted(ys)]
+
+    def pointer_moved(self, global_pos: QPoint) -> None:
+        """The square with arrows comes while the pointer is near a crossing."""
+        if self._dragging is not None:
+            return
+        at = self.mapFromGlobal(global_pos)
+        near = [c for c in self.crossings()
+                if (c - at).manhattanLength() <= 2 * self.cross.NEAR
+                and abs(c.x() - at.x()) <= self.cross.NEAR
+                and abs(c.y() - at.y()) <= self.cross.NEAR]
+        if near:
+            self.cross.place(min(
+                near, key=lambda c: (c - at).manhattanLength()))
+        else:
+            self.cross.hide()
+
+    def begin_drag(self, dragging) -> None:
+        self._dragging = dragging
+        if dragging is not self.cross:
+            self.cross.hide()
+        # Last in, first asked: ahead of every filter already there.
+        QApplication.instance().installEventFilter(self._esc_filter)
+
+    def end_drag(self) -> None:
+        self._dragging = None
+        QApplication.instance().removeEventFilter(self._esc_filter)
+        self.divider_guide.hide()
+        self.cross.hide()
+
+    def cancel_drag(self) -> None:
+        """Esc: everything stays as it was."""
+        if self._dragging is not None:
+            self._dragging.cancel()
+            self.end_drag()
+
     def _apply(self) -> None:
         on = self.is_enabled()
+        self.cross.hide()
         if on:
             self.main.setMinimumSize(80, 60)
         else:
@@ -497,7 +880,12 @@ class ViewGrid(QWidget):
             self.columns.insertWidget(0, first)
         self.col_a.setVisible(bool(shown & {0, 2}))
         self.col_b.setVisible(bool(shown & {1, 3}))
-        if on and self._maximized is None:
+        if on and self._maximized is None and self._kept_sizes is not None:
+            for splitter, sizes in zip((self.columns, self.col_a, self.col_b),
+                                       self._kept_sizes):
+                splitter.setSizes(sizes)
+            self._kept_sizes = None
+        elif on and self._maximized is None:
             total = max(1, self.width())
             parts = [total * w // sum(widths) for w in widths]
             if len(parts) == 2:
@@ -573,6 +961,7 @@ class ViewGrid(QWidget):
         cell = (self.cells[index]
                 if index is not None and self.is_enabled() else None)
         if cell is not self._maximized:
+            self._keep_sizes(cell)
             self._maximized = cell
             self._apply()
 

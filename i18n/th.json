@@ -3302,5 +3302,6 @@
  "Maximize view": "ขยายมุมมองเต็มพื้นที่",
  "Restore views": "คืนค่ามุมมอง",
  "Maximize": "ขยายเต็ม",
- "Restore": "คืนค่า"
+ "Restore": "คืนค่า",
+ "Drag: move these views' lines together": "ลาก: ย้ายเส้นของมุมมองเหล่านี้พร้อมกัน"
 }
