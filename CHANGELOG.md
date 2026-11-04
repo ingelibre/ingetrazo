@@ -16,9 +16,9 @@ follow [SemVer](https://semver.org).
 
 ### Cambiado
 
-- **Doble clic de la rueda: recentra en el punto** (#1154): el punto del modelo
-  bajo el cursor pasa al centro de la vista, sin cambiar el zoom ni encuadrar
-  nada; sobre el vacío no hace nada. Antes encuadraba todo el modelo (eso sigue
+- **Doble clic de la rueda: recentra en el punto** (#1154): el punto bajo el
+  cursor pasa al centro de la vista, sobre el modelo o sobre el vacío, sin
+  cambiar el zoom ni encuadrar nada. Antes encuadraba todo el modelo (eso sigue
   en «Zoom a extensión»). *Cómo probarlo:* con la herramienta que sea, doble
   clic de la rueda sobre una esquina del modelo.
 

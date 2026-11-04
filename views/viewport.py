@@ -17283,11 +17283,17 @@ class Viewport(QOpenGLWidget):
     def _recentre_on(self, x: float, y: float) -> None:
         """Bring the model point under pixel ``(x, y)`` to the centre of the
         view: a slide, the view keeps its direction and what is at that depth
-        keeps its size on screen. Nothing there, nothing happens (#1154)."""
+        keeps its size on screen. With no model there, the point at the depth
+        of the view's centre: the same slide, and the zoom stays (#1154)."""
+        cam = self.camera
         point = self._model_point_at(x, y)
         if point is None:
+            point = self._point_at_centre_depth(x, y)
+            if point is None:
+                return
+            cam.target = point
+            self.update()
             return
-        cam = self.camera
         if cam.perspective:
             # The depth along the view, not the slant length to the point:
             # the eye slides sideways and comes no nearer. A parallel view
@@ -17298,6 +17304,20 @@ class Viewport(QOpenGLWidget):
             cam.distance = max(cam.min_distance(point), depth)
         cam.target = QVector3D(point)
         self.update()
+
+    def _point_at_centre_depth(self, x: float, y: float):
+        """Where the ray of pixel ``(x, y)`` meets the plane through the
+        camera target, square to the view."""
+        origin, direction = self._pixel_to_ray(x, y)
+        if origin is None or direction is None:
+            return None
+        cam = self.camera
+        view = (cam.target - cam.eye()).normalized()
+        along = QVector3D.dotProduct(direction, view)
+        if abs(along) < 1e-6:
+            return None
+        t = QVector3D.dotProduct(cam.target - origin, view) / along
+        return origin + direction * t if t > 0.0 else None
 
     def _orbit_pivot_at(self, x: float, y: float):
         """Where an orbit gesture that starts at pixel ``(x, y)`` turns (#164).
