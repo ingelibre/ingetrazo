@@ -76,6 +76,41 @@ def test_the_height_is_typed_in_the_document_units(document_units):
         dlg.deleteLater()
 
 
+@pytest.mark.parametrize("unit, precision, step", [
+    ("m", 2, 0.10),
+    ("cm", 0, 0.10),
+    ("mm", 0, 0.10),
+    ("ft", 2, 4 * units.IN_M),
+    ("ft-in", 0, 4 * units.IN_M),
+    ("ft-in-frac", 2, 4 * units.IN_M),
+])
+def test_the_arrows_move_the_height_by_ten_centimetres(
+        document_units, unit, precision, step):
+    document_units(unit, precision)
+    niveles = _niveles()
+    dlg = niveles._LevelDialog(None, "Level", "Level 2", 3.0)
+    try:
+        dlg.z.stepUp()
+        assert dlg.z.value() == pytest.approx(3.0 + step, abs=1e-6)
+        dlg.z.stepDown()
+        assert dlg.z.value() == pytest.approx(3.0, abs=1e-6)
+    finally:
+        dlg.deleteLater()
+
+
+def test_ten_feet_and_one_arrow_read_ten_feet_four(document_units):
+    document_units("ft-in-frac", 2)
+    niveles = _niveles()
+    dlg = niveles._LevelDialog(None, "Level", "Level 2", 10 * units.FT_M)
+    try:
+        dlg.z.stepUp()
+        assert dlg.z.text() == units.format_length(
+            10 * units.FT_M + 4 * units.IN_M, "ft-in-frac", dlg.z._shown)
+        assert dlg.z.text().startswith("10'") and "4" in dlg.z.text()
+    finally:
+        dlg.deleteLater()
+
+
 def test_a_new_level_repeats_the_last_floor_to_floor():
     niveles = _niveles()
     ten = 10 * units.FT_M
