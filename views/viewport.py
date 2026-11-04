@@ -654,6 +654,16 @@ def _proto_wrapper(vp, mesh, paint=None):
     return w
 
 
+def _flags_read(mesh, entry: dict) -> None:
+    """``entry`` has answered for what the mesh's dirty flags announced: they
+    clear, and any other bake of this mesh is left behind (``flags_gen``)."""
+    if getattr(mesh, "_chunk_dirty", True) or getattr(mesh, "_attrs_dirty", False):
+        mesh._flags_gen = getattr(mesh, "_flags_gen", 0) + 1
+    mesh._chunk_dirty = False
+    mesh._attrs_dirty = False
+    entry["flags_gen"] = getattr(mesh, "_flags_gen", 0)
+
+
 #: The face modes Colour by layer applies to: the ones that draw the
 #: per-vertex colour. Hidden line, monochrome and wireframe keep their own
 #: flat look.
@@ -12170,6 +12180,13 @@ class Viewport(QOpenGLWidget):
         # its selection box showed where it is (issue #134, @fafecm).
         if entry is not None and entry.get("mesh") is not mesh:
             entry = None
+        # Copies painted differently bake one mesh separately, and the dirty
+        # flags are the mesh's: the first bake to read them clears them. The
+        # others learn from the generation that they have to look (#1129:
+        # a face painted inside a component never reached the copy that had
+        # been baked in a paint of its own).
+        behind = (entry is not None
+                  and entry.get("flags_gen", 0) != getattr(mesh, "_flags_gen", 0))
         from views import array_bake
         if array_bake.can_bake(mesh):
             # A lazy mesh (experimental engine) is baked from its arrays,
@@ -12193,6 +12210,7 @@ class Viewport(QOpenGLWidget):
             # (2026-09-14).
             if (entry.get("serial") is not None
                     and entry["serial"] == getattr(mesh, "_mut_serial", None)
+                    and not behind
                     and not getattr(mesh, "_attrs_dirty", False)
                     and len(mesh.vertices) == entry["nv"]
                     and len(mesh.edges) == entry["ne"]
@@ -12202,7 +12220,7 @@ class Viewport(QOpenGLWidget):
             # The probe judges GEOMETRY only, and _shift_chunk reuses the
             # cached texture buckets as they are — so a repaint must not be
             # allowed to ride along inside a translation.
-            if not getattr(mesh, "_attrs_dirty", False):
+            if not behind and not getattr(mesh, "_attrs_dirty", False):
                 d = self._translation_probe(entry, mesh)
                 if d is not None:
                     self._shift_chunk(entry, d, mesh)
@@ -12214,7 +12232,8 @@ class Viewport(QOpenGLWidget):
             # the last validation (O(1) dirty flag) and the samples agree —
             # skip the 100 ms fingerprint walk that used to run on EVERY
             # scene change (each stroke/drag frame beside a big import).
-            if (not getattr(mesh, "_chunk_dirty", True)
+            if (not behind
+                    and not getattr(mesh, "_chunk_dirty", True)
                     and len(mesh.vertices) == entry["nv"]
                     and len(mesh.edges) == entry["ne"]
                     and len(mesh.faces) == entry["nf"]
@@ -12245,8 +12264,7 @@ class Viewport(QOpenGLWidget):
                 entry["fp_approx"] = False
                 entry["vkey"] = vkey
                 entry["serial"] = getattr(mesh, "_mut_serial", None)
-                mesh._chunk_dirty = False
-                mesh._attrs_dirty = False
+                _flags_read(mesh, entry)
                 return entry
         _c0 = _time_mod.perf_counter() if _PERF else 0.0
         # P4: before the expensive rebuild, try the on-disk chunk cache —
@@ -12263,8 +12281,7 @@ class Viewport(QOpenGLWidget):
             disk["msig"] = msig
             disk["mesh"] = mesh
             disk["serial"] = getattr(mesh, "_mut_serial", None)
-            mesh._chunk_dirty = False
-            mesh._attrs_dirty = False
+            _flags_read(mesh, disk)
             if _PERF:
                 _plog("chunk_from_disk",
                       (_time_mod.perf_counter() - _c0) * 1000.0,
@@ -12503,8 +12520,7 @@ class Viewport(QOpenGLWidget):
         if _PERF:
             _plog("chunk_rebuild", (_time_mod.perf_counter() - _c0) * 1000.0,
                   extra=f"faces={len(faces)}")
-        mesh._chunk_dirty = False
-        mesh._attrs_dirty = False
+        _flags_read(mesh, entry)
         entry["mesh"] = mesh
         cache[id(group)] = entry
         _store = getattr(self, "_chunk_cache_store", None)   # stub VPs in tests
