@@ -138,3 +138,20 @@ def test_a_double_click_of_the_left_button_does_not_frame(win):
     vp.mouseReleaseEvent(_event(QEvent.MouseButtonRelease, 200, 200,
                                 Qt.LeftButton, Qt.NoButton))
     assert vp.camera.distance == pytest.approx(distance)
+
+
+def test_it_works_in_a_tab_opened_later(win):
+    """Each tab has its own viewport, and its wheel frames too."""
+    first = win.viewport
+    win._new_document()
+    vp = win.viewport
+    assert vp is not first
+    vp.scene.mesh.add_face([V(0, 0, 0), V(2, 0, 0), V(2, 2, 0), V(0, 2, 0)])
+    vp.scene.version += 1
+    vp.camera.target = V(500, 500, 0)
+    vp.camera.distance = 4000
+    distance = first.camera.distance
+    _double_click(vp)
+    _release(vp)
+    assert vp.camera.distance < 20
+    assert first.camera.distance == pytest.approx(distance)

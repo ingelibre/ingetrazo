@@ -1130,7 +1130,6 @@ class MainWindow(QMainWindow):
         act_ze.triggered.connect(self._on_zoom_extents)
         view_tb.addAction(act_ze)
         self._act_zoom_extents = act_ze
-        self.viewport.zoomExtentsRequested.connect(self._on_zoom_extents)
 
         # Zoom Selection: the same framing over the selection alone. With
         # nothing selected it does nothing (Zoom Extents is one key away).
@@ -6158,6 +6157,7 @@ class MainWindow(QMainWindow):
         def live(fn):
             return lambda *a: fn(*a) if vp is self.viewport else None
         vp.projectionChanged.connect(live(self._sync_projection_buttons))
+        vp.zoomExtentsRequested.connect(live(self._on_zoom_extents))
         for name in ("tray", "bim_tray", "georef_tray", "project_browser",
                      "layers_dock", "layers_toolbar", "profile_dock"):
             panel = getattr(self, name, None)
