@@ -3362,5 +3362,7 @@
  "Bottom right": "Kanan bawah",
  "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Gambar (*.png *.jpg *.jpeg *.bmp *.webp)",
  "Create mask": "Buat masker",
- "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Putih menjadi transparan; hitam menggunakan warna latar gaya. Abu-abu memberikan transparansi sebagian. Gambar asli tetap disimpan."
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Putih menjadi transparan; hitam menggunakan warna latar gaya. Abu-abu memberikan transparansi sebagian. Gambar asli tetap disimpan.",
+ "Model space": "Ruang model",
+ "Images above this row appear in front of the model; images below stay behind it.": "Gambar di atas baris ini tampil di depan model; gambar di bawahnya tetap di belakang."
 }

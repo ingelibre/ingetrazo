@@ -3362,5 +3362,7 @@
  "Bottom right": "ລຸ່ມຂວາ",
  "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "ຮູບພາບ (*.png *.jpg *.jpeg *.bmp *.webp)",
  "Create mask": "ສ້າງໜ້າກາກ",
- "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "ສີຂາວຈະໂປ່ງໃສ; ສີດຳໃຊ້ສີພື້ນຫຼັງຂອງຮູບແບບ. ສີເທົາໃຫ້ຄວາມໂປ່ງໃສບາງສ່ວນ. ຮູບຕົ້ນສະບັບຍັງຖືກເກັບໄວ້."
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "ສີຂາວຈະໂປ່ງໃສ; ສີດຳໃຊ້ສີພື້ນຫຼັງຂອງຮູບແບບ. ສີເທົາໃຫ້ຄວາມໂປ່ງໃສບາງສ່ວນ. ຮູບຕົ້ນສະບັບຍັງຖືກເກັບໄວ້.",
+ "Model space": "ພື້ນທີ່ໂມເດວ",
+ "Images above this row appear in front of the model; images below stay behind it.": "ຮູບພາບທີ່ຢູ່ເທິງແຖວນີ້ສະແດງຢູ່ດ້ານໜ້າໂມເດວ; ຮູບພາບທີ່ຢູ່ລຸ່ມຈະຢູ່ດ້ານຫຼັງ."
 }

@@ -3394,5 +3394,7 @@
  "Bottom right": "أسفل اليمين",
  "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "الصور (*.png *.jpg *.jpeg *.bmp *.webp)",
  "Create mask": "إنشاء قناع",
- "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "يصبح الأبيض شفافًا؛ ويستخدم الأسود لون خلفية النمط. يعطي الرمادي شفافية جزئية. تُحفظ الصورة الأصلية."
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "يصبح الأبيض شفافًا؛ ويستخدم الأسود لون خلفية النمط. يعطي الرمادي شفافية جزئية. تُحفظ الصورة الأصلية.",
+ "Model space": "مساحة النموذج",
+ "Images above this row appear in front of the model; images below stay behind it.": "تظهر الصور فوق هذا الصف أمام النموذج؛ وتبقى الصور أسفله خلف النموذج."
 }

@@ -3359,5 +3359,7 @@
  "Bottom right": "Снизу справа",
  "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Изображения (*.png *.jpg *.jpeg *.bmp *.webp)",
  "Create mask": "Создать маску",
- "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Белый становится прозрачным; чёрный использует цвет фона стиля. Серый даёт частичную прозрачность. Исходное изображение сохраняется."
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Белый становится прозрачным; чёрный использует цвет фона стиля. Серый даёт частичную прозрачность. Исходное изображение сохраняется.",
+ "Model space": "Пространство модели",
+ "Images above this row appear in front of the model; images below stay behind it.": "Изображения выше этой строки отображаются перед моделью; изображения ниже остаются позади неё."
 }

@@ -3386,5 +3386,7 @@
  "Bottom right": "Dưới bên phải",
  "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Hình ảnh (*.png *.jpg *.jpeg *.bmp *.webp)",
  "Create mask": "Tạo mặt nạ",
- "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Màu trắng trở nên trong suốt; màu đen dùng màu nền của kiểu. Màu xám tạo độ trong suốt một phần. Ảnh gốc được giữ nguyên."
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Màu trắng trở nên trong suốt; màu đen dùng màu nền của kiểu. Màu xám tạo độ trong suốt một phần. Ảnh gốc được giữ nguyên.",
+ "Model space": "Không gian mô hình",
+ "Images above this row appear in front of the model; images below stay behind it.": "Ảnh phía trên hàng này xuất hiện trước mô hình; ảnh phía dưới nằm sau mô hình."
 }

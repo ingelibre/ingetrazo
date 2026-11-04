@@ -3362,5 +3362,7 @@
  "Bottom right": "ล่างขวา",
  "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "รูปภาพ (*.png *.jpg *.jpeg *.bmp *.webp)",
  "Create mask": "สร้างมาสก์",
- "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "สีขาวจะโปร่งใส สีดำใช้สีพื้นหลังของสไตล์ สีเทาทำให้โปร่งใสบางส่วน ภาพต้นฉบับยังคงอยู่"
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "สีขาวจะโปร่งใส สีดำใช้สีพื้นหลังของสไตล์ สีเทาทำให้โปร่งใสบางส่วน ภาพต้นฉบับยังคงอยู่",
+ "Model space": "พื้นที่โมเดล",
+ "Images above this row appear in front of the model; images below stay behind it.": "ภาพเหนือแถวนี้จะแสดงด้านหน้าโมเดล ส่วนภาพด้านล่างจะอยู่ด้านหลังโมเดล"
 }

@@ -3359,5 +3359,7 @@
  "Bottom right": "右下",
  "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "画像 (*.png *.jpg *.jpeg *.bmp *.webp)",
  "Create mask": "マスクを作成",
- "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "白は透明になり、黒はスタイルの背景色になります。グレーは半透明になります。元の画像は保持されます。"
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "白は透明になり、黒はスタイルの背景色になります。グレーは半透明になります。元の画像は保持されます。",
+ "Model space": "モデル空間",
+ "Images above this row appear in front of the model; images below stay behind it.": "この行の上の画像はモデルの前面に、下の画像はモデルの背面に表示されます。"
 }

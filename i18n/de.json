@@ -3359,5 +3359,7 @@
  "Bottom right": "Unten rechts",
  "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Bilder (*.png *.jpg *.jpeg *.bmp *.webp)",
  "Create mask": "Maske erstellen",
- "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Weiß wird transparent; Schwarz verwendet die Hintergrundfarbe des Stils. Grau ergibt teilweise Transparenz. Das Originalbild bleibt erhalten."
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Weiß wird transparent; Schwarz verwendet die Hintergrundfarbe des Stils. Grau ergibt teilweise Transparenz. Das Originalbild bleibt erhalten.",
+ "Model space": "Modellraum",
+ "Images above this row appear in front of the model; images below stay behind it.": "Bilder oberhalb dieser Zeile erscheinen vor dem Modell; Bilder darunter bleiben dahinter."
 }

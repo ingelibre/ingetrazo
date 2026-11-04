@@ -13,8 +13,11 @@ does not remove the watermark from saved styles, views or IGZ documents.
 **Display watermarks** controls the whole collection; **Visible** controls the
 selected image. Name, opacity, placement and scale update the model immediately.
 Choose **Behind model** for a background or **In front of model** for an overlay.
-Within each placement layer, the top image in the list appears on top; use the
-arrow buttons to reorder images and **Delete** to remove the selected image.
+The **Model space** row separates foreground images above it from background
+images below. Use the arrow buttons to move an image across this boundary or move
+Model space past an image; its foreground/background setting updates automatically.
+Within each side, the top image appears on top. **Delete** removes the selected
+image. Model space represents the model and cannot be deleted or edited as an image.
 
 **Create mask** uses the image's brightness as a mask: white is transparent,
 black paints the style's background color and gray is partially transparent.

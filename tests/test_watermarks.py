@@ -174,6 +174,8 @@ def test_editor_import_edit_order_and_remove(tmp_path, monkeypatch):
         assert editor._selected().create_mask
         editor.add_image(str(tmp_path / "blue.png"))
         editor.down.click()
+        assert editor._selected().layer == "background"  # Cross the model row.
+        editor.down.click()
         assert window.viewport.scene.display_style.watermarks[0].id == red_id
         assert editor._selected().name == "blue"
         editor.remove.click()
@@ -181,6 +183,8 @@ def test_editor_import_edit_order_and_remove(tmp_path, monkeypatch):
         editor.remove.click()
         assert not editor.options.isEnabled()
         assert window.viewport.scene.display_style.watermarks == []
+        assert editor.images.count() == 1 and editor.images.item(0).data(Qt.UserRole) is None
+        assert not editor.up.isEnabled() and not editor.down.isEnabled()
     finally:
         panel.close()
         panel.deleteLater()
@@ -307,3 +311,77 @@ def test_mask_in_native_view_and_export_updates_with_background_color(cube_viewp
     assert live.pixelColor(225, 250).getRgb()[:3] == pytest.approx((230, 153, 51), abs=2)
     style.watermarks = [replace(mark, create_mask=False)]
     assert _render(vp)[250, 225] == pytest.approx((0, 0, 0), abs=2)
+
+
+def test_model_space_boundary_moves_images_without_becoming_saved_data(tmp_path):
+    from views.watermarks_panel import WatermarksPanel
+
+    front = _mark(tmp_path, "red", opacity=37, create_mask=True)
+    back = _mark(tmp_path, "blue", layer="background")
+    style = Style(watermarks=[back, front])  # Older files need not be grouped by layer.
+    editor = WatermarksPanel(lambda: style, lambda: None)
+
+    def rows():
+        return [editor.images.item(index).data(Qt.UserRole)
+                for index in range(editor.images.count())]
+
+    try:
+        before = style.to_dict()
+        editor.refresh()
+        assert rows() == [front.id, None, back.id]
+        assert style.to_dict() == before  # Opening the editor is read-only.
+        editor.images.setCurrentRow(1)
+        assert editor._selected() is None and not editor.options.isEnabled()
+        assert not editor.remove.isEnabled()
+        editor._remove()
+        assert style.to_dict() == before
+        # Move the model above the foreground image, making both backgrounds.
+        editor.up.click()
+        assert rows() == [None, front.id, back.id]
+        assert editor._selection_key() is editor._MODEL_SPACE
+        assert all(mark.layer == "background" for mark in style.watermarks)
+        assert style.watermarks[0] == replace(front, layer="background")
+        # Move it below both images, retaining each image's other settings.
+        editor.down.click()
+        editor.down.click()
+        assert rows() == [front.id, back.id, None]
+        assert all(mark.layer == "foreground" for mark in style.watermarks)
+        assert not editor.down.isEnabled()
+        # An image crossing the model updates its layer selector, too.
+        editor.images.setCurrentRow(1)
+        editor.down.click()
+        assert rows() == [front.id, None, back.id]
+        assert editor.layer.currentData() == "background"
+        editor.layer.setCurrentIndex(editor.layer.findData("foreground"))
+        assert rows() == [front.id, back.id, None]
+        assert editor._selected().id == back.id
+        restored = style.copy()
+        assert len(restored.watermarks) == 2
+        assert restored.to_dict() == style.to_dict()
+    finally:
+        editor.close()
+        editor.deleteLater()
+
+
+def test_model_row_crossing_updates_the_real_view(cube_viewport, tmp_path):
+    from views.watermarks_panel import WatermarksPanel
+
+    vp = cube_viewport
+    style = vp.scene.display_style = Style(
+        sky=False, ground=False, face_mode="monochrome", front_color=(0, 1, 0),
+        back_color=(0, 1, 0), edges=False, profiles=False)
+    baseline = _render(vp)
+    mark = _mark(tmp_path, placement="stretched")
+    style.watermarks = [mark]
+    editor = WatermarksPanel(lambda: style, vp.update)
+    try:
+        editor.refresh(mark.id)
+        assert _render(vp)[250, 300] == pytest.approx((255, 0, 0), abs=2)
+        editor.down.click()
+        assert editor._selected().layer == "background"
+        assert _render(vp)[250, 300] == pytest.approx(baseline[250, 300], abs=2)
+        editor.up.click()
+        assert _render(vp)[250, 300] == pytest.approx((255, 0, 0), abs=2)
+    finally:
+        editor.close()
+        editor.deleteLater()

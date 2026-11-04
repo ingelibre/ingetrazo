@@ -17,10 +17,13 @@ from PySide6.QtWidgets import (
 from core.i18n import tr
 from core.watermark import Watermark
 from views.filedialogs import file_dialogs
+from views.icons import tool_icon
 from views.watermarks import import_image, watermark_image
 
 
 class WatermarksPanel(QWidget):
+    _MODEL_SPACE = object()  # A UI boundary, never an image in the saved style.
+
     def __init__(self, style_provider, changed, parent=None):
         super().__init__(parent)
         self._style = style_provider
@@ -132,31 +135,54 @@ class WatermarksPanel(QWidget):
         return next((mark for mark in style.watermarks
                      if mark.id == item.data(Qt.UserRole)), None)
 
+    def _selection_key(self):
+        item = self.images.currentItem()
+        if item is None:
+            return None
+        return item.data(Qt.UserRole) or self._MODEL_SPACE
+
+    def _stack(self):
+        marks = self._style().watermarks
+        return ([mark for mark in marks if mark.layer == "foreground"] + [None]
+                + [mark for mark in marks if mark.layer == "background"])
+
     def refresh(self, selected_id=None):
         style = self._style()
         if style is None:
             return
-        current = self._selected()
-        selected_id = selected_id or (current.id if current else None)
+        selected_id = selected_id or self._selection_key()
+        previous_row = self.images.currentRow()
         self._updating = True
         try:
             self.display.setChecked(style.watermarks_visible)
-            signature = tuple((m.id, m.name, m.image, m.visible) for m in style.watermarks)
+            signature = (tuple((m.id, m.name, m.image, m.visible, m.layer)
+                               for m in style.watermarks), self.palette().cacheKey())
             if signature != self._signature:
                 self._signature = signature
                 self.images.clear()
-                for mark in style.watermarks:
+                for mark in self._stack():
+                    if mark is None:
+                        item = QListWidgetItem(tool_icon("view_iso"), tr("Model space"))
+                        item.setToolTip(tr(
+                            "Images above this row appear in front of the model; "
+                            "images below stay behind it."))
+                        font = item.font()
+                        font.setBold(True)
+                        item.setFont(font)
+                        item.setBackground(self.palette().midlight())
+                        item.setSizeHint(QSize(0, 32))
+                        self.images.addItem(item)
+                        continue
                     pixmap = QPixmap.fromImage(watermark_image(mark.image)).scaled(
                         36, 28, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     item = QListWidgetItem(QIcon(pixmap), mark.name)
                     item.setData(Qt.UserRole, mark.id)
                     self.images.addItem(item)
-                index = next((i for i, mark in enumerate(style.watermarks)
-                              if mark.id == selected_id), 0)
-                self.images.setCurrentRow(index if style.watermarks else -1)
-            elif selected_id:
+                self.images.setCurrentRow(max(0, min(previous_row, self.images.count() - 1)))
+            if selected_id:
                 for index in range(self.images.count()):
-                    if self.images.item(index).data(Qt.UserRole) == selected_id:
+                    key = self.images.item(index).data(Qt.UserRole) or self._MODEL_SPACE
+                    if key == selected_id:
                         self.images.setCurrentRow(index)
                         break
         finally:
@@ -172,8 +198,8 @@ class WatermarksPanel(QWidget):
             self.options.setEnabled(mark is not None)
             self.remove.setEnabled(mark is not None)
             row = self.images.currentRow()
-            self.up.setEnabled(mark is not None and row > 0)
-            self.down.setEnabled(mark is not None and row < self.images.count() - 1)
+            self.up.setEnabled(row > 0)
+            self.down.setEnabled(0 <= row < self.images.count() - 1)
             if mark is None:
                 self.name.clear()
                 return
@@ -243,13 +269,17 @@ class WatermarksPanel(QWidget):
             self._changed()
 
     def _move(self, delta):
-        mark = self._selected()
-        if mark is None:
+        selected = self._selection_key()
+        if selected is None:
             return
-        marks = self._style().watermarks
-        index = marks.index(mark)
+        stack = self._stack()
+        index = self.images.currentRow()
         other = index + delta
-        if 0 <= other < len(marks):
-            marks[index], marks[other] = marks[other], marks[index]
-            self.refresh(mark.id)
+        if 0 <= other < len(stack):
+            stack[index], stack[other] = stack[other], stack[index]
+            model_index = stack.index(None)
+            self._style().watermarks = [
+                replace(mark, layer="foreground" if row < model_index else "background")
+                for row, mark in enumerate(stack) if mark is not None]
+            self.refresh(selected)
             self._changed()

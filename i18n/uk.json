@@ -3374,5 +3374,7 @@
  "Bottom right": "Знизу праворуч",
  "Images (*.png *.jpg *.jpeg *.bmp *.webp)": "Зображення (*.png *.jpg *.jpeg *.bmp *.webp)",
  "Create mask": "Створити маску",
- "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Білий стає прозорим; чорний використовує колір тла стилю. Сірий дає часткову прозорість. Початкове зображення зберігається."
+ "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Білий стає прозорим; чорний використовує колір тла стилю. Сірий дає часткову прозорість. Початкове зображення зберігається.",
+ "Model space": "Простір моделі",
+ "Images above this row appear in front of the model; images below stay behind it.": "Зображення над цим рядком відображаються перед моделлю; зображення під ним залишаються позаду неї."
 }
