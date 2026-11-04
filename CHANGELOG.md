@@ -14,8 +14,22 @@ follow [SemVer](https://semver.org).
   `{nombre}`/`{name}`. *Cómo probarlo:* escribe un texto «{sheet} —
   {sheet_name}» en una lámina con cajetín y renombra la lámina.
 
+### Cambiado
+
+- **Doble clic de la rueda: recentra en el punto** (#1154): el punto del modelo
+  bajo el cursor pasa al centro de la vista, sin cambiar el zoom ni encuadrar
+  nada; sobre el vacío no hace nada. Antes encuadraba todo el modelo (eso sigue
+  en «Zoom a extensión»). *Cómo probarlo:* con la herramienta que sea, doble
+  clic de la rueda sobre una esquina del modelo.
+
 ### Corregido
 
+- **Lo que cambias dentro de un grupo anidado se ve al momento**: en un grupo
+  abierto dentro de otro, o en un contenedor con caras propias, pintar, dibujar
+  o mover no aparecía en pantalla hasta salir del grupo. Tampoco se veía
+  Deshacer tras salir del grupo ni editar un material usado dentro de un
+  componente cerrado. *Cómo probarlo:* entra en un grupo dentro de otro y pinta
+  una cara; Deshacer y Rehacer también deben verse.
 - **`{proyecto}`, `{autor}` y `{lamina}` leen la tabla del cajetín**: los
   campos de los textos de la lámina tomaban los valores con los que nació el
   cajetín, no los que uno escribe después en su tabla — cambiabas el nombre

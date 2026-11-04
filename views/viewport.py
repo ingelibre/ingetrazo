@@ -1780,8 +1780,6 @@ class Viewport(QOpenGLWidget):
     # "two_point"), whoever changed it — the View toolbar's quick buttons
     # follow it.
     projectionChanged = Signal(str)
-    # A double click of the wheel: frame the whole model (#979).
-    zoomExtentsRequested = Signal()
 
     # Soft warm white painted on faces with no material colour — like the matte
     # cardstock of an architecture model (a near-white default).
@@ -17260,17 +17258,10 @@ class Viewport(QOpenGLWidget):
         cam = self.camera
         return QVector3D.dotProduct(point - cam.eye(), cam.forward())
 
-    def _orbit_pivot_at(self, x: float, y: float):
-        """Where an orbit gesture that starts at pixel ``(x, y)`` turns (#164).
-
-        1. The model point under the cursor -- the nearest face the pick
-           ray hits (loose geometry and groups alike);
-        2. else, with the cursor on sky or ground, the middle of the
-           stretch of the view's central ray that crosses the model's
-           bounding box -- the middle of what is on screen;
-        3. else the camera target (an empty scene, a model off screen).
-        Worked out once per gesture: the pivot stays put while dragging.
-        """
+    def _model_point_at(self, x: float, y: float):
+        """The model point under pixel ``(x, y)`` -- what the frame on screen
+        shows there, else the nearest face the pick ray hits -- or ``None``
+        when the cursor is on sky or ground."""
         origin, direction = self._pixel_to_ray(x, y)
         seen = self._depth_world_at(x, y) if hasattr(self, "_depth_world_at") \
             else None
@@ -17285,8 +17276,43 @@ class Viewport(QOpenGLWidget):
                     t = float(np.min(hits.t))
                     if math.isfinite(t) and t > 0.0:
                         return origin + direction * t
-            except Exception:                  # noqa: BLE001 - fall back
+            except Exception:                  # noqa: BLE001 - no point then
                 pass
+        return None
+
+    def _recentre_on(self, x: float, y: float) -> None:
+        """Bring the model point under pixel ``(x, y)`` to the centre of the
+        view: a slide, the view keeps its direction and what is at that depth
+        keeps its size on screen. Nothing there, nothing happens (#1154)."""
+        point = self._model_point_at(x, y)
+        if point is None:
+            return
+        cam = self.camera
+        if cam.perspective:
+            # The depth along the view, not the slant length to the point:
+            # the eye slides sideways and comes no nearer. A parallel view
+            # keeps its distance, which is its zoom.
+            depth = self._depth_of(point)
+            if depth is None or not math.isfinite(depth) or depth <= 0.0:
+                return
+            cam.distance = max(cam.min_distance(point), depth)
+        cam.target = QVector3D(point)
+        self.update()
+
+    def _orbit_pivot_at(self, x: float, y: float):
+        """Where an orbit gesture that starts at pixel ``(x, y)`` turns (#164).
+
+        1. The model point under the cursor -- the nearest face the pick
+           ray hits (loose geometry and groups alike);
+        2. else, with the cursor on sky or ground, the middle of the
+           stretch of the view's central ray that crosses the model's
+           bounding box -- the middle of what is on screen;
+        3. else the camera target (an empty scene, a model off screen).
+        Worked out once per gesture: the pivot stays put while dragging.
+        """
+        point = Viewport._model_point_at(self, x, y)
+        if point is not None:
+            return point
         lo, hi = self.scene.bounds()
         if lo is not None:
             o, d = self._pixel_to_ray(self.width() / 2.0, self.height() / 2.0)
@@ -17612,10 +17638,11 @@ class Viewport(QOpenGLWidget):
         starts on a double), and the event is remembered so the next press in
         place counts as a triple click.
 
-        A double click of the wheel asks for Zoom Extents and starts no
-        orbit; the tool in use never hears of it (#979)."""
+        A double click of the wheel recentres the view on the point under
+        the cursor and starts no orbit; the tool in use never hears of it
+        (#979, #1154)."""
         if ev.button() == Qt.MiddleButton:
-            self.zoomExtentsRequested.emit()
+            self._recentre_on(ev.position().x(), ev.position().y())
             return
         if ev.button() != Qt.LeftButton or self.active_tool is None \
                 or self.nav_mode is not None:
