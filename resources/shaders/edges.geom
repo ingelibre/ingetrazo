@@ -58,6 +58,8 @@ vec2 line_limits;
 int line_cap;
 vec2 depth_side;
 vec2 depth_along;
+float line_depth_start;
+float line_depth_step;
 
 vec2 plane_slope(vec3 normal, vec3 world) {
     vec4 plane = u_plane_to_clip * vec4(normal, -dot(normal, world));
@@ -79,6 +81,12 @@ bool clip_segment(inout vec4 a, inout vec4 b, inout vec3 wa, inout vec3 wb,
 
 void corner(vec4 center, vec3 world, vec2 shift, float along, float side) {
     gl_Position = center + vec4(shift * 2.0 / u_viewport * center.w, 0.0, 0.0);
+    if (u_marker_pass == 0) {
+        // Expanded XY corners must extrapolate the line's depth as well.
+        // Keeping the old endpoint Z compresses the depth slope over the
+        // longer quad and lets adjacent faces cut translucent blocks into it.
+        gl_Position.z = (line_depth_start + along * line_depth_step) * center.w;
+    }
     gl_ClipDistance[0] = u_clip_enable == 1 ? dot(vec4(world, 1.0), u_clip_plane) : 1.0;
     g_pixel = vec2(along, side);
     g_length = line_length;
@@ -134,6 +142,8 @@ void main() {
     vec2 delta = (b.xy / b.w - a.xy / a.w) * u_viewport * 0.5;
     float len = length(delta);
     if (len < 1e-4) return;
+    line_depth_start = a.z / a.w;
+    line_depth_step = (b.z / b.w - line_depth_start) / len;
     vec2 tangent = delta / len, normal = vec2(-tangent.y, tangent.x);
     depth_side = vec2(dot(plane_slope0, normal * 2.0 / u_viewport),
                       dot(plane_slope1, normal * 2.0 / u_viewport));
@@ -150,8 +160,9 @@ void main() {
     line_cap = u_profiles == 1 && profile ? u_profile_cap : 0;
     line_limits = vec2(-before, len + after);
     if (line_cap >= 2) {
-        if (!cut.x) line_limits.x -= max(0.0, widths.x * 0.5 - 2.0 * u_scale);
-        if (!cut.y) line_limits.y += max(0.0, widths.y * 0.5 - 2.0 * u_scale);
+        float inset = line_cap == 2 ? 2.0 * u_scale : 0.0;
+        if (!cut.x) line_limits.x -= max(0.0, widths.x * 0.5 - inset);
+        if (!cut.y) line_limits.y += max(0.0, widths.y * 0.5 - inset);
     }
     float radius = max(widths.x, widths.y) * 0.5;
     if (u_endpoint > 0.0 && u_endpoint_type == 0) radius += u_scale;

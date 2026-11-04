@@ -3375,7 +3375,7 @@ class StylesPanel(QWidget):
             ("butt", "cap_butt", "Square, flush"),
             ("round", "cap_round", "Round, flush"),
             ("square", "cap_square", "Square, overhang: half the width minus 2 px (minimum 0)"),
-            ("round_extended", "cap_round_extended", "Round, overhang: half the width minus 2 px (minimum 0)")))
+            ("round_extended", "cap_round_extended", "Round, extended by half the width")))
         edges.addLayout(profile_row, 2, 1)
         self._back_edges = QCheckBox(tr("Back edges"))
         self._back_edges.setToolTip(tr(

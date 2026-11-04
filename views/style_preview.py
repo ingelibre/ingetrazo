@@ -125,7 +125,7 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                     continue
                 cap = style.profile_cap if style.profiles and index in outline else "butt"
                 if cap in ("square", "round_extended"):
-                    overhang = max(0, width / 2 - 2)
+                    overhang = max(0, width / 2 - (2 if cap == "square" else 0))
                     start -= overhang
                     end += overhang
                 painter.save()

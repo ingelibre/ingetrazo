@@ -77,9 +77,9 @@ void main() {
     if (coverage <= 0.0) discard;
     // Match adjacent faces at each covered pixel, rather than pulling the
     // entire expanded quad forward. Its center keeps the real edge depth.
-    float along = g_pixel.x;
-    float extension = min(along, 0.0) + max(along - g_length, 0.0);
-    vec2 delta = g_depth_side * g_pixel.y + g_depth_along * extension;
+    // Along-line depth, including the caps, is already correct in the quad.
+    // Only the offset across the stroke needs to meet its adjacent faces.
+    vec2 delta = g_depth_side * g_pixel.y;
     if (u_marker_pass == 1) delta = -g_depth_side * abs(g_pixel.y) - g_depth_along * abs(g_pixel.x);
     // Depth is tested at MSAA samples, while varyings are evaluated at
     // the pixel center. Cover that subpixel difference on sloped faces.
