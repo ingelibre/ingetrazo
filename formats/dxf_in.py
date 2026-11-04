@@ -467,6 +467,7 @@ def _add_mesh_entities(mesh, entities, scale: float, offset) -> None:
     from core.mesh import Mesh
     from core.topology import _key
 
+    kept = set()
     for loops in entities:
         part = Mesh()
         added, seed = [], set()
@@ -488,6 +489,13 @@ def _add_mesh_entities(mesh, entities, scale: float, offset) -> None:
         except Exception:
             pass                            # merge is a nicety, never fatal
         for f in part.faces:
+            # Two parts flush against each other, or one part written twice,
+            # bring the same face: one stays, as the layer-wide stitch left
+            # it. A second one on the same edges is no face of a solid.
+            outline = frozenset(_key(v.position) for v in f.loop)
+            if outline in kept:
+                continue
+            kept.add(outline)
             try:
                 mesh.add_face([v.position for v in f.loop],
                               [[v.position for v in h] for h in f.hole_loops]

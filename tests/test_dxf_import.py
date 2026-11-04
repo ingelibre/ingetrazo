@@ -433,3 +433,20 @@ def test_touching_polyface_parts_keep_their_own_faces(tmp_path):
             and min(v.position.z() for v in f.loop) > 0.5]
     assert len(tops) == 2 and all(abs(f.area() - 6.0) < 1e-6 for f in tops)
 
+
+def test_a_polyface_written_twice_leaves_no_double_faces(tmp_path):
+    """The same part twice on one layer, and two parts flush against each
+    other: each face once, never two faces on the same edges."""
+    doc = _doc()
+    msp = doc.modelspace()
+    for dx in (0.0, 0.0, 3.0):
+        pf = msp.add_polyface()
+        pf.append_faces([[(x + dx, y, z) for x, y, z in (_BOX_V[i] for i in f)]
+                         for f in _BOX_F])
+        pf.optimize()
+    scene, _ = _load(tmp_path, doc)
+    mesh = scene.groups[0].mesh
+    outlines = [frozenset((v.position.x(), v.position.y(), v.position.z())
+                          for v in f.loop) for f in mesh.faces]
+    assert len(outlines) == 11                 # the shared wall counts once
+    assert len(set(outlines)) == len(outlines)
