@@ -27,6 +27,7 @@ viewport draws is what the engine decided, with no second pass.
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer
@@ -40,6 +41,13 @@ def _no_snap_fast() -> bool:
     off, for A/B timing), read at call time to avoid a circular import."""
     from views import viewport as _viewport
     return bool(getattr(_viewport, "_NO_SNAP_FAST", False))
+
+
+#: The sticky axis (#1095) is held back: engaging at 3° and releasing at 20°
+#: silences «On edge» and «On face» inside that whole cone and leaves no way to
+#: draw a free line at 10° once the cursor has crossed the axis.
+#: ``INGETRAZO_STICKY_AXIS=1`` turns it on to try it by hand.
+_STICKY_AXIS = os.environ.get("INGETRAZO_STICKY_AXIS", "") == "1"
 
 
 def _magnet_may_leave_plane(tool) -> bool:
@@ -257,7 +265,7 @@ class InferenceEngine:
             radial_arm=bool(getattr(tool, "radial_arm", False)),
             axis_in_plane=not _magnet_may_leave_plane(tool),
             free_3d=not _tool_is_planar(tool),
-            sticky_axis=self._sticky_axis,
+            sticky_axis=self._sticky_axis if _STICKY_AXIS else None,
             face_crossing=(lambda: vp._face_crossing_point(px_x, px_y))
             if hasattr(vp, "_face_crossing_point") else None,
         )
