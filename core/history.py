@@ -2011,6 +2011,21 @@ class ExplodeCurvesCommand(Command):
         scene.version += 1
 
 
+class AddSceneCommand(Command):
+    """A new saved scene at the end of the list; undo takes it away again."""
+
+    def __init__(self, view) -> None:
+        self.view = view
+
+    def do(self, scene) -> None:
+        scene.saved_views.append(self.view)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        scene.saved_views.remove(self.view)
+        scene.version += 1
+
+
 class DeleteScenesCommand(Command):
     """Delete saved scenes, several at once (#280); undo puts each back in
     its place in the list."""

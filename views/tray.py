@@ -4525,8 +4525,10 @@ class ScenesPanel(QWidget):
         taken = {v.name for v in scene.saved_views}
         while f"{base} {n}" in taken:
             n += 1
-        scene.saved_views.append(SavedView.capture(
-            f"{base} {n}", scene, self._window.viewport.camera))
+        from core.history import AddSceneCommand
+        self._window.viewport.history.execute(AddSceneCommand(
+            SavedView.capture(f"{base} {n}", scene,
+                              self._window.viewport.camera)))
         self.refresh()
         row = getattr(self._window, "_scene_tabs", None)
         if row is not None:                   # it holds this very view

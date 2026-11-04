@@ -765,3 +765,21 @@ def test_a_scene_shown_from_the_panel_marks_its_tab(win):
     panel.show_view(win.viewport.scene.saved_views[0])
     assert tabs.currentIndex() == 0
 
+
+def test_undo_takes_a_new_scene_away_and_its_row_with_it(win):
+    scene = win.viewport.scene
+    win.tray.scenes.add_scene()
+    assert len(scene.saved_views) == 1 and not _row(win).isHidden()
+    win._on_undo()
+    assert scene.saved_views == [] and _row(win).isHidden()
+    assert win.tray.scenes.list.count() == 0
+    win._on_redo()
+    assert len(scene.saved_views) == 1 and not _row(win).isHidden()
+    assert win.tray.scenes.list.count() == 1
+
+
+def test_undo_of_the_plus_of_the_row_takes_one_scene_away(win):
+    win.tray.scenes.add_scene()
+    _row(win).plus.click()
+    win._on_undo()
+    assert _names(win) == [win.viewport.scene.saved_views[0].name]
