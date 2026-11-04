@@ -2441,15 +2441,21 @@ class MaterialsPanel(QWidget):
             # The first wear of each paint is all the tally keeps, so each
             # mesh is read once, not once per copy (21 406 copies of 2 722
             # meshes in #158), and a lazy one stays unbuilt.
-            from core.mesh import face_attrs
+            from core.mesh import edge_materials, face_attrs
+            def paint_attrs(mesh):
+                yield from face_attrs(mesh)
+                yield from edge_materials(mesh)
             for f in scene.loose_mesh.faces:
                 if scene.entity_visible(f):
                     yield f.attrs
+            for edge in scene.loose_mesh.edges:
+                if edge.material and scene.entity_visible(edge):
+                    yield edge.material
             seen: set = set()
             for g, _m in scene.placements():
                 if id(g.mesh) not in seen:
                     seen.add(id(g.mesh))
-                    yield from mesh_wears(g.mesh, face_attrs)
+                    yield from mesh_wears(g.mesh, paint_attrs)
             # A group's paint lives on the group, not on its faces (#133,
             # @fafecm: it only showed up here once the group was exploded).
             from core.group import iter_placements
@@ -3358,18 +3364,64 @@ class StylesPanel(QWidget):
         self._edges = QCheckBox(tr("Edges"))
         self._edges.toggled.connect(self._apply_edits)
         edges.addWidget(self._edges, 0, 0, 1, 2)
-        self._edge_c = self._swatch(tr("Edge color"), "edge_color")
-        edges.addWidget(QLabel(tr("Edge color:")), 3, 0)
-        edges.addWidget(self._edge_c, 3, 1)
-
         self._profiles = QCheckBox(tr("Profiles"))
         self._profiles.toggled.connect(self._apply_edits)
-        edges.addWidget(self._profiles, 2, 0, 1, 2)
+        edges.addWidget(self._profiles, 2, 0)
+        self._profile_width = self._edge_pixels(self._profiles, "profile_width", (1, 20))
+        edges.addWidget(self._profile_width, 2, 1, alignment=Qt.AlignLeft)
         self._back_edges = QCheckBox(tr("Back edges"))
         self._back_edges.setToolTip(tr(
             "Draw the edges hidden behind faces as dashed lines."))
         self._back_edges.toggled.connect(self._apply_edits)
         edges.addWidget(self._back_edges, 1, 0, 1, 2)
+
+        self._depth_cue = QCheckBox(tr("Depth cue"))
+        self._depth_cue.setToolTip(tr(
+            "Make foreground edges thicker than distant edges."))
+        self._depth_cue.toggled.connect(self._apply_edits)
+        edges.addWidget(self._depth_cue, 3, 0)
+        self._depth_cue_width = self._edge_pixels(
+            self._depth_cue, "depth_cue_width", (1, 20))
+        edges.addWidget(self._depth_cue_width, 3, 1, alignment=Qt.AlignLeft)
+
+        self._extensions = QCheckBox(tr("Extensions"))
+        self._extensions.setToolTip(tr(
+            "Extend drawn edges past their ends without changing the geometry."))
+        self._extensions.toggled.connect(self._apply_edits)
+        edges.addWidget(self._extensions, 4, 0)
+        self._extension_length = self._edge_pixels(
+            self._extensions, "extension_length", (1, 50))
+        edges.addWidget(self._extension_length, 4, 1, alignment=Qt.AlignLeft)
+
+        self._endpoints = QCheckBox(tr("Endpoints"))
+        self._endpoints.setToolTip(tr("Emphasize the ends of edges with a thicker stroke."))
+        self._endpoints.toggled.connect(self._apply_edits)
+        edges.addWidget(self._endpoints, 5, 0)
+        self._endpoint_length = self._edge_pixels(
+            self._endpoints, "endpoint_length", (1, 50))
+        edges.addWidget(self._endpoint_length, 5, 1, alignment=Qt.AlignLeft)
+
+        self._dashes = QCheckBox(tr("Dashes"))
+        self._dashes.setToolTip(tr(
+            "Show the line patterns assigned in Layers. Turn off to draw solid lines."))
+        self._dashes.toggled.connect(self._apply_edits)
+        edges.addWidget(self._dashes, 6, 0, 1, 2)
+
+        edges.addWidget(QLabel(tr("Color:")), 7, 0)
+        color_row = QHBoxLayout()
+        self._edge_color_mode = QComboBox()
+        self._edge_color_mode.setToolTip(tr(
+            "By material: choose a material in Materials and use Paint on an edge. "
+            "Open a group to paint its edges individually."))
+        for key, title in (("same", "All same"), ("material", "By material"),
+                           ("axis", "By axis")):
+            self._edge_color_mode.addItem(tr(title), key)
+        self._edge_color_mode.currentIndexChanged.connect(self._apply_edits)
+        color_row.addWidget(self._edge_color_mode, 1)
+        self._edge_c = self._swatch(tr("Edge color"), "edge_color")
+        self._edge_c.setFixedWidth(28)
+        color_row.addWidget(self._edge_c)
+        edges.addLayout(color_row, 7, 1)
 
         faces.addWidget(QLabel(tr("Front color:")), 1, 0)
         self._front_c = self._swatch(
@@ -3539,6 +3591,22 @@ class StylesPanel(QWidget):
     def _style(self):
         return getattr(self._window.viewport.scene, "display_style", None)
 
+    def _edge_pixels(self, toggle: QCheckBox, attr: str, bounds: tuple) -> QSpinBox:
+        field = QSpinBox()
+        field.setRange(*bounds)
+        field.setSuffix(tr(" px"))
+        field.setAccessibleName(toggle.text())
+        field.setToolTip(tr("Size in screen pixels, independent of zoom."))
+        field.valueChanged.connect(self._apply_edits)
+        return field
+
+    def _sync_edge_controls(self) -> None:
+        for toggle, field in ((self._profiles, self._profile_width),
+                              (self._depth_cue, self._depth_cue_width),
+                              (self._extensions, self._extension_length),
+                              (self._endpoints, self._endpoint_length)):
+            field.setEnabled(toggle.isChecked())
+
     def _shown_color(self, attr: str):
         """The colour a swatch shows for ``attr``. Back color may be unset
         (automatic): show the tint that actually draws."""
@@ -3551,6 +3619,7 @@ class StylesPanel(QWidget):
     def _swatch(self, title: str, attr: str) -> QPushButton:
         btn = QPushButton()
         btn.setAutoDefault(False)
+        btn.setAccessibleName(title)
         btn.setToolTip(title)
         btn.clicked.connect(lambda: self._pick_color(title, attr))
         return btn
@@ -3599,6 +3668,17 @@ class StylesPanel(QWidget):
                 self._mode.findData(style.face_mode))
             self._edges.setChecked(style.edges)
             self._profiles.setChecked(style.profiles)
+            self._profile_width.setValue(style.profile_width)
+            self._depth_cue.setChecked(style.depth_cue)
+            self._depth_cue_width.setValue(style.depth_cue_width)
+            self._extensions.setChecked(style.extensions)
+            self._extension_length.setValue(style.extension_length)
+            self._endpoints.setChecked(style.endpoints)
+            self._endpoint_length.setValue(style.endpoint_length)
+            self._dashes.setChecked(style.dashes)
+            self._edge_color_mode.setCurrentIndex(
+                self._edge_color_mode.findData(style.edge_color_mode))
+            self._sync_edge_controls()
             self._back_edges.setChecked(getattr(style, "back_edges", False))
             self._sky.setChecked(style.sky)
             self._fill.setChecked(style.section_fill)
@@ -3639,6 +3719,16 @@ class StylesPanel(QWidget):
         style.face_mode = self._mode.currentData()
         style.edges = self._edges.isChecked()
         style.profiles = self._profiles.isChecked()
+        style.profile_width = self._profile_width.value()
+        style.depth_cue = self._depth_cue.isChecked()
+        style.depth_cue_width = self._depth_cue_width.value()
+        style.extensions = self._extensions.isChecked()
+        style.extension_length = self._extension_length.value()
+        style.endpoints = self._endpoints.isChecked()
+        style.endpoint_length = self._endpoint_length.value()
+        style.dashes = self._dashes.isChecked()
+        style.edge_color_mode = self._edge_color_mode.currentData()
+        self._sync_edge_controls()
         style.back_edges = self._back_edges.isChecked()
         style.sky = self._sky.isChecked()
         style.section_fill = self._fill.isChecked()

@@ -50,6 +50,13 @@ def encode(clip: dict) -> bytes:
         if attrs:
             face.attrs = dict(attrs)
     scene.groups.extend(clip.get("groups", ()))
+    # Paint travels inside the embedded .igz, so a textured edge carries
+    # its image too, without changing the legacy clipboard edge tuples.
+    edge_materials = clip.get("edge_materials", ())
+    for index, (a, b, _soft, _curve) in enumerate(clip.get("edges", ())):
+        if index < len(edge_materials) and edge_materials[index]:
+            import copy
+            scene.mesh.add_edge(a, b).material = copy.deepcopy(edge_materials[index])
     head = {
         "format": _FORMAT,
         "ref": _xyz(clip["ref"]),
@@ -101,8 +108,15 @@ def decode(data: bytes) -> dict | None:
         if getattr(g, "xform", None) is None:
             g.xform = QMatrix4x4()
             g.component = False       # a group still (issue #90)
-    return {"faces": faces, "edges": edges, "groups": list(scene.groups),
-            "ref": QVector3D(*head["ref"])}
+    out = {"faces": faces, "edges": edges, "groups": list(scene.groups),
+           "ref": QVector3D(*head["ref"])}
+    from core.mesh import edge_material_key
+    materials = {edge_material_key(edge.a, edge.b): edge.material
+                 for edge in scene.mesh.edges if edge.material}
+    if materials:
+        out["edge_materials"] = [materials.get(edge_material_key(a, b))
+                                 for a, b, _soft, _curve in edges]
+    return out
 
 
 class ClipMime(QMimeData):

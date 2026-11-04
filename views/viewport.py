@@ -3113,7 +3113,9 @@ class Viewport(QOpenGLWidget):
         self._draw_scaffold(mvp, w, h)
 
         self._set_section_clip(True)
-        show_edges = style.edges or mode == "wireframe"
+        from core.edge_style import needs_edge_renderer
+        styled_edges = needs_edge_renderer(style, self.scene)
+        show_edges = (style.edges or mode == "wireframe") and not styled_edges
         ec = style.edge_color
         # Line weight for sheet renders: a GL line is one pixel whatever
         # the DPI (core-profile Mesa clamps glLineWidth), and one pixel at
@@ -3200,6 +3202,13 @@ class Viewport(QOpenGLWidget):
                 self._silhouette_vao.release()
                 if len(_jit_p) > 1:
                     self._program.setUniformValue(self._loc_mvp, mvp)
+        if styled_edges:
+            from views.edge_renderer import EdgeRenderer
+            renderer = getattr(self, "_edge_renderer", None)
+            if renderer is None:
+                renderer = self._edge_renderer = EdgeRenderer(self)
+            renderer.draw(mvp, w, h, style, mode,
+                          fade_color=edit_fade_color(style.background))
         _fmark("edges")
 
         # Selected edges (drawn on top, highlighted) — never in an export
@@ -5679,6 +5688,13 @@ class Viewport(QOpenGLWidget):
         document also slowed down reopen after reopen (the garbage collector
         walking the dead ones). And a CPython id() reused by a new group
         could meet an old entry — the composer's lesson with frames."""
+        edge_renderer = getattr(self, "_edge_renderer", None)
+        if edge_renderer is not None and self.context() is not None:
+            self.makeCurrent()
+            try:
+                edge_renderer.clear()
+            finally:
+                self.doneCurrent()
         draws = getattr(self, "_proto_draw", None)
         if draws and self.context() is not None:
             self.makeCurrent()                # GPU objects need the context
@@ -5746,12 +5762,16 @@ class Viewport(QOpenGLWidget):
                 "_ghost_vcol_vbo", "_ghost_tex_vao", "_ghost_tex_vbo",
                 "_depth_fbo", "_scene_fbo", "_shadow_fbo", "_depth_snap",
                 "_fine_shadow_fbo",
-                "_frame_cache_fbo", "_frame_cache")
+                "_frame_cache_fbo", "_frame_cache", "_edge_renderer")
 
     def _forget_context_objects(self) -> None:
         """Forget every lazily made GL object (see ``_LAZY_GL``) and the
         per-prototype draw entries (their VAOs and buffers): the next frame
         makes them again in the current context."""
+        renderer = getattr(self, "_edge_renderer", None)
+        forget = getattr(renderer, "forget_context", None)
+        if callable(forget):
+            forget()
         for name in self._LAZY_GL:
             if getattr(self, name, None) is not None:
                 setattr(self, name, None)
@@ -16792,6 +16812,9 @@ class Viewport(QOpenGLWidget):
             drop(old_clip)
         self.clipboard = {"faces": face_data, "edges": edge_data,
                           "groups": group_data, "ref": ref}
+        edge_materials = [copy.deepcopy(edge.material) for edge in edges]
+        if any(edge_materials):
+            self.clipboard["edge_materials"] = edge_materials
         # Also on the system clipboard, so another IngeTrazo window can
         # paste it (issue #76); encoded only if that window asks.
         from formats import clip as clip_transfer

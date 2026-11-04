@@ -43,9 +43,10 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 
 from core.i18n import tr
-from core.mesh import Face
+from core.mesh import Edge, Face
 from core.history import (
     CompoundCommand,
+    SetEdgeMaterialCommand,
     SetFaceBackCommand,
     SetFaceColorCommand,
     SetFaceMaterialTagCommand,
@@ -277,6 +278,10 @@ class PaintTool(Tool):
             if self._container_under(vp, group, x, y) is not None:
                 vp.set_hover(None)
                 return
+        edge = self._edge_under(ctx)
+        if edge is not None:
+            vp.set_hover(edge)
+            return
         # A face inside a component is marked through the placement it was
         # reached through, or the marking is drawn where the part WOULD be
         # unplaced and assembled, not where the placed, exploded part is.
@@ -292,6 +297,11 @@ class PaintTool(Tool):
         vp = ctx.viewport
         face, group = vp.pick_face_any(ctx.screen.x(), ctx.screen.y())
         if self._sampling(ctx) and self._sample_image(ctx, face):
+            return
+        edge = self._edge_under(ctx)
+        if (edge is not None and self._container_under(
+                vp, group, ctx.screen.x(), ctx.screen.y()) is None):
+            self._on_edge_click(ctx, edge)
             return
         if face is None:
             return
@@ -451,6 +461,53 @@ class PaintTool(Tool):
                 tag,
             ]))
         self._remember_current(vp)
+        vp.update()
+
+    @staticmethod
+    def _edge_under(ctx):
+        vp = ctx.viewport
+        style = getattr(vp.scene, "display_style", None)
+        if getattr(style, "edge_color_mode", "same") != "material":
+            return None
+        picker = getattr(vp, "pick_visible_edge", None)
+        if picker is None:
+            return None
+        edge = picker(ctx.screen.x(), ctx.screen.y())
+        return edge if isinstance(edge, Edge) else None
+
+    def _on_edge_click(self, ctx, edge):
+        vp = ctx.viewport
+        if self._sampling(ctx):
+            from core.group import effective_material
+            paint = edge.material or effective_material(vp.scene.edit_group) or {}
+            PaintTool.current_is_default = not bool(paint)
+            PaintTool.current_color = tuple(paint.get("color") or vp.scene.display_style.edge_color)
+            PaintTool.current_texture = dict(paint["texture"]) if paint.get("texture") else None
+            PaintTool.current_texture_plane = None
+            PaintTool.current_opacity = paint.get("opacity")
+            PaintTool.current_material = vp.scene.materials.get(paint.get("mat"))
+            win = vp.window() if hasattr(vp, "window") else None
+            if PaintTool.sample_armed:
+                PaintTool.sample_armed = False
+                if hasattr(win, "release_eyedropper"):
+                    win.release_eyedropper()
+            panel = getattr(getattr(win, "tray", None), "materials", None)
+            if hasattr(panel, "sync_from_paint"):
+                panel.sync_from_paint()
+        else:
+            selected = [item for item in vp.scene.selection if isinstance(item, Edge)]
+            edges = selected if edge in selected else [edge]
+            if PaintTool.current_is_default:
+                command = SetEdgeMaterialCommand(edges, None)
+            else:
+                material = PaintTool.current_material
+                command = CompoundCommand([
+                    SetFaceMaterialTagCommand(
+                        [], material.name if material is not None else None, material),
+                    SetEdgeMaterialCommand(edges, self._current_as_material()),
+                ])
+            vp.history.execute(command)
+            self._remember_current(vp)
         vp.update()
 
     @staticmethod

@@ -179,6 +179,9 @@ def used_materials(scene) -> set[str]:
             name = f.attrs.get("mat")
             if name:
                 used.add(name)
+        for edge in mesh.edges:
+            if edge.material and edge.material.get("mat"):
+                used.add(edge.material["mat"])
     # A group's own paint (issue #47) lives on the group, not on its faces:
     # Purge used to delete a material that only a group wore (issue #133).
     from core.group import iter_placements

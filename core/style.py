@@ -19,8 +19,7 @@ Face modes (Face Styles):
 - ``xray``        Everything translucent, edges always visible — the ones
                   behind a face washed toward the background.
 
-Deferred (documented, not lost): back edges, depth cue, extensions,
-endpoints, jitter, watermarks, per-material edge colour.
+Deferred (documented, not lost): jitter and watermarks.
 """
 from __future__ import annotations
 
@@ -28,6 +27,9 @@ from dataclasses import dataclass, field
 
 FACE_MODES = ("textures", "shaded", "hidden_line", "monochrome",
               "wireframe", "xray")
+EDGE_COLOR_MODES = ("same", "material", "axis")
+EDGE_WIDTH_RANGE = (1, 20)
+EDGE_LENGTH_RANGE = (1, 50)
 
 #: The soft warm white of the faces that wear no material in the shaded
 #: modes — the matte cardstock of an architecture model. The style's Front
@@ -50,6 +52,16 @@ class Style:
     # (issue #234). Off in every preset.
     back_edges: bool = False
     edge_color: tuple = (0.13, 0.17, 0.23)
+    # Distances and widths are logical screen pixels, independent of zoom.
+    profile_width: int = 1
+    depth_cue: bool = False
+    depth_cue_width: int = 4
+    extensions: bool = False
+    extension_length: int = 3
+    endpoints: bool = False
+    endpoint_length: int = 3
+    dashes: bool = True
+    edge_color_mode: str = "same"
     # The faces' front colour: every face in Hidden line and Monochrome,
     # and the faces wearing no material in the other modes (issue #776).
     front_color: tuple = (1.0, 1.0, 1.0)
@@ -103,6 +115,17 @@ class Style:
         }
         if self.color_by_layer:
             out["color_by_layer"] = True
+        # Keep old/default styles byte-for-byte compatible. New fields are
+        # optional, including the values of currently disabled effects.
+        defaults = {"profile_width": 1, "depth_cue": False,
+                    "depth_cue_width": 4, "extensions": False,
+                    "extension_length": 3, "endpoints": False,
+                    "endpoint_length": 3, "dashes": True,
+                    "edge_color_mode": "same"}
+        for attr, default in defaults.items():
+            value = getattr(self, attr)
+            if value != default:
+                out[attr] = value
         return out
 
     @classmethod
@@ -118,6 +141,20 @@ class Style:
             profiles=bool(raw.get("profiles", d.profiles)),
             back_edges=bool(raw.get("back_edges", d.back_edges)),
             edge_color=tuple(raw.get("edge_color", d.edge_color)),
+            profile_width=_pixel_value(raw.get("profile_width"), d.profile_width,
+                                       EDGE_WIDTH_RANGE),
+            depth_cue=bool(raw.get("depth_cue", d.depth_cue)),
+            depth_cue_width=_pixel_value(raw.get("depth_cue_width"), d.depth_cue_width,
+                                         EDGE_WIDTH_RANGE),
+            extensions=bool(raw.get("extensions", d.extensions)),
+            extension_length=_pixel_value(raw.get("extension_length"), d.extension_length,
+                                          EDGE_LENGTH_RANGE),
+            endpoints=bool(raw.get("endpoints", d.endpoints)),
+            endpoint_length=_pixel_value(raw.get("endpoint_length"), d.endpoint_length,
+                                         EDGE_LENGTH_RANGE),
+            dashes=bool(raw.get("dashes", d.dashes)),
+            edge_color_mode=(raw.get("edge_color_mode")
+                             if raw.get("edge_color_mode") in EDGE_COLOR_MODES else "same"),
             front_color=tuple(raw.get("front_color", d.front_color)),
             back_color=_opt_rgb(raw.get("back_color")),
             background=tuple(raw.get("background", d.background)),
@@ -143,6 +180,10 @@ class Style:
 #: The ambient occlusion controls' ranges (metres; plain factor).
 AO_DISTANCE_RANGE = (0.01, 50.0)
 AO_INTENSITY_RANGE = (0.0, 2.0)
+
+
+def _pixel_value(raw, default: int, bounds: tuple) -> int:
+    return round(_clamped(raw, default, bounds))
 
 
 def _clamped(raw, default: float, bounds: tuple) -> float:

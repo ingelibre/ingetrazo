@@ -3,6 +3,7 @@
 """Small, deterministic style samples painted without an OpenGL context."""
 from __future__ import annotations
 
+import math
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
     QColor, QLinearGradient, QPainter, QPen, QPixmap, QPolygonF,
@@ -91,18 +92,42 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
             for start, end in hidden:
                 painter.drawLine(QPointF(*start), QPointF(*end))
 
-        if style.edges or mode in ("wireframe", "xray"):
-            pen = QPen(edge, 1.1)
-            pen.setJoinStyle(Qt.RoundJoin)
-            painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
-            for points in (top, left, right):
-                painter.drawPolygon(_polygon(points))
-            if style.profiles:
-                pen.setWidthF(1.9)
+        if style.edges or style.profiles or mode in ("wireframe", "xray"):
+            from core.edge_style import AXIS_COLORS
+            # Local sample edges with their 3D axis and a small independent
+            # paint sample. This is a style illustration, not model geometry.
+            segments = ((top[0], top[1], 0), (top[1], top[2], 1),
+                        (top[2], top[3], 0), (top[3], top[0], 1),
+                        (left[0], left[3], 2), (left[3], left[2], 0),
+                        (left[2], left[1], 2), (right[1], right[2], 2),
+                        (right[2], right[3], 1))
+            outline = {0, 3, 4, 5, 7, 8}
+            for index, (a, b, axis) in enumerate(segments):
+                if not style.edges and mode not in ("wireframe", "xray") and index not in outline:
+                    continue
+                color = edge
+                if style.edge_color_mode == "axis":
+                    color = _color(AXIS_COLORS[axis])
+                elif style.edge_color_mode == "material" and index in (1, 7, 8):
+                    color = _color((0.68, 0.55, 0.39))
+                width = style.profile_width if style.profiles and index in outline else 1.0
+                if style.depth_cue:
+                    width = max(width, 1 + (style.depth_cue_width - 1) * (a[1] + b[1]) / 160)
+                width = min(8, width)
+                pen = QPen(color, width)
                 painter.setPen(pen)
-                painter.drawPolygon(_polygon([(47, 13), (79, 28), (79, 58),
-                                               (49, 73), (17, 58), (17, 28)]))
+                dx, dy = b[0] - a[0], b[1] - a[1]
+                length = max(math.hypot(dx, dy), 1e-6)
+                dx, dy = dx / length, dy / length
+                extension = min(10, style.extension_length) if style.extensions else 0
+                painter.drawLine(QPointF(a[0] - dx * extension, a[1] - dy * extension),
+                                 QPointF(b[0] + dx * extension, b[1] + dy * extension))
+                if style.endpoints:
+                    pen.setWidthF(width + 2)
+                    painter.setPen(pen)
+                    size = min(length / 2, style.endpoint_length)
+                    painter.drawLine(QPointF(*a), QPointF(a[0] + dx * size, a[1] + dy * size))
+                    painter.drawLine(QPointF(*b), QPointF(b[0] - dx * size, b[1] - dy * size))
     finally:
         painter.end()
     return pixmap
