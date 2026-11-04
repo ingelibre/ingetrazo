@@ -4343,10 +4343,18 @@ class ScenesPanel(QWidget):
             self.list.addItem(item)
         fit_rows(self.list)
         self._updating = False
+        # The scene tabs under the viewport list the same scenes.
+        follow = getattr(self._window, "_refresh_scene_tabs", None)
+        if callable(follow):
+            follow()
 
     # ---- View → model --------------------------------------------------------
     def _on_activate(self, item) -> None:
-        view = item.data(Qt.UserRole)
+        self.show_view(item.data(Qt.UserRole))
+
+    def show_view(self, view) -> None:
+        """Show the saved ``view`` (a double-click here, and a click on the
+        scene tabs under the viewport)."""
         if view is None:
             return
         scene = self._scene()
@@ -4392,6 +4400,11 @@ class ScenesPanel(QWidget):
         self.refresh()
         self._touch()
 
+    def add_scene(self) -> None:
+        """Keep the current view as a new scene (the «+ Scene» button, and
+        «+» of the scene tabs under the viewport)."""
+        self._on_add()
+
     def _on_add(self) -> None:
         from core.saved_views import SavedView
         scene = self._scene()
@@ -4407,7 +4420,11 @@ class ScenesPanel(QWidget):
 
     def _on_update(self) -> None:
         item = self.list.currentItem()
-        view = item.data(Qt.UserRole) if item is not None else None
+        self.update_view(item.data(Qt.UserRole) if item is not None else None)
+
+    def update_view(self, view) -> None:
+        """Keep the current view in the scene ``view`` (the «Update»
+        button, and the scene tabs' right-click menu)."""
         if view is None:
             return
         view.recapture(self._scene(), self._window.viewport.camera)
@@ -4420,7 +4437,11 @@ class ScenesPanel(QWidget):
         if not views:
             item = self.list.currentItem()
             views = [item.data(Qt.UserRole)] if item is not None else []
-        views = [v for v in views if v is not None]
+        self.delete_views([v for v in views if v is not None])
+
+    def delete_views(self, views) -> None:
+        """Delete these scenes, as one undo step (the «−» button, Delete in
+        the list, and the scene tabs' right-click menu)."""
         if not views:
             return
         from core.history import DeleteScenesCommand
