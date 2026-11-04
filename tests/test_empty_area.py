@@ -168,3 +168,51 @@ def test_plus_from_the_empty_area_starts_a_new_document(win):
     assert not win.is_empty()
     assert win.viewport.scene.groups
     assert not win._is_dirty()
+
+
+def _blank_edit(win):
+    from PySide6.QtGui import QVector3D as V
+    from core.history import AddEdgeCommand
+    win.viewport.history.execute(AddEdgeCommand(V(0, 0, 0), V(1, 0, 0)))
+    win.viewport.notify_scene_changed()
+
+
+def test_what_comes_into_the_blank_project_leaves_the_empty_area(win):
+    """An import, a paste, an extension or the AI bridge work on the project
+    behind the area: left there, the model and its unsaved changes were out
+    of sight, with nothing to say so."""
+    win.close_document()
+    assert win.is_empty()
+    win.viewport.notify_scene_changed()         # nothing came in
+    assert win.is_empty()
+    _blank_edit(win)
+    assert not win.is_empty()
+    assert win._doc_stack.isVisibleTo(win)
+    assert "*" in win.windowTitle()
+
+
+def test_a_workspace_entered_from_the_empty_area_is_on_show(win):
+    from core.history import History
+    from core.scene import Scene
+
+    class Workspace:
+        allowed_tools = None
+
+        def __init__(self):
+            self.scene = Scene()
+            self.history = History(self.scene)
+
+        def title(self):
+            return "w"
+
+        def is_dirty(self):
+            return False
+
+        def confirm_leave(self):
+            return True
+
+    win.close_document()
+    assert win.enter_workspace(Workspace())
+    assert not win.is_empty()
+    assert win._doc_stack.isVisibleTo(win)
+    assert win.leave_workspace()

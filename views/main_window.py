@@ -7055,6 +7055,7 @@ class MainWindow(QMainWindow):
         Returns False when a workspace is already shown."""
         if self._workspace is not None:
             return False
+        self._leave_empty_area()
         self._activate_tool("select")
         vp = self.viewport
         vp.end_group_edit()
@@ -9426,6 +9427,10 @@ class MainWindow(QMainWindow):
         return self.viewport.scene.content_version != self._saved_content
 
     def _on_scene_version_changed(self, _version: int) -> None:
+        # Something came into the blank project behind the empty area (an
+        # import, a paste, an extension, the AI bridge): it is on show.
+        if self.__dict__.get("_empty_on") and not self._doc_is_blank():
+            self._leave_empty_area()
         self._update_title()
 
     def _update_title(self) -> None:
