@@ -274,6 +274,43 @@ def test_offset_engine_refuses_on_edge_and_on_face():
 
 
 
+def test_offset_snaps_only_during_the_drag():
+    """Choosing the face stays as it was: no marker on the corners under the
+    cursor, and no Alt clause for inferences the tool does not take."""
+    import math
+
+    from PySide6.QtCore import QPointF, Qt
+    from views.status_hints import hint_for
+    from tools.offset import OffsetTool
+    from views.viewport import Viewport, _HoverEvent
+
+    vp = Viewport(None)
+    vp.resize(1000, 600)
+    vp.camera.set_aspect(1000, 600)
+    vp.flash_status = lambda *a, **k: None
+    vp.camera.yaw, vp.camera.pitch = math.radians(-40), math.radians(50)
+    vp.camera.target, vp.camera.distance = V(1, 1, 1), 10.0
+    vp.scene.mesh.add_face([V(0, 0, 1), V(2, 0, 1), V(2, 2, 1), V(0, 2, 1)])
+    vp.scene.mesh.add_edge(V(3, -1, 1), V(3, 3, 1))
+    tool = OffsetTool()
+    vp.active_tool = tool
+    tool.on_activate(vp)
+
+    def hover(p):
+        x, y = vp._world_to_pixel(p)
+        vp._process_hover(QPointF(x, y), Qt.NoModifier)
+        return vp.last_snap.kind
+
+    assert hover(V(2, 0, 1)) == "none"              # a corner of the face
+    assert hover(V(3, -1, 1)) == "none"
+    x, y = vp._world_to_pixel(V(1.9, 1, 1))
+    vp._process_hover(QPointF(x, y), Qt.NoModifier)
+    tool.on_click(vp._build_ctx(_HoverEvent(QPointF(x, y), Qt.NoModifier)))
+    assert tool.dragging
+    assert hover(V(3, -1, 1)) == "endpoint"
+    assert "Alt" not in hint_for("offset", tool, linear_mode="all")
+
+
 def test_a_refused_hot_retype_keeps_the_offset_already_made():
     """Typing 1 then 3 on a 4 × 4 face: 3 is too far and is refused, and
     the 1 m offset must stay (it vanished: the retype undid it first)."""

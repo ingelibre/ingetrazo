@@ -45,7 +45,6 @@ class OffsetTool(Tool):
     description = (
         "Draw a copy of a face's outline at an even distance inside "
         "or outside it — walls with thickness.")
-    uses_snap = True  # the drag distance snaps to named model points
     allow_inferences = False  # no «from point» / «level with» lines while dragging
     vcb_label = "Offset"
     wireframe_color = (0.13, 0.17, 0.23, 1.0)
@@ -63,6 +62,12 @@ class OffsetTool(Tool):
         "component_origin", "intersection", "intersection_edge",
         "intersection_face",
     ))
+
+    @property
+    def uses_snap(self) -> bool:
+        """Only during the drag, whose distance snaps to named model points.
+        Before it the click picks a face or a run of edges, not a point."""
+        return self.dragging
 
     def __init__(self) -> None:
         self.hovered_face: Face | None = None
