@@ -3365,5 +3365,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "أعلى جودة يرتب المثلثات الشفافة من الخلف إلى الأمام. أسرع يحافظ على التجميع حسب المادة.",
  "Transparency quality:": "جودة الشفافية:",
  "X-ray opacity:": "عتامة الأشعة السينية:",
- "Keep the current face style transparent and snap through faces.": "الحفاظ على نمط الأوجه وجعلها شفافة والسماح بالالتقاط عبرها."
+ "Keep the current face style transparent and snap through faces.": "الحفاظ على نمط الأوجه وجعلها شفافة والسماح بالالتقاط عبرها.",
+  "Ground transparency:": "شفافية الأرض:",
+  "Show ground from below": "إظهار الأرض من الأسفل",
+  "Ground color is saved; turn on Ground to display it.": "تم حفظ لون الأرض؛ فعّل الأرض لعرضه.",
+ "Sky color is saved; turn on Sky to display it.": "تم حفظ لون السماء؛ فعّل السماء لعرضه."
 }

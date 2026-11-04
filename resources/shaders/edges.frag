@@ -1,5 +1,6 @@
 #version 330 core
 noperspective in vec2 g_pixel;
+in float g_ground_distance;
 flat in float g_length;
 flat in vec2 g_width;
 flat in vec3 g_color;
@@ -71,6 +72,7 @@ float stroke_coverage() {
 }
 
 void main() {
+    if (g_ground_distance < 0.0) discard;
     float coverage = u_marker_pass == 1
         ? clamp(marker(g_pixel, u_endpoint_size * u_scale * 0.5) + 0.5, 0.0, 1.0)
         : stroke_coverage();

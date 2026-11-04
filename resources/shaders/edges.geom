@@ -35,6 +35,8 @@ uniform vec3 u_axis2;
 uniform vec4 u_clip_plane;
 uniform mat4 u_plane_to_clip;
 uniform int u_clip_enable;
+uniform vec4 u_style_ground_clip;
+out float g_ground_distance;
 uniform int u_hidden;
 noperspective out vec2 g_pixel;
 flat out float g_length;
@@ -80,6 +82,7 @@ bool clip_segment(inout vec4 a, inout vec4 b, inout vec3 wa, inout vec3 wb,
 }
 
 void corner(vec4 center, vec3 world, vec2 shift, float along, float side) {
+    g_ground_distance = dot(vec4(world, 1.0), u_style_ground_clip);
     gl_Position = center + vec4(shift * 2.0 / u_viewport * center.w, 0.0, 0.0);
     if (u_marker_pass == 0) {
         // Expanded XY corners must extrapolate the line's depth as well.

@@ -3331,5 +3331,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "更精细会将透明三角形从后向前排序。更快保留按材质分组的批次。",
  "Transparency quality:": "透明度质量：",
  "X-ray opacity:": "X射线不透明度：",
- "Keep the current face style transparent and snap through faces.": "保留当前面的样式，使其透明，并允许穿过面捕捉实体。"
+ "Keep the current face style transparent and snap through faces.": "保留当前面的样式，使其透明，并允许穿过面捕捉实体。",
+ "Ground transparency:": "地面透明度：",
+ "Show ground from below": "从下方显示地面",
+ "Ground color is saved; turn on Ground to display it.": "地面颜色已保存；启用地面即可显示。",
+ "Sky color is saved; turn on Sky to display it.": "天空颜色已保存；启用天空即可显示。"
 }

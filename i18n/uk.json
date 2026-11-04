@@ -3345,5 +3345,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Якісніше сортує прозорі трикутники від дальніх до ближніх. Швидше зберігає групування за матеріалами.",
  "Transparency quality:": "Якість прозорості:",
  "X-ray opacity:": "Непрозорість рентгену:",
- "Keep the current face style transparent and snap through faces.": "Зберегти стиль граней, зробити їх прозорими та дозволити прив’язку крізь грані."
+ "Keep the current face style transparent and snap through faces.": "Зберегти стиль граней, зробити їх прозорими та дозволити прив’язку крізь грані.",
+ "Ground transparency:": "Прозорість землі:",
+ "Show ground from below": "Показувати землю знизу",
+ "Ground color is saved; turn on Ground to display it.": "Колір землі збережено; увімкніть Землю, щоб його відобразити.",
+ "Sky color is saved; turn on Sky to display it.": "Колір неба збережено; увімкніть Небо, щоб його відобразити."
 }

@@ -104,6 +104,11 @@ class Style:
     # X-ray modes. Off in every preset; a scene remembers it with the style.
     color_by_layer: bool = False
     xray: bool = False
+    # None preserves the historical combined sky/ground backdrop. An explicit
+    # value opts into independent ground controls without changing old files.
+    ground: bool | None = None
+    ground_transparency: int = 0
+    ground_from_below: bool = True
 
     def __post_init__(self):
         if self.face_mode == "xray":
@@ -143,7 +148,9 @@ class Style:
                     "endpoint_length": 3, "endpoint_type": "default",
                     "endpoint_size": 6, "dashes": True,
                     "edge_color_mode": "same", "material_transparency": True,
-                    "transparency_quality": "faster", "xray_opacity": 60}
+                    "transparency_quality": "faster", "xray_opacity": 60,
+                    "ground": None, "ground_transparency": 0,
+                    "ground_from_below": True}
         for attr, default in defaults.items():
             value = getattr(self, attr)
             if value != default:
@@ -198,6 +205,9 @@ class Style:
             sky=bool(raw.get("sky", d.sky)),
             sky_color=tuple(raw.get("sky_color", d.sky_color)),
             ground_color=tuple(raw.get("ground_color", d.ground_color)),
+            ground=(bool(raw["ground"]) if raw.get("ground") is not None else None),
+            ground_transparency=_pixel_value(raw.get("ground_transparency"), 0, (0, 100)),
+            ground_from_below=bool(raw.get("ground_from_below", True)),
             section_fill=bool(raw.get("section_fill", d.section_fill)),
             section_fill_color=tuple(raw.get("section_fill_color",
                                              d.section_fill_color)),
@@ -235,6 +245,12 @@ def base_face_mode(style) -> str:
 
 def sees_through_faces(style) -> bool:
     return xray_enabled(style) or base_face_mode(style) == "wireframe"
+
+
+def ground_enabled(style) -> bool:
+    """Resolve the legacy combined backdrop or the independent ground toggle."""
+    ground = getattr(style, "ground", None)
+    return bool(style.sky if ground is None else ground)
 
 
 def _clamped(raw, default: float, bounds: tuple) -> float:

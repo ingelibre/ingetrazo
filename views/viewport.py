@@ -2128,6 +2128,7 @@ class Viewport(QOpenGLWidget):
         self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
         self._program = self._compile_program()
+        self._style_ground_program = None
         self._loc_mvp = self._program.uniformLocation("u_mvp")
         self._loc_color = self._program.uniformLocation("u_color")
         self._loc_back_color = self._program.uniformLocation("u_back_color")
@@ -2498,7 +2499,7 @@ class Viewport(QOpenGLWidget):
         # premium modeller feel. Fixed on zoom (it's the point at infinity),
         # moves only on orbit. Skipped over the base map / terrain (which supply
         # their own ground).
-        if (self.plano_style is None and style.sky
+        if (self.plano_style is None and (style.sky or style.ground is not None)
                 and not self._base_map_showing()
                 and not self._terrain_showing()
                 and not self._photo_showing()):
@@ -2527,7 +2528,8 @@ class Viewport(QOpenGLWidget):
             self._program.setUniformValue(
                 self._loc_fade_color, QVector3D(*edit_fade_color(
                     style.background)))
-        self._draw_image_planes()
+        if not self._style_ground_visible(style):
+            self._draw_image_planes()
         _fmark("ground")
 
         # No grid — the infinite axes are the spatial reference.
@@ -2695,6 +2697,38 @@ class Viewport(QOpenGLWidget):
             self._perf_stat = st
 
     def _paint_static(self, mvp, w, h, style, mode, _fmark, hover) -> None:
+        """Composite far geometry, the display ground, then near geometry.
+
+        Splitting at Z=0 keeps translucent faces on either side correctly
+        layered with the ground, including triangles that cross the plane.
+        Unchanged styles retain the original single pass.
+        """
+        if not self._style_ground_visible(style):
+            self._paint_static_half(mvp, w, h, style, mode, _fmark, hover)
+            return
+        side = 1.0 if self.camera.eye().z() >= 0 else -1.0
+        location = self._program.uniformLocation("u_style_ground_clip")
+
+        def clip(z, offset):
+            self._style_ground_clip = QVector4D(0, 0, z, offset)
+            self._program.setUniformValue(location, self._style_ground_clip)
+
+        try:
+            if style.ground_transparency > 0:
+                clip(-side, -1e-6)
+                self._draw_image_planes()
+                self._paint_static_half(mvp, w, h, style, mode, _fmark, hover)
+            clip(0, 0)
+            self._draw_style_ground(mvp, style)
+            if self._frame_shadow is not None:
+                self._draw_shadow_ground(style)
+            clip(side, 1e-6)
+            self._draw_image_planes()
+            self._paint_static_half(mvp, w, h, style, mode, _fmark, hover)
+        finally:
+            clip(0, 0)
+
+    def _paint_static_half(self, mvp, w, h, style, mode, _fmark, hover) -> None:
         """paintGL's passes of the model and what sits in it — faces,
         edges, selection, axes, guides — up to the section cut's edges;
         ``hover`` is the entity under the cursor they highlight (None:
@@ -2733,7 +2767,8 @@ class Viewport(QOpenGLWidget):
         # boundary edges sit cleanly on top instead of z-fighting.
         self._set_section_clip(True)
         if getattr(self, "_frame_shadow", None) is not None:
-            self._draw_shadow_ground(style)
+            if not self._style_ground_visible(style):
+                self._draw_shadow_ground(style)
             self._program.setUniformValue(self._loc_shadow_enable, 1)
         self._program.setUniformValue(self._loc_material_opaque, int(not style.material_transparency))
         self._program.setUniformValue1f(self._loc_xray_opacity, style.xray_opacity / 100.0 if xray else 1.0)
@@ -2986,7 +3021,9 @@ class Viewport(QOpenGLWidget):
         self._draw_section_fill(mode, style)
         # Ambient occlusion (#954): onto the opaque faces only — the glass
         # below, the billboards, highlights and every edge come after it.
-        self._apply_ambient_occlusion(w, h, mode, style)
+        if (not self._style_ground_visible(style)
+                or self._style_ground_clip.w() >= 0):
+            self._apply_ambient_occlusion(w, h, mode, style)
 
         # Translucent material runs (.skp trans with useTrans): drawn
         # after everything opaque, blended, depth-tested but not depth-
@@ -6283,15 +6320,15 @@ class Viewport(QOpenGLWidget):
 
         self._sky_grad_vao.bind()
         self._program.setUniformValue(self._loc_use_vcolor, 1)
-        if hy < 1.0:
+        if style.sky and hy < 1.0:
             gquad(hy, 1.0, c_sky0, c_sky1)
-        if hy > -1.0:
+        if style.ground is None and style.sky and hy > -1.0:
             gquad(-1.0, hy, c_gnd1, c_gnd0)
         self._program.setUniformValue(self._loc_use_vcolor, 0)
         self._sky_grad_vao.release()
         # A subtle horizon line where sky meets ground, in a tone
         # derived from the two haze colours so custom skies keep it legible.
-        if -1.0 < hy < 1.0:
+        if style.ground is None and style.sky and -1.0 < hy < 1.0:
             line = array("f", [-1.0, hy, 0.0, 1.0, hy, 0.0])
             self._sky_vao.bind()
             self._sky_vbo.bind()
@@ -6302,6 +6339,57 @@ class Viewport(QOpenGLWidget):
             self._sky_vao.release()
         self._gl.glEnable(GL_DEPTH_TEST)
         self._gl.glDepthMask(GL_TRUE)
+
+    def _style_ground_visible(self, style) -> bool:
+        return (style.ground is True and style.ground_transparency < 100
+                and self.plano_style is None and not self._base_map_showing()
+                and not self._terrain_showing() and not self._photo_showing()
+                and (self.camera.eye().z() >= 0 or style.ground_from_below))
+
+    def _draw_style_ground(self, mvp, style) -> None:
+        """Composite the optional Z=0 plane over geometry below ground.
+
+        This display surface never enters the model or snapping. Drawing after
+        geometry with depth writes off permits transparent ground, while model
+        surfaces above it retain their own colors and depth.
+        """
+        if not self._style_ground_visible(style):
+            return
+        inverse, valid = mvp.inverted()
+        if not valid:
+            return
+        program = self._style_ground_program
+        if program is None:
+            program = QOpenGLShaderProgram(self)
+            vertex = program.addShaderFromSourceFile(
+                QOpenGLShader.Vertex, str(SHADER_DIR / "style_ground.vert"))
+            fragment = program.addShaderFromSourceFile(
+                QOpenGLShader.Fragment, str(SHADER_DIR / "style_ground.frag"))
+            if not (vertex and fragment and program.link()):
+                raise RuntimeError("ground shader compile/link failed:\n" + program.log())
+            self._style_ground_program = program
+        program.bind()
+        program.setUniformValue("u_mvp", mvp)
+        program.setUniformValue("u_inverse_mvp", inverse)
+        program.setUniformValue("u_color", QVector4D(
+            *style.ground_color[:3], 1.0 - style.ground_transparency / 100.0))
+        quad = array("f", [-1, -1, 0, 1, -1, 0, 1, 1, 0,
+                           -1, -1, 0, 1, 1, 0, -1, 1, 0])
+        self._ground_vbo.bind()
+        self._ground_vbo.allocate(quad.tobytes(), len(quad) * 4)
+        self._ground_vbo.release()
+        self._ground_vao.bind()
+        self._gl.glEnable(GL_DEPTH_TEST)
+        self._gl.glDepthMask(GL_FALSE)
+        # Preserve destination alpha, including exported QImage conversion.
+        self._gl.glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                                     1, GL_ONE_MINUS_SRC_ALPHA)
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, 6)
+        self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        self._gl.glDepthMask(GL_TRUE)
+        self._ground_vao.release()
+        program.release()
+        self._program.bind()
 
     # ---- Sun shadows (core/sun.py) ------------------------------------------
     _SHADOW_MAP_SIZE = 2048

@@ -9,7 +9,8 @@ from PySide6.QtGui import (
     QColor, QLinearGradient, QPainter, QPen, QPixmap, QPolygonF,
 )
 
-from core.style import DEFAULT_FACE_COLOR, Style, effective_back_color, base_face_mode, xray_enabled
+from core.style import (DEFAULT_FACE_COLOR, Style, effective_back_color,
+                        base_face_mode, xray_enabled, ground_enabled)
 
 
 def _color(rgb, shade: float = 1.0) -> QColor:
@@ -40,10 +41,13 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
             sky.setColorAt(0, _color(style.sky_color))
             sky.setColorAt(1, _color(horizon))
             painter.fillRect(QRectF(0, 0, 100, 48), sky)
+        if ground_enabled(style):
+            painter.setOpacity(1.0 - style.ground_transparency / 100.0)
             ground = QLinearGradient(0, 48, 0, 80)
             ground.setColorAt(0, _color(style.ground_color, 1.07))
             ground.setColorAt(1, _color(style.ground_color))
             painter.fillRect(QRectF(0, 48, 100, 32), ground)
+            painter.setOpacity(1.0)
 
         mode = base_face_mode(style)
         xray = xray_enabled(style) and mode != "wireframe"

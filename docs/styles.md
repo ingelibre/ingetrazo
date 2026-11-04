@@ -1,8 +1,25 @@
-# Styles and face/edge settings
+# Styles and display settings
 
 Open **Styles** from the Panels toolbar. The window stays open while you work in the model.
 Use **Select** to browse Built-in styles or My styles, and **Edit** to adjust the current look.
 Changes appear immediately; **Save style…** stores a reusable copy in My styles.
+
+## Background
+
+On **Edit**, choose **Background settings**. Pick the background color and turn
+**Sky** and **Ground** on or off independently. Their color swatches stay editable
+while disabled, so a color can be prepared before displaying it.
+
+The ground is an infinite display plane at Z = 0. **Ground transparency** ranges
+from 0% (opaque) to 100% (invisible); intermediate values reveal geometry below it.
+Faces above the plane keep their appearance, including transparent materials.
+**Show ground from below** controls whether the plane is visible from underneath.
+Turning Ground off retains its transparency and underside setting.
+
+These settings travel with styles, saved views, the style library and IGZ documents.
+Old styles retain their original combined sky/ground backdrop until a background
+toggle or ground setting is edited. Maps, terrain and photogrammetric surveys keep
+their own ground; the display plane does not add model geometry or snapping targets.
 
 ## Faces
 

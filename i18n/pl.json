@@ -3338,5 +3338,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Dokładniej sortuje przezroczyste trójkąty od tyłu do przodu. Szybciej zachowuje partie materiałów.",
  "Transparency quality:": "Jakość przezroczystości:",
  "X-ray opacity:": "Krycie rentgenowskie:",
- "Keep the current face style transparent and snap through faces.": "Zachowaj styl ścian, nadaj im przezroczystość i pozwól na przyciąganie przez ściany."
+ "Keep the current face style transparent and snap through faces.": "Zachowaj styl ścian, nadaj im przezroczystość i pozwól na przyciąganie przez ściany.",
+ "Ground transparency:": "Przezroczystość podłoża:",
+ "Show ground from below": "Pokaż podłoże od spodu",
+ "Ground color is saved; turn on Ground to display it.": "Kolor podłoża został zapisany; włącz Podłoże, aby go wyświetlić.",
+ "Sky color is saved; turn on Sky to display it.": "Kolor nieba został zapisany; włącz Niebo, aby go wyświetlić."
 }

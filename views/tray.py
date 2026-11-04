@@ -3534,9 +3534,30 @@ class StylesPanel(QWidget):
         self._sky_c = self._swatch(tr("Sky color"), "sky_color")
         background.addWidget(self._sky_c, 1, 1)
 
-        background.addWidget(QLabel(tr("Ground:")), 2, 0)
+        self._ground = QCheckBox(tr("Ground"))
+        self._ground.toggled.connect(self._apply_edits)
+        background.addWidget(self._ground, 2, 0)
         self._ground_c = self._swatch(tr("Ground color"), "ground_color")
         background.addWidget(self._ground_c, 2, 1)
+        self._ground_transparency_label = QLabel(tr("Ground transparency:"))
+        background.addWidget(self._ground_transparency_label, 3, 0)
+        ground_row = QHBoxLayout()
+        self._ground_slider = QSlider(Qt.Horizontal)
+        self._ground_slider.setRange(0, 100)
+        self._ground_transparency = QSpinBox()
+        self._ground_transparency.setRange(0, 100)
+        self._ground_transparency.setSuffix(" %")
+        self._ground_slider.setAccessibleName(tr("Ground transparency:"))
+        self._ground_transparency.setAccessibleName(tr("Ground transparency:"))
+        self._ground_slider.valueChanged.connect(self._ground_transparency.setValue)
+        self._ground_transparency.valueChanged.connect(self._ground_slider.setValue)
+        self._ground_transparency.valueChanged.connect(self._apply_edits)
+        ground_row.addWidget(self._ground_slider, 1)
+        ground_row.addWidget(self._ground_transparency)
+        background.addLayout(ground_row, 3, 1)
+        self._ground_from_below = QCheckBox(tr("Show ground from below"))
+        self._ground_from_below.toggled.connect(self._apply_edits)
+        background.addWidget(self._ground_from_below, 4, 0, 1, 2)
 
         self._fill = QCheckBox(tr("Section Fill"))
         self._fill.toggled.connect(self._apply_edits)
@@ -3758,7 +3779,7 @@ class StylesPanel(QWidget):
     def refresh(self) -> None:
         """Mirror the active style and the user library (called on loads,
         preset applies and saves via ``_sync_style_menu``)."""
-        from core.style import BUILTIN_STYLES, user_styles, base_face_mode, xray_enabled
+        from core.style import BUILTIN_STYLES, user_styles, base_face_mode, xray_enabled, ground_enabled
         from views.style_preview import style_preview
         style = self._style()
         users = user_styles()
@@ -3820,6 +3841,10 @@ class StylesPanel(QWidget):
             self._sync_edge_controls()
             self._back_edges.setChecked(getattr(style, "back_edges", False))
             self._sky.setChecked(style.sky)
+            self._ground.setChecked(ground_enabled(style))
+            self._ground_transparency.setValue(style.ground_transparency)
+            self._ground_from_below.setChecked(style.ground_from_below)
+            self._sync_background_controls()
             self._fill.setChecked(style.section_fill)
             self._edge_c.setStyleSheet(self._css(style.edge_color))
             self._front_c.setStyleSheet(self._css(style.front_color))
@@ -3877,13 +3902,30 @@ class StylesPanel(QWidget):
         style.edge_color_mode = self._edge_color_mode.currentData()
         self._sync_edge_controls()
         style.back_edges = self._back_edges.isChecked()
+        from core.style import ground_enabled
+        # Preserve the legacy backdrop until its ground/sky controls change.
+        if (style.ground is not None
+                or self._ground.isChecked() != ground_enabled(style)
+                or self._sky.isChecked() != style.sky
+                or self._ground_transparency.value() != style.ground_transparency
+                or self._ground_from_below.isChecked() != style.ground_from_below):
+            style.ground = self._ground.isChecked()
         style.sky = self._sky.isChecked()
+        style.ground_transparency = self._ground_transparency.value()
+        style.ground_from_below = self._ground_from_below.isChecked()
+        self._sync_background_controls()
         style.section_fill = self._fill.isChecked()
         style.ambient_occlusion = self._ao.isChecked()
         style.ao_intensity = self._ao_int.value() / 10.0
         self._sync_ao_controls()
         self._window._sync_style_menu()
         self._window.viewport.update()
+
+    def _sync_background_controls(self) -> None:
+        on = self._ground.isChecked()
+        for widget in (self._ground_transparency_label, self._ground_slider,
+                       self._ground_transparency, self._ground_from_below):
+            widget.setEnabled(on)
 
     _AO_DIST_STEPS = 200
 
@@ -3981,10 +4023,15 @@ class StylesPanel(QWidget):
         if attr == "back_color" and mode in ("hidden_line", "wireframe"):
             return tr("Back color saved — it paints back faces in Textures, "
                       "Shaded, Monochrome and X-ray modes.")
-        if attr == "background" and style.sky:
+        from core.style import ground_enabled
+        if (attr == "background" and style.sky and ground_enabled(style)
+                and style.ground_transparency == 0):
             return tr("Background saved — it shows with the sky off.")
-        if attr in ("sky_color", "ground_color") and not style.sky:
-            return tr("Sky and ground colors show with the sky on.")
+        if attr == "sky_color" and not style.sky:
+            return tr("Sky color is saved; turn on Sky to display it.")
+        if attr == "ground_color":
+            if not ground_enabled(style):
+                return tr("Ground color is saved; turn on Ground to display it.")
         if attr == "edge_color" and not style.edges and mode != "wireframe":
             return tr("Edge color saved — this style has edges off.")
         if attr == "section_fill_color" and not style.section_fill:

@@ -65,6 +65,8 @@ uniform float u_dash_px;
 in vec2 v_uv;
 in vec3 v_color;
 in vec3 v_world;
+// Separate display-ground half-space; zero leaves existing rendering unchanged.
+uniform vec4 u_style_ground_clip;
 in vec3 v_local;
 // Instanced component pass (#482): face colours and texture shades were
 // baked from the PROTOTYPE's normals against the fixed world light, so a
@@ -164,6 +166,7 @@ float matte(vec3 n) {
 }
 
 void main() {
+    if (dot(vec4(v_world, 1.0), u_style_ground_clip) < 0.0) discard;
     // Taken before any discard, while the whole pixel quad is alive.
     vec3 n_local = cross(dFdx(v_local), dFdy(v_local));
     vec3 n_world = cross(dFdx(v_world), dFdy(v_world));

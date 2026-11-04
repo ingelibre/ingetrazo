@@ -3333,5 +3333,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "คุณภาพดีกว่าจัดเรียงสามเหลี่ยมโปร่งใสจากหลังมาหน้า เร็วกว่าคงการจัดกลุ่มตามวัสดุ",
  "Transparency quality:": "คุณภาพความโปร่งใส:",
  "X-ray opacity:": "ความทึบเอกซเรย์:",
- "Keep the current face style transparent and snap through faces.": "คงรูปแบบของหน้า ทำให้โปร่งใส และให้จับจุดผ่านหน้าได้"
+ "Keep the current face style transparent and snap through faces.": "คงรูปแบบของหน้า ทำให้โปร่งใส และให้จับจุดผ่านหน้าได้",
+ "Ground transparency:": "ความโปร่งใสของพื้น:",
+ "Show ground from below": "แสดงพื้นจากด้านล่าง",
+ "Ground color is saved; turn on Ground to display it.": "บันทึกสีพื้นแล้ว เปิดใช้พื้นเพื่อแสดงสี",
+ "Sky color is saved; turn on Sky to display it.": "บันทึกสีท้องฟ้าแล้ว เปิดใช้ท้องฟ้าเพื่อแสดงสี"
 }

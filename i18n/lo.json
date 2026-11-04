@@ -3333,5 +3333,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "ຄຸນນະພາບດີກວ່າຈັດລຽງສາມຫຼ່ຽມໂປ່ງໃສຈາກຫຼັງໄປໜ້າ. ໄວກວ່າຮັກສາກຸ່ມຕາມວັດສະດຸ.",
  "Transparency quality:": "ຄຸນນະພາບຄວາມໂປ່ງໃສ:",
  "X-ray opacity:": "ຄວາມທຶບເອັກຊ໌ເຣ:",
- "Keep the current face style transparent and snap through faces.": "ຮັກສາຮູບແບບຂອງໜ້າ ເຮັດໃຫ້ໂປ່ງໃສ ແລະ ອະນຸຍາດໃຫ້ຈັບຈຸດຜ່ານໜ້າໄດ້."
+ "Keep the current face style transparent and snap through faces.": "ຮັກສາຮູບແບບຂອງໜ້າ ເຮັດໃຫ້ໂປ່ງໃສ ແລະ ອະນຸຍາດໃຫ້ຈັບຈຸດຜ່ານໜ້າໄດ້.",
+ "Ground transparency:": "ຄວາມໂປ່ງໃສຂອງພື້ນດິນ:",
+ "Show ground from below": "ສະແດງພື້ນດິນຈາກດ້ານລຸ່ມ",
+ "Ground color is saved; turn on Ground to display it.": "ບັນທຶກສີພື້ນດິນແລ້ວ; ເປີດພື້ນດິນເພື່ອສະແດງສີ.",
+ "Sky color is saved; turn on Sky to display it.": "ບັນທຶກສີທ້ອງຟ້າແລ້ວ; ເປີດທ້ອງຟ້າເພື່ອສະແດງສີ."
 }

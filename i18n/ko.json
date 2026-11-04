@@ -3330,5 +3330,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "고품질은 투명 삼각형을 뒤에서 앞으로 정렬합니다. 빠르게는 재질별 묶음을 유지합니다.",
  "Transparency quality:": "투명도 품질:",
  "X-ray opacity:": "X선 불투명도:",
- "Keep the current face style transparent and snap through faces.": "면 스타일을 유지한 채 투명하게 표시하고 면 너머의 요소에 스냅할 수 있게 합니다."
+ "Keep the current face style transparent and snap through faces.": "면 스타일을 유지한 채 투명하게 표시하고 면 너머의 요소에 스냅할 수 있게 합니다.",
+ "Ground transparency:": "지면 투명도:",
+ "Show ground from below": "아래에서 지면 표시",
+ "Ground color is saved; turn on Ground to display it.": "지면 색상이 저장되었습니다. 표시하려면 지면을 켜세요.",
+ "Sky color is saved; turn on Sky to display it.": "하늘 색상이 저장되었습니다. 표시하려면 하늘을 켜세요."
 }

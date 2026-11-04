@@ -3333,5 +3333,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Lebih halus mengurutkan segitiga transparan dari belakang ke depan. Lebih cepat mempertahankan kelompok material.",
  "Transparency quality:": "Kualitas transparansi:",
  "X-ray opacity:": "Opasitas sinar-X:",
- "Keep the current face style transparent and snap through faces.": "Pertahankan gaya bidang, buat transparan, dan izinkan penangkapan titik melalui bidang."
+ "Keep the current face style transparent and snap through faces.": "Pertahankan gaya bidang, buat transparan, dan izinkan penangkapan titik melalui bidang.",
+ "Ground transparency:": "Transparansi tanah:",
+ "Show ground from below": "Tampilkan tanah dari bawah",
+ "Ground color is saved; turn on Ground to display it.": "Warna tanah disimpan; aktifkan Tanah untuk menampilkannya.",
+ "Sky color is saved; turn on Sky to display it.": "Warna langit disimpan; aktifkan Langit untuk menampilkannya."
 }

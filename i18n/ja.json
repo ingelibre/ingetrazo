@@ -3330,5 +3330,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "高品質は透明な三角形を奥から手前に並べます。高速はマテリアル単位の描画を維持します。",
  "Transparency quality:": "透明度の品質:",
  "X-ray opacity:": "X線の不透明度:",
- "Keep the current face style transparent and snap through faces.": "面のスタイルを保ったまま透明にし、面を通してスナップできるようにします。"
+ "Keep the current face style transparent and snap through faces.": "面のスタイルを保ったまま透明にし、面を通してスナップできるようにします。",
+ "Ground transparency:": "地面の透明度:",
+ "Show ground from below": "下から地面を表示",
+ "Ground color is saved; turn on Ground to display it.": "地面の色は保存されています。表示するには地面をオンにしてください。",
+ "Sky color is saved; turn on Sky to display it.": "空の色は保存されています。表示するには空をオンにしてください。"
 }

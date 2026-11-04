@@ -3337,5 +3337,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Mais precisa ordena os triângulos transparentes de trás para frente. Mais rápida mantém os lotes por material.",
  "Transparency quality:": "Qualidade da transparência:",
  "X-ray opacity:": "Opacidade de raios X:",
- "Keep the current face style transparent and snap through faces.": "Manter o estilo das faces, torná-lo transparente e permitir inferências através das faces."
+ "Keep the current face style transparent and snap through faces.": "Manter o estilo das faces, torná-lo transparente e permitir inferências através das faces.",
+ "Ground transparency:": "Transparência do solo:",
+ "Show ground from below": "Mostrar solo por baixo",
+ "Ground color is saved; turn on Ground to display it.": "A cor do solo foi salva; ative Solo para exibi-la.",
+ "Sky color is saved; turn on Sky to display it.": "A cor do céu foi salva; ative Céu para exibi-la."
 }

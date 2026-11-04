@@ -3357,5 +3357,9 @@
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Đẹp hơn sắp xếp các tam giác trong suốt từ sau ra trước. Nhanh hơn giữ các nhóm theo vật liệu.",
  "Transparency quality:": "Chất lượng trong suốt:",
  "X-ray opacity:": "Độ mờ X-quang:",
- "Keep the current face style transparent and snap through faces.": "Giữ kiểu hiển thị mặt, làm mặt trong suốt và cho phép bắt điểm xuyên qua mặt."
+ "Keep the current face style transparent and snap through faces.": "Giữ kiểu hiển thị mặt, làm mặt trong suốt và cho phép bắt điểm xuyên qua mặt.",
+ "Ground transparency:": "Độ trong suốt của mặt đất:",
+ "Show ground from below": "Hiển thị mặt đất từ bên dưới",
+ "Ground color is saved; turn on Ground to display it.": "Màu mặt đất đã được lưu; bật Mặt đất để hiển thị màu.",
+ "Sky color is saved; turn on Sky to display it.": "Màu bầu trời đã được lưu; bật Bầu trời để hiển thị màu."
 }
