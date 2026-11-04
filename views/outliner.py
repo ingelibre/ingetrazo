@@ -298,27 +298,32 @@ def inherited_states(groups) -> dict:
 def node_icon(key: str) -> QIcon:
     """The icon for a row kind — ``group``, ``component``, ``ifc``,
     ``image``, ``text``, ``document``, ``scene``, ``sheet``, ``frame``,
-    ``eye``, ``eye_off``, ``warning``."""
-    if key not in _ICONS:
+    ``eye``, ``eye_off``, ``warning``.
+
+    Kept once per theme: they are painted in the palette's ink and accent,
+    and a theme switched with the app open must not get the old ones back
+    (#1086)."""
+    slot = (key, _ink().rgba(), _accent().rgba())
+    if slot not in _ICONS:
         if key.startswith("layers_"):
             # The Layers bar's icons (views/icons.py): the two trees draw
             # the same buttons with the same set.
             from views.icons import tool_icon
-            _ICONS[key] = tool_icon(key)
+            _ICONS[slot] = tool_icon(key)
         elif key in ("image", "text", "sections"):
             from views.icons import tool_icon
-            _ICONS[key] = tool_icon({"image": "image", "text": "text3d",
-                                     "sections": "section_planes"}[key])
+            _ICONS[slot] = tool_icon({"image": "image", "text": "text3d",
+                                      "sections": "section_planes"}[key])
         elif key == "warning":
             from PySide6.QtWidgets import QApplication
-            _ICONS[key] = QApplication.style().standardIcon(
+            _ICONS[slot] = QApplication.style().standardIcon(
                 QStyle.SP_MessageBoxWarning)
         elif key == "folder":
             from PySide6.QtWidgets import QApplication
-            _ICONS[key] = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+            _ICONS[slot] = QApplication.style().standardIcon(QStyle.SP_DirIcon)
         else:
-            _ICONS[key] = _draw(key)
-    return _ICONS[key]
+            _ICONS[slot] = _draw(key)
+    return _ICONS[slot]
 
 
 def fill_icon(color, on: bool) -> QIcon:
