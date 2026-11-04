@@ -3337,5 +3337,9 @@
   "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "تمت قراءة “{name}” لكن لا يوجد فيه ما يمكن استيراده: لا خطوط ولا خطوط متعددة ولا أقواس ولا دوائر ولا قطوع ناقصة ولا منحنيات ولا أوجه في فضاء النموذج.",
   "Left out: {kinds}": "تم تخطي: {kinds}",
   "Menu": "القائمة",
-  "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "لا توجد مشاهد في هذا المشروع بعد: تظهر علامات التبويب مع أول مشهد (لوحة المشاهد، «+ مشهد»)."
+  "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "لا توجد مشاهد في هذا المشروع بعد: تظهر علامات التبويب مع أول مشهد (لوحة المشاهد، «+ مشهد»).",
+  "On Red Axis": "على المحور الأحمر",
+  "On Green Axis": "على المحور الأخضر",
+  "On Blue Axis": "على المحور الأزرق",
+  "hold Shift to lock": "اضغط Shift مع الاستمرار للتثبيت"
 }

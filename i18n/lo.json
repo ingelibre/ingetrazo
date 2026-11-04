@@ -3305,5 +3305,9 @@
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "ອ່ານ “{name}” ແລ້ວ ແຕ່ບໍ່ມີຫຍັງທີ່ນຳເຂົ້າໄດ້: ບໍ່ມີເສັ້ນ, ເສັ້ນໂພລີລາຍ, ເສັ້ນໂຄ້ງ, ວົງມົນ, ວົງຣີ, ສະປລາຍ ຫຼື ໜ້າ ໃນພື້ນທີ່ໂມເດວ.",
  "Left out: {kinds}": "ຂ້າມ: {kinds}",
  "Menu": "ເມນູ",
- "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "ໂຄງການນີ້ຍັງບໍ່ມີສາກ: ແຖບຈະປາກົດເມື່ອມີສາກທຳອິດ (ແຜງ ສາກທັງໝົດ, «+ ສາກ»)"
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "ໂຄງການນີ້ຍັງບໍ່ມີສາກ: ແຖບຈະປາກົດເມື່ອມີສາກທຳອິດ (ແຜງ ສາກທັງໝົດ, «+ ສາກ»)",
+ "On Red Axis": "ຢູ່ແກນສີແດງ",
+ "On Green Axis": "ຢູ່ແກນສີຂຽວ",
+ "On Blue Axis": "ຢູ່ແກນສີຟ້າ",
+ "hold Shift to lock": "ກົດ Shift ຄ້າງໄວ້ເພື່ອລັອກ"
 }

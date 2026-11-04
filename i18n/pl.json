@@ -3310,5 +3310,9 @@
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "Odczytano „{name}”, ale nie ma w nim nic do zaimportowania: w obszarze modelu nie ma linii, polilinii, łuków, okręgów, elips, splajnów ani ścian.",
  "Left out: {kinds}": "Pominięto: {kinds}",
  "Menu": "Menu",
- "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "Ten projekt nie ma jeszcze scen: karty pojawią się wraz z pierwszą (panel Sceny, «+ Scena»)."
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "Ten projekt nie ma jeszcze scen: karty pojawią się wraz z pierwszą (panel Sceny, «+ Scena»).",
+ "On Red Axis": "Na czerwonej osi",
+ "On Green Axis": "Na zielonej osi",
+ "On Blue Axis": "Na niebieskiej osi",
+ "hold Shift to lock": "przytrzymaj Shift, aby zablokować"
 }

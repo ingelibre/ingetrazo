@@ -3302,5 +3302,9 @@
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "“{name}” 파일을 읽었지만 가져올 수 있는 것이 없습니다. 모델 공간에 선, 폴리선, 호, 원, 타원, 스플라인, 면이 없습니다.",
  "Left out: {kinds}": "제외됨: {kinds}",
  "Menu": "메뉴",
- "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "이 프로젝트에는 아직 장면이 없습니다. 첫 장면을 만들면 탭이 나타납니다(장면 패널, «+ 장면»)."
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "이 프로젝트에는 아직 장면이 없습니다. 첫 장면을 만들면 탭이 나타납니다(장면 패널, «+ 장면»).",
+ "On Red Axis": "빨간 축 위",
+ "On Green Axis": "녹색 축 위",
+ "On Blue Axis": "파란 축 위",
+ "hold Shift to lock": "Shift를 누르고 있으면 고정"
 }

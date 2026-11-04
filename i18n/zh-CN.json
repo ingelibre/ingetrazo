@@ -3303,5 +3303,9 @@
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "已读取“{name}”，但没有可导入的内容：模型空间中没有直线、多段线、圆弧、圆、椭圆、样条曲线或面。",
  "Left out: {kinds}": "已跳过：{kinds}",
  "Menu": "菜单",
- "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "此项目还没有场景：创建第一个场景后会显示标签页（“场景”面板，“+ 场景”）。"
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "此项目还没有场景：创建第一个场景后会显示标签页（“场景”面板，“+ 场景”）。",
+ "On Red Axis": "在红轴上",
+ "On Green Axis": "在绿轴上",
+ "On Blue Axis": "在蓝轴上",
+ "hold Shift to lock": "按住 Shift 锁定"
 }

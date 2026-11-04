@@ -3305,5 +3305,9 @@
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "“{name}” berhasil dibaca, tetapi tidak ada yang bisa diimpor: tidak ada garis, polyline, busur, lingkaran, elips, spline, atau muka di ruang model.",
  "Left out: {kinds}": "Dilewati: {kinds}",
  "Menu": "Menu",
- "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "Proyek ini belum punya scene: tabnya muncul bersama scene pertama (panel Scene, «+ Scene»)."
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "Proyek ini belum punya scene: tabnya muncul bersama scene pertama (panel Scene, «+ Scene»).",
+ "On Red Axis": "Pada sumbu merah",
+ "On Green Axis": "Pada sumbu hijau",
+ "On Blue Axis": "Pada sumbu biru",
+ "hold Shift to lock": "tahan Shift untuk mengunci"
 }

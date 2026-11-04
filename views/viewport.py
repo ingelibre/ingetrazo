@@ -10746,12 +10746,13 @@ class Viewport(QOpenGLWidget):
         if snap is None:
             return
         if snap.kind == "axis_inference":
-            suffix = " (hold Shift to lock)"
+            suffix = f' ({tr("hold Shift to lock")})'
         elif snap.kind == "axis":
             suffix = ""
         else:
             return
-        names = {"x": "Red", "y": "Green", "z": "Blue"}
+        names = {"x": tr("On Red Axis"), "y": tr("On Green Axis"),
+                 "z": tr("On Blue Axis")}
         name = names.get(snap.axis or "", "?")
         r, g, b = snap.color
         font = QFont()
@@ -10759,7 +10760,7 @@ class Viewport(QOpenGLWidget):
         font.setItalic(True)
         painter.setFont(font)
         painter.setPen(QPen(QColor.fromRgbF(r, g, b, 0.95)))
-        painter.drawText(QPointF(14, 44), f"On {name} Axis{suffix}")
+        painter.drawText(QPointF(14, 44), f"{name}{suffix}")
 
     def _draw_reference_label(self, painter: QPainter) -> None:
         if self.reference_mode is None or self.reference_edge is None:

@@ -3302,5 +3302,9 @@
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "Файл «{name}» прочитан, но импортировать нечего: в пространстве модели нет линий, полилиний, дуг, окружностей, эллипсов, сплайнов и граней.",
  "Left out: {kinds}": "Пропущено: {kinds}",
  "Menu": "Меню",
- "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "В этом проекте ещё нет сцен: вкладки появятся с первой (панель Сцены, «+ Сцена»)."
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "В этом проекте ещё нет сцен: вкладки появятся с первой (панель Сцены, «+ Сцена»).",
+ "On Red Axis": "На красной оси",
+ "On Green Axis": "На зелёной оси",
+ "On Blue Axis": "На синей оси",
+ "hold Shift to lock": "удерживайте Shift для фиксации"
 }

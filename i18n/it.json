@@ -3303,5 +3303,9 @@
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "“{name}” è stato letto, ma non contiene nulla di importabile: nessuna linea, polilinea, arco, cerchio, ellisse, spline o faccia nello spazio modello.",
  "Left out: {kinds}": "Omesso: {kinds}",
  "Menu": "Menu",
- "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "Questo progetto non ha ancora scene: le sue schede compaiono con la prima (pannello Scene, «+ Scena»)."
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "Questo progetto non ha ancora scene: le sue schede compaiono con la prima (pannello Scene, «+ Scena»).",
+ "On Red Axis": "Sull'asse rosso",
+ "On Green Axis": "Sull'asse verde",
+ "On Blue Axis": "Sull'asse blu",
+ "hold Shift to lock": "tieni premuto Maiusc per bloccare"
 }

@@ -3305,5 +3305,9 @@
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "อ่าน “{name}” แล้ว แต่ไม่มีสิ่งใดที่นำเข้าได้: ไม่มีเส้น เส้นโพลีไลน์ ส่วนโค้ง วงกลม วงรี เส้นสไปลน์ หรือหน้าในพื้นที่โมเดล",
  "Left out: {kinds}": "ข้ามไป: {kinds}",
  "Menu": "เมนู",
- "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "โปรเจกต์นี้ยังไม่มีฉาก: แท็บจะปรากฏเมื่อมีฉากแรก (แผง ฉาก, «+ ฉาก»)"
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "โปรเจกต์นี้ยังไม่มีฉาก: แท็บจะปรากฏเมื่อมีฉากแรก (แผง ฉาก, «+ ฉาก»)",
+ "On Red Axis": "บนแกนสีแดง",
+ "On Green Axis": "บนแกนสีเขียว",
+ "On Blue Axis": "บนแกนสีน้ำเงิน",
+ "hold Shift to lock": "กด Shift ค้างไว้เพื่อล็อก"
 }

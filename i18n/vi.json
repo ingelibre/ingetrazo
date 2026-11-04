@@ -3329,5 +3329,9 @@
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "Đã đọc “{name}” nhưng không có gì để nhập: không có đường thẳng, đa tuyến, cung, đường tròn, elip, spline hay mặt trong không gian mô hình.",
  "Left out: {kinds}": "Đã bỏ qua: {kinds}",
  "Menu": "Menu",
- "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "Dự án này chưa có cảnh nào: các thẻ sẽ hiện khi có cảnh đầu tiên (bảng Các cảnh, «+ Cảnh»)."
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "Dự án này chưa có cảnh nào: các thẻ sẽ hiện khi có cảnh đầu tiên (bảng Các cảnh, «+ Cảnh»).",
+ "On Red Axis": "Trên trục đỏ",
+ "On Green Axis": "Trên trục xanh lá",
+ "On Blue Axis": "Trên trục xanh dương",
+ "hold Shift to lock": "giữ Shift để khóa"
 }

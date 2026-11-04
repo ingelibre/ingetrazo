@@ -3302,5 +3302,9 @@
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "已讀取「{name}」，但沒有可匯入的內容：模型空間中沒有直線、折線、圓弧、圓形、橢圓、雲形線或表面。",
  "Left out: {kinds}": "已略過：{kinds}",
  "Menu": "選單",
- "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "此專案尚無場景：建立第一個場景後就會顯示其頁籤（「場景」面板，「+ 場景」）。"
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "此專案尚無場景：建立第一個場景後就會顯示其頁籤（「場景」面板，「+ 場景」）。",
+ "On Red Axis": "在紅軸上",
+ "On Green Axis": "在綠軸上",
+ "On Blue Axis": "在藍軸上",
+ "hold Shift to lock": "按住 Shift 鎖定"
 }
