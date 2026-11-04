@@ -6643,6 +6643,8 @@ class ComposerWindow(QMainWindow):
 
         # Save / update / export live on the sheet toolbar at the top
         # (Marco, 2026-09-08: «para no sobrecargar la barra lateral derecha»).
+        from views.wheel_guard import guard_wheel
+        guard_wheel(panel)
         return panel
 
     def _build_canvas_area(self, view) -> _QWidget:
