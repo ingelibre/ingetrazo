@@ -372,3 +372,14 @@ def test_copies_outside_still_draw_instanced(win):
     closed = next(g for g in vp._placements()
                   if g.mesh is top.children[0].mesh)
     assert vp._instanced_eligible(closed)
+
+
+def test_leaving_a_nested_component_counts_its_copies(win, monkeypatch):
+    vp = win.viewport
+    said = []
+    monkeypatch.setattr(vp, "flash_status",
+                        lambda text, *_a: said.append(text))
+    _open(vp, nested_component)
+    vp.history.execute(SetFaceColorCommand([_front_face(vp)], (1.0, 0.0, 0.0)))
+    vp.end_group_edit()
+    assert any(" 1 " in text for text in said), said

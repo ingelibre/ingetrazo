@@ -17108,7 +17108,8 @@ class Viewport(QOpenGLWidget):
                 del self.history.undo_stack[mark:]
                 self.history.execute(ReshareInstanceCommand(
                     group, proto, xform, edited, inner))
-                copies = sum(1 for g in self.scene.groups if g.mesh is proto)
+                copies = sum(1 for g, _m in self.scene.placements()
+                             if g.mesh is proto)
                 self.flash_status(tr(
                     "Component '{name}' updated on its {n} copies",
                     name=group.name, n=copies), 4000)
