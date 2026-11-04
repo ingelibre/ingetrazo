@@ -7,7 +7,9 @@ Changes appear immediately; **Save style…** stores a reusable copy in My style
 ## Faces
 
 On **Edit**, choose **Face settings**. The mode buttons select Textures, Shaded,
-Hidden line, Monochrome, Wireframe or X-ray. Tooltips identify each button.
+Hidden line, Monochrome or Wireframe. Tooltips identify each button. **X-ray** is a
+separate toggle: it keeps the selected mode, makes its faces transparent and enables
+snapping to entities through faces. Changing modes keeps the toggle's state.
 Front and back colors and ambient occlusion keep their existing behavior.
 
 **Material transparency** displays material opacity and texture transparency. Turning it off
@@ -20,7 +22,7 @@ its triangle-center sort does not split intersecting triangles. This choice is p
 material transparency is off.
 
 **X-ray opacity** sets face opacity from 20% to 80%, with 60% preserving the previous default.
-The slider and numeric field stay synchronized and become available in X-ray mode. The setting
+The slider and numeric field stay synchronized and become available while X-ray is enabled. The setting
 applies to loose geometry, textures, instances and painted backs. Styles, saved views and the
 user style library retain these settings.
 

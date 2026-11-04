@@ -3364,5 +3364,6 @@
  "Nicer": "أعلى جودة",
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "أعلى جودة يرتب المثلثات الشفافة من الخلف إلى الأمام. أسرع يحافظ على التجميع حسب المادة.",
  "Transparency quality:": "جودة الشفافية:",
- "X-ray opacity:": "عتامة الأشعة السينية:"
+ "X-ray opacity:": "عتامة الأشعة السينية:",
+ "Keep the current face style transparent and snap through faces.": "الحفاظ على نمط الأوجه وجعلها شفافة والسماح بالالتقاط عبرها."
 }

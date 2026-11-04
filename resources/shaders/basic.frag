@@ -10,6 +10,8 @@ uniform int u_use_vcolor;
 uniform float u_opacity;
 // Styles can display materials as opaque without changing their paint.
 uniform int u_material_opaque;
+// Independent style overlay, applied only around model face passes.
+uniform float u_xray_opacity = 1.0;
 // 1 while drawing face-me billboards: a HARD alpha cut at 0.5 instead of
 // the Bayer dither below. Their mipmapped edge alpha would otherwise
 // render as stipple dots around the figure; the dither stays for scene
@@ -245,5 +247,5 @@ void main() {
         c.rgb *= mix(u_shadow_dark, 1.0,
                      clamp(ndl * 1.5, 0.0, 1.0) * lit);
     }
-    fragColor = vec4(mix(c.rgb, u_fade_color, u_fade), c.a);
+    fragColor = vec4(mix(c.rgb, u_fade_color, u_fade), c.a * u_xray_opacity);
 }

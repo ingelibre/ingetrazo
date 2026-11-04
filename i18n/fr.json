@@ -3329,5 +3329,6 @@
  "Nicer": "Soignée",
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Soignée trie les triangles transparents de l’arrière vers l’avant. Rapide conserve les lots par matière.",
  "Transparency quality:": "Qualité de transparence :",
- "X-ray opacity:": "Opacité en radiographie :"
+ "X-ray opacity:": "Opacité en radiographie :",
+ "Keep the current face style transparent and snap through faces.": "Conserver le mode de faces, le rendre transparent et permettre les accroches à travers les faces."
 }

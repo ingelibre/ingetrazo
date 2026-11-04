@@ -126,7 +126,7 @@ from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
 from core.style import (DEFAULT_BACK_COLOR, DEFAULT_FACE_COLOR,
-                        effective_back_color)
+                        effective_back_color, base_face_mode, xray_enabled, sees_through_faces)
 from core.materials import material_sig as _material_sig
 from core.snap import SnapResult, _AXIS_VECTORS
 from core.texture import face_uv_axes
@@ -2141,6 +2141,7 @@ class Viewport(QOpenGLWidget):
         self._loc_use_vcolor = self._program.uniformLocation("u_use_vcolor")
         self._loc_opacity = self._program.uniformLocation("u_opacity")
         self._loc_material_opaque = self._program.uniformLocation("u_material_opaque")
+        self._loc_xray_opacity = self._program.uniformLocation("u_xray_opacity")
         self._loc_hard_cutout = self._program.uniformLocation("u_hard_cutout")
         self._loc_shade = self._program.uniformLocation("u_shade")
         # Instanced pass: re-shade the prototype's baked tones for the
@@ -2425,7 +2426,7 @@ class Viewport(QOpenGLWidget):
         # plano_style override maps onto the same face modes; otherwise the
         # scene's active style drives faces, edges and background.
         style = self._effective_style()
-        mode = style.face_mode
+        mode = base_face_mode(style)
         self._frame_style = style
 
         # Active section cut: ONE world-space plane; the kept
@@ -2488,6 +2489,7 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue(self._loc_use_vcolor, 0)
         self._program.setUniformValue1f(self._loc_opacity, 1.0)
         self._program.setUniformValue(self._loc_material_opaque, 0)
+        self._program.setUniformValue1f(self._loc_xray_opacity, 1.0)
         self._program.setUniformValue1f(self._loc_shade, 1.0)
         self._program.setUniformValue(self._loc_hard_cutout, 0)
         self._program.setUniformValue1f(self._loc_fade, 0.0)
@@ -2700,6 +2702,7 @@ class Viewport(QOpenGLWidget):
         # Frustum culling (P1): the consolidated VBOs carry per-chunk draw
         # spans; only spans whose chunk AABB touches the frustum are
         # submitted. Conservative — a missing bbox always draws.
+        xray = xray_enabled(style) and mode != "wireframe"
         planes = self._frame_planes
         # Inside a group with the context faded, the buffers hold the
         # surroundings first and the edited group last; the split keeps the
@@ -2733,6 +2736,8 @@ class Viewport(QOpenGLWidget):
             self._draw_shadow_ground(style)
             self._program.setUniformValue(self._loc_shadow_enable, 1)
         self._program.setUniformValue(self._loc_material_opaque, int(not style.material_transparency))
+        self._program.setUniformValue1f(self._loc_xray_opacity, style.xray_opacity / 100.0 if xray else 1.0)
+        self._gl.glDepthMask(GL_FALSE if xray else GL_TRUE)
         self._gl.glBlendFuncSeparate(0x0302, 0x0303, 1, 0x0303)
         if self._faces_count > 0 and mode != "wireframe":
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
@@ -2759,11 +2764,9 @@ class Viewport(QOpenGLWidget):
                 # calls per frame.
                 self._program.setUniformValue(self._loc_use_vcolor, 1)
                 self._set_back_face_color()
-            if mode == "xray":
+            if xray:
                 # X-ray: translucent faces that do not occlude — edges stay
                 # fully visible because nothing writes depth.
-                self._program.setUniformValue1f(self._loc_opacity,
-                                                style.xray_opacity / 100.0)
                 self._gl.glDepthMask(GL_FALSE)
             self._faces_vao.bind()
             if split_f is None:
@@ -2792,9 +2795,9 @@ class Viewport(QOpenGLWidget):
                 self._gl.glDrawArrays(GL_TRIANGLES, fstart, fcount)
                 self._gl.glDisable(GL_CULL_FACE)
             self._faces_vao.release()
-            if mode == "xray":
+            if xray:
                 self._program.setUniformValue1f(self._loc_opacity, 1.0)
-                self._gl.glDepthMask(GL_TRUE)
+                self._gl.glDepthMask(GL_FALSE)
             self._program.setUniformValue(self._loc_use_vcolor, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
@@ -2844,9 +2847,7 @@ class Viewport(QOpenGLWidget):
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
             self._program.setUniformValue(self._loc_use_tex, 1)
-            if mode == "xray":
-                self._program.setUniformValue1f(self._loc_opacity,
-                                                style.xray_opacity / 100.0)
+            if xray:
                 self._gl.glDepthMask(GL_FALSE)
             self._tex_faces_vao.bind()
             run_parts = getattr(self, "_tex_run_parts", None)
@@ -2876,9 +2877,9 @@ class Viewport(QOpenGLWidget):
             self._program.setUniformValue1f(self._loc_fade, 0.0)
             self._set_cutout(False)
             self._tex_faces_vao.release()
-            if mode == "xray":
+            if xray:
                 self._program.setUniformValue1f(self._loc_opacity, 1.0)
-                self._gl.glDepthMask(GL_TRUE)
+                self._gl.glDepthMask(GL_FALSE)
             self._program.setUniformValue1f(self._loc_shade, 1.0)
             self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
@@ -2893,7 +2894,7 @@ class Viewport(QOpenGLWidget):
         # later draw win. Plan styles have their own rule (monochrome tints
         # every back, hidden-line none), X-ray keeps the blend clean.
         if (self._dback_count > 0 and mode in ("textures", "shaded")
-                and not _NO_BACK_TINT):
+                and not _NO_BACK_TINT and not xray):
             db_spans = getattr(self, "_dback_spans", None)
             split_db = (getattr(self, "_edit_split_db", None)
                         if fading else None)
@@ -2948,8 +2949,7 @@ class Viewport(QOpenGLWidget):
         # they win the depth test over the front copy there.
         if (self._back_vcol_run[1] > 0 or self._back_tex_runs) \
                 and mode in ("textures", "shaded", "xray"):
-            if mode == "xray":
-                self._program.setUniformValue1f(self._loc_opacity, style.xray_opacity / 100.0)
+            if xray:
                 self._gl.glDepthMask(GL_FALSE)
             self._gl.glEnable(GL_CULL_FACE)
             self._gl.glCullFace(GL_FRONT)
@@ -2977,9 +2977,9 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue1f(self._loc_shade, 1.0)
                 self._program.setUniformValue(self._loc_use_tex, 0)
             self._gl.glDisable(GL_CULL_FACE)
-            if mode == "xray":
+            if xray:
                 self._program.setUniformValue1f(self._loc_opacity, 1.0)
-                self._gl.glDepthMask(GL_TRUE)
+                self._gl.glDepthMask(GL_FALSE)
 
         if not style.material_transparency or mode in ("hidden_line", "monochrome"):
             self._draw_face_material_runs(mode, style)
@@ -2999,7 +2999,7 @@ class Viewport(QOpenGLWidget):
                 or self._back_tcol_runs or self._back_ttex_runs) \
                 and style.material_transparency and mode in ("textures", "shaded", "xray"):
             def material_opacity(value):
-                return float(value) * (style.xray_opacity / 100.0 if mode == "xray" else 1.0)
+                return float(value)
             self._gl.glDepthMask(GL_FALSE)
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
@@ -3060,9 +3060,11 @@ class Viewport(QOpenGLWidget):
                 self._program.setUniformValue(self._loc_use_tex, 0)
             self._program.setUniformValue1f(self._loc_opacity, 1.0)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
-            self._gl.glDepthMask(GL_TRUE)
+            self._gl.glDepthMask(GL_FALSE if xray else GL_TRUE)
 
         self._program.setUniformValue(self._loc_material_opaque, 0)
+        self._program.setUniformValue1f(self._loc_xray_opacity, 1.0)
+        self._gl.glDepthMask(GL_TRUE)
         self._gl.glBlendFunc(0x0302, 0x0303)
         # Face-me billboards (2D people): per-frame textured cutout
         # — skipped on plan sheets and line styles: a coloured cutout person
@@ -3151,7 +3153,7 @@ class Viewport(QOpenGLWidget):
         # first in the faded colour, then the ones in front at full strength.
         # From above, an open box keeps every edge dark and a lidded one
         # greys the edges under the lid — you see whether a face is there.
-        xray_edges = mode == "xray" and show_edges
+        xray_edges = xray and show_edges
         if xray_edges:
             self._xray_face_depth()
             bg = style.background
@@ -3384,7 +3386,7 @@ class Viewport(QOpenGLWidget):
         if not _FRAME_CACHE or self._export_size is not None:
             return None
         sc = self.scene
-        if (mode == "xray" or getattr(style, "back_edges", False)
+        if (xray_enabled(style) or getattr(style, "back_edges", False)
                 or self.plano_style is not None
                 or getattr(self, "_clip_vec", None) is not None
                 or getattr(sc, "show_hidden_objects", False)
@@ -3532,7 +3534,7 @@ class Viewport(QOpenGLWidget):
         self._gl.glStencilMask(0xFF)
         from views import ambient_occlusion as _ao
         settings = _ao.settings_for(style)
-        if settings is None or mode in ("wireframe", "xray"):
+        if settings is None or mode in ("wireframe", "xray") or xray_enabled(style):
             return
         if getattr(self, "_ao", None) is None:
             self._ao = _ao.AmbientOcclusion(self, SHADER_DIR)
@@ -4921,7 +4923,7 @@ class Viewport(QOpenGLWidget):
             return
         flat = mode in ("hidden_line", "monochrome")
         opaque = not style.material_transparency or flat
-        xray = mode == "xray"
+        xray = xray_enabled(style) and mode != "wireframe"
         eye, forward = self.camera.eye().toTuple(), self.camera.forward().toTuple()
         key = (eye, forward, sorted_triangles)
         if key != self._transparency_order_key:
@@ -4933,7 +4935,7 @@ class Viewport(QOpenGLWidget):
         self._gl.glPolygonOffset(1.0, 1.0)
         try:
             for run, first, count in self._transparency_order:
-                alpha = (1.0 if opaque else run.opacity) * (style.xray_opacity / 100.0 if xray else 1.0)
+                alpha = 1.0 if opaque else run.opacity
                 textured = run.path is not None and mode in ("textures", "xray")
                 tex = self._get_texture(run.path) if textured else None
                 if textured and tex is None:
@@ -4966,7 +4968,7 @@ class Viewport(QOpenGLWidget):
         finally:
             self._gl.glDisable(GL_CULL_FACE)
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
-            self._gl.glDepthMask(GL_TRUE)
+            self._gl.glDepthMask(GL_FALSE if xray else GL_TRUE)
             self._program.setUniformValue(self._loc_use_tex, 0)
             self._program.setUniformValue(self._loc_use_vcolor, 0)
             self._program.setUniformValue1f(self._loc_opacity, 1.0)
@@ -4980,13 +4982,12 @@ class Viewport(QOpenGLWidget):
         extra = self.context().extraFunctions()
         self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
         self._gl.glPolygonOffset(1.0, 1.0)
-        if mode == "xray":
-            self._program.setUniformValue1f(self._loc_opacity,
-                                            style.xray_opacity / 100.0)
+        xray = xray_enabled(style)
+        if xray:
             self._gl.glDepthMask(GL_FALSE)
         # The prototype's tones were baked for ITS orientation (#482).
         self._program.setUniformValue(self._loc_reshade, 1)
-        if mode in ("shaded", "textures") and _lean_instanced():
+        if mode in ("shaded", "textures") and _lean_instanced() and not xray:
             self._draw_instanced_faces_lean(by_proto, mode, extra)
             by_proto = {}
         for mesh, paint, groups, mirrored in by_proto.values():
@@ -5053,7 +5054,7 @@ class Viewport(QOpenGLWidget):
                         self._program.setUniformValue1f(self._loc_shade, 1.0)
                         self._program.setUniformValue(self._loc_use_tex, 0)
                 if (entry.get("dback_count") and not _NO_BACK_TINT
-                        and mode in ("textures", "shaded")):
+                        and mode in ("textures", "shaded") and not xray):
                     # The default back, as the consolidated pass draws it.
                     self._gl.glEnable(GL_CULL_FACE)
                     self._gl.glCullFace(GL_FRONT)
@@ -5066,9 +5067,9 @@ class Viewport(QOpenGLWidget):
         self._front_face(False)
         self._program.setUniformValue(self._loc_reshade, 0)
         self._program.setUniformValue1f(self._loc_fade, 0.0)
-        if mode == "xray":
+        if xray:
             self._program.setUniformValue1f(self._loc_opacity, 1.0)
-            self._gl.glDepthMask(GL_TRUE)
+            self._gl.glDepthMask(GL_FALSE)
         self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
 
     def _draw_instanced_raw(self) -> None:
@@ -9817,7 +9818,7 @@ class Viewport(QOpenGLWidget):
         Lives in the style (style.section_fill)."""
         if getattr(self, "_clip_vec", None) is None:
             return
-        if mode in ("wireframe", "xray"):
+        if mode in ("wireframe", "xray") or xray_enabled(style):
             return
         sp = self.scene.active_section()
         if sp is None:
@@ -16012,7 +16013,7 @@ class Viewport(QOpenGLWidget):
 
     # ---- Screen-depth occlusion for the overlay's annotations ---------------
     def _annotations_need_depth(self) -> bool:
-        if self._effective_style().face_mode in ("xray", "wireframe"):
+        if sees_through_faces(self._effective_style()):
             return False
         sc = self.scene
         return bool(getattr(sc, "dimensions", None)
@@ -16132,7 +16133,7 @@ class Viewport(QOpenGLWidget):
         sp = _active_cut(self.scene)
         if sp is not None and sp.side(world) > 1e-6:
             return True
-        if self._effective_style().face_mode in ("xray", "wireframe"):
+        if sees_through_faces(self._effective_style()):
             return False
         if (sp is None and hasattr(self, "_lazy_native")
                 and self._lazy_native() is not None):
@@ -16228,7 +16229,7 @@ class Viewport(QOpenGLWidget):
             return None
         if _active_cut(self.scene) is not None or not _qv_hypot3():
             return None
-        if self._effective_style().face_mode in ("xray", "wireframe"):
+        if sees_through_faces(self._effective_style()):
             return 0                     # nothing hides anything
         idx = self._pick_index(near="skip")
         stat = None
@@ -16267,7 +16268,8 @@ class Viewport(QOpenGLWidget):
         return (eye.x(), eye.y(), eye.z(), id(idx), id(nat[0]),
                 id(sc), sc.version, _cache_ver(self), _content_ver(self),
                 self._placements_epoch(), id(sc.edit_group),
-                self._rest_is_hidden(), self._effective_style().face_mode)
+                self._rest_is_hidden(), base_face_mode(self._effective_style()),
+                xray_enabled(self._effective_style()))
 
     def _occluded_many_now(self, worlds) -> list:
         """``_is_occluded`` for several points at once — the snap engine's
@@ -16295,8 +16297,7 @@ class Viewport(QOpenGLWidget):
                 worlds = [QVector3D(*p) for p in arr.tolist()]
             return [self._is_occluded(w) for w in worlds]   # the cut first (#384)
         out = [False] * len(worlds)
-        if not len(worlds) or self._effective_style().face_mode in (
-                "xray", "wireframe"):
+        if not len(worlds) or sees_through_faces(self._effective_style()):
             return out
         nat = (self._lazy_native() if hasattr(self, "_lazy_native")
                else None)

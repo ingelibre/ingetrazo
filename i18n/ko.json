@@ -3329,5 +3329,6 @@
  "Nicer": "고품질",
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "고품질은 투명 삼각형을 뒤에서 앞으로 정렬합니다. 빠르게는 재질별 묶음을 유지합니다.",
  "Transparency quality:": "투명도 품질:",
- "X-ray opacity:": "X선 불투명도:"
+ "X-ray opacity:": "X선 불투명도:",
+ "Keep the current face style transparent and snap through faces.": "면 스타일을 유지한 채 투명하게 표시하고 면 너머의 요소에 스냅할 수 있게 합니다."
 }

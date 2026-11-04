@@ -16,8 +16,9 @@ Face modes (Face Styles):
 - ``monochrome``  Flat default front/back colours, no materials — the
                   reversed-face checker.
 - ``wireframe``   Edges only, no faces (nothing occludes).
-- ``xray``        Everything translucent, edges always visible — the ones
-                  behind a face washed toward the background.
+X-ray is an independent overlay: it keeps the face mode and makes faces
+transparent while allowing inference through them. Legacy ``face_mode=xray``
+documents load as textured faces with this overlay enabled.
 
 Deferred (documented, not lost): jitter and watermarks.
 """
@@ -26,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 FACE_MODES = ("textures", "shaded", "hidden_line", "monochrome",
-              "wireframe", "xray")
+              "wireframe")
 EDGE_COLOR_MODES = ("same", "material", "axis")
 PROFILE_CAPS = ("butt", "round", "square", "round_extended")
 ENDPOINT_TYPES = ("default", "round", "square", "triangle")
@@ -102,11 +103,17 @@ class Style:
     # .layer_color) instead of their material — the shaded, textured and
     # X-ray modes. Off in every preset; a scene remembers it with the style.
     color_by_layer: bool = False
+    xray: bool = False
+
+    def __post_init__(self):
+        if self.face_mode == "xray":
+            self.face_mode = "textures"
+            self.xray = True
 
     def to_dict(self) -> dict:
         out = {
             "name": self.name,
-            "face_mode": self.face_mode,
+            "face_mode": base_face_mode(self),
             "edges": self.edges,
             "profiles": self.profiles,
             "back_edges": self.back_edges,
@@ -126,6 +133,8 @@ class Style:
         }
         if self.color_by_layer:
             out["color_by_layer"] = True
+        if xray_enabled(self):
+            out["xray"] = True
         # Keep old/default styles byte-for-byte compatible. New fields are
         # optional, including the values of currently disabled effects.
         defaults = {"profile_width": 1, "profile_cap": "butt", "depth_cue": False,
@@ -144,12 +153,16 @@ class Style:
     @classmethod
     def from_dict(cls, raw: dict) -> "Style":
         mode = raw.get("face_mode", "textures")
+        legacy_xray = mode == "xray"
+        if legacy_xray:
+            mode = "textures"
         if mode not in FACE_MODES:
             mode = "textures"
         d = cls()
         return cls(
             name=raw.get("name", d.name),
             face_mode=mode,
+            xray=bool(raw.get("xray", legacy_xray)),
             edges=bool(raw.get("edges", d.edges)),
             profiles=bool(raw.get("profiles", d.profiles)),
             back_edges=bool(raw.get("back_edges", d.back_edges)),
@@ -208,6 +221,20 @@ AO_INTENSITY_RANGE = (0.0, 2.0)
 
 def _pixel_value(raw, default: int, bounds: tuple) -> int:
     return round(_clamped(raw, default, bounds))
+
+
+def xray_enabled(style) -> bool:
+    """Also accept legacy direct assignments from scripts and extensions."""
+    return bool(getattr(style, "xray", False) or getattr(style, "face_mode", None) == "xray")
+
+
+def base_face_mode(style) -> str:
+    mode = getattr(style, "face_mode", "textures")
+    return "textures" if mode == "xray" else mode
+
+
+def sees_through_faces(style) -> bool:
+    return xray_enabled(style) or base_face_mode(style) == "wireframe"
 
 
 def _clamped(raw, default: float, bounds: tuple) -> float:
@@ -273,7 +300,7 @@ BUILTIN_STYLES: list[Style] = [
           background=(1.0, 1.0, 1.0), sky=False),
     Style(name="Wireframe", face_mode="wireframe",
           background=(1.0, 1.0, 1.0), sky=False),
-    Style(name="X-ray", face_mode="xray"),
+    Style(name="X-ray", xray=True),
 ]
 
 

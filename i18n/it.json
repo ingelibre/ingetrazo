@@ -3330,5 +3330,6 @@
  "Nicer": "Più accurata",
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Più accurata ordina i triangoli trasparenti dal fondo in avanti. Più veloce mantiene i lotti per materiale.",
  "Transparency quality:": "Qualità trasparenza:",
- "X-ray opacity:": "Opacità raggi X:"
+ "X-ray opacity:": "Opacità raggi X:",
+ "Keep the current face style transparent and snap through faces.": "Mantieni lo stile delle facce, rendilo trasparente e consenti gli agganci attraverso le facce."
 }

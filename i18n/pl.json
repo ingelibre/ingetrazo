@@ -3337,5 +3337,6 @@
  "Nicer": "Dokładniej",
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Dokładniej sortuje przezroczyste trójkąty od tyłu do przodu. Szybciej zachowuje partie materiałów.",
  "Transparency quality:": "Jakość przezroczystości:",
- "X-ray opacity:": "Krycie rentgenowskie:"
+ "X-ray opacity:": "Krycie rentgenowskie:",
+ "Keep the current face style transparent and snap through faces.": "Zachowaj styl ścian, nadaj im przezroczystość i pozwól na przyciąganie przez ściany."
 }

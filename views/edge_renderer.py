@@ -13,7 +13,7 @@ from core.group import effective_material
 from core.layers import DEFAULT_LAYER
 from core.materials import material_sig
 from core.paths import app_root
-from core.style import PROFILE_CAPS, ENDPOINT_TYPES
+from core.style import PROFILE_CAPS, ENDPOINT_TYPES, xray_enabled
 
 GL_FLOAT, GL_LINES = 0x1406, 0x0001
 GL_LEQUAL, GL_GREATER = 0x0203, 0x0204
@@ -273,7 +273,7 @@ class EdgeRenderer:
         gl = vp._gl
         # The original X-ray face pass leaves depth empty; lay it down just
         # for comparing visible and hidden strokes, as the regular edge pass.
-        xray = mode == "xray"
+        xray = xray_enabled(style) and mode != "wireframe"
         if xray:
             vp._xray_face_depth()
         self.program.bind()

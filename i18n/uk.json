@@ -3344,5 +3344,6 @@
  "Nicer": "Якісніше",
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Якісніше сортує прозорі трикутники від дальніх до ближніх. Швидше зберігає групування за матеріалами.",
  "Transparency quality:": "Якість прозорості:",
- "X-ray opacity:": "Непрозорість рентгену:"
+ "X-ray opacity:": "Непрозорість рентгену:",
+ "Keep the current face style transparent and snap through faces.": "Зберегти стиль граней, зробити їх прозорими та дозволити прив’язку крізь грані."
 }

@@ -127,10 +127,10 @@ def test_panel_edits_the_active_style_live(settings_file):
     win = _Win()
     panel = StylesPanel(win)
     panel._edges.setChecked(False)
-    panel._mode.setCurrentIndex(panel._mode.findData("xray"))
+    panel._xray.setChecked(True)
     style = win.viewport.scene.display_style
     assert style.edges is False
-    assert style.face_mode == "xray"
+    assert style.face_mode == "textures" and style.xray
 
 
 def test_every_swatch_stays_editable_and_hints_when_invisible(settings_file):

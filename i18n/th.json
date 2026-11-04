@@ -3332,5 +3332,6 @@
  "Nicer": "คุณภาพดีกว่า",
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "คุณภาพดีกว่าจัดเรียงสามเหลี่ยมโปร่งใสจากหลังมาหน้า เร็วกว่าคงการจัดกลุ่มตามวัสดุ",
  "Transparency quality:": "คุณภาพความโปร่งใส:",
- "X-ray opacity:": "ความทึบเอกซเรย์:"
+ "X-ray opacity:": "ความทึบเอกซเรย์:",
+ "Keep the current face style transparent and snap through faces.": "คงรูปแบบของหน้า ทำให้โปร่งใส และให้จับจุดผ่านหน้าได้"
 }

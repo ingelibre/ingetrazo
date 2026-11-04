@@ -3332,5 +3332,6 @@
  "Nicer": "Lebih halus",
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "Lebih halus mengurutkan segitiga transparan dari belakang ke depan. Lebih cepat mempertahankan kelompok material.",
  "Transparency quality:": "Kualitas transparansi:",
- "X-ray opacity:": "Opasitas sinar-X:"
+ "X-ray opacity:": "Opasitas sinar-X:",
+ "Keep the current face style transparent and snap through faces.": "Pertahankan gaya bidang, buat transparan, dan izinkan penangkapan titik melalui bidang."
 }

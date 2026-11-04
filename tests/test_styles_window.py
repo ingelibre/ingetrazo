@@ -287,8 +287,9 @@ def test_toolbar_opens_one_modeless_resizable_styles_window(style_library):
         window._act_style_edges.setChecked(False)
         assert not panel._edges.isChecked()
         assert not window.viewport.scene.display_style.edges
-        panel._mode.setCurrentIndex(panel._mode.findData("xray"))
-        assert window.viewport.scene.display_style.face_mode == "xray"
+        panel._xray.setChecked(True)
+        assert window.viewport.scene.display_style.face_mode == "textures"
+        assert window.viewport.scene.display_style.xray
         assert not window.viewport.scene.display_style.edges
         assert dialog.isVisible()
         dialog.close()

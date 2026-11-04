@@ -3329,5 +3329,6 @@
  "Nicer": "高品質",
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "高品質は透明な三角形を奥から手前に並べます。高速はマテリアル単位の描画を維持します。",
  "Transparency quality:": "透明度の品質:",
- "X-ray opacity:": "X線の不透明度:"
+ "X-ray opacity:": "X線の不透明度:",
+ "Keep the current face style transparent and snap through faces.": "面のスタイルを保ったまま透明にし、面を通してスナップできるようにします。"
 }

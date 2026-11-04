@@ -3213,7 +3213,7 @@ class StylesPanel(QWidget):
     #: "Shaded" the style is a preset bundle, "Shaded" the mode is one field.
     _MODES = (("textures", "Textures"), ("shaded", "Shaded"),
               ("hidden_line", "Hidden line"), ("monochrome", "Monochrome"),
-              ("wireframe", "Wireframe"), ("xray", "X-ray"))
+              ("wireframe", "Wireframe"))
 
     _CATEGORIES = (("Edge settings", "line"),
                    ("Face settings", "view_iso"),
@@ -3377,6 +3377,17 @@ class StylesPanel(QWidget):
             button.setIconSize(QSize(22, 22))
             self._face_modes.addButton(button, index)
             face_modes.addWidget(button)
+        face_modes.addSpacing(8)
+        self._xray = QToolButton()
+        self._xray.setCheckable(True)
+        self._xray.setIcon(tool_icon("face_xray"))
+        self._xray.setProperty("icon_key", "face_xray")
+        self._xray.setToolTip(tr("Keep the current face style transparent and snap through faces."))
+        self._xray.setAccessibleName(tr("X-ray"))
+        self._xray.setFixedSize(28, 28)
+        self._xray.setIconSize(QSize(22, 22))
+        self._xray.toggled.connect(self._apply_edits)
+        face_modes.addWidget(self._xray)
         face_modes.addStretch(1)
         self._face_modes.idClicked.connect(self._mode.setCurrentIndex)
         faces.addLayout(face_modes, 0, 1)
@@ -3717,7 +3728,7 @@ class StylesPanel(QWidget):
         if button is not None:
             button.setChecked(True)
         self._transparency_quality.setEnabled(self._material_transparency.isChecked())
-        xray = self._mode.currentData() == "xray"
+        xray = self._xray.isChecked()
         for widget in (self._xray_label, self._xray_slider, self._xray_opacity):
             widget.setEnabled(xray)
 
@@ -3747,7 +3758,7 @@ class StylesPanel(QWidget):
     def refresh(self) -> None:
         """Mirror the active style and the user library (called on loads,
         preset applies and saves via ``_sync_style_menu``)."""
-        from core.style import BUILTIN_STYLES, user_styles
+        from core.style import BUILTIN_STYLES, user_styles, base_face_mode, xray_enabled
         from views.style_preview import style_preview
         style = self._style()
         users = user_styles()
@@ -3771,15 +3782,19 @@ class StylesPanel(QWidget):
             saved = next((s for s in [*BUILTIN_STYLES, *users]
                           if s.name == style.name), None)
             mode_label = next(label for key, label in self._MODES
-                              if key == style.face_mode)
+                              if key == base_face_mode(style))
+            mode_label = tr(mode_label)
+            if xray_enabled(style):
+                mode_label += " · " + tr("X-ray")
             if saved is None:
-                self._style_hint.setText(tr("Custom style") + " · " + tr(mode_label))
+                self._style_hint.setText(tr("Custom style") + " · " + mode_label)
             elif saved.to_dict() != style.to_dict():
-                self._style_hint.setText(tr("Modified") + " · " + tr(mode_label))
+                self._style_hint.setText(tr("Modified") + " · " + mode_label)
             else:
-                self._style_hint.setText(tr(mode_label))
+                self._style_hint.setText(mode_label)
             self._mode.setCurrentIndex(
-                self._mode.findData(style.face_mode))
+                self._mode.findData(base_face_mode(style)))
+            self._xray.setChecked(xray_enabled(style))
             self._material_transparency.setChecked(style.material_transparency)
             self._transparency_quality.setCurrentIndex(
                 self._transparency_quality.findData(style.transparency_quality))
@@ -3840,12 +3855,8 @@ class StylesPanel(QWidget):
         style = self._style()
         if style is None or self._updating:
             return
-        face_mode = self._mode.currentData()
-        if style.face_mode != "xray" and face_mode == "xray":
-            self._window._style_before_xray = (self._window.viewport.scene, style.copy())
-        elif style.face_mode == "xray" and face_mode != "xray":
-            self._window._style_before_xray = (None, None)
-        style.face_mode = face_mode
+        style.face_mode = self._mode.currentData()
+        style.xray = self._xray.isChecked()
         style.material_transparency = self._material_transparency.isChecked()
         style.transparency_quality = self._transparency_quality.currentData()
         style.xray_opacity = self._xray_opacity.value()

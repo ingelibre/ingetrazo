@@ -9,7 +9,7 @@ from PySide6.QtGui import (
     QColor, QLinearGradient, QPainter, QPen, QPixmap, QPolygonF,
 )
 
-from core.style import DEFAULT_FACE_COLOR, Style, effective_back_color
+from core.style import DEFAULT_FACE_COLOR, Style, effective_back_color, base_face_mode, xray_enabled
 
 
 def _color(rgb, shade: float = 1.0) -> QColor:
@@ -45,7 +45,8 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
             ground.setColorAt(1, _color(style.ground_color))
             painter.fillRect(QRectF(0, 48, 100, 32), ground)
 
-        mode = style.face_mode
+        mode = base_face_mode(style)
+        xray = xray_enabled(style) and mode != "wireframe"
         edge = _color(style.edge_color)
         top = [(47, 13), (79, 28), (49, 43), (17, 28)]
         left = [(17, 28), (49, 43), (49, 73), (17, 58)]
@@ -60,7 +61,7 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                                                 style.front_color)))
             material = front if flat else (0.68, 0.55, 0.39)
             painter.setPen(Qt.NoPen)
-            if mode == "xray":
+            if xray:
                 painter.setOpacity(style.xray_opacity / 100.0)
             for points, rgb, shade in ((top, front, 1.0),
                                        (left, front, 0.91 if not flat else 1.0),
@@ -84,7 +85,7 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                 painter.restore()
             painter.setOpacity(1.0)
 
-        if mode in ("wireframe", "xray") or style.back_edges:
+        if mode == "wireframe" or xray or style.back_edges:
             pen = QPen(edge, 0.95)
             if mode != "wireframe":
                 pen.setStyle(Qt.DashLine)
@@ -92,7 +93,7 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
             for start, end in hidden:
                 painter.drawLine(QPointF(*start), QPointF(*end))
 
-        if style.edges or style.profiles or mode in ("wireframe", "xray"):
+        if style.edges or style.profiles or mode == "wireframe" or xray:
             from core.edge_style import AXIS_COLORS
             # Local sample axes and the painted right face's boundary edges.
             # This is a style illustration, not model geometry.
@@ -104,7 +105,7 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
             outline = {0, 3, 4, 5, 7, 8}
             markers = {}
             for index, (a, b, axis) in enumerate(segments):
-                if not style.edges and mode not in ("wireframe", "xray") and index not in outline:
+                if not style.edges and mode != "wireframe" and not xray and index not in outline:
                     continue
                 color = edge
                 if style.edge_color_mode == "axis":

@@ -2130,6 +2130,14 @@ def _face_mode(p, ink, mode):
         fill.setAlpha(35 if mode == "xray" else (55 + index * 35))
         p.setBrush(Qt.NoBrush if mode == "wireframe" else fill)
         p.drawPolygon(QPolygonF(points))
+        if mode == "monochrome":
+            # A neutral triangle and an accent triangle on each whole face.
+            p.setPen(Qt.NoPen)
+            p.setBrush(_accent())
+            p.drawPolygon(QPolygonF([points[0], points[2], points[3]]))
+            p.setPen(_rpen(ink, 2))
+            p.setBrush(Qt.NoBrush)
+            p.drawPolygon(QPolygonF(points))
     if mode in ("wireframe", "xray"):
         pen = _rpen(ink, 1.4)
         pen.setStyle(Qt.DashLine)
@@ -2141,9 +2149,9 @@ def _face_mode(p, ink, mode):
         for y in (23, 29, 35):
             p.drawLine(QPointF(27, y + 5), QPointF(40, y - 2))
     if mode == "monochrome":
-        p.setBrush(_accent())
-        p.drawPolygon(QPolygonF([QPointF(10, 25), QPointF(18, 29),
-                                 QPointF(18, 37), QPointF(10, 33)]))
+        p.setPen(_rpen(ink, 1.5))
+        for face in (top, left, right):
+            p.drawLine(face[0], face[2])
 
 
 def _edge_cap(p, ink, mode):

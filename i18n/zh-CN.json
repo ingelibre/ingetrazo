@@ -3330,5 +3330,6 @@
  "Nicer": "更精细",
  "Nicer sorts transparent triangles from back to front. Faster keeps material batches.": "更精细会将透明三角形从后向前排序。更快保留按材质分组的批次。",
  "Transparency quality:": "透明度质量：",
- "X-ray opacity:": "X射线不透明度："
+ "X-ray opacity:": "X射线不透明度：",
+ "Keep the current face style transparent and snap through faces.": "保留当前面的样式，使其透明，并允许穿过面捕捉实体。"
 }

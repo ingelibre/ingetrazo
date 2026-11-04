@@ -22,7 +22,7 @@ def test_face_options_roundtrip_and_preserve_legacy_defaults(tmp_path, monkeypat
 
     monkeypatch.setattr(library, "_settings", lambda: QSettings(
         str(tmp_path / "styles.ini"), QSettings.IniFormat))
-    original = Style(name="Glass", face_mode="xray", xray_opacity=35,
+    original = Style(name="Glass", face_mode="monochrome", xray=True, xray_opacity=35,
                      material_transparency=False, transparency_quality="nicer")
     library.save_user_style(original)
     assert library.style_by_name("Glass").to_dict() == original.to_dict()
@@ -47,6 +47,20 @@ def test_face_options_roundtrip_and_preserve_legacy_defaults(tmp_path, monkeypat
     assert Style.from_dict({"xray_opacity": "NaN"}).xray_opacity == 60
 
 
+def test_old_xray_styles_load_as_an_overlay_and_new_styles_keep_their_mode():
+    positional = Style("Legacy", "shaded", False)
+    assert not positional.edges and not positional.xray
+    legacy = Style.from_dict({"name": "Old", "face_mode": "xray", "xray_opacity": 35})
+    assert legacy.face_mode == "textures" and legacy.xray and legacy.xray_opacity == 35
+    assert legacy.to_dict()["face_mode"] == "textures" and legacy.to_dict()["xray"]
+    assert Style(face_mode="xray").xray
+    for mode in ("textures", "shaded", "hidden_line", "monochrome", "wireframe"):
+        style = Style(face_mode=mode, xray=True)
+        restored = style.copy()
+        assert restored.face_mode == mode and restored.xray
+    assert "xray" not in Style().to_dict()
+
+
 def test_nicer_sorts_across_material_runs_and_changes_with_view_direction():
     def parts(depth):
         vertices = np.zeros((3, 6), dtype=np.float32)
@@ -66,7 +80,6 @@ def test_xray_shortcut_preserves_edge_settings_opacity_and_edits():
 
     class Window:
         viewport = SimpleNamespace(scene=Scene())
-        _style_before_xray = (None, None)
         def _apply_display_style(self, style):
             self.viewport.scene.display_style = style.copy()
 
@@ -75,17 +88,18 @@ def test_xray_shortcut_preserves_edge_settings_opacity_and_edits():
                                               xray_opacity=35, transparency_quality="nicer")
     MainWindow._toggle_xray(window)
     style = window.viewport.scene.display_style
-    assert style.face_mode == "xray" and style.profile_width == 8 and style.xray_opacity == 35
+    assert style.face_mode == "shaded" and style.xray and style.profile_width == 8 and style.xray_opacity == 35
     style.xray_opacity = 70
     style.profile_width = 9
     MainWindow._toggle_xray(window)
     style = window.viewport.scene.display_style
-    assert style.face_mode == "shaded" and style.profile_width == 9 and style.xray_opacity == 70
+    assert style.face_mode == "shaded" and not style.xray and style.profile_width == 9 and style.xray_opacity == 70
     assert style.transparency_quality == "nicer"
     window.viewport.scene = Scene()
     window.viewport.scene.display_style = Style(face_mode="xray", profile_width=7)
     MainWindow._toggle_xray(window)
     assert window.viewport.scene.display_style.face_mode == "textures"
+    assert not window.viewport.scene.display_style.xray
     assert window.viewport.scene.display_style.profile_width == 7
 
 
@@ -111,8 +125,10 @@ def test_face_controls_apply_live_and_keep_disabled_values(tmp_path, monkeypatch
     try:
         style = window.viewport.scene.display_style
         assert not panel._xray_opacity.isEnabled()
-        panel._face_modes.button(5).click()
-        assert style.face_mode == "xray" and panel._xray_opacity.isEnabled()
+        panel._xray.click()
+        assert style.face_mode == "textures" and style.xray and panel._xray_opacity.isEnabled()
+        assert len(panel._face_modes.buttons()) == 5
+        assert panel._xray not in panel._face_modes.buttons()
         panel._xray_slider.setValue(32)
         assert style.xray_opacity == 32 and panel._xray_opacity.value() == 32
         panel._transparency_quality.setCurrentIndex(1)
@@ -120,13 +136,53 @@ def test_face_controls_apply_live_and_keep_disabled_values(tmp_path, monkeypatch
         panel._material_transparency.setChecked(False)
         assert not style.material_transparency and not panel._transparency_quality.isEnabled()
         panel._face_modes.button(2).click()
-        assert style.face_mode == "hidden_line" and not panel._xray_opacity.isEnabled()
+        assert style.face_mode == "hidden_line" and style.xray and panel._xray_opacity.isEnabled()
+        panel._xray.click()
+        assert style.face_mode == "hidden_line" and not style.xray and not panel._xray_opacity.isEnabled()
         panel.refresh()
         assert panel._xray_opacity.value() == 32 and panel._transparency_quality.currentData() == "nicer"
-        panel._face_modes.button(5).click()
+        panel._xray.click()
         assert style.xray_opacity == 32
     finally:
         panel.close()
+
+
+@pytest.mark.parametrize("mode", ["textures", "shaded", "hidden_line", "monochrome"])
+def test_xray_allows_real_endpoint_snapping_through_faces_without_changing_mode(mode):
+    from PySide6.QtCore import Qt
+    from tools.line import LineTool
+    from views.viewport import Viewport
+
+    vp = Viewport()
+    try:
+        vp.resize(900, 750)
+        vp.camera.aspect = 900 / 750
+        vp.camera.set_view("front")
+        vp.camera.perspective = False
+        vp.camera.distance = 5
+        vp.scene.show_axes = False
+        vp.scene.display_style = Style(face_mode=mode)
+        _plane(vp, 0, (1, 1, 1))
+        target = V(0.15, 0.5, 0.2)
+        vp.scene.mesh.add_edge(target, V(0.65, 0.5, 0.2))
+        vp.scene.version += 1
+        vp.active_tool = LineTool()
+        x, y = vp._world_to_pixel(target)
+        assert vp._is_occluded(target)
+        assert vp._occluded_many([target]) == [True]
+        before = vp._snap_at(x, y, Qt.NoModifier)
+        assert before is None or before.kind != "endpoint" or (before.point - target).length() > 1e-4
+        vp.scene.display_style.xray = True
+        assert not vp._is_occluded(target)
+        assert vp._occluded_many([target]) == [False]
+        snapped = vp._snap_at(x, y, Qt.NoModifier)
+        assert snapped is not None and snapped.kind == "endpoint"
+        assert (snapped.point - target).length() < 1e-4
+        assert vp.scene.display_style.face_mode == mode
+        vp.scene.display_style.xray = False
+        assert vp._is_occluded(target)
+    finally:
+        vp.close()
 
 
 def _plane(vp, y, color, opacity=1.0):
@@ -149,6 +205,40 @@ def _setup(vp, mode="textures"):
 
 def _image(vp):
     return vp.render_image(900, 750, overlays=False).convertToFormat(QImage.Format_RGBA8888)
+
+
+@pytest.mark.parametrize("mode", ["textures", "shaded", "hidden_line", "monochrome", "wireframe"])
+def test_xray_preserves_each_face_modes_rendering_and_only_adds_transparency(cube_viewport, tmp_path, mode):
+    vp = cube_viewport
+    style = _setup(vp, mode)
+    style.front_color = (0.2, 0.7, 0.2)
+    face = _plane(vp, 0, (0.9, 0.1, 0.1))
+    texture = QImage(16, 16, QImage.Format_RGB32)
+    texture.fill(QColor(255, 0, 0))
+    for y in range(16):
+        for x in range(8, 16):
+            texture.setPixelColor(x, y, QColor(0, 0, 255))
+    path = tmp_path / "two-colors.png"
+    assert texture.save(str(path))
+    face.attrs["texture"] = {"path": str(path), "sw": 2, "sh": 2}
+    vp.scene.version += 1
+
+    def pixels():
+        image = _image(vp)
+        return np.frombuffer(image.constBits(), dtype=np.uint8).copy().reshape((750, image.bytesPerLine() // 4, 4))
+
+    opaque = pixels()
+    before = style.to_dict()
+    style.xray = True
+    style.xray_opacity = 40
+    transparent = pixels()
+    assert style.face_mode == mode
+    expected = opaque[:, :, :3] if mode == "wireframe" else opaque[:, :, :3] * 0.4 + 255 * 0.6
+    assert np.abs(transparent[:, :, :3].astype(float) - expected).max() <= 3
+    style.xray = False
+    style.xray_opacity = 60
+    assert style.to_dict() == before
+    assert np.array_equal(pixels(), opaque)
 
 
 @pytest.mark.parametrize("textured", [False, True])

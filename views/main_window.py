@@ -1573,8 +1573,8 @@ class MainWindow(QMainWindow):
             self._style_actions[preset.name] = act
         # X-ray on and off with one key: a glance at what hides behind a
         # face, then back to the style you were in.
-        self._style_before_xray = (None, None)
         self._act_xray_toggle = QAction(tr("Toggle X-ray"), self)
+        self._act_xray_toggle.setCheckable(True)
         self._act_xray_toggle.setShortcut(QKeySequence("Alt+X"))
         self._act_xray_toggle.setStatusTip(tr(
             "Switch to X-ray, or back to the style you were in."))
@@ -4398,22 +4398,12 @@ class MainWindow(QMainWindow):
 
     def _toggle_xray(self) -> None:
         """Toggle X-ray while preserving edits to the active display style."""
-        from core.style import Style
+        from core.style import Style, base_face_mode, xray_enabled
         scene = self.viewport.scene
         style = getattr(scene, "display_style", None) or Style()
         updated = style.copy()
-        if style.face_mode == "xray":
-            prev_scene, prev = self._style_before_xray
-            self._style_before_xray = (None, None)
-            if prev_scene is scene and prev is not None:
-                updated.face_mode, updated.name = prev.face_mode, prev.name
-            else:
-                updated.face_mode = "textures"
-                if updated.name == "X-ray":
-                    updated.name = "Default"
-        else:
-            self._style_before_xray = (scene, style.copy())
-            updated.face_mode = "xray"
+        updated.face_mode = base_face_mode(style)
+        updated.xray = not xray_enabled(style)
         self._apply_display_style(updated)
 
     def _set_style_field(self, name: str, value: bool) -> None:
@@ -4429,7 +4419,10 @@ class MainWindow(QMainWindow):
 
     def _sync_style_menu(self) -> None:
         """Reflect the scene's active style in the menu (loads, scene recall)."""
+        from core.style import xray_enabled
         style = getattr(self.viewport.scene, "display_style", None)
+        if getattr(self, "_act_xray_toggle", None) is not None:
+            self._act_xray_toggle.setChecked(xray_enabled(style))
         if style is None:
             return
         for name, act in self._style_actions.items():
