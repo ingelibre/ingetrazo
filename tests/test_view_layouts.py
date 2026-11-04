@@ -340,3 +340,21 @@ def test_a_view_the_user_picked_stays_through_layouts(win):
     grid.cells[3].pick_view("back")
     win.set_view_layout("two_stacked")
     assert grid.cells[3].view == "back"           # not the suggested plan
+
+
+def test_the_extra_views_share_what_extensions_registered(win):
+    """Overlays, snap providers and pickables are one list per window
+    (MainWindow._make_viewport); the extra views have to draw and snap to
+    them too."""
+    win.set_view_layout("four")
+    main = win.viewport
+    for vp in _grid(win).extras():
+        assert vp._ext_overlays is main._ext_overlays
+        assert vp._ext_snap_providers is main._ext_snap_providers
+        assert vp._ext_pickables is main._ext_pickables
+
+
+def test_opening_the_views_keeps_hide_similar(win):
+    win.viewport.scene.hide_similar_components = True
+    win.set_view_layout("four")
+    assert win.viewport.scene.hide_similar_components is True

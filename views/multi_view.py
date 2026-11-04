@@ -524,6 +524,15 @@ class ViewGrid(QWidget):
                 continue
             vp = Viewport(cell)
             vp.setMinimumSize(80, 60)
+            # What extensions registered: one list per window, as in
+            # MainWindow._make_viewport.
+            for name in ("_ext_overlays", "_ext_snap_providers",
+                         "_ext_pickables"):
+                if hasattr(main, name):
+                    setattr(vp, name, getattr(main, name))
+            # set_document hands this view's own to the incoming scene.
+            vp.scene.hide_similar_components = bool(
+                getattr(main.scene, "hide_similar_components", False))
             vp.set_document(main.scene, main.history)
             cam = vp.camera
             cam.target = type(main.camera.target)(main.camera.target)
