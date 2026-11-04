@@ -25,6 +25,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDateEdit,
@@ -47,7 +48,9 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSpinBox,
+    QStackedWidget,
     QStyle,
+    QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -3190,10 +3193,11 @@ class DimensionStylePanel(QWidget):
 class StylesPanel(QWidget):
     """Live editor for ``scene.display_style`` — the Styles panel.
 
-    The top combo picks a style (built-ins + the user's saved library); the
-    controls below edit the ACTIVE style in place, live — the viewport reads
-    it every frame, so there is nothing to "apply". «Save style…» snapshots
-    the current look under a name into the user library (QSettings), where
+    Select browses the built-in and saved collections; Edit groups the
+    existing controls by category. Mix reserves a place for future work.
+    Edits change the ACTIVE style live — there is nothing to "apply".
+    «Save style…» snapshots the current look under a name into the user
+    library (QSettings), where
     ``style_by_name`` — and with it the composer's per-frame style combo —
     resolves it like any preset. Edits are not undoable, same as the
     dimension-style panel: they change how the model draws, not what it is.
@@ -3205,74 +3209,202 @@ class StylesPanel(QWidget):
               ("hidden_line", "Hidden line"), ("monochrome", "Monochrome"),
               ("wireframe", "Wireframe"), ("xray", "X-ray"))
 
+    _CATEGORIES = (("Edge settings", "line"),
+                   ("Face settings", "view_iso"),
+                   ("Background settings", "comp_terreno"),
+                   ("Watermark settings", "image"),
+                   ("Modeling settings", "section"))
+
     def __init__(self, window) -> None:
         super().__init__()
         self._window = window
         self._updating = False
-        grid = QGridLayout(self)
-        grid.setContentsMargins(8, 6, 8, 8)
+        self._library_key = None
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
 
+        header = QHBoxLayout()
+        self._preview = QLabel()
+        self._preview.setFixedSize(76, 66)
+        self._preview.setToolTip(tr("Current style"))
+        header.addWidget(self._preview)
+        identity = QVBoxLayout()
+        identity.setSpacing(4)
         self._combo = QComboBox()
+        self._combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._combo.setToolTip(tr("Current style"))
         self._combo.activated.connect(self._on_pick)
-        grid.addWidget(self._combo, 0, 0, 1, 2)
+        identity.addWidget(self._combo)
+        self._style_hint = QLabel()
+        self._style_hint.setWordWrap(True)
+        theme_style(self._style_hint, "color:{muted}; font-size:11px;")
+        identity.addWidget(self._style_hint)
+        header.addLayout(identity, 1)
+        layout.addLayout(header)
 
-        grid.addWidget(QLabel(tr("Face mode:")), 1, 0)
+        self._tabs = QTabWidget()
+        self._tabs.addTab(self._build_library(), tr("Select"))
+        self._tabs.addTab(self._build_editor(), tr("Edit"))
+        self._tabs.addTab(self._build_mix(), tr("Mix"))
+        layout.addWidget(self._tabs, 1)
+
+        row = QHBoxLayout()
+        save_btn = QPushButton(tr("Save style…"))
+        save_btn.setAutoDefault(False)
+        save_btn.clicked.connect(self._on_save)
+        row.addWidget(save_btn, 1)
+        self._del_btn = QPushButton(tr("Delete"))
+        self._del_btn.setAutoDefault(False)
+        self._del_btn.setToolTip(tr("Delete the current style from My styles"))
+        self._del_btn.clicked.connect(self._on_delete)
+        row.addWidget(self._del_btn)
+        layout.addLayout(row)
+
+        self.refresh()
+
+    def _build_library(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 10, 8, 8)
+        nav = QHBoxLayout()
+        self._home = QToolButton()
+        self._home.setIcon(self.style().standardIcon(QStyle.SP_DirHomeIcon))
+        self._home.setToolTip(tr("Style collections"))
+        self._home.setAccessibleName(tr("Style collections"))
+        self._home.clicked.connect(self._go_home)
+        nav.addWidget(self._home)
+        self._collection = QComboBox()
+        self._collection.addItem(tr("Style collections"), "")
+        self._collection.addItem(tr("Built-in styles"), "builtin")
+        self._collection.addItem(tr("My styles"), "user")
+        self._collection.currentIndexChanged.connect(self._refresh_library)
+        nav.addWidget(self._collection, 1)
+        layout.addLayout(nav)
+
+        self._library = QListWidget()
+        self._library.setViewMode(QListWidget.IconMode)
+        self._library.setResizeMode(QListWidget.Adjust)
+        self._library.setMovement(QListWidget.Static)
+        self._library.setIconSize(QSize(80, 64))
+        self._library.setGridSize(QSize(108, 100))
+        self._library.setWordWrap(True)
+        self._library.setSpacing(4)
+        self._library.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._library.setAccessibleName(tr("Styles"))
+        self._library.itemClicked.connect(self._open_library_item)
+        self._library.itemActivated.connect(self._open_library_item)
+        layout.addWidget(self._library, 1)
+        self._library_hint = QLabel()
+        self._library_hint.setWordWrap(True)
+        theme_style(self._library_hint, "color:{muted}; font-size:11px;")
+        layout.addWidget(self._library_hint)
+        return page
+
+    def _build_editor(self) -> QWidget:
+        from views.icons import tool_icon
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 10, 8, 8)
+        tools = QHBoxLayout()
+        tools.setSpacing(4)
+        self._edit_buttons = []
+        self._edit_group = QButtonGroup(self)
+        self._edit_group.setExclusive(True)
+        for index, (title, key) in enumerate(self._CATEGORIES):
+            button = QToolButton()
+            button.setIcon(tool_icon(key))
+            button.setProperty("icon_key", key)
+            button.setIconSize(QSize(24, 24))
+            button.setFixedSize(36, 34)
+            button.setCheckable(True)
+            button.setToolTip(tr(title))
+            button.setAccessibleName(tr(title))
+            self._edit_group.addButton(button, index)
+            self._edit_buttons.append(button)
+            tools.addWidget(button)
+        tools.addStretch(1)
+        layout.addLayout(tools)
+        self._category_title = QLabel()
+        theme_style(self._category_title, "font-weight:bold;")
+        layout.addWidget(self._category_title)
+
+        self._edit_stack = QStackedWidget()
+        grids = []
+        for _title, _key in self._CATEGORIES:
+            content = QWidget()
+            grid = QGridLayout(content)
+            grid.setContentsMargins(0, 4, 0, 8)
+            grid.setHorizontalSpacing(12)
+            grid.setVerticalSpacing(10)
+            grid.setColumnStretch(1, 1)
+            grids.append(grid)
+            scroll = QScrollArea()
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(content)
+            self._edit_stack.addWidget(scroll)
+        layout.addWidget(self._edit_stack, 1)
+        edges, faces, background, watermark, modeling = grids
+
+        faces.addWidget(QLabel(tr("Face mode:")), 0, 0)
         self._mode = QComboBox()
         for key, label in self._MODES:
             self._mode.addItem(tr(label), key)
         self._mode.currentIndexChanged.connect(self._apply_edits)
-        grid.addWidget(self._mode, 1, 1)
+        faces.addWidget(self._mode, 0, 1)
 
         self._edges = QCheckBox(tr("Edges"))
         self._edges.toggled.connect(self._apply_edits)
-        grid.addWidget(self._edges, 2, 0)
+        edges.addWidget(self._edges, 0, 0, 1, 2)
         self._edge_c = self._swatch(tr("Edge color"), "edge_color")
-        grid.addWidget(self._edge_c, 2, 1)
+        edges.addWidget(QLabel(tr("Edge color:")), 3, 0)
+        edges.addWidget(self._edge_c, 3, 1)
 
         self._profiles = QCheckBox(tr("Profiles"))
         self._profiles.toggled.connect(self._apply_edits)
-        grid.addWidget(self._profiles, 3, 0)
+        edges.addWidget(self._profiles, 2, 0, 1, 2)
         self._back_edges = QCheckBox(tr("Back edges"))
         self._back_edges.setToolTip(tr(
             "Draw the edges hidden behind faces as dashed lines."))
         self._back_edges.toggled.connect(self._apply_edits)
-        grid.addWidget(self._back_edges, 3, 1)
+        edges.addWidget(self._back_edges, 1, 0, 1, 2)
 
-        grid.addWidget(QLabel(tr("Front color:")), 4, 0)
+        faces.addWidget(QLabel(tr("Front color:")), 1, 0)
         self._front_c = self._swatch(
             tr("Front color — paints the faces with no material (every "
                "face in Hidden line and Monochrome)"),
             "front_color")
-        grid.addWidget(self._front_c, 4, 1)
+        faces.addWidget(self._front_c, 1, 1)
 
         # Back color: the tint of faces seen from behind (the
         # inside of a solid, or a reversed face).
-        grid.addWidget(QLabel(tr("Back color:")), 5, 0)
+        faces.addWidget(QLabel(tr("Back color:")), 2, 0)
         self._back_c = self._swatch(
             tr("Back color — paints faces seen from behind"), "back_color")
-        grid.addWidget(self._back_c, 5, 1)
+        faces.addWidget(self._back_c, 2, 1)
 
-        self._sky = QCheckBox(tr("Sky"))
-        self._sky.toggled.connect(self._apply_edits)
-        grid.addWidget(self._sky, 6, 0)
-        self._sky_c = self._swatch(tr("Sky color"), "sky_color")
-        grid.addWidget(self._sky_c, 6, 1)
-
-        grid.addWidget(QLabel(tr("Ground:")), 7, 0)
-        self._ground_c = self._swatch(tr("Ground color"), "ground_color")
-        grid.addWidget(self._ground_c, 7, 1)
-
-        grid.addWidget(QLabel(tr("Background:")), 8, 0)
+        background.addWidget(QLabel(tr("Background:")), 0, 0)
         self._bg_c = self._swatch(
             tr("Background — visible with the sky off"), "background")
-        grid.addWidget(self._bg_c, 8, 1)
+        background.addWidget(self._bg_c, 0, 1)
+        self._sky = QCheckBox(tr("Sky"))
+        self._sky.toggled.connect(self._apply_edits)
+        background.addWidget(self._sky, 1, 0)
+        self._sky_c = self._swatch(tr("Sky color"), "sky_color")
+        background.addWidget(self._sky_c, 1, 1)
+
+        background.addWidget(QLabel(tr("Ground:")), 2, 0)
+        self._ground_c = self._swatch(tr("Ground color"), "ground_color")
+        background.addWidget(self._ground_c, 2, 1)
 
         self._fill = QCheckBox(tr("Section Fill"))
         self._fill.toggled.connect(self._apply_edits)
-        grid.addWidget(self._fill, 9, 0)
+        modeling.addWidget(self._fill, 0, 0)
         self._fill_c = self._swatch(tr("Section fill color"),
                                     "section_fill_color")
-        grid.addWidget(self._fill_c, 9, 1)
+        modeling.addWidget(self._fill_c, 0, 1)
 
         # Ambient occlusion (#954): off in every preset. The
         # two values only take edits while the switch is on.
@@ -3281,9 +3413,9 @@ class StylesPanel(QWidget):
             "Softly darkens where surfaces meet — corners, the foot of a "
             "wall, under a bench."))
         self._ao.toggled.connect(self._apply_edits)
-        grid.addWidget(self._ao, 10, 0, 1, 2)
+        faces.addWidget(self._ao, 3, 0, 1, 2)
         self._ao_dist_lbl = QLabel()             # its unit: _sync_ao_controls
-        grid.addWidget(self._ao_dist_lbl, 11, 0)
+        faces.addWidget(self._ao_dist_lbl, 4, 0)
         # A slider and its value, like the intensity below, on a log scale:
         # a centimetre matters at the foot of a skirting board, ten metres
         # between two buildings.
@@ -3297,9 +3429,9 @@ class StylesPanel(QWidget):
         self._ao_dist_val = QLabel()
         self._ao_dist_val.setMinimumWidth(28)
         dist_row.addWidget(self._ao_dist_val)
-        grid.addLayout(dist_row, 11, 1)
+        faces.addLayout(dist_row, 4, 1)
         self._ao_int_lbl = QLabel(tr("Intensity:"))
-        grid.addWidget(self._ao_int_lbl, 12, 0)
+        faces.addWidget(self._ao_int_lbl, 5, 0)
         int_row = QHBoxLayout()
         self._ao_int = QSlider(Qt.Horizontal)
         self._ao_int.setRange(0, 20)             # tenths: 0.0 – 2.0
@@ -3308,18 +3440,100 @@ class StylesPanel(QWidget):
         self._ao_int_val = QLabel()
         self._ao_int_val.setMinimumWidth(28)
         int_row.addWidget(self._ao_int_val)
-        grid.addLayout(int_row, 12, 1)
+        faces.addLayout(int_row, 5, 1)
 
-        row = QHBoxLayout()
-        save_btn = QPushButton(tr("Save style…"))
-        save_btn.clicked.connect(self._on_save)
-        row.addWidget(save_btn)
-        self._del_btn = QPushButton(tr("Delete"))
-        self._del_btn.clicked.connect(self._on_delete)
-        row.addWidget(self._del_btn)
-        grid.addLayout(row, 13, 0, 1, 2)
+        watermark.addWidget(self._notice(
+            tr("Watermark settings are not available yet.")), 0, 0, 1, 2)
+        for grid in grids:
+            grid.setRowStretch(grid.rowCount(), 1)
+        self._edit_group.idClicked.connect(self._select_category)
+        self._select_category(0)
+        return page
 
-        self.refresh()
+    def _build_mix(self) -> QWidget:
+        from views.icons import tool_icon
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 10, 8, 8)
+        layout.addWidget(self._notice(tr(
+            "Combine settings from different styles. Mixing styles is not available yet.")))
+        for title, key in self._CATEGORIES:
+            row = QToolButton()
+            row.setText(tr(title))
+            row.setIcon(tool_icon(key))
+            row.setProperty("icon_key", key)
+            row.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row.setEnabled(False)
+            layout.addWidget(row)
+        layout.addStretch(1)
+        return page
+
+    @staticmethod
+    def _notice(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setWordWrap(True)
+        theme_style(label, "color:{muted};")
+        return label
+
+    def _select_category(self, index: int) -> None:
+        self._edit_buttons[index].setChecked(True)
+        self._edit_stack.setCurrentIndex(index)
+        self._category_title.setText(tr(self._CATEGORIES[index][0]))
+
+    def _go_home(self) -> None:
+        self._collection.setCurrentIndex(0)
+
+    def _refresh_library(self, *_args) -> None:
+        from core.style import BUILTIN_STYLES, user_styles
+        from views.style_preview import style_preview
+
+        users = user_styles()
+        collection = self._collection.currentData()
+        # Edits refresh the header frequently. Keep the browser's scroll
+        # position and keyboard focus unless its collection actually changed.
+        key = (collection, tuple(s.to_dict() for s in users))
+        if key != self._library_key:
+            self._library_key = key
+            self._library.clear()
+            if not collection:
+                folder_icon = self.style().standardIcon(QStyle.SP_DirIcon)
+                for folder, title in (("builtin", "Built-in styles"),
+                                      ("user", "My styles")):
+                    item = QListWidgetItem(folder_icon, tr(title))
+                    item.setData(Qt.UserRole, ("folder", folder))
+                    self._library.addItem(item)
+            else:
+                presets = BUILTIN_STYLES if collection == "builtin" else users
+                for preset in presets:
+                    label = tr(preset.name) if collection == "builtin" else preset.name
+                    item = QListWidgetItem(
+                        QIcon(style_preview(preset, QSize(80, 64))), label)
+                    item.setData(Qt.UserRole, ("style", preset.name))
+                    item.setToolTip(label)
+                    self._library.addItem(item)
+
+        self._home.setEnabled(bool(collection))
+        if not collection:
+            hint = tr("Open a collection to browse its styles.")
+        elif collection == "user" and not users:
+            hint = tr("No saved styles yet. Use Save style… to add the current style here.")
+        else:
+            hint = tr("Choose a style to apply it to the model.")
+        self._library_hint.setText(hint)
+        active = self._style()
+        for index in range(self._library.count()):
+            item = self._library.item(index)
+            selected = active is not None and item.data(Qt.UserRole) == ("style", active.name)
+            item.setSelected(selected)
+
+    def _open_library_item(self, item: QListWidgetItem) -> None:
+        kind, value = item.data(Qt.UserRole)
+        if kind == "folder":
+            self._collection.setCurrentIndex(self._collection.findData(value))
+        else:
+            self._on_pick(self._combo.findData(value))
 
     # ---- Plumbing -----------------------------------------------------------
     def _style(self):
@@ -3336,6 +3550,7 @@ class StylesPanel(QWidget):
 
     def _swatch(self, title: str, attr: str) -> QPushButton:
         btn = QPushButton()
+        btn.setAutoDefault(False)
         btn.setToolTip(title)
         btn.clicked.connect(lambda: self._pick_color(title, attr))
         return btn
@@ -3350,6 +3565,7 @@ class StylesPanel(QWidget):
         """Mirror the active style and the user library (called on loads,
         preset applies and saves via ``_sync_style_menu``)."""
         from core.style import BUILTIN_STYLES, user_styles
+        from views.style_preview import style_preview
         style = self._style()
         users = user_styles()
         self._updating = True
@@ -3363,9 +3579,22 @@ class StylesPanel(QWidget):
                     self._combo.addItem(s.name, s.name)
             if style is None:
                 return
-            # -1 (nothing shown) when the active style matches no entry —
-            # e.g. a document carrying a look that is in no library.
+            # An imported or deleted style still has a name in the model,
+            # even when it is absent from both library collections.
+            if self._combo.findData(style.name) < 0:
+                self._combo.addItem(style.name, style.name)
             self._combo.setCurrentIndex(self._combo.findData(style.name))
+            self._preview.setPixmap(style_preview(style, self._preview.size()))
+            saved = next((s for s in [*BUILTIN_STYLES, *users]
+                          if s.name == style.name), None)
+            mode_label = next(label for key, label in self._MODES
+                              if key == style.face_mode)
+            if saved is None:
+                self._style_hint.setText(tr("Custom style") + " · " + tr(mode_label))
+            elif saved.to_dict() != style.to_dict():
+                self._style_hint.setText(tr("Modified") + " · " + tr(mode_label))
+            else:
+                self._style_hint.setText(tr(mode_label))
             self._mode.setCurrentIndex(
                 self._mode.findData(style.face_mode))
             self._edges.setChecked(style.edges)
@@ -3389,6 +3618,7 @@ class StylesPanel(QWidget):
             self._sync_ao_controls()
             self._del_btn.setEnabled(
                 any(s.name == self._combo.currentData() for s in users))
+            self._refresh_library()
         finally:
             self._updating = False
 
@@ -3546,6 +3776,7 @@ class StylesPanel(QWidget):
         style.name = name        # the active style takes the saved identity
         save_user_style(style)
         self._window._sync_style_menu()
+        self._collection.setCurrentIndex(self._collection.findData("user"))
         self._window.statusBar().showMessage(
             tr("Style '{name}' saved.", name=name), 3000)
 

@@ -873,14 +873,12 @@ class MainWindow(QMainWindow):
         self.toolbars["layers"] = layers_tb
         self.layers_toolbar = LayersToolbar(self, layers_tb)
 
-        # Styles, Shadows and Dimension style hang OFF THE TOOLBAR as
-        # dropdown panels (user: the lateral bar was drowning, and floating
-        # windows felt loose — "¿no hay forma de integrarlo en el
-        # toolbar?"). Click the button, the panel drops under it; click
-        # outside, it folds away.
+        # Styles stays open in its own window while the user models.
+        # Shadows and Dimension style remain toolbar dropdowns.
         from PySide6.QtWidgets import QToolButton, QWidgetAction
         from views.tray import DimensionStylePanel, ShadowsPanel, StylesPanel
         self.styles_panel = StylesPanel(self)
+        self._styles_window = None
         self.shadows_panel = ShadowsPanel(self)
         self.dimstyle_panel = DimensionStylePanel(self)
         panels_tb = self._new_toolbar(tr("Panels"), "panels_toolbar")
@@ -897,14 +895,18 @@ class MainWindow(QMainWindow):
             btn = QToolButton(panels_tb)
             btn.setIcon(tool_icon(key))
             btn.setToolTip(f"{title}\n{tip}")
-            btn.setPopupMode(QToolButton.InstantPopup)
-            btn.setStyleSheet(
-                "QToolButton::menu-indicator { image: none; }")
-            menu = QMenu(btn)
-            wa = QWidgetAction(menu)
-            wa.setDefaultWidget(panel)
-            menu.addAction(wa)
-            btn.setMenu(menu)
+            if key == "styles":
+                btn.setObjectName("styles_button")
+                btn.clicked.connect(self._on_styles)
+            else:
+                btn.setPopupMode(QToolButton.InstantPopup)
+                btn.setStyleSheet(
+                    "QToolButton::menu-indicator { image: none; }")
+                menu = QMenu(btn)
+                wa = QWidgetAction(menu)
+                wa.setDefaultWidget(panel)
+                menu.addAction(wa)
+                btn.setMenu(menu)
             panels_tb.addWidget(btn)
             self._icon_actions.append((btn, key))
 
@@ -913,6 +915,16 @@ class MainWindow(QMainWindow):
         self.profile_dock = ProfileDock(self)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.profile_dock)
         self.profile_dock.hide()
+
+    def _on_styles(self) -> None:
+        """Open or bring back the same modeless Styles window."""
+        if self._styles_window is None:
+            from views.styles_window import StylesWindow
+            self._styles_window = StylesWindow(self, self.styles_panel)
+        self.styles_panel.refresh()
+        self._styles_window.show()
+        self._styles_window.raise_()
+        self._styles_window.activateWindow()
 
     def _new_toolbar(self, title: str, object_name: str) -> QToolBar:
         """A separate, independently draggable/floatable icons-only toolbar
@@ -4407,6 +4419,7 @@ class MainWindow(QMainWindow):
         if style is None or getattr(style, name) == bool(value):
             return
         setattr(style, name, bool(value))
+        self._sync_style_menu()
         self.viewport.update()
         browser = getattr(self, "project_browser", None)
         if browser is not None and name == "section_fill":
