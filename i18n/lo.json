@@ -3280,7 +3280,6 @@
  "Distance ({unit}):": "ໄລຍະຫ່າງ ({unit}):",
  "Show scenes as tabs": "ສະແດງສາກເປັນແຖບ",
  "This project's scenes as tabs under the view; a click shows one.": "ສາກຂອງໂຄງການນີ້ເປັນແຖບຢູ່ລຸ່ມມຸມມອງ; ຄລິກເພື່ອສະແດງ.",
- "No scenes yet: «+» keeps the current view as one.": "ຍັງບໍ່ມີສາກ: «+» ເກັບມຸມມອງປັດຈຸບັນໄວ້ເປັນສາກ.",
  "Click: change the view · Double-click: this view alone, or the four again": "ຄລິກ: ປ່ຽນມຸມມອງ · ຄລິກສອງເທື່ອ: ມຸມມອງນີ້ຢ່າງດຽວ ຫຼື ທັງສີ່ອີກຄັ້ງ",
  "One view": "ໜຶ່ງມຸມມອງ",
  "Two views": "ສອງມຸມມອງ",
@@ -3305,5 +3304,6 @@
  "Restore": "ກູ້ຄືນ",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "ອ່ານ “{name}” ແລ້ວ ແຕ່ບໍ່ມີຫຍັງທີ່ນຳເຂົ້າໄດ້: ບໍ່ມີເສັ້ນ, ເສັ້ນໂພລີລາຍ, ເສັ້ນໂຄ້ງ, ວົງມົນ, ວົງຣີ, ສະປລາຍ ຫຼື ໜ້າ ໃນພື້ນທີ່ໂມເດວ.",
  "Left out: {kinds}": "ຂ້າມ: {kinds}",
- "Menu": "ເມນູ"
+ "Menu": "ເມນູ",
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "ໂຄງການນີ້ຍັງບໍ່ມີສາກ: ແຖບຈະປາກົດເມື່ອມີສາກທຳອິດ (ແຜງ ສາກທັງໝົດ, «+ ສາກ»)"
 }

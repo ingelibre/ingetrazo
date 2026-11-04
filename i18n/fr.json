@@ -3277,7 +3277,6 @@
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Remet les réglages de cette fenêtre tels qu'IngeTrazo les fournit. Rien n'est enregistré tant que vous n'appuyez pas sur OK. La langue, l'Assistant IA, les raccourcis clavier et les unités du document ouvert restent tels quels.",
  "Show scenes as tabs": "Afficher les scènes en onglets",
  "This project's scenes as tabs under the view; a click shows one.": "Les scènes de ce projet en onglets sous la vue ; un clic en affiche une.",
- "No scenes yet: «+» keeps the current view as one.": "Pas encore de scènes : « + » garde la vue actuelle comme scène.",
  "Click: change the view · Double-click: this view alone, or the four again": "Clic : changer la vue · Double-clic : cette vue seule, ou les quatre à nouveau",
  "One view": "Une vue",
  "Two views": "Deux vues",
@@ -3302,5 +3301,6 @@
  "Restore": "Restaurer",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "« {name} » a été lu, mais ne contient rien d’importable : aucune ligne, polyligne, arc, cercle, ellipse, spline ou face dans l’espace objet.",
  "Left out: {kinds}": "Ignoré : {kinds}",
- "Menu": "Menu"
+ "Menu": "Menu",
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "Ce projet n'a pas encore de scènes : ses onglets apparaissent avec la première (panneau Scènes, «+ Scène»)."
 }

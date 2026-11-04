@@ -3285,7 +3285,6 @@
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Przywraca ustawienia tego okna do stanu, w jakim dostarczany jest IngeTrazo. Nic nie zostanie zapisane, dopóki nie naciśniesz OK. Język, Asystent AI, skróty klawiszowe i jednostki otwartego dokumentu pozostają bez zmian.",
  "Show scenes as tabs": "Pokaż sceny jako karty",
  "This project's scenes as tabs under the view; a click shows one.": "Sceny tego projektu jako karty pod widokiem; kliknięcie pokazuje scenę.",
- "No scenes yet: «+» keeps the current view as one.": "Brak scen: «+» zapisuje bieżący widok jako scenę.",
  "Click: change the view · Double-click: this view alone, or the four again": "Kliknięcie: zmiana widoku · Dwuklik: tylko ten widok lub znowu cztery",
  "One view": "Jeden widok",
  "Two views": "Dwa widoki",
@@ -3310,5 +3309,6 @@
  "Restore": "Przywróć",
  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "Odczytano „{name}”, ale nie ma w nim nic do zaimportowania: w obszarze modelu nie ma linii, polilinii, łuków, okręgów, elips, splajnów ani ścian.",
  "Left out: {kinds}": "Pominięto: {kinds}",
- "Menu": "Menu"
+ "Menu": "Menu",
+ "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "Ten projekt nie ma jeszcze scen: karty pojawią się wraz z pierwszą (panel Sceny, «+ Scena»)."
 }

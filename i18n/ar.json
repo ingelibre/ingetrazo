@@ -3312,7 +3312,6 @@
   "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "يعيد إعدادات هذه النافذة إلى ما يأتي به IngeTrazo. لا يُحفظ شيء حتى تضغط موافق. تبقى اللغة ومساعد الذكاء الاصطناعي واختصارات لوحة المفاتيح ووحدات المستند المفتوح كما هي.",
   "Show scenes as tabs": "عرض المشاهد كعلامات تبويب",
   "This project's scenes as tabs under the view; a click shows one.": "مشاهد هذا المشروع كعلامات تبويب أسفل العرض؛ نقرة تعرض أحدها.",
-  "No scenes yet: «+» keeps the current view as one.": "لا توجد مشاهد بعد: «+» يحفظ العرض الحالي كمشهد.",
   "Click: change the view · Double-click: this view alone, or the four again": "نقرة: تغيير العرض · نقرة مزدوجة: هذا العرض وحده، أو الأربعة مجددًا",
   "One view": "عرض واحد",
   "Two views": "عرضان",
@@ -3337,5 +3336,6 @@
   "Restore": "استعادة",
   "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "تمت قراءة “{name}” لكن لا يوجد فيه ما يمكن استيراده: لا خطوط ولا خطوط متعددة ولا أقواس ولا دوائر ولا قطوع ناقصة ولا منحنيات ولا أوجه في فضاء النموذج.",
   "Left out: {kinds}": "تم تخطي: {kinds}",
-  "Menu": "القائمة"
+  "Menu": "القائمة",
+  "This project has no scenes yet: its tabs appear with the first one (Scenes panel, «+ Scene»).": "لا توجد مشاهد في هذا المشروع بعد: تظهر علامات التبويب مع أول مشهد (لوحة المشاهد، «+ مشهد»)."
 }

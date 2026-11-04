@@ -10,12 +10,17 @@ in the Scenes panel, and they stay apart from the project tabs above.
   Scenes panel does; the scene shown wears a line in the accent colour
   under its name. A right-click only opens its menu: it shows nothing and
   changes nothing.
+- Dragging a tab changes the order of the scenes (one undo step): the view
+  stays where it is, so the scene shows on the release of a click, not on
+  its press. A double-click renames the scene.
 - **+** right after the last tab keeps the current view as a new scene
   (the panel's «+ Scene»).
 - A right-click on a tab offers to update that scene from the current
-  view, or to delete it (one undo step); on the bar itself, to hide the
-  row. Both menus open upwards: the row sits at the foot of the window.
-- A project without scenes says how to make one.
+  view, to rename it, or to delete it (one undo step); on the bar itself,
+  to hide the row. Both menus open upwards: the row sits at the foot of the
+  window.
+- A project without scenes has no row: its first scene brings it, from the
+  Scenes panel, and deleting the last takes it away.
 - On by default; each project keeps its own choice, from the right-click
   menu of its tab (``Document.scene_tabs``).
 
@@ -25,8 +30,8 @@ does the showing and the adding (``MainWindow._refresh_scene_tabs``).
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QStyle, QStyleOptionTab,
-                               QTabBar, QToolButton, QWidget)
+from PySide6.QtWidgets import (QHBoxLayout, QStyle, QStyleOptionTab, QTabBar,
+                               QToolButton, QWidget)
 
 from core.i18n import tr
 
@@ -37,6 +42,11 @@ SCENE_TABS_DEFAULT = True
 class SceneTabBar(QTabBar):
     """The scenes' tabs, hanging from the view's lower edge, with an accent
     line under the name of the scene shown."""
+
+    #: A left click on a tab, on its release: that it was no drag.
+    tabClicked = Signal(int)
+    #: A tab dropped elsewhere: the scene's old and new place in the list.
+    moveRequested = Signal(int, int)
 
     #: Thickness of the accent line and its gap above the tab's foot (px).
     LINE_PX = 2
@@ -54,31 +64,99 @@ class SceneTabBar(QTabBar):
         #: The button of the press that ``tabBarClicked`` follows: Qt sends
         #: that signal for any button, and a right-click showed the scene.
         self.pressed_button = Qt.LeftButton
+        self.setMovable(True)
+        self.tabMoved.connect(self._on_tab_moved)
+        #: While the left button holds a tab: the tab pressed and the scene
+        #: marked before the press; where a drag has taken it so far; a list
+        #: that came in meanwhile.
+        self._held = None
+        self._moved = None
+        self._waiting = None
 
     def mousePressEvent(self, ev) -> None:  # noqa: N802 — Qt override
         self.pressed_button = ev.button()
+        at = self.tabAt(ev.position().toPoint())
+        if ev.button() == Qt.LeftButton and at >= 0:
+            self._held = (at, self.marked_view())
+            self._moved = None
         try:
             super().mousePressEvent(ev)
         finally:
             self.pressed_button = Qt.LeftButton
 
+    def mouseReleaseEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        super().mouseReleaseEvent(ev)
+        if ev.button() != Qt.LeftButton or self._held is None:
+            return
+        (at, marked), to = self._held, self._moved
+        waiting, self._waiting = self._waiting, None
+        self._held = self._moved = None
+        if to is None:                         # a click, not a drag
+            self.tabClicked.emit(at)
+        else:
+            # Qt marks the tab it presses: the scene shown is still the one.
+            self.views.insert(to, self.views.pop(at))
+            self._mark(marked)
+            if to != at:
+                self.moveRequested.emit(at, to)
+                self._mark(marked)
+                return
+        if waiting is not None:
+            self.show_views(waiting)
+
+    def hideEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        self._held = self._moved = None
+        super().hideEvent(ev)
+        if self._waiting is not None:
+            waiting, self._waiting = self._waiting, None
+            self.show_views(waiting)
+
+    def _on_tab_moved(self, index: int, to: int) -> None:
+        # In the middle of the drag, and about the NEIGHBOUR the tab passes
+        # (Qt slides that one into its place): follow the tab held. The list
+        # itself only changes when the tab is dropped.
+        if self._held is None:
+            return
+        at = self._held[0] if self._moved is None else self._moved
+        if at == index:
+            at = to
+        elif index < at <= to:
+            at -= 1
+        elif to <= at < index:
+            at += 1
+        self._moved = at
+
+    def marked_view(self):
+        """The saved view of the tab marked, or None."""
+        i = self.currentIndex()
+        return self.views[i] if 0 <= i < len(self.views) else None
+
+    def _mark(self, view) -> None:
+        for i, v in enumerate(self.views):
+            if v is view:
+                self.setCurrentIndex(i)
+                return
+
     def show_views(self, views) -> None:
         """List ``views`` (the scene's saved views); the one marked stays
-        marked while its name is still there."""
-        names = [v.name for v in views]
-        self.views = list(views)
-        if names == [self.tabText(i) for i in range(self.count())]:
+        marked while it is still there, whatever it is called now."""
+        if self._held is not None:             # never under a press or a drag
+            self._waiting = list(views)
             return
-        current = (self.tabText(self.currentIndex())
-                   if self.currentIndex() >= 0 else None)
+        names = [v.name for v in views]
+        marked = self.marked_view()
+        self.views = list(views)
+        if names != [self.tabText(i) for i in range(self.count())]:
+            self.blockSignals(True)
+            while self.count():
+                self.removeTab(0)
+            for name in names:
+                self.addTab(name)
+            self.blockSignals(False)
+            self.updateGeometry()
         self.blockSignals(True)
-        while self.count():
-            self.removeTab(0)
-        for name in names:
-            self.addTab(name)
-        self.setCurrentIndex(names.index(current) if current in names else -1)
+        self._mark(marked)
         self.blockSignals(False)
-        self.updateGeometry()
 
     def sizeHint(self):  # noqa: N802 — Qt override
         """Exactly as wide as its tabs: Qt's hint keeps room for the
@@ -122,7 +200,7 @@ class SceneTabBar(QTabBar):
 
 
 class SceneTabRow(QWidget):
-    """The tabs, **+**, and the hint of a project without scenes."""
+    """The tabs and **+**."""
 
     sceneClicked = Signal(int)     # the index of the scene clicked
     addRequested = Signal()        # «+»: the current view as a new scene
@@ -130,6 +208,10 @@ class SceneTabRow(QWidget):
     menuRequested = Signal(int, QPoint)
     #: A right-click on the bar, off the tabs: where (global position).
     barMenuRequested = Signal(QPoint)
+    #: A double-click on a tab: rename that scene.
+    renameRequested = Signal(int)
+    #: A tab dragged elsewhere: the scene's old and new place in the list.
+    moveRequested = Signal(int, int)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -139,6 +221,9 @@ class SceneTabRow(QWidget):
         row.setSpacing(0)
         self.tabs = SceneTabBar(self)
         self.tabs.tabBarClicked.connect(self._on_clicked)
+        self.tabs.tabClicked.connect(self._on_tab_clicked)
+        self.tabs.tabBarDoubleClicked.connect(self.renameRequested.emit)
+        self.tabs.moveRequested.connect(self.moveRequested.emit)
         self.tabs.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tabs.customContextMenuRequested.connect(self._on_menu)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -160,16 +245,10 @@ class SceneTabRow(QWidget):
         plus.setAccessibleName(tr("+ Scene"))
         plus.clicked.connect(self.addRequested.emit)
         row.addWidget(plus, 0, Qt.AlignTop)
-        self.hint = QLabel(tr(
-            "No scenes yet: «+» keeps the current view as one."), self)
-        self.hint.setObjectName("scene_tab_hint")
-        self.hint.setContentsMargins(6, 3, 0, 0)
-        row.addWidget(self.hint, 0, Qt.AlignTop)
         row.addStretch(1)
         from views.theme import style as theme_style
         theme_style(self,
             "#scene_tabs {{ background: palette(window); }}"
-            "QLabel#scene_tab_hint {{ color: {muted}; }}"
             "QToolButton#scene_tab_new {{ border: none; border-radius: 6px;"
             " background: transparent; padding: 0px; }}"
             "QToolButton#scene_tab_new:hover {{"
@@ -186,16 +265,18 @@ class SceneTabRow(QWidget):
         self._match_plus()
 
     def show_views(self, views) -> None:
-        """The project's scenes; with none, the hint instead of the tabs."""
+        """The project's scenes."""
         self.tabs.show_views(views)
-        self.tabs.setVisible(bool(views))
-        self.hint.setVisible(not views)
         self._match_plus()
 
     def mark(self, index: int) -> None:
         """Mark the scene at ``index`` as the one shown."""
         if 0 <= index < self.tabs.count():
             self.tabs.setCurrentIndex(index)
+
+    def mark_view(self, view) -> None:
+        """Mark the scene ``view`` as the one shown, if it has a tab."""
+        self.tabs._mark(view)
 
     def _on_menu(self, pos) -> None:
         i = self.tabs.tabAt(pos)
@@ -205,10 +286,15 @@ class SceneTabRow(QWidget):
             self.barMenuRequested.emit(self.tabs.mapToGlobal(pos))
 
     def _on_clicked(self, index: int) -> None:
-        # Only the left button shows a scene: a right-click is the menu's.
-        if index >= 0 and self.tabs.pressed_button == Qt.LeftButton:
-            self.tabs.setCurrentIndex(index)
-            self.sceneClicked.emit(index)
+        # Only the left button shows a scene: a right-click is the menu's;
+        # and only when it lets go: the press may be the start of a drag.
+        if (index >= 0 and self.tabs.pressed_button == Qt.LeftButton
+                and self.tabs._held is None):
+            self._on_tab_clicked(index)
+
+    def _on_tab_clicked(self, index: int) -> None:
+        self.tabs.setCurrentIndex(index)
+        self.sceneClicked.emit(index)
 
 
 def menu_upwards(menu, global_pos) -> QPoint:
