@@ -3309,5 +3309,7 @@
   "Locked rows are not deleted: unlock them first": "لا تُحذف الصفوف المقفلة: ألغِ قفلها أولًا",
   "Distance ({unit}):": "المسافة ({unit}):",
   "Restore defaults": "استعادة الإعدادات الافتراضية",
-  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "يعيد إعدادات هذه النافذة إلى ما يأتي به IngeTrazo. لا يُحفظ شيء حتى تضغط موافق. تبقى اللغة ومساعد الذكاء الاصطناعي واختصارات لوحة المفاتيح ووحدات المستند المفتوح كما هي."
+  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "يعيد إعدادات هذه النافذة إلى ما يأتي به IngeTrazo. لا يُحفظ شيء حتى تضغط موافق. تبقى اللغة ومساعد الذكاء الاصطناعي واختصارات لوحة المفاتيح ووحدات المستند المفتوح كما هي.",
+  "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "تمت قراءة “{name}” لكن لا يوجد فيه ما يمكن استيراده: لا خطوط ولا خطوط متعددة ولا أقواس ولا دوائر ولا قطوع ناقصة ولا منحنيات ولا أوجه في فضاء النموذج.",
+  "Left out: {kinds}": "تم تخطي: {kinds}"
 }

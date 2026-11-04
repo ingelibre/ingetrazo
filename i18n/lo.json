@@ -3277,5 +3277,7 @@
  "Front color — paints faces in Hidden line and Monochrome": "ສີດ້ານໜ້າ — ທາສີໜ້າພຽງໃນໂໝດເຊື່ອງເສັ້ນ ແລະ ຂາວດຳ",
  "Restore defaults": "ຄືນຄ່າເລີ່ມຕົ້ນ",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "ຄືນການຕັ້ງຄ່າໃນໜ້າຕ່າງນີ້ເປັນຄ່າທີ່ມາກັບ IngeTrazo. ຈະບໍ່ມີການບັນທຶກຈົນກວ່າທ່ານຈະກົດ ຕົກລົງ. ພາສາ, ຜູ້ຊ່ວຍ AI, ປຸ່ມລັດ ແລະ ຫົວໜ່ວຍຂອງເອກະສານທີ່ເປີດຢູ່ຈະຄືເກົ່າ.",
- "Distance ({unit}):": "ໄລຍະຫ່າງ ({unit}):"
+ "Distance ({unit}):": "ໄລຍະຫ່າງ ({unit}):",
+ "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "ອ່ານ “{name}” ແລ້ວ ແຕ່ບໍ່ມີຫຍັງທີ່ນຳເຂົ້າໄດ້: ບໍ່ມີເສັ້ນ, ເສັ້ນໂພລີລາຍ, ເສັ້ນໂຄ້ງ, ວົງມົນ, ວົງຣີ, ສະປລາຍ ຫຼື ໜ້າ ໃນພື້ນທີ່ໂມເດວ.",
+ "Left out: {kinds}": "ຂ້າມ: {kinds}"
 }

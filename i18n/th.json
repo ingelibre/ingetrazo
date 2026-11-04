@@ -3277,5 +3277,7 @@
  "Front color — paints faces in Hidden line and Monochrome": "สีด้านหน้า — ระบายพื้นผิวในโหมดซ่อนเส้นและโหมดสีเดียว",
  "Distance ({unit}):": "ระยะ ({unit}):",
  "Restore defaults": "คืนค่าเริ่มต้น",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม"
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม",
+ "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "อ่าน “{name}” แล้ว แต่ไม่มีสิ่งใดที่นำเข้าได้: ไม่มีเส้น เส้นโพลีไลน์ ส่วนโค้ง วงกลม วงรี เส้นสไปลน์ หรือหน้าในพื้นที่โมเดล",
+ "Left out: {kinds}": "ข้ามไป: {kinds}"
 }

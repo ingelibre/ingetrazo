@@ -3274,5 +3274,7 @@
  "Front color — paints faces in Hidden line and Monochrome": "Цвет передней стороны — применяется для граней в режимах «Скрытые линии» и «Монохромный»",
  "Distance ({unit}):": "Расстояние ({unit}):",
  "Restore defaults": "Восстановить значения по умолчанию",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений.",
+ "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "Файл «{name}» прочитан, но импортировать нечего: в пространстве модели нет линий, полилиний, дуг, окружностей, эллипсов, сплайнов и граней.",
+ "Left out: {kinds}": "Пропущено: {kinds}"
 }

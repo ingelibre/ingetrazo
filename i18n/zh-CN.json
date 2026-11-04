@@ -3275,5 +3275,7 @@
  "Front color — paints faces in Hidden line and Monochrome": "正面颜色 — 在隐藏线和单色模式下绘制面",
  "Distance ({unit}):": "距离（{unit}）：",
  "Restore defaults": "恢复默认值",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。"
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。",
+ "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "已读取“{name}”，但没有可导入的内容：模型空间中没有直线、多段线、圆弧、圆、椭圆、样条曲线或面。",
+ "Left out: {kinds}": "已跳过：{kinds}"
 }

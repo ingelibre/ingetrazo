@@ -3274,5 +3274,7 @@
  "Front color — paints faces in Hidden line and Monochrome": "앞면 색상 — 숨은선 모드와 단색 모드에서 면을 칠합니다",
  "Distance ({unit}):": "거리 ({unit}):",
  "Restore defaults": "기본값 복원",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다.",
+ "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "“{name}” 파일을 읽었지만 가져올 수 있는 것이 없습니다. 모델 공간에 선, 폴리선, 호, 원, 타원, 스플라인, 면이 없습니다.",
+ "Left out: {kinds}": "제외됨: {kinds}"
 }

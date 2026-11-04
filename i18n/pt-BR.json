@@ -3281,5 +3281,7 @@
  "Front color saved — it paints faces in Hidden line and Monochrome modes.": "Cor frontal salva — ela pinta as faces nos modos Linha oculta e Monocromo.",
  "Distance ({unit}):": "Distância ({unit}):",
  "Restore defaults": "Restaurar padrões",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Volta as configurações desta janela para como o IngeTrazo vem. Nada é salvo até você clicar em OK. O idioma, o Assistente de IA, os atalhos de teclado e as unidades do documento aberto ficam como estão."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Volta as configurações desta janela para como o IngeTrazo vem. Nada é salvo até você clicar em OK. O idioma, o Assistente de IA, os atalhos de teclado e as unidades do documento aberto ficam como estão.",
+ "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "“{name}” foi lido, mas não tem nada que possa ser importado: nenhuma linha, polilinha, arco, círculo, elipse, spline ou face no espaço do modelo.",
+ "Left out: {kinds}": "Omitido: {kinds}"
 }

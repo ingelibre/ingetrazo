@@ -3289,5 +3289,7 @@
  "Ukrainian translation of the interface.": "Переклад інтерфейсу українською.",
  "Distance ({unit}):": "Відстань ({unit}):",
  "Restore defaults": "Відновити типові",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Повертає налаштування цього вікна до стандартних налаштувань IngeTrazo. Нічого не зберігається, доки ви не натиснете «Гаразд». Мова, Асистент ШІ, сполучення клавіш і одиниці відкритого документа залишаються без змін."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Повертає налаштування цього вікна до стандартних налаштувань IngeTrazo. Нічого не зберігається, доки ви не натиснете «Гаразд». Мова, Асистент ШІ, сполучення клавіш і одиниці відкритого документа залишаються без змін.",
+ "“{name}” was read, but it has nothing that can be imported: no lines, polylines, arcs, circles, ellipses, splines or faces in the model space.": "Файл «{name}» прочитано, але імпортувати нічого: у просторі моделі немає ліній, поліліній, дуг, кіл, еліпсів, сплайнів і граней.",
+ "Left out: {kinds}": "Пропущено: {kinds}"
 }

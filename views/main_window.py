@@ -8409,15 +8409,33 @@ class MainWindow(QMainWindow):
         dlg, cb = self._import_progress(tr("Importing {name}…",
                                            name=shown.name))
         stats: dict = {}
-        cmd = SnapshotImport(
-            lambda scene: stats.update(
-                load_dxf(scene, path, progress=cb, scale=scale, doc=doc,
-                         name=shown.stem)))
+        failure: list = []
+
+        def load(scene):
+            try:
+                stats.update(load_dxf(scene, path, progress=cb, scale=scale,
+                                      doc=doc, name=shown.stem))
+            except Exception as exc:  # noqa: BLE001 — surface parse errors
+                failure.append(exc)
+                raise               # history.execute rolls back and keeps it
+
+        cmd = SnapshotImport(load)
+        was_clean = not self._is_dirty()
         try:
             self.viewport.history.execute(cmd)
-        except Exception as exc:  # noqa: BLE001 — surface parse errors
+        except Exception as exc:  # noqa: BLE001
+            failure.append(exc)
+        if failure:
             dlg.close()
-            QMessageBox.critical(self, tr("Import DXF failed"), str(exc))
+            # The rollback moved the version on, and nothing changed: an
+            # untouched project stays so, and a tab opened for this goes.
+            if was_clean:
+                self._saved_version = self.viewport.scene.version
+            self._update_title()
+            QMessageBox.critical(
+                self, (tr("Import DWG failed") if label is not None
+                       else tr("Import DXF failed")),
+                self._dxf_failure_text(failure[0], shown))
             return False
         self._prepare_import_display(cmd, cb)
         dlg.close()
@@ -8433,6 +8451,20 @@ class MainWindow(QMainWindow):
         msg += self._survey_note(stats.get("offset"))
         self.statusBar().showMessage(msg, 8000)
         return True
+
+    @staticmethod
+    def _dxf_failure_text(exc, shown) -> str:
+        from formats.dxf_in import NothingToImport
+        if not isinstance(exc, NothingToImport):
+            return str(exc)
+        text = tr("“{name}” was read, but it has nothing that can be imported: "
+                  "no lines, polylines, arcs, circles, ellipses, splines or "
+                  "faces in the model space.", name=shown.name)
+        if exc.skipped:
+            kinds = ", ".join(f"{kind} ×{n}"
+                              for kind, n in sorted(exc.skipped.items()))
+            text += "\n\n" + tr("Left out: {kinds}", kinds=kinds)
+        return text
 
     def _dxf_unit(self, path, header_scale=None) -> "float | None":
         """Confirm the drawing's unit. The header's declaration (when there
