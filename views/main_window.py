@@ -1241,9 +1241,6 @@ class MainWindow(QMainWindow):
         layers = getattr(getattr(self, "layers_dock", None), "panel", None)
         if layers is not None:
             layers.refresh_pencil_icons()
-        styles = getattr(self, "styles_panel", None)
-        if styles is not None:
-            styles.refresh()
 
     def changeEvent(self, event) -> None:
         # Qt posts these when the OS/Qt theme (palette) flips at runtime.

@@ -3627,13 +3627,12 @@ class StylesPanel(QWidget):
     def _refresh_library(self, *_args) -> None:
         from core.style import BUILTIN_STYLES, user_styles
         from views.style_preview import style_preview
-        from views.theme import accent_color
 
         users = user_styles()
         collection = self._collection.currentData()
         # Edits refresh the header frequently. Keep the browser's scroll
         # position and keyboard focus unless its collection actually changed.
-        key = (collection, tuple(s.to_dict() for s in users), accent_color().rgba())
+        key = (collection, tuple(s.to_dict() for s in users))
         if key != self._library_key:
             self._library_key = key
             self._library.clear()
