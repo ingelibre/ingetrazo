@@ -358,3 +358,49 @@ def test_opening_the_views_keeps_hide_similar(win):
     win.viewport.scene.hide_similar_components = True
     win.set_view_layout("four")
     assert win.viewport.scene.hide_similar_components is True
+
+
+class _Workspace:
+    allowed_tools = None
+
+    def __init__(self):
+        from core.history import History
+        from core.scene import Scene
+        self.scene = Scene()
+        self.history = History(self.scene)
+
+    def title(self):
+        return "w"
+
+    def is_dirty(self):
+        return False
+
+    def confirm_leave(self):
+        return True
+
+
+def test_a_workspace_reaches_the_extra_views(win):
+    """They kept the parked model: a tool in one of them edited it, unseen,
+    behind the extension's document."""
+    win.set_view_layout("four")
+    model = win.viewport.scene
+    ws = _Workspace()
+    assert win.enter_workspace(ws)
+    for vp in _grid(win).extras():
+        assert vp.scene is ws.scene and vp.history is ws.history
+    assert win.leave_workspace()
+    assert win.viewport.scene is model
+    for vp in _grid(win).extras():
+        assert vp.scene is model and vp.history is win.viewport.history
+    assert not win._is_dirty()
+
+
+def test_quitting_hands_back_the_extra_views_textures(win, monkeypatch):
+    win.set_view_layout("four")
+    gone = []
+    for vp in _grid(win).extras():
+        monkeypatch.setattr(vp, "release_gl_textures",
+                            lambda v=vp: gone.append(v))
+    extras = _grid(win).extras()
+    win.close()
+    assert all(vp in gone for vp in extras)

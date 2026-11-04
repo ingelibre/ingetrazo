@@ -7067,6 +7067,7 @@ class MainWindow(QMainWindow):
         }
         self._parked["scene"], self._parked["history"] = vp.set_document(
             workspace.scene, workspace.history)
+        self._follow_in_extra_views()
         self._workspace = workspace
         self._project_tabs.setEnabled(False)   # the workspace holds the window
         self.set_tool_filter(getattr(workspace, "allowed_tools", None))
@@ -7090,6 +7091,7 @@ class MainWindow(QMainWindow):
         if hasattr(ws, "camera"):
             ws.camera = self._camera_dict()
         self.viewport.set_document(p["scene"], p["history"])
+        self._follow_in_extra_views()
         self._workspace, self._parked = None, None
         self._project_tabs.setEnabled(True)
         self.set_tool_filter(None)
@@ -7105,6 +7107,13 @@ class MainWindow(QMainWindow):
         if hasattr(ws, "left"):
             ws.left()
         return True
+
+    def _follow_in_extra_views(self) -> None:
+        """The window's viewport has another document: the project's other
+        views go with it, or a tool in one would edit the one left behind."""
+        grid = self._doc.view_grid
+        if grid is not None:
+            grid.follow_document()
 
     def workspace(self):
         """The extension workspace shown instead of the model, or None."""
@@ -9489,7 +9498,9 @@ class MainWindow(QMainWindow):
         # them down leaks each with a "Texture has not been destroyed"
         # warning; the context's aboutToBeDestroyed hook alone fires too late
         # on app exit, when the Python side is already coming apart.
-        for vp in self.all_viewports():
+        extras = [vp for doc in self._documents if doc.view_grid is not None
+                  for vp in doc.view_grid.extras()]
+        for vp in self.all_viewports() + extras:
             try:
                 vp.release_gl_textures()
             except Exception:  # noqa: BLE001 — never block quitting on cleanup
