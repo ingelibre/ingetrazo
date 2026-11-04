@@ -1384,9 +1384,12 @@ def _edge_face_snap(
         if abs(den) < 1e-9 * ab.length():
             continue                      # parallel / in the plane
         t = QVector3D.dotProduct(n, origin - edge.a) / den
-        if t < -1e-6 or t > 1.0 + 1e-6:
-            continue                      # the edge stops short of the plane
-        hit = edge.a + ab * max(0.0, min(1.0, t))
+        # Strictly inside the span: an edge that merely ENDS on the face (a
+        # wall rising from a slab) has an endpoint there, with its own radius.
+        margin = 1e-4 / ab.length()
+        if t <= margin or t >= 1.0 - margin:
+            continue                      # stops short of the plane, or on it
+        hit = edge.a + ab * t
         hp = world_to_pixel(hit)
         if hp is None:
             continue

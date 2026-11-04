@@ -70,6 +70,13 @@ def test_an_edge_stopping_short_of_the_plane_is_ignored():
     assert _snap(short, V(1.0, 1.0, 0.0)).kind != "intersection"
 
 
+def test_an_edge_ending_on_the_face_does_not_pierce_it():
+    """A wall rising from a slab: its foot is an endpoint, with the endpoint's
+    radius. Past that radius the cursor is on the face, not on a crossing."""
+    for rising in (_edge(V(1, 1, 0), V(1, 1, 2)), _edge(V(1, 1, 2), V(1, 1, 0))):
+        assert _snap(rising, V(1.11, 1.0, 0.0)).kind != "intersection"
+
+
 def test_an_edge_lying_in_the_plane_has_no_single_crossing():
     flat = _edge(V(-1, 1, 0), V(1, 1, 0))
     assert _snap(flat, V(0.3, 1.0, 0.0)).kind != "intersection"
