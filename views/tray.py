@@ -4525,6 +4525,21 @@ class BimPanel(QWidget):
             it += 1
         fit_rows(self.tree, rows=rows)
 
+    def _folded_groups(self) -> set:
+        """The ``id`` of the group behind each folded row of the table."""
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        folded = set()
+        it = QTreeWidgetItemIterator(self.tree)
+        while it.value() is not None:
+            item = it.value()
+            if item.childCount() and not item.isExpanded():
+                idx = item.data(0, Qt.UserRole)
+                group = (self._containers[-idx - 1] if idx < 0
+                         else self._objects[idx].get("group"))
+                folded.add(id(group))
+            it += 1
+        return folded
+
     # ---- Actions -------------------------------------------------------------
     def _on_tag(self) -> None:
         from core.bim import next_object_id, tag_faces, tag_group
@@ -4677,6 +4692,9 @@ class BimPanel(QWidget):
                 and getattr(self, "_untagged_scene", None) == id(scene)
                 and hist.tags_cv == scene.content_version):
             return
+        # The rows are rebuilt below, and opening a group is a change of
+        # content: what the user folded has to survive it (#1117).
+        folded = self._folded_groups()
         # A memo per panel: an edit re-measures only the objects it touched.
         memo = self.__dict__.setdefault("_takeoff_memo", {})
         self._objects = collect_objects(scene, memo)
@@ -4765,6 +4783,14 @@ class BimPanel(QWidget):
             else:
                 parent.addChild(item)
         self.tree.expandAll()
+        self.tree.blockSignals(True)            # one _fit_tree, below
+        try:
+            for rows in (tagged_rows, group_rows):
+                for key, row in rows.items():
+                    if key in folded:
+                        row.setExpanded(False)
+        finally:
+            self.tree.blockSignals(False)
         self._fit_tree()
 
 
