@@ -4011,13 +4011,14 @@ class Viewport(QOpenGLWidget):
         self._placements_memo = (key, out)
         return out
 
-    def _expand_placements(self, group, out=None, seen=None):
+    def _expand_placements(self, group, out=None, seen=None, above=None):
         """``group`` followed by its nested placements, as stable proxies.
 
         Used both for the whole scene (``_placements``) and for ONE group's
         subtree — a caller that used to treat a group as "its mesh" has to
         take the subtree instead, or a component drags an empty ghost while
-        its children sit frozen at the old spot."""
+        its children sit frozen at the old spot. ``above`` is the paint
+        ``group`` sits in, when it is not a top-level object."""
         if out is None:
             out = []
         cache = getattr(self, "_placement_proxies", None)
@@ -4102,7 +4103,7 @@ class Viewport(QOpenGLWidget):
                          proxy.hidden, kid_forced, proxy.layer, proxy.material)
 
         walk(group, getattr(group, "xform", None), hidden=bool(group.hidden),
-             paint=getattr(group, "material", None))
+             paint=getattr(group, "material", None) or above)
         return out
 
     def prepare_drawing(self, progress=None) -> None:
@@ -6717,8 +6718,13 @@ class Viewport(QOpenGLWidget):
         # spot — the hedge stood still through the whole drag and teleported
         # on release (Marco: "cuando roto o muevo tiene laj bastante").
         movers: list = []
+        # Inside an open group the movers sit in its paint: without it a
+        # plain piece turned unpainted for the drag and came back on release
+        # (#1101).
+        open_paint = self.scene.open_group_paint()
+        self._placements()                     # the proxies _preview_chunk bakes
         for g in groups:
-            self._expand_placements(g, movers)
+            self._expand_placements(g, movers, above=open_paint)
         groups = movers
         self._preview_external = external
         if not external:
@@ -6745,7 +6751,7 @@ class Viewport(QOpenGLWidget):
                     # anchor rides the preview transform): their raw mesh
                     # quad in the scratch VBOs showed a swimming texture.
                     continue
-                ch = self._group_chunk(g)
+                ch = self._preview_chunk(g)
                 if ch["edges"]:
                     edge_parts.append(ch["edges"])
                 if ch["vcol"]:
@@ -6777,6 +6783,13 @@ class Viewport(QOpenGLWidget):
             self._pv_tex_runs = runs
         finally:
             self.doneCurrent()
+
+    def _preview_chunk(self, g):
+        """The arrays of a mover's scratch copy. A nested piece handed in as
+        itself bakes through its placement proxy, which knows the paint above
+        it; the piece alone only knows its own (#1101)."""
+        proxies = getattr(self, "_placement_proxies", None) or {}
+        return self._group_chunk(proxies.get(id(g), g))
 
     def end_groups_preview(self) -> None:
         if not getattr(self, "_preview_external", False):

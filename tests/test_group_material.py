@@ -438,3 +438,32 @@ def test_an_open_plain_piece_keeps_wearing_its_container_paint():
     assert _paint_of(vp, scene.edit_group)["color"] == GRASS["color"]
     scene.end_group_edit()
     assert scene.open_group_paint() is None
+
+
+def test_a_plain_piece_keeps_its_container_paint_through_a_drag():
+    """Open a painted group and drag a plain child, leaf or container: the
+    scratch copy wears the same paint as the piece at rest."""
+    scene = Scene()
+    vp = _stub(scene)
+
+    def piece(name, x):
+        m = Mesh()
+        m.add_face([V(x, 0), V(x + 1, 0), V(x + 1, 1), V(x, 1)])
+        return Group(m, name)
+
+    inner = Group(Mesh(), "Inner")
+    inner.children = [piece("Deep", 0)]
+    leaf = piece("Leaf", 2)
+    top = Group(Mesh(), "Top")
+    top.children = [inner, leaf]
+    top.material = dict(GRASS)
+    scene.groups.append(top)
+    scene.version += 1
+    scene.begin_group_edit(top)
+    grass = tuple(round(float(c), 3)
+                  for c in vp._shaded_color(tuple(GRASS["color"]), V(0, 0, 1)))
+    vp._placements()
+    for mover in (inner, leaf):
+        movers = vp._expand_placements(mover, above=scene.open_group_paint())
+        baked = [vp._preview_chunk(g) for g in movers if g.mesh.faces]
+        assert baked and all(_vcol_colours(ch) == {grass} for ch in baked)
