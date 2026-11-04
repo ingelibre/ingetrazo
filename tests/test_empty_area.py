@@ -157,3 +157,14 @@ def test_closing_all_from_the_tab_menu_leaves_it_empty(win):
     next(a for a in menu.actions()
          if a.text() == tr("Close All Projects")).trigger()
     assert win.is_empty()
+
+
+def test_plus_from_the_empty_area_starts_a_new_document(win):
+    """The blank project behind the area was made without what a new
+    document starts with: «+» gave one without its scale figure."""
+    win.close_document()
+    assert not win.viewport.scene.groups
+    win._project_tabs.plus.click()
+    assert not win.is_empty()
+    assert win.viewport.scene.groups
+    assert not win._is_dirty()

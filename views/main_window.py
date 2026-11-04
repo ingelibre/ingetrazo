@@ -6337,6 +6337,7 @@ class MainWindow(QMainWindow):
         self.viewport.end_group_edit()
         if self._empty_on:                  # the blank one behind: it
             self._leave_empty_area()
+            self._start_blank_document()
             return
         self._new_document()
         self._start_blank_document()
