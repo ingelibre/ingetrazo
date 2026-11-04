@@ -5,7 +5,9 @@
 A group opened inside another, or a container opened with faces of its own,
 keeps a matrix, and it used to draw through the instanced path, whose caches
 trust the placements epoch: the epoch leaves the open mesh out on purpose, so
-paint, new faces and moves did not show until it was closed. Real frames are read back, in the offscreen platform's GL context."""
+paint, new faces and moves did not show until it was closed. The other half: a
+closed mesh repainted (an undo after leaving it, a material edited) bumped no
+serial. Real frames are read back, in the offscreen platform's GL context."""
 from __future__ import annotations
 
 import os
@@ -18,7 +20,8 @@ from PySide6.QtWidgets import QApplication
 
 from core.group import Group
 from core.history import (SetFaceBackCommand, SetFaceColorCommand,
-                          SetFaceOpacityCommand, SetFaceTextureCommand)
+                          SetFaceOpacityCommand, SetFaceTextureCommand,
+                          SetFaceMaterialTagCommand)
 from core.mesh import Mesh
 
 _app = QApplication.instance() or QApplication([])
@@ -232,6 +235,39 @@ def test_moving_all_of_it_shows(win, layout):
         mesh.move_vertex(v, V(0, 0, 50))
     vp.scene.version += 1
     assert _pixel(vp) != before
+
+
+@every_layout
+def test_undo_after_leaving_the_group_shows(win, layout):
+    vp = win.viewport
+    _open(vp, layout)
+    vp.history.execute(SetFaceColorCommand([_front_face(vp)], (1.0, 0.0, 0.0)))
+    _pixel(vp)
+    vp.end_group_edit()
+    assert _red(_pixel(vp))
+    while vp.history.undo_stack:
+        vp.history.undo()
+    assert not _red(_pixel(vp))
+
+
+@every_layout
+def test_a_material_edited_with_the_group_closed_shows(win, layout):
+    from core.history import RestampMaterialCommand
+    from core.materials import Material
+    vp = win.viewport
+    _open(vp, layout)
+    f = _front_face(vp)
+    vp.history.execute(SetFaceMaterialTagCommand(
+        [f], "M", Material("M", color=(0.0, 1.0, 0.0))))
+    vp.history.execute(SetFaceColorCommand([f], (0.0, 1.0, 0.0)))
+    _pixel(vp)
+    vp.end_group_edit()
+    _pixel(vp)
+    vp.history.execute(RestampMaterialCommand(
+        "M", Material("M", color=(1.0, 0.0, 0.0))))
+    assert _red(_pixel(vp))
+    vp.history.undo()
+    assert not _red(_pixel(vp))
 
 
 def _single_child(vp):
