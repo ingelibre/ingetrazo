@@ -20,11 +20,12 @@ X-ray is an independent overlay: it keeps the face mode and makes faces
 transparent while allowing inference through them. Legacy ``face_mode=xray``
 documents load as textured faces with this overlay enabled.
 
-Deferred (documented, not lost): jitter and watermarks.
+Deferred (documented, not lost): jitter.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from core.watermark import Watermark, load_watermarks
 
 FACE_MODES = ("textures", "shaded", "hidden_line", "monochrome",
               "wireframe")
@@ -109,6 +110,8 @@ class Style:
     ground: bool | None = None
     ground_transparency: int = 0
     ground_from_below: bool = True
+    watermarks: list[Watermark] = field(default_factory=list)
+    watermarks_visible: bool = True
 
     def __post_init__(self):
         if self.face_mode == "xray":
@@ -140,6 +143,10 @@ class Style:
             out["color_by_layer"] = True
         if xray_enabled(self):
             out["xray"] = True
+        if self.watermarks:
+            out["watermarks"] = [mark.to_dict() for mark in self.watermarks]
+        if not self.watermarks_visible:
+            out["watermarks_visible"] = False
         # Keep old/default styles byte-for-byte compatible. New fields are
         # optional, including the values of currently disabled effects.
         defaults = {"profile_width": 1, "profile_cap": "butt", "depth_cue": False,
@@ -208,6 +215,8 @@ class Style:
             ground=(bool(raw["ground"]) if raw.get("ground") is not None else None),
             ground_transparency=_pixel_value(raw.get("ground_transparency"), 0, (0, 100)),
             ground_from_below=bool(raw.get("ground_from_below", True)),
+            watermarks=load_watermarks(raw.get("watermarks")),
+            watermarks_visible=bool(raw.get("watermarks_visible", True)),
             section_fill=bool(raw.get("section_fill", d.section_fill)),
             section_fill_color=tuple(raw.get("section_fill_color",
                                              d.section_fill_color)),

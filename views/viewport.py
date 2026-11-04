@@ -91,7 +91,7 @@ def _plog(tag: str, ms: float, extra: str = "", floor: float = 50.0) -> None:
                      f"{tag} {ms:.0f}ms"
                      f"{' ' + extra if extra else ''}\n")
 
-from PySide6.QtCore import (QEvent, QObject, Qt, QPointF, QRectF, QTimer,
+from PySide6.QtCore import (QEvent, QObject, Qt, QPointF, QRectF, QSize, QTimer,
                             Signal)
 from PySide6.QtGui import (
     QColor,
@@ -2129,6 +2129,7 @@ class Viewport(QOpenGLWidget):
 
         self._program = self._compile_program()
         self._style_ground_program = None
+        self._watermark_textures = {}
         self._loc_mvp = self._program.uniformLocation("u_mvp")
         self._loc_color = self._program.uniformLocation("u_color")
         self._loc_back_color = self._program.uniformLocation("u_back_color")
@@ -2215,6 +2216,7 @@ class Viewport(QOpenGLWidget):
         self._preview_tex_vao, self._preview_tex_vbo = self._create_dynamic_uv()
         self._section_vao, self._section_vbo = self._create_dynamic()
         self._tile_quad_vao, self._tile_quad_vbo = self._create_dynamic_uv()
+        self._watermark_vao, self._watermark_vbo = self._create_dynamic_uv()
         self._terrain_vao, self._terrain_vbo = self._create_dynamic_uv()
         self._photo_vao, self._photo_vbo = self._create_dynamic_uv()
 
@@ -2509,6 +2511,7 @@ class Viewport(QOpenGLWidget):
         # Base-map tiles (Track G) — the ground image, drawn before the grid so
         # the grid lines read on top of the imagery. Depth-write OFF: it's a
         # backdrop, geometry always draws over it.
+        self._draw_style_watermarks(style, "background", w, h)
         self._render_tiles()
 
         # 3D draped terrain (Track G, G2 full) — real depth-tested relief that
@@ -2615,6 +2618,7 @@ class Viewport(QOpenGLWidget):
         if not depth_wire:
             self._gl.glEnable(GL_DEPTH_TEST)
 
+        self._draw_style_watermarks(style, "foreground", w, h)
         self._program.release()
 
         if self._export_size is not None:
@@ -5925,6 +5929,11 @@ class Viewport(QOpenGLWidget):
         self._forget_frame_records()
         self.makeCurrent()
         try:
+            watermarks = getattr(self, "_watermark_textures", None)
+            if watermarks:
+                for _key, texture in watermarks.values():
+                    texture.destroy()
+                watermarks.clear()
             cache = getattr(self, "_tex_cache", None)
             if cache:
                 for tex in cache.values():
@@ -6339,6 +6348,65 @@ class Viewport(QOpenGLWidget):
             self._sky_vao.release()
         self._gl.glEnable(GL_DEPTH_TEST)
         self._gl.glDepthMask(GL_TRUE)
+
+    def _draw_style_watermarks(self, style, layer, width, height) -> None:
+        if (not style.watermarks_visible or not any(
+                mark.visible and mark.opacity > 0 and mark.layer == layer
+                for mark in style.watermarks)):
+            return
+        from views.watermarks import paint_watermarks
+        from PySide6.QtGui import QTransform
+        marks = tuple(mark for mark in style.watermarks if mark.layer == layer)
+        key = (marks, width, height)
+        cached = self._watermark_textures.get(layer)
+        if cached is None or cached[0] != key:
+            image = QImage(width, height, QImage.Format_RGBA8888)
+            image.fill(Qt.transparent)
+            painter = QPainter(image)
+            try:
+                paint_watermarks(painter, style, QSize(width, height), layer)
+            finally:
+                painter.end()
+            if cached is not None:
+                cached[1].destroy()
+            texture = QOpenGLTexture(image.transformed(QTransform.fromScale(1, -1)))
+            texture.setMinificationFilter(QOpenGLTexture.Linear)
+            texture.setMagnificationFilter(QOpenGLTexture.Linear)
+            self._watermark_textures[layer] = (key, texture)
+        else:
+            texture = cached[1]
+        self._program.bind()
+        quad = array("f", [-1, -1, 0, 0, 0, 1, -1, 0, 1, 0, 1, 1, 0, 1, 1,
+                           -1, -1, 0, 0, 0, 1, 1, 0, 1, 1, -1, 1, 0, 0, 1])
+        self._watermark_vbo.bind()
+        self._watermark_vbo.allocate(quad.tobytes(), len(quad) * 4)
+        self._watermark_vbo.release()
+        self._program.setUniformValue(self._loc_mvp, QMatrix4x4())
+        self._program.setUniformValue(self._loc_use_vcolor, 0)
+        self._program.setUniformValue(self._loc_use_tex, 1)
+        self._program.setUniformValue1f(self._loc_shade, 1.0)
+        self._program.setUniformValue1f(self._loc_opacity, 1.0)
+        self._program.setUniformValue1f(self._loc_xray_opacity, 1.0)
+        self._program.setUniformValue(self._program.uniformLocation("u_screen_image"), 1)
+        self._set_color(1.0, 1.0, 1.0, 1.0)
+        self._gl.glDisable(GL_DEPTH_TEST)
+        self._gl.glDisable(GL_CULL_FACE)
+        self._gl.glEnable(GL_BLEND)
+        self._gl.glDepthMask(GL_FALSE)
+        self._gl.glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                                     1, GL_ONE_MINUS_SRC_ALPHA)
+        texture.bind(0)
+        self._watermark_vao.bind()
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, 6)
+        self._watermark_vao.release()
+        texture.release(0)
+        self._program.setUniformValue(self._program.uniformLocation("u_screen_image"), 0)
+        self._program.setUniformValue(self._loc_use_tex, 0)
+        self._program.setUniformValue(self._loc_mvp,
+                                      self.camera.projection_matrix() * self.camera.view_matrix())
+        self._gl.glDepthMask(GL_TRUE)
+        self._gl.glEnable(GL_DEPTH_TEST)
+        self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
     def _style_ground_visible(self, style) -> bool:
         return (style.ground is True and style.ground_transparency < 100

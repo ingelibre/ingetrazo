@@ -35,12 +35,15 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
     painter.setRenderHint(QPainter.Antialiasing)
     painter.scale(size.width() / 100.0, size.height() / 80.0)
     try:
+        from views.watermarks import paint_watermarks
         if style.sky:
             horizon = getattr(style, "horizon_color", None) or (0.98, 0.98, 0.98)
             sky = QLinearGradient(0, 0, 0, 48)
             sky.setColorAt(0, _color(style.sky_color))
             sky.setColorAt(1, _color(horizon))
             painter.fillRect(QRectF(0, 0, 100, 48), sky)
+        if style.ground is not None:
+            paint_watermarks(painter, style, QSize(100, 80), "background")
         if ground_enabled(style):
             painter.setOpacity(1.0 - style.ground_transparency / 100.0)
             ground = QLinearGradient(0, 48, 0, 80)
@@ -48,6 +51,8 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
             ground.setColorAt(1, _color(style.ground_color))
             painter.fillRect(QRectF(0, 48, 100, 32), ground)
             painter.setOpacity(1.0)
+        if style.ground is None:
+            paint_watermarks(painter, style, QSize(100, 80), "background")
 
         mode = base_face_mode(style)
         xray = xray_enabled(style) and mode != "wireframe"
@@ -166,6 +171,7 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
                     painter.drawRect(QRectF(x - r, y - r, r * 2, r * 2))
                 else:
                     painter.drawPolygon(_polygon([(x, y - r), (x + r, y + r), (x - r, y + r)]))
+        paint_watermarks(painter, style, QSize(100, 80), "foreground")
     finally:
         painter.end()
     return pixmap

@@ -4,6 +4,28 @@ Open **Styles** from the Panels toolbar. The window stays open while you work in
 Use **Select** to browse Built-in styles or My styles, and **Edit** to adjust the current look.
 Changes appear immediately; **Save style…** stores a reusable copy in My styles.
 
+## Watermarks
+
+On **Edit**, choose **Watermark settings** and **Add image…**. PNG, JPEG, BMP and
+WebP images are embedded in the style, so moving or deleting the original image
+does not remove the watermark from saved styles, views or IGZ documents.
+
+**Display watermarks** controls the whole collection; **Visible** controls the
+selected image. Name, opacity, placement and scale update the model immediately.
+Choose **Behind model** for a background or **In front of model** for an overlay.
+Within each placement layer, the top image in the list appears on top; use the
+arrow buttons to reorder images and **Delete** to remove the selected image.
+
+**Positioned** offers nine anchors and a width relative to the viewport, preserving
+the image's proportions. **Stretched** fills the viewport; **Keep aspect ratio**
+fills it without distortion, cropping any excess. **Tiled** repeats the image
+at the chosen scale. Disabled placement controls retain their values.
+
+Images stay fixed on screen during orbit and zoom, and scale with exported views.
+Background images sit behind model geometry and the display ground; foreground
+images cover the model but remain below the application's interactive drawing cues.
+None of these image layers becomes model geometry or a snapping target.
+
 ## Background
 
 On **Edit**, choose **Background settings**. Pick the background color and turn

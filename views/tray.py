@@ -3602,8 +3602,9 @@ class StylesPanel(QWidget):
         int_row.addWidget(self._ao_int_val)
         faces.addLayout(int_row, 8, 1)
 
-        watermark.addWidget(self._notice(
-            tr("Watermark settings are not available yet.")), 0, 0, 1, 2)
+        from views.watermarks_panel import WatermarksPanel
+        self._watermarks = WatermarksPanel(self._style, self._watermark_changed, self)
+        watermark.addWidget(self._watermarks, 0, 0, 1, 2)
         for grid in grids:
             grid.setRowStretch(grid.rowCount(), 1)
         self._edit_group.idClicked.connect(self._select_category)
@@ -3845,6 +3846,7 @@ class StylesPanel(QWidget):
             self._ground_transparency.setValue(style.ground_transparency)
             self._ground_from_below.setChecked(style.ground_from_below)
             self._sync_background_controls()
+            self._watermarks.refresh()
             self._fill.setChecked(style.section_fill)
             self._edge_c.setStyleSheet(self._css(style.edge_color))
             self._front_c.setStyleSheet(self._css(style.front_color))
@@ -3918,6 +3920,10 @@ class StylesPanel(QWidget):
         style.ambient_occlusion = self._ao.isChecked()
         style.ao_intensity = self._ao_int.value() / 10.0
         self._sync_ao_controls()
+        self._window._sync_style_menu()
+        self._window.viewport.update()
+
+    def _watermark_changed(self) -> None:
         self._window._sync_style_menu()
         self._window.viewport.update()
 

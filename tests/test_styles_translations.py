@@ -38,6 +38,11 @@ def _style_strings():
     strings.update(("Styles", "Built-in styles", "My styles", "All same", "By material", "By axis"))
     from core.style import BUILTIN_STYLES
     strings.update(style.name for style in BUILTIN_STYLES)
+    watermark_tree = ast.parse((ROOT / "views" / "watermarks_panel.py").read_text(encoding="utf-8"))
+    strings.update(node.args[0].value for node in ast.walk(watermark_tree)
+                   if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                   and node.func.id == "tr" and node.args
+                   and isinstance(node.args[0], ast.Constant))
     return strings
 
 
