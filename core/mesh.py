@@ -57,6 +57,14 @@ def _key(p: QVector3D) -> tuple[int, int, int]:
             round(z * _KEY_SCALE))
 
 
+def edge_material_key(a, b) -> tuple:
+    """Stable, direction-independent key for sparse serialized edge paint."""
+    def point(value):
+        coords = value.toTuple() if hasattr(value, "toTuple") else value
+        return tuple(round(float(c) * _KEY_SCALE) for c in coords)
+    return tuple(sorted((point(a), point(b))))
+
+
 class Vertex:
     """A shared point in the mesh.
 
@@ -92,7 +100,7 @@ class Edge:
     """
 
     __slots__ = ("v0", "v1", "faces", "soft", "curve", "layer",
-                 "hidden")
+                 "hidden", "material")
 
     def __init__(self, v0: Vertex, v1: Vertex) -> None:
         self.v0 = v0
@@ -105,6 +113,9 @@ class Edge:
         # as a line nor as a profile/silhouette (imported foliage cards —
         # the leaf's outline is its texture mask, not its quad).
         self.hidden: bool = False
+        # Independent edge paint. Unpainted edges keep None and inherit a
+        # container's material only in the By material display mode.
+        self.material: dict | None = None
         # Layer / tag name (None = default layer).
         self.layer = None
         # Segments of one drawn curve (circle/arc) share a ``curve`` id, so
@@ -154,14 +165,17 @@ PAINT_KEYS = ("color", "mat", "texture", "opacity")
 #: Marco hid an edge, grouped the drawing, and the edge came back (2026-09-10)
 #: because ``hidden`` was added to ``Edge`` later and only some of the copies
 #: learned about it. Adding a flag here now teaches every one of them at once.
-EDGE_FLAG_NAMES = ("soft", "curve", "layer", "hidden")
-EDGE_FLAG_DEFAULTS = (False, None, None, False)
+EDGE_FLAG_NAMES = ("soft", "curve", "layer", "hidden", "material")
+EDGE_FLAG_DEFAULTS = (False, None, None, False, None)
 
 
 def edge_flags(edge) -> tuple:
     """The edge's flags as a tuple, ready to travel with its coordinates."""
-    return tuple(getattr(edge, name, default)
-                 for name, default in zip(EDGE_FLAG_NAMES, EDGE_FLAG_DEFAULTS))
+    import copy
+    return tuple(copy.deepcopy(value) if name == "material" and value else value
+                 for name, value in ((name, getattr(edge, name, default))
+                                     for name, default in
+                                     zip(EDGE_FLAG_NAMES, EDGE_FLAG_DEFAULTS)))
 
 
 def edge_is_plain(edge) -> bool:
@@ -172,6 +186,9 @@ def edge_is_plain(edge) -> bool:
 def stamp_edge_flags(edge, flags) -> None:
     """Put back what :func:`edge_flags` took."""
     for name, value in zip(EDGE_FLAG_NAMES, flags):
+        if name == "material" and value:
+            import copy
+            value = copy.deepcopy(value)
         setattr(edge, name, value)
 
 
@@ -850,6 +867,9 @@ class Mesh:
                     e.soft = True
                 if len(flags[i]) > 3 and flags[i][3]:
                     e.hidden = True
+                if len(flags[i]) > 4 and flags[i][4]:
+                    import copy
+                    e.material = copy.deepcopy(flags[i][4])
                 if curve is not None:
                     e.curve = curve
                 if layer is not None:
@@ -1258,6 +1278,11 @@ class Mesh:
         self.remove_edge(edge)
         e0 = self._link_edge(v0, mid)
         e1 = self._link_edge(mid, v1)
+        if edge.material:
+            import copy
+            for sub in (e0, e1):
+                if sub.material is None:
+                    sub.material = copy.deepcopy(edge.material)
         for face in incident:
             self._insert_at_every_use(face, v0, v1, mid)
             for sub in (e0, e1):
@@ -1472,9 +1497,7 @@ class Mesh:
         # Sub-edges continue the split edge's curve/soft/layer identity.
         for sub, was_new in ((e0, e0_new), (e1, e1_new)):
             if was_new:
-                sub.soft = edge.soft
-                sub.layer = edge.layer
-                sub.curve = edge.curve
+                stamp_edge_flags(sub, edge_flags(edge))
         for face in incident:
             self._insert_into_face_loops(face, v0, v1, mid)
             if face not in e0.faces:
@@ -1492,6 +1515,8 @@ class Mesh:
         if len(v.edges) != 2:
             return False
         e1, e2 = list(v.edges)
+        if e1.material != e2.material:
+            return False
         d1 = v.position - e1.other(v).position
         d2 = e2.other(v).position - v.position
         if d1.length() < _STITCH_TOL or d2.length() < _STITCH_TOL:
@@ -1511,6 +1536,8 @@ class Mesh:
         self.remove_edge(e2)
         new_edge_existed = self.find_edge(n1, n2) is not None
         new_edge = self._link_edge(n1, n2)
+        if not new_edge_existed:
+            stamp_edge_flags(new_edge, edge_flags(e1))
         for face in faces:
             for loop in (face.loop, *face.hole_loops):
                 if v in loop:
@@ -1824,6 +1851,17 @@ def face_count(mesh) -> int:
     if type(mesh) is DeferredMesh:
         return mesh.__dict__["_deferred_nfaces"]
     return len(mesh.faces)
+
+
+def edge_materials(mesh):
+    """Independent edge paints, including those of an unbuilt mesh."""
+    if type(mesh) is DeferredMesh:
+        from formats.igz import _edge_material_map
+        yield from _edge_material_map(mesh.__dict__["_deferred_source"]["meta"]).values()
+    else:
+        for edge in mesh.edges:
+            if edge.material:
+                yield edge.material
 
 
 def face_attrs(mesh):

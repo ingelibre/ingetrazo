@@ -308,7 +308,40 @@ def _edge_json(e) -> dict:
         entry["curve"] = e.curve
     if getattr(e, "layer", None) is not None:
         entry["layer"] = e.layer
+    if getattr(e, "material", None):
+        entry["material"] = _face_attrs_json(SimpleNamespace(attrs=e.material))
     return entry
+
+
+def _edge_material_map(meta) -> dict:
+    """Read optional sparse edge paint; old documents simply have none."""
+    from core.mesh import edge_material_key
+    out = {}
+    entries = meta.get("edge_materials") or []
+    if not isinstance(entries, list):
+        return out
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("material"), dict):
+            continue
+        try:
+            key = edge_material_key(entry["a"], entry["b"])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        paint = _face_attrs_from_json(entry["material"])
+        if paint:
+            out[key] = paint
+    return out
+
+
+def _restore_edge_materials(mesh, meta) -> None:
+    from core.mesh import edge_material_key
+    paints = _edge_material_map(meta)
+    if paints:
+        import copy
+        for edge in mesh.edges:
+            paint = paints.get(edge_material_key(edge.a, edge.b))
+            if paint:
+                edge.material = copy.deepcopy(paint)
 
 
 def _mesh_json(mesh, geom_sink=None) -> dict:
@@ -338,6 +371,8 @@ def _plan_json(mesh, plan) -> dict:
     ``mesh`` would build, from its plan: the same entries, keys in the
     same order."""
     pos = plan.pos.tolist()
+    from core.mesh import edge_material_key
+    paints = _edge_material_map(mesh.__dict__["_deferred_source"]["meta"])
     edges = []
     for i, (a, b) in enumerate(plan.edges.tolist()):
         entry = {"a": list(pos[a]), "b": list(pos[b])}
@@ -349,6 +384,9 @@ def _plan_json(mesh, plan) -> dict:
             entry["curve"] = plan.curve[i]
         if plan.layer[i] is not None:
             entry["layer"] = plan.layer[i]
+        paint = paints.get(edge_material_key(pos[a], pos[b])) if paints else None
+        if paint:
+            entry["material"] = _face_attrs_json(SimpleNamespace(attrs=paint))
         edges.append(entry)
     src = mesh.__dict__["_deferred_source"]
     raw = src["meta"].get("face_attrs") or []
@@ -480,7 +518,11 @@ def _pack_geometry(mesh, sink: dict) -> dict:
         arrays["edge_curve"] = curves
     if layers is not None:
         arrays["edge_layer"] = layers
-    return _write_geometry(arrays, table, layer_table, sink)
+    meta = _write_geometry(arrays, table, layer_table, sink)
+    painted = [_edge_json(edge) for edge in edges if edge.material]
+    if painted:
+        meta["edge_materials"] = painted
+    return meta
 
 
 def _write_geometry(arrays, table, layer_table, sink: dict) -> dict:
@@ -602,7 +644,11 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
                     layer_table.append(l)
                 layers[i] = k
         arrays["edge_layer"] = layers
-    return _write_geometry(arrays, table, layer_table, sink)
+    meta = _write_geometry(arrays, table, layer_table, sink)
+    if src["meta"].get("edge_materials"):
+        import copy
+        meta["edge_materials"] = copy.deepcopy(src["meta"]["edge_materials"])
+    return meta
 
 
 def save_scene(scene, path: Path) -> dict:
@@ -1431,6 +1477,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         scene.show_hidden_objects = bool(shown.get("objects", False))
         scene.show_hidden_geometry = bool(shown.get("geometry", False))
     scene.show_axes = not bool(payload.get("axes_hidden", False))
+    from core.modeling_style import apply_modeling_visibility
+    apply_modeling_visibility(scene)
 
     georef = payload.get("georef")
     if isinstance(georef, dict) and isinstance(georef.get("datum"), dict):
@@ -1553,6 +1601,8 @@ def _load_mesh_small(mesh, payload) -> None:
             edge.hidden = True
         if raw.get("layer"):
             edge.layer = raw["layer"]
+        if isinstance(raw.get("material"), dict):
+            edge.material = _face_attrs_from_json(raw["material"])
         cid = raw.get("curve")
         if cid is not None:
             edge.curve = cid
@@ -1671,6 +1721,11 @@ def _json_arrays(payload) -> dict | None:
         return None
     ne = len(raw_edges)
     meta: dict = {"face_attrs": table}
+    import copy
+    painted = [copy.deepcopy(raw) for raw in raw_edges
+               if isinstance(raw.get("material"), dict)]
+    if painted:
+        meta["edge_materials"] = painted
     if names:
         meta["edge_layers"] = list(names)
     return dict(
@@ -1699,6 +1754,8 @@ def _payload_from_arrays(src) -> dict:
     curves = src["curves"].tolist() if src["curves"] is not None else None
     layers = src["layers"].tolist() if src["layers"] is not None else None
     edges = []
+    from core.mesh import edge_material_key
+    paints = _edge_material_map(src["meta"])
     for i, (a, b) in enumerate(src["edges"].tolist()):
         raw = {"a": pos[a], "b": pos[b]}
         if flags[i] & 1:
@@ -1709,6 +1766,9 @@ def _payload_from_arrays(src) -> dict:
             raw["curve"] = curves[i]
         if layers is not None and layers[i] >= 0:
             raw["layer"] = names[layers[i]]
+        paint = paints.get(edge_material_key(pos[a], pos[b])) if paints else None
+        if paint:
+            raw["material"] = _face_attrs_json(SimpleNamespace(attrs=paint))
         edges.append(raw)
     rings = src["rings"].tolist()
     sizes = src["sizes"].tolist()
@@ -1775,7 +1835,9 @@ def _load_mesh_json(mesh, payload) -> None:
             if cid is not None and (max_curve is None or cid > max_curve):
                 max_curve = cid
             flags.append((bool(raw.get("soft")), cid, raw.get("layer"),
-                          bool(raw.get("hidden"))))
+                          bool(raw.get("hidden")),
+                          _face_attrs_from_json(raw["material"])
+                          if isinstance(raw.get("material"), dict) else None))
         emap = mesh.add_edges_welded(
             vobjs, inverse[0:n_edge_pts:2], inverse[1:n_edge_pts:2], flags)
         # Keep new curves unique after loading stored ids.
@@ -1943,3 +2005,4 @@ def _build_geometry(mesh, meta, pos, edges, flags, curves, layers, rings,
                  for k in face_attr.tolist()]
         mesh.add_faces_welded(vobjs, inverse[rings], sizes, counts, attrs,
                               edge_map=emap)
+    _restore_edge_materials(mesh, meta)
