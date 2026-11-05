@@ -13,6 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
+from PySide6.QtGui import QVector3D as V  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 import core._native as _native  # noqa: E402
@@ -154,3 +155,64 @@ def test_the_pointer_that_got_there_first_needs_no_warmup():
         assert getattr(va, "_pick_warm", None) is None
     finally:
         _close(a)
+
+
+def test_the_box_bounds_are_those_of_the_chunk_asked_alone():
+    from tools.select import _local_bounds
+    a, va = _window(lazy=True)
+    try:
+        va.start_pick_warmup()
+        warm = va._pick_warm
+        warm.join()
+        assert warm.bounds
+        vpmod._pick_warm_take(va)
+        for chunk, _s in warm.bounds:
+            hit = chunk["_box_bounds"]
+            assert hit[0] is chunk["v0"] and hit[1] is chunk["edges"]
+            alone = {k: chunk[k] for k in ("v0", "e1", "e2", "edges")}
+            want = _local_bounds(alone)
+            assert (hit[2][0] == want[0]).all() and (hit[2][1] == want[1]).all()
+    finally:
+        _close(a)
+
+
+def test_the_box_of_a_placement_nobody_baked():
+    """Its selection box asks for no world bake, and is what the bake carried:
+    fresh after a move, a new frame or an edit of the prototype."""
+    from PySide6.QtGui import QMatrix4x4
+    a, va = _window(lazy=True)
+    b, vb = _window(lazy=False)
+    try:
+        ga = next(g for g in va.scene.groups if g.name == "C33")
+        gb = next(g for g in vb.scene.groups if g.name == "C33")
+        cached = getattr(va, "_inst_chunks", None) or {}
+        cached.pop(id(ga), None)
+        vb._group_chunk(gb)                # the way through the bake
+        assert va._group_obb(ga) == vb._group_obb(gb)
+        assert id(ga) not in (getattr(va, "_inst_chunks", None) or {})
+        assert id(gb) in vb._inst_chunks
+        kept = va._group_obb(ga)
+        assert va._group_obb(ga) is kept
+        for g in (ga, gb):
+            m = QMatrix4x4(g.xform)
+            m.translate(1.0, 2.0, 0.5)
+            g.xform = m
+        moved = va._group_obb(ga)
+        assert moved is not kept
+        fresh = type(va)._compute_obb(ga)
+        assert moved == fresh
+        # The prototype edited: a new bake of it, so a new box.
+        ga.mesh.add_face([V(9, 9, 9), V(10, 9, 9), V(10, 10, 9)])
+        ga.mesh._chunk_dirty = True
+        va.scene.version += 1
+        assert va._group_obb(ga) == type(va)._compute_obb(ga)
+        assert va._group_obb(ga) != moved
+        # Once baked for another reason, the bake carries the box again.
+        va._group_chunk(ga)
+        assert id(ga) in va._inst_chunks
+        assert va._group_obb(ga) == type(va)._compute_obb(ga)
+        va.reset_document_caches()
+        assert va._inst_obb is None
+    finally:
+        _close(a)
+        _close(b)

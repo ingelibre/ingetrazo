@@ -295,11 +295,13 @@ class _PickWarm:
     own copies of the arrays' references. What they made reaches the viewport
     in _pick_warm_take, on the GUI thread, and only if it still applies."""
 
-    def __init__(self, mod, protos, grids):
+    def __init__(self, mod, protos, grids, bounds=()):
         import queue
         import threading
+        from tools.select import _local_bounds as local_bounds
         self.protos: dict = {}
         self.grids: list = []
+        self.bounds: list = []
         jobs: queue.SimpleQueue = queue.SimpleQueue()
         for ckey, base in protos:
             jobs.put(("proto", ckey, base))
@@ -307,6 +309,10 @@ class _PickWarm:
             jobs.put(("grid", chunk, {
                 "v0": chunk["v0"], "e1": chunk["e1"], "e2": chunk["e2"],
                 "tri_ent": chunk["tri_ent"], "rev": chunk.get("rev")}))
+        for chunk in bounds:
+            jobs.put(("bounds", chunk, {
+                "v0": chunk["v0"], "e1": chunk["e1"], "e2": chunk["e2"],
+                "edges": chunk["edges"]}))
 
         def work():
             while True:
@@ -317,9 +323,12 @@ class _PickWarm:
                 try:
                     if kind == "proto":
                         self.protos[a] = _inst_proto_of(mod, b)
-                    else:
+                    elif kind == "grid":
                         _split_chunk_spans(b)
                         self.grids.append((a, b))
+                    else:
+                        local_bounds(b)
+                        self.bounds.append((a, b))
                 except Exception:      # noqa: BLE001 — the hover will retry
                     pass
         # Daemons: closing the window does not wait for them.
@@ -349,6 +358,10 @@ def _pick_warm_take(vp) -> None:
         if ("_span_grid" not in chunk and chunk.get("rev") == snap["rev"]
                 and chunk["v0"] is snap["v0"]):
             chunk["_span_grid"] = snap["_span_grid"]
+    # (Keyed on the very arrays: a chunk that has moved on just misses it.)
+    for chunk, snap in warm.bounds:
+        if "_box_bounds" not in chunk:
+            chunk["_box_bounds"] = snap["_box_bounds"]
 
 
 def _entity_owner(entities, i):
@@ -5878,6 +5891,7 @@ class Viewport(QOpenGLWidget):
         walking the dead ones). And a CPython id() reused by a new group
         could meet an old entry — the composer's lesson with frames."""
         self._pick_warm = None               # its threads end on their own
+        self._inst_obb = None
         self._pick_warm_due = False
         draws = getattr(self, "_proto_draw", None)
         if draws and self.context() is not None:
@@ -13240,7 +13254,9 @@ class Viewport(QOpenGLWidget):
                     if (c["v0"] is not None and len(c["v0"]) > _SPAN_GRID_MIN
                             and "_span_grid" not in c):
                         grids.append(c)
-        self._pick_warm = _PickWarm(mod, protos, grids)
+        # What a box selection asks of each, the first time (2 s over 257).
+        bounds = [base for _k, base in protos]
+        self._pick_warm = _PickWarm(mod, protos, grids, bounds)
 
     def _static_occluders(self, idx):
         """core._native's InstanceSet over the pick index's own triangles
@@ -15555,13 +15571,34 @@ class Viewport(QOpenGLWidget):
                 cache.clear()
             cache[id(group)] = (key, obb)
             return obb
-        entry = self._group_chunk(group)
         # The box follows the group's axes (issue #44), and Change Axes can
         # turn them without touching one vertex — so the cached box is only
         # good for the frame it was measured on.
         from core.group import group_frame
         fr = group_frame(group)
         fkey = tuple(fr.data()) if fr is not None else None
+        xf = getattr(group, "xform", None)
+        if xf is not None and id(group) not in (
+                getattr(self, "_inst_chunks", None) or ()):
+            # A placement nobody has baked to the world: the box is measured
+            # on the points, the bake would only have carried it. Selecting
+            # the 590 objects of a big model baked them all (#1092). Good for
+            # what its bake would have been good for.
+            base = self._group_chunk(
+                _proto_wrapper(self, group.mesh, _paint_of(self, group)))
+            key = (base["uid"], tuple(xf.data()), base.get("rev"), fkey)
+            memo = getattr(self, "_inst_obb", None)
+            if memo is None:
+                memo = self._inst_obb = {}
+            hit = memo.get(id(group))
+            if hit is not None and hit[0] == key:
+                return hit[1]
+            obb = self._compute_obb(group)
+            if len(memo) > 65536:          # ids of placements long gone
+                memo.clear()
+            memo[id(group)] = (key, obb)
+            return obb
+        entry = self._group_chunk(group)
         obb = entry.get("obb")
         if obb is not None and entry.get("obb_frame") == fkey:
             return obb
