@@ -523,17 +523,21 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
     # Faces with more than one hole drop the nested ones, as the object
     # writer does (by their positions).
     if len(counts) and (counts > 2).any():
-        rs = np.concatenate([[0], np.cumsum(sizes)])
-        fr = np.concatenate([[0], np.cumsum(counts)])
-        keep_ring = np.ones(len(sizes), dtype=bool)
-        for f in np.flatnonzero(counts > 2).tolist():
-            hk = list(range(int(fr[f]) + 1, int(fr[f + 1])))
-            pos = [[QVector3D(*plan.pos[i]) for i in
-                    corners_v[int(rs[k]):int(rs[k + 1])].tolist()]
-                   for k in hk]
-            kept = {id(x) for x in _maximal_holes(pos)}
-            for k, p in zip(hk, pos):
-                keep_ring[k] = id(p) in kept
+        # A plan does not change: the next save (the autosave) has it.
+        keep_ring = plan.extra.get("keep_ring")
+        if keep_ring is None:
+            rs = np.concatenate([[0], np.cumsum(sizes)])
+            fr = np.concatenate([[0], np.cumsum(counts)])
+            keep_ring = np.ones(len(sizes), dtype=bool)
+            for f in np.flatnonzero(counts > 2).tolist():
+                hk = list(range(int(fr[f]) + 1, int(fr[f + 1])))
+                pos = [[QVector3D(*p) for p in plan.pos[
+                    corners_v[int(rs[k]):int(rs[k + 1])]].tolist()]
+                    for k in hk]
+                kept = {id(x) for x in _maximal_holes(pos)}
+                for k, p in zip(hk, pos):
+                    keep_ring[k] = id(p) in kept
+            plan.extra["keep_ring"] = keep_ring
         if not keep_ring.all():
             corners_v = corners_v[np.repeat(keep_ring, sizes)]
             ring_face = np.repeat(np.arange(len(counts)), counts)
@@ -587,11 +591,12 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
     }
     flags = (plan.soft.astype(np.uint8) | (plan.hidden.astype(np.uint8) << 1))
     arrays["edge_flags"] = flags
-    if any(c is not None for c in plan.curve):
+    # (list.count: a generator over millions of edges took seconds to say no.)
+    if plan.curve.count(None) != len(plan.curve):
         arrays["edge_curve"] = np.array(
             [-1 if c is None else c for c in plan.curve], dtype=np.int64)
     layer_table: list = []
-    if any(l is not None for l in plan.layer):
+    if plan.layer.count(None) != len(plan.layer):
         layer_index: dict = {}
         layers = np.full(ne, -1, dtype=np.int32)
         for i, l in enumerate(plan.layer):
