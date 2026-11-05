@@ -1477,6 +1477,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         scene.show_hidden_objects = bool(shown.get("objects", False))
         scene.show_hidden_geometry = bool(shown.get("geometry", False))
     scene.show_axes = not bool(payload.get("axes_hidden", False))
+    from core.modeling_style import apply_modeling_visibility
+    apply_modeling_visibility(scene)
 
     georef = payload.get("georef")
     if isinstance(georef, dict) and isinstance(georef.get("datum"), dict):

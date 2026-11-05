@@ -3368,5 +3368,12 @@
  "Create mask": "Criar máscara",
  "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "O branco fica transparente; o preto usa a cor de fundo do estilo. O cinza produz transparência parcial. A imagem original é preservada.",
  "Model space": "Espaço do modelo",
- "Images above this row appear in front of the model; images below stay behind it.": "As imagens acima desta linha aparecem à frente do modelo; as que estão abaixo ficam atrás."
+ "Images above this row appear in front of the model; images below stay behind it.": "As imagens acima desta linha aparecem à frente do modelo; as que estão abaixo ficam atrás.",
+ "Active section": "Seção ativa",
+ "Color by layer": "Cor por camada",
+ "Color of the selection outline for locked objects.": "Cor do contorno de seleção dos objetos bloqueados.",
+ "Inactive section": "Seção inativa",
+ "Model axes": "Eixos do modelo",
+ "Section cut width:": "Espessura do corte:",
+ "Section cuts": "Linhas de corte"
 }

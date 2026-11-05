@@ -1312,6 +1312,8 @@ def shown_guides(scene) -> list:
     scaffolding on a layer like any dimension, so switching the layer off
     takes its guides off the screen and out of the snap). A function of the
     scene, so the snap of a stand-in viewport (tests) asks it too."""
+    if not getattr(getattr(scene, "display_style", None), "show_guides", True):
+        return []
     guides = getattr(scene, "guides", None) or ()
     visible = getattr(scene, "entity_visible", None)
     if visible is None:
@@ -3276,10 +3278,12 @@ class Viewport(QOpenGLWidget):
 
         # Selected edges (drawn on top, highlighted) — never in an export
         if self._selected_count > 0 and self._export_size is None:
-            self._set_color(0.95, 0.45, 0.16, 1.0)
+            self._set_color(*self._modeling_color("selected"), 1.0)
             self._selected_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, self._selected_count)
             self._selected_vao.release()
+        if self._export_size is None:
+            self._draw_locked_selection()
 
         # Hovered edge — light blue, on top of everything else so it reads as
         # the pick candidate even when it overlaps a selected (orange) edge.
@@ -3368,9 +3372,9 @@ class Viewport(QOpenGLWidget):
                 self._gl.glDepthMask(GL_FALSE)
                 for start, count, selected in g_spans:
                     if selected:
-                        self._set_color(0.95, 0.45, 0.16, 1.0)   # selection
+                        self._set_color(*self._modeling_color("selected"), 1.0)
                     else:
-                        self._set_color(0.27, 0.35, 0.47, 1.0)
+                        self._set_color(*self._modeling_color("guides", (0.27, 0.35, 0.47)), 1.0)
                     self._gl.glDrawArrays(GL_LINES, start, count)
                 self._gl.glDepthMask(GL_TRUE)
                 self._guides_vao.release()
@@ -5519,7 +5523,7 @@ class Viewport(QOpenGLWidget):
         if not images:
             return
         pen = QPen(QColor(120, 140, 165), 1, Qt.DashLine)
-        sel_pen = QPen(QColor(243, 115, 41), 2)      # selection orange
+        sel_pen = QPen(QColor.fromRgbF(*self._modeling_color("selected")), 2)
         selection = self.scene.selection
         for im in images:
             if not self.scene.entity_visible(im):
@@ -5527,7 +5531,10 @@ class Viewport(QOpenGLWidget):
             picked = im in selection
             if getattr(im, "locked", False) and not picked:
                 continue
-            painter.setPen(sel_pen if picked else pen)
+            if picked and getattr(im, "locked", False):
+                painter.setPen(QPen(QColor.fromRgbF(*self._modeling_color("locked")), 2))
+            else:
+                painter.setPen(sel_pen if picked else pen)
             for a, b in im.border_edges():
                 seg = self._clip_segment_front(a, b)
                 if seg is None:
@@ -5620,12 +5627,48 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue(self._loc_back_color,
                                       QVector4D(r, g, b, a))
 
+    def _modeling_color(self, key, default=None) -> tuple:
+        from core.modeling_style import modeling_color
+        style = getattr(self, "_frame_style", None) or self.scene.display_style
+        return modeling_color(style, key, default)
+
+    def _draw_locked_selection(self) -> None:
+        parts = []
+        for group in self.scene.selection:
+            if (isinstance(group, Group) and getattr(group, "locked", False)
+                    and self.scene.entity_visible(group)):
+                if getattr(group, "billboard", False):
+                    quad = self._billboard_quad(group)
+                    if quad is not None:
+                        corners = quad[0]
+                        data = array("f")
+                        for i in range(4):
+                            for point in (corners[i], corners[(i + 1) % 4]):
+                                data.extend(point.toTuple())
+                        parts.append(data.tobytes())
+                else:
+                    parts.append(_box_edges(*self._group_obb(group)))
+        if not parts:
+            return
+        raw = b"".join(parts)
+        self._bb_sel_vbo.bind()
+        self._bb_sel_vbo.allocate(raw, len(raw))
+        self._bb_sel_vbo.release()
+        self._set_color(*self._modeling_color("locked"), 1.0)
+        self._bb_sel_vao.bind()
+        self._gl.glDrawArrays(GL_LINES, 0, len(raw) // 12)
+        self._bb_sel_vao.release()
+
     def _selection_dot_colors(self, face) -> tuple:
         """``(front_dot, back_dot)``: the selection dot colour for each side
         of ``face``, each picked against the paint that side shows — its
         material colour (or the open group's paint), the two-sided back
         paint, or the style's back-face tint."""
         from core.materials import effective_attrs
+        style = getattr(self.scene, "display_style", None)
+        if "selected" in getattr(style, "modeling_colors", {}):
+            color = self._modeling_color("selected")
+            return color, color
         attrs = effective_attrs(face.attrs,
                                 _paint_of(self, self.scene.edit_group))
         tex = attrs.get("texture")
@@ -7490,9 +7533,15 @@ class Viewport(QOpenGLWidget):
                 else _front_tint(getattr(self, "style_override", None)
                                  or getattr(self.scene, "display_style",
                                             None)))
+        selected_color = tuple(getattr(self.scene.display_style, "modeling_colors", {}).get("selected", ()))
+        layer_look = _layer_look_sig(self.scene)
         if _cache_ver(self) == self._edges_version \
-                and tint == getattr(self, "_edges_front_tint", None):
+                and tint == getattr(self, "_edges_front_tint", None) \
+                and selected_color == getattr(self, "_selection_style_color", ()) \
+                and layer_look == getattr(self, "_edges_layer_look", None):
             return
+        self._selection_style_color = selected_color
+        self._edges_layer_look = layer_look
         self._edges_front_tint = tint
         _st0 = _time_mod.perf_counter() if _PERF else 0.0
 
@@ -8521,7 +8570,7 @@ class Viewport(QOpenGLWidget):
         self._bb_sel_vbo.bind()
         self._bb_sel_vbo.allocate(raw, len(raw))
         self._bb_sel_vbo.release()
-        self._set_color(0.95, 0.45, 0.16, 1.0)  # selection orange
+        self._set_color(*self._modeling_color("selected"), 1.0)
         self._bb_sel_vao.bind()
         self._gl.glDrawArrays(GL_LINES, 0, len(data) // 3)
         self._bb_sel_vao.release()
@@ -9811,10 +9860,10 @@ class Viewport(QOpenGLWidget):
             # and heavier instead of dashed.
             selected = sp in selection
             if sp.active:
-                col = QColor(243, 115, 41)
+                col = QColor.fromRgbF(*self._modeling_color("section_active"))
                 width = 2.0
             else:
-                col = QColor(178, 182, 188)
+                col = QColor.fromRgbF(*self._modeling_color("section_inactive"))
                 width = 1.4
             if selected:
                 width += 1.2
@@ -10026,58 +10075,31 @@ class Viewport(QOpenGLWidget):
         self._set_section_clip(True)
 
     def _draw_section_cut_edges(self) -> None:
-        """Thick section-cut lines: quads in the cut plane, sized
-        ~2.5 px, nudged toward the CLIPPED side so they never z-fight the
-        remaining geometry. Skipped when cuts are hidden."""
+        """Section-cut lines expanded in screen pixels, including exports."""
         if getattr(self, "_clip_vec", None) is None:
             return
         segs = self._section_cut_segments()
         if segs is None or not len(segs):
             return
         import numpy as np
-        sp = self.scene.active_section()
-        n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()],
-                     dtype=np.float64)
-        a = segs[:, 0].astype(np.float64)
-        b = segs[:, 1].astype(np.float64)
-        t = b - a
-        ln = np.linalg.norm(t, axis=1)
-        keep = ln > 1e-9
-        if not keep.any():
+        from core.modeling_style import section_cut_quads
+        mvp = self.camera.projection_matrix() * self.camera.view_matrix()
+        matrix = np.array(mvp.data(), dtype=np.float64).reshape(4, 4).T
+        width, height = self._export_size or self._fb_size()
+        scale = (max(1, self._export_edge_px) if self._export_size is not None
+                 else max(1.0, self.devicePixelRatioF()))
+        tris = section_cut_quads(segs, matrix, width, height,
+                                 self._frame_style.section_cut_width * scale)
+        if not len(tris):
             return
-        a, b, t, ln = a[keep], b[keep], t[keep], ln[keep]
-        t /= ln[:, None]
-        side = np.cross(np.broadcast_to(n, t.shape), t)
-        # ~2.5 px of world width at each segment's distance from the eye.
-        eye = self.camera.eye()
-        eyev = np.array([eye.x(), eye.y(), eye.z()], dtype=np.float64)
-        mid = (a + b) * 0.5
-        dist = np.linalg.norm(mid - eyev, axis=1)
-        h = max(1.0, self.height())
-        fov = math.radians(getattr(self.camera, "fov_deg", 45.0))
-        wpp = np.maximum(dist * math.tan(fov * 0.5) * 2.0 / h, 1e-6)
-        w = (wpp * 1.25)[:, None]
-        lift = n * 0.6
-        off = side * w
-        q0 = a - off + lift * w
-        q1 = b - off + lift * w
-        q2 = b + off + lift * w
-        q3 = a + off + lift * w
-        tris = np.empty((len(a) * 2, 9), dtype=np.float32)
-        tris[0::2, 0:3] = q0
-        tris[0::2, 3:6] = q1
-        tris[0::2, 6:9] = q2
-        tris[1::2, 0:3] = q0
-        tris[1::2, 3:6] = q2
-        tris[1::2, 6:9] = q3
         raw = tris.tobytes()
         self._section_vbo.bind()
         self._section_vbo.allocate(raw, len(raw))
         self._section_vbo.release()
-        ec = self._frame_style.edge_color
+        ec = self._modeling_color("section_cut", self._frame_style.edge_color)
         self._set_color(ec[0], ec[1], ec[2], 1.0)
         self._section_vao.bind()
-        self._gl.glDrawArrays(GL_TRIANGLES, 0, len(a) * 6)
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, len(tris))
         self._section_vao.release()
 
     def _clip_segment_front(
@@ -10240,9 +10262,9 @@ class Viewport(QOpenGLWidget):
         guides = shown_guides(self.scene)
         if not guides:
             return
-        pen = QPen(QColor(70, 90, 120), 1, Qt.DashLine)
+        pen = QPen(QColor.fromRgbF(*self._modeling_color("guides")), 1, Qt.DashLine)
         pen.setDashPattern([14.0, 10.0])
-        sel_pen = QPen(QColor(243, 115, 41), 2, Qt.DashLine)  # selection orange
+        sel_pen = QPen(QColor.fromRgbF(*self._modeling_color("selected")), 2, Qt.DashLine)
         sel_pen.setDashPattern([14.0, 10.0])
         selection = self.scene.selection
         for g in guides:

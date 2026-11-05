@@ -3361,5 +3361,12 @@
  "Create mask": "마스크 만들기",
  "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "흰색은 투명해지고 검은색은 스타일의 배경색을 사용합니다. 회색은 부분적으로 투명해집니다. 원본 이미지는 유지됩니다.",
  "Model space": "모델 공간",
- "Images above this row appear in front of the model; images below stay behind it.": "이 행 위의 이미지는 모델 앞에 표시되고 아래의 이미지는 모델 뒤에 표시됩니다."
+ "Images above this row appear in front of the model; images below stay behind it.": "이 행 위의 이미지는 모델 앞에 표시되고 아래의 이미지는 모델 뒤에 표시됩니다.",
+ "Active section": "활성 단면",
+ "Color by layer": "레이어별 색상",
+ "Color of the selection outline for locked objects.": "잠긴 객체의 선택 윤곽선 색상입니다.",
+ "Inactive section": "비활성 단면",
+ "Model axes": "모델 축",
+ "Section cut width:": "단면선 두께:",
+ "Section cuts": "단면선"
 }

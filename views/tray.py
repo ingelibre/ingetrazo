@@ -3561,10 +3561,14 @@ class StylesPanel(QWidget):
 
         self._fill = QCheckBox(tr("Section Fill"))
         self._fill.toggled.connect(self._apply_edits)
-        modeling.addWidget(self._fill, 0, 0)
+        from views.modeling_panel import ModelingPanel
+        self._modeling = ModelingPanel(lambda: self._window.viewport.scene,
+                                       self._modeling_changed, self)
+        modeling.addWidget(self._modeling, 0, 0, 1, 2)
+        modeling.addWidget(self._fill, 1, 0)
         self._fill_c = self._swatch(tr("Section fill color"),
                                     "section_fill_color")
-        modeling.addWidget(self._fill_c, 0, 1)
+        modeling.addWidget(self._fill_c, 1, 1)
 
         # Ambient occlusion (#954): off in every preset. The
         # two values only take edits while the switch is on.
@@ -3847,6 +3851,7 @@ class StylesPanel(QWidget):
             self._ground_from_below.setChecked(style.ground_from_below)
             self._sync_background_controls()
             self._watermarks.refresh()
+            self._modeling.refresh()
             self._fill.setChecked(style.section_fill)
             self._edge_c.setStyleSheet(self._css(style.edge_color))
             self._front_c.setStyleSheet(self._css(style.front_color))
@@ -3875,6 +3880,8 @@ class StylesPanel(QWidget):
         if picked is None:
             return
         self._window.viewport.scene.display_style = picked
+        from core.modeling_style import apply_modeling_visibility
+        apply_modeling_visibility(self._window.viewport.scene)
         self._window._sync_style_menu()          # menu + this panel
         self._window.viewport.update()
 
@@ -3920,6 +3927,10 @@ class StylesPanel(QWidget):
         style.ambient_occlusion = self._ao.isChecked()
         style.ao_intensity = self._ao_int.value() / 10.0
         self._sync_ao_controls()
+        self._window._sync_style_menu()
+        self._window.viewport.update()
+
+    def _modeling_changed(self) -> None:
         self._window._sync_style_menu()
         self._window.viewport.update()
 

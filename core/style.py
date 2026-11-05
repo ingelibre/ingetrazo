@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from core.watermark import Watermark, load_watermarks
+from core.modeling_style import load_modeling_colors, load_modeling_visibility
 
 FACE_MODES = ("textures", "shaded", "hidden_line", "monochrome",
               "wireframe")
@@ -112,6 +113,10 @@ class Style:
     ground_from_below: bool = True
     watermarks: list[Watermark] = field(default_factory=list)
     watermarks_visible: bool = True
+    modeling_colors: dict = field(default_factory=dict)
+    modeling_visibility: dict = field(default_factory=dict)
+    show_guides: bool = True
+    section_cut_width: float = 2.5
 
     def __post_init__(self):
         if self.face_mode == "xray":
@@ -147,6 +152,10 @@ class Style:
             out["watermarks"] = [mark.to_dict() for mark in self.watermarks]
         if not self.watermarks_visible:
             out["watermarks_visible"] = False
+        if self.modeling_colors:
+            out["modeling_colors"] = {key: list(color) for key, color in self.modeling_colors.items()}
+        if self.modeling_visibility:
+            out["modeling_visibility"] = dict(self.modeling_visibility)
         # Keep old/default styles byte-for-byte compatible. New fields are
         # optional, including the values of currently disabled effects.
         defaults = {"profile_width": 1, "profile_cap": "butt", "depth_cue": False,
@@ -157,7 +166,8 @@ class Style:
                     "edge_color_mode": "same", "material_transparency": True,
                     "transparency_quality": "faster", "xray_opacity": 60,
                     "ground": None, "ground_transparency": 0,
-                    "ground_from_below": True}
+                    "ground_from_below": True, "show_guides": True,
+                    "section_cut_width": 2.5}
         for attr, default in defaults.items():
             value = getattr(self, attr)
             if value != default:
@@ -217,6 +227,10 @@ class Style:
             ground_from_below=bool(raw.get("ground_from_below", True)),
             watermarks=load_watermarks(raw.get("watermarks")),
             watermarks_visible=bool(raw.get("watermarks_visible", True)),
+            modeling_colors=load_modeling_colors(raw.get("modeling_colors")),
+            modeling_visibility=load_modeling_visibility(raw.get("modeling_visibility")),
+            show_guides=bool(raw.get("show_guides", True)),
+            section_cut_width=_clamped(raw.get("section_cut_width"), 2.5, (1, 20)),
             section_fill=bool(raw.get("section_fill", d.section_fill)),
             section_fill_color=tuple(raw.get("section_fill_color",
                                              d.section_fill_color)),

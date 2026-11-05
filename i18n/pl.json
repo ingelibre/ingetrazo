@@ -3369,5 +3369,12 @@
  "Create mask": "Utwórz maskę",
  "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Biel staje się przezroczysta; czerń przyjmuje kolor tła stylu. Szarość daje częściową przezroczystość. Oryginalny obraz zostaje zachowany.",
  "Model space": "Przestrzeń modelu",
- "Images above this row appear in front of the model; images below stay behind it.": "Obrazy powyżej tego wiersza pojawiają się przed modelem; obrazy poniżej pozostają za nim."
+ "Images above this row appear in front of the model; images below stay behind it.": "Obrazy powyżej tego wiersza pojawiają się przed modelem; obrazy poniżej pozostają za nim.",
+ "Active section": "Aktywny przekrój",
+ "Color by layer": "Kolor według warstwy",
+ "Color of the selection outline for locked objects.": "Kolor obrysu zaznaczenia zablokowanych obiektów.",
+ "Inactive section": "Nieaktywny przekrój",
+ "Model axes": "Osie modelu",
+ "Section cut width:": "Grubość linii przekroju:",
+ "Section cuts": "Linie przekroju"
 }

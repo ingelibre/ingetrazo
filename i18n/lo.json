@@ -3364,5 +3364,12 @@
  "Create mask": "ສ້າງໜ້າກາກ",
  "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "ສີຂາວຈະໂປ່ງໃສ; ສີດຳໃຊ້ສີພື້ນຫຼັງຂອງຮູບແບບ. ສີເທົາໃຫ້ຄວາມໂປ່ງໃສບາງສ່ວນ. ຮູບຕົ້ນສະບັບຍັງຖືກເກັບໄວ້.",
  "Model space": "ພື້ນທີ່ໂມເດວ",
- "Images above this row appear in front of the model; images below stay behind it.": "ຮູບພາບທີ່ຢູ່ເທິງແຖວນີ້ສະແດງຢູ່ດ້ານໜ້າໂມເດວ; ຮູບພາບທີ່ຢູ່ລຸ່ມຈະຢູ່ດ້ານຫຼັງ."
+ "Images above this row appear in front of the model; images below stay behind it.": "ຮູບພາບທີ່ຢູ່ເທິງແຖວນີ້ສະແດງຢູ່ດ້ານໜ້າໂມເດວ; ຮູບພາບທີ່ຢູ່ລຸ່ມຈະຢູ່ດ້ານຫຼັງ.",
+ "Active section": "ລະນາບຕັດທີ່ໃຊ້ງານ",
+ "Color by layer": "ສີຕາມຊັ້ນ",
+ "Color of the selection outline for locked objects.": "ສີຂອງກອບການເລືອກວັດຖຸທີ່ລັອກໄວ້.",
+ "Inactive section": "ລະນາບຕັດທີ່ບໍ່ໃຊ້ງານ",
+ "Model axes": "ແກນໂມເດວ",
+ "Section cut width:": "ຄວາມໜາເສັ້ນຕັດ:",
+ "Section cuts": "ເສັ້ນຕັດ"
 }

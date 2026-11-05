@@ -3362,5 +3362,12 @@
  "Create mask": "创建蒙版",
  "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "白色变为透明；黑色使用样式的背景颜色。灰色产生部分透明效果。原始图像保持不变。",
  "Model space": "模型空间",
- "Images above this row appear in front of the model; images below stay behind it.": "此行上方的图像显示在模型前方；下方的图像显示在模型后方。"
+ "Images above this row appear in front of the model; images below stay behind it.": "此行上方的图像显示在模型前方；下方的图像显示在模型后方。",
+ "Active section": "活动剖面",
+ "Color by layer": "按图层着色",
+ "Color of the selection outline for locked objects.": "锁定对象的选择轮廓颜色。",
+ "Inactive section": "非活动剖面",
+ "Model axes": "模型轴",
+ "Section cut width:": "剖切线宽：",
+ "Section cuts": "剖切线"
 }

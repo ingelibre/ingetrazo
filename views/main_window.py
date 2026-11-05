@@ -4226,8 +4226,12 @@ class MainWindow(QMainWindow):
 
     # ---- Sections (section planes) -----------------------------------------
     def _set_section_visibility(self, attr: str, on: bool) -> None:
-        setattr(self.viewport.scene, attr, bool(on))
+        from core.modeling_style import set_modeling_visibility
+        set_modeling_visibility(self.viewport.scene, attr, on)
         self.viewport.update()
+        panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
         browser = getattr(self, "project_browser", None)
         if browser is not None:
             browser.outliner.on_scene_changed()
@@ -4301,6 +4305,8 @@ class MainWindow(QMainWindow):
         if bool(getattr(scene, attr, False)) == bool(on):
             return
         setattr(scene, attr, bool(on))
+        if attr == "show_hidden_geometry":
+            scene.display_style.modeling_visibility[attr] = bool(on)
         if not on:
             # What the view no longer shows cannot stay selected: the ghost
             # group's orange outline outlived the switch (Marco,
@@ -4311,11 +4317,19 @@ class MainWindow(QMainWindow):
         scene.version += 1
         self.viewport.update()
 
+        panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
+
     def _set_show_axes(self, on: bool) -> None:
         """Camera ▸ Axes: a scene flag (it travels in the document) and a
         repaint; nothing else depends on the axes being drawn."""
-        self.viewport.scene.show_axes = bool(on)
+        from core.modeling_style import set_modeling_visibility
+        set_modeling_visibility(self.viewport.scene, "show_axes", on)
         self.viewport.update()
+        panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
 
     def prompt_section_name(self, plane) -> None:
         """The post-placement prompt: name + symbol (cancel keeps
@@ -4391,6 +4405,8 @@ class MainWindow(QMainWindow):
     def _apply_display_style(self, preset) -> None:
         """Activate a built-in style (a COPY — presets stay pristine)."""
         self.viewport.scene.display_style = preset.copy()
+        from core.modeling_style import apply_modeling_visibility
+        apply_modeling_visibility(self.viewport.scene)
         self._sync_style_menu()
         self.viewport.update()
         self.statusBar().showMessage(
@@ -4419,6 +4435,8 @@ class MainWindow(QMainWindow):
 
     def _sync_style_menu(self) -> None:
         """Reflect the scene's active style in the menu (loads, scene recall)."""
+        if getattr(self, "_act_show_splanes", None) is not None:
+            self._sync_section_menu()
         from core.style import xray_enabled
         style = getattr(self.viewport.scene, "display_style", None)
         if getattr(self, "_act_xray_toggle", None) is not None:

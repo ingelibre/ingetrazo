@@ -3388,5 +3388,12 @@
  "Create mask": "Tạo mặt nạ",
  "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Màu trắng trở nên trong suốt; màu đen dùng màu nền của kiểu. Màu xám tạo độ trong suốt một phần. Ảnh gốc được giữ nguyên.",
  "Model space": "Không gian mô hình",
- "Images above this row appear in front of the model; images below stay behind it.": "Ảnh phía trên hàng này xuất hiện trước mô hình; ảnh phía dưới nằm sau mô hình."
+ "Images above this row appear in front of the model; images below stay behind it.": "Ảnh phía trên hàng này xuất hiện trước mô hình; ảnh phía dưới nằm sau mô hình.",
+ "Active section": "Mặt cắt đang hoạt động",
+ "Color by layer": "Màu theo lớp",
+ "Color of the selection outline for locked objects.": "Màu đường viền lựa chọn của các đối tượng bị khóa.",
+ "Inactive section": "Mặt cắt không hoạt động",
+ "Model axes": "Trục mô hình",
+ "Section cut width:": "Độ dày nét cắt:",
+ "Section cuts": "Nét cắt"
 }

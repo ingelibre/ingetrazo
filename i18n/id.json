@@ -3364,5 +3364,12 @@
  "Create mask": "Buat masker",
  "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Putih menjadi transparan; hitam menggunakan warna latar gaya. Abu-abu memberikan transparansi sebagian. Gambar asli tetap disimpan.",
  "Model space": "Ruang model",
- "Images above this row appear in front of the model; images below stay behind it.": "Gambar di atas baris ini tampil di depan model; gambar di bawahnya tetap di belakang."
+ "Images above this row appear in front of the model; images below stay behind it.": "Gambar di atas baris ini tampil di depan model; gambar di bawahnya tetap di belakang.",
+ "Active section": "Penampang aktif",
+ "Color by layer": "Warna menurut lapisan",
+ "Color of the selection outline for locked objects.": "Warna bingkai pilihan untuk objek yang terkunci.",
+ "Inactive section": "Penampang tidak aktif",
+ "Model axes": "Sumbu model",
+ "Section cut width:": "Lebar garis potong:",
+ "Section cuts": "Garis potong"
 }

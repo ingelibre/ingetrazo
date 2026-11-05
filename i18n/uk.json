@@ -3376,5 +3376,12 @@
  "Create mask": "Створити маску",
  "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Білий стає прозорим; чорний використовує колір тла стилю. Сірий дає часткову прозорість. Початкове зображення зберігається.",
  "Model space": "Простір моделі",
- "Images above this row appear in front of the model; images below stay behind it.": "Зображення над цим рядком відображаються перед моделлю; зображення під ним залишаються позаду неї."
+ "Images above this row appear in front of the model; images below stay behind it.": "Зображення над цим рядком відображаються перед моделлю; зображення під ним залишаються позаду неї.",
+ "Active section": "Активний переріз",
+ "Color by layer": "Колір за шаром",
+ "Color of the selection outline for locked objects.": "Колір контуру виділення заблокованих об’єктів.",
+ "Inactive section": "Неактивний переріз",
+ "Model axes": "Осі моделі",
+ "Section cut width:": "Товщина ліній перерізу:",
+ "Section cuts": "Лінії перерізу"
 }

@@ -3361,5 +3361,12 @@
  "Create mask": "Создать маску",
  "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "Белый становится прозрачным; чёрный использует цвет фона стиля. Серый даёт частичную прозрачность. Исходное изображение сохраняется.",
  "Model space": "Пространство модели",
- "Images above this row appear in front of the model; images below stay behind it.": "Изображения выше этой строки отображаются перед моделью; изображения ниже остаются позади неё."
+ "Images above this row appear in front of the model; images below stay behind it.": "Изображения выше этой строки отображаются перед моделью; изображения ниже остаются позади неё.",
+ "Active section": "Активное сечение",
+ "Color by layer": "Цвет по слою",
+ "Color of the selection outline for locked objects.": "Цвет контура выделения заблокированных объектов.",
+ "Inactive section": "Неактивное сечение",
+ "Model axes": "Оси модели",
+ "Section cut width:": "Толщина линий сечения:",
+ "Section cuts": "Линии сечения"
 }

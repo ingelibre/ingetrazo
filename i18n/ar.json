@@ -3396,5 +3396,12 @@
  "Create mask": "إنشاء قناع",
  "White becomes transparent; black uses the style's background color. Gray gives partial transparency. The original image is preserved.": "يصبح الأبيض شفافًا؛ ويستخدم الأسود لون خلفية النمط. يعطي الرمادي شفافية جزئية. تُحفظ الصورة الأصلية.",
  "Model space": "مساحة النموذج",
- "Images above this row appear in front of the model; images below stay behind it.": "تظهر الصور فوق هذا الصف أمام النموذج؛ وتبقى الصور أسفله خلف النموذج."
+ "Images above this row appear in front of the model; images below stay behind it.": "تظهر الصور فوق هذا الصف أمام النموذج؛ وتبقى الصور أسفله خلف النموذج.",
+ "Active section": "مقطع نشط",
+ "Color by layer": "اللون حسب الطبقة",
+ "Color of the selection outline for locked objects.": "لون إطار التحديد للكائنات المقفلة.",
+ "Inactive section": "مقطع غير نشط",
+ "Model axes": "محاور النموذج",
+ "Section cut width:": "سُمك خطوط القطع:",
+ "Section cuts": "خطوط القطع"
 }

@@ -4,6 +4,29 @@ Open **Styles** from the Panels toolbar. The window stays open while you work in
 Use **Select** to browse Built-in styles or My styles, and **Edit** to adjust the current look.
 Changes appear immediately; **Save style…** stores a reusable copy in My styles.
 
+## Modeling
+
+On **Edit**, choose **Modeling settings**. The color swatches control selected
+geometry, the selection outline of locked objects, guides, active/inactive section
+frames and section-cut lines. A chosen selection color replaces the automatic
+contrast color; untouched styles keep their existing selection behavior.
+Without a section-cut color override, cut lines follow the style's edge color.
+
+**Section cut width** ranges from 1 to 20 screen pixels (default 2.5). Width stays
+constant in perspective and parallel views and scales with exported line pens.
+The existing **Section Fill** switch and color remain below these controls.
+
+The visibility checkboxes control hidden geometry, section planes, section cuts,
+guides and model axes. They share their live state with the View/Camera menus.
+Hiding guides also removes them from picking and inference; the guides themselves
+are retained. Hiding hidden geometry removes hidden entities from the selection.
+**Color by layer** displays layer colors in Textures/Shaded without repainting faces;
+Hidden line, Monochrome and Wireframe retain their own appearance.
+
+These settings travel with saved styles, views and IGZ documents. Older styles
+without modeling visibility overrides retain the document's current visibility.
+Photo-matching display controls require a separate photo-matching feature.
+
 ## Watermarks
 
 On **Edit**, choose **Watermark settings** and **Add image…**. PNG, JPEG, BMP and

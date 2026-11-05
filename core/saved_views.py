@@ -156,6 +156,8 @@ class SavedView:
         if self.hidden_shown is not None:
             scene.show_hidden_objects = bool(self.hidden_shown.get("objects"))
             scene.show_hidden_geometry = bool(self.hidden_shown.get("geometry"))
+        from core.modeling_style import apply_modeling_visibility
+        apply_modeling_visibility(scene)
 
     # ---- Serialisation (.igz) ------------------------------------------------
     def to_dict(self) -> dict:
