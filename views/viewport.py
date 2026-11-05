@@ -238,6 +238,7 @@ AO_FOLIAGE_BIT = 0x80
 GL_BLEND = 0x0BE2
 GL_SRC_ALPHA = 0x0302
 GL_ONE_MINUS_SRC_ALPHA = 0x0303
+GL_ONE = 1
 GL_POLYGON_OFFSET_FILL = 0x8037
 GL_CULL_FACE = 0x0B44
 GL_CW = 0x0900
@@ -662,6 +663,15 @@ def _flags_read(mesh, entry: dict) -> None:
     mesh._chunk_dirty = False
     mesh._attrs_dirty = False
     entry["flags_gen"] = getattr(mesh, "_flags_gen", 0)
+
+
+def _scene_blend(gl) -> None:
+    """The scene's blending: «over» for the colour and for the alpha. With
+    the plain SRC_ALPHA, ONE_MINUS_SRC_ALPHA on both, a pane of 30 % left
+    alpha 0.79 on an opaque background (0.3 * 0.3 + 0.7) and two of them
+    0.64, so every exported picture came out with holes behind the glass."""
+    gl.glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                           GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 
 
 #: The face modes Colour by layer applies to: the ones that draw the
@@ -2139,7 +2149,7 @@ class Viewport(QOpenGLWidget):
         # coincident faces, which can rasterize to bit-identical depths.
         self._gl.glDepthFunc(GL_LEQUAL)
         self._gl.glEnable(GL_BLEND)
-        self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        _scene_blend(self._gl)
 
         self._program = self._compile_program()
         self._loc_mvp = self._program.uniformLocation("u_mvp")
@@ -2445,7 +2455,7 @@ class Viewport(QOpenGLWidget):
         self._gl.glDepthFunc(GL_LEQUAL)
         self._gl.glDepthMask(GL_TRUE)
         self._gl.glEnable(GL_BLEND)
-        self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        _scene_blend(self._gl)
         self._gl.glDisable(GL_CULL_FACE)
 
         # Effective display style (Styles): the composer's
@@ -5237,7 +5247,7 @@ class Viewport(QOpenGLWidget):
         # re-enables blending on its way out, which hid the bug behind
         # every edit (Marco, 2026-09-14: «puse sombras con el tif y orbité»).
         self._gl.glEnable(GL_BLEND)
-        self._gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        _scene_blend(self._gl)
         for im, tex in drawn:
             c = im.corners()
             # Two triangles, UV (0,0) at ``origin``: _get_texture uploads the
