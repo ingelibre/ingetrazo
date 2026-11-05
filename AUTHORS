@@ -418,3 +418,7 @@ Every source file carries an SPDX header and copyright notice; these must be
 preserved in any redistribution or derivative work, per the license terms.
 
 Later contributors may add their names below.
+
+İbrahim Halim Gökbulut  (github.com/h-skycloud)
+    Turkish localization, Türkiye BIM display terminology, and reversible
+    CAD/BIM/modeling workspace profiles with a getting-started guide.

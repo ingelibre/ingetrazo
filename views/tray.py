@@ -4451,10 +4451,17 @@ class BimPanel(QWidget):
         row = QHBoxLayout()
         self.class_box = QComboBox()
         from core.bim import IFC_CLASSES
-        self.class_box.addItems(IFC_CLASSES)
+        from views.bim_labels import class_label
+        for code in IFC_CLASSES:
+            self.class_box.addItem(class_label(code), code)
+        self.class_box.setAccessibleName(tr("IFC Class"))
+        self.class_box.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.class_box.setMinimumContentsLength(16)
+        self.class_box.view().setMinimumWidth(300)
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText(tr("Name (e.g. Wall axis A)"))
-        row.addWidget(self.class_box)
+        self.name_edit.setAccessibleName(tr("Name"))
+        lay.addWidget(self.class_box)
         row.addWidget(self.name_edit, 1)
         lay.addLayout(row)
 
@@ -4531,7 +4538,7 @@ class BimPanel(QWidget):
         scene = self._scene()
         faces = [s for s in scene.selection if isinstance(s, Face)]
         groups = [s for s in scene.selection if isinstance(s, Group)]
-        cls = self.class_box.currentText()
+        cls = self.class_box.currentData()
         name = self.name_edit.text().strip()
         tagged = 0
         for g in groups:
@@ -4551,7 +4558,7 @@ class BimPanel(QWidget):
     def _on_active_toggle(self, checked: bool) -> None:
         scene = self._scene()
         if checked:
-            cls = self.class_box.currentText()
+            cls = self.class_box.currentData()
             name = (self.name_edit.text().strip()
                     or cls.removeprefix("Ifc"))
             # Class + name only: each draw commit allocates its own object id
@@ -4741,9 +4748,14 @@ class BimPanel(QWidget):
             else:
                 met = f"{metrado:.2f} {pretty}"
             vol = "—" if obj["volume"] is None else f"{obj['volume']:.2f}"
+            from core.units import localized, model_units_of
+            settings = model_units_of(scene)
+            met, vol = localized(met, settings), localized(vol, settings)
+            from views.bim_labels import class_label
             item = QTreeWidgetItem([
-                obj["class"].removeprefix("Ifc"),
+                class_label(obj["class"]),
                 obj["name"], met, vol])
+            item.setToolTip(0, class_label(obj["class"]))
             item.setData(0, Qt.UserRole, idx)
             if obj["volume"] is None:
                 item.setToolTip(3, tr(
@@ -4765,6 +4777,7 @@ class BimPanel(QWidget):
             else:
                 parent.addChild(item)
         self.tree.expandAll()
+        self.tree.resizeColumnToContents(0)
         self._fit_tree()
 
 

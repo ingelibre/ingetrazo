@@ -219,8 +219,12 @@ Contributors from anywhere are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
 and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). All code, comments and commit
 messages are in **English**; the UI speaks Spanish, English, Brazilian
 Portuguese, Simplified Chinese, Italian, Indonesian, French, German, Polish,
-Russian, Vietnamese, Lao, Thai, Japanese and Korean (translations are one
+Russian, Vietnamese, Lao, Thai, Japanese, Korean and Turkish (translations are one
 JSON file each under `i18n/`).
+
+Turkish users can start with the skippable workspace guide; layouts remain
+available under Window > Workspace. See [Turkish localization](docs/turkish-localization.md)
+for the IFC display-label boundary, scope and validation evidence.
 
 ## Acknowledgements
 
