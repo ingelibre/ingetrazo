@@ -275,6 +275,13 @@ SHADER_DIR = app_root() / "resources" / "shaders"
 _LOOSE_SNAP_CAP = 3000
 
 
+def _entity_owner(entities, i):
+    """The owner half of pick-index entity ``i``: a lazy piece of the index
+    answers it without building its faces (see views.array_bake)."""
+    at = getattr(entities, "owner_at", None)
+    return at(i) if at is not None else entities[i][1]
+
+
 def _split_chunk_spans(chunk, depth=0, force=False):
     """``(v0, e1, e2, tri_ent, cells)`` of a chunk for the pick index. For a
     chunk of more than ``_SPAN_GRID_MIN`` triangles: the triangles reordered
@@ -5468,7 +5475,7 @@ class Viewport(QOpenGLWidget):
         front = Viewport._smallest_at_front(self, hits, origin, direction)
         if not len(front):
             return None
-        owner = hits.ent(int(front[0]))[1]
+        owner = hits.owner(int(front[0]))
         for g in (owner, getattr(owner, "owner", None)):
             if (g is not None and getattr(g, "locked", False)
                     and hasattr(g, "children")):
@@ -11338,7 +11345,8 @@ class Viewport(QOpenGLWidget):
                     pidx = getattr(idx, "ent_place_idx", None)
                     place = (idx.ent_placements[int(pidx[i])]
                              if pidx is not None and i < len(pidx)
-                             and pidx[i] >= 0 else idx.entities[i][1])
+                             and pidx[i] >= 0
+                             else _entity_owner(idx.entities, i))
                     best = (idx.entities[i][0], place)
         rows = Viewport._lazy_sel_rows(self, nat)
         if not len(rows):
@@ -14307,12 +14315,17 @@ class Viewport(QOpenGLWidget):
                 return idx.entities[int(rows[k])]
             return lazy[3](k - n)
 
+        def owner(k):
+            if k < n:
+                return _entity_owner(idx.entities, int(rows[k]))
+            return lazy[5](k - n)
+
         def place(k):
             if k < n:
                 i = int(rows[k])
                 if pidx is not None and i < len(pidx) and pidx[i] >= 0:
                     return idx.ent_placements[int(pidx[i])]
-                return idx.entities[i][1]
+                return _entity_owner(idx.entities, i)
             return lazy[4](k - n)
         t = face_t[rows] if n else np.empty(0)
         area = idx.ent_area[rows] if n else np.empty(0)
@@ -14322,7 +14335,7 @@ class Viewport(QOpenGLWidget):
             area = np.concatenate([area, lazy[1]])
             loose = np.concatenate([loose, np.zeros(len(lazy[0]), bool)])
         return SimpleNamespace(t=t, area=area, loose=loose, ent=ent,
-                               place=place)
+                               owner=owner, place=place)
 
     def _lazy_sel_rows(self, nat):
         """The rows of the lazy table whose faces a pick may land on (see
@@ -14393,7 +14406,10 @@ class Viewport(QOpenGLWidget):
 
         def place(m):
             return groups[keys[m][0]]
-        return tt, area, keys, ent, place
+
+        def owner(m):
+            return self._owner_of(groups[keys[m][0]])
+        return tt, area, keys, ent, place, owner
 
     def _hover_hits(self, idx, origin, direction):
         """:meth:`_face_hits` of the selectable faces, memoised for the
@@ -15641,6 +15657,10 @@ class Viewport(QOpenGLWidget):
             return ref
         src, mesh, group = ref[4], ref[5], ref[6]
         fresh = None
+        real = getattr(src, "real", None)
+        if real is not None:
+            # Found over a lazy mesh's light face: an edit asks of the real one.
+            src = real()
         if isinstance(src, Face):
             if src in mesh.faces:
                 # the same arc of the face, wherever it is now
@@ -16603,10 +16623,11 @@ class Viewport(QOpenGLWidget):
                else None)
         try:
             cam = self.camera
+            from views.array_bake import reading_now
             key = (round(screen_x, 2), round(screen_y, 2), id(idx),
                    cam.yaw, cam.pitch, cam.distance, cam.perspective,
                    cam.target.x(), cam.target.y(), cam.target.z(),
-                   self.width(), self.height())
+                   self.width(), self.height(), reading_now())
         except AttributeError:            # a bare stand-in (tests): no memo
             key = None
         cached = getattr(self, "_face_any_memo", None)
@@ -16699,7 +16720,7 @@ class Viewport(QOpenGLWidget):
                                                         direction)
                     best = (float(hits.t[front].min()),
                             None if hits.loose[front].any()
-                            else hits.ent(int(front[0]))[1])
+                            else hits.owner(int(front[0])))
             faces_answer = best
             for g in self._context_placements():
                 # The figure test first: it is an attribute, the layer test
@@ -18044,12 +18065,17 @@ class Viewport(QOpenGLWidget):
         win = self.window()
         if hasattr(win, "on_viewport_hover"):
             win.on_viewport_hover(ev.position().x(), ev.position().y())
-        self.inference.acquire(ev.position().x(), ev.position().y())
+        # What the snap reads of a face under the cursor builds no lazy mesh
+        # (#1092); a tool's on_hover below may keep what it picks, and a click
+        # gets the real faces.
+        from views.array_bake import reading_only
+        with reading_only():
+            self.inference.acquire(ev.position().x(), ev.position().y())
 
-        if self.active_tool is None:
-            return
-        _hmark("acquire")
-        ctx = self._build_ctx(ev)
+            if self.active_tool is None:
+                return
+            _hmark("acquire")
+            ctx = self._build_ctx(ev)
         _hmark("ctx")
         if ctx is None:
             return

@@ -30,6 +30,111 @@ def can_bake(mesh) -> bool:
             and _native.qt_hypot() is not None)
 
 
+#: While True, a face asked of a still-lazy mesh comes as a LightFace and the
+#: mesh stays unbuilt: only the hover's read-only passes turn it on
+#: (Viewport._process_hover, see reading_only).
+_reading = False
+
+
+class reading_only:
+    """``with reading_only():`` the code inside only READS the faces it picks
+    — their positions, their boundary's flags — and keeps none. A big lazy
+    mesh is not built for that: 9 s and 2 GB on the hover that crossed into
+    the largest group of a 5 M-face model, in the middle of a Line (#1092)."""
+
+    def __enter__(self):
+        global _reading
+        self._was, _reading = _reading, True
+
+    def __exit__(self, *exc):
+        global _reading
+        _reading = self._was
+
+
+def reading_now() -> bool:
+    return _reading
+
+
+class LightFace(Face):
+    """A face of a still-lazy mesh, read from its plan: the positions, holes,
+    attributes and boundary edges (with their flags) the built face would
+    have, on vertices and edges of its own. For reading only; ``real()`` is
+    the mesh's own face, built with the mesh."""
+
+    __slots__ = ("mesh", "index")
+
+    def real(self):
+        return self.mesh.faces[self.index]
+
+
+def _plan_face_edges(plan):
+    """``(start, edge)``: the edges incident to each face, CSR by face — the
+    inverse of the plan's edge → faces table. Memoised on the plan."""
+    hit = plan.extra.get("face_edges")
+    if hit is None:
+        n_per_edge = np.diff(plan.ef_start)
+        edge_of = np.repeat(np.arange(len(plan.edges)), n_per_edge)
+        order = np.argsort(plan.ef_face, kind="stable")
+        counts = np.bincount(plan.ef_face, minlength=plan.nfaces)
+        hit = plan.extra["face_edges"] = (
+            np.concatenate([[0], np.cumsum(counts)]), edge_of[order])
+    return hit
+
+
+def light_face(mesh, f) -> LightFace:
+    """Face ``f`` of lazy ``mesh`` as a :class:`LightFace`, the same object
+    while the mesh is lazy: the picks of a hover tell faces apart by identity."""
+    from core.mesh import Edge
+    plan = lazy_mesh.plan_of(mesh)
+    memo = plan.extra.setdefault("light_faces", {})
+    hit = memo.get(f)
+    if hit is not None:
+        return hit
+    rs = plan.extra.get("ring_start")
+    if rs is None:
+        rs = plan.extra["ring_start"] = np.concatenate(
+            [[0], np.cumsum(plan.ring_sizes)])
+        plan.extra["face_ring"] = np.concatenate(
+            [[0], np.cumsum(plan.ring_counts)])
+    fr = plan.extra["face_ring"]
+    verts: dict = {}
+    rings = []
+    for k in range(int(fr[f]), int(fr[f + 1])):
+        ring = []
+        for i in plan.corners[int(rs[k]):int(rs[k + 1])].tolist():
+            v = verts.get(i)
+            if v is None:
+                v = verts[i] = Vertex(QVector3D(*plan.pos[i]))
+            ring.append(v)
+        rings.append(ring)
+    out = LightFace(rings[0], rings[1:] or None)
+    out.mesh = mesh
+    out.index = f
+    start, edge_of = _plan_face_edges(plan)
+    for e in edge_of[int(start[f]):int(start[f + 1])].tolist():
+        a, b = plan.edges[e].tolist()
+        va, vb = verts.get(a), verts.get(b)
+        if va is None or vb is None:
+            continue
+        ed = Edge(va, vb)
+        ed.soft = bool(plan.soft[e])
+        ed.hidden = bool(plan.hidden[e])
+        ed.curve = plan.curve[e]
+        ed.layer = plan.layer[e]
+        va.edges.add(ed)
+        vb.edges.add(ed)
+    src = mesh.__dict__["_deferred_source"]
+    k = int(src["face_attr"][f])
+    if k >= 0:
+        from formats.igz import _face_attrs_from_json
+        raw = src["meta"].get("face_attrs") or []
+        out.attrs.update(_face_attrs_from_json(raw[k]) or {})
+    if len(memo) > 4096:                 # a hover's worth is what matters
+        memo.clear()
+    memo[f] = out
+    return out
+
+
 class DeferredFaces:
     """The ``faces`` of a chunk baked from arrays: the drawn faces, built
     (with their whole mesh) only when one is asked for — a click on it."""
@@ -46,6 +151,8 @@ class DeferredFaces:
     def __getitem__(self, i):
         if isinstance(i, slice):
             return [self.mesh.faces[k] for k in self.index[i].tolist()]
+        if _reading and type(self.mesh) is DeferredMesh:
+            return light_face(self.mesh, int(self.index[i]))
         return self.mesh.faces[int(self.index[i])]
 
     def __iter__(self):
@@ -595,6 +702,9 @@ class LazyPairs:
     def __getitem__(self, i):
         return (self.faces[i], self.owner)
 
+    def owner_at(self, _i):
+        return self.owner
+
     def __iter__(self):
         owner = self.owner
         return ((f, owner) for f in self.faces)
@@ -639,6 +749,17 @@ class PickEntities:
             raise IndexError(i)
         k = bisect.bisect_right(self._starts, i) - 1
         return self._parts[k][i - self._starts[k]]
+
+    def owner_at(self, i):
+        """The owner half of entity ``i``, with no face made for it."""
+        import bisect
+        i = int(i)
+        if i < 0:
+            i += self._len
+        k = bisect.bisect_right(self._starts, i) - 1
+        part = self._parts[k]
+        j = i - self._starts[k]
+        return part.owner_at(j) if isinstance(part, LazyPairs) else part[j][1]
 
     def __iter__(self):
         for part in self._parts:
