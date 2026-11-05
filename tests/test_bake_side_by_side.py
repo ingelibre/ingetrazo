@@ -80,6 +80,7 @@ def _close(win):
 @pytest.mark.parametrize("seed", range(4))
 def test_each_bake_is_the_one_made_alone(tmp_path, monkeypatch, seed):
     monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 0)
+    monkeypatch.setattr(array_bake, "_PREBAKE_MIN_FACES", 0)
     path = _doc(tmp_path, seed)
     together = _window(path)
     with monkeypatch.context() as m:
@@ -102,8 +103,26 @@ def test_each_bake_is_the_one_made_alone(tmp_path, monkeypatch, seed):
         _close(alone)
 
 
+def test_small_meshes_are_not_worth_a_thread(tmp_path, monkeypatch):
+    monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 0)
+    path = _doc(tmp_path, 1)
+    where = []
+    real = array_bake._bake
+
+    def spy(vp, mesh, paint, msig):
+        where.append(threading.current_thread() is threading.main_thread())
+        return real(vp, mesh, paint, msig)
+    monkeypatch.setattr(array_bake, "_bake", spy)
+    win = _window(path)
+    try:
+        assert where and all(where)
+    finally:
+        _close(win)
+
+
 def test_the_threads_did_the_baking_and_nothing_is_left(tmp_path, monkeypatch):
     monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 0)
+    monkeypatch.setattr(array_bake, "_PREBAKE_MIN_FACES", 0)
     path = _doc(tmp_path, 1)
     where = []
     real = array_bake._bake

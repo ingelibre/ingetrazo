@@ -192,13 +192,18 @@ def prefetch(meshes) -> None:
         list(ex.map(work, todo))
 
 
+#: Below this a mesh's bake is mostly Python: hundreds of them in threads
+#: only queue for the interpreter (the plaza opened 5 % slower).
+_PREBAKE_MIN_FACES = 1000
+
+
 def prebake(vp, jobs) -> None:
     """The bakes ``jobs`` (``(mesh, paint, msig)``) ask for, side by side: most
     of a bake is NumPy over the mesh's arrays and reads nothing else that can
     change. They wait in ``vp._prebaked`` for the bake that asks for them,
     which numbers them and takes them away."""
     todo = {(id(m), msig): (m, paint, msig) for m, paint, msig in jobs
-            if can_bake(m)}
+            if can_bake(m) and lazy_mesh.plan_of(m).nfaces >= _PREBAKE_MIN_FACES}
     done: dict = {}
     if len(todo) >= 2:
         import os
