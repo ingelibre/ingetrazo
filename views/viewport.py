@@ -17849,10 +17849,18 @@ class Viewport(QOpenGLWidget):
         had_plane = getattr(self.active_tool, "work_plane", None) is not None
         face_at_click = None
         group_at_click = None
+        from views.array_bake import reading_only
         if not had_start and not had_plane:
-            face_at_click, group_at_click = self.pick_face_placement(
-                ev.position().x(), ev.position().y())
-        ctx = self._build_ctx(ev)
+            # Only its plane is read, below: no need to build a big group's
+            # mesh for that (seconds and gigabytes, #1092).
+            with reading_only():
+                face_at_click, group_at_click = self.pick_face_placement(
+                    ev.position().x(), ev.position().y())
+        if getattr(self.active_tool, "click_reads_only", False):
+            with reading_only():
+                ctx = self._build_ctx(ev)
+        else:
+            ctx = self._build_ctx(ev)
         if ctx is not None:
             # The tool hears the cursor's snap KIND before it is called, as on
             # every hover (``_note_snap``): a click that never had its own

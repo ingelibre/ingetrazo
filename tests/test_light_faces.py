@@ -215,3 +215,37 @@ def test_a_centre_found_on_a_light_face_survives_an_edit(big_enough, tmp_path):
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def _click(vp, x, y):
+    press = QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(x, y),
+                        vp.mapToGlobal(QPointF(x, y)), Qt.LeftButton,
+                        Qt.LeftButton, Qt.NoModifier)
+    vp._dispatch_tool_click(press)
+
+
+def test_a_click_with_line_builds_nothing_and_takes_the_same_plane(
+        big_enough, tmp_path):
+    from core.snap import face_plane_world
+    win, vp = _window(tmp_path)
+    try:
+        mesh = vp.scene.groups[0].mesh
+        tool = win._activate_tool("line") or vp.active_tool
+        x, y = vp.width() / 2 + 7, vp.height() / 2 + 3
+        _hover(vp, x, y)
+        _click(vp, x, y)
+        assert tool.start_point is not None and tool.work_plane is not None
+        assert type(mesh) is M.DeferredMesh, "the first click built the group"
+        got = tool.work_plane
+        _hover(vp, x + 40, y)
+        _click(vp, x + 40, y + 11)
+        assert type(mesh) is M.DeferredMesh, "the second click built the group"
+        assert len(vp.scene.mesh.edges) == 1, "no edge drawn"
+        # The face that click would otherwise have built: the very same plane.
+        real, placed = vp.pick_face_placement(x, y)
+        assert type(real) is not array_bake.LightFace
+        want = face_plane_world(real, getattr(placed, "xform", None))
+        assert _xyz(got[0]) == _xyz(want[0]) and _xyz(got[1]) == _xyz(want[1])
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
