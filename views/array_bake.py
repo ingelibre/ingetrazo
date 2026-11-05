@@ -14,6 +14,7 @@ to the object bake."""
 from __future__ import annotations
 
 import sys
+import weakref
 from array import array
 
 import numpy as np
@@ -365,11 +366,28 @@ def bake(vp, mesh, paint, msig, vkey, uid):
     """The chunk entry of deferred ``mesh`` inside a container of paint
     ``paint`` — ``Viewport._group_chunk``'s rebuild, from arrays."""
     ready = getattr(vp, "_prebaked", None)
-    entry = ready.pop((id(mesh), msig), None) if ready else None
-    if entry is None:
-        entry = _bake(vp, mesh, paint, msig)
+    fresh = ready.pop((id(mesh), msig), None) if ready else None
+    if fresh is None:
+        # Another view of this document holds this very bake: its arrays do
+        # (four views of a big model were four copies of them, past 16 GB).
+        other = _live_bakes.get((id(mesh), msig))
+        fresh = (other.as_baked if other is not None and other["mesh"] is mesh
+                 else _bake(vp, mesh, paint, msig))
+    entry = BakedEntry(fresh)
+    entry.as_baked = fresh
     entry["vkey"], entry["uid"] = vkey, uid
+    _live_bakes[(id(mesh), msig)] = entry
     return entry
+
+
+class BakedEntry(dict):
+    """A chunk entry of a lazy mesh: one view's own dict, which that view goes
+    on to write its own keys in, and ``as_baked``, the fields as they left the
+    bake, what another view's entry is made from."""
+
+
+#: (mesh id, paint signature) → a live entry of that bake, in any view.
+_live_bakes: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
 
 
 def _bake(vp, mesh, paint, msig):

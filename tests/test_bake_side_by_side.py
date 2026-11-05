@@ -2,9 +2,11 @@
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """A big document opens with its meshes baked side by side (#1092): every
 bake is the one made alone, field for field, the numbers still given in the
-placements' order. Skipped without the engine."""
+placements' order. Views of one document share a lazy mesh's bake, each with
+its own entry. Skipped without the engine."""
 from __future__ import annotations
 
+import gc
 import os
 import random
 import threading
@@ -17,6 +19,8 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 import core._native as _native  # noqa: E402
 from core import mesh as M  # noqa: E402
+from core.materials import material_sig  # noqa: E402
+from core.scene import Scene  # noqa: E402
 from formats import igz  # noqa: E402
 from tests.test_deferred_mesh import _random_scene  # noqa: E402
 from views import array_bake  # noqa: E402
@@ -117,3 +121,72 @@ def test_the_threads_did_the_baking_and_nothing_is_left(tmp_path, monkeypatch):
         assert len(where) == n, "a prebaked mesh baked again"
     finally:
         _close(win)
+
+
+def _lazy_mesh(tmp_path):
+    path = _doc(tmp_path, 2)
+    scene = Scene()
+    igz.load_into(scene, path)
+    mesh = next(g.mesh for g in scene.groups if g.xform is not None)
+    assert array_bake.can_bake(mesh)
+    return scene, mesh
+
+
+class _Vp:
+    DEFAULT_FACE_COLOR = (0.8, 0.8, 0.8)
+    from PySide6.QtGui import QVector3D
+    _LIGHT = QVector3D(0.3, 0.5, 0.8).normalized()
+
+
+def test_two_views_share_the_arrays_and_nothing_of_their_own(tmp_path,
+                                                             monkeypatch):
+    monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 0)
+    scene, mesh = _lazy_mesh(tmp_path)
+    calls = []
+    real = array_bake._bake
+    monkeypatch.setattr(array_bake, "_bake",
+                        lambda *a: calls.append(a[3]) or real(*a))
+    a = array_bake.bake(_Vp, mesh, None, None, "va", 1)
+    original_fp = a["fp"]
+    a["fp"] = a["fp"] + (("paint",),)      # as _group_chunk writes on its own
+    a["_pick_ents"] = "of the first view"
+    b = array_bake.bake(_Vp, mesh, None, None, "vb", 2)
+    assert calls == [None], "baked twice"
+    assert b is not a and (b["uid"], b["vkey"]) == (2, "vb")
+    assert (a["uid"], a["vkey"]) == (1, "va")
+    assert b["vcol"] is a["vcol"] and b["v0"] is a["v0"]
+    assert b["fp"] is original_fp and "_pick_ents" not in b
+    # What is shared is what a bake alone gives.
+    alone = real(_Vp, mesh, None, None)
+    for field in set(alone) - SKIP - {"uid"}:
+        assert _plain(alone[field]) == _plain(b[field]), field
+
+
+def test_another_paint_or_a_forgotten_bake_is_baked_anew(tmp_path,
+                                                         monkeypatch):
+    monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 0)
+    scene, mesh = _lazy_mesh(tmp_path)
+    calls = []
+    real = array_bake._bake
+    monkeypatch.setattr(array_bake, "_bake",
+                        lambda *a: calls.append(a[3]) or real(*a))
+    paint = {"color": [0.2, 0.9, 0.1]}
+    sig = material_sig(paint)
+    a = array_bake.bake(_Vp, mesh, None, None, "v", 1)
+    c = array_bake.bake(_Vp, mesh, paint, sig, "v", 2)
+    assert calls == [None, sig] and c["vcol"] != a["vcol"]
+    del a, c
+    gc.collect()
+    array_bake.bake(_Vp, mesh, None, None, "v", 3)
+    assert calls == [None, sig, None], "held after no view has it"
+
+
+def test_an_entry_of_a_mesh_gone_is_not_taken_for_this_one(tmp_path,
+                                                           monkeypatch):
+    monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 0)
+    scene, mesh = _lazy_mesh(tmp_path)
+    alien = array_bake.BakedEntry({"mesh": object(), "vcol": b"alien"})
+    alien.as_baked = dict(alien)
+    array_bake._live_bakes[(id(mesh), None)] = alien
+    got = array_bake.bake(_Vp, mesh, None, None, "v", 1)
+    assert got["mesh"] is mesh and got["vcol"] != b"alien"
