@@ -2277,7 +2277,8 @@ class Viewport(QOpenGLWidget):
     def render_image(self, width_px: int, height_px: Optional[int] = None,
                      overlays: bool = True,
                      annotations_only: bool = False,
-                     sharp_shadows: bool = False) -> Optional["QImage"]:
+                     sharp_shadows: bool = False,
+                     transparent: bool = False) -> Optional["QImage"]:
         """Render the current view at ``width_px`` wide (height follows the
         viewport's aspect) and return it as a ``QImage`` — the hi-res 2D
         export. Reuses the exact ``paintGL`` pipeline against a temporary
@@ -2294,7 +2295,11 @@ class Viewport(QOpenGLWidget):
         ``sharp_shadows`` (Export image, sheets): the sun's map is drawn
         for this one picture at ``_SHADOW_EXPORT_SIZE`` instead of the view's
         2048 — a plaza of 100 m gets 1.2 cm per texel instead of 5 cm — and
-        freed after it, so the view keeps its own map and its memory."""
+        freed after it, so the view keeps its own map and its memory.
+
+        ``transparent`` (Export image): no sky, no ground and no background
+        colour — alpha 0 wherever the model is not, glass and the shadows on
+        the ground as translucent as they are."""
         if self._gl is None or self._program is None:
             return None
         lw = max(self.width(), 1)
@@ -2311,6 +2316,7 @@ class Viewport(QOpenGLWidget):
         self.makeCurrent()
         try:
             self._export_size = (width_px, height_px)
+            self._export_transparent = transparent
             if sharp_shadows and self._sun_dir_now() is not None:
                 view_shadow = (self._shadow_fbo, self._shadow_key)
                 self._shadow_fbo = self._shadow_key = None
@@ -2326,6 +2332,7 @@ class Viewport(QOpenGLWidget):
                     self._shadow_fbo, self._shadow_key = view_shadow
                     self._shadow_size = self._SHADOW_MAP_SIZE
                 self._export_size = None
+                self._export_transparent = False
                 # Drop the big export FBO (destroyed here, context current)
                 # and put the on-screen one back.
                 self._scene_fbo = prev_fbo
@@ -2410,6 +2417,9 @@ class Viewport(QOpenGLWidget):
         b = QVector3D(max(xs), max(ys), max(zs))
         cam.depth_reach = ((a + b) * 0.5, (b - a).length() * 0.5)
 
+    #: This picture's background is alpha 0 (``render_image``'s ``transparent``).
+    _export_transparent = False
+
     #: Off in a view of several (views/multi_view.py) other than the one being
     #: worked in: the model shows there, without the tool in hand's preview.
     tool_preview = True
@@ -2478,7 +2488,13 @@ class Viewport(QOpenGLWidget):
 
         self._gl.glClearDepthf(1.0)
         bg = style.background
-        self._gl.glClearColor(bg[0], bg[1], bg[2], 1.0)
+        if self._export_transparent:
+            # Black, not the background's colour: the picture is
+            # premultiplied, and an edge's antialiased pixels would otherwise
+            # carry that colour out as a halo.
+            self._gl.glClearColor(0.0, 0.0, 0.0, 0.0)
+        else:
+            self._gl.glClearColor(bg[0], bg[1], bg[2], 1.0)
         self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT
                          | GL_STENCIL_BUFFER_BIT)
         # Foliage marking for the ambient occlusion: every opaque fragment
@@ -2533,6 +2549,7 @@ class Viewport(QOpenGLWidget):
         # moves only on orbit. Skipped over the base map / terrain (which supply
         # their own ground).
         if (self.plano_style is None and style.sky
+                and not self._export_transparent
                 and not self._base_map_showing()
                 and not self._terrain_showing()
                 and not self._photo_showing()):
