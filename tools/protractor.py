@@ -78,6 +78,9 @@ class ProtractorBase(Tool):
         self.ref_point: QVector3D | None = None     # base (0°) direction
         self.hover_point: QVector3D | None = None
         self.work_plane: tuple[QVector3D, QVector3D] | None = None
+        #: The plane the centre was placed on, kept so an arrow-key lock set
+        #: after the first click can be released back to it.
+        self._centre_plane: tuple[QVector3D, QVector3D] | None = None
         self._axis_pick: str | None = None          # arrow-key plane lock
         self._shift_normal: QVector3D | None = None  # Shift-frozen plane
         self._custom_axis: QVector3D | None = None  # drag-defined axis
@@ -184,10 +187,18 @@ class ProtractorBase(Tool):
         if axis is None:
             return False
         self._axis_pick = None if self._axis_pick == axis else axis
-        if self._axis_pick is not None and self.start_point is None:
-            anchor = (self.hover_point if self.hover_point is not None
-                      else QVector3D(0, 0, 0))
-            self.work_plane = (anchor, QVector3D(_AXES[self._axis_pick]))
+        if self._axis_pick is not None:
+            # The lock re-anchors the work plane so the cursor — and the axis
+            # magnet — follow it. Before the centre the plane rides the
+            # cursor; after the centre it is pinned to the centre.
+            anchor = (self.start_point if self.start_point is not None
+                      else (self.hover_point if self.hover_point is not None
+                            else QVector3D(0, 0, 0)))
+            self.work_plane = (QVector3D(anchor),
+                               QVector3D(_AXES[self._axis_pick]))
+        elif self.start_point is not None and self._centre_plane is not None:
+            # Released after the centre: back to the plane it was placed on.
+            self.work_plane = self._centre_plane
         viewport.update()
         return True
 
@@ -351,6 +362,7 @@ class ProtractorBase(Tool):
         self.start_point = None
         self.ref_point = None
         self.work_plane = None
+        self._centre_plane = None
         self._shift_normal = None
         self._custom_axis = None
         self._axis_drag_live = None
@@ -416,6 +428,9 @@ class ProtractorTool(ProtractorBase):
         self._last = None            # a click ends the retype window
         if self.start_point is None:
             self.start_point = ctx.world
+            # Remember the plane the centre sits on: an arrow lock set later
+            # re-anchors at the centre, and releasing it comes back here.
+            self._centre_plane = (self.start_point, QVector3D(self._axis()))
             self._axis_drag_armed = True   # a DRAG from here tilts the disc
             return
         if self.ref_point is None:
