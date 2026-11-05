@@ -108,7 +108,9 @@ def test_a_model_without_lazy_placements_starts_nothing():
         _close(a)
 
 
-def test_opening_a_document_starts_it(tmp_path, monkeypatch):
+def test_it_starts_after_the_first_frame_of_an_opened_document(tmp_path,
+                                                                monkeypatch):
+    from PySide6.QtCore import QEventLoop, QTimer
     from formats import igz
     from views.main_window import MainWindow
     a, va = _window(lazy=True)
@@ -118,9 +120,37 @@ def test_opening_a_document_starts_it(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(vpmod.Viewport, "start_pick_warmup",
                         lambda self: calls.append(self))
+    monkeypatch.setattr(vpmod.Viewport, "_paint_frame",
+                        lambda self: calls.append("frame"))
     win = MainWindow()
     try:
         assert win.open_path(path) is not False
-        assert calls == [win.viewport]
+        assert calls == []
+        vp = win.viewport
+        vp.paintGL()
+        assert calls == ["frame"], "beside the frame, not after it"
+
+        def run():
+            loop = QEventLoop()
+            QTimer.singleShot(20, loop.quit)
+            loop.exec()
+        run()
+        assert calls == ["frame", vp]
+        vp.paintGL()
+        run()
+        assert calls == ["frame", vp, "frame"], "once a document"
     finally:
         _close(win)
+
+
+def test_the_pointer_that_got_there_first_needs_no_warmup():
+    a, va = _window(lazy=True)
+    try:
+        _set_view(va, VIEWS[0])
+        va._input_serial = (100.0, 100.0)
+        va.pick_group(100.0, 100.0)
+        assert va._inst_set_memo is not None
+        va.start_pick_warmup()
+        assert getattr(va, "_pick_warm", None) is None
+    finally:
+        _close(a)

@@ -2512,6 +2512,11 @@ class Viewport(QOpenGLWidget):
     tool_preview = True
 
     def paintGL(self) -> None:
+        if getattr(self, "_pick_warm_due", False):
+            # After this first frame of a new document, not beside it.
+            self._pick_warm_due = False
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, self, self.start_pick_warmup)
         if getattr(self, "tool_preview", True):
             Viewport._paint_frame(self)
             return
@@ -5873,6 +5878,7 @@ class Viewport(QOpenGLWidget):
         walking the dead ones). And a CPython id() reused by a new group
         could meet an old entry — the composer's lesson with frames."""
         self._pick_warm = None               # its threads end on their own
+        self._pick_warm_due = False
         draws = getattr(self, "_proto_draw", None)
         if draws and self.context() is not None:
             self.makeCurrent()                # GPU objects need the context
@@ -13215,6 +13221,9 @@ class Viewport(QOpenGLWidget):
         table = self._pick_lazy_table()
         if table is None:
             return
+        memo = getattr(self, "_inst_set_memo", None)
+        if memo is not None and memo[0] is table:
+            return                       # the pointer got there first
         seen: set = set()
         protos: list = []
         for g in table[0]:

@@ -7540,10 +7540,8 @@ class MainWindow(QMainWindow):
         self.viewport.notify_scene_changed()
         self._update_title()
         self.settle_heap()
-        try:
-            self.viewport.start_pick_warmup()
-        except Exception:  # noqa: BLE001 - the first hover builds it anyway
-            pass
+        # The heavy parts of the pick index, once the document is on screen.
+        self.viewport._pick_warm_due = True
         return True
 
     #: Young-generation threshold: how many net allocations between
