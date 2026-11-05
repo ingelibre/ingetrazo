@@ -3346,5 +3346,7 @@
  "Could not check for updates. Check your internet connection and try again.": "Không thể kiểm tra cập nhật. Hãy kiểm tra kết nối internet rồi thử lại.",
  "You have the latest version ({version}).": "Bạn đang dùng phiên bản mới nhất ({version}).",
  "Maximize this view or change it": "Phóng to khung nhìn này hoặc đổi nó",
- "Drag: move these views' lines together": "Kéo: di chuyển các đường của những khung nhìn này cùng nhau"
+ "Drag: move these views' lines together": "Kéo: di chuyển các đường của những khung nhìn này cùng nhau",
+ "Transparent background": "Nền trong suốt",
+ "Only PNG images keep transparency.": "Chỉ ảnh PNG mới giữ được độ trong suốt."
 }

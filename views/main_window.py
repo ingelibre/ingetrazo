@@ -9512,7 +9512,7 @@ class MainWindow(QMainWindow):
         """Hi-res 2D export of the current view ('Export 2D
         Graphic'): pick a file and a pixel width; height follows the
         viewport's aspect so the image matches exactly what you framed."""
-        from PySide6.QtWidgets import QInputDialog
+        from views.export_image_dialog import ExportImageDialog
         base = (self._current_path.stem if self._current_path is not None
                 else "untitled")
         path_str, _ = file_dialogs.getSaveFileName(
@@ -9523,12 +9523,14 @@ class MainWindow(QMainWindow):
         path = Path(path_str)
         if path.suffix.lower() not in (".png", ".jpg", ".jpeg"):
             path = path.with_suffix(".png")
-        width, ok = QInputDialog.getInt(
-            self, tr("Export Image"), tr("Width in pixels:"),
-            3840, 640, 16384, 320)
-        if not ok:
+        options = ExportImageDialog(self, path.suffix)
+        accepted = options.exec()
+        width, transparent = options.width_box.value(), options.transparent()
+        options.deleteLater()
+        if not accepted:
             return
-        image = self.viewport.render_image(width, sharp_shadows=True)
+        image = self.viewport.render_image(width, sharp_shadows=True,
+                                           transparent=transparent)
         if image is None or image.isNull() or not image.save(str(path)):
             QMessageBox.critical(self, tr("Export Image failed"),
                                  tr("Could not render or save the image."))

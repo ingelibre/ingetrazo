@@ -3322,5 +3322,7 @@
  "Could not check for updates. Check your internet connection and try again.": "ไม่สามารถตรวจสอบการอัปเดตได้ โปรดตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองอีกครั้ง",
  "You have the latest version ({version}).": "คุณใช้เวอร์ชันล่าสุดแล้ว ({version})",
  "Maximize this view or change it": "ขยายมุมมองนี้เต็มพื้นที่หรือเปลี่ยนมุมมอง",
- "Drag: move these views' lines together": "ลาก: ย้ายเส้นของมุมมองเหล่านี้พร้อมกัน"
+ "Drag: move these views' lines together": "ลาก: ย้ายเส้นของมุมมองเหล่านี้พร้อมกัน",
+ "Transparent background": "พื้นหลังโปร่งใส",
+ "Only PNG images keep transparency.": "เฉพาะภาพ PNG เท่านั้นที่คงความโปร่งใสไว้"
 }

@@ -3334,5 +3334,7 @@
  "Could not check for updates. Check your internet connection and try again.": "Не вдалося перевірити оновлення. Перевірте з'єднання з інтернетом і спробуйте ще раз.",
  "You have the latest version ({version}).": "У вас остання версія ({version}).",
  "Maximize this view or change it": "Розгорнути цей вид або змінити його",
- "Drag: move these views' lines together": "Перетягніть, щоб перемістити лінії цих видів разом"
+ "Drag: move these views' lines together": "Перетягніть, щоб перемістити лінії цих видів разом",
+ "Transparent background": "Прозоре тло",
+ "Only PNG images keep transparency.": "Прозорість зберігають лише зображення PNG."
 }

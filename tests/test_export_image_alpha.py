@@ -9,6 +9,7 @@ background box of Export image the file is opaque only where the model is.
 """
 from __future__ import annotations
 
+import json
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -16,7 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import numpy as np
 import pytest
 from PySide6.QtGui import QColor, QImage, QVector3D
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog
 
 _app = QApplication.instance() or QApplication([])
 V = QVector3D
@@ -130,12 +131,11 @@ def test_the_transparent_background_is_alpha_zero(view, style):
 def test_the_box_only_lasts_that_picture(view):
     _win, vp, folder = view
     _saved(vp, folder, "Default", transparent=True)
-    assert _at(vp, _saved(vp, folder, "Default"), "background").alpha() == 255
-    # ...and the view on screen, which no export call sets it for:
-    vp.style_override = None
+    # The view on screen first: no export call sets the flag for it.
     live = vp.grabFramebuffer()
     x, y = vp._world_to_pixel(ZONES["background"])
     assert live.pixelColor(int(x), int(y)).lightness() > 150
+    assert _at(vp, _saved(vp, folder, "Default"), "background").alpha() == 255
 
 
 def test_glass_on_nothing_keeps_its_own_opacity_and_colour(view):
@@ -191,3 +191,83 @@ def test_a_shadow_on_the_ground_is_translucent_black(view):
     assert shadow, "the shadow on the ground must reach the picture"
     # ...and a shadow is not what the background turned into:
     assert sum(1 for c in seen if c.alpha() == 0) > len(seen) // 2
+
+
+@pytest.fixture
+def export(view, monkeypatch):
+    """Export image as the menu runs it, its file dialog answered: ``run``
+    ticks the box as told and returns the file read back. ``seen`` holds the
+    dialog as the user found it."""
+    from views import export_image_dialog as eid
+    from views.filedialogs import file_dialogs
+    win, vp, folder = view
+    seen = {}
+
+    def run(name, tick=None, width=900):
+        target = folder / name
+
+        def answer(self):
+            seen["enabled"] = self.transparent_box.isEnabled()
+            seen["checked"] = self.transparent_box.isChecked()
+            seen["tip"] = self.transparent_box.toolTip()
+            self.width_box.setValue(width)
+            if tick is not None:
+                self.transparent_box.setChecked(tick)
+            return QDialog.Accepted
+
+        monkeypatch.setattr(eid.ExportImageDialog, "exec", answer)
+        monkeypatch.setattr(file_dialogs, "getSaveFileName",
+                            lambda *a, **k: (str(target), ""))
+        win._on_export_image()
+        return QImage(str(target)).convertToFormat(QImage.Format_ARGB32)
+
+    return vp, run, seen
+
+
+def test_the_box_is_offered_for_a_png_and_starts_off(export):
+    vp, run, seen = export
+    img = run("a.png")
+    assert seen == {"enabled": True, "checked": False, "tip": ""}
+    assert _at(vp, img, "background").alpha() == 255
+
+
+def test_ticking_it_makes_the_png_transparent(export):
+    vp, run, _seen = export
+    img = run("a.png", tick=True)
+    assert img.width() == WIDTH
+    assert _at(vp, img, "background").alpha() == 0
+    assert _at(vp, img, "solid").alpha() == 255
+
+
+def test_the_next_export_does_not_remember_it(export):
+    """The dialog keeps none of its options: the width is 3840 each time."""
+    _vp, run, seen = export
+    run("a.png", tick=True)
+    run("b.png")
+    assert seen["checked"] is False
+
+
+@pytest.mark.parametrize("name", ["a.jpg", "a.jpeg", "a.JPG"])
+def test_a_jpeg_does_not_offer_it(export, name):
+    vp, run, seen = export
+    img = run(name)
+    assert seen["enabled"] is False and seen["checked"] is False
+    assert seen["tip"]
+    assert _at(vp, img, "background").lightness() > 150
+
+
+def test_a_disabled_box_never_counts():
+    from views.export_image_dialog import ExportImageDialog
+    dlg = ExportImageDialog(None, ".jpg")
+    dlg.transparent_box.setChecked(True)     # by no hand: it is disabled
+    assert dlg.transparent() is False
+    dlg.deleteLater()
+
+
+def test_the_new_texts_are_translated():
+    """test_translation_files asks that every language has the message;
+    here, that the message is what the dialog asks for."""
+    from core import i18n
+    data = json.loads((i18n._I18N_DIR / "es.json").read_text(encoding="utf-8"))
+    assert data["Transparent background"] == "Fondo transparente"
+    assert "PNG" in data["Only PNG images keep transparency."]
