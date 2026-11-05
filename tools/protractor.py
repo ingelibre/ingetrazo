@@ -249,12 +249,16 @@ class ProtractorBase(Tool):
                   else self.hover_point)
         if w2p is None or centre is None:
             return
-        u, _v = plane_axes(self._axis())
+        u, v = plane_axes(self._axis())
         p0 = w2p(centre)
         p1 = w2p(centre + u)
-        if p0 is None or p1 is None:
+        p2 = w2p(centre + v)
+        if p0 is None or p1 is None or p2 is None:
             return
-        px_per_unit = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+        # The larger of the two in-plane scales: along an axis that points
+        # into the screen, one unit is a few pixels and the radius exploded.
+        px_per_unit = max(math.hypot(p1[0] - p0[0], p1[1] - p0[1]),
+                          math.hypot(p2[0] - p0[0], p2[1] - p0[1]))
         if px_per_unit > 1e-6:
             self._disc_r = DISC_PX / px_per_unit
         if self.start_point is not None:
