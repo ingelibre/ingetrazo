@@ -8830,7 +8830,11 @@ class Viewport(QOpenGLWidget):
                 # loop edges (faces are planar).
                 tri0 = np.empty((len(softs), 3, 3))
                 tri1 = np.empty((len(softs), 3, 3))
+                from core.profile_edges import edge_normal_sign
+                windings = {}
+                normal_signs = np.empty(len(softs))
                 for i, e in enumerate(softs):
+                    normal_signs[i] = edge_normal_sign(e, windings)
                     pts[i] = (e.a.x(), e.a.y(), e.a.z(),
                               e.b.x(), e.b.y(), e.b.z())
                     v = e.faces[0].vertices
@@ -8846,6 +8850,7 @@ class Viewport(QOpenGLWidget):
                                (v[2].x(), v[2].y(), v[2].z()))
                 n0 = np.cross(tri0[:, 1] - tri0[:, 0], tri0[:, 2] - tri0[:, 0])
                 n1 = np.cross(tri1[:, 1] - tri1[:, 0], tri1[:, 2] - tri1[:, 0])
+                n1 *= normal_signs[:, None]
                 c0 = tri0[:, 0]
                 c1 = tri1[:, 0]
                 arrays = (pts.astype(np.float32), n0, c0, n1, c1, single)
@@ -12698,6 +12703,8 @@ class Viewport(QOpenGLWidget):
                                      (c.x(), c.y(), c.z()))
             return r
 
+        from core.profile_edges import edge_normal_sign
+        windings = {}
         for e in mesh.edges:
             if getattr(e, "hidden", False):
                 continue                  # invisible: no line, no profile
@@ -12715,6 +12722,8 @@ class Viewport(QOpenGLWidget):
             soft_c0.append(c0)
             if len(fs) == 2:
                 n1, c1 = props(fs[1])
+                sign = edge_normal_sign(e, windings)
+                n1 = tuple(sign * value for value in n1)
                 soft_single.append(False)
             else:
                 n1, c1 = n0, c0
@@ -12847,10 +12856,10 @@ class Viewport(QOpenGLWidget):
             # mesh before the flip, which would serve its old winding.
             h.update(repr(fp[7]).encode())
         if fp[5]:
-            # Soft edges shade smooth since #131: a chunk stored before
-            # bakes the curved surface flat. Only meshes with soft edges
-            # take the term, so the rest keep their digests.
-            h.update(b"smooth-shading")
+            # Soft edges shade smooth since #131 and align their adjacent
+            # planes for silhouettes independently of face winding. Discard
+            # old soft-edge chunks; hard-only meshes keep their digests.
+            h.update(b"smooth-shading-oriented-profiles-v1")
         if fp[6]:
             # Hidden-edge term, only when some edge IS hidden: meshes without
             # any (the overwhelming majority) keep their pre-existing digests,
@@ -16129,6 +16138,8 @@ class Viewport(QOpenGLWidget):
         lh: list = []
         ls: list = []
         ln: list = []
+        from core.profile_edges import edge_normal_sign
+        windings = {}
         for e in scene.loose_mesh.edges:
             if getattr(e, "hidden", False) or not scene.entity_visible(e):
                 continue
@@ -16140,6 +16151,8 @@ class Viewport(QOpenGLWidget):
                     continue
                 na = fs[0].normal()
                 nb = fs[1].normal() if len(fs) > 1 else None
+                if nb is not None:
+                    nb *= edge_normal_sign(e, windings)
                 ls.append((p0, p1))
                 ln.append(((na.x(), na.y(), na.z()),
                            nan3 if nb is None else (nb.x(), nb.y(), nb.z())))

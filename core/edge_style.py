@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from core.layers import DEFAULT_LAYER, LINETYPES
+from core.profile_edges import edge_normal_sign, plan_normal_signs
 
 # Per vertex: position, material RGB, normals of two adjacent faces,
 # soft flag, boundary flag, dash count, and up to eight dash lengths.
@@ -138,6 +139,7 @@ def edge_vertices(mesh, scene, paint=None, inherited_layer=None, average=None) -
     plan = plan_of(mesh)
     if plan is not None:
         points, normals, starts, incident = _plan_arrays(mesh, plan)
+        normal_signs = plan_normal_signs(plan)
         from formats.igz import _edge_material_map, _face_attrs_from_json
         from core.mesh import edge_material_key
         paints = _edge_material_map(mesh.__dict__["_deferred_source"]["meta"])
@@ -164,6 +166,8 @@ def edge_vertices(mesh, scene, paint=None, inherited_layer=None, average=None) -
         hidden = np.asarray([edge.hidden or not scene.entity_visible(edge) for edge in edges])
         layers = [edge.layer for edge in edges]
         face_attrs = [face.attrs for face in faces]
+        windings = {}
+        normal_signs = np.asarray([edge_normal_sign(edge, windings) for edge in edges])
     count = len(points)
     data = np.zeros((count, 2, EDGE_FLOATS), dtype=np.float32)
     data[:, :, :3] = points
@@ -179,7 +183,8 @@ def edge_vertices(mesh, scene, paint=None, inherited_layer=None, average=None) -
         faces = incident[starts[i]:starts[i + 1]]
         if len(faces):
             data[i, :, 6:9] = normals[faces[0]]
-            data[i, :, 9:12] = normals[faces[1] if len(faces) > 1 else faces[0]]
+            data[i, :, 9:12] = (normals[faces[1] if len(faces) > 1 else faces[0]]
+                               * normal_signs[i])
         color = (_paint_color(materials[i] or {}, average, scene.materials)
                  or _mean_color([face_colors[int(f)] for f in faces]) or inherited)
         if color is not None:

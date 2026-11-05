@@ -291,6 +291,46 @@ def test_thick_profiles_stay_opaque_over_faces_near_their_ends(cube_viewport, pe
     assert samples >= 48
 
 
+@pytest.mark.parametrize("perspective", [False, True])
+@pytest.mark.parametrize("placement", ["loose", "group", "mirrored"])
+@pytest.mark.parametrize("soft,width", [(False, 12), (True, 12), (True, 1)])
+def test_profiles_stay_on_the_contour_when_faces_are_reversed(
+        cube_viewport, perspective, placement, soft, width):
+    from core.history import FlipFacesCommand, History
+    from core.mesh import Mesh
+
+    vp = cube_viewport
+    scene = vp.scene
+    mesh = scene.mesh
+    for edge in mesh.edges:
+        edge.soft = soft
+    if placement != "loose":
+        group = Group(mesh, name="Cube")
+        if placement == "mirrored":
+            group.xform = QMatrix4x4()
+            group.xform.scale(-1, 1.2, 0.8)
+        scene.groups.append(group)
+        scene.mesh = Mesh()
+    scene.display_style = _style(profiles=True, profile_width=width)
+    vp.camera.perspective = perspective
+    scene.version += 1
+
+    def strokes():
+        image = vp.render_image(900, 750, overlays=False).convertToFormat(QImage.Format_RGBA8888)
+        pixels = np.frombuffer(image.constBits(), dtype=np.uint8).reshape(
+            (image.height(), image.bytesPerLine() // 4, 4))
+        return (pixels[:, :image.width(), :3].max(axis=2) < 30).copy()
+
+    expected = strokes()
+    history = History(scene)
+    # Every individual face, mixed winding, and an entirely inside-out cube.
+    for indices in [(i,) for i in range(6)] + [(0, 1, 3), tuple(range(6))]:
+        history.execute(FlipFacesCommand([mesh.faces[i] for i in indices]))
+        assert np.array_equal(strokes(), expected), (perspective, placement, indices)
+        history.undo()
+        assert np.array_equal(strokes(), expected)
+
+
 def test_painting_a_solid_edge_updates_3d_material_color_and_undo(cube_viewport, monkeypatch):
     from PySide6.QtCore import QPointF, Qt
     from core.materials import Material
